@@ -82,10 +82,10 @@ impl FsTree {
     /// Call this periodically to process any pending filesystem events.
     /// Events are debounced: changes within 100ms of the last processed batch are ignored
     /// until 100ms has elapsed, at which point a single refresh is triggered.
-    pub fn poll_events(&mut self) {
+    pub fn poll_events(&mut self) -> bool {
         let rx = match self.event_rx.as_ref() {
             Some(rx) => rx,
-            None => return,
+            None => return false,
         };
 
         let mut has_relevant_event = false;
@@ -98,19 +98,20 @@ impl FsTree {
         }
 
         if !has_relevant_event {
-            return;
+            return false;
         }
 
         // Debounce: skip if we processed events less than 100ms ago.
         let now = Instant::now();
         if let Some(last) = self.last_event_time {
             if now.duration_since(last).as_millis() < 100 {
-                return;
+                return false;
             }
         }
 
         self.last_event_time = Some(now);
         self.refresh();
+        true
     }
 
     /// Start (or restart) the filesystem watcher on the current root.

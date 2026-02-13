@@ -1,311 +1,20 @@
-// GPU renderer implementation (Stream A)
+// GPU renderer implementation
 // Implements tide_core::Renderer using wgpu + cosmic-text
 
-use std::collections::HashMap;
+mod atlas;
+mod shaders;
+mod vertex;
+
 use std::sync::Arc;
 
-use bytemuck::{Pod, Zeroable};
 use cosmic_text::{
     Attrs, Buffer as CosmicBuffer, Family, FontSystem, Metrics, Shaping, SwashCache,
 };
 use tide_core::{Color, Rect, Renderer, Size, TextStyle, Vec2};
-use wgpu::util::DeviceExt;
 
-// ──────────────────────────────────────────────
-// WGSL Shaders
-// ──────────────────────────────────────────────
-
-const RECT_SHADER: &str = r#"
-struct VertexInput {
-    @location(0) position: vec2<f32>,
-    @location(1) color: vec4<f32>,
-};
-
-struct VertexOutput {
-    @builtin(position) clip_position: vec4<f32>,
-    @location(0) color: vec4<f32>,
-};
-
-struct Uniforms {
-    screen_size: vec2<f32>,
-};
-
-@group(0) @binding(0)
-var<uniform> uniforms: Uniforms;
-
-@vertex
-fn vs_main(in: VertexInput) -> VertexOutput {
-    var out: VertexOutput;
-    // Convert pixel coords to NDC: x: [0, width] -> [-1, 1], y: [0, height] -> [1, -1]
-    let ndc_x = (in.position.x / uniforms.screen_size.x) * 2.0 - 1.0;
-    let ndc_y = 1.0 - (in.position.y / uniforms.screen_size.y) * 2.0;
-    out.clip_position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
-    out.color = in.color;
-    return out;
-}
-
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return in.color;
-}
-"#;
-
-const GLYPH_SHADER: &str = r#"
-struct VertexInput {
-    @location(0) position: vec2<f32>,
-    @location(1) uv: vec2<f32>,
-    @location(2) color: vec4<f32>,
-};
-
-struct VertexOutput {
-    @builtin(position) clip_position: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-    @location(1) color: vec4<f32>,
-};
-
-struct Uniforms {
-    screen_size: vec2<f32>,
-};
-
-@group(0) @binding(0)
-var<uniform> uniforms: Uniforms;
-
-@group(1) @binding(0)
-var atlas_texture: texture_2d<f32>;
-@group(1) @binding(1)
-var atlas_sampler: sampler;
-
-@vertex
-fn vs_main(in: VertexInput) -> VertexOutput {
-    var out: VertexOutput;
-    let ndc_x = (in.position.x / uniforms.screen_size.x) * 2.0 - 1.0;
-    let ndc_y = 1.0 - (in.position.y / uniforms.screen_size.y) * 2.0;
-    out.clip_position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
-    out.uv = in.uv;
-    out.color = in.color;
-    return out;
-}
-
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let alpha = textureSample(atlas_texture, atlas_sampler, in.uv).r;
-    return vec4<f32>(in.color.rgb, in.color.a * alpha);
-}
-"#;
-
-// ──────────────────────────────────────────────
-// Vertex types
-// ──────────────────────────────────────────────
-
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-struct RectVertex {
-    position: [f32; 2],
-    color: [f32; 4],
-}
-
-impl RectVertex {
-    const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
-        array_stride: std::mem::size_of::<RectVertex>() as wgpu::BufferAddress,
-        step_mode: wgpu::VertexStepMode::Vertex,
-        attributes: &[
-            wgpu::VertexAttribute {
-                offset: 0,
-                shader_location: 0,
-                format: wgpu::VertexFormat::Float32x2,
-            },
-            wgpu::VertexAttribute {
-                offset: 8,
-                shader_location: 1,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-        ],
-    };
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-struct GlyphVertex {
-    position: [f32; 2],
-    uv: [f32; 2],
-    color: [f32; 4],
-}
-
-impl GlyphVertex {
-    const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
-        array_stride: std::mem::size_of::<GlyphVertex>() as wgpu::BufferAddress,
-        step_mode: wgpu::VertexStepMode::Vertex,
-        attributes: &[
-            wgpu::VertexAttribute {
-                offset: 0,
-                shader_location: 0,
-                format: wgpu::VertexFormat::Float32x2,
-            },
-            wgpu::VertexAttribute {
-                offset: 8,
-                shader_location: 1,
-                format: wgpu::VertexFormat::Float32x2,
-            },
-            wgpu::VertexAttribute {
-                offset: 16,
-                shader_location: 2,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-        ],
-    };
-}
-
-// ──────────────────────────────────────────────
-// Glyph Atlas
-// ──────────────────────────────────────────────
-
-/// Region in the atlas texture for a single glyph
-#[derive(Debug, Clone, Copy)]
-struct AtlasRegion {
-    /// UV coords in [0,1] range
-    uv_min: [f32; 2],
-    uv_max: [f32; 2],
-    /// Pixel size of the glyph image
-    width: u32,
-    height: u32,
-    /// Offset from the baseline/origin
-    left: f32,
-    top: f32,
-}
-
-/// Key for glyph cache lookup
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct GlyphCacheKey {
-    character: char,
-    bold: bool,
-    italic: bool,
-}
-
-const ATLAS_SIZE: u32 = 1024;
-
-struct GlyphAtlas {
-    texture: wgpu::Texture,
-    texture_view: wgpu::TextureView,
-    /// Current packing cursor
-    cursor_x: u32,
-    cursor_y: u32,
-    row_height: u32,
-    /// Map from glyph key to atlas region
-    cache: HashMap<GlyphCacheKey, AtlasRegion>,
-}
-
-impl GlyphAtlas {
-    fn new(device: &wgpu::Device) -> Self {
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("glyph_atlas"),
-            size: wgpu::Extent3d {
-                width: ATLAS_SIZE,
-                height: ATLAS_SIZE,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        Self {
-            texture,
-            texture_view,
-            cursor_x: 0,
-            cursor_y: 0,
-            row_height: 0,
-            cache: HashMap::new(),
-        }
-    }
-
-    /// Upload a glyph bitmap into the atlas, returning the region.
-    fn upload_glyph(
-        &mut self,
-        queue: &wgpu::Queue,
-        width: u32,
-        height: u32,
-        left: f32,
-        top: f32,
-        data: &[u8],
-    ) -> AtlasRegion {
-        if width == 0 || height == 0 {
-            return AtlasRegion {
-                uv_min: [0.0, 0.0],
-                uv_max: [0.0, 0.0],
-                width: 0,
-                height: 0,
-                left,
-                top,
-            };
-        }
-
-        // Move to next row if needed
-        if self.cursor_x + width > ATLAS_SIZE {
-            self.cursor_x = 0;
-            self.cursor_y += self.row_height + 1;
-            self.row_height = 0;
-        }
-
-        // If we've run out of space, just return empty (in production, grow or use multiple atlases)
-        if self.cursor_y + height > ATLAS_SIZE {
-            return AtlasRegion {
-                uv_min: [0.0, 0.0],
-                uv_max: [0.0, 0.0],
-                width: 0,
-                height: 0,
-                left,
-                top,
-            };
-        }
-
-        let x = self.cursor_x;
-        let y = self.cursor_y;
-
-        queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &self.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d { x, y, z: 0 },
-                aspect: wgpu::TextureAspect::All,
-            },
-            data,
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(width),
-                rows_per_image: Some(height),
-            },
-            wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
-
-        let uv_min = [x as f32 / ATLAS_SIZE as f32, y as f32 / ATLAS_SIZE as f32];
-        let uv_max = [
-            (x + width) as f32 / ATLAS_SIZE as f32,
-            (y + height) as f32 / ATLAS_SIZE as f32,
-        ];
-
-        self.cursor_x += width + 1;
-        if height > self.row_height {
-            self.row_height = height;
-        }
-
-        AtlasRegion {
-            uv_min,
-            uv_max,
-            width,
-            height,
-            left,
-            top,
-        }
-    }
-}
+use atlas::{AtlasRegion, GlyphAtlas, GlyphCacheKey};
+use shaders::{GLYPH_SHADER, RECT_SHADER};
+use vertex::{GlyphVertex, RectVertex};
 
 // ──────────────────────────────────────────────
 // WgpuRenderer
@@ -345,7 +54,22 @@ pub struct WgpuRenderer {
     grid_glyph_vb_capacity: usize,
     grid_glyph_ib_capacity: usize,
 
-    // Overlay layer — rebuilt every frame (borders, cursor, file tree, preedit)
+    // Chrome layer — cached for borders and file tree
+    chrome_rect_vertices: Vec<RectVertex>,
+    chrome_rect_indices: Vec<u32>,
+    chrome_glyph_vertices: Vec<GlyphVertex>,
+    chrome_glyph_indices: Vec<u32>,
+    chrome_needs_upload: bool,
+    chrome_rect_vb: wgpu::Buffer,
+    chrome_rect_ib: wgpu::Buffer,
+    chrome_glyph_vb: wgpu::Buffer,
+    chrome_glyph_ib: wgpu::Buffer,
+    chrome_rect_vb_capacity: usize,
+    chrome_rect_ib_capacity: usize,
+    chrome_glyph_vb_capacity: usize,
+    chrome_glyph_ib_capacity: usize,
+
+    // Overlay layer — rebuilt every frame (cursor, preedit)
     rect_vertices: Vec<RectVertex>,
     rect_indices: Vec<u32>,
     glyph_vertices: Vec<GlyphVertex>,
@@ -371,6 +95,10 @@ pub struct WgpuRenderer {
     // Surface format (for potential re-creation)
     #[allow(dead_code)]
     surface_format: wgpu::TextureFormat,
+
+    // Atlas overflow tracking
+    atlas_reset_count: u64,
+    last_atlas_reset_count: u64,
 
     // Store device and queue for uploading glyphs during draw calls
     device: Arc<wgpu::Device>,
@@ -604,6 +332,20 @@ impl WgpuRenderer {
             grid_rect_ib_capacity: initial_buf_size as usize,
             grid_glyph_vb_capacity: initial_buf_size as usize,
             grid_glyph_ib_capacity: initial_buf_size as usize,
+            // Chrome layer (cached for borders and file tree)
+            chrome_rect_vertices: Vec::with_capacity(4096),
+            chrome_rect_indices: Vec::with_capacity(6144),
+            chrome_glyph_vertices: Vec::with_capacity(8192),
+            chrome_glyph_indices: Vec::with_capacity(12288),
+            chrome_needs_upload: true,
+            chrome_rect_vb: create_buf("chrome_rect_vb", vb_usage),
+            chrome_rect_ib: create_buf("chrome_rect_ib", ib_usage),
+            chrome_glyph_vb: create_buf("chrome_glyph_vb", vb_usage),
+            chrome_glyph_ib: create_buf("chrome_glyph_ib", ib_usage),
+            chrome_rect_vb_capacity: initial_buf_size as usize,
+            chrome_rect_ib_capacity: initial_buf_size as usize,
+            chrome_glyph_vb_capacity: initial_buf_size as usize,
+            chrome_glyph_ib_capacity: initial_buf_size as usize,
             // Overlay layer (rebuilt every frame)
             rect_vertices: Vec::with_capacity(4096),
             rect_indices: Vec::with_capacity(6144),
@@ -621,6 +363,8 @@ impl WgpuRenderer {
             scale_factor,
             cached_cell_size,
             surface_format: format,
+            atlas_reset_count: 0,
+            last_atlas_reset_count: 0,
             device: Arc::clone(&device),
             queue: Arc::clone(&queue),
         }
@@ -716,7 +460,7 @@ impl WgpuRenderer {
                             cosmic_text::SwashContent::SubpixelMask => {
                                 // RGB subpixel -> average as grayscale
                                 image.data.chunks(3).map(|c| {
-                                    let r = c.get(0).copied().unwrap_or(0) as u16;
+                                    let r = c.first().copied().unwrap_or(0) as u16;
                                     let g = c.get(1).copied().unwrap_or(0) as u16;
                                     let b = c.get(2).copied().unwrap_or(0) as u16;
                                     ((r + g + b) / 3) as u8
@@ -724,6 +468,7 @@ impl WgpuRenderer {
                             }
                         };
 
+                        let cache_len_before = self.atlas.cache.len();
                         region = self.atlas.upload_glyph(
                             &self.queue,
                             width,
@@ -732,6 +477,12 @@ impl WgpuRenderer {
                             top,
                             &alpha_data,
                         );
+                        // Detect atlas reset: cache was cleared during upload
+                        if self.atlas.cache.is_empty() && cache_len_before > 0 {
+                            self.atlas_reset_count += 1;
+                            self.grid_needs_upload = true;
+                            self.chrome_needs_upload = true;
+                        }
                     }
                 }
             }
@@ -756,6 +507,13 @@ impl WgpuRenderer {
         self.grid_rect_vertices.push(RectVertex { position: [x + w, y + h], color: c });
         self.grid_rect_vertices.push(RectVertex { position: [x, y + h], color: c });
         self.grid_rect_indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+
+    /// Check if the atlas was reset since last check (all UV coords are stale).
+    pub fn atlas_was_reset(&mut self) -> bool {
+        let prev = self.last_atlas_reset_count;
+        self.last_atlas_reset_count = self.atlas_reset_count;
+        prev != self.atlas_reset_count
     }
 
     /// Signal that the grid content has changed and needs a full rebuild.
@@ -815,6 +573,92 @@ impl WgpuRenderer {
         }
     }
 
+    // ── Chrome layer methods (cached for borders and file tree) ──
+
+    /// Draw a rect into the cached chrome layer.
+    pub fn draw_chrome_rect(&mut self, rect: Rect, color: Color) {
+        let x = rect.x * self.scale_factor;
+        let y = rect.y * self.scale_factor;
+        let w = rect.width * self.scale_factor;
+        let h = rect.height * self.scale_factor;
+        let base = self.chrome_rect_vertices.len() as u32;
+        let c = [color.r, color.g, color.b, color.a];
+        self.chrome_rect_vertices.push(RectVertex { position: [x, y], color: c });
+        self.chrome_rect_vertices.push(RectVertex { position: [x + w, y], color: c });
+        self.chrome_rect_vertices.push(RectVertex { position: [x + w, y + h], color: c });
+        self.chrome_rect_vertices.push(RectVertex { position: [x, y + h], color: c });
+        self.chrome_rect_indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+
+    /// Draw text into the cached chrome layer.
+    pub fn draw_chrome_text(&mut self, text: &str, position: Vec2, style: TextStyle, clip: Rect) {
+        let scale = self.scale_factor;
+        let cell_w = self.cached_cell_size.width * scale;
+        let baseline_y = self.cached_cell_size.height * scale * 0.8;
+
+        let mut cursor_x = position.x * scale;
+        let start_y = position.y * scale;
+
+        let clip_left = clip.x * scale;
+        let clip_top = clip.y * scale;
+        let clip_right = (clip.x + clip.width) * scale;
+        let clip_bottom = (clip.y + clip.height) * scale;
+
+        for ch in text.chars() {
+            if ch == ' ' || ch == '\t' {
+                let advance = if ch == '\t' { cell_w * 4.0 } else { cell_w };
+                cursor_x += advance;
+                continue;
+            }
+
+            if let Some(bg) = style.background {
+                let qx = cursor_x;
+                let qy = start_y;
+                let qw = cell_w;
+                let qh = self.cached_cell_size.height * scale;
+                if qx + qw > clip_left && qx < clip_right && qy + qh > clip_top && qy < clip_bottom {
+                    let base = self.chrome_rect_vertices.len() as u32;
+                    let c = [bg.r, bg.g, bg.b, bg.a];
+                    self.chrome_rect_vertices.push(RectVertex { position: [qx, qy], color: c });
+                    self.chrome_rect_vertices.push(RectVertex { position: [qx + qw, qy], color: c });
+                    self.chrome_rect_vertices.push(RectVertex { position: [qx + qw, qy + qh], color: c });
+                    self.chrome_rect_vertices.push(RectVertex { position: [qx, qy + qh], color: c });
+                    self.chrome_rect_indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+                }
+            }
+
+            let region = self.ensure_glyph_cached(ch, style.bold, style.italic);
+
+            if region.width > 0 && region.height > 0 {
+                let gx = cursor_x + region.left;
+                let gy = start_y + baseline_y - region.top;
+                let gw = region.width as f32;
+                let gh = region.height as f32;
+
+                if gx + gw > clip_left && gx < clip_right && gy + gh > clip_top && gy < clip_bottom {
+                    let base = self.chrome_glyph_vertices.len() as u32;
+                    let c = [style.foreground.r, style.foreground.g, style.foreground.b, style.foreground.a];
+                    self.chrome_glyph_vertices.push(GlyphVertex { position: [gx, gy], uv: [region.uv_min[0], region.uv_min[1]], color: c });
+                    self.chrome_glyph_vertices.push(GlyphVertex { position: [gx + gw, gy], uv: [region.uv_max[0], region.uv_min[1]], color: c });
+                    self.chrome_glyph_vertices.push(GlyphVertex { position: [gx + gw, gy + gh], uv: [region.uv_max[0], region.uv_max[1]], color: c });
+                    self.chrome_glyph_vertices.push(GlyphVertex { position: [gx, gy + gh], uv: [region.uv_min[0], region.uv_max[1]], color: c });
+                    self.chrome_glyph_indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+                }
+            }
+
+            cursor_x += cell_w;
+        }
+    }
+
+    /// Signal that chrome content has changed and needs a full rebuild.
+    pub fn invalidate_chrome(&mut self) {
+        self.chrome_rect_vertices.clear();
+        self.chrome_rect_indices.clear();
+        self.chrome_glyph_vertices.clear();
+        self.chrome_glyph_indices.clear();
+        self.chrome_needs_upload = true;
+    }
+
     // ── Overlay layer methods (rebuilt every frame) ──
 
     /// Push a colored quad (two triangles) into the rect batch.
@@ -848,6 +692,7 @@ impl WgpuRenderer {
     }
 
     /// Push a textured glyph quad into the glyph batch.
+    #[allow(clippy::too_many_arguments)]
     fn push_glyph_quad(
         &mut self,
         x: f32,
@@ -912,7 +757,7 @@ impl WgpuRenderer {
     }
 
     /// Submit batched draw calls to a render pass.
-    /// Draws: grid rects → overlay rects → grid glyphs → overlay glyphs
+    /// Draws: grid rects → chrome rects → overlay rects → grid glyphs → chrome glyphs → overlay glyphs
     pub fn render_frame(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -951,6 +796,27 @@ impl WgpuRenderer {
             self.grid_needs_upload = false;
         }
 
+        // ── Upload chrome layer (only when chrome changed) ──
+        if self.chrome_needs_upload {
+            if !self.chrome_rect_vertices.is_empty() {
+                let vb_bytes = bytemuck::cast_slice(&self.chrome_rect_vertices);
+                Self::ensure_buffer_capacity(&self.device, &mut self.chrome_rect_vb, &mut self.chrome_rect_vb_capacity, vb_bytes.len(), vb_usage, "chrome_rect_vb");
+                self.queue.write_buffer(&self.chrome_rect_vb, 0, vb_bytes);
+                let ib_bytes = bytemuck::cast_slice(&self.chrome_rect_indices);
+                Self::ensure_buffer_capacity(&self.device, &mut self.chrome_rect_ib, &mut self.chrome_rect_ib_capacity, ib_bytes.len(), ib_usage, "chrome_rect_ib");
+                self.queue.write_buffer(&self.chrome_rect_ib, 0, ib_bytes);
+            }
+            if !self.chrome_glyph_vertices.is_empty() {
+                let vb_bytes = bytemuck::cast_slice(&self.chrome_glyph_vertices);
+                Self::ensure_buffer_capacity(&self.device, &mut self.chrome_glyph_vb, &mut self.chrome_glyph_vb_capacity, vb_bytes.len(), vb_usage, "chrome_glyph_vb");
+                self.queue.write_buffer(&self.chrome_glyph_vb, 0, vb_bytes);
+                let ib_bytes = bytemuck::cast_slice(&self.chrome_glyph_indices);
+                Self::ensure_buffer_capacity(&self.device, &mut self.chrome_glyph_ib, &mut self.chrome_glyph_ib_capacity, ib_bytes.len(), ib_usage, "chrome_glyph_ib");
+                self.queue.write_buffer(&self.chrome_glyph_ib, 0, ib_bytes);
+            }
+            self.chrome_needs_upload = false;
+        }
+
         // ── Upload overlay layer (every frame) ──
         let has_overlay_rects = !self.rect_vertices.is_empty();
         let has_overlay_glyphs = !self.glyph_vertices.is_empty();
@@ -975,6 +841,8 @@ impl WgpuRenderer {
 
         let grid_rect_count = self.grid_rect_indices.len() as u32;
         let grid_glyph_count = self.grid_glyph_indices.len() as u32;
+        let chrome_rect_count = self.chrome_rect_indices.len() as u32;
+        let chrome_glyph_count = self.chrome_glyph_indices.len() as u32;
         let overlay_rect_count = self.rect_indices.len() as u32;
         let overlay_glyph_count = self.glyph_indices.len() as u32;
 
@@ -994,7 +862,7 @@ impl WgpuRenderer {
                 occlusion_query_set: None,
             });
 
-            // Draw order: grid rects → overlay rects → grid glyphs → overlay glyphs
+            // Draw order: grid rects → chrome rects → overlay rects → grid glyphs → chrome glyphs → overlay glyphs
             pass.set_pipeline(&self.rect_pipeline);
             pass.set_bind_group(0, &self.uniform_bind_group, &[]);
 
@@ -1002,6 +870,12 @@ impl WgpuRenderer {
                 pass.set_vertex_buffer(0, self.grid_rect_vb.slice(..));
                 pass.set_index_buffer(self.grid_rect_ib.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..grid_rect_count, 0, 0..1);
+            }
+
+            if chrome_rect_count > 0 {
+                pass.set_vertex_buffer(0, self.chrome_rect_vb.slice(..));
+                pass.set_index_buffer(self.chrome_rect_ib.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..chrome_rect_count, 0, 0..1);
             }
 
             if overlay_rect_count > 0 {
@@ -1018,6 +892,12 @@ impl WgpuRenderer {
                 pass.set_vertex_buffer(0, self.grid_glyph_vb.slice(..));
                 pass.set_index_buffer(self.grid_glyph_ib.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..grid_glyph_count, 0, 0..1);
+            }
+
+            if chrome_glyph_count > 0 {
+                pass.set_vertex_buffer(0, self.chrome_glyph_vb.slice(..));
+                pass.set_index_buffer(self.chrome_glyph_ib.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..chrome_glyph_count, 0, 0..1);
             }
 
             if overlay_glyph_count > 0 {

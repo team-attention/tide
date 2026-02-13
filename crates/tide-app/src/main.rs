@@ -2,6 +2,10 @@
 // Wires all crates together: winit window, wgpu surface, renderer, terminal panes,
 // layout engine, input router, file tree, and CWD following.
 
+mod input;
+mod pane;
+mod theme;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -11,122 +15,21 @@ use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{ElementState, Ime, MouseButton as WinitMouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::keyboard::{Key as WinitKey, ModifiersState, NamedKey};
+use winit::keyboard::ModifiersState;
 use winit::window::{Window, WindowAttributes, WindowId};
 
 use tide_core::{
-    Color, CursorShape, FileTreeSource, InputEvent, Key, LayoutEngine, Modifiers, MouseButton,
-    PaneId, Rect, Renderer, Size, SplitDirection, TerminalBackend, TextStyle, Vec2,
+    Color, FileTreeSource, InputEvent, LayoutEngine, MouseButton, PaneId, Rect, Renderer, Size,
+    SplitDirection, TerminalBackend, TextStyle, Vec2,
 };
 use tide_input::{Action, Direction, GlobalAction, Router};
 use tide_layout::SplitLayout;
 use tide_renderer::WgpuRenderer;
-use tide_terminal::Terminal;
 use tide_tree::FsTree;
 
-// ──────────────────────────────────────────────
-// Theme constants
-// ──────────────────────────────────────────────
-
-const BG_COLOR: Color = Color::new(0.06, 0.065, 0.09, 1.0);
-const BORDER_COLOR: Color = Color::new(0.15, 0.16, 0.22, 1.0);
-const FOCUSED_BORDER_COLOR: Color = Color::new(0.25, 0.5, 1.0, 1.0);
-const TREE_BG_COLOR: Color = Color::new(0.05, 0.055, 0.08, 1.0);
-const TREE_TEXT_COLOR: Color = Color::new(0.72, 0.74, 0.82, 1.0);
-const TREE_DIR_COLOR: Color = Color::new(0.35, 0.6, 1.0, 1.0);
-const BORDER_WIDTH: f32 = 1.0;
-const FILE_TREE_WIDTH: f32 = 220.0;
-
-// ──────────────────────────────────────────────
-// TerminalPane
-// ──────────────────────────────────────────────
-
-struct TerminalPane {
-    #[allow(dead_code)]
-    id: PaneId,
-    backend: Terminal,
-}
-
-impl TerminalPane {
-    fn new(id: PaneId, cols: u16, rows: u16) -> Result<Self, Box<dyn std::error::Error>> {
-        let backend = Terminal::new(cols, rows)?;
-        Ok(Self { id, backend })
-    }
-
-    /// Render the grid cells into the cached grid layer.
-    fn render_grid(&self, rect: Rect, renderer: &mut WgpuRenderer) {
-        let cell_size = renderer.cell_size();
-
-        // Draw pane background into grid layer (so cell BGs draw on top)
-        renderer.draw_grid_rect(rect, BG_COLOR);
-
-        let grid = self.backend.grid();
-        let offset = Vec2::new(rect.x, rect.y);
-
-        // Clamp to the number of rows/cols that fit within the pane rect
-        let max_rows = (rect.height / cell_size.height).ceil() as usize;
-        let max_cols = (rect.width / cell_size.width).ceil() as usize;
-        let rows = (grid.rows as usize).min(max_rows).min(grid.cells.len());
-        let cols = (grid.cols as usize).min(max_cols);
-
-        for row in 0..rows {
-            for col in 0..cols {
-                if col >= grid.cells[row].len() {
-                    break;
-                }
-                let cell = &grid.cells[row][col];
-                if cell.character == '\0'
-                    || (cell.character == ' ' && cell.style.background.is_none())
-                {
-                    continue;
-                }
-                renderer.draw_grid_cell(cell.character, row, col, cell.style, cell_size, offset);
-            }
-        }
-    }
-
-    /// Render the cursor into the overlay layer (always redrawn).
-    fn render_cursor(&self, rect: Rect, renderer: &mut WgpuRenderer) {
-        let cell_size = renderer.cell_size();
-        let cursor = self.backend.cursor();
-        if cursor.visible {
-            let cx = rect.x + cursor.col as f32 * cell_size.width;
-            let cy = rect.y + cursor.row as f32 * cell_size.height;
-
-            let cursor_color = Color::new(0.25, 0.5, 1.0, 0.9);
-            match cursor.shape {
-                CursorShape::Block => {
-                    renderer.draw_rect(
-                        Rect::new(cx, cy, cell_size.width, cell_size.height),
-                        cursor_color,
-                    );
-                }
-                CursorShape::Beam => {
-                    renderer.draw_rect(Rect::new(cx, cy, 2.0, cell_size.height), cursor_color);
-                }
-                CursorShape::Underline => {
-                    renderer.draw_rect(
-                        Rect::new(cx, cy + cell_size.height - 2.0, cell_size.width, 2.0),
-                        cursor_color,
-                    );
-                }
-            }
-        }
-    }
-
-    fn handle_key(&mut self, key: &Key, modifiers: &Modifiers) {
-        let bytes = Terminal::key_to_bytes(key, modifiers);
-        if !bytes.is_empty() {
-            self.backend.write(&bytes);
-        }
-    }
-
-    fn resize_to_rect(&mut self, rect: Rect, cell_size: Size) {
-        let cols = (rect.width / cell_size.width).max(1.0) as u16;
-        let rows = (rect.height / cell_size.height).max(1.0) as u16;
-        self.backend.resize(cols, rows);
-    }
-}
+use input::{winit_key_to_tide, winit_modifiers_to_tide};
+use pane::TerminalPane;
+use theme::*;
 
 // ──────────────────────────────────────────────
 // App state
@@ -175,6 +78,17 @@ struct App {
     // Grid generation tracking for vertex caching
     pane_generations: HashMap<PaneId, u64>,
     layout_generation: u64,
+
+    // Chrome generation tracking (borders + file tree)
+    chrome_generation: u64,
+    last_chrome_generation: u64,
+
+    // Input latency: skip 8ms sleep after keypress while awaiting PTY response
+    input_just_sent: bool,
+    input_sent_at: Option<Instant>,
+
+    // Adaptive frame pacing: throttle to ~60fps during high throughput
+    consecutive_dirty_frames: u32,
 }
 
 impl App {
@@ -206,6 +120,11 @@ impl App {
             pane_rects: Vec::new(),
             pane_generations: HashMap::new(),
             layout_generation: 0,
+            chrome_generation: 0,
+            last_chrome_generation: u64::MAX,
+            input_just_sent: false,
+            input_sent_at: None,
+            consecutive_dirty_frames: 0,
         }
     }
 
@@ -368,6 +287,7 @@ impl App {
         if rects_changed {
             self.layout_generation += 1;
             self.pane_generations.clear();
+            self.chrome_generation += 1;
         }
 
         // Store window size for layout drag operations
@@ -404,94 +324,108 @@ impl App {
 
         let renderer = self.renderer.as_mut().unwrap();
 
-        renderer.begin_frame(logical);
-
-        // Draw file tree panel if visible
-        if show_file_tree {
-            if let Some(tree) = self.file_tree.as_ref() {
-                let panel_rect = Rect::new(0.0, 0.0, FILE_TREE_WIDTH, logical.height);
-
-                renderer.draw_rect(panel_rect, TREE_BG_COLOR);
-                renderer.draw_rect(
-                    Rect::new(FILE_TREE_WIDTH - BORDER_WIDTH, 0.0, BORDER_WIDTH, logical.height),
-                    BORDER_COLOR,
-                );
-
-                let cell_size = renderer.cell_size();
-                let line_height = cell_size.height;
-                let indent_width = cell_size.width * 1.5;
-                let left_padding = 4.0;
-
-                let entries = tree.visible_entries();
-                for (i, entry) in entries.iter().enumerate() {
-                    let y = i as f32 * line_height - file_tree_scroll;
-                    if y + line_height < 0.0 || y > logical.height {
-                        continue;
-                    }
-
-                    let x = left_padding + entry.depth as f32 * indent_width;
-
-                    let prefix = if entry.entry.is_dir {
-                        if entry.is_expanded { "v " } else { "> " }
-                    } else {
-                        "  "
-                    };
-
-                    let text_color = if entry.entry.is_dir {
-                        TREE_DIR_COLOR
-                    } else {
-                        TREE_TEXT_COLOR
-                    };
-
-                    let style = TextStyle {
-                        foreground: text_color,
-                        background: None,
-                        bold: entry.entry.is_dir,
-                        italic: false,
-                        underline: false,
-                    };
-
-                    let display_text = format!("{}{}", prefix, entry.entry.name);
-                    renderer.draw_text(&display_text, Vec2::new(x, y), style, panel_rect);
-                }
-            }
+        // Atlas reset → all cached UV coords are stale, force full rebuild
+        if renderer.atlas_was_reset() {
+            self.pane_generations.clear();
+            self.last_chrome_generation = self.chrome_generation.wrapping_sub(1);
         }
 
-        // Draw pane borders and backgrounds
-        for &(id, rect) in &pane_rects {
-            let is_focused = focused == Some(id);
-            let border_color = if is_focused {
-                FOCUSED_BORDER_COLOR
-            } else {
-                BORDER_COLOR
-            };
+        renderer.begin_frame(logical);
 
-            renderer.draw_rect(
-                Rect::new(rect.x, rect.y, rect.width, BORDER_WIDTH),
-                border_color,
-            );
-            renderer.draw_rect(
-                Rect::new(
-                    rect.x,
-                    rect.y + rect.height - BORDER_WIDTH,
-                    rect.width,
-                    BORDER_WIDTH,
-                ),
-                border_color,
-            );
-            renderer.draw_rect(
-                Rect::new(rect.x, rect.y, BORDER_WIDTH, rect.height),
-                border_color,
-            );
-            renderer.draw_rect(
-                Rect::new(
-                    rect.x + rect.width - BORDER_WIDTH,
-                    rect.y,
-                    BORDER_WIDTH,
-                    rect.height,
-                ),
-                border_color,
-            );
+        // Rebuild chrome layer only when chrome content changed (borders, file tree)
+        let chrome_dirty = self.chrome_generation != self.last_chrome_generation;
+        if chrome_dirty {
+            renderer.invalidate_chrome();
+
+            // Draw file tree panel if visible
+            if show_file_tree {
+                if let Some(tree) = self.file_tree.as_ref() {
+                    let panel_rect = Rect::new(0.0, 0.0, FILE_TREE_WIDTH, logical.height);
+
+                    renderer.draw_chrome_rect(panel_rect, TREE_BG_COLOR);
+                    renderer.draw_chrome_rect(
+                        Rect::new(FILE_TREE_WIDTH - BORDER_WIDTH, 0.0, BORDER_WIDTH, logical.height),
+                        BORDER_COLOR,
+                    );
+
+                    let cell_size = renderer.cell_size();
+                    let line_height = cell_size.height;
+                    let indent_width = cell_size.width * 1.5;
+                    let left_padding = 4.0;
+
+                    let entries = tree.visible_entries();
+                    for (i, entry) in entries.iter().enumerate() {
+                        let y = i as f32 * line_height - file_tree_scroll;
+                        if y + line_height < 0.0 || y > logical.height {
+                            continue;
+                        }
+
+                        let x = left_padding + entry.depth as f32 * indent_width;
+
+                        let prefix = if entry.entry.is_dir {
+                            if entry.is_expanded { "v " } else { "> " }
+                        } else {
+                            "  "
+                        };
+
+                        let text_color = if entry.entry.is_dir {
+                            TREE_DIR_COLOR
+                        } else {
+                            TREE_TEXT_COLOR
+                        };
+
+                        let style = TextStyle {
+                            foreground: text_color,
+                            background: None,
+                            bold: entry.entry.is_dir,
+                            italic: false,
+                            underline: false,
+                        };
+
+                        let display_text = format!("{}{}", prefix, entry.entry.name);
+                        renderer.draw_chrome_text(&display_text, Vec2::new(x, y), style, panel_rect);
+                    }
+                }
+            }
+
+            // Draw pane borders
+            for &(id, rect) in &pane_rects {
+                let is_focused = focused == Some(id);
+                let border_color = if is_focused {
+                    FOCUSED_BORDER_COLOR
+                } else {
+                    BORDER_COLOR
+                };
+
+                renderer.draw_chrome_rect(
+                    Rect::new(rect.x, rect.y, rect.width, BORDER_WIDTH),
+                    border_color,
+                );
+                renderer.draw_chrome_rect(
+                    Rect::new(
+                        rect.x,
+                        rect.y + rect.height - BORDER_WIDTH,
+                        rect.width,
+                        BORDER_WIDTH,
+                    ),
+                    border_color,
+                );
+                renderer.draw_chrome_rect(
+                    Rect::new(rect.x, rect.y, BORDER_WIDTH, rect.height),
+                    border_color,
+                );
+                renderer.draw_chrome_rect(
+                    Rect::new(
+                        rect.x + rect.width - BORDER_WIDTH,
+                        rect.y,
+                        BORDER_WIDTH,
+                        rect.height,
+                    ),
+                    border_color,
+                );
+            }
+
+            self.last_chrome_generation = self.chrome_generation;
         }
 
         // Check if grid needs rebuild (any pane content or layout changed)
@@ -619,6 +553,8 @@ impl App {
                     if let Some(focused_id) = self.focused {
                         if let Some(pane) = self.terminal_panes.get_mut(&focused_id) {
                             pane.backend.write(text.as_bytes());
+                            self.input_just_sent = true;
+                            self.input_sent_at = Some(Instant::now());
                         }
                     }
                     self.ime_composing = false;
@@ -636,10 +572,10 @@ impl App {
                 }
 
                 // During IME composition, only handle non-character keys
-                if self.ime_composing {
-                    if matches!(event.logical_key, WinitKey::Character(_)) {
-                        return;
-                    }
+                if self.ime_composing
+                    && matches!(event.logical_key, winit::keyboard::Key::Character(_))
+                {
+                    return;
                 }
 
                 if let Some(key) = winit_key_to_tide(&event.logical_key) {
@@ -707,7 +643,11 @@ impl App {
 
                 // Check if scrolling over the file tree
                 if self.show_file_tree && self.last_cursor_pos.x < FILE_TREE_WIDTH {
-                    self.file_tree_scroll = (self.file_tree_scroll - dy * 10.0).max(0.0);
+                    let new_scroll = (self.file_tree_scroll - dy * 10.0).max(0.0);
+                    if new_scroll != self.file_tree_scroll {
+                        self.file_tree_scroll = new_scroll;
+                        self.chrome_generation += 1;
+                    }
                 } else {
                     let input = InputEvent::MouseScroll {
                         delta: dy,
@@ -732,15 +672,20 @@ impl App {
             Action::RouteToPane(id) => {
                 // Update focus
                 if let Some(InputEvent::MouseClick { .. }) = event {
-                    self.focused = Some(id);
-                    self.router.set_focused(id);
-                    self.update_file_tree_cwd();
+                    if self.focused != Some(id) {
+                        self.focused = Some(id);
+                        self.router.set_focused(id);
+                        self.chrome_generation += 1;
+                        self.update_file_tree_cwd();
+                    }
                 }
 
                 // Forward keyboard input to terminal
                 if let Some(InputEvent::KeyPress { key, modifiers }) = event {
                     if let Some(pane) = self.terminal_panes.get_mut(&id) {
                         pane.handle_key(&key, &modifiers);
+                        self.input_just_sent = true;
+                        self.input_sent_at = Some(Instant::now());
                     }
                 }
             }
@@ -775,6 +720,7 @@ impl App {
                 if let Some(focused) = self.focused {
                     let new_id = self.layout.split(focused, SplitDirection::Vertical);
                     self.create_terminal_pane(new_id);
+                    self.chrome_generation += 1;
                     self.compute_layout();
                 }
             }
@@ -782,6 +728,7 @@ impl App {
                 if let Some(focused) = self.focused {
                     let new_id = self.layout.split(focused, SplitDirection::Horizontal);
                     self.create_terminal_pane(new_id);
+                    self.chrome_generation += 1;
                     self.compute_layout();
                 }
             }
@@ -805,12 +752,14 @@ impl App {
                         self.focused = None;
                     }
 
+                    self.chrome_generation += 1;
                     self.compute_layout();
                     self.update_file_tree_cwd();
                 }
             }
             GlobalAction::ToggleFileTree => {
                 self.show_file_tree = !self.show_file_tree;
+                self.chrome_generation += 1;
                 self.compute_layout();
                 if self.show_file_tree {
                     self.update_file_tree_cwd();
@@ -873,7 +822,7 @@ impl App {
 
                     // Prefer overlapping panes; among those, pick the closest on the primary axis
                     let score = if overlaps { dist } else { dist + 100000.0 };
-                    if best.map_or(true, |(_, d)| score < d) {
+                    if best.is_none_or(|(_, d)| score < d) {
                         best = Some((id, score));
                     }
                 }
@@ -881,6 +830,7 @@ impl App {
                 if let Some((next_id, _)) = best {
                     self.focused = Some(next_id);
                     self.router.set_focused(next_id);
+                    self.chrome_generation += 1;
                     self.update_file_tree_cwd();
                 }
             }
@@ -911,7 +861,10 @@ impl App {
 
         // Poll file tree events
         if let Some(tree) = self.file_tree.as_mut() {
-            tree.poll_events();
+            let had_changes = tree.poll_events();
+            if had_changes {
+                self.chrome_generation += 1;
+            }
         }
 
         // Periodic CWD check (every 500ms)
@@ -939,6 +892,7 @@ impl App {
                     tree.set_root(cwd);
                 }
                 self.file_tree_scroll = 0.0;
+                self.chrome_generation += 1;
             }
         }
     }
@@ -962,6 +916,7 @@ impl App {
                 let entry = entries[index].clone();
                 if entry.entry.is_dir {
                     tree.toggle(&entry.entry.path);
+                    self.chrome_generation += 1;
                 }
             }
         }
@@ -1032,79 +987,33 @@ impl ApplicationHandler for App {
         for pane in self.terminal_panes.values() {
             if pane.backend.has_new_output() {
                 self.needs_redraw = true;
+                self.input_just_sent = false;
+                self.input_sent_at = None;
                 break;
             }
         }
 
         if self.needs_redraw {
+            self.consecutive_dirty_frames += 1;
             if let Some(window) = &self.window {
                 window.request_redraw();
             }
-        } else {
-            // Nothing changed — sleep until next event or 8ms timeout
-            event_loop.set_control_flow(ControlFlow::wait_duration(Duration::from_millis(8)));
-        }
-    }
-}
-
-// ──────────────────────────────────────────────
-// Key conversion utilities
-// ──────────────────────────────────────────────
-
-fn winit_key_to_tide(key: &WinitKey) -> Option<Key> {
-    match key {
-        WinitKey::Named(named) => match named {
-            NamedKey::Enter => Some(Key::Enter),
-            NamedKey::Backspace => Some(Key::Backspace),
-            NamedKey::Tab => Some(Key::Tab),
-            NamedKey::Escape => Some(Key::Escape),
-            NamedKey::Delete => Some(Key::Delete),
-            NamedKey::ArrowUp => Some(Key::Up),
-            NamedKey::ArrowDown => Some(Key::Down),
-            NamedKey::ArrowLeft => Some(Key::Left),
-            NamedKey::ArrowRight => Some(Key::Right),
-            NamedKey::Home => Some(Key::Home),
-            NamedKey::End => Some(Key::End),
-            NamedKey::PageUp => Some(Key::PageUp),
-            NamedKey::PageDown => Some(Key::PageDown),
-            NamedKey::Insert => Some(Key::Insert),
-            NamedKey::F1 => Some(Key::F(1)),
-            NamedKey::F2 => Some(Key::F(2)),
-            NamedKey::F3 => Some(Key::F(3)),
-            NamedKey::F4 => Some(Key::F(4)),
-            NamedKey::F5 => Some(Key::F(5)),
-            NamedKey::F6 => Some(Key::F(6)),
-            NamedKey::F7 => Some(Key::F(7)),
-            NamedKey::F8 => Some(Key::F(8)),
-            NamedKey::F9 => Some(Key::F(9)),
-            NamedKey::F10 => Some(Key::F(10)),
-            NamedKey::F11 => Some(Key::F(11)),
-            NamedKey::F12 => Some(Key::F(12)),
-            NamedKey::Space => Some(Key::Char(' ')),
-            _ => None,
-        },
-        WinitKey::Character(s) => {
-            let mut chars = s.chars();
-            if let Some(c) = chars.next() {
-                if chars.next().is_none() {
-                    Some(Key::Char(c))
-                } else {
-                    None
-                }
+        } else if self.input_just_sent {
+            // Poll aggressively while awaiting PTY response after keypress
+            // 50ms safety timeout: stop polling if PTY hasn't responded
+            if self.input_sent_at.is_some_and(|t| t.elapsed() > Duration::from_millis(50)) {
+                self.input_just_sent = false;
+                self.input_sent_at = None;
+                event_loop.set_control_flow(ControlFlow::wait_duration(Duration::from_millis(8)));
             } else {
-                None
+                event_loop.set_control_flow(ControlFlow::Poll);
             }
+        } else {
+            // Adaptive frame pacing: 16ms (~60fps) during high throughput, 8ms otherwise
+            let wait_ms = if self.consecutive_dirty_frames > 10 { 16 } else { 8 };
+            self.consecutive_dirty_frames = 0;
+            event_loop.set_control_flow(ControlFlow::wait_duration(Duration::from_millis(wait_ms)));
         }
-        _ => None,
-    }
-}
-
-fn winit_modifiers_to_tide(modifiers: ModifiersState) -> Modifiers {
-    Modifiers {
-        shift: modifiers.shift_key(),
-        ctrl: modifiers.control_key(),
-        alt: modifiers.alt_key(),
-        meta: modifiers.super_key(),
     }
 }
 

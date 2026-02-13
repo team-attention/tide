@@ -18,7 +18,6 @@ use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor, Rgb as AnsiR
 
 use tide_core::{
     Color, CursorShape, CursorState, Key, Modifiers, TerminalBackend, TerminalCell, TerminalGrid,
-    TextStyle,
 };
 
 /// Simple dimensions struct that implements alacritty_terminal's Dimensions trait.
@@ -172,31 +171,6 @@ impl Terminal {
         TerminalGrid { cols, rows, cells }
     }
 
-    /// Convert an alacritty_terminal color to our Color type
-    fn convert_color(color: &AnsiColor, colors: &alacritty_terminal::term::color::Colors) -> Color {
-        match color {
-            AnsiColor::Named(named) => Self::named_color_to_rgb(*named),
-            AnsiColor::Spec(rgb) => Color::rgb(
-                rgb.r as f32 / 255.0,
-                rgb.g as f32 / 255.0,
-                rgb.b as f32 / 255.0,
-            ),
-            AnsiColor::Indexed(idx) => {
-                // Look up in the color palette
-                if let Some(rgb) = colors[*idx as usize] {
-                    Color::rgb(
-                        rgb.r as f32 / 255.0,
-                        rgb.g as f32 / 255.0,
-                        rgb.b as f32 / 255.0,
-                    )
-                } else {
-                    // Fallback to default color computation for indexed colors
-                    Self::indexed_color_fallback(*idx)
-                }
-            }
-        }
-    }
-
     /// Convert a named ANSI color to RGB (vibrant Warp-inspired palette)
     fn named_color_to_rgb(named: NamedColor) -> Color {
         match named {
@@ -307,12 +281,11 @@ impl Terminal {
 
         let mut any_changed = false;
 
-        for line_idx in 0..total_lines {
-            let row = &mut cells[line_idx];
+        for (line_idx, row) in cells.iter_mut().enumerate().take(total_lines) {
             row.resize_with(cols, TerminalCell::default);
             let base = line_idx * cols;
 
-            for col_idx in 0..cols {
+            for (col_idx, tc) in row.iter_mut().enumerate().take(cols) {
                 let idx = base + col_idx;
                 let raw = self.raw_buf[idx];
 
@@ -325,7 +298,6 @@ impl Terminal {
                 let (c, fg, bg, flags) = raw;
 
                 if flags.contains(CellFlags::WIDE_CHAR_SPACER) {
-                    let tc = &mut row[col_idx];
                     tc.character = '\0';
                     tc.style.background = None;
                     continue;
@@ -340,7 +312,6 @@ impl Terminal {
                     Some(bg_color)
                 };
 
-                let tc = &mut row[col_idx];
                 tc.character = c;
                 tc.style.foreground = fg_color;
                 tc.style.background = background;
@@ -442,7 +413,7 @@ impl Terminal {
                 if modifiers.ctrl {
                     // Ctrl+A..Z maps to 0x01..0x1A
                     let lower = c.to_ascii_lowercase();
-                    if lower >= 'a' && lower <= 'z' {
+                    if lower.is_ascii_lowercase() {
                         return vec![(lower as u8) - b'a' + 1];
                     }
                 }

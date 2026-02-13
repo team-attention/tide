@@ -20,6 +20,7 @@ enum Node {
 
 impl Node {
     /// Returns true if this node (or any descendant) contains the given pane.
+    #[cfg(test)]
     fn contains(&self, pane: PaneId) -> bool {
         match self {
             Node::Leaf(id) => *id == pane,
@@ -104,7 +105,7 @@ impl Node {
                     return match replacement {
                         Some(node) => {
                             // Left child was restructured
-                            *left = Box::new(node);
+                            **left = node;
                             // Keep this split node as-is (child was replaced internally)
                             // Actually we need to signal upward that we handled it.
                             // Return the current node restructured? No:
@@ -121,7 +122,7 @@ impl Node {
                 if let Some(replacement) = right.remove_pane(target) {
                     return match replacement {
                         Some(node) => {
-                            *right = Box::new(node);
+                            **right = node;
                             Some(Some(self.clone()))
                         }
                         None => {
