@@ -26,7 +26,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::ModifiersState;
 use winit::window::{Window, WindowAttributes, WindowId};
 
-use tide_core::{LayoutEngine, PaneId, Rect, Renderer, Size, TerminalBackend};
+use tide_core::{LayoutEngine, PaneDecorations, PaneId, Rect, Renderer, Size, TerminalBackend};
 use tide_input::Router;
 use tide_layout::SplitLayout;
 use tide_renderer::WgpuRenderer;
@@ -81,6 +81,9 @@ struct App {
     pub(crate) pane_rects: Vec<(PaneId, Rect)>,
     pub(crate) visual_pane_rects: Vec<(PaneId, Rect)>,
 
+    // The overall rect available for pane tiling (excluding file tree and editor panel)
+    pub(crate) pane_area_rect: Option<Rect>,
+
     // Grid generation tracking for vertex caching
     pub(crate) pane_generations: HashMap<PaneId, u64>,
     pub(crate) layout_generation: u64,
@@ -105,6 +108,7 @@ struct App {
     pub(crate) editor_panel_rect: Option<Rect>,
     pub(crate) editor_panel_width: f32,
     pub(crate) panel_border_dragging: bool,
+    pub(crate) panel_tab_scroll: f32,
 }
 
 impl App {
@@ -135,6 +139,7 @@ impl App {
             ime_preedit: String::new(),
             pane_rects: Vec::new(),
             visual_pane_rects: Vec::new(),
+            pane_area_rect: None,
             pane_generations: HashMap::new(),
             layout_generation: 0,
             chrome_generation: 0,
@@ -148,6 +153,7 @@ impl App {
             editor_panel_rect: None,
             editor_panel_width: EDITOR_PANEL_WIDTH,
             panel_border_dragging: false,
+            panel_tab_scroll: 0.0,
         }
     }
 
@@ -217,32 +223,29 @@ impl App {
             self.editor_panel_rect = None;
         }
 
+        // Store the pane area rect for root-level drop zone detection
+        self.pane_area_rect = Some(Rect::new(terminal_offset_x, 0.0, terminal_area.width, terminal_area.height));
+
+        // First compute to establish initial rects
+        let _initial_rects = self.layout.compute(terminal_area, &pane_ids, self.focused);
+
+        // Snap ratios to cell boundaries, then recompute with snapped ratios
+        if let Some(renderer) = &self.renderer {
+            let cell_size = renderer.cell_size();
+            let decorations = PaneDecorations {
+                gap: PANE_GAP,
+                padding: PANE_PADDING,
+                tab_bar_height: TAB_BAR_HEIGHT,
+            };
+            self.layout
+                .snap_ratios_to_cells(terminal_area, cell_size, &decorations);
+        }
+
         let mut rects = self.layout.compute(terminal_area, &pane_ids, self.focused);
 
         // Offset rects to account for file tree panel
         for (_, rect) in &mut rects {
             rect.x += terminal_offset_x;
-        }
-
-        // Resize terminal backends to match their rects (minus tab bar height)
-        // During border drag, skip PTY resize to avoid SIGWINCH spam
-        // (shell redraws prompt on every resize, flooding the terminal)
-        let is_dragging = self.router.is_dragging_border() || self.panel_border_dragging;
-        if !is_dragging {
-            if let Some(renderer) = &self.renderer {
-                let cell_size = renderer.cell_size();
-                for &(id, rect) in &rects {
-                    if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&id) {
-                        let content_rect = Rect::new(
-                            rect.x,
-                            rect.y,
-                            rect.width,
-                            (rect.height - TAB_BAR_HEIGHT).max(cell_size.height),
-                        );
-                        pane.resize_to_rect(content_rect, cell_size);
-                    }
-                }
-            }
         }
 
         // Force grid rebuild if rects changed
@@ -279,6 +282,27 @@ impl App {
                 (id, vr)
             })
             .collect();
+
+        // Resize terminal backends to match the actual visible content area.
+        // Uses visual rects + PANE_PADDING to match the render inner rect exactly.
+        // During border drag, skip PTY resize to avoid SIGWINCH spam.
+        let is_dragging = self.router.is_dragging_border() || self.panel_border_dragging;
+        if !is_dragging {
+            if let Some(renderer) = &self.renderer {
+                let cell_size = renderer.cell_size();
+                for &(id, vr) in &self.visual_pane_rects {
+                    if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&id) {
+                        let content_rect = Rect::new(
+                            vr.x + PANE_PADDING,
+                            vr.y + TAB_BAR_HEIGHT,
+                            (vr.width - 2.0 * PANE_PADDING).max(cell_size.width),
+                            (vr.height - TAB_BAR_HEIGHT - PANE_PADDING).max(cell_size.height),
+                        );
+                        pane.resize_to_rect(content_rect, cell_size);
+                    }
+                }
+            }
+        }
 
         if rects_changed {
             self.layout_generation += 1;

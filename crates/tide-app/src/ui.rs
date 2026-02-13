@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use tide_core::{DropZone, PaneId, Rect};
+use tide_core::PaneId;
 
 use crate::pane::PaneKind;
 
@@ -40,40 +40,6 @@ pub(crate) fn panel_tab_title(panes: &HashMap<PaneId, PaneKind>, id: PaneId) -> 
         format!("{}…", truncated)
     } else {
         full
-    }
-}
-
-// ──────────────────────────────────────────────
-// Drop preview geometry
-// ──────────────────────────────────────────────
-
-pub(crate) fn compute_preview_rect(target_rect: Rect, zone: DropZone) -> Rect {
-    match zone {
-        DropZone::Top => Rect::new(
-            target_rect.x,
-            target_rect.y,
-            target_rect.width,
-            target_rect.height / 2.0,
-        ),
-        DropZone::Bottom => Rect::new(
-            target_rect.x,
-            target_rect.y + target_rect.height / 2.0,
-            target_rect.width,
-            target_rect.height / 2.0,
-        ),
-        DropZone::Left => Rect::new(
-            target_rect.x,
-            target_rect.y,
-            target_rect.width / 2.0,
-            target_rect.height,
-        ),
-        DropZone::Right => Rect::new(
-            target_rect.x + target_rect.width / 2.0,
-            target_rect.y,
-            target_rect.width / 2.0,
-            target_rect.height,
-        ),
-        DropZone::Center => target_rect,
     }
 }
 

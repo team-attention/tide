@@ -33,6 +33,15 @@ impl WgpuRenderer {
         Size::new(cell_width / scale_factor, line_height / scale_factor)
     }
 
+    /// Pre-warm the glyph atlas with printable ASCII characters.
+    /// Call once after initialization to avoid first-frame rasterization stalls.
+    pub fn warmup_ascii(&mut self) {
+        for ch in '!'..='~' {
+            self.ensure_glyph_cached(ch, false, false);
+            self.ensure_glyph_cached(ch, true, false);
+        }
+    }
+
     /// Rasterize and cache a glyph, returning its atlas region.
     pub(crate) fn ensure_glyph_cached(&mut self, character: char, bold: bool, italic: bool) -> AtlasRegion {
         let key = GlyphCacheKey {

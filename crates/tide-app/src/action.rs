@@ -313,6 +313,7 @@ impl App {
                     self.focused = Some(tab_id);
                     self.router.set_focused(tab_id);
                     self.chrome_generation += 1;
+                    self.scroll_to_active_panel_tab();
                     return;
                 }
             }
@@ -341,6 +342,7 @@ impl App {
                 self.router.set_focused(new_id);
                 self.chrome_generation += 1;
                 self.compute_layout();
+                self.scroll_to_active_panel_tab();
             }
             Err(e) => {
                 log::error!("Failed to open editor for {:?}: {}", path, e);
@@ -374,6 +376,8 @@ impl App {
 
         self.chrome_generation += 1;
         self.compute_layout();
+        self.clamp_panel_tab_scroll();
+        self.scroll_to_active_panel_tab();
     }
 
     /// Try to extract a file path from the terminal grid at the given click position.

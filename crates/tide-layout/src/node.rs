@@ -1,4 +1,4 @@
-use tide_core::{PaneId, Rect, SplitDirection, Vec2};
+use tide_core::{PaneDecorations, PaneId, Rect, Size, SplitDirection, Vec2};
 
 // ──────────────────────────────────────────────
 // Node: binary tree for layout
@@ -55,8 +55,21 @@ impl Node {
         }
     }
 
+    /// Count the number of leaf panes reachable through consecutive same-direction splits.
+    /// A node with a different split direction or a leaf counts as 1.
+    pub(crate) fn count_chain_leaves(&self, dir: SplitDirection) -> usize {
+        match self {
+            Node::Leaf(_) => 1,
+            Node::Split { direction, left, right, .. } if *direction == dir => {
+                left.count_chain_leaves(dir) + right.count_chain_leaves(dir)
+            }
+            _ => 1,
+        }
+    }
+
     /// Replace a leaf with a split node containing the original leaf and a new leaf.
-    /// Returns the new PaneId if the split was performed, or None if the target was not found.
+    /// When the new split has the same direction as a parent split, ratios are
+    /// adjusted so all leaves in the same-direction chain get equal space.
     pub(crate) fn split_pane(
         &mut self,
         target: PaneId,
@@ -76,11 +89,24 @@ impl Node {
                 true
             }
             Node::Leaf(_) => false,
-            Node::Split { left, right, .. } => {
+            Node::Split { direction: dir, ratio, left, right, .. } => {
                 if left.split_pane(target, new_id, direction) {
+                    if *dir == direction {
+                        let n_left = left.count_chain_leaves(*dir);
+                        let n_right = right.count_chain_leaves(*dir);
+                        *ratio = n_left as f32 / (n_left + n_right) as f32;
+                    }
                     return true;
                 }
-                right.split_pane(target, new_id, direction)
+                if right.split_pane(target, new_id, direction) {
+                    if *dir == direction {
+                        let n_left = left.count_chain_leaves(*dir);
+                        let n_right = right.count_chain_leaves(*dir);
+                        *ratio = n_left as f32 / (n_left + n_right) as f32;
+                    }
+                    return true;
+                }
+                false
             }
         }
     }
@@ -89,6 +115,9 @@ impl Node {
     /// - Some(Some(node)) if the pane was found and a sibling remains
     /// - Some(None) if the pane was found and this entire node should be removed (leaf case)
     /// - None if the pane was not found in this subtree
+    ///
+    /// When removal changes the same-direction chain leaf count at a split node,
+    /// the ratio is re-equalized so columns/rows stay balanced.
     pub(crate) fn remove_pane(&mut self, target: PaneId) -> Option<Option<Node>> {
         match self {
             Node::Leaf(id) if *id == target => {
@@ -96,13 +125,20 @@ impl Node {
                 Some(None)
             }
             Node::Leaf(_) => None,
-            Node::Split { left, right, .. } => {
+            Node::Split { direction, ratio, left, right } => {
+                let dir = *direction;
+
                 // Try removing from left child
+                let left_old = left.count_chain_leaves(dir);
                 if let Some(replacement) = left.remove_pane(target) {
                     return match replacement {
                         Some(node) => {
-                            // Left child was restructured
                             **left = node;
+                            if left.count_chain_leaves(dir) != left_old {
+                                let nl = left.count_chain_leaves(dir);
+                                let nr = right.count_chain_leaves(dir);
+                                *ratio = nl as f32 / (nl + nr) as f32;
+                            }
                             Some(Some(self.clone()))
                         }
                         None => {
@@ -112,10 +148,16 @@ impl Node {
                     };
                 }
                 // Try removing from right child
+                let right_old = right.count_chain_leaves(dir);
                 if let Some(replacement) = right.remove_pane(target) {
                     return match replacement {
                         Some(node) => {
                             **right = node;
+                            if right.count_chain_leaves(dir) != right_old {
+                                let nl = left.count_chain_leaves(dir);
+                                let nr = right.count_chain_leaves(dir);
+                                *ratio = nl as f32 / (nl + nr) as f32;
+                            }
                             Some(Some(self.clone()))
                         }
                         None => {
@@ -240,9 +282,89 @@ impl Node {
         self.replace_pane_id(sentinel, b);
     }
 
+    /// Recursively snap split ratios so that the left/top child's content area
+    /// aligns to a whole number of cells.
+    ///
+    /// For each split node the algorithm:
+    /// 1. Computes the left child's tiling rect from the current ratio
+    /// 2. Derives the content width/height (subtracting gap + padding)
+    /// 3. Rounds to the nearest cell boundary
+    /// 4. Adjusts the ratio accordingly, clamped to dynamic min/max
+    /// 5. Recurses into both children
+    pub(crate) fn snap_ratios(
+        &mut self,
+        rect: Rect,
+        cell_size: Size,
+        decorations: &PaneDecorations,
+    ) {
+        if let Node::Split {
+            direction,
+            ratio,
+            left,
+            right,
+        } = self
+        {
+            let half_gap = decorations.gap / 2.0;
+
+            match direction {
+                SplitDirection::Horizontal => {
+                    let total = rect.width;
+                    if total < 1.0 || cell_size.width < 1.0 {
+                        return;
+                    }
+                    // Left child tiling width
+                    let left_tiling_w = total * *ratio;
+                    // Content width: tiling_width - interior gap/2 - padding*2
+                    let content_w = left_tiling_w - half_gap - 2.0 * decorations.padding;
+                    if content_w > 0.0 {
+                        let snapped_w = (content_w / cell_size.width).round() * cell_size.width;
+                        let new_tiling_w = snapped_w + half_gap + 2.0 * decorations.padding;
+                        let new_ratio = new_tiling_w / total;
+                        let min_r = min_ratio_for_direction(
+                            rect,
+                            cell_size,
+                            decorations,
+                            SplitDirection::Horizontal,
+                        );
+                        *ratio = new_ratio.clamp(min_r, 1.0 - min_r);
+                    }
+                }
+                SplitDirection::Vertical => {
+                    let total = rect.height;
+                    if total < 1.0 || cell_size.height < 1.0 {
+                        return;
+                    }
+                    let left_tiling_h = total * *ratio;
+                    // Content height: tiling_height - interior gap/2 - tab_bar - padding
+                    let content_h =
+                        left_tiling_h - half_gap - decorations.tab_bar_height - decorations.padding;
+                    if content_h > 0.0 {
+                        let snapped_h = (content_h / cell_size.height).round() * cell_size.height;
+                        let new_tiling_h =
+                            snapped_h + half_gap + decorations.tab_bar_height + decorations.padding;
+                        let new_ratio = new_tiling_h / total;
+                        let min_r = min_ratio_for_direction(
+                            rect,
+                            cell_size,
+                            decorations,
+                            SplitDirection::Vertical,
+                        );
+                        *ratio = new_ratio.clamp(min_r, 1.0 - min_r);
+                    }
+                }
+            }
+
+            let (left_rect, right_rect) = split_rect(rect, *direction, *ratio);
+            left.snap_ratios(left_rect, cell_size, decorations);
+            right.snap_ratios(right_rect, cell_size, decorations);
+        }
+    }
+
     /// Replace the leaf containing `target` with a split containing both
     /// `target` and `new_pane`. `insert_first` controls whether the new pane
     /// goes into the left/top (true) or right/bottom (false) child.
+    /// When the new split has the same direction as a parent split, ratios are
+    /// adjusted so all leaves in the same-direction chain get equal space.
     pub(crate) fn insert_pane_at(
         &mut self,
         target: PaneId,
@@ -268,11 +390,24 @@ impl Node {
                 true
             }
             Node::Leaf(_) => false,
-            Node::Split { left, right, .. } => {
+            Node::Split { direction: dir, ratio, left, right, .. } => {
                 if left.insert_pane_at(target, new_pane, direction, insert_first) {
+                    if *dir == direction {
+                        let n_left = left.count_chain_leaves(*dir);
+                        let n_right = right.count_chain_leaves(*dir);
+                        *ratio = n_left as f32 / (n_left + n_right) as f32;
+                    }
                     return true;
                 }
-                right.insert_pane_at(target, new_pane, direction, insert_first)
+                if right.insert_pane_at(target, new_pane, direction, insert_first) {
+                    if *dir == direction {
+                        let n_left = left.count_chain_leaves(*dir);
+                        let n_right = right.count_chain_leaves(*dir);
+                        *ratio = n_left as f32 / (n_left + n_right) as f32;
+                    }
+                    return true;
+                }
+                false
             }
         }
     }
@@ -281,6 +416,38 @@ impl Node {
 // ──────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────
+
+/// Minimum number of columns/rows a pane must contain.
+const MIN_COLS: f32 = 4.0;
+const MIN_ROWS: f32 = 2.0;
+
+/// Compute the minimum ratio for a split so that neither child is smaller than
+/// MIN_COLS/MIN_ROWS cells (accounting for decorations).
+pub(crate) fn min_ratio_for_direction(
+    rect: Rect,
+    cell_size: Size,
+    decorations: &PaneDecorations,
+    direction: SplitDirection,
+) -> f32 {
+    let half_gap = decorations.gap / 2.0;
+    match direction {
+        SplitDirection::Horizontal => {
+            if rect.width < 1.0 {
+                return 0.1;
+            }
+            let min_tiling_w = MIN_COLS * cell_size.width + half_gap + 2.0 * decorations.padding;
+            (min_tiling_w / rect.width).clamp(0.05, 0.45)
+        }
+        SplitDirection::Vertical => {
+            if rect.height < 1.0 {
+                return 0.1;
+            }
+            let min_tiling_h =
+                MIN_ROWS * cell_size.height + half_gap + decorations.tab_bar_height + decorations.padding;
+            (min_tiling_h / rect.height).clamp(0.05, 0.45)
+        }
+    }
+}
 
 /// Split a rect into two sub-rects based on direction and ratio.
 pub(crate) fn split_rect(rect: Rect, direction: SplitDirection, ratio: f32) -> (Rect, Rect) {

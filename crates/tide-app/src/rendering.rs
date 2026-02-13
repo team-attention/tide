@@ -3,7 +3,7 @@ use tide_core::{Color, FileTreeSource, Rect, Renderer, TerminalBackend, TextStyl
 use crate::drag_drop::{DropDestination, PaneDragState};
 use crate::pane::PaneKind;
 use crate::theme::*;
-use crate::ui::{compute_preview_rect, file_icon, pane_title, panel_tab_title};
+use crate::ui::{file_icon, pane_title, panel_tab_title};
 use crate::App;
 
 impl App {
@@ -133,11 +133,23 @@ impl App {
                 let cell_size = renderer.cell_size();
                 let cell_height = cell_size.height;
                 let tab_bar_top = panel_rect.y + PANE_PADDING;
-                let tab_start_x = panel_rect.x + PANE_PADDING;
+                let tab_start_x = panel_rect.x + PANE_PADDING - self.panel_tab_scroll;
+                let tab_bar_clip = Rect::new(
+                    panel_rect.x + PANE_PADDING,
+                    tab_bar_top,
+                    panel_rect.width - 2.0 * PANE_PADDING,
+                    PANEL_TAB_HEIGHT,
+                );
 
-                // Draw horizontal tab bar
+                // Draw horizontal tab bar (with scroll offset)
                 for (i, &tab_id) in editor_panel_tabs.iter().enumerate() {
                     let tx = tab_start_x + i as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
+
+                    // Skip tabs entirely outside visible area
+                    if tx + PANEL_TAB_WIDTH < tab_bar_clip.x || tx > tab_bar_clip.x + tab_bar_clip.width {
+                        continue;
+                    }
+
                     let is_active = editor_panel_active == Some(tab_id);
 
                     // Tab background
@@ -146,7 +158,7 @@ impl App {
                         renderer.draw_chrome_rounded_rect(tab_bg_rect, PANEL_TAB_BG_ACTIVE, 4.0);
                     }
 
-                    // Tab title
+                    // Tab title — clip to both tab bounds and panel bounds
                     let title = panel_tab_title(&self.panes, tab_id);
                     let text_color = if is_active && focused == Some(tab_id) {
                         TAB_BAR_TEXT_FOCUSED
@@ -163,7 +175,10 @@ impl App {
                         underline: false,
                     };
                     let text_y = tab_bar_top + (PANEL_TAB_HEIGHT - cell_height) / 2.0;
-                    let clip = Rect::new(tx, tab_bar_top, PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - 8.0, PANEL_TAB_HEIGHT);
+                    let title_clip_w = (PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - 8.0)
+                        .min((tab_bar_clip.x + tab_bar_clip.width - tx).max(0.0));
+                    let clip_x = tx.max(tab_bar_clip.x);
+                    let clip = Rect::new(clip_x, tab_bar_top, title_clip_w.max(0.0), PANEL_TAB_HEIGHT);
                     renderer.draw_chrome_text(
                         &title,
                         Vec2::new(tx + 6.0, text_y),
@@ -174,20 +189,25 @@ impl App {
                     // Close "x" button
                     let close_x = tx + PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - 4.0;
                     let close_y = tab_bar_top + (PANEL_TAB_HEIGHT - cell_height) / 2.0;
-                    let close_style = TextStyle {
-                        foreground: TAB_BAR_TEXT,
-                        background: None,
-                        bold: false,
-                        italic: false,
-                        underline: false,
-                    };
-                    let close_clip = Rect::new(close_x, tab_bar_top, PANEL_TAB_CLOSE_SIZE + 4.0, PANEL_TAB_HEIGHT);
-                    renderer.draw_chrome_text(
-                        "\u{f00d}",  // Nerd Font close icon
-                        Vec2::new(close_x, close_y),
-                        close_style,
-                        close_clip,
-                    );
+                    // Only draw close button if it's within visible area
+                    if close_x + PANEL_TAB_CLOSE_SIZE > tab_bar_clip.x
+                        && close_x < tab_bar_clip.x + tab_bar_clip.width
+                    {
+                        let close_style = TextStyle {
+                            foreground: TAB_BAR_TEXT,
+                            background: None,
+                            bold: false,
+                            italic: false,
+                            underline: false,
+                        };
+                        let close_clip = Rect::new(close_x, tab_bar_top, PANEL_TAB_CLOSE_SIZE + 4.0, PANEL_TAB_HEIGHT);
+                        renderer.draw_chrome_text(
+                            "\u{f00d}",  // Nerd Font close icon
+                            Vec2::new(close_x, close_y),
+                            close_style,
+                            close_clip,
+                        );
+                    }
                 }
 
                 // Focus accent bar if panel's active pane is focused
@@ -400,17 +420,77 @@ impl App {
         }
 
         // Draw drop preview overlay when dragging a pane
-        if let PaneDragState::Dragging { drop_target: Some(ref dest), .. } = &self.pane_drag {
+        if let PaneDragState::Dragging {
+            drop_target: Some(ref dest),
+            ..
+        } = &self.pane_drag {
             match dest {
-                DropDestination::TreePane(target_id, zone) => {
-                    if let Some(&(_, target_rect)) = visual_pane_rects.iter().find(|(id, _)| *id == *target_id) {
-                        let preview = compute_preview_rect(target_rect, *zone);
-                        Self::draw_drop_preview_border(renderer, preview);
+                DropDestination::TreeRoot(zone) | DropDestination::TreePane(_, zone) => {
+                    let is_swap = *zone == tide_core::DropZone::Center;
+
+                    if is_swap {
+                        // Swap preview: border-only outline around target's visual rect
+                        if let DropDestination::TreePane(target_id, _) = dest {
+                            if let Some(&(_, target_rect)) = visual_pane_rects.iter().find(|(id, _)| *id == *target_id) {
+                                Self::draw_swap_preview(renderer, target_rect);
+                            }
+                        }
+                    } else {
+                        // Insert preview: half of target pane's visual rect
+                        match dest {
+                            DropDestination::TreePane(target_id, _) => {
+                                if let Some(&(_, tr)) = visual_pane_rects.iter().find(|(id, _)| *id == *target_id) {
+                                    let preview = match zone {
+                                        tide_core::DropZone::Left => Rect::new(tr.x, tr.y, tr.width / 2.0, tr.height),
+                                        tide_core::DropZone::Right => Rect::new(tr.x + tr.width / 2.0, tr.y, tr.width / 2.0, tr.height),
+                                        tide_core::DropZone::Top => Rect::new(tr.x, tr.y, tr.width, tr.height / 2.0),
+                                        tide_core::DropZone::Bottom => Rect::new(tr.x, tr.y + tr.height / 2.0, tr.width, tr.height / 2.0),
+                                        _ => tr,
+                                    };
+                                    Self::draw_insert_preview(renderer, preview);
+                                }
+                            }
+                            DropDestination::TreeRoot(_) => {
+                                // Root-level drop: show strip along the edge of the pane area
+                                if let Some(area) = self.pane_area_rect {
+                                    let frac = 0.25;
+                                    let preview = match zone {
+                                        tide_core::DropZone::Left => Some(Rect::new(
+                                            area.x + PANE_GAP, PANE_GAP,
+                                            area.width * frac - PANE_GAP * 1.5, logical.height - PANE_GAP * 2.0,
+                                        )),
+                                        tide_core::DropZone::Right => {
+                                            let w = area.width * frac - PANE_GAP * 1.5;
+                                            Some(Rect::new(
+                                                area.x + area.width - w - PANE_GAP, PANE_GAP,
+                                                w, logical.height - PANE_GAP * 2.0,
+                                            ))
+                                        }
+                                        tide_core::DropZone::Top => Some(Rect::new(
+                                            area.x + PANE_GAP, PANE_GAP,
+                                            area.width - PANE_GAP * 2.0, logical.height * frac - PANE_GAP * 1.5,
+                                        )),
+                                        tide_core::DropZone::Bottom => {
+                                            let h = logical.height * frac - PANE_GAP * 1.5;
+                                            Some(Rect::new(
+                                                area.x + PANE_GAP, logical.height - h - PANE_GAP,
+                                                area.width - PANE_GAP * 2.0, h,
+                                            ))
+                                        }
+                                        _ => None,
+                                    };
+                                    if let Some(p) = preview {
+                                        Self::draw_insert_preview(renderer, p);
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                 }
                 DropDestination::EditorPanel => {
                     if let Some(panel_rect) = editor_panel_rect {
-                        Self::draw_drop_preview_border(renderer, panel_rect);
+                        Self::draw_insert_preview(renderer, panel_rect);
                     }
                 }
             }
@@ -430,12 +510,22 @@ impl App {
         output.present();
     }
 
-    fn draw_drop_preview_border(renderer: &mut tide_renderer::WgpuRenderer, preview: Rect) {
+    /// Insert preview: semi-transparent fill + thin border.
+    fn draw_insert_preview(renderer: &mut tide_renderer::WgpuRenderer, preview: Rect) {
         renderer.draw_rect(preview, DROP_PREVIEW_FILL);
         let bw = DROP_PREVIEW_BORDER_WIDTH;
         renderer.draw_rect(Rect::new(preview.x, preview.y, preview.width, bw), DROP_PREVIEW_BORDER);
         renderer.draw_rect(Rect::new(preview.x, preview.y + preview.height - bw, preview.width, bw), DROP_PREVIEW_BORDER);
         renderer.draw_rect(Rect::new(preview.x, preview.y, bw, preview.height), DROP_PREVIEW_BORDER);
         renderer.draw_rect(Rect::new(preview.x + preview.width - bw, preview.y, bw, preview.height), DROP_PREVIEW_BORDER);
+    }
+
+    /// Swap preview: thick border only, no fill — visually distinct from insert.
+    fn draw_swap_preview(renderer: &mut tide_renderer::WgpuRenderer, preview: Rect) {
+        let bw = SWAP_PREVIEW_BORDER_WIDTH;
+        renderer.draw_rect(Rect::new(preview.x, preview.y, preview.width, bw), SWAP_PREVIEW_BORDER);
+        renderer.draw_rect(Rect::new(preview.x, preview.y + preview.height - bw, preview.width, bw), SWAP_PREVIEW_BORDER);
+        renderer.draw_rect(Rect::new(preview.x, preview.y, bw, preview.height), SWAP_PREVIEW_BORDER);
+        renderer.draw_rect(Rect::new(preview.x + preview.width - bw, preview.y, bw, preview.height), SWAP_PREVIEW_BORDER);
     }
 }

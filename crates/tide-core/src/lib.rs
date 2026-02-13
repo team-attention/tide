@@ -216,6 +216,14 @@ pub enum CursorShape {
 // Layout types
 // ──────────────────────────────────────────────
 
+/// Decoration sizes needed by the layout engine to snap ratios to cell boundaries.
+#[derive(Debug, Clone, Copy)]
+pub struct PaneDecorations {
+    pub gap: f32,
+    pub padding: f32,
+    pub tab_bar_height: f32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SplitDirection {
     Horizontal,
@@ -229,6 +237,12 @@ pub enum DropZone {
     Left,
     Right,
     Center,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DropTarget {
+    Pane(PaneId, DropZone),
+    Root(DropZone),
 }
 
 // ──────────────────────────────────────────────

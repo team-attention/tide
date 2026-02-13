@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::SplitLayout;
-    use tide_core::{LayoutEngine, Rect, Size, SplitDirection, Vec2};
+    use tide_core::{LayoutEngine, PaneDecorations, Rect, Size, SplitDirection, Vec2};
 
     const WINDOW: Size = Size {
         width: 800.0,
@@ -535,5 +535,286 @@ mod tests {
         assert!(layout.root.is_none());
         let rects = layout.compute(WINDOW, &[], None);
         assert!(rects.is_empty());
+    }
+
+    // ──────────────────────────────────────────
+    // move_pane_to_root
+    // ──────────────────────────────────────────
+
+    #[test]
+    fn test_move_pane_to_root_left_creates_horizontal_split() {
+        // V(A, V(B, C)) → move A to root-left → H(A, V(B, C))
+        let (mut layout, pane_a) = SplitLayout::with_initial_pane();
+        let pane_b = layout.split(pane_a, SplitDirection::Vertical);
+        let pane_c = layout.split(pane_b, SplitDirection::Vertical);
+
+        assert!(layout.move_pane_to_root(pane_a, tide_core::DropZone::Left));
+
+        let rects = layout.compute(WINDOW, &[], None);
+        assert_eq!(rects.len(), 3);
+
+        // A should be on the left half
+        let ra = rects.iter().find(|(id, _)| *id == pane_a).unwrap();
+        assert!(approx_eq(ra.1.x, 0.0));
+        assert!(approx_eq(ra.1.width, 400.0));
+        assert!(approx_eq(ra.1.height, 600.0));
+
+        // B and C should share the right half vertically
+        let rb = rects.iter().find(|(id, _)| *id == pane_b).unwrap();
+        let rc = rects.iter().find(|(id, _)| *id == pane_c).unwrap();
+        assert!(approx_eq(rb.1.x, 400.0));
+        assert!(approx_eq(rc.1.x, 400.0));
+        assert!(approx_eq(rb.1.width, 400.0));
+        assert!(approx_eq(rc.1.width, 400.0));
+
+        assert_no_gaps_no_overlaps(&rects, WINDOW);
+    }
+
+    #[test]
+    fn test_move_pane_to_root_integrity() {
+        // V(A, V(B, C)) → move A to root-right → H(V(B,C), A)
+        let (mut layout, pane_a) = SplitLayout::with_initial_pane();
+        let pane_b = layout.split(pane_a, SplitDirection::Vertical);
+        let _pane_c = layout.split(pane_b, SplitDirection::Vertical);
+
+        assert!(layout.move_pane_to_root(pane_a, tide_core::DropZone::Right));
+
+        let rects = layout.compute(WINDOW, &[], None);
+        assert_eq!(rects.len(), 3);
+        assert_no_gaps_no_overlaps(&rects, WINDOW);
+
+        // A should be on the right half
+        let ra = rects.iter().find(|(id, _)| *id == pane_a).unwrap();
+        assert!(approx_eq(ra.1.x, 400.0));
+        assert!(approx_eq(ra.1.width, 400.0));
+    }
+
+    #[test]
+    fn test_move_pane_to_root_single_pane_noop() {
+        let (mut layout, pane_a) = SplitLayout::with_initial_pane();
+
+        // Single pane: root move should be a no-op
+        assert!(!layout.move_pane_to_root(pane_a, tide_core::DropZone::Left));
+
+        let rects = layout.compute(WINDOW, &[], None);
+        assert_eq!(rects.len(), 1);
+        assert!(rect_approx_eq(&rects[0].1, &Rect::new(0.0, 0.0, 800.0, 600.0)));
+    }
+
+    #[test]
+    fn test_move_pane_to_root_two_panes() {
+        // H(A, B) → move B to root-top → V(B, A)
+        let (mut layout, pane_a) = SplitLayout::with_initial_pane();
+        let pane_b = layout.split(pane_a, SplitDirection::Horizontal);
+
+        assert!(layout.move_pane_to_root(pane_b, tide_core::DropZone::Top));
+
+        let rects = layout.compute(WINDOW, &[], None);
+        assert_eq!(rects.len(), 2);
+
+        // B should be on top
+        let rb = rects.iter().find(|(id, _)| *id == pane_b).unwrap();
+        assert!(approx_eq(rb.1.y, 0.0));
+        assert!(approx_eq(rb.1.height, 300.0));
+        assert!(approx_eq(rb.1.width, 800.0));
+
+        // A should be on bottom
+        let ra = rects.iter().find(|(id, _)| *id == pane_a).unwrap();
+        assert!(approx_eq(ra.1.y, 300.0));
+        assert!(approx_eq(ra.1.height, 300.0));
+        assert!(approx_eq(ra.1.width, 800.0));
+
+        assert_no_gaps_no_overlaps(&rects, WINDOW);
+    }
+
+    #[test]
+    fn test_move_pane_to_root_bottom() {
+        // V(A, B) → move A to root-bottom → V(B, A)
+        let (mut layout, pane_a) = SplitLayout::with_initial_pane();
+        let pane_b = layout.split(pane_a, SplitDirection::Vertical);
+
+        assert!(layout.move_pane_to_root(pane_a, tide_core::DropZone::Bottom));
+
+        let rects = layout.compute(WINDOW, &[], None);
+        assert_eq!(rects.len(), 2);
+
+        // B should be on top, A on bottom
+        let rb = rects.iter().find(|(id, _)| *id == pane_b).unwrap();
+        assert!(approx_eq(rb.1.y, 0.0));
+        let ra = rects.iter().find(|(id, _)| *id == pane_a).unwrap();
+        assert!(approx_eq(ra.1.y, 300.0));
+
+        assert_no_gaps_no_overlaps(&rects, WINDOW);
+    }
+
+    #[test]
+    fn test_move_pane_to_root_center_returns_false() {
+        let (mut layout, pane_a) = SplitLayout::with_initial_pane();
+        let _pane_b = layout.split(pane_a, SplitDirection::Horizontal);
+
+        assert!(!layout.move_pane_to_root(pane_a, tide_core::DropZone::Center));
+    }
+
+    // ──────────────────────────────────────────
+    // Cell-aligned snap
+    // ──────────────────────────────────────────
+
+    const CELL: Size = Size {
+        width: 8.0,
+        height: 16.0,
+    };
+
+    const DECORATIONS: PaneDecorations = PaneDecorations {
+        gap: 4.0,
+        padding: 6.0,
+        tab_bar_height: 30.0,
+    };
+
+    /// Helper: compute content width from a visual pane rect.
+    /// content_w = tiling_width - gap/2 - 2*padding (interior pane assumption)
+    fn content_width_from_tiling(tiling_w: f32) -> f32 {
+        tiling_w - DECORATIONS.gap / 2.0 - 2.0 * DECORATIONS.padding
+    }
+
+    fn content_height_from_tiling(tiling_h: f32) -> f32 {
+        tiling_h - DECORATIONS.gap / 2.0 - DECORATIONS.tab_bar_height - DECORATIONS.padding
+    }
+
+    #[test]
+    fn test_snap_horizontal_split_aligns_to_cells() {
+        let (mut layout, pane1) = SplitLayout::with_initial_pane();
+        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+
+        // Snap ratios
+        layout.snap_ratios_to_cells(WINDOW, CELL, &DECORATIONS);
+        let rects = layout.compute(WINDOW, &[pane1, pane2], None);
+
+        let left = rects.iter().find(|(id, _)| *id == pane1).unwrap();
+        let cw = content_width_from_tiling(left.1.width);
+        let cols = cw / CELL.width;
+        assert!(
+            (cols - cols.round()).abs() < 0.01,
+            "Left content width {} does not align to cell width {}: cols = {}",
+            cw,
+            CELL.width,
+            cols
+        );
+    }
+
+    #[test]
+    fn test_snap_vertical_split_aligns_to_cells() {
+        let (mut layout, pane1) = SplitLayout::with_initial_pane();
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
+
+        layout.snap_ratios_to_cells(WINDOW, CELL, &DECORATIONS);
+        let rects = layout.compute(WINDOW, &[pane1, pane2], None);
+
+        let top = rects.iter().find(|(id, _)| *id == pane1).unwrap();
+        let ch = content_height_from_tiling(top.1.height);
+        let rows = ch / CELL.height;
+        assert!(
+            (rows - rows.round()).abs() < 0.01,
+            "Top content height {} does not align to cell height {}: rows = {}",
+            ch,
+            CELL.height,
+            rows
+        );
+    }
+
+    #[test]
+    fn test_snap_50_50_split_equal_cols() {
+        let (mut layout, pane1) = SplitLayout::with_initial_pane();
+        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+
+        layout.snap_ratios_to_cells(WINDOW, CELL, &DECORATIONS);
+        let rects = layout.compute(WINDOW, &[pane1, pane2], None);
+
+        let left = rects.iter().find(|(id, _)| *id == pane1).unwrap();
+        let right = rects.iter().find(|(id, _)| *id == pane2).unwrap();
+
+        let left_cols = (content_width_from_tiling(left.1.width) / CELL.width).round() as i32;
+        let right_cols = (content_width_from_tiling(right.1.width) / CELL.width).round() as i32;
+
+        assert!(
+            (left_cols - right_cols).abs() <= 1,
+            "50:50 split should have equal cols (±1): left={}, right={}",
+            left_cols,
+            right_cols
+        );
+    }
+
+    #[test]
+    fn test_snap_preserves_tiling() {
+        let (mut layout, pane1) = SplitLayout::with_initial_pane();
+        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+
+        layout.snap_ratios_to_cells(WINDOW, CELL, &DECORATIONS);
+        let rects = layout.compute(WINDOW, &[pane1, pane2], None);
+
+        // Rects should still tile the window (no gaps, no overlaps)
+        assert_no_gaps_no_overlaps(&rects, WINDOW);
+    }
+
+    #[test]
+    fn test_snap_nested_splits() {
+        let (mut layout, pane1) = SplitLayout::with_initial_pane();
+        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+        let pane3 = layout.split(pane2, SplitDirection::Vertical);
+
+        layout.snap_ratios_to_cells(WINDOW, CELL, &DECORATIONS);
+        let rects = layout.compute(WINDOW, &[pane1, pane2, pane3], None);
+
+        assert_eq!(rects.len(), 3);
+        assert_no_gaps_no_overlaps(&rects, WINDOW);
+
+        // Check that left pane content is cell-aligned
+        let left = rects.iter().find(|(id, _)| *id == pane1).unwrap();
+        let cw = content_width_from_tiling(left.1.width);
+        let cols = cw / CELL.width;
+        assert!(
+            (cols - cols.round()).abs() < 0.01,
+            "Nested: left content width not cell-aligned: cols = {}",
+            cols
+        );
+    }
+
+    #[test]
+    fn test_snap_single_pane_is_noop() {
+        let (mut layout, pane1) = SplitLayout::with_initial_pane();
+
+        layout.snap_ratios_to_cells(WINDOW, CELL, &DECORATIONS);
+        let rects = layout.compute(WINDOW, &[pane1], None);
+
+        assert_eq!(rects.len(), 1);
+        assert!(rect_approx_eq(
+            &rects[0].1,
+            &Rect::new(0.0, 0.0, 800.0, 600.0)
+        ));
+    }
+
+    #[test]
+    fn test_snap_respects_min_pane_size() {
+        let (mut layout, pane1) = SplitLayout::with_initial_pane();
+        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+
+        // Drag border to extreme left
+        layout.last_window_size = Some(WINDOW);
+        layout.begin_drag(Vec2::new(400.0, 300.0), WINDOW);
+        layout.drag_border(Vec2::new(10.0, 300.0));
+        layout.end_drag();
+
+        layout.snap_ratios_to_cells(WINDOW, CELL, &DECORATIONS);
+        let rects = layout.compute(WINDOW, &[pane1, pane2], None);
+
+        let left = rects.iter().find(|(id, _)| *id == pane1).unwrap();
+        let cw = content_width_from_tiling(left.1.width);
+        let cols = cw / CELL.width;
+
+        // Should have at least MIN_COLS (4) columns
+        assert!(
+            cols >= 3.5,
+            "Left pane too small after snap: cols = {}",
+            cols
+        );
     }
 }

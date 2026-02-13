@@ -65,12 +65,15 @@ impl App {
         };
         surface.configure(&device, &config);
 
-        let renderer = WgpuRenderer::new(
+        let mut renderer = WgpuRenderer::new(
             Arc::clone(&device),
             Arc::clone(&queue),
             format,
             self.scale_factor,
         );
+
+        // Pre-warm ASCII glyphs before first frame to avoid input latency
+        renderer.warmup_ascii();
 
         self.surface = Some(surface);
         self.device = Some(device);

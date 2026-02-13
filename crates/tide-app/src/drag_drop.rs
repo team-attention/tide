@@ -4,6 +4,9 @@ use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
 
+/// Threshold for outer zone detection (0–12% of pane extent).
+const OUTER_ZONE_THRESHOLD: f32 = 0.12;
+
 // ──────────────────────────────────────────────
 // Drop destination: tree pane or editor panel
 // ──────────────────────────────────────────────
@@ -11,6 +14,7 @@ use crate::App;
 #[derive(Debug, Clone)]
 pub(crate) enum DropDestination {
     TreePane(PaneId, DropZone),
+    TreeRoot(DropZone),
     EditorPanel,
 }
 
@@ -53,11 +57,14 @@ impl App {
             return None;
         }
 
-        let tab_start_x = panel_rect.x + PANE_PADDING;
+        let tab_start_x = panel_rect.x + PANE_PADDING - self.panel_tab_scroll;
         for (i, &tab_id) in self.editor_panel_tabs.iter().enumerate() {
             let tx = tab_start_x + i as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
             if pos.x >= tx && pos.x <= tx + PANEL_TAB_WIDTH {
-                return Some(tab_id);
+                // Only match if within panel bounds
+                if pos.x >= panel_rect.x && pos.x <= panel_rect.x + panel_rect.width {
+                    return Some(tab_id);
+                }
             }
         }
         None
@@ -72,7 +79,7 @@ impl App {
             return None;
         }
 
-        let tab_start_x = panel_rect.x + PANE_PADDING;
+        let tab_start_x = panel_rect.x + PANE_PADDING - self.panel_tab_scroll;
         for (i, &tab_id) in self.editor_panel_tabs.iter().enumerate() {
             let tx = tab_start_x + i as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
             // Close button is on the right edge of the tab
@@ -83,10 +90,53 @@ impl App {
                 && pos.y >= close_y
                 && pos.y <= close_y + PANEL_TAB_CLOSE_SIZE
             {
-                return Some(tab_id);
+                if pos.x >= panel_rect.x && pos.x <= panel_rect.x + panel_rect.width {
+                    return Some(tab_id);
+                }
             }
         }
         None
+    }
+
+    /// Check if the cursor is in the panel tab bar area.
+    pub(crate) fn is_over_panel_tab_bar(&self, pos: Vec2) -> bool {
+        if let Some(ref panel_rect) = self.editor_panel_rect {
+            let tab_bar_top = panel_rect.y + PANE_PADDING;
+            pos.x >= panel_rect.x
+                && pos.x <= panel_rect.x + panel_rect.width
+                && pos.y >= tab_bar_top
+                && pos.y <= tab_bar_top + PANEL_TAB_HEIGHT
+        } else {
+            false
+        }
+    }
+
+    /// Clamp the panel tab scroll to valid range.
+    pub(crate) fn clamp_panel_tab_scroll(&mut self) {
+        if let Some(ref panel_rect) = self.editor_panel_rect {
+            let total_width = self.editor_panel_tabs.len() as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP) - PANEL_TAB_GAP;
+            let visible_width = panel_rect.width - 2.0 * PANE_PADDING;
+            let max_scroll = (total_width - visible_width).max(0.0);
+            self.panel_tab_scroll = self.panel_tab_scroll.clamp(0.0, max_scroll);
+        }
+    }
+
+    /// Auto-scroll to make the active panel tab visible.
+    pub(crate) fn scroll_to_active_panel_tab(&mut self) {
+        if let (Some(active), Some(ref panel_rect)) = (self.editor_panel_active, self.editor_panel_rect) {
+            if let Some(idx) = self.editor_panel_tabs.iter().position(|&id| id == active) {
+                let tab_left = idx as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
+                let tab_right = tab_left + PANEL_TAB_WIDTH;
+                let visible_width = panel_rect.width - 2.0 * PANE_PADDING;
+
+                if tab_left < self.panel_tab_scroll {
+                    self.panel_tab_scroll = tab_left;
+                } else if tab_right > self.panel_tab_scroll + visible_width {
+                    self.panel_tab_scroll = tab_right - visible_width;
+                }
+                self.clamp_panel_tab_scroll();
+            }
+        }
     }
 
     /// Compute the drop destination for a given mouse position during drag.
@@ -126,34 +176,43 @@ impl App {
     }
 
     /// Compute tree pane drop target (pane + zone) for drag.
+    /// Uses tiling rects for hit-testing so the gap between panes is a valid drop area.
     fn compute_tree_drop_target(
         &self,
         mouse: Vec2,
         source: PaneId,
         from_panel: bool,
     ) -> Option<DropDestination> {
-        // For panel sources, we don't have a source_rect in the tree — use a dummy
-        let source_rect = if from_panel {
+        // Use tiling rects for source redundancy check (tiling rects touch area boundary)
+        let source_tiling = if from_panel {
             None
         } else {
-            self.visual_pane_rects
+            self.pane_rects
                 .iter()
                 .find(|(id, _)| *id == source)
                 .map(|(_, r)| *r)
         };
 
-        for &(id, rect) in &self.visual_pane_rects {
+        // Iterate tiling rects for hit-testing (covers gap areas between panes)
+        for &(id, tiling_rect) in &self.pane_rects {
             if !from_panel && id == source {
                 continue;
             }
-            if !rect.contains(mouse) {
+            if !tiling_rect.contains(mouse) {
                 continue;
             }
 
-            let rel_x = (mouse.x - rect.x) / rect.width;
-            let rel_y = (mouse.y - rect.y) / rect.height;
+            // Use visual rect for zone computation: rel coords outside [0,1] = in gap → edge zone
+            let visual_rect = self.visual_pane_rects
+                .iter()
+                .find(|(vid, _)| *vid == id)
+                .map(|(_, r)| *r)
+                .unwrap_or(tiling_rect);
 
-            let mut zone = if rel_y < 0.25 {
+            let rel_x = (mouse.x - visual_rect.x) / visual_rect.width;
+            let rel_y = (mouse.y - visual_rect.y) / visual_rect.height;
+
+            let zone = if rel_y < 0.25 {
                 DropZone::Top
             } else if rel_y > 0.75 {
                 DropZone::Bottom
@@ -165,22 +224,62 @@ impl App {
                 DropZone::Center
             };
 
-            // If source is in tree, check for redundant placement
-            if let Some(src_rect) = source_rect {
-                let src_cx = src_rect.x + src_rect.width / 2.0;
-                let src_cy = src_rect.y + src_rect.height / 2.0;
-                let tgt_cx = rect.x + rect.width / 2.0;
-                let tgt_cy = rect.y + rect.height / 2.0;
+            // Check for outer zone: if the zone is directional and the target pane's
+            // tiling rect edge touches the pane_area_rect boundary, AND the relative
+            // position is within the outer threshold → Root-level drop.
+            if zone != DropZone::Center {
+                if let Some(area) = self.pane_area_rect {
+                    let touches_boundary = match zone {
+                        DropZone::Top => tiling_rect.y <= area.y + 0.5,
+                        DropZone::Bottom => tiling_rect.y + tiling_rect.height >= area.y + area.height - 0.5,
+                        DropZone::Left => tiling_rect.x <= area.x + 0.5,
+                        DropZone::Right => tiling_rect.x + tiling_rect.width >= area.x + area.width - 0.5,
+                        DropZone::Center => false,
+                    };
 
-                let is_redundant = match zone {
-                    DropZone::Left => src_cx < tgt_cx,
-                    DropZone::Right => src_cx > tgt_cx,
-                    DropZone::Top => src_cy < tgt_cy,
-                    DropZone::Bottom => src_cy > tgt_cy,
-                    DropZone::Center => false,
-                };
-                if is_redundant {
-                    zone = DropZone::Center;
+                    let is_outer = match zone {
+                        DropZone::Top => rel_y < OUTER_ZONE_THRESHOLD,
+                        DropZone::Bottom => rel_y > (1.0 - OUTER_ZONE_THRESHOLD),
+                        DropZone::Left => rel_x < OUTER_ZONE_THRESHOLD,
+                        DropZone::Right => rel_x > (1.0 - OUTER_ZONE_THRESHOLD),
+                        DropZone::Center => false,
+                    };
+
+                    if touches_boundary && is_outer {
+                        // Redundancy check: root-level drop is redundant only if the source
+                        // already spans the full perpendicular extent on that edge.
+                        let source_redundant = if let Some(src_rect) = source_tiling {
+                            match zone {
+                                DropZone::Top => {
+                                    src_rect.y <= area.y + 0.5
+                                        && src_rect.x <= area.x + 0.5
+                                        && src_rect.x + src_rect.width >= area.x + area.width - 0.5
+                                }
+                                DropZone::Bottom => {
+                                    src_rect.y + src_rect.height >= area.y + area.height - 0.5
+                                        && src_rect.x <= area.x + 0.5
+                                        && src_rect.x + src_rect.width >= area.x + area.width - 0.5
+                                }
+                                DropZone::Left => {
+                                    src_rect.x <= area.x + 0.5
+                                        && src_rect.y <= area.y + 0.5
+                                        && src_rect.y + src_rect.height >= area.y + area.height - 0.5
+                                }
+                                DropZone::Right => {
+                                    src_rect.x + src_rect.width >= area.x + area.width - 0.5
+                                        && src_rect.y <= area.y + 0.5
+                                        && src_rect.y + src_rect.height >= area.y + area.height - 0.5
+                                }
+                                DropZone::Center => false,
+                            }
+                        } else {
+                            false // panel sources never touch tree boundaries
+                        };
+
+                        if !source_redundant {
+                            return Some(DropDestination::TreeRoot(zone));
+                        }
+                    }
                 }
             }
 

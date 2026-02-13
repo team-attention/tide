@@ -42,8 +42,11 @@ pub const PANEL_TAB_GAP: f32 = 2.0;
 pub const PANEL_TAB_BG_ACTIVE: Color = Color::new(0.16, 0.16, 0.22, 1.0);
 pub const PANEL_TAB_CLOSE_SIZE: f32 = 14.0;
 
-// Drop preview
+// Drop preview (insert: fill + border)
 pub const DROP_PREVIEW_FILL: Color = Color::new(0.35, 0.58, 1.0, 0.15);
 pub const DROP_PREVIEW_BORDER: Color = Color::new(0.35, 0.58, 1.0, 0.6);
 pub const DROP_PREVIEW_BORDER_WIDTH: f32 = 2.0;
+// Drop preview (swap: border only, thicker)
+pub const SWAP_PREVIEW_BORDER: Color = Color::new(0.75, 0.55, 1.0, 0.7);
+pub const SWAP_PREVIEW_BORDER_WIDTH: f32 = 3.0;
 pub const DRAG_THRESHOLD: f32 = 5.0;

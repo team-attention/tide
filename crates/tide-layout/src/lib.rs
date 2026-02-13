@@ -4,7 +4,7 @@
 mod node;
 mod tests;
 
-use tide_core::{DropZone, LayoutEngine, PaneId, Rect, Size, SplitDirection, Vec2};
+use tide_core::{DropZone, LayoutEngine, PaneDecorations, PaneId, Rect, Size, SplitDirection, Vec2};
 
 use node::Node;
 
@@ -86,6 +86,31 @@ impl SplitLayout {
         ids
     }
 
+    /// Equalize the root split's ratio based on same-direction chain leaf counts.
+    fn equalize_root_chain(&mut self) {
+        if let Some(Node::Split { direction, ratio, left, right, .. }) = &mut self.root {
+            let dir = *direction;
+            let n_left = left.count_chain_leaves(dir);
+            let n_right = right.count_chain_leaves(dir);
+            *ratio = n_left as f32 / (n_left + n_right) as f32;
+        }
+    }
+
+    /// Snap all split ratios so that pane content areas align to cell boundaries.
+    /// Call this after `compute()` but before using the resulting rects for rendering.
+    /// The caller should call `compute()` again after snapping.
+    pub fn snap_ratios_to_cells(
+        &mut self,
+        window_size: Size,
+        cell_size: tide_core::Size,
+        decorations: &PaneDecorations,
+    ) {
+        if let Some(ref mut root) = self.root {
+            let rect = Rect::new(0.0, 0.0, window_size.width, window_size.height);
+            root.snap_ratios(rect, cell_size, decorations);
+        }
+    }
+
     /// Insert a new pane next to an existing target pane in the split tree.
     /// Used when moving panes from the editor panel into the tree.
     pub fn insert_pane(
@@ -102,6 +127,100 @@ impl SplitLayout {
             self.root = Some(Node::Leaf(new_pane));
             true
         }
+    }
+
+    /// Insert a new pane at the root level, wrapping the existing tree.
+    /// Used when moving a pane from the editor panel to the tree root.
+    pub fn insert_at_root(&mut self, new_pane: PaneId, zone: DropZone) -> bool {
+        if zone == DropZone::Center {
+            return false;
+        }
+
+        let (direction, insert_first) = match zone {
+            DropZone::Top => (SplitDirection::Vertical, true),
+            DropZone::Bottom => (SplitDirection::Vertical, false),
+            DropZone::Left => (SplitDirection::Horizontal, true),
+            DropZone::Right => (SplitDirection::Horizontal, false),
+            DropZone::Center => unreachable!(),
+        };
+
+        let new_node = Node::Leaf(new_pane);
+
+        match self.root.take() {
+            Some(existing) => {
+                let (left, right) = if insert_first {
+                    (new_node, existing)
+                } else {
+                    (existing, new_node)
+                };
+                self.root = Some(Node::Split {
+                    direction,
+                    ratio: 0.5,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                });
+                // Equalize same-direction chain at root
+                self.equalize_root_chain();
+            }
+            None => {
+                self.root = Some(new_node);
+            }
+        }
+
+        true
+    }
+
+    /// Move `source` pane to the root level based on the drop zone.
+    /// Removes source from the tree, then wraps the remaining root in a new split.
+    /// Returns true if the operation succeeded.
+    pub fn move_pane_to_root(&mut self, source: PaneId, zone: DropZone) -> bool {
+        if zone == DropZone::Center {
+            return false;
+        }
+        let root = match self.root.as_mut() {
+            Some(r) => r,
+            None => return false,
+        };
+
+        // Remove source from tree
+        match root.remove_pane(source) {
+            Some(Some(replacement)) => {
+                *root = replacement;
+            }
+            Some(None) => {
+                // Source was the only pane — can't do root-level move.
+                self.root = Some(Node::Leaf(source));
+                return false;
+            }
+            None => return false,
+        }
+
+        // Wrap remaining root with source at the specified edge
+        let remaining = self.root.take().unwrap();
+        let (direction, insert_first) = match zone {
+            DropZone::Top => (SplitDirection::Vertical, true),
+            DropZone::Bottom => (SplitDirection::Vertical, false),
+            DropZone::Left => (SplitDirection::Horizontal, true),
+            DropZone::Right => (SplitDirection::Horizontal, false),
+            DropZone::Center => unreachable!(),
+        };
+
+        let source_node = Node::Leaf(source);
+        let (left, right) = if insert_first {
+            (source_node, remaining)
+        } else {
+            (remaining, source_node)
+        };
+
+        self.root = Some(Node::Split {
+            direction,
+            ratio: 0.5,
+            left: Box::new(left),
+            right: Box::new(right),
+        });
+        self.equalize_root_chain();
+
+        true
     }
 
     /// Move `source` pane relative to `target` pane based on the drop zone.
@@ -144,6 +263,56 @@ impl SplitLayout {
         };
 
         root.insert_pane_at(target, source, direction, insert_first)
+    }
+
+    /// Simulate a drop operation and return the resulting tiling rect for the source pane.
+    /// Used for accurate drop preview that accounts for equalization.
+    pub fn simulate_drop(
+        &self,
+        source: PaneId,
+        target: Option<PaneId>,
+        zone: DropZone,
+        source_in_tree: bool,
+        window_size: Size,
+    ) -> Option<Rect> {
+        let mut sim = SplitLayout {
+            root: self.root.clone(),
+            next_id: self.next_id,
+            active_drag: None,
+            last_window_size: None,
+        };
+
+        match target {
+            None => {
+                // Root-level drop
+                if source_in_tree {
+                    if !sim.move_pane_to_root(source, zone) {
+                        return None;
+                    }
+                } else if !sim.insert_at_root(source, zone) {
+                    return None;
+                }
+            }
+            Some(target_id) => {
+                if source_in_tree {
+                    if !sim.move_pane(source, target_id, zone) {
+                        return None;
+                    }
+                } else {
+                    let (direction, insert_first) = match zone {
+                        DropZone::Top => (SplitDirection::Vertical, true),
+                        DropZone::Bottom => (SplitDirection::Vertical, false),
+                        DropZone::Left => (SplitDirection::Horizontal, true),
+                        DropZone::Right => (SplitDirection::Horizontal, false),
+                        DropZone::Center => (SplitDirection::Horizontal, false),
+                    };
+                    sim.insert_pane(target_id, source, direction, insert_first);
+                }
+            }
+        }
+
+        let rects = sim.compute(window_size, &[], None);
+        rects.into_iter().find(|(id, _)| *id == source).map(|(_, r)| r)
     }
 }
 

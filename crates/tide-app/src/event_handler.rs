@@ -150,6 +150,7 @@ impl App {
                             self.router.set_focused(tab_id);
                             self.chrome_generation += 1;
                         }
+                        self.scroll_to_active_panel_tab();
                         return;
                     }
 
@@ -254,6 +255,11 @@ impl App {
                         self.file_tree_scroll = new_scroll;
                         self.chrome_generation += 1;
                     }
+                } else if self.is_over_panel_tab_bar(self.last_cursor_pos) {
+                    // Horizontal scroll for panel tab bar
+                    self.panel_tab_scroll -= dy * 20.0;
+                    self.clamp_panel_tab_scroll();
+                    self.chrome_generation += 1;
                 } else if let Some(panel_rect) = self.editor_panel_rect {
                     if panel_rect.contains(self.last_cursor_pos) {
                         // Route scroll to active panel editor
@@ -333,6 +339,28 @@ impl App {
     /// Handle a completed drop operation.
     fn handle_drop(&mut self, source: tide_core::PaneId, from_panel: bool, dest: DropDestination) {
         match dest {
+            DropDestination::TreeRoot(zone) => {
+                if from_panel {
+                    // Moving from panel to tree root: remove from panel, wrap tree root
+                    self.editor_panel_tabs.retain(|&id| id != source);
+                    if self.editor_panel_active == Some(source) {
+                        self.editor_panel_active = self.editor_panel_tabs.last().copied();
+                    }
+
+                    if self.layout.insert_at_root(source, zone) {
+                        self.focused = Some(source);
+                        self.router.set_focused(source);
+                        self.chrome_generation += 1;
+                        self.compute_layout();
+                    }
+                } else {
+                    // Tree to tree root: use move_pane_to_root
+                    if self.layout.move_pane_to_root(source, zone) {
+                        self.chrome_generation += 1;
+                        self.compute_layout();
+                    }
+                }
+            }
             DropDestination::TreePane(target_id, zone) => {
                 if from_panel {
                     // Moving from panel to tree: remove from panel, insert into tree
@@ -384,6 +412,7 @@ impl App {
                 self.router.set_focused(source);
                 self.chrome_generation += 1;
                 self.compute_layout();
+                self.scroll_to_active_panel_tab();
             }
         }
     }
