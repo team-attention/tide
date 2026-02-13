@@ -4,8 +4,6 @@ use tide_core::{Color, CursorShape, Key, Modifiers, Rect, Renderer, Size, Termin
 use tide_renderer::WgpuRenderer;
 use tide_terminal::Terminal;
 
-use crate::theme::BG_COLOR;
-
 pub type PaneId = tide_core::PaneId;
 
 pub struct TerminalPane {
@@ -23,10 +21,6 @@ impl TerminalPane {
     /// Render the grid cells into the cached grid layer.
     pub fn render_grid(&self, rect: Rect, renderer: &mut WgpuRenderer) {
         let cell_size = renderer.cell_size();
-
-        // Draw pane background into grid layer (so cell BGs draw on top)
-        renderer.draw_grid_rect(rect, BG_COLOR);
-
         let grid = self.backend.grid();
         let offset = Vec2::new(rect.x, rect.y);
 

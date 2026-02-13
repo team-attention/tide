@@ -72,8 +72,9 @@ struct App {
     ime_composing: bool,
     ime_preedit: String,
 
-    // Computed pane rects (cached after layout computation)
+    // Computed pane rects: tiling rects (hit-testing/drag) and visual rects (gap-inset, rendering)
     pane_rects: Vec<(PaneId, Rect)>,
+    visual_pane_rects: Vec<(PaneId, Rect)>,
 
     // Grid generation tracking for vertex caching
     pane_generations: HashMap<PaneId, u64>,
@@ -118,6 +119,7 @@ impl App {
             ime_composing: false,
             ime_preedit: String::new(),
             pane_rects: Vec::new(),
+            visual_pane_rects: Vec::new(),
             pane_generations: HashMap::new(),
             layout_generation: 0,
             chrome_generation: 0,
@@ -284,6 +286,36 @@ impl App {
         let rects_changed = rects != self.pane_rects;
         self.pane_rects = rects;
 
+        // Compute visual rects with gap insets for rendering
+        let logical = self.logical_size();
+        self.visual_pane_rects = self
+            .pane_rects
+            .iter()
+            .map(|&(id, r)| {
+                // For each edge: if at window boundary → PANE_GAP, else → PANE_GAP/2
+                let half = PANE_GAP / 2.0;
+                let left = if r.x <= terminal_offset_x + 0.5 { PANE_GAP } else { half };
+                let top = if r.y <= 0.5 { PANE_GAP } else { half };
+                let right = if r.x + r.width >= terminal_offset_x + terminal_area.width - 0.5 {
+                    PANE_GAP
+                } else {
+                    half
+                };
+                let bottom = if r.y + r.height >= logical.height - 0.5 {
+                    PANE_GAP
+                } else {
+                    half
+                };
+                let vr = Rect::new(
+                    r.x + left,
+                    r.y + top,
+                    (r.width - left - right).max(1.0),
+                    (r.height - top - bottom).max(1.0),
+                );
+                (id, vr)
+            })
+            .collect();
+
         if rects_changed {
             self.layout_generation += 1;
             self.pane_generations.clear();
@@ -320,7 +352,7 @@ impl App {
         let focused = self.focused;
         let show_file_tree = self.show_file_tree;
         let file_tree_scroll = self.file_tree_scroll;
-        let pane_rects = self.pane_rects.clone();
+        let visual_pane_rects = self.visual_pane_rects.clone();
 
         let renderer = self.renderer.as_mut().unwrap();
 
@@ -332,97 +364,106 @@ impl App {
 
         renderer.begin_frame(logical);
 
-        // Rebuild chrome layer only when chrome content changed (borders, file tree)
+        // Rebuild chrome layer only when chrome content changed (panel backgrounds, file tree)
         let chrome_dirty = self.chrome_generation != self.last_chrome_generation;
         if chrome_dirty {
             renderer.invalidate_chrome();
 
-            // Draw file tree panel if visible
+            // Draw file tree panel if visible (rounded rect background)
             if show_file_tree {
+                let tree_visual_rect = Rect::new(
+                    PANE_GAP,
+                    PANE_GAP,
+                    FILE_TREE_WIDTH - PANE_GAP - PANE_GAP / 2.0,
+                    logical.height - PANE_GAP * 2.0,
+                );
+                renderer.draw_chrome_rounded_rect(tree_visual_rect, TREE_BG, PANE_RADIUS);
+
                 if let Some(tree) = self.file_tree.as_ref() {
-                    let panel_rect = Rect::new(0.0, 0.0, FILE_TREE_WIDTH, logical.height);
-
-                    renderer.draw_chrome_rect(panel_rect, TREE_BG_COLOR);
-                    renderer.draw_chrome_rect(
-                        Rect::new(FILE_TREE_WIDTH - BORDER_WIDTH, 0.0, BORDER_WIDTH, logical.height),
-                        BORDER_COLOR,
-                    );
-
                     let cell_size = renderer.cell_size();
                     let line_height = cell_size.height;
                     let indent_width = cell_size.width * 1.5;
-                    let left_padding = 4.0;
+                    let left_padding = PANE_GAP + PANE_PADDING;
 
                     let entries = tree.visible_entries();
                     for (i, entry) in entries.iter().enumerate() {
-                        let y = i as f32 * line_height - file_tree_scroll;
+                        let y = PANE_GAP + PANE_PADDING + i as f32 * line_height - file_tree_scroll;
                         if y + line_height < 0.0 || y > logical.height {
                             continue;
                         }
 
                         let x = left_padding + entry.depth as f32 * indent_width;
 
-                        let prefix = if entry.entry.is_dir {
-                            if entry.is_expanded { "v " } else { "> " }
+                        // Nerd Font icon
+                        let icon = file_icon(&entry.entry.name, entry.entry.is_dir, entry.is_expanded);
+                        let icon_color = if entry.entry.is_dir {
+                            TREE_DIR_COLOR
                         } else {
-                            "  "
+                            TREE_ICON_COLOR
                         };
 
+                        // Draw icon
+                        let icon_style = TextStyle {
+                            foreground: icon_color,
+                            background: None,
+                            bold: false,
+                            italic: false,
+                            underline: false,
+                        };
+                        let icon_str: String = std::iter::once(icon).collect();
+                        renderer.draw_chrome_text(
+                            &icon_str,
+                            Vec2::new(x, y),
+                            icon_style,
+                            tree_visual_rect,
+                        );
+
+                        // Draw name after icon + space
+                        let name_x = x + cell_size.width * 2.0;
                         let text_color = if entry.entry.is_dir {
                             TREE_DIR_COLOR
                         } else {
                             TREE_TEXT_COLOR
                         };
-
-                        let style = TextStyle {
+                        let name_style = TextStyle {
                             foreground: text_color,
                             background: None,
                             bold: entry.entry.is_dir,
                             italic: false,
                             underline: false,
                         };
-
-                        let display_text = format!("{}{}", prefix, entry.entry.name);
-                        renderer.draw_chrome_text(&display_text, Vec2::new(x, y), style, panel_rect);
+                        renderer.draw_chrome_text(
+                            &entry.entry.name,
+                            Vec2::new(name_x, y),
+                            name_style,
+                            tree_visual_rect,
+                        );
                     }
                 }
             }
 
-            // Draw pane borders
-            for &(id, rect) in &pane_rects {
-                let is_focused = focused == Some(id);
-                let border_color = if is_focused {
-                    FOCUSED_BORDER_COLOR
+            // Draw pane backgrounds as rounded rects
+            for &(id, rect) in &visual_pane_rects {
+                let bg = if focused == Some(id) {
+                    PANE_BG_FOCUSED
                 } else {
-                    BORDER_COLOR
+                    PANE_BG
                 };
+                renderer.draw_chrome_rounded_rect(rect, bg, PANE_RADIUS);
+            }
 
-                renderer.draw_chrome_rect(
-                    Rect::new(rect.x, rect.y, rect.width, BORDER_WIDTH),
-                    border_color,
-                );
-                renderer.draw_chrome_rect(
-                    Rect::new(
-                        rect.x,
-                        rect.y + rect.height - BORDER_WIDTH,
-                        rect.width,
-                        BORDER_WIDTH,
-                    ),
-                    border_color,
-                );
-                renderer.draw_chrome_rect(
-                    Rect::new(rect.x, rect.y, BORDER_WIDTH, rect.height),
-                    border_color,
-                );
-                renderer.draw_chrome_rect(
-                    Rect::new(
-                        rect.x + rect.width - BORDER_WIDTH,
+            // Focus accent bar: thin colored bar at the top of the focused pane
+            if let Some(fid) = focused {
+                if let Some(&(_, rect)) = visual_pane_rects.iter().find(|(id, _)| *id == fid) {
+                    let bar_h = 2.0;
+                    let bar_rect = Rect::new(
+                        rect.x + PANE_RADIUS,
                         rect.y,
-                        BORDER_WIDTH,
-                        rect.height,
-                    ),
-                    border_color,
-                );
+                        rect.width - PANE_RADIUS * 2.0,
+                        bar_h,
+                    );
+                    renderer.draw_chrome_rect(bar_rect, ACCENT_COLOR);
+                }
             }
 
             self.last_chrome_generation = self.chrome_generation;
@@ -430,7 +471,7 @@ impl App {
 
         // Check if grid needs rebuild (any pane content or layout changed)
         let mut grid_dirty = false;
-        for &(id, _) in &pane_rects {
+        for &(id, _) in &visual_pane_rects {
             if let Some(pane) = self.terminal_panes.get(&id) {
                 let gen = pane.backend.grid_generation();
                 let prev = self.pane_generations.get(&id).copied().unwrap_or(u64::MAX);
@@ -444,13 +485,13 @@ impl App {
         // Rebuild grid layer only when content or layout changed
         if grid_dirty {
             renderer.invalidate_grid();
-            for &(id, rect) in &pane_rects {
+            for &(id, rect) in &visual_pane_rects {
                 if let Some(pane) = self.terminal_panes.get(&id) {
                     let inner = Rect::new(
-                        rect.x + BORDER_WIDTH,
-                        rect.y + BORDER_WIDTH,
-                        rect.width - 2.0 * BORDER_WIDTH,
-                        rect.height - 2.0 * BORDER_WIDTH,
+                        rect.x + PANE_PADDING,
+                        rect.y + PANE_PADDING,
+                        rect.width - 2.0 * PANE_PADDING,
+                        rect.height - 2.0 * PANE_PADDING,
                     );
                     pane.render_grid(inner, renderer);
                     self.pane_generations.insert(id, pane.backend.grid_generation());
@@ -459,13 +500,13 @@ impl App {
         }
 
         // Always render cursor (overlay layer) — cursor blinks/moves independently
-        for &(id, rect) in &pane_rects {
+        for &(id, rect) in &visual_pane_rects {
             if let Some(pane) = self.terminal_panes.get(&id) {
                 let inner = Rect::new(
-                    rect.x + BORDER_WIDTH,
-                    rect.y + BORDER_WIDTH,
-                    rect.width - 2.0 * BORDER_WIDTH,
-                    rect.height - 2.0 * BORDER_WIDTH,
+                    rect.x + PANE_PADDING,
+                    rect.y + PANE_PADDING,
+                    rect.width - 2.0 * PANE_PADDING,
+                    rect.height - 2.0 * PANE_PADDING,
                 );
                 pane.render_cursor(inner, renderer);
             }
@@ -474,13 +515,13 @@ impl App {
         // Render IME preedit overlay (Korean composition in progress)
         if !self.ime_preedit.is_empty() {
             if let Some(focused_id) = focused {
-                if let Some((_, rect)) = pane_rects.iter().find(|(id, _)| *id == focused_id) {
+                if let Some((_, rect)) = visual_pane_rects.iter().find(|(id, _)| *id == focused_id) {
                     if let Some(pane) = self.terminal_panes.get(&focused_id) {
                         let cursor = pane.backend.cursor();
                         let cell_size = renderer.cell_size();
                         let inner_offset = Vec2::new(
-                            rect.x + BORDER_WIDTH,
-                            rect.y + BORDER_WIDTH,
+                            rect.x + PANE_PADDING,
+                            rect.y + PANE_PADDING,
                         );
                         let cx = inner_offset.x + cursor.col as f32 * cell_size.width;
                         let cy = inner_offset.y + cursor.row as f32 * cell_size.height;
@@ -908,7 +949,9 @@ impl App {
         };
 
         let line_height = cell_size.height;
-        let index = ((position.y + self.file_tree_scroll) / line_height) as usize;
+        // Account for gap + padding offsets
+        let adjusted_y = position.y - PANE_GAP - PANE_PADDING;
+        let index = ((adjusted_y + self.file_tree_scroll) / line_height) as usize;
 
         if let Some(tree) = self.file_tree.as_mut() {
             let entries = tree.visible_entries();
@@ -1014,6 +1057,40 @@ impl ApplicationHandler for App {
             self.consecutive_dirty_frames = 0;
             event_loop.set_control_flow(ControlFlow::wait_duration(Duration::from_millis(wait_ms)));
         }
+    }
+}
+
+// ──────────────────────────────────────────────
+// Nerd Font file icons
+// ──────────────────────────────────────────────
+
+fn file_icon(name: &str, is_dir: bool, expanded: bool) -> char {
+    if is_dir {
+        return if expanded { '\u{f07c}' } else { '\u{f07b}' };
+    }
+    let ext = name.rsplit('.').next().unwrap_or("");
+    match ext {
+        "rs" => '\u{e7a8}',
+        "toml" => '\u{e615}',
+        "md" => '\u{e73e}',
+        "json" => '\u{e60b}',
+        "yaml" | "yml" => '\u{e615}',
+        "js" => '\u{e74e}',
+        "ts" => '\u{e628}',
+        "tsx" | "jsx" => '\u{e7ba}',
+        "py" => '\u{e73c}',
+        "go" => '\u{e626}',
+        "c" | "h" => '\u{e61e}',
+        "cpp" | "hpp" | "cc" => '\u{e61d}',
+        "lock" => '\u{f023}',
+        "sh" | "bash" | "zsh" => '\u{e795}',
+        "git" | "gitignore" => '\u{e702}',
+        "css" => '\u{e749}',
+        "html" => '\u{e736}',
+        "svg" => '\u{e698}',
+        "png" | "jpg" | "jpeg" | "gif" | "webp" => '\u{f1c5}',
+        "txt" => '\u{f15c}',
+        _ => '\u{f15b}',
     }
 }
 

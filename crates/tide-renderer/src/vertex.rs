@@ -36,6 +36,56 @@ pub struct GlyphVertex {
     pub color: [f32; 4],
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct ChromeRectVertex {
+    pub position: [f32; 2],      // quad corner position (px)
+    pub color: [f32; 4],         // RGBA
+    pub rect_center: [f32; 2],   // rect center (px)
+    pub rect_half: [f32; 2],     // half-width, half-height (px)
+    pub corner_radius: f32,      // rounded corner radius (px)
+    pub _pad: f32,               // 48-byte alignment
+}
+
+impl ChromeRectVertex {
+    pub const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
+        array_stride: std::mem::size_of::<ChromeRectVertex>() as wgpu::BufferAddress,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &[
+            // position
+            wgpu::VertexAttribute {
+                offset: 0,
+                shader_location: 0,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            // color
+            wgpu::VertexAttribute {
+                offset: 8,
+                shader_location: 1,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            // rect_center
+            wgpu::VertexAttribute {
+                offset: 24,
+                shader_location: 2,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            // rect_half
+            wgpu::VertexAttribute {
+                offset: 32,
+                shader_location: 3,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            // corner_radius
+            wgpu::VertexAttribute {
+                offset: 40,
+                shader_location: 4,
+                format: wgpu::VertexFormat::Float32,
+            },
+        ],
+    };
+}
+
 impl GlyphVertex {
     pub const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
         array_stride: std::mem::size_of::<GlyphVertex>() as wgpu::BufferAddress,

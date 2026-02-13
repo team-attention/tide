@@ -13,8 +13,8 @@ use cosmic_text::{
 use tide_core::{Color, Rect, Renderer, Size, TextStyle, Vec2};
 
 use atlas::{AtlasRegion, GlyphAtlas, GlyphCacheKey};
-use shaders::{GLYPH_SHADER, RECT_SHADER};
-use vertex::{GlyphVertex, RectVertex};
+use shaders::{CHROME_RECT_SHADER, GLYPH_SHADER, RECT_SHADER};
+use vertex::{ChromeRectVertex, GlyphVertex, RectVertex};
 
 // ──────────────────────────────────────────────
 // WgpuRenderer
@@ -23,6 +23,7 @@ use vertex::{GlyphVertex, RectVertex};
 pub struct WgpuRenderer {
     // GPU pipelines
     rect_pipeline: wgpu::RenderPipeline,
+    chrome_rounded_pipeline: wgpu::RenderPipeline,
     glyph_pipeline: wgpu::RenderPipeline,
 
     // Uniform buffer (screen size)
@@ -54,8 +55,8 @@ pub struct WgpuRenderer {
     grid_glyph_vb_capacity: usize,
     grid_glyph_ib_capacity: usize,
 
-    // Chrome layer — cached for borders and file tree
-    chrome_rect_vertices: Vec<RectVertex>,
+    // Chrome layer — cached for panel backgrounds and file tree
+    chrome_rect_vertices: Vec<ChromeRectVertex>,
     chrome_rect_indices: Vec<u32>,
     chrome_glyph_vertices: Vec<GlyphVertex>,
     chrome_glyph_indices: Vec<u32>,
@@ -192,6 +193,54 @@ impl WgpuRenderer {
             cache: None,
         });
 
+        // --- Chrome rounded rect pipeline (SDF) ---
+        let chrome_rect_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("chrome_rect_shader"),
+            source: wgpu::ShaderSource::Wgsl(CHROME_RECT_SHADER.into()),
+        });
+
+        let chrome_rect_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("chrome_rect_pipeline_layout"),
+                bind_group_layouts: &[&uniform_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let chrome_rounded_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("chrome_rounded_pipeline"),
+                layout: Some(&chrome_rect_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &chrome_rect_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[ChromeRectVertex::LAYOUT],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &chrome_rect_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    unclipped_depth: false,
+                    conservative: false,
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
+
         // --- Glyph Atlas ---
         let atlas = GlyphAtlas::new(&device);
 
@@ -311,6 +360,7 @@ impl WgpuRenderer {
 
         Self {
             rect_pipeline,
+            chrome_rounded_pipeline,
             glyph_pipeline,
             uniform_buffer,
             uniform_bind_group,
@@ -575,18 +625,44 @@ impl WgpuRenderer {
 
     // ── Chrome layer methods (cached for borders and file tree) ──
 
-    /// Draw a rect into the cached chrome layer.
+    /// Draw a sharp rect into the cached chrome layer (radius = 0).
     pub fn draw_chrome_rect(&mut self, rect: Rect, color: Color) {
-        let x = rect.x * self.scale_factor;
-        let y = rect.y * self.scale_factor;
-        let w = rect.width * self.scale_factor;
-        let h = rect.height * self.scale_factor;
-        let base = self.chrome_rect_vertices.len() as u32;
+        self.draw_chrome_rounded_rect(rect, color, 0.0);
+    }
+
+    /// Draw a rounded rect into the cached chrome layer (SDF-based AA).
+    pub fn draw_chrome_rounded_rect(&mut self, rect: Rect, color: Color, radius: f32) {
+        let s = self.scale_factor;
+        let x = rect.x * s;
+        let y = rect.y * s;
+        let w = rect.width * s;
+        let h = rect.height * s;
+        let r = radius * s;
+
+        // Expand quad by 1px for AA bleed
+        let expand = 1.0_f32;
+        let qx = x - expand;
+        let qy = y - expand;
+        let qw = w + expand * 2.0;
+        let qh = h + expand * 2.0;
+
+        let center = [x + w * 0.5, y + h * 0.5];
+        let half = [w * 0.5, h * 0.5];
         let c = [color.r, color.g, color.b, color.a];
-        self.chrome_rect_vertices.push(RectVertex { position: [x, y], color: c });
-        self.chrome_rect_vertices.push(RectVertex { position: [x + w, y], color: c });
-        self.chrome_rect_vertices.push(RectVertex { position: [x + w, y + h], color: c });
-        self.chrome_rect_vertices.push(RectVertex { position: [x, y + h], color: c });
+
+        let base = self.chrome_rect_vertices.len() as u32;
+        let vert = |px: f32, py: f32| ChromeRectVertex {
+            position: [px, py],
+            color: c,
+            rect_center: center,
+            rect_half: half,
+            corner_radius: r,
+            _pad: 0.0,
+        };
+        self.chrome_rect_vertices.push(vert(qx, qy));
+        self.chrome_rect_vertices.push(vert(qx + qw, qy));
+        self.chrome_rect_vertices.push(vert(qx + qw, qy + qh));
+        self.chrome_rect_vertices.push(vert(qx, qy + qh));
         self.chrome_rect_indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
 
@@ -619,10 +695,20 @@ impl WgpuRenderer {
                 if qx + qw > clip_left && qx < clip_right && qy + qh > clip_top && qy < clip_bottom {
                     let base = self.chrome_rect_vertices.len() as u32;
                     let c = [bg.r, bg.g, bg.b, bg.a];
-                    self.chrome_rect_vertices.push(RectVertex { position: [qx, qy], color: c });
-                    self.chrome_rect_vertices.push(RectVertex { position: [qx + qw, qy], color: c });
-                    self.chrome_rect_vertices.push(RectVertex { position: [qx + qw, qy + qh], color: c });
-                    self.chrome_rect_vertices.push(RectVertex { position: [qx, qy + qh], color: c });
+                    let center = [qx + qw * 0.5, qy + qh * 0.5];
+                    let half = [qw * 0.5, qh * 0.5];
+                    let vert = |px: f32, py: f32| ChromeRectVertex {
+                        position: [px, py],
+                        color: c,
+                        rect_center: center,
+                        rect_half: half,
+                        corner_radius: 0.0,
+                        _pad: 0.0,
+                    };
+                    self.chrome_rect_vertices.push(vert(qx, qy));
+                    self.chrome_rect_vertices.push(vert(qx + qw, qy));
+                    self.chrome_rect_vertices.push(vert(qx + qw, qy + qh));
+                    self.chrome_rect_vertices.push(vert(qx, qy + qh));
                     self.chrome_rect_indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
                 }
             }
@@ -853,7 +939,7 @@ impl WgpuRenderer {
                     view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.07, g: 0.07, b: 0.10, a: 1.0 }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -872,10 +958,16 @@ impl WgpuRenderer {
                 pass.draw_indexed(0..grid_rect_count, 0, 0..1);
             }
 
+            // Chrome rects use the SDF rounded rect pipeline
             if chrome_rect_count > 0 {
+                pass.set_pipeline(&self.chrome_rounded_pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
                 pass.set_vertex_buffer(0, self.chrome_rect_vb.slice(..));
                 pass.set_index_buffer(self.chrome_rect_ib.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..chrome_rect_count, 0, 0..1);
+                // Restore rect pipeline for overlay
+                pass.set_pipeline(&self.rect_pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
             }
 
             if overlay_rect_count > 0 {
