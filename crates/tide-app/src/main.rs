@@ -227,7 +227,7 @@ impl App {
         // Resize terminal backends to match their rects (minus tab bar height)
         // During border drag, skip PTY resize to avoid SIGWINCH spam
         // (shell redraws prompt on every resize, flooding the terminal)
-        let is_dragging = self.router.is_dragging_border();
+        let is_dragging = self.router.is_dragging_border() || self.panel_border_dragging;
         if !is_dragging {
             if let Some(renderer) = &self.renderer {
                 let cell_size = renderer.cell_size();
