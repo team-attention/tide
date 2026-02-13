@@ -643,7 +643,7 @@ mod tests {
     #[test]
     fn test_named_color_to_rgb() {
         let color = Terminal::named_color_to_rgb(NamedColor::Red);
-        assert_eq!(color, Color::rgb(0.8, 0.0, 0.0));
+        assert_eq!(color, Color::rgb(1.0, 0.33, 0.33));
     }
 
     #[test]

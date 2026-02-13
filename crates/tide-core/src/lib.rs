@@ -222,6 +222,15 @@ pub enum SplitDirection {
     Vertical,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DropZone {
+    Top,
+    Bottom,
+    Left,
+    Right,
+    Center,
+}
+
 // ──────────────────────────────────────────────
 // Trait: Renderer
 // ──────────────────────────────────────────────

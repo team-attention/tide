@@ -1,7 +1,7 @@
 // Layout engine implementation (Stream C)
 // Implements tide_core::LayoutEngine with a binary split tree
 
-use tide_core::{LayoutEngine, PaneId, Rect, Size, SplitDirection, Vec2};
+use tide_core::{DropZone, LayoutEngine, PaneId, Rect, Size, SplitDirection, Vec2};
 
 // ──────────────────────────────────────────────
 // Node: binary tree for layout
@@ -228,6 +228,63 @@ impl Node {
             }
         }
     }
+
+    /// Replace all occurrences of `from` PaneId with `to` in leaf nodes.
+    fn replace_pane_id(&mut self, from: PaneId, to: PaneId) {
+        match self {
+            Node::Leaf(id) if *id == from => *id = to,
+            Node::Leaf(_) => {}
+            Node::Split { left, right, .. } => {
+                left.replace_pane_id(from, to);
+                right.replace_pane_id(from, to);
+            }
+        }
+    }
+
+    /// Swap two pane IDs using a sentinel value for 3-way swap.
+    fn swap_panes(&mut self, a: PaneId, b: PaneId) {
+        let sentinel = u64::MAX;
+        self.replace_pane_id(a, sentinel);
+        self.replace_pane_id(b, a);
+        self.replace_pane_id(sentinel, b);
+    }
+
+    /// Replace the leaf containing `target` with a split containing both
+    /// `target` and `new_pane`. `insert_first` controls whether the new pane
+    /// goes into the left/top (true) or right/bottom (false) child.
+    fn insert_pane_at(
+        &mut self,
+        target: PaneId,
+        new_pane: PaneId,
+        direction: SplitDirection,
+        insert_first: bool,
+    ) -> bool {
+        match self {
+            Node::Leaf(id) if *id == target => {
+                let target_node = Node::Leaf(target);
+                let new_node = Node::Leaf(new_pane);
+                let (left, right) = if insert_first {
+                    (new_node, target_node)
+                } else {
+                    (target_node, new_node)
+                };
+                *self = Node::Split {
+                    direction,
+                    ratio: 0.5,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                };
+                true
+            }
+            Node::Leaf(_) => false,
+            Node::Split { left, right, .. } => {
+                if left.insert_pane_at(target, new_pane, direction, insert_first) {
+                    return true;
+                }
+                right.insert_pane_at(target, new_pane, direction, insert_first)
+            }
+        }
+    }
 }
 
 // ──────────────────────────────────────────────
@@ -332,6 +389,49 @@ impl SplitLayout {
             root.pane_ids(&mut ids);
         }
         ids
+    }
+
+    /// Move `source` pane relative to `target` pane based on the drop zone.
+    /// Center = swap the two panes. Directional = remove source, insert next to target.
+    /// Returns true if the operation succeeded.
+    pub fn move_pane(&mut self, source: PaneId, target: PaneId, zone: DropZone) -> bool {
+        if source == target {
+            return false;
+        }
+        let root = match self.root.as_mut() {
+            Some(r) => r,
+            None => return false,
+        };
+
+        if zone == DropZone::Center {
+            root.swap_panes(source, target);
+            return true;
+        }
+
+        // Directional move: remove source from tree, then insert next to target.
+        // First, remove the source pane.
+        match root.remove_pane(source) {
+            Some(Some(replacement)) => {
+                *root = replacement;
+            }
+            Some(None) => {
+                // Source was the only pane — can't move it.
+                self.root = Some(Node::Leaf(source));
+                return false;
+            }
+            None => return false,
+        }
+
+        let root = self.root.as_mut().unwrap();
+        let (direction, insert_first) = match zone {
+            DropZone::Top => (SplitDirection::Vertical, true),
+            DropZone::Bottom => (SplitDirection::Vertical, false),
+            DropZone::Left => (SplitDirection::Horizontal, true),
+            DropZone::Right => (SplitDirection::Horizontal, false),
+            DropZone::Center => unreachable!(),
+        };
+
+        root.insert_pane_at(target, source, direction, insert_first)
     }
 }
 

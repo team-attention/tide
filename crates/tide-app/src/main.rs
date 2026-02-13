@@ -19,8 +19,8 @@ use winit::keyboard::ModifiersState;
 use winit::window::{Window, WindowAttributes, WindowId};
 
 use tide_core::{
-    Color, FileTreeSource, InputEvent, LayoutEngine, MouseButton, PaneId, Rect, Renderer, Size,
-    SplitDirection, TerminalBackend, TextStyle, Vec2,
+    Color, DropZone, FileTreeSource, InputEvent, LayoutEngine, MouseButton, PaneId, Rect,
+    Renderer, Size, SplitDirection, TerminalBackend, TextStyle, Vec2,
 };
 use tide_input::{Action, Direction, GlobalAction, Router};
 use tide_layout::SplitLayout;
@@ -30,6 +30,22 @@ use tide_tree::FsTree;
 use input::{winit_key_to_tide, winit_modifiers_to_tide};
 use pane::TerminalPane;
 use theme::*;
+
+// ──────────────────────────────────────────────
+// Pane drag & drop state machine
+// ──────────────────────────────────────────────
+
+enum PaneDragState {
+    Idle,
+    PendingDrag {
+        source_pane: PaneId,
+        press_pos: Vec2,
+    },
+    Dragging {
+        source_pane: PaneId,
+        drop_target: Option<(PaneId, DropZone)>,
+    },
+}
 
 // ──────────────────────────────────────────────
 // App state
@@ -90,6 +106,9 @@ struct App {
 
     // Adaptive frame pacing: throttle to ~60fps during high throughput
     consecutive_dirty_frames: u32,
+
+    // Pane drag & drop
+    pane_drag: PaneDragState,
 }
 
 impl App {
@@ -127,6 +146,7 @@ impl App {
             input_just_sent: false,
             input_sent_at: None,
             consecutive_dirty_frames: 0,
+            pane_drag: PaneDragState::Idle,
         }
     }
 
@@ -267,7 +287,7 @@ impl App {
             rect.x += terminal_offset_x;
         }
 
-        // Resize terminal backends to match their rects
+        // Resize terminal backends to match their rects (minus tab bar height)
         // During border drag, skip PTY resize to avoid SIGWINCH spam
         // (shell redraws prompt on every resize, flooding the terminal)
         let is_dragging = self.router.is_dragging_border();
@@ -276,7 +296,13 @@ impl App {
                 let cell_size = renderer.cell_size();
                 for &(id, rect) in &rects {
                     if let Some(pane) = self.terminal_panes.get_mut(&id) {
-                        pane.resize_to_rect(rect, cell_size);
+                        let content_rect = Rect::new(
+                            rect.x,
+                            rect.y,
+                            rect.width,
+                            (rect.height - TAB_BAR_HEIGHT).max(cell_size.height),
+                        );
+                        pane.resize_to_rect(content_rect, cell_size);
                     }
                 }
             }
@@ -466,6 +492,31 @@ impl App {
                 }
             }
 
+            // Tab bar text for each pane
+            let cell_height = renderer.cell_size().height;
+            for &(id, rect) in &visual_pane_rects {
+                let title = pane_title(&self.terminal_panes, id);
+                let text_color = if focused == Some(id) {
+                    TAB_BAR_TEXT_FOCUSED
+                } else {
+                    TAB_BAR_TEXT
+                };
+                let style = TextStyle {
+                    foreground: text_color,
+                    background: None,
+                    bold: focused == Some(id),
+                    italic: false,
+                    underline: false,
+                };
+                let text_y = rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
+                renderer.draw_chrome_text(
+                    &title,
+                    Vec2::new(rect.x + PANE_PADDING + 4.0, text_y),
+                    style,
+                    Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT),
+                );
+            }
+
             self.last_chrome_generation = self.chrome_generation;
         }
 
@@ -489,9 +540,9 @@ impl App {
                 if let Some(pane) = self.terminal_panes.get(&id) {
                     let inner = Rect::new(
                         rect.x + PANE_PADDING,
-                        rect.y + PANE_PADDING,
+                        rect.y + TAB_BAR_HEIGHT,
                         rect.width - 2.0 * PANE_PADDING,
-                        rect.height - 2.0 * PANE_PADDING,
+                        rect.height - TAB_BAR_HEIGHT - PANE_PADDING,
                     );
                     pane.render_grid(inner, renderer);
                     self.pane_generations.insert(id, pane.backend.grid_generation());
@@ -504,9 +555,9 @@ impl App {
             if let Some(pane) = self.terminal_panes.get(&id) {
                 let inner = Rect::new(
                     rect.x + PANE_PADDING,
-                    rect.y + PANE_PADDING,
+                    rect.y + TAB_BAR_HEIGHT,
                     rect.width - 2.0 * PANE_PADDING,
-                    rect.height - 2.0 * PANE_PADDING,
+                    rect.height - TAB_BAR_HEIGHT - PANE_PADDING,
                 );
                 pane.render_cursor(inner, renderer);
             }
@@ -521,7 +572,7 @@ impl App {
                         let cell_size = renderer.cell_size();
                         let inner_offset = Vec2::new(
                             rect.x + PANE_PADDING,
-                            rect.y + PANE_PADDING,
+                            rect.y + TAB_BAR_HEIGHT,
                         );
                         let cx = inner_offset.x + cursor.col as f32 * cell_size.width;
                         let cy = inner_offset.y + cursor.row as f32 * cell_size.height;
@@ -555,6 +606,21 @@ impl App {
                         }
                     }
                 }
+            }
+        }
+
+        // Draw drop preview overlay when dragging a pane
+        if let PaneDragState::Dragging { drop_target: Some((target_id, zone)), .. } = &self.pane_drag {
+            if let Some(&(_, target_rect)) = visual_pane_rects.iter().find(|(id, _)| *id == *target_id) {
+                let preview = compute_preview_rect(target_rect, *zone);
+                // Fill
+                renderer.draw_rect(preview, DROP_PREVIEW_FILL);
+                // Border (4 thin rects)
+                let bw = DROP_PREVIEW_BORDER_WIDTH;
+                renderer.draw_rect(Rect::new(preview.x, preview.y, preview.width, bw), DROP_PREVIEW_BORDER);
+                renderer.draw_rect(Rect::new(preview.x, preview.y + preview.height - bw, preview.width, bw), DROP_PREVIEW_BORDER);
+                renderer.draw_rect(Rect::new(preview.x, preview.y, bw, preview.height), DROP_PREVIEW_BORDER);
+                renderer.draw_rect(Rect::new(preview.x + preview.width - bw, preview.y, bw, preview.height), DROP_PREVIEW_BORDER);
             }
         }
 
@@ -612,6 +678,14 @@ impl App {
                     return;
                 }
 
+                // Cancel pane drag on Escape
+                if !matches!(self.pane_drag, PaneDragState::Idle) {
+                    if event.logical_key == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape) {
+                        self.pane_drag = PaneDragState::Idle;
+                        return;
+                    }
+                }
+
                 // During IME composition, only handle non-character keys
                 if self.ime_composing
                     && matches!(event.logical_key, winit::keyboard::Key::Character(_))
@@ -629,6 +703,33 @@ impl App {
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 if state != ElementState::Pressed {
+                    // Handle pane drag drop on mouse release
+                    let drag_state = std::mem::replace(&mut self.pane_drag, PaneDragState::Idle);
+                    match drag_state {
+                        PaneDragState::Dragging { source_pane, drop_target: Some((target_id, zone)), .. } => {
+                            if self.layout.move_pane(source_pane, target_id, zone) {
+                                self.chrome_generation += 1;
+                                self.compute_layout();
+                            }
+                            return;
+                        }
+                        PaneDragState::PendingDrag { source_pane, .. } => {
+                            // Click (no drag): just focus the pane
+                            if self.focused != Some(source_pane) {
+                                self.focused = Some(source_pane);
+                                self.router.set_focused(source_pane);
+                                self.chrome_generation += 1;
+                                self.update_file_tree_cwd();
+                            }
+                            return;
+                        }
+                        PaneDragState::Dragging { .. } => {
+                            // Drop with no valid target: cancel
+                            return;
+                        }
+                        PaneDragState::Idle => {}
+                    }
+
                     let was_dragging = self.router.is_dragging_border();
                     // End drag on mouse release
                     self.layout.end_drag();
@@ -647,6 +748,24 @@ impl App {
                     _ => return,
                 };
 
+                // Check if click is on a tab bar — initiate pane drag
+                if btn == MouseButton::Left {
+                    if let Some(pane_id) = self.pane_at_tab_bar(self.last_cursor_pos) {
+                        self.pane_drag = PaneDragState::PendingDrag {
+                            source_pane: pane_id,
+                            press_pos: self.last_cursor_pos,
+                        };
+                        // Focus the pane immediately
+                        if self.focused != Some(pane_id) {
+                            self.focused = Some(pane_id);
+                            self.router.set_focused(pane_id);
+                            self.chrome_generation += 1;
+                            self.update_file_tree_cwd();
+                        }
+                        return;
+                    }
+                }
+
                 let input = InputEvent::MouseClick {
                     position: self.last_cursor_pos,
                     button: btn,
@@ -661,6 +780,33 @@ impl App {
                     position.y as f32 / self.scale_factor,
                 );
                 self.last_cursor_pos = pos;
+
+                // Handle pane drag state machine
+                match &self.pane_drag {
+                    PaneDragState::PendingDrag { source_pane, press_pos } => {
+                        let dx = pos.x - press_pos.x;
+                        let dy = pos.y - press_pos.y;
+                        if (dx * dx + dy * dy).sqrt() >= DRAG_THRESHOLD {
+                            let source = *source_pane;
+                            let target = self.compute_drop_target(pos, source);
+                            self.pane_drag = PaneDragState::Dragging {
+                                source_pane: source,
+                                drop_target: target,
+                            };
+                        }
+                        return;
+                    }
+                    PaneDragState::Dragging { source_pane, .. } => {
+                        let source = *source_pane;
+                        let target = self.compute_drop_target(pos, source);
+                        self.pane_drag = PaneDragState::Dragging {
+                            source_pane: source,
+                            drop_target: target,
+                        };
+                        return;
+                    }
+                    PaneDragState::Idle => {}
+                }
 
                 if self.router.is_dragging_border() {
                     // Adjust position for file tree offset
@@ -965,6 +1111,68 @@ impl App {
         }
     }
 
+    /// Hit-test whether the position is within a pane's tab bar area.
+    fn pane_at_tab_bar(&self, pos: Vec2) -> Option<PaneId> {
+        for &(id, rect) in &self.visual_pane_rects {
+            let tab_rect = Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT);
+            if tab_rect.contains(pos) {
+                return Some(id);
+            }
+        }
+        None
+    }
+
+    /// Compute the drop target (pane + zone) for a given mouse position during drag.
+    fn compute_drop_target(&self, mouse: Vec2, source: PaneId) -> Option<(PaneId, DropZone)> {
+        let source_rect = self.visual_pane_rects.iter().find(|(id, _)| *id == source).map(|(_, r)| *r)?;
+
+        for &(id, rect) in &self.visual_pane_rects {
+            if id == source {
+                continue;
+            }
+            if !rect.contains(mouse) {
+                continue;
+            }
+
+            // Compute relative position within the pane rect (0.0 to 1.0)
+            let rel_x = (mouse.x - rect.x) / rect.width;
+            let rel_y = (mouse.y - rect.y) / rect.height;
+
+            let mut zone = if rel_y < 0.25 {
+                DropZone::Top
+            } else if rel_y > 0.75 {
+                DropZone::Bottom
+            } else if rel_x < 0.25 {
+                DropZone::Left
+            } else if rel_x > 0.75 {
+                DropZone::Right
+            } else {
+                DropZone::Center
+            };
+
+            // If the directional zone would result in the same arrangement
+            // (source is already on that side of target), show swap instead.
+            let src_cx = source_rect.x + source_rect.width / 2.0;
+            let src_cy = source_rect.y + source_rect.height / 2.0;
+            let tgt_cx = rect.x + rect.width / 2.0;
+            let tgt_cy = rect.y + rect.height / 2.0;
+
+            let is_redundant = match zone {
+                DropZone::Left => src_cx < tgt_cx,
+                DropZone::Right => src_cx > tgt_cx,
+                DropZone::Top => src_cy < tgt_cy,
+                DropZone::Bottom => src_cy > tgt_cy,
+                DropZone::Center => false,
+            };
+            if is_redundant {
+                zone = DropZone::Center;
+            }
+
+            return Some((id, zone));
+        }
+        None
+    }
+
     fn reconfigure_surface(&mut self) {
         if let (Some(surface), Some(device), Some(config)) = (
             self.surface.as_ref(),
@@ -1057,6 +1265,61 @@ impl ApplicationHandler for App {
             self.consecutive_dirty_frames = 0;
             event_loop.set_control_flow(ControlFlow::wait_duration(Duration::from_millis(wait_ms)));
         }
+    }
+}
+
+// ──────────────────────────────────────────────
+// Tab bar title
+// ──────────────────────────────────────────────
+
+fn pane_title(terminal_panes: &HashMap<PaneId, TerminalPane>, id: PaneId) -> String {
+    if let Some(pane) = terminal_panes.get(&id) {
+        if let Some(cwd) = pane.backend.detect_cwd_fallback() {
+            let components: Vec<_> = cwd.components().collect();
+            let display: String = if components.len() <= 2 {
+                cwd.display().to_string()
+            } else {
+                let last_two: std::path::PathBuf =
+                    components[components.len() - 2..].iter().collect();
+                last_two.display().to_string()
+            };
+            return display;
+        }
+    }
+    format!("Terminal {}", id)
+}
+
+// ──────────────────────────────────────────────
+// Drop preview geometry
+// ──────────────────────────────────────────────
+
+fn compute_preview_rect(target_rect: Rect, zone: DropZone) -> Rect {
+    match zone {
+        DropZone::Top => Rect::new(
+            target_rect.x,
+            target_rect.y,
+            target_rect.width,
+            target_rect.height / 2.0,
+        ),
+        DropZone::Bottom => Rect::new(
+            target_rect.x,
+            target_rect.y + target_rect.height / 2.0,
+            target_rect.width,
+            target_rect.height / 2.0,
+        ),
+        DropZone::Left => Rect::new(
+            target_rect.x,
+            target_rect.y,
+            target_rect.width / 2.0,
+            target_rect.height,
+        ),
+        DropZone::Right => Rect::new(
+            target_rect.x + target_rect.width / 2.0,
+            target_rect.y,
+            target_rect.width / 2.0,
+            target_rect.height,
+        ),
+        DropZone::Center => target_rect,
     }
 }
 
