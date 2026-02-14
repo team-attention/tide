@@ -331,6 +331,14 @@ impl App {
 
                     // File finder interception: consume all keys when active
                     if self.file_finder.is_some() {
+                        // Cmd+Enter / Ctrl+Enter → toggle maximize
+                        if matches!(key, tide_core::Key::Enter) && (modifiers.meta || modifiers.ctrl) {
+                            self.editor_panel_maximized = !self.editor_panel_maximized;
+                            self.chrome_generation += 1;
+                            self.compute_layout();
+                            self.needs_redraw = true;
+                            return;
+                        }
                         match key {
                             tide_core::Key::Escape => {
                                 self.close_file_finder();
@@ -729,6 +737,7 @@ impl App {
                     let left = if self.show_file_tree { self.file_tree_width } else { 0.0 };
                     let new_width = (logical.width - pos.x).max(150.0).min(logical.width - left - 100.0);
                     self.editor_panel_width = new_width;
+                    self.editor_panel_width_manual = true;
                     self.compute_layout();
                     self.clamp_panel_tab_scroll();
                     return;
@@ -989,6 +998,12 @@ impl App {
                     }
                 }
             }
+        } else if self.show_editor_panel {
+            // Empty panel or file finder: focus the placeholder
+            let placeholder = self.get_or_alloc_placeholder();
+            self.focused = Some(placeholder);
+            self.router.set_focused(placeholder);
+            self.chrome_generation += 1;
         }
     }
 

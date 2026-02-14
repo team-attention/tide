@@ -336,6 +336,7 @@ struct App {
     pub(crate) editor_panel_rect: Option<Rect>,
     pub(crate) editor_panel_width: f32,
     pub(crate) panel_border_dragging: bool,
+    pub(crate) editor_panel_width_manual: bool,
     pub(crate) panel_tab_scroll: f32,
     pub(crate) panel_tab_scroll_target: f32,
 
@@ -347,6 +348,9 @@ struct App {
 
     // File finder state (in-panel file search/open UI)
     pub(crate) file_finder: Option<FileFinderState>,
+
+    // Placeholder PaneId for empty editor panel focus (not in panes or tabs)
+    pub(crate) editor_panel_placeholder: Option<tide_core::PaneId>,
 
     // Theme mode
     pub(crate) dark_mode: bool,
@@ -417,11 +421,13 @@ impl App {
             editor_panel_rect: None,
             editor_panel_width: EDITOR_PANEL_WIDTH,
             panel_border_dragging: false,
+            editor_panel_width_manual: false,
             panel_tab_scroll: 0.0,
             panel_tab_scroll_target: 0.0,
             save_as_input: None,
             save_confirm: None,
             file_finder: None,
+            editor_panel_placeholder: None,
             dark_mode: true,
             hover_target: None,
             file_watcher: None,
@@ -521,6 +527,33 @@ impl App {
 
     pub(crate) fn palette(&self) -> &'static ThemePalette {
         if self.dark_mode { &DARK } else { &LIGHT }
+    }
+
+    /// Compute the ideal editor panel width based on the number of terminal columns.
+    /// 1 pane → half of available width, 2+ panes → one third, clamped to min 150.
+    pub(crate) fn auto_editor_panel_width(&self) -> f32 {
+        let logical = self.logical_size();
+        let left_reserved = if self.show_file_tree { self.file_tree_width } else { 0.0 };
+        let available = (logical.width - left_reserved).max(0.0);
+        let pane_count = self.layout.pane_ids().len();
+        let width = if pane_count <= 1 {
+            available / 2.0
+        } else {
+            available / 3.0
+        };
+        width.max(150.0)
+    }
+
+    /// Get or allocate a placeholder PaneId for the empty editor panel.
+    /// Used only for focus tracking and maximize — never added to panes or tabs.
+    pub(crate) fn get_or_alloc_placeholder(&mut self) -> PaneId {
+        if let Some(id) = self.editor_panel_placeholder {
+            id
+        } else {
+            let id = self.layout.alloc_id();
+            self.editor_panel_placeholder = Some(id);
+            id
+        }
     }
 
     /// Install an event-loop waker on a terminal pane so the PTY thread
