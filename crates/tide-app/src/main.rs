@@ -81,6 +81,10 @@ struct App {
     pub(crate) ime_active: bool,
     pub(crate) ime_composing: bool,
     pub(crate) ime_preedit: String,
+    /// First hangul character typed before IME was active (macOS sends
+    /// KeyboardInput before Ime::Enabled on language switch).  Stored here
+    /// so we can combine it with the first Preedit/Commit the IME produces.
+    pub(crate) pending_hangul_initial: Option<char>,
 
     // Computed pane rects: tiling rects (hit-testing/drag) and visual rects (gap-inset, rendering)
     pub(crate) pane_rects: Vec<(PaneId, Rect)>,
@@ -169,6 +173,7 @@ impl App {
             ime_active: false,
             ime_composing: false,
             ime_preedit: String::new(),
+            pending_hangul_initial: None,
             pane_rects: Vec::new(),
             visual_pane_rects: Vec::new(),
             prev_visual_pane_rects: Vec::new(),
