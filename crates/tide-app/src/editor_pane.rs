@@ -31,6 +31,11 @@ pub struct EditorPane {
 }
 
 impl EditorPane {
+    pub fn new_empty(id: PaneId) -> Self {
+        let editor = EditorState::new_empty();
+        Self { id, editor, search: None, selection: None }
+    }
+
     pub fn open(id: PaneId, path: &Path) -> io::Result<Self> {
         let editor = EditorState::open(path)?;
         Ok(Self { id, editor, search: None, selection: None })

@@ -30,6 +30,19 @@ pub struct EditorState {
 }
 
 impl EditorState {
+    /// Create a new empty editor (no file on disk).
+    pub fn new_empty() -> Self {
+        Self {
+            buffer: Buffer::new(),
+            cursor: EditorCursor::new(),
+            highlighter: Highlighter::new(),
+            syntax: None,
+            scroll_offset: 0,
+            h_scroll_offset: 0,
+            generation: 0,
+        }
+    }
+
     /// Open a file for editing.
     pub fn open(path: &Path) -> io::Result<Self> {
         let buffer = Buffer::from_file(path)?;
