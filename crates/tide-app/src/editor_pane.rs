@@ -12,6 +12,7 @@ use tide_renderer::WgpuRenderer;
 
 use crate::pane::Selection;
 use crate::search::SearchState;
+use crate::theme::{SCROLLBAR_CURRENT_MATCH, SCROLLBAR_MATCH, SCROLLBAR_THUMB, SCROLLBAR_TRACK, SCROLLBAR_WIDTH};
 
 /// Color for line numbers in the gutter.
 const GUTTER_TEXT: Color = Color::new(0.40, 0.42, 0.50, 1.0);
@@ -40,7 +41,12 @@ impl EditorPane {
         let cell_size = renderer.cell_size();
         let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
         let content_x = rect.x + gutter_width;
-        let content_width = (rect.width - gutter_width).max(0.0);
+        let scrollbar_reserved = if self.needs_scrollbar(rect, cell_size.height) {
+            SCROLLBAR_WIDTH
+        } else {
+            0.0
+        };
+        let content_width = (rect.width - gutter_width - scrollbar_reserved).max(0.0);
 
         let visible_rows = (rect.height / cell_size.height).floor() as usize;
         let scroll = self.editor.scroll_offset();
@@ -243,6 +249,55 @@ impl EditorPane {
             }
         }
         result
+    }
+
+    /// Whether the file is long enough to need a scrollbar.
+    pub fn needs_scrollbar(&self, rect: Rect, cell_height: f32) -> bool {
+        let visible_rows = (rect.height / cell_height).floor() as usize;
+        self.editor.buffer.line_count() > visible_rows
+    }
+
+    /// Render a scrollbar on the right edge of the editor area.
+    /// Includes match markers from search results when search is active.
+    pub fn render_scrollbar(&self, rect: Rect, renderer: &mut WgpuRenderer, search: Option<&SearchState>) {
+        let cell_size = renderer.cell_size();
+        let visible_rows = (rect.height / cell_size.height).floor() as usize;
+        let total_lines = self.editor.buffer.line_count();
+        if total_lines <= visible_rows {
+            return;
+        }
+
+        let track_x = rect.x + rect.width - SCROLLBAR_WIDTH;
+        let track_rect = Rect::new(track_x, rect.y, SCROLLBAR_WIDTH, rect.height);
+
+        // Track background
+        renderer.draw_rect(track_rect, SCROLLBAR_TRACK);
+
+        // Thumb
+        let scroll = self.editor.scroll_offset();
+        let thumb_ratio_start = scroll as f32 / total_lines as f32;
+        let thumb_ratio_end = (scroll + visible_rows) as f32 / total_lines as f32;
+        let thumb_y = rect.y + thumb_ratio_start * rect.height;
+        let thumb_h = (thumb_ratio_end - thumb_ratio_start) * rect.height;
+        let thumb_h = thumb_h.max(4.0); // minimum thumb height
+        renderer.draw_rect(Rect::new(track_x, thumb_y, SCROLLBAR_WIDTH, thumb_h), SCROLLBAR_THUMB);
+
+        // Search match markers
+        if let Some(search) = search {
+            if search.visible && !search.query.is_empty() {
+                let marker_h = 2.0_f32;
+                for (mi, m) in search.matches.iter().enumerate() {
+                    let ratio = m.line as f32 / total_lines as f32;
+                    let my = rect.y + (ratio * rect.height).min(rect.height - marker_h);
+                    let color = if search.current == Some(mi) {
+                        SCROLLBAR_CURRENT_MATCH
+                    } else {
+                        SCROLLBAR_MATCH
+                    };
+                    renderer.draw_rect(Rect::new(track_x, my, SCROLLBAR_WIDTH, marker_h), color);
+                }
+            }
+        }
     }
 
     /// Get the generation counter for dirty checking.

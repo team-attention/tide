@@ -101,12 +101,33 @@ impl App {
 
                 // Forward mouse scroll to pane
                 if let Some(InputEvent::MouseScroll { delta, .. }) = event {
+                    // Compute actual visible rows/cols for the pane
+                    let (visible_rows, visible_cols) = self.renderer.as_ref().map(|r| {
+                        let cs = r.cell_size();
+                        let rect = self.visual_pane_rects.iter()
+                            .find(|(pid, _)| *pid == id)
+                            .map(|(_, r)| *r);
+                        if let Some(r) = rect {
+                            let rows = ((r.height - TAB_BAR_HEIGHT - PANE_PADDING) / cs.height).floor() as usize;
+                            let gutter_width = 5.0 * cs.width;
+                            let cols = ((r.width - 2.0 * PANE_PADDING - gutter_width) / cs.width).floor() as usize;
+                            (rows.max(1), cols.max(1))
+                        } else if let Some(pr) = self.editor_panel_rect {
+                            let content_height = (pr.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING).max(1.0);
+                            let rows = (content_height / cs.height).floor() as usize;
+                            let gutter_width = 5.0 * cs.width;
+                            let cols = ((pr.width - 2.0 * PANE_PADDING - gutter_width) / cs.width).floor() as usize;
+                            (rows.max(1), cols.max(1))
+                        } else {
+                            (30, 80)
+                        }
+                    }).unwrap_or((30, 80));
                     match self.panes.get_mut(&id) {
                         Some(PaneKind::Editor(pane)) => {
                             if delta > 0.0 {
-                                pane.handle_action(EditorAction::ScrollUp(delta.abs()), 30);
+                                pane.handle_action_with_size(EditorAction::ScrollUp(delta.abs()), visible_rows, visible_cols);
                             } else {
-                                pane.handle_action(EditorAction::ScrollDown(delta.abs()), 30);
+                                pane.handle_action_with_size(EditorAction::ScrollDown(delta.abs()), visible_rows, visible_cols);
                             }
                         }
                         Some(PaneKind::Terminal(pane)) => {
@@ -152,16 +173,18 @@ impl App {
         match action {
             GlobalAction::SplitVertical => {
                 if let Some(focused) = self.focused {
+                    let cwd = self.focused_terminal_cwd();
                     let new_id = self.layout.split(focused, SplitDirection::Vertical);
-                    self.create_terminal_pane(new_id);
+                    self.create_terminal_pane(new_id, cwd);
                     self.chrome_generation += 1;
                     self.compute_layout();
                 }
             }
             GlobalAction::SplitHorizontal => {
                 if let Some(focused) = self.focused {
+                    let cwd = self.focused_terminal_cwd();
                     let new_id = self.layout.split(focused, SplitDirection::Horizontal);
-                    self.create_terminal_pane(new_id);
+                    self.create_terminal_pane(new_id, cwd);
                     self.chrome_generation += 1;
                     self.compute_layout();
                 }
@@ -377,19 +400,28 @@ impl App {
         }
     }
 
-    pub(crate) fn create_terminal_pane(&mut self, id: tide_core::PaneId) {
+    pub(crate) fn create_terminal_pane(&mut self, id: tide_core::PaneId, cwd: Option<std::path::PathBuf>) {
         let cell_size = self.renderer.as_ref().unwrap().cell_size();
         let logical = self.logical_size();
         let cols = (logical.width / 2.0 / cell_size.width).max(1.0) as u16;
         let rows = (logical.height / cell_size.height).max(1.0) as u16;
 
-        match TerminalPane::new(id, cols, rows) {
+        match TerminalPane::with_cwd(id, cols, rows, cwd) {
             Ok(pane) => {
                 self.panes.insert(id, PaneKind::Terminal(pane));
             }
             Err(e) => {
                 log::error!("Failed to create terminal pane: {}", e);
             }
+        }
+    }
+
+    /// Get the CWD of the currently focused terminal pane, if any.
+    fn focused_terminal_cwd(&self) -> Option<std::path::PathBuf> {
+        let focused = self.focused?;
+        match self.panes.get(&focused) {
+            Some(PaneKind::Terminal(p)) => p.backend.detect_cwd_fallback(),
+            _ => None,
         }
     }
 

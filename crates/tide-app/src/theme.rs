@@ -51,6 +51,13 @@ pub const SWAP_PREVIEW_BORDER: Color = Color::new(0.75, 0.55, 1.0, 0.7);
 pub const SWAP_PREVIEW_BORDER_WIDTH: f32 = 3.0;
 pub const DRAG_THRESHOLD: f32 = 5.0;
 
+// Scrollbar
+pub const SCROLLBAR_WIDTH: f32 = 6.0;
+pub const SCROLLBAR_TRACK: Color = Color::new(0.30, 0.30, 0.35, 0.10);
+pub const SCROLLBAR_THUMB: Color = Color::new(0.60, 0.62, 0.70, 0.35);
+pub const SCROLLBAR_MATCH: Color = Color::new(0.90, 0.70, 0.10, 0.80);
+pub const SCROLLBAR_CURRENT_MATCH: Color = Color::new(1.0, 0.90, 0.20, 1.0);
+
 // Search
 pub const SEARCH_MATCH_BG: Color = Color::new(0.60, 0.50, 0.10, 0.35);
 pub const SEARCH_CURRENT_BG: Color = Color::new(0.90, 0.70, 0.10, 0.55);

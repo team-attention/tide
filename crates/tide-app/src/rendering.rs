@@ -507,6 +507,8 @@ impl App {
                             }
                         }
                     }
+                    // Render editor scrollbar with search match markers
+                    pane.render_scrollbar(inner, renderer, pane.search.as_ref());
                 }
                 None => {}
             }
@@ -603,6 +605,8 @@ impl App {
                         }
                     }
                 }
+                // Render panel editor scrollbar with search match markers
+                pane.render_scrollbar(inner, renderer, pane.search.as_ref());
             }
         }
 

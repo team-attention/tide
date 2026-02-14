@@ -172,6 +172,13 @@ impl App {
                             content.contains(self.last_cursor_pos)
                         }) {
                             let pid = *pane_id;
+                            // Clear selection on all other panes
+                            for (_, pane) in self.panes.iter_mut() {
+                                match pane {
+                                    PaneKind::Terminal(p) => p.selection = None,
+                                    PaneKind::Editor(p) => p.selection = None,
+                                }
+                            }
                             // Pre-compute positions before mutable borrow
                             let term_cell = self.pixel_to_cell(self.last_cursor_pos, pid);
                             let editor_cell = {
@@ -376,20 +383,28 @@ impl App {
                         // Pre-compute cell positions before mutably borrowing panes
                         let cell_size = self.renderer.as_ref().map(|r| r.cell_size());
 
-                        // Update selection for panes (terminal + editor)
-                        let pane_ids: Vec<_> = self.visual_pane_rects.iter().map(|(id, _)| *id).collect();
-                        for pid in pane_ids {
+                        // Update selection only for the pane that has an active selection,
+                        // and only if the cursor is within that pane's content area.
+                        let pane_rects: Vec<_> = self.visual_pane_rects.iter().map(|(id, r)| (*id, *r)).collect();
+                        for (pid, rect) in pane_rects {
+                            let content = Rect::new(
+                                rect.x + PANE_PADDING,
+                                rect.y + TAB_BAR_HEIGHT,
+                                rect.width - 2.0 * PANE_PADDING,
+                                rect.height - TAB_BAR_HEIGHT - PANE_PADDING,
+                            );
+                            if !content.contains(pos) {
+                                continue;
+                            }
                             let cell = self.pixel_to_cell(pos, pid);
                             // Compute editor cell without borrowing panes
                             let editor_cell = if let Some(cs) = cell_size {
-                                if let Some((_, visual_rect)) = self.visual_pane_rects.iter().find(|(id, _)| *id == pid) {
-                                    let gutter_width = 5.0 * cs.width;
-                                    let content_x = visual_rect.x + PANE_PADDING + gutter_width;
-                                    let content_y = visual_rect.y + TAB_BAR_HEIGHT;
-                                    let rel_col = ((pos.x - content_x) / cs.width).floor() as isize;
-                                    let rel_row = ((pos.y - content_y) / cs.height).floor() as isize;
-                                    if rel_row >= 0 && rel_col >= 0 { Some((rel_row as usize, rel_col as usize)) } else { None }
-                                } else { None }
+                                let gutter_width = 5.0 * cs.width;
+                                let content_x = rect.x + PANE_PADDING + gutter_width;
+                                let content_y = rect.y + TAB_BAR_HEIGHT;
+                                let rel_col = ((pos.x - content_x) / cs.width).floor() as isize;
+                                let rel_row = ((pos.y - content_y) / cs.height).floor() as isize;
+                                if rel_row >= 0 && rel_col >= 0 { Some((rel_row as usize, rel_col as usize)) } else { None }
                             } else { None };
 
                             match self.panes.get_mut(&pid) {

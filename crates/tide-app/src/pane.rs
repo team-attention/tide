@@ -36,6 +36,11 @@ impl TerminalPane {
         Ok(Self { id, backend, selection: None, search: None })
     }
 
+    pub fn with_cwd(id: PaneId, cols: u16, rows: u16, cwd: Option<std::path::PathBuf>) -> Result<Self, Box<dyn std::error::Error>> {
+        let backend = Terminal::with_cwd(cols, rows, cwd)?;
+        Ok(Self { id, backend, selection: None, search: None })
+    }
+
     /// Extract selected text from the terminal grid.
     pub fn selected_text(&self, sel: &Selection) -> String {
         let grid = self.backend.grid();

@@ -94,6 +94,11 @@ pub struct Terminal {
 impl Terminal {
     /// Create a new terminal backend with the given dimensions.
     pub fn new(cols: u16, rows: u16) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::with_cwd(cols, rows, None)
+    }
+
+    /// Create a new terminal backend, optionally starting in the given directory.
+    pub fn with_cwd(cols: u16, rows: u16, cwd: Option<PathBuf>) -> Result<Self, Box<dyn std::error::Error>> {
         let cell_width = 8;
         let cell_height = 16;
 
@@ -116,13 +121,13 @@ impl Terminal {
         // Determine the shell to use
         let shell = Self::detect_shell();
 
-        // Create PTY config (start in $HOME so .app bundles don't land in /)
-        let home = std::env::var("HOME").ok().map(PathBuf::from);
+        // Use provided cwd, or fall back to $HOME so .app bundles don't land in /
+        let working_directory = cwd.or_else(|| std::env::var("HOME").ok().map(PathBuf::from));
         let mut env = std::collections::HashMap::new();
         env.insert(String::from("TERM"), String::from("xterm-256color"));
         let pty_config = tty::Options {
             shell: Some(tty::Shell::new(shell, vec![String::from("--login")])),
-            working_directory: home,
+            working_directory,
             env,
             ..tty::Options::default()
         };
