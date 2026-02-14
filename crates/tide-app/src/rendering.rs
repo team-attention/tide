@@ -62,25 +62,25 @@ impl App {
         if chrome_dirty {
             renderer.invalidate_chrome();
 
-            // Draw file tree panel if visible (rounded rect background)
+            // Draw file tree panel if visible (flat, edge-to-edge)
             if show_file_tree {
                 let tree_visual_rect = Rect::new(
-                    PANE_GAP,
-                    PANE_GAP,
-                    FILE_TREE_WIDTH - PANE_GAP - PANE_GAP / 2.0,
-                    logical.height - PANE_GAP * 2.0,
+                    0.0,
+                    0.0,
+                    FILE_TREE_WIDTH - BORDER_WIDTH,
+                    logical.height,
                 );
-                renderer.draw_chrome_rounded_rect(tree_visual_rect, TREE_BG, PANE_RADIUS);
+                renderer.draw_chrome_rect(tree_visual_rect, SURFACE_BG);
 
                 if let Some(tree) = self.file_tree.as_ref() {
                     let cell_size = renderer.cell_size();
                     let line_height = cell_size.height;
                     let indent_width = cell_size.width * 1.5;
-                    let left_padding = PANE_GAP + PANE_PADDING;
+                    let left_padding = PANE_PADDING;
 
                     let entries = tree.visible_entries();
                     for (i, entry) in entries.iter().enumerate() {
-                        let y = PANE_GAP + PANE_PADDING + i as f32 * line_height - file_tree_scroll;
+                        let y = PANE_PADDING + i as f32 * line_height - file_tree_scroll;
                         if y + line_height < 0.0 || y > logical.height {
                             continue;
                         }
@@ -137,9 +137,9 @@ impl App {
                 }
             }
 
-            // Draw editor panel if visible
+            // Draw editor panel if visible (flat, border provided by clear color)
             if let Some(panel_rect) = editor_panel_rect {
-                renderer.draw_chrome_rounded_rect(panel_rect, TREE_BG, PANE_RADIUS);
+                renderer.draw_chrome_rect(panel_rect, SURFACE_BG);
 
                 let cell_size = renderer.cell_size();
                 let cell_height = cell_size.height;
@@ -223,42 +223,32 @@ impl App {
                     }
                 }
 
-                // Focus accent bar if panel's active pane is focused
+                // Accent border if panel's active pane is focused (all 4 sides)
                 if let Some(active) = editor_panel_active {
                     if focused == Some(active) {
-                        let bar_h = 2.0;
-                        let bar_rect = Rect::new(
-                            panel_rect.x + PANE_RADIUS,
-                            panel_rect.y,
-                            panel_rect.width - PANE_RADIUS * 2.0,
-                            bar_h,
-                        );
-                        renderer.draw_chrome_rect(bar_rect, ACCENT_COLOR);
+                        let bw = BORDER_WIDTH;
+                        let r = panel_rect;
+                        renderer.draw_chrome_rect(Rect::new(r.x, r.y, r.width, bw), BORDER_FOCUSED);
+                        renderer.draw_chrome_rect(Rect::new(r.x, r.y + r.height - bw, r.width, bw), BORDER_FOCUSED);
+                        renderer.draw_chrome_rect(Rect::new(r.x, r.y, bw, r.height), BORDER_FOCUSED);
+                        renderer.draw_chrome_rect(Rect::new(r.x + r.width - bw, r.y, bw, r.height), BORDER_FOCUSED);
                     }
                 }
             }
 
-            // Draw pane backgrounds as rounded rects
-            for &(id, rect) in &visual_pane_rects {
-                let bg = if focused == Some(id) {
-                    PANE_BG_FOCUSED
-                } else {
-                    PANE_BG
-                };
-                renderer.draw_chrome_rounded_rect(rect, bg, PANE_RADIUS);
+            // Draw pane backgrounds (flat, unified surface color)
+            for &(_id, rect) in &visual_pane_rects {
+                renderer.draw_chrome_rect(rect, SURFACE_BG);
             }
 
-            // Focus accent bar: thin colored bar at the top of the focused pane (tree panes)
+            // Accent border on focused pane (all 4 sides)
             if let Some(fid) = focused {
                 if let Some(&(_, rect)) = visual_pane_rects.iter().find(|(id, _)| *id == fid) {
-                    let bar_h = 2.0;
-                    let bar_rect = Rect::new(
-                        rect.x + PANE_RADIUS,
-                        rect.y,
-                        rect.width - PANE_RADIUS * 2.0,
-                        bar_h,
-                    );
-                    renderer.draw_chrome_rect(bar_rect, ACCENT_COLOR);
+                    let bw = BORDER_WIDTH;
+                    renderer.draw_chrome_rect(Rect::new(rect.x, rect.y, rect.width, bw), BORDER_FOCUSED);
+                    renderer.draw_chrome_rect(Rect::new(rect.x, rect.y + rect.height - bw, rect.width, bw), BORDER_FOCUSED);
+                    renderer.draw_chrome_rect(Rect::new(rect.x, rect.y, bw, rect.height), BORDER_FOCUSED);
+                    renderer.draw_chrome_rect(Rect::new(rect.x + rect.width - bw, rect.y, bw, rect.height), BORDER_FOCUSED);
                 }
             }
 

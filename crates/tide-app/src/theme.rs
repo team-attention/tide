@@ -1,24 +1,22 @@
-// UI theme constants — Catppuccin-inspired depth-layered palette.
+// UI theme constants — modern flat border-based palette.
 
 use tide_core::Color;
 
-// Depth layers (darkest → lightest)
-#[allow(dead_code)] // Used as reference; actual clear color is set in renderer
-pub const WINDOW_BG: Color = Color::new(0.07, 0.07, 0.10, 1.0); // gap background
-pub const TREE_BG: Color = Color::new(0.09, 0.09, 0.13, 1.0); // file tree
-pub const PANE_BG: Color = Color::new(0.11, 0.11, 0.16, 1.0); // terminal pane
-pub const PANE_BG_FOCUSED: Color = Color::new(0.13, 0.13, 0.18, 1.0); // focused pane
+// Surface & borders
+pub const SURFACE_BG: Color = Color::new(0.10, 0.10, 0.14, 1.0); // unified panel background
+#[allow(dead_code)] // Value mirrored in renderer clear color
+pub const BORDER_COLOR: Color = Color::new(0.18, 0.18, 0.24, 1.0); // border / clear color
+pub const BORDER_FOCUSED: Color = Color::new(0.35, 0.58, 1.0, 0.7); // accent border on focused pane
 
 // Text
 pub const TREE_TEXT_COLOR: Color = Color::new(0.70, 0.72, 0.80, 1.0);
 pub const TREE_DIR_COLOR: Color = Color::new(0.35, 0.58, 1.0, 1.0);
 pub const TREE_ICON_COLOR: Color = Color::new(0.55, 0.58, 0.68, 1.0);
-pub const ACCENT_COLOR: Color = Color::new(0.35, 0.58, 1.0, 0.6); // focus accent bar
 
 // Layout
-pub const PANE_GAP: f32 = 4.0; // gap between panels
-pub const PANE_RADIUS: f32 = 8.0; // rounded corner radius
-pub const PANE_PADDING: f32 = 6.0; // inner padding (>= RADIUS/sqrt(2) ~ 5.66)
+pub const BORDER_WIDTH: f32 = 1.0; // border line width between panels
+pub const PANE_GAP: f32 = BORDER_WIDTH; // gap = border width (gap IS the border)
+pub const PANE_PADDING: f32 = 4.0; // inner padding
 pub const FILE_TREE_WIDTH: f32 = 240.0; // file tree panel width
 
 // Tab bar
@@ -39,7 +37,7 @@ pub const EDITOR_PANEL_WIDTH: f32 = 380.0;
 pub const PANEL_TAB_HEIGHT: f32 = 30.0;
 pub const PANEL_TAB_WIDTH: f32 = 140.0;
 pub const PANEL_TAB_GAP: f32 = 2.0;
-pub const PANEL_TAB_BG_ACTIVE: Color = Color::new(0.16, 0.16, 0.22, 1.0);
+pub const PANEL_TAB_BG_ACTIVE: Color = Color::new(0.14, 0.14, 0.20, 1.0);
 pub const PANEL_TAB_CLOSE_SIZE: f32 = 14.0;
 
 // Drop preview (insert: fill + border)

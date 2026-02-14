@@ -215,6 +215,11 @@ impl Router {
             Key::Down => Some(GlobalAction::MoveFocus(Direction::Down)),
             Key::Left => Some(GlobalAction::MoveFocus(Direction::Left)),
             Key::Right => Some(GlobalAction::MoveFocus(Direction::Right)),
+            // Cmd+HJKL / Ctrl+HJKL -> vim-style focus navigation
+            Key::Char('h') | Key::Char('H') => Some(GlobalAction::MoveFocus(Direction::Left)),
+            Key::Char('j') | Key::Char('J') => Some(GlobalAction::MoveFocus(Direction::Down)),
+            Key::Char('k') | Key::Char('K') => Some(GlobalAction::MoveFocus(Direction::Up)),
+            Key::Char('l') | Key::Char('L') => Some(GlobalAction::MoveFocus(Direction::Right)),
             _ => None,
         }
     }
