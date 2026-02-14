@@ -1,6 +1,6 @@
 // Cursor management for the editor.
 
-use crate::buffer::{Buffer, Position};
+use crate::buffer::{floor_char_boundary, Buffer, Position};
 
 pub struct EditorCursor {
     pub position: Position,
@@ -19,22 +19,33 @@ impl EditorCursor {
     pub fn move_up(&mut self, buffer: &Buffer) {
         if self.position.line > 0 {
             self.position.line -= 1;
-            let line_len = buffer.line(self.position.line).map_or(0, |l| l.len());
-            self.position.col = self.desired_col.min(line_len);
+            if let Some(line) = buffer.line(self.position.line) {
+                self.position.col = floor_char_boundary(line, self.desired_col.min(line.len()));
+            } else {
+                self.position.col = 0;
+            }
         }
     }
 
     pub fn move_down(&mut self, buffer: &Buffer) {
         if self.position.line + 1 < buffer.line_count() {
             self.position.line += 1;
-            let line_len = buffer.line(self.position.line).map_or(0, |l| l.len());
-            self.position.col = self.desired_col.min(line_len);
+            if let Some(line) = buffer.line(self.position.line) {
+                self.position.col = floor_char_boundary(line, self.desired_col.min(line.len()));
+            } else {
+                self.position.col = 0;
+            }
         }
     }
 
     pub fn move_left(&mut self, buffer: &Buffer) {
         if self.position.col > 0 {
-            self.position.col -= 1;
+            if let Some(line) = buffer.line(self.position.line) {
+                let col = self.position.col.min(line.len());
+                self.position.col = floor_char_boundary(line, col.saturating_sub(1));
+            } else {
+                self.position.col = 0;
+            }
         } else if self.position.line > 0 {
             self.position.line -= 1;
             self.position.col = buffer.line(self.position.line).map_or(0, |l| l.len());
@@ -45,7 +56,13 @@ impl EditorCursor {
     pub fn move_right(&mut self, buffer: &Buffer) {
         let line_len = buffer.line(self.position.line).map_or(0, |l| l.len());
         if self.position.col < line_len {
-            self.position.col += 1;
+            if let Some(line) = buffer.line(self.position.line) {
+                let mut col = self.position.col + 1;
+                while col < line.len() && !line.is_char_boundary(col) {
+                    col += 1;
+                }
+                self.position.col = col;
+            }
         } else if self.position.line + 1 < buffer.line_count() {
             self.position.line += 1;
             self.position.col = 0;
@@ -67,15 +84,21 @@ impl EditorCursor {
     pub fn move_page_up(&mut self, buffer: &Buffer, visible_rows: usize) {
         let jump = visible_rows.saturating_sub(1).max(1);
         self.position.line = self.position.line.saturating_sub(jump);
-        let line_len = buffer.line(self.position.line).map_or(0, |l| l.len());
-        self.position.col = self.desired_col.min(line_len);
+        if let Some(line) = buffer.line(self.position.line) {
+            self.position.col = floor_char_boundary(line, self.desired_col.min(line.len()));
+        } else {
+            self.position.col = 0;
+        }
     }
 
     pub fn move_page_down(&mut self, buffer: &Buffer, visible_rows: usize) {
         let jump = visible_rows.saturating_sub(1).max(1);
         self.position.line = (self.position.line + jump).min(buffer.line_count().saturating_sub(1));
-        let line_len = buffer.line(self.position.line).map_or(0, |l| l.len());
-        self.position.col = self.desired_col.min(line_len);
+        if let Some(line) = buffer.line(self.position.line) {
+            self.position.col = floor_char_boundary(line, self.desired_col.min(line.len()));
+        } else {
+            self.position.col = 0;
+        }
     }
 
     /// Clamp cursor to valid position within buffer bounds.
@@ -85,8 +108,11 @@ impl EditorCursor {
             return;
         }
         self.position.line = self.position.line.min(buffer.line_count() - 1);
-        let line_len = buffer.line(self.position.line).map_or(0, |l| l.len());
-        self.position.col = self.position.col.min(line_len);
+        if let Some(line) = buffer.line(self.position.line) {
+            self.position.col = floor_char_boundary(line, self.position.col.min(line.len()));
+        } else {
+            self.position.col = 0;
+        }
     }
 
     /// Set cursor to a specific position, updating desired_col.
