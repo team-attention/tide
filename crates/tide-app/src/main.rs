@@ -42,6 +42,74 @@ use theme::*;
 use theme::{ThemePalette, DARK, LIGHT};
 
 // ──────────────────────────────────────────────
+// Save-as input state (inline filename entry for untitled files)
+// ──────────────────────────────────────────────
+
+pub(crate) struct SaveAsInput {
+    pub pane_id: PaneId,
+    pub query: String,
+    pub cursor: usize,
+}
+
+impl SaveAsInput {
+    pub fn new(pane_id: PaneId) -> Self {
+        Self {
+            pane_id,
+            query: String::new(),
+            cursor: 0,
+        }
+    }
+
+    pub fn insert_char(&mut self, ch: char) {
+        self.query.insert(self.cursor, ch);
+        self.cursor += ch.len_utf8();
+    }
+
+    pub fn backspace(&mut self) {
+        if self.cursor > 0 {
+            let prev = self.query[..self.cursor]
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            self.query.drain(prev..self.cursor);
+            self.cursor = prev;
+        }
+    }
+
+    pub fn delete_char(&mut self) {
+        if self.cursor < self.query.len() {
+            let next = self.query[self.cursor..]
+                .char_indices()
+                .nth(1)
+                .map(|(i, _)| self.cursor + i)
+                .unwrap_or(self.query.len());
+            self.query.drain(self.cursor..next);
+        }
+    }
+
+    pub fn move_cursor_left(&mut self) {
+        if self.cursor > 0 {
+            self.cursor = self.query[..self.cursor]
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+        }
+    }
+
+    pub fn move_cursor_right(&mut self) {
+        if self.cursor < self.query.len() {
+            self.cursor = self.query[self.cursor..]
+                .char_indices()
+                .nth(1)
+                .map(|(i, _)| self.cursor + i)
+                .unwrap_or(self.query.len());
+        }
+    }
+}
+
+// ──────────────────────────────────────────────
 // App state
 // ──────────────────────────────────────────────
 
@@ -143,6 +211,9 @@ struct App {
     pub(crate) panel_tab_scroll: f32,
     pub(crate) panel_tab_scroll_target: f32,
 
+    // Save-as input (inline filename entry for untitled files)
+    pub(crate) save_as_input: Option<SaveAsInput>,
+
     // Theme mode
     pub(crate) dark_mode: bool,
 
@@ -213,6 +284,7 @@ impl App {
             panel_border_dragging: false,
             panel_tab_scroll: 0.0,
             panel_tab_scroll_target: 0.0,
+            save_as_input: None,
             dark_mode: true,
             hover_target: None,
             file_watcher: None,
@@ -226,8 +298,10 @@ impl App {
         let icon = match &self.hover_target {
             Some(HoverTarget::FileTreeEntry(_))
             | Some(HoverTarget::PaneTabBar(_))
+            | Some(HoverTarget::PaneTabClose(_))
             | Some(HoverTarget::PanelTab(_))
-            | Some(HoverTarget::PanelTabClose(_)) => CursorIcon::Pointer,
+            | Some(HoverTarget::PanelTabClose(_))
+            | Some(HoverTarget::EmptyPanelButton) => CursorIcon::Pointer,
             Some(HoverTarget::FileTreeBorder) => CursorIcon::ColResize,
             Some(HoverTarget::PanelBorder) => CursorIcon::ColResize,
             Some(HoverTarget::SplitBorder(SplitDirection::Horizontal)) => CursorIcon::ColResize,
@@ -237,6 +311,31 @@ impl App {
         if let Some(window) = &self.window {
             window.set_cursor(icon);
         }
+    }
+
+    /// Check if a position is on the "New File" button in the empty editor panel.
+    pub(crate) fn is_on_new_file_button(&self, pos: tide_core::Vec2) -> bool {
+        if !self.editor_panel_tabs.is_empty() {
+            return false;
+        }
+        let panel_rect = match self.editor_panel_rect {
+            Some(r) => r,
+            None => return false,
+        };
+        let cell_size = match self.renderer.as_ref() {
+            Some(r) => r.cell_size(),
+            None => return false,
+        };
+        let cell_height = cell_size.height;
+        let label_y = panel_rect.y + panel_rect.height * 0.38;
+        let btn_text = "New File";
+        let hint_text = "  Cmd+Shift+E";
+        let btn_w = (btn_text.len() + hint_text.len()) as f32 * cell_size.width + 24.0;
+        let btn_h = cell_height + 12.0;
+        let btn_x = panel_rect.x + (panel_rect.width - btn_w) / 2.0;
+        let btn_y = label_y + cell_height + 16.0;
+        let btn_rect = Rect::new(btn_x, btn_y, btn_w, btn_h);
+        btn_rect.contains(pos)
     }
 
     pub(crate) fn palette(&self) -> &'static ThemePalette {
@@ -295,7 +394,7 @@ impl App {
         let logical = self.logical_size();
         let pane_ids = self.layout.pane_ids();
 
-        let show_editor_panel = self.show_editor_panel && !self.editor_panel_tabs.is_empty();
+        let show_editor_panel = self.show_editor_panel;
 
         // When editor panel is maximized, it fills the full area (excluding file tree)
         if self.editor_panel_maximized && show_editor_panel {
@@ -656,6 +755,20 @@ impl ApplicationHandler for App {
             }
         }
 
+        // Handle empty panel "New File" button click
+        if let WindowEvent::MouseInput {
+            state: ElementState::Pressed,
+            button: WinitMouseButton::Left,
+            ..
+        } = &event
+        {
+            if self.is_on_new_file_button(self.last_cursor_pos) {
+                self.new_editor_pane();
+                self.needs_redraw = true;
+                return;
+            }
+        }
+
         // Handle editor panel clicks before general routing
         // Tab clicks flow through to handle_window_event for drag support.
         // Only intercept: close buttons and content area clicks.
@@ -685,6 +798,20 @@ impl ApplicationHandler for App {
                         return;
                     }
                 }
+            }
+        }
+
+        // Handle pane tab bar close button clicks
+        if let WindowEvent::MouseInput {
+            state: ElementState::Pressed,
+            button: WinitMouseButton::Left,
+            ..
+        } = &event
+        {
+            if let Some(pane_id) = self.pane_tab_close_at(self.last_cursor_pos) {
+                self.close_specific_pane(pane_id);
+                self.needs_redraw = true;
+                return;
             }
         }
 

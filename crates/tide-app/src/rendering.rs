@@ -146,86 +146,145 @@ impl App {
             if let Some(panel_rect) = editor_panel_rect {
                 renderer.draw_chrome_rect(panel_rect, p.surface_bg);
 
-                let cell_size = renderer.cell_size();
-                let cell_height = cell_size.height;
-                let tab_bar_top = panel_rect.y + PANE_PADDING;
-                let tab_start_x = panel_rect.x + PANE_PADDING - self.panel_tab_scroll;
-                let tab_bar_clip = Rect::new(
-                    panel_rect.x + PANE_PADDING,
-                    tab_bar_top,
-                    panel_rect.width - 2.0 * PANE_PADDING,
-                    PANEL_TAB_HEIGHT,
-                );
-
-                // Draw horizontal tab bar (with scroll offset)
-                for (i, &tab_id) in editor_panel_tabs.iter().enumerate() {
-                    let tx = tab_start_x + i as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
-
-                    // Skip tabs entirely outside visible area
-                    if tx + PANEL_TAB_WIDTH < tab_bar_clip.x || tx > tab_bar_clip.x + tab_bar_clip.width {
-                        continue;
-                    }
-
-                    let is_active = editor_panel_active == Some(tab_id);
-
-                    // Tab background
-                    if is_active {
-                        let tab_bg_rect = Rect::new(tx, tab_bar_top, PANEL_TAB_WIDTH, PANEL_TAB_HEIGHT);
-                        renderer.draw_chrome_rounded_rect(tab_bg_rect, p.panel_tab_bg_active, 4.0);
-                    }
-
-                    // Tab title — clip to both tab bounds and panel bounds
-                    let title = panel_tab_title(&self.panes, tab_id);
-                    let text_color = if is_active && focused == Some(tab_id) {
-                        p.tab_text_focused
-                    } else if is_active {
-                        p.tree_text
-                    } else {
-                        p.tab_text
-                    };
-                    let style = TextStyle {
-                        foreground: text_color,
-                        background: None,
-                        bold: is_active,
-                        dim: false,
-                        italic: false,
-                        underline: false,
-                    };
-                    let text_y = tab_bar_top + (PANEL_TAB_HEIGHT - cell_height) / 2.0;
-                    let title_clip_w = (PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - 14.0)
-                        .min((tab_bar_clip.x + tab_bar_clip.width - tx).max(0.0));
-                    let clip_x = tx.max(tab_bar_clip.x);
-                    let clip = Rect::new(clip_x, tab_bar_top, title_clip_w.max(0.0), PANEL_TAB_HEIGHT);
-                    renderer.draw_chrome_text(
-                        &title,
-                        Vec2::new(tx + 12.0, text_y),
-                        style,
-                        clip,
+                if !editor_panel_tabs.is_empty() {
+                    let cell_size = renderer.cell_size();
+                    let cell_height = cell_size.height;
+                    let tab_bar_top = panel_rect.y + PANE_PADDING;
+                    let tab_start_x = panel_rect.x + PANE_PADDING - self.panel_tab_scroll;
+                    let tab_bar_clip = Rect::new(
+                        panel_rect.x + PANE_PADDING,
+                        tab_bar_top,
+                        panel_rect.width - 2.0 * PANE_PADDING,
+                        PANEL_TAB_HEIGHT,
                     );
 
-                    // Close "x" button
-                    let close_x = tx + PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - 4.0;
-                    let close_y = tab_bar_top + (PANEL_TAB_HEIGHT - cell_height) / 2.0;
-                    // Only draw close button if it's within visible area
-                    if close_x + PANEL_TAB_CLOSE_SIZE > tab_bar_clip.x
-                        && close_x < tab_bar_clip.x + tab_bar_clip.width
-                    {
-                        let close_style = TextStyle {
-                            foreground: p.tab_text,
+                    // Draw horizontal tab bar (with scroll offset)
+                    for (i, &tab_id) in editor_panel_tabs.iter().enumerate() {
+                        let tx = tab_start_x + i as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
+
+                        // Skip tabs entirely outside visible area
+                        if tx + PANEL_TAB_WIDTH < tab_bar_clip.x || tx > tab_bar_clip.x + tab_bar_clip.width {
+                            continue;
+                        }
+
+                        let is_active = editor_panel_active == Some(tab_id);
+
+                        // Tab background
+                        if is_active {
+                            let tab_bg_rect = Rect::new(tx, tab_bar_top, PANEL_TAB_WIDTH, PANEL_TAB_HEIGHT);
+                            renderer.draw_chrome_rounded_rect(tab_bg_rect, p.panel_tab_bg_active, 4.0);
+                        }
+
+                        // Tab title — clip to both tab bounds and panel bounds
+                        let title = panel_tab_title(&self.panes, tab_id);
+                        let text_color = if is_active && focused == Some(tab_id) {
+                            p.tab_text_focused
+                        } else if is_active {
+                            p.tree_text
+                        } else {
+                            p.tab_text
+                        };
+                        let style = TextStyle {
+                            foreground: text_color,
                             background: None,
-                            bold: false,
+                            bold: is_active,
                             dim: false,
                             italic: false,
                             underline: false,
                         };
-                        let close_clip = Rect::new(close_x, tab_bar_top, PANEL_TAB_CLOSE_SIZE + 4.0, PANEL_TAB_HEIGHT);
+                        let text_y = tab_bar_top + (PANEL_TAB_HEIGHT - cell_height) / 2.0;
+                        let title_clip_w = (PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - 14.0)
+                            .min((tab_bar_clip.x + tab_bar_clip.width - tx).max(0.0));
+                        let clip_x = tx.max(tab_bar_clip.x);
+                        let clip = Rect::new(clip_x, tab_bar_top, title_clip_w.max(0.0), PANEL_TAB_HEIGHT);
                         renderer.draw_chrome_text(
-                            "\u{f00d}",  // Nerd Font close icon
-                            Vec2::new(close_x, close_y),
-                            close_style,
-                            close_clip,
+                            &title,
+                            Vec2::new(tx + 12.0, text_y),
+                            style,
+                            clip,
                         );
+
+                        // Close "x" button
+                        let close_x = tx + PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - 4.0;
+                        let close_y = tab_bar_top + (PANEL_TAB_HEIGHT - cell_height) / 2.0;
+                        // Only draw close button if it's within visible area
+                        if close_x + PANEL_TAB_CLOSE_SIZE > tab_bar_clip.x
+                            && close_x < tab_bar_clip.x + tab_bar_clip.width
+                        {
+                            let close_style = TextStyle {
+                                foreground: p.tab_text,
+                                background: None,
+                                bold: false,
+                                dim: false,
+                                italic: false,
+                                underline: false,
+                            };
+                            let close_clip = Rect::new(close_x, tab_bar_top, PANEL_TAB_CLOSE_SIZE + 4.0, PANEL_TAB_HEIGHT);
+                            renderer.draw_chrome_text(
+                                "\u{f00d}",  // Nerd Font close icon
+                                Vec2::new(close_x, close_y),
+                                close_style,
+                                close_clip,
+                            );
+                        }
                     }
+                } else {
+                    // Empty state: "No files open" + "New File" button
+                    let cell_size = renderer.cell_size();
+                    let cell_height = cell_size.height;
+
+                    // "No files open" text at ~38% height
+                    let label = "No files open";
+                    let label_w = label.len() as f32 * cell_size.width;
+                    let label_x = panel_rect.x + (panel_rect.width - label_w) / 2.0;
+                    let label_y = panel_rect.y + panel_rect.height * 0.38;
+                    let muted_style = TextStyle {
+                        foreground: p.tab_text,
+                        background: None,
+                        bold: false,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    };
+                    renderer.draw_chrome_text(
+                        label,
+                        Vec2::new(label_x, label_y),
+                        muted_style,
+                        panel_rect,
+                    );
+
+                    // "New File" button
+                    let btn_text = "New File";
+                    let hint_text = "  Cmd+Shift+E";
+                    let btn_w = (btn_text.len() + hint_text.len()) as f32 * cell_size.width + 24.0;
+                    let btn_h = cell_height + 12.0;
+                    let btn_x = panel_rect.x + (panel_rect.width - btn_w) / 2.0;
+                    let btn_y = label_y + cell_height + 16.0;
+                    let btn_rect = Rect::new(btn_x, btn_y, btn_w, btn_h);
+                    renderer.draw_chrome_rounded_rect(btn_rect, p.panel_tab_bg_active, 4.0);
+
+                    let btn_text_y = btn_y + (btn_h - cell_height) / 2.0;
+                    let btn_style = TextStyle {
+                        foreground: p.tab_text_focused,
+                        background: None,
+                        bold: true,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    };
+                    renderer.draw_chrome_text(
+                        btn_text,
+                        Vec2::new(btn_x + 12.0, btn_text_y),
+                        btn_style,
+                        btn_rect,
+                    );
+                    let hint_x = btn_x + 12.0 + btn_text.len() as f32 * cell_size.width;
+                    renderer.draw_chrome_text(
+                        hint_text,
+                        Vec2::new(hint_x, btn_text_y),
+                        muted_style,
+                        btn_rect,
+                    );
                 }
 
                 // Accent border around focused panel
@@ -263,7 +322,7 @@ impl App {
                 }
             }
 
-            // Tab bar text for each pane
+            // Tab bar text + close button for each pane
             let cell_height = renderer.cell_size().height;
             for &(id, rect) in &visual_pane_rects {
                 let title = pane_title(&self.panes, id);
@@ -281,11 +340,30 @@ impl App {
                     underline: false,
                 };
                 let text_y = rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
+                let title_clip_w = rect.width - PANE_CLOSE_SIZE - PANE_PADDING * 2.0 - 4.0;
                 renderer.draw_chrome_text(
                     &title,
                     Vec2::new(rect.x + PANE_PADDING + 4.0, text_y),
                     style,
-                    Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT),
+                    Rect::new(rect.x, rect.y, title_clip_w.max(0.0) + PANE_PADDING + 4.0, TAB_BAR_HEIGHT),
+                );
+
+                // Close button
+                let close_x = rect.x + rect.width - PANE_CLOSE_SIZE - PANE_PADDING;
+                let close_y = rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
+                let close_style = TextStyle {
+                    foreground: p.tab_text,
+                    background: None,
+                    bold: false,
+                    dim: false,
+                    italic: false,
+                    underline: false,
+                };
+                renderer.draw_chrome_text(
+                    "\u{f00d}",
+                    Vec2::new(close_x, close_y),
+                    close_style,
+                    Rect::new(close_x, rect.y, PANE_CLOSE_SIZE + PANE_PADDING, TAB_BAR_HEIGHT),
                 );
             }
 
@@ -645,6 +723,14 @@ impl App {
                             renderer.draw_rect(tab_rect, p.hover_tab);
                         }
                     }
+                    drag_drop::HoverTarget::PaneTabClose(pane_id) => {
+                        if let Some(&(_, rect)) = visual_pane_rects.iter().find(|(id, _)| id == pane_id) {
+                            let close_x = rect.x + rect.width - PANE_CLOSE_SIZE - PANE_PADDING;
+                            let close_y = rect.y + (TAB_BAR_HEIGHT - PANE_CLOSE_SIZE) / 2.0;
+                            let close_rect = Rect::new(close_x, close_y, PANE_CLOSE_SIZE, PANE_CLOSE_SIZE);
+                            renderer.draw_rect(close_rect, p.hover_close);
+                        }
+                    }
                     drag_drop::HoverTarget::PanelTab(tab_id) => {
                         // Only highlight inactive tabs (active tab already has background)
                         if editor_panel_active != Some(*tab_id) {
@@ -717,6 +803,20 @@ impl App {
                             let border_x = panel_rect.x - 2.0;
                             let border_rect = Rect::new(border_x, 0.0, 4.0, logical.height);
                             renderer.draw_rect(border_rect, p.hover_panel_border);
+                        }
+                    }
+                    drag_drop::HoverTarget::EmptyPanelButton => {
+                        if let Some(panel_rect) = editor_panel_rect {
+                            let cell_size = renderer.cell_size();
+                            let cell_height = cell_size.height;
+                            let label_y = panel_rect.y + panel_rect.height * 0.38;
+                            let btn_text = "New File";
+                            let hint_text = "  Cmd+Shift+E";
+                            let btn_w = (btn_text.len() + hint_text.len()) as f32 * cell_size.width + 24.0;
+                            let btn_h = cell_height + 12.0;
+                            let btn_x = panel_rect.x + (panel_rect.width - btn_w) / 2.0;
+                            let btn_y = label_y + cell_height + 16.0;
+                            renderer.draw_rect(Rect::new(btn_x, btn_y, btn_w, btn_h), p.hover_tab);
                         }
                     }
                 }
@@ -824,6 +924,72 @@ impl App {
                 let close_icon_x = close_x + (close_area_w - cell_size.width) / 2.0;
                 let close_clip = Rect::new(close_x, bar_y, close_area_w, bar_h);
                 renderer.draw_top_text("\u{f00d}", Vec2::new(close_icon_x, text_y), counter_style, close_clip);
+            }
+        }
+
+        // Render save-as input overlay (inline filename entry for untitled files)
+        if let Some(ref save_as) = self.save_as_input {
+            // Find the rect for the pane (panel or tree)
+            let target_rect = if let Some(panel_rect) = editor_panel_rect {
+                if editor_panel_tabs.contains(&save_as.pane_id) || self.editor_panel_active == Some(save_as.pane_id) {
+                    Some(panel_rect)
+                } else {
+                    visual_pane_rects.iter().find(|(id, _)| *id == save_as.pane_id).map(|(_, r)| *r)
+                }
+            } else {
+                visual_pane_rects.iter().find(|(id, _)| *id == save_as.pane_id).map(|(_, r)| *r)
+            };
+
+            if let Some(rect) = target_rect {
+                let cell_size = renderer.cell_size();
+                let bar_w = SEARCH_BAR_WIDTH;
+                let bar_h = SEARCH_BAR_HEIGHT;
+                let bar_x = rect.x + rect.width - bar_w - 8.0;
+                let bar_y = rect.y + TAB_BAR_HEIGHT + 4.0;
+                let bar_rect = Rect::new(bar_x, bar_y, bar_w, bar_h);
+
+                // Background
+                renderer.draw_top_rect(bar_rect, p.search_bar_bg);
+
+                // Border (always shown — input is always focused)
+                let bw = 1.0;
+                renderer.draw_top_rect(Rect::new(bar_x, bar_y, bar_w, bw), p.search_bar_border);
+                renderer.draw_top_rect(Rect::new(bar_x, bar_y + bar_h - bw, bar_w, bw), p.search_bar_border);
+                renderer.draw_top_rect(Rect::new(bar_x, bar_y, bw, bar_h), p.search_bar_border);
+                renderer.draw_top_rect(Rect::new(bar_x + bar_w - bw, bar_y, bw, bar_h), p.search_bar_border);
+
+                // "Save as: " label
+                let label = "Save as: ";
+                let label_style = TextStyle {
+                    foreground: p.search_bar_counter,
+                    background: None,
+                    bold: false,
+                    dim: false,
+                    italic: false,
+                    underline: false,
+                };
+                let text_x = bar_x + 6.0;
+                let text_y = bar_y + (bar_h - cell_size.height) / 2.0;
+                let label_w = label.len() as f32 * cell_size.width;
+                renderer.draw_top_text(label, Vec2::new(text_x, text_y), label_style, bar_rect);
+
+                // Query text
+                let query_x = text_x + label_w;
+                let query_style = TextStyle {
+                    foreground: p.search_bar_text,
+                    background: None,
+                    bold: false,
+                    dim: false,
+                    italic: false,
+                    underline: false,
+                };
+                let query_clip = Rect::new(query_x, bar_y, bar_w - label_w - 12.0, bar_h);
+                renderer.draw_top_text(&save_as.query, Vec2::new(query_x, text_y), query_style, query_clip);
+
+                // Cursor beam
+                let cursor_char_offset = save_as.query[..save_as.cursor].chars().count();
+                let cx = query_x + cursor_char_offset as f32 * cell_size.width;
+                renderer.draw_top_rect(Rect::new(cx, text_y, 1.5, cell_size.height), p.cursor_accent);
             }
         }
 

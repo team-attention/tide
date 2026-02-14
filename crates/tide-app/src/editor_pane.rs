@@ -225,7 +225,7 @@ impl EditorPane {
 
     /// Get the file name for display in the tab bar.
     pub fn title(&self) -> String {
-        let name = self.editor.file_name().to_string();
+        let name = self.editor.file_display_name();
         match (self.disk_changed, self.editor.is_modified()) {
             (true, true) => format!("{} \u{27f3}\u{f111}", name),   // disk changed + locally modified
             (true, false) => format!("{} \u{27f3}", name),           // disk changed only (fallback)
