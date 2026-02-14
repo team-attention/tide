@@ -82,12 +82,14 @@ impl App {
                     let left_padding = PANE_PADDING;
 
                     let entries = tree.visible_entries();
+                    let text_offset_y = (line_height - cell_size.height) / 2.0;
                     for (i, entry) in entries.iter().enumerate() {
                         let y = PANE_PADDING + i as f32 * line_height - file_tree_scroll;
                         if y + line_height < 0.0 || y > logical.height {
                             continue;
                         }
 
+                        let text_y = y + text_offset_y;
                         let x = left_padding + entry.depth as f32 * indent_width;
 
                         // Nerd Font icon
@@ -110,7 +112,7 @@ impl App {
                         let icon_str: String = std::iter::once(icon).collect();
                         renderer.draw_chrome_text(
                             &icon_str,
-                            Vec2::new(x, y),
+                            Vec2::new(x, text_y),
                             icon_style,
                             tree_visual_rect,
                         );
@@ -132,7 +134,7 @@ impl App {
                         };
                         renderer.draw_chrome_text(
                             &entry.entry.name,
-                            Vec2::new(name_x, y),
+                            Vec2::new(name_x, text_y),
                             name_style,
                             tree_visual_rect,
                         );
