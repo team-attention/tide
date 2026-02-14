@@ -40,12 +40,12 @@ impl App {
             None => return 0.0,
         };
         let logical = self.logical_size();
-        let content_height = PANE_PADDING + entry_count as f32 * cell_size.height;
+        let content_height = PANE_PADDING + entry_count as f32 * cell_size.height * FILE_TREE_LINE_SPACING;
         (content_height - logical.height).max(0.0)
     }
 
     pub(crate) fn handle_file_tree_click(&mut self, position: Vec2) {
-        if !self.show_file_tree || position.x >= FILE_TREE_WIDTH {
+        if !self.show_file_tree || position.x >= self.file_tree_width {
             return;
         }
 
@@ -54,7 +54,7 @@ impl App {
             None => return,
         };
 
-        let line_height = cell_size.height;
+        let line_height = cell_size.height * FILE_TREE_LINE_SPACING;
         // Account for padding offset (no gap — tree is flush with window edge)
         let adjusted_y = position.y - PANE_PADDING;
         let index = ((adjusted_y + self.file_tree_scroll) / line_height) as usize;

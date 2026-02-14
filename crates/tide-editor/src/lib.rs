@@ -123,8 +123,16 @@ impl EditorState {
             }
             EditorAction::SetCursor { line, col } => {
                 let line = line.min(self.buffer.line_count().saturating_sub(1));
-                let col = col.min(self.buffer.line(line).map_or(0, |l| l.len()));
-                self.cursor.set_position(Position { line, col });
+                // col is a character index (from mouse click) — convert to byte offset
+                let byte_col = if let Some(line_str) = self.buffer.line(line) {
+                    line_str.char_indices()
+                        .nth(col)
+                        .map(|(i, _)| i)
+                        .unwrap_or(line_str.len())
+                } else {
+                    0
+                };
+                self.cursor.set_position(Position { line, col: byte_col });
             }
             EditorAction::ScrollUp(delta) => {
                 let prev = self.scroll_offset;
@@ -198,11 +206,17 @@ impl EditorState {
         if visible_cols == 0 {
             return;
         }
-        let col = self.cursor.position.col;
-        if col < self.h_scroll_offset {
-            self.h_scroll_offset = col;
-        } else if col >= self.h_scroll_offset + visible_cols {
-            self.h_scroll_offset = col - visible_cols + 1;
+        // h_scroll_offset is character-indexed; convert cursor byte offset to char index
+        let char_col = if let Some(line) = self.buffer.line(self.cursor.position.line) {
+            let byte_col = self.cursor.position.col.min(line.len());
+            line[..byte_col].chars().count()
+        } else {
+            0
+        };
+        if char_col < self.h_scroll_offset {
+            self.h_scroll_offset = char_col;
+        } else if char_col >= self.h_scroll_offset + visible_cols {
+            self.h_scroll_offset = char_col - visible_cols + 1;
         }
     }
 
@@ -253,5 +267,11 @@ impl EditorState {
 
     pub fn is_modified(&self) -> bool {
         self.buffer.is_modified()
+    }
+
+    /// Switch syntax highlighting theme for dark/light mode.
+    pub fn set_dark_mode(&mut self, dark: bool) {
+        self.highlighter.set_dark_mode(dark);
+        self.generation += 1;
     }
 }

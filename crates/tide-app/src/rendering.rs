@@ -1,4 +1,4 @@
-use tide_core::{Color, FileTreeSource, Rect, Renderer, TerminalBackend, TextStyle, Vec2};
+use tide_core::{FileTreeSource, Rect, Renderer, TerminalBackend, TextStyle, Vec2};
 
 use crate::drag_drop;
 use crate::drag_drop::{DropDestination, PaneDragState};
@@ -40,6 +40,8 @@ impl App {
         let editor_panel_tabs = self.editor_panel_tabs.clone();
         let editor_panel_active = self.editor_panel_active;
 
+        let p = self.palette();
+
         let renderer = self.renderer.as_mut().unwrap();
 
         // Atlas reset → all cached UV coords are stale, force full rebuild
@@ -68,14 +70,14 @@ impl App {
                 let tree_visual_rect = Rect::new(
                     0.0,
                     0.0,
-                    FILE_TREE_WIDTH - BORDER_WIDTH,
+                    self.file_tree_width - PANE_GAP,
                     logical.height,
                 );
-                renderer.draw_chrome_rect(tree_visual_rect, SURFACE_BG);
+                renderer.draw_chrome_rect(tree_visual_rect, p.file_tree_bg);
 
                 if let Some(tree) = self.file_tree.as_ref() {
                     let cell_size = renderer.cell_size();
-                    let line_height = cell_size.height;
+                    let line_height = cell_size.height * FILE_TREE_LINE_SPACING;
                     let indent_width = cell_size.width * 1.5;
                     let left_padding = PANE_PADDING;
 
@@ -91,9 +93,9 @@ impl App {
                         // Nerd Font icon
                         let icon = file_icon(&entry.entry.name, entry.entry.is_dir, entry.is_expanded);
                         let icon_color = if entry.entry.is_dir {
-                            TREE_DIR_COLOR
+                            p.tree_dir
                         } else {
-                            TREE_ICON_COLOR
+                            p.tree_icon
                         };
 
                         // Draw icon
@@ -116,9 +118,9 @@ impl App {
                         // Draw name after icon + space
                         let name_x = x + cell_size.width * 2.0;
                         let text_color = if entry.entry.is_dir {
-                            TREE_DIR_COLOR
+                            p.tree_dir
                         } else {
-                            TREE_TEXT_COLOR
+                            p.tree_text
                         };
                         let name_style = TextStyle {
                             foreground: text_color,
@@ -140,7 +142,7 @@ impl App {
 
             // Draw editor panel if visible (flat, border provided by clear color)
             if let Some(panel_rect) = editor_panel_rect {
-                renderer.draw_chrome_rect(panel_rect, SURFACE_BG);
+                renderer.draw_chrome_rect(panel_rect, p.surface_bg);
 
                 let cell_size = renderer.cell_size();
                 let cell_height = cell_size.height;
@@ -167,17 +169,17 @@ impl App {
                     // Tab background
                     if is_active {
                         let tab_bg_rect = Rect::new(tx, tab_bar_top, PANEL_TAB_WIDTH, PANEL_TAB_HEIGHT);
-                        renderer.draw_chrome_rounded_rect(tab_bg_rect, PANEL_TAB_BG_ACTIVE, 4.0);
+                        renderer.draw_chrome_rounded_rect(tab_bg_rect, p.panel_tab_bg_active, 4.0);
                     }
 
                     // Tab title — clip to both tab bounds and panel bounds
                     let title = panel_tab_title(&self.panes, tab_id);
                     let text_color = if is_active && focused == Some(tab_id) {
-                        TAB_BAR_TEXT_FOCUSED
+                        p.tab_text_focused
                     } else if is_active {
-                        TREE_TEXT_COLOR
+                        p.tree_text
                     } else {
-                        TAB_BAR_TEXT
+                        p.tab_text
                     };
                     let style = TextStyle {
                         foreground: text_color,
@@ -188,13 +190,13 @@ impl App {
                         underline: false,
                     };
                     let text_y = tab_bar_top + (PANEL_TAB_HEIGHT - cell_height) / 2.0;
-                    let title_clip_w = (PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - 8.0)
+                    let title_clip_w = (PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - 14.0)
                         .min((tab_bar_clip.x + tab_bar_clip.width - tx).max(0.0));
                     let clip_x = tx.max(tab_bar_clip.x);
                     let clip = Rect::new(clip_x, tab_bar_top, title_clip_w.max(0.0), PANEL_TAB_HEIGHT);
                     renderer.draw_chrome_text(
                         &title,
-                        Vec2::new(tx + 6.0, text_y),
+                        Vec2::new(tx + 12.0, text_y),
                         style,
                         clip,
                     );
@@ -207,7 +209,7 @@ impl App {
                         && close_x < tab_bar_clip.x + tab_bar_clip.width
                     {
                         let close_style = TextStyle {
-                            foreground: TAB_BAR_TEXT,
+                            foreground: p.tab_text,
                             background: None,
                             bold: false,
                             dim: false,
@@ -224,32 +226,38 @@ impl App {
                     }
                 }
 
-                // Accent border if panel's active pane is focused (all 4 sides)
+                // Accent border around focused panel
                 if let Some(active) = editor_panel_active {
                     if focused == Some(active) {
-                        let bw = BORDER_WIDTH;
                         let r = panel_rect;
-                        renderer.draw_chrome_rect(Rect::new(r.x, r.y, r.width, bw), BORDER_FOCUSED);
-                        renderer.draw_chrome_rect(Rect::new(r.x, r.y + r.height - bw, r.width, bw), BORDER_FOCUSED);
-                        renderer.draw_chrome_rect(Rect::new(r.x, r.y, bw, r.height), BORDER_FOCUSED);
-                        renderer.draw_chrome_rect(Rect::new(r.x + r.width - bw, r.y, bw, r.height), BORDER_FOCUSED);
+                        // top
+                        renderer.draw_chrome_rect(Rect::new(r.x, r.y, r.width, BORDER_WIDTH), p.border_focused);
+                        // bottom
+                        renderer.draw_chrome_rect(Rect::new(r.x, r.y + r.height - BORDER_WIDTH, r.width, BORDER_WIDTH), p.border_focused);
+                        // left
+                        renderer.draw_chrome_rect(Rect::new(r.x, r.y, BORDER_WIDTH, r.height), p.border_focused);
+                        // right
+                        renderer.draw_chrome_rect(Rect::new(r.x + r.width - BORDER_WIDTH, r.y, BORDER_WIDTH, r.height), p.border_focused);
                     }
                 }
             }
 
             // Draw pane backgrounds (flat, unified surface color)
             for &(_id, rect) in &visual_pane_rects {
-                renderer.draw_chrome_rect(rect, SURFACE_BG);
+                renderer.draw_chrome_rect(rect, p.surface_bg);
             }
 
-            // Accent border on focused pane (all 4 sides)
+            // Accent border around focused pane
             if let Some(fid) = focused {
                 if let Some(&(_, rect)) = visual_pane_rects.iter().find(|(id, _)| *id == fid) {
-                    let bw = BORDER_WIDTH;
-                    renderer.draw_chrome_rect(Rect::new(rect.x, rect.y, rect.width, bw), BORDER_FOCUSED);
-                    renderer.draw_chrome_rect(Rect::new(rect.x, rect.y + rect.height - bw, rect.width, bw), BORDER_FOCUSED);
-                    renderer.draw_chrome_rect(Rect::new(rect.x, rect.y, bw, rect.height), BORDER_FOCUSED);
-                    renderer.draw_chrome_rect(Rect::new(rect.x + rect.width - bw, rect.y, bw, rect.height), BORDER_FOCUSED);
+                    // top
+                    renderer.draw_chrome_rect(Rect::new(rect.x, rect.y, rect.width, BORDER_WIDTH), p.border_focused);
+                    // bottom
+                    renderer.draw_chrome_rect(Rect::new(rect.x, rect.y + rect.height - BORDER_WIDTH, rect.width, BORDER_WIDTH), p.border_focused);
+                    // left
+                    renderer.draw_chrome_rect(Rect::new(rect.x, rect.y, BORDER_WIDTH, rect.height), p.border_focused);
+                    // right
+                    renderer.draw_chrome_rect(Rect::new(rect.x + rect.width - BORDER_WIDTH, rect.y, BORDER_WIDTH, rect.height), p.border_focused);
                 }
             }
 
@@ -258,9 +266,9 @@ impl App {
             for &(id, rect) in &visual_pane_rects {
                 let title = pane_title(&self.panes, id);
                 let text_color = if focused == Some(id) {
-                    TAB_BAR_TEXT_FOCUSED
+                    p.tab_text_focused
                 } else {
-                    TAB_BAR_TEXT
+                    p.tab_text
                 };
                 let style = TextStyle {
                     foreground: text_color,
@@ -306,7 +314,7 @@ impl App {
                         self.pane_generations.insert(id, pane.backend.grid_generation());
                     }
                     Some(PaneKind::Editor(pane)) => {
-                        pane.render_grid(inner, renderer);
+                        pane.render_grid(inner, renderer, p.gutter_text, p.gutter_active_text);
                         self.pane_generations.insert(id, pane.generation());
                     }
                     None => {}
@@ -330,7 +338,7 @@ impl App {
                         (panel_rect.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING).max(1.0),
                     );
                     renderer.begin_pane_grid(active_id);
-                    pane.render_grid(inner, renderer);
+                    pane.render_grid(inner, renderer, p.gutter_text, p.gutter_active_text);
                     renderer.end_pane_grid();
                     self.pane_generations.insert(active_id, pane.generation());
                 }
@@ -358,7 +366,7 @@ impl App {
                 Some(PaneKind::Terminal(pane)) => {
                     // Hide cursor when search bar is focused on this pane
                     if search_focus != Some(id) {
-                        pane.render_cursor(inner, renderer);
+                        pane.render_cursor(inner, renderer, p.cursor_accent);
                     }
                     // Render selection highlight
                     if let Some(ref sel) = pane.selection {
@@ -370,19 +378,22 @@ impl App {
                         };
                         // Skip rendering if anchor == end (no actual selection)
                         if start != end {
-                            let sel_color = Color::new(0.35, 0.58, 1.0, 0.25);
+                            let sel_color = p.selection;
                             let grid = pane.backend.grid();
                             let max_rows = (inner.height / cell_size.height).ceil() as usize;
-                            let max_cols = (inner.width / cell_size.width).ceil() as usize;
+                            let max_cols = (inner.width / cell_size.width).floor() as usize;
                             let visible_rows = (grid.rows as usize).min(max_rows);
                             let visible_cols = (grid.cols as usize).min(max_cols);
+                            // Center offset matching terminal grid
+                            let actual_w = max_cols as f32 * cell_size.width;
+                            let center_x = (inner.width - actual_w) / 2.0;
                             for row in start.0..=end.0.min(visible_rows.saturating_sub(1)) {
                                 let col_start = if row == start.0 { start.1 } else { 0 };
                                 let col_end = if row == end.0 { end.1 } else { visible_cols };
                                 if col_start >= col_end {
                                     continue;
                                 }
-                                let rx = inner.x + col_start as f32 * cell_size.width;
+                                let rx = inner.x + center_x + col_start as f32 * cell_size.width;
                                 let ry = inner.y + row as f32 * cell_size.height;
                                 let rw = (col_end - col_start) as f32 * cell_size.width;
                                 renderer.draw_rect(
@@ -400,6 +411,10 @@ impl App {
                             let display_offset = pane.backend.display_offset();
                             let grid = pane.backend.grid();
                             let screen_rows = grid.rows as usize;
+                            // Center offset matching terminal grid
+                            let max_cols = (inner.width / cell_size.width).floor() as usize;
+                            let actual_w = max_cols as f32 * cell_size.width;
+                            let center_x = (inner.width - actual_w) / 2.0;
                             // Visible absolute line range
                             let visible_start = history_size.saturating_sub(display_offset);
                             let visible_end = visible_start + screen_rows;
@@ -408,13 +423,13 @@ impl App {
                                     continue;
                                 }
                                 let visual_row = m.line - visible_start;
-                                let rx = inner.x + m.col as f32 * cell_size.width;
+                                let rx = inner.x + center_x + m.col as f32 * cell_size.width;
                                 let ry = inner.y + visual_row as f32 * cell_size.height;
                                 let rw = m.len as f32 * cell_size.width;
                                 let color = if search.current == Some(mi) {
-                                    SEARCH_CURRENT_BG
+                                    p.search_current_bg
                                 } else {
-                                    SEARCH_MATCH_BG
+                                    p.search_match_bg
                                 };
                                 renderer.draw_rect(Rect::new(rx, ry, rw, cell_size.height), color);
                             }
@@ -423,7 +438,7 @@ impl App {
                 }
                 Some(PaneKind::Editor(pane)) => {
                     if search_focus != Some(id) {
-                        pane.render_cursor(inner, renderer);
+                        pane.render_cursor(inner, renderer, p.cursor_accent);
                     }
                     // Render editor selection highlight
                     if let Some(ref sel) = pane.selection {
@@ -434,7 +449,7 @@ impl App {
                             (sel.end, sel.anchor)
                         };
                         if start != end {
-                            let sel_color = Color::new(0.35, 0.58, 1.0, 0.25);
+                            let sel_color = p.selection;
                             let scroll = pane.editor.scroll_offset();
                             let h_scroll = pane.editor.h_scroll_offset();
                             let gutter_width = 5.0 * cell_size.width;
@@ -449,9 +464,9 @@ impl App {
                                 let col_end = if row == end.0 {
                                     end.1
                                 } else {
-                                    // Full line width: use buffer line length or visible cols
-                                    let line_len = pane.editor.buffer.line(row).map_or(0, |l| l.len());
-                                    line_len.max(h_scroll + visible_cols)
+                                    // Full line width: use char count or visible cols
+                                    let char_count = pane.editor.buffer.line(row).map_or(0, |l| l.chars().count());
+                                    char_count.max(h_scroll + visible_cols)
                                 };
                                 if col_start >= col_end {
                                     continue;
@@ -495,9 +510,9 @@ impl App {
                                 let ry = inner.y + visual_row as f32 * cell_size.height;
                                 let rw = draw_len as f32 * cell_size.width;
                                 let color = if search.current == Some(mi) {
-                                    SEARCH_CURRENT_BG
+                                    p.search_current_bg
                                 } else {
-                                    SEARCH_MATCH_BG
+                                    p.search_match_bg
                                 };
                                 renderer.draw_rect(Rect::new(rx, ry, rw, cell_size.height), color);
                             }
@@ -521,7 +536,7 @@ impl App {
                     (panel_rect.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING).max(1.0),
                 );
                 if search_focus != Some(active_id) {
-                    pane.render_cursor(inner, renderer);
+                    pane.render_cursor(inner, renderer, p.cursor_accent);
                 }
 
                 // Panel editor selection highlight
@@ -533,7 +548,7 @@ impl App {
                         (sel.end, sel.anchor)
                     };
                     if start != end {
-                        let sel_color = Color::new(0.35, 0.58, 1.0, 0.25);
+                        let sel_color = p.selection;
                         let scroll = pane.editor.scroll_offset();
                         let h_scroll = pane.editor.h_scroll_offset();
                         let gutter_width = 5.0 * cell_size.width;
@@ -548,8 +563,8 @@ impl App {
                             let col_end = if row == end.0 {
                                 end.1
                             } else {
-                                let line_len = pane.editor.buffer.line(row).map_or(0, |l| l.len());
-                                line_len.max(h_scroll + visible_cols)
+                                let char_count = pane.editor.buffer.line(row).map_or(0, |l| l.chars().count());
+                                char_count.max(h_scroll + visible_cols)
                             };
                             if col_start >= col_end {
                                 continue;
@@ -593,9 +608,9 @@ impl App {
                             let ry = inner.y + visual_row as f32 * cell_size.height;
                             let rw = draw_len as f32 * cell_size.width;
                             let color = if search.current == Some(mi) {
-                                SEARCH_CURRENT_BG
+                                p.search_current_bg
                             } else {
-                                SEARCH_MATCH_BG
+                                p.search_match_bg
                             };
                             renderer.draw_rect(Rect::new(rx, ry, rw, cell_size.height), color);
                         }
@@ -609,23 +624,23 @@ impl App {
         // Render hover highlights (overlay layer)
         if let Some(ref hover) = self.hover_target {
             // Skip hover rendering during drag
-            if matches!(self.pane_drag, PaneDragState::Idle) && !self.panel_border_dragging {
+            if matches!(self.pane_drag, PaneDragState::Idle) && !self.panel_border_dragging && !self.file_tree_border_dragging {
                 match hover {
                     drag_drop::HoverTarget::FileTreeEntry(index) => {
                         if show_file_tree {
                             let cell_size = renderer.cell_size();
-                            let line_height = cell_size.height;
+                            let line_height = cell_size.height * FILE_TREE_LINE_SPACING;
                             let y = PANE_PADDING + *index as f32 * line_height - file_tree_scroll;
                             if y + line_height > 0.0 && y < logical.height {
-                                let row_rect = Rect::new(0.0, y, FILE_TREE_WIDTH - BORDER_WIDTH, line_height);
-                                renderer.draw_rect(row_rect, HOVER_FILE_TREE);
+                                let row_rect = Rect::new(0.0, y, self.file_tree_width - PANE_GAP, line_height);
+                                renderer.draw_rect(row_rect, p.hover_file_tree);
                             }
                         }
                     }
                     drag_drop::HoverTarget::PaneTabBar(pane_id) => {
                         if let Some(&(_, rect)) = visual_pane_rects.iter().find(|(id, _)| id == pane_id) {
                             let tab_rect = Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT);
-                            renderer.draw_rect(tab_rect, HOVER_TAB);
+                            renderer.draw_rect(tab_rect, p.hover_tab);
                         }
                     }
                     drag_drop::HoverTarget::PanelTab(tab_id) => {
@@ -637,7 +652,7 @@ impl App {
                                 if let Some(idx) = editor_panel_tabs.iter().position(|&id| id == *tab_id) {
                                     let tx = tab_start_x + idx as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
                                     let tab_rect = Rect::new(tx, tab_bar_top, PANEL_TAB_WIDTH, PANEL_TAB_HEIGHT);
-                                    renderer.draw_rect(tab_rect, HOVER_TAB);
+                                    renderer.draw_rect(tab_rect, p.hover_tab);
                                 }
                             }
                         }
@@ -651,15 +666,55 @@ impl App {
                                 let close_x = tx + PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - 4.0;
                                 let close_y = tab_bar_top + (PANEL_TAB_HEIGHT - PANEL_TAB_CLOSE_SIZE) / 2.0;
                                 let close_rect = Rect::new(close_x, close_y, PANEL_TAB_CLOSE_SIZE, PANEL_TAB_CLOSE_SIZE);
-                                renderer.draw_rect(close_rect, HOVER_CLOSE_BUTTON);
+                                renderer.draw_rect(close_rect, p.hover_close);
                             }
+                        }
+                    }
+                    drag_drop::HoverTarget::SplitBorder(dir) => {
+                        // Highlight the border line between adjacent panes
+                        for &(id_a, rect_a) in &visual_pane_rects {
+                            match dir {
+                                tide_core::SplitDirection::Horizontal => {
+                                    let right_edge = rect_a.x + rect_a.width;
+                                    for &(id_b, rect_b) in &visual_pane_rects {
+                                        if id_b != id_a && (rect_b.x - right_edge).abs() <= PANE_GAP + 1.0 {
+                                            let y = rect_a.y.max(rect_b.y);
+                                            let h = (rect_a.y + rect_a.height).min(rect_b.y + rect_b.height) - y;
+                                            if h > 0.0 {
+                                                let border_rect = Rect::new(right_edge - 1.0, y, rect_b.x - right_edge + 2.0, h);
+                                                renderer.draw_rect(border_rect, p.hover_panel_border);
+                                            }
+                                        }
+                                    }
+                                }
+                                tide_core::SplitDirection::Vertical => {
+                                    let bottom_edge = rect_a.y + rect_a.height;
+                                    for &(id_b, rect_b) in &visual_pane_rects {
+                                        if id_b != id_a && (rect_b.y - bottom_edge).abs() <= PANE_GAP + 1.0 {
+                                            let x = rect_a.x.max(rect_b.x);
+                                            let w = (rect_a.x + rect_a.width).min(rect_b.x + rect_b.width) - x;
+                                            if w > 0.0 {
+                                                let border_rect = Rect::new(x, bottom_edge - 1.0, w, rect_b.y - bottom_edge + 2.0);
+                                                renderer.draw_rect(border_rect, p.hover_panel_border);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    drag_drop::HoverTarget::FileTreeBorder => {
+                        if show_file_tree {
+                            let border_x = self.file_tree_width - 2.0;
+                            let border_rect = Rect::new(border_x, 0.0, 4.0, logical.height);
+                            renderer.draw_rect(border_rect, p.hover_panel_border);
                         }
                     }
                     drag_drop::HoverTarget::PanelBorder => {
                         if let Some(panel_rect) = editor_panel_rect {
                             let border_x = panel_rect.x - 2.0;
                             let border_rect = Rect::new(border_x, 0.0, 4.0, logical.height);
-                            renderer.draw_rect(border_rect, HOVER_PANEL_BORDER);
+                            renderer.draw_rect(border_rect, p.hover_panel_border);
                         }
                     }
                 }
@@ -709,21 +764,21 @@ impl App {
                 let bar_rect = Rect::new(bar_x, bar_y, bar_w, bar_h);
 
                 // Background (top layer — fully opaque, covers text)
-                renderer.draw_top_rect(bar_rect, SEARCH_BAR_BG);
+                renderer.draw_top_rect(bar_rect, p.search_bar_bg);
 
                 // Border (only when focused)
                 if *is_focused {
                     let bw = 1.0;
-                    renderer.draw_top_rect(Rect::new(bar_x, bar_y, bar_w, bw), SEARCH_BAR_BORDER);
-                    renderer.draw_top_rect(Rect::new(bar_x, bar_y + bar_h - bw, bar_w, bw), SEARCH_BAR_BORDER);
-                    renderer.draw_top_rect(Rect::new(bar_x, bar_y, bw, bar_h), SEARCH_BAR_BORDER);
-                    renderer.draw_top_rect(Rect::new(bar_x + bar_w - bw, bar_y, bw, bar_h), SEARCH_BAR_BORDER);
+                    renderer.draw_top_rect(Rect::new(bar_x, bar_y, bar_w, bw), p.search_bar_border);
+                    renderer.draw_top_rect(Rect::new(bar_x, bar_y + bar_h - bw, bar_w, bw), p.search_bar_border);
+                    renderer.draw_top_rect(Rect::new(bar_x, bar_y, bw, bar_h), p.search_bar_border);
+                    renderer.draw_top_rect(Rect::new(bar_x + bar_w - bw, bar_y, bw, bar_h), p.search_bar_border);
                 }
 
                 let text_x = bar_x + 6.0;
                 let text_y = bar_y + (bar_h - cell_size.height) / 2.0;
                 let text_style = TextStyle {
-                    foreground: SEARCH_BAR_TEXT,
+                    foreground: p.search_bar_text,
                     background: None,
                     bold: false,
                     dim: false,
@@ -731,7 +786,7 @@ impl App {
                     underline: false,
                 };
                 let counter_style = TextStyle {
-                    foreground: SEARCH_BAR_COUNTER,
+                    foreground: p.search_bar_counter,
                     background: None,
                     bold: false,
                     dim: false,
@@ -754,7 +809,7 @@ impl App {
                 if *is_focused {
                     let cursor_char_offset = query[..*cursor_pos].chars().count();
                     let cx = text_x + cursor_char_offset as f32 * cell_size.width;
-                    let cursor_color = Color::new(0.35, 0.58, 1.0, 0.9);
+                    let cursor_color = p.cursor_accent;
                     renderer.draw_top_rect(Rect::new(cx, text_y, 1.5, cell_size.height), cursor_color);
                 }
 
@@ -776,8 +831,12 @@ impl App {
                     if let Some(PaneKind::Terminal(pane)) = self.panes.get(&focused_id) {
                         let cursor = pane.backend.cursor();
                         let cell_size = renderer.cell_size();
+                        let inner_w = rect.width - 2.0 * PANE_PADDING;
+                        let max_cols = (inner_w / cell_size.width).floor() as usize;
+                        let actual_w = max_cols as f32 * cell_size.width;
+                        let center_x = (inner_w - actual_w) / 2.0;
                         let inner_offset = Vec2::new(
-                            rect.x + PANE_PADDING,
+                            rect.x + PANE_PADDING + center_x,
                             rect.y + TAB_BAR_HEIGHT,
                         );
                         let cx = inner_offset.x + cursor.col as f32 * cell_size.width;
@@ -786,15 +845,14 @@ impl App {
                         // Draw preedit background
                         let preedit_chars: Vec<char> = self.ime_preedit.chars().collect();
                         let pw = preedit_chars.len().max(1) as f32 * cell_size.width;
-                        let preedit_bg = Color::new(0.18, 0.22, 0.38, 1.0);
                         renderer.draw_rect(
                             Rect::new(cx, cy, pw, cell_size.height),
-                            preedit_bg,
+                            p.ime_preedit_bg,
                         );
 
                         // Draw each preedit character
                         let preedit_style = TextStyle {
-                            foreground: Color::new(0.95, 0.96, 1.0, 1.0),
+                            foreground: p.ime_preedit_fg,
                             background: None,
                             bold: false,
                             dim: false,
@@ -830,7 +888,7 @@ impl App {
                         // Swap preview: border-only outline around target's visual rect
                         if let DropDestination::TreePane(target_id, _) = dest {
                             if let Some(&(_, target_rect)) = visual_pane_rects.iter().find(|(id, _)| *id == *target_id) {
-                                Self::draw_swap_preview(renderer, target_rect);
+                                Self::draw_swap_preview(renderer, target_rect, p);
                             }
                         }
                     } else {
@@ -852,14 +910,14 @@ impl App {
                                     preview_rect.width,
                                     preview_rect.height,
                                 );
-                                Self::draw_insert_preview(renderer, screen_rect);
+                                Self::draw_insert_preview(renderer, screen_rect, p);
                             }
                         }
                     }
                 }
                 DropDestination::EditorPanel => {
                     if let Some(panel_rect) = editor_panel_rect {
-                        Self::draw_insert_preview(renderer, panel_rect);
+                        Self::draw_insert_preview(renderer, panel_rect, p);
                     }
                 }
             }
@@ -877,24 +935,28 @@ impl App {
 
         queue.submit(std::iter::once(encoder.finish()));
         output.present();
+
+        // Reclaim completed GPU staging buffers to prevent memory accumulation.
+        // Without this, write_buffer() staging allocations are never freed on macOS Metal.
+        device.poll(wgpu::Maintain::Poll);
     }
 
     /// Insert preview: semi-transparent fill + thin border.
-    fn draw_insert_preview(renderer: &mut tide_renderer::WgpuRenderer, preview: Rect) {
-        renderer.draw_rect(preview, DROP_PREVIEW_FILL);
+    fn draw_insert_preview(renderer: &mut tide_renderer::WgpuRenderer, preview: Rect, p: &ThemePalette) {
+        renderer.draw_rect(preview, p.drop_fill);
         let bw = DROP_PREVIEW_BORDER_WIDTH;
-        renderer.draw_rect(Rect::new(preview.x, preview.y, preview.width, bw), DROP_PREVIEW_BORDER);
-        renderer.draw_rect(Rect::new(preview.x, preview.y + preview.height - bw, preview.width, bw), DROP_PREVIEW_BORDER);
-        renderer.draw_rect(Rect::new(preview.x, preview.y, bw, preview.height), DROP_PREVIEW_BORDER);
-        renderer.draw_rect(Rect::new(preview.x + preview.width - bw, preview.y, bw, preview.height), DROP_PREVIEW_BORDER);
+        renderer.draw_rect(Rect::new(preview.x, preview.y, preview.width, bw), p.drop_border);
+        renderer.draw_rect(Rect::new(preview.x, preview.y + preview.height - bw, preview.width, bw), p.drop_border);
+        renderer.draw_rect(Rect::new(preview.x, preview.y, bw, preview.height), p.drop_border);
+        renderer.draw_rect(Rect::new(preview.x + preview.width - bw, preview.y, bw, preview.height), p.drop_border);
     }
 
     /// Swap preview: thick border only, no fill — visually distinct from insert.
-    fn draw_swap_preview(renderer: &mut tide_renderer::WgpuRenderer, preview: Rect) {
+    fn draw_swap_preview(renderer: &mut tide_renderer::WgpuRenderer, preview: Rect, p: &ThemePalette) {
         let bw = SWAP_PREVIEW_BORDER_WIDTH;
-        renderer.draw_rect(Rect::new(preview.x, preview.y, preview.width, bw), SWAP_PREVIEW_BORDER);
-        renderer.draw_rect(Rect::new(preview.x, preview.y + preview.height - bw, preview.width, bw), SWAP_PREVIEW_BORDER);
-        renderer.draw_rect(Rect::new(preview.x, preview.y, bw, preview.height), SWAP_PREVIEW_BORDER);
-        renderer.draw_rect(Rect::new(preview.x + preview.width - bw, preview.y, bw, preview.height), SWAP_PREVIEW_BORDER);
+        renderer.draw_rect(Rect::new(preview.x, preview.y, preview.width, bw), p.swap_border);
+        renderer.draw_rect(Rect::new(preview.x, preview.y + preview.height - bw, preview.width, bw), p.swap_border);
+        renderer.draw_rect(Rect::new(preview.x, preview.y, bw, preview.height), p.swap_border);
+        renderer.draw_rect(Rect::new(preview.x + preview.width - bw, preview.y, bw, preview.height), p.swap_border);
     }
 }

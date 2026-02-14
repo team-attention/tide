@@ -29,7 +29,7 @@ impl App {
     }
 
     /// Compute the hover target for a given cursor position.
-    /// Priority: PanelBorder → PanelTabClose → PanelTab → PaneTabBar → FileTreeEntry → None
+    /// Priority: PanelBorder → SplitBorder → PanelTabClose → PanelTab → PaneTabBar → FileTreeBorder → FileTreeEntry → None
     pub(crate) fn compute_hover_target(&self, pos: Vec2) -> Option<HoverTarget> {
         // Panel border (resize handle)
         if let Some(panel_rect) = self.editor_panel_rect {
@@ -37,6 +37,11 @@ impl App {
             if (pos.x - border_x).abs() < 5.0 {
                 return Some(HoverTarget::PanelBorder);
             }
+        }
+
+        // Split pane border (resize handle between tiled panes)
+        if let Some(dir) = self.split_border_at(pos) {
+            return Some(HoverTarget::SplitBorder(dir));
         }
 
         // Panel tab close button
@@ -54,11 +59,19 @@ impl App {
             return Some(HoverTarget::PaneTabBar(pane_id));
         }
 
+        // File tree border (resize handle)
+        if self.show_file_tree {
+            let border_x = self.file_tree_width;
+            if (pos.x - border_x).abs() < 5.0 {
+                return Some(HoverTarget::FileTreeBorder);
+            }
+        }
+
         // File tree entry
-        if self.show_file_tree && pos.x < FILE_TREE_WIDTH {
+        if self.show_file_tree && pos.x < self.file_tree_width {
             if let Some(renderer) = &self.renderer {
                 let cell_size = renderer.cell_size();
-                let line_height = cell_size.height;
+                let line_height = cell_size.height * FILE_TREE_LINE_SPACING;
                 let adjusted_y = pos.y - PANE_PADDING;
                 let index = ((adjusted_y + self.file_tree_scroll) / line_height) as usize;
                 if let Some(tree) = &self.file_tree {
@@ -70,6 +83,51 @@ impl App {
             }
         }
 
+        None
+    }
+
+    /// Check if cursor is near an internal border between split panes.
+    /// Returns the split direction (Horizontal for vertical line, Vertical for horizontal line).
+    fn split_border_at(&self, pos: Vec2) -> Option<SplitDirection> {
+        let t = 5.0_f32;
+        let rects = &self.pane_rects;
+        if rects.len() < 2 {
+            return None;
+        }
+        for &(id_a, rect_a) in rects {
+            // Check right edge → adjacent left edge = Horizontal split (side by side)
+            let right_edge = rect_a.x + rect_a.width;
+            if (pos.x - right_edge).abs() <= t
+                && pos.y >= rect_a.y
+                && pos.y <= rect_a.y + rect_a.height
+            {
+                for &(id_b, rect_b) in rects {
+                    if id_b != id_a
+                        && (rect_b.x - right_edge).abs() <= t * 2.0
+                        && pos.y >= rect_b.y
+                        && pos.y <= rect_b.y + rect_b.height
+                    {
+                        return Some(SplitDirection::Horizontal);
+                    }
+                }
+            }
+            // Check bottom edge → adjacent top edge = Vertical split (stacked)
+            let bottom_edge = rect_a.y + rect_a.height;
+            if (pos.y - bottom_edge).abs() <= t
+                && pos.x >= rect_a.x
+                && pos.x <= rect_a.x + rect_a.width
+            {
+                for &(id_b, rect_b) in rects {
+                    if id_b != id_a
+                        && (rect_b.y - bottom_edge).abs() <= t * 2.0
+                        && pos.x >= rect_b.x
+                        && pos.x <= rect_b.x + rect_b.width
+                    {
+                        return Some(SplitDirection::Vertical);
+                    }
+                }
+            }
+        }
         None
     }
 }
@@ -341,6 +399,13 @@ impl App {
                 }
 
                 if state != ElementState::Pressed {
+                    // End file tree border resize on release
+                    if self.file_tree_border_dragging {
+                        self.file_tree_border_dragging = false;
+                        self.compute_layout();
+                        return;
+                    }
+
                     // End panel border resize on release
                     if self.panel_border_dragging {
                         self.panel_border_dragging = false;
@@ -391,6 +456,15 @@ impl App {
                 };
 
                 if btn == MouseButton::Left {
+                    // Check file tree border for resize
+                    if self.show_file_tree {
+                        let border_x = self.file_tree_width;
+                        if (self.last_cursor_pos.x - border_x).abs() < 5.0 {
+                            self.file_tree_border_dragging = true;
+                            return;
+                        }
+                    }
+
                     // Check panel border for resize
                     if let Some(panel_rect) = self.editor_panel_rect {
                         let border_x = panel_rect.x;
@@ -452,14 +526,34 @@ impl App {
                 );
                 self.last_cursor_pos = pos;
 
+                // Handle file tree border resize drag
+                if self.file_tree_border_dragging {
+                    let logical = self.logical_size();
+                    let new_width = pos.x.max(120.0).min(logical.width * 0.5);
+                    self.file_tree_width = new_width;
+                    self.compute_layout();
+                    self.chrome_generation += 1;
+                    return;
+                }
+
                 // Handle panel border resize drag
                 if self.panel_border_dragging {
                     let logical = self.logical_size();
-                    let left = if self.show_file_tree { FILE_TREE_WIDTH } else { 0.0 };
+                    let left = if self.show_file_tree { self.file_tree_width } else { 0.0 };
                     let new_width = (logical.width - pos.x).max(150.0).min(logical.width - left - 100.0);
                     self.editor_panel_width = new_width;
                     self.compute_layout();
                     return;
+                }
+
+                // Auto-unmaximize when drag threshold exceeded
+                if let PaneDragState::PendingDrag { press_pos, .. } = &self.pane_drag {
+                    let dx = pos.x - press_pos.x;
+                    let dy = pos.y - press_pos.y;
+                    if (dx * dx + dy * dy).sqrt() >= DRAG_THRESHOLD && self.maximized_pane.is_some() {
+                        self.maximized_pane = None;
+                        self.compute_layout();
+                    }
                 }
 
                 // Handle pane drag state machine
@@ -496,7 +590,7 @@ impl App {
                 if self.router.is_dragging_border() {
                     // Adjust position for file tree offset
                     let drag_pos = if self.show_file_tree {
-                        Vec2::new(pos.x - FILE_TREE_WIDTH, pos.y)
+                        Vec2::new(pos.x - self.file_tree_width, pos.y)
                     } else {
                         pos
                     };
@@ -581,7 +675,7 @@ impl App {
                 };
 
                 // Check if scrolling over the file tree
-                if self.show_file_tree && self.last_cursor_pos.x < FILE_TREE_WIDTH {
+                if self.show_file_tree && self.last_cursor_pos.x < self.file_tree_width {
                     let max_scroll = self.file_tree_max_scroll();
                     let new_scroll = (self.file_tree_scroll - dy * 10.0).clamp(0.0, max_scroll);
                     if new_scroll != self.file_tree_scroll {
@@ -591,7 +685,7 @@ impl App {
                 } else if self.is_over_panel_tab_bar(self.last_cursor_pos) {
                     // Horizontal scroll for panel tab bar (both horizontal and vertical input)
                     self.panel_tab_scroll += dx * 20.0;
-                    self.panel_tab_scroll -= dy * 20.0;
+                    self.panel_tab_scroll += dy * 20.0;
                     self.clamp_panel_tab_scroll();
                     self.chrome_generation += 1;
                 } else if let Some(panel_rect) = self.editor_panel_rect {
@@ -663,12 +757,8 @@ impl App {
                     }
                 }
             }
-            WindowEvent::RedrawRequested => {
-                self.update();
-                self.render();
-                self.needs_redraw = false;
-                self.last_frame = Instant::now();
-            }
+            // RedrawRequested is handled directly in window_event() with early return
+            // to avoid the unconditional `needs_redraw = true` at the end.
             _ => {}
         }
     }

@@ -72,6 +72,9 @@ impl App {
             self.scale_factor,
         );
 
+        // Set initial clear color from theme palette
+        renderer.clear_color = self.palette().border_color;
+
         // Pre-warm ASCII glyphs before first frame to avoid input latency
         renderer.warmup_ascii();
 
