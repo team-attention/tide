@@ -132,6 +132,7 @@ impl App {
             let total_width = self.editor_panel_tabs.len() as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP) - PANEL_TAB_GAP;
             let visible_width = panel_rect.width - 2.0 * PANE_PADDING;
             let max_scroll = (total_width - visible_width).max(0.0);
+            self.panel_tab_scroll_target = self.panel_tab_scroll_target.clamp(0.0, max_scroll);
             self.panel_tab_scroll = self.panel_tab_scroll.clamp(0.0, max_scroll);
         }
     }
@@ -144,10 +145,10 @@ impl App {
                 let tab_right = tab_left + PANEL_TAB_WIDTH;
                 let visible_width = panel_rect.width - 2.0 * PANE_PADDING;
 
-                if tab_left < self.panel_tab_scroll {
-                    self.panel_tab_scroll = tab_left;
-                } else if tab_right > self.panel_tab_scroll + visible_width {
-                    self.panel_tab_scroll = tab_right - visible_width;
+                if tab_left < self.panel_tab_scroll_target {
+                    self.panel_tab_scroll_target = tab_left;
+                } else if tab_right > self.panel_tab_scroll_target + visible_width {
+                    self.panel_tab_scroll_target = tab_right - visible_width;
                 }
                 self.clamp_panel_tab_scroll();
             }
