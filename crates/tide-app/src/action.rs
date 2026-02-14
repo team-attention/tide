@@ -177,6 +177,7 @@ impl App {
                     let new_id = self.layout.split(focused, SplitDirection::Vertical);
                     self.create_terminal_pane(new_id, cwd);
                     self.focused = Some(new_id);
+                    self.router.set_focused(new_id);
                     self.chrome_generation += 1;
                     self.compute_layout();
                 }
@@ -187,6 +188,7 @@ impl App {
                     let new_id = self.layout.split(focused, SplitDirection::Horizontal);
                     self.create_terminal_pane(new_id, cwd);
                     self.focused = Some(new_id);
+                    self.router.set_focused(new_id);
                     self.chrome_generation += 1;
                     self.compute_layout();
                 }
