@@ -296,6 +296,16 @@ impl App {
                 };
 
                 if let Some(key) = key_opt {
+                    // Cmd+Q / Ctrl+Q → quit the app
+                    if matches!(key, tide_core::Key::Char('q'))
+                        && modifiers.meta
+                        && !modifiers.ctrl
+                        && !modifiers.shift
+                        && !modifiers.alt
+                    {
+                        std::process::exit(0);
+                    }
+
                     // Save-as input interception: consume all keys when active
                     if self.save_as_input.is_some() {
                         match key {
@@ -1010,7 +1020,8 @@ impl App {
             return false;
         }
 
-        let bar_w = SEARCH_BAR_WIDTH;
+        let bar_w = SEARCH_BAR_WIDTH.min(rect.width - 16.0);
+        if bar_w < 80.0 { return false; }
         let bar_h = SEARCH_BAR_HEIGHT;
         let bar_x = rect.x + rect.width - bar_w - 8.0;
         let bar_y = rect.y + TAB_BAR_HEIGHT + 4.0;
