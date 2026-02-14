@@ -233,14 +233,14 @@ impl App {
 
         let terminal_offset_x = left_reserved;
 
-        // Compute editor panel rect
+        // Compute editor panel rect (edge-to-edge, border provided by clear color gap)
         if show_editor_panel {
             let panel_x = terminal_offset_x + terminal_area.width;
             self.editor_panel_rect = Some(Rect::new(
-                panel_x + PANE_GAP / 2.0,
-                PANE_GAP,
-                self.editor_panel_width - PANE_GAP / 2.0 - PANE_GAP,
-                logical.height - PANE_GAP * 2.0,
+                panel_x + BORDER_WIDTH,
+                0.0,
+                self.editor_panel_width - BORDER_WIDTH,
+                logical.height,
             ));
         } else {
             self.editor_panel_rect = None;
@@ -286,24 +286,24 @@ impl App {
         let rects_changed = rects != self.pane_rects;
         self.pane_rects = rects;
 
-        // Compute visual rects with gap insets for rendering
+        // Compute visual rects: window edges flush (0px), internal edges share a 1px border gap
         let logical = self.logical_size();
         let right_edge = terminal_offset_x + terminal_area.width;
+        let half = BORDER_WIDTH / 2.0;
         self.visual_pane_rects = self
             .pane_rects
             .iter()
             .map(|&(id, r)| {
-                // For each edge: if at window boundary → PANE_GAP, else → PANE_GAP/2
-                let half = PANE_GAP / 2.0;
-                let left = if r.x <= terminal_offset_x + 0.5 { PANE_GAP } else { half };
-                let top = if r.y <= 0.5 { PANE_GAP } else { half };
+                // Window boundary → 0px inset (flush), internal edge → half border width
+                let left = if r.x <= terminal_offset_x + 0.5 { 0.0 } else { half };
+                let top = if r.y <= 0.5 { 0.0 } else { half };
                 let right = if r.x + r.width >= right_edge - 0.5 {
-                    PANE_GAP
+                    0.0
                 } else {
                     half
                 };
                 let bottom = if r.y + r.height >= logical.height - 0.5 {
-                    PANE_GAP
+                    0.0
                 } else {
                     half
                 };
