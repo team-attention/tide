@@ -330,7 +330,8 @@ impl App {
                 };
 
                 // Phase A: Tab cycling when focused on editor panel
-                let in_editor_panel = self.editor_panel_tabs.contains(&current_id);
+                let in_editor_panel = self.editor_panel_tabs.contains(&current_id)
+                    || self.editor_panel_placeholder == Some(current_id);
                 if in_editor_panel {
                     if let Some(active) = self.editor_panel_active {
                         if let Some(idx) = self.editor_panel_tabs.iter().position(|&id| id == active) {
@@ -420,10 +421,14 @@ impl App {
 
                 // Build rect list: tree panes + editor panel (if visible).
                 let mut all_rects = self.pane_rects.clone();
-                // Include editor panel as a navigation target (using the active tab's ID)
-                if let (Some(active_id), Some(panel_rect)) = (self.editor_panel_active, self.editor_panel_rect) {
-                    if self.show_editor_panel {
-                        all_rects.push((active_id, panel_rect));
+                // Include editor panel as a navigation target
+                if self.show_editor_panel {
+                    if let Some(panel_rect) = self.editor_panel_rect {
+                        let focus_id = match self.editor_panel_active {
+                            Some(id) => id,
+                            None => self.get_or_alloc_placeholder(),
+                        };
+                        all_rects.push((focus_id, panel_rect));
                     }
                 }
 
@@ -494,7 +499,9 @@ impl App {
             }
             GlobalAction::ToggleMaximizePane => {
                 if let Some(focused) = self.focused {
-                    if self.editor_panel_tabs.contains(&focused) {
+                    let in_panel = self.editor_panel_tabs.contains(&focused)
+                        || self.editor_panel_placeholder == Some(focused);
+                    if in_panel {
                         // Toggle editor panel maximize
                         self.editor_panel_maximized = !self.editor_panel_maximized;
                         self.maximized_pane = None; // mutually exclusive
@@ -516,10 +523,14 @@ impl App {
             GlobalAction::ToggleEditorPanel => {
                 self.show_editor_panel = !self.show_editor_panel;
                 self.chrome_generation += 1;
-                // If hiding, move focus to tree (preserve maximize state)
+                // If hiding, move focus to tree and reset manual width + maximize
                 if !self.show_editor_panel {
+                    self.editor_panel_maximized = false;
+                    self.editor_panel_width_manual = false;
                     if let Some(focused) = self.focused {
-                        if self.editor_panel_tabs.contains(&focused) {
+                        let in_panel = self.editor_panel_tabs.contains(&focused)
+                            || self.editor_panel_placeholder == Some(focused);
+                        if in_panel {
                             if let Some(&first) = self.layout.pane_ids().first() {
                                 self.focused = Some(first);
                                 self.router.set_focused(first);
@@ -627,6 +638,9 @@ impl App {
         self.router.set_focused(new_id);
         self.chrome_generation += 1;
         if !panel_was_visible {
+            if !self.editor_panel_width_manual {
+                self.editor_panel_width = self.auto_editor_panel_width();
+            }
             self.compute_layout();
         }
         self.scroll_to_active_panel_tab();
@@ -653,6 +667,9 @@ impl App {
                     self.router.set_focused(tab_id);
                     self.chrome_generation += 1;
                     if needs_layout {
+                        if !self.editor_panel_width_manual {
+                            self.editor_panel_width = self.auto_editor_panel_width();
+                        }
                         self.compute_layout();
                     }
                     self.scroll_to_active_panel_tab();
@@ -687,6 +704,9 @@ impl App {
                 self.watch_file(&path);
                 // Recompute layout if the panel just became visible (causes terminal resize)
                 if needs_layout {
+                    if !self.editor_panel_width_manual {
+                        self.editor_panel_width = self.auto_editor_panel_width();
+                    }
                     self.compute_layout();
                 }
                 self.scroll_to_active_panel_tab();
@@ -742,6 +762,8 @@ impl App {
 
         if self.editor_panel_tabs.is_empty() {
             self.show_editor_panel = false;
+            self.editor_panel_maximized = false;
+            self.editor_panel_width_manual = false;
         }
 
         // Switch active to last remaining tab (or None)
@@ -1014,6 +1036,9 @@ impl App {
         self.file_finder = Some(crate::FileFinderState::new(base_dir, entries));
         if !self.show_editor_panel {
             self.show_editor_panel = true;
+            if !self.editor_panel_width_manual {
+                self.editor_panel_width = self.auto_editor_panel_width();
+            }
             self.compute_layout();
         }
         self.chrome_generation += 1;
@@ -1027,6 +1052,8 @@ impl App {
             // If no tabs are open, hide the editor panel
             if self.editor_panel_tabs.is_empty() {
                 self.show_editor_panel = false;
+                self.editor_panel_maximized = false;
+                self.editor_panel_width_manual = false;
                 self.compute_layout();
             }
         }
