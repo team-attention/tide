@@ -84,6 +84,7 @@ impl Highlighter {
                                         italic: style
                                             .font_style
                                             .contains(syntect::highlighting::FontStyle::ITALIC),
+                                        dim: false,
                                         underline: style
                                             .font_style
                                             .contains(syntect::highlighting::FontStyle::UNDERLINE),

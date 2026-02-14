@@ -75,6 +75,7 @@ impl EditorPane {
                 foreground: gutter_color,
                 background: None,
                 bold: false,
+                dim: false,
                 italic: false,
                 underline: false,
             };

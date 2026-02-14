@@ -336,13 +336,19 @@ impl Terminal {
                 };
 
                 tc.character = c;
-                tc.style.foreground = fg_color;
-                tc.style.background = background;
                 tc.style.bold = flags.contains(CellFlags::BOLD);
+                tc.style.dim = flags.contains(CellFlags::DIM);
                 tc.style.italic = flags.contains(CellFlags::ITALIC);
                 tc.style.underline = flags.contains(CellFlags::UNDERLINE)
                     || flags.contains(CellFlags::DOUBLE_UNDERLINE)
                     || flags.contains(CellFlags::UNDERCURL);
+
+                tc.style.foreground = if tc.style.dim {
+                    Color::new(fg_color.r * 0.5, fg_color.g * 0.5, fg_color.b * 0.5, fg_color.a)
+                } else {
+                    fg_color
+                };
+                tc.style.background = background;
             }
         }
 
