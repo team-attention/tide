@@ -695,8 +695,8 @@ impl App {
                     }
                 } else if self.is_over_panel_tab_bar(self.last_cursor_pos) {
                     // Horizontal scroll for panel tab bar
-                    self.panel_tab_scroll -= dx * 20.0;
-                    self.panel_tab_scroll -= dy * 20.0;
+                    self.panel_tab_scroll += dx * 20.0;
+                    self.panel_tab_scroll += dy * 20.0;
                     self.clamp_panel_tab_scroll();
                     self.chrome_generation += 1;
                 } else if let Some(panel_rect) = self.editor_panel_rect {

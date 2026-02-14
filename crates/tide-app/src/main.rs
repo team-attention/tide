@@ -442,6 +442,9 @@ impl App {
             self.chrome_generation += 1;
         }
 
+        // Clamp panel tab scroll after layout change (container may have grown)
+        self.clamp_panel_tab_scroll();
+
         // Store window size for layout drag operations
         self.layout.last_window_size = Some(terminal_area);
     }
