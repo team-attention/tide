@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use tide_core::{Color, Rect, Size, TextStyle, Vec2};
 
 use crate::vertex::{GlyphVertex, RectVertex};
@@ -43,6 +45,12 @@ impl WgpuRenderer {
         self.pane_grid_caches.remove(&pane_id);
     }
 
+    /// Keep only pane caches whose IDs are present in `pane_ids`.
+    pub fn retain_pane_caches(&mut self, pane_ids: &[u64]) {
+        let keep: HashSet<u64> = pane_ids.iter().copied().collect();
+        self.pane_grid_caches.retain(|id, _| keep.contains(id));
+    }
+
     /// Invalidate all per-pane caches (atlas reset, scale change, etc.).
     pub fn invalidate_all_pane_caches(&mut self) {
         self.pane_grid_caches.clear();
@@ -69,7 +77,8 @@ impl WgpuRenderer {
         }
 
         // Remove stale caches for panes no longer in the order
-        self.pane_grid_caches.retain(|id, _| pane_order.contains(id));
+        let keep: HashSet<u64> = pane_order.iter().copied().collect();
+        self.pane_grid_caches.retain(|id, _| keep.contains(id));
 
         self.grid_needs_upload = true;
     }

@@ -13,6 +13,14 @@ use crate::theme::*;
 use crate::App;
 
 impl App {
+    fn cleanup_closed_pane_state(&mut self, pane_id: tide_core::PaneId) {
+        self.pane_generations.remove(&pane_id);
+        self.scroll_accumulator.remove(&pane_id);
+        if let Some(renderer) = self.renderer.as_mut() {
+            renderer.remove_pane_cache(pane_id);
+        }
+    }
+
     pub(crate) fn handle_action(&mut self, action: Action, event: Option<InputEvent>) {
         match action {
             Action::RouteToPane(id) => {
@@ -698,8 +706,7 @@ impl App {
         }
         self.editor_panel_tabs.retain(|&id| id != tab_id);
         self.panes.remove(&tab_id);
-        self.pane_generations.remove(&tab_id);
-        self.scroll_accumulator.remove(&tab_id);
+        self.cleanup_closed_pane_state(tab_id);
 
         if self.editor_panel_tabs.is_empty() {
             self.show_editor_panel = false;
@@ -820,8 +827,7 @@ impl App {
 
         self.layout.remove(pane_id);
         self.panes.remove(&pane_id);
-        self.pane_generations.remove(&pane_id);
-        self.scroll_accumulator.remove(&pane_id);
+        self.cleanup_closed_pane_state(pane_id);
 
         // Focus the first remaining pane
         let remaining = self.layout.pane_ids();
