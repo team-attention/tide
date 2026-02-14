@@ -2,13 +2,31 @@ use std::time::Instant;
 
 use winit::event::{ElementState, Ime, MouseButton as WinitMouseButton, MouseScrollDelta, WindowEvent};
 
-use tide_core::{InputEvent, LayoutEngine, MouseButton, Renderer, SplitDirection, TerminalBackend, Vec2};
+use tide_core::{InputEvent, LayoutEngine, MouseButton, Rect, Renderer, SplitDirection, TerminalBackend, Vec2};
 
 use crate::drag_drop::{DropDestination, PaneDragState};
 use crate::input::{winit_key_to_tide, winit_modifiers_to_tide};
-use crate::pane::PaneKind;
+use crate::pane::{PaneKind, Selection};
 use crate::theme::*;
 use crate::App;
+
+impl App {
+    /// Convert a pixel position to a terminal cell (row, col) within a pane's content area.
+    /// Returns None if the position is outside any terminal pane's content area.
+    pub(crate) fn pixel_to_cell(&self, pos: Vec2, pane_id: tide_core::PaneId) -> Option<(usize, usize)> {
+        let (_, visual_rect) = self.visual_pane_rects.iter().find(|(id, _)| *id == pane_id)?;
+        let cell_size = self.renderer.as_ref()?.cell_size();
+        let inner_x = visual_rect.x + PANE_PADDING;
+        let inner_y = visual_rect.y + TAB_BAR_HEIGHT;
+        let col = ((pos.x - inner_x) / cell_size.width).floor() as isize;
+        let row = ((pos.y - inner_y) / cell_size.height).floor() as isize;
+        if row >= 0 && col >= 0 {
+            Some((row as usize, col as usize))
+        } else {
+            None
+        }
+    }
+}
 
 impl App {
     pub(crate) fn handle_window_event(&mut self, event: WindowEvent) {
@@ -75,6 +93,40 @@ impl App {
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
+                if state == ElementState::Pressed && button == WinitMouseButton::Left {
+                    self.mouse_left_pressed = true;
+
+                    // Start text selection if clicking on terminal content
+                    // (but not on tab bars, borders, etc.)
+                    let mods = winit_modifiers_to_tide(self.modifiers);
+                    if !mods.ctrl && !mods.meta {
+                        // Find which pane is under cursor (use pane_rects for hit testing)
+                        if let Some((pane_id, _)) = self.visual_pane_rects.iter().find(|(_, r)| {
+                            let content = Rect::new(
+                                r.x + PANE_PADDING,
+                                r.y + TAB_BAR_HEIGHT,
+                                r.width - 2.0 * PANE_PADDING,
+                                r.height - TAB_BAR_HEIGHT - PANE_PADDING,
+                            );
+                            content.contains(self.last_cursor_pos)
+                        }) {
+                            let pid = *pane_id;
+                            if let Some(cell) = self.pixel_to_cell(self.last_cursor_pos, pid) {
+                                if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&pid) {
+                                    pane.selection = Some(Selection {
+                                        anchor: cell,
+                                        end: cell,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if state == ElementState::Released && button == WinitMouseButton::Left {
+                    self.mouse_left_pressed = false;
+                }
+
                 if state != ElementState::Pressed {
                     // End panel border resize on release
                     if self.panel_border_dragging {
@@ -238,6 +290,21 @@ impl App {
                     self.layout.drag_border(drag_pos);
                     self.compute_layout();
                 } else {
+                    // Update text selection while mouse is pressed
+                    if self.mouse_left_pressed {
+                        // Find which terminal pane has an active selection
+                        let pane_ids: Vec<_> = self.visual_pane_rects.iter().map(|(id, _)| *id).collect();
+                        for pid in pane_ids {
+                            if let Some(cell) = self.pixel_to_cell(pos, pid) {
+                                if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&pid) {
+                                    if let Some(ref mut sel) = pane.selection {
+                                        sel.end = cell;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     let input = InputEvent::MouseMove { position: pos };
                     let _ = self.router.process(input, &self.pane_rects);
                 }

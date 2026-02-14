@@ -14,16 +14,63 @@ pub enum PaneKind {
     Editor(EditorPane),
 }
 
+/// Text selection state (anchor = drag start, end = current position).
+#[derive(Debug, Clone)]
+pub struct Selection {
+    pub anchor: (usize, usize), // (row, col)
+    pub end: (usize, usize),    // (row, col)
+}
+
 pub struct TerminalPane {
     #[allow(dead_code)]
     pub id: PaneId,
     pub backend: Terminal,
+    pub selection: Option<Selection>,
 }
 
 impl TerminalPane {
     pub fn new(id: PaneId, cols: u16, rows: u16) -> Result<Self, Box<dyn std::error::Error>> {
         let backend = Terminal::new(cols, rows)?;
-        Ok(Self { id, backend })
+        Ok(Self { id, backend, selection: None })
+    }
+
+    /// Extract selected text from the terminal grid.
+    pub fn selected_text(&self, sel: &Selection) -> String {
+        let grid = self.backend.grid();
+        let (start, end) = if sel.anchor < sel.end {
+            (sel.anchor, sel.end)
+        } else {
+            (sel.end, sel.anchor)
+        };
+
+        let mut result = String::new();
+        for row in start.0..=end.0 {
+            if row >= grid.cells.len() {
+                break;
+            }
+            let line = &grid.cells[row];
+            let col_start = if row == start.0 { start.1 } else { 0 };
+            let col_end = if row == end.0 {
+                end.1.min(line.len())
+            } else {
+                line.len()
+            };
+            for col in col_start..col_end {
+                if col < line.len() {
+                    let ch = line[col].character;
+                    if ch != '\0' {
+                        result.push(ch);
+                    }
+                }
+            }
+            if row != end.0 {
+                // Trim trailing spaces from line before adding newline
+                let trimmed = result.trim_end_matches(' ');
+                result.truncate(trimmed.len());
+                result.push('\n');
+            }
+        }
+        result
     }
 
     /// Render the grid cells into the cached grid layer.

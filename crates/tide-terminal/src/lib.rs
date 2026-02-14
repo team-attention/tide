@@ -439,7 +439,13 @@ impl Terminal {
                 let s = c.encode_utf8(&mut buf);
                 s.as_bytes().to_vec()
             }
-            Key::Enter => vec![0x0d],       // CR
+            Key::Enter => {
+                if modifiers.shift {
+                    vec![0x1b, b'[', b'1', b'3', b';', b'2', b'u'] // CSI u: ESC[13;2u
+                } else {
+                    vec![0x0d] // CR
+                }
+            }
             Key::Backspace => vec![0x7f],   // DEL
             Key::Tab => {
                 if modifiers.shift {
