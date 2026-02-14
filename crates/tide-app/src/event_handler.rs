@@ -39,6 +39,11 @@ impl App {
             }
         }
 
+        // Empty panel "New File" button
+        if self.is_on_new_file_button(pos) {
+            return Some(HoverTarget::EmptyPanelButton);
+        }
+
         // Split pane border (resize handle between tiled panes)
         if let Some(dir) = self.split_border_at(pos) {
             return Some(HoverTarget::SplitBorder(dir));
@@ -52,6 +57,11 @@ impl App {
         // Panel tab
         if let Some(tab_id) = self.panel_tab_at(pos) {
             return Some(HoverTarget::PanelTab(tab_id));
+        }
+
+        // Pane tab bar close button (before general tab bar check)
+        if let Some(pane_id) = self.pane_tab_close_at(pos) {
+            return Some(HoverTarget::PaneTabClose(pane_id));
         }
 
         // Pane tab bar (split tree panes)
@@ -168,7 +178,17 @@ impl App {
                     } else {
                         text
                     };
-                    // IME composed text (Korean, CJK, etc.) → route to focused pane or search bar
+                    // IME composed text → route to save-as input, search bar, or focused pane
+                    if self.save_as_input.is_some() {
+                        for ch in output.chars() {
+                            if let Some(ref mut input) = self.save_as_input {
+                                input.insert_char(ch);
+                            }
+                        }
+                        self.ime_composing = false;
+                        self.ime_preedit.clear();
+                        return;
+                    }
                     if let Some(search_pane_id) = self.search_focus {
                         for ch in output.chars() {
                             self.search_bar_insert(search_pane_id, ch);
@@ -276,6 +296,52 @@ impl App {
                 };
 
                 if let Some(key) = key_opt {
+                    // Save-as input interception: consume all keys when active
+                    if self.save_as_input.is_some() {
+                        match key {
+                            tide_core::Key::Escape => {
+                                self.save_as_input = None;
+                            }
+                            tide_core::Key::Enter => {
+                                let pane_id = self.save_as_input.as_ref().unwrap().pane_id;
+                                let filename = self.save_as_input.as_ref().unwrap().query.clone();
+                                self.save_as_input = None;
+                                if !filename.is_empty() {
+                                    self.complete_save_as(pane_id, &filename);
+                                }
+                            }
+                            tide_core::Key::Backspace => {
+                                if let Some(ref mut input) = self.save_as_input {
+                                    input.backspace();
+                                }
+                            }
+                            tide_core::Key::Delete => {
+                                if let Some(ref mut input) = self.save_as_input {
+                                    input.delete_char();
+                                }
+                            }
+                            tide_core::Key::Left => {
+                                if let Some(ref mut input) = self.save_as_input {
+                                    input.move_cursor_left();
+                                }
+                            }
+                            tide_core::Key::Right => {
+                                if let Some(ref mut input) = self.save_as_input {
+                                    input.move_cursor_right();
+                                }
+                            }
+                            tide_core::Key::Char(ch) => {
+                                if !modifiers.ctrl && !modifiers.meta {
+                                    if let Some(ref mut input) = self.save_as_input {
+                                        input.insert_char(ch);
+                                    }
+                                }
+                            }
+                            _ => {} // consume all other keys
+                        }
+                        return;
+                    }
+
                     // Search bar key interception: when search is focused, consume keys
                     if let Some(search_pane_id) = self.search_focus {
                         // Cmd+F while search is focused → close search (toggle)

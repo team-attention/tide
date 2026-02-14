@@ -229,6 +229,21 @@ impl EditorState {
             .unwrap_or("Untitled")
     }
 
+    /// Display name with parent directory: "parent/filename.ext" or just "filename.ext".
+    pub fn file_display_name(&self) -> String {
+        match self.buffer.file_path.as_ref() {
+            Some(path) => {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("Untitled");
+                if let Some(parent) = path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()) {
+                    format!("{}/{}", parent, name)
+                } else {
+                    name.to_string()
+                }
+            }
+            None => "Untitled".to_string(),
+        }
+    }
+
     pub fn file_path(&self) -> Option<&Path> {
         self.buffer.file_path.as_deref()
     }
@@ -267,6 +282,12 @@ impl EditorState {
 
     pub fn is_modified(&self) -> bool {
         self.buffer.is_modified()
+    }
+
+    /// Detect and set syntax highlighting based on a file path.
+    pub fn detect_and_set_syntax(&mut self, path: &Path) {
+        self.syntax = self.highlighter.detect_syntax(path).map(|s| s.name.clone());
+        self.generation += 1;
     }
 
     /// Switch syntax highlighting theme for dark/light mode.
