@@ -113,6 +113,12 @@ struct App {
     // Search focus: which pane's search bar has keyboard focus
     pub(crate) search_focus: Option<PaneId>,
 
+    // Pane maximize (temporary full-area display of a single pane)
+    pub(crate) maximized_pane: Option<PaneId>,
+
+    // Editor panel visibility toggle
+    pub(crate) show_editor_panel: bool,
+
     // Editor panel (right-side tab panel)
     pub(crate) editor_panel_tabs: Vec<tide_core::PaneId>,
     pub(crate) editor_panel_active: Option<tide_core::PaneId>,
@@ -163,6 +169,8 @@ impl App {
             scroll_accumulator: HashMap::new(),
             mouse_left_pressed: false,
             search_focus: None,
+            maximized_pane: None,
+            show_editor_panel: true,
             editor_panel_tabs: Vec::new(),
             editor_panel_active: None,
             editor_panel_rect: None,
@@ -212,7 +220,7 @@ impl App {
         let logical = self.logical_size();
         let pane_ids = self.layout.pane_ids();
 
-        let show_editor_panel = !self.editor_panel_tabs.is_empty();
+        let show_editor_panel = self.show_editor_panel && !self.editor_panel_tabs.is_empty();
 
         // Reserve space for file tree (left) and editor panel (right)
         let left_reserved = if self.show_file_tree { FILE_TREE_WIDTH } else { 0.0 };
@@ -261,6 +269,17 @@ impl App {
         // Offset rects to account for file tree panel
         for (_, rect) in &mut rects {
             rect.x += terminal_offset_x;
+        }
+
+        // If a pane is maximized, override rects to show only that pane filling the terminal area
+        if let Some(max_id) = self.maximized_pane {
+            if rects.iter().any(|(id, _)| *id == max_id) {
+                let full_rect = Rect::new(terminal_offset_x, 0.0, terminal_area.width, terminal_area.height);
+                rects = vec![(max_id, full_rect)];
+            } else {
+                // Maximized pane no longer exists in layout — clear maximize
+                self.maximized_pane = None;
+            }
         }
 
         // Force grid rebuild if rects changed

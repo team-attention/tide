@@ -5,7 +5,7 @@ use winit::event::{ElementState, Ime, MouseButton as WinitMouseButton, MouseScro
 use tide_core::{InputEvent, LayoutEngine, MouseButton, Rect, Renderer, SplitDirection, TerminalBackend, Vec2};
 
 use crate::drag_drop::{DropDestination, PaneDragState};
-use crate::input::{winit_key_to_tide, winit_modifiers_to_tide};
+use crate::input::{winit_key_to_tide, winit_modifiers_to_tide, winit_physical_key_to_tide};
 use crate::pane::{PaneKind, Selection};
 use crate::search;
 use crate::theme::*;
@@ -101,9 +101,17 @@ impl App {
                     }
                 }
 
-                if let Some(key) = winit_key_to_tide(&event.logical_key) {
-                    let modifiers = winit_modifiers_to_tide(self.modifiers);
+                // When Cmd/Ctrl is held, prefer physical key so hotkeys work
+                // regardless of IME language (e.g. Korean Cmd+ㅠ → physical B → Cmd+B)
+                let modifiers = winit_modifiers_to_tide(self.modifiers);
+                let key_opt = if modifiers.ctrl || modifiers.meta {
+                    winit_physical_key_to_tide(&event.physical_key)
+                        .or_else(|| winit_key_to_tide(&event.logical_key))
+                } else {
+                    winit_key_to_tide(&event.logical_key)
+                };
 
+                if let Some(key) = key_opt {
                     // Search bar key interception: when search is focused, consume keys
                     if let Some(search_pane_id) = self.search_focus {
                         // Cmd+F while search is focused → close search (toggle)
