@@ -173,7 +173,8 @@ pub fn execute_search_editor(state: &mut SearchState, lines: &[String]) {
                 col: char_col,
                 len: query_char_len,
             });
-            start = byte_col + 1;
+            // Advance by one character (not one byte) to find overlapping matches
+            start = byte_col + line_lower[byte_col..].chars().next().map_or(1, |c| c.len_utf8());
         }
     }
 

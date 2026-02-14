@@ -220,7 +220,12 @@ impl WgpuRenderer {
                     view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.18, g: 0.18, b: 0.24, a: 1.0 }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: self.clear_color.r as f64,
+                            g: self.clear_color.g as f64,
+                            b: self.clear_color.b as f64,
+                            a: self.clear_color.a as f64,
+                        }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],

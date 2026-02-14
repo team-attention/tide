@@ -159,18 +159,18 @@ impl App {
             }
             Action::DragBorder(pos) => {
                 let drag_pos = if self.show_file_tree {
-                    Vec2::new(pos.x - FILE_TREE_WIDTH, pos.y)
+                    Vec2::new(pos.x - self.file_tree_width, pos.y)
                 } else {
                     pos
                 };
-                let terminal_area = if self.show_file_tree {
-                    Size::new(
-                        (self.logical_size().width - FILE_TREE_WIDTH).max(100.0),
-                        self.logical_size().height,
-                    )
-                } else {
-                    self.logical_size()
-                };
+                let logical = self.logical_size();
+                let left = if self.show_file_tree { self.file_tree_width } else { 0.0 };
+                let show_panel = self.show_editor_panel && !self.editor_panel_tabs.is_empty();
+                let right = if show_panel { self.editor_panel_width } else { 0.0 };
+                let terminal_area = Size::new(
+                    (logical.width - left - right).max(100.0),
+                    logical.height,
+                );
                 self.layout.begin_drag(drag_pos, terminal_area);
                 self.layout.drag_border(drag_pos);
                 self.compute_layout();
@@ -236,6 +236,8 @@ impl App {
 
                     self.layout.remove(focused);
                     self.panes.remove(&focused);
+                    self.pane_generations.remove(&focused);
+                    self.scroll_accumulator.remove(&focused);
 
                     // Focus the first remaining pane
                     let remaining = self.layout.pane_ids();
@@ -524,6 +526,29 @@ impl App {
             GlobalAction::NewEditorFile => {
                 self.new_editor_pane();
             }
+            GlobalAction::ToggleTheme => {
+                self.dark_mode = !self.dark_mode;
+                let border_color = self.palette().border_color;
+                if let Some(renderer) = &mut self.renderer {
+                    renderer.clear_color = border_color;
+                }
+                // Update color palettes for all panes
+                let dark = self.dark_mode;
+                for pane in self.panes.values_mut() {
+                    match pane {
+                        crate::pane::PaneKind::Terminal(tp) => {
+                            tp.backend.set_dark_mode(dark);
+                        }
+                        crate::pane::PaneKind::Editor(ep) => {
+                            ep.editor.set_dark_mode(dark);
+                        }
+                    }
+                }
+                self.chrome_generation += 1;
+                self.layout_generation = self.layout_generation.wrapping_add(1);
+                // Force full grid rebuild for all panes (terminal colors change)
+                self.pane_generations.clear();
+            }
         }
     }
 
@@ -576,6 +601,10 @@ impl App {
     /// Open a file in the editor panel. If already open, activate its tab.
     /// Auto-shows the editor panel if it was hidden.
     pub(crate) fn open_editor_pane(&mut self, path: PathBuf) {
+        // Track whether panel needs layout recompute (becoming visible)
+        let needs_layout = !self.show_editor_panel
+            || (self.show_editor_panel && self.editor_panel_tabs.is_empty());
+
         // Auto-show editor panel if hidden
         if !self.show_editor_panel {
             self.show_editor_panel = true;
@@ -585,9 +614,13 @@ impl App {
             if let Some(PaneKind::Editor(editor)) = self.panes.get(&tab_id) {
                 if editor.editor.file_path() == Some(path.as_path()) {
                     self.editor_panel_active = Some(tab_id);
+                    self.pane_generations.remove(&tab_id);
                     self.focused = Some(tab_id);
                     self.router.set_focused(tab_id);
                     self.chrome_generation += 1;
+                    if needs_layout {
+                        self.compute_layout();
+                    }
                     self.scroll_to_active_panel_tab();
                     return;
                 }
@@ -607,7 +640,6 @@ impl App {
         }
 
         // Create new editor pane in the panel
-        let panel_was_visible = !self.editor_panel_tabs.is_empty();
         let new_id = self.layout.alloc_id();
         match EditorPane::open(new_id, &path) {
             Ok(pane) => {
@@ -619,8 +651,8 @@ impl App {
                 self.chrome_generation += 1;
                 // Watch the file for external changes
                 self.watch_file(&path);
-                // Only recompute layout if the panel just became visible (causes terminal resize)
-                if !panel_was_visible {
+                // Recompute layout if the panel just became visible (causes terminal resize)
+                if needs_layout {
                     self.compute_layout();
                 }
                 self.scroll_to_active_panel_tab();
@@ -645,6 +677,7 @@ impl App {
         self.editor_panel_tabs.retain(|&id| id != tab_id);
         self.panes.remove(&tab_id);
         self.pane_generations.remove(&tab_id);
+        self.scroll_accumulator.remove(&tab_id);
 
         // Switch active to last remaining tab (or None)
         if self.editor_panel_active == Some(tab_id) {

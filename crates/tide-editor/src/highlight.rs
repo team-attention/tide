@@ -17,14 +17,27 @@ pub struct StyledSpan {
 pub struct Highlighter {
     syntax_set: SyntaxSet,
     theme: Theme,
+    dark_theme: Theme,
+    light_theme: Theme,
 }
 
 impl Highlighter {
     pub fn new() -> Self {
         let syntax_set = SyntaxSet::load_defaults_newlines();
         let theme_set = ThemeSet::load_defaults();
-        let theme = theme_set.themes["base16-ocean.dark"].clone();
-        Self { syntax_set, theme }
+        let dark_theme = theme_set.themes["base16-eighties.dark"].clone();
+        let light_theme = theme_set.themes["InspiredGitHub"].clone();
+        let theme = dark_theme.clone();
+        Self { syntax_set, theme, dark_theme, light_theme }
+    }
+
+    /// Switch syntax highlighting theme for dark/light mode.
+    pub fn set_dark_mode(&mut self, dark: bool) {
+        self.theme = if dark {
+            self.dark_theme.clone()
+        } else {
+            self.light_theme.clone()
+        };
     }
 
     /// Detect syntax from file extension. Returns None if unknown.
@@ -44,6 +57,11 @@ impl Highlighter {
         let mut h = HighlightLines::new(syntax, &self.theme);
         let mut result = Vec::with_capacity(count);
 
+        // Get the theme's default background to filter it out from spans
+        let theme_bg = self.theme.settings.background.unwrap_or(
+            syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 }
+        );
+
         // Process lines from start to build up highlighter state
         for (i, line) in lines.iter().enumerate() {
             let line_with_newline = format!("{}\n", line);
@@ -60,10 +78,14 @@ impl Highlighter {
                                     style.foreground.b as f32 / 255.0,
                                     style.foreground.a as f32 / 255.0,
                                 );
-                                let bg = if style.background.a > 0
-                                    && (style.background.r, style.background.g, style.background.b)
-                                        != (0, 0, 0)
-                                {
+                                // Filter out theme default background and black
+                                let is_theme_bg = style.background.r == theme_bg.r
+                                    && style.background.g == theme_bg.g
+                                    && style.background.b == theme_bg.b;
+                                let is_black = style.background.r == 0
+                                    && style.background.g == 0
+                                    && style.background.b == 0;
+                                let bg = if style.background.a > 0 && !is_theme_bg && !is_black {
                                     Some(Color::new(
                                         style.background.r as f32 / 255.0,
                                         style.background.g as f32 / 255.0,

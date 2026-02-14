@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tide_core::Size;
+use tide_core::{Color, Size};
 
 use crate::atlas::GlyphAtlas;
 use crate::grid::PaneGridCache;
@@ -333,6 +333,7 @@ impl WgpuRenderer {
             scale_factor,
             cached_cell_size,
             surface_format: format,
+            clear_color: Color::new(0.02, 0.02, 0.02, 1.0),
             atlas_reset_count: 0,
             last_atlas_reset_count: 0,
             device: Arc::clone(&device),

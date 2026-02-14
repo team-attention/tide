@@ -12,12 +12,13 @@ use tide_renderer::WgpuRenderer;
 
 use crate::pane::Selection;
 use crate::search::SearchState;
-use crate::theme::{SCROLLBAR_CURRENT_MATCH, SCROLLBAR_MATCH, SCROLLBAR_THUMB, SCROLLBAR_TRACK, SCROLLBAR_WIDTH};
+use crate::theme::SCROLLBAR_WIDTH;
 
-/// Color for line numbers in the gutter.
-const GUTTER_TEXT: Color = Color::new(0.40, 0.42, 0.50, 1.0);
-/// Color for the current line number.
-const GUTTER_ACTIVE_TEXT: Color = Color::new(0.70, 0.72, 0.80, 1.0);
+// Scrollbar colors (semi-transparent — work well on both dark and light backgrounds)
+const SCROLLBAR_TRACK: Color = Color::new(0.50, 0.50, 0.50, 0.08);
+const SCROLLBAR_THUMB: Color = Color::new(0.50, 0.50, 0.50, 0.30);
+const SCROLLBAR_MATCH: Color = Color::new(0.90, 0.70, 0.10, 0.80);
+const SCROLLBAR_CURRENT_MATCH: Color = Color::new(1.0, 0.90, 0.20, 1.0);
 
 /// Width of the gutter (line numbers) in cells.
 const GUTTER_WIDTH_CELLS: usize = 5;
@@ -43,7 +44,7 @@ impl EditorPane {
     }
 
     /// Render the editor grid cells into the cached grid layer.
-    pub fn render_grid(&self, rect: Rect, renderer: &mut WgpuRenderer) {
+    pub fn render_grid(&self, rect: Rect, renderer: &mut WgpuRenderer, gutter_text: Color, gutter_active_text: Color) {
         let cell_size = renderer.cell_size();
         let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
         let content_x = rect.x + gutter_width;
@@ -73,9 +74,9 @@ impl EditorPane {
             // Draw line number in gutter
             let line_num = format!("{:>4} ", abs_line + 1);
             let gutter_color = if abs_line == cursor_line {
-                GUTTER_ACTIVE_TEXT
+                gutter_active_text
             } else {
-                GUTTER_TEXT
+                gutter_text
             };
             let gutter_style = TextStyle {
                 foreground: gutter_color,
@@ -134,7 +135,7 @@ impl EditorPane {
     }
 
     /// Render the editor cursor into the overlay layer (always redrawn).
-    pub fn render_cursor(&self, rect: Rect, renderer: &mut WgpuRenderer) {
+    pub fn render_cursor(&self, rect: Rect, renderer: &mut WgpuRenderer, cursor_color: Color) {
         let cell_size = renderer.cell_size();
         let pos = self.editor.cursor_position();
         let scroll = self.editor.scroll_offset();
@@ -143,7 +144,14 @@ impl EditorPane {
         if pos.line < scroll {
             return;
         }
-        if pos.col < h_scroll {
+        // Convert byte offset to char index for comparison with h_scroll (char-indexed)
+        let cursor_char_col = if let Some(line_text) = self.editor.buffer.line(pos.line) {
+            let byte_col = pos.col.min(line_text.len());
+            line_text[..byte_col].chars().count()
+        } else {
+            0
+        };
+        if cursor_char_col < h_scroll {
             return;
         }
         let visual_row = pos.line - scroll;
@@ -151,11 +159,11 @@ impl EditorPane {
         let visual_col_offset = if let Some(line_text) = self.editor.buffer.line(pos.line) {
             line_text.chars()
                 .skip(h_scroll)
-                .take(pos.col.saturating_sub(h_scroll))
+                .take(cursor_char_col - h_scroll)
                 .map(|c| c.width().unwrap_or(1))
                 .sum::<usize>()
         } else {
-            pos.col - h_scroll
+            cursor_char_col - h_scroll
         };
         let visual_col = GUTTER_WIDTH_CELLS + visual_col_offset;
 
@@ -171,7 +179,6 @@ impl EditorPane {
             return;
         }
 
-        let cursor_color = Color::new(0.25, 0.5, 1.0, 0.9);
         // Top layer so beam is visible above grid glyphs
         renderer.draw_top_rect(Rect::new(cx, cy, 2.0, cell_size.height), cursor_color);
     }
@@ -245,10 +252,11 @@ impl EditorPane {
                 Some(l) => l,
                 None => break,
             };
-            let col_start = if row == start.0 { start.1.min(line.len()) } else { 0 };
-            let col_end = if row == end.0 { end.1.min(line.len()) } else { line.len() };
+            let char_count = line.chars().count();
+            let col_start = if row == start.0 { start.1.min(char_count) } else { 0 };
+            let col_end = if row == end.0 { end.1.min(char_count) } else { char_count };
             if col_start <= col_end {
-                // Get chars from col_start to col_end
+                // Get chars from col_start to col_end (both are character indices)
                 let text: String = line.chars().skip(col_start).take(col_end - col_start).collect();
                 result.push_str(&text);
             }

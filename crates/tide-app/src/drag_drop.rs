@@ -1,4 +1,4 @@
-use tide_core::{DropZone, PaneId, Rect, Vec2};
+use tide_core::{DropZone, PaneId, Rect, SplitDirection, Vec2};
 
 use crate::pane::PaneKind;
 use crate::theme::*;
@@ -14,6 +14,8 @@ const OUTER_ZONE_THRESHOLD: f32 = 0.12;
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum HoverTarget {
     FileTreeEntry(usize),
+    FileTreeBorder,
+    SplitBorder(SplitDirection),
     PaneTabBar(PaneId),
     PanelTab(PaneId),
     PanelTabClose(PaneId),

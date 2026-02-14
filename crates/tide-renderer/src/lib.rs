@@ -120,6 +120,9 @@ pub struct WgpuRenderer {
     #[allow(dead_code)]
     pub(crate) surface_format: wgpu::TextureFormat,
 
+    // Clear color (gap / background)
+    pub clear_color: Color,
+
     // Atlas overflow tracking
     pub(crate) atlas_reset_count: u64,
     pub(crate) last_atlas_reset_count: u64,

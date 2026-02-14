@@ -84,11 +84,15 @@ impl TerminalPane {
     pub fn render_grid(&self, rect: Rect, renderer: &mut WgpuRenderer) {
         let cell_size = renderer.cell_size();
         let grid = self.backend.grid();
-        let offset = Vec2::new(rect.x, rect.y);
+
+        // Center the grid horizontally within the rect to equalize left/right padding
+        let max_cols = (rect.width / cell_size.width).floor() as usize;
+        let actual_width = max_cols as f32 * cell_size.width;
+        let extra_x = (rect.width - actual_width) / 2.0;
+        let offset = Vec2::new(rect.x + extra_x, rect.y);
 
         // Clamp to the number of rows/cols that fit within the pane rect
         let max_rows = (rect.height / cell_size.height).ceil() as usize;
-        let max_cols = (rect.width / cell_size.width).ceil() as usize;
         let rows = (grid.rows as usize).min(max_rows).min(grid.cells.len());
         let cols = (grid.cols as usize).min(max_cols);
 
@@ -109,26 +113,29 @@ impl TerminalPane {
     }
 
     /// Render the cursor into the overlay layer (always redrawn).
-    pub fn render_cursor(&self, rect: Rect, renderer: &mut WgpuRenderer) {
+    pub fn render_cursor(&self, rect: Rect, renderer: &mut WgpuRenderer, cursor_color: Color) {
         let cell_size = renderer.cell_size();
         let cursor = self.backend.cursor();
         // Hide cursor when scrolled into history (cursor is at the prompt below viewport)
         if cursor.visible && self.backend.display_offset() == 0 {
-            let cx = rect.x + cursor.col as f32 * cell_size.width;
-            let cy = rect.y + cursor.row as f32 * cell_size.height;
+            // Center offset matching render_grid
+            let max_cols = (rect.width / cell_size.width).floor() as usize;
+            let actual_width = max_cols as f32 * cell_size.width;
+            let extra_x = (rect.width - actual_width) / 2.0;
 
-            let cursor_color = Color::new(0.25, 0.5, 1.0, 0.9);
+            let cx = rect.x + extra_x + cursor.col as f32 * cell_size.width;
+            let cy = rect.y + cursor.row as f32 * cell_size.height;
             match cursor.shape {
                 CursorShape::Block => {
-                    // Block cursor behind text so the character remains readable
-                    renderer.draw_rect(
+                    // Top layer so block cursor is visible above grid glyphs (TUI apps)
+                    renderer.draw_top_rect(
                         Rect::new(cx, cy, cell_size.width, cell_size.height),
                         cursor_color,
                     );
                 }
                 CursorShape::Beam => {
                     // Top layer so beam is visible above grid glyphs (TUI apps)
-                    renderer.draw_top_rect(Rect::new(cx, cy, 2.0, cell_size.height), cursor_color);
+                    renderer.draw_top_rect(Rect::new(cx, cy, 3.0, cell_size.height), cursor_color);
                 }
                 CursorShape::Underline => {
                     // Top layer so underline is visible above grid glyphs

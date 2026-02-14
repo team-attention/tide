@@ -37,6 +37,7 @@ pub enum GlobalAction {
     ToggleMaximizePane,
     ToggleEditorPanel,
     NewEditorFile,
+    ToggleTheme,
 }
 
 /// Cardinal direction for focus movement.
@@ -202,6 +203,13 @@ impl Router {
             }
             // Cmd+Enter / Ctrl+Enter -> toggle maximize pane
             Key::Enter => Some(GlobalAction::ToggleMaximizePane),
+            // Cmd+Shift+T / Ctrl+Shift+T -> toggle dark/light theme
+            Key::Char('t') | Key::Char('T') => {
+                if modifiers.shift {
+                    return Some(GlobalAction::ToggleTheme);
+                }
+                None
+            }
             // Cmd+Shift+E -> new editor file, Cmd+E / Ctrl+E -> toggle editor panel
             Key::Char('e') | Key::Char('E') => {
                 if modifiers.shift {

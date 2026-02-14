@@ -30,7 +30,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::ModifiersState;
 use winit::window::{Window, WindowAttributes, WindowId};
 
-use tide_core::{LayoutEngine, PaneDecorations, PaneId, Rect, Renderer, Size, TerminalBackend};
+use tide_core::{LayoutEngine, PaneDecorations, PaneId, Rect, Renderer, Size, SplitDirection, TerminalBackend};
 use tide_input::Router;
 use tide_layout::SplitLayout;
 use tide_renderer::WgpuRenderer;
@@ -39,6 +39,7 @@ use tide_tree::FsTree;
 use drag_drop::{HoverTarget, PaneDragState};
 use pane::{PaneKind, TerminalPane};
 use theme::*;
+use theme::{ThemePalette, DARK, LIGHT};
 
 // ──────────────────────────────────────────────
 // App state
@@ -62,6 +63,8 @@ struct App {
     pub(crate) file_tree: Option<FsTree>,
     pub(crate) show_file_tree: bool,
     pub(crate) file_tree_scroll: f32,
+    pub(crate) file_tree_width: f32,
+    pub(crate) file_tree_border_dragging: bool,
 
     // Window state
     pub(crate) scale_factor: f32,
@@ -138,6 +141,9 @@ struct App {
     pub(crate) panel_border_dragging: bool,
     pub(crate) panel_tab_scroll: f32,
 
+    // Theme mode
+    pub(crate) dark_mode: bool,
+
     // Hover target for interactive feedback
     pub(crate) hover_target: Option<HoverTarget>,
 
@@ -162,6 +168,8 @@ impl App {
             file_tree: None,
             show_file_tree: false,
             file_tree_scroll: 0.0,
+            file_tree_width: FILE_TREE_WIDTH,
+            file_tree_border_dragging: false,
             scale_factor: 1.0,
             window_size: PhysicalSize::new(1200, 800),
             modifiers: ModifiersState::empty(),
@@ -198,6 +206,7 @@ impl App {
             editor_panel_width: EDITOR_PANEL_WIDTH,
             panel_border_dragging: false,
             panel_tab_scroll: 0.0,
+            dark_mode: true,
             hover_target: None,
             file_watcher: None,
             file_watch_rx: None,
@@ -211,12 +220,19 @@ impl App {
             | Some(HoverTarget::PaneTabBar(_))
             | Some(HoverTarget::PanelTab(_))
             | Some(HoverTarget::PanelTabClose(_)) => CursorIcon::Pointer,
+            Some(HoverTarget::FileTreeBorder) => CursorIcon::ColResize,
             Some(HoverTarget::PanelBorder) => CursorIcon::ColResize,
+            Some(HoverTarget::SplitBorder(SplitDirection::Horizontal)) => CursorIcon::ColResize,
+            Some(HoverTarget::SplitBorder(SplitDirection::Vertical)) => CursorIcon::RowResize,
             None => CursorIcon::Default,
         };
         if let Some(window) = &self.window {
             window.set_cursor(icon);
         }
+    }
+
+    pub(crate) fn palette(&self) -> &'static ThemePalette {
+        if self.dark_mode { &DARK } else { &LIGHT }
     }
 
     fn create_initial_pane(&mut self) {
@@ -263,7 +279,7 @@ impl App {
 
         // When editor panel is maximized, it fills the full area (excluding file tree)
         if self.editor_panel_maximized && show_editor_panel {
-            let left_reserved = if self.show_file_tree { FILE_TREE_WIDTH } else { 0.0 };
+            let left_reserved = if self.show_file_tree { self.file_tree_width } else { 0.0 };
             self.editor_panel_rect = Some(Rect::new(
                 left_reserved,
                 0.0,
@@ -281,7 +297,7 @@ impl App {
         }
 
         // Reserve space for file tree (left) and editor panel (right)
-        let left_reserved = if self.show_file_tree { FILE_TREE_WIDTH } else { 0.0 };
+        let left_reserved = if self.show_file_tree { self.file_tree_width } else { 0.0 };
         let right_reserved = if show_editor_panel { self.editor_panel_width } else { 0.0 };
 
         let terminal_area = Size::new(
@@ -291,13 +307,13 @@ impl App {
 
         let terminal_offset_x = left_reserved;
 
-        // Compute editor panel rect (edge-to-edge, border provided by clear color gap)
+        // Compute editor panel rect (edge-to-edge, gap provided by clear color)
         if show_editor_panel {
             let panel_x = terminal_offset_x + terminal_area.width;
             self.editor_panel_rect = Some(Rect::new(
-                panel_x + BORDER_WIDTH,
+                panel_x + PANE_GAP,
                 0.0,
-                self.editor_panel_width - BORDER_WIDTH,
+                self.editor_panel_width - PANE_GAP,
                 logical.height,
             ));
         } else {
@@ -310,16 +326,22 @@ impl App {
         // First compute to establish initial rects
         let _initial_rects = self.layout.compute(terminal_area, &pane_ids, self.focused);
 
-        // Snap ratios to cell boundaries, then recompute with snapped ratios
-        if let Some(renderer) = &self.renderer {
-            let cell_size = renderer.cell_size();
-            let decorations = PaneDecorations {
-                gap: PANE_GAP,
-                padding: PANE_PADDING,
-                tab_bar_height: TAB_BAR_HEIGHT,
-            };
-            self.layout
-                .snap_ratios_to_cells(terminal_area, cell_size, &decorations);
+        // Snap ratios to cell boundaries, then recompute with snapped ratios.
+        // Skip during active border drags to prevent cumulative drift.
+        let is_dragging = self.router.is_dragging_border()
+            || self.panel_border_dragging
+            || self.file_tree_border_dragging;
+        if !is_dragging {
+            if let Some(renderer) = &self.renderer {
+                let cell_size = renderer.cell_size();
+                let decorations = PaneDecorations {
+                    gap: PANE_GAP,
+                    padding: PANE_PADDING,
+                    tab_bar_height: TAB_BAR_HEIGHT,
+                };
+                self.layout
+                    .snap_ratios_to_cells(terminal_area, cell_size, &decorations);
+            }
         }
 
         let mut rects = self.layout.compute(terminal_area, &pane_ids, self.focused);
@@ -344,10 +366,10 @@ impl App {
         let rects_changed = rects != self.pane_rects;
         self.pane_rects = rects;
 
-        // Compute visual rects: window edges flush (0px), internal edges share a 1px border gap
+        // Compute visual rects: window edges flush (0px), internal edges share gap
         let logical = self.logical_size();
         let right_edge = terminal_offset_x + terminal_area.width;
-        let half = BORDER_WIDTH / 2.0;
+        let half = PANE_GAP / 2.0;
         self.visual_pane_rects = self
             .pane_rects
             .iter()
@@ -378,7 +400,9 @@ impl App {
         // Resize terminal backends to match the actual visible content area.
         // Uses visual rects + PANE_PADDING to match the render inner rect exactly.
         // During border drag, skip PTY resize to avoid SIGWINCH spam.
-        let is_dragging = self.router.is_dragging_border() || self.panel_border_dragging;
+        let is_dragging = self.router.is_dragging_border()
+            || self.panel_border_dragging
+            || self.file_tree_border_dragging;
         if !is_dragging {
             if let Some(renderer) = &self.renderer {
                 let cell_size = renderer.cell_size();
@@ -556,6 +580,18 @@ impl ApplicationHandler for App {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
+        // Handle RedrawRequested directly — must NOT fall through to the
+        // unconditional `needs_redraw = true` at the end of this function,
+        // otherwise every completed frame immediately requests another frame,
+        // creating an infinite render loop that leaks GPU staging memory.
+        if matches!(event, WindowEvent::RedrawRequested) {
+            self.update();
+            self.render();
+            self.needs_redraw = false;
+            self.last_frame = Instant::now();
+            return;
+        }
+
         // Handle search bar clicks before anything else
         if let WindowEvent::MouseInput {
             state: ElementState::Pressed,
@@ -579,7 +615,8 @@ impl ApplicationHandler for App {
         } = &event
         {
             if let Some(ref panel_rect) = self.editor_panel_rect {
-                if panel_rect.contains(self.last_cursor_pos) {
+                let near_border = (self.last_cursor_pos.x - panel_rect.x).abs() < 5.0;
+                if panel_rect.contains(self.last_cursor_pos) && !near_border {
                     // Tab close button → handle here
                     if let Some(tab_id) = self.panel_tab_close_at(self.last_cursor_pos) {
                         self.close_editor_panel_tab(tab_id);
@@ -607,7 +644,7 @@ impl ApplicationHandler for App {
             ..
         } = &event
         {
-            if self.show_file_tree && self.last_cursor_pos.x < FILE_TREE_WIDTH {
+            if self.show_file_tree && self.last_cursor_pos.x < self.file_tree_width {
                 self.handle_file_tree_click(self.last_cursor_pos);
                 return;
             }
@@ -631,6 +668,14 @@ impl ApplicationHandler for App {
         }
 
         if self.needs_redraw {
+            // Throttle to ~120fps max to prevent GPU staging buffer accumulation.
+            // Without this, continuous PTY output causes an unthrottled render loop.
+            let min_frame_time = Duration::from_micros(8_333); // ~120fps
+            let elapsed = self.last_frame.elapsed();
+            if elapsed < min_frame_time {
+                event_loop.set_control_flow(ControlFlow::wait_duration(min_frame_time - elapsed));
+                return;
+            }
             self.consecutive_dirty_frames += 1;
             if let Some(window) = &self.window {
                 window.request_redraw();
@@ -661,6 +706,15 @@ impl ApplicationHandler for App {
 fn main() {
     env_logger::init();
 
+    #[cfg(target_os = "macos")]
+    let event_loop = {
+        use winit::platform::macos::EventLoopBuilderExtMacOS;
+        EventLoop::builder()
+            .with_default_menu(false)
+            .build()
+            .expect("create event loop")
+    };
+    #[cfg(not(target_os = "macos"))]
     let event_loop = EventLoop::new().expect("create event loop");
     event_loop.set_control_flow(ControlFlow::Poll);
 

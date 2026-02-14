@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Instant;
 use tide_core::{FileEntry, FileTreeSource, TreeEntry};
+use unicode_normalization::UnicodeNormalization;
 
 /// Reads a directory and returns sorted FileEntry items.
 /// Directories come first, then files, each group sorted alphabetically (case-insensitive).
@@ -26,7 +27,7 @@ fn read_directory(path: &Path) -> Vec<FileEntry> {
             let metadata = std::fs::metadata(entry.path())
                 .or_else(|_| entry.metadata())
                 .ok()?;
-            let name = entry.file_name().into_string().ok()?;
+            let name: String = entry.file_name().into_string().ok()?.nfc().collect();
             Some(FileEntry {
                 name,
                 path: entry.path(),

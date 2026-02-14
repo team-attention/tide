@@ -99,6 +99,8 @@ pub struct Terminal {
     grid_generation: u64,
     /// Stay-at-bottom mode: applied on every sync_grid until user scrolls away
     stay_at_bottom: bool,
+    /// Dark/light mode — affects terminal ANSI color palette
+    dark_mode: bool,
 }
 
 impl Terminal {
@@ -173,6 +175,7 @@ impl Terminal {
             palette_buf: [None; 256],
             grid_generation: 0,
             stay_at_bottom: false,
+            dark_mode: true,
         })
     }
 
@@ -200,8 +203,17 @@ impl Terminal {
         TerminalGrid { cols, rows, cells }
     }
 
-    /// Convert a named ANSI color to RGB (vibrant Warp-inspired palette)
-    fn named_color_to_rgb(named: NamedColor) -> Color {
+    /// Convert a named ANSI color to RGB, respecting dark/light mode.
+    fn named_color_to_rgb(dark_mode: bool, named: NamedColor) -> Color {
+        if dark_mode {
+            Self::named_color_dark(named)
+        } else {
+            Self::named_color_light(named)
+        }
+    }
+
+    /// Dark mode ANSI palette
+    fn named_color_dark(named: NamedColor) -> Color {
         match named {
             // Normal colors
             NamedColor::Black => Color::rgb(0.1, 0.1, 0.14),
@@ -225,8 +237,38 @@ impl Terminal {
 
             // Special
             NamedColor::Foreground => Color::rgb(0.9, 0.91, 0.95),   // #E6E8F2
-            NamedColor::Background => Color::rgb(0.0, 0.0, 0.0),    // Transparent → pane BG shows
+            NamedColor::Background => Color::rgb(0.0, 0.0, 0.0),     // Transparent → pane BG shows
             _ => Color::rgb(0.9, 0.91, 0.95),
+        }
+    }
+
+    /// Light mode ANSI palette — dark text on light background
+    fn named_color_light(named: NamedColor) -> Color {
+        match named {
+            // Normal colors — darker variants for readability on light bg
+            NamedColor::Black => Color::rgb(0.0, 0.0, 0.0),
+            NamedColor::Red => Color::rgb(0.75, 0.10, 0.10),
+            NamedColor::Green => Color::rgb(0.10, 0.55, 0.15),
+            NamedColor::Yellow => Color::rgb(0.60, 0.50, 0.0),
+            NamedColor::Blue => Color::rgb(0.15, 0.30, 0.75),
+            NamedColor::Magenta => Color::rgb(0.55, 0.20, 0.75),
+            NamedColor::Cyan => Color::rgb(0.10, 0.55, 0.60),
+            NamedColor::White => Color::rgb(0.55, 0.55, 0.55),
+
+            // Bright colors
+            NamedColor::BrightBlack => Color::rgb(0.40, 0.40, 0.40),
+            NamedColor::BrightRed => Color::rgb(0.85, 0.20, 0.15),
+            NamedColor::BrightGreen => Color::rgb(0.15, 0.65, 0.20),
+            NamedColor::BrightYellow => Color::rgb(0.70, 0.58, 0.0),
+            NamedColor::BrightBlue => Color::rgb(0.20, 0.40, 0.85),
+            NamedColor::BrightMagenta => Color::rgb(0.65, 0.30, 0.85),
+            NamedColor::BrightCyan => Color::rgb(0.15, 0.65, 0.70),
+            NamedColor::BrightWhite => Color::rgb(0.85, 0.85, 0.85),
+
+            // Special
+            NamedColor::Foreground => Color::rgb(0.12, 0.12, 0.12),  // Dark text
+            NamedColor::Background => Color::rgb(0.0, 0.0, 0.0),     // Transparent → pane BG shows
+            _ => Color::rgb(0.12, 0.12, 0.12),
         }
     }
 
@@ -311,6 +353,7 @@ impl Terminal {
         // Phase 2: Diff with previous frame — only convert changed cells
         let total_cells = cols * total_lines;
         let same_size = self.prev_raw_buf.len() == total_cells;
+        let dark_mode = self.dark_mode;
 
         let cells = &mut self.cached_grid.cells;
         cells.resize_with(total_lines, || vec![TerminalCell::default(); cols]);
@@ -339,8 +382,8 @@ impl Terminal {
                     continue;
                 }
 
-                let fg_color = Self::convert_color_palette(&fg, &self.palette_buf);
-                let bg_color = Self::convert_color_palette(&bg, &self.palette_buf);
+                let fg_color = Self::convert_color(dark_mode, &fg, &self.palette_buf);
+                let bg_color = Self::convert_color(dark_mode, &bg, &self.palette_buf);
 
                 let background = if bg_color.r == 0.0 && bg_color.g == 0.0 && bg_color.b == 0.0 {
                     None
@@ -357,7 +400,7 @@ impl Terminal {
                     || flags.contains(CellFlags::UNDERCURL);
 
                 tc.style.foreground = if tc.style.dim {
-                    Color::new(fg_color.r * 0.5, fg_color.g * 0.5, fg_color.b * 0.5, fg_color.a)
+                    Color::new(fg_color.r * 0.65, fg_color.g * 0.65, fg_color.b * 0.65, fg_color.a)
                 } else {
                     fg_color
                 };
@@ -378,15 +421,20 @@ impl Terminal {
     }
 
     /// Convert color using pre-copied palette (no lock needed)
-    fn convert_color_palette(color: &AnsiColor, palette: &[Option<AnsiRgb>; 256]) -> Color {
+    fn convert_color(dark_mode: bool, color: &AnsiColor, palette: &[Option<AnsiRgb>; 256]) -> Color {
         match color {
-            AnsiColor::Named(named) => Self::named_color_to_rgb(*named),
+            AnsiColor::Named(named) => Self::named_color_to_rgb(dark_mode, *named),
             AnsiColor::Spec(rgb) => Color::rgb(
                 rgb.r as f32 / 255.0,
                 rgb.g as f32 / 255.0,
                 rgb.b as f32 / 255.0,
             ),
             AnsiColor::Indexed(idx) => {
+                // Indices 0-15 → route through our named palette (respects dark/light)
+                if *idx < 16 {
+                    let named = Self::index_to_named(*idx);
+                    return Self::named_color_to_rgb(dark_mode, named);
+                }
                 if let Some(rgb) = palette[*idx as usize] {
                     Color::rgb(
                         rgb.r as f32 / 255.0,
@@ -397,6 +445,29 @@ impl Terminal {
                     Self::indexed_color_fallback(*idx)
                 }
             }
+        }
+    }
+
+    /// Map indexed color 0-15 to the corresponding NamedColor.
+    fn index_to_named(idx: u8) -> NamedColor {
+        match idx {
+            0 => NamedColor::Black,
+            1 => NamedColor::Red,
+            2 => NamedColor::Green,
+            3 => NamedColor::Yellow,
+            4 => NamedColor::Blue,
+            5 => NamedColor::Magenta,
+            6 => NamedColor::Cyan,
+            7 => NamedColor::White,
+            8 => NamedColor::BrightBlack,
+            9 => NamedColor::BrightRed,
+            10 => NamedColor::BrightGreen,
+            11 => NamedColor::BrightYellow,
+            12 => NamedColor::BrightBlue,
+            13 => NamedColor::BrightMagenta,
+            14 => NamedColor::BrightCyan,
+            15 => NamedColor::BrightWhite,
+            _ => NamedColor::Foreground,
         }
     }
 
@@ -595,7 +666,8 @@ impl Terminal {
                 // Convert byte offset to char column index
                 let char_col = row_text[..byte_col].chars().count();
                 results.push((abs_line, char_col, query_char_len));
-                start = byte_col + 1;
+                // Advance by one character (not one byte) to find overlapping matches
+                start = byte_col + row_lower[byte_col..].chars().next().map_or(1, |c| c.len_utf8());
             }
         }
 
@@ -612,6 +684,17 @@ impl Terminal {
     pub fn history_size(&self) -> usize {
         let term = self.term.lock();
         term.grid().history_size()
+    }
+
+    /// Set dark/light mode for the terminal color palette.
+    /// Forces a full grid re-render so all colors are updated.
+    pub fn set_dark_mode(&mut self, dark: bool) {
+        if self.dark_mode != dark {
+            self.dark_mode = dark;
+            // Clear prev_raw_buf to force full re-render of all cells
+            self.prev_raw_buf.clear();
+            self.dirty.store(true, Ordering::Relaxed);
+        }
     }
 
     /// Enter stay-at-bottom mode: every sync_grid will scroll to bottom until
