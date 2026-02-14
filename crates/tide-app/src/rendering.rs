@@ -230,73 +230,6 @@ impl App {
                         }
                     }
 
-                    // Save-as input bar (below tab row, styled like search bar)
-                    if let Some(ref save_as) = self.save_as_input {
-                        if self.editor_panel_tabs.contains(&save_as.pane_id) {
-                            let bar_y = tab_bar_top + PANEL_TAB_HEIGHT + 2.0;
-                            let bar_x = panel_rect.x + PANE_PADDING;
-                            let bar_w = panel_rect.width - 2.0 * PANE_PADDING;
-                            let bar_h = SEARCH_BAR_HEIGHT;
-                            let bar_rect = Rect::new(bar_x, bar_y, bar_w, bar_h);
-
-                            // Background
-                            renderer.draw_chrome_rect(bar_rect, p.search_bar_bg);
-                            // Border (1px)
-                            let bw = 1.0;
-                            renderer.draw_chrome_rect(Rect::new(bar_x, bar_y, bar_w, bw), p.search_bar_border);
-                            renderer.draw_chrome_rect(Rect::new(bar_x, bar_y + bar_h - bw, bar_w, bw), p.search_bar_border);
-                            renderer.draw_chrome_rect(Rect::new(bar_x, bar_y, bw, bar_h), p.search_bar_border);
-                            renderer.draw_chrome_rect(Rect::new(bar_x + bar_w - bw, bar_y, bw, bar_h), p.search_bar_border);
-
-                            // "Save as: " label
-                            let label = "Save as: ";
-                            let label_style = TextStyle {
-                                foreground: p.search_bar_counter,
-                                background: None,
-                                bold: false,
-                                dim: false,
-                                italic: false,
-                                underline: false,
-                            };
-                            let text_y = bar_y + (bar_h - cell_height) / 2.0;
-                            let label_x = bar_x + 6.0;
-                            renderer.draw_chrome_text(
-                                label,
-                                Vec2::new(label_x, text_y),
-                                label_style,
-                                bar_rect,
-                            );
-
-                            // Query text after label
-                            let query_x = label_x + label.len() as f32 * cell_size.width;
-                            let query_clip_w = (bar_x + bar_w - query_x - 6.0).max(0.0);
-                            let query_clip = Rect::new(query_x, bar_y, query_clip_w, bar_h);
-                            let query_style = TextStyle {
-                                foreground: p.search_bar_text,
-                                background: None,
-                                bold: false,
-                                dim: false,
-                                italic: false,
-                                underline: false,
-                            };
-                            renderer.draw_chrome_text(
-                                &save_as.query,
-                                Vec2::new(query_x, text_y),
-                                query_style,
-                                query_clip,
-                            );
-
-                            // Cursor beam
-                            let cursor_char_offset = save_as.query[..save_as.cursor].chars().count();
-                            let cx = query_x + cursor_char_offset as f32 * cell_size.width;
-                            if cx >= query_clip.x && cx <= query_clip.x + query_clip.width {
-                                renderer.draw_chrome_rect(
-                                    Rect::new(cx, text_y, 1.5, cell_height),
-                                    p.cursor_accent,
-                                );
-                            }
-                        }
-                    }
                 } else {
                     // Empty state: "No files open" + "New File" button
                     let cell_size = renderer.cell_size();
@@ -479,17 +412,12 @@ impl App {
                 let prev = self.pane_generations.get(&active_id).copied().unwrap_or(u64::MAX);
                 if gen != prev {
                     any_dirty = true;
-                    let save_as_offset = if self.save_as_input.as_ref().is_some_and(|s| s.pane_id == active_id) {
-                        SEARCH_BAR_HEIGHT + 4.0
-                    } else {
-                        0.0
-                    };
-                    let content_top = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP + save_as_offset;
+                    let content_top = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP;
                     let inner = Rect::new(
                         panel_rect.x + PANE_PADDING,
                         content_top,
                         panel_rect.width - 2.0 * PANE_PADDING,
-                        (panel_rect.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING - save_as_offset).max(1.0),
+                        (panel_rect.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING).max(1.0),
                     );
                     renderer.begin_pane_grid(active_id);
                     pane.render_grid(inner, renderer, p.gutter_text, p.gutter_active_text);
@@ -682,17 +610,12 @@ impl App {
         // Render cursor for active panel editor
         if let (Some(active_id), Some(panel_rect)) = (editor_panel_active, editor_panel_rect) {
             if let Some(PaneKind::Editor(pane)) = self.panes.get(&active_id) {
-                let save_as_offset = if self.save_as_input.as_ref().is_some_and(|s| s.pane_id == active_id) {
-                    SEARCH_BAR_HEIGHT + 4.0
-                } else {
-                    0.0
-                };
-                let content_top = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP + save_as_offset;
+                let content_top = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP;
                 let inner = Rect::new(
                     panel_rect.x + PANE_PADDING,
                     content_top,
                     panel_rect.width - 2.0 * PANE_PADDING,
-                    (panel_rect.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING - save_as_offset).max(1.0),
+                    (panel_rect.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING).max(1.0),
                 );
                 if search_focus != Some(active_id) {
                     pane.render_cursor(inner, renderer, p.cursor_accent);
@@ -1003,6 +926,121 @@ impl App {
                 let close_icon_x = close_x + (close_area_w - cell_size.width) / 2.0;
                 let close_clip = Rect::new(close_x, bar_y, close_area_w, bar_h);
                 renderer.draw_top_text("\u{f00d}", Vec2::new(close_icon_x, text_y), counter_style, close_clip);
+            }
+        }
+
+        // Render conflict notification bar for panel editor when file changed on disk while dirty
+        if let (Some(active_id), Some(panel_rect)) = (editor_panel_active, editor_panel_rect) {
+            if let Some(PaneKind::Editor(pane)) = self.panes.get(&active_id) {
+                if pane.disk_changed && pane.editor.is_modified() {
+                    let cell_size = renderer.cell_size();
+                    let content_top = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP;
+                    let bar_x = panel_rect.x + PANE_PADDING;
+                    let bar_w = panel_rect.width - 2.0 * PANE_PADDING;
+                    let bar_rect = Rect::new(bar_x, content_top, bar_w, CONFLICT_BAR_HEIGHT);
+
+                    // Bar background
+                    renderer.draw_top_rect(bar_rect, p.conflict_bar_bg);
+
+                    let text_y = content_top + (CONFLICT_BAR_HEIGHT - cell_size.height) / 2.0;
+                    let text_style = TextStyle {
+                        foreground: p.conflict_bar_text,
+                        background: None,
+                        bold: false,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    };
+                    let msg = "File changed on disk";
+                    renderer.draw_top_text(msg, Vec2::new(bar_x + 8.0, text_y), text_style, bar_rect);
+
+                    // Buttons: [Overwrite] [Reload] right-aligned
+                    let btn_style = TextStyle {
+                        foreground: p.conflict_bar_btn_text,
+                        background: None,
+                        bold: true,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    };
+                    let btn_pad = 8.0;
+                    let btn_h = CONFLICT_BAR_HEIGHT - 6.0;
+                    let btn_y = content_top + 3.0;
+
+                    // Reload button (rightmost)
+                    let reload_text = "Reload";
+                    let reload_w = reload_text.len() as f32 * cell_size.width + btn_pad * 2.0;
+                    let reload_x = bar_x + bar_w - reload_w - 4.0;
+                    let reload_rect = Rect::new(reload_x, btn_y, reload_w, btn_h);
+                    renderer.draw_top_rect(reload_rect, p.conflict_bar_btn);
+                    renderer.draw_top_text(reload_text, Vec2::new(reload_x + btn_pad, text_y), btn_style, reload_rect);
+
+                    // Overwrite button
+                    let overwrite_text = "Overwrite";
+                    let overwrite_w = overwrite_text.len() as f32 * cell_size.width + btn_pad * 2.0;
+                    let overwrite_x = reload_x - overwrite_w - 4.0;
+                    let overwrite_rect = Rect::new(overwrite_x, btn_y, overwrite_w, btn_h);
+                    renderer.draw_top_rect(overwrite_rect, p.conflict_bar_btn);
+                    renderer.draw_top_text(overwrite_text, Vec2::new(overwrite_x + btn_pad, text_y), btn_style, overwrite_rect);
+                }
+            }
+        }
+
+        // Render save-as inline edit overlay on the top layer (avoids chrome rebuild per keystroke)
+        if let Some(ref save_as) = self.save_as_input {
+            if let Some(panel_rect) = editor_panel_rect {
+                if let Some(tab_index) = self.editor_panel_tabs.iter().position(|&id| id == save_as.pane_id) {
+                    let cell_size = renderer.cell_size();
+                    let cell_height = cell_size.height;
+                    let tab_bar_top = panel_rect.y + PANE_PADDING;
+                    let tab_start_x = panel_rect.x + PANE_PADDING - self.panel_tab_scroll;
+                    let tx = tab_start_x + tab_index as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
+                    let text_y = tab_bar_top + (PANEL_TAB_HEIGHT - cell_height) / 2.0;
+
+                    // Clip to tab bounds within panel
+                    let tab_bar_clip = Rect::new(
+                        panel_rect.x + PANE_PADDING,
+                        tab_bar_top,
+                        panel_rect.width - 2.0 * PANE_PADDING,
+                        PANEL_TAB_HEIGHT,
+                    );
+                    let title_clip_w = (PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - 14.0)
+                        .min((tab_bar_clip.x + tab_bar_clip.width - tx).max(0.0));
+                    let clip_x = tx.max(tab_bar_clip.x);
+                    let clip = Rect::new(clip_x, tab_bar_top, title_clip_w.max(0.0), PANEL_TAB_HEIGHT);
+
+                    // Cover original tab title with background
+                    renderer.draw_top_rect(
+                        Rect::new(tx + 2.0, tab_bar_top + 2.0, PANEL_TAB_WIDTH - 4.0, PANEL_TAB_HEIGHT - 4.0),
+                        p.panel_tab_bg_active,
+                    );
+
+                    // Draw inline editable filename
+                    let input_style = TextStyle {
+                        foreground: p.tab_text_focused,
+                        background: None,
+                        bold: true,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    };
+                    renderer.draw_top_text(
+                        &save_as.query,
+                        Vec2::new(tx + 12.0, text_y),
+                        input_style,
+                        clip,
+                    );
+
+                    // Cursor beam
+                    let cursor_char_offset = save_as.query[..save_as.cursor].chars().count();
+                    let cx = tx + 12.0 + cursor_char_offset as f32 * cell_size.width;
+                    if cx >= clip.x && cx <= clip.x + clip.width {
+                        renderer.draw_top_rect(
+                            Rect::new(cx, text_y, 1.5, cell_height),
+                            p.cursor_accent,
+                        );
+                    }
+                }
             }
         }
 

@@ -187,6 +187,7 @@ impl App {
                         }
                         self.ime_composing = false;
                         self.ime_preedit.clear();
+                        self.needs_redraw = true;
                         return;
                     }
                     if let Some(search_pane_id) = self.search_focus {
@@ -349,6 +350,7 @@ impl App {
                             }
                             _ => {} // consume all other keys
                         }
+                        self.needs_redraw = true;
                         return;
                     }
 
@@ -882,6 +884,57 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Handle conflict bar button click. Returns true if the click was consumed.
+    pub(crate) fn handle_conflict_bar_click(&mut self, pos: Vec2) -> bool {
+        let (active_id, panel_rect) = match (self.editor_panel_active, self.editor_panel_rect) {
+            (Some(a), Some(r)) => (a, r),
+            _ => return false,
+        };
+        let has_conflict = if let Some(PaneKind::Editor(pane)) = self.panes.get(&active_id) {
+            pane.disk_changed && pane.editor.is_modified()
+        } else {
+            false
+        };
+        if !has_conflict {
+            return false;
+        }
+        let content_top = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP;
+        let bar_x = panel_rect.x + PANE_PADDING;
+        let bar_w = panel_rect.width - 2.0 * PANE_PADDING;
+        if pos.y < content_top || pos.y > content_top + CONFLICT_BAR_HEIGHT
+            || pos.x < bar_x || pos.x > bar_x + bar_w
+        {
+            return false;
+        }
+        let cell_size = match self.renderer.as_ref().map(|r| r.cell_size()) {
+            Some(cs) => cs,
+            None => return false,
+        };
+        let btn_pad = 8.0;
+        let reload_w = 6.0 * cell_size.width + btn_pad * 2.0;
+        let reload_x = bar_x + bar_w - reload_w - 4.0;
+        let overwrite_w = 9.0 * cell_size.width + btn_pad * 2.0;
+        let overwrite_x = reload_x - overwrite_w - 4.0;
+        if pos.x >= reload_x {
+            if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&active_id) {
+                if let Err(e) = pane.editor.reload() {
+                    log::error!("Conflict reload failed: {}", e);
+                }
+                pane.disk_changed = false;
+            }
+        } else if pos.x >= overwrite_x {
+            if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&active_id) {
+                if let Err(e) = pane.editor.buffer.save() {
+                    log::error!("Conflict overwrite failed: {}", e);
+                }
+                pane.disk_changed = false;
+            }
+        }
+        self.chrome_generation += 1;
+        self.needs_redraw = true;
+        true
     }
 
     /// Handle a completed drop operation.
