@@ -354,6 +354,16 @@ impl App {
                         return;
                     }
 
+                    // Save confirm bar interception: Escape cancels, block other keys
+                    if self.save_confirm.is_some() {
+                        if matches!(key, tide_core::Key::Escape) {
+                            self.cancel_save_confirm();
+                        }
+                        // Block all other keys while save confirm is active
+                        self.needs_redraw = true;
+                        return;
+                    }
+
                     // Search bar key interception: when search is focused, consume keys
                     if let Some(search_pane_id) = self.search_focus {
                         // Cmd+F while search is focused → close search (toggle)
@@ -886,56 +896,178 @@ impl App {
         }
     }
 
-    /// Handle conflict bar button click. Returns true if the click was consumed.
-    pub(crate) fn handle_conflict_bar_click(&mut self, pos: Vec2) -> bool {
-        let (active_id, panel_rect) = match (self.editor_panel_active, self.editor_panel_rect) {
-            (Some(a), Some(r)) => (a, r),
-            _ => return false,
-        };
-        let has_conflict = if let Some(PaneKind::Editor(pane)) = self.panes.get(&active_id) {
-            pane.disk_changed && pane.editor.is_modified()
-        } else {
-            false
-        };
-        if !has_conflict {
-            return false;
+    /// Handle notification bar button clicks (conflict bar + save confirm bar).
+    /// Checks all editor panes (panel + left-side). Returns true if the click was consumed.
+    pub(crate) fn handle_notification_bar_click(&mut self, pos: Vec2) -> bool {
+        // Try save confirm bar first
+        if let Some(ref sc) = self.save_confirm {
+            let pane_id = sc.pane_id;
+            if let Some(bar_rect) = self.notification_bar_rect(pane_id) {
+                if pos.y >= bar_rect.y && pos.y <= bar_rect.y + bar_rect.height
+                    && pos.x >= bar_rect.x && pos.x <= bar_rect.x + bar_rect.width
+                {
+                    let cell_size = match self.renderer.as_ref().map(|r| r.cell_size()) {
+                        Some(cs) => cs,
+                        None => return false,
+                    };
+                    let btn_pad = 8.0;
+
+                    // Cancel (rightmost)
+                    let cancel_w = 6.0 * cell_size.width + btn_pad * 2.0;
+                    let cancel_x = bar_rect.x + bar_rect.width - cancel_w - 4.0;
+
+                    // Don't Save
+                    let dont_save_w = 10.0 * cell_size.width + btn_pad * 2.0;
+                    let dont_save_x = cancel_x - dont_save_w - 4.0;
+
+                    // Save
+                    let save_w = 4.0 * cell_size.width + btn_pad * 2.0;
+                    let save_x = dont_save_x - save_w - 4.0;
+
+                    if pos.x >= cancel_x {
+                        self.cancel_save_confirm();
+                    } else if pos.x >= dont_save_x {
+                        self.confirm_discard_and_close();
+                    } else if pos.x >= save_x {
+                        self.confirm_save_and_close();
+                    }
+                    self.needs_redraw = true;
+                    return true;
+                }
+            }
         }
-        let content_top = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP;
-        let bar_x = panel_rect.x + PANE_PADDING;
-        let bar_w = panel_rect.width - 2.0 * PANE_PADDING;
-        if pos.y < content_top || pos.y > content_top + CONFLICT_BAR_HEIGHT
-            || pos.x < bar_x || pos.x > bar_x + bar_w
-        {
-            return false;
+
+        // Try conflict bar
+        if self.handle_conflict_bar_click_inner(pos) {
+            return true;
         }
+
+        false
+    }
+
+    /// Get the notification bar rect for a pane (either in panel or left-side).
+    fn notification_bar_rect(&self, pane_id: tide_core::PaneId) -> Option<Rect> {
+        // Check panel editor
+        if let (Some(active_id), Some(panel_rect)) = (self.editor_panel_active, self.editor_panel_rect) {
+            if active_id == pane_id {
+                let content_top = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP;
+                let bar_x = panel_rect.x + PANE_PADDING;
+                let bar_w = panel_rect.width - 2.0 * PANE_PADDING;
+                return Some(Rect::new(bar_x, content_top, bar_w, CONFLICT_BAR_HEIGHT));
+            }
+        }
+        // Check left-side panes
+        if let Some(&(_, rect)) = self.visual_pane_rects.iter().find(|(id, _)| *id == pane_id) {
+            let content_top = rect.y + TAB_BAR_HEIGHT;
+            let bar_x = rect.x + PANE_PADDING;
+            let bar_w = rect.width - 2.0 * PANE_PADDING;
+            return Some(Rect::new(bar_x, content_top, bar_w, CONFLICT_BAR_HEIGHT));
+        }
+        None
+    }
+
+    /// Handle conflict bar button click for any pane. Returns true if the click was consumed.
+    fn handle_conflict_bar_click_inner(&mut self, pos: Vec2) -> bool {
+        // Find which pane has a conflict bar under the click
+        let mut target_pane: Option<(tide_core::PaneId, Rect)> = None;
+
+        // Check panel editor
+        if let (Some(active_id), Some(panel_rect)) = (self.editor_panel_active, self.editor_panel_rect) {
+            if let Some(PaneKind::Editor(pane)) = self.panes.get(&active_id) {
+                if pane.needs_notification_bar() {
+                    let content_top = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP;
+                    let bar_x = panel_rect.x + PANE_PADDING;
+                    let bar_w = panel_rect.width - 2.0 * PANE_PADDING;
+                    let bar_rect = Rect::new(bar_x, content_top, bar_w, CONFLICT_BAR_HEIGHT);
+                    if pos.y >= bar_rect.y && pos.y <= bar_rect.y + CONFLICT_BAR_HEIGHT
+                        && pos.x >= bar_rect.x && pos.x <= bar_rect.x + bar_rect.width
+                    {
+                        target_pane = Some((active_id, bar_rect));
+                    }
+                }
+            }
+        }
+
+        // Check left-side panes
+        if target_pane.is_none() {
+            for &(id, rect) in &self.visual_pane_rects {
+                if let Some(PaneKind::Editor(pane)) = self.panes.get(&id) {
+                    if pane.needs_notification_bar() {
+                        let content_top = rect.y + TAB_BAR_HEIGHT;
+                        let bar_x = rect.x + PANE_PADDING;
+                        let bar_w = rect.width - 2.0 * PANE_PADDING;
+                        let bar_rect = Rect::new(bar_x, content_top, bar_w, CONFLICT_BAR_HEIGHT);
+                        if pos.y >= bar_rect.y && pos.y <= bar_rect.y + CONFLICT_BAR_HEIGHT
+                            && pos.x >= bar_rect.x && pos.x <= bar_rect.x + bar_rect.width
+                        {
+                            target_pane = Some((id, bar_rect));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        let (pane_id, bar_rect) = match target_pane {
+            Some(t) => t,
+            None => return false,
+        };
+
         let cell_size = match self.renderer.as_ref().map(|r| r.cell_size()) {
             Some(cs) => cs,
             None => return false,
         };
+
+        let is_deleted = self.panes.get(&pane_id)
+            .and_then(|pk| if let PaneKind::Editor(ep) = pk { Some(ep.file_deleted) } else { None })
+            .unwrap_or(false);
+
         let btn_pad = 8.0;
-        let reload_w = 6.0 * cell_size.width + btn_pad * 2.0;
-        let reload_x = bar_x + bar_w - reload_w - 4.0;
+
+        // Overwrite button (rightmost)
         let overwrite_w = 9.0 * cell_size.width + btn_pad * 2.0;
-        let overwrite_x = reload_x - overwrite_w - 4.0;
-        if pos.x >= reload_x {
-            if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&active_id) {
-                if let Err(e) = pane.editor.reload() {
-                    log::error!("Conflict reload failed: {}", e);
-                }
-                pane.disk_changed = false;
-            }
-        } else if pos.x >= overwrite_x {
-            if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&active_id) {
+        let overwrite_x = bar_rect.x + bar_rect.width - overwrite_w - 4.0;
+
+        // Compare button (only for non-deleted)
+        let compare_w = 7.0 * cell_size.width + btn_pad * 2.0;
+        let compare_x = overwrite_x - compare_w - 4.0;
+
+        if pos.x >= overwrite_x {
+            // Overwrite
+            if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&pane_id) {
                 if let Err(e) = pane.editor.buffer.save() {
                     log::error!("Conflict overwrite failed: {}", e);
                 }
                 pane.disk_changed = false;
+                pane.file_deleted = false;
+                pane.diff_mode = false;
+                pane.disk_content = None;
+            }
+        } else if !is_deleted && pos.x >= compare_x {
+            // Compare — enter diff mode
+            if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&pane_id) {
+                // Load disk content for diff
+                if let Some(path) = pane.editor.file_path().map(|p| p.to_path_buf()) {
+                    match std::fs::read_to_string(&path) {
+                        Ok(content) => {
+                            let lines: Vec<String> = content.lines().map(String::from).collect();
+                            pane.disk_content = Some(lines);
+                            pane.diff_mode = true;
+                        }
+                        Err(e) => {
+                            log::error!("Failed to read disk content for diff: {}", e);
+                        }
+                    }
+                }
             }
         }
+
         self.chrome_generation += 1;
+        self.pane_generations.remove(&pane_id);
         self.needs_redraw = true;
         true
     }
+
 
     /// Handle a completed drop operation.
     fn handle_drop(&mut self, source: tide_core::PaneId, from_panel: bool, dest: DropDestination) {

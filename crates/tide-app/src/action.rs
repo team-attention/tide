@@ -103,6 +103,9 @@ impl App {
                                 // Clear disk_changed on save (user's version wins)
                                 if is_save {
                                     pane.disk_changed = false;
+                                    pane.diff_mode = false;
+                                    pane.disk_content = None;
+                                    pane.file_deleted = false;
                                 }
                                 // Redraw tab label when modified indicator changes
                                 if pane.editor.is_modified() != was_modified || is_save {
@@ -212,50 +215,7 @@ impl App {
             }
             GlobalAction::ClosePane => {
                 if let Some(focused) = self.focused {
-                    // If focused pane is in the editor panel, close panel tab
-                    if self.editor_panel_tabs.contains(&focused) {
-                        self.close_editor_panel_tab(focused);
-                        self.update_file_tree_cwd();
-                        return;
-                    }
-
-                    // Clear maximize if the maximized pane is being closed
-                    if self.maximized_pane == Some(focused) {
-                        self.maximized_pane = None;
-                    }
-
-                    let remaining = self.layout.pane_ids();
-                    if remaining.len() <= 1 && self.editor_panel_tabs.is_empty() {
-                        // Don't close the last pane — exit the app instead
-                        std::process::exit(0);
-                    }
-                    if remaining.len() <= 1 {
-                        // Last tree pane but panel has tabs — focus panel instead
-                        if let Some(active) = self.editor_panel_active {
-                            self.focused = Some(active);
-                            self.router.set_focused(active);
-                            self.chrome_generation += 1;
-                        }
-                        return;
-                    }
-
-                    self.layout.remove(focused);
-                    self.panes.remove(&focused);
-                    self.pane_generations.remove(&focused);
-                    self.scroll_accumulator.remove(&focused);
-
-                    // Focus the first remaining pane
-                    let remaining = self.layout.pane_ids();
-                    if let Some(&next) = remaining.first() {
-                        self.focused = Some(next);
-                        self.router.set_focused(next);
-                    } else {
-                        self.focused = None;
-                    }
-
-                    self.chrome_generation += 1;
-                    self.compute_layout();
-                    self.update_file_tree_cwd();
+                    self.close_specific_pane(focused);
                 }
             }
             GlobalAction::ToggleFileTree => {
@@ -697,11 +657,35 @@ impl App {
         }
     }
 
-    /// Close an editor panel tab.
+    /// Close an editor panel tab. If dirty, show save confirm bar instead.
     pub(crate) fn close_editor_panel_tab(&mut self, tab_id: tide_core::PaneId) {
+        // Check if editor is dirty → show save confirm bar
+        if let Some(PaneKind::Editor(pane)) = self.panes.get(&tab_id) {
+            if pane.editor.is_modified() {
+                self.save_confirm = Some(crate::SaveConfirmState { pane_id: tab_id });
+                // Ensure this tab is active and focused so the bar is visible
+                if self.editor_panel_tabs.contains(&tab_id) {
+                    self.editor_panel_active = Some(tab_id);
+                }
+                self.focused = Some(tab_id);
+                self.router.set_focused(tab_id);
+                self.chrome_generation += 1;
+                self.pane_generations.remove(&tab_id);
+                return;
+            }
+        }
+        self.force_close_editor_panel_tab(tab_id);
+    }
+
+    /// Force close an editor panel tab (no dirty check).
+    pub(crate) fn force_close_editor_panel_tab(&mut self, tab_id: tide_core::PaneId) {
         // Cancel save-as if the target pane is being closed
         if self.save_as_input.as_ref().is_some_and(|s| s.pane_id == tab_id) {
             self.save_as_input = None;
+        }
+        // Cancel save confirm if the target pane is being closed
+        if self.save_confirm.as_ref().is_some_and(|s| s.pane_id == tab_id) {
+            self.save_confirm = None;
         }
         // Unwatch the file before removing the pane
         let watch_path = if let Some(PaneKind::Editor(editor)) = self.panes.get(&tab_id) {
@@ -776,13 +760,41 @@ impl App {
 
     /// Close a specific pane by its ID (used by close button clicks).
     pub(crate) fn close_specific_pane(&mut self, pane_id: tide_core::PaneId) {
+        // If the pane is in the editor panel, close the panel tab (with dirty check)
+        if self.editor_panel_tabs.contains(&pane_id) {
+            self.close_editor_panel_tab(pane_id);
+            self.update_file_tree_cwd();
+            return;
+        }
+
+        // Check if editor is dirty → show save confirm bar
+        if let Some(PaneKind::Editor(pane)) = self.panes.get(&pane_id) {
+            if pane.editor.is_modified() {
+                self.save_confirm = Some(crate::SaveConfirmState { pane_id });
+                self.focused = Some(pane_id);
+                self.router.set_focused(pane_id);
+                self.chrome_generation += 1;
+                self.pane_generations.remove(&pane_id);
+                return;
+            }
+        }
+
+        self.force_close_specific_pane(pane_id);
+    }
+
+    /// Force close a specific pane (no dirty check).
+    pub(crate) fn force_close_specific_pane(&mut self, pane_id: tide_core::PaneId) {
         // Cancel save-as if the target pane is being closed
         if self.save_as_input.as_ref().is_some_and(|s| s.pane_id == pane_id) {
             self.save_as_input = None;
         }
-        // If the pane is in the editor panel, close the panel tab
+        // Cancel save confirm
+        if self.save_confirm.as_ref().is_some_and(|s| s.pane_id == pane_id) {
+            self.save_confirm = None;
+        }
+        // If the pane is in the editor panel, force close the panel tab
         if self.editor_panel_tabs.contains(&pane_id) {
-            self.close_editor_panel_tab(pane_id);
+            self.force_close_editor_panel_tab(pane_id);
             self.update_file_tree_cwd();
             return;
         }
@@ -902,6 +914,55 @@ impl App {
             Some(resolved)
         } else {
             None
+        }
+    }
+
+    /// Save and close the pane from the save confirm bar.
+    pub(crate) fn confirm_save_and_close(&mut self) {
+        let pane_id = match self.save_confirm.take() {
+            Some(sc) => sc.pane_id,
+            None => return,
+        };
+        // Save
+        if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&pane_id) {
+            if pane.editor.file_path().is_none() {
+                // Untitled file → open save-as input
+                self.save_as_input = Some(crate::SaveAsInput::new(pane_id));
+                return;
+            }
+            if let Err(e) = pane.editor.buffer.save() {
+                log::error!("Save failed: {}", e);
+                return;
+            }
+            pane.disk_changed = false;
+        }
+        // Close
+        if self.editor_panel_tabs.contains(&pane_id) {
+            self.force_close_editor_panel_tab(pane_id);
+        } else {
+            self.force_close_specific_pane(pane_id);
+        }
+    }
+
+    /// Discard changes and close the pane from the save confirm bar.
+    pub(crate) fn confirm_discard_and_close(&mut self) {
+        let pane_id = match self.save_confirm.take() {
+            Some(sc) => sc.pane_id,
+            None => return,
+        };
+        if self.editor_panel_tabs.contains(&pane_id) {
+            self.force_close_editor_panel_tab(pane_id);
+        } else {
+            self.force_close_specific_pane(pane_id);
+        }
+    }
+
+    /// Cancel the save confirm bar.
+    pub(crate) fn cancel_save_confirm(&mut self) {
+        if self.save_confirm.is_some() {
+            self.save_confirm = None;
+            self.chrome_generation += 1;
+            self.pane_generations.clear();
         }
     }
 }

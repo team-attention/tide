@@ -30,21 +30,51 @@ pub struct EditorPane {
     pub search: Option<SearchState>,
     pub selection: Option<Selection>,
     pub disk_changed: bool,
+    pub file_deleted: bool,
+    pub diff_mode: bool,
+    pub disk_content: Option<Vec<String>>,
 }
 
 impl EditorPane {
     pub fn new_empty(id: PaneId) -> Self {
         let editor = EditorState::new_empty();
-        Self { id, editor, search: None, selection: None, disk_changed: false }
+        Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None }
     }
 
     pub fn open(id: PaneId, path: &Path) -> io::Result<Self> {
         let editor = EditorState::open(path)?;
-        Ok(Self { id, editor, search: None, selection: None, disk_changed: false })
+        Ok(Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None })
     }
 
-    /// Render the editor grid cells into the cached grid layer.
-    pub fn render_grid(&self, rect: Rect, renderer: &mut WgpuRenderer, gutter_text: Color, gutter_active_text: Color) {
+    /// Whether this pane needs a notification bar (conflict or diff).
+    pub fn needs_notification_bar(&self) -> bool {
+        (self.disk_changed && self.editor.is_modified()) || self.diff_mode
+    }
+
+    /// Render the editor grid cells into the cached grid layer, with optional diff colors.
+    pub fn render_grid_full(
+        &self,
+        rect: Rect,
+        renderer: &mut WgpuRenderer,
+        gutter_text: Color,
+        gutter_active_text: Color,
+        diff_added_bg: Option<Color>,
+        diff_removed_bg: Option<Color>,
+        diff_added_gutter: Option<Color>,
+        diff_removed_gutter: Option<Color>,
+    ) {
+        if self.diff_mode {
+            if let Some(ref disk_content) = self.disk_content {
+                self.render_diff_grid(rect, renderer, gutter_text, disk_content,
+                    diff_added_bg.unwrap_or(gutter_text),
+                    diff_removed_bg.unwrap_or(gutter_text),
+                    diff_added_gutter.unwrap_or(gutter_text),
+                    diff_removed_gutter.unwrap_or(gutter_text),
+                );
+                return;
+            }
+        }
+
         let cell_size = renderer.cell_size();
         let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
         let content_x = rect.x + gutter_width;
@@ -134,6 +164,145 @@ impl EditorPane {
         }
     }
 
+    /// Render the diff view grid.
+    fn render_diff_grid(
+        &self,
+        rect: Rect,
+        renderer: &mut WgpuRenderer,
+        gutter_text: Color,
+        disk_content: &[String],
+        added_bg: Color,
+        removed_bg: Color,
+        added_gutter: Color,
+        removed_gutter: Color,
+    ) {
+        use crate::diff::{compute_diff, DiffOp};
+
+        let cell_size = renderer.cell_size();
+        let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+        let content_x = rect.x + gutter_width;
+        let content_width = (rect.width - gutter_width).max(0.0);
+
+        let diff_ops = compute_diff(disk_content, &self.editor.buffer.lines);
+        let visible_rows = (rect.height / cell_size.height).floor() as usize;
+        let scroll = self.editor.scroll_offset();
+        let h_scroll = self.editor.h_scroll_offset();
+
+        // Render visible virtual lines
+        for (vi, op) in diff_ops.iter().skip(scroll).take(visible_rows).enumerate() {
+            let y = rect.y + vi as f32 * cell_size.height;
+            if y + cell_size.height > rect.y + rect.height {
+                break;
+            }
+
+            match op {
+                DiffOp::Equal(buf_idx) | DiffOp::Insert(buf_idx) => {
+                    let is_added = matches!(op, DiffOp::Insert(_));
+
+                    // Draw full-row background rect for added lines
+                    if is_added {
+                        let row_rect = Rect::new(rect.x, y, rect.width, cell_size.height);
+                        renderer.draw_grid_rect(row_rect, added_bg);
+                    }
+
+                    // Gutter: line number or + marker
+                    let gutter_str = if is_added {
+                        format!("{:>3}+ ", buf_idx + 1)
+                    } else {
+                        format!("{:>4} ", buf_idx + 1)
+                    };
+                    let gc = if is_added { added_gutter } else { gutter_text };
+                    let gutter_style = TextStyle {
+                        foreground: gc,
+                        background: None,
+                        bold: false,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    };
+                    for (ci, ch) in gutter_str.chars().enumerate().take(GUTTER_WIDTH_CELLS) {
+                        if ch != ' ' {
+                            renderer.draw_grid_cell(ch, vi, ci, gutter_style, cell_size, Vec2::new(rect.x, rect.y));
+                        }
+                    }
+
+                    // Content
+                    if let Some(line) = self.editor.buffer.line(*buf_idx) {
+                        let text_style = TextStyle {
+                            foreground: Color::new(0.88, 0.88, 0.88, 1.0),
+                            background: None,
+                            bold: false,
+                            dim: false,
+                            italic: false,
+                            underline: false,
+                        };
+                        let mut char_idx = 0usize;
+                        let mut display_col = 0usize;
+                        for ch in line.chars() {
+                            if ch == '\n' { continue; }
+                            let char_w = ch.width().unwrap_or(1);
+                            if char_idx < h_scroll { char_idx += 1; continue; }
+                            let px = content_x + display_col as f32 * cell_size.width;
+                            if px >= content_x + content_width { break; }
+                            if ch != ' ' {
+                                renderer.draw_grid_cell(ch, vi, GUTTER_WIDTH_CELLS + display_col, text_style, cell_size, Vec2::new(rect.x, rect.y));
+                            }
+                            display_col += char_w;
+                            char_idx += 1;
+                        }
+                    }
+                }
+                DiffOp::Delete(disk_idx) => {
+                    // Draw full-row background rect for removed lines
+                    let row_rect = Rect::new(rect.x, y, rect.width, cell_size.height);
+                    renderer.draw_grid_rect(row_rect, removed_bg);
+
+                    // Gutter: - marker
+                    let gutter_str = format!("{:>3}- ", disk_idx + 1);
+                    let gutter_style = TextStyle {
+                        foreground: removed_gutter,
+                        background: None,
+                        bold: false,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    };
+                    for (ci, ch) in gutter_str.chars().enumerate().take(GUTTER_WIDTH_CELLS) {
+                        if ch != ' ' {
+                            renderer.draw_grid_cell(ch, vi, ci, gutter_style, cell_size, Vec2::new(rect.x, rect.y));
+                        }
+                    }
+
+                    // Content from disk
+                    if let Some(line) = disk_content.get(*disk_idx) {
+                        let text_style = TextStyle {
+                            foreground: Color::new(0.65, 0.65, 0.65, 1.0),
+                            background: None,
+                            bold: false,
+                            dim: true,
+                            italic: false,
+                            underline: false,
+                        };
+                        let mut char_idx = 0usize;
+                        let mut display_col = 0usize;
+                        for ch in line.chars() {
+                            if ch == '\n' { continue; }
+                            let char_w = ch.width().unwrap_or(1);
+                            if char_idx < h_scroll { char_idx += 1; continue; }
+                            let px = content_x + display_col as f32 * cell_size.width;
+                            if px >= content_x + content_width { break; }
+                            if ch != ' ' {
+                                renderer.draw_grid_cell(ch, vi, GUTTER_WIDTH_CELLS + display_col, text_style, cell_size, Vec2::new(rect.x, rect.y));
+                            }
+                            display_col += char_w;
+                            char_idx += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Render the editor cursor into the overlay layer (always redrawn).
     pub fn render_cursor(&self, rect: Rect, renderer: &mut WgpuRenderer, cursor_color: Color) {
         let cell_size = renderer.cell_size();
@@ -141,9 +310,37 @@ impl EditorPane {
         let scroll = self.editor.scroll_offset();
         let h_scroll = self.editor.h_scroll_offset();
 
-        if pos.line < scroll {
-            return;
-        }
+        // In diff mode, map buffer cursor line to virtual diff line
+        let visual_row = if self.diff_mode {
+            if let Some(ref disk_content) = self.disk_content {
+                use crate::diff::{compute_diff, DiffOp};
+                let diff_ops = compute_diff(disk_content, &self.editor.buffer.lines);
+                let mut vline = None;
+                for (vi, op) in diff_ops.iter().enumerate() {
+                    match op {
+                        DiffOp::Equal(buf_idx) | DiffOp::Insert(buf_idx) => {
+                            if *buf_idx == pos.line {
+                                vline = Some(vi);
+                                break;
+                            }
+                        }
+                        DiffOp::Delete(_) => {}
+                    }
+                }
+                match vline {
+                    Some(vl) if vl >= scroll => vl - scroll,
+                    _ => return,
+                }
+            } else {
+                return;
+            }
+        } else {
+            if pos.line < scroll {
+                return;
+            }
+            pos.line - scroll
+        };
+
         // Convert byte offset to char index for comparison with h_scroll (char-indexed)
         let cursor_char_col = if let Some(line_text) = self.editor.buffer.line(pos.line) {
             let byte_col = pos.col.min(line_text.len());
@@ -154,7 +351,6 @@ impl EditorPane {
         if cursor_char_col < h_scroll {
             return;
         }
-        let visual_row = pos.line - scroll;
         // Compute visual column accounting for wide characters
         let visual_col_offset = if let Some(line_text) = self.editor.buffer.line(pos.line) {
             line_text.chars()
@@ -226,11 +422,13 @@ impl EditorPane {
     /// Get the file name for display in the tab bar.
     pub fn title(&self) -> String {
         let name = self.editor.file_display_name();
-        match (self.disk_changed, self.editor.is_modified()) {
-            (true, true) => format!("{} \u{27f3}\u{f111}", name),   // disk changed + locally modified
-            (true, false) => format!("{} \u{27f3}", name),           // disk changed only (fallback)
-            (false, true) => format!("{} \u{f111}", name),           // locally modified only
-            (false, false) => name,
+        if self.file_deleted {
+            return format!("{} (deleted)", name);
+        }
+        if self.disk_changed {
+            format!("{} \u{27f3}", name) // ↻ indicator for disk changed
+        } else {
+            name
         }
     }
 

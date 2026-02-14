@@ -3,6 +3,7 @@
 // layout engine, input router, file tree, and CWD following.
 
 mod action;
+mod diff;
 mod drag_drop;
 mod editor_pane;
 mod event_handler;
@@ -111,6 +112,14 @@ impl SaveAsInput {
 }
 
 // ──────────────────────────────────────────────
+// Save confirm state (inline bar when closing dirty editors)
+// ──────────────────────────────────────────────
+
+pub(crate) struct SaveConfirmState {
+    pub pane_id: PaneId,
+}
+
+// ──────────────────────────────────────────────
 // App state
 // ──────────────────────────────────────────────
 
@@ -215,6 +224,9 @@ struct App {
     // Save-as input (inline filename entry for untitled files)
     pub(crate) save_as_input: Option<SaveAsInput>,
 
+    // Save confirm state (inline bar when closing dirty editors)
+    pub(crate) save_confirm: Option<SaveConfirmState>,
+
     // Theme mode
     pub(crate) dark_mode: bool,
 
@@ -287,6 +299,7 @@ impl App {
             panel_tab_scroll: 0.0,
             panel_tab_scroll_target: 0.0,
             save_as_input: None,
+            save_confirm: None,
             dark_mode: true,
             hover_target: None,
             file_watcher: None,
@@ -670,19 +683,42 @@ impl App {
                     })
                     .collect();
 
+                // Check if the file actually exists (macOS FSEvents may report
+                // Modify events for deleted files)
+                let file_exists = changed_path.exists();
+
                 for id in matching_ids {
                     if let Some(PaneKind::Editor(editor_pane)) = self.panes.get_mut(&id) {
-                        if !editor_pane.editor.is_modified() {
-                            // Buffer clean → auto-reload silently
-                            if let Err(e) = editor_pane.editor.reload() {
-                                log::error!("Failed to reload {:?}: {}", changed_path, e);
+                        if !file_exists {
+                            // File doesn't exist — treat as deletion
+                            if !editor_pane.editor.is_modified() {
+                                // Buffer clean → will be closed below via removed_paths
+                                // Add to removed_paths to avoid duplication
+                                if !removed_paths.contains(changed_path) {
+                                    removed_paths.push(changed_path.clone());
+                                }
+                            } else {
+                                editor_pane.disk_changed = true;
+                                editor_pane.file_deleted = true;
                             }
-                            editor_pane.disk_changed = false;
                         } else {
-                            // Buffer dirty → mark disk changed, let user decide
-                            editor_pane.disk_changed = true;
+                            // File was recreated or modified
+                            editor_pane.file_deleted = false;
+                            editor_pane.diff_mode = false;
+                            editor_pane.disk_content = None;
+                            if !editor_pane.editor.is_modified() {
+                                // Buffer clean → auto-reload silently
+                                if let Err(e) = editor_pane.editor.reload() {
+                                    log::error!("Failed to reload {:?}: {}", changed_path, e);
+                                }
+                                editor_pane.disk_changed = false;
+                            } else {
+                                // Buffer dirty → mark disk changed, let user decide
+                                editor_pane.disk_changed = true;
+                            }
                         }
                         self.chrome_generation += 1;
+                        self.pane_generations.remove(&id);
                     }
                 }
             }
@@ -707,9 +743,11 @@ impl App {
                             // Buffer clean → close the tab
                             tabs_to_close.push(id);
                         } else {
-                            // Buffer dirty → mark disk changed, keep tab open for save-as
+                            // Buffer dirty → mark as deleted and disk changed
                             editor_pane.disk_changed = true;
+                            editor_pane.file_deleted = true;
                             self.chrome_generation += 1;
+                            self.pane_generations.remove(&id);
                         }
                     }
                 }
@@ -838,10 +876,11 @@ impl ApplicationHandler for App {
                         self.needs_redraw = true;
                         return;
                     }
-                    // Tab click → let flow to handle_window_event for drag initiation
+                    // Tab click → cancel save confirm and let flow for drag initiation
                     if self.panel_tab_at(self.last_cursor_pos).is_some() {
+                        self.cancel_save_confirm();
                         // fall through
-                    } else if self.handle_conflict_bar_click(self.last_cursor_pos) {
+                    } else if self.handle_notification_bar_click(self.last_cursor_pos) {
                         // Conflict bar button was clicked
                         return;
                     } else {
@@ -852,6 +891,20 @@ impl ApplicationHandler for App {
                         return;
                     }
                 }
+            }
+        }
+
+        // Handle notification bar clicks on left-side panes
+        if let WindowEvent::MouseInput {
+            state: ElementState::Pressed,
+            button: WinitMouseButton::Left,
+            ..
+        } = &event
+        {
+            // Check left-side pane notification bars (not inside panel)
+            let in_panel = self.editor_panel_rect.is_some_and(|pr| pr.contains(self.last_cursor_pos));
+            if !in_panel && self.handle_notification_bar_click(self.last_cursor_pos) {
+                return;
             }
         }
 

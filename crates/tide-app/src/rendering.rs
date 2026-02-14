@@ -1,11 +1,31 @@
 use tide_core::{FileTreeSource, Rect, Renderer, TerminalBackend, TextStyle, Vec2};
 
 use crate::drag_drop;
-use crate::drag_drop::{DropDestination, PaneDragState};
+use crate::drag_drop::{DropDestination, HoverTarget, PaneDragState};
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::ui::{file_icon, pane_title, panel_tab_title};
 use crate::App;
+
+/// Compute the bar offset for a pane. Returns CONFLICT_BAR_HEIGHT if a notification bar
+/// (conflict or save confirm) is visible, else 0.
+fn bar_offset_for(
+    pane_id: tide_core::PaneId,
+    panes: &std::collections::HashMap<tide_core::PaneId, PaneKind>,
+    save_confirm: &Option<crate::SaveConfirmState>,
+) -> f32 {
+    if let Some(ref sc) = save_confirm {
+        if sc.pane_id == pane_id {
+            return CONFLICT_BAR_HEIGHT;
+        }
+    }
+    if let Some(PaneKind::Editor(pane)) = panes.get(&pane_id) {
+        if pane.needs_notification_bar() {
+            return CONFLICT_BAR_HEIGHT;
+        }
+    }
+    0.0
+}
 
 impl App {
     pub(crate) fn render(&mut self) {
@@ -205,15 +225,24 @@ impl App {
                             clip,
                         );
 
-                        // Close "x" button
+                        // Close / modified indicator button
                         let close_x = tx + PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - 4.0;
                         let close_y = tab_bar_top + (PANEL_TAB_HEIGHT - cell_height) / 2.0;
                         // Only draw close button if it's within visible area
                         if close_x + PANEL_TAB_CLOSE_SIZE > tab_bar_clip.x
                             && close_x < tab_bar_clip.x + tab_bar_clip.width
                         {
+                            let is_modified = self.panes.get(&tab_id)
+                                .and_then(|pk| if let PaneKind::Editor(ep) = pk { Some(ep.editor.is_modified()) } else { None })
+                                .unwrap_or(false);
+                            let is_close_hovered = matches!(self.hover_target, Some(HoverTarget::PanelTabClose(hid)) if hid == tab_id);
+                            let (icon, icon_color) = if is_modified && !is_close_hovered {
+                                ("\u{f111}", p.editor_modified)  // ● in modified color
+                            } else {
+                                ("\u{f00d}", p.tab_text)  // ✕ in normal color
+                            };
                             let close_style = TextStyle {
-                                foreground: p.tab_text,
+                                foreground: icon_color,
                                 background: None,
                                 bold: false,
                                 dim: false,
@@ -222,7 +251,7 @@ impl App {
                             };
                             let close_clip = Rect::new(close_x, tab_bar_top, PANEL_TAB_CLOSE_SIZE + 4.0, PANEL_TAB_HEIGHT);
                             renderer.draw_chrome_text(
-                                "\u{f00d}",  // Nerd Font close icon
+                                icon,
                                 Vec2::new(close_x, close_y),
                                 close_style,
                                 close_clip,
@@ -350,11 +379,21 @@ impl App {
                     Rect::new(rect.x, rect.y, title_clip_w.max(0.0) + PANE_PADDING + 4.0, TAB_BAR_HEIGHT),
                 );
 
-                // Close button
+                // Close / modified indicator button
                 let close_x = rect.x + rect.width - PANE_CLOSE_SIZE - PANE_PADDING;
                 let close_y = rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
+                let is_modified = match self.panes.get(&id) {
+                    Some(PaneKind::Editor(ep)) => ep.editor.is_modified(),
+                    _ => false,
+                };
+                let is_close_hovered = matches!(self.hover_target, Some(HoverTarget::PaneTabClose(hid)) if hid == id);
+                let (icon, icon_color) = if is_modified && !is_close_hovered {
+                    ("\u{f111}", p.editor_modified)
+                } else {
+                    ("\u{f00d}", p.tab_text)
+                };
                 let close_style = TextStyle {
-                    foreground: p.tab_text,
+                    foreground: icon_color,
                     background: None,
                     bold: false,
                     dim: false,
@@ -362,7 +401,7 @@ impl App {
                     underline: false,
                 };
                 renderer.draw_chrome_text(
-                    "\u{f00d}",
+                    icon,
                     Vec2::new(close_x, close_y),
                     close_style,
                     Rect::new(close_x, rect.y, PANE_CLOSE_SIZE + PANE_PADDING, TAB_BAR_HEIGHT),
@@ -383,11 +422,12 @@ impl App {
             let prev = self.pane_generations.get(&id).copied().unwrap_or(u64::MAX);
             if gen != prev {
                 any_dirty = true;
+                let pane_bar = bar_offset_for(id, &self.panes, &self.save_confirm);
                 let inner = Rect::new(
                     rect.x + PANE_PADDING,
-                    rect.y + TAB_BAR_HEIGHT,
+                    rect.y + TAB_BAR_HEIGHT + pane_bar,
                     rect.width - 2.0 * PANE_PADDING,
-                    rect.height - TAB_BAR_HEIGHT - PANE_PADDING,
+                    (rect.height - TAB_BAR_HEIGHT - PANE_PADDING - pane_bar).max(1.0),
                 );
                 renderer.begin_pane_grid(id);
                 match self.panes.get(&id) {
@@ -396,7 +436,9 @@ impl App {
                         self.pane_generations.insert(id, pane.backend.grid_generation());
                     }
                     Some(PaneKind::Editor(pane)) => {
-                        pane.render_grid(inner, renderer, p.gutter_text, p.gutter_active_text);
+                        pane.render_grid_full(inner, renderer, p.gutter_text, p.gutter_active_text,
+                            Some(p.diff_added_bg), Some(p.diff_removed_bg),
+                            Some(p.diff_added_gutter), Some(p.diff_removed_gutter));
                         self.pane_generations.insert(id, pane.generation());
                     }
                     None => {}
@@ -412,15 +454,18 @@ impl App {
                 let prev = self.pane_generations.get(&active_id).copied().unwrap_or(u64::MAX);
                 if gen != prev {
                     any_dirty = true;
-                    let content_top = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP;
+                    let bar_offset = bar_offset_for(active_id, &self.panes, &self.save_confirm);
+                    let content_top = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP + bar_offset;
                     let inner = Rect::new(
                         panel_rect.x + PANE_PADDING,
                         content_top,
                         panel_rect.width - 2.0 * PANE_PADDING,
-                        (panel_rect.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING).max(1.0),
+                        (panel_rect.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING - bar_offset).max(1.0),
                     );
                     renderer.begin_pane_grid(active_id);
-                    pane.render_grid(inner, renderer, p.gutter_text, p.gutter_active_text);
+                    pane.render_grid_full(inner, renderer, p.gutter_text, p.gutter_active_text,
+                        Some(p.diff_added_bg), Some(p.diff_removed_bg),
+                        Some(p.diff_added_gutter), Some(p.diff_removed_gutter));
                     renderer.end_pane_grid();
                     self.pane_generations.insert(active_id, pane.generation());
                 }
@@ -438,11 +483,12 @@ impl App {
 
         // Always render cursor (overlay layer) — cursor blinks/moves independently
         for &(id, rect) in &visual_pane_rects {
+            let pane_bar = bar_offset_for(id, &self.panes, &self.save_confirm);
             let inner = Rect::new(
                 rect.x + PANE_PADDING,
-                rect.y + TAB_BAR_HEIGHT,
+                rect.y + TAB_BAR_HEIGHT + pane_bar,
                 rect.width - 2.0 * PANE_PADDING,
-                rect.height - TAB_BAR_HEIGHT - PANE_PADDING,
+                (rect.height - TAB_BAR_HEIGHT - PANE_PADDING - pane_bar).max(1.0),
             );
             match self.panes.get(&id) {
                 Some(PaneKind::Terminal(pane)) => {
@@ -610,12 +656,13 @@ impl App {
         // Render cursor for active panel editor
         if let (Some(active_id), Some(panel_rect)) = (editor_panel_active, editor_panel_rect) {
             if let Some(PaneKind::Editor(pane)) = self.panes.get(&active_id) {
-                let content_top = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP;
+                let bar_offset = bar_offset_for(active_id, &self.panes, &self.save_confirm);
+                let content_top = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP + bar_offset;
                 let inner = Rect::new(
                     panel_rect.x + PANE_PADDING,
                     content_top,
                     panel_rect.width - 2.0 * PANE_PADDING,
-                    (panel_rect.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING).max(1.0),
+                    (panel_rect.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING - bar_offset).max(1.0),
                 );
                 if search_focus != Some(active_id) {
                     pane.render_cursor(inner, renderer, p.cursor_accent);
@@ -929,59 +976,138 @@ impl App {
             }
         }
 
-        // Render conflict notification bar for panel editor when file changed on disk while dirty
-        if let (Some(active_id), Some(panel_rect)) = (editor_panel_active, editor_panel_rect) {
-            if let Some(PaneKind::Editor(pane)) = self.panes.get(&active_id) {
-                if pane.disk_changed && pane.editor.is_modified() {
-                    let cell_size = renderer.cell_size();
-                    let content_top = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP;
-                    let bar_x = panel_rect.x + PANE_PADDING;
-                    let bar_w = panel_rect.width - 2.0 * PANE_PADDING;
-                    let bar_rect = Rect::new(bar_x, content_top, bar_w, CONFLICT_BAR_HEIGHT);
+        // Render notification bars (conflict / save confirm) for all editor panes
+        {
+            let cell_size = renderer.cell_size();
 
-                    // Bar background
-                    renderer.draw_top_rect(bar_rect, p.conflict_bar_bg);
+            // Collect all panes that need notification bars
+            let mut bar_panes: Vec<(tide_core::PaneId, Rect)> = Vec::new();
 
-                    let text_y = content_top + (CONFLICT_BAR_HEIGHT - cell_size.height) / 2.0;
-                    let text_style = TextStyle {
-                        foreground: p.conflict_bar_text,
-                        background: None,
-                        bold: false,
-                        dim: false,
-                        italic: false,
-                        underline: false,
-                    };
-                    let msg = "File changed on disk";
-                    renderer.draw_top_text(msg, Vec2::new(bar_x + 8.0, text_y), text_style, bar_rect);
+            // Panel editor
+            if let (Some(active_id), Some(panel_rect)) = (editor_panel_active, editor_panel_rect) {
+                let content_top = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP;
+                let bar_x = panel_rect.x + PANE_PADDING;
+                let bar_w = panel_rect.width - 2.0 * PANE_PADDING;
+                bar_panes.push((active_id, Rect::new(bar_x, content_top, bar_w, CONFLICT_BAR_HEIGHT)));
+            }
 
-                    // Buttons: [Overwrite] [Reload] right-aligned
-                    let btn_style = TextStyle {
-                        foreground: p.conflict_bar_btn_text,
-                        background: None,
-                        bold: true,
-                        dim: false,
-                        italic: false,
-                        underline: false,
-                    };
-                    let btn_pad = 8.0;
-                    let btn_h = CONFLICT_BAR_HEIGHT - 6.0;
-                    let btn_y = content_top + 3.0;
+            // Left-side panes
+            for &(id, rect) in &visual_pane_rects {
+                let content_top = rect.y + TAB_BAR_HEIGHT;
+                let bar_x = rect.x + PANE_PADDING;
+                let bar_w = rect.width - 2.0 * PANE_PADDING;
+                bar_panes.push((id, Rect::new(bar_x, content_top, bar_w, CONFLICT_BAR_HEIGHT)));
+            }
 
-                    // Reload button (rightmost)
-                    let reload_text = "Reload";
-                    let reload_w = reload_text.len() as f32 * cell_size.width + btn_pad * 2.0;
-                    let reload_x = bar_x + bar_w - reload_w - 4.0;
-                    let reload_rect = Rect::new(reload_x, btn_y, reload_w, btn_h);
-                    renderer.draw_top_rect(reload_rect, p.conflict_bar_btn);
-                    renderer.draw_top_text(reload_text, Vec2::new(reload_x + btn_pad, text_y), btn_style, reload_rect);
+            for (pane_id, bar_rect) in bar_panes {
+                // Check for save confirm bar first
+                if let Some(ref sc) = self.save_confirm {
+                    if sc.pane_id == pane_id {
+                        // Render save confirm bar
+                        renderer.draw_top_rect(bar_rect, p.conflict_bar_bg);
+                        let text_y = bar_rect.y + (CONFLICT_BAR_HEIGHT - cell_size.height) / 2.0;
+                        let text_style = TextStyle {
+                            foreground: p.conflict_bar_text,
+                            background: None,
+                            bold: false,
+                            dim: false,
+                            italic: false,
+                            underline: false,
+                        };
+                        renderer.draw_top_text("Unsaved changes", Vec2::new(bar_rect.x + 8.0, text_y), text_style, bar_rect);
 
-                    // Overwrite button
-                    let overwrite_text = "Overwrite";
-                    let overwrite_w = overwrite_text.len() as f32 * cell_size.width + btn_pad * 2.0;
-                    let overwrite_x = reload_x - overwrite_w - 4.0;
-                    let overwrite_rect = Rect::new(overwrite_x, btn_y, overwrite_w, btn_h);
-                    renderer.draw_top_rect(overwrite_rect, p.conflict_bar_btn);
-                    renderer.draw_top_text(overwrite_text, Vec2::new(overwrite_x + btn_pad, text_y), btn_style, overwrite_rect);
+                        let btn_style = TextStyle {
+                            foreground: p.conflict_bar_btn_text,
+                            background: None,
+                            bold: true,
+                            dim: false,
+                            italic: false,
+                            underline: false,
+                        };
+                        let btn_pad = 8.0;
+                        let btn_h = CONFLICT_BAR_HEIGHT - 6.0;
+                        let btn_y = bar_rect.y + 3.0;
+
+                        // Cancel button (rightmost)
+                        let cancel_text = "Cancel";
+                        let cancel_w = cancel_text.len() as f32 * cell_size.width + btn_pad * 2.0;
+                        let cancel_x = bar_rect.x + bar_rect.width - cancel_w - 4.0;
+                        let cancel_rect = Rect::new(cancel_x, btn_y, cancel_w, btn_h);
+                        renderer.draw_top_rect(cancel_rect, p.conflict_bar_btn);
+                        renderer.draw_top_text(cancel_text, Vec2::new(cancel_x + btn_pad, text_y), btn_style, cancel_rect);
+
+                        // Don't Save button
+                        let dont_save_text = "Don't Save";
+                        let dont_save_w = dont_save_text.len() as f32 * cell_size.width + btn_pad * 2.0;
+                        let dont_save_x = cancel_x - dont_save_w - 4.0;
+                        let dont_save_rect = Rect::new(dont_save_x, btn_y, dont_save_w, btn_h);
+                        renderer.draw_top_rect(dont_save_rect, p.conflict_bar_btn);
+                        renderer.draw_top_text(dont_save_text, Vec2::new(dont_save_x + btn_pad, text_y), btn_style, dont_save_rect);
+
+                        // Save button
+                        let save_text = "Save";
+                        let save_w = save_text.len() as f32 * cell_size.width + btn_pad * 2.0;
+                        let save_x = dont_save_x - save_w - 4.0;
+                        let save_rect = Rect::new(save_x, btn_y, save_w, btn_h);
+                        renderer.draw_top_rect(save_rect, p.conflict_bar_btn);
+                        renderer.draw_top_text(save_text, Vec2::new(save_x + btn_pad, text_y), btn_style, save_rect);
+
+                        continue; // Don't also show conflict bar
+                    }
+                }
+
+                // Conflict bar
+                if let Some(PaneKind::Editor(pane)) = self.panes.get(&pane_id) {
+                    if pane.needs_notification_bar() {
+                        renderer.draw_top_rect(bar_rect, p.conflict_bar_bg);
+                        let text_y = bar_rect.y + (CONFLICT_BAR_HEIGHT - cell_size.height) / 2.0;
+                        let text_style = TextStyle {
+                            foreground: p.conflict_bar_text,
+                            background: None,
+                            bold: false,
+                            dim: false,
+                            italic: false,
+                            underline: false,
+                        };
+                        let msg = if pane.file_deleted {
+                            "File deleted on disk"
+                        } else if pane.diff_mode {
+                            "Comparing with disk"
+                        } else {
+                            "File changed on disk"
+                        };
+                        renderer.draw_top_text(msg, Vec2::new(bar_rect.x + 8.0, text_y), text_style, bar_rect);
+
+                        let btn_style = TextStyle {
+                            foreground: p.conflict_bar_btn_text,
+                            background: None,
+                            bold: true,
+                            dim: false,
+                            italic: false,
+                            underline: false,
+                        };
+                        let btn_pad = 8.0;
+                        let btn_h = CONFLICT_BAR_HEIGHT - 6.0;
+                        let btn_y = bar_rect.y + 3.0;
+
+                        // Overwrite button (rightmost)
+                        let overwrite_text = "Overwrite";
+                        let overwrite_w = overwrite_text.len() as f32 * cell_size.width + btn_pad * 2.0;
+                        let overwrite_x = bar_rect.x + bar_rect.width - overwrite_w - 4.0;
+                        let overwrite_rect = Rect::new(overwrite_x, btn_y, overwrite_w, btn_h);
+                        renderer.draw_top_rect(overwrite_rect, p.conflict_bar_btn);
+                        renderer.draw_top_text(overwrite_text, Vec2::new(overwrite_x + btn_pad, text_y), btn_style, overwrite_rect);
+
+                        // Compare button (not in diff mode, not for deleted files)
+                        if !pane.file_deleted && !pane.diff_mode {
+                            let compare_text = "Compare";
+                            let compare_w = compare_text.len() as f32 * cell_size.width + btn_pad * 2.0;
+                            let compare_x = overwrite_x - compare_w - 4.0;
+                            let compare_rect = Rect::new(compare_x, btn_y, compare_w, btn_h);
+                            renderer.draw_top_rect(compare_rect, p.conflict_bar_btn);
+                            renderer.draw_top_text(compare_text, Vec2::new(compare_x + btn_pad, text_y), btn_style, compare_rect);
+                        }
+                    }
                 }
             }
         }
