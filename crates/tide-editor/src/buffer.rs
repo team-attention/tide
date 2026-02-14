@@ -26,8 +26,13 @@ enum EditOp {
 pub struct Buffer {
     pub lines: Vec<String>,
     pub file_path: Option<PathBuf>,
-    pub modified: bool,
     generation: u64,
+    /// Tracks distance from the last-saved state.
+    /// Forward edits increment, undo decrements, redo increments, save resets to 0.
+    mod_count: i64,
+    /// Set when the redo stack is cleared while mod_count < 0, meaning the
+    /// saved state is no longer reachable through undo.
+    force_modified: bool,
     undo_stack: Vec<(EditOp, Position)>, // (op, cursor_before)
     redo_stack: Vec<(EditOp, Position)>,
 }
@@ -37,8 +42,9 @@ impl Buffer {
         Self {
             lines: vec![String::new()],
             file_path: None,
-            modified: false,
             generation: 0,
+            mod_count: 0,
+            force_modified: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
         }
@@ -60,8 +66,9 @@ impl Buffer {
         Ok(Self {
             lines,
             file_path: Some(path.to_path_buf()),
-            modified: false,
             generation: 0,
+            mod_count: 0,
+            force_modified: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
         })
@@ -74,7 +81,8 @@ impl Buffer {
             .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "No file path set"))?;
         let content = self.lines.join("\n");
         fs::write(path, &content)?;
-        self.modified = false;
+        self.mod_count = 0;
+        self.force_modified = false;
         self.generation += 1;
         Ok(())
     }
@@ -86,9 +94,9 @@ impl Buffer {
         let col = pos.col.min(self.lines[pos.line].len());
         let actual_pos = Position { line: pos.line, col };
         self.undo_stack.push((EditOp::InsertChar { pos: actual_pos, ch }, pos));
-        self.redo_stack.clear();
+        self.clear_redo_stack();
         self.lines[pos.line].insert(col, ch);
-        self.modified = true;
+        self.mod_count += 1;
         self.generation += 1;
     }
 
@@ -100,16 +108,16 @@ impl Buffer {
         if pos.col < line_len {
             let ch = self.lines[pos.line].remove(pos.col);
             self.undo_stack.push((EditOp::DeleteChar { pos, ch, merged_next: false }, pos));
-            self.redo_stack.clear();
-            self.modified = true;
+            self.clear_redo_stack();
+            self.mod_count += 1;
             self.generation += 1;
         } else if pos.line + 1 < self.lines.len() {
             // Delete at end of line: merge with next line
             let next = self.lines.remove(pos.line + 1);
             self.undo_stack.push((EditOp::DeleteChar { pos, ch: '\n', merged_next: true }, pos));
-            self.redo_stack.clear();
+            self.clear_redo_stack();
             self.lines[pos.line].push_str(&next);
-            self.modified = true;
+            self.mod_count += 1;
             self.generation += 1;
         }
     }
@@ -127,8 +135,8 @@ impl Buffer {
                     ch: Some(ch),
                     merged_line: false,
                 }, pos));
-                self.redo_stack.clear();
-                self.modified = true;
+                self.clear_redo_stack();
+                self.mod_count += 1;
                 self.generation += 1;
                 return result_pos;
             }
@@ -148,8 +156,8 @@ impl Buffer {
                 ch: None,
                 merged_line: true,
             }, pos));
-            self.redo_stack.clear();
-            self.modified = true;
+            self.clear_redo_stack();
+            self.mod_count += 1;
             self.generation += 1;
             result_pos
         } else {
@@ -164,11 +172,11 @@ impl Buffer {
         let col = pos.col.min(self.lines[pos.line].len());
         let actual_pos = Position { line: pos.line, col };
         self.undo_stack.push((EditOp::InsertNewline { pos: actual_pos }, pos));
-        self.redo_stack.clear();
+        self.clear_redo_stack();
         let rest = self.lines[pos.line][col..].to_string();
         self.lines[pos.line].truncate(col);
         self.lines.insert(pos.line + 1, rest);
-        self.modified = true;
+        self.mod_count += 1;
         self.generation += 1;
         Position {
             line: pos.line + 1,
@@ -215,7 +223,7 @@ impl Buffer {
             }
         }
         self.redo_stack.push((op, cursor_before));
-        self.modified = true;
+        self.mod_count -= 1;
         self.generation += 1;
         Some(cursor_before)
     }
@@ -256,7 +264,7 @@ impl Buffer {
             }
         };
         self.undo_stack.push((op, cursor_before));
-        self.modified = true;
+        self.mod_count += 1;
         self.generation += 1;
         Some(new_cursor)
     }
@@ -270,11 +278,20 @@ impl Buffer {
     }
 
     pub fn is_modified(&self) -> bool {
-        self.modified
+        self.mod_count != 0 || self.force_modified
     }
 
     pub fn generation(&self) -> u64 {
         self.generation
+    }
+
+    /// Clear the redo stack, marking the buffer as permanently modified if the
+    /// saved state is no longer reachable through undo.
+    fn clear_redo_stack(&mut self) {
+        if !self.redo_stack.is_empty() && self.mod_count < 0 {
+            self.force_modified = true;
+        }
+        self.redo_stack.clear();
     }
 }
 

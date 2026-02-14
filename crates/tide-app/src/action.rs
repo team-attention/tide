@@ -70,6 +70,7 @@ impl App {
                         Some(PaneKind::Editor(pane)) => {
                             pane.selection = None; // Clear selection on key input
                             if let Some(action) = tide_editor::key_to_editor_action(&key, &modifiers) {
+                                let was_modified = pane.editor.is_modified();
                                 let cell_size = self.renderer.as_ref().map(|r| r.cell_size());
                                 let (visible_rows, visible_cols) = if let Some(cs) = cell_size {
                                     let tree_rect = self.visual_pane_rects.iter()
@@ -93,6 +94,10 @@ impl App {
                                     (30, 80)
                                 };
                                 pane.handle_action_with_size(action, visible_rows, visible_cols);
+                                // Redraw tab label when modified indicator changes
+                                if pane.editor.is_modified() != was_modified {
+                                    self.chrome_generation += 1;
+                                }
                             }
                         }
                         None => {}
@@ -444,6 +449,9 @@ impl App {
                 }
                 self.compute_layout();
             }
+            GlobalAction::NewEditorFile => {
+                self.new_editor_pane();
+            }
         }
     }
 
@@ -470,6 +478,27 @@ impl App {
             Some(PaneKind::Terminal(p)) => p.backend.detect_cwd_fallback(),
             _ => None,
         }
+    }
+
+    /// Create a new empty editor pane in the panel.
+    /// Auto-shows the editor panel if it was hidden.
+    pub(crate) fn new_editor_pane(&mut self) {
+        if !self.show_editor_panel {
+            self.show_editor_panel = true;
+        }
+        let panel_was_visible = !self.editor_panel_tabs.is_empty();
+        let new_id = self.layout.alloc_id();
+        let pane = EditorPane::new_empty(new_id);
+        self.panes.insert(new_id, PaneKind::Editor(pane));
+        self.editor_panel_tabs.push(new_id);
+        self.editor_panel_active = Some(new_id);
+        self.focused = Some(new_id);
+        self.router.set_focused(new_id);
+        self.chrome_generation += 1;
+        if !panel_was_visible {
+            self.compute_layout();
+        }
+        self.scroll_to_active_panel_tab();
     }
 
     /// Open a file in the editor panel. If already open, activate its tab.
