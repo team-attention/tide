@@ -59,10 +59,15 @@ impl App {
         let editor_panel_rect = self.editor_panel_rect;
         let editor_panel_tabs = self.editor_panel_tabs.clone();
         let editor_panel_active = self.editor_panel_active;
+        let alive_pane_ids: Vec<u64> = self.panes.keys().copied().collect();
 
         let p = self.palette();
 
         let renderer = self.renderer.as_mut().unwrap();
+
+        // Keep runtime caches bounded to currently alive panes.
+        self.pane_generations.retain(|id, _| self.panes.contains_key(id));
+        renderer.retain_pane_caches(&alive_pane_ids);
 
         // Atlas reset → all cached UV coords are stale, force full rebuild
         if renderer.atlas_was_reset() {
