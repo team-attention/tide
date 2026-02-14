@@ -89,6 +89,7 @@ pub struct TextStyle {
     pub foreground: Color,
     pub background: Option<Color>,
     pub bold: bool,
+    pub dim: bool,
     pub italic: bool,
     pub underline: bool,
 }
@@ -99,6 +100,7 @@ impl Default for TextStyle {
             foreground: Color::WHITE,
             background: None,
             bold: false,
+            dim: false,
             italic: false,
             underline: false,
         }

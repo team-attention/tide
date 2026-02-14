@@ -100,6 +100,7 @@ impl App {
                             foreground: icon_color,
                             background: None,
                             bold: false,
+                            dim: false,
                             italic: false,
                             underline: false,
                         };
@@ -122,6 +123,7 @@ impl App {
                             foreground: text_color,
                             background: None,
                             bold: entry.entry.is_dir,
+                            dim: false,
                             italic: false,
                             underline: false,
                         };
@@ -180,6 +182,7 @@ impl App {
                         foreground: text_color,
                         background: None,
                         bold: is_active,
+                        dim: false,
                         italic: false,
                         underline: false,
                     };
@@ -206,6 +209,7 @@ impl App {
                             foreground: TAB_BAR_TEXT,
                             background: None,
                             bold: false,
+                            dim: false,
                             italic: false,
                             underline: false,
                         };
@@ -271,6 +275,7 @@ impl App {
                     foreground: text_color,
                     background: None,
                     bold: focused == Some(id),
+                    dim: false,
                     italic: false,
                     underline: false,
                 };
@@ -670,6 +675,7 @@ impl App {
                     foreground: SEARCH_BAR_TEXT,
                     background: None,
                     bold: false,
+                    dim: false,
                     italic: false,
                     underline: false,
                 };
@@ -677,6 +683,7 @@ impl App {
                     foreground: SEARCH_BAR_COUNTER,
                     background: None,
                     bold: false,
+                    dim: false,
                     italic: false,
                     underline: false,
                 };
@@ -739,6 +746,7 @@ impl App {
                             foreground: Color::new(0.95, 0.96, 1.0, 1.0),
                             background: None,
                             bold: false,
+                            dim: false,
                             italic: false,
                             underline: true,
                         };
