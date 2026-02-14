@@ -265,166 +265,7 @@ impl App {
                         }
                     }
 
-                } else if let Some(ref finder) = self.file_finder {
-                    // File finder UI: search input + file list
-                    let cell_size = renderer.cell_size();
-                    let cell_height = cell_size.height;
-                    let line_height = cell_height * FILE_TREE_LINE_SPACING;
-                    let indent_width = cell_size.width * 1.5;
-
-                    let muted_style = TextStyle {
-                        foreground: p.tab_text,
-                        background: None,
-                        bold: false,
-                        dim: false,
-                        italic: false,
-                        underline: false,
-                    };
-
-                    // Search input bar
-                    let input_x = panel_rect.x + PANE_PADDING;
-                    let input_y = panel_rect.y + PANE_PADDING + 8.0;
-                    let input_w = panel_rect.width - 2.0 * PANE_PADDING;
-                    let input_h = cell_height + 12.0;
-                    let input_rect = Rect::new(input_x, input_y, input_w, input_h);
-                    renderer.draw_chrome_rounded_rect(input_rect, p.panel_tab_bg_active, 4.0);
-
-                    // Search icon + query text
-                    let query_x = input_x + 8.0;
-                    let query_y = input_y + (input_h - cell_height) / 2.0;
-                    let search_icon = "\u{f002} "; //
-                    let icon_style = TextStyle {
-                        foreground: p.tab_text,
-                        background: None,
-                        bold: false,
-                        dim: false,
-                        italic: false,
-                        underline: false,
-                    };
-                    renderer.draw_chrome_text(
-                        search_icon,
-                        Vec2::new(query_x, query_y),
-                        icon_style,
-                        input_rect,
-                    );
-                    let text_x = query_x + 2.0 * cell_size.width;
-                    let text_style = TextStyle {
-                        foreground: p.tab_text_focused,
-                        background: None,
-                        bold: false,
-                        dim: false,
-                        italic: false,
-                        underline: false,
-                    };
-                    let text_clip = Rect::new(text_x, input_y, input_w - 8.0 - 2.0 * cell_size.width, input_h);
-                    if finder.query.is_empty() {
-                        renderer.draw_chrome_text(
-                            "Search files...",
-                            Vec2::new(text_x, query_y),
-                            muted_style,
-                            text_clip,
-                        );
-                    } else {
-                        renderer.draw_chrome_text(
-                            &finder.query,
-                            Vec2::new(text_x, query_y),
-                            text_style,
-                            text_clip,
-                        );
-                    }
-
-                    // Match count
-                    let count_text = format!("{}/{}", finder.filtered.len(), finder.entries.len());
-                    let count_w = count_text.len() as f32 * cell_size.width;
-                    let count_x = input_x + input_w - count_w - 8.0;
-                    renderer.draw_chrome_text(
-                        &count_text,
-                        Vec2::new(count_x, query_y),
-                        muted_style,
-                        input_rect,
-                    );
-
-                    // File list
-                    let list_top = input_y + input_h + 8.0;
-                    let list_bottom = panel_rect.y + panel_rect.height - PANE_PADDING;
-                    let visible_rows = ((list_bottom - list_top) / line_height).floor() as usize;
-                    let list_clip = Rect::new(
-                        panel_rect.x + PANE_PADDING,
-                        list_top,
-                        panel_rect.width - 2.0 * PANE_PADDING,
-                        list_bottom - list_top,
-                    );
-
-                    for vi in 0..visible_rows {
-                        let fi = finder.scroll_offset + vi;
-                        if fi >= finder.filtered.len() {
-                            break;
-                        }
-                        let entry_idx = finder.filtered[fi];
-                        let rel_path = &finder.entries[entry_idx];
-                        let y = list_top + vi as f32 * line_height;
-                        if y + line_height > list_bottom {
-                            break;
-                        }
-
-                        // Selected item highlight
-                        if fi == finder.selected {
-                            let sel_rect = Rect::new(
-                                panel_rect.x + PANE_PADDING,
-                                y,
-                                panel_rect.width - 2.0 * PANE_PADDING,
-                                line_height,
-                            );
-                            renderer.draw_chrome_rounded_rect(sel_rect, p.panel_tab_bg_active, 2.0);
-                        }
-
-                        // File icon
-                        let text_offset_y = (line_height - cell_height) / 2.0;
-                        let file_name = rel_path.file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_default();
-                        let icon = file_icon(&file_name, false, false);
-                        let icon_style = TextStyle {
-                            foreground: p.tree_icon,
-                            background: None,
-                            bold: false,
-                            dim: false,
-                            italic: false,
-                            underline: false,
-                        };
-                        let icon_x = panel_rect.x + PANE_PADDING + 4.0;
-                        let icon_str: String = std::iter::once(icon).collect();
-                        renderer.draw_chrome_text(
-                            &icon_str,
-                            Vec2::new(icon_x, y + text_offset_y),
-                            icon_style,
-                            list_clip,
-                        );
-
-                        // File path
-                        let path_x = icon_x + indent_width + 4.0;
-                        let display_path = rel_path.to_string_lossy();
-                        let path_color = if fi == finder.selected {
-                            p.tab_text_focused
-                        } else {
-                            p.tree_text
-                        };
-                        let path_style = TextStyle {
-                            foreground: path_color,
-                            background: None,
-                            bold: fi == finder.selected,
-                            dim: false,
-                            italic: false,
-                            underline: false,
-                        };
-                        renderer.draw_chrome_text(
-                            &display_path,
-                            Vec2::new(path_x, y + text_offset_y),
-                            path_style,
-                            list_clip,
-                        );
-                    }
-                } else {
+                } else if self.file_finder.is_none() {
                     // Empty state: "No files open" + "New File" + "Open File" buttons
                     let cell_size = renderer.cell_size();
                     let cell_height = cell_size.height;
@@ -1373,20 +1214,174 @@ impl App {
             }
         }
 
-        // Render file finder cursor beam on top layer
+        // Render file finder UI on top layer (visible regardless of tab state)
         if let (Some(ref finder), Some(panel_rect)) = (&self.file_finder, editor_panel_rect) {
-            if editor_panel_tabs.is_empty() {
-                let cell_size = renderer.cell_size();
-                let cell_height = cell_size.height;
-                let input_y = panel_rect.y + PANE_PADDING + 8.0;
-                let input_h = cell_height + 12.0;
-                let query_x = panel_rect.x + PANE_PADDING + 8.0 + 2.0 * cell_size.width;
-                let query_y = input_y + (input_h - cell_height) / 2.0;
-                let cursor_char_offset = finder.query[..finder.cursor].chars().count();
-                let cx = query_x + cursor_char_offset as f32 * cell_size.width;
-                renderer.draw_top_rect(
-                    Rect::new(cx, query_y, 1.5, cell_height),
-                    p.cursor_accent,
+            let cell_size = renderer.cell_size();
+            let cell_height = cell_size.height;
+            let line_height = cell_height * FILE_TREE_LINE_SPACING;
+            let indent_width = cell_size.width * 1.5;
+
+            // Full panel background to cover editor content below
+            renderer.draw_top_rect(panel_rect, p.surface_bg);
+
+            let muted_style = TextStyle {
+                foreground: p.tab_text,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            };
+
+            // Search input bar
+            let input_x = panel_rect.x + PANE_PADDING;
+            let input_y = panel_rect.y + PANE_PADDING + 8.0;
+            let input_w = panel_rect.width - 2.0 * PANE_PADDING;
+            let input_h = cell_height + 12.0;
+            let input_rect = Rect::new(input_x, input_y, input_w, input_h);
+            renderer.draw_top_rect(input_rect, p.panel_tab_bg_active);
+
+            // Search icon + query text
+            let query_x = input_x + 8.0;
+            let query_y = input_y + (input_h - cell_height) / 2.0;
+            let search_icon = "\u{f002} "; //
+            let icon_style = TextStyle {
+                foreground: p.tab_text,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            };
+            renderer.draw_top_text(
+                search_icon,
+                Vec2::new(query_x, query_y),
+                icon_style,
+                input_rect,
+            );
+            let text_x = query_x + 2.0 * cell_size.width;
+            let text_style = TextStyle {
+                foreground: p.tab_text_focused,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            };
+            let text_clip = Rect::new(text_x, input_y, input_w - 8.0 - 2.0 * cell_size.width, input_h);
+            if finder.query.is_empty() {
+                renderer.draw_top_text(
+                    "Search files...",
+                    Vec2::new(text_x, query_y),
+                    muted_style,
+                    text_clip,
+                );
+            } else {
+                renderer.draw_top_text(
+                    &finder.query,
+                    Vec2::new(text_x, query_y),
+                    text_style,
+                    text_clip,
+                );
+            }
+
+            // Match count
+            let count_text = format!("{}/{}", finder.filtered.len(), finder.entries.len());
+            let count_w = count_text.len() as f32 * cell_size.width;
+            let count_x = input_x + input_w - count_w - 8.0;
+            renderer.draw_top_text(
+                &count_text,
+                Vec2::new(count_x, query_y),
+                muted_style,
+                input_rect,
+            );
+
+            // Cursor beam
+            let cursor_char_offset = finder.query[..finder.cursor].chars().count();
+            let cx = text_x + cursor_char_offset as f32 * cell_size.width;
+            renderer.draw_top_rect(
+                Rect::new(cx, query_y, 1.5, cell_height),
+                p.cursor_accent,
+            );
+
+            // File list
+            let list_top = input_y + input_h + 8.0;
+            let list_bottom = panel_rect.y + panel_rect.height - PANE_PADDING;
+            let visible_rows = ((list_bottom - list_top) / line_height).floor() as usize;
+            let list_clip = Rect::new(
+                panel_rect.x + PANE_PADDING,
+                list_top,
+                panel_rect.width - 2.0 * PANE_PADDING,
+                list_bottom - list_top,
+            );
+
+            for vi in 0..visible_rows {
+                let fi = finder.scroll_offset + vi;
+                if fi >= finder.filtered.len() {
+                    break;
+                }
+                let entry_idx = finder.filtered[fi];
+                let rel_path = &finder.entries[entry_idx];
+                let y = list_top + vi as f32 * line_height;
+                if y + line_height > list_bottom {
+                    break;
+                }
+
+                // Selected item highlight
+                if fi == finder.selected {
+                    let sel_rect = Rect::new(
+                        panel_rect.x + PANE_PADDING,
+                        y,
+                        panel_rect.width - 2.0 * PANE_PADDING,
+                        line_height,
+                    );
+                    renderer.draw_top_rect(sel_rect, p.panel_tab_bg_active);
+                }
+
+                // File icon
+                let text_offset_y = (line_height - cell_height) / 2.0;
+                let file_name = rel_path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let icon = file_icon(&file_name, false, false);
+                let icon_style = TextStyle {
+                    foreground: p.tree_icon,
+                    background: None,
+                    bold: false,
+                    dim: false,
+                    italic: false,
+                    underline: false,
+                };
+                let icon_x = panel_rect.x + PANE_PADDING + 4.0;
+                let icon_str: String = std::iter::once(icon).collect();
+                renderer.draw_top_text(
+                    &icon_str,
+                    Vec2::new(icon_x, y + text_offset_y),
+                    icon_style,
+                    list_clip,
+                );
+
+                // File path
+                let path_x = icon_x + indent_width + 4.0;
+                let display_path = rel_path.to_string_lossy();
+                let path_color = if fi == finder.selected {
+                    p.tab_text_focused
+                } else {
+                    p.tree_text
+                };
+                let path_style = TextStyle {
+                    foreground: path_color,
+                    background: None,
+                    bold: fi == finder.selected,
+                    dim: false,
+                    italic: false,
+                    underline: false,
+                };
+                renderer.draw_top_text(
+                    &display_path,
+                    Vec2::new(path_x, y + text_offset_y),
+                    path_style,
+                    list_clip,
                 );
             }
         }

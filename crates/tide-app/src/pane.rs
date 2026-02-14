@@ -135,6 +135,13 @@ impl TerminalPane {
         let cx = rect.x + extra_x + cursor.col as f32 * cell_size.width;
         let cy = rect.y + cursor.row as f32 * cell_size.height;
 
+        // Skip rendering if cursor is outside the visible pane rect
+        if cy + cell_size.height > rect.y + rect.height || cy < rect.y
+            || cx + cell_size.width > rect.x + rect.width + extra_x || cx < rect.x
+        {
+            return;
+        }
+
         match cursor.shape {
             CursorShape::Block => {
                 // Block cursor: always render (ignore cursor.visible for TUI app compat)
