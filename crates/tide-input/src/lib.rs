@@ -34,6 +34,8 @@ pub enum GlobalAction {
     Copy,
     ToggleFullscreen,
     Find,
+    ToggleMaximizePane,
+    ToggleEditorPanel,
 }
 
 /// Cardinal direction for focus movement.
@@ -197,6 +199,10 @@ impl Router {
                     None
                 }
             }
+            // Cmd+Enter / Ctrl+Enter -> toggle maximize pane
+            Key::Enter => Some(GlobalAction::ToggleMaximizePane),
+            // Cmd+E / Ctrl+E -> toggle editor panel
+            Key::Char('e') | Key::Char('E') => Some(GlobalAction::ToggleEditorPanel),
             // Cmd+Arrow / Ctrl+Arrow -> move focus
             Key::Up => Some(GlobalAction::MoveFocus(Direction::Up)),
             Key::Down => Some(GlobalAction::MoveFocus(Direction::Down)),

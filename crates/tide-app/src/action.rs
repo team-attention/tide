@@ -173,6 +173,7 @@ impl App {
         match action {
             GlobalAction::SplitVertical => {
                 if let Some(focused) = self.focused {
+                    self.maximized_pane = None;
                     let cwd = self.focused_terminal_cwd();
                     let new_id = self.layout.split(focused, SplitDirection::Vertical);
                     self.create_terminal_pane(new_id, cwd);
@@ -184,6 +185,7 @@ impl App {
             }
             GlobalAction::SplitHorizontal => {
                 if let Some(focused) = self.focused {
+                    self.maximized_pane = None;
                     let cwd = self.focused_terminal_cwd();
                     let new_id = self.layout.split(focused, SplitDirection::Horizontal);
                     self.create_terminal_pane(new_id, cwd);
@@ -200,6 +202,11 @@ impl App {
                         self.close_editor_panel_tab(focused);
                         self.update_file_tree_cwd();
                         return;
+                    }
+
+                    // Clear maximize if the maximized pane is being closed
+                    if self.maximized_pane == Some(focused) {
+                        self.maximized_pane = None;
                     }
 
                     let remaining = self.layout.pane_ids();
@@ -333,6 +340,11 @@ impl App {
                 }
             }
             GlobalAction::MoveFocus(direction) => {
+                // Unmaximize first so all pane rects are available for navigation
+                if self.maximized_pane.is_some() {
+                    self.maximized_pane = None;
+                    self.compute_layout();
+                }
                 if self.pane_rects.len() < 2 {
                     return;
                 }
@@ -401,6 +413,37 @@ impl App {
                     self.update_file_tree_cwd();
                 }
             }
+            GlobalAction::ToggleMaximizePane => {
+                if let Some(focused) = self.focused {
+                    // Only maximize tree panes (not editor panel panes)
+                    if self.editor_panel_tabs.contains(&focused) {
+                        return;
+                    }
+                    if self.maximized_pane == Some(focused) {
+                        self.maximized_pane = None;
+                    } else {
+                        self.maximized_pane = Some(focused);
+                    }
+                    self.chrome_generation += 1;
+                    self.compute_layout();
+                }
+            }
+            GlobalAction::ToggleEditorPanel => {
+                self.show_editor_panel = !self.show_editor_panel;
+                self.chrome_generation += 1;
+                // If hiding and focus is on a panel pane, move focus to tree
+                if !self.show_editor_panel {
+                    if let Some(focused) = self.focused {
+                        if self.editor_panel_tabs.contains(&focused) {
+                            if let Some(&first) = self.layout.pane_ids().first() {
+                                self.focused = Some(first);
+                                self.router.set_focused(first);
+                            }
+                        }
+                    }
+                }
+                self.compute_layout();
+            }
         }
     }
 
@@ -430,7 +473,12 @@ impl App {
     }
 
     /// Open a file in the editor panel. If already open, activate its tab.
+    /// Auto-shows the editor panel if it was hidden.
     pub(crate) fn open_editor_pane(&mut self, path: PathBuf) {
+        // Auto-show editor panel if hidden
+        if !self.show_editor_panel {
+            self.show_editor_panel = true;
+        }
         // Check if already open in panel tabs → activate & focus
         for &tab_id in &self.editor_panel_tabs {
             if let Some(PaneKind::Editor(editor)) = self.panes.get(&tab_id) {
