@@ -62,12 +62,21 @@ impl EditorState {
         })
     }
 
-    /// Reload the file from disk, resetting cursor and scroll.
+    /// Reload the file from disk, preserving cursor position (clamped to valid bounds).
     pub fn reload(&mut self) -> io::Result<()> {
+        let old_lines = self.buffer.lines.clone();
         self.buffer.reload()?;
-        self.cursor.set_position(buffer::Position { line: 0, col: 0 });
-        self.scroll_offset = 0;
-        self.h_scroll_offset = 0;
+        // Clamp cursor to valid position instead of resetting (VSCode-like behavior)
+        if self.buffer.lines != old_lines {
+            let max_line = self.buffer.line_count().saturating_sub(1);
+            let new_line = self.cursor.position.line.min(max_line);
+            let max_col = self.buffer.line(new_line).map_or(0, |l| l.len());
+            let new_col = self.cursor.position.col.min(max_col);
+            self.cursor.set_position(buffer::Position { line: new_line, col: new_col });
+            // Clamp scroll offsets
+            let max_scroll = self.buffer.line_count().saturating_sub(1);
+            self.scroll_offset = self.scroll_offset.min(max_scroll);
+        }
         self.generation += 1;
         Ok(())
     }

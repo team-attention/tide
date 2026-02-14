@@ -17,6 +17,7 @@ mod ui;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -223,6 +224,7 @@ struct App {
     // File watcher for external change detection in editor panes
     pub(crate) file_watcher: Option<notify::RecommendedWatcher>,
     pub(crate) file_watch_rx: Option<mpsc::Receiver<notify::Result<notify::Event>>>,
+    pub(crate) file_watch_dirty: Arc<AtomicBool>,
 
     // Event loop proxy for waking the loop from background threads (PTY, file watcher)
     pub(crate) event_loop_proxy: Option<EventLoopProxy<()>>,
@@ -289,6 +291,7 @@ impl App {
             hover_target: None,
             file_watcher: None,
             file_watch_rx: None,
+            file_watch_dirty: Arc::new(AtomicBool::new(false)),
             event_loop_proxy: None,
         }
     }
@@ -558,7 +561,16 @@ impl App {
             return true;
         }
         let (tx, rx) = mpsc::channel();
-        match notify::recommended_watcher(tx) {
+        let proxy = self.event_loop_proxy.clone();
+        let dirty_flag = self.file_watch_dirty.clone();
+        match notify::recommended_watcher(move |event| {
+            let _ = tx.send(event);
+            dirty_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            // Wake the event loop so file changes are processed immediately
+            if let Some(ref p) = proxy {
+                let _ = p.send_event(());
+            }
+        }) {
             Ok(watcher) => {
                 self.file_watcher = Some(watcher);
                 self.file_watch_rx = Some(rx);
@@ -829,6 +841,9 @@ impl ApplicationHandler for App {
                     // Tab click → let flow to handle_window_event for drag initiation
                     if self.panel_tab_at(self.last_cursor_pos).is_some() {
                         // fall through
+                    } else if self.handle_conflict_bar_click(self.last_cursor_pos) {
+                        // Conflict bar button was clicked
+                        return;
                     } else {
                         // Content area click → focus + cursor + start selection drag
                         self.mouse_left_pressed = true;
@@ -882,6 +897,11 @@ impl ApplicationHandler for App {
                     break;
                 }
             }
+        }
+
+        // Check if file watcher has pending events
+        if self.file_watch_dirty.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            self.needs_redraw = true;
         }
 
         if self.needs_redraw {

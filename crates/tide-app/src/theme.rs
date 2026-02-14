@@ -64,6 +64,12 @@ pub struct ThemePalette {
 
     // Cursor accent
     pub cursor_accent: Color,
+
+    // Conflict bar (file changed on disk while buffer dirty)
+    pub conflict_bar_bg: Color,
+    pub conflict_bar_text: Color,
+    pub conflict_bar_btn: Color,
+    pub conflict_bar_btn_text: Color,
 }
 
 // ──────────────────────────────────────────────
@@ -126,6 +132,12 @@ pub static DARK: ThemePalette = ThemePalette {
 
     // Cursor accent
     cursor_accent: Color::new(1.0, 1.0, 1.0, 1.0),
+
+    // Conflict bar
+    conflict_bar_bg:       Color::new(0.18, 0.15, 0.06, 1.0),
+    conflict_bar_text:     Color::new(0.88, 0.78, 0.45, 1.0),
+    conflict_bar_btn:      Color::new(0.24, 0.20, 0.08, 1.0),
+    conflict_bar_btn_text: Color::new(0.92, 0.82, 0.50, 1.0),
 };
 
 // ──────────────────────────────────────────────
@@ -188,6 +200,12 @@ pub static LIGHT: ThemePalette = ThemePalette {
 
     // Cursor accent
     cursor_accent: Color::new(0.15, 0.15, 0.15, 1.0),
+
+    // Conflict bar
+    conflict_bar_bg:       Color::new(1.0, 0.96, 0.84, 1.0),
+    conflict_bar_text:     Color::new(0.42, 0.32, 0.08, 1.0),
+    conflict_bar_btn:      Color::new(0.92, 0.88, 0.72, 1.0),
+    conflict_bar_btn_text: Color::new(0.32, 0.24, 0.04, 1.0),
 };
 
 // ──────────────────────────────────────────────
@@ -219,3 +237,5 @@ pub const SCROLLBAR_WIDTH: f32 = 6.0;
 pub const SEARCH_BAR_WIDTH: f32 = 260.0;
 pub const SEARCH_BAR_HEIGHT: f32 = 28.0;
 pub const SEARCH_BAR_CLOSE_SIZE: f32 = 20.0;
+
+pub const CONFLICT_BAR_HEIGHT: f32 = 26.0;
