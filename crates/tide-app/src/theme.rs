@@ -70,6 +70,12 @@ pub struct ThemePalette {
     pub conflict_bar_text: Color,
     pub conflict_bar_btn: Color,
     pub conflict_bar_btn_text: Color,
+
+    // Diff view
+    pub diff_added_bg: Color,
+    pub diff_removed_bg: Color,
+    pub diff_added_gutter: Color,
+    pub diff_removed_gutter: Color,
 }
 
 // ──────────────────────────────────────────────
@@ -138,6 +144,12 @@ pub static DARK: ThemePalette = ThemePalette {
     conflict_bar_text:     Color::new(0.88, 0.78, 0.45, 1.0),
     conflict_bar_btn:      Color::new(0.24, 0.20, 0.08, 1.0),
     conflict_bar_btn_text: Color::new(0.92, 0.82, 0.50, 1.0),
+
+    // Diff view
+    diff_added_bg:      Color::new(0.10, 0.22, 0.10, 1.0),   // dark green bg
+    diff_removed_bg:    Color::new(0.25, 0.10, 0.10, 1.0),   // dark red bg
+    diff_added_gutter:  Color::new(0.30, 0.70, 0.30, 1.0),   // green gutter +
+    diff_removed_gutter: Color::new(0.70, 0.30, 0.30, 1.0),  // red gutter -
 };
 
 // ──────────────────────────────────────────────
@@ -206,6 +218,12 @@ pub static LIGHT: ThemePalette = ThemePalette {
     conflict_bar_text:     Color::new(0.42, 0.32, 0.08, 1.0),
     conflict_bar_btn:      Color::new(0.92, 0.88, 0.72, 1.0),
     conflict_bar_btn_text: Color::new(0.32, 0.24, 0.04, 1.0),
+
+    // Diff view
+    diff_added_bg:      Color::new(0.85, 0.95, 0.85, 1.0),   // light green bg
+    diff_removed_bg:    Color::new(0.95, 0.85, 0.85, 1.0),   // light red bg
+    diff_added_gutter:  Color::new(0.15, 0.55, 0.15, 1.0),   // green gutter +
+    diff_removed_gutter: Color::new(0.60, 0.15, 0.15, 1.0),  // red gutter -
 };
 
 // ──────────────────────────────────────────────
