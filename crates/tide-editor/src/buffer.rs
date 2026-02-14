@@ -303,6 +303,11 @@ impl Buffer {
         self.lines.len()
     }
 
+    /// Return the character count of the longest line.
+    pub fn max_line_chars(&self) -> usize {
+        self.lines.iter().map(|l| l.chars().count()).max().unwrap_or(0)
+    }
+
     pub fn is_modified(&self) -> bool {
         self.lines != self.saved_content
     }

@@ -167,7 +167,8 @@ impl EditorState {
             }
             EditorAction::ScrollRight(delta) => {
                 let prev = self.h_scroll_offset;
-                self.h_scroll_offset += delta as usize;
+                let max_line_chars = self.buffer.max_line_chars();
+                self.h_scroll_offset = (self.h_scroll_offset + delta as usize).min(max_line_chars);
                 if self.h_scroll_offset != prev {
                     self.generation += 1;
                 }
