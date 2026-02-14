@@ -688,17 +688,15 @@ impl App {
                 // Check if scrolling over the file tree
                 if self.show_file_tree && self.last_cursor_pos.x < self.file_tree_width {
                     let max_scroll = self.file_tree_max_scroll();
-                    let new_scroll = (self.file_tree_scroll - dy * 10.0).clamp(0.0, max_scroll);
-                    if new_scroll != self.file_tree_scroll {
-                        self.file_tree_scroll = new_scroll;
-                        self.chrome_generation += 1;
+                    let new_target = (self.file_tree_scroll_target - dy * 10.0).clamp(0.0, max_scroll);
+                    if new_target != self.file_tree_scroll_target {
+                        self.file_tree_scroll_target = new_target;
                     }
                 } else if self.is_over_panel_tab_bar(self.last_cursor_pos) {
                     // Horizontal scroll for panel tab bar
-                    self.panel_tab_scroll += dx * 20.0;
-                    self.panel_tab_scroll += dy * 20.0;
+                    self.panel_tab_scroll_target -= dx * 20.0;
+                    self.panel_tab_scroll_target -= dy * 20.0;
                     self.clamp_panel_tab_scroll();
-                    self.chrome_generation += 1;
                 } else if let Some(panel_rect) = self.editor_panel_rect {
                     if panel_rect.contains(self.last_cursor_pos) {
                         // Route scroll to active panel editor

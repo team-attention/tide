@@ -63,6 +63,7 @@ struct App {
     pub(crate) file_tree: Option<FsTree>,
     pub(crate) show_file_tree: bool,
     pub(crate) file_tree_scroll: f32,
+    pub(crate) file_tree_scroll_target: f32,
     pub(crate) file_tree_width: f32,
     pub(crate) file_tree_border_dragging: bool,
 
@@ -140,6 +141,7 @@ struct App {
     pub(crate) editor_panel_width: f32,
     pub(crate) panel_border_dragging: bool,
     pub(crate) panel_tab_scroll: f32,
+    pub(crate) panel_tab_scroll_target: f32,
 
     // Theme mode
     pub(crate) dark_mode: bool,
@@ -171,6 +173,7 @@ impl App {
             file_tree: None,
             show_file_tree: false,
             file_tree_scroll: 0.0,
+            file_tree_scroll_target: 0.0,
             file_tree_width: FILE_TREE_WIDTH,
             file_tree_border_dragging: false,
             scale_factor: 1.0,
@@ -209,6 +212,7 @@ impl App {
             editor_panel_width: EDITOR_PANEL_WIDTH,
             panel_border_dragging: false,
             panel_tab_scroll: 0.0,
+            panel_tab_scroll_target: 0.0,
             dark_mode: true,
             hover_target: None,
             file_watcher: None,
@@ -559,6 +563,30 @@ impl App {
                     }
                 }
             }
+        }
+
+        // Smooth scroll animation
+        const SCROLL_LERP: f32 = 0.25;
+        const SCROLL_SNAP: f32 = 0.5;
+
+        let ft_diff = self.file_tree_scroll_target - self.file_tree_scroll;
+        if ft_diff.abs() > SCROLL_SNAP {
+            self.file_tree_scroll += ft_diff * SCROLL_LERP;
+            self.chrome_generation += 1;
+            self.needs_redraw = true;
+        } else if ft_diff.abs() > 0.0 {
+            self.file_tree_scroll = self.file_tree_scroll_target;
+            self.chrome_generation += 1;
+        }
+
+        let pt_diff = self.panel_tab_scroll_target - self.panel_tab_scroll;
+        if pt_diff.abs() > SCROLL_SNAP {
+            self.panel_tab_scroll += pt_diff * SCROLL_LERP;
+            self.chrome_generation += 1;
+            self.needs_redraw = true;
+        } else if pt_diff.abs() > 0.0 {
+            self.panel_tab_scroll = self.panel_tab_scroll_target;
+            self.chrome_generation += 1;
         }
 
         // Periodic CWD check (every 500ms)

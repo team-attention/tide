@@ -24,6 +24,7 @@ impl App {
                     tree.set_root(cwd);
                 }
                 self.file_tree_scroll = 0.0;
+                self.file_tree_scroll_target = 0.0;
                 self.chrome_generation += 1;
             }
         }
