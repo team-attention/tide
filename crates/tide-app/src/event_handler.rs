@@ -99,11 +99,20 @@ impl App {
                     self.ime_active = false;
                     self.ime_composing = false;
                     self.ime_preedit.clear();
+                    self.pending_hangul_initial = None;
                 }
                 Ime::Commit(text) => {
+                    // If we have a pending initial from a pre-IME keystroke,
+                    // try to combine it with the committed text.
+                    let output = if let Some(initial) = self.pending_hangul_initial.take() {
+                        combine_initial_with_text(initial, &text)
+                            .unwrap_or_else(|| { let mut s = String::new(); s.push(initial); s.push_str(&text); s })
+                    } else {
+                        text
+                    };
                     // IME composed text (Korean, CJK, etc.) → route to focused pane or search bar
                     if let Some(search_pane_id) = self.search_focus {
-                        for ch in text.chars() {
+                        for ch in output.chars() {
                             self.search_bar_insert(search_pane_id, ch);
                         }
                     } else if let Some(focused_id) = self.focused {
@@ -112,12 +121,12 @@ impl App {
                                 if pane.backend.display_offset() > 0 {
                                     pane.backend.request_scroll_to_bottom();
                                 }
-                                pane.backend.write(text.as_bytes());
+                                pane.backend.write(output.as_bytes());
                                 self.input_just_sent = true;
                                 self.input_sent_at = Some(Instant::now());
                             }
                             Some(PaneKind::Editor(pane)) => {
-                                for ch in text.chars() {
+                                for ch in output.chars() {
                                     pane.editor.handle_action(tide_editor::EditorActionKind::InsertChar(ch));
                                 }
                             }
@@ -127,8 +136,18 @@ impl App {
                     self.ime_composing = false;
                     self.ime_preedit.clear();
                 }
-                Ime::Preedit(text, _) => {
+                Ime::Preedit(text, _cursor) => {
                     self.ime_composing = !text.is_empty();
+                    // If we have a pending initial, combine it with the
+                    // preedit text for display (e.g. ㅇ + ㅏ → 아).
+                    if !text.is_empty() {
+                        if let Some(initial) = self.pending_hangul_initial {
+                            if let Some(combined) = combine_initial_with_text(initial, &text) {
+                                self.ime_preedit = combined;
+                                return;
+                            }
+                        }
+                    }
                     self.ime_preedit = text;
                 }
             },
@@ -151,15 +170,23 @@ impl App {
                         return;
                     }
 
-                    // Always skip Hangul characters from KeyboardInput — they must
-                    // go through Ime::Preedit/Commit for correct syllable composition.
-                    // Without this, language-switch race conditions cause jamo separation.
+                    // Handle Hangul characters from KeyboardInput.
                     if let winit::keyboard::Key::Character(ref s) = event.logical_key {
-                        if s.chars().next().is_some_and(|c| is_hangul_char(c)) {
-                            if !self.modifiers.control_key()
+                        if let Some(c) = s.chars().next() {
+                            if is_hangul_char(c)
+                                && !self.modifiers.control_key()
                                 && !self.modifiers.super_key()
                                 && !self.modifiers.alt_key()
                             {
+                                if self.ime_active {
+                                    // IME is active — it will deliver via Preedit/Commit.
+                                    return;
+                                }
+                                // IME not yet active (first char after language switch).
+                                // Store as pending and show as preedit; the next
+                                // Ime::Preedit/Commit will combine it.
+                                self.pending_hangul_initial = Some(c);
+                                self.ime_preedit = s.to_string();
                                 return;
                             }
                         }
@@ -1127,4 +1154,45 @@ fn is_hangul_char(c: char) -> bool {
         | '\u{AC00}'..='\u{D7AF}' // Hangul Syllables
         | '\u{D7B0}'..='\u{D7FF}' // Hangul Jamo Extended-B
     )
+}
+
+/// Map a Compatibility Jamo consonant to its Choseong (initial) index (0..18).
+fn choseong_index(c: char) -> Option<u32> {
+    // Compatibility Jamo consonants → Choseong index
+    // ㄱ ㄲ ㄴ ㄷ ㄸ ㄹ ㅁ ㅂ ㅃ ㅅ ㅆ ㅇ ㅈ ㅉ ㅊ ㅋ ㅌ ㅍ ㅎ
+    match c {
+        'ㄱ' => Some(0),  'ㄲ' => Some(1),  'ㄴ' => Some(2),
+        'ㄷ' => Some(3),  'ㄸ' => Some(4),  'ㄹ' => Some(5),
+        'ㅁ' => Some(6),  'ㅂ' => Some(7),  'ㅃ' => Some(8),
+        'ㅅ' => Some(9),  'ㅆ' => Some(10), 'ㅇ' => Some(11),
+        'ㅈ' => Some(12), 'ㅉ' => Some(13), 'ㅊ' => Some(14),
+        'ㅋ' => Some(15), 'ㅌ' => Some(16), 'ㅍ' => Some(17),
+        'ㅎ' => Some(18),
+        _ => None,
+    }
+}
+
+/// Map a Compatibility Jamo vowel to its Jungseong (medial) index (0..20).
+fn jungseong_index(c: char) -> Option<u32> {
+    let code = c as u32;
+    // ㅏ (0x314F) .. ㅣ (0x3163) → indices 0..20
+    if (0x314F..=0x3163).contains(&code) {
+        Some(code - 0x314F)
+    } else {
+        None
+    }
+}
+
+/// Try to combine a Choseong (initial consonant) with a string that starts
+/// with a Jungseong (vowel).  Returns the combined string if successful.
+/// e.g. 'ㅇ' + "ㅏ" → "아",  'ㅇ' + "ㅏㄴ" → "안" (won't happen here).
+fn combine_initial_with_text(initial: char, text: &str) -> Option<String> {
+    let cho = choseong_index(initial)?;
+    let first = text.chars().next()?;
+    let jung = jungseong_index(first)?;
+    let syllable = char::from_u32(0xAC00 + (cho * 21 + jung) * 28)?;
+    let mut result = String::new();
+    result.push(syllable);
+    result.extend(text.chars().skip(1));
+    Some(result)
 }

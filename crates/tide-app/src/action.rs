@@ -490,6 +490,9 @@ impl App {
                         // Toggle editor panel maximize
                         self.editor_panel_maximized = !self.editor_panel_maximized;
                         self.maximized_pane = None; // mutually exclusive
+                    } else if self.editor_panel_maximized {
+                        // Editor panel is maximized but focus is elsewhere — just unmaximize it
+                        self.editor_panel_maximized = false;
                     } else {
                         // Toggle tree pane maximize
                         if self.maximized_pane == Some(focused) {
@@ -497,7 +500,6 @@ impl App {
                         } else {
                             self.maximized_pane = Some(focused);
                         }
-                        self.editor_panel_maximized = false; // mutually exclusive
                     }
                     self.chrome_generation += 1;
                     self.compute_layout();
