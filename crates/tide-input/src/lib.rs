@@ -30,6 +30,9 @@ pub enum GlobalAction {
     ToggleFileTree,
     OpenFile,
     MoveFocus(Direction),
+    Paste,
+    Copy,
+    ToggleFullscreen,
 }
 
 /// Cardinal direction for focus movement.
@@ -163,6 +166,34 @@ impl Router {
             Key::Char('b') | Key::Char('B') => Some(GlobalAction::ToggleFileTree),
             // Cmd+O / Ctrl+O -> open file (show file tree)
             Key::Char('o') | Key::Char('O') => Some(GlobalAction::OpenFile),
+            // Cmd+V (macOS) / Ctrl+Shift+V (Linux) -> paste
+            Key::Char('v') | Key::Char('V') => {
+                if modifiers.meta {
+                    Some(GlobalAction::Paste)
+                } else if modifiers.ctrl && modifiers.shift {
+                    Some(GlobalAction::Paste)
+                } else {
+                    None // Ctrl+V → terminal 0x16
+                }
+            }
+            // Cmd+C (macOS) / Ctrl+Shift+C (Linux) -> copy
+            Key::Char('c') | Key::Char('C') => {
+                if modifiers.meta {
+                    Some(GlobalAction::Copy)
+                } else if modifiers.ctrl && modifiers.shift {
+                    Some(GlobalAction::Copy)
+                } else {
+                    None // Ctrl+C → terminal SIGINT
+                }
+            }
+            // Cmd+Ctrl+F -> toggle fullscreen
+            Key::Char('f') | Key::Char('F') => {
+                if modifiers.meta && modifiers.ctrl {
+                    Some(GlobalAction::ToggleFullscreen)
+                } else {
+                    None
+                }
+            }
             // Cmd+Arrow / Ctrl+Arrow -> move focus
             Key::Up => Some(GlobalAction::MoveFocus(Direction::Up)),
             Key::Down => Some(GlobalAction::MoveFocus(Direction::Down)),

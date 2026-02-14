@@ -61,6 +61,7 @@ impl App {
                 if let Some(InputEvent::KeyPress { key, modifiers }) = event {
                     match self.panes.get_mut(&id) {
                         Some(PaneKind::Terminal(pane)) => {
+                            pane.selection = None; // Clear selection on key input
                             pane.handle_key(&key, &modifiers);
                             self.input_just_sent = true;
                             self.input_sent_at = Some(Instant::now());
@@ -107,8 +108,14 @@ impl App {
                             }
                         }
                         Some(PaneKind::Terminal(pane)) => {
-                            // Positive delta = scroll up (into history)
-                            pane.scroll_display(delta as i32);
+                            // Accumulate sub-pixel scroll deltas to prevent jitter
+                            let acc = self.scroll_accumulator.entry(id).or_insert(0.0);
+                            *acc += delta;
+                            let lines = acc.trunc() as i32;
+                            if lines != 0 {
+                                *acc -= lines as f32;
+                                pane.scroll_display(lines);
+                            }
                         }
                         None => {}
                     }
@@ -213,6 +220,49 @@ impl App {
                     self.chrome_generation += 1;
                     self.compute_layout();
                     self.update_file_tree_cwd();
+                }
+            }
+            GlobalAction::ToggleFullscreen => {
+                if let Some(window) = &self.window {
+                    if window.fullscreen().is_some() {
+                        window.set_fullscreen(None);
+                    } else {
+                        window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+                    }
+                }
+            }
+            GlobalAction::Paste => {
+                if let Some(focused_id) = self.focused {
+                    if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&focused_id) {
+                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                            if let Ok(text) = clipboard.get_text() {
+                                if !text.is_empty() {
+                                    // Bracket paste mode for safety
+                                    let mut data = Vec::new();
+                                    data.extend_from_slice(b"\x1b[200~");
+                                    data.extend_from_slice(text.as_bytes());
+                                    data.extend_from_slice(b"\x1b[201~");
+                                    pane.backend.write(&data);
+                                    self.input_just_sent = true;
+                                    self.input_sent_at = Some(Instant::now());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            GlobalAction::Copy => {
+                if let Some(focused_id) = self.focused {
+                    if let Some(PaneKind::Terminal(pane)) = self.panes.get(&focused_id) {
+                        if let Some(ref sel) = pane.selection {
+                            let text = pane.selected_text(sel);
+                            if !text.is_empty() {
+                                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                                    let _ = clipboard.set_text(&text);
+                                }
+                            }
+                        }
+                    }
                 }
             }
             GlobalAction::MoveFocus(direction) => {

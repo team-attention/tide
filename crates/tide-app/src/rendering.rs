@@ -358,7 +358,41 @@ impl App {
                 rect.height - TAB_BAR_HEIGHT - PANE_PADDING,
             );
             match self.panes.get(&id) {
-                Some(PaneKind::Terminal(pane)) => pane.render_cursor(inner, renderer),
+                Some(PaneKind::Terminal(pane)) => {
+                    pane.render_cursor(inner, renderer);
+                    // Render selection highlight
+                    if let Some(ref sel) = pane.selection {
+                        let cell_size = renderer.cell_size();
+                        let (start, end) = if sel.anchor <= sel.end {
+                            (sel.anchor, sel.end)
+                        } else {
+                            (sel.end, sel.anchor)
+                        };
+                        // Skip rendering if anchor == end (no actual selection)
+                        if start != end {
+                            let sel_color = Color::new(0.35, 0.58, 1.0, 0.25);
+                            let grid = pane.backend.grid();
+                            let max_rows = (inner.height / cell_size.height).ceil() as usize;
+                            let max_cols = (inner.width / cell_size.width).ceil() as usize;
+                            let visible_rows = (grid.rows as usize).min(max_rows);
+                            let visible_cols = (grid.cols as usize).min(max_cols);
+                            for row in start.0..=end.0.min(visible_rows.saturating_sub(1)) {
+                                let col_start = if row == start.0 { start.1 } else { 0 };
+                                let col_end = if row == end.0 { end.1 } else { visible_cols };
+                                if col_start >= col_end {
+                                    continue;
+                                }
+                                let rx = inner.x + col_start as f32 * cell_size.width;
+                                let ry = inner.y + row as f32 * cell_size.height;
+                                let rw = (col_end - col_start) as f32 * cell_size.width;
+                                renderer.draw_rect(
+                                    Rect::new(rx, ry, rw, cell_size.height),
+                                    sel_color,
+                                );
+                            }
+                        }
+                    }
+                }
                 Some(PaneKind::Editor(pane)) => pane.render_cursor(inner, renderer),
                 None => {}
             }

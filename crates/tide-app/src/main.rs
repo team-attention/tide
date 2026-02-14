@@ -103,6 +103,12 @@ struct App {
     // Pane drag & drop
     pub(crate) pane_drag: PaneDragState,
 
+    // Scroll accumulator for sub-pixel precision (prevents jitter from PixelDelta)
+    pub(crate) scroll_accumulator: HashMap<PaneId, f32>,
+
+    // Mouse state for text selection
+    pub(crate) mouse_left_pressed: bool,
+
     // Editor panel (right-side tab panel)
     pub(crate) editor_panel_tabs: Vec<tide_core::PaneId>,
     pub(crate) editor_panel_active: Option<tide_core::PaneId>,
@@ -150,6 +156,8 @@ impl App {
             input_sent_at: None,
             consecutive_dirty_frames: 0,
             pane_drag: PaneDragState::Idle,
+            scroll_accumulator: HashMap::new(),
+            mouse_left_pressed: false,
             editor_panel_tabs: Vec::new(),
             editor_panel_active: None,
             editor_panel_rect: None,
