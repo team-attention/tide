@@ -70,8 +70,13 @@ impl App {
                         Some(PaneKind::Editor(pane)) => {
                             pane.selection = None; // Clear selection on key input
                             if let Some(action) = tide_editor::key_to_editor_action(&key, &modifiers) {
-                                let was_modified = pane.editor.is_modified();
                                 let is_save = matches!(action, tide_editor::EditorActionKind::Save);
+                                // Intercept Save on untitled files → open save-as input
+                                if is_save && pane.editor.file_path().is_none() {
+                                    self.save_as_input = Some(crate::SaveAsInput::new(id));
+                                    return;
+                                }
+                                let was_modified = pane.editor.is_modified();
                                 let cell_size = self.renderer.as_ref().map(|r| r.cell_size());
                                 let (visible_rows, visible_cols) = if let Some(cs) = cell_size {
                                     let tree_rect = self.visual_pane_rects.iter()
@@ -165,7 +170,7 @@ impl App {
                 };
                 let logical = self.logical_size();
                 let left = if self.show_file_tree { self.file_tree_width } else { 0.0 };
-                let show_panel = self.show_editor_panel && !self.editor_panel_tabs.is_empty();
+                let show_panel = self.show_editor_panel;
                 let right = if show_panel { self.editor_panel_width } else { 0.0 };
                 let terminal_area = Size::new(
                     (logical.width - left - right).max(100.0),
@@ -352,6 +357,7 @@ impl App {
                 }
             }
             GlobalAction::MoveFocus(direction) => {
+                self.save_as_input = None;
                 let current_id = match self.focused {
                     Some(id) => id,
                     None => return,
@@ -666,6 +672,10 @@ impl App {
 
     /// Close an editor panel tab.
     pub(crate) fn close_editor_panel_tab(&mut self, tab_id: tide_core::PaneId) {
+        // Cancel save-as if the target pane is being closed
+        if self.save_as_input.as_ref().is_some_and(|s| s.pane_id == tab_id) {
+            self.save_as_input = None;
+        }
         // Unwatch the file before removing the pane
         let watch_path = if let Some(PaneKind::Editor(editor)) = self.panes.get(&tab_id) {
             editor.editor.file_path().map(|p| p.to_path_buf())
@@ -702,6 +712,87 @@ impl App {
         self.compute_layout();
         self.clamp_panel_tab_scroll();
         self.scroll_to_active_panel_tab();
+    }
+
+    /// Complete the save-as flow: resolve path, set file_path, detect syntax, save, watch.
+    pub(crate) fn complete_save_as(&mut self, pane_id: tide_core::PaneId, filename: &str) {
+        let path = if std::path::Path::new(filename).is_absolute() {
+            PathBuf::from(filename)
+        } else {
+            let base = self.focused_terminal_cwd()
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            base.join(filename)
+        };
+
+        // Create parent dirs if needed
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+        }
+
+        if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&pane_id) {
+            pane.editor.buffer.file_path = Some(path.clone());
+            pane.editor.detect_and_set_syntax(&path);
+            if let Err(e) = pane.editor.buffer.save() {
+                log::error!("Failed to save file: {}", e);
+            }
+            pane.disk_changed = false;
+        }
+
+        self.watch_file(&path);
+        self.chrome_generation += 1;
+    }
+
+    /// Close a specific pane by its ID (used by close button clicks).
+    pub(crate) fn close_specific_pane(&mut self, pane_id: tide_core::PaneId) {
+        // Cancel save-as if the target pane is being closed
+        if self.save_as_input.as_ref().is_some_and(|s| s.pane_id == pane_id) {
+            self.save_as_input = None;
+        }
+        // If the pane is in the editor panel, close the panel tab
+        if self.editor_panel_tabs.contains(&pane_id) {
+            self.close_editor_panel_tab(pane_id);
+            self.update_file_tree_cwd();
+            return;
+        }
+
+        // Clear maximize if the maximized pane is being closed
+        if self.maximized_pane == Some(pane_id) {
+            self.maximized_pane = None;
+        }
+
+        let remaining = self.layout.pane_ids();
+        if remaining.len() <= 1 && self.editor_panel_tabs.is_empty() {
+            std::process::exit(0);
+        }
+        if remaining.len() <= 1 {
+            // Last tree pane but panel has tabs — focus panel instead
+            if let Some(active) = self.editor_panel_active {
+                self.focused = Some(active);
+                self.router.set_focused(active);
+                self.chrome_generation += 1;
+            }
+            return;
+        }
+
+        self.layout.remove(pane_id);
+        self.panes.remove(&pane_id);
+        self.pane_generations.remove(&pane_id);
+        self.scroll_accumulator.remove(&pane_id);
+
+        // Focus the first remaining pane
+        let remaining = self.layout.pane_ids();
+        if let Some(&next) = remaining.first() {
+            self.focused = Some(next);
+            self.router.set_focused(next);
+        } else {
+            self.focused = None;
+        }
+
+        self.chrome_generation += 1;
+        self.compute_layout();
+        self.update_file_tree_cwd();
     }
 
     /// Try to extract a file path from the terminal grid at the given click position.
