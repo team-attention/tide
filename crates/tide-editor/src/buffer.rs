@@ -4,6 +4,18 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+/// Find the largest byte offset <= idx that is a valid char boundary in the string.
+pub fn floor_char_boundary(s: &str, idx: usize) -> usize {
+    if idx >= s.len() {
+        return s.len();
+    }
+    let mut i = idx;
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Position {
     pub line: usize,
@@ -110,7 +122,7 @@ impl Buffer {
         if pos.line >= self.lines.len() {
             return;
         }
-        let col = pos.col.min(self.lines[pos.line].len());
+        let col = floor_char_boundary(&self.lines[pos.line], pos.col.min(self.lines[pos.line].len()));
         let actual_pos = Position { line: pos.line, col };
         self.undo_stack.push((EditOp::InsertChar { pos: actual_pos, ch }, pos));
         self.redo_stack.clear();
@@ -123,9 +135,11 @@ impl Buffer {
             return;
         }
         let line_len = self.lines[pos.line].len();
-        if pos.col < line_len {
-            let ch = self.lines[pos.line].remove(pos.col);
-            self.undo_stack.push((EditOp::DeleteChar { pos, ch, merged_next: false }, pos));
+        let col = floor_char_boundary(&self.lines[pos.line], pos.col);
+        if col < line_len {
+            let ch = self.lines[pos.line].remove(col);
+            let actual_pos = Position { line: pos.line, col };
+            self.undo_stack.push((EditOp::DeleteChar { pos: actual_pos, ch, merged_next: false }, pos));
             self.redo_stack.clear();
             self.generation += 1;
         } else if pos.line + 1 < self.lines.len() {
@@ -141,10 +155,11 @@ impl Buffer {
     /// Backspace: delete the character before pos, returning the new cursor position.
     pub fn backspace(&mut self, pos: Position) -> Position {
         if pos.col > 0 {
-            let col = pos.col.min(self.lines[pos.line].len());
+            let col = floor_char_boundary(&self.lines[pos.line], pos.col.min(self.lines[pos.line].len()));
             if col > 0 {
-                let ch = self.lines[pos.line].remove(col - 1);
-                let result_pos = Position { line: pos.line, col: col - 1 };
+                let prev = floor_char_boundary(&self.lines[pos.line], col - 1);
+                let ch = self.lines[pos.line].remove(prev);
+                let result_pos = Position { line: pos.line, col: prev };
                 self.undo_stack.push((EditOp::Backspace {
                     original_pos: pos,
                     result_pos,
@@ -157,7 +172,7 @@ impl Buffer {
             }
             Position {
                 line: pos.line,
-                col: col.saturating_sub(1),
+                col: 0,
             }
         } else if pos.line > 0 {
             // Backspace at start of line: merge with previous line
@@ -183,7 +198,7 @@ impl Buffer {
         if pos.line >= self.lines.len() {
             return pos;
         }
-        let col = pos.col.min(self.lines[pos.line].len());
+        let col = floor_char_boundary(&self.lines[pos.line], pos.col.min(self.lines[pos.line].len()));
         let actual_pos = Position { line: pos.line, col };
         self.undo_stack.push((EditOp::InsertNewline { pos: actual_pos }, pos));
         self.redo_stack.clear();
@@ -246,7 +261,7 @@ impl Buffer {
         let new_cursor = match &op {
             EditOp::InsertChar { pos, ch } => {
                 self.lines[pos.line].insert(pos.col, *ch);
-                Position { line: pos.line, col: pos.col + 1 }
+                Position { line: pos.line, col: pos.col + ch.len_utf8() }
             }
             EditOp::DeleteChar { pos, ch, merged_next } => {
                 if *merged_next {
@@ -494,5 +509,63 @@ mod tests {
         buf.undo();
         buf.undo();
         assert!(!buf.is_modified());
+    }
+
+    #[test]
+    fn insert_multibyte_chars() {
+        let mut buf = Buffer::new();
+        // '가' is 3 bytes in UTF-8
+        buf.insert_char(Position { line: 0, col: 0 }, '가');
+        assert_eq!(buf.line(0), Some("가"));
+        // Insert second char after first (at byte offset 3)
+        buf.insert_char(Position { line: 0, col: 3 }, '나');
+        assert_eq!(buf.line(0), Some("가나"));
+        // Insert between the two (at byte offset 3)
+        buf.insert_char(Position { line: 0, col: 3 }, 'A');
+        assert_eq!(buf.line(0), Some("가A나"));
+    }
+
+    #[test]
+    fn backspace_multibyte_char() {
+        let mut buf = Buffer::new();
+        buf.insert_char(Position { line: 0, col: 0 }, '가');
+        buf.insert_char(Position { line: 0, col: 3 }, '나');
+        assert_eq!(buf.line(0), Some("가나"));
+        // Backspace from end (byte offset 6) should remove '나'
+        let pos = buf.backspace(Position { line: 0, col: 6 });
+        assert_eq!(pos, Position { line: 0, col: 3 });
+        assert_eq!(buf.line(0), Some("가"));
+        // Backspace from byte offset 3 should remove '가'
+        let pos = buf.backspace(Position { line: 0, col: 3 });
+        assert_eq!(pos, Position { line: 0, col: 0 });
+        assert_eq!(buf.line(0), Some(""));
+    }
+
+    #[test]
+    fn delete_multibyte_char() {
+        let mut buf = Buffer::new();
+        buf.lines = vec!["가나다".into()];
+        // Delete at byte offset 0 removes '가'
+        buf.delete_char(Position { line: 0, col: 0 });
+        assert_eq!(buf.line(0), Some("나다"));
+        // Delete at byte offset 0 now removes '나'
+        buf.delete_char(Position { line: 0, col: 0 });
+        assert_eq!(buf.line(0), Some("다"));
+    }
+
+    #[test]
+    fn undo_redo_multibyte() {
+        let mut buf = Buffer::new();
+        buf.insert_char(Position { line: 0, col: 0 }, '한');
+        buf.insert_char(Position { line: 0, col: 3 }, '글');
+        assert_eq!(buf.line(0), Some("한글"));
+
+        let pos = buf.undo();
+        assert_eq!(pos, Some(Position { line: 0, col: 3 }));
+        assert_eq!(buf.line(0), Some("한"));
+
+        let pos = buf.redo();
+        assert_eq!(pos, Some(Position { line: 0, col: 6 }));
+        assert_eq!(buf.line(0), Some("한글"));
     }
 }

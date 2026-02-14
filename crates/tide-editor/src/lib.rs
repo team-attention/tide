@@ -77,7 +77,7 @@ impl EditorState {
         match action {
             EditorAction::InsertChar(ch) => {
                 self.buffer.insert_char(self.cursor.position, ch);
-                self.cursor.position.col += 1;
+                self.cursor.position.col += ch.len_utf8();
                 self.cursor.desired_col = self.cursor.position.col;
                 self.generation += 1;
             }
