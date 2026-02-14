@@ -40,8 +40,8 @@ impl App {
         };
 
         let line_height = cell_size.height;
-        // Account for gap + padding offsets
-        let adjusted_y = position.y - PANE_GAP - PANE_PADDING;
+        // Account for padding offset (no gap — tree is flush with window edge)
+        let adjusted_y = position.y - PANE_PADDING;
         let index = ((adjusted_y + self.file_tree_scroll) / line_height) as usize;
 
         // Extract click info from file tree (borrow released before open_editor_pane)
