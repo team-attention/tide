@@ -208,6 +208,8 @@ pub const PANEL_TAB_WIDTH: f32 = 140.0;
 pub const PANEL_TAB_GAP: f32 = 2.0;
 pub const PANEL_TAB_CLOSE_SIZE: f32 = 14.0;
 
+pub const PANE_CLOSE_SIZE: f32 = 14.0;
+
 pub const DROP_PREVIEW_BORDER_WIDTH: f32 = 2.0;
 pub const SWAP_PREVIEW_BORDER_WIDTH: f32 = 3.0;
 pub const DRAG_THRESHOLD: f32 = 5.0;

@@ -17,9 +17,11 @@ pub(crate) enum HoverTarget {
     FileTreeBorder,
     SplitBorder(SplitDirection),
     PaneTabBar(PaneId),
+    PaneTabClose(PaneId),
     PanelTab(PaneId),
     PanelTabClose(PaneId),
     PanelBorder,
+    EmptyPanelButton,
 }
 
 // ──────────────────────────────────────────────
@@ -57,6 +59,26 @@ impl App {
         for &(id, rect) in &self.visual_pane_rects {
             let tab_rect = Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT);
             if tab_rect.contains(pos) {
+                return Some(id);
+            }
+        }
+        None
+    }
+
+    /// Hit-test whether the position is on a pane tab bar close button.
+    pub(crate) fn pane_tab_close_at(&self, pos: Vec2) -> Option<PaneId> {
+        for &(id, rect) in &self.visual_pane_rects {
+            let tab_rect = Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT);
+            if !tab_rect.contains(pos) {
+                continue;
+            }
+            let close_x = rect.x + rect.width - PANE_CLOSE_SIZE - PANE_PADDING;
+            let close_y = rect.y + (TAB_BAR_HEIGHT - PANE_CLOSE_SIZE) / 2.0;
+            if pos.x >= close_x
+                && pos.x <= close_x + PANE_CLOSE_SIZE
+                && pos.y >= close_y
+                && pos.y <= close_y + PANE_CLOSE_SIZE
+            {
                 return Some(id);
             }
         }
