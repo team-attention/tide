@@ -93,13 +93,13 @@ impl App {
                                     if let Some(r) = tree_rect {
                                         let rows = ((r.height - TAB_BAR_HEIGHT - PANE_PADDING) / cs.height).floor() as usize;
                                         let gutter_width = 5.0 * cs.width;
-                                        let cols = ((r.width - 2.0 * PANE_PADDING - gutter_width) / cs.width).floor() as usize;
+                                        let cols = ((r.width - 2.0 * PANE_PADDING - 2.0 * gutter_width) / cs.width).floor() as usize;
                                         (rows, cols)
                                     } else if let Some(pr) = self.editor_panel_rect {
                                         let content_height = (pr.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING).max(1.0);
                                         let rows = (content_height / cs.height).floor() as usize;
                                         let gutter_width = 5.0 * cs.width;
-                                        let cols = ((pr.width - 2.0 * PANE_PADDING - gutter_width) / cs.width).floor() as usize;
+                                        let cols = ((pr.width - 2.0 * PANE_PADDING - 2.0 * gutter_width) / cs.width).floor() as usize;
                                         (rows, cols)
                                     } else {
                                         (30, 80)
@@ -136,13 +136,13 @@ impl App {
                         if let Some(r) = rect {
                             let rows = ((r.height - TAB_BAR_HEIGHT - PANE_PADDING) / cs.height).floor() as usize;
                             let gutter_width = 5.0 * cs.width;
-                            let cols = ((r.width - 2.0 * PANE_PADDING - gutter_width) / cs.width).floor() as usize;
+                            let cols = ((r.width - 2.0 * PANE_PADDING - 2.0 * gutter_width) / cs.width).floor() as usize;
                             (rows.max(1), cols.max(1))
                         } else if let Some(pr) = self.editor_panel_rect {
                             let content_height = (pr.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING).max(1.0);
                             let rows = (content_height / cs.height).floor() as usize;
                             let gutter_width = 5.0 * cs.width;
-                            let cols = ((pr.width - 2.0 * PANE_PADDING - gutter_width) / cs.width).floor() as usize;
+                            let cols = ((pr.width - 2.0 * PANE_PADDING - 2.0 * gutter_width) / cs.width).floor() as usize;
                             (rows.max(1), cols.max(1))
                         } else {
                             (30, 80)
@@ -199,10 +199,12 @@ impl App {
         match action {
             GlobalAction::SplitVertical => {
                 if let Some(focused) = self.focused {
-                    self.maximized_pane = None;
                     let cwd = self.focused_terminal_cwd();
                     let new_id = self.layout.split(focused, SplitDirection::Vertical);
                     self.create_terminal_pane(new_id, cwd);
+                    if self.maximized_pane.is_some() {
+                        self.maximized_pane = Some(new_id);
+                    }
                     self.focused = Some(new_id);
                     self.router.set_focused(new_id);
                     self.chrome_generation += 1;
@@ -211,10 +213,12 @@ impl App {
             }
             GlobalAction::SplitHorizontal => {
                 if let Some(focused) = self.focused {
-                    self.maximized_pane = None;
                     let cwd = self.focused_terminal_cwd();
                     let new_id = self.layout.split(focused, SplitDirection::Horizontal);
                     self.create_terminal_pane(new_id, cwd);
+                    if self.maximized_pane.is_some() {
+                        self.maximized_pane = Some(new_id);
+                    }
                     self.focused = Some(new_id);
                     self.router.set_focused(new_id);
                     self.chrome_generation += 1;
@@ -235,13 +239,7 @@ impl App {
                 }
             }
             GlobalAction::OpenFile => {
-                // Open file tree so user can pick a file
-                if !self.show_file_tree {
-                    self.show_file_tree = true;
-                    self.chrome_generation += 1;
-                    self.compute_layout();
-                    self.update_file_tree_cwd();
-                }
+                self.open_file_finder();
             }
             GlobalAction::ToggleFullscreen => {
                 if let Some(window) = &self.window {
@@ -379,20 +377,55 @@ impl App {
                     }
                 }
 
-                // Phase B: Standard navigation with editor panel included
-                // Unmaximize first so all pane rects are available for navigation
+                // Phase B: Maximized pane navigation (Left/Right cycle, Up/Down no-op)
                 if self.maximized_pane.is_some() {
-                    self.maximized_pane = None;
-                    self.compute_layout();
+                    let pane_ids = self.layout.pane_ids();
+                    if let Some(pos) = pane_ids.iter().position(|&id| id == current_id) {
+                        match direction {
+                            Direction::Left => {
+                                if pos > 0 {
+                                    let prev_id = pane_ids[pos - 1];
+                                    self.maximized_pane = Some(prev_id);
+                                    self.focused = Some(prev_id);
+                                    self.router.set_focused(prev_id);
+                                    self.chrome_generation += 1;
+                                    self.compute_layout();
+                                    self.update_file_tree_cwd();
+                                }
+                            }
+                            Direction::Right => {
+                                if pos + 1 < pane_ids.len() {
+                                    let next_id = pane_ids[pos + 1];
+                                    self.maximized_pane = Some(next_id);
+                                    self.focused = Some(next_id);
+                                    self.router.set_focused(next_id);
+                                    self.chrome_generation += 1;
+                                    self.compute_layout();
+                                    self.update_file_tree_cwd();
+                                }
+                            }
+                            Direction::Up | Direction::Down => {
+                                // no-op while maximized
+                            }
+                        }
+                    }
+                    return;
                 }
+
+                // Phase C: Standard navigation with editor panel included
                 if self.editor_panel_maximized {
                     self.editor_panel_maximized = false;
                     self.compute_layout();
                 }
 
-                // Build rect list: only tree panes (no editor panel).
-                // Terminal panes and editor panel are separate navigation domains.
-                let all_rects = self.pane_rects.clone();
+                // Build rect list: tree panes + editor panel (if visible).
+                let mut all_rects = self.pane_rects.clone();
+                // Include editor panel as a navigation target (using the active tab's ID)
+                if let (Some(active_id), Some(panel_rect)) = (self.editor_panel_active, self.editor_panel_rect) {
+                    if self.show_editor_panel {
+                        all_rects.push((active_id, panel_rect));
+                    }
+                }
 
                 if all_rects.len() < 2 {
                     return;

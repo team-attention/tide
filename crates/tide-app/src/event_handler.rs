@@ -889,7 +889,7 @@ impl App {
                                 let cs = r.cell_size();
                                 let content_height = (panel_rect.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING).max(1.0);
                                 let gutter_width = 5.0 * cs.width;
-                                let content_width = (panel_rect.width - 2.0 * PANE_PADDING - gutter_width).max(1.0);
+                                let content_width = (panel_rect.width - 2.0 * PANE_PADDING - 2.0 * gutter_width).max(1.0);
                                 let rows = (content_height / cs.height).floor() as usize;
                                 let cols = (content_width / cs.width).floor() as usize;
                                 (rows, cols)
@@ -935,7 +935,7 @@ impl App {
                             let visible_cols = self.renderer.as_ref().map(|r| {
                                 let cs = r.cell_size();
                                 let gutter = 5.0 * cs.width;
-                                ((rect.width - 2.0 * PANE_PADDING - gutter) / cs.width).floor() as usize
+                                ((rect.width - 2.0 * PANE_PADDING - 2.0 * gutter) / cs.width).floor() as usize
                             }).unwrap_or(80);
                             let visible_rows = self.renderer.as_ref().map(|r| {
                                 let cs = r.cell_size();
@@ -1359,12 +1359,12 @@ impl App {
         };
         let gutter_width = 5.0 * cs.width;
         if let Some(&(_, rect)) = self.visual_pane_rects.iter().find(|(id, _)| *id == pane_id) {
-            let cw = rect.width - 2.0 * PANE_PADDING - gutter_width;
+            let cw = rect.width - 2.0 * PANE_PADDING - 2.0 * gutter_width;
             return (cw / cs.width).floor().max(1.0) as usize;
         }
         if let Some(panel_rect) = self.editor_panel_rect {
             if self.editor_panel_active == Some(pane_id) {
-                let cw = panel_rect.width - 2.0 * PANE_PADDING - gutter_width;
+                let cw = panel_rect.width - 2.0 * PANE_PADDING - 2.0 * gutter_width;
                 return (cw / cs.width).floor().max(1.0) as usize;
             }
         }

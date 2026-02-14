@@ -681,8 +681,8 @@ impl App {
             );
             match self.panes.get(&id) {
                 Some(PaneKind::Terminal(pane)) => {
-                    // Hide cursor when search bar is focused on this pane
-                    if search_focus != Some(id) {
+                    // Only render cursor on the focused pane (and hide when search bar is active)
+                    if focused == Some(id) && search_focus != Some(id) {
                         pane.render_cursor(inner, renderer, p.cursor_accent);
                     }
                     // Render selection highlight
@@ -754,7 +754,7 @@ impl App {
                     }
                 }
                 Some(PaneKind::Editor(pane)) => {
-                    if search_focus != Some(id) {
+                    if focused == Some(id) && search_focus != Some(id) {
                         pane.render_cursor(inner, renderer, p.cursor_accent);
                     }
                     // Render editor selection highlight
@@ -853,7 +853,7 @@ impl App {
                     panel_rect.width - 2.0 * PANE_PADDING,
                     (panel_rect.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING - bar_offset).max(1.0),
                 );
-                if search_focus != Some(active_id) {
+                if focused == Some(active_id) && search_focus != Some(active_id) {
                     pane.render_cursor(inner, renderer, p.cursor_accent);
                 }
 
