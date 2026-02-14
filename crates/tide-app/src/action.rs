@@ -1024,6 +1024,11 @@ impl App {
         if self.file_finder.is_some() {
             self.file_finder = None;
             self.chrome_generation += 1;
+            // If no tabs are open, hide the editor panel
+            if self.editor_panel_tabs.is_empty() {
+                self.show_editor_panel = false;
+                self.compute_layout();
+            }
         }
     }
 
