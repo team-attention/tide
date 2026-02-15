@@ -1,7 +1,25 @@
 // Git integration: branch detection and status parsing via CLI.
+// All functions are called from background threads — never from the main/render thread.
 
 use std::path::Path;
 use std::process::Command;
+
+/// Run a git command. Returns None if the command fails.
+/// Safe to call from background threads only (may block on git I/O).
+fn run_git(args: &[&str], cwd: &Path) -> Option<String> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        None
+    }
+}
 
 /// Git repository information for a working directory.
 #[derive(Debug, Clone)]
@@ -27,19 +45,8 @@ pub fn detect_git_info(cwd: &Path) -> Option<GitInfo> {
 }
 
 fn detect_branch(cwd: &Path) -> Option<String> {
-    let output = Command::new("git")
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .current_dir(cwd)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let text = run_git(&["rev-parse", "--abbrev-ref", "HEAD"], cwd)?;
+    let branch = text.trim().to_string();
     if branch.is_empty() { None } else { Some(branch) }
 }
 
@@ -60,18 +67,10 @@ pub struct BranchInfo {
 
 /// List files with their status from `git status --porcelain`.
 pub fn status_files(cwd: &Path) -> Vec<StatusEntry> {
-    let output = match Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(cwd)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
-    {
-        Ok(o) if o.status.success() => o,
-        _ => return Vec::new(),
+    let text = match run_git(&["status", "--porcelain"], cwd) {
+        Some(t) => t,
+        None => return Vec::new(),
     };
-
-    let text = String::from_utf8_lossy(&output.stdout);
     text.lines()
         .filter(|l| l.len() >= 4)
         .map(|l| StatusEntry {
@@ -83,35 +82,16 @@ pub fn status_files(cwd: &Path) -> Vec<StatusEntry> {
 
 /// Get unified diff for a single file.
 pub fn file_diff(cwd: &Path, path: &str) -> Option<String> {
-    let output = Command::new("git")
-        .args(["diff", "--", path])
-        .current_dir(cwd)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&output.stdout).to_string();
+    let text = run_git(&["diff", "--", path], cwd)?;
     if text.is_empty() { None } else { Some(text) }
 }
 
 /// List all branches (local and remote).
 pub fn list_branches(cwd: &Path) -> Vec<BranchInfo> {
-    let output = match Command::new("git")
-        .args(["branch", "-a", "--format=%(HEAD) %(refname:short)"])
-        .current_dir(cwd)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
-    {
-        Ok(o) if o.status.success() => o,
-        _ => return Vec::new(),
+    let text = match run_git(&["branch", "-a", "--format=%(HEAD) %(refname:short)"], cwd) {
+        Some(t) => t,
+        None => return Vec::new(),
     };
-
-    let text = String::from_utf8_lossy(&output.stdout);
     text.lines()
         .filter(|l| l.len() >= 2)
         .map(|l| {
@@ -126,36 +106,16 @@ pub fn list_branches(cwd: &Path) -> Vec<BranchInfo> {
 fn detect_status(cwd: &Path) -> GitStatus {
     let mut status = GitStatus::default();
 
-    // Count changed files via porcelain status
-    if let Ok(output) = Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(cwd)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
-    {
-        if output.status.success() {
-            let text = String::from_utf8_lossy(&output.stdout);
-            status.changed_files = text.lines().filter(|l| !l.is_empty()).count();
-        }
+    if let Some(text) = run_git(&["status", "--porcelain"], cwd) {
+        status.changed_files = text.lines().filter(|l| !l.is_empty()).count();
     }
 
-    // Get diff stats (additions/deletions)
-    if let Ok(output) = Command::new("git")
-        .args(["diff", "--numstat"])
-        .current_dir(cwd)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
-    {
-        if output.status.success() {
-            let text = String::from_utf8_lossy(&output.stdout);
-            for line in text.lines() {
-                let parts: Vec<&str> = line.split('\t').collect();
-                if parts.len() >= 2 {
-                    status.additions += parts[0].parse::<usize>().unwrap_or(0);
-                    status.deletions += parts[1].parse::<usize>().unwrap_or(0);
-                }
+    if let Some(text) = run_git(&["diff", "--numstat"], cwd) {
+        for line in text.lines() {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 2 {
+                status.additions += parts[0].parse::<usize>().unwrap_or(0);
+                status.deletions += parts[1].parse::<usize>().unwrap_or(0);
             }
         }
     }

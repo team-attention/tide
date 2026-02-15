@@ -373,7 +373,7 @@ fn terminal_title(pane: &crate::pane::TerminalPane, id: PaneId) -> String {
 }
 
 /// Shorten a path for badge display: ~/foo/bar → ~/f/bar
-fn shorten_path(path: &std::path::Path) -> String {
+pub(crate) fn shorten_path(path: &std::path::Path) -> String {
     let home = dirs::home_dir();
     let display = if let Some(ref home) = home {
         if let Ok(rel) = path.strip_prefix(home) {

@@ -325,6 +325,135 @@ impl BranchSwitcherState {
 }
 
 // ──────────────────────────────────────────────
+// Directory switcher popup state
+// ──────────────────────────────────────────────
+
+pub(crate) struct DirEntry {
+    pub path: PathBuf,
+    pub name: String,
+    pub is_parent: bool,
+}
+
+pub(crate) struct DirSwitcherState {
+    pub pane_id: PaneId,
+    pub query: String,
+    pub cursor: usize,
+    pub entries: Vec<DirEntry>,
+    pub filtered: Vec<usize>,
+    pub selected: usize,
+    pub scroll_offset: usize,
+    pub anchor_rect: tide_core::Rect,
+}
+
+impl DirSwitcherState {
+    pub fn new(pane_id: PaneId, entries: Vec<DirEntry>, anchor_rect: tide_core::Rect) -> Self {
+        let filtered: Vec<usize> = (0..entries.len()).collect();
+        Self {
+            pane_id,
+            query: String::new(),
+            cursor: 0,
+            entries,
+            filtered,
+            selected: 0,
+            scroll_offset: 0,
+            anchor_rect,
+        }
+    }
+
+    pub fn insert_char(&mut self, ch: char) {
+        self.query.insert(self.cursor, ch);
+        self.cursor += ch.len_utf8();
+        self.filter();
+    }
+
+    pub fn backspace(&mut self) {
+        if self.cursor > 0 {
+            let prev = self.query[..self.cursor]
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            self.query.drain(prev..self.cursor);
+            self.cursor = prev;
+            self.filter();
+        }
+    }
+
+    pub fn select_up(&mut self) {
+        if self.selected > 0 {
+            self.selected -= 1;
+            if self.selected < self.scroll_offset {
+                self.scroll_offset = self.selected;
+            }
+        }
+    }
+
+    pub fn select_down(&mut self) {
+        if !self.filtered.is_empty() && self.selected + 1 < self.filtered.len() {
+            self.selected += 1;
+        }
+    }
+
+    pub fn selected_entry(&self) -> Option<&DirEntry> {
+        let idx = *self.filtered.get(self.selected)?;
+        self.entries.get(idx)
+    }
+
+    fn filter(&mut self) {
+        if self.query.is_empty() {
+            self.filtered = (0..self.entries.len()).collect();
+        } else {
+            let query_lower = self.query.to_lowercase();
+            self.filtered = self.entries.iter().enumerate()
+                .filter(|(_, e)| e.name.to_lowercase().contains(&query_lower))
+                .map(|(i, _)| i)
+                .collect();
+        }
+        self.selected = 0;
+        self.scroll_offset = 0;
+    }
+}
+
+fn build_dir_entries(cwd: &std::path::Path) -> Vec<DirEntry> {
+    let mut entries = Vec::new();
+
+    // Subdirectories of CWD (skip hidden, sorted by name)
+    if let Ok(read_dir) = std::fs::read_dir(cwd) {
+        let mut subdirs: Vec<DirEntry> = read_dir
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_type().map(|ft| ft.is_dir()).unwrap_or(false)
+                    && !e.file_name().to_string_lossy().starts_with('.')
+            })
+            .map(|e| DirEntry {
+                path: e.path(),
+                name: format!("{}/", e.file_name().to_string_lossy()),
+                is_parent: false,
+            })
+            .collect();
+        subdirs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        entries.extend(subdirs);
+    }
+
+    // Parent chain up to $HOME (exclusive — HOME itself is not shown)
+    let home = dirs::home_dir();
+    let mut current = cwd.parent();
+    while let Some(parent) = current {
+        if home.as_ref().is_some_and(|h| parent == h) {
+            break;
+        }
+        entries.push(DirEntry {
+            path: parent.to_path_buf(),
+            name: header::shorten_path(parent),
+            is_parent: true,
+        });
+        current = parent.parent();
+    }
+
+    entries
+}
+
+// ──────────────────────────────────────────────
 // App state
 // ──────────────────────────────────────────────
 
@@ -358,7 +487,10 @@ struct App {
 
     // CWD tracking
     pub(crate) last_cwd: Option<PathBuf>,
-    pub(crate) last_cwd_check: Instant,
+    /// Deferred badge check scheduled after PTY output settles.
+    /// Event-driven: set ~150ms after last PTY burst so CWD/idle badges
+    /// update promptly regardless of whether user or AI agent changed dirs.
+    badge_check_at: Option<Instant>,
 
     // Frame pacing
     pub(crate) needs_redraw: bool,
@@ -457,6 +589,9 @@ struct App {
     // Branch switcher popup
     pub(crate) branch_switcher: Option<BranchSwitcherState>,
 
+    // Directory switcher popup
+    pub(crate) dir_switcher: Option<DirSwitcherState>,
+
     // Hover target for interactive feedback
     pub(crate) hover_target: Option<HoverTarget>,
 
@@ -467,6 +602,12 @@ struct App {
 
     // Event loop proxy for waking the loop from background threads (PTY, file watcher)
     pub(crate) event_loop_proxy: Option<EventLoopProxy<()>>,
+
+    // Background git info poller
+    pub(crate) git_poll_rx: Option<mpsc::Receiver<std::collections::HashMap<PathBuf, Option<tide_terminal::git::GitInfo>>>>,
+    pub(crate) git_poll_cwd_tx: Option<mpsc::Sender<Vec<PathBuf>>>,
+    pub(crate) git_poll_handle: Option<std::thread::JoinHandle<()>>,
+    pub(crate) git_poll_stop: Arc<AtomicBool>,
 }
 
 impl App {
@@ -493,7 +634,7 @@ impl App {
             modifiers: ModifiersState::empty(),
             last_cursor_pos: tide_core::Vec2::new(0.0, 0.0),
             last_cwd: None,
-            last_cwd_check: Instant::now(),
+            badge_check_at: None,
             needs_redraw: true,
             last_frame: Instant::now(),
             ime_active: false,
@@ -535,11 +676,16 @@ impl App {
             dark_mode: true,
             header_hit_zones: Vec::new(),
             branch_switcher: None,
+            dir_switcher: None,
             hover_target: None,
             file_watcher: None,
             file_watch_rx: None,
             file_watch_dirty: Arc::new(AtomicBool::new(false)),
             event_loop_proxy: None,
+            git_poll_rx: None,
+            git_poll_cwd_tx: None,
+            git_poll_handle: None,
+            git_poll_stop: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -655,6 +801,51 @@ impl App {
         } else {
             None
         }
+    }
+
+    /// Hit-test the directory switcher popup. Returns the filtered index of the item under pos.
+    pub(crate) fn dir_switcher_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
+        let ds = self.dir_switcher.as_ref()?;
+        let cell_size = self.renderer.as_ref()?.cell_size();
+        let line_height = cell_size.height + 4.0;
+
+        let popup_w = 280.0_f32;
+        let popup_x = ds.anchor_rect.x;
+        let popup_y = ds.anchor_rect.y + ds.anchor_rect.height + 4.0;
+        let input_h = cell_size.height + 10.0;
+        let list_top = popup_y + input_h;
+
+        if pos.x < popup_x || pos.x > popup_x + popup_w || pos.y < list_top {
+            return None;
+        }
+
+        let rel_y = pos.y - list_top;
+        let idx = (rel_y / line_height) as usize + ds.scroll_offset;
+        if idx < ds.filtered.len() {
+            Some(idx)
+        } else {
+            None
+        }
+    }
+
+    /// Check if a position is inside the directory switcher popup area.
+    pub(crate) fn dir_switcher_contains(&self, pos: tide_core::Vec2) -> bool {
+        if let Some(ref ds) = self.dir_switcher {
+            let cell_size = self.renderer.as_ref().map(|r| r.cell_size());
+            if let Some(cs) = cell_size {
+                let popup_w = 280.0_f32;
+                let popup_x = ds.anchor_rect.x;
+                let popup_y = ds.anchor_rect.y + ds.anchor_rect.height + 4.0;
+                let line_height = cs.height + 4.0;
+                let input_h = cs.height + 10.0;
+                let hint_h = cs.height + 6.0;
+                let max_visible = 10.min(ds.filtered.len());
+                let popup_h = input_h + max_visible as f32 * line_height + hint_h + 8.0;
+                let popup_rect = Rect::new(popup_x, popup_y, popup_w, popup_h);
+                return popup_rect.contains(pos);
+            }
+        }
+        false
     }
 
     /// Check if a position is inside the branch switcher popup area.
@@ -1116,8 +1307,9 @@ impl App {
             self.chrome_generation += 1;
             self.needs_redraw = true;
         } else if ft_diff.abs() > 0.0 {
+            // Final snap (< 0.5px) — set position but skip chrome rebuild.
+            // Next natural chrome rebuild will use the correct final value.
             self.file_tree_scroll = self.file_tree_scroll_target;
-            self.chrome_generation += 1;
         }
 
         let pt_diff = self.panel_tab_scroll_target - self.panel_tab_scroll;
@@ -1127,14 +1319,16 @@ impl App {
             self.needs_redraw = true;
         } else if pt_diff.abs() > 0.0 {
             self.panel_tab_scroll = self.panel_tab_scroll_target;
-            self.chrome_generation += 1;
         }
 
-        // Periodic CWD check + badge update (every 500ms)
-        if self.last_cwd_check.elapsed() > Duration::from_millis(500) {
-            self.last_cwd_check = Instant::now();
-            self.update_file_tree_cwd();
-            self.update_terminal_badges();
+        // Consume git info from background poller (non-blocking).
+        // CWD/idle badge checks are event-driven (see badge_check_at in about_to_wait).
+        // Git info still needs periodic consumption since it arrives asynchronously.
+        self.update_terminal_badges();
+
+        // Start git poller if not yet running
+        if self.git_poll_handle.is_none() {
+            self.start_git_poller();
         }
     }
 }
@@ -1242,6 +1436,46 @@ impl ApplicationHandler for App {
             ..
         } = &event
         {
+            // Directory switcher popup click handling
+            if self.dir_switcher.is_some() {
+                if let Some(idx) = self.dir_switcher_item_at(self.last_cursor_pos) {
+                    let selected = self.dir_switcher.as_ref()
+                        .and_then(|ds| {
+                            let entry_idx = *ds.filtered.get(idx)?;
+                            Some((ds.pane_id, ds.entries.get(entry_idx)?.path.clone()))
+                        });
+                    self.dir_switcher = None;
+                    if let Some((pane_id, path)) = selected {
+                        if self.modifiers.super_key() {
+                            // Cmd+click: split and open new session at target dir
+                            let new_id = self.layout.split(pane_id, SplitDirection::Vertical);
+                            self.create_terminal_pane(new_id, Some(path));
+                            self.focused = Some(new_id);
+                            self.router.set_focused(new_id);
+                            self.chrome_generation += 1;
+                            self.compute_layout();
+                        } else {
+                            // Normal click: cd in current pane
+                            if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&pane_id) {
+                                let path_str = path.to_string_lossy();
+                                let cmd = if path_str.contains(' ') || path_str.contains('\'') || path_str.contains('"') {
+                                    format!("cd '{}'\n", path_str.replace('\'', "'\\''"))
+                                } else {
+                                    format!("cd {}\n", path_str)
+                                };
+                                pane.backend.write(cmd.as_bytes());
+                            }
+                        }
+                    }
+                    self.needs_redraw = true;
+                    return;
+                } else if !self.dir_switcher_contains(self.last_cursor_pos) {
+                    self.dir_switcher = None;
+                    self.needs_redraw = true;
+                    return;
+                }
+            }
+
             // Branch switcher popup click handling
             if self.branch_switcher.is_some() {
                 if let Some(idx) = self.branch_switcher_item_at(self.last_cursor_pos) {
@@ -1369,21 +1603,46 @@ impl ApplicationHandler for App {
             }
         }
 
+        // Check if this event can skip a redraw (idle cursor hover, modifier change)
+        let skip_redraw = match &event {
+            WindowEvent::CursorMoved { .. } => {
+                !self.mouse_left_pressed
+                    && !self.file_tree_border_dragging
+                    && !self.panel_border_dragging
+                    && !self.router.is_dragging_border()
+                    && matches!(self.pane_drag, PaneDragState::Idle)
+            }
+            WindowEvent::ModifiersChanged(_) => true,
+            _ => false,
+        };
+
         self.handle_window_event(event);
-        self.needs_redraw = true;
+
+        if !skip_redraw {
+            self.needs_redraw = true;
+        }
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         // Check if any terminal has new PTY output (cheap atomic load)
+        let mut had_pty_output = false;
         for pane in self.panes.values() {
             if let PaneKind::Terminal(terminal) = pane {
                 if terminal.backend.has_new_output() {
                     self.needs_redraw = true;
                     self.input_just_sent = false;
                     self.input_sent_at = None;
+                    had_pty_output = true;
                     break;
                 }
             }
+        }
+
+        // PTY just produced output → schedule a deferred badge check.
+        // After a cd (by user or AI agent), the shell emits a new prompt.
+        // We check CWD/idle 150ms after the last output burst settles.
+        if had_pty_output {
+            self.badge_check_at = Some(Instant::now() + Duration::from_millis(150));
         }
 
         // Check if file watcher has pending events
@@ -1391,10 +1650,20 @@ impl ApplicationHandler for App {
             self.needs_redraw = true;
         }
 
+        // Consume git poller results (woken via EventLoopProxy::send_event)
+        if self.consume_git_poll_results() {
+            self.chrome_generation += 1;
+            self.needs_redraw = true;
+        }
+
         if self.needs_redraw {
-            // Throttle to ~120fps max to prevent GPU staging buffer accumulation.
-            // Without this, continuous PTY output causes an unthrottled render loop.
-            let min_frame_time = Duration::from_micros(8_333); // ~120fps
+            // Adaptive frame throttling: start at ~120fps, drop to ~30fps during
+            // sustained PTY output (e.g. long-running commands) to save battery/GPU.
+            let min_frame_time = if self.consecutive_dirty_frames > 60 {
+                Duration::from_micros(33_333) // ~30fps after 0.5s of continuous output
+            } else {
+                Duration::from_micros(8_333) // ~120fps normal
+            };
             let elapsed = self.last_frame.elapsed();
             if elapsed < min_frame_time {
                 event_loop.set_control_flow(ControlFlow::wait_duration(min_frame_time - elapsed));
@@ -1405,6 +1674,8 @@ impl ApplicationHandler for App {
                 window.request_redraw();
             }
         } else if self.input_just_sent {
+            // User just typed — reset adaptive throttle so next PTY burst starts at 120fps
+            self.consecutive_dirty_frames = 0;
             // Poll aggressively while awaiting PTY response after keypress
             // 50ms safety timeout: stop polling if PTY hasn't responded
             if self.input_sent_at.is_some_and(|t| t.elapsed() > Duration::from_millis(50)) {
@@ -1415,8 +1686,47 @@ impl ApplicationHandler for App {
                 event_loop.set_control_flow(ControlFlow::Poll);
             }
         } else {
-            // Truly idle: sleep until PTY waker or user input wakes us
+            // Idle — check if a deferred badge update is due
             self.consecutive_dirty_frames = 0;
+
+            if let Some(check_at) = self.badge_check_at {
+                let now = Instant::now();
+                if now >= check_at {
+                    // PTY output settled — run CWD/idle badge check now
+                    self.badge_check_at = None;
+                    self.update_file_tree_cwd();
+                    self.update_terminal_badges();
+
+                    // Send CWDs to git poller so git badges update too
+                    if let Some(ref tx) = self.git_poll_cwd_tx {
+                        let mut cwds: Vec<PathBuf> = Vec::new();
+                        for pane in self.panes.values() {
+                            if let PaneKind::Terminal(p) = pane {
+                                if let Some(ref cwd) = p.cwd {
+                                    if !cwds.contains(cwd) {
+                                        cwds.push(cwd.clone());
+                                    }
+                                }
+                            }
+                        }
+                        let _ = tx.send(cwds);
+                    }
+
+                    // If badge changed, request a frame
+                    if self.needs_redraw {
+                        if let Some(window) = &self.window {
+                            window.request_redraw();
+                        }
+                        return;
+                    }
+                } else {
+                    // Not yet — sleep until the scheduled check time
+                    event_loop.set_control_flow(ControlFlow::WaitUntil(check_at));
+                    return;
+                }
+            }
+
+            // Truly idle: sleep until PTY waker or user input wakes us
             event_loop.set_control_flow(ControlFlow::Wait);
         }
     }

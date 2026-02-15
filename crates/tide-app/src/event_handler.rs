@@ -10,7 +10,7 @@ use crate::input::{winit_key_to_tide, winit_modifiers_to_tide, winit_physical_ke
 use crate::pane::{PaneKind, Selection};
 use crate::search;
 use crate::theme::*;
-use crate::{App, BranchSwitcherState};
+use crate::{App, BranchSwitcherState, DirSwitcherState, build_dir_entries};
 
 impl App {
     /// Convert a pixel position to a terminal cell (row, col) within a pane's content area.
@@ -121,24 +121,26 @@ impl App {
                         return true;
                     }
                     HeaderHitAction::Directory => {
-                        // If shell is idle, inject cd command; otherwise copy to clipboard
-                        let (cwd_str, is_idle) = if let Some(PaneKind::Terminal(pane)) = self.panes.get(&zone.pane_id) {
-                            let cwd = pane.cwd.as_ref().map(|p| p.display().to_string());
-                            (cwd, pane.shell_idle)
-                        } else {
-                            (None, false)
-                        };
-                        if let Some(cwd) = cwd_str {
-                            if is_idle {
-                                // Inject cd command to terminal
-                                let cmd = format!("cd {}\n", shell_escape(&cwd));
-                                if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&zone.pane_id) {
-                                    pane.backend.write(cmd.as_bytes());
+                        if let Some(PaneKind::Terminal(pane)) = self.panes.get(&zone.pane_id) {
+                            if pane.shell_idle {
+                                // Shell idle → open directory switcher popup
+                                let cwd = pane.cwd.clone();
+                                let pane_id = zone.pane_id;
+                                let anchor_rect = zone.rect;
+                                if let Some(cwd) = cwd {
+                                    let entries = build_dir_entries(&cwd);
+                                    if !entries.is_empty() {
+                                        self.dir_switcher = Some(DirSwitcherState::new(
+                                            pane_id, entries, anchor_rect,
+                                        ));
+                                    }
                                 }
                             } else {
-                                // Copy path to clipboard
-                                if let Ok(mut cb) = arboard::Clipboard::new() {
-                                    let _ = cb.set_text(&cwd);
+                                // Process running → copy path to clipboard (fallback)
+                                if let Some(ref cwd) = pane.cwd {
+                                    if let Ok(mut cb) = arboard::Clipboard::new() {
+                                        let _ = cb.set_text(cwd.display().to_string());
+                                    }
                                 }
                             }
                         }
@@ -338,7 +340,19 @@ impl App {
                     } else {
                         output
                     };
-                    // IME composed text → route to branch switcher, file finder, save-as input, search bar, or focused pane
+                    // IME composed text → route to dir switcher, branch switcher, file finder, save-as input, search bar, or focused pane
+                    if self.dir_switcher.is_some() {
+                        for ch in output.chars() {
+                            if let Some(ref mut ds) = self.dir_switcher {
+                                ds.insert_char(ch);
+                                self.chrome_generation += 1;
+                            }
+                        }
+                        self.ime_composing = false;
+                        self.ime_preedit.clear();
+                        self.needs_redraw = true;
+                        return;
+                    }
                     if self.branch_switcher.is_some() {
                         for ch in output.chars() {
                             if let Some(ref mut bs) = self.branch_switcher {
@@ -450,7 +464,13 @@ impl App {
                         if let winit::keyboard::Key::Character(ref s) = event.logical_key {
                             if let Some(c) = s.chars().next() {
                                 if !is_hangul_char(c) {
-                                    if self.branch_switcher.is_some() {
+                                    if self.dir_switcher.is_some() {
+                                        if let Some(ref mut ds) = self.dir_switcher {
+                                            ds.insert_char(c);
+                                            self.chrome_generation += 1;
+                                        }
+                                        self.needs_redraw = true;
+                                    } else if self.branch_switcher.is_some() {
                                         if let Some(ref mut bs) = self.branch_switcher {
                                             bs.insert_char(c);
                                             self.chrome_generation += 1;
@@ -580,6 +600,75 @@ impl App {
                         crate::session::save_session(&session);
                         crate::session::delete_running_marker();
                         std::process::exit(0);
+                    }
+
+                    // Directory switcher popup interception: consume all keys when active
+                    if self.dir_switcher.is_some() {
+                        match key {
+                            tide_core::Key::Escape => {
+                                self.dir_switcher = None;
+                            }
+                            tide_core::Key::Enter => {
+                                let selected = self.dir_switcher.as_ref()
+                                    .and_then(|ds| ds.selected_entry().map(|e| (ds.pane_id, e.path.clone())));
+                                self.dir_switcher = None;
+                                if let Some((pane_id, path)) = selected {
+                                    if modifiers.meta {
+                                        // Cmd+Enter: split and open new session at target dir
+                                        let new_id = self.layout.split(pane_id, SplitDirection::Vertical);
+                                        self.create_terminal_pane(new_id, Some(path));
+                                        self.focused = Some(new_id);
+                                        self.router.set_focused(new_id);
+                                        self.chrome_generation += 1;
+                                        self.compute_layout();
+                                    } else {
+                                        // Normal Enter: cd in current pane
+                                        if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&pane_id) {
+                                            let path_str = path.to_string_lossy();
+                                            let cmd = if path_str.contains(' ') || path_str.contains('\'') || path_str.contains('"') {
+                                                format!("cd '{}'\n", path_str.replace('\'', "'\\''"))
+                                            } else {
+                                                format!("cd {}\n", path_str)
+                                            };
+                                            pane.backend.write(cmd.as_bytes());
+                                        }
+                                    }
+                                }
+                            }
+                            tide_core::Key::Up => {
+                                if let Some(ref mut ds) = self.dir_switcher {
+                                    ds.select_up();
+                                    self.chrome_generation += 1;
+                                }
+                            }
+                            tide_core::Key::Down => {
+                                if let Some(ref mut ds) = self.dir_switcher {
+                                    ds.select_down();
+                                    let visible_rows = 10usize;
+                                    if ds.selected >= ds.scroll_offset + visible_rows {
+                                        ds.scroll_offset = ds.selected.saturating_sub(visible_rows - 1);
+                                    }
+                                    self.chrome_generation += 1;
+                                }
+                            }
+                            tide_core::Key::Backspace => {
+                                if let Some(ref mut ds) = self.dir_switcher {
+                                    ds.backspace();
+                                    self.chrome_generation += 1;
+                                }
+                            }
+                            tide_core::Key::Char(ch) => {
+                                if !modifiers.ctrl && !modifiers.meta {
+                                    if let Some(ref mut ds) = self.dir_switcher {
+                                        ds.insert_char(ch);
+                                        self.chrome_generation += 1;
+                                    }
+                                }
+                            }
+                            _ => {} // consume all other keys
+                        }
+                        self.needs_redraw = true;
+                        return;
                     }
 
                     // Branch switcher popup interception: consume all keys when active
@@ -1184,6 +1273,40 @@ impl App {
                     MouseScrollDelta::LineDelta(x, y) => (x * 3.0, y * 3.0),
                     MouseScrollDelta::PixelDelta(p) => (p.x as f32 / 10.0, p.y as f32 / 10.0),
                 };
+
+                // Popup scroll: directory switcher
+                if self.dir_switcher.is_some() && self.dir_switcher_contains(self.last_cursor_pos) {
+                    if let Some(ref mut ds) = self.dir_switcher {
+                        let max_visible = 10usize;
+                        let lines = if dy.abs() >= 1.0 { dy.abs().ceil() as usize } else { 1 };
+                        if dy > 0.0 {
+                            ds.scroll_offset = ds.scroll_offset.saturating_sub(lines);
+                        } else if dy < 0.0 {
+                            let max_off = ds.filtered.len().saturating_sub(max_visible);
+                            ds.scroll_offset = (ds.scroll_offset + lines).min(max_off);
+                        }
+                        self.chrome_generation += 1;
+                    }
+                    self.needs_redraw = true;
+                    return;
+                }
+
+                // Popup scroll: branch switcher
+                if self.branch_switcher.is_some() && self.branch_switcher_contains(self.last_cursor_pos) {
+                    if let Some(ref mut bs) = self.branch_switcher {
+                        let max_visible = 10usize;
+                        let lines = if dy.abs() >= 1.0 { dy.abs().ceil() as usize } else { 1 };
+                        if dy > 0.0 {
+                            bs.scroll_offset = bs.scroll_offset.saturating_sub(lines);
+                        } else if dy < 0.0 {
+                            let max_off = bs.filtered.len().saturating_sub(max_visible);
+                            bs.scroll_offset = (bs.scroll_offset + lines).min(max_off);
+                        }
+                        self.chrome_generation += 1;
+                    }
+                    self.needs_redraw = true;
+                    return;
+                }
 
                 // Axis isolation for editor content: only apply dominant scroll axis
                 let (editor_dx, editor_dy) = if dx.abs() > dy.abs() {
@@ -1992,17 +2115,4 @@ fn combine_initial_with_text(initial: char, text: &str) -> Option<String> {
     result.push(syllable);
     result.extend(text.chars().skip(1));
     Some(result)
-}
-
-/// Escape a string for safe use as a shell argument.
-fn shell_escape(s: &str) -> String {
-    if s.is_empty() {
-        return "''".to_string();
-    }
-    // If the string contains only safe characters, return as-is
-    if s.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '/' | '.' | '_' | '-')) {
-        return s.to_string();
-    }
-    // Otherwise, wrap in single quotes, escaping any existing single quotes
-    format!("'{}'", s.replace('\'', "'\\''"))
 }
