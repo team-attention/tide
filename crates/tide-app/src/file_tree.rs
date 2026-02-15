@@ -45,6 +45,52 @@ impl App {
         (content_height - logical.height).max(0.0)
     }
 
+    /// Poll CWD, git info, and shell idle state for all terminal panes.
+    /// Bumps chrome_generation if anything changed.
+    pub(crate) fn update_terminal_badges(&mut self) {
+        let mut changed = false;
+        let pane_ids: Vec<tide_core::PaneId> = self.panes.keys().copied().collect();
+        for id in pane_ids {
+            if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&id) {
+                // CWD
+                let new_cwd = pane.backend.detect_cwd_fallback();
+                if new_cwd != pane.cwd {
+                    pane.cwd = new_cwd;
+                    changed = true;
+                }
+
+                // Git info (only if CWD is available)
+                let new_git = pane.cwd.as_ref().and_then(|cwd| {
+                    tide_terminal::git::detect_git_info(cwd)
+                });
+                let git_changed = match (&pane.git_info, &new_git) {
+                    (None, None) => false,
+                    (Some(_), None) | (None, Some(_)) => true,
+                    (Some(old), Some(new)) => {
+                        old.branch != new.branch
+                            || old.status.changed_files != new.status.changed_files
+                            || old.status.additions != new.status.additions
+                            || old.status.deletions != new.status.deletions
+                    }
+                };
+                if git_changed {
+                    pane.git_info = new_git;
+                    changed = true;
+                }
+
+                // Shell idle
+                let new_idle = pane.backend.is_shell_idle();
+                if new_idle != pane.shell_idle {
+                    pane.shell_idle = new_idle;
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.chrome_generation += 1;
+        }
+    }
+
     pub(crate) fn handle_file_tree_click(&mut self, position: Vec2) {
         if !self.show_file_tree || position.x >= self.file_tree_width {
             return;

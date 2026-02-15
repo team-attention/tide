@@ -121,6 +121,7 @@ impl App {
                                 }
                             }
                         }
+                        Some(PaneKind::Diff(_)) => {} // Diff pane has no keyboard input
                         None => {}
                     }
                 }
@@ -165,6 +166,12 @@ impl App {
                                 *acc -= lines as f32;
                                 pane.scroll_display(lines);
                             }
+                        }
+                        Some(PaneKind::Diff(dp)) => {
+                            let total = dp.total_lines() as f32;
+                            dp.scroll_target = (dp.scroll_target - delta).clamp(0.0, total.max(0.0));
+                            dp.scroll = dp.scroll_target;
+                            dp.generation = dp.generation.wrapping_add(1);
                         }
                         None => {}
                     }
@@ -293,6 +300,7 @@ impl App {
                                 }
                             }
                         }
+                        Some(PaneKind::Diff(_)) => {} // no selection in diff pane
                         None => {}
                     }
                 }
@@ -302,6 +310,7 @@ impl App {
                     let has_search = match self.panes.get(&focused_id) {
                         Some(PaneKind::Terminal(pane)) => pane.search.is_some(),
                         Some(PaneKind::Editor(pane)) => pane.search.is_some(),
+                        Some(PaneKind::Diff(_)) => false,
                         None => false,
                     };
                     if has_search {
@@ -316,6 +325,7 @@ impl App {
                             Some(PaneKind::Editor(pane)) => {
                                 pane.search = Some(SearchState::new());
                             }
+                            Some(PaneKind::Diff(_)) => {} // no search in diff pane
                             None => {}
                         }
                         self.search_focus = Some(focused_id);
@@ -559,6 +569,7 @@ impl App {
                         crate::pane::PaneKind::Editor(ep) => {
                             ep.editor.set_dark_mode(dark);
                         }
+                        crate::pane::PaneKind::Diff(_) => {} // no color palette
                     }
                 }
                 self.chrome_generation += 1;
@@ -1092,5 +1103,46 @@ impl App {
         for subdir in subdirs {
             Self::scan_dir(&subdir, base_dir, entries, depth + 1, max_depth);
         }
+    }
+
+    /// Open or focus a DiffPane for the given CWD.
+    /// If a DiffPane with the same CWD already exists in the panel, focus and refresh it.
+    pub(crate) fn open_diff_pane(&mut self, cwd: PathBuf) {
+        // Check if already open
+        for &tab_id in &self.editor_panel_tabs {
+            if let Some(PaneKind::Diff(dp)) = self.panes.get_mut(&tab_id) {
+                if dp.cwd == cwd {
+                    dp.refresh();
+                    self.editor_panel_active = Some(tab_id);
+                    self.focused = Some(tab_id);
+                    self.router.set_focused(tab_id);
+                    self.chrome_generation += 1;
+                    self.pane_generations.remove(&tab_id);
+                    self.scroll_to_active_panel_tab();
+                    return;
+                }
+            }
+        }
+
+        // Create new DiffPane in the editor panel
+        if !self.show_editor_panel {
+            self.show_editor_panel = true;
+        }
+        let needs_layout = self.editor_panel_tabs.is_empty();
+        let new_id = self.layout.alloc_id();
+        let dp = crate::diff_pane::DiffPane::new(new_id, cwd);
+        self.panes.insert(new_id, PaneKind::Diff(dp));
+        self.editor_panel_tabs.push(new_id);
+        self.editor_panel_active = Some(new_id);
+        self.focused = Some(new_id);
+        self.router.set_focused(new_id);
+        self.chrome_generation += 1;
+        if needs_layout {
+            if !self.editor_panel_width_manual {
+                self.editor_panel_width = self.auto_editor_panel_width();
+            }
+            self.compute_layout();
+        }
+        self.scroll_to_active_panel_tab();
     }
 }
