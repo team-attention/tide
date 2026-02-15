@@ -2,9 +2,10 @@ use tide_core::{FileTreeSource, Rect, Renderer, TerminalBackend, TextStyle, Vec2
 
 use crate::drag_drop;
 use crate::drag_drop::{DropDestination, HoverTarget, PaneDragState};
+use crate::header;
 use crate::pane::PaneKind;
 use crate::theme::*;
-use crate::ui::{file_icon, pane_title, panel_tab_title};
+use crate::ui::{file_icon, panel_tab_title};
 use crate::App;
 
 /// Compute the bar offset for a pane. Returns CONFLICT_BAR_HEIGHT if a notification bar
@@ -383,60 +384,15 @@ impl App {
                 }
             }
 
-            // Tab bar text + close button for each pane
-            let cell_height = renderer.cell_size().height;
+            // Header (title + badges + close) for each pane
+            let mut all_hit_zones = Vec::new();
             for &(id, rect) in &visual_pane_rects {
-                let title = pane_title(&self.panes, id);
-                let text_color = if focused == Some(id) {
-                    p.tab_text_focused
-                } else {
-                    p.tab_text
-                };
-                let style = TextStyle {
-                    foreground: text_color,
-                    background: None,
-                    bold: focused == Some(id),
-                    dim: false,
-                    italic: false,
-                    underline: false,
-                };
-                let text_y = rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
-                let title_clip_w = rect.width - PANE_CLOSE_SIZE - PANE_PADDING * 2.0 - 4.0;
-                renderer.draw_chrome_text(
-                    &title,
-                    Vec2::new(rect.x + PANE_PADDING + 4.0, text_y),
-                    style,
-                    Rect::new(rect.x, rect.y, title_clip_w.max(0.0) + PANE_PADDING + 4.0, TAB_BAR_HEIGHT),
+                let zones = header::render_pane_header(
+                    id, rect, &self.panes, focused, p, renderer,
                 );
-
-                // Close / modified indicator button
-                let close_x = rect.x + rect.width - PANE_CLOSE_SIZE - PANE_PADDING;
-                let close_y = rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
-                let is_modified = match self.panes.get(&id) {
-                    Some(PaneKind::Editor(ep)) => ep.editor.is_modified(),
-                    _ => false,
-                };
-                let is_close_hovered = matches!(self.hover_target, Some(HoverTarget::PaneTabClose(hid)) if hid == id);
-                let (icon, icon_color) = if is_modified && !is_close_hovered {
-                    ("\u{f111}", p.editor_modified)
-                } else {
-                    ("\u{f00d}", p.tab_text)
-                };
-                let close_style = TextStyle {
-                    foreground: icon_color,
-                    background: None,
-                    bold: false,
-                    dim: false,
-                    italic: false,
-                    underline: false,
-                };
-                renderer.draw_chrome_text(
-                    icon,
-                    Vec2::new(close_x, close_y),
-                    close_style,
-                    Rect::new(close_x, rect.y, PANE_CLOSE_SIZE + PANE_PADDING, TAB_BAR_HEIGHT),
-                );
+                all_hit_zones.extend(zones);
             }
+            self.header_hit_zones = all_hit_zones;
 
             self.last_chrome_generation = self.chrome_generation;
         }
@@ -447,6 +403,7 @@ impl App {
             let gen = match self.panes.get(&id) {
                 Some(PaneKind::Terminal(pane)) => pane.backend.grid_generation(),
                 Some(PaneKind::Editor(pane)) => pane.generation(),
+                Some(PaneKind::Diff(dp)) => dp.generation(),
                 None => continue,
             };
             let prev = self.pane_generations.get(&id).copied().unwrap_or(u64::MAX);
@@ -470,6 +427,12 @@ impl App {
                             Some(p.diff_added_bg), Some(p.diff_removed_bg),
                             Some(p.diff_added_gutter), Some(p.diff_removed_gutter));
                         self.pane_generations.insert(id, pane.generation());
+                    }
+                    Some(PaneKind::Diff(dp)) => {
+                        dp.render_grid(inner, renderer, p.tab_text_focused, p.tab_text,
+                            p.diff_added_bg, p.diff_removed_bg,
+                            p.diff_added_gutter, p.diff_removed_gutter);
+                        self.pane_generations.insert(id, dp.generation());
                     }
                     None => {}
                 }
@@ -680,6 +643,7 @@ impl App {
                     // Render editor scrollbar with search match markers
                     pane.render_scrollbar(inner, renderer, pane.search.as_ref());
                 }
+                Some(PaneKind::Diff(_)) => {}
                 None => {}
             }
         }
@@ -1382,6 +1346,140 @@ impl App {
                     &display_path,
                     Vec2::new(path_x, y + text_offset_y),
                     path_style,
+                    list_clip,
+                );
+            }
+        }
+
+        // Render branch switcher popup overlay
+        if let Some(ref bs) = self.branch_switcher {
+            let cell_size = renderer.cell_size();
+            let cell_height = cell_size.height;
+            let line_height = cell_height + 4.0;
+            let popup_w = 260.0_f32;
+            let popup_x = bs.anchor_rect.x;
+            let popup_y = bs.anchor_rect.y + bs.anchor_rect.height + 4.0;
+
+            let input_h = cell_height + 10.0;
+            let max_visible = 10.min(bs.filtered.len());
+            let popup_h = input_h + max_visible as f32 * line_height + 8.0;
+
+            let popup_rect = Rect::new(popup_x, popup_y, popup_w, popup_h);
+
+            // Background
+            renderer.draw_top_rect(popup_rect, p.popup_bg);
+
+            // Border
+            let border = 1.0;
+            renderer.draw_top_rect(Rect::new(popup_x, popup_y, popup_w, border), p.popup_border);
+            renderer.draw_top_rect(Rect::new(popup_x, popup_y + popup_h - border, popup_w, border), p.popup_border);
+            renderer.draw_top_rect(Rect::new(popup_x, popup_y, border, popup_h), p.popup_border);
+            renderer.draw_top_rect(Rect::new(popup_x + popup_w - border, popup_y, border, popup_h), p.popup_border);
+
+            // Search input
+            let input_y = popup_y + 2.0;
+            let input_clip = Rect::new(popup_x + 8.0, input_y, popup_w - 16.0, input_h);
+            let text_style = TextStyle {
+                foreground: p.tab_text_focused,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            };
+            let muted_style = TextStyle {
+                foreground: p.tab_text,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            };
+            let text_y = input_y + (input_h - cell_height) / 2.0;
+            let text_x = popup_x + 8.0;
+            if bs.query.is_empty() {
+                renderer.draw_top_text(
+                    "Switch branch...",
+                    Vec2::new(text_x, text_y),
+                    muted_style,
+                    input_clip,
+                );
+            } else {
+                renderer.draw_top_text(
+                    &bs.query,
+                    Vec2::new(text_x, text_y),
+                    text_style,
+                    input_clip,
+                );
+            }
+            // Cursor beam
+            let cursor_char_offset = bs.query[..bs.cursor].chars().count();
+            let cx = text_x + cursor_char_offset as f32 * cell_size.width;
+            renderer.draw_top_rect(
+                Rect::new(cx, text_y, 1.5, cell_height),
+                p.cursor_accent,
+            );
+
+            // Separator line
+            let sep_y = input_y + input_h;
+            renderer.draw_top_rect(Rect::new(popup_x + 4.0, sep_y, popup_w - 8.0, 1.0), p.popup_border);
+
+            // Branch list
+            let list_top = sep_y + 2.0;
+            let list_clip = Rect::new(popup_x, list_top, popup_w, max_visible as f32 * line_height);
+            for vi in 0..max_visible {
+                let fi = bs.scroll_offset + vi;
+                if fi >= bs.filtered.len() {
+                    break;
+                }
+                let entry_idx = bs.filtered[fi];
+                let branch = &bs.branches[entry_idx];
+                let y = list_top + vi as f32 * line_height;
+
+                // Selected highlight
+                if fi == bs.selected {
+                    renderer.draw_top_rect(
+                        Rect::new(popup_x + 2.0, y, popup_w - 4.0, line_height),
+                        p.popup_selected,
+                    );
+                }
+
+                // Current branch checkmark
+                let item_x = popup_x + 8.0;
+                let item_y = y + (line_height - cell_height) / 2.0;
+                if branch.is_current {
+                    let check_style = TextStyle {
+                        foreground: p.badge_git_branch,
+                        background: None,
+                        bold: true,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    };
+                    renderer.draw_top_text("\u{f00c}", Vec2::new(item_x, item_y), check_style, list_clip);
+                }
+
+                // Branch name
+                let name_x = item_x + 2.0 * cell_size.width;
+                let name_color = if branch.is_current {
+                    p.badge_git_branch
+                } else if branch.is_remote {
+                    p.tab_text
+                } else {
+                    p.tab_text_focused
+                };
+                let name_style = TextStyle {
+                    foreground: name_color,
+                    background: None,
+                    bold: fi == bs.selected,
+                    dim: branch.is_remote,
+                    italic: branch.is_remote,
+                    underline: false,
+                };
+                renderer.draw_top_text(
+                    &branch.name,
+                    Vec2::new(name_x, item_y),
+                    name_style,
                     list_clip,
                 );
             }

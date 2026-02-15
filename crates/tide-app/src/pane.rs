@@ -1,18 +1,23 @@
 // Terminal pane: wraps a terminal backend with rendering helpers.
 
+use std::path::PathBuf;
+
 use tide_core::{Color, CursorShape, Key, Modifiers, Rect, Renderer, Size, TerminalBackend, Vec2};
 use tide_renderer::WgpuRenderer;
 use tide_terminal::Terminal;
+use tide_terminal::git::GitInfo;
 
+use crate::diff_pane::DiffPane;
 use crate::editor_pane::EditorPane;
 use crate::search::SearchState;
 
 pub type PaneId = tide_core::PaneId;
 
-/// Polymorphic pane: either a terminal or an editor.
+/// Polymorphic pane: terminal, editor, or diff viewer.
 pub enum PaneKind {
     Terminal(TerminalPane),
     Editor(EditorPane),
+    Diff(DiffPane),
 }
 
 /// Text selection state (anchor = drag start, end = current position).
@@ -31,17 +36,29 @@ pub struct TerminalPane {
     /// Suppress cursor rendering for N frames after creation to avoid flicker
     /// while the shell re-renders its prompt after SIGWINCH resize.
     pub cursor_suppress: u8,
+    /// Cached CWD for header badge display (updated periodically).
+    pub cwd: Option<PathBuf>,
+    /// Cached git info for header badge display (updated periodically).
+    pub git_info: Option<GitInfo>,
+    /// Whether the shell is idle (no foreground process).
+    pub shell_idle: bool,
 }
 
 impl TerminalPane {
     pub fn new(id: PaneId, cols: u16, rows: u16) -> Result<Self, Box<dyn std::error::Error>> {
         let backend = Terminal::new(cols, rows)?;
-        Ok(Self { id, backend, selection: None, search: None, cursor_suppress: 3 })
+        Ok(Self {
+            id, backend, selection: None, search: None, cursor_suppress: 3,
+            cwd: None, git_info: None, shell_idle: true,
+        })
     }
 
     pub fn with_cwd(id: PaneId, cols: u16, rows: u16, cwd: Option<std::path::PathBuf>) -> Result<Self, Box<dyn std::error::Error>> {
         let backend = Terminal::with_cwd(cols, rows, cwd)?;
-        Ok(Self { id, backend, selection: None, search: None, cursor_suppress: 3 })
+        Ok(Self {
+            id, backend, selection: None, search: None, cursor_suppress: 3,
+            cwd: None, git_info: None, shell_idle: true,
+        })
     }
 
     /// Extract selected text from the terminal grid.
