@@ -4,11 +4,13 @@
 
 mod action;
 mod diff;
+mod diff_pane;
 mod drag_drop;
 mod editor_pane;
 mod event_handler;
 mod file_tree;
 mod gpu;
+mod header;
 mod input;
 mod pane;
 mod rendering;
@@ -239,6 +241,90 @@ impl FileFinderState {
 }
 
 // ──────────────────────────────────────────────
+// Branch switcher popup state
+// ──────────────────────────────────────────────
+
+pub(crate) struct BranchSwitcherState {
+    pub pane_id: PaneId,
+    pub query: String,
+    pub cursor: usize,
+    pub branches: Vec<tide_terminal::git::BranchInfo>,
+    pub filtered: Vec<usize>,
+    pub selected: usize,
+    pub scroll_offset: usize,
+    pub anchor_rect: Rect,
+}
+
+impl BranchSwitcherState {
+    pub fn new(pane_id: PaneId, branches: Vec<tide_terminal::git::BranchInfo>, anchor_rect: Rect) -> Self {
+        let filtered: Vec<usize> = (0..branches.len()).collect();
+        Self {
+            pane_id,
+            query: String::new(),
+            cursor: 0,
+            branches,
+            filtered,
+            selected: 0,
+            scroll_offset: 0,
+            anchor_rect,
+        }
+    }
+
+    pub fn insert_char(&mut self, ch: char) {
+        self.query.insert(self.cursor, ch);
+        self.cursor += ch.len_utf8();
+        self.filter();
+    }
+
+    pub fn backspace(&mut self) {
+        if self.cursor > 0 {
+            let prev = self.query[..self.cursor]
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            self.query.drain(prev..self.cursor);
+            self.cursor = prev;
+            self.filter();
+        }
+    }
+
+    pub fn select_up(&mut self) {
+        if self.selected > 0 {
+            self.selected -= 1;
+            if self.selected < self.scroll_offset {
+                self.scroll_offset = self.selected;
+            }
+        }
+    }
+
+    pub fn select_down(&mut self) {
+        if !self.filtered.is_empty() && self.selected + 1 < self.filtered.len() {
+            self.selected += 1;
+        }
+    }
+
+    pub fn selected_branch(&self) -> Option<&tide_terminal::git::BranchInfo> {
+        let idx = *self.filtered.get(self.selected)?;
+        self.branches.get(idx)
+    }
+
+    fn filter(&mut self) {
+        if self.query.is_empty() {
+            self.filtered = (0..self.branches.len()).collect();
+        } else {
+            let query_lower = self.query.to_lowercase();
+            self.filtered = self.branches.iter().enumerate()
+                .filter(|(_, b)| b.name.to_lowercase().contains(&query_lower))
+                .map(|(i, _)| i)
+                .collect();
+        }
+        self.selected = 0;
+        self.scroll_offset = 0;
+    }
+}
+
+// ──────────────────────────────────────────────
 // App state
 // ──────────────────────────────────────────────
 
@@ -365,6 +451,12 @@ struct App {
     // Theme mode
     pub(crate) dark_mode: bool,
 
+    // Header hit zones (for badge click handling)
+    pub(crate) header_hit_zones: Vec<header::HeaderHitZone>,
+
+    // Branch switcher popup
+    pub(crate) branch_switcher: Option<BranchSwitcherState>,
+
     // Hover target for interactive feedback
     pub(crate) hover_target: Option<HoverTarget>,
 
@@ -441,6 +533,8 @@ impl App {
             file_finder: None,
             editor_panel_placeholder: None,
             dark_mode: true,
+            header_hit_zones: Vec::new(),
+            branch_switcher: None,
             hover_target: None,
             file_watcher: None,
             file_watch_rx: None,
@@ -535,6 +629,51 @@ impl App {
         } else {
             None
         }
+    }
+
+    /// Hit-test the branch switcher popup. Returns the filtered index of the item under pos.
+    pub(crate) fn branch_switcher_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
+        let bs = self.branch_switcher.as_ref()?;
+        let cell_size = self.renderer.as_ref()?.cell_size();
+        let line_height = cell_size.height + 4.0;
+
+        // Popup geometry (must match rendering)
+        let popup_w = 260.0_f32;
+        let popup_x = bs.anchor_rect.x;
+        let popup_y = bs.anchor_rect.y + bs.anchor_rect.height + 4.0;
+        let input_h = cell_size.height + 10.0;
+        let list_top = popup_y + input_h;
+
+        if pos.x < popup_x || pos.x > popup_x + popup_w || pos.y < list_top {
+            return None;
+        }
+
+        let rel_y = pos.y - list_top;
+        let idx = (rel_y / line_height) as usize + bs.scroll_offset;
+        if idx < bs.filtered.len() {
+            Some(idx)
+        } else {
+            None
+        }
+    }
+
+    /// Check if a position is inside the branch switcher popup area.
+    pub(crate) fn branch_switcher_contains(&self, pos: tide_core::Vec2) -> bool {
+        if let Some(ref bs) = self.branch_switcher {
+            let cell_size = self.renderer.as_ref().map(|r| r.cell_size());
+            if let Some(cs) = cell_size {
+                let popup_w = 260.0_f32;
+                let popup_x = bs.anchor_rect.x;
+                let popup_y = bs.anchor_rect.y + bs.anchor_rect.height + 4.0;
+                let line_height = cs.height + 4.0;
+                let input_h = cs.height + 10.0;
+                let max_visible = 10.min(bs.filtered.len());
+                let popup_h = input_h + max_visible as f32 * line_height + 8.0;
+                let popup_rect = Rect::new(popup_x, popup_y, popup_w, popup_h);
+                return popup_rect.contains(pos);
+            }
+        }
+        false
     }
 
     pub(crate) fn palette(&self) -> &'static ThemePalette {
@@ -991,10 +1130,11 @@ impl App {
             self.chrome_generation += 1;
         }
 
-        // Periodic CWD check (every 500ms)
+        // Periodic CWD check + badge update (every 500ms)
         if self.last_cwd_check.elapsed() > Duration::from_millis(500) {
             self.last_cwd_check = Instant::now();
             self.update_file_tree_cwd();
+            self.update_terminal_badges();
         }
     }
 }
@@ -1102,6 +1242,31 @@ impl ApplicationHandler for App {
             ..
         } = &event
         {
+            // Branch switcher popup click handling
+            if self.branch_switcher.is_some() {
+                if let Some(idx) = self.branch_switcher_item_at(self.last_cursor_pos) {
+                    let selected = self.branch_switcher.as_ref()
+                        .and_then(|bs| {
+                            let entry_idx = *bs.filtered.get(idx)?;
+                            Some((bs.pane_id, bs.branches.get(entry_idx)?.name.clone()))
+                        });
+                    self.branch_switcher = None;
+                    if let Some((pane_id, branch_name)) = selected {
+                        if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&pane_id) {
+                            let cmd = format!("git checkout {}\n", branch_name);
+                            pane.backend.write(cmd.as_bytes());
+                        }
+                    }
+                    self.needs_redraw = true;
+                    return;
+                } else if !self.branch_switcher_contains(self.last_cursor_pos) {
+                    // Click outside popup → close it
+                    self.branch_switcher = None;
+                    self.needs_redraw = true;
+                    return;
+                }
+            }
+
             if let Some(idx) = self.file_finder_item_at(self.last_cursor_pos) {
                 if let Some(ref finder) = self.file_finder {
                     if let Some(&entry_idx) = finder.filtered.get(idx) {
@@ -1165,7 +1330,19 @@ impl ApplicationHandler for App {
             }
         }
 
-        // Handle pane tab bar close button clicks
+        // Handle header badge clicks (close, directory, git branch, git status)
+        if let WindowEvent::MouseInput {
+            state: ElementState::Pressed,
+            button: WinitMouseButton::Left,
+            ..
+        } = &event
+        {
+            if self.check_header_click() {
+                return;
+            }
+        }
+
+        // Handle pane tab bar close button clicks (fallback for header)
         if let WindowEvent::MouseInput {
             state: ElementState::Pressed,
             button: WinitMouseButton::Left,

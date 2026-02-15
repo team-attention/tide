@@ -76,6 +76,23 @@ pub struct ThemePalette {
     pub diff_removed_bg: Color,
     pub diff_added_gutter: Color,
     pub diff_removed_gutter: Color,
+
+    // Header badges
+    pub badge_bg: Color,
+    pub badge_text: Color,
+    pub badge_text_dimmed: Color,
+    pub badge_git_branch: Color,
+    #[allow(dead_code)]
+    pub badge_git_additions: Color,
+    #[allow(dead_code)]
+    pub badge_git_deletions: Color,
+    pub badge_conflict: Color,
+    pub badge_deleted: Color,
+
+    // Popup (branch switcher)
+    pub popup_bg: Color,
+    pub popup_border: Color,
+    pub popup_selected: Color,
 }
 
 // ──────────────────────────────────────────────
@@ -150,6 +167,21 @@ pub static DARK: ThemePalette = ThemePalette {
     diff_removed_bg:    Color::new(0.25, 0.10, 0.10, 1.0),   // dark red bg
     diff_added_gutter:  Color::new(0.30, 0.70, 0.30, 1.0),   // green gutter +
     diff_removed_gutter: Color::new(0.70, 0.30, 0.30, 1.0),  // red gutter -
+
+    // Header badges
+    badge_bg:             Color::new(1.0, 1.0, 1.0, 0.06),
+    badge_text:           Color::new(0.70, 0.70, 0.70, 1.0),
+    badge_text_dimmed:    Color::new(0.45, 0.45, 0.45, 1.0),
+    badge_git_branch:     Color::new(0.65, 0.50, 1.0, 1.0),
+    badge_git_additions:  Color::new(0.30, 0.80, 0.40, 1.0),
+    badge_git_deletions:  Color::new(0.90, 0.35, 0.35, 1.0),
+    badge_conflict:       Color::new(0.90, 0.65, 0.25, 1.0),
+    badge_deleted:        Color::new(0.90, 0.35, 0.35, 1.0),
+
+    // Popup
+    popup_bg:       Color::new(0.10, 0.10, 0.10, 1.0),
+    popup_border:   Color::new(1.0, 1.0, 1.0, 0.15),
+    popup_selected: Color::new(1.0, 1.0, 1.0, 0.08),
 };
 
 // ──────────────────────────────────────────────
@@ -224,6 +256,21 @@ pub static LIGHT: ThemePalette = ThemePalette {
     diff_removed_bg:    Color::new(0.95, 0.85, 0.85, 1.0),   // light red bg
     diff_added_gutter:  Color::new(0.15, 0.55, 0.15, 1.0),   // green gutter +
     diff_removed_gutter: Color::new(0.60, 0.15, 0.15, 1.0),  // red gutter -
+
+    // Header badges
+    badge_bg:             Color::new(0.0, 0.0, 0.0, 0.06),
+    badge_text:           Color::new(0.35, 0.35, 0.35, 1.0),
+    badge_text_dimmed:    Color::new(0.55, 0.55, 0.55, 1.0),
+    badge_git_branch:     Color::new(0.45, 0.25, 0.80, 1.0),
+    badge_git_additions:  Color::new(0.15, 0.55, 0.15, 1.0),
+    badge_git_deletions:  Color::new(0.65, 0.15, 0.15, 1.0),
+    badge_conflict:       Color::new(0.85, 0.55, 0.15, 1.0),
+    badge_deleted:        Color::new(0.65, 0.15, 0.15, 1.0),
+
+    // Popup
+    popup_bg:       Color::new(0.96, 0.96, 0.95, 1.0),
+    popup_border:   Color::new(0.0, 0.0, 0.0, 0.15),
+    popup_selected: Color::new(0.0, 0.0, 0.0, 0.06),
 };
 
 // ──────────────────────────────────────────────
@@ -257,3 +304,8 @@ pub const SEARCH_BAR_HEIGHT: f32 = 28.0;
 pub const SEARCH_BAR_CLOSE_SIZE: f32 = 20.0;
 
 pub const CONFLICT_BAR_HEIGHT: f32 = 26.0;
+
+// Header badges
+pub const BADGE_PADDING_H: f32 = 6.0;
+pub const BADGE_GAP: f32 = 4.0;
+pub const BADGE_RADIUS: f32 = 3.0;

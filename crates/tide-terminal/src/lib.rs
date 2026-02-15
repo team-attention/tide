@@ -16,6 +16,8 @@ use alacritty_terminal::term::{Config as TermConfig, Term, TermMode};
 use alacritty_terminal::tty;
 use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor, Rgb as AnsiRgb};
 
+pub mod git;
+
 use tide_core::{
     Color, CursorShape, CursorState, Key, Modifiers, TerminalBackend, TerminalCell, TerminalGrid,
 };
@@ -646,6 +648,55 @@ impl Terminal {
     /// This allows the event loop to sleep with `ControlFlow::Wait` and be woken up on demand.
     pub fn set_waker(&self, f: Box<dyn Fn() + Send>) {
         *self.waker.lock().unwrap() = Some(f);
+    }
+
+    /// Returns the child PID of the shell process.
+    pub fn child_pid(&self) -> Option<u32> {
+        self.child_pid
+    }
+
+    /// Detect whether the shell is idle (no foreground child process running).
+    /// Uses platform-specific process inspection.
+    #[cfg(target_os = "macos")]
+    pub fn is_shell_idle(&self) -> bool {
+        let pid = match self.child_pid {
+            Some(p) => p,
+            None => return false,
+        };
+        // Check if the shell has any child processes via pgrep
+        let output = std::process::Command::new("pgrep")
+            .args(["-P", &pid.to_string()])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output();
+        match output {
+            Ok(o) => {
+                // If pgrep finds children, shell is busy
+                let text = String::from_utf8_lossy(&o.stdout);
+                text.trim().is_empty()
+            }
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn is_shell_idle(&self) -> bool {
+        let pid = match self.child_pid {
+            Some(p) => p,
+            None => return false,
+        };
+        // Linux: check /proc/PID/stat for foreground process group
+        let stat_path = format!("/proc/{}/stat", pid);
+        if let Ok(contents) = std::fs::read_to_string(&stat_path) {
+            let fields: Vec<&str> = contents.split_whitespace().collect();
+            // Field 4 = pgrp, field 7 = tpgid (foreground process group)
+            if fields.len() > 7 {
+                let pgrp = fields[4].parse::<i32>().unwrap_or(0);
+                let tpgid = fields[7].parse::<i32>().unwrap_or(-1);
+                return pgrp == tpgid;
+            }
+        }
+        false
     }
 
     /// Returns true if the terminal has new output since the last process() call.

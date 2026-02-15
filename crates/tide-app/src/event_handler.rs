@@ -5,11 +5,12 @@ use winit::event::{ElementState, Ime, MouseButton as WinitMouseButton, MouseScro
 use tide_core::{FileTreeSource, InputEvent, LayoutEngine, MouseButton, Rect, Renderer, SplitDirection, TerminalBackend, Vec2};
 
 use crate::drag_drop::{DropDestination, HoverTarget, PaneDragState};
+use crate::header::{HeaderHitAction, HeaderHitZone};
 use crate::input::{winit_key_to_tide, winit_modifiers_to_tide, winit_physical_key_to_tide};
 use crate::pane::{PaneKind, Selection};
 use crate::search;
 use crate::theme::*;
-use crate::App;
+use crate::{App, BranchSwitcherState};
 
 impl App {
     /// Convert a pixel position to a terminal cell (row, col) within a pane's content area.
@@ -104,6 +105,137 @@ impl App {
         }
 
         None
+    }
+
+    /// Check if the current cursor position clicks on a header badge or close button.
+    /// Returns true if the click was consumed.
+    pub(crate) fn check_header_click(&mut self) -> bool {
+        let pos = self.last_cursor_pos;
+        let zones: Vec<HeaderHitZone> = self.header_hit_zones.clone();
+        for zone in &zones {
+            if zone.rect.contains(pos) {
+                match zone.action {
+                    HeaderHitAction::Close => {
+                        self.close_specific_pane(zone.pane_id);
+                        self.needs_redraw = true;
+                        return true;
+                    }
+                    HeaderHitAction::Directory => {
+                        // If shell is idle, inject cd command; otherwise copy to clipboard
+                        let (cwd_str, is_idle) = if let Some(PaneKind::Terminal(pane)) = self.panes.get(&zone.pane_id) {
+                            let cwd = pane.cwd.as_ref().map(|p| p.display().to_string());
+                            (cwd, pane.shell_idle)
+                        } else {
+                            (None, false)
+                        };
+                        if let Some(cwd) = cwd_str {
+                            if is_idle {
+                                // Inject cd command to terminal
+                                let cmd = format!("cd {}\n", shell_escape(&cwd));
+                                if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&zone.pane_id) {
+                                    pane.backend.write(cmd.as_bytes());
+                                }
+                            } else {
+                                // Copy path to clipboard
+                                if let Ok(mut cb) = arboard::Clipboard::new() {
+                                    let _ = cb.set_text(&cwd);
+                                }
+                            }
+                        }
+                        self.needs_redraw = true;
+                        return true;
+                    }
+                    HeaderHitAction::GitBranch => {
+                        if let Some(PaneKind::Terminal(pane)) = self.panes.get(&zone.pane_id) {
+                            if pane.shell_idle {
+                                // Shell idle → open branch switcher popup
+                                let cwd = pane.cwd.clone();
+                                let pane_id = zone.pane_id;
+                                let anchor_rect = zone.rect;
+                                if let Some(cwd) = cwd {
+                                    let branches = tide_terminal::git::list_branches(&cwd);
+                                    if !branches.is_empty() {
+                                        self.branch_switcher = Some(BranchSwitcherState::new(
+                                            pane_id, branches, anchor_rect,
+                                        ));
+                                    }
+                                }
+                            } else {
+                                // Process running → copy branch name to clipboard
+                                if let Some(ref git) = pane.git_info {
+                                    if let Ok(mut cb) = arboard::Clipboard::new() {
+                                        let _ = cb.set_text(&git.branch);
+                                    }
+                                }
+                            }
+                        }
+                        self.needs_redraw = true;
+                        return true;
+                    }
+                    HeaderHitAction::GitStatus => {
+                        // Open or focus the Diff pane for this terminal's CWD
+                        let cwd = if let Some(PaneKind::Terminal(pane)) = self.panes.get(&zone.pane_id) {
+                            pane.cwd.clone()
+                        } else {
+                            None
+                        };
+                        if let Some(cwd) = cwd {
+                            self.open_diff_pane(cwd);
+                        }
+                        self.needs_redraw = true;
+                        return true;
+                    }
+                    HeaderHitAction::EditorCompare => {
+                        // Enter diff mode (load disk content)
+                        if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&zone.pane_id) {
+                            if let Some(path) = pane.editor.file_path().map(|p| p.to_path_buf()) {
+                                match std::fs::read_to_string(&path) {
+                                    Ok(content) => {
+                                        let lines: Vec<String> = content.lines().map(String::from).collect();
+                                        pane.disk_content = Some(lines);
+                                        pane.diff_mode = true;
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to read disk content for diff: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                        self.chrome_generation += 1;
+                        self.pane_generations.remove(&zone.pane_id);
+                        self.needs_redraw = true;
+                        return true;
+                    }
+                    HeaderHitAction::EditorOverwrite => {
+                        // Save buffer to disk, clear conflict flags
+                        if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&zone.pane_id) {
+                            if let Err(e) = pane.editor.buffer.save() {
+                                log::error!("Conflict overwrite failed: {}", e);
+                            }
+                            pane.disk_changed = false;
+                            pane.file_deleted = false;
+                            pane.diff_mode = false;
+                            pane.disk_content = None;
+                        }
+                        self.chrome_generation += 1;
+                        self.pane_generations.remove(&zone.pane_id);
+                        self.needs_redraw = true;
+                        return true;
+                    }
+                    HeaderHitAction::DiffRefresh => {
+                        // Refresh the DiffPane
+                        if let Some(PaneKind::Diff(dp)) = self.panes.get_mut(&zone.pane_id) {
+                            dp.refresh();
+                        }
+                        self.chrome_generation += 1;
+                        self.pane_generations.remove(&zone.pane_id);
+                        self.needs_redraw = true;
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Check if cursor is near an internal border between split panes.
@@ -206,7 +338,19 @@ impl App {
                     } else {
                         output
                     };
-                    // IME composed text → route to file finder, save-as input, search bar, or focused pane
+                    // IME composed text → route to branch switcher, file finder, save-as input, search bar, or focused pane
+                    if self.branch_switcher.is_some() {
+                        for ch in output.chars() {
+                            if let Some(ref mut bs) = self.branch_switcher {
+                                bs.insert_char(ch);
+                                self.chrome_generation += 1;
+                            }
+                        }
+                        self.ime_composing = false;
+                        self.ime_preedit.clear();
+                        self.needs_redraw = true;
+                        return;
+                    }
                     if self.file_finder.is_some() {
                         for ch in output.chars() {
                             if let Some(ref mut finder) = self.file_finder {
@@ -249,6 +393,7 @@ impl App {
                                     pane.editor.handle_action(tide_editor::EditorActionKind::InsertChar(ch));
                                 }
                             }
+                            Some(PaneKind::Diff(_)) => {}
                             None => {}
                         }
                     }
@@ -305,7 +450,13 @@ impl App {
                         if let winit::keyboard::Key::Character(ref s) = event.logical_key {
                             if let Some(c) = s.chars().next() {
                                 if !is_hangul_char(c) {
-                                    if self.file_finder.is_some() {
+                                    if self.branch_switcher.is_some() {
+                                        if let Some(ref mut bs) = self.branch_switcher {
+                                            bs.insert_char(c);
+                                            self.chrome_generation += 1;
+                                        }
+                                        self.needs_redraw = true;
+                                    } else if self.file_finder.is_some() {
                                         if let Some(ref mut finder) = self.file_finder {
                                             finder.insert_char(c);
                                             self.chrome_generation += 1;
@@ -325,6 +476,7 @@ impl App {
                                                     tide_editor::EditorActionKind::InsertChar(c),
                                                 );
                                             }
+                                            Some(PaneKind::Diff(_)) => {}
                                             None => {}
                                         }
                                     }
@@ -428,6 +580,61 @@ impl App {
                         crate::session::save_session(&session);
                         crate::session::delete_running_marker();
                         std::process::exit(0);
+                    }
+
+                    // Branch switcher popup interception: consume all keys when active
+                    if self.branch_switcher.is_some() {
+                        match key {
+                            tide_core::Key::Escape => {
+                                self.branch_switcher = None;
+                            }
+                            tide_core::Key::Enter => {
+                                let selected = self.branch_switcher.as_ref()
+                                    .and_then(|bs| bs.selected_branch().map(|b| (bs.pane_id, b.name.clone())));
+                                self.branch_switcher = None;
+                                if let Some((pane_id, branch_name)) = selected {
+                                    // Inject `git checkout <branch>\n` into the terminal
+                                    if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&pane_id) {
+                                        let cmd = format!("git checkout {}\n", branch_name);
+                                        pane.backend.write(cmd.as_bytes());
+                                    }
+                                }
+                            }
+                            tide_core::Key::Up => {
+                                if let Some(ref mut bs) = self.branch_switcher {
+                                    bs.select_up();
+                                    self.chrome_generation += 1;
+                                }
+                            }
+                            tide_core::Key::Down => {
+                                if let Some(ref mut bs) = self.branch_switcher {
+                                    bs.select_down();
+                                    // Auto-scroll
+                                    let visible_rows = 10usize; // matches render max
+                                    if bs.selected >= bs.scroll_offset + visible_rows {
+                                        bs.scroll_offset = bs.selected.saturating_sub(visible_rows - 1);
+                                    }
+                                    self.chrome_generation += 1;
+                                }
+                            }
+                            tide_core::Key::Backspace => {
+                                if let Some(ref mut bs) = self.branch_switcher {
+                                    bs.backspace();
+                                    self.chrome_generation += 1;
+                                }
+                            }
+                            tide_core::Key::Char(ch) => {
+                                if !modifiers.ctrl && !modifiers.meta {
+                                    if let Some(ref mut bs) = self.branch_switcher {
+                                        bs.insert_char(ch);
+                                        self.chrome_generation += 1;
+                                    }
+                                }
+                            }
+                            _ => {} // consume all other keys
+                        }
+                        self.needs_redraw = true;
+                        return;
                     }
 
                     // File finder interception: consume all keys when active
@@ -579,6 +786,7 @@ impl App {
                             match self.panes.get_mut(&search_pane_id) {
                                 Some(PaneKind::Terminal(pane)) => { pane.search = None; }
                                 Some(PaneKind::Editor(pane)) => { pane.search = None; }
+                                Some(PaneKind::Diff(_)) => {}
                                 None => {}
                             }
                             self.search_focus = None;
@@ -591,6 +799,7 @@ impl App {
                                 match self.panes.get_mut(&search_pane_id) {
                                     Some(PaneKind::Terminal(pane)) => { pane.search = None; }
                                     Some(PaneKind::Editor(pane)) => { pane.search = None; }
+                                    Some(PaneKind::Diff(_)) => {}
                                     None => {}
                                 }
                                 self.search_focus = None;
@@ -653,6 +862,7 @@ impl App {
                                 match pane {
                                     PaneKind::Terminal(p) => p.selection = None,
                                     PaneKind::Editor(p) => p.selection = None,
+                                    PaneKind::Diff(_) => {}
                                 }
                             }
                             // Pre-compute positions before mutable borrow
@@ -680,6 +890,8 @@ impl App {
                                         let col = pane.editor.h_scroll_offset() + rc;
                                         pane.selection = Some(Selection { anchor: (line, col), end: (line, col) });
                                     }
+                                }
+                                Some(PaneKind::Diff(_)) => {
                                 }
                                 None => {}
                             }
@@ -935,6 +1147,7 @@ impl App {
                                         sel.end = (pane.editor.scroll_offset() + rel_row, pane.editor.h_scroll_offset() + rel_col);
                                     }
                                 }
+                                Some(PaneKind::Diff(_)) => {}
                                 None => {}
                             }
                         }
@@ -1411,6 +1624,7 @@ impl App {
         let has_search = match self.panes.get(&id) {
             Some(PaneKind::Terminal(p)) => p.search.as_ref().is_some_and(|s| s.visible),
             Some(PaneKind::Editor(p)) => p.search.as_ref().is_some_and(|s| s.visible),
+            Some(PaneKind::Diff(_)) => false,
             None => false,
         };
         if !has_search {
@@ -1435,6 +1649,7 @@ impl App {
             match self.panes.get_mut(&id) {
                 Some(PaneKind::Terminal(pane)) => { pane.search = None; }
                 Some(PaneKind::Editor(pane)) => { pane.search = None; }
+                Some(PaneKind::Diff(_)) => {}
                 None => {}
             }
             if self.search_focus == Some(id) {
@@ -1499,6 +1714,7 @@ impl App {
                     s.insert_char(ch);
                 }
             }
+            Some(PaneKind::Diff(_)) => return,
             None => return,
         }
         self.execute_search(pane_id);
@@ -1517,6 +1733,7 @@ impl App {
                     s.backspace();
                 }
             }
+            Some(PaneKind::Diff(_)) => return,
             None => return,
         }
         self.execute_search(pane_id);
@@ -1535,6 +1752,7 @@ impl App {
                     s.delete_char();
                 }
             }
+            Some(PaneKind::Diff(_)) => return,
             None => return,
         }
         self.execute_search(pane_id);
@@ -1549,6 +1767,7 @@ impl App {
             Some(PaneKind::Editor(pane)) => {
                 if let Some(ref mut s) = pane.search { s.move_cursor_left(); }
             }
+            Some(PaneKind::Diff(_)) => {}
             None => {}
         }
     }
@@ -1561,6 +1780,7 @@ impl App {
             Some(PaneKind::Editor(pane)) => {
                 if let Some(ref mut s) = pane.search { s.move_cursor_right(); }
             }
+            Some(PaneKind::Diff(_)) => {}
             None => {}
         }
     }
@@ -1577,6 +1797,7 @@ impl App {
                     search::execute_search_editor(s, &pane.editor.buffer.lines);
                 }
             }
+            Some(PaneKind::Diff(_)) => {}
             None => {}
         }
     }
@@ -1622,6 +1843,7 @@ impl App {
                     }
                 }
             }
+            Some(PaneKind::Diff(_)) => {}
             None => {}
         }
     }
@@ -1667,6 +1889,7 @@ impl App {
                     }
                 }
             }
+            Some(PaneKind::Diff(_)) => {}
             None => {}
         }
     }
@@ -1712,6 +1935,7 @@ impl App {
                     }
                 }
             }
+            Some(PaneKind::Diff(_)) => {}
             None => {}
         }
     }
@@ -1768,4 +1992,17 @@ fn combine_initial_with_text(initial: char, text: &str) -> Option<String> {
     result.push(syllable);
     result.extend(text.chars().skip(1));
     Some(result)
+}
+
+/// Escape a string for safe use as a shell argument.
+fn shell_escape(s: &str) -> String {
+    if s.is_empty() {
+        return "''".to_string();
+    }
+    // If the string contains only safe characters, return as-is
+    if s.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '/' | '.' | '_' | '-')) {
+        return s.to_string();
+    }
+    // Otherwise, wrap in single quotes, escaping any existing single quotes
+    format!("'{}'", s.replace('\'', "'\\''"))
 }

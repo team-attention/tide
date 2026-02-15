@@ -24,6 +24,7 @@ pub(crate) fn pane_title(panes: &HashMap<PaneId, PaneKind>, id: PaneId) -> Strin
             format!("Terminal {}", id)
         }
         Some(PaneKind::Editor(pane)) => pane.title(),
+        Some(PaneKind::Diff(dp)) => format!("Git Changes ({})", dp.files.len()),
         None => format!("Pane {}", id),
     }
 }
