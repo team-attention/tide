@@ -656,27 +656,25 @@ impl Terminal {
     }
 
     /// Detect whether the shell is idle (no foreground child process running).
-    /// Uses platform-specific process inspection.
+    /// Uses native kernel API — no subprocess spawn.
     #[cfg(target_os = "macos")]
     pub fn is_shell_idle(&self) -> bool {
         let pid = match self.child_pid {
             Some(p) => p,
             None => return false,
         };
-        // Check if the shell has any child processes via pgrep
-        let output = std::process::Command::new("pgrep")
-            .args(["-P", &pid.to_string()])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output();
-        match output {
-            Ok(o) => {
-                // If pgrep finds children, shell is busy
-                let text = String::from_utf8_lossy(&o.stdout);
-                text.trim().is_empty()
-            }
-            Err(_) => false,
-        }
+        // Use proc_listchildpids to check if shell has any child processes.
+        // This is a direct kernel call — no subprocess spawn, effectively instant.
+        let mut pids = [0i32; 16];
+        let ret = unsafe {
+            libc::proc_listchildpids(
+                pid as i32,
+                pids.as_mut_ptr() as *mut libc::c_void,
+                (pids.len() * std::mem::size_of::<i32>()) as i32,
+            )
+        };
+        // ret = number of child PIDs found. 0 means no children → shell is idle.
+        ret <= 0
     }
 
     #[cfg(not(target_os = "macos"))]
