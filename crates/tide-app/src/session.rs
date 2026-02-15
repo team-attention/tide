@@ -91,6 +91,36 @@ pub fn load_session() -> Option<Session> {
 }
 
 // ──────────────────────────────────────────────
+// Running marker for crash recovery
+// ──────────────────────────────────────────────
+
+fn running_marker_path() -> Option<PathBuf> {
+    let config_dir = dirs::config_dir()?;
+    Some(config_dir.join("tide").join("running"))
+}
+
+pub fn create_running_marker() {
+    let path = match running_marker_path() {
+        Some(p) => p,
+        None => return,
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&path, "");
+}
+
+pub fn delete_running_marker() {
+    if let Some(path) = running_marker_path() {
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+pub fn is_crash_recovery() -> bool {
+    running_marker_path().is_some_and(|p| p.exists())
+}
+
+// ──────────────────────────────────────────────
 // Capture session from app state
 // ──────────────────────────────────────────────
 
@@ -275,6 +305,22 @@ impl App {
         self.last_cwd = Some(cwd);
 
         true
+    }
+
+    /// Restore only preferences (window size, theme, panel widths) from a session,
+    /// then create a fresh initial pane. Used after intentional quit.
+    pub(crate) fn restore_preferences(&mut self, session: &Session) {
+        self.file_tree_width = session.file_tree_width;
+        self.editor_panel_width = session.editor_panel_width;
+        self.dark_mode = session.dark_mode;
+
+        // Apply dark mode to renderer
+        let border_color = self.palette().border_color;
+        if let Some(renderer) = &mut self.renderer {
+            renderer.clear_color = border_color;
+        }
+
+        self.create_initial_pane();
     }
 }
 

@@ -1027,15 +1027,21 @@ impl ApplicationHandler for App {
         self.window = Some(window);
         self.init_gpu();
 
-        // Try restoring from saved session; fall back to fresh pane
-        let restored = if let Some(session) = saved_session {
-            self.restore_from_session(session)
-        } else {
-            false
+        // Crash recovery: if the running marker exists, the previous session
+        // ended abnormally → restore everything.  Otherwise only restore prefs.
+        let is_crash = session::is_crash_recovery();
+        let restored = match saved_session {
+            Some(session) if is_crash => self.restore_from_session(session),
+            Some(ref session) => {
+                self.restore_preferences(session);
+                true
+            }
+            None => false,
         };
         if !restored {
             self.create_initial_pane();
         }
+        session::create_running_marker();
         self.compute_layout();
     }
 
