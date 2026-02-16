@@ -493,7 +493,15 @@ impl App {
     }
 
     /// Open the git switcher popup in the given mode, or copy branch name if a process is running.
+    /// Clicking the same badge again closes the popup (toggle behavior).
     fn open_git_switcher(&mut self, pane_id: tide_core::PaneId, mode: GitSwitcherMode, anchor_rect: Rect) {
+        // Toggle: close if already open for the same pane and mode
+        if let Some(ref gs) = self.git_switcher {
+            if gs.pane_id == pane_id && gs.mode == mode {
+                self.git_switcher = None;
+                return;
+            }
+        }
         if let Some(PaneKind::Terminal(pane)) = self.panes.get(&pane_id) {
             if pane.shell_idle {
                 if let Some(ref cwd) = pane.cwd {
@@ -511,6 +519,15 @@ impl App {
                     }
                 }
             }
+        }
+    }
+
+    /// Get the cwd of the terminal pane associated with the git switcher.
+    fn git_switcher_pane_cwd(&self) -> Option<std::path::PathBuf> {
+        let gs = self.git_switcher.as_ref()?;
+        match self.panes.get(&gs.pane_id) {
+            Some(PaneKind::Terminal(p)) => p.cwd.clone(),
+            _ => None,
         }
     }
 
@@ -553,15 +570,10 @@ impl App {
                 let action = self.git_switcher.as_ref().and_then(|gs| {
                     let entry_idx = *gs.filtered_worktrees.get(fi)?;
                     let wt = gs.worktrees.get(entry_idx)?;
-                    if let Some(ref cwd) = self.panes.get(&gs.pane_id)
-                        .and_then(|pk| if let PaneKind::Terminal(p) = pk { p.cwd.clone() } else { None })
-                    {
-                        Some((cwd.clone(), wt.path.clone()))
-                    } else {
-                        None
-                    }
+                    Some(wt.path.clone())
                 });
-                if let Some((cwd, wt_path)) = action {
+                let cwd = self.git_switcher_pane_cwd();
+                if let (Some(wt_path), Some(cwd)) = (action, cwd) {
                     match tide_terminal::git::remove_worktree(&cwd, &wt_path, false) {
                         Ok(()) => {
                             if let Some(ref mut gs) = self.git_switcher {
@@ -575,15 +587,11 @@ impl App {
                 }
             }
             crate::WorktreeButton::NewWorktree => {
-                let action = self.git_switcher.as_ref().and_then(|gs| {
-                    if gs.query.is_empty() {
-                        return None;
-                    }
-                    let pane_cwd = self.panes.get(&gs.pane_id)
-                        .and_then(|pk| if let PaneKind::Terminal(p) = pk { p.cwd.clone() } else { None })?;
-                    Some((gs.pane_id, pane_cwd, gs.query.clone()))
-                });
-                if let Some((_pane_id, cwd, branch_name)) = action {
+                let query = self.git_switcher.as_ref()
+                    .filter(|gs| !gs.query.is_empty())
+                    .map(|gs| gs.query.clone());
+                let cwd = self.git_switcher_pane_cwd();
+                if let (Some(branch_name), Some(cwd)) = (query, cwd) {
                     // Resolve repo root so worktree path is correct even from subdirectories
                     let root = tide_terminal::git::repo_root(&cwd).unwrap_or_else(|| cwd.clone());
                     let settings = crate::settings::load_settings();
