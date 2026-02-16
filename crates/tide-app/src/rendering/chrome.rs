@@ -32,9 +32,9 @@ pub(crate) fn render_chrome(
     if show_file_tree {
         let tree_visual_rect = app.file_tree_rect.unwrap_or(Rect::new(
             0.0,
-            0.0,
+            app.top_inset,
             app.file_tree_width - PANE_GAP,
-            logical.height,
+            logical.height - app.top_inset,
         ));
         renderer.draw_chrome_rect(tree_visual_rect, p.file_tree_bg);
 
