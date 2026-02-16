@@ -272,25 +272,26 @@ impl App {
         }
 
         // Handle stacked mode: advance to next tab or fall back to Split
-        if self.pane_area_mode == crate::PaneAreaMode::Stacked && self.stacked_active == Some(pane_id) {
-            let pane_ids = self.layout.pane_ids();
-            let pos = pane_ids.iter().position(|&id| id == pane_id);
-            // Try to advance to an adjacent pane
-            let next = pos.and_then(|p| {
-                if p + 1 < pane_ids.len() {
-                    Some(pane_ids[p + 1])
-                } else if p > 0 {
-                    Some(pane_ids[p - 1])
+        if let crate::PaneAreaMode::Stacked(active) = self.pane_area_mode {
+            if active == pane_id {
+                let pane_ids = self.layout.pane_ids();
+                let pos = pane_ids.iter().position(|&id| id == pane_id);
+                // Try to advance to an adjacent pane
+                let next = pos.and_then(|p| {
+                    if p + 1 < pane_ids.len() {
+                        Some(pane_ids[p + 1])
+                    } else if p > 0 {
+                        Some(pane_ids[p - 1])
+                    } else {
+                        None
+                    }
+                });
+                if let Some(next_id) = next {
+                    self.pane_area_mode = crate::PaneAreaMode::Stacked(next_id);
                 } else {
-                    None
+                    // Last pane — exit Stacked mode
+                    self.pane_area_mode = crate::PaneAreaMode::Split;
                 }
-            });
-            if let Some(next_id) = next {
-                self.stacked_active = Some(next_id);
-            } else {
-                // Last pane — exit Stacked mode
-                self.pane_area_mode = crate::PaneAreaMode::Split;
-                self.stacked_active = None;
             }
         }
 

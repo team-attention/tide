@@ -17,6 +17,7 @@ impl App {
             | Some(HoverTarget::PaneTabClose(_))
             | Some(HoverTarget::PanelTab(_))
             | Some(HoverTarget::PanelTabClose(_))
+            | Some(HoverTarget::StackedTab(_))
             | Some(HoverTarget::EmptyPanelButton)
             | Some(HoverTarget::EmptyPanelOpenFile)
             | Some(HoverTarget::FileFinderItem(_)) => CursorIcon::Pointer,
@@ -363,16 +364,13 @@ impl App {
         }
 
         // If in Stacked mode, override rects to show only the active pane filling the terminal area
-        if self.pane_area_mode == PaneAreaMode::Stacked {
-            if let Some(active_id) = self.stacked_active {
-                if rects.iter().any(|(id, _)| *id == active_id) {
-                    let full_rect = Rect::new(terminal_offset_x, 0.0, terminal_area.width, terminal_area.height);
-                    rects = vec![(active_id, full_rect)];
-                } else {
-                    // Stacked active pane no longer exists — fall back to Split
-                    self.pane_area_mode = PaneAreaMode::Split;
-                    self.stacked_active = None;
-                }
+        if let PaneAreaMode::Stacked(active_id) = self.pane_area_mode {
+            if rects.iter().any(|(id, _)| *id == active_id) {
+                let full_rect = Rect::new(terminal_offset_x, 0.0, terminal_area.width, terminal_area.height);
+                rects = vec![(active_id, full_rect)];
+            } else {
+                // Stacked active pane no longer exists — fall back to Split
+                self.pane_area_mode = PaneAreaMode::Split;
             }
         }
 
@@ -418,15 +416,20 @@ impl App {
             || self.panel_border_dragging
             || self.file_tree_border_dragging;
         if !is_dragging {
+            let stacked_top = if matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
+                PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
+            } else {
+                TAB_BAR_HEIGHT
+            };
             if let Some(renderer) = &self.renderer {
                 let cell_size = renderer.cell_size();
                 for &(id, vr) in &self.visual_pane_rects {
                     if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&id) {
                         let content_rect = Rect::new(
                             vr.x + PANE_PADDING,
-                            vr.y + TAB_BAR_HEIGHT,
+                            vr.y + stacked_top,
                             (vr.width - 2.0 * PANE_PADDING).max(cell_size.width),
-                            (vr.height - TAB_BAR_HEIGHT - PANE_PADDING).max(cell_size.height),
+                            (vr.height - stacked_top - PANE_PADDING).max(cell_size.height),
                         );
                         pane.resize_to_rect(content_rect, cell_size);
                     }
