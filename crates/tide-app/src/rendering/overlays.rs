@@ -12,6 +12,46 @@ fn visual_width(s: &str) -> usize {
     s.chars().map(|c| UnicodeWidthChar::width(c).unwrap_or(1)).sum()
 }
 
+// ── Shared helper functions ──
+
+/// Draw a 1px (or `POPUP_BORDER_WIDTH`) border around `rect`.
+fn draw_popup_border(renderer: &mut tide_renderer::WgpuRenderer, rect: Rect, color: tide_core::Color) {
+    let bw = POPUP_BORDER_WIDTH;
+    renderer.draw_top_rect(Rect::new(rect.x, rect.y, rect.width, bw), color);
+    renderer.draw_top_rect(Rect::new(rect.x, rect.y + rect.height - bw, rect.width, bw), color);
+    renderer.draw_top_rect(Rect::new(rect.x, rect.y, bw, rect.height), color);
+    renderer.draw_top_rect(Rect::new(rect.x + rect.width - bw, rect.y, bw, rect.height), color);
+}
+
+/// Draw a cursor beam (vertical line) at the given position.
+fn draw_cursor_beam(renderer: &mut tide_renderer::WgpuRenderer, x: f32, y: f32, height: f32, color: tide_core::Color) {
+    renderer.draw_top_rect(Rect::new(x, y, CURSOR_BEAM_WIDTH, height), color);
+}
+
+/// Create a plain (non-bold) TextStyle with the given foreground color.
+fn text_style(color: tide_core::Color) -> TextStyle {
+    TextStyle {
+        foreground: color,
+        background: None,
+        bold: false,
+        dim: false,
+        italic: false,
+        underline: false,
+    }
+}
+
+/// Create a bold TextStyle with the given foreground color.
+fn bold_style(color: tide_core::Color) -> TextStyle {
+    TextStyle {
+        foreground: color,
+        background: None,
+        bold: true,
+        dim: false,
+        italic: false,
+        underline: false,
+    }
+}
+
 
 /// Render all overlay UI elements on the top layer: search bars, notification bars,
 /// save-as inline edit, file finder, git switcher, and file switcher.
@@ -86,31 +126,13 @@ fn render_search_bars(
 
         // Border (only when focused)
         if *is_focused {
-            let bw = 1.0;
-            renderer.draw_top_rect(Rect::new(bar_x, bar_y, bar_w, bw), p.search_bar_border);
-            renderer.draw_top_rect(Rect::new(bar_x, bar_y + bar_h - bw, bar_w, bw), p.search_bar_border);
-            renderer.draw_top_rect(Rect::new(bar_x, bar_y, bw, bar_h), p.search_bar_border);
-            renderer.draw_top_rect(Rect::new(bar_x + bar_w - bw, bar_y, bw, bar_h), p.search_bar_border);
+            draw_popup_border(renderer, bar_rect, p.search_bar_border);
         }
 
         let text_x = bar_x + 6.0;
         let text_y = bar_y + (bar_h - cell_size.height) / 2.0;
-        let text_style = TextStyle {
-            foreground: p.search_bar_text,
-            background: None,
-            bold: false,
-            dim: false,
-            italic: false,
-            underline: false,
-        };
-        let counter_style = TextStyle {
-            foreground: p.search_bar_counter,
-            background: None,
-            bold: false,
-            dim: false,
-            italic: false,
-            underline: false,
-        };
+        let ts = text_style(p.search_bar_text);
+        let counter_style = text_style(p.search_bar_counter);
 
         // Layout: [query text] [counter] [close button]
         let close_area_w = SEARCH_BAR_CLOSE_SIZE;
@@ -121,13 +143,12 @@ fn render_search_bars(
 
         // Query text (top layer)
         let text_clip = Rect::new(text_x, bar_y, text_clip_w, bar_h);
-        renderer.draw_top_text(query, Vec2::new(text_x, text_y), text_style, text_clip);
+        renderer.draw_top_text(query, Vec2::new(text_x, text_y), ts, text_clip);
 
         // Text cursor (beam) — only when focused
         if *is_focused {
             let cx = text_x + visual_width(&query[..*cursor_pos]) as f32 * cell_size.width;
-            let cursor_color = p.cursor_accent;
-            renderer.draw_top_rect(Rect::new(cx, text_y, 1.5, cell_size.height), cursor_color);
+            draw_cursor_beam(renderer, cx, text_y, cell_size.height, p.cursor_accent);
         }
 
         // Counter text
@@ -179,24 +200,10 @@ fn render_notification_bars(
                 // Render save confirm bar
                 renderer.draw_top_rect(bar_rect, p.conflict_bar_bg);
                 let text_y = bar_rect.y + (CONFLICT_BAR_HEIGHT - cell_size.height) / 2.0;
-                let text_style = TextStyle {
-                    foreground: p.conflict_bar_text,
-                    background: None,
-                    bold: false,
-                    dim: false,
-                    italic: false,
-                    underline: false,
-                };
-                renderer.draw_top_text("Unsaved changes", Vec2::new(bar_rect.x + 8.0, text_y), text_style, bar_rect);
+                let ts = text_style(p.conflict_bar_text);
+                renderer.draw_top_text("Unsaved changes", Vec2::new(bar_rect.x + 8.0, text_y), ts, bar_rect);
 
-                let btn_style = TextStyle {
-                    foreground: p.conflict_bar_btn_text,
-                    background: None,
-                    bold: true,
-                    dim: false,
-                    italic: false,
-                    underline: false,
-                };
+                let btn_style = bold_style(p.conflict_bar_btn_text);
                 let btn_pad = 8.0;
                 let btn_h = CONFLICT_BAR_HEIGHT - 6.0;
                 let btn_y = bar_rect.y + 3.0;
@@ -234,29 +241,15 @@ fn render_notification_bars(
             if pane.needs_notification_bar() {
                 renderer.draw_top_rect(bar_rect, p.conflict_bar_bg);
                 let text_y = bar_rect.y + (CONFLICT_BAR_HEIGHT - cell_size.height) / 2.0;
-                let text_style = TextStyle {
-                    foreground: p.conflict_bar_text,
-                    background: None,
-                    bold: false,
-                    dim: false,
-                    italic: false,
-                    underline: false,
-                };
+                let ts = text_style(p.conflict_bar_text);
                 let msg = if pane.file_deleted {
                     "File deleted on disk"
                 } else {
                     "Comparing with disk"
                 };
-                renderer.draw_top_text(msg, Vec2::new(bar_rect.x + 8.0, text_y), text_style, bar_rect);
+                renderer.draw_top_text(msg, Vec2::new(bar_rect.x + 8.0, text_y), ts, bar_rect);
 
-                let btn_style = TextStyle {
-                    foreground: p.conflict_bar_btn_text,
-                    background: None,
-                    bold: true,
-                    dim: false,
-                    italic: false,
-                    underline: false,
-                };
+                let btn_style = bold_style(p.conflict_bar_btn_text);
                 let btn_pad = 8.0;
                 let btn_h = CONFLICT_BAR_HEIGHT - 6.0;
                 let btn_y = bar_rect.y + 3.0;
@@ -283,68 +276,93 @@ fn render_notification_bars(
     }
 }
 
-/// Render save-as inline edit overlay on the top layer.
+/// Render save-as floating popup overlay on the top layer.
 fn render_save_as(
     app: &App,
     renderer: &mut tide_renderer::WgpuRenderer,
     p: &ThemePalette,
     editor_panel_rect: Option<Rect>,
 ) {
-    if let Some(ref save_as) = app.save_as_input {
-        if let Some(panel_rect) = editor_panel_rect {
-            if let Some(tab_index) = app.editor_panel_tabs.iter().position(|&id| id == save_as.pane_id) {
-                let cell_size = renderer.cell_size();
-                let cell_height = cell_size.height;
-                let tab_bar_top = panel_rect.y + PANE_PADDING;
-                let tab_start_x = panel_rect.x + PANE_PADDING - app.panel_tab_scroll;
-                let tx = tab_start_x + tab_index as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
-                let text_y = tab_bar_top + (PANEL_TAB_HEIGHT - cell_height) / 2.0;
+    let save_as = match app.save_as_input {
+        Some(ref s) => s,
+        None => return,
+    };
+    let panel_rect = match editor_panel_rect {
+        Some(r) => r,
+        None => return,
+    };
 
-                // Clip to tab bounds within panel
-                let tab_bar_clip = Rect::new(
-                    panel_rect.x + PANE_PADDING,
-                    tab_bar_top,
-                    panel_rect.width - 2.0 * PANE_PADDING,
-                    PANEL_TAB_HEIGHT,
-                );
-                let title_clip_w = (PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - 14.0)
-                    .min((tab_bar_clip.x + tab_bar_clip.width - tx).max(0.0));
-                let clip_x = tx.max(tab_bar_clip.x);
-                let clip = Rect::new(clip_x, tab_bar_top, title_clip_w.max(0.0), PANEL_TAB_HEIGHT);
+    let cell_size = renderer.cell_size();
+    let cell_height = cell_size.height;
+    let field_h = cell_height + POPUP_INPUT_PADDING;
+    let hint_h = cell_height + 8.0;
+    let padding = POPUP_TEXT_INSET;
 
-                // Cover original tab title with background
-                renderer.draw_top_rect(
-                    Rect::new(tx + 2.0, tab_bar_top + 2.0, PANEL_TAB_WIDTH - 4.0, PANEL_TAB_HEIGHT - 4.0),
-                    p.panel_tab_bg_active,
-                );
+    // Popup dimensions
+    let popup_w = SAVE_AS_POPUP_W.min(panel_rect.width - 2.0 * PANE_PADDING);
+    let popup_h = field_h * 2.0 + POPUP_SEPARATOR + hint_h + 2.0 * padding;
+    let popup_x = panel_rect.x + (panel_rect.width - popup_w) / 2.0;
+    let popup_y = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP;
+    let popup_rect = Rect::new(popup_x, popup_y, popup_w, popup_h);
 
-                // Draw inline editable filename
-                let input_style = TextStyle {
-                    foreground: p.tab_text_focused,
-                    background: None,
-                    bold: true,
-                    dim: false,
-                    italic: false,
-                    underline: false,
-                };
-                renderer.draw_top_text(
-                    &save_as.query,
-                    Vec2::new(tx + 12.0, text_y),
-                    input_style,
-                    clip,
-                );
+    // Background
+    renderer.draw_top_rect(popup_rect, p.popup_bg);
 
-                // Cursor beam
-                let cx = tx + 12.0 + visual_width(&save_as.query[..save_as.cursor]) as f32 * cell_size.width;
-                if cx >= clip.x && cx <= clip.x + clip.width {
-                    renderer.draw_top_rect(
-                        Rect::new(cx, text_y, 1.5, cell_height),
-                        p.cursor_accent,
-                    );
-                }
-            }
-        }
+    // Border
+    draw_popup_border(renderer, popup_rect, p.popup_border);
+
+    let ts = text_style(p.tab_text_focused);
+    let label_style = bold_style(p.tab_text);
+    let muted_style = text_style(p.tab_text);
+
+    let label_w = 5.0 * cell_size.width + 8.0; // "Dir " or "Name" + padding
+    let content_x = popup_x + padding + label_w;
+    let content_w = popup_w - 2.0 * padding - label_w;
+
+    let is_dir_active = save_as.active_field == crate::SaveAsField::Directory;
+
+    // ── Directory field ──
+    let dir_y = popup_y + padding;
+    let dir_rect = Rect::new(popup_x + padding, dir_y, popup_w - 2.0 * padding, field_h);
+    if is_dir_active {
+        renderer.draw_top_rect(dir_rect, p.popup_selected);
     }
+    let dir_text_y = dir_y + (field_h - cell_height) / 2.0;
+    renderer.draw_top_text("Dir", Vec2::new(popup_x + padding + 4.0, dir_text_y), label_style, dir_rect);
+    let dir_clip = Rect::new(content_x, dir_y, content_w, field_h);
+    renderer.draw_top_text(&save_as.directory, Vec2::new(content_x, dir_text_y), ts, dir_clip);
+    if is_dir_active {
+        let cx = content_x + visual_width(&save_as.directory[..save_as.dir_cursor]) as f32 * cell_size.width;
+        draw_cursor_beam(renderer, cx, dir_text_y, cell_height, p.cursor_accent);
+    }
+
+    // Separator
+    let sep_y = dir_y + field_h;
+    renderer.draw_top_rect(Rect::new(popup_x + POPUP_SEPARATOR_INSET, sep_y, popup_w - 2.0 * POPUP_SEPARATOR_INSET, POPUP_SEPARATOR), p.popup_border);
+
+    // ── Filename field ──
+    let name_y = sep_y + POPUP_SEPARATOR;
+    let name_rect = Rect::new(popup_x + padding, name_y, popup_w - 2.0 * padding, field_h);
+    if !is_dir_active {
+        renderer.draw_top_rect(name_rect, p.popup_selected);
+    }
+    let name_text_y = name_y + (field_h - cell_height) / 2.0;
+    renderer.draw_top_text("Name", Vec2::new(popup_x + padding + 4.0, name_text_y), label_style, name_rect);
+    let name_clip = Rect::new(content_x, name_y, content_w, field_h);
+    renderer.draw_top_text(&save_as.filename, Vec2::new(content_x, name_text_y), ts, name_clip);
+    if !is_dir_active {
+        let cx = content_x + visual_width(&save_as.filename[..save_as.filename_cursor]) as f32 * cell_size.width;
+        draw_cursor_beam(renderer, cx, name_text_y, cell_height, p.cursor_accent);
+    }
+
+    // ── Hint bar ──
+    let hint_y = name_y + field_h;
+    let hint_text_y = hint_y + (hint_h - cell_height) / 2.0;
+    let hint = "Enter save   Tab switch   Esc cancel";
+    let hint_w_px = hint.len() as f32 * cell_size.width;
+    let hint_x = popup_x + (popup_w - hint_w_px) / 2.0;
+    let hint_clip = Rect::new(popup_x + padding, hint_y, popup_w - 2.0 * padding, hint_h);
+    renderer.draw_top_text(hint, Vec2::new(hint_x, hint_text_y), muted_style, hint_clip);
 }
 
 /// Render file finder UI on top layer (visible regardless of tab state).
@@ -363,35 +381,21 @@ fn render_file_finder(
         // Full panel background to cover editor content below
         renderer.draw_top_rect(panel_rect, p.surface_bg);
 
-        let muted_style = TextStyle {
-            foreground: p.tab_text,
-            background: None,
-            bold: false,
-            dim: false,
-            italic: false,
-            underline: false,
-        };
+        let muted_style = text_style(p.tab_text);
 
         // Search input bar
         let input_x = panel_rect.x + PANE_PADDING;
         let input_y = panel_rect.y + PANE_PADDING + 8.0;
         let input_w = panel_rect.width - 2.0 * PANE_PADDING;
-        let input_h = cell_height + 12.0;
+        let input_h = cell_height + POPUP_INPUT_PADDING;
         let input_rect = Rect::new(input_x, input_y, input_w, input_h);
         renderer.draw_top_rect(input_rect, p.panel_tab_bg_active);
 
         // Search icon + query text
-        let query_x = input_x + 8.0;
+        let query_x = input_x + POPUP_TEXT_INSET;
         let query_y = input_y + (input_h - cell_height) / 2.0;
         let search_icon = "\u{f002} ";
-        let icon_style = TextStyle {
-            foreground: p.tab_text,
-            background: None,
-            bold: false,
-            dim: false,
-            italic: false,
-            underline: false,
-        };
+        let icon_style = text_style(p.tab_text);
         renderer.draw_top_text(
             search_icon,
             Vec2::new(query_x, query_y),
@@ -399,15 +403,8 @@ fn render_file_finder(
             input_rect,
         );
         let text_x = query_x + 2.0 * cell_size.width;
-        let text_style = TextStyle {
-            foreground: p.tab_text_focused,
-            background: None,
-            bold: false,
-            dim: false,
-            italic: false,
-            underline: false,
-        };
-        let text_clip = Rect::new(text_x, input_y, input_w - 8.0 - 2.0 * cell_size.width, input_h);
+        let ts = text_style(p.tab_text_focused);
+        let text_clip = Rect::new(text_x, input_y, input_w - POPUP_TEXT_INSET - 2.0 * cell_size.width, input_h);
         if finder.query.is_empty() {
             renderer.draw_top_text(
                 "Search files...",
@@ -419,7 +416,7 @@ fn render_file_finder(
             renderer.draw_top_text(
                 &finder.query,
                 Vec2::new(text_x, query_y),
-                text_style,
+                ts,
                 text_clip,
             );
         }
@@ -427,7 +424,7 @@ fn render_file_finder(
         // Match count
         let count_text = format!("{}/{}", finder.filtered.len(), finder.entries.len());
         let count_w = count_text.len() as f32 * cell_size.width;
-        let count_x = input_x + input_w - count_w - 8.0;
+        let count_x = input_x + input_w - count_w - POPUP_TEXT_INSET;
         renderer.draw_top_text(
             &count_text,
             Vec2::new(count_x, query_y),
@@ -437,10 +434,7 @@ fn render_file_finder(
 
         // Cursor beam
         let cx = text_x + visual_width(&finder.query[..finder.cursor]) as f32 * cell_size.width;
-        renderer.draw_top_rect(
-            Rect::new(cx, query_y, 1.5, cell_height),
-            p.cursor_accent,
-        );
+        draw_cursor_beam(renderer, cx, query_y, cell_height, p.cursor_accent);
 
         // File list
         let list_top = input_y + input_h + 8.0;
@@ -482,14 +476,7 @@ fn render_file_finder(
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
             let icon = file_icon(&file_name, false, false);
-            let icon_style = TextStyle {
-                foreground: p.tree_icon,
-                background: None,
-                bold: false,
-                dim: false,
-                italic: false,
-                underline: false,
-            };
+            let icon_style = text_style(p.tree_icon);
             let icon_x = panel_rect.x + PANE_PADDING + 4.0;
             let icon_str: String = std::iter::once(icon).collect();
             renderer.draw_top_text(
@@ -556,34 +543,16 @@ fn render_git_switcher(
     renderer.draw_top_rect(popup_rect, p.popup_bg);
 
     // Border
-    let border = 1.0;
-    renderer.draw_top_rect(Rect::new(popup_x, popup_y, popup_w, border), p.popup_border);
-    renderer.draw_top_rect(Rect::new(popup_x, popup_y + popup_h - border, popup_w, border), p.popup_border);
-    renderer.draw_top_rect(Rect::new(popup_x, popup_y, border, popup_h), p.popup_border);
-    renderer.draw_top_rect(Rect::new(popup_x + popup_w - border, popup_y, border, popup_h), p.popup_border);
+    draw_popup_border(renderer, popup_rect, p.popup_border);
 
-    let text_style = TextStyle {
-        foreground: p.tab_text_focused,
-        background: None,
-        bold: false,
-        dim: false,
-        italic: false,
-        underline: false,
-    };
-    let muted_style = TextStyle {
-        foreground: p.tab_text,
-        background: None,
-        bold: false,
-        dim: false,
-        italic: false,
-        underline: false,
-    };
+    let ts = text_style(p.tab_text_focused);
+    let muted_style = text_style(p.tab_text);
 
     // Search input
     let input_y = popup_y + 2.0;
-    let input_clip = Rect::new(popup_x + 8.0, input_y, popup_w - 16.0, input_h);
+    let input_clip = Rect::new(popup_x + POPUP_TEXT_INSET, input_y, popup_w - 2.0 * POPUP_TEXT_INSET, input_h);
     let text_y = input_y + (input_h - cell_height) / 2.0;
-    let text_x = popup_x + 8.0;
+    let text_x = popup_x + POPUP_TEXT_INSET;
     let placeholder = match gs.mode {
         crate::GitSwitcherMode::Branches => "Filter branches...",
         crate::GitSwitcherMode::Worktrees => "Filter worktrees...",
@@ -591,23 +560,23 @@ fn render_git_switcher(
     if gs.query.is_empty() {
         renderer.draw_top_text(placeholder, Vec2::new(text_x, text_y), muted_style, input_clip);
     } else {
-        renderer.draw_top_text(&gs.query, Vec2::new(text_x, text_y), text_style, input_clip);
+        renderer.draw_top_text(&gs.query, Vec2::new(text_x, text_y), ts, input_clip);
     }
     // Cursor beam
     let cx = text_x + visual_width(&gs.query[..gs.cursor]) as f32 * cell_size.width;
-    renderer.draw_top_rect(Rect::new(cx, text_y, 1.5, cell_height), p.cursor_accent);
+    draw_cursor_beam(renderer, cx, text_y, cell_height, p.cursor_accent);
 
     // Tab bar
     let tab_y = input_y + input_h;
     let tab_sep_y = tab_y + tab_h;
-    renderer.draw_top_rect(Rect::new(popup_x + 4.0, tab_sep_y, popup_w - 8.0, 1.0), p.popup_border);
+    renderer.draw_top_rect(Rect::new(popup_x + POPUP_SEPARATOR_INSET, tab_sep_y, popup_w - 2.0 * POPUP_SEPARATOR_INSET, POPUP_SEPARATOR), p.popup_border);
 
     let branches_label = "Branches";
     let worktrees_label = "Worktrees";
     let tab_pad = 12.0;
     let branches_w = branches_label.len() as f32 * cell_size.width + tab_pad * 2.0;
     let worktrees_w = worktrees_label.len() as f32 * cell_size.width + tab_pad * 2.0;
-    let branches_x = popup_x + 8.0;
+    let branches_x = popup_x + POPUP_TEXT_INSET;
     let worktrees_x = branches_x + branches_w + 4.0;
     let tab_text_y = tab_y + (tab_h - cell_height) / 2.0;
 
@@ -655,14 +624,7 @@ fn render_git_switcher(
     let list_top = tab_sep_y + 2.0;
     let list_clip = Rect::new(popup_x, list_top, popup_w, max_visible as f32 * line_height + new_wt_btn_h);
 
-    let btn_style = TextStyle {
-        foreground: p.badge_text,
-        background: None,
-        bold: false,
-        dim: false,
-        italic: false,
-        underline: false,
-    };
+    let btn_style = text_style(p.badge_text);
 
     // Helper closure: render [Switch] [Pane] buttons (and optionally [×] for worktrees)
     // Returns nothing; just draws. `show_delete` controls the × button.
@@ -670,17 +632,13 @@ fn render_git_switcher(
                                   y: f32, item_y: f32, show_delete: bool| {
         let btn_h = cell_height + 2.0;
         let btn_y = y + (line_height - btn_h) / 2.0;
-        let mut btn_right = popup_x + popup_w - 8.0;
+        let mut btn_right = popup_x + popup_w - POPUP_TEXT_INSET;
 
         if show_delete {
             let del_w = cell_size.width + 8.0;
             let del_x = btn_right - del_w;
             renderer.draw_top_rect(Rect::new(del_x, btn_y, del_w, btn_h), p.badge_bg);
-            let del_style = TextStyle {
-                foreground: p.badge_git_deletions,
-                background: None,
-                bold: false, dim: false, italic: false, underline: false,
-            };
+            let del_style = text_style(p.badge_git_deletions);
             renderer.draw_top_text("\u{f00d}", Vec2::new(del_x + 4.0, item_y), del_style, list_clip);
             btn_right = del_x - 3.0;
         }
@@ -718,24 +676,17 @@ fn render_git_switcher(
                 // Selected highlight
                 if fi == gs.selected {
                     renderer.draw_top_rect(
-                        Rect::new(popup_x + 2.0, y, popup_w - 4.0, line_height),
+                        Rect::new(popup_x + POPUP_SELECTED_INSET, y, popup_w - 2.0 * POPUP_SELECTED_INSET, line_height),
                         p.popup_selected,
                     );
                 }
 
-                let item_x = popup_x + 8.0;
+                let item_x = popup_x + POPUP_TEXT_INSET;
                 let item_y = y + (line_height - cell_height) / 2.0;
 
                 // Current branch checkmark
                 if branch.is_current {
-                    let check_style = TextStyle {
-                        foreground: p.badge_git_branch,
-                        background: None,
-                        bold: true,
-                        dim: false,
-                        italic: false,
-                        underline: false,
-                    };
+                    let check_style = bold_style(p.badge_git_branch);
                     renderer.draw_top_text("\u{f00c}", Vec2::new(item_x, item_y), check_style, list_clip);
                 }
 
@@ -743,14 +694,7 @@ fn render_git_switcher(
                 let has_wt = gs.worktree_branch_names.contains(&branch.name);
                 if has_wt {
                     let wt_icon_x = item_x + 1.5 * cell_size.width;
-                    let wt_style = TextStyle {
-                        foreground: p.badge_git_worktree,
-                        background: None,
-                        bold: false,
-                        dim: false,
-                        italic: false,
-                        underline: false,
-                    };
+                    let wt_style = text_style(p.badge_git_worktree);
                     renderer.draw_top_text("\u{f1bb}", Vec2::new(wt_icon_x, item_y), wt_style, list_clip);
                 }
 
@@ -791,24 +735,17 @@ fn render_git_switcher(
                 // Selected highlight
                 if fi == gs.selected {
                     renderer.draw_top_rect(
-                        Rect::new(popup_x + 2.0, y, popup_w - 4.0, line_height),
+                        Rect::new(popup_x + POPUP_SELECTED_INSET, y, popup_w - 2.0 * POPUP_SELECTED_INSET, line_height),
                         p.popup_selected,
                     );
                 }
 
-                let item_x = popup_x + 8.0;
+                let item_x = popup_x + POPUP_TEXT_INSET;
                 let item_y = y + (line_height - cell_height) / 2.0;
 
                 // Current worktree checkmark
                 if wt.is_current {
-                    let check_style = TextStyle {
-                        foreground: p.badge_git_worktree,
-                        background: None,
-                        bold: true,
-                        dim: false,
-                        italic: false,
-                        underline: false,
-                    };
+                    let check_style = bold_style(p.badge_git_worktree);
                     renderer.draw_top_text("\u{f00c}", Vec2::new(item_x, item_y), check_style, list_clip);
                 }
 
@@ -846,26 +783,19 @@ fn render_git_switcher(
         if create_fi >= gs.scroll_offset && create_fi < gs.scroll_offset + max_visible {
             let vi = create_fi - gs.scroll_offset;
             let y = list_top + vi as f32 * line_height;
-            let item_x = popup_x + 8.0;
+            let item_x = popup_x + POPUP_TEXT_INSET;
             let item_y = y + (line_height - cell_height) / 2.0;
 
             // Selected highlight
             if create_fi == gs.selected {
                 renderer.draw_top_rect(
-                    Rect::new(popup_x + 2.0, y, popup_w - 4.0, line_height),
+                    Rect::new(popup_x + POPUP_SELECTED_INSET, y, popup_w - 2.0 * POPUP_SELECTED_INSET, line_height),
                     p.popup_selected,
                 );
             }
 
             // "+" icon
-            let plus_style = TextStyle {
-                foreground: p.badge_git_branch,
-                background: None,
-                bold: true,
-                dim: false,
-                italic: false,
-                underline: false,
-            };
+            let plus_style = bold_style(p.badge_git_branch);
             renderer.draw_top_text("+", Vec2::new(item_x, item_y), plus_style, list_clip);
 
             // Query text as the name
@@ -886,15 +816,8 @@ fn render_git_switcher(
     }
 }
 
-/// Abbreviate a path for compact display in the worktree list.
-fn abbreviate_path(path: &std::path::Path) -> String {
-    if let Some(home) = dirs::home_dir() {
-        if let Ok(suffix) = path.strip_prefix(&home) {
-            return format!("~/{}", suffix.display());
-        }
-    }
-    path.to_string_lossy().to_string()
-}
+// Re-use abbreviate_path from ui_state
+use crate::ui_state::abbreviate_path;
 
 /// Render file switcher popup overlay.
 fn render_file_switcher(
@@ -905,14 +828,15 @@ fn render_file_switcher(
     if let Some(ref fs) = app.file_switcher {
         let cell_size = renderer.cell_size();
         let cell_height = cell_size.height;
-        let line_height = cell_height + 4.0;
-        let popup_w = 260.0_f32;
-        let popup_x = fs.anchor_rect.x;
-        let popup_y = fs.anchor_rect.y + fs.anchor_rect.height + 4.0;
+        let geo = fs.geometry(cell_height);
 
-        let input_h = cell_height + 10.0;
-        let max_visible = 10.min(fs.filtered.len());
-        let popup_h = input_h + max_visible as f32 * line_height + 8.0;
+        let popup_x = geo.popup_x;
+        let popup_y = geo.popup_y;
+        let popup_w = geo.popup_w;
+        let popup_h = geo.popup_h;
+        let input_h = geo.input_h;
+        let line_height = geo.line_height;
+        let max_visible = geo.max_visible;
 
         let popup_rect = Rect::new(popup_x, popup_y, popup_w, popup_h);
 
@@ -920,33 +844,15 @@ fn render_file_switcher(
         renderer.draw_top_rect(popup_rect, p.popup_bg);
 
         // Border
-        let border = 1.0;
-        renderer.draw_top_rect(Rect::new(popup_x, popup_y, popup_w, border), p.popup_border);
-        renderer.draw_top_rect(Rect::new(popup_x, popup_y + popup_h - border, popup_w, border), p.popup_border);
-        renderer.draw_top_rect(Rect::new(popup_x, popup_y, border, popup_h), p.popup_border);
-        renderer.draw_top_rect(Rect::new(popup_x + popup_w - border, popup_y, border, popup_h), p.popup_border);
+        draw_popup_border(renderer, popup_rect, p.popup_border);
 
         // Search input
         let input_y = popup_y + 2.0;
-        let input_clip = Rect::new(popup_x + 8.0, input_y, popup_w - 16.0, input_h);
-        let text_style = TextStyle {
-            foreground: p.tab_text_focused,
-            background: None,
-            bold: false,
-            dim: false,
-            italic: false,
-            underline: false,
-        };
-        let muted_style = TextStyle {
-            foreground: p.tab_text,
-            background: None,
-            bold: false,
-            dim: false,
-            italic: false,
-            underline: false,
-        };
+        let input_clip = Rect::new(popup_x + POPUP_TEXT_INSET, input_y, popup_w - 2.0 * POPUP_TEXT_INSET, input_h);
+        let ts = text_style(p.tab_text_focused);
+        let muted_style = text_style(p.tab_text);
         let text_y = input_y + (input_h - cell_height) / 2.0;
-        let text_x = popup_x + 8.0;
+        let text_x = popup_x + POPUP_TEXT_INSET;
         if fs.query.is_empty() {
             renderer.draw_top_text(
                 "Switch to file...",
@@ -958,23 +864,20 @@ fn render_file_switcher(
             renderer.draw_top_text(
                 &fs.query,
                 Vec2::new(text_x, text_y),
-                text_style,
+                ts,
                 input_clip,
             );
         }
         // Cursor beam
         let cx = text_x + visual_width(&fs.query[..fs.cursor]) as f32 * cell_size.width;
-        renderer.draw_top_rect(
-            Rect::new(cx, text_y, 1.5, cell_height),
-            p.cursor_accent,
-        );
+        draw_cursor_beam(renderer, cx, text_y, cell_height, p.cursor_accent);
 
         // Separator line
         let sep_y = input_y + input_h;
-        renderer.draw_top_rect(Rect::new(popup_x + 4.0, sep_y, popup_w - 8.0, 1.0), p.popup_border);
+        renderer.draw_top_rect(Rect::new(popup_x + POPUP_SEPARATOR_INSET, sep_y, popup_w - 2.0 * POPUP_SEPARATOR_INSET, POPUP_SEPARATOR), p.popup_border);
 
         // File list
-        let list_top = sep_y + 2.0;
+        let list_top = geo.list_top;
         let list_clip = Rect::new(popup_x, list_top, popup_w, max_visible as f32 * line_height);
         for vi in 0..max_visible {
             let fi = fs.scroll_offset + vi;
@@ -988,12 +891,12 @@ fn render_file_switcher(
             // Selected highlight
             if fi == fs.selected {
                 renderer.draw_top_rect(
-                    Rect::new(popup_x + 2.0, y, popup_w - 4.0, line_height),
+                    Rect::new(popup_x + POPUP_SELECTED_INSET, y, popup_w - 2.0 * POPUP_SELECTED_INSET, line_height),
                     p.popup_selected,
                 );
             }
 
-            let item_x = popup_x + 8.0;
+            let item_x = popup_x + POPUP_TEXT_INSET;
             let item_y = y + (line_height - cell_height) / 2.0;
 
             // File icon + name

@@ -456,12 +456,20 @@ impl App {
             tide_core::Key::Escape => {
                 self.save_as_input = None;
             }
+            tide_core::Key::Tab => {
+                if let Some(ref mut input) = self.save_as_input {
+                    input.toggle_field();
+                }
+            }
             tide_core::Key::Enter => {
-                let pane_id = self.save_as_input.as_ref().unwrap().pane_id;
-                let filename = self.save_as_input.as_ref().unwrap().query.clone();
+                let resolved = self.save_as_input.as_ref().and_then(|input| {
+                    let pane_id = input.pane_id;
+                    input.resolve_path().map(|p| (pane_id, p))
+                });
                 self.save_as_input = None;
-                if !filename.is_empty() {
-                    self.complete_save_as(pane_id, &filename);
+                if let Some((pane_id, path)) = resolved {
+                    let path_str = path.to_string_lossy().to_string();
+                    self.complete_save_as(pane_id, &path_str);
                 }
             }
             tide_core::Key::Backspace => {
