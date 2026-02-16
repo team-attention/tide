@@ -14,6 +14,15 @@ pub(crate) enum LayoutSide {
     Right,
 }
 
+/// Layout mode for the main terminal pane area.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PaneAreaMode {
+    /// 2D spatial layout with per-pane headers (default).
+    Split,
+    /// Dock-like stacked view: tab bar + single visible pane, linear navigation.
+    Stacked,
+}
+
 // ──────────────────────────────────────────────
 // Save-as input state (inline filename entry for untitled files)
 // ──────────────────────────────────────────────

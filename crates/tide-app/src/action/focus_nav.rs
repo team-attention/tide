@@ -1,6 +1,6 @@
 use tide_input::Direction;
 
-use crate::App;
+use crate::{App, PaneAreaMode};
 
 impl App {
     /// Handle MoveFocus direction navigation.
@@ -68,15 +68,15 @@ impl App {
             }
         }
 
-        // Phase B: Maximized pane navigation (Left/Right cycle, Up/Down no-op)
-        if self.maximized_pane.is_some() {
+        // Phase B: Stacked mode navigation (Left/Right cycle tabs, Up/Down no-op)
+        if self.pane_area_mode == PaneAreaMode::Stacked {
             let pane_ids = self.layout.pane_ids();
             if let Some(pos) = pane_ids.iter().position(|&id| id == current_id) {
                 match direction {
                     Direction::Left => {
                         if pos > 0 {
                             let prev_id = pane_ids[pos - 1];
-                            self.maximized_pane = Some(prev_id);
+                            self.stacked_active = Some(prev_id);
                             self.focused = Some(prev_id);
                             self.router.set_focused(prev_id);
                             self.chrome_generation += 1;
@@ -87,7 +87,7 @@ impl App {
                     Direction::Right => {
                         if pos + 1 < pane_ids.len() {
                             let next_id = pane_ids[pos + 1];
-                            self.maximized_pane = Some(next_id);
+                            self.stacked_active = Some(next_id);
                             self.focused = Some(next_id);
                             self.router.set_focused(next_id);
                             self.chrome_generation += 1;
@@ -96,7 +96,7 @@ impl App {
                         }
                     }
                     Direction::Up | Direction::Down => {
-                        // no-op while maximized
+                        // no-op while stacked
                     }
                 }
             }

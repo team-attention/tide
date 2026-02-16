@@ -152,8 +152,10 @@ struct App {
     // Search focus: which pane's search bar has keyboard focus
     pub(crate) search_focus: Option<PaneId>,
 
-    // Pane maximize (temporary full-area display of a single pane)
-    pub(crate) maximized_pane: Option<PaneId>,
+    // Pane area layout mode (Split = tiled 2D, Stacked = dock-like tabs)
+    pub(crate) pane_area_mode: PaneAreaMode,
+    // Which pane is visible in Stacked mode
+    pub(crate) stacked_active: Option<PaneId>,
 
     // Editor panel visibility toggle
     pub(crate) show_editor_panel: bool,
@@ -267,7 +269,8 @@ impl App {
             scroll_accumulator: HashMap::new(),
             mouse_left_pressed: false,
             search_focus: None,
-            maximized_pane: None,
+            pane_area_mode: PaneAreaMode::Split,
+            stacked_active: None,
             show_editor_panel: false,
             editor_panel_maximized: false,
             editor_panel_tabs: Vec::new(),

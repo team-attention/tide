@@ -65,6 +65,9 @@ impl App {
         let editor_panel_tabs = self.editor_panel_tabs.clone();
         let editor_panel_active = self.editor_panel_active;
         let alive_pane_ids: Vec<u64> = self.panes.keys().copied().collect();
+        let pane_area_mode = self.pane_area_mode;
+        let all_pane_ids = self.layout.pane_ids();
+        let stacked_active = self.stacked_active;
         let empty_panel_btn_rects = self.empty_panel_button_rects();
 
         let p = self.palette();
@@ -101,6 +104,7 @@ impl App {
                 focused, show_file_tree, file_tree_scroll,
                 &visual_pane_rects, editor_panel_rect,
                 &editor_panel_tabs, editor_panel_active,
+                pane_area_mode, &all_pane_ids, stacked_active,
             );
 
             self.last_chrome_generation = self.chrome_generation;

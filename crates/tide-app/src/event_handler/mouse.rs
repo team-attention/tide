@@ -306,12 +306,13 @@ impl App {
             return;
         }
 
-        // Auto-unmaximize when drag threshold exceeded
+        // Auto-unstack when drag threshold exceeded in Stacked mode
         if let PaneDragState::PendingDrag { press_pos, .. } = &self.pane_drag {
             let dx = pos.x - press_pos.x;
             let dy = pos.y - press_pos.y;
-            if (dx * dx + dy * dy).sqrt() >= DRAG_THRESHOLD && self.maximized_pane.is_some() {
-                self.maximized_pane = None;
+            if (dx * dx + dy * dy).sqrt() >= DRAG_THRESHOLD && self.pane_area_mode == crate::PaneAreaMode::Stacked {
+                self.pane_area_mode = crate::PaneAreaMode::Split;
+                self.stacked_active = None;
                 self.compute_layout();
             }
         }
