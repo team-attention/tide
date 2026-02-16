@@ -340,7 +340,9 @@ impl App {
             if pane.editor.file_path().is_none() {
                 // Untitled file -> open save-as input
                 let base_dir = self.resolve_base_dir();
-                self.save_as_input = Some(crate::SaveAsInput::new(pane_id, base_dir));
+                let anchor = self.active_panel_tab_rect()
+                    .unwrap_or_else(|| tide_core::Rect::new(0.0, 0.0, 0.0, 0.0));
+                self.save_as_input = Some(crate::SaveAsInput::new(pane_id, base_dir, anchor));
                 return;
             }
             if let Err(e) = pane.editor.buffer.save() {

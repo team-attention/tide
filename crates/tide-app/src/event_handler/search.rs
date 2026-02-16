@@ -125,12 +125,12 @@ impl App {
         match self.panes.get_mut(&pane_id) {
             Some(PaneKind::Terminal(pane)) => {
                 if let Some(ref mut s) = pane.search {
-                    s.insert_char(ch);
+                    s.input.insert_char(ch);
                 }
             }
             Some(PaneKind::Editor(pane)) => {
                 if let Some(ref mut s) = pane.search {
-                    s.insert_char(ch);
+                    s.input.insert_char(ch);
                 }
             }
             Some(PaneKind::Diff(_)) => return,
@@ -144,12 +144,12 @@ impl App {
         match self.panes.get_mut(&pane_id) {
             Some(PaneKind::Terminal(pane)) => {
                 if let Some(ref mut s) = pane.search {
-                    s.backspace();
+                    s.input.backspace();
                 }
             }
             Some(PaneKind::Editor(pane)) => {
                 if let Some(ref mut s) = pane.search {
-                    s.backspace();
+                    s.input.backspace();
                 }
             }
             Some(PaneKind::Diff(_)) => return,
@@ -163,12 +163,12 @@ impl App {
         match self.panes.get_mut(&pane_id) {
             Some(PaneKind::Terminal(pane)) => {
                 if let Some(ref mut s) = pane.search {
-                    s.delete_char();
+                    s.input.delete_char();
                 }
             }
             Some(PaneKind::Editor(pane)) => {
                 if let Some(ref mut s) = pane.search {
-                    s.delete_char();
+                    s.input.delete_char();
                 }
             }
             Some(PaneKind::Diff(_)) => return,
@@ -181,10 +181,10 @@ impl App {
     pub(crate) fn search_bar_cursor_left(&mut self, pane_id: tide_core::PaneId) {
         match self.panes.get_mut(&pane_id) {
             Some(PaneKind::Terminal(pane)) => {
-                if let Some(ref mut s) = pane.search { s.move_cursor_left(); }
+                if let Some(ref mut s) = pane.search { s.input.move_cursor_left(); }
             }
             Some(PaneKind::Editor(pane)) => {
-                if let Some(ref mut s) = pane.search { s.move_cursor_left(); }
+                if let Some(ref mut s) = pane.search { s.input.move_cursor_left(); }
             }
             Some(PaneKind::Diff(_)) => {}
             None => {}
@@ -194,10 +194,10 @@ impl App {
     pub(crate) fn search_bar_cursor_right(&mut self, pane_id: tide_core::PaneId) {
         match self.panes.get_mut(&pane_id) {
             Some(PaneKind::Terminal(pane)) => {
-                if let Some(ref mut s) = pane.search { s.move_cursor_right(); }
+                if let Some(ref mut s) = pane.search { s.input.move_cursor_right(); }
             }
             Some(PaneKind::Editor(pane)) => {
-                if let Some(ref mut s) = pane.search { s.move_cursor_right(); }
+                if let Some(ref mut s) = pane.search { s.input.move_cursor_right(); }
             }
             Some(PaneKind::Diff(_)) => {}
             None => {}

@@ -508,7 +508,7 @@ impl App {
         true
     }
 
-    /// Open the git switcher popup in the given mode, or copy branch name if a process is running.
+    /// Open the git switcher popup (works even when a process is running).
     /// Clicking the same badge again closes the popup (toggle behavior).
     fn open_git_switcher(&mut self, pane_id: tide_core::PaneId, mode: GitSwitcherMode, anchor_rect: Rect) {
         // Toggle: close if already open for the same pane and mode
@@ -519,21 +519,15 @@ impl App {
             }
         }
         if let Some(PaneKind::Terminal(pane)) = self.panes.get(&pane_id) {
-            if pane.shell_idle {
-                if let Some(ref cwd) = pane.cwd {
-                    let branches = tide_terminal::git::list_branches(cwd);
-                    let worktrees = tide_terminal::git::list_worktrees(cwd);
-                    self.git_switcher = Some(GitSwitcherState::new(
-                        pane_id, mode, branches, worktrees, anchor_rect,
-                    ));
-                }
-            } else if mode == GitSwitcherMode::Branches {
-                // Process running → copy branch name to clipboard
-                if let Some(ref git) = pane.git_info {
-                    if let Ok(mut cb) = arboard::Clipboard::new() {
-                        let _ = cb.set_text(&git.branch);
-                    }
-                }
+            let shell_busy = !pane.shell_idle;
+            if let Some(ref cwd) = pane.cwd {
+                let branches = tide_terminal::git::list_branches(cwd);
+                let worktrees = tide_terminal::git::list_worktrees(cwd);
+                let mut gs = GitSwitcherState::new(
+                    pane_id, mode, branches, worktrees, anchor_rect,
+                );
+                gs.shell_busy = shell_busy;
+                self.git_switcher = Some(gs);
             }
         }
     }
@@ -559,7 +553,7 @@ impl App {
 
                 if gs.is_create_row(fi) {
                     // Create row
-                    let query = gs.query.trim().to_string();
+                    let query = gs.input.text.trim().to_string();
                     let mode = gs.mode;
                     let cwd = self.git_switcher_pane_cwd();
                     self.git_switcher = None;
@@ -647,7 +641,7 @@ impl App {
                 let pane_id = gs.pane_id;
 
                 if gs.is_create_row(fi) {
-                    let query = gs.query.trim().to_string();
+                    let query = gs.input.text.trim().to_string();
                     let mode = gs.mode;
                     let cwd = self.git_switcher_pane_cwd();
                     self.git_switcher = None;
