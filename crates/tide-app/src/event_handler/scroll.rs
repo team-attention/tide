@@ -176,11 +176,7 @@ impl App {
                             let gutter = 5.0 * cs.width;
                             ((rect.width - 2.0 * PANE_PADDING - 2.0 * gutter) / cs.width).floor() as usize
                         }).unwrap_or(80);
-                        let scroll_top_off = if matches!(self.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
-                            PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
-                        } else {
-                            TAB_BAR_HEIGHT
-                        };
+                        let scroll_top_off = self.pane_area_mode.content_top();
                         let visible_rows = self.renderer.as_ref().map(|r| {
                             let cs = r.cell_size();
                             ((rect.height - scroll_top_off - PANE_PADDING) / cs.height).floor() as usize

@@ -17,12 +17,7 @@ pub(crate) fn render_grid(
     editor_panel_active: Option<u64>,
     editor_panel_rect: Option<Rect>,
 ) -> bool {
-    // In stacked mode, the tab bar is taller than in split mode
-    let top_offset = if matches!(app.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
-        PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
-    } else {
-        TAB_BAR_HEIGHT
-    };
+    let top_offset = app.pane_area_mode.content_top();
 
     let mut any_dirty = false;
     for &(id, rect) in visual_pane_rects {

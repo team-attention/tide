@@ -74,9 +74,7 @@ impl App {
         for (i, &tab_id) in pane_ids.iter().enumerate() {
             let tx = tab_start_x + i as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
             if pos.x >= tx && pos.x <= tx + PANEL_TAB_WIDTH {
-                if pos.x >= rect.x && pos.x <= rect.x + rect.width {
-                    return Some(tab_id);
-                }
+                return Some(tab_id);
             }
         }
         None

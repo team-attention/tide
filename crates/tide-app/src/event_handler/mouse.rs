@@ -16,11 +16,7 @@ impl App {
             // Start text selection if clicking on pane content
             // (but not on tab bars, borders, etc.)
             let mods = winit_modifiers_to_tide(self.modifiers);
-            let content_top_offset = if matches!(self.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
-                PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
-            } else {
-                TAB_BAR_HEIGHT
-            };
+            let content_top_offset = self.pane_area_mode.content_top();
             if !mods.ctrl && !mods.meta {
                 if let Some((pane_id, _)) = self.visual_pane_rects.iter().find(|(_, r)| {
                     let content = Rect::new(
@@ -388,11 +384,7 @@ impl App {
             if self.mouse_left_pressed {
                 // Pre-compute cell positions before mutably borrowing panes
                 let cell_size = self.renderer.as_ref().map(|r| r.cell_size());
-                let drag_top_offset = if matches!(self.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
-                    PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
-                } else {
-                    TAB_BAR_HEIGHT
-                };
+                let drag_top_offset = self.pane_area_mode.content_top();
 
                 // Update selection only for the pane that has an active selection,
                 // and only if the cursor is within that pane's content area.

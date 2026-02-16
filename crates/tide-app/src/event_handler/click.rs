@@ -12,13 +12,9 @@ impl App {
     pub(crate) fn pixel_to_cell(&self, pos: Vec2, pane_id: tide_core::PaneId) -> Option<(usize, usize)> {
         let (_, visual_rect) = self.visual_pane_rects.iter().find(|(id, _)| *id == pane_id)?;
         let cell_size = self.renderer.as_ref()?.cell_size();
-        let top_offset = if matches!(self.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
-            PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
-        } else {
-            TAB_BAR_HEIGHT
-        };
+        let content_top = self.pane_area_mode.content_top();
         let inner_x = visual_rect.x + PANE_PADDING;
-        let inner_y = visual_rect.y + top_offset;
+        let inner_y = visual_rect.y + content_top;
         let col = ((pos.x - inner_x) / cell_size.width).floor() as isize;
         let row = ((pos.y - inner_y) / cell_size.height).floor() as isize;
         if row >= 0 && col >= 0 {
@@ -414,13 +410,9 @@ impl App {
             }
         }
         // Check left-side panes
-        let bar_top_offset = if matches!(self.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
-            PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
-        } else {
-            TAB_BAR_HEIGHT
-        };
+        let content_top_off = self.pane_area_mode.content_top();
         if let Some(&(_, rect)) = self.visual_pane_rects.iter().find(|(id, _)| *id == pane_id) {
-            let content_top = rect.y + bar_top_offset;
+            let content_top = rect.y + content_top_off;
             let bar_x = rect.x + PANE_PADDING;
             let bar_w = rect.width - 2.0 * PANE_PADDING;
             return Some(Rect::new(bar_x, content_top, bar_w, CONFLICT_BAR_HEIGHT));
@@ -451,16 +443,12 @@ impl App {
         }
 
         // Check left-side panes
-        let conflict_top_offset = if matches!(self.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
-            PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
-        } else {
-            TAB_BAR_HEIGHT
-        };
+        let content_top_off = self.pane_area_mode.content_top();
         if target_pane.is_none() {
             for &(id, rect) in &self.visual_pane_rects {
                 if let Some(PaneKind::Editor(pane)) = self.panes.get(&id) {
                     if pane.needs_notification_bar() {
-                        let content_top = rect.y + conflict_top_offset;
+                        let content_top = rect.y + content_top_off;
                         let bar_x = rect.x + PANE_PADDING;
                         let bar_w = rect.width - 2.0 * PANE_PADDING;
                         let bar_rect = Rect::new(bar_x, content_top, bar_w, CONFLICT_BAR_HEIGHT);

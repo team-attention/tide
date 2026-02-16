@@ -21,13 +21,9 @@ impl App {
             .find(|(id, _)| *id == pane_id)?;
         let cell_size = self.renderer.as_ref()?.cell_size();
 
-        let top_off = if matches!(self.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
-            PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
-        } else {
-            TAB_BAR_HEIGHT
-        };
+        let content_top = self.pane_area_mode.content_top();
         let inner_x = visual_rect.x + PANE_PADDING;
-        let inner_y = visual_rect.y + top_off;
+        let inner_y = visual_rect.y + content_top;
 
         // Center offset matching render_grid
         let max_cols = ((visual_rect.width - 2.0 * PANE_PADDING) / cell_size.width).floor() as usize;
@@ -79,13 +75,9 @@ impl App {
             .find(|(id, _)| *id == pane_id)?;
         let cell_size = self.renderer.as_ref()?.cell_size();
 
-        let top_off = if matches!(self.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
-            PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
-        } else {
-            TAB_BAR_HEIGHT
-        };
+        let content_top = self.pane_area_mode.content_top();
         let inner_x = visual_rect.x + PANE_PADDING;
-        let inner_y = visual_rect.y + top_off;
+        let inner_y = visual_rect.y + content_top;
 
         let col = ((position.x - inner_x) / cell_size.width) as usize;
         let row = ((position.y - inner_y) / cell_size.height) as usize;

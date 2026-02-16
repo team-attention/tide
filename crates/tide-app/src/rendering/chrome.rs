@@ -323,66 +323,11 @@ pub(crate) fn render_chrome(
     // Stacked mode: render dock-style tab bar; Split mode: render per-pane headers
     let mut all_hit_zones = Vec::new();
     if let PaneAreaMode::Stacked(stacked_active) = pane_area_mode {
-        // Render horizontal tab bar at the top of the visible pane rect
-        if let Some(&(_, rect)) = visual_pane_rects.first() {
-            let cell_size = renderer.cell_size();
-            let cell_height = cell_size.height;
-            let tab_bar_top = rect.y + PANE_PADDING;
-            let tab_start_x = rect.x + PANE_PADDING;
-            let tab_bar_clip = Rect::new(
-                rect.x + PANE_PADDING,
-                tab_bar_top,
-                rect.width - 2.0 * PANE_PADDING,
-                PANEL_TAB_HEIGHT,
-            );
-
-            for (i, &tab_id) in all_pane_ids.iter().enumerate() {
-                let tx = tab_start_x + i as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
-
-                // Skip tabs entirely outside visible area
-                if tx + PANEL_TAB_WIDTH < tab_bar_clip.x || tx > tab_bar_clip.x + tab_bar_clip.width {
-                    continue;
-                }
-
-                let is_active = stacked_active == tab_id;
-
-                // Tab background
-                if is_active {
-                    let tab_bg_rect = Rect::new(tx, tab_bar_top, PANEL_TAB_WIDTH, PANEL_TAB_HEIGHT);
-                    renderer.draw_chrome_rounded_rect(tab_bg_rect, p.panel_tab_bg_active, 4.0);
-                }
-
-                // Tab title
-                let text_y = tab_bar_top + (PANEL_TAB_HEIGHT - cell_height) / 2.0;
-                let title_clip_w = (PANEL_TAB_WIDTH - 14.0)
-                    .min((tab_bar_clip.x + tab_bar_clip.width - tx).max(0.0));
-                let clip_x = tx.max(tab_bar_clip.x);
-                let clip = Rect::new(clip_x, tab_bar_top, title_clip_w.max(0.0), PANEL_TAB_HEIGHT);
-
-                let title = panel_tab_title(&app.panes, tab_id);
-                let text_color = if is_active && focused == Some(tab_id) {
-                    p.tab_text_focused
-                } else if is_active {
-                    p.tree_text
-                } else {
-                    p.tab_text
-                };
-                let style = TextStyle {
-                    foreground: text_color,
-                    background: None,
-                    bold: is_active,
-                    dim: false,
-                    italic: false,
-                    underline: false,
-                };
-                renderer.draw_chrome_text(
-                    &title,
-                    Vec2::new(tx + 12.0, text_y),
-                    style,
-                    clip,
-                );
-            }
-        }
+        render_stacked_tab_bar(
+            app, renderer, p,
+            visual_pane_rects, all_pane_ids,
+            stacked_active, focused,
+        );
     } else {
         // Split mode: Header (title + badges + close) for each pane
         for &(id, rect) in visual_pane_rects {
@@ -429,5 +374,77 @@ pub(crate) fn render_chrome(
                 );
             }
         }
+    }
+}
+
+/// Render the horizontal tab bar for stacked pane mode.
+fn render_stacked_tab_bar(
+    app: &App,
+    renderer: &mut tide_renderer::WgpuRenderer,
+    p: &ThemePalette,
+    visual_pane_rects: &[(u64, Rect)],
+    all_pane_ids: &[u64],
+    stacked_active: u64,
+    focused: Option<u64>,
+) {
+    let Some(&(_, rect)) = visual_pane_rects.first() else {
+        return;
+    };
+    let cell_size = renderer.cell_size();
+    let cell_height = cell_size.height;
+    let tab_bar_top = rect.y + PANE_PADDING;
+    let tab_start_x = rect.x + PANE_PADDING;
+    let tab_bar_clip = Rect::new(
+        rect.x + PANE_PADDING,
+        tab_bar_top,
+        rect.width - 2.0 * PANE_PADDING,
+        PANEL_TAB_HEIGHT,
+    );
+
+    for (i, &tab_id) in all_pane_ids.iter().enumerate() {
+        let tx = tab_start_x + i as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
+
+        // Skip tabs entirely outside visible area
+        if tx + PANEL_TAB_WIDTH < tab_bar_clip.x || tx > tab_bar_clip.x + tab_bar_clip.width {
+            continue;
+        }
+
+        let is_active = stacked_active == tab_id;
+
+        // Tab background
+        if is_active {
+            let tab_bg_rect = Rect::new(tx, tab_bar_top, PANEL_TAB_WIDTH, PANEL_TAB_HEIGHT);
+            renderer.draw_chrome_rounded_rect(tab_bg_rect, p.panel_tab_bg_active, 4.0);
+        }
+
+        // Tab title
+        let text_y = tab_bar_top + (PANEL_TAB_HEIGHT - cell_height) / 2.0;
+        let title_clip_w = (PANEL_TAB_WIDTH - 14.0)
+            .min((tab_bar_clip.x + tab_bar_clip.width - tx).max(0.0));
+        let clip_x = tx.max(tab_bar_clip.x);
+        let clip = Rect::new(clip_x, tab_bar_top, title_clip_w.max(0.0), PANEL_TAB_HEIGHT);
+
+        let title = panel_tab_title(&app.panes, tab_id);
+        let text_color = if is_active && focused == Some(tab_id) {
+            p.tab_text_focused
+        } else if is_active {
+            p.tree_text
+        } else {
+            p.tab_text
+        };
+        let style = TextStyle {
+            foreground: text_color,
+            background: None,
+            bold: is_active,
+            dim: false,
+            italic: false,
+            underline: false,
+        };
+        renderer.draw_chrome_text(
+            &title,
+            Vec2::new(tx + 12.0, text_y),
+            style,
+            clip,
+        );
     }
 }
