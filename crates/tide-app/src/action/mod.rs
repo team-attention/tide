@@ -13,7 +13,7 @@ use crate::search::SearchState;
 use crate::input::winit_modifiers_to_tide;
 use crate::pane::PaneKind;
 use crate::theme::*;
-use crate::App;
+use crate::{App, PaneAreaMode};
 
 impl App {
     fn cleanup_closed_pane_state(&mut self, pane_id: tide_core::PaneId) {
@@ -224,8 +224,8 @@ impl App {
                     let cwd = self.focused_terminal_cwd();
                     let new_id = self.layout.split(focused, SplitDirection::Vertical);
                     self.create_terminal_pane(new_id, cwd);
-                    if self.maximized_pane.is_some() {
-                        self.maximized_pane = Some(new_id);
+                    if self.pane_area_mode == PaneAreaMode::Stacked {
+                        self.stacked_active = Some(new_id);
                     }
                     self.focused = Some(new_id);
                     self.router.set_focused(new_id);
@@ -238,8 +238,8 @@ impl App {
                     let cwd = self.focused_terminal_cwd();
                     let new_id = self.layout.split(focused, SplitDirection::Horizontal);
                     self.create_terminal_pane(new_id, cwd);
-                    if self.maximized_pane.is_some() {
-                        self.maximized_pane = Some(new_id);
+                    if self.pane_area_mode == PaneAreaMode::Stacked {
+                        self.stacked_active = Some(new_id);
                     }
                     self.focused = Some(new_id);
                     self.router.set_focused(new_id);
@@ -357,16 +357,22 @@ impl App {
                     if in_panel {
                         // Toggle editor panel maximize
                         self.editor_panel_maximized = !self.editor_panel_maximized;
-                        self.maximized_pane = None; // mutually exclusive
+                        self.pane_area_mode = PaneAreaMode::Split; // mutually exclusive
+                        self.stacked_active = None;
                     } else if self.editor_panel_maximized {
                         // Editor panel is maximized but focus is elsewhere -- just unmaximize it
                         self.editor_panel_maximized = false;
                     } else {
-                        // Toggle tree pane maximize
-                        if self.maximized_pane == Some(focused) {
-                            self.maximized_pane = None;
-                        } else {
-                            self.maximized_pane = Some(focused);
+                        // Toggle pane area mode between Split and Stacked
+                        match self.pane_area_mode {
+                            PaneAreaMode::Split => {
+                                self.pane_area_mode = PaneAreaMode::Stacked;
+                                self.stacked_active = Some(focused);
+                            }
+                            PaneAreaMode::Stacked => {
+                                self.pane_area_mode = PaneAreaMode::Split;
+                                self.stacked_active = None;
+                            }
                         }
                     }
                     self.chrome_generation += 1;

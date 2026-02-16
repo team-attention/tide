@@ -6,7 +6,7 @@ use crate::drag_drop::HoverTarget;
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::ui_state::LayoutSide;
-use crate::App;
+use crate::{App, PaneAreaMode};
 
 impl App {
     pub(crate) fn update_cursor_icon(&self) {
@@ -362,14 +362,17 @@ impl App {
             rect.x += terminal_offset_x;
         }
 
-        // If a pane is maximized, override rects to show only that pane filling the terminal area
-        if let Some(max_id) = self.maximized_pane {
-            if rects.iter().any(|(id, _)| *id == max_id) {
-                let full_rect = Rect::new(terminal_offset_x, 0.0, terminal_area.width, terminal_area.height);
-                rects = vec![(max_id, full_rect)];
-            } else {
-                // Maximized pane no longer exists in layout — clear maximize
-                self.maximized_pane = None;
+        // If in Stacked mode, override rects to show only the active pane filling the terminal area
+        if self.pane_area_mode == PaneAreaMode::Stacked {
+            if let Some(active_id) = self.stacked_active {
+                if rects.iter().any(|(id, _)| *id == active_id) {
+                    let full_rect = Rect::new(terminal_offset_x, 0.0, terminal_area.width, terminal_area.height);
+                    rects = vec![(active_id, full_rect)];
+                } else {
+                    // Stacked active pane no longer exists — fall back to Split
+                    self.pane_area_mode = PaneAreaMode::Split;
+                    self.stacked_active = None;
+                }
             }
         }
 
