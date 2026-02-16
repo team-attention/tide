@@ -95,6 +95,7 @@ pub struct ThemePalette {
     pub popup_bg: Color,
     pub popup_border: Color,
     pub popup_selected: Color,
+    pub popup_scrim: Color,
 
     // Link highlight
     pub link_color: Color,
@@ -150,7 +151,7 @@ pub static DARK: ThemePalette = ThemePalette {
     // Search
     search_match_bg:    Color::new(0.65, 0.50, 0.10, 0.40),
     search_current_bg:  Color::new(0.95, 0.75, 0.10, 0.60),
-    search_bar_bg:      Color::new(0.08, 0.08, 0.08, 1.0),
+    search_bar_bg:      Color::new(0.10, 0.10, 0.10, 1.0),
     search_bar_border:  Color::new(1.0, 1.0, 1.0, 0.15),
     search_bar_text:    Color::new(0.88, 0.88, 0.88, 1.0),
     search_bar_counter: Color::new(0.45, 0.45, 0.45, 1.0),
@@ -192,6 +193,7 @@ pub static DARK: ThemePalette = ThemePalette {
     popup_bg:       Color::new(0.10, 0.10, 0.10, 1.0),
     popup_border:   Color::new(1.0, 1.0, 1.0, 0.15),
     popup_selected: Color::new(1.0, 1.0, 1.0, 0.08),
+    popup_scrim:    Color::new(0.0, 0.0, 0.0, 0.45),
 
     // Link highlight — #4E94CE blue
     link_color: Color::new(0.306, 0.580, 0.808, 1.0),
@@ -247,7 +249,7 @@ pub static LIGHT: ThemePalette = ThemePalette {
     // Search
     search_match_bg:    Color::new(0.90, 0.80, 0.20, 0.25),
     search_current_bg:  Color::new(0.95, 0.75, 0.10, 0.45),
-    search_bar_bg:      Color::new(1.0, 1.0, 1.0, 1.0),
+    search_bar_bg:      Color::new(0.96, 0.96, 0.95, 1.0),
     search_bar_border:  Color::new(0.0, 0.0, 0.0, 0.15),
     search_bar_text:    Color::new(0.10, 0.10, 0.10, 1.0),
     search_bar_counter: Color::new(0.50, 0.50, 0.50, 1.0),
@@ -289,6 +291,7 @@ pub static LIGHT: ThemePalette = ThemePalette {
     popup_bg:       Color::new(0.96, 0.96, 0.95, 1.0),
     popup_border:   Color::new(0.0, 0.0, 0.0, 0.15),
     popup_selected: Color::new(0.0, 0.0, 0.0, 0.06),
+    popup_scrim:    Color::new(0.0, 0.0, 0.0, 0.25),
 
     // Link highlight — #0969DA blue
     link_color: Color::new(0.035, 0.412, 0.855, 1.0),

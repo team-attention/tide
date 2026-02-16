@@ -168,8 +168,11 @@ impl App {
             return None;
         }
 
-        // Create row: only Switch and NewPane buttons
+        let busy = gs.shell_busy;
+
+        // Create row: only Switch and NewPane buttons (no create when busy)
         if gs.is_create_row(fi) {
+            if busy { return None; }
             let mut btn_right = geo.popup_x + geo.popup_w - 8.0;
 
             let pane_label = "Pane";
@@ -200,8 +203,8 @@ impl App {
                 let has_wt = gs.worktree_branch_names.contains(&branch.name);
                 let mut btn_right = geo.popup_x + geo.popup_w - 8.0;
 
-                // Delete button (×) — only for branches without worktree
-                if !has_wt {
+                // Delete button (×) — only for branches without worktree, hidden when busy
+                if !has_wt && !busy {
                     let del_w = cell_size.width + 8.0;
                     let del_x = btn_right - del_w;
                     if pos.x >= del_x && pos.x <= del_x + del_w {
@@ -217,14 +220,17 @@ impl App {
                 if pos.x >= pane_x && pos.x <= pane_x + pane_w {
                     return Some(crate::SwitcherButton::NewPane(fi));
                 }
-                btn_right = pane_x - 3.0;
 
-                // [Switch] button
-                let switch_label = "Switch";
-                let switch_w = switch_label.len() as f32 * cell_size.width + 10.0;
-                let switch_x = btn_right - switch_w;
-                if pos.x >= switch_x && pos.x <= switch_x + switch_w {
-                    return Some(crate::SwitcherButton::Switch(fi));
+                if !busy {
+                    btn_right = pane_x - 3.0;
+
+                    // [Switch] button — hidden when busy
+                    let switch_label = "Switch";
+                    let switch_w = switch_label.len() as f32 * cell_size.width + 10.0;
+                    let switch_x = btn_right - switch_w;
+                    if pos.x >= switch_x && pos.x <= switch_x + switch_w {
+                        return Some(crate::SwitcherButton::Switch(fi));
+                    }
                 }
             }
             crate::GitSwitcherMode::Worktrees => {
@@ -236,8 +242,8 @@ impl App {
 
                 let mut btn_right = geo.popup_x + geo.popup_w - 8.0;
 
-                // Delete button (×) — not for main
-                if !wt.is_main {
+                // Delete button (×) — not for main, hidden when busy
+                if !wt.is_main && !busy {
                     let del_w = cell_size.width + 8.0;
                     let del_x = btn_right - del_w;
                     if pos.x >= del_x && pos.x <= del_x + del_w {
@@ -253,14 +259,17 @@ impl App {
                 if pos.x >= pane_x && pos.x <= pane_x + pane_w {
                     return Some(crate::SwitcherButton::NewPane(fi));
                 }
-                btn_right = pane_x - 3.0;
 
-                // [Switch] button
-                let switch_label = "Switch";
-                let switch_w = switch_label.len() as f32 * cell_size.width + 10.0;
-                let switch_x = btn_right - switch_w;
-                if pos.x >= switch_x && pos.x <= switch_x + switch_w {
-                    return Some(crate::SwitcherButton::Switch(fi));
+                if !busy {
+                    btn_right = pane_x - 3.0;
+
+                    // [Switch] button — hidden when busy
+                    let switch_label = "Switch";
+                    let switch_w = switch_label.len() as f32 * cell_size.width + 10.0;
+                    let switch_x = btn_right - switch_w;
+                    if pos.x >= switch_x && pos.x <= switch_x + switch_w {
+                        return Some(crate::SwitcherButton::Switch(fi));
+                    }
                 }
             }
         }
@@ -285,6 +294,50 @@ impl App {
         } else {
             None
         }
+    }
+
+    /// Compute the bounding rect of the active panel tab (for anchoring popups).
+    pub(crate) fn active_panel_tab_rect(&self) -> Option<Rect> {
+        let panel_rect = self.editor_panel_rect?;
+        let active_id = self.editor_panel_active?;
+        let index = self.editor_panel_tabs.iter().position(|&id| id == active_id)?;
+        let tab_bar_top = panel_rect.y + PANE_PADDING;
+        let tab_start_x = panel_rect.x + PANE_PADDING - self.panel_tab_scroll;
+        let tx = tab_start_x + index as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
+        Some(Rect::new(tx, tab_bar_top, PANEL_TAB_WIDTH, PANEL_TAB_HEIGHT))
+    }
+
+    /// Check if a position is inside the file finder area (covers the whole editor panel).
+    pub(crate) fn file_finder_contains(&self, pos: tide_core::Vec2) -> bool {
+        if self.file_finder.is_some() {
+            if let Some(panel_rect) = self.editor_panel_rect {
+                return panel_rect.contains(pos);
+            }
+        }
+        false
+    }
+
+    /// Check if a position is inside the save-as popup area.
+    pub(crate) fn save_as_contains(&self, pos: tide_core::Vec2) -> bool {
+        if let Some(ref save_as) = self.save_as_input {
+            if let (Some(panel_rect), Some(renderer)) = (self.editor_panel_rect, self.renderer.as_ref()) {
+                let cell_size = renderer.cell_size();
+                let cell_height = cell_size.height;
+                let field_h = cell_height + POPUP_INPUT_PADDING;
+                let hint_h = cell_height + 8.0;
+                let padding = POPUP_TEXT_INSET;
+                let popup_w = SAVE_AS_POPUP_W.min(panel_rect.width - 2.0 * PANE_PADDING);
+                let popup_h = field_h * 2.0 + POPUP_SEPARATOR + hint_h + 2.0 * padding;
+                let popup_x = save_as.anchor_rect.x.clamp(
+                    panel_rect.x + PANE_PADDING,
+                    panel_rect.x + panel_rect.width - popup_w - PANE_PADDING,
+                );
+                let popup_y = save_as.anchor_rect.y + save_as.anchor_rect.height + 4.0;
+                let popup_rect = Rect::new(popup_x, popup_y, popup_w, popup_h);
+                return popup_rect.contains(pos);
+            }
+        }
+        false
     }
 
     /// Check if a position is inside the file switcher popup area.

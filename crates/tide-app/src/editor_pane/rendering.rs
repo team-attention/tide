@@ -372,7 +372,7 @@ impl EditorPane {
 
         // Search match markers
         if let Some(search) = search {
-            if search.visible && !search.query.is_empty() {
+            if search.visible && !search.input.is_empty() {
                 let marker_h = 2.0_f32;
                 for (mi, m) in search.matches.iter().enumerate() {
                     let ratio = m.line as f32 / total_lines as f32;

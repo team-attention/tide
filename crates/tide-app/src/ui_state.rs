@@ -5,6 +5,78 @@ use std::path::PathBuf;
 use tide_core::{PaneId, Rect};
 use crate::theme::{TAB_BAR_HEIGHT, PANE_PADDING, PANEL_TAB_HEIGHT, PANE_GAP, PANEL_TAB_WIDTH, PANEL_TAB_GAP, PANEL_TAB_CLOSE_SIZE, PANEL_TAB_CLOSE_PADDING, POPUP_INPUT_PADDING, POPUP_LINE_EXTRA, POPUP_MAX_VISIBLE, FILE_SWITCHER_POPUP_W};
 
+// ──────────────────────────────────────────────
+// InputLine — shared text-editing state for popup inputs
+// ──────────────────────────────────────────────
+
+pub(crate) struct InputLine {
+    pub text: String,
+    pub cursor: usize,
+}
+
+impl InputLine {
+    pub fn new() -> Self {
+        Self { text: String::new(), cursor: 0 }
+    }
+
+    pub fn with_text(text: String) -> Self {
+        let cursor = text.len();
+        Self { text, cursor }
+    }
+
+    pub fn insert_char(&mut self, ch: char) {
+        self.text.insert(self.cursor, ch);
+        self.cursor += ch.len_utf8();
+    }
+
+    pub fn backspace(&mut self) {
+        if self.cursor > 0 {
+            let prev = self.text[..self.cursor]
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            self.text.drain(prev..self.cursor);
+            self.cursor = prev;
+        }
+    }
+
+    pub fn delete_char(&mut self) {
+        if self.cursor < self.text.len() {
+            let next = self.text[self.cursor..]
+                .char_indices()
+                .nth(1)
+                .map(|(i, _)| self.cursor + i)
+                .unwrap_or(self.text.len());
+            self.text.drain(self.cursor..next);
+        }
+    }
+
+    pub fn move_cursor_left(&mut self) {
+        if self.cursor > 0 {
+            self.cursor = self.text[..self.cursor]
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+        }
+    }
+
+    pub fn move_cursor_right(&mut self) {
+        if self.cursor < self.text.len() {
+            self.cursor = self.text[self.cursor..]
+                .char_indices()
+                .nth(1)
+                .map(|(i, _)| self.cursor + i)
+                .unwrap_or(self.text.len());
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.text.is_empty()
+    }
+}
+
 /// Simple shell escaping: wrap in single quotes if the string contains any shell metacharacters.
 pub(crate) fn shell_escape(s: &str) -> String {
     // Reject strings with control characters that could inject commands
@@ -100,32 +172,29 @@ pub(crate) enum SaveAsField {
 
 pub(crate) struct SaveAsInput {
     pub pane_id: PaneId,
-    pub filename: String,
-    pub filename_cursor: usize,
-    pub directory: String,
-    pub dir_cursor: usize,
+    pub filename: InputLine,
+    pub directory: InputLine,
     pub active_field: SaveAsField,
+    pub anchor_rect: Rect,
 }
 
 impl SaveAsInput {
-    pub fn new(pane_id: PaneId, base_dir: PathBuf) -> Self {
+    pub fn new(pane_id: PaneId, base_dir: PathBuf, anchor_rect: Rect) -> Self {
         let directory = abbreviate_path(&base_dir);
-        let dir_cursor = directory.len();
         Self {
             pane_id,
-            filename: String::new(),
-            filename_cursor: 0,
-            directory,
-            dir_cursor,
+            filename: InputLine::new(),
+            directory: InputLine::with_text(directory),
             active_field: SaveAsField::Filename,
+            anchor_rect,
         }
     }
 
-    /// Returns mutable references to the active field's text and cursor.
-    fn active_text_mut(&mut self) -> (&mut String, &mut usize) {
+    /// Returns a mutable reference to the active field's InputLine.
+    pub fn active_input_mut(&mut self) -> &mut InputLine {
         match self.active_field {
-            SaveAsField::Filename => (&mut self.filename, &mut self.filename_cursor),
-            SaveAsField::Directory => (&mut self.directory, &mut self.dir_cursor),
+            SaveAsField::Filename => &mut self.filename,
+            SaveAsField::Directory => &mut self.directory,
         }
     }
 
@@ -137,56 +206,23 @@ impl SaveAsInput {
     }
 
     pub fn insert_char(&mut self, ch: char) {
-        let (text, cursor) = self.active_text_mut();
-        text.insert(*cursor, ch);
-        *cursor += ch.len_utf8();
+        self.active_input_mut().insert_char(ch);
     }
 
     pub fn backspace(&mut self) {
-        let (text, cursor) = self.active_text_mut();
-        if *cursor > 0 {
-            let prev = text[..*cursor]
-                .char_indices()
-                .next_back()
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-            text.drain(prev..*cursor);
-            *cursor = prev;
-        }
+        self.active_input_mut().backspace();
     }
 
     pub fn delete_char(&mut self) {
-        let (text, cursor) = self.active_text_mut();
-        if *cursor < text.len() {
-            let next = text[*cursor..]
-                .char_indices()
-                .nth(1)
-                .map(|(i, _)| *cursor + i)
-                .unwrap_or(text.len());
-            text.drain(*cursor..next);
-        }
+        self.active_input_mut().delete_char();
     }
 
     pub fn move_cursor_left(&mut self) {
-        let (text, cursor) = self.active_text_mut();
-        if *cursor > 0 {
-            *cursor = text[..*cursor]
-                .char_indices()
-                .next_back()
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-        }
+        self.active_input_mut().move_cursor_left();
     }
 
     pub fn move_cursor_right(&mut self) {
-        let (text, cursor) = self.active_text_mut();
-        if *cursor < text.len() {
-            *cursor = text[*cursor..]
-                .char_indices()
-                .nth(1)
-                .map(|(i, _)| *cursor + i)
-                .unwrap_or(text.len());
-        }
+        self.active_input_mut().move_cursor_right();
     }
 
     /// Resolve the full save path from directory + filename.
@@ -194,12 +230,12 @@ impl SaveAsInput {
         if self.filename.is_empty() {
             return None;
         }
-        let filename_path = std::path::Path::new(&self.filename);
+        let filename_path = std::path::Path::new(&self.filename.text);
         if filename_path.is_absolute() {
-            return Some(PathBuf::from(&self.filename));
+            return Some(PathBuf::from(&self.filename.text));
         }
-        let dir = expand_tilde(&self.directory);
-        Some(PathBuf::from(dir).join(&self.filename))
+        let dir = expand_tilde(&self.directory.text);
+        Some(PathBuf::from(dir).join(&self.filename.text))
     }
 }
 
@@ -236,8 +272,7 @@ pub(crate) struct SaveConfirmState {
 // ──────────────────────────────────────────────
 
 pub(crate) struct FileFinderState {
-    pub query: String,
-    pub cursor: usize,
+    pub input: InputLine,
     pub base_dir: PathBuf,
     pub entries: Vec<PathBuf>,          // all files (relative to base_dir)
     pub filtered: Vec<usize>,           // indices into entries
@@ -249,8 +284,7 @@ impl FileFinderState {
     pub fn new(base_dir: PathBuf, entries: Vec<PathBuf>) -> Self {
         let filtered: Vec<usize> = (0..entries.len()).collect();
         Self {
-            query: String::new(),
-            cursor: 0,
+            input: InputLine::new(),
             base_dir,
             entries,
             filtered,
@@ -260,54 +294,30 @@ impl FileFinderState {
     }
 
     pub fn insert_char(&mut self, ch: char) {
-        self.query.insert(self.cursor, ch);
-        self.cursor += ch.len_utf8();
+        self.input.insert_char(ch);
         self.filter();
     }
 
     pub fn backspace(&mut self) {
-        if self.cursor > 0 {
-            let prev = self.query[..self.cursor]
-                .char_indices()
-                .next_back()
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-            self.query.drain(prev..self.cursor);
-            self.cursor = prev;
+        if self.input.cursor > 0 {
+            self.input.backspace();
             self.filter();
         }
     }
 
     pub fn delete_char(&mut self) {
-        if self.cursor < self.query.len() {
-            let next = self.query[self.cursor..]
-                .char_indices()
-                .nth(1)
-                .map(|(i, _)| self.cursor + i)
-                .unwrap_or(self.query.len());
-            self.query.drain(self.cursor..next);
+        if self.input.cursor < self.input.text.len() {
+            self.input.delete_char();
             self.filter();
         }
     }
 
     pub fn move_cursor_left(&mut self) {
-        if self.cursor > 0 {
-            self.cursor = self.query[..self.cursor]
-                .char_indices()
-                .next_back()
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-        }
+        self.input.move_cursor_left();
     }
 
     pub fn move_cursor_right(&mut self) {
-        if self.cursor < self.query.len() {
-            self.cursor = self.query[self.cursor..]
-                .char_indices()
-                .nth(1)
-                .map(|(i, _)| self.cursor + i)
-                .unwrap_or(self.query.len());
-        }
+        self.input.move_cursor_right();
     }
 
     pub fn select_up(&mut self) {
@@ -332,10 +342,10 @@ impl FileFinderState {
     }
 
     fn filter(&mut self) {
-        if self.query.is_empty() {
+        if self.input.is_empty() {
             self.filtered = (0..self.entries.len()).collect();
         } else {
-            let query_lower = self.query.to_lowercase();
+            let query_lower = self.input.text.to_lowercase();
             self.filtered = self.entries.iter().enumerate()
                 .filter(|(_, path)| {
                     let name = path.to_string_lossy().to_lowercase();
@@ -386,8 +396,7 @@ pub(crate) const GIT_SWITCHER_MAX_VISIBLE: usize = 10;
 
 pub(crate) struct GitSwitcherState {
     pub pane_id: PaneId,
-    pub query: String,
-    pub cursor: usize,
+    pub input: InputLine,
     pub mode: GitSwitcherMode,
     pub branches: Vec<tide_terminal::git::BranchInfo>,
     pub worktrees: Vec<tide_terminal::git::WorktreeInfo>,
@@ -398,6 +407,8 @@ pub(crate) struct GitSwitcherState {
     pub anchor_rect: Rect,
     /// Branch names that have a corresponding worktree
     pub worktree_branch_names: std::collections::HashSet<String>,
+    /// True when the owning terminal has a running process (hides Switch/Delete buttons)
+    pub shell_busy: bool,
 }
 
 impl GitSwitcherState {
@@ -415,8 +426,7 @@ impl GitSwitcherState {
             .collect();
         Self {
             pane_id,
-            query: String::new(),
-            cursor: 0,
+            input: InputLine::new(),
             mode,
             branches,
             worktrees,
@@ -426,6 +436,7 @@ impl GitSwitcherState {
             scroll_offset: 0,
             anchor_rect,
             worktree_branch_names,
+            shell_busy: false,
         }
     }
 
@@ -469,54 +480,30 @@ impl GitSwitcherState {
     }
 
     pub fn insert_char(&mut self, ch: char) {
-        self.query.insert(self.cursor, ch);
-        self.cursor += ch.len_utf8();
+        self.input.insert_char(ch);
         self.filter();
     }
 
     pub fn backspace(&mut self) {
-        if self.cursor > 0 {
-            let prev = self.query[..self.cursor]
-                .char_indices()
-                .next_back()
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-            self.query.drain(prev..self.cursor);
-            self.cursor = prev;
+        if self.input.cursor > 0 {
+            self.input.backspace();
             self.filter();
         }
     }
 
     pub fn delete_char(&mut self) {
-        if self.cursor < self.query.len() {
-            let next = self.query[self.cursor..]
-                .char_indices()
-                .nth(1)
-                .map(|(i, _)| self.cursor + i)
-                .unwrap_or(self.query.len());
-            self.query.drain(self.cursor..next);
+        if self.input.cursor < self.input.text.len() {
+            self.input.delete_char();
             self.filter();
         }
     }
 
     pub fn move_cursor_left(&mut self) {
-        if self.cursor > 0 {
-            self.cursor = self.query[..self.cursor]
-                .char_indices()
-                .next_back()
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-        }
+        self.input.move_cursor_left();
     }
 
     pub fn move_cursor_right(&mut self) {
-        if self.cursor < self.query.len() {
-            self.cursor = self.query[self.cursor..]
-                .char_indices()
-                .nth(1)
-                .map(|(i, _)| self.cursor + i)
-                .unwrap_or(self.query.len());
-        }
+        self.input.move_cursor_right();
     }
 
     pub fn select_up(&mut self) {
@@ -558,7 +545,7 @@ impl GitSwitcherState {
 
     /// Whether a "Create" row should appear (query non-empty and no exact match).
     pub fn has_create_row(&self) -> bool {
-        let q = self.query.trim();
+        let q = self.input.text.trim();
         if q.is_empty() {
             return false;
         }
@@ -625,8 +612,8 @@ impl GitSwitcherState {
     }
 
     fn filter(&mut self) {
-        let query_lower = self.query.to_lowercase();
-        if self.query.is_empty() {
+        let query_lower = self.input.text.to_lowercase();
+        if self.input.is_empty() {
             self.filtered_branches = (0..self.branches.len()).collect();
             self.filtered_worktrees = (0..self.worktrees.len()).collect();
         } else {
@@ -673,8 +660,7 @@ pub(crate) struct FileSwitcherGeometry {
 }
 
 pub(crate) struct FileSwitcherState {
-    pub query: String,
-    pub cursor: usize,
+    pub input: InputLine,
     pub entries: Vec<FileSwitcherEntry>,
     pub filtered: Vec<usize>,
     pub selected: usize,
@@ -711,8 +697,7 @@ impl FileSwitcherState {
         // Pre-select the active entry
         let selected = entries.iter().position(|e| e.is_active).unwrap_or(0);
         Self {
-            query: String::new(),
-            cursor: 0,
+            input: InputLine::new(),
             entries,
             filtered,
             selected,
@@ -722,20 +707,13 @@ impl FileSwitcherState {
     }
 
     pub fn insert_char(&mut self, ch: char) {
-        self.query.insert(self.cursor, ch);
-        self.cursor += ch.len_utf8();
+        self.input.insert_char(ch);
         self.filter();
     }
 
     pub fn backspace(&mut self) {
-        if self.cursor > 0 {
-            let prev = self.query[..self.cursor]
-                .char_indices()
-                .next_back()
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-            self.query.drain(prev..self.cursor);
-            self.cursor = prev;
+        if self.input.cursor > 0 {
+            self.input.backspace();
             self.filter();
         }
     }
@@ -761,10 +739,10 @@ impl FileSwitcherState {
     }
 
     fn filter(&mut self) {
-        if self.query.is_empty() {
+        if self.input.is_empty() {
             self.filtered = (0..self.entries.len()).collect();
         } else {
-            let query_lower = self.query.to_lowercase();
+            let query_lower = self.input.text.to_lowercase();
             self.filtered = self.entries.iter().enumerate()
                 .filter(|(_, e)| e.name.to_lowercase().contains(&query_lower))
                 .map(|(i, _)| i)

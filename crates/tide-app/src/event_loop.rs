@@ -126,6 +126,34 @@ impl ApplicationHandler for App {
             ..
         } = &event
         {
+            // Save-as popup: click outside → dismiss, click inside → consume
+            if self.save_as_input.is_some() {
+                if !self.save_as_contains(self.last_cursor_pos) {
+                    self.save_as_input = None;
+                }
+                self.needs_redraw = true;
+                return;
+            }
+
+            // File finder: click on item → open, click outside → dismiss
+            if self.file_finder.is_some() {
+                if let Some(idx) = self.file_finder_item_at(self.last_cursor_pos) {
+                    if let Some(ref finder) = self.file_finder {
+                        if let Some(&entry_idx) = finder.filtered.get(idx) {
+                            let path = finder.base_dir.join(&finder.entries[entry_idx]);
+                            self.close_file_finder();
+                            self.open_editor_pane(path);
+                            self.needs_redraw = true;
+                            return;
+                        }
+                    }
+                } else if !self.file_finder_contains(self.last_cursor_pos) {
+                    self.close_file_finder();
+                }
+                self.needs_redraw = true;
+                return;
+            }
+
             // Git switcher popup click handling
             if self.git_switcher.is_some() {
                 // Check button clicks first (worktree mode)
@@ -174,17 +202,6 @@ impl ApplicationHandler for App {
                 }
             }
 
-            if let Some(idx) = self.file_finder_item_at(self.last_cursor_pos) {
-                if let Some(ref finder) = self.file_finder {
-                    if let Some(&entry_idx) = finder.filtered.get(idx) {
-                        let path = finder.base_dir.join(&finder.entries[entry_idx]);
-                        self.close_file_finder();
-                        self.open_editor_pane(path);
-                        self.needs_redraw = true;
-                        return;
-                    }
-                }
-            }
         }
 
         // Handle editor panel clicks before general routing

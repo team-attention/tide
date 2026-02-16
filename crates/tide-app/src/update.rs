@@ -73,7 +73,7 @@ impl App {
                 // Re-execute search when terminal output changes
                 if terminal.backend.grid_generation() != old_gen {
                     if let Some(ref mut s) = terminal.search {
-                        if !s.query.is_empty() {
+                        if !s.input.is_empty() {
                             search::execute_search_terminal(s, &terminal.backend);
                         }
                     }

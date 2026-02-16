@@ -78,7 +78,7 @@ pub(crate) fn render_cursor_and_highlights(
                 }
                 // Render terminal search highlights
                 if let Some(ref search) = pane.search {
-                    if search.visible && !search.query.is_empty() {
+                    if search.visible && !search.input.is_empty() {
                         let cell_size = renderer.cell_size();
                         let history_size = pane.backend.history_size();
                         let display_offset = pane.backend.display_offset();
@@ -219,7 +219,7 @@ fn render_editor_search_highlights(
     p: &ThemePalette,
     search: &crate::search::SearchState,
 ) {
-    if search.visible && !search.query.is_empty() {
+    if search.visible && !search.input.is_empty() {
         let cell_size = renderer.cell_size();
         let scroll = pane.editor.scroll_offset();
         let h_scroll = pane.editor.h_scroll_offset();

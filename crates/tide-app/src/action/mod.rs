@@ -91,7 +91,9 @@ impl App {
                                 // Intercept Save on untitled files -> open save-as input
                                 if is_save && pane.editor.file_path().is_none() {
                                     let base_dir = self.resolve_base_dir();
-                                    self.save_as_input = Some(crate::SaveAsInput::new(id, base_dir));
+                                    let anchor = self.active_panel_tab_rect()
+                                        .unwrap_or_else(|| tide_core::Rect::new(0.0, 0.0, 0.0, 0.0));
+                                    self.save_as_input = Some(crate::SaveAsInput::new(id, base_dir, anchor));
                                     return;
                                 }
                                 let was_modified = pane.editor.is_modified();

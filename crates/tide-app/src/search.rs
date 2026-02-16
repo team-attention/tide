@@ -1,5 +1,6 @@
 // Search state and logic for Cmd+F search in terminal and editor panes.
 
+use crate::ui_state::InputLine;
 use tide_terminal::Terminal;
 
 /// A single match location.
@@ -12,8 +13,7 @@ pub struct SearchMatch {
 
 /// Search state for a single pane.
 pub struct SearchState {
-    pub query: String,
-    pub cursor: usize,            // cursor position within query string
+    pub input: InputLine,
     pub matches: Vec<SearchMatch>,
     pub current: Option<usize>,   // index into matches
     pub visible: bool,
@@ -22,60 +22,10 @@ pub struct SearchState {
 impl SearchState {
     pub fn new() -> Self {
         Self {
-            query: String::new(),
-            cursor: 0,
+            input: InputLine::new(),
             matches: Vec::new(),
             current: None,
             visible: true,
-        }
-    }
-
-    pub fn insert_char(&mut self, ch: char) {
-        self.query.insert(self.cursor, ch);
-        self.cursor += ch.len_utf8();
-    }
-
-    pub fn backspace(&mut self) {
-        if self.cursor > 0 {
-            // Find the previous char boundary
-            let prev = self.query[..self.cursor]
-                .char_indices()
-                .next_back()
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-            self.query.drain(prev..self.cursor);
-            self.cursor = prev;
-        }
-    }
-
-    pub fn delete_char(&mut self) {
-        if self.cursor < self.query.len() {
-            let next = self.query[self.cursor..]
-                .char_indices()
-                .nth(1)
-                .map(|(i, _)| self.cursor + i)
-                .unwrap_or(self.query.len());
-            self.query.drain(self.cursor..next);
-        }
-    }
-
-    pub fn move_cursor_left(&mut self) {
-        if self.cursor > 0 {
-            self.cursor = self.query[..self.cursor]
-                .char_indices()
-                .next_back()
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-        }
-    }
-
-    pub fn move_cursor_right(&mut self) {
-        if self.cursor < self.query.len() {
-            self.cursor = self.query[self.cursor..]
-                .char_indices()
-                .nth(1)
-                .map(|(i, _)| self.cursor + i)
-                .unwrap_or(self.query.len());
         }
     }
 
@@ -123,11 +73,11 @@ pub fn execute_search_terminal(state: &mut SearchState, terminal: &Terminal) {
     state.matches.clear();
     state.current = None;
 
-    if state.query.is_empty() {
+    if state.input.is_empty() {
         return;
     }
 
-    let results = terminal.search_buffer(&state.query);
+    let results = terminal.search_buffer(&state.input.text);
     state.matches = results
         .into_iter()
         .map(|(line, col, len)| SearchMatch { line, col, len })
@@ -155,12 +105,12 @@ pub fn execute_search_editor(state: &mut SearchState, lines: &[String]) {
     state.matches.clear();
     state.current = None;
 
-    if state.query.is_empty() {
+    if state.input.is_empty() {
         return;
     }
 
-    let query_lower = state.query.to_lowercase();
-    let query_char_len = state.query.chars().count();
+    let query_lower = state.input.text.to_lowercase();
+    let query_char_len = state.input.text.chars().count();
     for (line_idx, line) in lines.iter().enumerate() {
         let line_lower = line.to_lowercase();
         let mut start = 0;
