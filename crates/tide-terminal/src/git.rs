@@ -102,6 +102,174 @@ pub fn list_branches(cwd: &Path) -> Vec<BranchInfo> {
         .collect()
 }
 
+/// Information about a git worktree.
+#[derive(Debug, Clone)]
+pub struct WorktreeInfo {
+    pub path: std::path::PathBuf,
+    pub branch: Option<String>,
+    pub commit: String,
+    pub is_main: bool,
+    pub is_current: bool,
+}
+
+/// List all worktrees for the repository containing `cwd`.
+pub fn list_worktrees(cwd: &Path) -> Vec<WorktreeInfo> {
+    let text = match run_git(&["worktree", "list", "--porcelain"], cwd) {
+        Some(t) => t,
+        None => return Vec::new(),
+    };
+
+    // Determine the canonical path of `cwd` for is_current detection
+    let cwd_canonical = std::fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
+
+    // Determine the main worktree path using git-common-dir (more reliable than positional)
+    let main_wt_canonical = run_git(&["rev-parse", "--git-common-dir"], cwd)
+        .map(|s| {
+            let common = std::path::PathBuf::from(s.trim());
+            // git-common-dir returns the .git dir; its parent is the main worktree
+            let abs = if common.is_absolute() { common } else { cwd.join(common) };
+            std::fs::canonicalize(abs.parent().unwrap_or(&abs))
+                .unwrap_or_else(|_| abs.parent().unwrap_or(&abs).to_path_buf())
+        });
+
+    let mut worktrees = Vec::new();
+    let mut current_path: Option<std::path::PathBuf> = None;
+    let mut current_commit = String::new();
+    let mut current_branch: Option<String> = None;
+
+    let flush = |path: std::path::PathBuf,
+                 branch: Option<String>,
+                 commit: String,
+                 main_canon: &Option<std::path::PathBuf>,
+                 cwd_canon: &std::path::PathBuf| -> WorktreeInfo {
+        let path_canonical = std::fs::canonicalize(&path)
+            .unwrap_or_else(|_| path.clone());
+        let is_main = main_canon.as_ref()
+            .map(|m| *m == path_canonical)
+            .unwrap_or(false);
+        // Check if cwd is within this worktree (handles subdirectories)
+        let is_current = cwd_canon.starts_with(&path_canonical);
+        WorktreeInfo { path, branch, commit, is_main, is_current }
+    };
+
+    for line in text.lines() {
+        if let Some(path_str) = line.strip_prefix("worktree ") {
+            // Flush previous entry
+            if let Some(path) = current_path.take() {
+                worktrees.push(flush(
+                    path, current_branch.take(),
+                    std::mem::take(&mut current_commit),
+                    &main_wt_canonical, &cwd_canonical,
+                ));
+            }
+            current_path = Some(std::path::PathBuf::from(path_str));
+            current_commit = String::new();
+            current_branch = None;
+        } else if let Some(hash) = line.strip_prefix("HEAD ") {
+            current_commit = hash.to_string();
+        } else if let Some(branch_ref) = line.strip_prefix("branch ") {
+            // branch refs/heads/main → "main"
+            current_branch = Some(
+                branch_ref
+                    .strip_prefix("refs/heads/")
+                    .unwrap_or(branch_ref)
+                    .to_string(),
+            );
+        }
+        // "bare", "detached", blank lines are skipped
+    }
+
+    // Flush last entry
+    if let Some(path) = current_path.take() {
+        worktrees.push(flush(
+            path, current_branch.take(), current_commit,
+            &main_wt_canonical, &cwd_canonical,
+        ));
+    }
+
+    worktrees
+}
+
+/// Add a new worktree. If `new_branch` is true, creates a new branch.
+pub fn add_worktree(
+    cwd: &Path,
+    path: &Path,
+    branch: &str,
+    new_branch: bool,
+) -> Result<(), String> {
+    let path_str = path.to_string_lossy().to_string();
+    let mut args = vec!["worktree", "add"];
+    if new_branch {
+        args.push("-b");
+        args.push(branch);
+        args.push(&path_str);
+    } else {
+        args.push(&path_str);
+        args.push(branch);
+    }
+
+    let output = Command::new("git")
+        .args(&args)
+        .current_dir(cwd)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        Err(stderr.trim().to_string())
+    }
+}
+
+/// Remove a worktree. If `force` is true, uses --force flag.
+pub fn remove_worktree(cwd: &Path, path: &Path, force: bool) -> Result<(), String> {
+    let path_str = path.to_string_lossy().to_string();
+    let mut args = vec!["worktree", "remove"];
+    if force {
+        args.push("--force");
+    }
+    args.push(&path_str);
+
+    let output = Command::new("git")
+        .args(&args)
+        .current_dir(cwd)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        Err(stderr.trim().to_string())
+    }
+}
+
+/// Count worktrees for a repo (lightweight, for badge display).
+pub fn count_worktrees(cwd: &Path) -> usize {
+    let text = match run_git(&["worktree", "list", "--porcelain"], cwd) {
+        Some(t) => t,
+        None => return 0,
+    };
+    text.lines().filter(|l| l.starts_with("worktree ")).count()
+}
+
+/// Check whether a local branch with the given name exists.
+pub fn branch_exists(cwd: &Path, branch: &str) -> bool {
+    run_git(&["rev-parse", "--verify", &format!("refs/heads/{}", branch)], cwd).is_some()
+}
+
+/// Get the root directory of the repository (the top-level working directory).
+pub fn repo_root(cwd: &Path) -> Option<std::path::PathBuf> {
+    let text = run_git(&["rev-parse", "--show-toplevel"], cwd)?;
+    let root = text.trim();
+    if root.is_empty() { None } else { Some(std::path::PathBuf::from(root)) }
+}
+
 fn detect_status(cwd: &Path) -> GitStatus {
     let mut status = GitStatus::default();
 

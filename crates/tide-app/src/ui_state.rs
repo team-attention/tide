@@ -5,6 +5,25 @@ use std::path::PathBuf;
 use tide_core::{PaneId, Rect};
 use crate::theme::{TAB_BAR_HEIGHT, PANE_PADDING, PANEL_TAB_HEIGHT, PANE_GAP, PANEL_TAB_WIDTH, PANEL_TAB_GAP, PANEL_TAB_CLOSE_SIZE, PANEL_TAB_CLOSE_PADDING};
 
+/// Simple shell escaping: wrap in single quotes if the string contains any shell metacharacters.
+pub(crate) fn shell_escape(s: &str) -> String {
+    // Reject strings with control characters that could inject commands
+    if s.bytes().any(|b| b < 0x20 && b != b'\t') {
+        return "''".to_string();
+    }
+    if s.contains(' ') || s.contains('\'') || s.contains('"') || s.contains('\\')
+        || s.contains('$') || s.contains('`') || s.contains('!') || s.contains('(')
+        || s.contains(')') || s.contains('&') || s.contains(';') || s.contains('|')
+        || s.contains('*') || s.contains('?') || s.contains('[') || s.contains(']')
+        || s.contains('{') || s.contains('}') || s.contains('#') || s.contains('~')
+        || s.contains('\t')
+    {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    } else {
+        s.to_string()
+    }
+}
+
 // ──────────────────────────────────────────────
 // Layout side: which edge a sidebar/dock component is on
 // ──────────────────────────────────────────────
@@ -264,32 +283,123 @@ impl FileFinderState {
 }
 
 // ──────────────────────────────────────────────
-// Branch switcher popup state
+// Git switcher popup state (integrated branch + worktree)
 // ──────────────────────────────────────────────
 
-pub(crate) struct BranchSwitcherState {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GitSwitcherMode {
+    Branches,
+    Worktrees,
+}
+
+/// Button types available in the worktree tab of the git switcher popup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WorktreeButton {
+    Switch(usize),     // index into filtered_worktrees
+    NewPane(usize),    // index into filtered_worktrees
+    Delete(usize),     // index into filtered_worktrees
+    NewWorktree,       // bottom action button
+}
+
+/// Pre-computed popup geometry for the git switcher, shared between rendering and hit-testing.
+pub(crate) struct GitSwitcherGeometry {
+    pub popup_x: f32,
+    pub popup_y: f32,
+    pub popup_w: f32,
+    pub popup_h: f32,
+    pub input_h: f32,
+    pub tab_h: f32,
+    pub line_height: f32,
+    pub list_top: f32,
+    pub max_visible: usize,
+    pub new_wt_btn_h: f32,
+}
+
+pub(crate) const GIT_SWITCHER_POPUP_W: f32 = 320.0;
+pub(crate) const GIT_SWITCHER_MAX_VISIBLE: usize = 10;
+
+pub(crate) struct GitSwitcherState {
     pub pane_id: PaneId,
     pub query: String,
     pub cursor: usize,
+    pub mode: GitSwitcherMode,
     pub branches: Vec<tide_terminal::git::BranchInfo>,
-    pub filtered: Vec<usize>,
+    pub worktrees: Vec<tide_terminal::git::WorktreeInfo>,
+    pub filtered_branches: Vec<usize>,
+    pub filtered_worktrees: Vec<usize>,
     pub selected: usize,
     pub scroll_offset: usize,
     pub anchor_rect: Rect,
+    /// Branch names that have a corresponding worktree
+    pub worktree_branch_names: std::collections::HashSet<String>,
 }
 
-impl BranchSwitcherState {
-    pub fn new(pane_id: PaneId, branches: Vec<tide_terminal::git::BranchInfo>, anchor_rect: Rect) -> Self {
-        let filtered: Vec<usize> = (0..branches.len()).collect();
+impl GitSwitcherState {
+    pub fn new(
+        pane_id: PaneId,
+        mode: GitSwitcherMode,
+        branches: Vec<tide_terminal::git::BranchInfo>,
+        worktrees: Vec<tide_terminal::git::WorktreeInfo>,
+        anchor_rect: Rect,
+    ) -> Self {
+        let filtered_branches: Vec<usize> = (0..branches.len()).collect();
+        let filtered_worktrees: Vec<usize> = (0..worktrees.len()).collect();
+        let worktree_branch_names: std::collections::HashSet<String> = worktrees.iter()
+            .filter_map(|wt| wt.branch.clone())
+            .collect();
         Self {
             pane_id,
             query: String::new(),
             cursor: 0,
+            mode,
             branches,
-            filtered,
+            worktrees,
+            filtered_branches,
+            filtered_worktrees,
             selected: 0,
             scroll_offset: 0,
             anchor_rect,
+            worktree_branch_names,
+        }
+    }
+
+    /// Compute popup geometry given cell size and logical window dimensions.
+    pub fn geometry(&self, cell_height: f32, logical_width: f32, logical_height: f32) -> GitSwitcherGeometry {
+        let line_height = cell_height + 4.0;
+        let tab_h = cell_height + 8.0;
+        let input_h = cell_height + 10.0;
+        let popup_w = GIT_SWITCHER_POPUP_W;
+        let popup_x = self.anchor_rect.x.min(logical_width - popup_w - 4.0).max(0.0);
+        let current_len = self.current_filtered_len();
+        let max_visible = GIT_SWITCHER_MAX_VISIBLE.min(current_len);
+        let has_new_wt_btn = self.mode == GitSwitcherMode::Worktrees;
+        let new_wt_btn_h = if has_new_wt_btn { line_height + 4.0 } else { 0.0 };
+        // input_y = popup_y + 2.0, tab_y = input_y + input_h, tab_sep_y = tab_y + tab_h
+        // list_top = tab_sep_y + 2.0 = popup_y + 2.0 + input_h + tab_h + 2.0
+        let content_h = 4.0 + input_h + tab_h + 2.0 + max_visible as f32 * line_height + new_wt_btn_h + 4.0;
+        // Vertical clamping: prefer below anchor, flip above if not enough space
+        let below_y = self.anchor_rect.y + self.anchor_rect.height + 4.0;
+        let popup_y = if below_y + content_h > logical_height {
+            // Try above the anchor
+            let above_y = self.anchor_rect.y - content_h - 4.0;
+            if above_y >= 0.0 { above_y } else { below_y.min(logical_height - content_h).max(0.0) }
+        } else {
+            below_y
+        };
+        let popup_h = content_h;
+        let list_top = popup_y + 2.0 + input_h + tab_h + 2.0;
+
+        GitSwitcherGeometry {
+            popup_x,
+            popup_y,
+            popup_w,
+            popup_h,
+            input_h,
+            tab_h,
+            line_height,
+            list_top,
+            max_visible,
+            new_wt_btn_h,
         }
     }
 
@@ -312,6 +422,38 @@ impl BranchSwitcherState {
         }
     }
 
+    pub fn delete_char(&mut self) {
+        if self.cursor < self.query.len() {
+            let next = self.query[self.cursor..]
+                .char_indices()
+                .nth(1)
+                .map(|(i, _)| self.cursor + i)
+                .unwrap_or(self.query.len());
+            self.query.drain(self.cursor..next);
+            self.filter();
+        }
+    }
+
+    pub fn move_cursor_left(&mut self) {
+        if self.cursor > 0 {
+            self.cursor = self.query[..self.cursor]
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+        }
+    }
+
+    pub fn move_cursor_right(&mut self) {
+        if self.cursor < self.query.len() {
+            self.cursor = self.query[self.cursor..]
+                .char_indices()
+                .nth(1)
+                .map(|(i, _)| self.cursor + i)
+                .unwrap_or(self.query.len());
+        }
+    }
+
     pub fn select_up(&mut self) {
         if self.selected > 0 {
             self.selected -= 1;
@@ -322,23 +464,80 @@ impl BranchSwitcherState {
     }
 
     pub fn select_down(&mut self) {
-        if !self.filtered.is_empty() && self.selected + 1 < self.filtered.len() {
+        let len = self.current_filtered_len();
+        if len > 0 && self.selected + 1 < len {
             self.selected += 1;
+            if self.selected >= self.scroll_offset + GIT_SWITCHER_MAX_VISIBLE {
+                self.scroll_offset = self.selected.saturating_sub(GIT_SWITCHER_MAX_VISIBLE - 1);
+            }
         }
     }
 
+    pub fn toggle_mode(&mut self) {
+        self.mode = match self.mode {
+            GitSwitcherMode::Branches => GitSwitcherMode::Worktrees,
+            GitSwitcherMode::Worktrees => GitSwitcherMode::Branches,
+        };
+        self.selected = 0;
+        self.scroll_offset = 0;
+        self.filter();
+    }
+
     pub fn selected_branch(&self) -> Option<&tide_terminal::git::BranchInfo> {
-        let idx = *self.filtered.get(self.selected)?;
+        let idx = *self.filtered_branches.get(self.selected)?;
         self.branches.get(idx)
     }
 
+    pub fn selected_worktree(&self) -> Option<&tide_terminal::git::WorktreeInfo> {
+        let idx = *self.filtered_worktrees.get(self.selected)?;
+        self.worktrees.get(idx)
+    }
+
+    pub fn current_filtered_len(&self) -> usize {
+        match self.mode {
+            GitSwitcherMode::Branches => self.filtered_branches.len(),
+            GitSwitcherMode::Worktrees => self.filtered_worktrees.len(),
+        }
+    }
+
+    /// Refresh the worktree list (e.g. after add/delete) while preserving selection position.
+    pub fn refresh_worktrees(&mut self, cwd: &std::path::Path) {
+        self.worktrees = tide_terminal::git::list_worktrees(cwd);
+        self.worktree_branch_names = self.worktrees.iter()
+            .filter_map(|wt| wt.branch.clone())
+            .collect();
+        let prev_selected = self.selected;
+        let prev_scroll = self.scroll_offset;
+        self.filter();
+        // Clamp selected index to new list length, preserving position
+        let len = self.current_filtered_len();
+        if len > 0 && prev_selected < len {
+            self.selected = prev_selected;
+            self.scroll_offset = prev_scroll.min(len.saturating_sub(GIT_SWITCHER_MAX_VISIBLE));
+        } else if len > 0 {
+            self.selected = len - 1;
+            self.scroll_offset = len.saturating_sub(GIT_SWITCHER_MAX_VISIBLE);
+        }
+    }
+
     fn filter(&mut self) {
+        let query_lower = self.query.to_lowercase();
         if self.query.is_empty() {
-            self.filtered = (0..self.branches.len()).collect();
+            self.filtered_branches = (0..self.branches.len()).collect();
+            self.filtered_worktrees = (0..self.worktrees.len()).collect();
         } else {
-            let query_lower = self.query.to_lowercase();
-            self.filtered = self.branches.iter().enumerate()
+            self.filtered_branches = self.branches.iter().enumerate()
                 .filter(|(_, b)| b.name.to_lowercase().contains(&query_lower))
+                .map(|(i, _)| i)
+                .collect();
+            self.filtered_worktrees = self.worktrees.iter().enumerate()
+                .filter(|(_, wt)| {
+                    let branch_match = wt.branch.as_ref()
+                        .map(|b| b.to_lowercase().contains(&query_lower))
+                        .unwrap_or(false);
+                    let path_match = wt.path.to_string_lossy().to_lowercase().contains(&query_lower);
+                    branch_match || path_match
+                })
                 .map(|(i, _)| i)
                 .collect();
         }
