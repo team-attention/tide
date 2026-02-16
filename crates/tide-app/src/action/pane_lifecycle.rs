@@ -4,7 +4,7 @@ use tide_core::{LayoutEngine, Renderer};
 
 use crate::editor_pane::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
-use crate::App;
+use crate::{App, PaneAreaMode};
 
 impl App {
     pub(crate) fn create_terminal_pane(&mut self, id: tide_core::PaneId, cwd: Option<std::path::PathBuf>) {
@@ -271,9 +271,28 @@ impl App {
             return;
         }
 
-        // Clear maximize if the maximized pane is being closed
-        if self.maximized_pane == Some(pane_id) {
-            self.maximized_pane = None;
+        // Handle stacked mode: advance to next tab or fall back to Split
+        if let PaneAreaMode::Stacked(active) = self.pane_area_mode {
+            if active == pane_id {
+                let pane_ids = self.layout.pane_ids();
+                let pos = pane_ids.iter().position(|&id| id == pane_id);
+                // Try to advance to an adjacent pane
+                let next = pos.and_then(|p| {
+                    if p + 1 < pane_ids.len() {
+                        Some(pane_ids[p + 1])
+                    } else if p > 0 {
+                        Some(pane_ids[p - 1])
+                    } else {
+                        None
+                    }
+                });
+                if let Some(next_id) = next {
+                    self.pane_area_mode = PaneAreaMode::Stacked(next_id);
+                } else {
+                    // Last pane — exit Stacked mode
+                    self.pane_area_mode = PaneAreaMode::Split;
+                }
+            }
         }
 
         let remaining = self.layout.pane_ids();

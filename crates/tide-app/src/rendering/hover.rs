@@ -3,7 +3,7 @@ use tide_core::{Rect, Renderer};
 use crate::drag_drop;
 use crate::drag_drop::PaneDragState;
 use crate::theme::*;
-use crate::App;
+use crate::{App, PaneAreaMode};
 
 
 /// Render hover highlights (overlay layer) for the currently hovered UI element.
@@ -34,6 +34,27 @@ pub(crate) fn render_hover(
                                 let row_rect = Rect::new(ft_rect.x, y, ft_rect.width, line_height);
                                 renderer.draw_rect(row_rect, p.hover_file_tree);
                             }
+                        }
+                    }
+                }
+                drag_drop::HoverTarget::StackedTab(tab_id) => {
+                    // Highlight stacked tab (only inactive tabs, active already has background)
+                    if let PaneAreaMode::Stacked(active) = app.pane_area_mode {
+                        if active != *tab_id {
+                            if let Some(geo) = app.stacked_tab_bar_geometry() {
+                                let pane_ids = app.layout.pane_ids();
+                                if let Some(idx) = pane_ids.iter().position(|&id| id == *tab_id) {
+                                    renderer.draw_rect(geo.tab_rect(idx), p.hover_tab);
+                                }
+                            }
+                        }
+                    }
+                }
+                drag_drop::HoverTarget::StackedTabClose(tab_id) => {
+                    if let Some(geo) = app.stacked_tab_bar_geometry() {
+                        let pane_ids = app.layout.pane_ids();
+                        if let Some(idx) = pane_ids.iter().position(|&id| id == *tab_id) {
+                            renderer.draw_rect(geo.close_rect(idx), p.hover_close);
                         }
                     }
                 }
@@ -71,7 +92,7 @@ pub(crate) fn render_hover(
                         let tab_start_x = panel_rect.x + PANE_PADDING - app.panel_tab_scroll;
                         if let Some(idx) = editor_panel_tabs.iter().position(|&id| id == *tab_id) {
                             let tx = tab_start_x + idx as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
-                            let close_x = tx + PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - 4.0;
+                            let close_x = tx + PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - PANEL_TAB_CLOSE_PADDING;
                             let close_y = tab_bar_top + (PANEL_TAB_HEIGHT - PANEL_TAB_CLOSE_SIZE) / 2.0;
                             let close_rect = Rect::new(close_x, close_y, PANEL_TAB_CLOSE_SIZE, PANEL_TAB_CLOSE_SIZE);
                             renderer.draw_rect(close_rect, p.hover_close);
