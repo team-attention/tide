@@ -339,7 +339,8 @@ impl App {
         if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&pane_id) {
             if pane.editor.file_path().is_none() {
                 // Untitled file -> open save-as input
-                self.save_as_input = Some(crate::SaveAsInput::new(pane_id));
+                let base_dir = self.resolve_base_dir();
+                self.save_as_input = Some(crate::SaveAsInput::new(pane_id, base_dir));
                 return;
             }
             if let Err(e) = pane.editor.buffer.save() {

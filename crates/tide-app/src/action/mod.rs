@@ -90,7 +90,8 @@ impl App {
                                 let is_save = matches!(action, tide_editor::EditorActionKind::Save);
                                 // Intercept Save on untitled files -> open save-as input
                                 if is_save && pane.editor.file_path().is_none() {
-                                    self.save_as_input = Some(crate::SaveAsInput::new(id));
+                                    let base_dir = self.resolve_base_dir();
+                                    self.save_as_input = Some(crate::SaveAsInput::new(id, base_dir));
                                     return;
                                 }
                                 let was_modified = pane.editor.is_modified();

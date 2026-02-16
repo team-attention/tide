@@ -336,3 +336,16 @@ pub const TITLEBAR_HEIGHT: f32 = 28.0;
 pub const BADGE_PADDING_H: f32 = 6.0;
 pub const BADGE_GAP: f32 = 4.0;
 pub const BADGE_RADIUS: f32 = 3.0;
+
+// ── Popup layout constants ──
+pub const POPUP_INPUT_PADDING: f32 = 10.0;    // 입력 필드 높이 = cell_h + 이 값
+pub const POPUP_LINE_EXTRA: f32 = 4.0;        // 리스트 줄 높이 = cell_h + 이 값
+pub const POPUP_TEXT_INSET: f32 = 8.0;        // 팝업 내부 텍스트 좌우 여백
+pub const POPUP_BORDER_WIDTH: f32 = 1.0;      // 팝업 테두리 두께
+pub const POPUP_SEPARATOR: f32 = 1.0;         // 구분선 두께
+pub const POPUP_SEPARATOR_INSET: f32 = 4.0;   // 구분선 좌우 인셋
+pub const POPUP_SELECTED_INSET: f32 = 2.0;    // 선택 하이라이트 좌우 인셋
+pub const POPUP_MAX_VISIBLE: usize = 10;      // 리스트 최대 표시 항목
+pub const CURSOR_BEAM_WIDTH: f32 = 1.5;       // 텍스트 커서 beam 너비
+pub const FILE_SWITCHER_POPUP_W: f32 = 260.0; // 파일 스위처 팝업 너비
+pub const SAVE_AS_POPUP_W: f32 = 400.0;       // Save-as 팝업 최대 너비

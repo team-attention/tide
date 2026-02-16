@@ -85,7 +85,7 @@ impl App {
 
         // Search input area: top of panel
         let input_y = panel_rect.y + PANE_PADDING + 8.0;
-        let input_h = cell_size.height + 12.0;
+        let input_h = cell_size.height + POPUP_INPUT_PADDING;
         let list_top = input_y + input_h + 8.0;
 
         if pos.y < list_top || pos.x < panel_rect.x || pos.x > panel_rect.x + panel_rect.width {
@@ -272,20 +272,14 @@ impl App {
     pub(crate) fn file_switcher_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
         let fs = self.file_switcher.as_ref()?;
         let cell_size = self.renderer.as_ref()?.cell_size();
-        let line_height = cell_size.height + 4.0;
+        let geo = fs.geometry(cell_size.height);
 
-        let popup_w = 260.0_f32;
-        let popup_x = fs.anchor_rect.x;
-        let popup_y = fs.anchor_rect.y + fs.anchor_rect.height + 4.0;
-        let input_h = cell_size.height + 10.0;
-        let list_top = popup_y + input_h;
-
-        if pos.x < popup_x || pos.x > popup_x + popup_w || pos.y < list_top {
+        if pos.x < geo.popup_x || pos.x > geo.popup_x + geo.popup_w || pos.y < geo.list_top {
             return None;
         }
 
-        let rel_y = pos.y - list_top;
-        let idx = (rel_y / line_height) as usize + fs.scroll_offset;
+        let rel_y = pos.y - geo.list_top;
+        let idx = (rel_y / geo.line_height) as usize + fs.scroll_offset;
         if idx < fs.filtered.len() {
             Some(idx)
         } else {
@@ -296,16 +290,9 @@ impl App {
     /// Check if a position is inside the file switcher popup area.
     pub(crate) fn file_switcher_contains(&self, pos: tide_core::Vec2) -> bool {
         if let Some(ref fs) = self.file_switcher {
-            let cell_size = self.renderer.as_ref().map(|r| r.cell_size());
-            if let Some(cs) = cell_size {
-                let popup_w = 260.0_f32;
-                let popup_x = fs.anchor_rect.x;
-                let popup_y = fs.anchor_rect.y + fs.anchor_rect.height + 4.0;
-                let line_height = cs.height + 4.0;
-                let input_h = cs.height + 10.0;
-                let max_visible = 10.min(fs.filtered.len());
-                let popup_h = input_h + max_visible as f32 * line_height + 8.0;
-                let popup_rect = Rect::new(popup_x, popup_y, popup_w, popup_h);
+            if let Some(cs) = self.renderer.as_ref().map(|r| r.cell_size()) {
+                let geo = fs.geometry(cs.height);
+                let popup_rect = Rect::new(geo.popup_x, geo.popup_y, geo.popup_w, geo.popup_h);
                 return popup_rect.contains(pos);
             }
         }
