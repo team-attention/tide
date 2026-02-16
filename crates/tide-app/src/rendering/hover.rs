@@ -139,7 +139,7 @@ pub(crate) fn render_hover(
                         } else {
                             ft_rect.x - PANE_GAP
                         };
-                        let border_rect = Rect::new(border_x, 0.0, 4.0, logical.height);
+                        let border_rect = Rect::new(border_x, ft_rect.y, 4.0, ft_rect.height);
                         renderer.draw_rect(border_rect, p.hover_panel_border);
                     }
                 }
@@ -150,7 +150,7 @@ pub(crate) fn render_hover(
                         } else {
                             panel_rect.x + panel_rect.width
                         };
-                        let border_rect = Rect::new(border_x, 0.0, 4.0, logical.height);
+                        let border_rect = Rect::new(border_x, panel_rect.y, 4.0, panel_rect.height);
                         renderer.draw_rect(border_rect, p.hover_panel_border);
                     }
                 }

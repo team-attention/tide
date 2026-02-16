@@ -7,6 +7,11 @@ use crate::theme::*;
 use crate::ui::file_icon;
 use crate::App;
 
+/// Sum of display widths for characters in `s`, treating wide (CJK) chars as 2 columns.
+fn visual_width(s: &str) -> usize {
+    s.chars().map(|c| UnicodeWidthChar::width(c).unwrap_or(1)).sum()
+}
+
 
 /// Render all overlay UI elements on the top layer: search bars, notification bars,
 /// save-as inline edit, file finder, git switcher, and file switcher.
@@ -120,11 +125,7 @@ fn render_search_bars(
 
         // Text cursor (beam) — only when focused
         if *is_focused {
-            let cursor_visual_cols: usize = query[..*cursor_pos]
-                .chars()
-                .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
-                .sum();
-            let cx = text_x + cursor_visual_cols as f32 * cell_size.width;
+            let cx = text_x + visual_width(&query[..*cursor_pos]) as f32 * cell_size.width;
             let cursor_color = p.cursor_accent;
             renderer.draw_top_rect(Rect::new(cx, text_y, 1.5, cell_size.height), cursor_color);
         }
@@ -334,11 +335,7 @@ fn render_save_as(
                 );
 
                 // Cursor beam
-                let cursor_visual_cols: usize = save_as.query[..save_as.cursor]
-                    .chars()
-                    .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
-                    .sum();
-                let cx = tx + 12.0 + cursor_visual_cols as f32 * cell_size.width;
+                let cx = tx + 12.0 + visual_width(&save_as.query[..save_as.cursor]) as f32 * cell_size.width;
                 if cx >= clip.x && cx <= clip.x + clip.width {
                     renderer.draw_top_rect(
                         Rect::new(cx, text_y, 1.5, cell_height),
@@ -439,11 +436,7 @@ fn render_file_finder(
         );
 
         // Cursor beam
-        let cursor_visual_cols: usize = finder.query[..finder.cursor]
-            .chars()
-            .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
-            .sum();
-        let cx = text_x + cursor_visual_cols as f32 * cell_size.width;
+        let cx = text_x + visual_width(&finder.query[..finder.cursor]) as f32 * cell_size.width;
         renderer.draw_top_rect(
             Rect::new(cx, query_y, 1.5, cell_height),
             p.cursor_accent,
@@ -601,11 +594,7 @@ fn render_git_switcher(
         renderer.draw_top_text(&gs.query, Vec2::new(text_x, text_y), text_style, input_clip);
     }
     // Cursor beam
-    let cursor_visual_cols: usize = gs.query[..gs.cursor]
-        .chars()
-        .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
-        .sum();
-    let cx = text_x + cursor_visual_cols as f32 * cell_size.width;
+    let cx = text_x + visual_width(&gs.query[..gs.cursor]) as f32 * cell_size.width;
     renderer.draw_top_rect(Rect::new(cx, text_y, 1.5, cell_height), p.cursor_accent);
 
     // Tab bar
@@ -974,11 +963,7 @@ fn render_file_switcher(
             );
         }
         // Cursor beam
-        let cursor_visual_cols: usize = fs.query[..fs.cursor]
-            .chars()
-            .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
-            .sum();
-        let cx = text_x + cursor_visual_cols as f32 * cell_size.width;
+        let cx = text_x + visual_width(&fs.query[..fs.cursor]) as f32 * cell_size.width;
         renderer.draw_top_rect(
             Rect::new(cx, text_y, 1.5, cell_height),
             p.cursor_accent,
