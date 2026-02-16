@@ -1,10 +1,10 @@
-use tide_core::{FileTreeSource, LayoutEngine, Rect, Renderer, SplitDirection, Vec2};
+use tide_core::{FileTreeSource, LayoutEngine, Rect, Renderer, SplitDirection, TerminalBackend, Vec2};
 
 use crate::drag_drop::{DropDestination, HoverTarget};
 use crate::header::{HeaderHitAction, HeaderHitZone};
 use crate::pane::{PaneKind, Selection};
 use crate::theme::*;
-use crate::{App, BranchSwitcherState};
+use crate::{App, GitSwitcherMode, GitSwitcherState, shell_escape};
 
 impl App {
     /// Convert a pixel position to a terminal cell (row, col) within a pane's content area.
@@ -148,29 +148,12 @@ impl App {
                         return true;
                     }
                     HeaderHitAction::GitBranch => {
-                        if let Some(PaneKind::Terminal(pane)) = self.panes.get(&zone.pane_id) {
-                            if pane.shell_idle {
-                                // Shell idle → open branch switcher popup
-                                let cwd = pane.cwd.clone();
-                                let pane_id = zone.pane_id;
-                                let anchor_rect = zone.rect;
-                                if let Some(cwd) = cwd {
-                                    let branches = tide_terminal::git::list_branches(&cwd);
-                                    if !branches.is_empty() {
-                                        self.branch_switcher = Some(BranchSwitcherState::new(
-                                            pane_id, branches, anchor_rect,
-                                        ));
-                                    }
-                                }
-                            } else {
-                                // Process running → copy branch name to clipboard
-                                if let Some(ref git) = pane.git_info {
-                                    if let Ok(mut cb) = arboard::Clipboard::new() {
-                                        let _ = cb.set_text(&git.branch);
-                                    }
-                                }
-                            }
-                        }
+                        self.open_git_switcher(zone.pane_id, GitSwitcherMode::Branches, zone.rect);
+                        self.needs_redraw = true;
+                        return true;
+                    }
+                    HeaderHitAction::GitWorktree => {
+                        self.open_git_switcher(zone.pane_id, GitSwitcherMode::Worktrees, zone.rect);
                         self.needs_redraw = true;
                         return true;
                     }
@@ -520,6 +503,132 @@ impl App {
         self.pane_generations.remove(&pane_id);
         self.needs_redraw = true;
         true
+    }
+
+    /// Open the git switcher popup in the given mode, or copy branch name if a process is running.
+    /// Clicking the same badge again closes the popup (toggle behavior).
+    fn open_git_switcher(&mut self, pane_id: tide_core::PaneId, mode: GitSwitcherMode, anchor_rect: Rect) {
+        // Toggle: close if already open for the same pane and mode
+        if let Some(ref gs) = self.git_switcher {
+            if gs.pane_id == pane_id && gs.mode == mode {
+                self.git_switcher = None;
+                return;
+            }
+        }
+        if let Some(PaneKind::Terminal(pane)) = self.panes.get(&pane_id) {
+            if pane.shell_idle {
+                if let Some(ref cwd) = pane.cwd {
+                    let branches = tide_terminal::git::list_branches(cwd);
+                    let worktrees = tide_terminal::git::list_worktrees(cwd);
+                    self.git_switcher = Some(GitSwitcherState::new(
+                        pane_id, mode, branches, worktrees, anchor_rect,
+                    ));
+                }
+            } else if mode == GitSwitcherMode::Branches {
+                // Process running → copy branch name to clipboard
+                if let Some(ref git) = pane.git_info {
+                    if let Ok(mut cb) = arboard::Clipboard::new() {
+                        let _ = cb.set_text(&git.branch);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Get the cwd of the terminal pane associated with the git switcher.
+    fn git_switcher_pane_cwd(&self) -> Option<std::path::PathBuf> {
+        let gs = self.git_switcher.as_ref()?;
+        match self.panes.get(&gs.pane_id) {
+            Some(PaneKind::Terminal(p)) => p.cwd.clone(),
+            _ => None,
+        }
+    }
+
+    /// Handle a git switcher popup button click.
+    pub(crate) fn handle_git_switcher_button(&mut self, btn: crate::WorktreeButton) {
+        match btn {
+            crate::WorktreeButton::Switch(fi) => {
+                let action = self.git_switcher.as_ref().and_then(|gs| {
+                    let entry_idx = *gs.filtered_worktrees.get(fi)?;
+                    let wt = gs.worktrees.get(entry_idx)?;
+                    Some((gs.pane_id, wt.path.to_string_lossy().to_string()))
+                });
+                self.git_switcher = None;
+                if let Some((pane_id, path)) = action {
+                    if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&pane_id) {
+                        let cmd = format!("cd {}\n", shell_escape(&path));
+                        pane.backend.write(cmd.as_bytes());
+                    }
+                }
+            }
+            crate::WorktreeButton::NewPane(fi) => {
+                let wt_path = self.git_switcher.as_ref().and_then(|gs| {
+                    let entry_idx = *gs.filtered_worktrees.get(fi)?;
+                    let wt = gs.worktrees.get(entry_idx)?;
+                    Some(wt.path.clone())
+                });
+                let focused = self.git_switcher.as_ref().map(|gs| gs.pane_id);
+                self.git_switcher = None;
+                if let (Some(wt_path), Some(focused_id)) = (wt_path, focused) {
+                    use tide_core::{LayoutEngine, SplitDirection};
+                    let new_id = self.layout.split(focused_id, SplitDirection::Horizontal);
+                    self.create_terminal_pane(new_id, Some(wt_path));
+                    self.focused = Some(new_id);
+                    self.router.set_focused(new_id);
+                    self.chrome_generation += 1;
+                    self.compute_layout();
+                }
+            }
+            crate::WorktreeButton::Delete(fi) => {
+                let action = self.git_switcher.as_ref().and_then(|gs| {
+                    let entry_idx = *gs.filtered_worktrees.get(fi)?;
+                    let wt = gs.worktrees.get(entry_idx)?;
+                    Some(wt.path.clone())
+                });
+                let cwd = self.git_switcher_pane_cwd();
+                if let (Some(wt_path), Some(cwd)) = (action, cwd) {
+                    match tide_terminal::git::remove_worktree(&cwd, &wt_path, false) {
+                        Ok(()) => {
+                            if let Some(ref mut gs) = self.git_switcher {
+                                gs.refresh_worktrees(&cwd);
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to remove worktree: {}", e);
+                        }
+                    }
+                }
+            }
+            crate::WorktreeButton::NewWorktree => {
+                let query = self.git_switcher.as_ref()
+                    .filter(|gs| !gs.query.is_empty())
+                    .map(|gs| gs.query.clone());
+                let cwd = self.git_switcher_pane_cwd();
+                if let (Some(branch_name), Some(cwd)) = (query, cwd) {
+                    // Resolve repo root so worktree path is correct even from subdirectories
+                    let root = tide_terminal::git::repo_root(&cwd).unwrap_or_else(|| cwd.clone());
+                    let settings = crate::settings::load_settings();
+                    let wt_path = settings.worktree.compute_worktree_path(&root, &branch_name);
+                    // Use existing branch if it exists, otherwise create a new one
+                    let new_branch = !tide_terminal::git::branch_exists(&cwd, &branch_name);
+                    match tide_terminal::git::add_worktree(&cwd, &wt_path, &branch_name, new_branch) {
+                        Ok(()) => {
+                            if let Some(ref mut gs) = self.git_switcher {
+                                // Clear query before refresh so filter() shows all entries
+                                gs.query.clear();
+                                gs.cursor = 0;
+                                gs.refresh_worktrees(&cwd);
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to create worktree: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+        self.chrome_generation += 1;
+        self.needs_redraw = true;
     }
 
     /// Handle a completed drop operation.
