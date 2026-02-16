@@ -17,6 +17,8 @@ pub(crate) fn render_grid(
     editor_panel_active: Option<u64>,
     editor_panel_rect: Option<Rect>,
 ) -> bool {
+    let top_offset = app.pane_area_mode.content_top();
+
     let mut any_dirty = false;
     for &(id, rect) in visual_pane_rects {
         let gen = match app.panes.get(&id) {
@@ -31,9 +33,9 @@ pub(crate) fn render_grid(
             let pane_bar = bar_offset_for(id, &app.panes, &app.save_confirm);
             let inner = Rect::new(
                 rect.x + PANE_PADDING,
-                rect.y + TAB_BAR_HEIGHT + pane_bar,
+                rect.y + top_offset + pane_bar,
                 rect.width - 2.0 * PANE_PADDING,
-                (rect.height - TAB_BAR_HEIGHT - PANE_PADDING - pane_bar).max(1.0),
+                (rect.height - top_offset - PANE_PADDING - pane_bar).max(1.0),
             );
             renderer.begin_pane_grid(id);
             match app.panes.get(&id) {

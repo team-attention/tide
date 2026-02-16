@@ -21,8 +21,9 @@ impl App {
             .find(|(id, _)| *id == pane_id)?;
         let cell_size = self.renderer.as_ref()?.cell_size();
 
+        let content_top = self.pane_area_mode.content_top();
         let inner_x = visual_rect.x + PANE_PADDING;
-        let inner_y = visual_rect.y + TAB_BAR_HEIGHT;
+        let inner_y = visual_rect.y + content_top;
 
         // Center offset matching render_grid
         let max_cols = ((visual_rect.width - 2.0 * PANE_PADDING) / cell_size.width).floor() as usize;
@@ -74,8 +75,9 @@ impl App {
             .find(|(id, _)| *id == pane_id)?;
         let cell_size = self.renderer.as_ref()?.cell_size();
 
+        let content_top = self.pane_area_mode.content_top();
         let inner_x = visual_rect.x + PANE_PADDING;
-        let inner_y = visual_rect.y + TAB_BAR_HEIGHT;
+        let inner_y = visual_rect.y + content_top;
 
         let col = ((position.x - inner_x) / cell_size.width) as usize;
         let row = ((position.y - inner_y) / cell_size.height) as usize;
