@@ -55,8 +55,13 @@ impl App {
                         if let Some(renderer) = self.renderer.as_ref() {
                             if let Some(&(_, rect)) = self.visual_pane_rects.iter().find(|(pid, _)| *pid == id) {
                                 let cell_size = renderer.cell_size();
+                                let top_off = if matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
+                                    PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
+                                } else {
+                                    TAB_BAR_HEIGHT
+                                };
                                 let inner_x = rect.x + PANE_PADDING;
-                                let inner_y = rect.y + TAB_BAR_HEIGHT;
+                                let inner_y = rect.y + top_off;
                                 let gutter_width = 5.0 * cell_size.width; // GUTTER_WIDTH_CELLS
 
                                 let content_x = inner_x + gutter_width;
@@ -66,7 +71,7 @@ impl App {
                                 if rel_row >= 0 && rel_col >= 0 {
                                     let line = pane.editor.scroll_offset() + rel_row as usize;
                                     let col = pane.editor.h_scroll_offset() + rel_col as usize;
-                                    let visible_rows = ((rect.height - TAB_BAR_HEIGHT - PANE_PADDING) / cell_size.height).floor() as usize;
+                                    let visible_rows = ((rect.height - top_off - PANE_PADDING) / cell_size.height).floor() as usize;
                                     pane.handle_action(EditorAction::SetCursor { line, col }, visible_rows);
                                 }
                             }
@@ -94,12 +99,17 @@ impl App {
                                 }
                                 let was_modified = pane.editor.is_modified();
                                 let cell_size = self.renderer.as_ref().map(|r| r.cell_size());
+                                let pane_top = if matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
+                                    PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
+                                } else {
+                                    TAB_BAR_HEIGHT
+                                };
                                 let (visible_rows, visible_cols) = if let Some(cs) = cell_size {
                                     let tree_rect = self.visual_pane_rects.iter()
                                         .find(|(pid, _)| *pid == id)
                                         .map(|(_, r)| *r);
                                     if let Some(r) = tree_rect {
-                                        let rows = ((r.height - TAB_BAR_HEIGHT - PANE_PADDING) / cs.height).floor() as usize;
+                                        let rows = ((r.height - pane_top - PANE_PADDING) / cs.height).floor() as usize;
                                         let gutter_width = 5.0 * cs.width;
                                         let cols = ((r.width - 2.0 * PANE_PADDING - 2.0 * gutter_width) / cs.width).floor() as usize;
                                         (rows, cols)
@@ -137,13 +147,18 @@ impl App {
                 // Forward mouse scroll to pane
                 if let Some(InputEvent::MouseScroll { delta, .. }) = event {
                     // Compute actual visible rows/cols for the pane
+                    let scroll_top = if matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
+                        PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
+                    } else {
+                        TAB_BAR_HEIGHT
+                    };
                     let (visible_rows, visible_cols) = self.renderer.as_ref().map(|r| {
                         let cs = r.cell_size();
                         let rect = self.visual_pane_rects.iter()
                             .find(|(pid, _)| *pid == id)
                             .map(|(_, r)| *r);
                         if let Some(r) = rect {
-                            let rows = ((r.height - TAB_BAR_HEIGHT - PANE_PADDING) / cs.height).floor() as usize;
+                            let rows = ((r.height - scroll_top - PANE_PADDING) / cs.height).floor() as usize;
                             let gutter_width = 5.0 * cs.width;
                             let cols = ((r.width - 2.0 * PANE_PADDING - 2.0 * gutter_width) / cs.width).floor() as usize;
                             (rows.max(1), cols.max(1))
@@ -224,8 +239,8 @@ impl App {
                     let cwd = self.focused_terminal_cwd();
                     let new_id = self.layout.split(focused, SplitDirection::Vertical);
                     self.create_terminal_pane(new_id, cwd);
-                    if self.pane_area_mode == PaneAreaMode::Stacked {
-                        self.stacked_active = Some(new_id);
+                    if matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
+                        self.pane_area_mode = PaneAreaMode::Stacked(new_id);
                     }
                     self.focused = Some(new_id);
                     self.router.set_focused(new_id);
@@ -238,8 +253,8 @@ impl App {
                     let cwd = self.focused_terminal_cwd();
                     let new_id = self.layout.split(focused, SplitDirection::Horizontal);
                     self.create_terminal_pane(new_id, cwd);
-                    if self.pane_area_mode == PaneAreaMode::Stacked {
-                        self.stacked_active = Some(new_id);
+                    if matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
+                        self.pane_area_mode = PaneAreaMode::Stacked(new_id);
                     }
                     self.focused = Some(new_id);
                     self.router.set_focused(new_id);
@@ -358,7 +373,6 @@ impl App {
                         // Toggle editor panel maximize
                         self.editor_panel_maximized = !self.editor_panel_maximized;
                         self.pane_area_mode = PaneAreaMode::Split; // mutually exclusive
-                        self.stacked_active = None;
                     } else if self.editor_panel_maximized {
                         // Editor panel is maximized but focus is elsewhere -- just unmaximize it
                         self.editor_panel_maximized = false;
@@ -366,12 +380,10 @@ impl App {
                         // Toggle pane area mode between Split and Stacked
                         match self.pane_area_mode {
                             PaneAreaMode::Split => {
-                                self.pane_area_mode = PaneAreaMode::Stacked;
-                                self.stacked_active = Some(focused);
+                                self.pane_area_mode = PaneAreaMode::Stacked(focused);
                             }
-                            PaneAreaMode::Stacked => {
+                            PaneAreaMode::Stacked(_) => {
                                 self.pane_area_mode = PaneAreaMode::Split;
-                                self.stacked_active = None;
                             }
                         }
                     }

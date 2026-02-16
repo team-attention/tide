@@ -20,6 +20,7 @@ pub(crate) enum HoverTarget {
     PaneTabClose(PaneId),
     PanelTab(PaneId),
     PanelTabClose(PaneId),
+    StackedTab(PaneId),
     PanelBorder,
     EmptyPanelButton,
     EmptyPanelOpenFile,
@@ -58,6 +59,29 @@ pub(crate) enum PaneDragState {
 }
 
 impl App {
+    /// Hit-test whether the position is on a stacked-mode tab. Returns the PaneId of the tab.
+    pub(crate) fn stacked_tab_at(&self, pos: Vec2) -> Option<PaneId> {
+        let crate::PaneAreaMode::Stacked(_) = self.pane_area_mode else {
+            return None;
+        };
+        let &(_, rect) = self.visual_pane_rects.first()?;
+        let tab_bar_top = rect.y + PANE_PADDING;
+        if pos.y < tab_bar_top || pos.y > tab_bar_top + PANEL_TAB_HEIGHT {
+            return None;
+        }
+        let pane_ids = self.layout.pane_ids();
+        let tab_start_x = rect.x + PANE_PADDING;
+        for (i, &tab_id) in pane_ids.iter().enumerate() {
+            let tx = tab_start_x + i as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
+            if pos.x >= tx && pos.x <= tx + PANEL_TAB_WIDTH {
+                if pos.x >= rect.x && pos.x <= rect.x + rect.width {
+                    return Some(tab_id);
+                }
+            }
+        }
+        None
+    }
+
     /// Hit-test whether the position is within a pane's tab bar area (split tree panes).
     pub(crate) fn pane_at_tab_bar(&self, pos: Vec2) -> Option<PaneId> {
         for &(id, rect) in &self.visual_pane_rects {

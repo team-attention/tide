@@ -20,7 +20,8 @@ pub(crate) enum PaneAreaMode {
     /// 2D spatial layout with per-pane headers (default).
     Split,
     /// Dock-like stacked view: tab bar + single visible pane, linear navigation.
-    Stacked,
+    /// The `PaneId` is the currently active (visible) pane.
+    Stacked(PaneId),
 }
 
 // ──────────────────────────────────────────────

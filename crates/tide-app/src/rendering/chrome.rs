@@ -25,7 +25,6 @@ pub(crate) fn render_chrome(
     editor_panel_active: Option<u64>,
     pane_area_mode: PaneAreaMode,
     all_pane_ids: &[u64],
-    stacked_active: Option<u64>,
 ) {
     renderer.invalidate_chrome();
 
@@ -323,7 +322,7 @@ pub(crate) fn render_chrome(
 
     // Stacked mode: render dock-style tab bar; Split mode: render per-pane headers
     let mut all_hit_zones = Vec::new();
-    if pane_area_mode == PaneAreaMode::Stacked {
+    if let PaneAreaMode::Stacked(stacked_active) = pane_area_mode {
         // Render horizontal tab bar at the top of the visible pane rect
         if let Some(&(_, rect)) = visual_pane_rects.first() {
             let cell_size = renderer.cell_size();
@@ -345,7 +344,7 @@ pub(crate) fn render_chrome(
                     continue;
                 }
 
-                let is_active = stacked_active == Some(tab_id);
+                let is_active = stacked_active == tab_id;
 
                 // Tab background
                 if is_active {

@@ -54,7 +54,12 @@ impl App {
         if bar_w < 80.0 { return false; }
         let bar_h = SEARCH_BAR_HEIGHT;
         let bar_x = rect.x + rect.width - bar_w - 8.0;
-        let bar_y = rect.y + TAB_BAR_HEIGHT + 4.0;
+        let search_top = if matches!(self.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
+            PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
+        } else {
+            TAB_BAR_HEIGHT
+        };
+        let bar_y = rect.y + search_top + 4.0;
         let bar_rect = Rect::new(bar_x, bar_y, bar_w, bar_h);
 
         if !bar_rect.contains(pos) {
@@ -91,7 +96,12 @@ impl App {
             None => return 30,
         };
         if let Some(&(_, rect)) = self.visual_pane_rects.iter().find(|(id, _)| *id == pane_id) {
-            return ((rect.height - TAB_BAR_HEIGHT - PANE_PADDING) / cs.height).floor() as usize;
+            let top = if matches!(self.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
+                PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
+            } else {
+                TAB_BAR_HEIGHT
+            };
+            return ((rect.height - top - PANE_PADDING) / cs.height).floor() as usize;
         }
         if let Some(panel_rect) = self.editor_panel_rect {
             if self.editor_panel_active == Some(pane_id) {

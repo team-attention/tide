@@ -16,13 +16,18 @@ impl App {
             // Start text selection if clicking on pane content
             // (but not on tab bars, borders, etc.)
             let mods = winit_modifiers_to_tide(self.modifiers);
+            let content_top_offset = if matches!(self.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
+                PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
+            } else {
+                TAB_BAR_HEIGHT
+            };
             if !mods.ctrl && !mods.meta {
                 if let Some((pane_id, _)) = self.visual_pane_rects.iter().find(|(_, r)| {
                     let content = Rect::new(
                         r.x + PANE_PADDING,
-                        r.y + TAB_BAR_HEIGHT,
+                        r.y + content_top_offset,
                         r.width - 2.0 * PANE_PADDING,
-                        r.height - TAB_BAR_HEIGHT - PANE_PADDING,
+                        r.height - content_top_offset - PANE_PADDING,
                     );
                     content.contains(self.last_cursor_pos)
                 }) {
@@ -42,7 +47,7 @@ impl App {
                         if let (Some(cs), Some((_, rect))) = (cs, self.visual_pane_rects.iter().find(|(id, _)| *id == pid)) {
                             let gutter = 5.0 * cs.width;
                             let cx = rect.x + PANE_PADDING + gutter;
-                            let cy = rect.y + TAB_BAR_HEIGHT;
+                            let cy = rect.y + content_top_offset;
                             let rc = ((self.last_cursor_pos.x - cx) / cs.width).floor() as isize;
                             let rr = ((self.last_cursor_pos.y - cy) / cs.height).floor() as isize;
                             if rr >= 0 && rc >= 0 { Some((rr as usize, rc as usize)) } else { None }
@@ -210,6 +215,25 @@ impl App {
                 return;
             }
 
+            // Check stacked tabs for click-to-switch + drag initiation
+            if let Some(tab_id) = self.stacked_tab_at(self.last_cursor_pos) {
+                self.pane_drag = PaneDragState::PendingDrag {
+                    source_pane: tab_id,
+                    press_pos: self.last_cursor_pos,
+                    from_panel: false,
+                };
+                // Activate and focus the clicked stacked tab
+                self.pane_area_mode = crate::PaneAreaMode::Stacked(tab_id);
+                if self.focused != Some(tab_id) {
+                    self.focused = Some(tab_id);
+                    self.router.set_focused(tab_id);
+                    self.update_file_tree_cwd();
+                }
+                self.chrome_generation += 1;
+                self.compute_layout();
+                return;
+            }
+
             // Check tree tab bars for drag initiation
             if let Some(pane_id) = self.pane_at_tab_bar(self.last_cursor_pos) {
                 self.pane_drag = PaneDragState::PendingDrag {
@@ -310,9 +334,8 @@ impl App {
         if let PaneDragState::PendingDrag { press_pos, .. } = &self.pane_drag {
             let dx = pos.x - press_pos.x;
             let dy = pos.y - press_pos.y;
-            if (dx * dx + dy * dy).sqrt() >= DRAG_THRESHOLD && self.pane_area_mode == crate::PaneAreaMode::Stacked {
+            if (dx * dx + dy * dy).sqrt() >= DRAG_THRESHOLD && matches!(self.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
                 self.pane_area_mode = crate::PaneAreaMode::Split;
-                self.stacked_active = None;
                 self.compute_layout();
             }
         }
@@ -365,6 +388,11 @@ impl App {
             if self.mouse_left_pressed {
                 // Pre-compute cell positions before mutably borrowing panes
                 let cell_size = self.renderer.as_ref().map(|r| r.cell_size());
+                let drag_top_offset = if matches!(self.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
+                    PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
+                } else {
+                    TAB_BAR_HEIGHT
+                };
 
                 // Update selection only for the pane that has an active selection,
                 // and only if the cursor is within that pane's content area.
@@ -372,9 +400,9 @@ impl App {
                 for (pid, rect) in pane_rects {
                     let content = Rect::new(
                         rect.x + PANE_PADDING,
-                        rect.y + TAB_BAR_HEIGHT,
+                        rect.y + drag_top_offset,
                         rect.width - 2.0 * PANE_PADDING,
-                        rect.height - TAB_BAR_HEIGHT - PANE_PADDING,
+                        rect.height - drag_top_offset - PANE_PADDING,
                     );
                     if !content.contains(pos) {
                         continue;
@@ -384,7 +412,7 @@ impl App {
                     let editor_cell = if let Some(cs) = cell_size {
                         let gutter_width = 5.0 * cs.width;
                         let content_x = rect.x + PANE_PADDING + gutter_width;
-                        let content_y = rect.y + TAB_BAR_HEIGHT;
+                        let content_y = rect.y + drag_top_offset;
                         let rel_col = ((pos.x - content_x) / cs.width).floor() as isize;
                         let rel_row = ((pos.y - content_y) / cs.height).floor() as isize;
                         if rel_row >= 0 && rel_col >= 0 { Some((rel_row as usize, rel_col as usize)) } else { None }

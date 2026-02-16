@@ -29,9 +29,14 @@ pub(crate) fn render_ime_and_drop_preview(
                     let max_cols = (inner_w / cell_size.width).floor() as usize;
                     let actual_w = max_cols as f32 * cell_size.width;
                     let center_x = (inner_w - actual_w) / 2.0;
+                    let ime_top = if matches!(app.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
+                        PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
+                    } else {
+                        TAB_BAR_HEIGHT
+                    };
                     let inner_offset = Vec2::new(
                         rect.x + PANE_PADDING + center_x,
-                        rect.y + TAB_BAR_HEIGHT,
+                        rect.y + ime_top,
                     );
                     let cx = inner_offset.x + cursor.col as f32 * cell_size.width;
                     let cy = inner_offset.y + cursor.row as f32 * cell_size.height;

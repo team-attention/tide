@@ -154,8 +154,6 @@ struct App {
 
     // Pane area layout mode (Split = tiled 2D, Stacked = dock-like tabs)
     pub(crate) pane_area_mode: PaneAreaMode,
-    // Which pane is visible in Stacked mode
-    pub(crate) stacked_active: Option<PaneId>,
 
     // Editor panel visibility toggle
     pub(crate) show_editor_panel: bool,
@@ -270,7 +268,6 @@ impl App {
             mouse_left_pressed: false,
             search_focus: None,
             pane_area_mode: PaneAreaMode::Split,
-            stacked_active: None,
             show_editor_panel: false,
             editor_panel_maximized: false,
             editor_panel_tabs: Vec::new(),

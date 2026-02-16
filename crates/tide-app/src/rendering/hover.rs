@@ -37,6 +37,23 @@ pub(crate) fn render_hover(
                         }
                     }
                 }
+                drag_drop::HoverTarget::StackedTab(tab_id) => {
+                    // Highlight stacked tab (only inactive tabs, active already has background)
+                    if let crate::PaneAreaMode::Stacked(active) = app.pane_area_mode {
+                        if active != *tab_id {
+                            if let Some(&(_, rect)) = visual_pane_rects.first() {
+                                let tab_bar_top = rect.y + PANE_PADDING;
+                                let tab_start_x = rect.x + PANE_PADDING;
+                                let pane_ids = app.layout.pane_ids();
+                                if let Some(idx) = pane_ids.iter().position(|&id| id == *tab_id) {
+                                    let tx = tab_start_x + idx as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
+                                    let tab_rect = Rect::new(tx, tab_bar_top, PANEL_TAB_WIDTH, PANEL_TAB_HEIGHT);
+                                    renderer.draw_rect(tab_rect, p.hover_tab);
+                                }
+                            }
+                        }
+                    }
+                }
                 drag_drop::HoverTarget::PaneTabBar(pane_id) => {
                     if let Some(&(_, rect)) = visual_pane_rects.iter().find(|(id, _)| id == pane_id) {
                         let tab_rect = Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT);
