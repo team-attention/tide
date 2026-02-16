@@ -19,12 +19,7 @@ pub(crate) fn render_cursor_and_highlights(
     editor_panel_active: Option<u64>,
     editor_panel_rect: Option<Rect>,
 ) {
-    // In stacked mode, the tab bar is taller
-    let top_offset = if matches!(app.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
-        PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
-    } else {
-        TAB_BAR_HEIGHT
-    };
+    let top_offset = app.pane_area_mode.content_top();
 
     // Always render cursor (overlay layer) — cursor blinks/moves independently
     for &(id, rect) in visual_pane_rects {

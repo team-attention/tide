@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use tide_core::{PaneId, Rect};
+use crate::theme::{TAB_BAR_HEIGHT, PANE_PADDING, PANEL_TAB_HEIGHT, PANE_GAP};
 
 // ──────────────────────────────────────────────
 // Layout side: which edge a sidebar/dock component is on
@@ -22,6 +23,17 @@ pub(crate) enum PaneAreaMode {
     /// Dock-like stacked view: tab bar + single visible pane, linear navigation.
     /// The `PaneId` is the currently active (visible) pane.
     Stacked(PaneId),
+}
+
+impl PaneAreaMode {
+    /// Height from pane rect top to the start of the content area.
+    /// Stacked mode uses a taller tab bar than Split mode headers.
+    pub(crate) fn content_top(&self) -> f32 {
+        match self {
+            PaneAreaMode::Split => TAB_BAR_HEIGHT,
+            PaneAreaMode::Stacked(_) => PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP,
+        }
+    }
 }
 
 // ──────────────────────────────────────────────

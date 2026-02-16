@@ -71,12 +71,7 @@ fn render_search_bars(
         if bar_w < 80.0 { continue; } // too narrow to render
         let bar_h = SEARCH_BAR_HEIGHT;
         let bar_x = rect.x + rect.width - bar_w - 8.0;
-        let overlay_top = if matches!(app.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
-            PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
-        } else {
-            TAB_BAR_HEIGHT
-        };
-        let bar_y = rect.y + overlay_top + 4.0;
+        let bar_y = rect.y + app.pane_area_mode.content_top() + 4.0;
         let bar_rect = Rect::new(bar_x, bar_y, bar_w, bar_h);
 
         // Background (top layer — fully opaque, covers text)
@@ -163,13 +158,9 @@ fn render_notification_bars(
     }
 
     // Left-side panes
-    let notif_top_offset = if matches!(app.pane_area_mode, crate::PaneAreaMode::Stacked(_)) {
-        PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP
-    } else {
-        TAB_BAR_HEIGHT
-    };
+    let content_top_off = app.pane_area_mode.content_top();
     for &(id, rect) in visual_pane_rects {
-        let content_top = rect.y + notif_top_offset;
+        let content_top = rect.y + content_top_off;
         let bar_x = rect.x + PANE_PADDING;
         let bar_w = rect.width - 2.0 * PANE_PADDING;
         bar_panes.push((id, Rect::new(bar_x, content_top, bar_w, CONFLICT_BAR_HEIGHT)));
