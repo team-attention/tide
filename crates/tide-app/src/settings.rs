@@ -1,5 +1,6 @@
 // Settings persistence: global app configuration stored separately from session state.
-// Follows VS Code pattern: ~/.config/tide/settings.json
+// Uses platform-native config dir: e.g. ~/Library/Application Support/tide/settings.json
+// on macOS, ~/.config/tide/settings.json on Linux.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

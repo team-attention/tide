@@ -111,7 +111,12 @@ impl App {
         }
 
         let rel_y = pos.y - geo.list_top;
-        let idx = (rel_y / geo.line_height) as usize + gs.scroll_offset;
+        let vi = (rel_y / geo.line_height) as usize;
+        // Don't select items beyond the visible rows (e.g. clicks in the button area below)
+        if vi >= geo.max_visible {
+            return None;
+        }
+        let idx = vi + gs.scroll_offset;
         if idx < gs.current_filtered_len() {
             Some(idx)
         } else {

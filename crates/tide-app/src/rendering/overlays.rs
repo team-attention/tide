@@ -858,14 +858,12 @@ fn render_git_switcher(
 
 /// Abbreviate a path for compact display in the worktree list.
 fn abbreviate_path(path: &std::path::Path) -> String {
-    let s = path.to_string_lossy();
     if let Some(home) = dirs::home_dir() {
-        let home_str = home.to_string_lossy();
-        if s.starts_with(home_str.as_ref()) {
-            return format!("~{}", &s[home_str.len()..]);
+        if let Ok(suffix) = path.strip_prefix(&home) {
+            return format!("~/{}", suffix.display());
         }
     }
-    s.to_string()
+    path.to_string_lossy().to_string()
 }
 
 /// Render file switcher popup overlay.
