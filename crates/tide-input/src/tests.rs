@@ -23,13 +23,6 @@ mod tests {
         Modifiers::default()
     }
 
-    fn ctrl() -> Modifiers {
-        Modifiers {
-            ctrl: true,
-            ..Default::default()
-        }
-    }
-
     fn meta() -> Modifiers {
         Modifiers {
             meta: true,
@@ -142,28 +135,13 @@ mod tests {
     // ── Hotkey interception tests ───────────────
 
     #[test]
-    fn ctrl_backslash_triggers_split_right() {
+    fn meta_t_triggers_split_horizontal() {
         let mut router = Router::new();
         router.set_focused(1);
         let panes = two_panes_horizontal();
 
         let event = InputEvent::KeyPress {
-            key: Key::Char('\\'),
-            modifiers: ctrl(),
-        };
-        let action = router.process(event, &panes);
-
-        assert_eq!(action, Action::GlobalAction(GlobalAction::SplitHorizontal));
-    }
-
-    #[test]
-    fn meta_backslash_triggers_split_right() {
-        let mut router = Router::new();
-        router.set_focused(1);
-        let panes = two_panes_horizontal();
-
-        let event = InputEvent::KeyPress {
-            key: Key::Char('\\'),
+            key: Key::Char('t'),
             modifiers: meta(),
         };
         let action = router.process(event, &panes);
@@ -172,13 +150,13 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_shift_backslash_triggers_split_bottom() {
+    fn ctrl_shift_t_triggers_split_vertical() {
         let mut router = Router::new();
         router.set_focused(1);
         let panes = two_panes_horizontal();
 
         let event = InputEvent::KeyPress {
-            key: Key::Char('|'),
+            key: Key::Char('t'),
             modifiers: ctrl_shift(),
         };
         let action = router.process(event, &panes);
@@ -187,33 +165,18 @@ mod tests {
     }
 
     #[test]
-    fn meta_shift_backslash_triggers_split_bottom() {
+    fn meta_shift_t_triggers_split_vertical() {
         let mut router = Router::new();
         router.set_focused(1);
         let panes = two_panes_horizontal();
 
         let event = InputEvent::KeyPress {
-            key: Key::Char('|'),
+            key: Key::Char('t'),
             modifiers: meta_shift(),
         };
         let action = router.process(event, &panes);
 
         assert_eq!(action, Action::GlobalAction(GlobalAction::SplitVertical));
-    }
-
-    #[test]
-    fn ctrl_w_triggers_close_pane() {
-        let mut router = Router::new();
-        router.set_focused(1);
-        let panes = two_panes_horizontal();
-
-        let event = InputEvent::KeyPress {
-            key: Key::Char('w'),
-            modifiers: ctrl(),
-        };
-        let action = router.process(event, &panes);
-
-        assert_eq!(action, Action::GlobalAction(GlobalAction::ClosePane));
     }
 
     #[test]
@@ -232,14 +195,14 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_b_triggers_toggle_file_tree() {
+    fn meta_shift_bracket_right_triggers_toggle_file_tree() {
         let mut router = Router::new();
         router.set_focused(1);
         let panes = two_panes_horizontal();
 
         let event = InputEvent::KeyPress {
-            key: Key::Char('b'),
-            modifiers: ctrl(),
+            key: Key::Char(']'),
+            modifiers: meta_shift(),
         };
         let action = router.process(event, &panes);
 
@@ -247,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_arrow_triggers_move_focus() {
+    fn meta_arrow_triggers_move_focus_all_directions() {
         let mut router = Router::new();
         router.set_focused(1);
         let panes = two_panes_horizontal();
@@ -262,7 +225,7 @@ mod tests {
         for (key, expected_dir) in cases {
             let event = InputEvent::KeyPress {
                 key,
-                modifiers: ctrl(),
+                modifiers: meta(),
             };
             let action = router.process(event, &panes);
             assert_eq!(
@@ -273,32 +236,14 @@ mod tests {
     }
 
     #[test]
-    fn meta_arrow_triggers_move_focus() {
-        let mut router = Router::new();
-        router.set_focused(1);
-        let panes = two_panes_horizontal();
-
-        let event = InputEvent::KeyPress {
-            key: Key::Right,
-            modifiers: meta(),
-        };
-        let action = router.process(event, &panes);
-
-        assert_eq!(
-            action,
-            Action::GlobalAction(GlobalAction::MoveFocus(Direction::Right))
-        );
-    }
-
-    #[test]
     fn hotkey_is_not_routed_to_pane() {
         let mut router = Router::new();
         router.set_focused(1);
         let panes = two_panes_horizontal();
 
         let event = InputEvent::KeyPress {
-            key: Key::Char('\\'),
-            modifiers: ctrl(),
+            key: Key::Char('t'),
+            modifiers: meta(),
         };
         let action = router.process(event, &panes);
 
@@ -504,8 +449,8 @@ mod tests {
         let panes = two_panes_horizontal();
 
         let event = InputEvent::KeyPress {
-            key: Key::Char('\\'),
-            modifiers: ctrl(),
+            key: Key::Char('t'),
+            modifiers: meta(),
         };
         let result = router.route(event, &panes, 1);
 

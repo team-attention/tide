@@ -1,6 +1,6 @@
 use unicode_width::UnicodeWidthChar;
 
-use tide_core::{Rect, Renderer, TextStyle, Vec2};
+use tide_core::{Color, Rect, Renderer, TextStyle, Vec2};
 
 use crate::pane::PaneKind;
 use crate::theme::*;
@@ -576,60 +576,70 @@ fn render_git_switcher(
 
     let popup_rect = Rect::new(popup_x, popup_y, popup_w, popup_h);
 
+    // Shadow (behind background)
+    let shadow_color = Color::new(0.0, 0.0, 0.0, 0.80);
+    renderer.draw_top_shadow(popup_rect, shadow_color, 8.0, 60.0, 0.0);
+
     // Background + border (rounded)
     draw_popup_rounded_bg(renderer, popup_rect, p.popup_bg, p.popup_border, POPUP_CORNER_RADIUS);
 
     let ts = text_style(p.tab_text_focused);
     let muted_style = text_style(p.tab_text);
+    let item_pad = 12.0_f32;
 
-    // Search input
+    // Search input — with search icon and bottom border
     let input_y = popup_y + 2.0;
-    let input_clip = Rect::new(popup_x + POPUP_TEXT_INSET, input_y, popup_w - 2.0 * POPUP_TEXT_INSET, input_h);
+    let input_clip = Rect::new(popup_x + item_pad, input_y, popup_w - 2.0 * item_pad, input_h);
     let text_y = input_y + (input_h - cell_height) / 2.0;
-    let text_x = popup_x + POPUP_TEXT_INSET;
+    let icon_x = popup_x + item_pad;
+    let icon_gray = Color::new(0.420, 0.420, 0.439, 1.0); // #6B6B70
+    let icon_style = text_style(icon_gray);
+    renderer.draw_top_text("\u{f002}", Vec2::new(icon_x, text_y), icon_style, input_clip);
+    let text_x = icon_x + cell_size.width + 6.0; // after icon + gap
     let placeholder = match gs.mode {
-        crate::GitSwitcherMode::Branches => "Filter branches...",
-        crate::GitSwitcherMode::Worktrees => "Filter worktrees...",
+        crate::GitSwitcherMode::Branches => "Search branches...",
+        crate::GitSwitcherMode::Worktrees => "Search worktrees...",
     };
+    let placeholder_color = Color::new(0.290, 0.290, 0.306, 1.0); // #4A4A4E
+    let placeholder_style = text_style(placeholder_color);
     if gs.input.is_empty() {
-        renderer.draw_top_text(placeholder, Vec2::new(text_x, text_y), muted_style, input_clip);
+        renderer.draw_top_text(placeholder, Vec2::new(text_x, text_y), placeholder_style, input_clip);
     } else {
         renderer.draw_top_text(&gs.input.text, Vec2::new(text_x, text_y), ts, input_clip);
     }
     // Cursor beam
     let cx = text_x + visual_width(&gs.input.text[..gs.input.cursor]) as f32 * cell_size.width;
     draw_cursor_beam(renderer, cx, text_y, cell_height, p.cursor_accent);
+    // Bottom border of search bar
+    let sep_color = Color::new(0.122, 0.122, 0.137, 1.0); // #1F1F23
+    renderer.draw_top_rect(Rect::new(popup_x, input_y + input_h - 1.0, popup_w, 1.0), sep_color);
 
-    // Tab bar
+    // Tab bar — two full-width centered tabs
     let tab_y = input_y + input_h;
     let tab_sep_y = tab_y + tab_h;
-    renderer.draw_top_rect(Rect::new(popup_x + POPUP_SEPARATOR_INSET, tab_sep_y, popup_w - 2.0 * POPUP_SEPARATOR_INSET, POPUP_SEPARATOR), p.popup_border);
+    // Full-width separator (1px)
+    renderer.draw_top_rect(Rect::new(popup_x, tab_sep_y, popup_w, 1.0), sep_color);
 
     let branches_label = "Branches";
     let worktrees_label = "Worktrees";
-    let tab_pad = 12.0;
-    let branches_w = branches_label.len() as f32 * cell_size.width + tab_pad * 2.0;
-    let worktrees_w = worktrees_label.len() as f32 * cell_size.width + tab_pad * 2.0;
-    let branches_x = popup_x + POPUP_TEXT_INSET;
-    let worktrees_x = branches_x + branches_w + 4.0;
+    let half_w = popup_w / 2.0;
     let tab_text_y = tab_y + (tab_h - cell_height) / 2.0;
 
-    // Active tab underline
+    // Active tab underline (2px, accent color, centered under active tab)
     let active_tab_x = match gs.mode {
-        crate::GitSwitcherMode::Branches => branches_x,
-        crate::GitSwitcherMode::Worktrees => worktrees_x,
-    };
-    let active_tab_w = match gs.mode {
-        crate::GitSwitcherMode::Branches => branches_w,
-        crate::GitSwitcherMode::Worktrees => worktrees_w,
+        crate::GitSwitcherMode::Branches => popup_x,
+        crate::GitSwitcherMode::Worktrees => popup_x + half_w,
     };
     renderer.draw_top_rect(
-        Rect::new(active_tab_x, tab_sep_y - 2.0, active_tab_w, 2.0),
-        p.tab_text_focused,
+        Rect::new(active_tab_x, tab_sep_y - 2.0, half_w, 2.0),
+        p.dock_tab_underline,
     );
 
+    // Tab text colors per Pen: active #ADADB0 weight 500, inactive #6B6B70
+    let tab_active_color = Color::new(0.678, 0.678, 0.690, 1.0); // #ADADB0
+    let tab_inactive_color = icon_gray; // #6B6B70
     let branches_style = TextStyle {
-        foreground: if gs.mode == crate::GitSwitcherMode::Branches { p.tab_text_focused } else { p.tab_text },
+        foreground: if gs.mode == crate::GitSwitcherMode::Branches { tab_active_color } else { tab_inactive_color },
         background: None,
         bold: gs.mode == crate::GitSwitcherMode::Branches,
         dim: false,
@@ -637,7 +647,7 @@ fn render_git_switcher(
         underline: false,
     };
     let worktrees_style = TextStyle {
-        foreground: if gs.mode == crate::GitSwitcherMode::Worktrees { p.tab_text_focused } else { p.tab_text },
+        foreground: if gs.mode == crate::GitSwitcherMode::Worktrees { tab_active_color } else { tab_inactive_color },
         background: None,
         bold: gs.mode == crate::GitSwitcherMode::Worktrees,
         dim: false,
@@ -645,57 +655,84 @@ fn render_git_switcher(
         underline: false,
     };
     let tab_clip = Rect::new(popup_x, tab_y, popup_w, tab_h);
-    renderer.draw_top_text(branches_label, Vec2::new(branches_x + tab_pad, tab_text_y), branches_style, tab_clip);
-    renderer.draw_top_text(worktrees_label, Vec2::new(worktrees_x + tab_pad, tab_text_y), worktrees_style, tab_clip);
+    // Center each label in its half
+    let branches_text_w = branches_label.len() as f32 * cell_size.width;
+    let worktrees_text_w = worktrees_label.len() as f32 * cell_size.width;
+    let branches_text_x = popup_x + (half_w - branches_text_w) / 2.0;
+    let worktrees_text_x = popup_x + half_w + (half_w - worktrees_text_w) / 2.0;
+    renderer.draw_top_text(branches_label, Vec2::new(branches_text_x, tab_text_y), branches_style, tab_clip);
+    renderer.draw_top_text(worktrees_label, Vec2::new(worktrees_text_x, tab_text_y), worktrees_style, tab_clip);
 
-    // Tab hint
-    let hint = "Tab";
-    let hint_w = hint.len() as f32 * cell_size.width;
-    let hint_x = popup_x + popup_w - hint_w - 12.0;
-    renderer.draw_top_text(hint, Vec2::new(hint_x, tab_text_y), muted_style, tab_clip);
-
-    // List area
-    let list_top = tab_sep_y + 2.0;
+    // List area (with 4px top padding per Pen design)
+    let list_top = tab_sep_y + 4.0;
     let list_clip = Rect::new(popup_x, list_top, popup_w, max_visible as f32 * line_height + new_wt_btn_h);
 
-    let btn_style = text_style(p.badge_text);
+    // Compute button zone width so we can clip text before it
+    let btn_pad_h = 10.0_f32;
+    let new_pane_btn_w = "New Pane".len() as f32 * cell_size.width + btn_pad_h * 2.0;
+    let switch_btn_w = "Switch".len() as f32 * cell_size.width + btn_pad_h * 2.0;
+    let gap = 8.0_f32; // flex gap between items (matches Pen)
+    let buttons_zone_w = new_pane_btn_w + gap + switch_btn_w;
+
+    // Branch item style constants
+    let accent_color = p.dock_tab_underline; // #C4B8A6
+    let text_gray = Color::new(0.678, 0.678, 0.690, 1.0); // #ADADB0
+    let hint_bar_border = Color::new(0.122, 0.122, 0.137, 1.0); // #1F1F23
+    let hint_text_color = Color::new(0.290, 0.290, 0.306, 1.0); // #4A4A4E
+    let badge_bg_color = Color::new(0.769, 0.722, 0.651, 0.094); // #C4B8A618
+    let switch_btn_bg = accent_color;
+    let switch_btn_text_color = Color::new(0.039, 0.039, 0.043, 1.0); // #0A0A0B
+    let new_pane_border_color = Color::new(0.165, 0.165, 0.180, 1.0); // #2A2A2E
 
     let busy = gs.shell_busy;
 
-    // Helper closure: render [Switch] [Pane] buttons (and optionally [×] for worktrees)
-    // Returns nothing; just draws. `show_delete` controls the × button.
-    // When `busy` is true, only [Pane] is shown (Switch/Delete hidden).
+    // Helper: render action buttons ("Switch" filled + "New Pane" outlined), right-aligned in row.
+    // When `busy` is true, only "New Pane" is shown.
     let render_action_buttons = |renderer: &mut tide_renderer::WgpuRenderer,
-                                  y: f32, item_y: f32, show_delete: bool| {
-        let btn_h = cell_height + 2.0;
+                                  y: f32, _item_y: f32, _show_delete: bool| {
+        let btn_h = cell_height + 4.0; // taller buttons for 36px rows
         let btn_y = y + (line_height - btn_h) / 2.0;
-        let mut btn_right = popup_x + popup_w - POPUP_TEXT_INSET;
+        let btn_radius = 4.0_f32;
+        let mut btn_right = popup_x + popup_w - item_pad;
 
-        if show_delete && !busy {
-            let del_w = cell_size.width + 8.0;
-            let del_x = btn_right - del_w;
-            renderer.draw_top_rect(Rect::new(del_x, btn_y, del_w, btn_h), p.badge_bg);
-            let del_style = text_style(p.badge_git_deletions);
-            renderer.draw_top_text("\u{f00d}", Vec2::new(del_x + 4.0, item_y), del_style, list_clip);
-            btn_right = del_x - 3.0;
-        }
-
-        // [Pane]
-        let pane_label = "Pane";
-        let pane_w = pane_label.len() as f32 * cell_size.width + 10.0;
-        let pane_x = btn_right - pane_w;
-        renderer.draw_top_rect(Rect::new(pane_x, btn_y, pane_w, btn_h), p.badge_bg);
-        renderer.draw_top_text(pane_label, Vec2::new(pane_x + 5.0, item_y), btn_style, list_clip);
+        // "New Pane" button — outlined
+        let new_pane_label = "New Pane";
+        let new_pane_w = new_pane_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
+        let new_pane_x = btn_right - new_pane_w;
+        renderer.draw_top_rounded_rect(
+            Rect::new(new_pane_x, btn_y, new_pane_w, btn_h),
+            new_pane_border_color,
+            btn_radius,
+        );
+        renderer.draw_top_rounded_rect(
+            Rect::new(new_pane_x + 1.0, btn_y + 1.0, new_pane_w - 2.0, btn_h - 2.0),
+            p.popup_bg,
+            (btn_radius - 1.0).max(0.0),
+        );
+        let new_pane_style = text_style(text_gray);
+        let btn_text_y = btn_y + (btn_h - cell_height) / 2.0;
+        renderer.draw_top_text(new_pane_label, Vec2::new(new_pane_x + btn_pad_h, btn_text_y), new_pane_style, list_clip);
+        btn_right = new_pane_x - gap;
 
         if !busy {
-            btn_right = pane_x - 3.0;
-
-            // [Switch]
+            // "Switch" button — filled accent
             let switch_label = "Switch";
-            let switch_w = switch_label.len() as f32 * cell_size.width + 10.0;
+            let switch_w = switch_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
             let switch_x = btn_right - switch_w;
-            renderer.draw_top_rect(Rect::new(switch_x, btn_y, switch_w, btn_h), p.badge_bg);
-            renderer.draw_top_text(switch_label, Vec2::new(switch_x + 5.0, item_y), btn_style, list_clip);
+            renderer.draw_top_rounded_rect(
+                Rect::new(switch_x, btn_y, switch_w, btn_h),
+                switch_btn_bg,
+                btn_radius,
+            );
+            let switch_style = TextStyle {
+                foreground: switch_btn_text_color,
+                background: None,
+                bold: true,
+                dim: false,
+                italic: false,
+                underline: false,
+            };
+            renderer.draw_top_text(switch_label, Vec2::new(switch_x + btn_pad_h, btn_text_y), switch_style, list_clip);
         }
     };
 
@@ -706,7 +743,6 @@ fn render_git_switcher(
             for vi in 0..max_visible {
                 let fi = gs.scroll_offset + vi;
                 if fi >= base_len {
-                    // Might be the create row — handled below
                     break;
                 }
                 let entry_idx = gs.filtered_branches[fi];
@@ -721,44 +757,70 @@ fn render_git_switcher(
                     );
                 }
 
-                let item_x = popup_x + POPUP_TEXT_INSET;
+                let item_x = popup_x + item_pad;
                 let item_y = y + (line_height - cell_height) / 2.0;
 
-                // Current branch checkmark
+                // Git-branch icon
+                let icon_color = if branch.is_current { accent_color } else { icon_gray };
+                let branch_icon_style = text_style(icon_color);
+                renderer.draw_top_text("\u{e0a0}", Vec2::new(item_x, item_y), branch_icon_style, list_clip);
+                let name_x = item_x + cell_size.width + 6.0; // icon width + gap
+
                 if branch.is_current {
-                    let check_style = bold_style(p.badge_git_branch);
-                    renderer.draw_top_text("\u{f00c}", Vec2::new(item_x, item_y), check_style, list_clip);
-                }
+                    // Current branch: accent icon, white text, subtle bg tint, "current" badge
+                    // Subtle accent bg tint on entire row
+                    let current_row_bg = Color::new(0.769, 0.722, 0.651, 0.031); // #C4B8A608
+                    renderer.draw_top_rect(
+                        Rect::new(popup_x, y, popup_w, line_height),
+                        current_row_bg,
+                    );
+                    let name_style = TextStyle {
+                        foreground: p.tab_text_focused,
+                        background: None,
+                        bold: fi == gs.selected,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    };
+                    renderer.draw_top_text(&branch.name, Vec2::new(name_x, item_y), name_style, list_clip);
 
-                // Worktree indicator (tree icon if branch has a worktree)
-                let has_wt = gs.worktree_branch_names.contains(&branch.name);
-                if has_wt {
-                    let wt_icon_x = item_x + 1.5 * cell_size.width;
-                    let wt_style = text_style(p.badge_git_worktree);
-                    renderer.draw_top_text("\u{f1bb}", Vec2::new(wt_icon_x, item_y), wt_style, list_clip);
-                }
-
-                // Branch name
-                let name_x = item_x + 3.5 * cell_size.width;
-                let name_color = if branch.is_current {
-                    p.badge_git_branch
+                    // "current" badge
+                    let badge_label = "current";
+                    let badge_w = badge_label.len() as f32 * cell_size.width + 8.0;
+                    let badge_h = cell_height;
+                    let badge_x = name_x + (branch.name.len() as f32 + 1.0) * cell_size.width;
+                    let badge_y = y + (line_height - badge_h) / 2.0;
+                    renderer.draw_top_rounded_rect(
+                        Rect::new(badge_x, badge_y, badge_w, badge_h),
+                        badge_bg_color,
+                        4.0,
+                    );
+                    let badge_style = TextStyle {
+                        foreground: accent_color,
+                        background: None,
+                        bold: false,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    };
+                    renderer.draw_top_text(badge_label, Vec2::new(badge_x + 4.0, item_y), badge_style, list_clip);
                 } else {
-                    p.tab_text_focused
-                };
-                let name_style = TextStyle {
-                    foreground: name_color,
-                    background: None,
-                    bold: fi == gs.selected,
-                    dim: false,
-                    italic: false,
-                    underline: false,
-                };
-                renderer.draw_top_text(&branch.name, Vec2::new(name_x, item_y), name_style, list_clip);
+                    // Non-current branch: gray icon, gray text, action buttons
+                    // Clip text before buttons zone
+                    let icon_zone = cell_size.width + 6.0;
+                    let text_clip_w = popup_w - item_pad * 2.0 - icon_zone - buttons_zone_w - 8.0;
+                    let text_clip = Rect::new(name_x, y, text_clip_w.max(0.0), line_height);
+                    let name_style = TextStyle {
+                        foreground: text_gray,
+                        background: None,
+                        bold: fi == gs.selected,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    };
+                    renderer.draw_top_text(&branch.name, Vec2::new(name_x, item_y), name_style, text_clip);
 
-                // Action buttons — not for current branch
-                if !branch.is_current {
-                    let show_delete = !has_wt;
-                    render_action_buttons(renderer, y, item_y, show_delete);
+                    render_action_buttons(renderer, y, item_y, false);
                 }
             }
         }
@@ -780,37 +842,76 @@ fn render_git_switcher(
                     );
                 }
 
-                let item_x = popup_x + POPUP_TEXT_INSET;
+                let item_x = popup_x + item_pad;
                 let item_y = y + (line_height - cell_height) / 2.0;
 
-                // Current worktree checkmark
-                if wt.is_current {
-                    let check_style = bold_style(p.badge_git_worktree);
-                    renderer.draw_top_text("\u{f00c}", Vec2::new(item_x, item_y), check_style, list_clip);
-                }
-
-                // Branch name or "(detached)"
                 let name = wt.branch.as_deref().unwrap_or("(detached)");
-                let name_x = item_x + 2.0 * cell_size.width;
-                let name_style = TextStyle {
-                    foreground: if wt.is_current { p.badge_git_worktree } else { p.tab_text_focused },
-                    background: None,
-                    bold: fi == gs.selected,
-                    dim: false,
-                    italic: false,
-                    underline: false,
-                };
-                renderer.draw_top_text(name, Vec2::new(name_x, item_y), name_style, list_clip);
 
-                // Abbreviated path
-                let path_display = abbreviate_path(&wt.path);
-                let path_x = name_x + (name.len() as f32 + 1.0) * cell_size.width;
-                renderer.draw_top_text(&path_display, Vec2::new(path_x, item_y), muted_style, list_clip);
+                // Git-branch icon
+                let wt_icon_color = if wt.is_current { p.badge_git_worktree } else { icon_gray };
+                let wt_icon_style = text_style(wt_icon_color);
+                renderer.draw_top_text("\u{e0a0}", Vec2::new(item_x, item_y), wt_icon_style, list_clip);
+                let name_x = item_x + cell_size.width + 6.0;
 
-                // Action buttons — not for current worktree
-                if !wt.is_current {
-                    let show_delete = !wt.is_main;
-                    render_action_buttons(renderer, y, item_y, show_delete);
+                if wt.is_current {
+                    // Current worktree: accent icon, white text, subtle bg tint, "current" badge
+                    let current_row_bg = Color::new(0.769, 0.722, 0.651, 0.031); // #C4B8A608
+                    renderer.draw_top_rect(
+                        Rect::new(popup_x, y, popup_w, line_height),
+                        current_row_bg,
+                    );
+                    let name_style = TextStyle {
+                        foreground: p.tab_text_focused,
+                        background: None,
+                        bold: fi == gs.selected,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    };
+                    renderer.draw_top_text(name, Vec2::new(name_x, item_y), name_style, list_clip);
+
+                    // "current" badge
+                    let badge_label = "current";
+                    let badge_w = badge_label.len() as f32 * cell_size.width + 8.0;
+                    let badge_h = cell_height;
+                    let badge_x = name_x + (name.len() as f32 + 1.0) * cell_size.width;
+                    let badge_y = y + (line_height - badge_h) / 2.0;
+                    renderer.draw_top_rounded_rect(
+                        Rect::new(badge_x, badge_y, badge_w, badge_h),
+                        badge_bg_color,
+                        4.0,
+                    );
+                    let badge_style = TextStyle {
+                        foreground: accent_color,
+                        background: None,
+                        bold: false,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    };
+                    renderer.draw_top_text(badge_label, Vec2::new(badge_x + 4.0, item_y), badge_style, list_clip);
+                } else {
+                    // Non-current worktree: gray icon, gray text, path, action buttons
+                    // Clip text before buttons zone
+                    let icon_zone = cell_size.width + 6.0;
+                    let text_clip_w = popup_w - item_pad * 2.0 - icon_zone - buttons_zone_w - 8.0;
+                    let text_clip = Rect::new(name_x, y, text_clip_w.max(0.0), line_height);
+                    let name_style = TextStyle {
+                        foreground: text_gray,
+                        background: None,
+                        bold: fi == gs.selected,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    };
+                    renderer.draw_top_text(name, Vec2::new(name_x, item_y), name_style, text_clip);
+
+                    // Abbreviated path
+                    let path_display = abbreviate_path(&wt.path);
+                    let path_x = name_x + (name.len() as f32 + 1.0) * cell_size.width;
+                    renderer.draw_top_text(&path_display, Vec2::new(path_x, item_y), muted_style, text_clip);
+
+                    render_action_buttons(renderer, y, item_y, false);
                 }
             }
         }
@@ -819,14 +920,12 @@ fn render_git_switcher(
     // Create row: rendered after normal items if visible (hidden when busy)
     if gs.has_create_row() && !busy {
         let create_fi = base_len;
-        // Check if create row is within the visible window
         if create_fi >= gs.scroll_offset && create_fi < gs.scroll_offset + max_visible {
             let vi = create_fi - gs.scroll_offset;
             let y = list_top + vi as f32 * line_height;
-            let item_x = popup_x + POPUP_TEXT_INSET;
+            let item_x = popup_x + item_pad;
             let item_y = y + (line_height - cell_height) / 2.0;
 
-            // Selected highlight
             if create_fi == gs.selected {
                 renderer.draw_top_rect(
                     Rect::new(popup_x + POPUP_SELECTED_INSET, y, popup_w - 2.0 * POPUP_SELECTED_INSET, line_height),
@@ -834,11 +933,9 @@ fn render_git_switcher(
                 );
             }
 
-            // "+" icon
-            let plus_style = bold_style(p.badge_git_branch);
+            let plus_style = bold_style(accent_color);
             renderer.draw_top_text("+", Vec2::new(item_x, item_y), plus_style, list_clip);
 
-            // Query text as the name
             let name_x = item_x + 2.0 * cell_size.width;
             let create_name_style = TextStyle {
                 foreground: p.tab_text_focused,
@@ -850,10 +947,30 @@ fn render_git_switcher(
             };
             renderer.draw_top_text(gs.input.text.trim(), Vec2::new(name_x, item_y), create_name_style, list_clip);
 
-            // [Switch] [Pane] buttons (no Delete)
             render_action_buttons(renderer, y, item_y, false);
         }
     }
+
+    // Hint bar at bottom
+    let hint_bar_h = 28.0_f32;
+    let hint_bar_y = popup_y + popup_h - hint_bar_h;
+    // Top border of hint bar
+    renderer.draw_top_rect(Rect::new(popup_x, hint_bar_y, popup_w, 1.0), hint_bar_border);
+    // Hint text centered
+    let hint_text = "\u{21B5} switch  \u{2318}\u{21B5} new pane  esc close";
+    let hint_text_w = hint_text.len() as f32 * cell_size.width;
+    let hint_text_x = popup_x + (popup_w - hint_text_w) / 2.0;
+    let hint_text_y = hint_bar_y + (hint_bar_h - cell_height) / 2.0;
+    let hint_style = TextStyle {
+        foreground: hint_text_color,
+        background: None,
+        bold: false,
+        dim: false,
+        italic: false,
+        underline: false,
+    };
+    let hint_clip = Rect::new(popup_x, hint_bar_y, popup_w, hint_bar_h);
+    renderer.draw_top_text(hint_text, Vec2::new(hint_text_x, hint_text_y), hint_style, hint_clip);
 }
 
 // Re-use abbreviate_path from ui_state

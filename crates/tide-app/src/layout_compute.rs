@@ -21,7 +21,8 @@ impl App {
             | Some(HoverTarget::StackedTabClose(_))
             | Some(HoverTarget::EmptyPanelButton)
             | Some(HoverTarget::EmptyPanelOpenFile)
-            | Some(HoverTarget::FileFinderItem(_)) => CursorIcon::Pointer,
+            | Some(HoverTarget::FileFinderItem(_))
+            | Some(HoverTarget::TitlebarSwap) => CursorIcon::Pointer,
             Some(HoverTarget::SidebarHandle)
             | Some(HoverTarget::DockHandle) => CursorIcon::Grab,
             Some(HoverTarget::FileTreeBorder) => CursorIcon::ColResize,
@@ -162,7 +163,7 @@ impl App {
         }
 
         let y = geo.list_top + vi as f32 * geo.line_height;
-        let btn_h = cell_height + 2.0;
+        let btn_h = cell_height + 4.0;
         let btn_y = y + (geo.line_height - btn_h) / 2.0;
         if pos.y < btn_y || pos.y > btn_y + btn_h {
             return None;
@@ -170,21 +171,27 @@ impl App {
 
         let busy = gs.shell_busy;
 
+        // New button layout: [Switch (filled)] [New Pane (outlined)]
+        // Button sizing matches render_action_buttons in overlays.rs
+        let btn_pad_h = 10.0_f32;
+        let item_pad = 12.0_f32;
+        let btn_gap = 8.0_f32;
+
         // Create row: only Switch and NewPane buttons (no create when busy)
         if gs.is_create_row(fi) {
             if busy { return None; }
-            let mut btn_right = geo.popup_x + geo.popup_w - 8.0;
+            let mut btn_right = geo.popup_x + geo.popup_w - item_pad;
 
-            let pane_label = "Pane";
-            let pane_w = pane_label.len() as f32 * cell_size.width + 10.0;
-            let pane_x = btn_right - pane_w;
-            if pos.x >= pane_x && pos.x <= pane_x + pane_w {
+            let new_pane_label = "New Pane";
+            let new_pane_w = new_pane_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
+            let new_pane_x = btn_right - new_pane_w;
+            if pos.x >= new_pane_x && pos.x <= new_pane_x + new_pane_w {
                 return Some(crate::SwitcherButton::NewPane(fi));
             }
-            btn_right = pane_x - 3.0;
+            btn_right = new_pane_x - btn_gap;
 
             let switch_label = "Switch";
-            let switch_w = switch_label.len() as f32 * cell_size.width + 10.0;
+            let switch_w = switch_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
             let switch_x = btn_right - switch_w;
             if pos.x >= switch_x && pos.x <= switch_x + switch_w {
                 return Some(crate::SwitcherButton::Switch(fi));
@@ -200,33 +207,22 @@ impl App {
                     return None;
                 }
 
-                let has_wt = gs.worktree_branch_names.contains(&branch.name);
-                let mut btn_right = geo.popup_x + geo.popup_w - 8.0;
+                let mut btn_right = geo.popup_x + geo.popup_w - item_pad;
 
-                // Delete button (×) — only for branches without worktree, hidden when busy
-                if !has_wt && !busy {
-                    let del_w = cell_size.width + 8.0;
-                    let del_x = btn_right - del_w;
-                    if pos.x >= del_x && pos.x <= del_x + del_w {
-                        return Some(crate::SwitcherButton::Delete(fi));
-                    }
-                    btn_right = del_x - 3.0;
-                }
-
-                // [Pane] button
-                let pane_label = "Pane";
-                let pane_w = pane_label.len() as f32 * cell_size.width + 10.0;
-                let pane_x = btn_right - pane_w;
-                if pos.x >= pane_x && pos.x <= pane_x + pane_w {
+                // [New Pane] button
+                let new_pane_label = "New Pane";
+                let new_pane_w = new_pane_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
+                let new_pane_x = btn_right - new_pane_w;
+                if pos.x >= new_pane_x && pos.x <= new_pane_x + new_pane_w {
                     return Some(crate::SwitcherButton::NewPane(fi));
                 }
 
                 if !busy {
-                    btn_right = pane_x - 3.0;
+                    btn_right = new_pane_x - btn_gap;
 
                     // [Switch] button — hidden when busy
                     let switch_label = "Switch";
-                    let switch_w = switch_label.len() as f32 * cell_size.width + 10.0;
+                    let switch_w = switch_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
                     let switch_x = btn_right - switch_w;
                     if pos.x >= switch_x && pos.x <= switch_x + switch_w {
                         return Some(crate::SwitcherButton::Switch(fi));
@@ -240,32 +236,22 @@ impl App {
                     return None;
                 }
 
-                let mut btn_right = geo.popup_x + geo.popup_w - 8.0;
+                let mut btn_right = geo.popup_x + geo.popup_w - item_pad;
 
-                // Delete button (×) — not for main, hidden when busy
-                if !wt.is_main && !busy {
-                    let del_w = cell_size.width + 8.0;
-                    let del_x = btn_right - del_w;
-                    if pos.x >= del_x && pos.x <= del_x + del_w {
-                        return Some(crate::SwitcherButton::Delete(fi));
-                    }
-                    btn_right = del_x - 3.0;
-                }
-
-                // [Pane] button
-                let pane_label = "Pane";
-                let pane_w = pane_label.len() as f32 * cell_size.width + 10.0;
-                let pane_x = btn_right - pane_w;
-                if pos.x >= pane_x && pos.x <= pane_x + pane_w {
+                // [New Pane] button
+                let new_pane_label = "New Pane";
+                let new_pane_w = new_pane_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
+                let new_pane_x = btn_right - new_pane_w;
+                if pos.x >= new_pane_x && pos.x <= new_pane_x + new_pane_w {
                     return Some(crate::SwitcherButton::NewPane(fi));
                 }
 
                 if !busy {
-                    btn_right = pane_x - 3.0;
+                    btn_right = new_pane_x - btn_gap;
 
                     // [Switch] button — hidden when busy
                     let switch_label = "Switch";
-                    let switch_w = switch_label.len() as f32 * cell_size.width + 10.0;
+                    let switch_w = switch_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
                     let switch_x = btn_right - switch_w;
                     if pos.x >= switch_x && pos.x <= switch_x + switch_w {
                         return Some(crate::SwitcherButton::Switch(fi));
@@ -300,11 +286,15 @@ impl App {
     pub(crate) fn active_panel_tab_rect(&self) -> Option<Rect> {
         let panel_rect = self.editor_panel_rect?;
         let active_id = self.active_editor_tab()?;
-        let index = self.active_editor_tabs().iter().position(|&id| id == active_id)?;
-        let tab_bar_top = panel_rect.y + PANE_PADDING;
-        let tab_start_x = panel_rect.x + PANE_PADDING - self.panel_tab_scroll;
-        let tx = tab_start_x + index as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
-        Some(Rect::new(tx, tab_bar_top, PANEL_TAB_WIDTH, PANEL_TAB_HEIGHT))
+        let tabs = self.active_editor_tabs();
+        let index = tabs.iter().position(|&id| id == active_id)?;
+        let cell_w = self.renderer.as_ref()?.cell_size().width;
+        let tab_bar_top = panel_rect.y;
+        let tab_start_x = panel_rect.x - self.panel_tab_scroll;
+        let tx = tab_start_x + crate::ui::dock_tab_x(&self.panes, &tabs, index, cell_w);
+        let title = crate::ui::panel_tab_title(&self.panes, active_id);
+        let tab_w = crate::ui::dock_tab_width(&title, cell_w);
+        Some(Rect::new(tx, tab_bar_top, tab_w, PANEL_TAB_HEIGHT))
     }
 
     /// Check if a position is inside the file finder area (covers the whole editor panel).
@@ -452,7 +442,7 @@ impl App {
             // File tree rect (still visible during panel maximize)
             if show_file_tree {
                 let ft_x = if ft_on_left { 0.0 } else { logical.width - sidebar_width };
-                self.file_tree_rect = Some(Rect::new(ft_x, top, sidebar_width - PANE_GAP, logical.height - top));
+                self.file_tree_rect = Some(Rect::new(ft_x, top, sidebar_width, logical.height - top));
             } else {
                 self.file_tree_rect = None;
             }
@@ -476,10 +466,9 @@ impl App {
         // Compute file_tree_rect and editor_panel_rect based on sides.
         // Rule: sidebar (file tree) is always outermost when both are on the same side.
         //
-        // Layout pattern per component (width includes gap budget):
-        //   Left side:  outer x=0, inner x=outer_w       (gap is at right end of each rect)
-        //   Right side: inner x=W-reserved+GAP, outer x=W-outer_w+GAP  (gap is at left end)
-        // Rect width is always component_width - PANE_GAP.
+        // Panels are flush (no gap) — separated by 1px border only.
+        //   Left side:  outer x=0, inner x=outer_w
+        //   Right side: inner x=W-reserved, outer x=W-outer_w
         let both_on_same_side = show_file_tree && show_editor_panel && self.sidebar_side == self.dock_side;
 
         if show_file_tree {
@@ -487,13 +476,13 @@ impl App {
                 LayoutSide::Left => 0.0, // always outer
                 LayoutSide::Right => {
                     // always outer (at window edge)
-                    logical.width - sidebar_width + PANE_GAP
+                    logical.width - sidebar_width
                 }
             };
             self.file_tree_rect = Some(Rect::new(
                 sidebar_x,
                 top,
-                sidebar_width - PANE_GAP,
+                sidebar_width,
                 logical.height - top,
             ));
         } else {
@@ -512,17 +501,17 @@ impl App {
                 LayoutSide::Right => {
                     if both_on_same_side {
                         // inner (closer to terminal)
-                        logical.width - right_reserved + PANE_GAP
+                        logical.width - right_reserved
                     } else {
                         // alone on right (at window edge)
-                        logical.width - dock_width + PANE_GAP
+                        logical.width - dock_width
                     }
                 }
             };
             self.editor_panel_rect = Some(Rect::new(
                 dock_x,
                 top,
-                dock_width - PANE_GAP,
+                dock_width,
                 logical.height - top,
             ));
         } else {

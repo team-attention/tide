@@ -19,6 +19,18 @@ pub(crate) fn render_grid(
 ) -> bool {
     let top_offset = app.pane_area_mode.content_top();
 
+    // Set side-by-side mode on diff panes based on where they are rendered
+    for &(id, _) in visual_pane_rects {
+        if let Some(PaneKind::Diff(dp)) = app.panes.get_mut(&id) {
+            dp.side_by_side = true;
+        }
+    }
+    if let Some(active_id) = editor_panel_active {
+        if let Some(PaneKind::Diff(dp)) = app.panes.get_mut(&active_id) {
+            dp.side_by_side = false;
+        }
+    }
+
     let mut any_dirty = false;
     for &(id, rect) in visual_pane_rects {
         let gen = match app.panes.get(&id) {
@@ -52,7 +64,8 @@ pub(crate) fn render_grid(
                 Some(PaneKind::Diff(dp)) => {
                     dp.render_grid(inner, renderer, p.tab_text_focused, p.tab_text,
                         p.diff_added_bg, p.diff_removed_bg,
-                        p.diff_added_gutter, p.diff_removed_gutter);
+                        p.diff_added_gutter, p.diff_removed_gutter,
+                        p.border_subtle);
                     app.pane_generations.insert(id, dp.generation());
                 }
                 None => {}
@@ -90,7 +103,8 @@ pub(crate) fn render_grid(
                     Some(PaneKind::Diff(dp)) => {
                         dp.render_grid(inner, renderer, p.tab_text_focused, p.tab_text,
                             p.diff_added_bg, p.diff_removed_bg,
-                            p.diff_added_gutter, p.diff_removed_gutter);
+                            p.diff_added_gutter, p.diff_removed_gutter,
+                            p.border_subtle);
                     }
                     _ => {}
                 }

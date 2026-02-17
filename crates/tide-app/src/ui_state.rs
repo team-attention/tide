@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use tide_core::{PaneId, Rect, Vec2};
-use crate::theme::{TAB_BAR_HEIGHT, PANE_PADDING, PANEL_TAB_HEIGHT, PANE_GAP, PANEL_TAB_WIDTH, PANEL_TAB_GAP, PANEL_TAB_CLOSE_SIZE, PANEL_TAB_CLOSE_PADDING, POPUP_INPUT_PADDING, POPUP_LINE_EXTRA, POPUP_MAX_VISIBLE, FILE_SWITCHER_POPUP_W, CONTEXT_MENU_W};
+use crate::theme::{TAB_BAR_HEIGHT, POPUP_INPUT_PADDING, POPUP_LINE_EXTRA, POPUP_MAX_VISIBLE, FILE_SWITCHER_POPUP_W, CONTEXT_MENU_W};
 
 // ──────────────────────────────────────────────
 // InputLine — shared text-editing state for popup inputs
@@ -97,6 +97,16 @@ pub(crate) fn shell_escape(s: &str) -> String {
 }
 
 // ──────────────────────────────────────────────
+// SubFocus — secondary focus target (file tree, dock) while terminal retains border
+// ──────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SubFocus {
+    FileTree,
+    Dock,
+}
+
+// ──────────────────────────────────────────────
 // Layout side: which edge a sidebar/dock component is on
 // ──────────────────────────────────────────────
 
@@ -128,37 +138,11 @@ impl PaneAreaMode {
     pub(crate) fn content_top(&self) -> f32 {
         match self {
             PaneAreaMode::Split => TAB_BAR_HEIGHT,
-            PaneAreaMode::Stacked(_) => PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP,
+            PaneAreaMode::Stacked(_) => TAB_BAR_HEIGHT,
         }
     }
 }
 
-/// Computed geometry for a horizontal tab bar (stacked panes or editor panel).
-/// Extracted to share layout math between hit-testing, rendering, and hover.
-pub(crate) struct TabBarGeometry {
-    pub tab_bar_top: f32,
-    pub tab_start_x: f32,
-}
-
-impl TabBarGeometry {
-    /// X position of the tab at `index`.
-    pub fn tab_x(&self, index: usize) -> f32 {
-        self.tab_start_x + index as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP)
-    }
-
-    /// Bounding rect of the tab at `index`.
-    pub fn tab_rect(&self, index: usize) -> Rect {
-        Rect::new(self.tab_x(index), self.tab_bar_top, PANEL_TAB_WIDTH, PANEL_TAB_HEIGHT)
-    }
-
-    /// Bounding rect of the close button inside the tab at `index`.
-    pub fn close_rect(&self, index: usize) -> Rect {
-        let tx = self.tab_x(index);
-        let close_x = tx + PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - PANEL_TAB_CLOSE_PADDING;
-        let close_y = self.tab_bar_top + (PANEL_TAB_HEIGHT - PANEL_TAB_CLOSE_SIZE) / 2.0;
-        Rect::new(close_x, close_y, PANEL_TAB_CLOSE_SIZE, PANEL_TAB_CLOSE_SIZE)
-    }
-}
 
 // ──────────────────────────────────────────────
 // Save-as input state (floating popup with directory + filename)
@@ -392,7 +376,7 @@ pub(crate) struct GitSwitcherGeometry {
 }
 
 pub(crate) const GIT_SWITCHER_POPUP_W: f32 = 320.0;
-pub(crate) const GIT_SWITCHER_MAX_VISIBLE: usize = 10;
+pub(crate) const GIT_SWITCHER_MAX_VISIBLE: usize = 8;
 
 pub(crate) struct GitSwitcherState {
     pub pane_id: PaneId,
@@ -442,17 +426,19 @@ impl GitSwitcherState {
 
     /// Compute popup geometry given cell size and logical window dimensions.
     pub fn geometry(&self, cell_height: f32, logical_width: f32, logical_height: f32) -> GitSwitcherGeometry {
-        let line_height = cell_height + POPUP_LINE_EXTRA;
-        let tab_h = cell_height + 8.0; // git-switcher 고유 tab 높이
-        let input_h = cell_height + POPUP_INPUT_PADDING;
+        // Git switcher uses 36px rows to match Pen design (spacious branch items)
+        let line_height = 36.0_f32.max(cell_height + POPUP_LINE_EXTRA);
+        let tab_h = 32.0_f32; // per Pen design
+        let input_h = 36.0_f32; // per Pen design
         let popup_w = GIT_SWITCHER_POPUP_W;
         let popup_x = self.anchor_rect.x.min(logical_width - popup_w - 4.0).max(0.0);
         let current_len = self.current_filtered_len();
         let max_visible = GIT_SWITCHER_MAX_VISIBLE.min(current_len);
         let new_wt_btn_h = 0.0;
         // input_y = popup_y + 2.0, tab_y = input_y + input_h, tab_sep_y = tab_y + tab_h
-        // list_top = tab_sep_y + 2.0 = popup_y + 2.0 + input_h + tab_h + 2.0
-        let content_h = 4.0 + input_h + tab_h + 2.0 + max_visible as f32 * line_height + new_wt_btn_h + 4.0;
+        // list_top = tab_sep_y + 4.0 (4px top padding on list per Pen)
+        let hint_bar_h = 28.0_f32;
+        let content_h = 2.0 + input_h + tab_h + 4.0 + max_visible as f32 * line_height + new_wt_btn_h + 4.0 + hint_bar_h;
         // Vertical clamping: prefer below anchor, flip above if not enough space
         let below_y = self.anchor_rect.y + self.anchor_rect.height + 4.0;
         let popup_y = if below_y + content_h > logical_height {
@@ -463,7 +449,7 @@ impl GitSwitcherState {
             below_y
         };
         let popup_h = content_h;
-        let list_top = popup_y + 2.0 + input_h + tab_h + 2.0;
+        let list_top = popup_y + 2.0 + input_h + tab_h + 4.0;
 
         GitSwitcherGeometry {
             popup_x,

@@ -13,6 +13,7 @@ use crate::search::SearchState;
 use crate::input::winit_modifiers_to_tide;
 use crate::pane::PaneKind;
 use crate::theme::*;
+use crate::ui_state::SubFocus;
 use crate::{App, PaneAreaMode};
 
 impl App {
@@ -24,29 +25,47 @@ impl App {
         }
     }
 
+    /// Switch primary focus to a terminal pane, clearing any sub-focus.
+    /// Handles all common side effects: file tree CWD update, panel tab scroll
+    /// reset, auto-hide panel when switching away from a terminal with editors.
+    pub(crate) fn focus_terminal(&mut self, id: tide_core::PaneId) {
+        self.sub_focus = None;
+        if self.focused == Some(id) {
+            return;
+        }
+        let old_tid = self.focused_terminal_id();
+        self.focused = Some(id);
+        self.router.set_focused(id);
+        self.chrome_generation += 1;
+        self.update_file_tree_cwd();
+        if self.focused_terminal_id() != old_tid {
+            self.panel_tab_scroll = 0.0;
+            self.panel_tab_scroll_target = 0.0;
+            if self.editor_panel_auto_shown && self.active_editor_tabs().is_empty() {
+                self.show_editor_panel = false;
+                self.editor_panel_auto_shown = false;
+                self.compute_layout();
+            }
+        }
+    }
+
+    /// Resolve the effective target pane for actions like Copy/Paste/Find.
+    /// When sub_focus is Dock, targets the active editor tab instead of the
+    /// focused terminal.
+    fn action_target_id(&self) -> Option<tide_core::PaneId> {
+        if self.sub_focus == Some(SubFocus::Dock) {
+            self.active_editor_tab()
+        } else {
+            self.focused
+        }
+    }
+
     pub(crate) fn handle_action(&mut self, action: Action, event: Option<InputEvent>) {
         match action {
             Action::RouteToPane(id) => {
                 // Update focus
                 if let Some(InputEvent::MouseClick { position, .. }) = event {
-                    if self.focused != Some(id) {
-                        let old_tid = self.focused_terminal_id();
-                        self.focused = Some(id);
-                        self.router.set_focused(id);
-                        self.chrome_generation += 1;
-                        self.update_file_tree_cwd();
-                        // Reset panel tab scroll when switching terminal context
-                        if self.focused_terminal_id() != old_tid {
-                            self.panel_tab_scroll = 0.0;
-                            self.panel_tab_scroll_target = 0.0;
-                            // Auto-hide panel if it was auto-shown and new terminal has no editors
-                            if self.editor_panel_auto_shown && self.active_editor_tabs().is_empty() {
-                                self.show_editor_panel = false;
-                                self.editor_panel_auto_shown = false;
-                                self.compute_layout();
-                            }
-                        }
-                    }
+                    self.focus_terminal(id);
 
                     // Ctrl+Click / Cmd+Click on terminal -> try to open URL or file at click position
                     let mods = winit_modifiers_to_tide(self.modifiers);
@@ -272,6 +291,9 @@ impl App {
             }
             GlobalAction::ToggleFileTree => {
                 self.show_file_tree = !self.show_file_tree;
+                if !self.show_file_tree && self.sub_focus == Some(SubFocus::FileTree) {
+                    self.sub_focus = None;
+                }
                 self.chrome_generation += 1;
                 self.compute_layout();
                 if self.show_file_tree {
@@ -296,28 +318,41 @@ impl App {
                 }
             }
             GlobalAction::Paste => {
-                if let Some(focused_id) = self.focused {
-                    if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&focused_id) {
-                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                            if let Ok(text) = clipboard.get_text() {
-                                if !text.is_empty() {
-                                    // Bracket paste mode for safety
-                                    let mut data = Vec::new();
-                                    data.extend_from_slice(b"\x1b[200~");
-                                    data.extend_from_slice(text.as_bytes());
-                                    data.extend_from_slice(b"\x1b[201~");
-                                    pane.backend.write(&data);
-                                    self.input_just_sent = true;
-                                    self.input_sent_at = Some(Instant::now());
+                if let Some(target_id) = self.action_target_id() {
+                    match self.panes.get_mut(&target_id) {
+                        Some(PaneKind::Terminal(pane)) => {
+                            if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                                if let Ok(text) = clipboard.get_text() {
+                                    if !text.is_empty() {
+                                        let mut data = Vec::new();
+                                        data.extend_from_slice(b"\x1b[200~");
+                                        data.extend_from_slice(text.as_bytes());
+                                        data.extend_from_slice(b"\x1b[201~");
+                                        pane.backend.write(&data);
+                                        self.input_just_sent = true;
+                                        self.input_sent_at = Some(Instant::now());
+                                    }
                                 }
                             }
                         }
+                        Some(PaneKind::Editor(pane)) => {
+                            if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                                if let Ok(text) = clipboard.get_text() {
+                                    for ch in text.chars() {
+                                        pane.editor.handle_action(
+                                            tide_editor::EditorActionKind::InsertChar(ch),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
             GlobalAction::Copy => {
-                if let Some(focused_id) = self.focused {
-                    match self.panes.get(&focused_id) {
+                if let Some(target_id) = self.action_target_id() {
+                    match self.panes.get(&target_id) {
                         Some(PaneKind::Terminal(pane)) => {
                             if let Some(ref sel) = pane.selection {
                                 let text = pane.selected_text(sel);
@@ -338,35 +373,30 @@ impl App {
                                 }
                             }
                         }
-                        Some(PaneKind::Diff(_)) => {} // no selection in diff pane
-                        None => {}
+                        _ => {}
                     }
                 }
             }
             GlobalAction::Find => {
-                if let Some(focused_id) = self.focused {
-                    let has_search = match self.panes.get(&focused_id) {
+                if let Some(target_id) = self.action_target_id() {
+                    let has_search = match self.panes.get(&target_id) {
                         Some(PaneKind::Terminal(pane)) => pane.search.is_some(),
                         Some(PaneKind::Editor(pane)) => pane.search.is_some(),
-                        Some(PaneKind::Diff(_)) => false,
-                        None => false,
+                        _ => false,
                     };
                     if has_search {
-                        // Search already open -> just (re-)focus it
-                        self.search_focus = Some(focused_id);
+                        self.search_focus = Some(target_id);
                     } else {
-                        // Open new search
-                        match self.panes.get_mut(&focused_id) {
+                        match self.panes.get_mut(&target_id) {
                             Some(PaneKind::Terminal(pane)) => {
                                 pane.search = Some(SearchState::new());
                             }
                             Some(PaneKind::Editor(pane)) => {
                                 pane.search = Some(SearchState::new());
                             }
-                            Some(PaneKind::Diff(_)) => {} // no search in diff pane
-                            None => {}
+                            _ => {}
                         }
-                        self.search_focus = Some(focused_id);
+                        self.search_focus = Some(target_id);
                     }
                 }
             }
@@ -403,22 +433,44 @@ impl App {
                 self.show_editor_panel = !self.show_editor_panel;
                 self.editor_panel_auto_shown = false;
                 self.chrome_generation += 1;
-                // If hiding, move focus to tree and reset manual width + maximize
+                // If hiding, clear sub_focus and reset manual width + maximize
                 if !self.show_editor_panel {
                     self.editor_panel_maximized = false;
                     self.editor_panel_width_manual = false;
-                    if let Some(focused) = self.focused {
-                        let in_panel = self.is_dock_editor(focused)
-                            || self.editor_panel_placeholder == Some(focused);
-                        if in_panel {
-                            if let Some(&first) = self.layout.pane_ids().first() {
-                                self.focused = Some(first);
-                                self.router.set_focused(first);
-                            }
-                        }
+                    if self.sub_focus == Some(SubFocus::Dock) {
+                        self.sub_focus = None;
                     }
                 }
                 self.compute_layout();
+            }
+            GlobalAction::FocusFileTree => {
+                if self.sub_focus == Some(SubFocus::FileTree) {
+                    // Toggle off: return to terminal
+                    self.sub_focus = None;
+                } else if self.show_file_tree {
+                    self.sub_focus = Some(SubFocus::FileTree);
+                } else {
+                    self.show_file_tree = true;
+                    self.sub_focus = Some(SubFocus::FileTree);
+                    self.update_file_tree_cwd();
+                    self.compute_layout();
+                }
+                self.chrome_generation += 1;
+                self.needs_redraw = true;
+            }
+            GlobalAction::FocusDock => {
+                if self.sub_focus == Some(SubFocus::Dock) {
+                    // Toggle off: return to terminal
+                    self.sub_focus = None;
+                } else if self.show_editor_panel {
+                    self.sub_focus = Some(SubFocus::Dock);
+                } else {
+                    self.show_editor_panel = true;
+                    self.sub_focus = Some(SubFocus::Dock);
+                    self.compute_layout();
+                }
+                self.chrome_generation += 1;
+                self.needs_redraw = true;
             }
             GlobalAction::NewEditorFile => {
                 self.new_editor_pane();
@@ -455,6 +507,46 @@ impl App {
             GlobalAction::NewWindow => {
                 if let Ok(exe) = std::env::current_exe() {
                     let _ = std::process::Command::new(exe).spawn();
+                }
+            }
+            GlobalAction::DockTabPrev => {
+                let tid = self.focused_terminal_id();
+                let tabs = self.active_editor_tabs().to_vec();
+                let active = self.active_editor_tab();
+                if let (Some(tid), Some(active)) = (tid, active) {
+                    if let Some(idx) = tabs.iter().position(|&id| id == active) {
+                        if idx > 0 {
+                            let new_tab = tabs[idx - 1];
+                            if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                                tp.active_editor = Some(new_tab);
+                            }
+                            // Invalidate both old and new tab to force grid rebuild
+                            self.pane_generations.remove(&active);
+                            self.pane_generations.remove(&new_tab);
+                            self.chrome_generation += 1;
+                            self.scroll_to_active_panel_tab();
+                        }
+                    }
+                }
+            }
+            GlobalAction::DockTabNext => {
+                let tid = self.focused_terminal_id();
+                let tabs = self.active_editor_tabs().to_vec();
+                let active = self.active_editor_tab();
+                if let (Some(tid), Some(active)) = (tid, active) {
+                    if let Some(idx) = tabs.iter().position(|&id| id == active) {
+                        if idx + 1 < tabs.len() {
+                            let new_tab = tabs[idx + 1];
+                            if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                                tp.active_editor = Some(new_tab);
+                            }
+                            // Invalidate both old and new tab to force grid rebuild
+                            self.pane_generations.remove(&active);
+                            self.pane_generations.remove(&new_tab);
+                            self.chrome_generation += 1;
+                            self.scroll_to_active_panel_tab();
+                        }
+                    }
                 }
             }
             GlobalAction::ToggleTheme => {

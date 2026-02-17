@@ -6,6 +6,7 @@ use crate::drag_drop::PaneDragState;
 use crate::input::winit_modifiers_to_tide;
 use crate::pane::{PaneKind, Selection};
 use crate::theme::*;
+use crate::ui_state::SubFocus;
 use crate::{App, PaneAreaMode};
 
 impl App {
@@ -116,12 +117,7 @@ impl App {
                 }
                 PaneDragState::PendingDrag { source_pane, .. } => {
                     // Click (no drag): just focus the pane
-                    if self.focused != Some(source_pane) {
-                        self.focused = Some(source_pane);
-                        self.router.set_focused(source_pane);
-                        self.chrome_generation += 1;
-                        self.update_file_tree_cwd();
-                    }
+                    self.focus_terminal(source_pane);
                     return;
                 }
                 PaneDragState::Dragging { .. } => {
@@ -150,6 +146,27 @@ impl App {
         };
 
         if btn == MouseButton::Left {
+            // Titlebar swap button — toggle dock side
+            if self.top_inset > 0.0 {
+                let logical = self.logical_size();
+                let icon_w = 12.0_f32;
+                let icon_h = 12.0_f32;
+                let swap_x = logical.width - PANE_PADDING - icon_w;
+                let swap_y = (self.top_inset - icon_h) / 2.0;
+                if self.last_cursor_pos.x >= swap_x && self.last_cursor_pos.x <= swap_x + icon_w
+                    && self.last_cursor_pos.y >= swap_y && self.last_cursor_pos.y <= swap_y + icon_h
+                {
+                    self.dock_side = match self.dock_side {
+                        crate::LayoutSide::Left => crate::LayoutSide::Right,
+                        crate::LayoutSide::Right => crate::LayoutSide::Left,
+                    };
+                    self.compute_layout();
+                    self.chrome_generation += 1;
+                    self.needs_redraw = true;
+                    return;
+                }
+            }
+
             // Check top-edge drag handles (top strip of sidebar/dock panels)
             if let Some(ft_rect) = self.file_tree_rect {
                 if self.last_cursor_pos.y >= ft_rect.y && self.last_cursor_pos.y < ft_rect.y + PANE_PADDING
@@ -196,18 +213,15 @@ impl App {
 
             // Check panel tabs for click-to-activate (no drag)
             if let Some(tab_id) = self.panel_tab_at(self.last_cursor_pos) {
-                // Activate and focus
+                // Activate tab and set dock sub-focus (don't change focused terminal)
                 if let Some(tid) = self.terminal_owning(tab_id) {
                     if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                         tp.active_editor = Some(tab_id);
                     }
                 }
                 self.pane_generations.remove(&tab_id); // force grid rebuild
-                if self.focused != Some(tab_id) {
-                    self.focused = Some(tab_id);
-                    self.router.set_focused(tab_id);
-                    self.chrome_generation += 1;
-                }
+                self.sub_focus = Some(SubFocus::Dock);
+                self.chrome_generation += 1;
                 self.scroll_to_active_panel_tab();
                 return;
             }
@@ -225,14 +239,8 @@ impl App {
                     source_pane: tab_id,
                     press_pos: self.last_cursor_pos,
                 };
-                // Activate and focus the clicked stacked tab
                 self.pane_area_mode = PaneAreaMode::Stacked(tab_id);
-                if self.focused != Some(tab_id) {
-                    self.focused = Some(tab_id);
-                    self.router.set_focused(tab_id);
-                    self.update_file_tree_cwd();
-                }
-                self.chrome_generation += 1;
+                self.focus_terminal(tab_id);
                 self.compute_layout();
                 return;
             }
@@ -243,13 +251,7 @@ impl App {
                     source_pane: pane_id,
                     press_pos: self.last_cursor_pos,
                 };
-                // Focus the pane immediately
-                if self.focused != Some(pane_id) {
-                    self.focused = Some(pane_id);
-                    self.router.set_focused(pane_id);
-                    self.chrome_generation += 1;
-                    self.update_file_tree_cwd();
-                }
+                self.focus_terminal(pane_id);
                 return;
             }
         }

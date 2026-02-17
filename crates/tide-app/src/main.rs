@@ -138,6 +138,9 @@ struct App {
     pub(crate) chrome_generation: u64,
     pub(crate) last_chrome_generation: u64,
 
+    // Track dock active tab to force grid reassembly on change
+    pub(crate) last_editor_panel_active: Option<PaneId>,
+
     // Input latency: skip 8ms sleep after keypress while awaiting PTY response
     pub(crate) input_just_sent: bool,
     pub(crate) input_sent_at: Option<Instant>,
@@ -218,6 +221,12 @@ struct App {
     // Context menu (right-click on file tree)
     pub(crate) context_menu: Option<ContextMenuState>,
 
+    // SubFocus: secondary focus target (file tree, dock) while terminal retains border
+    pub(crate) sub_focus: Option<SubFocus>,
+
+    // File tree keyboard cursor index (visible entry index)
+    pub(crate) file_tree_cursor: usize,
+
     // File tree inline rename
     pub(crate) file_tree_rename: Option<FileTreeRenameState>,
 
@@ -288,6 +297,7 @@ impl App {
             layout_generation: 0,
             chrome_generation: 0,
             last_chrome_generation: u64::MAX,
+            last_editor_panel_active: None,
             input_just_sent: false,
             input_sent_at: None,
             consecutive_dirty_frames: 0,
@@ -318,6 +328,8 @@ impl App {
             file_switcher: None,
             hover_target: None,
             context_menu: None,
+            sub_focus: None,
+            file_tree_cursor: 0,
             file_tree_rename: None,
             file_tree_git_status: std::collections::HashMap::new(),
             file_tree_git_root: None,

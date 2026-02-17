@@ -45,35 +45,43 @@ pub(crate) fn panel_tab_title(panes: &HashMap<PaneId, PaneKind>, id: PaneId) -> 
 }
 
 // ──────────────────────────────────────────────
+// Variable-width tab helpers
+// ──────────────────────────────────────────────
+
+use crate::theme::{DOCK_TAB_GAP, DOCK_TAB_PAD, STACKED_TAB_PAD};
+
+/// Dock tab width: pad + text + gap + icon_cell + pad.
+pub(crate) fn dock_tab_width(title: &str, cell_w: f32) -> f32 {
+    DOCK_TAB_PAD * 2.0 + title.chars().count() as f32 * cell_w + DOCK_TAB_GAP + cell_w
+}
+
+/// Total width of all dock tabs (for scroll clamping).
+pub(crate) fn dock_tabs_total_width(panes: &HashMap<PaneId, PaneKind>, tabs: &[PaneId], cell_w: f32) -> f32 {
+    tabs.iter()
+        .map(|&id| dock_tab_width(&panel_tab_title(panes, id), cell_w))
+        .sum()
+}
+
+/// Cumulative x offset of the dock tab at `index`.
+pub(crate) fn dock_tab_x(panes: &HashMap<PaneId, PaneKind>, tabs: &[PaneId], index: usize, cell_w: f32) -> f32 {
+    tabs.iter()
+        .take(index)
+        .map(|&id| dock_tab_width(&panel_tab_title(panes, id), cell_w))
+        .sum()
+}
+
+/// Stacked pane tab width: pad + text + pad.
+pub(crate) fn stacked_tab_width(title: &str, cell_w: f32) -> f32 {
+    STACKED_TAB_PAD * 2.0 + title.chars().count() as f32 * cell_w
+}
+
+// ──────────────────────────────────────────────
 // Nerd Font file icons
 // ──────────────────────────────────────────────
 
-pub(crate) fn file_icon(name: &str, is_dir: bool, expanded: bool) -> char {
+pub(crate) fn file_icon(_name: &str, is_dir: bool, expanded: bool) -> char {
     if is_dir {
         return if expanded { '\u{f07c}' } else { '\u{f07b}' };
     }
-    let ext = name.rsplit('.').next().unwrap_or("");
-    match ext {
-        "rs" => '\u{e7a8}',
-        "toml" => '\u{e615}',
-        "md" => '\u{e73e}',
-        "json" => '\u{e60b}',
-        "yaml" | "yml" => '\u{e615}',
-        "js" => '\u{e74e}',
-        "ts" => '\u{e628}',
-        "tsx" | "jsx" => '\u{e7ba}',
-        "py" => '\u{e73c}',
-        "go" => '\u{e626}',
-        "c" | "h" => '\u{e61e}',
-        "cpp" | "hpp" | "cc" => '\u{e61d}',
-        "lock" => '\u{f023}',
-        "sh" | "bash" | "zsh" => '\u{e795}',
-        "git" | "gitignore" => '\u{e702}',
-        "css" => '\u{e749}',
-        "html" => '\u{e736}',
-        "svg" => '\u{e698}',
-        "png" | "jpg" | "jpeg" | "gif" | "webp" => '\u{f1c5}',
-        "txt" => '\u{f15c}',
-        _ => '\u{f15b}',
-    }
+    '\u{f15b}' // generic file icon
 }

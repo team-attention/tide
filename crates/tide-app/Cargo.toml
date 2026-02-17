@@ -3,6 +3,10 @@ name = "tide-app"
 edition.workspace = true
 version.workspace = true
 
+[[bin]]
+name = "Tide"
+path = "src/main.rs"
+
 [package.metadata.bundle]
 name = "Tide"
 identifier = "com.eatnug.tide"

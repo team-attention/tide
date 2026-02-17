@@ -2,11 +2,12 @@ use std::time::Instant;
 
 use winit::event::ElementState;
 
-use tide_core::{InputEvent, Renderer, TerminalBackend};
+use tide_core::{FileTreeSource, InputEvent, Renderer, TerminalBackend};
 
 use crate::drag_drop::PaneDragState;
 use crate::input::{winit_key_to_tide, winit_modifiers_to_tide, winit_physical_key_to_tide};
 use crate::pane::PaneKind;
+use crate::ui_state::SubFocus;
 use crate::App;
 
 use super::ime::is_hangul_char;
@@ -224,6 +225,44 @@ impl App {
                 // Block all other keys while save confirm is active
                 self.needs_redraw = true;
                 return;
+            }
+
+            // SubFocus interception: file tree or dock keyboard nav
+            if let Some(sf) = self.sub_focus {
+                // Global hotkeys: pass through most, but block MoveFocus
+                // (Cmd+HJKL should NOT escape sub_focus to navigate terminals)
+                if modifiers.meta || (modifiers.ctrl && modifiers.shift) {
+                    let input = InputEvent::KeyPress { key, modifiers };
+                    let action = self.router.process(input, &self.pane_rects);
+                    match &action {
+                        tide_input::Action::GlobalAction(ga)
+                            if matches!(ga, tide_input::GlobalAction::MoveFocus(_)) =>
+                        {
+                            // Fall through to sub-focus handler below
+                        }
+                        _ => {
+                            self.handle_action(action, Some(input));
+                            return;
+                        }
+                    }
+                }
+                match sf {
+                    SubFocus::FileTree => {
+                        self.handle_file_tree_nav_key(key, &modifiers);
+                        return;
+                    }
+                    SubFocus::Dock => {
+                        // Forward keys to the focused editor pane in the dock
+                        let input = InputEvent::KeyPress { key, modifiers };
+                        if let Some(active_editor) = self.active_editor_tab() {
+                            self.handle_action(
+                                tide_input::Action::RouteToPane(active_editor),
+                                Some(input),
+                            );
+                        }
+                        return;
+                    }
+                }
             }
 
             // Search bar key interception: when search is focused, consume keys
@@ -601,6 +640,153 @@ impl App {
             _ => {} // consume all other keys
         }
         self.needs_redraw = true;
+    }
+
+    fn handle_file_tree_nav_key(&mut self, key: tide_core::Key, _modifiers: &tide_core::Modifiers) {
+        let entry_count = self.file_tree.as_ref()
+            .map(|t| t.visible_entries().len())
+            .unwrap_or(0);
+        if entry_count == 0 {
+            self.needs_redraw = true;
+            return;
+        }
+
+        match key {
+            tide_core::Key::Char('j') | tide_core::Key::Char('J') | tide_core::Key::Down => {
+                if self.file_tree_cursor + 1 < entry_count {
+                    self.file_tree_cursor += 1;
+                    self.chrome_generation += 1;
+                    self.auto_scroll_file_tree_cursor();
+                }
+            }
+            tide_core::Key::Char('k') | tide_core::Key::Char('K') | tide_core::Key::Up => {
+                if self.file_tree_cursor > 0 {
+                    self.file_tree_cursor -= 1;
+                    self.chrome_generation += 1;
+                    self.auto_scroll_file_tree_cursor();
+                }
+            }
+            tide_core::Key::Char('h') | tide_core::Key::Char('H') | tide_core::Key::Left => {
+                // Collapse directory or move to parent
+                if let Some(tree) = &self.file_tree {
+                    let entries = tree.visible_entries();
+                    if let Some(entry) = entries.get(self.file_tree_cursor) {
+                        if entry.entry.is_dir && entry.is_expanded {
+                            let path = entry.entry.path.clone();
+                            if let Some(tree) = &mut self.file_tree {
+                                tree.toggle(&path);
+                            }
+                            self.chrome_generation += 1;
+                        } else if entry.depth > 0 {
+                            // Move cursor to parent directory
+                            let parent_depth = entry.depth - 1;
+                            for i in (0..self.file_tree_cursor).rev() {
+                                if let Some(e) = entries.get(i) {
+                                    if e.entry.is_dir && e.depth == parent_depth {
+                                        self.file_tree_cursor = i;
+                                        self.chrome_generation += 1;
+                                        self.auto_scroll_file_tree_cursor();
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            tide_core::Key::Char('l') | tide_core::Key::Char('L') | tide_core::Key::Right => {
+                // Expand directory or open file
+                if let Some(tree) = &self.file_tree {
+                    let entries = tree.visible_entries();
+                    if let Some(entry) = entries.get(self.file_tree_cursor) {
+                        if entry.entry.is_dir {
+                            if !entry.is_expanded {
+                                let path = entry.entry.path.clone();
+                                if let Some(tree) = &mut self.file_tree {
+                                    tree.toggle(&path);
+                                }
+                                self.chrome_generation += 1;
+                            } else if self.file_tree_cursor + 1 < entry_count {
+                                // Already expanded → move into first child
+                                self.file_tree_cursor += 1;
+                                self.chrome_generation += 1;
+                                self.auto_scroll_file_tree_cursor();
+                            }
+                        } else {
+                            let path = entry.entry.path.clone();
+                            self.open_editor_pane(path);
+                        }
+                    }
+                }
+            }
+            tide_core::Key::Char('g') => {
+                self.file_tree_cursor = 0;
+                self.chrome_generation += 1;
+                self.auto_scroll_file_tree_cursor();
+            }
+            tide_core::Key::Char('G') => {
+                if entry_count > 0 {
+                    self.file_tree_cursor = entry_count - 1;
+                    self.chrome_generation += 1;
+                    self.auto_scroll_file_tree_cursor();
+                }
+            }
+            tide_core::Key::Char(' ') => {
+                // Space toggles folder expand/collapse
+                if let Some(tree) = &self.file_tree {
+                    let entries = tree.visible_entries();
+                    if let Some(entry) = entries.get(self.file_tree_cursor) {
+                        if entry.entry.is_dir {
+                            let path = entry.entry.path.clone();
+                            if let Some(tree) = &mut self.file_tree {
+                                tree.toggle(&path);
+                            }
+                            self.chrome_generation += 1;
+                        }
+                    }
+                }
+            }
+            tide_core::Key::Enter => {
+                if let Some(tree) = &self.file_tree {
+                    let entries = tree.visible_entries();
+                    if let Some(entry) = entries.get(self.file_tree_cursor) {
+                        if entry.entry.is_dir {
+                            let path = entry.entry.path.clone();
+                            if let Some(tree) = &mut self.file_tree {
+                                tree.toggle(&path);
+                            }
+                            self.chrome_generation += 1;
+                        } else {
+                            let path = entry.entry.path.clone();
+                            self.open_editor_pane(path);
+                        }
+                    }
+                }
+            }
+            _ => {} // consume all other keys
+        }
+        self.needs_redraw = true;
+    }
+
+    /// Adjust file tree scroll so the cursor is visible.
+    fn auto_scroll_file_tree_cursor(&mut self) {
+        if let (Some(tree_rect), Some(renderer)) = (self.file_tree_rect, self.renderer.as_ref()) {
+            let cell_size = renderer.cell_size();
+            let line_height = cell_size.height * crate::theme::FILE_TREE_LINE_SPACING;
+            let padding = crate::theme::PANE_PADDING;
+
+            let cursor_y = padding + self.file_tree_cursor as f32 * line_height;
+            let visible_top = self.file_tree_scroll;
+            let visible_bottom = self.file_tree_scroll + tree_rect.height - padding * 2.0;
+
+            if cursor_y < visible_top {
+                self.file_tree_scroll_target = cursor_y;
+                self.file_tree_scroll = cursor_y;
+            } else if cursor_y + line_height > visible_bottom {
+                self.file_tree_scroll_target = cursor_y + line_height - (tree_rect.height - padding * 2.0);
+                self.file_tree_scroll = self.file_tree_scroll_target;
+            }
+        }
     }
 
     fn handle_search_bar_key(&mut self, search_pane_id: tide_core::PaneId, key: tide_core::Key, modifiers: &tide_core::Modifiers) {
