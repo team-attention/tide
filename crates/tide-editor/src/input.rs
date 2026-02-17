@@ -17,6 +17,7 @@ pub enum EditorAction {
     End,
     PageUp,
     PageDown,
+    SelectAll,
     Save,
     Undo,
     Redo,
@@ -43,6 +44,11 @@ pub fn key_to_editor_action(key: &Key, modifiers: &Modifiers) -> Option<EditorAc
     // Cmd+Z / Ctrl+Z -> Undo
     if (modifiers.ctrl || modifiers.meta) && matches!(key, Key::Char('z') | Key::Char('Z')) {
         return Some(EditorAction::Undo);
+    }
+
+    // Cmd+A / Ctrl+A -> SelectAll
+    if (modifiers.ctrl || modifiers.meta) && matches!(key, Key::Char('a') | Key::Char('A')) {
+        return Some(EditorAction::SelectAll);
     }
 
     // Don't process other ctrl/meta combos as editor input
@@ -100,8 +106,16 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_a_maps_to_select_all() {
+        assert_eq!(
+            key_to_editor_action(&Key::Char('a'), &ctrl()),
+            Some(EditorAction::SelectAll)
+        );
+    }
+
+    #[test]
     fn ctrl_other_returns_none() {
-        assert_eq!(key_to_editor_action(&Key::Char('a'), &ctrl()), None);
+        assert_eq!(key_to_editor_action(&Key::Char('b'), &ctrl()), None);
     }
 
     #[test]

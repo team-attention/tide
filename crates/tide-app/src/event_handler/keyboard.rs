@@ -110,7 +110,10 @@ impl App {
                     winit::keyboard::Key::Character(s)
                         if s.as_str().chars().next().map_or(false, |c| !is_hangul_char(c))
                 );
-                if is_non_hangul {
+                if is_non_hangul
+                    || self.modifiers.control_key()
+                    || self.modifiers.super_key()
+                {
                     ime_pass_through = true;
                 } else {
                     return;
@@ -241,7 +244,15 @@ impl App {
                             // Fall through to sub-focus handler below
                         }
                         _ => {
-                            self.handle_action(action, Some(input));
+                            // When sub_focus is Dock and the router returns RouteToPane
+                            // (unrecognized hotkey), reroute to the active editor tab
+                            // so keys like Cmd+S reach the editor instead of the terminal.
+                            let rerouted = if sf == SubFocus::Dock {
+                                if let tide_input::Action::RouteToPane(_) = &action {
+                                    self.active_editor_tab().map(tide_input::Action::RouteToPane)
+                                } else { None }
+                            } else { None };
+                            self.handle_action(rerouted.unwrap_or(action), Some(input));
                             return;
                         }
                     }

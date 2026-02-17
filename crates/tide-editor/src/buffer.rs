@@ -219,6 +219,52 @@ impl Buffer {
         self.lines.iter().map(|l| l.chars().count()).max().unwrap_or(0)
     }
 
+    /// Delete text between two byte-offset positions, returning the new cursor position (start).
+    /// `start` and `end` are (line, byte_col) positions; start must be <= end.
+    pub fn delete_range(&mut self, start: Position, end: Position) -> Position {
+        if start == end || start.line >= self.lines.len() {
+            return start;
+        }
+        let end_line = end.line.min(self.lines.len() - 1);
+        let end_col = end.col.min(self.lines[end_line].len());
+        let start_col = start.col.min(self.lines[start.line].len());
+
+        // Capture the deleted text for undo
+        let mut deleted_lines = Vec::new();
+        if start.line == end_line {
+            deleted_lines.push(self.lines[start.line][start_col..end_col].to_string());
+        } else {
+            deleted_lines.push(self.lines[start.line][start_col..].to_string());
+            for line_idx in (start.line + 1)..end_line {
+                deleted_lines.push(self.lines[line_idx].clone());
+            }
+            deleted_lines.push(self.lines[end_line][..end_col].to_string());
+        }
+
+        let actual_start = Position { line: start.line, col: start_col };
+        let actual_end = Position { line: end_line, col: end_col };
+        self.undo_stack.push((
+            crate::undo::EditOp::DeleteRange {
+                start: actual_start,
+                end: actual_end,
+                deleted_lines,
+            },
+            start,
+        ));
+        self.redo_stack.clear();
+
+        if start.line == end_line {
+            self.lines[start.line].drain(start_col..end_col);
+        } else {
+            let suffix = self.lines[end_line][end_col..].to_string();
+            self.lines[start.line].truncate(start_col);
+            self.lines[start.line].push_str(&suffix);
+            self.lines.drain((start.line + 1)..=end_line);
+        }
+        self.generation += 1;
+        Position { line: start.line, col: start_col }
+    }
+
     pub fn is_modified(&self) -> bool {
         self.lines != self.saved_content
     }
