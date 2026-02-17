@@ -44,7 +44,7 @@ pub struct ChromeRectVertex {
     pub rect_center: [f32; 2],   // rect center (px)
     pub rect_half: [f32; 2],     // half-width, half-height (px)
     pub corner_radius: f32,      // rounded corner radius (px)
-    pub _pad: f32,               // 48-byte alignment
+    pub shadow_blur: f32,        // >0 = shadow mode: soft falloff over this radius (px)
 }
 
 impl ChromeRectVertex {
@@ -80,6 +80,12 @@ impl ChromeRectVertex {
             wgpu::VertexAttribute {
                 offset: 40,
                 shader_location: 4,
+                format: wgpu::VertexFormat::Float32,
+            },
+            // shadow_blur
+            wgpu::VertexAttribute {
+                offset: 44,
+                shader_location: 5,
                 format: wgpu::VertexFormat::Float32,
             },
         ],

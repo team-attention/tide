@@ -38,7 +38,46 @@ impl WgpuRenderer {
             rect_center: center,
             rect_half: half,
             corner_radius: r,
-            _pad: 0.0,
+            shadow_blur: 0.0,
+        };
+        self.chrome_rect_vertices.push(vert(qx, qy));
+        self.chrome_rect_vertices.push(vert(qx + qw, qy));
+        self.chrome_rect_vertices.push(vert(qx + qw, qy + qh));
+        self.chrome_rect_vertices.push(vert(qx, qy + qh));
+        self.chrome_rect_indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+
+    /// Draw a soft outer shadow for a rounded rect (SDF-based blur).
+    /// `blur` = blur radius in logical pixels, `spread` = expand/shrink of shadow shape.
+    pub fn draw_chrome_shadow(&mut self, rect: Rect, color: Color, radius: f32, blur: f32, spread: f32) {
+        let s = self.scale_factor;
+        // Shadow shape = rect adjusted by spread (negative = smaller)
+        let sx = (rect.x - spread) * s;
+        let sy = (rect.y - spread) * s;
+        let sw = (rect.width + spread * 2.0) * s;
+        let sh = (rect.height + spread * 2.0) * s;
+        let sr = radius * s;
+        let sb = blur * s;
+
+        // Expand quad by blur radius so the soft falloff is fully visible
+        let expand = sb + 2.0;
+        let qx = sx - expand;
+        let qy = sy - expand;
+        let qw = sw + expand * 2.0;
+        let qh = sh + expand * 2.0;
+
+        let center = [sx + sw * 0.5, sy + sh * 0.5];
+        let half = [sw * 0.5, sh * 0.5];
+        let c = [color.r, color.g, color.b, color.a];
+
+        let base = self.chrome_rect_vertices.len() as u32;
+        let vert = |px: f32, py: f32| ChromeRectVertex {
+            position: [px, py],
+            color: c,
+            rect_center: center,
+            rect_half: half,
+            corner_radius: sr,
+            shadow_blur: sb,
         };
         self.chrome_rect_vertices.push(vert(qx, qy));
         self.chrome_rect_vertices.push(vert(qx + qw, qy));
@@ -86,7 +125,7 @@ impl WgpuRenderer {
                         rect_center: center,
                         rect_half: half,
                         corner_radius: 0.0,
-                        _pad: 0.0,
+                        shadow_blur: 0.0,
                     };
                     self.chrome_rect_vertices.push(vert(qx, qy));
                     self.chrome_rect_vertices.push(vert(qx + qw, qy));

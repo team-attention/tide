@@ -1,7 +1,7 @@
 use tide_core::{DropZone, PaneId, Rect, Renderer, SplitDirection, Vec2};
 
 use crate::theme::*;
-use crate::ui_state::TabBarGeometry;
+use crate::ui::{dock_tab_width, dock_tab_x, dock_tabs_total_width, panel_tab_title, stacked_tab_width};
 use crate::{App, PaneAreaMode};
 
 /// Threshold for outer zone detection (0–12% of pane extent).
@@ -28,6 +28,7 @@ pub(crate) enum HoverTarget {
     FileFinderItem(usize),
     SidebarHandle,
     DockHandle,
+    TitlebarSwap,
 }
 
 // ──────────────────────────────────────────────
@@ -57,43 +58,46 @@ pub(crate) enum PaneDragState {
 }
 
 impl App {
-    /// Tab bar geometry for the stacked pane area, or `None` if not in stacked mode.
-    pub(crate) fn stacked_tab_bar_geometry(&self) -> Option<TabBarGeometry> {
+    /// Hit-test whether the position is on a stacked-mode inline tab.
+    /// Returns the PaneId of the tab. Tabs are variable-width inline text.
+    pub(crate) fn stacked_tab_at(&self, pos: Vec2) -> Option<PaneId> {
         if !matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
             return None;
         }
         let &(_, rect) = self.visual_pane_rects.first()?;
-        Some(TabBarGeometry {
-            tab_bar_top: rect.y + PANE_PADDING,
-            tab_start_x: rect.x + PANE_PADDING,
-        })
-    }
-
-    /// Hit-test whether the position is on a stacked-mode tab. Returns the PaneId of the tab.
-    pub(crate) fn stacked_tab_at(&self, pos: Vec2) -> Option<PaneId> {
-        let geo = self.stacked_tab_bar_geometry()?;
-        if pos.y < geo.tab_bar_top || pos.y > geo.tab_bar_top + PANEL_TAB_HEIGHT {
+        let header_top = rect.y;
+        if pos.y < header_top || pos.y > header_top + TAB_BAR_HEIGHT {
             return None;
         }
+        let cell_w = self.renderer.as_ref()?.cell_size().width;
         let pane_ids = self.layout.pane_ids();
-        for (i, &tab_id) in pane_ids.iter().enumerate() {
-            if geo.tab_rect(i).contains(pos) {
+        let mut tx = rect.x + PANE_PADDING;
+        for &tab_id in pane_ids.iter() {
+            let title = crate::ui::pane_title(&self.panes, tab_id);
+            let tab_w = stacked_tab_width(&title, cell_w);
+            if pos.x >= tx && pos.x <= tx + tab_w {
                 return Some(tab_id);
             }
+            tx += tab_w;
         }
         None
     }
 
-    /// Hit-test whether the position is on a stacked-mode tab's close button.
+    /// Hit-test stacked-mode close button (single button on header right).
+    /// Returns the active pane id since it's a single close button for the header.
     pub(crate) fn stacked_tab_close_at(&self, pos: Vec2) -> Option<PaneId> {
-        let geo = self.stacked_tab_bar_geometry()?;
-        if pos.y < geo.tab_bar_top || pos.y > geo.tab_bar_top + PANEL_TAB_HEIGHT {
-            return None;
-        }
-        let pane_ids = self.layout.pane_ids();
-        for (i, &tab_id) in pane_ids.iter().enumerate() {
-            if geo.close_rect(i).contains(pos) {
-                return Some(tab_id);
+        if let PaneAreaMode::Stacked(active) = self.pane_area_mode {
+            let &(_, rect) = self.visual_pane_rects.first()?;
+            let cell_size = self.renderer.as_ref()?.cell_size();
+            let header_top = rect.y;
+            if pos.y < header_top || pos.y > header_top + TAB_BAR_HEIGHT {
+                return None;
+            }
+            let content_right = rect.x + rect.width - PANE_PADDING;
+            let close_w = cell_size.width + BADGE_PADDING_H * 2.0;
+            let close_x = content_right - close_w;
+            if pos.x >= close_x && pos.x <= close_x + close_w {
+                return Some(active);
             }
         }
         None
@@ -143,52 +147,54 @@ impl App {
         None
     }
 
-    /// Hit-test whether the position is on a panel tab. Returns the PaneId of the tab.
+    /// Hit-test whether the position is on a panel tab (variable-width dock tabs).
     pub(crate) fn panel_tab_at(&self, pos: Vec2) -> Option<PaneId> {
         let panel_rect = self.editor_panel_rect.as_ref()?;
-        // Tab bar area is the top PANEL_TAB_HEIGHT of the panel
-        let tab_bar_top = panel_rect.y + PANE_PADDING;
+        let tab_bar_top = panel_rect.y;
         if pos.y < tab_bar_top || pos.y > tab_bar_top + PANEL_TAB_HEIGHT {
             return None;
         }
-
-        let tab_start_x = panel_rect.x + PANE_PADDING - self.panel_tab_scroll;
-        for (i, &tab_id) in self.active_editor_tabs().iter().enumerate() {
-            let tx = tab_start_x + i as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
-            if pos.x >= tx && pos.x <= tx + PANEL_TAB_WIDTH {
-                // Only match if within panel bounds
+        let cell_w = self.renderer.as_ref()?.cell_size().width;
+        let tabs = self.active_editor_tabs();
+        let mut tx = panel_rect.x - self.panel_tab_scroll;
+        for &tab_id in tabs.iter() {
+            let title = panel_tab_title(&self.panes, tab_id);
+            let tab_w = dock_tab_width(&title, cell_w);
+            if pos.x >= tx && pos.x <= tx + tab_w {
                 if pos.x >= panel_rect.x && pos.x <= panel_rect.x + panel_rect.width {
                     return Some(tab_id);
                 }
             }
+            tx += tab_w;
         }
         None
     }
 
-    /// Check if a click position is on the close button of a panel tab.
-    /// Returns the tab's PaneId if clicking the close "x".
+    /// Hit-test the close button area within a variable-width dock tab.
     pub(crate) fn panel_tab_close_at(&self, pos: Vec2) -> Option<PaneId> {
         let panel_rect = self.editor_panel_rect.as_ref()?;
-        let tab_bar_top = panel_rect.y + PANE_PADDING;
+        let tab_bar_top = panel_rect.y;
         if pos.y < tab_bar_top || pos.y > tab_bar_top + PANEL_TAB_HEIGHT {
             return None;
         }
-
-        let tab_start_x = panel_rect.x + PANE_PADDING - self.panel_tab_scroll;
-        for (i, &tab_id) in self.active_editor_tabs().iter().enumerate() {
-            let tx = tab_start_x + i as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
-            // Close button is on the right edge of the tab
-            let close_x = tx + PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - PANEL_TAB_CLOSE_PADDING;
-            let close_y = tab_bar_top + (PANEL_TAB_HEIGHT - PANEL_TAB_CLOSE_SIZE) / 2.0;
-            if pos.x >= close_x
-                && pos.x <= close_x + PANEL_TAB_CLOSE_SIZE
-                && pos.y >= close_y
-                && pos.y <= close_y + PANEL_TAB_CLOSE_SIZE
+        let cell_w = self.renderer.as_ref()?.cell_size().width;
+        let cell_h = self.renderer.as_ref()?.cell_size().height;
+        let tabs = self.active_editor_tabs();
+        let mut tx = panel_rect.x - self.panel_tab_scroll;
+        for &tab_id in tabs.iter() {
+            let title = panel_tab_title(&self.panes, tab_id);
+            let tab_w = dock_tab_width(&title, cell_w);
+            // Close icon is after the text: tx + DOCK_TAB_PAD + text_w + DOCK_TAB_GAP
+            let icon_x = tx + DOCK_TAB_PAD + title.chars().count() as f32 * cell_w + DOCK_TAB_GAP;
+            let icon_y = tab_bar_top + (PANEL_TAB_HEIGHT - cell_h) / 2.0;
+            if pos.x >= icon_x && pos.x <= icon_x + cell_w
+                && pos.y >= icon_y && pos.y <= icon_y + cell_h
             {
                 if pos.x >= panel_rect.x && pos.x <= panel_rect.x + panel_rect.width {
                     return Some(tab_id);
                 }
             }
+            tx += tab_w;
         }
         None
     }
@@ -196,7 +202,7 @@ impl App {
     /// Check if the cursor is in the panel tab bar area.
     pub(crate) fn is_over_panel_tab_bar(&self, pos: Vec2) -> bool {
         if let Some(ref panel_rect) = self.editor_panel_rect {
-            let tab_bar_top = panel_rect.y + PANE_PADDING;
+            let tab_bar_top = panel_rect.y;
             pos.x >= panel_rect.x
                 && pos.x <= panel_rect.x + panel_rect.width
                 && pos.y >= tab_bar_top
@@ -208,8 +214,10 @@ impl App {
 
     /// Clamp the panel tab scroll to valid range.
     pub(crate) fn clamp_panel_tab_scroll(&mut self) {
-        if let Some(ref panel_rect) = self.editor_panel_rect {
-            let total_width = self.active_editor_tabs().len() as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP) - PANEL_TAB_GAP;
+        if let (Some(ref panel_rect), Some(renderer)) = (self.editor_panel_rect, self.renderer.as_ref()) {
+            let cell_w = renderer.cell_size().width;
+            let tabs = self.active_editor_tabs();
+            let total_width = dock_tabs_total_width(&self.panes, &tabs, cell_w);
             let visible_width = panel_rect.width - 2.0 * PANE_PADDING;
             let max_scroll = (total_width - visible_width).max(0.0);
             self.panel_tab_scroll_target = self.panel_tab_scroll_target.clamp(0.0, max_scroll);
@@ -219,10 +227,15 @@ impl App {
 
     /// Auto-scroll to make the active panel tab visible.
     pub(crate) fn scroll_to_active_panel_tab(&mut self) {
-        if let (Some(active), Some(ref panel_rect)) = (self.active_editor_tab(), self.editor_panel_rect) {
-            if let Some(idx) = self.active_editor_tabs().iter().position(|&id| id == active) {
-                let tab_left = idx as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
-                let tab_right = tab_left + PANEL_TAB_WIDTH;
+        if let (Some(active), Some(ref panel_rect), Some(renderer)) =
+            (self.active_editor_tab(), self.editor_panel_rect, self.renderer.as_ref())
+        {
+            let cell_w = renderer.cell_size().width;
+            let tabs = self.active_editor_tabs();
+            if let Some(idx) = tabs.iter().position(|&id| id == active) {
+                let tab_left = dock_tab_x(&self.panes, &tabs, idx, cell_w);
+                let title = panel_tab_title(&self.panes, active);
+                let tab_right = tab_left + dock_tab_width(&title, cell_w);
                 let visible_width = panel_rect.width - 2.0 * PANE_PADDING;
 
                 if tab_left < self.panel_tab_scroll_target {

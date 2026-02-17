@@ -22,6 +22,7 @@ pub struct ThemePalette {
     pub tree_dir: Color,        // folder names
     pub tree_dir_icon: Color,   // folder icon color (warm)
     pub tree_icon: Color,       // file icon color (dim)
+    pub tree_row_active: Color, // expanded folder row background
 
     // Tab bar
     pub tab_text: Color,
@@ -105,9 +106,6 @@ pub struct ThemePalette {
     // Link highlight
     pub link_color: Color,
 
-    // Drag handle grip dots
-    pub handle_dots: Color,
-
     // File tree git status
     pub git_modified: Color,
     pub git_added: Color,
@@ -125,7 +123,7 @@ pub static DARK: ThemePalette = ThemePalette {
     pane_bg:        Color::new(0.055, 0.055, 0.063, 1.0),
     file_tree_bg:   Color::new(0.067, 0.067, 0.075, 1.0),
     border_color:   Color::new(0.039, 0.039, 0.043, 1.0),
-    border_focused: Color::new(0.769, 0.722, 0.651, 0.333),
+    border_focused: Color::new(0.769, 0.722, 0.651, 0.50),
     border_subtle:  Color::new(0.122, 0.122, 0.137, 1.0),
 
     // Text — warm neutral
@@ -133,6 +131,7 @@ pub static DARK: ThemePalette = ThemePalette {
     tree_dir:       Color::new(0.678, 0.678, 0.690, 1.0),   // folder names #ADADB0
     tree_dir_icon:  Color::new(0.831, 0.784, 0.714, 1.0),   // folder icons #D4C8B6
     tree_icon:      Color::new(0.290, 0.290, 0.306, 1.0),   // file icons #4A4A4E
+    tree_row_active: Color::new(0.102, 0.102, 0.114, 1.0),  // expanded folder row bg #1A1A1D
 
     // Tab bar
     tab_text:           Color::new(0.420, 0.420, 0.439, 1.0),
@@ -187,15 +186,15 @@ pub static DARK: ThemePalette = ThemePalette {
     conflict_bar_btn:      Color::new(0.24, 0.20, 0.08, 1.0),
     conflict_bar_btn_text: Color::new(0.92, 0.82, 0.50, 1.0),
 
-    // Diff view
-    diff_added_bg:      Color::new(0.10, 0.22, 0.10, 1.0),   // dark green bg
-    diff_removed_bg:    Color::new(0.25, 0.10, 0.10, 1.0),   // dark red bg
-    diff_added_gutter:  Color::new(0.30, 0.70, 0.30, 1.0),   // green gutter +
-    diff_removed_gutter: Color::new(0.70, 0.30, 0.30, 1.0),  // red gutter -
+    // Diff view — transparent overlays matching Tide.pen
+    diff_added_bg:      Color::new(0.133, 0.773, 0.369, 0.071),  // #22C55E12
+    diff_removed_bg:    Color::new(0.937, 0.267, 0.267, 0.071),  // #EF444412
+    diff_added_gutter:  Color::new(0.525, 0.937, 0.675, 1.0),    // #86EFAC
+    diff_removed_gutter: Color::new(0.937, 0.604, 0.604, 1.0),   // #EF9A9A
 
-    // Header badges
-    badge_bg:             Color::new(0.769, 0.722, 0.651, 0.18),
-    badge_bg_unfocused:   Color::new(0.420, 0.420, 0.439, 0.18),
+    // Header badges — alpha 0.094 = 0x18/0xFF per Tide.pen
+    badge_bg:             Color::new(0.769, 0.722, 0.651, 0.094),
+    badge_bg_unfocused:   Color::new(0.420, 0.420, 0.439, 0.094),
     badge_text:           Color::new(0.545, 0.545, 0.565, 1.0),
     badge_text_dimmed:    Color::new(0.290, 0.290, 0.306, 1.0),
     badge_git_branch:     Color::new(0.769, 0.722, 0.651, 1.0),
@@ -213,9 +212,6 @@ pub static DARK: ThemePalette = ThemePalette {
 
     // Link highlight — #4E94CE blue
     link_color: Color::new(0.306, 0.580, 0.808, 1.0),
-
-    // Drag handle grip dots
-    handle_dots: Color::new(1.0, 1.0, 1.0, 0.35),
 
     // File tree git status
     git_modified: Color::new(0.831, 0.659, 0.263, 1.0),   // warm yellow #D4A843
@@ -242,6 +238,7 @@ pub static LIGHT: ThemePalette = ThemePalette {
     tree_dir:       Color::new(0.15, 0.15, 0.15, 1.0),
     tree_dir_icon:  Color::new(0.30, 0.30, 0.30, 1.0),
     tree_icon:      Color::new(0.55, 0.55, 0.55, 1.0),
+    tree_row_active: Color::new(0.90, 0.90, 0.89, 1.0),
 
     // Tab bar
     tab_text:           Color::new(0.50, 0.50, 0.50, 1.0),
@@ -323,9 +320,6 @@ pub static LIGHT: ThemePalette = ThemePalette {
     // Link highlight — #0969DA blue
     link_color: Color::new(0.035, 0.412, 0.855, 1.0),
 
-    // Drag handle grip dots
-    handle_dots: Color::new(0.0, 0.0, 0.0, 0.35),
-
     // File tree git status
     git_modified: Color::new(0.70, 0.58, 0.10, 1.0),   // warm yellow
     git_added:    Color::new(0.15, 0.55, 0.15, 1.0),    // green
@@ -338,21 +332,17 @@ pub static LIGHT: ThemePalette = ThemePalette {
 // ──────────────────────────────────────────────
 
 pub const BORDER_WIDTH: f32 = 1.0;
-pub const PANE_GAP: f32 = 3.0;
-pub const PANE_PADDING: f32 = 10.0;
+pub const PANE_GAP: f32 = 2.0;
+pub const PANE_PADDING: f32 = 12.0;
 pub const PANE_CORNER_RADIUS: f32 = 6.0;
 pub const FILE_TREE_LINE_SPACING: f32 = 1.5;
+pub const FILE_TREE_ROW_RADIUS: f32 = 6.0;
 pub const FILE_TREE_WIDTH: f32 = 240.0;
 
 pub const TAB_BAR_HEIGHT: f32 = 32.0;
 
 pub const EDITOR_PANEL_WIDTH: f32 = 340.0;
 pub const PANEL_TAB_HEIGHT: f32 = 36.0;
-pub const PANEL_TAB_WIDTH: f32 = 140.0;
-pub const PANEL_TAB_GAP: f32 = 2.0;
-pub const PANEL_TAB_CLOSE_SIZE: f32 = 14.0;
-pub const PANEL_TAB_CLOSE_PADDING: f32 = 4.0;
-pub const PANEL_TAB_TEXT_INSET: f32 = 12.0;
 
 pub const PANE_CLOSE_SIZE: f32 = 14.0;
 
@@ -362,19 +352,27 @@ pub const DRAG_THRESHOLD: f32 = 5.0;
 
 pub const SCROLLBAR_WIDTH: f32 = 6.0;
 
+// Dock tab layout (variable width, per Tide.pen)
+pub const DOCK_TAB_PAD: f32 = 12.0;
+pub const DOCK_TAB_GAP: f32 = 6.0;
+pub const DOCK_TAB_DOT_SIZE: f32 = 6.0;
+
+// Stacked pane tab layout (inline text tabs)
+pub const STACKED_TAB_PAD: f32 = 10.0;
+
 pub const SEARCH_BAR_WIDTH: f32 = 260.0;
 pub const SEARCH_BAR_HEIGHT: f32 = 28.0;
 pub const SEARCH_BAR_CLOSE_SIZE: f32 = 20.0;
 
-pub const CONFLICT_BAR_HEIGHT: f32 = 26.0;
+pub const CONFLICT_BAR_HEIGHT: f32 = 28.0;
 
 // Header badges
 /// Height of the macOS titlebar inset (traffic light area).
 /// Used to offset all layout rects so content doesn't overlap the titlebar controls.
 pub const TITLEBAR_HEIGHT: f32 = 40.0;
 
-pub const BADGE_PADDING_H: f32 = 6.0;
-pub const BADGE_GAP: f32 = 4.0;
+pub const BADGE_PADDING_H: f32 = 8.0;
+pub const BADGE_GAP: f32 = 6.0;
 pub const BADGE_RADIUS: f32 = 100.0;
 
 // ── Popup layout constants ──

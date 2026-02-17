@@ -4,7 +4,8 @@ use crate::drag_drop::HoverTarget;
 use crate::header;
 use crate::pane::PaneKind;
 use crate::theme::*;
-use crate::ui::{file_icon, panel_tab_title};
+use crate::ui::{dock_tab_width, file_icon, panel_tab_title, stacked_tab_width};
+use crate::ui_state::SubFocus;
 use crate::{App, PaneAreaMode};
 
 /// Render the chrome layer: file tree panel, editor panel + tabs, pane backgrounds,
@@ -28,20 +29,83 @@ pub(crate) fn render_chrome(
 ) {
     renderer.invalidate_chrome();
 
+    // Draw titlebar background, border, and title (macOS transparent titlebar)
+    if app.top_inset > 0.0 {
+        let tb = Rect::new(0.0, 0.0, logical.width, app.top_inset);
+        renderer.draw_chrome_rect(tb, p.file_tree_bg);
+        // Bottom border
+        renderer.draw_chrome_rect(
+            Rect::new(0.0, app.top_inset - BORDER_WIDTH, logical.width, BORDER_WIDTH),
+            p.border_subtle,
+        );
+        // Centered "tide" title
+        let cs = renderer.cell_size();
+        let title_text = "Tide";
+        let title_w = title_text.len() as f32 * cs.width;
+        let title_x = (logical.width - title_w) / 2.0;
+        let title_y = (app.top_inset - cs.height) / 2.0;
+        renderer.draw_chrome_text(
+            title_text,
+            Vec2::new(title_x, title_y),
+            TextStyle {
+                foreground: p.tab_text,
+                background: None,
+                bold: false, dim: false, italic: false, underline: false,
+            },
+            tb,
+        );
+        // Right: dock position indicator (two vertical rectangles, filled side = dock side)
+        {
+            let icon_h = 12.0_f32;
+            let rect_w = 5.0_f32;
+            let gap = 2.0_f32;
+            let icon_w = rect_w * 2.0 + gap;
+            let icon_x = logical.width - PANE_PADDING - icon_w;
+            let icon_y = (app.top_inset - icon_h) / 2.0;
+            let left_rect = Rect::new(icon_x, icon_y, rect_w, icon_h);
+            let right_rect = Rect::new(icon_x + rect_w + gap, icon_y, rect_w, icon_h);
+            let fill_color = p.tab_text;
+            let outline_color = tide_core::Color::new(p.tab_text.r, p.tab_text.g, p.tab_text.b, 0.4);
+            let bw = 1.0_f32;
+            let (filled, outlined) = if app.dock_side == crate::LayoutSide::Right {
+                (right_rect, left_rect)
+            } else {
+                (left_rect, right_rect)
+            };
+            // Filled rectangle
+            renderer.draw_chrome_rect(filled, fill_color);
+            // Outlined rectangle (4 border edges)
+            let o = outlined;
+            renderer.draw_chrome_rect(Rect::new(o.x, o.y, o.width, bw), outline_color);
+            renderer.draw_chrome_rect(Rect::new(o.x, o.y + o.height - bw, o.width, bw), outline_color);
+            renderer.draw_chrome_rect(Rect::new(o.x, o.y, bw, o.height), outline_color);
+            renderer.draw_chrome_rect(Rect::new(o.x + o.width - bw, o.y, bw, o.height), outline_color);
+        }
+    }
+
     // Draw file tree panel if visible (flat, edge-to-edge)
     if show_file_tree {
         let tree_visual_rect = app.file_tree_rect.unwrap_or(Rect::new(
             0.0,
             app.top_inset,
-            app.file_tree_width - PANE_GAP,
+            app.file_tree_width,
             logical.height - app.top_inset,
         ));
         renderer.draw_chrome_rect(tree_visual_rect, p.file_tree_bg);
 
-        // Right edge border only for file tree (inside, 1px)
+        // Right edge border for file tree
         {
             let r = tree_visual_rect;
-            renderer.draw_chrome_rect(Rect::new(r.x + r.width - BORDER_WIDTH, r.y, BORDER_WIDTH, r.height), p.border_subtle);
+            let tree_focused = app.sub_focus == Some(SubFocus::FileTree);
+            if tree_focused {
+                // Focused: warm accent edge (2px) + subtle inner glow (4px fade)
+                let accent = p.dock_tab_underline;
+                let glow = tide_core::Color::new(accent.r, accent.g, accent.b, 0.10);
+                renderer.draw_chrome_rect(Rect::new(r.x + r.width - 2.0, r.y, 2.0, r.height), accent);
+                renderer.draw_chrome_rect(Rect::new(r.x + r.width - 6.0, r.y, 4.0, r.height), glow);
+            } else {
+                renderer.draw_chrome_rect(Rect::new(r.x + r.width - BORDER_WIDTH, r.y, BORDER_WIDTH, r.height), p.border_subtle);
+            }
         }
 
         if let Some(tree) = app.file_tree.as_ref() {
@@ -112,6 +176,17 @@ pub(crate) fn render_chrome(
                 let text_y = y + text_offset_y;
                 let x = tree_visual_rect.x + left_padding + entry.depth as f32 * indent_width;
 
+                // Expanded directory: draw row background (per Tide.pen)
+                if entry.entry.is_dir && entry.is_expanded {
+                    let row_rect = Rect::new(
+                        tree_visual_rect.x + left_padding / 2.0,
+                        y,
+                        tree_visual_rect.width - left_padding,
+                        line_height,
+                    );
+                    renderer.draw_chrome_rounded_rect(row_rect, p.tree_row_active, FILE_TREE_ROW_RADIUS);
+                }
+
                 // Look up git status for this entry
                 let git_color = if entry.entry.is_dir {
                     // For directories: check if any child has git status
@@ -141,12 +216,20 @@ pub(crate) fn render_chrome(
                     tide_core::FileGitStatus::Deleted => None, // deleted files won't appear in tree
                 });
 
-                // Nerd Font icon
+                // Git status badge letter (right-aligned)
+                let status_badge = git_color.and_then(|gs| match gs {
+                    tide_core::FileGitStatus::Modified => Some("M"),
+                    tide_core::FileGitStatus::Added | tide_core::FileGitStatus::Untracked => Some("U"),
+                    tide_core::FileGitStatus::Conflict => Some("!"),
+                    tide_core::FileGitStatus::Deleted => None,
+                });
+
+                // Icon — directories always keep standard icon color (per Tide.pen)
                 let icon = file_icon(&entry.entry.name, entry.entry.is_dir, entry.is_expanded);
-                let icon_color = if let Some(sc) = status_color {
-                    sc
-                } else if entry.entry.is_dir {
+                let icon_color = if entry.entry.is_dir {
                     p.tree_dir_icon
+                } else if let Some(sc) = status_color {
+                    sc
                 } else {
                     p.tree_icon
                 };
@@ -170,8 +253,11 @@ pub(crate) fn render_chrome(
 
                 // Draw name after icon + space
                 let name_x = x + cell_size.width * 2.0;
+                let is_expanded_dir = entry.entry.is_dir && entry.is_expanded;
                 let text_color = if let Some(sc) = status_color {
                     sc
+                } else if is_expanded_dir {
+                    p.tab_text_focused
                 } else if entry.entry.is_dir {
                     p.tree_dir
                 } else {
@@ -180,7 +266,7 @@ pub(crate) fn render_chrome(
                 let name_style = TextStyle {
                     foreground: text_color,
                     background: None,
-                    bold: entry.entry.is_dir,
+                    bold: is_expanded_dir,
                     dim: false,
                     italic: false,
                     underline: false,
@@ -191,6 +277,39 @@ pub(crate) fn render_chrome(
                     name_style,
                     tree_text_clip,
                 );
+
+                // Draw git status badge ("M", "A", "?", "!") right-aligned
+                if let Some(badge) = status_badge {
+                    let badge_x = tree_visual_rect.x + tree_visual_rect.width - PANE_PADDING - cell_size.width;
+                    let badge_style = TextStyle {
+                        foreground: status_color.unwrap_or(p.tree_text),
+                        background: None,
+                        bold: true, dim: false, italic: false, underline: false,
+                    };
+                    renderer.draw_chrome_text(badge, Vec2::new(badge_x, text_y), badge_style, tree_text_clip);
+                }
+            }
+
+            // File tree keyboard cursor highlight (when sub_focus == FileTree)
+            if app.sub_focus == Some(SubFocus::FileTree) && app.file_tree_cursor < entries.len() {
+                let cursor_y = tree_visual_rect.y + PANE_PADDING + app.file_tree_cursor as f32 * line_height - file_tree_scroll;
+                if cursor_y + line_height > tree_visual_rect.y && cursor_y < tree_visual_rect.y + tree_visual_rect.height {
+                    let row_rect = Rect::new(
+                        tree_visual_rect.x + left_padding / 2.0,
+                        cursor_y,
+                        tree_visual_rect.width - left_padding,
+                        line_height,
+                    );
+                    // Warm accent row highlight (more visible than hover)
+                    let accent = p.dock_tab_underline;
+                    let row_bg = tide_core::Color::new(accent.r, accent.g, accent.b, 0.12);
+                    renderer.draw_chrome_rounded_rect(row_rect, row_bg, FILE_TREE_ROW_RADIUS);
+                    // Left accent bar on cursor row
+                    renderer.draw_chrome_rect(
+                        Rect::new(tree_visual_rect.x + 2.0, cursor_y + 2.0, 2.0, line_height - 4.0),
+                        accent,
+                    );
+                }
             }
         }
     }
@@ -202,99 +321,108 @@ pub(crate) fn render_chrome(
         if !editor_panel_tabs.is_empty() {
             let cell_size = renderer.cell_size();
             let cell_height = cell_size.height;
-            let tab_bar_top = panel_rect.y + PANE_PADDING;
-            let tab_start_x = panel_rect.x + PANE_PADDING - app.panel_tab_scroll;
+            let cell_w = cell_size.width;
+            let tab_bar_top = panel_rect.y;
             let tab_bar_clip = Rect::new(
-                panel_rect.x + PANE_PADDING,
+                panel_rect.x,
                 tab_bar_top,
-                panel_rect.width - 2.0 * PANE_PADDING,
+                panel_rect.width,
                 PANEL_TAB_HEIGHT,
             );
 
-            // Draw horizontal tab bar (with scroll offset)
-            for (i, &tab_id) in editor_panel_tabs.iter().enumerate() {
-                let tx = tab_start_x + i as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
+            // Tab bar background + bottom border (highlight when dock focused)
+            let dock_focused = app.sub_focus == Some(SubFocus::Dock);
+            if dock_focused {
+                let accent = p.dock_tab_underline;
+                let tab_bar_bg = tide_core::Color::new(accent.r, accent.g, accent.b, 0.06);
+                renderer.draw_chrome_rect(
+                    Rect::new(panel_rect.x, tab_bar_top, panel_rect.width, PANEL_TAB_HEIGHT),
+                    tab_bar_bg,
+                );
+            }
+            renderer.draw_chrome_rect(
+                Rect::new(panel_rect.x, tab_bar_top + PANEL_TAB_HEIGHT - 1.0, panel_rect.width, 1.0),
+                p.border_subtle,
+            );
 
-                // Skip tabs entirely outside visible area
-                if tx + PANEL_TAB_WIDTH < tab_bar_clip.x || tx > tab_bar_clip.x + tab_bar_clip.width {
+            // Variable-width tabs (per Tide.pen dock tab bar)
+            let mut tx = panel_rect.x - app.panel_tab_scroll;
+            for &tab_id in editor_panel_tabs.iter() {
+                let title = panel_tab_title(&app.panes, tab_id);
+                let tab_w = dock_tab_width(&title, cell_w);
+
+                // Skip tabs outside visible area
+                if tx + tab_w < panel_rect.x || tx > panel_rect.x + panel_rect.width {
+                    tx += tab_w;
                     continue;
                 }
 
                 let is_active = editor_panel_active == Some(tab_id);
+                let is_modified = app.panes.get(&tab_id)
+                    .and_then(|pk| if let PaneKind::Editor(ep) = pk { Some(ep.editor.is_modified()) } else { None })
+                    .unwrap_or(false);
 
-                // Tab background — flat bg + underline for active focused tab
-                if is_active && focused == Some(tab_id) {
-                    let tab_bg_rect = Rect::new(tx, tab_bar_top, PANEL_TAB_WIDTH, PANEL_TAB_HEIGHT);
-                    renderer.draw_chrome_rect(tab_bg_rect, p.pane_bg);
-                    // Active tab underline
+                // Active tab: bg + underline
+                if is_active {
                     renderer.draw_chrome_rect(
-                        Rect::new(tx, tab_bar_top + PANEL_TAB_HEIGHT - 2.0, PANEL_TAB_WIDTH, 2.0),
+                        Rect::new(tx, tab_bar_top, tab_w, PANEL_TAB_HEIGHT),
+                        p.pane_bg,
+                    );
+                    renderer.draw_chrome_rect(
+                        Rect::new(tx, tab_bar_top + PANEL_TAB_HEIGHT - 2.0, tab_w, 2.0),
                         p.dock_tab_underline,
                     );
                 }
 
-                // Tab title — clip to both tab bounds and panel bounds
+                // Tab title
                 let text_y = tab_bar_top + (PANEL_TAB_HEIGHT - cell_height) / 2.0;
-                let title_clip_w = (PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - PANEL_TAB_CLOSE_PADDING - PANEL_TAB_TEXT_INSET - 2.0)
-                    .min((tab_bar_clip.x + tab_bar_clip.width - tx).max(0.0));
-                let clip_x = tx.max(tab_bar_clip.x);
-                let clip = Rect::new(clip_x, tab_bar_top, title_clip_w.max(0.0), PANEL_TAB_HEIGHT);
-
-                let title = panel_tab_title(&app.panes, tab_id);
-                let text_color = if is_active && focused == Some(tab_id) {
-                    p.tab_text_focused
+                let text_color = if is_active && is_modified {
+                    p.editor_modified
                 } else if is_active {
-                    p.tree_text
+                    p.tab_text_focused
                 } else {
                     p.tab_text
                 };
-                let style = TextStyle {
-                    foreground: text_color,
-                    background: None,
-                    bold: is_active,
-                    dim: false,
-                    italic: false,
-                    underline: false,
-                };
                 renderer.draw_chrome_text(
                     &title,
-                    Vec2::new(tx + PANEL_TAB_TEXT_INSET, text_y),
-                    style,
-                    clip,
+                    Vec2::new(tx + DOCK_TAB_PAD, text_y),
+                    TextStyle {
+                        foreground: text_color,
+                        background: None,
+                        bold: is_active,
+                        dim: false, italic: false, underline: false,
+                    },
+                    tab_bar_clip,
                 );
 
-                // Close / modified indicator button
-                let close_x = tx + PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - PANEL_TAB_CLOSE_PADDING;
-                let close_y = tab_bar_top + (PANEL_TAB_HEIGHT - PANEL_TAB_CLOSE_SIZE) / 2.0;
-                // Only draw close button if it's within visible area
-                if close_x + PANEL_TAB_CLOSE_SIZE > tab_bar_clip.x
-                    && close_x < tab_bar_clip.x + tab_bar_clip.width
-                {
-                    let is_modified = app.panes.get(&tab_id)
-                        .and_then(|pk| if let PaneKind::Editor(ep) = pk { Some(ep.editor.is_modified()) } else { None })
-                        .unwrap_or(false);
-                    let is_close_hovered = matches!(app.hover_target, Some(HoverTarget::PanelTabClose(hid)) if hid == tab_id);
-                    let (icon, icon_color) = if is_modified && !is_close_hovered {
-                        ("\u{f111}", p.editor_modified)  // in modified color
-                    } else {
-                        ("\u{f00d}", p.close_icon)  // close icon color
-                    };
-                    let close_style = TextStyle {
-                        foreground: icon_color,
-                        background: None,
-                        bold: false,
-                        dim: false,
-                        italic: false,
-                        underline: false,
-                    };
-                    let close_clip = Rect::new(close_x, tab_bar_top, PANEL_TAB_CLOSE_SIZE + PANEL_TAB_CLOSE_PADDING, PANEL_TAB_HEIGHT);
+                // Close icon or modified dot
+                let icon_x = tx + DOCK_TAB_PAD + title.chars().count() as f32 * cell_w + DOCK_TAB_GAP;
+                let is_close_hovered = matches!(app.hover_target, Some(HoverTarget::PanelTabClose(hid)) if hid == tab_id);
+
+                if is_modified && is_active && !is_close_hovered {
+                    // Modified dot (6x6 circle, accent color)
+                    let dot_y = text_y + (cell_height - DOCK_TAB_DOT_SIZE) / 2.0;
+                    renderer.draw_chrome_rounded_rect(
+                        Rect::new(icon_x, dot_y, DOCK_TAB_DOT_SIZE, DOCK_TAB_DOT_SIZE),
+                        p.dock_tab_underline,
+                        3.0,
+                    );
+                } else {
+                    // Close icon
+                    let icon_color = if is_close_hovered { p.tab_text_focused } else { p.close_icon };
                     renderer.draw_chrome_text(
-                        icon,
-                        Vec2::new(close_x, close_y),
-                        close_style,
-                        close_clip,
+                        "\u{f00d}",
+                        Vec2::new(icon_x, text_y),
+                        TextStyle {
+                            foreground: icon_color,
+                            background: None,
+                            bold: false, dim: false, italic: false, underline: false,
+                        },
+                        tab_bar_clip,
                     );
                 }
+
+                tx += tab_w;
             }
 
         } else if app.file_finder.is_none() {
@@ -324,7 +452,7 @@ pub(crate) fn render_chrome(
 
             // "New File" button
             let btn_text = "New File";
-            let hint_text = "  Cmd+Shift+E";
+            let hint_text = "  Cmd+Shift+N";
             let btn_w = (btn_text.len() + hint_text.len()) as f32 * cell_size.width + 24.0;
             let btn_h = cell_height + 12.0;
             let btn_x = panel_rect.x + (panel_rect.width - btn_w) / 2.0;
@@ -380,10 +508,19 @@ pub(crate) fn render_chrome(
             );
         }
 
-        // Left edge border only for editor panel (inside, 1px)
+        // Left edge border for editor panel
         {
             let r = panel_rect;
-            renderer.draw_chrome_rect(Rect::new(r.x, r.y, BORDER_WIDTH, r.height), p.border_subtle);
+            let dock_focused = app.sub_focus == Some(SubFocus::Dock);
+            if dock_focused {
+                // Focused: warm accent edge (2px) + subtle inner glow (4px fade)
+                let accent = p.dock_tab_underline;
+                let glow = tide_core::Color::new(accent.r, accent.g, accent.b, 0.10);
+                renderer.draw_chrome_rect(Rect::new(r.x, r.y, 2.0, r.height), accent);
+                renderer.draw_chrome_rect(Rect::new(r.x + 2.0, r.y, 4.0, r.height), glow);
+            } else {
+                renderer.draw_chrome_rect(Rect::new(r.x, r.y, BORDER_WIDTH, r.height), p.border_subtle);
+            }
         }
     }
 
@@ -393,6 +530,12 @@ pub(crate) fn render_chrome(
         let border_color = if is_focused { p.border_focused } else { p.border_subtle };
         let top_border = if is_focused { 2.0 } else { 1.0 };
         let side_border = 1.0_f32;
+
+        // Focused pane: draw outer glow shadow (per Tide.pen: blur=12, spread=-4, #C4B8A622)
+        if is_focused {
+            let shadow_color = tide_core::Color::new(0.769, 0.722, 0.651, 0.25);
+            renderer.draw_chrome_shadow(rect, shadow_color, PANE_CORNER_RADIUS, 16.0, -4.0);
+        }
 
         // Outer rounded rect (border color)
         renderer.draw_chrome_rounded_rect(rect, border_color, PANE_CORNER_RADIUS);
@@ -425,46 +568,11 @@ pub(crate) fn render_chrome(
     }
     app.header_hit_zones = all_hit_zones;
 
-    // Render grip handle dots at the top center of sidebar and dock panels
-    {
-        let dot_size = 2.0_f32;
-        let dot_gap = 3.0_f32;
-        let dot_count = 3;
-        let total_w = dot_count as f32 * dot_size + (dot_count - 1) as f32 * dot_gap;
-
-        // Sidebar grip dots (top center of file tree)
-        if show_file_tree {
-            if let Some(ft_rect) = app.file_tree_rect {
-                let dot_y = ft_rect.y + (PANE_PADDING - dot_size) / 2.0;
-                let center_x = ft_rect.x + ft_rect.width / 2.0;
-                for i in 0..dot_count {
-                    let dx = center_x - total_w / 2.0 + i as f32 * (dot_size + dot_gap);
-                    renderer.draw_chrome_rounded_rect(
-                        Rect::new(dx, dot_y, dot_size, dot_size),
-                        p.handle_dots,
-                        1.0,
-                    );
-                }
-            }
-        }
-
-        // Dock grip dots (top center of editor panel)
-        if let Some(panel_rect) = editor_panel_rect {
-            let dot_y = panel_rect.y + (PANE_PADDING - dot_size) / 2.0;
-            let center_x = panel_rect.x + panel_rect.width / 2.0;
-            for i in 0..dot_count {
-                let dx = center_x - total_w / 2.0 + i as f32 * (dot_size + dot_gap);
-                renderer.draw_chrome_rounded_rect(
-                    Rect::new(dx, dot_y, dot_size, dot_size),
-                    p.handle_dots,
-                    1.0,
-                );
-            }
-        }
-    }
 }
 
-/// Render the horizontal tab bar for stacked pane mode.
+/// Render inline text tabs for stacked pane mode (per Tide.pen maximize mode header).
+/// Tabs are variable-width inline text with underline for active tab.
+/// Close button is on the far right of the header (not per-tab).
 fn render_stacked_tab_bar(
     app: &App,
     renderer: &mut tide_renderer::WgpuRenderer,
@@ -472,96 +580,74 @@ fn render_stacked_tab_bar(
     visual_pane_rects: &[(u64, Rect)],
     all_pane_ids: &[u64],
     stacked_active: u64,
-    focused: Option<u64>,
+    _focused: Option<u64>,
 ) {
     let Some(&(_, rect)) = visual_pane_rects.first() else {
         return;
     };
     let cell_size = renderer.cell_size();
     let cell_height = cell_size.height;
-    let tab_bar_top = rect.y + PANE_PADDING;
-    let tab_start_x = rect.x + PANE_PADDING;
-    let tab_bar_clip = Rect::new(
-        rect.x + PANE_PADDING,
-        tab_bar_top,
-        rect.width - 2.0 * PANE_PADDING,
-        PANEL_TAB_HEIGHT,
-    );
+    let cell_w = cell_size.width;
+    let header_top = rect.y;
+    let header_h = TAB_BAR_HEIGHT;
+    let text_y = header_top + (header_h - cell_height) / 2.0;
+    let header_clip = Rect::new(rect.x, header_top, rect.width, header_h);
 
-    for (i, &tab_id) in all_pane_ids.iter().enumerate() {
-        let tx = tab_start_x + i as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
+    // Right side: close button
+    let content_right = rect.x + rect.width - PANE_PADDING;
+    let close_w = cell_w + BADGE_PADDING_H * 2.0;
+    let close_x = content_right - close_w;
+    {
+        let close_style = TextStyle {
+            foreground: p.close_icon,
+            background: None,
+            bold: false, dim: false, italic: false, underline: false,
+        };
+        renderer.draw_chrome_text(
+            "\u{f00d}",
+            Vec2::new(close_x + BADGE_PADDING_H, text_y),
+            close_style,
+            Rect::new(close_x, text_y - 1.0, close_w, cell_height + 2.0),
+        );
+    }
 
-        // Skip tabs entirely outside visible area
-        if tx + PANEL_TAB_WIDTH < tab_bar_clip.x || tx > tab_bar_clip.x + tab_bar_clip.width {
-            continue;
+    // Left side: inline pane tabs (variable width)
+    let mut tx = rect.x + PANE_PADDING;
+    for &tab_id in all_pane_ids.iter() {
+        let title = crate::ui::pane_title(&app.panes, tab_id);
+        let tab_w = stacked_tab_width(&title, cell_w);
+
+        if tx + tab_w > close_x - 12.0 {
+            break; // don't overlap with right-side controls
         }
 
         let is_active = stacked_active == tab_id;
 
-        // Tab background — flat bg + underline for active focused tab
-        if is_active && focused == Some(tab_id) {
-            let tab_bg_rect = Rect::new(tx, tab_bar_top, PANEL_TAB_WIDTH, PANEL_TAB_HEIGHT);
-            renderer.draw_chrome_rect(tab_bg_rect, p.pane_bg);
-            // Active tab underline
+        // Active tab: underline
+        if is_active {
             renderer.draw_chrome_rect(
-                Rect::new(tx, tab_bar_top + PANEL_TAB_HEIGHT - 2.0, PANEL_TAB_WIDTH, 2.0),
+                Rect::new(tx, header_top + header_h - 2.0, tab_w, 2.0),
                 p.dock_tab_underline,
             );
         }
 
-        // Tab title — clip to leave room for close button
-        let text_y = tab_bar_top + (PANEL_TAB_HEIGHT - cell_height) / 2.0;
-        let title_clip_w = (PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - PANEL_TAB_CLOSE_PADDING - PANEL_TAB_TEXT_INSET - 2.0)
-            .min((tab_bar_clip.x + tab_bar_clip.width - tx).max(0.0));
-        let clip_x = tx.max(tab_bar_clip.x);
-        let clip = Rect::new(clip_x, tab_bar_top, title_clip_w.max(0.0), PANEL_TAB_HEIGHT);
-
-        let title = panel_tab_title(&app.panes, tab_id);
-        let text_color = if is_active && focused == Some(tab_id) {
+        let text_color = if is_active {
             p.tab_text_focused
-        } else if is_active {
-            p.tree_text
         } else {
             p.tab_text
         };
-        let style = TextStyle {
-            foreground: text_color,
-            background: None,
-            bold: is_active,
-            dim: false,
-            italic: false,
-            underline: false,
-        };
         renderer.draw_chrome_text(
             &title,
-            Vec2::new(tx + PANEL_TAB_TEXT_INSET, text_y),
-            style,
-            clip,
+            Vec2::new(tx + STACKED_TAB_PAD, text_y),
+            TextStyle {
+                foreground: text_color,
+                background: None,
+                bold: is_active,
+                dim: false, italic: false, underline: false,
+            },
+            header_clip,
         );
 
-        // Close button — use PANEL_TAB_CLOSE_SIZE for y to match hit-test geometry
-        let close_x = tx + PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - PANEL_TAB_CLOSE_PADDING;
-        let close_y = tab_bar_top + (PANEL_TAB_HEIGHT - PANEL_TAB_CLOSE_SIZE) / 2.0;
-        if close_x + PANEL_TAB_CLOSE_SIZE > tab_bar_clip.x
-            && close_x < tab_bar_clip.x + tab_bar_clip.width
-        {
-            let is_close_hovered = matches!(app.hover_target, Some(HoverTarget::StackedTabClose(hid)) if hid == tab_id);
-            let icon_color = if is_close_hovered { p.tab_text_focused } else { p.close_icon };
-            let close_style = TextStyle {
-                foreground: icon_color,
-                background: None,
-                bold: false,
-                dim: false,
-                italic: false,
-                underline: false,
-            };
-            let close_clip = Rect::new(close_x, tab_bar_top, PANEL_TAB_CLOSE_SIZE + PANEL_TAB_CLOSE_PADDING, PANEL_TAB_HEIGHT);
-            renderer.draw_chrome_text(
-                "\u{f00d}",
-                Vec2::new(close_x, close_y),
-                close_style,
-                close_clip,
-            );
-        }
+        tx += tab_w;
     }
 }

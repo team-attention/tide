@@ -122,14 +122,24 @@ impl App {
             self.last_chrome_generation = self.chrome_generation;
         }
 
+        // Detect dock active tab change → force grid rebuild for new tab
+        let dock_active_changed = editor_panel_active != self.last_editor_panel_active;
+        if dock_active_changed {
+            if let Some(new_active) = editor_panel_active {
+                self.pane_generations.remove(&new_active);
+            }
+            self.last_editor_panel_active = editor_panel_active;
+        }
+
         // Per-pane dirty checking: only rebuild panes whose content changed
         let any_dirty = grid::render_grid(
             self, &mut renderer, &p,
             &visual_pane_rects, editor_panel_active, editor_panel_rect,
         );
 
-        // Assemble all pane caches into the global grid arrays if anything changed
-        if any_dirty {
+        // Assemble all pane caches into the global grid arrays if anything changed,
+        // or when dock active tab changed (old grid must be removed from assembly)
+        if any_dirty || dock_active_changed {
             let mut order: Vec<u64> = visual_pane_rects.iter().map(|(id, _)| *id).collect();
             if let (Some(active_id), Some(_)) = (editor_panel_active, editor_panel_rect) {
                 order.push(active_id);

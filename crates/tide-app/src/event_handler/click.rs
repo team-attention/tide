@@ -4,6 +4,7 @@ use crate::drag_drop::{DropDestination, HoverTarget};
 use crate::header::{HeaderHitAction, HeaderHitZone};
 use crate::pane::{PaneKind, Selection};
 use crate::theme::*;
+use crate::ui_state::SubFocus;
 use crate::{App, GitSwitcherMode, GitSwitcherState, shell_escape};
 
 impl App {
@@ -27,6 +28,20 @@ impl App {
     /// Compute the hover target for a given cursor position.
     /// Priority: TopHandles → PanelBorder → SplitBorder → PanelTabClose → PanelTab → PaneTabBar → FileTreeBorder → FileTreeEntry → None
     pub(crate) fn compute_hover_target(&self, pos: Vec2) -> Option<HoverTarget> {
+        // Titlebar swap button (dock position indicator)
+        if self.top_inset > 0.0 {
+            let logical = self.logical_size();
+            let icon_w = 12.0_f32;
+            let icon_h = 12.0_f32;
+            let swap_x = logical.width - PANE_PADDING - icon_w;
+            let swap_y = (self.top_inset - icon_h) / 2.0;
+            if pos.x >= swap_x && pos.x <= swap_x + icon_w
+                && pos.y >= swap_y && pos.y <= swap_y + icon_h
+            {
+                return Some(HoverTarget::TitlebarSwap);
+            }
+        }
+
         // Top-edge drag handles (top strip of sidebar/dock panels)
         if let Some(ft_rect) = self.file_tree_rect {
             if pos.y >= ft_rect.y && pos.y < ft_rect.y + PANE_PADDING
@@ -151,12 +166,8 @@ impl App {
                         return true;
                     }
                     HeaderHitAction::GitBranch => {
+                        // Single badge opens git switcher; popup tabs handle branch/worktree switching
                         self.open_git_switcher(zone.pane_id, GitSwitcherMode::Branches, zone.rect);
-                        self.needs_redraw = true;
-                        return true;
-                    }
-                    HeaderHitAction::GitWorktree => {
-                        self.open_git_switcher(zone.pane_id, GitSwitcherMode::Worktrees, zone.rect);
                         self.needs_redraw = true;
                         return true;
                     }
@@ -294,11 +305,8 @@ impl App {
     pub(crate) fn handle_editor_panel_click(&mut self, pos: Vec2) {
         // Content area click → focus and move cursor
         if let Some(active_id) = self.active_editor_tab() {
-            if self.focused != Some(active_id) {
-                self.focused = Some(active_id);
-                self.router.set_focused(active_id);
-                self.chrome_generation += 1;
-            }
+            self.sub_focus = Some(SubFocus::Dock);
+            self.chrome_generation += 1;
 
             // Move cursor to click position + start selection
             if let (Some(panel_rect), Some(cell_size)) = (self.editor_panel_rect, self.renderer.as_ref().map(|r| r.cell_size())) {
@@ -333,10 +341,8 @@ impl App {
                 }
             }
         } else if self.show_editor_panel {
-            // Empty panel or file finder: focus the placeholder
-            let placeholder = self.get_or_alloc_placeholder();
-            self.focused = Some(placeholder);
-            self.router.set_focused(placeholder);
+            // Empty panel: set sub_focus to Dock without changing focused terminal
+            self.sub_focus = Some(SubFocus::Dock);
             self.chrome_generation += 1;
         }
     }

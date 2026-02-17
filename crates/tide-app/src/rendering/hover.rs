@@ -38,24 +38,42 @@ pub(crate) fn render_hover(
                     }
                 }
                 drag_drop::HoverTarget::StackedTab(tab_id) => {
-                    // Highlight stacked tab (only inactive tabs, active already has background)
+                    // Highlight stacked inline tab (only inactive tabs)
                     if let PaneAreaMode::Stacked(active) = app.pane_area_mode {
                         if active != *tab_id {
-                            if let Some(geo) = app.stacked_tab_bar_geometry() {
+                            if let Some(&(_, rect)) = app.visual_pane_rects.first() {
+                                let cell_w = renderer.cell_size().width;
                                 let pane_ids = app.layout.pane_ids();
-                                if let Some(idx) = pane_ids.iter().position(|&id| id == *tab_id) {
-                                    renderer.draw_rect(geo.tab_rect(idx), p.hover_tab);
+                                let mut tx = rect.x + PANE_PADDING;
+                                for &pid in pane_ids.iter() {
+                                    let title = crate::ui::pane_title(&app.panes, pid);
+                                    let tab_w = crate::ui::stacked_tab_width(&title, cell_w);
+                                    if pid == *tab_id {
+                                        renderer.draw_rect(
+                                            Rect::new(tx, rect.y, tab_w, TAB_BAR_HEIGHT),
+                                            p.hover_tab,
+                                        );
+                                        break;
+                                    }
+                                    tx += tab_w;
                                 }
                             }
                         }
                     }
                 }
-                drag_drop::HoverTarget::StackedTabClose(tab_id) => {
-                    if let Some(geo) = app.stacked_tab_bar_geometry() {
-                        let pane_ids = app.layout.pane_ids();
-                        if let Some(idx) = pane_ids.iter().position(|&id| id == *tab_id) {
-                            renderer.draw_rect(geo.close_rect(idx), p.hover_close);
-                        }
+                drag_drop::HoverTarget::StackedTabClose(_tab_id) => {
+                    // Single close button on header right
+                    if let Some(&(_, rect)) = app.visual_pane_rects.first() {
+                        let cell_w = renderer.cell_size().width;
+                        let cell_h = renderer.cell_size().height;
+                        let content_right = rect.x + rect.width - PANE_PADDING;
+                        let close_w = cell_w + BADGE_PADDING_H * 2.0;
+                        let close_x = content_right - close_w;
+                        let close_y = rect.y + (TAB_BAR_HEIGHT - cell_h - 2.0) / 2.0;
+                        renderer.draw_rect(
+                            Rect::new(close_x, close_y, close_w, cell_h + 2.0),
+                            p.hover_close,
+                        );
                     }
                 }
                 drag_drop::HoverTarget::PaneTabBar(pane_id) => {
@@ -77,29 +95,46 @@ pub(crate) fn render_hover(
                     }
                 }
                 drag_drop::HoverTarget::PanelTab(tab_id) => {
-                    // Only highlight inactive tabs (active tab already has background)
+                    // Only highlight inactive dock tabs (active already has bg)
                     if editor_panel_active != Some(*tab_id) {
                         if let Some(panel_rect) = editor_panel_rect {
-                            let tab_bar_top = panel_rect.y + PANE_PADDING;
-                            let tab_start_x = panel_rect.x + PANE_PADDING - app.panel_tab_scroll;
-                            if let Some(idx) = editor_panel_tabs.iter().position(|&id| id == *tab_id) {
-                                let tx = tab_start_x + idx as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
-                                let tab_rect = Rect::new(tx, tab_bar_top, PANEL_TAB_WIDTH, PANEL_TAB_HEIGHT);
-                                renderer.draw_rect(tab_rect, p.hover_tab);
+                            let cell_w = renderer.cell_size().width;
+                            let tab_bar_top = panel_rect.y;
+                            let mut tx = panel_rect.x - app.panel_tab_scroll;
+                            for &tid in editor_panel_tabs.iter() {
+                                let title = crate::ui::panel_tab_title(&app.panes, tid);
+                                let tab_w = crate::ui::dock_tab_width(&title, cell_w);
+                                if tid == *tab_id {
+                                    renderer.draw_rect(
+                                        Rect::new(tx, tab_bar_top, tab_w, PANEL_TAB_HEIGHT),
+                                        p.hover_tab,
+                                    );
+                                    break;
+                                }
+                                tx += tab_w;
                             }
                         }
                     }
                 }
                 drag_drop::HoverTarget::PanelTabClose(tab_id) => {
                     if let Some(panel_rect) = editor_panel_rect {
-                        let tab_bar_top = panel_rect.y + PANE_PADDING;
-                        let tab_start_x = panel_rect.x + PANE_PADDING - app.panel_tab_scroll;
-                        if let Some(idx) = editor_panel_tabs.iter().position(|&id| id == *tab_id) {
-                            let tx = tab_start_x + idx as f32 * (PANEL_TAB_WIDTH + PANEL_TAB_GAP);
-                            let close_x = tx + PANEL_TAB_WIDTH - PANEL_TAB_CLOSE_SIZE - PANEL_TAB_CLOSE_PADDING;
-                            let close_y = tab_bar_top + (PANEL_TAB_HEIGHT - PANEL_TAB_CLOSE_SIZE) / 2.0;
-                            let close_rect = Rect::new(close_x, close_y, PANEL_TAB_CLOSE_SIZE, PANEL_TAB_CLOSE_SIZE);
-                            renderer.draw_rect(close_rect, p.hover_close);
+                        let cell_w = renderer.cell_size().width;
+                        let cell_h = renderer.cell_size().height;
+                        let tab_bar_top = panel_rect.y;
+                        let mut tx = panel_rect.x - app.panel_tab_scroll;
+                        for &tid in editor_panel_tabs.iter() {
+                            let title = crate::ui::panel_tab_title(&app.panes, tid);
+                            let tab_w = crate::ui::dock_tab_width(&title, cell_w);
+                            if tid == *tab_id {
+                                let icon_x = tx + DOCK_TAB_PAD + title.chars().count() as f32 * cell_w + DOCK_TAB_GAP;
+                                let icon_y = tab_bar_top + (PANEL_TAB_HEIGHT - cell_h) / 2.0;
+                                renderer.draw_rect(
+                                    Rect::new(icon_x, icon_y, cell_w, cell_h),
+                                    p.hover_close,
+                                );
+                                break;
+                            }
+                            tx += tab_w;
                         }
                     }
                 }
@@ -198,6 +233,16 @@ pub(crate) fn render_hover(
                         // Highlight top edge of editor panel
                         let handle_rect = Rect::new(panel_rect.x, panel_rect.y, panel_rect.width, PANE_PADDING);
                         renderer.draw_rect(handle_rect, p.hover_panel_border);
+                    }
+                }
+                drag_drop::HoverTarget::TitlebarSwap => {
+                    if app.top_inset > 0.0 {
+                        let icon_w = 14.0_f32;
+                        let icon_h = 12.0_f32;
+                        let swap_x = _logical.width - PANE_PADDING - icon_w;
+                        let swap_y = (app.top_inset - icon_h) / 2.0;
+                        let swap_rect = Rect::new(swap_x - 3.0, swap_y - 3.0, icon_w + 6.0, icon_h + 6.0);
+                        renderer.draw_rect(swap_rect, p.hover_tab);
                     }
                 }
             }

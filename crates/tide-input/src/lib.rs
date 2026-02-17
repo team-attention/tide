@@ -37,11 +37,15 @@ pub enum GlobalAction {
     ToggleMaximizePane,
     ToggleEditorPanel,
     NewEditorFile,
+    FocusFileTree,
+    FocusDock,
     ToggleTheme,
     FontSizeUp,
     FontSizeDown,
     FontSizeReset,
     NewWindow,
+    DockTabPrev,
+    DockTabNext,
 }
 
 /// Cardinal direction for focus movement.
@@ -162,9 +166,8 @@ impl Router {
     /// Returns Some(GlobalAction) if the combination is a known hotkey.
     fn match_hotkey(&self, key: Key, modifiers: Modifiers) -> Option<GlobalAction> {
         match key {
-            // Cmd+\ / Ctrl+\  -> split right
-            // Cmd+Shift+\ / Ctrl+Shift+\ -> split bottom
-            Key::Char('\\') | Key::Char('|') => {
+            // Cmd+T -> split horizontal, Cmd+Shift+T -> split vertical
+            Key::Char('t') | Key::Char('T') => {
                 if modifiers.shift {
                     Some(GlobalAction::SplitVertical)
                 } else {
@@ -173,8 +176,6 @@ impl Router {
             }
             // Cmd+W / Ctrl+W -> close pane
             Key::Char('w') | Key::Char('W') => Some(GlobalAction::ClosePane),
-            // Cmd+B / Ctrl+B -> toggle file tree
-            Key::Char('b') | Key::Char('B') => Some(GlobalAction::ToggleFileTree),
             // Cmd+O / Ctrl+O -> open file (show file tree)
             Key::Char('o') | Key::Char('O') => Some(GlobalAction::OpenFile),
             // Cmd+V (macOS) / Ctrl+Shift+V (Linux) -> paste
@@ -209,38 +210,71 @@ impl Router {
             }
             // Cmd+Enter / Ctrl+Enter -> toggle maximize pane
             Key::Enter => Some(GlobalAction::ToggleMaximizePane),
-            // Cmd+Shift+T / Ctrl+Shift+T -> toggle dark/light theme
-            Key::Char('t') | Key::Char('T') => {
+            // Cmd+Shift+D -> toggle dark/light theme
+            Key::Char('d') | Key::Char('D') => {
                 if modifiers.shift {
-                    return Some(GlobalAction::ToggleTheme);
-                }
-                None
-            }
-            // Cmd+Shift+E -> new editor file, Cmd+E / Ctrl+E -> toggle editor panel
-            Key::Char('e') | Key::Char('E') => {
-                if modifiers.shift {
-                    Some(GlobalAction::NewEditorFile)
+                    Some(GlobalAction::ToggleTheme)
                 } else {
-                    Some(GlobalAction::ToggleEditorPanel)
+                    None
                 }
             }
-            // Cmd+Arrow -> move focus (Ctrl+Arrow is reserved for terminal
-            // word navigation, so only match on Meta/Cmd)
+            // Cmd+] -> focus file tree, Cmd+Shift+] -> toggle file tree
+            Key::Char(']') => {
+                if modifiers.shift {
+                    Some(GlobalAction::ToggleFileTree)
+                } else {
+                    Some(GlobalAction::FocusFileTree)
+                }
+            }
+            // Cmd+[ -> focus dock, Cmd+Shift+[ -> toggle editor panel
+            Key::Char('[') => {
+                if modifiers.shift {
+                    Some(GlobalAction::ToggleEditorPanel)
+                } else {
+                    Some(GlobalAction::FocusDock)
+                }
+            }
+            // Cmd+Arrow -> move focus / dock tab navigation
             Key::Up if modifiers.meta => Some(GlobalAction::MoveFocus(Direction::Up)),
             Key::Down if modifiers.meta => Some(GlobalAction::MoveFocus(Direction::Down)),
-            Key::Left if modifiers.meta => Some(GlobalAction::MoveFocus(Direction::Left)),
-            Key::Right if modifiers.meta => Some(GlobalAction::MoveFocus(Direction::Right)),
-            // Cmd+HJKL / Ctrl+HJKL -> vim-style focus navigation
-            Key::Char('h') | Key::Char('H') => Some(GlobalAction::MoveFocus(Direction::Left)),
+            Key::Left if modifiers.meta => {
+                if modifiers.shift {
+                    Some(GlobalAction::DockTabPrev)
+                } else {
+                    Some(GlobalAction::MoveFocus(Direction::Left))
+                }
+            }
+            Key::Right if modifiers.meta => {
+                if modifiers.shift {
+                    Some(GlobalAction::DockTabNext)
+                } else {
+                    Some(GlobalAction::MoveFocus(Direction::Right))
+                }
+            }
+            // Cmd+HJKL -> vim-style focus navigation
+            // Cmd+Shift+H/L -> dock tab prev/next
+            Key::Char('h') | Key::Char('H') => {
+                if modifiers.shift {
+                    Some(GlobalAction::DockTabPrev)
+                } else {
+                    Some(GlobalAction::MoveFocus(Direction::Left))
+                }
+            }
             Key::Char('j') | Key::Char('J') => Some(GlobalAction::MoveFocus(Direction::Down)),
             Key::Char('k') | Key::Char('K') => Some(GlobalAction::MoveFocus(Direction::Up)),
-            Key::Char('l') | Key::Char('L') => Some(GlobalAction::MoveFocus(Direction::Right)),
-            // Cmd+N -> new window
-            Key::Char('n') | Key::Char('N') => {
-                if !modifiers.shift {
-                    return Some(GlobalAction::NewWindow);
+            Key::Char('l') | Key::Char('L') => {
+                if modifiers.shift {
+                    Some(GlobalAction::DockTabNext)
+                } else {
+                    Some(GlobalAction::MoveFocus(Direction::Right))
                 }
-                None
+            }
+            // Cmd+Shift+N -> new editor file, Cmd+N -> new window
+            Key::Char('n') | Key::Char('N') => {
+                if modifiers.shift {
+                    return Some(GlobalAction::NewEditorFile);
+                }
+                Some(GlobalAction::NewWindow)
             }
             // Cmd+= / Cmd++ -> font size up, Cmd+- -> font size down, Cmd+0 -> reset
             Key::Char('+') | Key::Char('=') => Some(GlobalAction::FontSizeUp),

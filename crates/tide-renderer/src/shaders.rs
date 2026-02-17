@@ -42,6 +42,7 @@ struct VertexInput {
     @location(2) rect_center: vec2<f32>,
     @location(3) rect_half: vec2<f32>,
     @location(4) corner_radius: f32,
+    @location(5) shadow_blur: f32,
 };
 
 struct VertexOutput {
@@ -51,6 +52,7 @@ struct VertexOutput {
     @location(2) rect_center: vec2<f32>,
     @location(3) rect_half: vec2<f32>,
     @location(4) corner_radius: f32,
+    @location(5) shadow_blur: f32,
 };
 
 struct Uniforms {
@@ -71,6 +73,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.rect_center = in.rect_center;
     out.rect_half = in.rect_half;
     out.corner_radius = in.corner_radius;
+    out.shadow_blur = in.shadow_blur;
     return out;
 }
 
@@ -83,11 +86,17 @@ fn sdf_rounded_rect(p: vec2<f32>, center: vec2<f32>, half: vec2<f32>, r: f32) ->
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let dist = sdf_rounded_rect(in.pixel_pos, in.rect_center, in.rect_half, in.corner_radius);
-    let alpha = 1.0 - smoothstep(-1.0, 0.5, dist);
-    if alpha < 0.001 {
-        discard;
+    if in.shadow_blur > 0.0 {
+        // Shadow mode: soft gaussian-like falloff over blur radius
+        let alpha = 1.0 - smoothstep(-in.shadow_blur * 0.5, in.shadow_blur, dist);
+        if alpha < 0.001 { discard; }
+        return vec4<f32>(in.color.rgb, in.color.a * alpha);
+    } else {
+        // Normal mode: crisp SDF edge
+        let alpha = 1.0 - smoothstep(-1.0, 0.5, dist);
+        if alpha < 0.001 { discard; }
+        return vec4<f32>(in.color.rgb, in.color.a * alpha);
     }
-    return vec4<f32>(in.color.rgb, in.color.a * alpha);
 }
 "#;
 

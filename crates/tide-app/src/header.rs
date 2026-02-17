@@ -21,7 +21,6 @@ pub struct HeaderHitZone {
 pub enum HeaderHitAction {
     Close,
     GitBranch,
-    GitWorktree,
     GitStatus,
     EditorCompare,
     EditorBack,
@@ -46,9 +45,8 @@ pub fn render_pane_header(
 
     let text_y = rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
 
-    // Align content_right to the terminal grid's actual right edge so badges
-    // line up with the rightmost terminal column (shell timestamps, etc.).
-    let content_left = rect.x + PANE_PADDING + 4.0;
+    // Align content to header padding (matches Tide.pen padding: [0, 12])
+    let content_left = rect.x + PANE_PADDING;
     let grid_cols = ((rect.width - 2.0 * PANE_PADDING) / cell_size.width).floor();
     let content_right = rect.x + PANE_PADDING + grid_cols * cell_size.width;
 
@@ -94,48 +92,38 @@ pub fn render_pane_header(
     // Determine title and badges based on pane kind
     match panes.get(&id) {
         Some(PaneKind::Terminal(pane)) => {
-            // Git status badge
-            if let Some(ref git) = pane.git_info {
-                if git.status.changed_files > 0 {
-                    let stat_text = format!(
-                        "{} +{} -{}",
-                        git.status.changed_files, git.status.additions, git.status.deletions
-                    );
-                    let stat_color = if is_focused { p.badge_text } else { p.tab_text };
-                    let badge_w = stat_text.len() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
-                    let badge_x = badge_right - badge_w;
-                    if badge_x > content_left + 60.0 {
-                        render_badge_colored(renderer, badge_x, text_y, badge_w, cell_height, &stat_text, stat_color, badge_bg, BADGE_RADIUS);
-                        zones.push(HeaderHitZone {
-                            pane_id: id,
-                            rect: Rect::new(badge_x, rect.y, badge_w, TAB_BAR_HEIGHT),
-                            action: HeaderHitAction::GitStatus,
-                        });
-                        badge_right = badge_x - BADGE_GAP;
+            // Git status badge — green tinted, focused pane only (per Tide.pen)
+            if is_focused {
+                if let Some(ref git) = pane.git_info {
+                    if git.status.changed_files > 0 {
+                        let stat_text = format!(
+                            "{} +{} -{}",
+                            git.status.changed_files, git.status.additions, git.status.deletions
+                        );
+                        let stat_color = p.git_added;
+                        let stat_bg = tide_core::Color::new(p.git_added.r, p.git_added.g, p.git_added.b, 0.094);
+                        let badge_w = stat_text.len() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
+                        let badge_x = badge_right - badge_w;
+                        if badge_x > content_left + 60.0 {
+                            render_badge_colored(renderer, badge_x, text_y, badge_w, cell_height, &stat_text, stat_color, stat_bg, BADGE_RADIUS);
+                            zones.push(HeaderHitZone {
+                                pane_id: id,
+                                rect: Rect::new(badge_x, rect.y, badge_w, TAB_BAR_HEIGHT),
+                                action: HeaderHitAction::GitStatus,
+                            });
+                            badge_right = badge_x - BADGE_GAP;
+                        }
                     }
                 }
             }
 
-            // Worktree badge (only shown when 2+ worktrees)
-            if pane.worktree_count >= 2 {
-                let wt_display = format!("\u{f1bb} {}", pane.worktree_count); // tree icon + count
-                let wt_color = if is_focused { p.badge_git_worktree } else { p.tab_text };
-                let badge_w = wt_display.chars().count() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
-                let badge_x = badge_right - badge_w;
-                if badge_x > content_left + 60.0 {
-                    render_badge_colored(renderer, badge_x, text_y, badge_w, cell_height, &wt_display, wt_color, badge_bg, BADGE_RADIUS);
-                    zones.push(HeaderHitZone {
-                        pane_id: id,
-                        rect: Rect::new(badge_x, rect.y, badge_w, TAB_BAR_HEIGHT),
-                        action: HeaderHitAction::GitWorktree,
-                    });
-                    badge_right = badge_x - BADGE_GAP;
-                }
-            }
-
-            // Git branch badge
+            // Combined git branch + worktree badge (single badge, popup handles switching)
             if let Some(ref git) = pane.git_info {
-                let branch_display = format!("\u{e0a0} {}", git.branch); // git branch icon
+                let branch_display = if pane.worktree_count >= 2 {
+                    format!("\u{e0a0} {}", git.branch)
+                } else {
+                    format!("\u{e0a0} {}", git.branch)
+                };
                 let branch_color = if is_focused { p.badge_git_branch } else { p.tab_text };
                 let badge_w = branch_display.chars().count() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
                 let badge_x = badge_right - badge_w;
