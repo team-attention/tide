@@ -17,11 +17,21 @@ pub(crate) fn render_ime_and_drop_preview(
     visual_pane_rects: &[(u64, Rect)],
     focused: Option<u64>,
 ) {
-    // Render IME preedit overlay — only for terminal panes
+    // Render IME preedit overlay for terminal and editor panes
     if !app.ime_preedit.is_empty() {
-        if let Some(focused_id) = focused {
-            if let Some((_, rect)) = visual_pane_rects.iter().find(|(id, _)| *id == focused_id) {
-                if let Some(PaneKind::Terminal(pane)) = app.panes.get(&focused_id) {
+        // Determine effective target: dock editor when sub_focus is Dock
+        let effective_id = if app.sub_focus == Some(crate::ui_state::SubFocus::Dock) {
+            app.active_editor_tab().or(focused)
+        } else {
+            focused
+        };
+        if let Some(target_id) = effective_id {
+            // Try editor pane first (both tree editors and panel editors)
+            let is_editor = matches!(app.panes.get(&target_id), Some(PaneKind::Editor(_)));
+            if is_editor {
+                render_editor_ime_preedit(app, renderer, p, visual_pane_rects, target_id);
+            } else if let Some((_, rect)) = visual_pane_rects.iter().find(|(id, _)| *id == target_id) {
+                if let Some(PaneKind::Terminal(pane)) = app.panes.get(&target_id) {
                     let cursor = pane.backend.cursor();
                     let cell_size = renderer.cell_size();
                     let inner_w = rect.width - 2.0 * PANE_PADDING;
@@ -144,5 +154,99 @@ pub(crate) fn render_ime_and_drop_preview(
         };
         let preview_rect = Rect::new(preview_x, 0.0, my_width, win_h);
         App::draw_insert_preview(renderer, preview_rect, p);
+    }
+}
+
+/// Render IME preedit overlay for an editor pane (tree editor or panel editor).
+fn render_editor_ime_preedit(
+    app: &App,
+    renderer: &mut tide_renderer::WgpuRenderer,
+    p: &ThemePalette,
+    visual_pane_rects: &[(u64, Rect)],
+    target_id: u64,
+) {
+    let pane = match app.panes.get(&target_id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => return,
+    };
+    let cell_size = renderer.cell_size();
+    let pos = pane.editor.cursor_position();
+    let scroll = pane.editor.scroll_offset();
+    let h_scroll = pane.editor.h_scroll_offset();
+
+    if pos.line < scroll {
+        return;
+    }
+    let visual_row = pos.line - scroll;
+
+    // Convert byte offset to char index
+    let cursor_char_col = if let Some(line_text) = pane.editor.buffer.line(pos.line) {
+        let byte_col = pos.col.min(line_text.len());
+        line_text[..byte_col].chars().count()
+    } else {
+        0
+    };
+    if cursor_char_col < h_scroll {
+        return;
+    }
+    let visual_col_offset = if let Some(line_text) = pane.editor.buffer.line(pos.line) {
+        line_text.chars()
+            .skip(h_scroll)
+            .take(cursor_char_col - h_scroll)
+            .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
+            .sum::<usize>()
+    } else {
+        cursor_char_col - h_scroll
+    };
+    let gutter_cells = 5usize; // GUTTER_WIDTH_CELLS
+
+    // Determine the rect for this editor (tree pane or panel editor)
+    let (inner_x, inner_y) = if let Some((_, rect)) = visual_pane_rects.iter().find(|(id, _)| *id == target_id) {
+        let top_offset = app.pane_area_mode.content_top();
+        (rect.x + PANE_PADDING, rect.y + top_offset)
+    } else if let Some(panel_rect) = app.editor_panel_rect {
+        let content_top = panel_rect.y + PANE_PADDING + PANEL_TAB_HEIGHT + PANE_GAP;
+        (panel_rect.x + PANE_PADDING, content_top)
+    } else {
+        return;
+    };
+
+    let gutter_width = gutter_cells as f32 * cell_size.width;
+    let cx = inner_x + gutter_width + visual_col_offset as f32 * cell_size.width;
+    let cy = inner_y + visual_row as f32 * cell_size.height;
+
+    // Draw preedit background
+    let preedit_chars: Vec<char> = app.ime_preedit.chars().collect();
+    let pw = preedit_chars.iter()
+        .map(|c| UnicodeWidthChar::width(*c).unwrap_or(1))
+        .sum::<usize>()
+        .max(1) as f32 * cell_size.width;
+    renderer.draw_top_rect(
+        Rect::new(cx, cy, pw, cell_size.height),
+        p.ime_preedit_bg,
+    );
+
+    // Draw each preedit character
+    let preedit_style = TextStyle {
+        foreground: p.ime_preedit_fg,
+        background: None,
+        bold: false,
+        dim: false,
+        italic: false,
+        underline: true,
+    };
+    let inner_offset = Vec2::new(inner_x + gutter_width, inner_y);
+    let display_col = visual_col_offset;
+    let mut col_offset = 0usize;
+    for &ch in preedit_chars.iter() {
+        renderer.draw_cell(
+            ch,
+            visual_row,
+            display_col + col_offset,
+            preedit_style,
+            cell_size,
+            inner_offset,
+        );
+        col_offset += UnicodeWidthChar::width(ch).unwrap_or(1);
     }
 }

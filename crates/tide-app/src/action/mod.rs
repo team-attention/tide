@@ -116,8 +116,24 @@ impl App {
                             self.input_sent_at = Some(Instant::now());
                         }
                         Some(PaneKind::Editor(pane)) => {
-                            pane.selection = None; // Clear selection on key input
                             if let Some(action) = tide_editor::key_to_editor_action(&key, &modifiers) {
+                                // Handle SelectAll: set selection, don't clear it
+                                if matches!(action, tide_editor::EditorActionKind::SelectAll) {
+                                    pane.select_all();
+                                    return;
+                                }
+                                // Delete selection on editing actions (insert, backspace, delete, enter)
+                                match &action {
+                                    tide_editor::EditorActionKind::InsertChar(_)
+                                    | tide_editor::EditorActionKind::Backspace
+                                    | tide_editor::EditorActionKind::Delete
+                                    | tide_editor::EditorActionKind::Enter => {
+                                        pane.delete_selection();
+                                    }
+                                    _ => {}
+                                }
+                                // Clear selection on movement and editing keys
+                                pane.selection = None;
                                 let is_save = matches!(action, tide_editor::EditorActionKind::Save);
                                 // Intercept Save on untitled files -> open save-as input
                                 if is_save && pane.editor.file_path().is_none() {
@@ -338,10 +354,24 @@ impl App {
                         Some(PaneKind::Editor(pane)) => {
                             if let Ok(mut clipboard) = arboard::Clipboard::new() {
                                 if let Ok(text) = clipboard.get_text() {
-                                    for ch in text.chars() {
-                                        pane.editor.handle_action(
-                                            tide_editor::EditorActionKind::InsertChar(ch),
-                                        );
+                                    if !text.is_empty() {
+                                        // Delete selection before paste
+                                        pane.delete_selection();
+                                        for ch in text.chars() {
+                                            if ch == '\n' || ch == '\r' {
+                                                // Skip \r in \r\n sequences
+                                                if ch == '\r' {
+                                                    continue;
+                                                }
+                                                pane.editor.handle_action(
+                                                    tide_editor::EditorActionKind::Enter,
+                                                );
+                                            } else {
+                                                pane.editor.handle_action(
+                                                    tide_editor::EditorActionKind::InsertChar(ch),
+                                                );
+                                            }
+                                        }
                                     }
                                 }
                             }

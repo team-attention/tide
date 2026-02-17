@@ -56,7 +56,13 @@ impl App {
             .create_view(&wgpu::TextureViewDescriptor::default());
 
         let logical = self.logical_size();
-        let focused = self.focused;
+        // When sub_focus is Dock, treat the active editor tab as focused
+        // so the editor cursor renders (self.focused is still the terminal).
+        let focused = if self.sub_focus == Some(crate::ui_state::SubFocus::Dock) {
+            self.active_editor_tab().or(self.focused)
+        } else {
+            self.focused
+        };
         let search_focus = self.search_focus;
         let show_file_tree = self.show_file_tree;
         let file_tree_scroll = self.file_tree_scroll;

@@ -113,6 +113,9 @@ impl EditorState {
             EditorAction::End => self.cursor.move_end(&self.buffer),
             EditorAction::PageUp => self.cursor.move_page_up(&self.buffer, 30),
             EditorAction::PageDown => self.cursor.move_page_down(&self.buffer, 30),
+            EditorAction::SelectAll => {
+                // Handled by the EditorPane wrapper (needs access to selection state)
+            }
             EditorAction::Save => {
                 if let Err(e) = self.buffer.save() {
                     log::error!("Failed to save file: {}", e);

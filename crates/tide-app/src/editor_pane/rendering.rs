@@ -337,8 +337,15 @@ impl EditorPane {
             return;
         }
 
-        // Top layer so beam is visible above grid glyphs
-        renderer.draw_top_rect(Rect::new(cx, cy, 2.0, cell_size.height), cursor_color);
+        // Draw a subtle outline for contrast, then the main cursor beam on top
+        let outline_color = Color::new(
+            1.0 - cursor_color.r,
+            1.0 - cursor_color.g,
+            1.0 - cursor_color.b,
+            0.25,
+        );
+        renderer.draw_top_rect(Rect::new(cx - 0.5, cy, 3.5, cell_size.height), outline_color);
+        renderer.draw_top_rect(Rect::new(cx, cy, 2.5, cell_size.height), cursor_color);
     }
 
     /// Whether the file is long enough to need a scrollbar.

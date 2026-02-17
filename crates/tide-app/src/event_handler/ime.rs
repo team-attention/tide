@@ -95,23 +95,31 @@ impl App {
                     for ch in output.chars() {
                         self.search_bar_insert(search_pane_id, ch);
                     }
-                } else if let Some(focused_id) = self.focused {
-                    match self.panes.get_mut(&focused_id) {
-                        Some(PaneKind::Terminal(pane)) => {
-                            if pane.backend.display_offset() > 0 {
-                                pane.backend.request_scroll_to_bottom();
+                } else {
+                    // Route to dock editor when sub_focus is Dock, otherwise to focused pane
+                    let target_id = if self.sub_focus == Some(crate::ui_state::SubFocus::Dock) {
+                        self.active_editor_tab().or(self.focused)
+                    } else {
+                        self.focused
+                    };
+                    if let Some(target_id) = target_id {
+                        match self.panes.get_mut(&target_id) {
+                            Some(PaneKind::Terminal(pane)) => {
+                                if pane.backend.display_offset() > 0 {
+                                    pane.backend.request_scroll_to_bottom();
+                                }
+                                pane.backend.write(output.as_bytes());
+                                self.input_just_sent = true;
+                                self.input_sent_at = Some(Instant::now());
                             }
-                            pane.backend.write(output.as_bytes());
-                            self.input_just_sent = true;
-                            self.input_sent_at = Some(Instant::now());
-                        }
-                        Some(PaneKind::Editor(pane)) => {
-                            for ch in output.chars() {
-                                pane.editor.handle_action(tide_editor::EditorActionKind::InsertChar(ch));
+                            Some(PaneKind::Editor(pane)) => {
+                                for ch in output.chars() {
+                                    pane.editor.handle_action(tide_editor::EditorActionKind::InsertChar(ch));
+                                }
                             }
+                            Some(PaneKind::Diff(_)) => {}
+                            None => {}
                         }
-                        Some(PaneKind::Diff(_)) => {}
-                        None => {}
                     }
                 }
                 self.ime_composing = false;

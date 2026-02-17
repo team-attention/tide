@@ -121,6 +121,57 @@ impl EditorPane {
         result
     }
 
+    /// Select all text in the buffer.
+    pub fn select_all(&mut self) {
+        let last_line = self.editor.buffer.line_count().saturating_sub(1);
+        let last_col = self.editor.buffer.line(last_line).map_or(0, |l| l.chars().count());
+        self.selection = Some(Selection {
+            anchor: (0, 0),
+            end: (last_line, last_col),
+        });
+    }
+
+    /// Convert a selection (char-indexed) to byte-offset positions for buffer operations.
+    /// Returns (start, end) where start <= end in document order.
+    pub fn selection_byte_range(&self, sel: &Selection) -> (tide_editor::EditorPosition, tide_editor::EditorPosition) {
+        let (start, end) = if sel.anchor <= sel.end {
+            (sel.anchor, sel.end)
+        } else {
+            (sel.end, sel.anchor)
+        };
+        let start_byte = self.char_col_to_byte(start.0, start.1);
+        let end_byte = self.char_col_to_byte(end.0, end.1);
+        (
+            tide_editor::EditorPosition { line: start.0, col: start_byte },
+            tide_editor::EditorPosition { line: end.0, col: end_byte },
+        )
+    }
+
+    /// Convert a character column index to a byte offset for a given line.
+    fn char_col_to_byte(&self, line: usize, char_col: usize) -> usize {
+        if let Some(text) = self.editor.buffer.line(line) {
+            text.char_indices()
+                .nth(char_col)
+                .map(|(i, _)| i)
+                .unwrap_or(text.len())
+        } else {
+            0
+        }
+    }
+
+    /// Delete the current selection, clear it, and set cursor to start.
+    /// Returns true if a selection was deleted.
+    pub fn delete_selection(&mut self) -> bool {
+        if let Some(sel) = self.selection.take() {
+            let (start, end) = self.selection_byte_range(&sel);
+            let new_pos = self.editor.buffer.delete_range(start, end);
+            self.editor.cursor.set_position(new_pos);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Get the generation counter for dirty checking.
     pub fn generation(&self) -> u64 {
         self.editor.generation()
