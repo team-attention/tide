@@ -221,11 +221,11 @@ impl Hotkey {
 
     /// Format this hotkey as a human-readable string (e.g. "Cmd+Shift+T").
     pub fn display(&self) -> String {
-        let mut parts = Vec::new();
-        if self.ctrl { parts.push("Ctrl"); }
-        if self.meta { parts.push("Cmd"); }
-        if self.alt { parts.push("Alt"); }
-        if self.shift { parts.push("Shift"); }
+        let mut parts: Vec<String> = Vec::new();
+        if self.ctrl { parts.push("Ctrl".to_string()); }
+        if self.meta { parts.push("Cmd".to_string()); }
+        if self.alt { parts.push("Alt".to_string()); }
+        if self.shift { parts.push("Shift".to_string()); }
         parts.push(display_key(&self.key));
         parts.join("+")
     }
@@ -287,12 +287,7 @@ impl Hotkey {
                 if chars.next().is_none() {
                     Some(Key::Char(c.to_lowercase().next().unwrap_or(c)))
                 } else {
-                    // Multi-char like "+" or special
-                    if s.len() == 1 {
-                        Some(Key::Char(s.chars().next()?))
-                    } else {
-                        None
-                    }
+                    None
                 }
             }
         }
@@ -300,40 +295,31 @@ impl Hotkey {
 }
 
 /// Format a Key as a short display string.
-pub fn display_key(key: &Key) -> &'static str {
+///
+/// Returns a `String` to support arbitrary `Key::Char` values.
+pub fn display_key(key: &Key) -> String {
     match key {
-        Key::Char('t') | Key::Char('T') => "T",
-        Key::Char('w') | Key::Char('W') => "W",
-        Key::Char('v') | Key::Char('V') => "V",
-        Key::Char('c') | Key::Char('C') => "C",
-        Key::Char('f') | Key::Char('F') => "F",
-        Key::Char('d') | Key::Char('D') => "D",
-        Key::Char('h') | Key::Char('H') => "H",
-        Key::Char('j') | Key::Char('J') => "J",
-        Key::Char('k') | Key::Char('K') => "K",
-        Key::Char('l') | Key::Char('L') => "L",
-        Key::Char('i') | Key::Char('I') => "I",
-        Key::Char('o') | Key::Char('O') => "O",
-        Key::Char('n') | Key::Char('N') => "N",
-        Key::Char('q') | Key::Char('Q') => "Q",
-        Key::Char(',') => ",",
-        Key::Char('\\') | Key::Char('|') => "\\",
-        Key::Char('+') | Key::Char('=') => "+",
-        Key::Char('-') | Key::Char('_') => "-",
-        Key::Char('0') => "0",
-        Key::Char('1') | Key::Char('!') => "1",
-        Key::Char('2') | Key::Char('@') => "2",
-        Key::Char('3') | Key::Char('#') => "3",
-        Key::Enter => "Enter",
-        Key::Escape => "Esc",
-        Key::Up => "\u{2191}",
-        Key::Down => "\u{2193}",
-        Key::Left => "\u{2190}",
-        Key::Right => "\u{2192}",
-        Key::Backspace => "Bksp",
-        Key::Tab => "Tab",
-        Key::Delete => "Del",
-        _ => "?",
+        Key::Char('\\') | Key::Char('|') => "\\".to_string(),
+        Key::Char('+') | Key::Char('=') => "+".to_string(),
+        Key::Char('-') | Key::Char('_') => "-".to_string(),
+        Key::Char('!') => "1".to_string(),
+        Key::Char('@') => "2".to_string(),
+        Key::Char('#') => "3".to_string(),
+        Key::Char(c) => c.to_uppercase().to_string(),
+        Key::Enter => "Enter".to_string(),
+        Key::Escape => "Esc".to_string(),
+        Key::Up => "\u{2191}".to_string(),
+        Key::Down => "\u{2193}".to_string(),
+        Key::Left => "\u{2190}".to_string(),
+        Key::Right => "\u{2192}".to_string(),
+        Key::Backspace => "Bksp".to_string(),
+        Key::Tab => "Tab".to_string(),
+        Key::Delete => "Del".to_string(),
+        Key::Home => "Home".to_string(),
+        Key::End => "End".to_string(),
+        Key::PageUp => "PgUp".to_string(),
+        Key::PageDown => "PgDn".to_string(),
+        _ => "?".to_string(),
     }
 }
 
@@ -534,11 +520,10 @@ impl Router {
     /// Match a key + modifiers against the hotkey table.
     /// Returns Some(GlobalAction) if the combination is a known hotkey.
     fn match_hotkey(&self, key: Key, modifiers: Modifiers) -> Option<GlobalAction> {
-        // Check user-customized keybinding map first
+        // When a custom keybinding map exists, use it exclusively so that
+        // removed/rebound bindings don't fall through to the hardcoded table.
         if let Some(ref map) = self.keybinding_map {
-            if let Some(action) = map.lookup(&key, &modifiers) {
-                return Some(action);
-            }
+            return map.lookup(&key, &modifiers);
         }
 
         match key {

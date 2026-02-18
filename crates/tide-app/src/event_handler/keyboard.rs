@@ -783,6 +783,17 @@ impl App {
                 );
                 let action_index = page.recording.as_ref().unwrap().action_index;
                 if action_index < page.bindings.len() {
+                    // Clear any existing binding that uses this same hotkey
+                    // to prevent unreachable duplicate bindings.
+                    for (i, (_, existing)) in page.bindings.iter_mut().enumerate() {
+                        if i != action_index && *existing == hotkey {
+                            // Reset the conflicting binding to a placeholder
+                            *existing = tide_input::Hotkey::new(
+                                tide_core::Key::Char('?'),
+                                false, false, false, false,
+                            );
+                        }
+                    }
                     page.bindings[action_index].1 = hotkey;
                     page.dirty = true;
                 }

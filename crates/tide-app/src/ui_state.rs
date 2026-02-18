@@ -362,7 +362,6 @@ pub(crate) enum GitSwitcherMode {
 
 /// Button types available in the git switcher popup (both Branches and Worktrees tabs).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub(crate) enum SwitcherButton {
     Switch(usize),     // filtered index
     NewPane(usize),    // filtered index
