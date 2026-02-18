@@ -260,6 +260,12 @@ impl App {
                 } else {
                     self.focused = None;
                 }
+                // No editor tabs remain — return focus to the terminal pane area
+                // so keyboard input is routed correctly instead of being lost in
+                // the now-empty EditorDock.
+                if self.focus_area == crate::ui_state::FocusArea::EditorDock {
+                    self.focus_area = crate::ui_state::FocusArea::PaneArea;
+                }
             }
         }
 

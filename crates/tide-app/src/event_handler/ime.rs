@@ -1,10 +1,5 @@
-use std::time::Instant;
-
 use winit::event::Ime;
 
-use tide_core::TerminalBackend;
-
-use crate::pane::PaneKind;
 use crate::App;
 
 impl App {
@@ -14,17 +9,19 @@ impl App {
                 self.ime_active = true;
             }
             Ime::Disabled => {
-                self.ime_active = false;
-                self.ime_composing = false;
-                self.ime_preedit.clear();
-                self.pending_hangul_initial = None;
+                self.reset_ime_state();
             }
             Ime::Commit(text) => {
                 // If we have a pending initial from a pre-IME keystroke,
                 // try to combine it with the committed text.
                 let output = if let Some(initial) = self.pending_hangul_initial.take() {
                     combine_initial_with_text(initial, &text)
-                        .unwrap_or_else(|| { let mut s = String::new(); s.push(initial); s.push_str(&text); s })
+                        .unwrap_or_else(|| {
+                            let mut s = String::new();
+                            s.push(initial);
+                            s.push_str(&text);
+                            s
+                        })
                 } else {
                     text
                 };
@@ -43,87 +40,8 @@ impl App {
                 } else {
                     output
                 };
-                // IME composed text → route to git switcher, branch switcher, file finder, save-as input, search bar, or focused pane
-                if self.git_switcher.is_some() {
-                    for ch in output.chars() {
-                        if let Some(ref mut gs) = self.git_switcher {
-                            gs.insert_char(ch);
-                            self.chrome_generation += 1;
-                        }
-                    }
-                    self.ime_composing = false;
-                    self.ime_preedit.clear();
-                    self.needs_redraw = true;
-                    return;
-                }
-                if self.file_switcher.is_some() {
-                    for ch in output.chars() {
-                        if let Some(ref mut fs) = self.file_switcher {
-                            fs.insert_char(ch);
-                            self.chrome_generation += 1;
-                        }
-                    }
-                    self.ime_composing = false;
-                    self.ime_preedit.clear();
-                    self.needs_redraw = true;
-                    return;
-                }
-                if self.file_finder.is_some() {
-                    for ch in output.chars() {
-                        if let Some(ref mut finder) = self.file_finder {
-                            finder.insert_char(ch);
-                            self.chrome_generation += 1;
-                        }
-                    }
-                    self.ime_composing = false;
-                    self.ime_preedit.clear();
-                    self.needs_redraw = true;
-                    return;
-                }
-                if self.save_as_input.is_some() {
-                    for ch in output.chars() {
-                        if let Some(ref mut input) = self.save_as_input {
-                            input.insert_char(ch);
-                        }
-                    }
-                    self.ime_composing = false;
-                    self.ime_preedit.clear();
-                    self.needs_redraw = true;
-                    return;
-                }
-                if let Some(search_pane_id) = self.search_focus {
-                    for ch in output.chars() {
-                        self.search_bar_insert(search_pane_id, ch);
-                    }
-                } else if self.focus_area == crate::ui_state::FocusArea::FileTree {
-                    // FileTree focused: consume IME text (don't send to terminal)
-                } else {
-                    // Route to dock editor when focus_area is EditorDock, otherwise to focused pane
-                    let target_id = if self.focus_area == crate::ui_state::FocusArea::EditorDock {
-                        self.active_editor_tab().or(self.focused)
-                    } else {
-                        self.focused
-                    };
-                    if let Some(target_id) = target_id {
-                        match self.panes.get_mut(&target_id) {
-                            Some(PaneKind::Terminal(pane)) => {
-                                if pane.backend.display_offset() > 0 {
-                                    pane.backend.request_scroll_to_bottom();
-                                }
-                                pane.backend.write(output.as_bytes());
-                                self.input_just_sent = true;
-                                self.input_sent_at = Some(Instant::now());
-                            }
-                            Some(PaneKind::Editor(pane)) => {
-                                for ch in output.chars() {
-                                    pane.editor.handle_action(tide_editor::EditorActionKind::InsertChar(ch));
-                                }
-                            }
-                            Some(PaneKind::Diff(_)) => {}
-                            None => {}
-                        }
-                    }
-                }
+                // Route through the unified text target.
+                self.send_text_to_target(&output);
                 self.ime_composing = false;
                 self.ime_preedit.clear();
             }
@@ -170,8 +88,6 @@ pub(crate) fn is_hangul_char(c: char) -> bool {
 
 /// Map a Compatibility Jamo consonant to its Choseong (initial) index (0..18).
 fn choseong_index(c: char) -> Option<u32> {
-    // Compatibility Jamo consonants → Choseong index
-    // ㄱ ㄲ ㄴ ㄷ ㄸ ㄹ ㅁ ㅂ ㅃ ㅅ ㅆ ㅇ ㅈ ㅉ ㅊ ㅋ ㅌ ㅍ ㅎ
     match c {
         'ㄱ' => Some(0),  'ㄲ' => Some(1),  'ㄴ' => Some(2),
         'ㄷ' => Some(3),  'ㄸ' => Some(4),  'ㄹ' => Some(5),
@@ -187,7 +103,6 @@ fn choseong_index(c: char) -> Option<u32> {
 /// Map a Compatibility Jamo vowel to its Jungseong (medial) index (0..20).
 fn jungseong_index(c: char) -> Option<u32> {
     let code = c as u32;
-    // ㅏ (0x314F) .. ㅣ (0x3163) → indices 0..20
     if (0x314F..=0x3163).contains(&code) {
         Some(code - 0x314F)
     } else {
@@ -197,7 +112,6 @@ fn jungseong_index(c: char) -> Option<u32> {
 
 /// Try to combine a Choseong (initial consonant) with a string that starts
 /// with a Jungseong (vowel).  Returns the combined string if successful.
-/// e.g. 'ㅇ' + "ㅏ" → "아",  'ㅇ' + "ㅏㄴ" → "안" (won't happen here).
 pub(super) fn combine_initial_with_text(initial: char, text: &str) -> Option<String> {
     let cho = choseong_index(initial)?;
     let first = text.chars().next()?;
