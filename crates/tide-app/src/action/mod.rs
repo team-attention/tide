@@ -94,6 +94,13 @@ impl App {
     /// FileTree/EditorDock: hidden→show+focus / unfocused→focus / focused→hide+PaneArea
     /// PaneArea: unfocused→focus / focused→Split↔Stacked
     fn handle_focus_area(&mut self, target: FocusArea) {
+        // Clear stale IME composition when switching focus areas.
+        if target != self.focus_area {
+            self.ime_composing = false;
+            self.ime_preedit.clear();
+            self.pending_hangul_initial = None;
+            self.ime_dropped_preedit = None;
+        }
         // If zoomed into a different area, unzoom first
         if self.editor_panel_maximized && target != FocusArea::EditorDock {
             self.editor_panel_maximized = false;
