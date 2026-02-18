@@ -7,14 +7,14 @@ use std::time::Instant;
 
 use tide_core::{InputEvent, LayoutEngine, Renderer, Size, SplitDirection, TerminalBackend, Vec2};
 use tide_editor::input::EditorAction;
-use tide_input::{Action, GlobalAction};
+use tide_input::{Action, AreaSlot, GlobalAction};
 use crate::search::SearchState;
 
 use crate::input::winit_modifiers_to_tide;
 use crate::pane::PaneKind;
 use crate::theme::*;
-use crate::ui_state::SubFocus;
-use crate::{App, PaneAreaMode};
+use crate::ui_state::FocusArea;
+use crate::{App, LayoutSide, PaneAreaMode};
 
 impl App {
     fn cleanup_closed_pane_state(&mut self, pane_id: tide_core::PaneId) {
@@ -25,11 +25,11 @@ impl App {
         }
     }
 
-    /// Switch primary focus to a terminal pane, clearing any sub-focus.
+    /// Switch primary focus to a terminal pane, setting focus to PaneArea.
     /// Handles all common side effects: file tree CWD update, panel tab scroll
     /// reset, auto-hide panel when switching away from a terminal with editors.
     pub(crate) fn focus_terminal(&mut self, id: tide_core::PaneId) {
-        self.sub_focus = None;
+        self.focus_area = FocusArea::PaneArea;
         if self.focused == Some(id) {
             return;
         }
@@ -50,13 +50,171 @@ impl App {
     }
 
     /// Resolve the effective target pane for actions like Copy/Paste/Find.
-    /// When sub_focus is Dock, targets the active editor tab instead of the
+    /// When focus_area is EditorDock, targets the active editor tab instead of the
     /// focused terminal.
     fn action_target_id(&self) -> Option<tide_core::PaneId> {
-        if self.sub_focus == Some(SubFocus::Dock) {
+        if self.focus_area == FocusArea::EditorDock {
             self.active_editor_tab()
         } else {
             self.focused
+        }
+    }
+
+    /// Resolve an AreaSlot (Cmd+1/2/3) to a FocusArea based on sidebar_side / dock_side.
+    /// Left-to-right ordering: sidebar(if Left), dock(if Left), PaneArea, dock(if Right), sidebar(if Right)
+    /// Slot1 = leftmost, Slot2 = middle, Slot3 = rightmost.
+    fn resolve_slot(&self, slot: AreaSlot) -> FocusArea {
+        // Build the left-to-right ordering of areas
+        let mut areas = Vec::with_capacity(3);
+        // Left-side items
+        if self.sidebar_side == LayoutSide::Left {
+            areas.push(FocusArea::FileTree);
+        }
+        if self.dock_side == LayoutSide::Left {
+            areas.push(FocusArea::EditorDock);
+        }
+        // Center
+        areas.push(FocusArea::PaneArea);
+        // Right-side items
+        if self.dock_side == LayoutSide::Right {
+            areas.push(FocusArea::EditorDock);
+        }
+        if self.sidebar_side == LayoutSide::Right {
+            areas.push(FocusArea::FileTree);
+        }
+
+        match slot {
+            AreaSlot::Slot1 => areas[0],
+            AreaSlot::Slot2 => if areas.len() >= 2 { areas[1] } else { areas[0] },
+            AreaSlot::Slot3 => if areas.len() >= 3 { areas[2] } else { *areas.last().unwrap() },
+        }
+    }
+
+    /// Handle FocusArea(slot) — 3-stage toggle:
+    /// FileTree/EditorDock: hidden→show+focus / unfocused→focus / focused→hide+PaneArea
+    /// PaneArea: unfocused→focus / focused→Split↔Stacked
+    fn handle_focus_area(&mut self, target: FocusArea) {
+        // If zoomed into a different area, unzoom first
+        if self.editor_panel_maximized && target != FocusArea::EditorDock {
+            self.editor_panel_maximized = false;
+            self.compute_layout();
+        }
+        if self.pane_area_maximized && target != FocusArea::PaneArea {
+            self.pane_area_maximized = false;
+            self.pane_area_mode = PaneAreaMode::Split;
+            self.compute_layout();
+        }
+
+        match target {
+            FocusArea::FileTree => {
+                if self.focus_area == FocusArea::FileTree {
+                    // Focused → hide + return to PaneArea
+                    self.show_file_tree = false;
+                    self.focus_area = FocusArea::PaneArea;
+                    self.chrome_generation += 1;
+                    self.compute_layout();
+                } else if self.show_file_tree {
+                    // Visible but not focused → focus
+                    self.focus_area = FocusArea::FileTree;
+                } else {
+                    // Hidden → show + focus
+                    self.show_file_tree = true;
+                    self.focus_area = FocusArea::FileTree;
+                    self.update_file_tree_cwd();
+                    self.compute_layout();
+                }
+            }
+            FocusArea::EditorDock => {
+                if self.focus_area == FocusArea::EditorDock {
+                    // Focused → hide + return to PaneArea
+                    self.show_editor_panel = false;
+                    self.editor_panel_auto_shown = false;
+                    self.editor_panel_maximized = false;
+                    self.editor_panel_width_manual = false;
+                    self.focus_area = FocusArea::PaneArea;
+                    self.chrome_generation += 1;
+                    self.compute_layout();
+                } else if self.show_editor_panel {
+                    // Visible but not focused → focus
+                    self.focus_area = FocusArea::EditorDock;
+                } else {
+                    // Hidden → show + focus
+                    self.show_editor_panel = true;
+                    self.focus_area = FocusArea::EditorDock;
+                    self.compute_layout();
+                }
+            }
+            FocusArea::PaneArea => {
+                if self.focus_area == FocusArea::PaneArea {
+                    // Already focused → toggle Split ↔ Stacked
+                    if let Some(focused) = self.focused {
+                        match self.pane_area_mode {
+                            PaneAreaMode::Split => {
+                                self.pane_area_mode = PaneAreaMode::Stacked(focused);
+                            }
+                            PaneAreaMode::Stacked(_) => {
+                                self.pane_area_mode = PaneAreaMode::Split;
+                            }
+                        }
+                        self.compute_layout();
+                    }
+                } else {
+                    // Not focused → focus terminal
+                    if let Some(tid) = self.focused_terminal_id() {
+                        self.focus_terminal(tid);
+                    } else {
+                        self.focus_area = FocusArea::PaneArea;
+                    }
+                }
+            }
+        }
+        self.chrome_generation += 1;
+        self.needs_redraw = true;
+    }
+
+    /// Handle Navigate(direction) — route based on focus_area.
+    fn handle_navigate(&mut self, direction: tide_input::Direction) {
+        match self.focus_area {
+            FocusArea::FileTree => {
+                self.navigate_file_tree(direction);
+            }
+            FocusArea::PaneArea => {
+                self.handle_move_focus(direction);
+            }
+            FocusArea::EditorDock => {
+                self.navigate_dock_tabs(direction);
+            }
+        }
+    }
+
+    /// Handle ToggleZoom — context-dependent zoom.
+    fn handle_toggle_zoom(&mut self) {
+        match self.focus_area {
+            FocusArea::EditorDock => {
+                self.pane_area_maximized = false;
+                self.editor_panel_maximized = !self.editor_panel_maximized;
+                self.chrome_generation += 1;
+                self.compute_layout();
+            }
+            FocusArea::PaneArea => {
+                if let Some(focused) = self.focused {
+                    self.editor_panel_maximized = false;
+                    if self.pane_area_maximized {
+                        // Unzoom: restore split mode
+                        self.pane_area_maximized = false;
+                        self.pane_area_mode = PaneAreaMode::Split;
+                    } else {
+                        // Zoom: stacked + maximize (hide dock)
+                        self.pane_area_maximized = true;
+                        self.pane_area_mode = PaneAreaMode::Stacked(focused);
+                    }
+                    self.chrome_generation += 1;
+                    self.compute_layout();
+                }
+            }
+            FocusArea::FileTree => {
+                // No-op for file tree zoom
+            }
         }
     }
 
@@ -305,18 +463,23 @@ impl App {
                     self.close_specific_pane(focused);
                 }
             }
-            GlobalAction::ToggleFileTree => {
-                self.show_file_tree = !self.show_file_tree;
-                if !self.show_file_tree && self.sub_focus == Some(SubFocus::FileTree) {
-                    self.sub_focus = None;
-                }
-                self.chrome_generation += 1;
-                self.compute_layout();
-                if self.show_file_tree {
-                    self.update_file_tree_cwd();
-                }
+            GlobalAction::FocusArea(slot) => {
+                let target = self.resolve_slot(slot);
+                self.handle_focus_area(target);
             }
-            GlobalAction::OpenFile => {
+            GlobalAction::Navigate(direction) => {
+                self.handle_navigate(direction);
+            }
+            GlobalAction::ToggleZoom => {
+                self.handle_toggle_zoom();
+            }
+            GlobalAction::DockTabPrev => {
+                self.navigate_dock_tabs(tide_input::Direction::Left);
+            }
+            GlobalAction::DockTabNext => {
+                self.navigate_dock_tabs(tide_input::Direction::Right);
+            }
+            GlobalAction::FileFinder => {
                 self.open_file_finder();
             }
             GlobalAction::ToggleFullscreen => {
@@ -355,11 +518,9 @@ impl App {
                             if let Ok(mut clipboard) = arboard::Clipboard::new() {
                                 if let Ok(text) = clipboard.get_text() {
                                     if !text.is_empty() {
-                                        // Delete selection before paste
                                         pane.delete_selection();
                                         for ch in text.chars() {
                                             if ch == '\n' || ch == '\r' {
-                                                // Skip \r in \r\n sequences
                                                 if ch == '\r' {
                                                     continue;
                                                 }
@@ -430,81 +591,6 @@ impl App {
                     }
                 }
             }
-            GlobalAction::MoveFocus(direction) => {
-                self.handle_move_focus(direction);
-            }
-            GlobalAction::ToggleMaximizePane => {
-                if let Some(focused) = self.focused {
-                    let in_panel = self.is_dock_editor(focused)
-                        || self.editor_panel_placeholder == Some(focused);
-                    if in_panel {
-                        // Toggle editor panel maximize
-                        self.editor_panel_maximized = !self.editor_panel_maximized;
-                        self.pane_area_mode = PaneAreaMode::Split; // mutually exclusive
-                    } else if self.editor_panel_maximized {
-                        // Editor panel is maximized but focus is elsewhere -- just unmaximize it
-                        self.editor_panel_maximized = false;
-                    } else {
-                        // Toggle pane area mode between Split and Stacked
-                        match self.pane_area_mode {
-                            PaneAreaMode::Split => {
-                                self.pane_area_mode = PaneAreaMode::Stacked(focused);
-                            }
-                            PaneAreaMode::Stacked(_) => {
-                                self.pane_area_mode = PaneAreaMode::Split;
-                            }
-                        }
-                    }
-                    self.chrome_generation += 1;
-                    self.compute_layout();
-                }
-            }
-            GlobalAction::ToggleEditorPanel => {
-                self.show_editor_panel = !self.show_editor_panel;
-                self.editor_panel_auto_shown = false;
-                self.chrome_generation += 1;
-                // If hiding, clear sub_focus and reset manual width + maximize
-                if !self.show_editor_panel {
-                    self.editor_panel_maximized = false;
-                    self.editor_panel_width_manual = false;
-                    if self.sub_focus == Some(SubFocus::Dock) {
-                        self.sub_focus = None;
-                    }
-                }
-                self.compute_layout();
-            }
-            GlobalAction::FocusFileTree => {
-                if self.sub_focus == Some(SubFocus::FileTree) {
-                    // Toggle off: return to terminal
-                    self.sub_focus = None;
-                } else if self.show_file_tree {
-                    self.sub_focus = Some(SubFocus::FileTree);
-                } else {
-                    self.show_file_tree = true;
-                    self.sub_focus = Some(SubFocus::FileTree);
-                    self.update_file_tree_cwd();
-                    self.compute_layout();
-                }
-                self.chrome_generation += 1;
-                self.needs_redraw = true;
-            }
-            GlobalAction::FocusDock => {
-                if self.sub_focus == Some(SubFocus::Dock) {
-                    // Toggle off: return to terminal
-                    self.sub_focus = None;
-                } else if self.show_editor_panel {
-                    self.sub_focus = Some(SubFocus::Dock);
-                } else {
-                    self.show_editor_panel = true;
-                    self.sub_focus = Some(SubFocus::Dock);
-                    self.compute_layout();
-                }
-                self.chrome_generation += 1;
-                self.needs_redraw = true;
-            }
-            GlobalAction::NewEditorFile => {
-                self.new_editor_pane();
-            }
             GlobalAction::FontSizeUp => {
                 if let Some(renderer) = &mut self.renderer {
                     let new_size = renderer.font_size() + 1.0;
@@ -539,45 +625,8 @@ impl App {
                     let _ = std::process::Command::new(exe).spawn();
                 }
             }
-            GlobalAction::DockTabPrev => {
-                let tid = self.focused_terminal_id();
-                let tabs = self.active_editor_tabs().to_vec();
-                let active = self.active_editor_tab();
-                if let (Some(tid), Some(active)) = (tid, active) {
-                    if let Some(idx) = tabs.iter().position(|&id| id == active) {
-                        if idx > 0 {
-                            let new_tab = tabs[idx - 1];
-                            if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                                tp.active_editor = Some(new_tab);
-                            }
-                            // Invalidate both old and new tab to force grid rebuild
-                            self.pane_generations.remove(&active);
-                            self.pane_generations.remove(&new_tab);
-                            self.chrome_generation += 1;
-                            self.scroll_to_active_panel_tab();
-                        }
-                    }
-                }
-            }
-            GlobalAction::DockTabNext => {
-                let tid = self.focused_terminal_id();
-                let tabs = self.active_editor_tabs().to_vec();
-                let active = self.active_editor_tab();
-                if let (Some(tid), Some(active)) = (tid, active) {
-                    if let Some(idx) = tabs.iter().position(|&id| id == active) {
-                        if idx + 1 < tabs.len() {
-                            let new_tab = tabs[idx + 1];
-                            if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                                tp.active_editor = Some(new_tab);
-                            }
-                            // Invalidate both old and new tab to force grid rebuild
-                            self.pane_generations.remove(&active);
-                            self.pane_generations.remove(&new_tab);
-                            self.chrome_generation += 1;
-                            self.scroll_to_active_panel_tab();
-                        }
-                    }
-                }
+            GlobalAction::NewFile => {
+                self.new_editor_pane();
             }
             GlobalAction::ToggleTheme => {
                 self.dark_mode = !self.dark_mode;
@@ -585,7 +634,6 @@ impl App {
                 if let Some(renderer) = &mut self.renderer {
                     renderer.clear_color = border_color;
                 }
-                // Update color palettes for all panes
                 let dark = self.dark_mode;
                 for pane in self.panes.values_mut() {
                     match pane {
@@ -595,12 +643,11 @@ impl App {
                         crate::pane::PaneKind::Editor(ep) => {
                             ep.editor.set_dark_mode(dark);
                         }
-                        crate::pane::PaneKind::Diff(_) => {} // no color palette
+                        crate::pane::PaneKind::Diff(_) => {}
                     }
                 }
                 self.chrome_generation += 1;
                 self.layout_generation = self.layout_generation.wrapping_add(1);
-                // Force full grid rebuild for all panes (terminal colors change)
                 self.pane_generations.clear();
             }
         }

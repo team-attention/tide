@@ -56,9 +56,9 @@ impl App {
             .create_view(&wgpu::TextureViewDescriptor::default());
 
         let logical = self.logical_size();
-        // When sub_focus is Dock, treat the active editor tab as focused
+        // When focus_area is EditorDock, treat the active editor tab as focused
         // so the editor cursor renders (self.focused is still the terminal).
-        let focused = if self.sub_focus == Some(crate::ui_state::SubFocus::Dock) {
+        let focused = if self.focus_area == crate::ui_state::FocusArea::EditorDock {
             self.active_editor_tab().or(self.focused)
         } else {
             self.focused

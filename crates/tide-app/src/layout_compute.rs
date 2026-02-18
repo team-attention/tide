@@ -456,6 +456,18 @@ impl App {
             return;
         }
 
+        // When pane area is maximized, ignore dock reservation (terminal fills screen minus file tree)
+        if self.pane_area_maximized {
+            left_reserved = 0.0;
+            right_reserved = 0.0;
+            if show_file_tree {
+                match self.sidebar_side {
+                    LayoutSide::Left => left_reserved += sidebar_width,
+                    LayoutSide::Right => right_reserved += sidebar_width,
+                }
+            }
+        }
+
         let terminal_area = Size::new(
             (logical.width - left_reserved - right_reserved).max(100.0),
             logical.height - top,
@@ -489,7 +501,7 @@ impl App {
             self.file_tree_rect = None;
         }
 
-        if show_editor_panel {
+        if show_editor_panel && !self.pane_area_maximized {
             let dock_x = match self.dock_side {
                 LayoutSide::Left => {
                     if both_on_same_side {

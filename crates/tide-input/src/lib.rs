@@ -21,31 +21,36 @@ pub enum Action {
     None,
 }
 
+/// Which screen slot the user pressed (Cmd+1/2/3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AreaSlot {
+    Slot1,
+    Slot2,
+    Slot3,
+}
+
 /// Global actions triggered by hotkeys or other mechanisms.
 #[derive(Debug, Clone, PartialEq)]
 pub enum GlobalAction {
     SplitVertical,
     SplitHorizontal,
     ClosePane,
-    ToggleFileTree,
-    OpenFile,
-    MoveFocus(Direction),
+    FocusArea(AreaSlot),
+    Navigate(Direction),
+    ToggleZoom,
+    DockTabPrev,
+    DockTabNext,
+    FileFinder,
     Paste,
     Copy,
     ToggleFullscreen,
     Find,
-    ToggleMaximizePane,
-    ToggleEditorPanel,
-    NewEditorFile,
-    FocusFileTree,
-    FocusDock,
     ToggleTheme,
     FontSizeUp,
     FontSizeDown,
     FontSizeReset,
     NewWindow,
-    DockTabPrev,
-    DockTabNext,
+    NewFile,
 }
 
 /// Cardinal direction for focus movement.
@@ -176,8 +181,6 @@ impl Router {
             }
             // Cmd+W / Ctrl+W -> close pane
             Key::Char('w') | Key::Char('W') => Some(GlobalAction::ClosePane),
-            // Cmd+O / Ctrl+O -> open file (show file tree)
-            Key::Char('o') | Key::Char('O') => Some(GlobalAction::OpenFile),
             // Cmd+V (macOS) / Ctrl+Shift+V (Linux) -> paste
             Key::Char('v') | Key::Char('V') => {
                 if modifiers.meta {
@@ -208,8 +211,8 @@ impl Router {
                     None
                 }
             }
-            // Cmd+Enter / Ctrl+Enter -> toggle maximize pane
-            Key::Enter => Some(GlobalAction::ToggleMaximizePane),
+            // Cmd+Enter / Ctrl+Enter -> toggle zoom
+            Key::Enter => Some(GlobalAction::ToggleZoom),
             // Cmd+Shift+D -> toggle dark/light theme
             Key::Char('d') | Key::Char('D') => {
                 if modifiers.shift {
@@ -218,63 +221,39 @@ impl Router {
                     None
                 }
             }
-            // Cmd+] -> focus file tree, Cmd+Shift+] -> toggle file tree
-            Key::Char(']') => {
+            // Cmd+1 -> FocusArea(Slot1)
+            Key::Char('1') | Key::Char('!') => Some(GlobalAction::FocusArea(AreaSlot::Slot1)),
+            // Cmd+2 -> FocusArea(Slot2)
+            Key::Char('2') | Key::Char('@') => Some(GlobalAction::FocusArea(AreaSlot::Slot2)),
+            // Cmd+3 -> FocusArea(Slot3)
+            Key::Char('3') | Key::Char('#') => Some(GlobalAction::FocusArea(AreaSlot::Slot3)),
+            // Cmd+Arrow -> Navigate
+            Key::Up if modifiers.meta => Some(GlobalAction::Navigate(Direction::Up)),
+            Key::Down if modifiers.meta => Some(GlobalAction::Navigate(Direction::Down)),
+            Key::Left if modifiers.meta => Some(GlobalAction::Navigate(Direction::Left)),
+            Key::Right if modifiers.meta => Some(GlobalAction::Navigate(Direction::Right)),
+            // Cmd+HJKL -> Navigate
+            Key::Char('h') | Key::Char('H') => Some(GlobalAction::Navigate(Direction::Left)),
+            Key::Char('j') | Key::Char('J') => Some(GlobalAction::Navigate(Direction::Down)),
+            Key::Char('k') | Key::Char('K') => Some(GlobalAction::Navigate(Direction::Up)),
+            Key::Char('l') | Key::Char('L') => Some(GlobalAction::Navigate(Direction::Right)),
+            // Cmd+I -> dock tab prev
+            Key::Char('i') | Key::Char('I') => Some(GlobalAction::DockTabPrev),
+            // Cmd+O -> dock tab next
+            Key::Char('o') | Key::Char('O') => {
                 if modifiers.shift {
-                    Some(GlobalAction::ToggleFileTree)
+                    Some(GlobalAction::FileFinder)
                 } else {
-                    Some(GlobalAction::FocusFileTree)
-                }
-            }
-            // Cmd+[ -> focus dock, Cmd+Shift+[ -> toggle editor panel
-            Key::Char('[') => {
-                if modifiers.shift {
-                    Some(GlobalAction::ToggleEditorPanel)
-                } else {
-                    Some(GlobalAction::FocusDock)
-                }
-            }
-            // Cmd+Arrow -> move focus / dock tab navigation
-            Key::Up if modifiers.meta => Some(GlobalAction::MoveFocus(Direction::Up)),
-            Key::Down if modifiers.meta => Some(GlobalAction::MoveFocus(Direction::Down)),
-            Key::Left if modifiers.meta => {
-                if modifiers.shift {
-                    Some(GlobalAction::DockTabPrev)
-                } else {
-                    Some(GlobalAction::MoveFocus(Direction::Left))
-                }
-            }
-            Key::Right if modifiers.meta => {
-                if modifiers.shift {
                     Some(GlobalAction::DockTabNext)
-                } else {
-                    Some(GlobalAction::MoveFocus(Direction::Right))
                 }
             }
-            // Cmd+HJKL -> vim-style focus navigation
-            // Cmd+Shift+H/L -> dock tab prev/next
-            Key::Char('h') | Key::Char('H') => {
-                if modifiers.shift {
-                    Some(GlobalAction::DockTabPrev)
-                } else {
-                    Some(GlobalAction::MoveFocus(Direction::Left))
-                }
-            }
-            Key::Char('j') | Key::Char('J') => Some(GlobalAction::MoveFocus(Direction::Down)),
-            Key::Char('k') | Key::Char('K') => Some(GlobalAction::MoveFocus(Direction::Up)),
-            Key::Char('l') | Key::Char('L') => {
-                if modifiers.shift {
-                    Some(GlobalAction::DockTabNext)
-                } else {
-                    Some(GlobalAction::MoveFocus(Direction::Right))
-                }
-            }
-            // Cmd+Shift+N -> new editor file, Cmd+N -> new window
+            // Cmd+N -> new window, Cmd+Shift+N -> new file
             Key::Char('n') | Key::Char('N') => {
                 if modifiers.shift {
-                    return Some(GlobalAction::NewEditorFile);
+                    Some(GlobalAction::NewFile)
+                } else {
+                    Some(GlobalAction::NewWindow)
                 }
-                Some(GlobalAction::NewWindow)
             }
             // Cmd+= / Cmd++ -> font size up, Cmd+- -> font size down, Cmd+0 -> reset
             Key::Char('+') | Key::Char('=') => Some(GlobalAction::FontSizeUp),

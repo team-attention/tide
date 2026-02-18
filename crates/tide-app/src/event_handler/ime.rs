@@ -95,9 +95,11 @@ impl App {
                     for ch in output.chars() {
                         self.search_bar_insert(search_pane_id, ch);
                     }
+                } else if self.focus_area == crate::ui_state::FocusArea::FileTree {
+                    // FileTree focused: consume IME text (don't send to terminal)
                 } else {
-                    // Route to dock editor when sub_focus is Dock, otherwise to focused pane
-                    let target_id = if self.sub_focus == Some(crate::ui_state::SubFocus::Dock) {
+                    // Route to dock editor when focus_area is EditorDock, otherwise to focused pane
+                    let target_id = if self.focus_area == crate::ui_state::FocusArea::EditorDock {
                         self.active_editor_tab().or(self.focused)
                     } else {
                         self.focused

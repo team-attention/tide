@@ -19,8 +19,8 @@ pub(crate) fn render_ime_and_drop_preview(
 ) {
     // Render IME preedit overlay for terminal and editor panes
     if !app.ime_preedit.is_empty() {
-        // Determine effective target: dock editor when sub_focus is Dock
-        let effective_id = if app.sub_focus == Some(crate::ui_state::SubFocus::Dock) {
+        // Determine effective target: dock editor when focus_area is EditorDock
+        let effective_id = if app.focus_area == crate::ui_state::FocusArea::EditorDock {
             app.active_editor_tab().or(focused)
         } else {
             focused

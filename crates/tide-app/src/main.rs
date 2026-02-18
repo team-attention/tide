@@ -169,6 +169,9 @@ struct App {
     // Editor panel maximize (temporary full-area display of entire editor panel)
     pub(crate) editor_panel_maximized: bool,
 
+    // Pane area maximize (terminal fills screen minus file tree, hides dock)
+    pub(crate) pane_area_maximized: bool,
+
     // Editor panel (right-side tab panel)
     // NOTE: editor_panel_tabs / editor_panel_active are terminal-bound (TerminalPane.editors / .active_editor).
     // Use active_editor_tabs() / active_editor_tab() accessors.
@@ -221,8 +224,8 @@ struct App {
     // Context menu (right-click on file tree)
     pub(crate) context_menu: Option<ContextMenuState>,
 
-    // SubFocus: secondary focus target (file tree, dock) while terminal retains border
-    pub(crate) sub_focus: Option<SubFocus>,
+    // FocusArea: which area currently has keyboard focus
+    pub(crate) focus_area: FocusArea,
 
     // File tree keyboard cursor index (visible entry index)
     pub(crate) file_tree_cursor: usize,
@@ -308,6 +311,7 @@ impl App {
             pane_area_mode: PaneAreaMode::default(),
             show_editor_panel: false,
             editor_panel_maximized: false,
+            pane_area_maximized: false,
             editor_panel_rect: None,
             editor_panel_width: EDITOR_PANEL_WIDTH,
             panel_border_dragging: false,
@@ -328,7 +332,7 @@ impl App {
             file_switcher: None,
             hover_target: None,
             context_menu: None,
-            sub_focus: None,
+            focus_area: FocusArea::PaneArea,
             file_tree_cursor: 0,
             file_tree_rename: None,
             file_tree_git_status: std::collections::HashMap::new(),

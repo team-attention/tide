@@ -7,7 +7,7 @@ use tide_core::{FileTreeSource, InputEvent, Renderer, TerminalBackend};
 use crate::drag_drop::PaneDragState;
 use crate::input::{winit_key_to_tide, winit_modifiers_to_tide, winit_physical_key_to_tide};
 use crate::pane::PaneKind;
-use crate::ui_state::SubFocus;
+use crate::ui_state::FocusArea;
 use crate::App;
 
 use super::ime::is_hangul_char;
@@ -63,20 +63,30 @@ impl App {
                                 self.needs_redraw = true;
                             } else if let Some(search_pane_id) = self.search_focus {
                                 self.search_bar_insert(search_pane_id, c);
-                            } else if let Some(focused_id) = self.focused {
-                                match self.panes.get_mut(&focused_id) {
-                                    Some(PaneKind::Terminal(pane)) => {
-                                        pane.backend.write(s.as_bytes());
-                                        self.input_just_sent = true;
-                                        self.input_sent_at = Some(Instant::now());
+                            } else if self.focus_area == crate::ui_state::FocusArea::FileTree {
+                                // FileTree focused: consume character (don't send to terminal)
+                            } else {
+                                // Route to dock editor or focused pane
+                                let target_id = if self.focus_area == crate::ui_state::FocusArea::EditorDock {
+                                    self.active_editor_tab().or(self.focused)
+                                } else {
+                                    self.focused
+                                };
+                                if let Some(target_id) = target_id {
+                                    match self.panes.get_mut(&target_id) {
+                                        Some(PaneKind::Terminal(pane)) => {
+                                            pane.backend.write(s.as_bytes());
+                                            self.input_just_sent = true;
+                                            self.input_sent_at = Some(Instant::now());
+                                        }
+                                        Some(PaneKind::Editor(pane)) => {
+                                            pane.editor.handle_action(
+                                                tide_editor::EditorActionKind::InsertChar(c),
+                                            );
+                                        }
+                                        Some(PaneKind::Diff(_)) => {}
+                                        None => {}
                                     }
-                                    Some(PaneKind::Editor(pane)) => {
-                                        pane.editor.handle_action(
-                                            tide_editor::EditorActionKind::InsertChar(c),
-                                        );
-                                    }
-                                    Some(PaneKind::Diff(_)) => {}
-                                    None => {}
                                 }
                             }
                         }
@@ -230,49 +240,52 @@ impl App {
                 return;
             }
 
-            // SubFocus interception: file tree or dock keyboard nav
-            if let Some(sf) = self.sub_focus {
-                // Global hotkeys: pass through most, but block MoveFocus
-                // (Cmd+HJKL should NOT escape sub_focus to navigate terminals)
-                if modifiers.meta || (modifiers.ctrl && modifiers.shift) {
-                    let input = InputEvent::KeyPress { key, modifiers };
-                    let action = self.router.process(input, &self.pane_rects);
-                    match &action {
-                        tide_input::Action::GlobalAction(ga)
-                            if matches!(ga, tide_input::GlobalAction::MoveFocus(_)) =>
-                        {
-                            // Fall through to sub-focus handler below
-                        }
-                        _ => {
-                            // When sub_focus is Dock and the router returns RouteToPane
-                            // (unrecognized hotkey), reroute to the active editor tab
-                            // so keys like Cmd+S reach the editor instead of the terminal.
-                            let rerouted = if sf == SubFocus::Dock {
-                                if let tide_input::Action::RouteToPane(_) = &action {
-                                    self.active_editor_tab().map(tide_input::Action::RouteToPane)
-                                } else { None }
-                            } else { None };
-                            self.handle_action(rerouted.unwrap_or(action), Some(input));
-                            return;
-                        }
-                    }
-                }
-                match sf {
-                    SubFocus::FileTree => {
+            // FocusArea interception: file tree or dock keyboard nav
+            match self.focus_area {
+                FocusArea::FileTree => {
+                    // Cmd+Enter opens file/toggles folder
+                    if matches!(key, tide_core::Key::Enter) && modifiers.meta {
                         self.handle_file_tree_nav_key(key, &modifiers);
                         return;
                     }
-                    SubFocus::Dock => {
-                        // Forward keys to the focused editor pane in the dock
+                    // Global hotkeys: pass through (but don't forward unrecognized to terminal)
+                    if modifiers.meta || (modifiers.ctrl && modifiers.shift) {
                         let input = InputEvent::KeyPress { key, modifiers };
-                        if let Some(active_editor) = self.active_editor_tab() {
-                            self.handle_action(
-                                tide_input::Action::RouteToPane(active_editor),
-                                Some(input),
-                            );
+                        let action = self.router.process(input, &self.pane_rects);
+                        if !matches!(action, tide_input::Action::RouteToPane(_)) {
+                            self.handle_action(action, Some(input));
                         }
                         return;
                     }
+                    // Plain keys → file tree navigation (j/k/g/G/Enter)
+                    self.handle_file_tree_nav_key(key, &modifiers);
+                    return;
+                }
+                FocusArea::EditorDock => {
+                    // Global hotkeys: pass through, reroute unrecognized to editor
+                    if modifiers.meta || (modifiers.ctrl && modifiers.shift) {
+                        let input = InputEvent::KeyPress { key, modifiers };
+                        let action = self.router.process(input, &self.pane_rects);
+                        // When the router returns RouteToPane (unrecognized hotkey),
+                        // reroute to the active editor tab so keys like Cmd+S reach the editor.
+                        let rerouted = if let tide_input::Action::RouteToPane(_) = &action {
+                            self.active_editor_tab().map(tide_input::Action::RouteToPane)
+                        } else { None };
+                        self.handle_action(rerouted.unwrap_or(action), Some(input));
+                        return;
+                    }
+                    // Plain keys → forward to the focused editor pane in the dock
+                    let input = InputEvent::KeyPress { key, modifiers };
+                    if let Some(active_editor) = self.active_editor_tab() {
+                        self.handle_action(
+                            tide_input::Action::RouteToPane(active_editor),
+                            Some(input),
+                        );
+                    }
+                    return;
+                }
+                FocusArea::PaneArea => {
+                    // Default: fall through to normal routing below
                 }
             }
 
@@ -663,71 +676,18 @@ impl App {
         }
 
         match key {
-            tide_core::Key::Char('j') | tide_core::Key::Char('J') | tide_core::Key::Down => {
+            tide_core::Key::Char('j') | tide_core::Key::Down => {
                 if self.file_tree_cursor + 1 < entry_count {
                     self.file_tree_cursor += 1;
                     self.chrome_generation += 1;
                     self.auto_scroll_file_tree_cursor();
                 }
             }
-            tide_core::Key::Char('k') | tide_core::Key::Char('K') | tide_core::Key::Up => {
+            tide_core::Key::Char('k') | tide_core::Key::Up => {
                 if self.file_tree_cursor > 0 {
                     self.file_tree_cursor -= 1;
                     self.chrome_generation += 1;
                     self.auto_scroll_file_tree_cursor();
-                }
-            }
-            tide_core::Key::Char('h') | tide_core::Key::Char('H') | tide_core::Key::Left => {
-                // Collapse directory or move to parent
-                if let Some(tree) = &self.file_tree {
-                    let entries = tree.visible_entries();
-                    if let Some(entry) = entries.get(self.file_tree_cursor) {
-                        if entry.entry.is_dir && entry.is_expanded {
-                            let path = entry.entry.path.clone();
-                            if let Some(tree) = &mut self.file_tree {
-                                tree.toggle(&path);
-                            }
-                            self.chrome_generation += 1;
-                        } else if entry.depth > 0 {
-                            // Move cursor to parent directory
-                            let parent_depth = entry.depth - 1;
-                            for i in (0..self.file_tree_cursor).rev() {
-                                if let Some(e) = entries.get(i) {
-                                    if e.entry.is_dir && e.depth == parent_depth {
-                                        self.file_tree_cursor = i;
-                                        self.chrome_generation += 1;
-                                        self.auto_scroll_file_tree_cursor();
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            tide_core::Key::Char('l') | tide_core::Key::Char('L') | tide_core::Key::Right => {
-                // Expand directory or open file
-                if let Some(tree) = &self.file_tree {
-                    let entries = tree.visible_entries();
-                    if let Some(entry) = entries.get(self.file_tree_cursor) {
-                        if entry.entry.is_dir {
-                            if !entry.is_expanded {
-                                let path = entry.entry.path.clone();
-                                if let Some(tree) = &mut self.file_tree {
-                                    tree.toggle(&path);
-                                }
-                                self.chrome_generation += 1;
-                            } else if self.file_tree_cursor + 1 < entry_count {
-                                // Already expanded → move into first child
-                                self.file_tree_cursor += 1;
-                                self.chrome_generation += 1;
-                                self.auto_scroll_file_tree_cursor();
-                            }
-                        } else {
-                            let path = entry.entry.path.clone();
-                            self.open_editor_pane(path);
-                        }
-                    }
                 }
             }
             tide_core::Key::Char('g') => {
@@ -740,21 +700,6 @@ impl App {
                     self.file_tree_cursor = entry_count - 1;
                     self.chrome_generation += 1;
                     self.auto_scroll_file_tree_cursor();
-                }
-            }
-            tide_core::Key::Char(' ') => {
-                // Space toggles folder expand/collapse
-                if let Some(tree) = &self.file_tree {
-                    let entries = tree.visible_entries();
-                    if let Some(entry) = entries.get(self.file_tree_cursor) {
-                        if entry.entry.is_dir {
-                            let path = entry.entry.path.clone();
-                            if let Some(tree) = &mut self.file_tree {
-                                tree.toggle(&path);
-                            }
-                            self.chrome_generation += 1;
-                        }
-                    }
                 }
             }
             tide_core::Key::Enter => {
@@ -780,7 +725,7 @@ impl App {
     }
 
     /// Adjust file tree scroll so the cursor is visible.
-    fn auto_scroll_file_tree_cursor(&mut self) {
+    pub(crate) fn auto_scroll_file_tree_cursor(&mut self) {
         if let (Some(tree_rect), Some(renderer)) = (self.file_tree_rect, self.renderer.as_ref()) {
             let cell_size = renderer.cell_size();
             let line_height = cell_size.height * crate::theme::FILE_TREE_LINE_SPACING;

@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::{Action, Direction, GlobalAction, Router};
+    use crate::{Action, AreaSlot, Direction, GlobalAction, Router};
     use tide_core::{InputEvent, Key, Modifiers, MouseButton, Rect, Size, Vec2};
 
     /// Helper: creates a set of two side-by-side pane rects.
@@ -195,22 +195,78 @@ mod tests {
     }
 
     #[test]
-    fn meta_shift_bracket_right_triggers_toggle_file_tree() {
+    fn meta_1_triggers_focus_area_slot1() {
         let mut router = Router::new();
         router.set_focused(1);
         let panes = two_panes_horizontal();
 
         let event = InputEvent::KeyPress {
-            key: Key::Char(']'),
-            modifiers: meta_shift(),
+            key: Key::Char('1'),
+            modifiers: meta(),
         };
         let action = router.process(event, &panes);
 
-        assert_eq!(action, Action::GlobalAction(GlobalAction::ToggleFileTree));
+        assert_eq!(action, Action::GlobalAction(GlobalAction::FocusArea(AreaSlot::Slot1)));
     }
 
     #[test]
-    fn meta_arrow_triggers_move_focus_all_directions() {
+    fn meta_2_triggers_focus_area_slot2() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let event = InputEvent::KeyPress {
+            key: Key::Char('2'),
+            modifiers: meta(),
+        };
+        let action = router.process(event, &panes);
+
+        assert_eq!(action, Action::GlobalAction(GlobalAction::FocusArea(AreaSlot::Slot2)));
+    }
+
+    #[test]
+    fn meta_3_triggers_focus_area_slot3() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let event = InputEvent::KeyPress {
+            key: Key::Char('3'),
+            modifiers: meta(),
+        };
+        let action = router.process(event, &panes);
+
+        assert_eq!(action, Action::GlobalAction(GlobalAction::FocusArea(AreaSlot::Slot3)));
+    }
+
+    #[test]
+    fn meta_hjkl_triggers_navigate() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let cases = [
+            ('h', Direction::Left),
+            ('j', Direction::Down),
+            ('k', Direction::Up),
+            ('l', Direction::Right),
+        ];
+
+        for (ch, expected_dir) in cases {
+            let event = InputEvent::KeyPress {
+                key: Key::Char(ch),
+                modifiers: meta(),
+            };
+            let action = router.process(event, &panes);
+            assert_eq!(
+                action,
+                Action::GlobalAction(GlobalAction::Navigate(expected_dir))
+            );
+        }
+    }
+
+    #[test]
+    fn meta_arrow_triggers_navigate_all_directions() {
         let mut router = Router::new();
         router.set_focused(1);
         let panes = two_panes_horizontal();
@@ -230,9 +286,84 @@ mod tests {
             let action = router.process(event, &panes);
             assert_eq!(
                 action,
-                Action::GlobalAction(GlobalAction::MoveFocus(expected_dir))
+                Action::GlobalAction(GlobalAction::Navigate(expected_dir))
             );
         }
+    }
+
+    #[test]
+    fn meta_enter_triggers_toggle_zoom() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let event = InputEvent::KeyPress {
+            key: Key::Enter,
+            modifiers: meta(),
+        };
+        let action = router.process(event, &panes);
+
+        assert_eq!(action, Action::GlobalAction(GlobalAction::ToggleZoom));
+    }
+
+    #[test]
+    fn meta_i_triggers_dock_tab_prev() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let event = InputEvent::KeyPress {
+            key: Key::Char('i'),
+            modifiers: meta(),
+        };
+        let action = router.process(event, &panes);
+
+        assert_eq!(action, Action::GlobalAction(GlobalAction::DockTabPrev));
+    }
+
+    #[test]
+    fn meta_o_triggers_dock_tab_next() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let event = InputEvent::KeyPress {
+            key: Key::Char('o'),
+            modifiers: meta(),
+        };
+        let action = router.process(event, &panes);
+
+        assert_eq!(action, Action::GlobalAction(GlobalAction::DockTabNext));
+    }
+
+    #[test]
+    fn meta_shift_o_triggers_file_finder() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let event = InputEvent::KeyPress {
+            key: Key::Char('o'),
+            modifiers: meta_shift(),
+        };
+        let action = router.process(event, &panes);
+
+        assert_eq!(action, Action::GlobalAction(GlobalAction::FileFinder));
+    }
+
+    #[test]
+    fn meta_shift_n_triggers_new_window() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let event = InputEvent::KeyPress {
+            key: Key::Char('n'),
+            modifiers: meta_shift(),
+        };
+        let action = router.process(event, &panes);
+
+        assert_eq!(action, Action::GlobalAction(GlobalAction::NewWindow));
     }
 
     #[test]

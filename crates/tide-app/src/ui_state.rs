@@ -97,13 +97,20 @@ pub(crate) fn shell_escape(s: &str) -> String {
 }
 
 // ──────────────────────────────────────────────
-// SubFocus — secondary focus target (file tree, dock) while terminal retains border
+// FocusArea — which area currently has keyboard focus
 // ──────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SubFocus {
+pub(crate) enum FocusArea {
     FileTree,
-    Dock,
+    PaneArea,
+    EditorDock,
+}
+
+impl Default for FocusArea {
+    fn default() -> Self {
+        FocusArea::PaneArea
+    }
 }
 
 // ──────────────────────────────────────────────
