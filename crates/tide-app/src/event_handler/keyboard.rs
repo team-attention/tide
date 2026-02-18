@@ -1,12 +1,10 @@
-use std::time::Instant;
-
 use winit::event::ElementState;
 
-use tide_core::{FileTreeSource, InputEvent, Renderer, TerminalBackend};
+use tide_core::{FileTreeSource, InputEvent, Renderer};
 
 use crate::drag_drop::PaneDragState;
-use crate::input::{winit_key_to_tide, winit_modifiers_to_tide, winit_physical_key_to_tide};
 use crate::pane::PaneKind;
+use crate::input::{winit_key_to_tide, winit_modifiers_to_tide, winit_physical_key_to_tide};
 use crate::ui_state::FocusArea;
 use crate::App;
 
@@ -25,9 +23,11 @@ impl App {
             // event is consumed by the IME and only a Released event
             // arrives with the character.  Send it directly to the
             // focused pane.
+            // On macOS, when a non-Hangul key (e.g. Shift+/ → ?) is pressed
+            // during Korean IME composition, the Pressed event is consumed by
+            // the IME and only a Released event arrives with the character.
+            // Route via the unified text target.
             if event.state == ElementState::Released && self.ime_active {
-                // Skip if the corresponding Pressed event already had text
-                // (meaning it was processed normally, not consumed by IME).
                 if let Some(ref pressed_key) = self.last_pressed_with_text {
                     if *pressed_key == event.physical_key {
                         self.last_pressed_with_text = None;
@@ -37,67 +37,7 @@ impl App {
                 if let winit::keyboard::Key::Character(ref s) = event.logical_key {
                     if let Some(c) = s.as_str().chars().next() {
                         if !is_hangul_char(c) {
-                            if self.config_page.is_some() {
-                                if let Some(ref mut page) = self.config_page {
-                                    if page.worktree_editing {
-                                        page.worktree_input.insert_char(c);
-                                        page.dirty = true;
-                                        self.chrome_generation += 1;
-                                    }
-                                }
-                                self.needs_redraw = true;
-                            } else if self.file_tree_rename.is_some() {
-                                if let Some(ref mut rename) = self.file_tree_rename {
-                                    rename.input.insert_char(c);
-                                    self.chrome_generation += 1;
-                                }
-                                self.needs_redraw = true;
-                            } else if self.git_switcher.is_some() {
-                                if let Some(ref mut gs) = self.git_switcher {
-                                    gs.insert_char(c);
-                                    self.chrome_generation += 1;
-                                }
-                                self.needs_redraw = true;
-                            } else if self.file_switcher.is_some() {
-                                if let Some(ref mut fs) = self.file_switcher {
-                                    fs.insert_char(c);
-                                    self.chrome_generation += 1;
-                                }
-                                self.needs_redraw = true;
-                            } else if self.file_finder.is_some() {
-                                if let Some(ref mut finder) = self.file_finder {
-                                    finder.insert_char(c);
-                                    self.chrome_generation += 1;
-                                }
-                                self.needs_redraw = true;
-                            } else if let Some(search_pane_id) = self.search_focus {
-                                self.search_bar_insert(search_pane_id, c);
-                            } else if self.focus_area == crate::ui_state::FocusArea::FileTree {
-                                // FileTree focused: consume character (don't send to terminal)
-                            } else {
-                                // Route to dock editor or focused pane
-                                let target_id = if self.focus_area == crate::ui_state::FocusArea::EditorDock {
-                                    self.active_editor_tab().or(self.focused)
-                                } else {
-                                    self.focused
-                                };
-                                if let Some(target_id) = target_id {
-                                    match self.panes.get_mut(&target_id) {
-                                        Some(PaneKind::Terminal(pane)) => {
-                                            pane.backend.write(s.as_bytes());
-                                            self.input_just_sent = true;
-                                            self.input_sent_at = Some(Instant::now());
-                                        }
-                                        Some(PaneKind::Editor(pane)) => {
-                                            pane.editor.handle_action(
-                                                tide_editor::EditorActionKind::InsertChar(c),
-                                            );
-                                        }
-                                        Some(PaneKind::Diff(_)) => {}
-                                        None => {}
-                                    }
-                                }
-                            }
+                            self.send_text_to_target(s.as_str());
                         }
                     }
                 }
