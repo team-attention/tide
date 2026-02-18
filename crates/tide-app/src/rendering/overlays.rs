@@ -1179,7 +1179,7 @@ fn render_config_page(
     let hint_text_color = Color::new(0.290, 0.290, 0.306, 1.0);
 
     // ── Title bar ──
-    let title_h = 36.0_f32;
+    let title_h = CONFIG_PAGE_TITLE_H;
     let title_y = popup_y + 2.0;
     let title_text_y = title_y + (title_h - cell_height) / 2.0;
     let title_style = bold_style(p.tab_text_focused);
@@ -1188,7 +1188,7 @@ fn render_config_page(
     renderer.draw_top_rect(Rect::new(popup_x, title_y + title_h, popup_w, 1.0), sep_color);
 
     // ── Tab bar ──
-    let tab_h = 32.0_f32;
+    let tab_h = CONFIG_PAGE_TAB_H;
     let tab_y = title_y + title_h + 1.0;
     let tab_text_y = tab_y + (tab_h - cell_height) / 2.0;
     let half_w = popup_w / 2.0;
@@ -1228,7 +1228,7 @@ fn render_config_page(
 
     // ── Content area ──
     let content_top = tab_y + tab_h + 1.0;
-    let hint_bar_h = 28.0_f32;
+    let hint_bar_h = CONFIG_PAGE_HINT_BAR_H;
     let content_bottom = popup_y + popup_h - hint_bar_h;
     let line_height = 32.0_f32.max(cell_height + POPUP_LINE_EXTRA);
 

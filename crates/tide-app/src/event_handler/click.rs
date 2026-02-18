@@ -781,11 +781,11 @@ impl App {
         let cell_height = cell_size.height;
 
         // Title bar area
-        let title_h = 36.0_f32;
+        let title_h = crate::theme::CONFIG_PAGE_TITLE_H;
         let title_y = popup_y + 2.0;
 
         // Tab bar area
-        let tab_h = 32.0_f32;
+        let tab_h = crate::theme::CONFIG_PAGE_TAB_H;
         let tab_y = title_y + title_h + 1.0;
         let half_w = popup_w / 2.0;
 
@@ -806,7 +806,7 @@ impl App {
 
         // Content area
         let content_top = tab_y + tab_h + 1.0;
-        let hint_bar_h = 28.0_f32;
+        let hint_bar_h = crate::theme::CONFIG_PAGE_HINT_BAR_H;
         let content_bottom = popup_y + popup_h - hint_bar_h;
         let line_height = 32.0_f32.max(cell_height + crate::theme::POPUP_LINE_EXTRA);
 
