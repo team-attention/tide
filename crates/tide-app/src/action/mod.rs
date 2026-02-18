@@ -428,61 +428,35 @@ impl App {
         }
     }
 
+    fn split_pane(&mut self, direction: SplitDirection, cwd: Option<std::path::PathBuf>) {
+        if let Some(focused) = self.focused {
+            let new_id = self.layout.split(focused, direction);
+            self.create_terminal_pane(new_id, cwd);
+            if matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
+                self.pane_area_mode = PaneAreaMode::Stacked(new_id);
+            }
+            self.focused = Some(new_id);
+            self.router.set_focused(new_id);
+            self.chrome_generation += 1;
+            self.compute_layout();
+        }
+    }
+
     pub(crate) fn handle_global_action(&mut self, action: GlobalAction) {
         match action {
             GlobalAction::SplitVertical => {
-                if let Some(focused) = self.focused {
-                    let new_id = self.layout.split(focused, SplitDirection::Vertical);
-                    self.create_terminal_pane(new_id, None);
-                    if matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
-                        self.pane_area_mode = PaneAreaMode::Stacked(new_id);
-                    }
-                    self.focused = Some(new_id);
-                    self.router.set_focused(new_id);
-                    self.chrome_generation += 1;
-                    self.compute_layout();
-                }
+                self.split_pane(SplitDirection::Vertical, None);
             }
             GlobalAction::SplitHorizontal => {
-                if let Some(focused) = self.focused {
-                    let new_id = self.layout.split(focused, SplitDirection::Horizontal);
-                    self.create_terminal_pane(new_id, None);
-                    if matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
-                        self.pane_area_mode = PaneAreaMode::Stacked(new_id);
-                    }
-                    self.focused = Some(new_id);
-                    self.router.set_focused(new_id);
-                    self.chrome_generation += 1;
-                    self.compute_layout();
-                }
+                self.split_pane(SplitDirection::Horizontal, None);
             }
             GlobalAction::SplitVerticalHere => {
-                if let Some(focused) = self.focused {
-                    let cwd = self.focused_terminal_cwd();
-                    let new_id = self.layout.split(focused, SplitDirection::Vertical);
-                    self.create_terminal_pane(new_id, cwd);
-                    if matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
-                        self.pane_area_mode = PaneAreaMode::Stacked(new_id);
-                    }
-                    self.focused = Some(new_id);
-                    self.router.set_focused(new_id);
-                    self.chrome_generation += 1;
-                    self.compute_layout();
-                }
+                let cwd = self.focused_terminal_cwd();
+                self.split_pane(SplitDirection::Vertical, cwd);
             }
             GlobalAction::SplitHorizontalHere => {
-                if let Some(focused) = self.focused {
-                    let cwd = self.focused_terminal_cwd();
-                    let new_id = self.layout.split(focused, SplitDirection::Horizontal);
-                    self.create_terminal_pane(new_id, cwd);
-                    if matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
-                        self.pane_area_mode = PaneAreaMode::Stacked(new_id);
-                    }
-                    self.focused = Some(new_id);
-                    self.router.set_focused(new_id);
-                    self.chrome_generation += 1;
-                    self.compute_layout();
-                }
+                let cwd = self.focused_terminal_cwd();
+                self.split_pane(SplitDirection::Horizontal, cwd);
             }
             GlobalAction::ClosePane => {
                 if let Some(focused) = self.focused {

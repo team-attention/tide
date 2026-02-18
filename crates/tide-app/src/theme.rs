@@ -394,3 +394,6 @@ pub const CONTEXT_MENU_W: f32 = 140.0;        // 컨텍스트 메뉴 너비
 pub const CONFIG_PAGE_W: f32 = 560.0;
 pub const CONFIG_PAGE_MAX_H: f32 = 480.0;
 pub const CONFIG_PAGE_MAX_VISIBLE: usize = 14;
+pub const CONFIG_PAGE_TITLE_H: f32 = 36.0;
+pub const CONFIG_PAGE_TAB_H: f32 = 32.0;
+pub const CONFIG_PAGE_HINT_BAR_H: f32 = 28.0;
