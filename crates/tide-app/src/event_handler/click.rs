@@ -4,7 +4,7 @@ use crate::drag_drop::{DropDestination, HoverTarget};
 use crate::header::{HeaderHitAction, HeaderHitZone};
 use crate::pane::{PaneKind, Selection};
 use crate::theme::*;
-use crate::ui_state::SubFocus;
+use crate::ui_state::FocusArea;
 use crate::{App, GitSwitcherMode, GitSwitcherState, shell_escape};
 
 impl App {
@@ -305,7 +305,7 @@ impl App {
     pub(crate) fn handle_editor_panel_click(&mut self, pos: Vec2) {
         // Content area click → focus and move cursor
         if let Some(active_id) = self.active_editor_tab() {
-            self.sub_focus = Some(SubFocus::Dock);
+            self.focus_area = FocusArea::EditorDock;
             self.chrome_generation += 1;
 
             // Move cursor to click position + start selection
@@ -341,8 +341,8 @@ impl App {
                 }
             }
         } else if self.show_editor_panel {
-            // Empty panel: set sub_focus to Dock without changing focused terminal
-            self.sub_focus = Some(SubFocus::Dock);
+            // Empty panel: set focus to EditorDock without changing focused terminal
+            self.focus_area = FocusArea::EditorDock;
             self.chrome_generation += 1;
         }
     }

@@ -53,6 +53,7 @@ impl App {
         }
         self.focused = Some(new_id);
         self.router.set_focused(new_id);
+        self.focus_area = crate::ui_state::FocusArea::EditorDock;
         self.chrome_generation += 1;
         if !panel_was_visible {
             if !self.editor_panel_width_manual {
@@ -89,6 +90,7 @@ impl App {
                     self.pane_generations.remove(&tab_id);
                     self.focused = Some(tab_id);
                     self.router.set_focused(tab_id);
+                    self.focus_area = crate::ui_state::FocusArea::EditorDock;
                     self.chrome_generation += 1;
                     if needs_layout {
                         if !self.editor_panel_width_manual {
@@ -108,6 +110,7 @@ impl App {
                 if editor.editor.file_path() == Some(path.as_path()) {
                     self.focused = Some(id);
                     self.router.set_focused(id);
+                    self.focus_area = crate::ui_state::FocusArea::EditorDock;
                     self.chrome_generation += 1;
                     return;
                 }
@@ -127,6 +130,7 @@ impl App {
                 }
                 self.focused = Some(new_id);
                 self.router.set_focused(new_id);
+                self.focus_area = crate::ui_state::FocusArea::EditorDock;
                 self.chrome_generation += 1;
                 // Watch the file for external changes
                 self.watch_file(&path);
@@ -145,11 +149,12 @@ impl App {
         }
     }
 
-    /// Close an editor panel tab. If dirty, show save confirm bar instead.
+    /// Close an editor panel tab. If dirty (and has a file path), show save confirm bar instead.
+    /// Untitled (new) files close immediately without prompting.
     pub(crate) fn close_editor_panel_tab(&mut self, tab_id: tide_core::PaneId) {
-        // Check if editor is dirty -> show save confirm bar
+        // Check if editor is dirty -> show save confirm bar (skip for untitled files)
         if let Some(PaneKind::Editor(pane)) = self.panes.get(&tab_id) {
-            if pane.editor.is_modified() {
+            if pane.editor.is_modified() && pane.editor.file_path().is_some() {
                 self.save_confirm = Some(crate::SaveConfirmState { pane_id: tab_id });
                 // Ensure this tab is active and focused so the bar is visible
                 if let Some(owner_tid) = self.terminal_owning(tab_id) {

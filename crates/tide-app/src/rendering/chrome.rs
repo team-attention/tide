@@ -5,7 +5,7 @@ use crate::header;
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::ui::{dock_tab_width, file_icon, panel_tab_title, stacked_tab_width};
-use crate::ui_state::SubFocus;
+use crate::ui_state::FocusArea;
 use crate::{App, PaneAreaMode};
 
 /// Render the chrome layer: file tree panel, editor panel + tabs, pane backgrounds,
@@ -96,7 +96,7 @@ pub(crate) fn render_chrome(
         // Right edge border for file tree
         {
             let r = tree_visual_rect;
-            let tree_focused = app.sub_focus == Some(SubFocus::FileTree);
+            let tree_focused = app.focus_area == FocusArea::FileTree;
             if tree_focused {
                 // Focused: warm accent edge (2px) + subtle inner glow (4px fade)
                 let accent = p.dock_tab_underline;
@@ -290,8 +290,8 @@ pub(crate) fn render_chrome(
                 }
             }
 
-            // File tree keyboard cursor highlight (when sub_focus == FileTree)
-            if app.sub_focus == Some(SubFocus::FileTree) && app.file_tree_cursor < entries.len() {
+            // File tree keyboard cursor highlight (when focus_area == FileTree)
+            if app.focus_area == FocusArea::FileTree && app.file_tree_cursor < entries.len() {
                 let cursor_y = tree_visual_rect.y + PANE_PADDING + app.file_tree_cursor as f32 * line_height - file_tree_scroll;
                 if cursor_y + line_height > tree_visual_rect.y && cursor_y < tree_visual_rect.y + tree_visual_rect.height {
                     let row_rect = Rect::new(
@@ -331,7 +331,7 @@ pub(crate) fn render_chrome(
             );
 
             // Tab bar background + bottom border (highlight when dock focused)
-            let dock_focused = app.sub_focus == Some(SubFocus::Dock);
+            let dock_focused = app.focus_area == FocusArea::EditorDock;
             if dock_focused {
                 let accent = p.dock_tab_underline;
                 let tab_bar_bg = tide_core::Color::new(accent.r, accent.g, accent.b, 0.06);
@@ -511,7 +511,7 @@ pub(crate) fn render_chrome(
         // Left edge border for editor panel
         {
             let r = panel_rect;
-            let dock_focused = app.sub_focus == Some(SubFocus::Dock);
+            let dock_focused = app.focus_area == FocusArea::EditorDock;
             if dock_focused {
                 // Focused: warm accent edge (2px) + subtle inner glow (4px fade)
                 let accent = p.dock_tab_underline;

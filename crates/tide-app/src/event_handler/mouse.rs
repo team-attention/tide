@@ -6,7 +6,7 @@ use crate::drag_drop::PaneDragState;
 use crate::input::winit_modifiers_to_tide;
 use crate::pane::{PaneKind, Selection};
 use crate::theme::*;
-use crate::ui_state::SubFocus;
+use crate::ui_state::FocusArea;
 use crate::{App, PaneAreaMode};
 
 impl App {
@@ -220,7 +220,7 @@ impl App {
                     }
                 }
                 self.pane_generations.remove(&tab_id); // force grid rebuild
-                self.sub_focus = Some(SubFocus::Dock);
+                self.focus_area = FocusArea::EditorDock;
                 self.chrome_generation += 1;
                 self.scroll_to_active_panel_tab();
                 return;
