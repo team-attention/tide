@@ -430,7 +430,13 @@ impl App {
         let (layout, pane_id) = SplitLayout::with_initial_pane();
         self.layout = layout;
 
-        let cell_size = self.renderer.as_ref().unwrap().cell_size();
+        let cell_size = match self.renderer.as_ref() {
+            Some(r) => r.cell_size(),
+            None => {
+                log::error!("create_initial_pane called before renderer initialized");
+                return;
+            }
+        };
         let logical_w = self.window_size.width as f32 / self.scale_factor;
         let logical_h = self.window_size.height as f32 / self.scale_factor;
 
