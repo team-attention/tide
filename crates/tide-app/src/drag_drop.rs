@@ -36,6 +36,7 @@ pub(crate) enum HoverTarget {
     PaneMaximize(PaneId),
     PaneAreaMaximize,
     DockMaximize,
+    DockPreviewToggle,
 }
 
 // ──────────────────────────────────────────────

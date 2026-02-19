@@ -9,6 +9,8 @@ use tide_core::PaneId;
 use tide_editor::input::EditorAction;
 use tide_editor::EditorState;
 
+use tide_editor::markdown::{PreviewLine, render_markdown_preview, MarkdownTheme};
+
 use crate::pane::Selection;
 
 
@@ -25,17 +27,20 @@ pub struct EditorPane {
     pub file_deleted: bool,
     pub diff_mode: bool,
     pub disk_content: Option<Vec<String>>,
+    pub preview_mode: bool,
+    preview_cache: Option<(u64, usize, bool, Vec<PreviewLine>)>,
+    pub preview_scroll: usize,
 }
 
 impl EditorPane {
     pub fn new_empty(id: PaneId) -> Self {
         let editor = EditorState::new_empty();
-        Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None }
+        Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: false, preview_cache: None, preview_scroll: 0 }
     }
 
     pub fn open(id: PaneId, path: &Path) -> io::Result<Self> {
         let editor = EditorState::open(path)?;
-        Ok(Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None })
+        Ok(Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: false, preview_cache: None, preview_scroll: 0 })
     }
 
     /// Whether this pane needs a notification bar (diff mode or file deleted).
@@ -75,11 +80,31 @@ impl EditorPane {
     }
 
     /// Prevent horizontal over-scrolling: end of longest line stays at right edge.
+    /// h_scroll_offset is character-indexed, visible_cols is in display cells.
     fn clamp_h_scroll(&mut self, visible_cols: usize) {
-        let max_len = self.editor.buffer.lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
-        let max_h = max_len.saturating_sub(visible_cols);
-        if self.editor.h_scroll_offset() > max_h {
-            self.editor.set_h_scroll_offset(max_h);
+        use unicode_width::UnicodeWidthChar;
+        // For each line, find the max character offset such that remaining chars fit in visible_cols.
+        let max_scroll = self.editor.buffer.lines.iter().map(|l| {
+            let display_width: usize = l.chars().map(|c| c.width().unwrap_or(1)).sum();
+            if display_width <= visible_cols {
+                return 0;
+            }
+            // Walk from the end to find how many chars fit in visible_cols
+            let total_chars = l.chars().count();
+            let mut width_from_end = 0;
+            let mut chars_from_end = 0;
+            for ch in l.chars().rev() {
+                let w = ch.width().unwrap_or(1);
+                if width_from_end + w > visible_cols {
+                    break;
+                }
+                width_from_end += w;
+                chars_from_end += 1;
+            }
+            total_chars - chars_from_end
+        }).max().unwrap_or(0);
+        if self.editor.h_scroll_offset() > max_scroll {
+            self.editor.set_h_scroll_offset(max_scroll);
         }
     }
 
@@ -174,6 +199,55 @@ impl EditorPane {
 
     /// Get the generation counter for dirty checking.
     pub fn generation(&self) -> u64 {
-        self.editor.generation()
+        if self.preview_mode {
+            self.editor.generation().wrapping_add(self.preview_scroll as u64)
+        } else {
+            self.editor.generation()
+        }
+    }
+
+    /// Check if this file is a markdown file.
+    pub fn is_markdown(&self) -> bool {
+        self.editor.file_path()
+            .and_then(|p| p.extension())
+            .and_then(|ext| ext.to_str())
+            .map(|ext| matches!(ext, "md" | "markdown" | "mdown" | "mkd"))
+            .unwrap_or(false)
+    }
+
+    /// Toggle preview mode on/off.
+    pub fn toggle_preview(&mut self) {
+        self.preview_mode = !self.preview_mode;
+        self.preview_scroll = 0;
+        self.preview_cache = None;
+    }
+
+    /// Ensure the preview cache is up to date.
+    pub fn ensure_preview_cache(&mut self, wrap_width: usize, dark: bool) {
+        let gen = self.editor.generation();
+        if let Some((cached_gen, cached_width, cached_dark, _)) = &self.preview_cache {
+            if *cached_gen == gen && *cached_width == wrap_width && *cached_dark == dark {
+                return;
+            }
+        }
+        let theme = if dark { MarkdownTheme::dark() } else { MarkdownTheme::light() };
+        let lines = render_markdown_preview(&self.editor.buffer.lines, &theme, wrap_width);
+        self.preview_cache = Some((gen, wrap_width, dark, lines));
+    }
+
+    /// Get a reference to the cached preview lines.
+    pub fn preview_lines(&self) -> &[PreviewLine] {
+        match &self.preview_cache {
+            Some((_, _, _, lines)) => lines,
+            None => &[],
+        }
+    }
+
+    /// Total number of preview lines (for scroll clamping).
+    pub fn preview_line_count(&self) -> usize {
+        match &self.preview_cache {
+            Some((_, _, _, lines)) => lines.len(),
+            None => 0,
+        }
     }
 }

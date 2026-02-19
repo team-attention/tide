@@ -618,8 +618,27 @@ pub(crate) fn render_chrome(
                 tab_bar_clip,
             );
 
+            // Markdown preview toggle badge (left of maximize button)
+            let mut tabs_stop = max_x - 12.0;
+            if let Some(active_id) = editor_panel_active {
+                if let Some(PaneKind::Editor(ep)) = app.panes.get(&active_id) {
+                    if ep.is_markdown() && !ep.diff_mode {
+                        let preview_text = if ep.preview_mode { "edit" } else { "preview" };
+                        let badge_w = preview_text.len() as f32 * cell_w + BADGE_PADDING_H * 2.0;
+                        let badge_x = tabs_stop - badge_w;
+                        let dock_focused = app.focus_area == FocusArea::EditorDock;
+                        let badge_color = if dock_focused { p.badge_text } else { p.tab_text };
+                        let badge_bg = if dock_focused { p.badge_bg } else { p.badge_bg_unfocused };
+                        crate::header::render_dock_preview_badge(
+                            renderer, badge_x, text_y, badge_w, cell_height,
+                            preview_text, badge_color, badge_bg,
+                        );
+                        tabs_stop = badge_x - BADGE_GAP;
+                    }
+                }
+            }
+
             // Variable-width tabs (matching stacked mode style)
-            let tabs_stop = max_x - 12.0;
             let mut tx = panel_rect.x + PANE_PADDING - app.panel_tab_scroll;
             for &tab_id in editor_panel_tabs.iter() {
                 let title = panel_tab_title(&app.panes, tab_id);
