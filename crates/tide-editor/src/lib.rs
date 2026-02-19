@@ -4,6 +4,7 @@ pub mod buffer;
 pub mod cursor;
 pub mod highlight;
 pub mod input;
+pub mod markdown;
 mod undo;
 
 use std::io;

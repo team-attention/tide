@@ -275,6 +275,9 @@ pub(crate) fn render_hover(
                 drag_drop::HoverTarget::DockMaximize => {
                     // Hover is rendered via chrome.rs (bg on maximize icon)
                 }
+                drag_drop::HoverTarget::DockPreviewToggle => {
+                    // Hover is rendered via chrome.rs (bg on preview badge)
+                }
             }
         }
     }

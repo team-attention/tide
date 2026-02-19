@@ -29,7 +29,8 @@ impl App {
             | Some(HoverTarget::PaneModeToggle)
             | Some(HoverTarget::PaneMaximize(_))
             | Some(HoverTarget::PaneAreaMaximize)
-            | Some(HoverTarget::DockMaximize) => CursorIcon::Pointer,
+            | Some(HoverTarget::DockMaximize)
+            | Some(HoverTarget::DockPreviewToggle) => CursorIcon::Pointer,
             Some(HoverTarget::SidebarHandle)
             | Some(HoverTarget::DockHandle) => CursorIcon::Grab,
             Some(HoverTarget::FileTreeBorder) => CursorIcon::ColResize,
