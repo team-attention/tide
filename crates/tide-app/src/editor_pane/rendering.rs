@@ -25,6 +25,10 @@ impl EditorPane {
         diff_added_gutter: Option<Color>,
         diff_removed_gutter: Option<Color>,
     ) {
+        if self.preview_mode {
+            self.render_preview_grid(rect, renderer);
+            return;
+        }
         if self.diff_mode {
             if let Some(ref disk_content) = self.disk_content {
                 self.render_diff_grid(rect, renderer, gutter_text, disk_content,
@@ -265,6 +269,65 @@ impl EditorPane {
         }
     }
 
+    /// Render the markdown preview grid.
+    fn render_preview_grid(&self, rect: Rect, renderer: &mut WgpuRenderer) {
+        let cell_size = renderer.cell_size();
+        let scrollbar_reserved = if self.preview_needs_scrollbar(rect, cell_size.height) {
+            SCROLLBAR_WIDTH
+        } else {
+            0.0
+        };
+        let content_width = (rect.width - scrollbar_reserved).max(0.0);
+        let visible_rows = (rect.height / cell_size.height).floor() as usize;
+        let preview_lines = self.preview_lines();
+
+        for (vi, line) in preview_lines.iter().skip(self.preview_scroll).take(visible_rows).enumerate() {
+            let y = rect.y + vi as f32 * cell_size.height;
+
+            if y + cell_size.height > rect.y + rect.height {
+                break;
+            }
+
+            // Draw full-row background if present (for code blocks)
+            if let Some(bg) = line.bg_color {
+                let row_rect = Rect::new(rect.x, y, content_width, cell_size.height);
+                renderer.draw_grid_rect(row_rect, bg);
+            }
+
+            // Draw styled spans
+            let mut display_col = 0usize;
+            for span in &line.spans {
+                for ch in span.text.chars() {
+                    if ch == '\n' {
+                        continue;
+                    }
+                    let char_w = ch.width().unwrap_or(1);
+                    let px = rect.x + display_col as f32 * cell_size.width;
+                    if px >= rect.x + content_width {
+                        break;
+                    }
+                    if ch != ' ' || span.style.background.is_some() {
+                        renderer.draw_grid_cell(
+                            ch,
+                            vi,
+                            display_col,
+                            span.style,
+                            cell_size,
+                            Vec2::new(rect.x, rect.y),
+                        );
+                    }
+                    display_col += char_w;
+                }
+            }
+        }
+    }
+
+    /// Whether the preview content is long enough to need a scrollbar.
+    fn preview_needs_scrollbar(&self, rect: Rect, cell_height: f32) -> bool {
+        let visible_rows = (rect.height / cell_height).floor() as usize;
+        self.preview_line_count() > visible_rows
+    }
+
     /// Render the editor cursor into the overlay layer (always redrawn).
     pub fn render_cursor(&self, rect: Rect, renderer: &mut WgpuRenderer, cursor_color: Color) {
         let cell_size = renderer.cell_size();
@@ -359,7 +422,14 @@ impl EditorPane {
     pub fn render_scrollbar(&self, rect: Rect, renderer: &mut WgpuRenderer, search: Option<&SearchState>, palette: &ThemePalette) {
         let cell_size = renderer.cell_size();
         let visible_rows = (rect.height / cell_size.height).floor() as usize;
-        let total_lines = self.editor.buffer.line_count();
+
+        // In preview mode, use preview line count and scroll
+        let (total_lines, scroll) = if self.preview_mode {
+            (self.preview_line_count(), self.preview_scroll)
+        } else {
+            (self.editor.buffer.line_count(), self.editor.scroll_offset())
+        };
+
         if total_lines <= visible_rows {
             return;
         }
@@ -371,7 +441,6 @@ impl EditorPane {
         renderer.draw_rect(track_rect, palette.scrollbar_track);
 
         // Thumb
-        let scroll = self.editor.scroll_offset();
         let thumb_ratio_start = scroll as f32 / total_lines as f32;
         let thumb_ratio_end = (scroll + visible_rows) as f32 / total_lines as f32;
         let thumb_y = rect.y + thumb_ratio_start * rect.height;
@@ -379,19 +448,21 @@ impl EditorPane {
         let thumb_h = thumb_h.max(4.0); // minimum thumb height
         renderer.draw_rect(Rect::new(track_x, thumb_y, SCROLLBAR_WIDTH, thumb_h), palette.scrollbar_thumb);
 
-        // Search match markers
-        if let Some(search) = search {
-            if search.visible && !search.input.is_empty() {
-                let marker_h = 2.0_f32;
-                for (mi, m) in search.matches.iter().enumerate() {
-                    let ratio = m.line as f32 / total_lines as f32;
-                    let my = rect.y + (ratio * rect.height).min(rect.height - marker_h);
-                    let color = if search.current == Some(mi) {
-                        palette.scrollbar_current
-                    } else {
-                        palette.scrollbar_match
-                    };
-                    renderer.draw_rect(Rect::new(track_x, my, SCROLLBAR_WIDTH, marker_h), color);
+        // Search match markers (not applicable in preview mode)
+        if !self.preview_mode {
+            if let Some(search) = search {
+                if search.visible && !search.input.is_empty() {
+                    let marker_h = 2.0_f32;
+                    for (mi, m) in search.matches.iter().enumerate() {
+                        let ratio = m.line as f32 / total_lines as f32;
+                        let my = rect.y + (ratio * rect.height).min(rect.height - marker_h);
+                        let color = if search.current == Some(mi) {
+                            palette.scrollbar_current
+                        } else {
+                            palette.scrollbar_match
+                        };
+                        renderer.draw_rect(Rect::new(track_x, my, SCROLLBAR_WIDTH, marker_h), color);
+                    }
                 }
             }
         }

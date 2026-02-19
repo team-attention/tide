@@ -25,6 +25,7 @@ pub enum HeaderHitAction {
     EditorCompare,
     EditorBack,
     EditorFileName,
+    MarkdownPreview,
     DiffRefresh,
     Maximize,
 }
@@ -198,6 +199,23 @@ pub fn render_pane_header(
         }
         Some(PaneKind::Editor(ep)) => {
 
+            // Markdown preview toggle badge
+            if ep.is_markdown() && !ep.diff_mode {
+                let preview_text = if ep.preview_mode { "edit" } else { "preview" };
+                let preview_w = preview_text.len() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
+                let preview_x = badge_right - preview_w;
+                if preview_x > content_left + 40.0 {
+                    let preview_color = if is_focused { p.badge_text } else { p.tab_text };
+                    render_badge_colored(renderer, preview_x, text_y, preview_w, cell_height, preview_text, preview_color, badge_bg, BADGE_RADIUS);
+                    zones.push(HeaderHitZone {
+                        pane_id: id,
+                        rect: Rect::new(preview_x, rect.y, preview_w, TAB_BAR_HEIGHT),
+                        action: HeaderHitAction::MarkdownPreview,
+                    });
+                    badge_right = preview_x - BADGE_GAP;
+                }
+            }
+
             if ep.diff_mode {
                 // Diff mode: show [back] button only
                 let back_text = "back";
@@ -331,6 +349,20 @@ fn render_badge(
     _parent_rect: Rect,
 ) {
     render_badge_colored(renderer, x, text_y, width, cell_height, text, text_color, p.badge_bg, BADGE_RADIUS);
+}
+
+/// Render a preview badge for the dock tab bar.
+pub fn render_dock_preview_badge(
+    renderer: &mut tide_renderer::WgpuRenderer,
+    x: f32,
+    text_y: f32,
+    width: f32,
+    cell_height: f32,
+    text: &str,
+    text_color: tide_core::Color,
+    bg_color: tide_core::Color,
+) {
+    render_badge_colored(renderer, x, text_y, width, cell_height, text, text_color, bg_color, BADGE_RADIUS);
 }
 
 /// Render a badge pill with custom background color.

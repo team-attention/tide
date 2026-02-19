@@ -1,4 +1,4 @@
-use tide_core::Rect;
+use tide_core::{Rect, Renderer};
 
 use crate::pane::PaneKind;
 use crate::theme::*;
@@ -28,6 +28,18 @@ pub(crate) fn render_grid(
     if let Some(active_id) = editor_panel_active {
         if let Some(PaneKind::Diff(dp)) = app.panes.get_mut(&active_id) {
             dp.side_by_side = false;
+        }
+    }
+
+    // Pre-compute preview caches for editor panes in preview mode
+    for &(id, rect) in visual_pane_rects {
+        if let Some(PaneKind::Editor(pane)) = app.panes.get_mut(&id) {
+            if pane.preview_mode {
+                let cell_w = renderer.cell_size().width;
+                // Reserve scrollbar width so wrapping matches the visible content area
+                let wrap_width = ((rect.width - 2.0 * PANE_PADDING - SCROLLBAR_WIDTH) / cell_w).floor() as usize;
+                pane.ensure_preview_cache(wrap_width, app.dark_mode);
+            }
         }
     }
 
@@ -71,6 +83,18 @@ pub(crate) fn render_grid(
                 None => {}
             }
             renderer.end_pane_grid();
+        }
+    }
+
+    // Pre-compute preview cache for panel editor
+    if let (Some(active_id), Some(panel_rect)) = (editor_panel_active, editor_panel_rect) {
+        if let Some(PaneKind::Editor(pane)) = app.panes.get_mut(&active_id) {
+            if pane.preview_mode {
+                let cell_w = renderer.cell_size().width;
+                // Reserve scrollbar width so wrapping matches the visible content area
+                let wrap_width = ((panel_rect.width - 2.0 * PANE_PADDING - SCROLLBAR_WIDTH) / cell_w).floor() as usize;
+                pane.ensure_preview_cache(wrap_width, app.dark_mode);
+            }
         }
     }
 

@@ -127,6 +127,18 @@ impl App {
                         (rows, cols)
                     }).unwrap_or((30, 80));
                     match self.panes.get_mut(&active_id) {
+                        Some(PaneKind::Editor(pane)) if pane.preview_mode => {
+                            let total = pane.preview_line_count();
+                            let max_scroll = total.saturating_sub(visible_rows);
+                            let scroll_lines = if editor_dy.abs() >= 1.0 { editor_dy.abs().ceil() as usize } else { 1 };
+                            if editor_dy > 0.0 {
+                                pane.preview_scroll = pane.preview_scroll.saturating_sub(scroll_lines);
+                            } else if editor_dy < 0.0 {
+                                pane.preview_scroll = (pane.preview_scroll + scroll_lines).min(max_scroll);
+                            }
+                            self.pane_generations.remove(&active_id);
+                            self.needs_redraw = true;
+                        }
                         Some(PaneKind::Editor(pane)) => {
                             use tide_editor::input::EditorAction;
                             if editor_dy > 0.0 {

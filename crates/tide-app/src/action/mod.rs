@@ -247,7 +247,10 @@ impl App {
                         }
                     }
 
-                    // Click on editor pane -> move cursor
+                    // Click on editor pane -> move cursor (skip in preview mode)
+                    if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&id) {
+                        if pane.preview_mode { return; }
+                    }
                     if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&id) {
                         if let Some(renderer) = self.renderer.as_ref() {
                             if let Some(&(_, rect)) = self.visual_pane_rects.iter().find(|(pid, _)| *pid == id) {
@@ -282,6 +285,68 @@ impl App {
                             self.input_sent_at = Some(Instant::now());
                         }
                         Some(PaneKind::Editor(pane)) => {
+                            // Cmd+Shift+M / Ctrl+Shift+M: toggle markdown preview
+                            if (modifiers.meta || modifiers.ctrl) && modifiers.shift {
+                                if let tide_core::Key::Char('m') | tide_core::Key::Char('M') = &key {
+                                    if pane.is_markdown() {
+                                        pane.toggle_preview();
+                                        self.chrome_generation += 1;
+                                        self.pane_generations.remove(&id);
+                                        self.needs_redraw = true;
+                                        return;
+                                    }
+                                }
+                            }
+
+                            // In preview mode, only allow Escape, scroll keys
+                            if pane.preview_mode {
+                                // Compute visible rows for scroll clamping
+                                let visible_rows = self.renderer.as_ref().and_then(|r| {
+                                    let cs = r.cell_size();
+                                    self.visual_pane_rects.iter().find(|(pid, _)| *pid == id)
+                                        .map(|(_, rect)| {
+                                            let content_top = self.pane_area_mode.content_top();
+                                            ((rect.height - content_top - PANE_PADDING) / cs.height).floor() as usize
+                                        })
+                                }).unwrap_or(30);
+                                let total = pane.preview_line_count();
+                                let max_scroll = total.saturating_sub(visible_rows);
+                                match &key {
+                                    tide_core::Key::Escape => {
+                                        pane.toggle_preview();
+                                        self.chrome_generation += 1;
+                                        self.pane_generations.remove(&id);
+                                        self.needs_redraw = true;
+                                    }
+                                    tide_core::Key::Char('j') | tide_core::Key::Down => {
+                                        if pane.preview_scroll < max_scroll {
+                                            pane.preview_scroll += 1;
+                                            self.pane_generations.remove(&id);
+                                            self.needs_redraw = true;
+                                        }
+                                    }
+                                    tide_core::Key::Char('k') | tide_core::Key::Up => {
+                                        if pane.preview_scroll > 0 {
+                                            pane.preview_scroll -= 1;
+                                            self.pane_generations.remove(&id);
+                                            self.needs_redraw = true;
+                                        }
+                                    }
+                                    tide_core::Key::PageDown => {
+                                        pane.preview_scroll = (pane.preview_scroll + 30).min(max_scroll);
+                                        self.pane_generations.remove(&id);
+                                        self.needs_redraw = true;
+                                    }
+                                    tide_core::Key::PageUp => {
+                                        pane.preview_scroll = pane.preview_scroll.saturating_sub(30);
+                                        self.pane_generations.remove(&id);
+                                        self.needs_redraw = true;
+                                    }
+                                    _ => {} // Block all other input
+                                }
+                                return;
+                            }
+
                             if let Some(action) = tide_editor::key_to_editor_action(&key, &modifiers) {
                                 // Handle SelectAll: set selection, don't clear it
                                 if matches!(action, tide_editor::EditorActionKind::SelectAll) {
@@ -377,6 +442,18 @@ impl App {
                         }
                     }).unwrap_or((30, 80));
                     match self.panes.get_mut(&id) {
+                        Some(PaneKind::Editor(pane)) if pane.preview_mode => {
+                            let total = pane.preview_line_count();
+                            let max_scroll = total.saturating_sub(visible_rows);
+                            let scroll_amount = delta.abs() as usize;
+                            if delta > 0.0 {
+                                pane.preview_scroll = pane.preview_scroll.saturating_sub(scroll_amount);
+                            } else {
+                                pane.preview_scroll = (pane.preview_scroll + scroll_amount).min(max_scroll);
+                            }
+                            self.pane_generations.remove(&id);
+                            self.needs_redraw = true;
+                        }
                         Some(PaneKind::Editor(pane)) => {
                             if delta > 0.0 {
                                 pane.handle_action_with_size(EditorAction::ScrollUp(delta.abs()), visible_rows, visible_cols);

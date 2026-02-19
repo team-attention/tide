@@ -110,16 +110,18 @@ pub(crate) fn render_cursor_and_highlights(
                 }
             }
             Some(PaneKind::Editor(pane)) => {
-                if focused == Some(id) && search_focus != Some(id) && app.ime_preedit.is_empty() {
-                    pane.render_cursor(inner, renderer, p.cursor_accent);
-                }
-                // Render editor selection highlight
-                if let Some(ref sel) = pane.selection {
-                    render_editor_selection(pane, inner, renderer, p, sel);
-                }
-                // Render editor search highlights
-                if let Some(ref search) = pane.search {
-                    render_editor_search_highlights(pane, inner, renderer, p, search);
+                if !pane.preview_mode {
+                    if focused == Some(id) && search_focus != Some(id) && app.ime_preedit.is_empty() {
+                        pane.render_cursor(inner, renderer, p.cursor_accent);
+                    }
+                    // Render editor selection highlight
+                    if let Some(ref sel) = pane.selection {
+                        render_editor_selection(pane, inner, renderer, p, sel);
+                    }
+                    // Render editor search highlights
+                    if let Some(ref search) = pane.search {
+                        render_editor_search_highlights(pane, inner, renderer, p, search);
+                    }
                 }
                 // Render editor scrollbar with search match markers
                 pane.render_scrollbar(inner, renderer, pane.search.as_ref(), p);
@@ -140,18 +142,20 @@ pub(crate) fn render_cursor_and_highlights(
                 panel_rect.width - 2.0 * PANE_PADDING,
                 (panel_rect.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING - bar_offset).max(1.0),
             );
-            if focused == Some(active_id) && search_focus != Some(active_id) && app.ime_preedit.is_empty() {
-                pane.render_cursor(inner, renderer, p.cursor_accent);
-            }
+            if !pane.preview_mode {
+                if focused == Some(active_id) && search_focus != Some(active_id) && app.ime_preedit.is_empty() {
+                    pane.render_cursor(inner, renderer, p.cursor_accent);
+                }
 
-            // Panel editor selection highlight
-            if let Some(ref sel) = pane.selection {
-                render_editor_selection(pane, inner, renderer, p, sel);
-            }
+                // Panel editor selection highlight
+                if let Some(ref sel) = pane.selection {
+                    render_editor_selection(pane, inner, renderer, p, sel);
+                }
 
-            // Panel editor search highlights
-            if let Some(ref search) = pane.search {
-                render_editor_search_highlights(pane, inner, renderer, p, search);
+                // Panel editor search highlights
+                if let Some(ref search) = pane.search {
+                    render_editor_search_highlights(pane, inner, renderer, p, search);
+                }
             }
 
             // Render panel editor scrollbar with search match markers

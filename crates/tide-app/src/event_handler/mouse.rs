@@ -184,6 +184,39 @@ impl App {
                 }
             }
 
+            // Dock preview toggle badge (check before handle drags to avoid interception)
+            if matches!(self.hover_target, Some(crate::drag_drop::HoverTarget::DockPreviewToggle)) {
+                if let Some(active_id) = self.active_editor_tab() {
+                    if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&active_id) {
+                        pane.toggle_preview();
+                    }
+                    self.chrome_generation += 1;
+                    self.pane_generations.remove(&active_id);
+                    self.needs_redraw = true;
+                    return;
+                }
+            }
+
+            // Dock maximize button (check before handle drags)
+            if matches!(self.hover_target, Some(crate::drag_drop::HoverTarget::DockMaximize)) {
+                self.pane_area_maximized = false;
+                self.editor_panel_maximized = !self.editor_panel_maximized;
+                self.chrome_generation += 1;
+                self.compute_layout();
+                self.needs_redraw = true;
+                return;
+            }
+
+            // Pane area maximize button (stacked mode)
+            if matches!(self.hover_target, Some(crate::drag_drop::HoverTarget::PaneAreaMaximize)) {
+                self.editor_panel_maximized = false;
+                self.pane_area_maximized = !self.pane_area_maximized;
+                self.chrome_generation += 1;
+                self.compute_layout();
+                self.needs_redraw = true;
+                return;
+            }
+
             // Check top-edge drag handles (top strip of sidebar/dock panels)
             if let Some(ft_rect) = self.file_tree_rect {
                 if self.last_cursor_pos.y >= ft_rect.y && self.last_cursor_pos.y < ft_rect.y + PANE_PADDING
@@ -226,26 +259,6 @@ impl App {
                     self.panel_border_dragging = true;
                     return;
                 }
-            }
-
-            // Dock maximize button (check before panel tabs to avoid interception)
-            if matches!(self.hover_target, Some(crate::drag_drop::HoverTarget::DockMaximize)) {
-                self.pane_area_maximized = false;
-                self.editor_panel_maximized = !self.editor_panel_maximized;
-                self.chrome_generation += 1;
-                self.compute_layout();
-                self.needs_redraw = true;
-                return;
-            }
-
-            // Pane area maximize button (stacked mode)
-            if matches!(self.hover_target, Some(crate::drag_drop::HoverTarget::PaneAreaMaximize)) {
-                self.editor_panel_maximized = false;
-                self.pane_area_maximized = !self.pane_area_maximized;
-                self.chrome_generation += 1;
-                self.compute_layout();
-                self.needs_redraw = true;
-                return;
             }
 
             // Check panel tabs for click-to-activate (no drag)

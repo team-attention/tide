@@ -248,6 +248,30 @@ impl ApplicationHandler for App {
                         // Conflict bar button was clicked
                         return;
                     } else {
+                        // Check dock badges (preview toggle, maximize) before content click
+                        use crate::drag_drop::HoverTarget;
+                        match self.hover_target {
+                            Some(HoverTarget::DockPreviewToggle) => {
+                                if let Some(active_id) = self.active_editor_tab() {
+                                    if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&active_id) {
+                                        pane.toggle_preview();
+                                    }
+                                    self.chrome_generation += 1;
+                                    self.pane_generations.remove(&active_id);
+                                    self.needs_redraw = true;
+                                    return;
+                                }
+                            }
+                            Some(HoverTarget::DockMaximize) => {
+                                self.pane_area_maximized = false;
+                                self.editor_panel_maximized = !self.editor_panel_maximized;
+                                self.chrome_generation += 1;
+                                self.compute_layout();
+                                self.needs_redraw = true;
+                                return;
+                            }
+                            _ => {}
+                        }
                         // Content area click → focus + cursor + start selection drag
                         self.mouse_left_pressed = true;
                         self.handle_editor_panel_click(self.last_cursor_pos);
