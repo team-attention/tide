@@ -138,6 +138,13 @@ impl App {
                 }
             }
             TextInputTarget::Pane(id) => {
+                // Block text input in preview mode
+                if let Some(PaneKind::Editor(pane)) = self.panes.get(&id) {
+                    if pane.preview_mode {
+                        self.needs_redraw = true;
+                        return;
+                    }
+                }
                 match self.panes.get_mut(&id) {
                     Some(PaneKind::Terminal(pane)) => {
                         if pane.backend.display_offset() > 0 {

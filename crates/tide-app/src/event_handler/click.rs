@@ -84,6 +84,36 @@ impl App {
                 return Some(HoverTarget::SidebarHandle);
             }
         }
+        // Dock maximize button and preview toggle badge (checked before DockHandle
+        // so clicks on badges in the tab bar aren't intercepted as handle drags)
+        if let Some(panel_rect) = self.editor_panel_rect {
+            if let Some(renderer) = &self.renderer {
+                let cell_w = renderer.cell_size().width;
+                let tab_bar_y = panel_rect.y + PANE_PADDING;
+                let max_w = cell_w + BADGE_PADDING_H * 2.0;
+                let max_x = panel_rect.x + panel_rect.width - max_w;
+                let max_rect = Rect::new(max_x, tab_bar_y, max_w, PANEL_TAB_HEIGHT);
+                if max_rect.contains(pos) {
+                    return Some(HoverTarget::DockMaximize);
+                }
+
+                // Dock preview toggle badge (left of maximize)
+                if let Some(active_id) = self.active_editor_tab() {
+                    if let Some(PaneKind::Editor(ep)) = self.panes.get(&active_id) {
+                        if ep.is_markdown() && !ep.diff_mode {
+                            let preview_text = if ep.preview_mode { "edit" } else { "preview" };
+                            let badge_w = preview_text.len() as f32 * cell_w + BADGE_PADDING_H * 2.0;
+                            let badge_x = max_x - BADGE_GAP - badge_w;
+                            let badge_rect = Rect::new(badge_x, tab_bar_y, badge_w, PANEL_TAB_HEIGHT);
+                            if badge_rect.contains(pos) {
+                                return Some(HoverTarget::DockPreviewToggle);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if let Some(panel_rect) = self.editor_panel_rect {
             if pos.y >= panel_rect.y && pos.y < panel_rect.y + PANE_PADDING
                 && pos.x >= panel_rect.x && pos.x < panel_rect.x + panel_rect.width
@@ -122,19 +152,6 @@ impl App {
         // Split pane border (resize handle between tiled panes)
         if let Some(dir) = self.split_border_at(pos) {
             return Some(HoverTarget::SplitBorder(dir));
-        }
-
-        // Dock maximize button (right edge of dock tab bar)
-        if let Some(panel_rect) = self.editor_panel_rect {
-            if let Some(renderer) = &self.renderer {
-                let cell_w = renderer.cell_size().width;
-                let max_w = cell_w + BADGE_PADDING_H * 2.0;
-                let max_x = panel_rect.x + panel_rect.width - max_w;
-                let max_rect = Rect::new(max_x, panel_rect.y, max_w, PANEL_TAB_HEIGHT);
-                if max_rect.contains(pos) {
-                    return Some(HoverTarget::DockMaximize);
-                }
-            }
         }
 
         // Panel tab close button
@@ -306,6 +323,15 @@ impl App {
                         self.needs_redraw = true;
                         return true;
                     }
+                    HeaderHitAction::MarkdownPreview => {
+                        if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&zone.pane_id) {
+                            pane.toggle_preview();
+                        }
+                        self.chrome_generation += 1;
+                        self.pane_generations.remove(&zone.pane_id);
+                        self.needs_redraw = true;
+                        return true;
+                    }
                     HeaderHitAction::EditorFileName => {
                         // Click on file name badge: open file switcher popup
                         let anchor_rect = zone.rect;
@@ -417,6 +443,9 @@ impl App {
 
                 if rel_row >= 0 {
                     match self.panes.get_mut(&active_id) {
+                        Some(PaneKind::Editor(pane)) if pane.preview_mode => {
+                            // Block cursor movement in preview mode
+                        }
                         Some(PaneKind::Editor(pane)) if rel_col >= 0 => {
                             use tide_editor::input::EditorAction;
                             let line = pane.editor.scroll_offset() + rel_row as usize;
