@@ -7,3 +7,4 @@ Cargo.lock
 .spets/
 node_modules/
 dist/
+.vite/
