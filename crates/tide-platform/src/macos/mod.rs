@@ -3,6 +3,7 @@
 mod app;
 pub(crate) mod ime_proxy;
 mod view;
+pub mod webview;
 mod window;
 
 pub use app::MacosApp;

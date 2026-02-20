@@ -89,6 +89,18 @@ impl App {
             }
         }
 
+        // Sync browser webview state (URL, title, loading, navigation)
+        for pane in self.panes.values_mut() {
+            if let PaneKind::Browser(bp) = pane {
+                let old_gen = bp.generation;
+                bp.sync_from_webview();
+                if bp.generation != old_gen {
+                    self.chrome_generation += 1;
+                    self.needs_redraw = true;
+                }
+            }
+        }
+
         // Keep file tree/CWD in sync with terminal output (works for RedrawRequested path too).
         if had_terminal_output {
             self.update_file_tree_cwd();
