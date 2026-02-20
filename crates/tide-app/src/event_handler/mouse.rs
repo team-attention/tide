@@ -279,13 +279,13 @@ impl App {
                     let pos = self.last_cursor_pos;
                     if pos.x >= ft_rect.x
                         && pos.x < ft_rect.x + ft_rect.width
-                        && pos.y >= ft_rect.y + PANE_PADDING
+                        && pos.y >= ft_rect.y + PANE_CORNER_RADIUS + FILE_TREE_HEADER_HEIGHT
                     {
                         if let Some(renderer) = self.renderer.as_ref() {
                             let cell_size = renderer.cell_size();
                             let line_height = cell_size.height * FILE_TREE_LINE_SPACING;
-                            let ft_y = ft_rect.y;
-                            let adjusted_y = pos.y - ft_y - PANE_PADDING;
+                            let content_y = ft_rect.y + PANE_CORNER_RADIUS;
+                            let adjusted_y = pos.y - content_y - FILE_TREE_HEADER_HEIGHT;
                             let index =
                                 ((adjusted_y + self.file_tree_scroll) / line_height) as usize;
 
@@ -319,7 +319,7 @@ impl App {
                     let pos = self.last_cursor_pos;
                     if pos.x >= ft_rect.x
                         && pos.x < ft_rect.x + ft_rect.width
-                        && pos.y >= ft_rect.y + PANE_PADDING
+                        && pos.y >= ft_rect.y + PANE_CORNER_RADIUS + FILE_TREE_HEADER_HEIGHT
                     {
                         self.handle_file_tree_click(pos);
                         return;
@@ -335,7 +335,7 @@ impl App {
             return;
         }
 
-        // General mouse input routing (same as before, minus winit conversion)
+        // General mouse input routing
         self.handle_mouse_input_core(button, window);
         self.needs_redraw = true;
     }
