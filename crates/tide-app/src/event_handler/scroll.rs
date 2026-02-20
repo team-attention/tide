@@ -1,5 +1,3 @@
-use winit::event::MouseScrollDelta;
-
 use tide_core::{InputEvent, Renderer};
 
 use crate::pane::PaneKind;
@@ -7,12 +5,9 @@ use crate::theme::*;
 use crate::App;
 
 impl App {
-    pub(crate) fn handle_mouse_wheel(&mut self, delta: MouseScrollDelta) {
-        let (dx, dy) = match delta {
-            MouseScrollDelta::LineDelta(x, y) => (x * 3.0, y * 3.0),
-            MouseScrollDelta::PixelDelta(p) => (p.x as f32 / 10.0, p.y as f32 / 10.0),
-        };
-
+    /// Handle scroll event with pre-processed delta values.
+    /// dx/dy are in "line" units (platform normalizes pixel/line deltas).
+    pub(crate) fn handle_scroll(&mut self, dx: f32, dy: f32) {
         // Popup scroll: config page
         if let Some(ref mut cp) = self.config_page {
             if matches!(cp.section, crate::ui_state::ConfigSection::Keybindings) {

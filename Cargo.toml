@@ -7,6 +7,7 @@ members = [
     "crates/tide-tree",
     "crates/tide-input",
     "crates/tide-editor",
+    "crates/tide-platform",
     "crates/tide-app",
 ]
 resolver = "2"

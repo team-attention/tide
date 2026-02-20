@@ -199,7 +199,7 @@ impl App {
         self.git_poll_rx = Some(rx);
 
         let stop_flag = self.git_poll_stop.clone();
-        let proxy = self.event_loop_proxy.clone();
+        let waker = self.event_loop_waker.clone();
 
         // We need to send CWD list to the thread. We'll use a shared list.
         // The thread will re-read pane CWDs via a shared channel.
@@ -229,8 +229,8 @@ impl App {
                 }
 
                 let _ = tx.send(results);
-                if let Some(ref p) = proxy {
-                    let _ = p.send_event(());
+                if let Some(ref w) = waker {
+                    w();
                 }
             }
         });

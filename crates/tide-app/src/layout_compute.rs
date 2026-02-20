@@ -9,8 +9,8 @@ use crate::ui_state::LayoutSide;
 use crate::{App, PaneAreaMode};
 
 impl App {
-    pub(crate) fn update_cursor_icon(&self) {
-        use winit::window::CursorIcon;
+    pub(crate) fn update_cursor_icon(&self, window: &dyn tide_platform::PlatformWindow) {
+        use tide_platform::CursorIcon;
         let icon = match &self.hover_target {
             Some(HoverTarget::FileTreeEntry(_))
             | Some(HoverTarget::PaneTabBar(_))
@@ -39,9 +39,7 @@ impl App {
             Some(HoverTarget::SplitBorder(SplitDirection::Vertical)) => CursorIcon::RowResize,
             None => CursorIcon::Default,
         };
-        if let Some(window) = &self.window {
-            window.set_cursor(icon);
-        }
+        window.set_cursor_icon(icon);
     }
 
     /// Compute the geometry for buttons in the empty editor panel.

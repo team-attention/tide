@@ -128,8 +128,8 @@ pub(crate) fn render_ime_and_drop_preview(
     // Draw handle drag drop preview
     // Sidebar is always outermost: sidebar at edge, dock inside.
     if let Some(target_side) = app.handle_drag_preview {
-        let win_w = app.window_size.width as f32 / app.scale_factor;
-        let win_h = app.window_size.height as f32 / app.scale_factor;
+        let win_w = app.window_size.0 as f32 / app.scale_factor;
+        let win_h = app.window_size.1 as f32 / app.scale_factor;
         let is_sidebar = app.sidebar_handle_dragging;
         let my_width = if is_sidebar { app.file_tree_width } else { app.editor_panel_width };
         let other_visible = if is_sidebar { app.show_editor_panel } else { app.show_file_tree };

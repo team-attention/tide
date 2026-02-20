@@ -10,7 +10,6 @@ use tide_editor::input::EditorAction;
 use tide_input::{Action, AreaSlot, GlobalAction};
 use crate::search::SearchState;
 
-use crate::input::winit_modifiers_to_tide;
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::ui_state::FocusArea;
@@ -99,8 +98,8 @@ impl App {
         if target != self.focus_area {
             self.ime_composing = false;
             self.ime_preedit.clear();
-            self.pending_hangul_initial = None;
-            self.ime_dropped_preedit = None;
+            self.ime_composing = false;
+            self.ime_preedit.clear();
         }
         // If zoomed into a different area, unzoom first
         if self.editor_panel_maximized && target != FocusArea::EditorDock {
@@ -234,7 +233,7 @@ impl App {
                     self.focus_terminal(id);
 
                     // Ctrl+Click / Cmd+Click on terminal -> try to open URL or file at click position
-                    let mods = winit_modifiers_to_tide(self.modifiers);
+                    let mods = self.modifiers;
                     if mods.ctrl || mods.meta {
                         // Try URL first
                         if let Some(url) = self.extract_url_at(id, position) {
@@ -410,6 +409,9 @@ impl App {
                                 if pane.editor.is_modified() != was_modified || is_save {
                                     self.chrome_generation += 1;
                                 }
+                                // Invalidate cached pane texture and request redraw
+                                self.pane_generations.remove(&id);
+                                self.needs_redraw = true;
                             }
                         }
                         Some(PaneKind::Diff(_)) => {} // Diff pane has no keyboard input
@@ -568,18 +570,8 @@ impl App {
                 self.open_file_finder();
             }
             GlobalAction::ToggleFullscreen => {
-                if let Some(window) = &self.window {
-                    self.is_fullscreen = !self.is_fullscreen;
-                    if self.is_fullscreen {
-                        window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
-                        self.top_inset = 0.0;
-                    } else {
-                        window.set_fullscreen(None);
-                        self.top_inset = if cfg!(target_os = "macos") { TITLEBAR_HEIGHT } else { 0.0 };
-                    }
-                    self.chrome_generation += 1;
-                    self.compute_layout();
-                }
+                // Fullscreen is handled by the native platform layer.
+                // The Fullscreen(bool) event will update state when the transition completes.
             }
             GlobalAction::Paste => {
                 if let Some(target_id) = self.action_target_id() {
