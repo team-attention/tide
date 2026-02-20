@@ -156,9 +156,17 @@ impl App {
                     }
                     Some(PaneKind::Editor(pane)) => {
                         for ch in text.chars() {
-                            pane.editor
-                                .handle_action(tide_editor::EditorActionKind::InsertChar(ch));
+                            // Map control characters to editor actions
+                            let action = match ch {
+                                '\u{7f}' | '\u{8}' => tide_editor::EditorActionKind::Backspace,
+                                '\r' | '\n' => tide_editor::EditorActionKind::Enter,
+                                ch if ch.is_control() => continue,
+                                ch => tide_editor::EditorActionKind::InsertChar(ch),
+                            };
+                            pane.editor.handle_action(action);
                         }
+                        // Editor has no PTY output loop — must invalidate cache explicitly
+                        self.pane_generations.remove(&id);
                     }
                     Some(PaneKind::Diff(_)) | None => {}
                 }
@@ -168,16 +176,10 @@ impl App {
         self.needs_redraw = true;
     }
 
-    /// Reset all IME-related state.
-    /// Call on window focus regain, FocusArea transitions, and IME disable.
+    /// Reset IME-related state.
+    /// Call on window focus regain, FocusArea transitions, etc.
     pub(crate) fn reset_ime_state(&mut self) {
-        self.ime_active = false;
         self.ime_composing = false;
         self.ime_preedit.clear();
-        self.pending_hangul_initial = None;
-        self.ime_dropped_preedit = None;
-        self.last_pressed_with_text = None;
-        self.ime_just_committed = false;
-        self.ime_committed_physical_key = None;
     }
 }

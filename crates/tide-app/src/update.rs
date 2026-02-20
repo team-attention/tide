@@ -19,14 +19,14 @@ impl App {
             return true;
         }
         let (tx, rx) = mpsc::channel();
-        let proxy = self.event_loop_proxy.clone();
+        let waker = self.event_loop_waker.clone();
         let dirty_flag = self.file_watch_dirty.clone();
         match notify::recommended_watcher(move |event| {
             let _ = tx.send(event);
             dirty_flag.store(true, std::sync::atomic::Ordering::Relaxed);
             // Wake the event loop so file changes are processed immediately
-            if let Some(ref p) = proxy {
-                let _ = p.send_event(());
+            if let Some(ref w) = waker {
+                w();
             }
         }) {
             Ok(watcher) => {

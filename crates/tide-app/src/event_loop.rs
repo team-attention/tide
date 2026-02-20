@@ -1,423 +1,192 @@
-// ApplicationHandler implementation extracted from main.rs
+// Platform event dispatch — replaces winit's ApplicationHandler.
 
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
-use winit::event::{ElementState, MouseButton as WinitMouseButton, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow};
-use winit::window::{WindowAttributes, WindowId};
+use tide_core::TerminalBackend;
+use tide_platform::{PlatformEvent, PlatformWindow};
 
-use std::sync::Arc;
-
-use tide_core::{FileTreeSource, Renderer};
-
-use crate::drag_drop::PaneDragState;
 use crate::pane::PaneKind;
 use crate::session;
 use crate::theme::*;
 use crate::App;
 
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_some() {
-            return;
-        }
-
-        // Try loading a saved session to restore window size
-        let saved_session = session::load_session();
-        let (win_w, win_h) = saved_session
-            .as_ref()
-            .map(|s| (s.window_width as f64, s.window_height as f64))
-            .unwrap_or((960.0, 640.0));
-
-        let attrs = WindowAttributes::default()
-            .with_title("Tide")
-            .with_inner_size(LogicalSize::new(win_w, win_h))
-            .with_min_inner_size(LogicalSize::new(400.0, 300.0));
-
-        // macOS: transparent titlebar with content extending beneath it
-        #[cfg(target_os = "macos")]
-        let attrs = {
-            use winit::platform::macos::WindowAttributesExtMacOS;
-            attrs
-                .with_titlebar_transparent(true)
-                .with_fullsize_content_view(true)
-                .with_title_hidden(true)
-        };
-
-        let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
-        window.set_ime_allowed(true);
-
-        self.window = Some(window);
-        self.init_gpu();
-
-        // Crash recovery: if the running marker exists, the previous session
-        // ended abnormally → restore everything.  Otherwise only restore prefs.
-        let is_crash = session::is_crash_recovery();
-        let restored = match saved_session {
-            Some(session) if is_crash => self.restore_from_session(session),
-            Some(ref session) => {
-                self.restore_preferences(session);
-                true
-            }
-            None => false,
-        };
-        if !restored {
-            self.create_initial_pane();
-        }
-        session::create_running_marker();
-        self.compute_layout();
-    }
-
-    fn window_event(
+impl App {
+    /// Main entry point for all platform events.
+    /// Called by the native run loop for every key, mouse, IME, resize, etc.
+    pub(crate) fn handle_platform_event(
         &mut self,
-        _event_loop: &ActiveEventLoop,
-        _window_id: WindowId,
-        event: WindowEvent,
+        event: PlatformEvent,
+        window: &dyn PlatformWindow,
     ) {
-        // Handle RedrawRequested directly — must NOT fall through to the
-        // unconditional `needs_redraw = true` at the end of this function,
-        // otherwise every completed frame immediately requests another frame,
-        // creating an infinite render loop that leaks GPU staging memory.
-        if matches!(event, WindowEvent::RedrawRequested) {
+        // One-time initialization on first event
+        if self.surface.is_none() {
+            self.init_gpu(window);
+
+            let saved_session = session::load_session();
+            let is_crash = session::is_crash_recovery();
+            let restored = match saved_session {
+                Some(session) if is_crash => self.restore_from_session(session),
+                Some(ref session) => {
+                    self.restore_preferences(session);
+                    true
+                }
+                None => false,
+            };
+            if !restored {
+                self.create_initial_pane();
+            }
+            session::create_running_marker();
+            self.compute_layout();
+        }
+
+        // Track the effective target pane before event processing so we can
+        // discard IME composition if focus moves to a different pane.
+        let target_before = self.effective_ime_target();
+
+        match event {
+            PlatformEvent::RedrawRequested => {
+                self.update();
+                self.render();
+                self.needs_redraw = false;
+                self.last_frame = Instant::now();
+                return;
+            }
+            PlatformEvent::CloseRequested => {
+                let session = session::Session::from_app(self);
+                session::save_session(&session);
+                session::delete_running_marker();
+                std::process::exit(0);
+            }
+            PlatformEvent::Resized { width, height } => {
+                self.window_size = (width, height);
+                self.reconfigure_surface();
+                self.resize_deferred_at = Some(Instant::now() + Duration::from_millis(100));
+                self.compute_layout();
+            }
+            PlatformEvent::ScaleFactorChanged(scale) => {
+                self.scale_factor = scale as f32;
+            }
+            PlatformEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = modifiers;
+            }
+            PlatformEvent::Focused(focused) => {
+                if focused {
+                    self.modifiers = tide_core::Modifiers::default();
+                    self.reset_ime_state();
+                    window.discard_marked_text();
+                }
+            }
+            PlatformEvent::Fullscreen(fs) => {
+                self.is_fullscreen = fs;
+                self.top_inset = if fs { 0.0 } else { TITLEBAR_HEIGHT };
+                self.compute_layout();
+            }
+            PlatformEvent::ImeCommit(text) => {
+                self.handle_ime_commit(&text);
+            }
+            PlatformEvent::ImePreedit { text, cursor: _ } => {
+                self.handle_ime_preedit(&text);
+            }
+            PlatformEvent::KeyDown { key, modifiers, chars } => {
+                self.handle_key_down(key, modifiers, chars);
+            }
+            PlatformEvent::KeyUp { .. } => {
+                // Native IME handles all text routing via ImeCommit/ImePreedit,
+                // so we don't need to process KeyUp events for text input.
+            }
+            PlatformEvent::MouseDown { button, position } => {
+                let pos = self.physical_to_logical(position);
+                self.last_cursor_pos = pos;
+                let btn = platform_button_to_core(button);
+                if let Some(btn) = btn {
+                    self.handle_mouse_down(btn, window);
+                }
+            }
+            PlatformEvent::MouseUp { button, position } => {
+                let pos = self.physical_to_logical(position);
+                self.last_cursor_pos = pos;
+                let btn = platform_button_to_core(button);
+                if let Some(btn) = btn {
+                    self.handle_mouse_up(btn);
+                }
+            }
+            PlatformEvent::MouseMoved { position } => {
+                let pos = self.physical_to_logical(position);
+                self.handle_cursor_moved_logical(pos, window);
+            }
+            PlatformEvent::Scroll { dx, dy, position } => {
+                let pos = self.physical_to_logical(position);
+                self.last_cursor_pos = pos;
+                self.handle_scroll(dx, dy);
+            }
+        }
+
+        // If the effective target pane changed, commit any in-progress composition
+        // to the OLD target, then clear IME state so it doesn't carry over.
+        let target_after = self.effective_ime_target();
+        if target_before != target_after && self.ime_composing {
+            if let Some(old_id) = target_before {
+                if !self.ime_preedit.is_empty() {
+                    let preedit = self.ime_preedit.clone();
+                    match self.panes.get_mut(&old_id) {
+                        Some(PaneKind::Terminal(pane)) => {
+                            pane.backend.write(preedit.as_bytes());
+                        }
+                        Some(PaneKind::Editor(pane)) => {
+                            for ch in preedit.chars() {
+                                pane.editor
+                                    .handle_action(tide_editor::EditorActionKind::InsertChar(ch));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            self.reset_ime_state();
+            window.discard_marked_text();
+        }
+
+        // Frame pacing: check if we need to redraw
+        self.poll_background_events(window);
+
+        // Render directly at the end of event handling.
+        // This avoids deferred selector / re-entrancy issues with CAMetalLayer views.
+        if self.needs_redraw {
             self.update();
             self.render();
             self.needs_redraw = false;
             self.last_frame = Instant::now();
-            return;
-        }
-
-        // Handle search bar clicks before anything else
-        if let WindowEvent::MouseInput {
-            state: ElementState::Pressed,
-            button: WinitMouseButton::Left,
-            ..
-        } = &event
-        {
-            if self.check_search_bar_click() {
-                self.needs_redraw = true;
-                return;
-            }
-        }
-
-        // Handle empty panel "New File" / "Open File" button clicks
-        if let WindowEvent::MouseInput {
-            state: ElementState::Pressed,
-            button: WinitMouseButton::Left,
-            ..
-        } = &event
-        {
-            if self.is_on_new_file_button(self.last_cursor_pos) {
-                self.new_editor_pane();
-                self.needs_redraw = true;
-                return;
-            }
-            if self.is_on_open_file_button(self.last_cursor_pos) {
-                self.open_file_finder();
-                self.needs_redraw = true;
-                return;
-            }
-        }
-
-        // Handle file finder item click
-        if let WindowEvent::MouseInput {
-            state: ElementState::Pressed,
-            button: WinitMouseButton::Left,
-            ..
-        } = &event
-        {
-            // Context menu: click inside → execute, any left click → dismiss
-            if self.context_menu.is_some() {
-                if let Some(idx) = self.context_menu_item_at(self.last_cursor_pos) {
-                    self.execute_context_menu_action(idx);
-                }
-                self.context_menu = None;
-                self.needs_redraw = true;
-                return;
-            }
-
-            // Save-as popup: click outside → dismiss, click inside → consume
-            if self.save_as_input.is_some() {
-                if !self.save_as_contains(self.last_cursor_pos) {
-                    self.save_as_input = None;
-                }
-                self.needs_redraw = true;
-                return;
-            }
-
-            // File finder: click on item → open, click outside → dismiss
-            if self.file_finder.is_some() {
-                if let Some(idx) = self.file_finder_item_at(self.last_cursor_pos) {
-                    if let Some(ref finder) = self.file_finder {
-                        if let Some(&entry_idx) = finder.filtered.get(idx) {
-                            let path = finder.base_dir.join(&finder.entries[entry_idx]);
-                            self.close_file_finder();
-                            self.open_editor_pane(path);
-                            self.needs_redraw = true;
-                            return;
-                        }
-                    }
-                } else if !self.file_finder_contains(self.last_cursor_pos) {
-                    self.close_file_finder();
-                }
-                self.needs_redraw = true;
-                return;
-            }
-
-            // Git switcher popup click handling
-            if self.git_switcher.is_some() {
-                // Check button clicks first (worktree mode)
-                if let Some(btn) = self.git_switcher_button_at(self.last_cursor_pos) {
-                    self.handle_git_switcher_button(btn);
-                    self.needs_redraw = true;
-                    return;
-                }
-                // Check item clicks
-                if let Some(idx) = self.git_switcher_item_at(self.last_cursor_pos) {
-                    // Both modes: click selects (buttons handle actions)
-                    if let Some(ref mut gs) = self.git_switcher {
-                        gs.selected = idx;
-                        self.chrome_generation += 1;
-                    }
-                    self.needs_redraw = true;
-                    return;
-                } else if !self.git_switcher_contains(self.last_cursor_pos) {
-                    // Click outside popup → close it
-                    self.git_switcher = None;
-                    self.needs_redraw = true;
-                    return;
-                }
-            }
-
-            // File switcher popup click handling
-            if self.file_switcher.is_some() {
-                if let Some(idx) = self.file_switcher_item_at(self.last_cursor_pos) {
-                    let selected_pane_id = self.file_switcher.as_ref()
-                        .and_then(|fs| {
-                            let entry_idx = *fs.filtered.get(idx)?;
-                            Some(fs.entries.get(entry_idx)?.pane_id)
-                        });
-                    self.file_switcher = None;
-                    if let Some(pane_id) = selected_pane_id {
-                        if let Some(tid) = self.terminal_owning(pane_id) {
-                            if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                                tp.active_editor = Some(pane_id);
-                            }
-                        }
-                        self.chrome_generation += 1;
-                        self.pane_generations.remove(&pane_id);
-                    }
-                    self.needs_redraw = true;
-                    return;
-                } else if !self.file_switcher_contains(self.last_cursor_pos) {
-                    self.file_switcher = None;
-                    self.needs_redraw = true;
-                    return;
-                }
-            }
-
-        }
-
-        // Handle editor panel clicks before general routing
-        // Tab clicks flow through to handle_window_event for drag support.
-        // Only intercept: close buttons and content area clicks.
-        if let WindowEvent::MouseInput {
-            state: ElementState::Pressed,
-            button: WinitMouseButton::Left,
-            ..
-        } = &event
-        {
-            if let Some(ref panel_rect) = self.editor_panel_rect {
-                let near_border = (self.last_cursor_pos.x - panel_rect.x).abs() < 5.0;
-                let in_handle_strip = self.last_cursor_pos.y >= panel_rect.y
-                    && self.last_cursor_pos.y < panel_rect.y + PANE_PADDING;
-                if panel_rect.contains(self.last_cursor_pos) && !near_border && !in_handle_strip {
-                    // Tab close button → handle here
-                    if let Some(tab_id) = self.panel_tab_close_at(self.last_cursor_pos) {
-                        self.close_editor_panel_tab(tab_id);
-                        self.needs_redraw = true;
-                        return;
-                    }
-                    // Tab click → cancel save confirm and let flow for drag initiation
-                    if self.panel_tab_at(self.last_cursor_pos).is_some() {
-                        self.cancel_save_confirm();
-                        // fall through
-                    } else if self.handle_notification_bar_click(self.last_cursor_pos) {
-                        // Conflict bar button was clicked
-                        return;
-                    } else {
-                        // Check dock badges (preview toggle, maximize) before content click
-                        use crate::drag_drop::HoverTarget;
-                        match self.hover_target {
-                            Some(HoverTarget::DockPreviewToggle) => {
-                                if let Some(active_id) = self.active_editor_tab() {
-                                    if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&active_id) {
-                                        pane.toggle_preview();
-                                    }
-                                    self.chrome_generation += 1;
-                                    self.pane_generations.remove(&active_id);
-                                    self.needs_redraw = true;
-                                    return;
-                                }
-                            }
-                            Some(HoverTarget::DockMaximize) => {
-                                self.pane_area_maximized = false;
-                                self.editor_panel_maximized = !self.editor_panel_maximized;
-                                self.chrome_generation += 1;
-                                self.compute_layout();
-                                self.needs_redraw = true;
-                                return;
-                            }
-                            _ => {}
-                        }
-                        // Content area click → focus + cursor + start selection drag
-                        self.mouse_left_pressed = true;
-                        self.handle_editor_panel_click(self.last_cursor_pos);
-                        self.needs_redraw = true;
-                        return;
-                    }
-                }
-            }
-        }
-
-        // Handle notification bar clicks on left-side panes
-        if let WindowEvent::MouseInput {
-            state: ElementState::Pressed,
-            button: WinitMouseButton::Left,
-            ..
-        } = &event
-        {
-            // Check left-side pane notification bars (not inside panel)
-            let in_panel = self.editor_panel_rect.is_some_and(|pr| pr.contains(self.last_cursor_pos));
-            if !in_panel && self.handle_notification_bar_click(self.last_cursor_pos) {
-                return;
-            }
-        }
-
-        // Handle header badge clicks (close, git branch, git status)
-        if let WindowEvent::MouseInput {
-            state: ElementState::Pressed,
-            button: WinitMouseButton::Left,
-            ..
-        } = &event
-        {
-            if self.check_header_click() {
-                return;
-            }
-        }
-
-        // Handle pane tab bar close button clicks (fallback for header)
-        if let WindowEvent::MouseInput {
-            state: ElementState::Pressed,
-            button: WinitMouseButton::Left,
-            ..
-        } = &event
-        {
-            if let Some(pane_id) = self.pane_tab_close_at(self.last_cursor_pos) {
-                self.close_specific_pane(pane_id);
-                self.needs_redraw = true;
-                return;
-            }
-        }
-
-        // Handle right-click on file tree → context menu
-        if let WindowEvent::MouseInput {
-            state: ElementState::Pressed,
-            button: WinitMouseButton::Right,
-            ..
-        } = &event
-        {
-            if self.show_file_tree {
-                if let Some(ft_rect) = self.file_tree_rect {
-                    let pos = self.last_cursor_pos;
-                    if pos.x >= ft_rect.x && pos.x < ft_rect.x + ft_rect.width && pos.y >= ft_rect.y + PANE_PADDING {
-                        // Compute entry index (same math as handle_file_tree_click)
-                        if let Some(renderer) = self.renderer.as_ref() {
-                            let cell_size = renderer.cell_size();
-                            let line_height = cell_size.height * FILE_TREE_LINE_SPACING;
-                            let ft_y = ft_rect.y;
-                            let adjusted_y = pos.y - ft_y - PANE_PADDING;
-                            let index = ((adjusted_y + self.file_tree_scroll) / line_height) as usize;
-
-                            if let Some(tree) = self.file_tree.as_ref() {
-                                let entries = tree.visible_entries();
-                                if index < entries.len() {
-                                    let entry = &entries[index];
-                                    // Dismiss any existing context menu or rename
-                                    self.context_menu = None;
-                                    self.file_tree_rename = None;
-                                    self.context_menu = Some(crate::ContextMenuState {
-                                        entry_index: index,
-                                        path: entry.entry.path.clone(),
-                                        is_dir: entry.entry.is_dir,
-                                        position: pos,
-                                        selected: 0,
-                                    });
-                                    self.needs_redraw = true;
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Handle file tree clicks before general routing
-        // (skip the top handle strip so drag-to-move can work)
-        if let WindowEvent::MouseInput {
-            state: ElementState::Pressed,
-            button: WinitMouseButton::Left,
-            ..
-        } = &event
-        {
-            if self.show_file_tree {
-                if let Some(ft_rect) = self.file_tree_rect {
-                    let pos = self.last_cursor_pos;
-                    if pos.x >= ft_rect.x && pos.x < ft_rect.x + ft_rect.width && pos.y >= ft_rect.y + PANE_PADDING {
-                        self.handle_file_tree_click(pos);
-                        return;
-                    }
-                }
-            }
-        }
-
-        // Check if this event can skip a redraw (idle cursor hover, modifier change)
-        let skip_redraw = match &event {
-            WindowEvent::CursorMoved { .. } => {
-                !self.mouse_left_pressed
-                    && !self.file_tree_border_dragging
-                    && !self.panel_border_dragging
-                    && !self.sidebar_handle_dragging
-                    && !self.dock_handle_dragging
-                    && !self.router.is_dragging_border()
-                    && matches!(self.pane_drag, PaneDragState::Idle)
-            }
-            WindowEvent::ModifiersChanged(_) => true,
-            _ => false,
-        };
-
-        self.handle_window_event(event);
-
-        if !skip_redraw {
-            self.needs_redraw = true;
         }
     }
 
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // Deferred PTY resize: after window resize events stop, apply final terminal sizes
+    /// The effective pane that will receive IME input, considering focus area.
+    fn effective_ime_target(&self) -> Option<tide_core::PaneId> {
+        use crate::ui_state::FocusArea;
+        if self.focus_area == FocusArea::EditorDock {
+            self.active_editor_tab().or(self.focused)
+        } else {
+            self.focused
+        }
+    }
+
+    /// Convert logical position (from NSView, already in view coords) to our logical coords
+    fn physical_to_logical(&self, pos: (f64, f64)) -> tide_core::Vec2 {
+        // NSView positions are already in logical (point) coordinates when isFlipped
+        tide_core::Vec2::new(pos.0 as f32, pos.1 as f32)
+    }
+
+    /// Poll background events (PTY output, file watcher, git poller) and manage frame pacing.
+    pub(crate) fn poll_background_events(&mut self, window: &dyn PlatformWindow) {
+        // Deferred PTY resize
         if let Some(at) = self.resize_deferred_at {
             if Instant::now() >= at {
                 self.resize_deferred_at = None;
-
-                self.compute_layout(); // PTY resize now happens (flag cleared)
+                self.compute_layout();
                 self.needs_redraw = true;
             }
         }
 
-        // Check if any terminal has new PTY output (cheap atomic load)
+        // Check PTY output
         let mut had_pty_output = false;
         for pane in self.panes.values() {
             if let PaneKind::Terminal(terminal) = pane {
@@ -431,102 +200,148 @@ impl ApplicationHandler for App {
             }
         }
 
-        // PTY just produced output → schedule a deferred badge check.
-        // After a cd (by user or AI agent), the shell emits a new prompt.
-        // We check CWD/idle 150ms after the last output burst settles.
         if had_pty_output {
             self.badge_check_at = Some(Instant::now() + Duration::from_millis(150));
         }
 
-        // Check if file watcher has pending events
-        if self.file_watch_dirty.swap(false, std::sync::atomic::Ordering::Relaxed) {
+        // File watcher
+        if self
+            .file_watch_dirty
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
+        {
             self.needs_redraw = true;
         }
 
-        // Consume git poller results (woken via EventLoopProxy::send_event)
+        // Git poller
         if self.consume_git_poll_results() {
             self.chrome_generation += 1;
             self.needs_redraw = true;
         }
 
-        if self.needs_redraw {
-            // Adaptive frame throttling: start at ~120fps, drop to ~30fps during
-            // sustained PTY output (e.g. long-running commands) to save battery/GPU.
-            let min_frame_time = if self.consecutive_dirty_frames > 60 {
-                Duration::from_micros(33_333) // ~30fps after 0.5s of continuous output
-            } else {
-                Duration::from_micros(8_333) // ~120fps normal
-            };
-            let elapsed = self.last_frame.elapsed();
-            if elapsed < min_frame_time {
-                event_loop.set_control_flow(ControlFlow::wait_duration(min_frame_time - elapsed));
-                return;
-            }
-            let target_fps = if self.consecutive_dirty_frames > 60 { 30 } else { 120 };
-            log::trace!(
-                "frame_pace: interval={:.1}ms dirty_frames={} target={}fps",
-                elapsed.as_secs_f64() * 1000.0,
-                self.consecutive_dirty_frames,
-                target_fps,
-            );
-            self.consecutive_dirty_frames += 1;
-            if let Some(window) = &self.window {
-                window.request_redraw();
-            }
-        } else if self.input_just_sent {
-            // User just typed — reset adaptive throttle so next PTY burst starts at 120fps
-            self.consecutive_dirty_frames = 0;
-            // Poll aggressively while awaiting PTY response after keypress
-            // 50ms safety timeout: stop polling if PTY hasn't responded
-            if self.input_sent_at.is_some_and(|t| t.elapsed() > Duration::from_millis(50)) {
-                self.input_just_sent = false;
-                self.input_sent_at = None;
-                event_loop.set_control_flow(ControlFlow::wait_duration(Duration::from_millis(8)));
-            } else {
-                event_loop.set_control_flow(ControlFlow::Poll);
-            }
-        } else {
-            // Idle — check if a deferred badge update is due
-            self.consecutive_dirty_frames = 0;
+        // Badge check
+        if let Some(check_at) = self.badge_check_at {
+            if Instant::now() >= check_at {
+                self.badge_check_at = None;
+                self.update_file_tree_cwd();
+                self.update_terminal_badges();
 
-            if let Some(check_at) = self.badge_check_at {
-                let now = Instant::now();
-                if now >= check_at {
-                    // PTY output settled — run CWD/idle badge check now
-                    self.badge_check_at = None;
-                    self.update_file_tree_cwd();
-                    self.update_terminal_badges();
-
-                    // Send CWDs to git poller so git badges update too
-                    if let Some(ref tx) = self.git_poll_cwd_tx {
-                        let cwds: std::collections::HashSet<PathBuf> = self.panes.values()
-                            .filter_map(|pane| {
-                                if let PaneKind::Terminal(p) = pane {
-                                    p.cwd.clone()
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
-                        let _ = tx.send(cwds.into_iter().collect());
-                    }
-
-                    // If badge changed, request a frame
-                    if self.needs_redraw {
-                        if let Some(window) = &self.window {
-                            window.request_redraw();
-                        }
-                        return;
-                    }
-                } else {
-                    // Not yet — sleep until the scheduled check time
-                    event_loop.set_control_flow(ControlFlow::WaitUntil(check_at));
-                    return;
+                if let Some(ref tx) = self.git_poll_cwd_tx {
+                    let cwds: std::collections::HashSet<std::path::PathBuf> = self
+                        .panes
+                        .values()
+                        .filter_map(|pane| {
+                            if let PaneKind::Terminal(p) = pane {
+                                p.cwd.clone()
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    let _ = tx.send(cwds.into_iter().collect());
                 }
             }
-
-            // Truly idle: sleep until PTY waker or user input wakes us
-            event_loop.set_control_flow(ControlFlow::Wait);
         }
+
+        // Update IME cursor area so the candidate window follows the text cursor
+        self.update_ime_cursor_area(window);
+    }
+
+    /// Update the IME cursor area on the native window so the candidate window
+    /// appears next to the text cursor.
+    fn update_ime_cursor_area(&self, window: &dyn PlatformWindow) {
+        use crate::ui_state::FocusArea;
+        use tide_core::{Renderer, TerminalBackend};
+
+        let renderer = match self.renderer.as_ref() {
+            Some(r) => r,
+            None => return,
+        };
+        let cell_size = renderer.cell_size();
+
+        // Determine the effective target pane
+        let target_id = if self.focus_area == FocusArea::EditorDock {
+            self.active_editor_tab().or(self.focused)
+        } else {
+            self.focused
+        };
+        let target_id = match target_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        match self.panes.get(&target_id) {
+            Some(PaneKind::Terminal(pane)) => {
+                // Find the visual rect for this pane
+                if let Some((_, rect)) = self.visual_pane_rects.iter().find(|(id, _)| *id == target_id) {
+                    let cursor = pane.backend.cursor();
+                    let inner_w = rect.width - 2.0 * crate::theme::PANE_PADDING;
+                    let max_cols = (inner_w / cell_size.width).floor() as usize;
+                    let actual_w = max_cols as f32 * cell_size.width;
+                    let center_x = (inner_w - actual_w) / 2.0;
+                    let top = self.pane_area_mode.content_top();
+                    let cx = rect.x + crate::theme::PANE_PADDING + center_x + cursor.col as f32 * cell_size.width;
+                    let cy = rect.y + top + cursor.row as f32 * cell_size.height;
+                    window.set_ime_cursor_area(
+                        cx as f64,
+                        cy as f64,
+                        cell_size.width as f64,
+                        cell_size.height as f64,
+                    );
+                }
+            }
+            Some(PaneKind::Editor(pane)) => {
+                let pos = pane.editor.cursor_position();
+                let scroll = pane.editor.scroll_offset();
+                let h_scroll = pane.editor.h_scroll_offset();
+                if pos.line < scroll {
+                    return;
+                }
+                let visual_row = pos.line - scroll;
+                let cursor_char_col = if let Some(line_text) = pane.editor.buffer.line(pos.line) {
+                    let byte_col = pos.col.min(line_text.len());
+                    line_text[..byte_col].chars().count()
+                } else {
+                    0
+                };
+                if cursor_char_col < h_scroll {
+                    return;
+                }
+                let visual_col = cursor_char_col - h_scroll;
+                let gutter_cells = 5usize;
+
+                // Check visual rect first (tree editor), then panel rect
+                let (inner_x, inner_y) = if let Some((_, rect)) = self.visual_pane_rects.iter().find(|(id, _)| *id == target_id) {
+                    let top = self.pane_area_mode.content_top();
+                    (rect.x + crate::theme::PANE_PADDING, rect.y + top)
+                } else if let Some(panel_rect) = self.editor_panel_rect {
+                    let content_top = panel_rect.y + crate::theme::PANE_PADDING + crate::theme::PANEL_TAB_HEIGHT + crate::theme::PANE_GAP;
+                    (panel_rect.x + crate::theme::PANE_PADDING, content_top)
+                } else {
+                    return;
+                };
+
+                let gutter_width = gutter_cells as f32 * cell_size.width;
+                let cx = inner_x + gutter_width + visual_col as f32 * cell_size.width;
+                let cy = inner_y + visual_row as f32 * cell_size.height;
+                window.set_ime_cursor_area(
+                    cx as f64,
+                    cy as f64,
+                    cell_size.width as f64,
+                    cell_size.height as f64,
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+fn platform_button_to_core(
+    button: tide_platform::MouseButton,
+) -> Option<tide_core::MouseButton> {
+    match button {
+        tide_platform::MouseButton::Left => Some(tide_core::MouseButton::Left),
+        tide_platform::MouseButton::Right => Some(tide_core::MouseButton::Right),
+        tide_platform::MouseButton::Middle => Some(tide_core::MouseButton::Middle),
+        _ => None,
     }
 }

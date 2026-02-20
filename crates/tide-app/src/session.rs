@@ -174,8 +174,8 @@ impl Session {
             }
         }
 
-        let logical_w = app.window_size.width as f32 / app.scale_factor;
-        let logical_h = app.window_size.height as f32 / app.scale_factor;
+        let logical_w = app.window_size.0 as f32 / app.scale_factor;
+        let logical_h = app.window_size.1 as f32 / app.scale_factor;
 
         Session {
             layout,

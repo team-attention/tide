@@ -38,7 +38,7 @@ pub(crate) fn render_cursor_and_highlights(
                     pane.render_cursor(inner, renderer, p.cursor_accent);
                 }
                 // Render URL underlines when Cmd/Meta is held
-                if app.modifiers.super_key() {
+                if app.modifiers.meta {
                     pane.render_url_underlines(inner, renderer, p.link_color);
                 }
                 // Render selection highlight

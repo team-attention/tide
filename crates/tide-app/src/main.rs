@@ -1,5 +1,5 @@
-// Tide v0.1 — Integration (Step 3)
-// Wires all crates together: winit window, wgpu surface, renderer, terminal panes,
+// Tide — GPU terminal emulator with native macOS platform layer.
+// Wires all crates together: native window, wgpu surface, renderer, terminal panes,
 // layout engine, input router, file tree, and CWD following.
 
 mod action;
@@ -12,7 +12,6 @@ mod event_loop;
 mod file_tree;
 mod gpu;
 mod header;
-mod input;
 mod layout_compute;
 mod pane;
 mod rendering;
@@ -33,12 +32,7 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Instant;
 
-use winit::dpi::PhysicalSize;
-use winit::event_loop::{ControlFlow, EventLoop, EventLoopProxy};
-use winit::keyboard::ModifiersState;
-use winit::window::Window;
-
-use tide_core::{PaneId, Rect, Renderer, Size};
+use tide_core::{Modifiers, PaneId, Rect, Renderer, Size};
 use tide_input::Router;
 use tide_layout::SplitLayout;
 use tide_renderer::WgpuRenderer;
@@ -53,7 +47,6 @@ use theme::*;
 // ──────────────────────────────────────────────
 
 struct App {
-    pub(crate) window: Option<Arc<Window>>,
     pub(crate) surface: Option<wgpu::Surface<'static>>,
     pub(crate) device: Option<Arc<wgpu::Device>>,
     pub(crate) queue: Option<Arc<wgpu::Queue>>,
@@ -85,8 +78,8 @@ struct App {
 
     // Window state
     pub(crate) scale_factor: f32,
-    pub(crate) window_size: PhysicalSize<u32>,
-    pub(crate) modifiers: ModifiersState,
+    pub(crate) window_size: (u32, u32),
+    pub(crate) modifiers: Modifiers,
     pub(crate) last_cursor_pos: tide_core::Vec2,
 
     // CWD tracking
@@ -104,31 +97,9 @@ struct App {
     /// While Some, compute_layout skips PTY resize to avoid SIGWINCH spam.
     pub(crate) resize_deferred_at: Option<Instant>,
 
-    // IME composition state
-    pub(crate) ime_active: bool,
+    // IME composition state (native NSTextInputClient handles all complexity)
     pub(crate) ime_composing: bool,
     pub(crate) ime_preedit: String,
-    /// First hangul character typed before IME was active (macOS sends
-    /// KeyboardInput before Ime::Enabled on language switch).  Stored here
-    /// so we can combine it with the first Preedit/Commit the IME produces.
-    pub(crate) pending_hangul_initial: Option<char>,
-    /// Preedit text saved when composition is cleared by Preedit("").
-    /// If the next Ime::Commit doesn't contain this text, it was dropped
-    /// by the IME (e.g. pressing ? during Korean composition) and must be
-    /// prepended to the committed output.
-    pub(crate) ime_dropped_preedit: Option<String>,
-    /// Physical key of the last Pressed event that had text (event.text.is_some()).
-    /// Used to prevent the Released event handler from duplicating characters
-    /// that were already processed by the Pressed handler.
-    pub(crate) last_pressed_with_text: Option<winit::keyboard::PhysicalKey>,
-    /// Set after Ime::Commit — the next Pressed event with text=None is the
-    /// trigger key (e.g. period) whose character was consumed by the IME.
-    /// We send it immediately in the Pressed handler to preserve input order.
-    pub(crate) ime_just_committed: bool,
-    /// Physical key of a character sent via the `ime_just_committed` path.
-    /// Used to prevent the Released handler from duplicating it (analogous
-    /// to `last_pressed_with_text` but for the post-commit case).
-    pub(crate) ime_committed_physical_key: Option<winit::keyboard::PhysicalKey>,
 
     // Computed pane rects: tiling rects (hit-testing/drag) and visual rects (gap-inset, rendering)
     pub(crate) pane_rects: Vec<(PaneId, Rect)>,
@@ -256,8 +227,8 @@ struct App {
     pub(crate) file_watch_rx: Option<mpsc::Receiver<notify::Result<notify::Event>>>,
     pub(crate) file_watch_dirty: Arc<AtomicBool>,
 
-    // Event loop proxy for waking the loop from background threads (PTY, file watcher)
-    pub(crate) event_loop_proxy: Option<EventLoopProxy<()>>,
+    // Waker for poking the event loop from background threads (PTY, file watcher)
+    pub(crate) event_loop_waker: Option<tide_platform::WakeCallback>,
 
     // Background git info poller
     pub(crate) git_poll_rx: Option<mpsc::Receiver<std::collections::HashMap<PathBuf, (Option<tide_terminal::git::GitInfo>, usize)>>>,
@@ -269,7 +240,6 @@ struct App {
 impl App {
     fn new() -> Self {
         Self {
-            window: None,
             surface: None,
             device: None,
             queue: None,
@@ -292,22 +262,16 @@ impl App {
             dock_handle_dragging: false,
             handle_drag_preview: None,
             scale_factor: 1.0,
-            window_size: PhysicalSize::new(1200, 800),
-            modifiers: ModifiersState::empty(),
+            window_size: (1200, 800),
+            modifiers: Modifiers::default(),
             last_cursor_pos: tide_core::Vec2::new(0.0, 0.0),
             last_cwd: None,
             badge_check_at: None,
             needs_redraw: true,
             last_frame: Instant::now(),
             resize_deferred_at: None,
-            ime_active: false,
             ime_composing: false,
             ime_preedit: String::new(),
-            pending_hangul_initial: None,
-            ime_dropped_preedit: None,
-            last_pressed_with_text: None,
-            ime_just_committed: false,
-            ime_committed_physical_key: None,
             pane_rects: Vec::new(),
             visual_pane_rects: Vec::new(),
             prev_visual_pane_rects: Vec::new(),
@@ -358,7 +322,7 @@ impl App {
             file_watcher: None,
             file_watch_rx: None,
             file_watch_dirty: Arc::new(AtomicBool::new(false)),
-            event_loop_proxy: None,
+            event_loop_waker: None,
             git_poll_rx: None,
             git_poll_cwd_tx: None,
             git_poll_handle: None,
@@ -422,13 +386,11 @@ impl App {
     // ── Helpers ──
 
     /// Install an event-loop waker on a terminal pane so the PTY thread
-    /// can wake us from `ControlFlow::Wait` when new output arrives.
+    /// can wake us from sleep when new output arrives.
     fn install_pty_waker(&self, pane: &TerminalPane) {
-        if let Some(proxy) = &self.event_loop_proxy {
-            let proxy = proxy.clone();
-            pane.backend.set_waker(Box::new(move || {
-                let _ = proxy.send_event(());
-            }));
+        if let Some(ref waker) = self.event_loop_waker {
+            let w = waker.clone();
+            pane.backend.set_waker(Box::new(move || w()));
         }
     }
 
@@ -443,8 +405,8 @@ impl App {
                 return;
             }
         };
-        let logical_w = self.window_size.width as f32 / self.scale_factor;
-        let logical_h = self.window_size.height as f32 / self.scale_factor;
+        let logical_w = self.window_size.0 as f32 / self.scale_factor;
+        let logical_h = self.window_size.1 as f32 / self.scale_factor;
 
         let cols = (logical_w / cell_size.width).max(1.0) as u16;
         let rows = (logical_h / cell_size.height).max(1.0) as u16;
@@ -470,8 +432,8 @@ impl App {
 
     pub(crate) fn logical_size(&self) -> Size {
         Size::new(
-            self.window_size.width as f32 / self.scale_factor,
-            self.window_size.height as f32 / self.scale_factor,
+            self.window_size.0 as f32 / self.scale_factor,
+            self.window_size.1 as f32 / self.scale_factor,
         )
     }
 }
@@ -483,25 +445,35 @@ impl App {
 fn main() {
     env_logger::init();
 
-    #[cfg(target_os = "macos")]
-    let event_loop = {
-        use winit::platform::macos::EventLoopBuilderExtMacOS;
-        EventLoop::builder()
-            .with_default_menu(false)
-            .build()
-            .expect("create event loop")
-    };
-    #[cfg(not(target_os = "macos"))]
-    let event_loop = EventLoop::new().expect("create event loop");
-    let proxy = event_loop.create_proxy();
-    event_loop.set_control_flow(ControlFlow::Wait);
-
     let mut app = App::new();
-    app.event_loop_proxy = Some(proxy);
+    app.event_loop_waker = Some(tide_platform::macos::MacosApp::create_waker());
+
     // Initialize keybinding map from saved settings
     if !app.settings.keybindings.is_empty() {
         let map = settings::build_keybinding_map(&app.settings);
         app.router.keybinding_map = Some(map);
     }
-    event_loop.run_app(&mut app).expect("run event loop");
+
+    // Try loading a saved session to restore window size
+    let saved_session = session::load_session();
+    let (win_w, win_h) = saved_session
+        .as_ref()
+        .map(|s| (s.window_width as f64, s.window_height as f64))
+        .unwrap_or((960.0, 640.0));
+
+    let config = tide_platform::WindowConfig {
+        title: "Tide".to_string(),
+        width: win_w,
+        height: win_h,
+        min_width: 400.0,
+        min_height: 300.0,
+        transparent_titlebar: true,
+    };
+
+    tide_platform::macos::MacosApp::run(
+        config,
+        Box::new(move |event, window| {
+            app.handle_platform_event(event, window);
+        }),
+    );
 }

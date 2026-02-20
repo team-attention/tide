@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
+use tide_platform::PlatformWindow;
 use tide_renderer::WgpuRenderer;
 
 use crate::App;
 
 impl App {
-    pub(crate) fn init_gpu(&mut self) {
-        let window = self.window.as_ref().unwrap().clone();
+    pub(crate) fn init_gpu(&mut self, window: &dyn PlatformWindow) {
         self.scale_factor = window.scale_factor() as f32;
         self.window_size = window.inner_size();
 
@@ -15,7 +15,16 @@ impl App {
             ..Default::default()
         });
 
-        let surface = instance.create_surface(window).expect("create surface");
+        // Create surface using raw window handle (unsafe: we know the window outlives the surface)
+        let surface = unsafe {
+            let raw_handle = window.window_handle().expect("window handle");
+            let raw_display = window.display_handle().expect("display handle");
+            let target = wgpu::SurfaceTargetUnsafe::RawHandle {
+                raw_display_handle: raw_display.into(),
+                raw_window_handle: raw_handle.into(),
+            };
+            instance.create_surface_unsafe(target).expect("create surface")
+        };
 
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
@@ -56,8 +65,8 @@ impl App {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
-            width: self.window_size.width,
-            height: self.window_size.height,
+            width: self.window_size.0,
+            height: self.window_size.1,
             present_mode,
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
@@ -92,8 +101,8 @@ impl App {
             self.device.as_ref(),
             self.surface_config.as_mut(),
         ) {
-            config.width = self.window_size.width.max(1);
-            config.height = self.window_size.height.max(1);
+            config.width = self.window_size.0.max(1);
+            config.height = self.window_size.1.max(1);
             surface.configure(device, config);
         }
     }
