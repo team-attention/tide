@@ -223,4 +223,12 @@ impl PlatformWindow for MacosWindow {
             proxy.set_ime_cursor_rect(x, y, w, h);
         }
     }
+
+    fn content_view_ptr(&self) -> Option<*mut std::ffi::c_void> {
+        Some(Retained::as_ptr(&self.view) as *mut std::ffi::c_void)
+    }
+
+    fn window_ptr(&self) -> Option<*mut std::ffi::c_void> {
+        Some(Retained::as_ptr(&self.ns_window) as *mut std::ffi::c_void)
+    }
 }

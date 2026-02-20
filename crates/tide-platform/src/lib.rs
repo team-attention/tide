@@ -117,6 +117,18 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn focus_ime_proxy(&self, pane_id: u64);
     /// Update the IME candidate window position for a specific pane's proxy.
     fn set_ime_proxy_cursor_area(&self, pane_id: u64, x: f64, y: f64, w: f64, h: f64);
+
+    /// Return a raw pointer to the content NSView (macOS) for subview management.
+    /// Returns `None` on platforms that don't support native subviews.
+    fn content_view_ptr(&self) -> Option<*mut std::ffi::c_void> {
+        None
+    }
+
+    /// Return a raw pointer to the NSWindow (macOS) for first responder management.
+    /// Returns `None` on platforms that don't support this.
+    fn window_ptr(&self) -> Option<*mut std::ffi::c_void> {
+        None
+    }
 }
 
 // ──────────────────────────────────────────────
