@@ -711,25 +711,31 @@ impl App {
 
                     // First responder management: when URL bar is NOT focused,
                     // let the webview receive keyboard events directly.
-                    // When URL bar IS focused, sync_ime_proxies() will focus
-                    // the browser pane's IME proxy to route keyboard input
-                    // through PlatformEvent for URL bar editing.
-                    if let (Some(wv), Some(win_ptr)) =
-                        (&bp.webview, self.window_ptr)
-                    {
-                        if !bp.url_input_focused {
+                    // Only call make_first_responder when state actually changes.
+                    let should_be_first_responder = !bp.url_input_focused;
+                    if should_be_first_responder && !bp.is_first_responder {
+                        if let (Some(wv), Some(win_ptr)) =
+                            (&bp.webview, self.window_ptr)
+                        {
                             unsafe { wv.make_first_responder(win_ptr); }
                         }
+                        bp.is_first_responder = true;
+                    } else if !should_be_first_responder && bp.is_first_responder {
+                        bp.is_first_responder = false;
                     }
                 } else {
                     bp.set_visible(false);
                 }
             } else {
-                // Resign first responder when browser tab is not active
-                if let (Some(wv), Some(win_ptr), Some(view_ptr)) =
-                    (&bp.webview, self.window_ptr, self.content_view_ptr)
-                {
-                    unsafe { wv.resign_first_responder(win_ptr, view_ptr); }
+                // Resign first responder when browser tab is not active.
+                // Only call when state actually changes.
+                if bp.is_first_responder {
+                    if let (Some(wv), Some(win_ptr), Some(view_ptr)) =
+                        (&bp.webview, self.window_ptr, self.content_view_ptr)
+                    {
+                        unsafe { wv.resign_first_responder(win_ptr, view_ptr); }
+                    }
+                    bp.is_first_responder = false;
                 }
                 bp.set_visible(false);
             }

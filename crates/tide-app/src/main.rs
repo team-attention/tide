@@ -109,6 +109,9 @@ struct App {
     pub(crate) pending_ime_proxy_creates: Vec<u64>,
     pub(crate) pending_ime_proxy_removes: Vec<u64>,
 
+    // IME cursor area dirty flag: only recompute geometry when cursor may have moved
+    pub(crate) ime_cursor_dirty: bool,
+
     // Computed pane rects: tiling rects (hit-testing/drag) and visual rects (gap-inset, rendering)
     pub(crate) pane_rects: Vec<(PaneId, Rect)>,
     pub(crate) visual_pane_rects: Vec<(PaneId, Rect)>,
@@ -290,6 +293,7 @@ impl App {
             last_ime_target: None,
             pending_ime_proxy_creates: Vec::new(),
             pending_ime_proxy_removes: Vec::new(),
+            ime_cursor_dirty: true,
             pane_rects: Vec::new(),
             visual_pane_rects: Vec::new(),
             prev_visual_pane_rects: Vec::new(),

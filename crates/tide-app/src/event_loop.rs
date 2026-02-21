@@ -47,10 +47,18 @@ impl App {
 
         match event {
             PlatformEvent::RedrawRequested => {
-                self.update();
-                self.render();
-                self.needs_redraw = false;
-                self.last_frame = Instant::now();
+                if self.needs_redraw {
+                    self.update();
+                    self.render();
+                    self.needs_redraw = false;
+                    self.last_frame = Instant::now();
+
+                    // Reveal window after first frame so the user never sees a blank window
+                    if !self.window_shown {
+                        window.show_window();
+                        self.window_shown = true;
+                    }
+                }
                 return;
             }
             PlatformEvent::CloseRequested => {
@@ -64,6 +72,7 @@ impl App {
                 self.reconfigure_surface();
                 self.resize_deferred_at = Some(Instant::now() + Duration::from_millis(100));
                 self.compute_layout();
+                self.ime_cursor_dirty = true;
             }
             PlatformEvent::ScaleFactorChanged(scale) => {
                 self.scale_factor = scale as f32;
@@ -82,15 +91,19 @@ impl App {
                 self.is_fullscreen = fs;
                 self.top_inset = if fs { 0.0 } else { TITLEBAR_HEIGHT };
                 self.compute_layout();
+                self.ime_cursor_dirty = true;
             }
             PlatformEvent::ImeCommit(text) => {
                 self.handle_ime_commit(&text);
+                self.ime_cursor_dirty = true;
             }
             PlatformEvent::ImePreedit { text, cursor: _ } => {
                 self.handle_ime_preedit(&text);
+                self.ime_cursor_dirty = true;
             }
             PlatformEvent::KeyDown { key, modifiers, chars } => {
                 self.handle_key_down(key, modifiers, chars);
+                self.ime_cursor_dirty = true;
             }
             PlatformEvent::KeyUp { .. } => {
                 // Native IME handles all text routing via ImeCommit/ImePreedit,
@@ -103,6 +116,7 @@ impl App {
                 if let Some(btn) = btn {
                     self.handle_mouse_down(btn, window);
                 }
+                self.ime_cursor_dirty = true;
             }
             PlatformEvent::MouseUp { button, position } => {
                 let pos = self.physical_to_logical(position);
@@ -132,30 +146,51 @@ impl App {
         // Frame pacing: check if we need to redraw
         self.poll_background_events(window);
 
-        // Render directly at the end of event handling.
-        // This avoids deferred selector / re-entrancy issues with CAMetalLayer views.
+        // Frame-paced rendering: render immediately if enough time has passed
+        // since the last frame (~60fps cap). Otherwise defer via a 0-delay timer
+        // so rapid bursts (e.g. mouse drag) are coalesced within one frame.
         if self.needs_redraw {
-            self.update();
-            self.render();
-            self.needs_redraw = false;
-            self.last_frame = Instant::now();
+            let now = Instant::now();
+            if now.duration_since(self.last_frame) >= Duration::from_millis(16) {
+                self.update();
+                self.render();
+                self.needs_redraw = false;
+                self.last_frame = now;
 
-            // Reveal window after first frame so the user never sees a blank window
-            if !self.window_shown {
-                window.show_window();
-                self.window_shown = true;
+                if !self.window_shown {
+                    window.show_window();
+                    self.window_shown = true;
+                }
+            } else {
+                window.request_redraw();
             }
         }
     }
 
     /// Process pending IME proxy view operations and focus the correct proxy.
     fn sync_ime_proxies(&mut self, window: &dyn PlatformWindow) {
+        // Early return when there's nothing to do at all
+        if self.pending_ime_proxy_creates.is_empty()
+            && self.pending_ime_proxy_removes.is_empty()
+        {
+            let target = self.effective_ime_target();
+            if target == self.last_ime_target {
+                // No pending ops, no target change — still re-focus the proxy
+                // because macOS may have changed first responder (e.g. window focus).
+                if let Some(target) = target {
+                    window.focus_ime_proxy(target);
+                }
+                return;
+            }
+        }
+
         for id in self.pending_ime_proxy_creates.drain(..) {
             window.create_ime_proxy(id);
         }
         for id in self.pending_ime_proxy_removes.drain(..) {
             window.remove_ime_proxy(id);
         }
+
         // Focus the proxy for the current effective target
         let target = self.effective_ime_target();
         if target != self.last_ime_target {
@@ -169,6 +204,7 @@ impl App {
             self.ime_composing = false;
             self.ime_preedit.clear();
             self.needs_redraw = true;
+            self.ime_cursor_dirty = true;
             self.last_ime_target = target;
         }
         if let Some(target) = target {
@@ -246,6 +282,7 @@ impl App {
             if let PaneKind::Terminal(terminal) = pane {
                 if terminal.backend.has_new_output() {
                     self.needs_redraw = true;
+                    self.ime_cursor_dirty = true;
                     self.input_just_sent = false;
                     self.input_sent_at = None;
                     had_pty_output = true;
@@ -301,8 +338,12 @@ impl App {
     }
 
     /// Update the IME cursor area on the proxy view so the candidate window
-    /// appears next to the text cursor.
-    fn update_ime_cursor_area(&self, window: &dyn PlatformWindow) {
+    /// appears next to the text cursor. Only recomputes when `ime_cursor_dirty` is set.
+    fn update_ime_cursor_area(&mut self, window: &dyn PlatformWindow) {
+        if !self.ime_cursor_dirty {
+            return;
+        }
+        self.ime_cursor_dirty = false;
         use crate::ui_state::FocusArea;
         use tide_core::{Renderer, TerminalBackend};
 
