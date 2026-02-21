@@ -149,11 +149,16 @@ impl HasDisplayHandle for MacosWindow {
 
 impl PlatformWindow for MacosWindow {
     fn request_redraw(&self) {
-        // For CAMetalLayer-backed views, setNeedsDisplay doesn't trigger drawRect:.
-        // Rendering is driven directly by the event loop (handle_platform_event)
-        // and by the waker (triggerRedraw via performSelectorOnMainThread).
-        // This method exists for the trait but the main render path doesn't use it.
-        unsafe { self.view.setNeedsDisplay(true); }
+        // Schedule triggerRedraw on the main thread (same mechanism the waker uses).
+        // The RedrawRequested handler checks `needs_redraw` to skip redundant renders.
+        unsafe {
+            let _: () = objc2::msg_send![
+                &*self.view,
+                performSelectorOnMainThread: objc2::sel!(triggerRedraw),
+                withObject: std::ptr::null::<objc2::runtime::AnyObject>(),
+                waitUntilDone: false
+            ];
+        }
     }
 
     fn set_cursor_icon(&self, icon: CursorIcon) {

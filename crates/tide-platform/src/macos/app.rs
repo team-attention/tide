@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 use objc2::rc::Retained;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
@@ -15,6 +15,10 @@ use super::window::MacosWindow;
 /// Global view pointer so background-thread wakers can trigger redraws
 /// via `performSelectorOnMainThread`.
 static GLOBAL_VIEW: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+/// Coalescing flag: prevents duplicate wakeup scheduling when a wakeup
+/// is already pending. Cleared by the main thread in triggerRedraw.
+static WAKEUP_PENDING: AtomicBool = AtomicBool::new(false);
 
 /// macOS platform entry point.
 pub struct MacosApp;
@@ -56,8 +60,14 @@ impl MacosApp {
 
     /// Create a waker that can be sent to background threads.
     /// When invoked, it wakes the run loop and triggers a redraw.
+    /// Uses AtomicBool coalescing to skip duplicate wakeups when one is already pending.
     pub fn create_waker() -> WakeCallback {
         std::sync::Arc::new(move || {
+            // Skip if a wakeup is already pending (coalescing)
+            if WAKEUP_PENDING.swap(true, Ordering::AcqRel) {
+                return;
+            }
+
             unsafe {
                 use objc2::msg_send_id;
                 use objc2::rc::Retained;
@@ -86,8 +96,8 @@ impl MacosApp {
                 }
 
                 // Also trigger a redraw on the view via performSelectorOnMainThread.
-                // This ensures setNeedsDisplay is called on the main thread,
-                // which will trigger drawRect: → RedrawRequested on the next display cycle.
+                // This ensures triggerRedraw is called on the main thread,
+                // which emits RedrawRequested for the next render cycle.
                 let view_raw = GLOBAL_VIEW.load(Ordering::Acquire);
                 if !view_raw.is_null() {
                     let _: () = objc2::msg_send![
@@ -100,6 +110,12 @@ impl MacosApp {
             }
         })
     }
+}
+
+/// Clear the wakeup coalescing flag. Called from triggerRedraw on the main thread
+/// so the next background wakeup can schedule a new redraw.
+pub(crate) fn clear_wakeup_pending() {
+    WAKEUP_PENDING.store(false, Ordering::Release);
 }
 
 thread_local! {

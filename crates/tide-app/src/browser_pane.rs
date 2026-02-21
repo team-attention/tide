@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use tide_core::PaneId;
 use tide_platform::macos::webview::WebViewHandle;
 
@@ -22,6 +24,10 @@ pub struct BrowserPane {
     pub webview: Option<WebViewHandle>,
     /// Generation counter for dirty tracking.
     pub generation: u64,
+    /// Last time sync_from_webview() actually ran (for throttling).
+    pub last_sync: Instant,
+    /// Whether this browser pane currently holds first responder status.
+    pub is_first_responder: bool,
 }
 
 impl BrowserPane {
@@ -37,6 +43,8 @@ impl BrowserPane {
             can_go_forward: false,
             webview: None,
             generation: 0,
+            last_sync: Instant::now(),
+            is_first_responder: false,
         }
     }
 
@@ -54,6 +62,8 @@ impl BrowserPane {
             can_go_forward: false,
             webview: None,
             generation: 0,
+            last_sync: Instant::now(),
+            is_first_responder: false,
         }
     }
 
@@ -108,7 +118,15 @@ impl BrowserPane {
     }
 
     /// Sync state from the native WKWebView (URL, title, loading, navigation state).
+    /// Throttled to at most once per 500ms to reduce ObjC IPC overhead.
     pub fn sync_from_webview(&mut self) {
+        const SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+        let now = Instant::now();
+        if now.duration_since(self.last_sync) < SYNC_INTERVAL {
+            return;
+        }
+        self.last_sync = now;
+
         let Some(ref wv) = self.webview else { return };
 
         let new_url = wv.current_url().unwrap_or_default();

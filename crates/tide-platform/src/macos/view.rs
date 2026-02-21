@@ -203,6 +203,9 @@ declare_class!(
         /// to wake the main thread and trigger a render.
         #[method(triggerRedraw)]
         fn trigger_redraw(&self) {
+            // Clear the wakeup coalescing flag so the next background wakeup
+            // can schedule a new redraw.
+            super::app::clear_wakeup_pending();
             self.emit(PlatformEvent::RedrawRequested);
         }
     }

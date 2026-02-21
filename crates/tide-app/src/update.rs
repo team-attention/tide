@@ -89,9 +89,15 @@ impl App {
             }
         }
 
-        // Sync browser webview state (URL, title, loading, navigation)
+        // Sync browser webview state (URL, title, loading, navigation).
+        // Only sync the active browser tab — hidden ones are skipped to save IPC.
+        let active_browser = self.active_editor_tab();
         for pane in self.panes.values_mut() {
             if let PaneKind::Browser(bp) = pane {
+                // Skip hidden browser panes entirely
+                if active_browser != Some(bp.id) {
+                    continue;
+                }
                 let old_gen = bp.generation;
                 bp.sync_from_webview();
                 if bp.generation != old_gen {
