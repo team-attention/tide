@@ -247,6 +247,9 @@ struct App {
     // Platform pointers for webview management (macOS)
     pub(crate) content_view_ptr: Option<*mut std::ffi::c_void>,
     pub(crate) window_ptr: Option<*mut std::ffi::c_void>,
+
+    // Window visibility: false until first frame renders (avoids blank window flash)
+    pub(crate) window_shown: bool,
 }
 
 impl App {
@@ -344,6 +347,7 @@ impl App {
             git_poll_stop: Arc::new(AtomicBool::new(false)),
             content_view_ptr: None,
             window_ptr: None,
+            window_shown: false,
         }
     }
 
@@ -461,6 +465,17 @@ impl App {
 // ──────────────────────────────────────────────
 
 fn main() {
+    // Enable backtraces for panic diagnostics
+    std::env::set_var("RUST_BACKTRACE", "1");
+
+    // Install a custom panic hook that logs to stderr before the default handler.
+    // This ensures we capture the panic message even when catch_unwind absorbs it.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        eprintln!("[tide] PANIC: {info}");
+        default_hook(info);
+    }));
+
     env_logger::init();
 
     let mut app = App::new();

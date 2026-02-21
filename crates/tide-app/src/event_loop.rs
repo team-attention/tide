@@ -139,6 +139,12 @@ impl App {
             self.render();
             self.needs_redraw = false;
             self.last_frame = Instant::now();
+
+            // Reveal window after first frame so the user never sees a blank window
+            if !self.window_shown {
+                window.show_window();
+                self.window_shown = true;
+            }
         }
     }
 
@@ -194,13 +200,27 @@ impl App {
     }
 
     /// The effective pane that will receive IME input, considering focus area.
+    ///
+    /// Returns `None` when the active browser tab's URL bar is NOT focused,
+    /// so the WKWebView retains first responder and receives keyboard input
+    /// for web content directly.
     pub(crate) fn effective_ime_target(&self) -> Option<tide_core::PaneId> {
         use crate::ui_state::FocusArea;
-        if self.focus_area == FocusArea::EditorDock {
+        let target = if self.focus_area == FocusArea::EditorDock {
             self.active_editor_tab().or(self.focused)
         } else {
             self.focused
+        };
+        // When a browser pane is the target but its URL bar is not focused,
+        // return None so sync_ime_proxies won't steal first responder from WKWebView.
+        if let Some(id) = target {
+            if let Some(PaneKind::Browser(bp)) = self.panes.get(&id) {
+                if !bp.url_input_focused {
+                    return None;
+                }
+            }
         }
+        target
     }
 
     /// Convert logical position (from NSView, already in view coords) to our logical coords

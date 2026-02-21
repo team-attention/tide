@@ -129,6 +129,10 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     fn window_ptr(&self) -> Option<*mut std::ffi::c_void> {
         None
     }
+
+    /// Reveal the window (set alpha to 1). Called after the first frame renders
+    /// so the user never sees a blank window during GPU initialization.
+    fn show_window(&self) {}
 }
 
 // ──────────────────────────────────────────────

@@ -236,13 +236,27 @@ impl TideView {
     }
 
     fn emit(&self, event: PlatformEvent) {
-        super::app::with_main_window(|window| {
-            // Use try_borrow_mut to avoid panics if the callback is re-entered
-            // (e.g., waker's triggerRedraw firing during NSTextInputContext processing).
-            if let Ok(mut cb) = self.ivars().callback.try_borrow_mut() {
-                cb(event.clone(), window);
-            }
-        });
+        // Wrap in catch_unwind to prevent panics from crossing the FFI boundary
+        // (Objective-C → Rust callbacks abort the process on panic).
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            super::app::with_main_window(|window| {
+                // Use try_borrow_mut to avoid panics if the callback is re-entered
+                // (e.g., waker's triggerRedraw firing during NSTextInputContext processing).
+                if let Ok(mut cb) = self.ivars().callback.try_borrow_mut() {
+                    cb(event.clone(), window);
+                }
+            });
+        }));
+        if let Err(e) = result {
+            let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = e.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "unknown panic".to_string()
+            };
+            eprintln!("[tide] PANIC in TideView callback: {msg}");
+        }
     }
 
     fn mouse_pos(&self, event: &NSEvent) -> (f64, f64) {
@@ -331,11 +345,24 @@ impl TideWindowDelegate {
     }
 
     fn emit(&self, event: PlatformEvent) {
-        super::app::with_main_window(|window| {
-            if let Ok(mut cb) = self.ivars().callback.try_borrow_mut() {
-                cb(event.clone(), window);
-            }
-        });
+        // Wrap in catch_unwind to prevent panics from crossing the FFI boundary.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            super::app::with_main_window(|window| {
+                if let Ok(mut cb) = self.ivars().callback.try_borrow_mut() {
+                    cb(event.clone(), window);
+                }
+            });
+        }));
+        if let Err(e) = result {
+            let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = e.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "unknown panic".to_string()
+            };
+            eprintln!("[tide] PANIC in TideWindowDelegate callback: {msg}");
+        }
     }
 }
 

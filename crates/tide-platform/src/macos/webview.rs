@@ -5,12 +5,138 @@
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Bool};
-use objc2::{msg_send, msg_send_id};
-use objc2_foundation::{CGFloat, NSRect, NSPoint, NSSize, NSString};
+use objc2::{declare_class, msg_send, msg_send_id, mutability, ClassType, DeclaredClass};
+use objc2_foundation::{CGFloat, MainThreadMarker, NSObject, NSRect, NSPoint, NSSize, NSString};
+
+// ---------------------------------------------------------------------------
+// WKUIDelegate — handles popups, JavaScript dialogs, etc.
+// ---------------------------------------------------------------------------
+declare_class!(
+    struct TideUIDelegate;
+
+    unsafe impl ClassType for TideUIDelegate {
+        type Super = NSObject;
+        type Mutability = mutability::MainThreadOnly;
+        const NAME: &'static str = "TideUIDelegate";
+    }
+
+    impl DeclaredClass for TideUIDelegate {
+        type Ivars = ();
+    }
+
+    unsafe impl TideUIDelegate {
+        #[method_id(init)]
+        fn init(this: objc2::rc::Allocated<Self>) -> Option<Retained<Self>> {
+            let this = this.set_ivars(());
+            unsafe { msg_send_id![super(this), init] }
+        }
+
+        /// Handle window.open() by loading in the same webview (no popup windows).
+        #[method_id(webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:)]
+        fn create_webview(
+            &self,
+            webview: &AnyObject,
+            _config: &AnyObject,
+            navigation_action: &AnyObject,
+            _window_features: &AnyObject,
+        ) -> Option<Retained<AnyObject>> {
+            unsafe {
+                let request: Retained<AnyObject> = msg_send_id![navigation_action, request];
+                let _: Option<Retained<AnyObject>> =
+                    msg_send_id![webview, loadRequest: &*request];
+            }
+            None
+        }
+
+        /// Handle JavaScript alert() — show native NSAlert.
+        #[method(webView:runJavaScriptAlertPanelWithMessage:initiatedByFrame:completionHandler:)]
+        fn run_alert(
+            &self,
+            _webview: &AnyObject,
+            message: &NSString,
+            _frame: &AnyObject,
+            completion: &block2::Block<dyn Fn()>,
+        ) {
+            unsafe {
+                // Show a native NSAlert
+                let alert_cls = AnyClass::get("NSAlert").unwrap();
+                let alert: Retained<AnyObject> = msg_send_id![alert_cls, new];
+                let _: () = msg_send![&alert, setMessageText: message];
+                let _: () = msg_send![&alert, addButtonWithTitle: &*NSString::from_str("OK")];
+                let _: isize = msg_send![&alert, runModal];
+            }
+            completion.call(());
+        }
+
+        /// Handle JavaScript confirm() — show native NSAlert with OK/Cancel.
+        #[method(webView:runJavaScriptConfirmPanelWithMessage:initiatedByFrame:completionHandler:)]
+        fn run_confirm(
+            &self,
+            _webview: &AnyObject,
+            message: &NSString,
+            _frame: &AnyObject,
+            completion: &block2::Block<dyn Fn(Bool)>,
+        ) {
+            let result = unsafe {
+                let alert_cls = AnyClass::get("NSAlert").unwrap();
+                let alert: Retained<AnyObject> = msg_send_id![alert_cls, new];
+                let _: () = msg_send![&alert, setMessageText: message];
+                let _: () = msg_send![&alert, addButtonWithTitle: &*NSString::from_str("OK")];
+                let _: () = msg_send![&alert, addButtonWithTitle: &*NSString::from_str("Cancel")];
+                let response: isize = msg_send![&alert, runModal];
+                // NSAlertFirstButtonReturn = 1000
+                response == 1000
+            };
+            completion.call((Bool::new(result),));
+        }
+
+        /// Handle JavaScript prompt() — show native NSAlert with text field.
+        #[method(webView:runJavaScriptTextInputPanelWithPrompt:defaultText:initiatedByFrame:completionHandler:)]
+        fn run_prompt(
+            &self,
+            _webview: &AnyObject,
+            prompt: &NSString,
+            default_text: Option<&NSString>,
+            _frame: &AnyObject,
+            completion: &block2::Block<dyn Fn(*mut NSString)>,
+        ) {
+            unsafe {
+                let alert_cls = AnyClass::get("NSAlert").unwrap();
+                let alert: Retained<AnyObject> = msg_send_id![alert_cls, new];
+                let _: () = msg_send![&alert, setMessageText: prompt];
+                let _: () = msg_send![&alert, addButtonWithTitle: &*NSString::from_str("OK")];
+                let _: () = msg_send![&alert, addButtonWithTitle: &*NSString::from_str("Cancel")];
+
+                // Add a text field to the alert
+                let text_field_cls = AnyClass::get("NSTextField").unwrap();
+                let frame = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(300.0, 24.0));
+                let field: Retained<AnyObject> = msg_send_id![
+                    msg_send_id![text_field_cls, alloc],
+                    initWithFrame: frame
+                ];
+                if let Some(dt) = default_text {
+                    let _: () = msg_send![&field, setStringValue: dt];
+                }
+                let _: () = msg_send![&alert, setAccessoryView: &*field];
+
+                let response: isize = msg_send![&alert, runModal];
+                if response == 1000 {
+                    // NSAlertFirstButtonReturn — user clicked OK
+                    let value: Retained<NSString> = msg_send_id![&field, stringValue];
+                    completion.call((&*value as *const NSString as *mut NSString,));
+                } else {
+                    completion.call((std::ptr::null_mut(),));
+                }
+            }
+        }
+    }
+);
 
 /// Handle to a WKWebView instance, added as a subview of the parent NSView.
 pub struct WebViewHandle {
     webview: Retained<AnyObject>,
+    /// Retained so the weak UIDelegate reference stays valid.
+    _ui_delegate: Retained<TideUIDelegate>,
 }
 
 impl WebViewHandle {
@@ -24,6 +150,26 @@ impl WebViewHandle {
         // WKWebViewConfiguration
         let config_cls = AnyClass::get("WKWebViewConfiguration")?;
         let config: Retained<AnyObject> = msg_send_id![config_cls, new];
+
+        // Enable JavaScript popup windows
+        let prefs: Retained<AnyObject> = msg_send_id![&config, preferences];
+        let _: () = msg_send![&prefs, setJavaScriptCanOpenWindowsAutomatically: Bool::YES];
+
+        // Request desktop content mode (WKWebpagePreferences)
+        let page_prefs_cls = AnyClass::get("WKWebpagePreferences");
+        if let Some(cls) = page_prefs_cls {
+            let page_prefs: Retained<AnyObject> = msg_send_id![cls, new];
+            // WKContentMode.desktop = 1
+            let _: () = msg_send![&page_prefs, setPreferredContentMode: 1_isize];
+            let _: () = msg_send![&config, setDefaultWebpagePreferences: &*page_prefs];
+        }
+
+        // Append Safari version to the default user agent.
+        // Using applicationNameForUserAgent preserves the system's real macOS
+        // version and WebKit build, making the UA more authentic than a
+        // hardcoded customUserAgent string.
+        let app_name = NSString::from_str("Version/18.3 Safari/605.1.15");
+        let _: () = msg_send![&config, setApplicationNameForUserAgent: &*app_name];
 
         // WKWebView initWithFrame:configuration:
         let wk_cls = AnyClass::get("WKWebView")?;
@@ -40,10 +186,17 @@ impl WebViewHandle {
         // Hide initially until frame is set
         let _: () = msg_send![&webview, setHidden: Bool::YES];
 
+        // Set up UI delegate for popup handling and JavaScript dialogs
+        let mtm = MainThreadMarker::new().expect("must be on main thread");
+        let delegate: Retained<TideUIDelegate> = unsafe {
+            msg_send_id![mtm.alloc::<TideUIDelegate>(), init]
+        };
+        let _: () = msg_send![&webview, setUIDelegate: &*delegate];
+
         // Add as subview
         let _: () = msg_send![parent, addSubview: &*webview];
 
-        Some(Self { webview })
+        Some(Self { webview, _ui_delegate: delegate })
     }
 
     /// Navigate to a URL string.
@@ -51,14 +204,15 @@ impl WebViewHandle {
         unsafe {
             let url_cls = AnyClass::get("NSURL").expect("NSURL class");
             let ns_url_str = NSString::from_str(url);
-            let nsurl: Retained<AnyObject> =
+            let nsurl: Option<Retained<AnyObject>> =
                 msg_send_id![url_cls, URLWithString: &*ns_url_str];
+            let Some(nsurl) = nsurl else { return };
 
             let req_cls = AnyClass::get("NSURLRequest").expect("NSURLRequest class");
             let request: Retained<AnyObject> =
                 msg_send_id![req_cls, requestWithURL: &*nsurl];
 
-            let _: Retained<AnyObject> =
+            let _: Option<Retained<AnyObject>> =
                 msg_send_id![&self.webview, loadRequest: &*request];
         }
     }
@@ -66,21 +220,21 @@ impl WebViewHandle {
     /// Go back in history.
     pub fn go_back(&self) {
         unsafe {
-            let _: Retained<AnyObject> = msg_send_id![&self.webview, goBack];
+            let _: Option<Retained<AnyObject>> = msg_send_id![&self.webview, goBack];
         }
     }
 
     /// Go forward in history.
     pub fn go_forward(&self) {
         unsafe {
-            let _: Retained<AnyObject> = msg_send_id![&self.webview, goForward];
+            let _: Option<Retained<AnyObject>> = msg_send_id![&self.webview, goForward];
         }
     }
 
     /// Reload the current page.
     pub fn reload(&self) {
         unsafe {
-            let _: Retained<AnyObject> = msg_send_id![&self.webview, reload];
+            let _: Option<Retained<AnyObject>> = msg_send_id![&self.webview, reload];
         }
     }
 

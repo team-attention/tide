@@ -748,31 +748,75 @@ pub(crate) fn render_chrome(
                     // URL bar
                     let url_w = nav_x + nav_w - cx - 8.0;
                     if url_w > 40.0 {
+                        use unicode_width::UnicodeWidthChar;
+
                         let url_rect = Rect::new(cx, nav_y + 2.0, url_w, nav_h - 4.0);
                         let url_bg = if bp.url_input_focused { p.file_tree_bg } else { p.badge_bg };
                         renderer.draw_chrome_rounded_rect(url_rect, url_bg, 3.0);
 
-                        // URL text
-                        let url_display = if bp.url_input_focused {
-                            &bp.url_input
-                        } else {
-                            &bp.url
+                        // Helper: display width of a string in cells (CJK = 2, ASCII = 1)
+                        let str_display_width = |s: &str| -> usize {
+                            s.chars().map(|c| UnicodeWidthChar::width(c).unwrap_or(1)).sum()
                         };
-                        let max_chars = (url_w / cell_w).floor() as usize;
-                        let truncated: String = url_display.chars().take(max_chars.saturating_sub(1)).collect();
-                        renderer.draw_chrome_text(
-                            &truncated,
-                            Vec2::new(cx + 4.0, text_y),
-                            TextStyle { foreground: p.tab_text_focused, background: None, bold: false, dim: false, italic: false, underline: false },
-                            url_rect,
-                        );
 
-                        // URL input cursor
+                        let max_cols = (url_w / cell_w).floor() as usize;
                         if bp.url_input_focused {
-                            let cursor_x = cx + 4.0 + bp.url_input_cursor.min(max_chars) as f32 * cell_w;
+                            // Build display string with preedit at cursor position
+                            let preedit = &app.ime_preedit;
+                            let before: String = bp.url_input.chars().take(bp.url_input_cursor).collect();
+                            let after: String = bp.url_input.chars().skip(bp.url_input_cursor).collect();
+                            let display = format!("{}{}{}", before, preedit, after);
+
+                            // Truncate by display columns, not char count
+                            let mut truncated = String::new();
+                            let mut cols = 0;
+                            for ch in display.chars() {
+                                let w = UnicodeWidthChar::width(ch).unwrap_or(1);
+                                if cols + w > max_cols.saturating_sub(1) { break; }
+                                truncated.push(ch);
+                                cols += w;
+                            }
+
+                            renderer.draw_chrome_text(
+                                &truncated,
+                                Vec2::new(cx + 4.0, text_y),
+                                TextStyle { foreground: p.tab_text_focused, background: None, bold: false, dim: false, italic: false, underline: false },
+                                url_rect,
+                            );
+
+                            // Draw preedit underline to show composition in progress
+                            if !preedit.is_empty() {
+                                let before_cols = str_display_width(&before) as f32;
+                                let preedit_cols = str_display_width(preedit) as f32;
+                                let underline_x = cx + 4.0 + before_cols * cell_w;
+                                let underline_w = preedit_cols * cell_w;
+                                renderer.draw_chrome_rect(
+                                    Rect::new(underline_x, nav_y + nav_h - 4.0, underline_w, 1.0),
+                                    p.cursor_accent,
+                                );
+                            }
+
+                            // Cursor position: display width of text before cursor + preedit
+                            let cursor_cols = str_display_width(&before) + str_display_width(preedit);
+                            let cursor_x = cx + 4.0 + cursor_cols as f32 * cell_w;
                             renderer.draw_chrome_rect(
                                 Rect::new(cursor_x, nav_y + 4.0, 2.0, nav_h - 8.0),
                                 p.cursor_accent,
+                            );
+                        } else {
+                            let mut truncated = String::new();
+                            let mut cols = 0;
+                            for ch in bp.url.chars() {
+                                let w = UnicodeWidthChar::width(ch).unwrap_or(1);
+                                if cols + w > max_cols.saturating_sub(1) { break; }
+                                truncated.push(ch);
+                                cols += w;
+                            }
+                            renderer.draw_chrome_text(
+                                &truncated,
+                                Vec2::new(cx + 4.0, text_y),
+                                TextStyle { foreground: p.tab_text_focused, background: None, bold: false, dim: false, italic: false, underline: false },
+                                url_rect,
                             );
                         }
                     }

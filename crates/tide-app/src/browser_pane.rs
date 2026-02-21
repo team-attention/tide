@@ -8,7 +8,7 @@ pub struct BrowserPane {
     pub url: String,
     /// Editable URL bar text.
     pub url_input: String,
-    /// Cursor position within url_input.
+    /// Cursor position within url_input (char index, not byte offset).
     pub url_input_cursor: usize,
     /// Whether the URL bar has keyboard focus.
     pub url_input_focused: bool,
@@ -42,7 +42,7 @@ impl BrowserPane {
 
     pub fn with_url(id: PaneId, url: String) -> Self {
         let url_input = url.clone();
-        let cursor = url_input.len();
+        let cursor = url_input.chars().count();
         Self {
             id,
             url: url.clone(),
@@ -82,7 +82,7 @@ impl BrowserPane {
         };
         self.url = normalized.clone();
         self.url_input = normalized.clone();
-        self.url_input_cursor = normalized.len();
+        self.url_input_cursor = normalized.chars().count();
         if let Some(ref wv) = self.webview {
             wv.navigate(&normalized);
         }
@@ -122,7 +122,7 @@ impl BrowserPane {
             self.url = new_url.clone();
             if !self.url_input_focused {
                 self.url_input = new_url;
-                self.url_input_cursor = self.url_input.len();
+                self.url_input_cursor = self.url_input.chars().count();
             }
             self.loading = new_loading;
             self.can_go_back = new_back;
@@ -143,6 +143,20 @@ impl BrowserPane {
         if let Some(ref wv) = self.webview {
             wv.set_visible(visible);
         }
+    }
+
+    /// Convert char-based cursor position to byte offset for String operations.
+    pub fn cursor_byte_offset(&self) -> usize {
+        self.url_input
+            .char_indices()
+            .nth(self.url_input_cursor)
+            .map(|(i, _)| i)
+            .unwrap_or(self.url_input.len())
+    }
+
+    /// Number of characters in the URL input.
+    pub fn url_input_char_len(&self) -> usize {
+        self.url_input.chars().count()
     }
 
     /// Remove the webview from the view hierarchy and drop the handle.

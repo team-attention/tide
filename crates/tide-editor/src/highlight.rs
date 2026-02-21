@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use syntect::highlighting::{Theme, ThemeSet};
-use syntect::parsing::{SyntaxReference, SyntaxSet};
+use syntect::parsing::{SyntaxDefinition, SyntaxReference, SyntaxSet};
 use syntect::easy::HighlightLines;
 
 use tide_core::{Color, TextStyle};
@@ -23,7 +23,15 @@ pub struct Highlighter {
 
 impl Highlighter {
     pub fn new() -> Self {
-        let syntax_set = SyntaxSet::load_defaults_newlines();
+        let mut builder = SyntaxSet::load_defaults_newlines().into_builder();
+
+        // Load custom JSX/TSX syntax embedded at compile time.
+        let jsx_yaml = include_str!("../syntaxes/JSX.sublime-syntax");
+        if let Ok(jsx_def) = SyntaxDefinition::load_from_str(jsx_yaml, true, None) {
+            builder.add(jsx_def);
+        }
+
+        let syntax_set = builder.build();
         let theme_set = ThemeSet::load_defaults();
         let dark_theme = theme_set.themes["base16-eighties.dark"].clone();
         let light_theme = theme_set.themes["InspiredGitHub"].clone();
@@ -43,7 +51,22 @@ impl Highlighter {
     /// Detect syntax from file extension. Returns None if unknown.
     pub fn detect_syntax(&self, path: &Path) -> Option<&SyntaxReference> {
         let ext = path.extension()?.to_str()?;
-        self.syntax_set.find_syntax_by_extension(ext)
+        self.syntax_set.find_syntax_by_extension(ext).or_else(|| {
+            // Map common extensions missing from syntect defaults
+            let fallback = match ext {
+                "svelte" | "vue" => "html",
+                "mdx" => "md",
+                "jsonc" | "json5" => "json",
+                "zsh" | "fish" => "sh",
+                "h" | "hpp" | "hxx" | "cc" | "cxx" | "c++" | "inl" => "cpp",
+                "m" | "mm" => "cpp",
+                "yml" => "yaml",
+                "dockerfile" => "Dockerfile",
+                "toml" => "yaml",   // reasonable fallback
+                _ => return None,
+            };
+            self.syntax_set.find_syntax_by_extension(fallback)
+        })
     }
 
     /// Highlight a range of lines. Only processes the visible viewport for performance.
