@@ -4,6 +4,16 @@
 //! NSTextInputClient. macOS routes keyboard/IME events to whichever proxy
 //! is the first responder, giving each pane an independent NSTextInputContext.
 //! This prevents Korean IME composition from carrying over when switching panes.
+//!
+//! ## Korean IME inline composition
+//!
+//! The Korean IME on macOS may commit the first consonant via `insertText:`
+//! instead of `setMarkedText:` after an input method switch. Subsequent
+//! characters are then composed inline using `insertText:replacementRange:`
+//! — the IME reads back the committed text via `attributedSubstringForProposedRange:`
+//! and replaces it with the composed syllable. To support this, we maintain a
+//! virtual text buffer (`committed_text`) and emit Backspace events before each
+//! replacement commit so the terminal stays in sync.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -33,6 +43,11 @@ pub struct ImeProxyViewIvars {
     ime_cursor_rect: Cell<NSRect>,
     ime_handled: Cell<bool>,
     current_event: RefCell<Option<Retained<NSEvent>>>,
+    /// Virtual text buffer: stores committed text so that `selectedRange`,
+    /// `markedRange`, and `attributedSubstringForProposedRange` can return
+    /// consistent, correct values. All range calculations use UTF-16 code
+    /// units (matching NSString/NSRange conventions).
+    committed_text: RefCell<String>,
 }
 
 declare_class!(
@@ -65,6 +80,14 @@ declare_class!(
             self.ivars().ime_handled.set(false);
 
             unsafe {
+                // Activate the input context before processing the key event.
+                // After an input method switch, the context may not be "current"
+                // until explicitly activated.
+                let ic: Option<Retained<AnyObject>> = msg_send_id![self, inputContext];
+                if let Some(ref ic) = ic {
+                    let _: () = msg_send![ic, activate];
+                }
+
                 let events = NSArray::from_slice(&[event]);
                 let _: () = msg_send![self, interpretKeyEvents: &*events];
             }
@@ -83,6 +106,32 @@ declare_class!(
             let (key, modifiers) = key_and_modifiers_from_event(event);
             self.emit(PlatformEvent::KeyUp { key, modifiers });
         }
+
+        /// On modifier changes (including Caps Lock input method toggle),
+        /// prime the NSTextInputContext by cycling through a setMarkedText/
+        /// unmarkText sequence. This nudges the context's internal state so
+        /// the Korean IME's inline composition (via replacementRange) works
+        /// more reliably after an input method switch.
+        #[method(flagsChanged:)]
+        fn flags_changed(&self, event: &NSEvent) {
+            self.ivars().ime_handled.set(true); // prevent side-effect emissions
+            unsafe {
+                let empty = NSString::from_str("");
+                let range = NSRange::new(0, 0);
+                let _: () = msg_send![
+                    self,
+                    setMarkedText: &*empty,
+                    selectedRange: range,
+                    replacementRange: range
+                ];
+                let _: () = msg_send![self, unmarkText];
+            }
+            self.ivars().ime_handled.set(false);
+            // Forward to next responder (TideView) for ModifiersChanged emission
+            unsafe {
+                let _: () = msg_send![super(self), flagsChanged: event];
+            }
+        }
     }
 
     // ── NSTextInputClient protocol ──
@@ -92,10 +141,35 @@ declare_class!(
         fn insert_text_replacement_range(
             &self,
             string: &AnyObject,
-            _replacement_range: NSRange,
+            replacement_range: NSRange,
         ) {
             let text = nsstring_from_anyobject(string);
             self.ivars().marked_text.borrow_mut().clear();
+
+            // Handle replacement range: the IME wants to replace previously
+            // committed text (e.g., Korean IME composing syllables inline).
+            // Emit Backspace events to erase the old characters, then commit
+            // the new text.
+            if replacement_range.location != NSNotFound as usize {
+                let buf = self.ivars().committed_text.borrow();
+                let (byte_start, byte_end) = utf16_range_to_byte_range(&buf, replacement_range);
+                let replaced_chars = buf[byte_start..byte_end].chars().count();
+                drop(buf);
+
+                for _ in 0..replaced_chars {
+                    self.emit(PlatformEvent::KeyDown {
+                        key: Key::Backspace,
+                        modifiers: Modifiers::default(),
+                        chars: None,
+                    });
+                }
+
+                let mut buf = self.ivars().committed_text.borrow_mut();
+                buf.replace_range(byte_start..byte_end, &text);
+            } else {
+                self.ivars().committed_text.borrow_mut().push_str(&text);
+            }
+
             self.ivars().ime_handled.set(true);
             self.emit(PlatformEvent::ImeCommit(text));
         }
@@ -130,31 +204,55 @@ declare_class!(
 
         #[method(markedRange)]
         fn marked_range(&self) -> NSRange {
-            let text = self.ivars().marked_text.borrow();
-            if text.is_empty() {
+            let marked = self.ivars().marked_text.borrow();
+            if marked.is_empty() {
                 NSRange::new(NSNotFound as usize, 0)
             } else {
-                NSRange::new(0, text.len())
+                let committed_utf16 = utf16_len(&self.ivars().committed_text.borrow());
+                let marked_utf16 = utf16_len(&marked);
+                NSRange::new(committed_utf16, marked_utf16)
             }
         }
 
         #[method(selectedRange)]
         fn selected_range(&self) -> NSRange {
-            let text = self.ivars().marked_text.borrow();
-            if text.is_empty() {
-                NSRange::new(NSNotFound as usize, 0)
-            } else {
-                NSRange::new(text.len(), 0)
-            }
+            let committed_utf16 = utf16_len(&self.ivars().committed_text.borrow());
+            let marked_utf16 = utf16_len(&self.ivars().marked_text.borrow());
+            NSRange::new(committed_utf16 + marked_utf16, 0)
         }
 
         #[method_id(attributedSubstringForProposedRange:actualRange:)]
         fn attributed_substring_for_proposed_range(
             &self,
-            _range: NSRange,
-            _actual_range: *mut NSRange,
+            range: NSRange,
+            actual_range: *mut NSRange,
         ) -> Option<Retained<NSAttributedString>> {
-            None
+            // Build virtual text: committed + marked
+            let committed = self.ivars().committed_text.borrow();
+            let marked = self.ivars().marked_text.borrow();
+            let mut full_text = committed.clone();
+            full_text.push_str(&marked);
+
+            let full_utf16_len = utf16_len(&full_text);
+
+            let substring = if range.location < full_utf16_len {
+                let end = (range.location + range.length).min(full_utf16_len);
+                let (byte_start, byte_end) = utf16_range_to_byte_range(
+                    &full_text,
+                    NSRange::new(range.location, end - range.location),
+                );
+                if !actual_range.is_null() {
+                    unsafe { *actual_range = NSRange::new(range.location, end - range.location); }
+                }
+                full_text[byte_start..byte_end].to_string()
+            } else {
+                if !actual_range.is_null() {
+                    unsafe { *actual_range = range; }
+                }
+                String::new()
+            };
+
+            Some(NSAttributedString::from_nsstring(&NSString::from_str(&substring)))
         }
 
         #[method_id(validAttributesForMarkedText)]
@@ -173,8 +271,7 @@ declare_class!(
                 let window: Option<Retained<objc2_app_kit::NSWindow>> =
                     msg_send_id![self, window];
                 if let Some(window) = window {
-                    // Convert from parent TideView coordinate space to window coords
-                    if let Some(superview) = self.superview() {  // safe: inside unsafe block
+                    if let Some(superview) = self.superview() {
                         let window_rect: NSRect = msg_send![&*superview, convertRect: ime_rect, toView: std::ptr::null::<NSView>()];
                         let screen_rect = window.convertRectToScreen(window_rect);
                         return screen_rect;
@@ -212,6 +309,16 @@ declare_class!(
                 }
             };
             if let Some(key) = key {
+                // Keep committed_text in sync for Backspace/Delete/Enter
+                if key == Key::Backspace {
+                    let mut buf = self.ivars().committed_text.borrow_mut();
+                    if let Some((idx, _)) = buf.char_indices().last() {
+                        buf.truncate(idx);
+                    }
+                } else if key == Key::Enter {
+                    self.ivars().committed_text.borrow_mut().clear();
+                }
+
                 let modifiers = if selector == sel!(insertBacktab:) {
                     Modifiers { shift: true, ..Default::default() }
                 } else if let Some(event) = self.ivars().current_event.borrow().as_ref() {
@@ -240,14 +347,12 @@ impl ImeProxyView {
             )),
             ime_handled: Cell::new(false),
             current_event: RefCell::new(None),
+            committed_text: RefCell::new(String::new()),
         });
         unsafe { msg_send_id![super(this), initWithFrame: NSRect::ZERO] }
     }
 
     pub fn set_ime_cursor_rect(&self, x: f64, y: f64, w: f64, h: f64) {
-        // Cursor rect is in TideView (superview) coordinate space.
-        // TideView is flipped but convertRect:toView:nil handles the flip,
-        // so we need to store in the superview's native coordinate space.
         if let Some(superview) = unsafe { self.superview() } {
             let frame = superview.frame();
             let flipped_y = frame.size.height - y - h;
@@ -271,8 +376,6 @@ impl ImeProxyView {
     }
 
     fn emit(&self, event: PlatformEvent) {
-        // Wrap in catch_unwind to prevent panics from crossing the FFI boundary
-        // (Objective-C → Rust callbacks abort the process on panic).
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             super::app::with_main_window(|window| {
                 if let Ok(mut cb) = self.ivars().callback.try_borrow_mut() {
@@ -293,4 +396,33 @@ impl ImeProxyView {
             eprintln!("[tide] PANIC in ImeProxyView callback: {msg}");
         }
     }
+}
+
+/// Count UTF-16 code units in a Rust string.
+fn utf16_len(s: &str) -> usize {
+    s.chars().map(|c| c.len_utf16()).sum()
+}
+
+/// Convert an NSRange (in UTF-16 code units) to a byte range in a Rust string.
+fn utf16_range_to_byte_range(s: &str, range: NSRange) -> (usize, usize) {
+    let mut utf16_pos = 0;
+    let mut byte_start = s.len();
+    let mut byte_end = s.len();
+
+    for (byte_idx, ch) in s.char_indices() {
+        if utf16_pos == range.location {
+            byte_start = byte_idx;
+        }
+        utf16_pos += ch.len_utf16();
+        if utf16_pos == range.location + range.length {
+            byte_end = byte_idx + ch.len_utf8();
+            break;
+        }
+    }
+    if utf16_pos == range.location && byte_start == s.len() {
+        byte_start = s.len();
+        byte_end = s.len();
+    }
+
+    (byte_start, byte_end)
 }

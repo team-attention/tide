@@ -704,6 +704,20 @@ impl App {
             GlobalAction::OpenBrowser => {
                 self.open_browser_pane(None);
             }
+            GlobalAction::BrowserBack => {
+                if let Some(active_id) = self.active_editor_tab() {
+                    if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&active_id) {
+                        bp.go_back();
+                    }
+                }
+            }
+            GlobalAction::BrowserForward => {
+                if let Some(active_id) = self.active_editor_tab() {
+                    if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&active_id) {
+                        bp.go_forward();
+                    }
+                }
+            }
             GlobalAction::OpenConfig => {
                 self.toggle_config_page();
             }

@@ -164,13 +164,6 @@ impl WebViewHandle {
             let _: () = msg_send![&config, setDefaultWebpagePreferences: &*page_prefs];
         }
 
-        // Append Safari version to the default user agent.
-        // Using applicationNameForUserAgent preserves the system's real macOS
-        // version and WebKit build, making the UA more authentic than a
-        // hardcoded customUserAgent string.
-        let app_name = NSString::from_str("Version/18.3 Safari/605.1.15");
-        let _: () = msg_send![&config, setApplicationNameForUserAgent: &*app_name];
-
         // WKWebView initWithFrame:configuration:
         let wk_cls = AnyClass::get("WKWebView")?;
         let frame = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(100.0, 100.0));
@@ -179,6 +172,18 @@ impl WebViewHandle {
             initWithFrame: frame,
             configuration: &*config
         ];
+
+        // Set a complete Safari user agent so sites like Google serve full
+        // CSS/JS instead of degraded experiences for unknown browsers.
+        let ua = NSString::from_str(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
+             AppleWebKit/605.1.15 (KHTML, like Gecko) \
+             Version/18.3 Safari/605.1.15",
+        );
+        let _: () = msg_send![&webview, setCustomUserAgent: &*ua];
+
+        // Enable trackpad swipe gestures for back/forward navigation
+        let _: () = msg_send![&webview, setAllowsBackForwardNavigationGestures: Bool::YES];
 
         // Disable opaque background so rounded corners etc. work
         let _: () = msg_send![&webview, setOpaque: Bool::NO];

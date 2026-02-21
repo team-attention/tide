@@ -41,7 +41,7 @@ impl App {
             }
             session::create_running_marker();
             // Create IME proxy views for all panes created during init
-            self.sync_ime_proxies(window);
+            self.sync_ime_proxies(window, false);
             self.compute_layout();
         }
 
@@ -57,6 +57,21 @@ impl App {
         } else {
             None
         };
+
+        // Keyboard/IME/modifier events should NOT trigger redundant
+        // makeFirstResponder calls — the resign/become cycle resets
+        // NSTextInputContext, which breaks Korean IME composition on the
+        // first character after an input method switch.
+        // Only mouse, resize, and focus events may need to re-establish
+        // the first responder (e.g. after clicking a WKWebView).
+        let skip_ime_refocus = matches!(
+            event,
+            PlatformEvent::KeyDown { .. }
+                | PlatformEvent::KeyUp { .. }
+                | PlatformEvent::ImeCommit(_)
+                | PlatformEvent::ImePreedit { .. }
+                | PlatformEvent::ModifiersChanged(_)
+        );
 
         match event {
             PlatformEvent::RedrawRequested => {
@@ -97,7 +112,7 @@ impl App {
                 if focused {
                     self.modifiers = tide_core::Modifiers::default();
                     // Re-establish first responder for the current focused pane
-                    self.sync_ime_proxies(window);
+                    self.sync_ime_proxies(window, false);
                 }
             }
             PlatformEvent::Fullscreen(fs) => {
@@ -151,10 +166,9 @@ impl App {
         }
 
         // Sync IME proxy views: create/remove proxies and focus the right one.
-        // This replaces the old effective_ime_target before/after comparison.
         // Proxy view first-responder transitions automatically call unmarkText,
         // which clears any in-progress Korean IME composition.
-        self.sync_ime_proxies(window);
+        self.sync_ime_proxies(window, skip_ime_refocus);
 
         // Frame pacing: check if we need to redraw
         self.poll_background_events(window);
@@ -199,17 +213,24 @@ impl App {
     }
 
     /// Process pending IME proxy view operations and focus the correct proxy.
-    fn sync_ime_proxies(&mut self, window: &dyn PlatformWindow) {
+    /// `skip_refocus`: when true, skip redundant `makeFirstResponder` calls
+    /// if the IME target hasn't changed.  Keyboard/IME/modifier events set
+    /// this to avoid the resign→become cycle that resets NSTextInputContext
+    /// and breaks Korean IME composition after an input method switch.
+    fn sync_ime_proxies(&mut self, window: &dyn PlatformWindow, skip_refocus: bool) {
         // Early return when there's nothing to do at all
         if self.pending_ime_proxy_creates.is_empty()
             && self.pending_ime_proxy_removes.is_empty()
         {
             let target = self.effective_ime_target();
             if target == self.last_ime_target {
-                // No pending ops, no target change — still re-focus the proxy
-                // because macOS may have changed first responder (e.g. window focus).
-                if let Some(target) = target {
-                    window.focus_ime_proxy(target);
+                // Re-focus the proxy only for mouse/focus events —
+                // macOS may have changed first responder (e.g. clicking WKWebView).
+                // Skip for key/IME events to preserve NSTextInputContext state.
+                if !skip_refocus {
+                    if let Some(target) = target {
+                        window.focus_ime_proxy(target);
+                    }
                 }
                 return;
             }
