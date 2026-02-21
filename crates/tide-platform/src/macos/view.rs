@@ -108,6 +108,46 @@ declare_class!(
             // No-op: keyboard input routed through ImeProxyView subviews
         }
 
+        /// Intercept Cmd+ key equivalents before subviews (including WKWebView)
+        /// can consume them. This ensures app-level shortcuts like Cmd+H/J/K/L
+        /// and Cmd+W work even when a WKWebView is the first responder.
+        ///
+        /// Standard editing shortcuts (Cmd+C/V/A/X/Z) and non-Cmd keys fall
+        /// through to super to preserve default subview propagation — this is
+        /// critical for IME (NSTextInputContext) and WKWebView native handling.
+        #[method(performKeyEquivalent:)]
+        fn perform_key_equivalent(&self, event: &NSEvent) -> Bool {
+            let flags = unsafe { event.modifierFlags() };
+            let modifiers = modifiers_from_flags(flags);
+
+            if modifiers.meta {
+                let (key, modifiers) = key_and_modifiers_from_event(event);
+
+                // Standard editing shortcuts — let them propagate to subviews.
+                // WKWebView handles Cmd+C/V/A natively for browser panes;
+                // ImeProxyView handles them via keyDown for terminal/editor panes.
+                let is_editing_shortcut = match key {
+                    Key::Char('c') | Key::Char('v') | Key::Char('a') | Key::Char('x') => {
+                        !modifiers.shift && !modifiers.ctrl && !modifiers.alt
+                    }
+                    // Cmd+Z (undo) and Cmd+Shift+Z (redo)
+                    Key::Char('z') => !modifiers.ctrl && !modifiers.alt,
+                    _ => false,
+                };
+
+                if !is_editing_shortcut {
+                    // Intercept: emit as KeyDown and claim the event
+                    let chars = unsafe { event.characters().map(|s| s.to_string()) };
+                    self.emit(PlatformEvent::KeyDown { key, modifiers, chars });
+                    return Bool::YES;
+                }
+            }
+
+            // Preserve default subview propagation for non-intercepted keys.
+            // Critical: breaking this chain breaks IME composition (Korean, etc.)
+            unsafe { msg_send![super(self), performKeyEquivalent: event] }
+        }
+
         #[method(flagsChanged:)]
         fn flags_changed(&self, event: &NSEvent) {
             let modifiers = modifiers_from_flags(unsafe { event.modifierFlags() });

@@ -55,6 +55,8 @@ pub enum GlobalAction {
     NewFile,
     OpenConfig,
     OpenBrowser,
+    BrowserBack,
+    BrowserForward,
 }
 
 impl GlobalAction {
@@ -89,6 +91,8 @@ impl GlobalAction {
             GlobalAction::NewFile => "New File",
             GlobalAction::OpenConfig => "Open Config",
             GlobalAction::OpenBrowser => "Open Browser",
+            GlobalAction::BrowserBack => "Browser Back",
+            GlobalAction::BrowserForward => "Browser Forward",
         }
     }
 
@@ -123,6 +127,8 @@ impl GlobalAction {
             GlobalAction::NewFile => "NewFile",
             GlobalAction::OpenConfig => "OpenConfig",
             GlobalAction::OpenBrowser => "OpenBrowser",
+            GlobalAction::BrowserBack => "BrowserBack",
+            GlobalAction::BrowserForward => "BrowserForward",
         }
     }
 
@@ -157,6 +163,8 @@ impl GlobalAction {
             "NewFile" => Some(GlobalAction::NewFile),
             "OpenConfig" => Some(GlobalAction::OpenConfig),
             "OpenBrowser" => Some(GlobalAction::OpenBrowser),
+            "BrowserBack" => Some(GlobalAction::BrowserBack),
+            "BrowserForward" => Some(GlobalAction::BrowserForward),
             _ => None,
         }
     }
@@ -192,6 +200,8 @@ impl GlobalAction {
             GlobalAction::NewFile,
             GlobalAction::OpenConfig,
             GlobalAction::OpenBrowser,
+            GlobalAction::BrowserBack,
+            GlobalAction::BrowserForward,
         ]
     }
 }
@@ -370,6 +380,8 @@ impl KeybindingMap {
             (Hotkey::new(Key::Char('0'), false, false, true, false), GlobalAction::FontSizeReset),
             (Hotkey::new(Key::Char(','), false, false, true, false), GlobalAction::OpenConfig),
             (Hotkey::new(Key::Char('b'), true, false, true, false), GlobalAction::OpenBrowser),
+            (Hotkey::new(Key::Char('['), false, false, true, false), GlobalAction::BrowserBack),
+            (Hotkey::new(Key::Char(']'), false, false, true, false), GlobalAction::BrowserForward),
         ]
     }
 
@@ -639,6 +651,9 @@ impl Router {
                     None
                 }
             }
+            // Cmd+[ -> browser back, Cmd+] -> browser forward
+            Key::Char('[') => Some(GlobalAction::BrowserBack),
+            Key::Char(']') => Some(GlobalAction::BrowserForward),
             _ => None,
         }
     }
