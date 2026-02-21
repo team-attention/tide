@@ -45,6 +45,19 @@ impl App {
             self.compute_layout();
         }
 
+        // Determine if this is an input event for low-latency frame pacing (4ms vs 16ms)
+        let is_input_event = matches!(
+            event,
+            PlatformEvent::KeyDown { .. }
+                | PlatformEvent::ImeCommit(_)
+                | PlatformEvent::ImePreedit { .. }
+        );
+        let input_event_start = if is_input_event {
+            Some(Instant::now())
+        } else {
+            None
+        };
+
         match event {
             PlatformEvent::RedrawRequested => {
                 if self.needs_redraw {
@@ -146,22 +159,40 @@ impl App {
         // Frame pacing: check if we need to redraw
         self.poll_background_events(window);
 
-        // Frame-paced rendering: render immediately if enough time has passed
-        // since the last frame (~60fps cap). Otherwise defer via a 0-delay timer
-        // so rapid bursts (e.g. mouse drag) are coalesced within one frame.
+        // Frame-paced rendering: input events use a shorter interval (4ms / 250fps)
+        // for responsive visual feedback; other events use the default 16ms / ~60fps cap.
+        // Otherwise defer via a 0-delay timer so rapid bursts are coalesced.
         if self.needs_redraw {
             let now = Instant::now();
-            if now.duration_since(self.last_frame) >= Duration::from_millis(16) {
+            let min_interval = if is_input_event {
+                Duration::from_millis(4)
+            } else {
+                Duration::from_millis(16)
+            };
+            if now.duration_since(self.last_frame) >= min_interval {
                 self.update();
                 self.render();
                 self.needs_redraw = false;
                 self.last_frame = now;
+
+                if let Some(start) = input_event_start {
+                    log::trace!("input->render: {}us", start.elapsed().as_micros());
+                }
 
                 if !self.window_shown {
                     window.show_window();
                     self.window_shown = true;
                 }
             } else {
+                if let Some(start) = input_event_start {
+                    let since_last = now.duration_since(self.last_frame).as_micros();
+                    log::trace!(
+                        "input deferred ({}us since last frame, min={}ms)",
+                        since_last,
+                        min_interval.as_millis()
+                    );
+                    let _ = start; // suppress unused warning
+                }
                 window.request_redraw();
             }
         }

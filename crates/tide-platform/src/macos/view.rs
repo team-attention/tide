@@ -247,6 +247,8 @@ impl TideView {
                 // (e.g., waker's triggerRedraw firing during NSTextInputContext processing).
                 if let Ok(mut cb) = self.ivars().callback.try_borrow_mut() {
                     cb(event.clone(), window);
+                } else {
+                    log::warn!("TideView: event dropped (re-entrancy): {:?}", event);
                 }
             });
         }));
@@ -353,6 +355,8 @@ impl TideWindowDelegate {
             super::app::with_main_window(|window| {
                 if let Ok(mut cb) = self.ivars().callback.try_borrow_mut() {
                     cb(event.clone(), window);
+                } else {
+                    log::warn!("TideWindowDelegate: event dropped (re-entrancy): {:?}", event);
                 }
             });
         }));
