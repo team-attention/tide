@@ -150,7 +150,8 @@ impl App {
             TextInputTarget::BrowserUrlBar(pane_id) => {
                 if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&pane_id) {
                     for ch in text.chars() {
-                        bp.url_input.insert(bp.url_input_cursor, ch);
+                        let byte_off = bp.cursor_byte_offset();
+                        bp.url_input.insert(byte_off, ch);
                         bp.url_input_cursor += 1;
                     }
                 }

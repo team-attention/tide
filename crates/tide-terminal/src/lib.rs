@@ -178,7 +178,9 @@ impl Terminal {
         let event_loop = EventLoop::new(term.clone(), listener, pty, false, false)?;
         let notifier = Notifier(event_loop.channel());
         // Allow the event listener to forward PtyWrite events (e.g. DSR/CPR responses) back to PTY
-        *pty_writer.lock().unwrap() = Some(Notifier(event_loop.channel()));
+        if let Ok(mut guard) = pty_writer.lock() {
+            *guard = Some(Notifier(event_loop.channel()));
+        }
         event_loop.spawn();
 
         // Initialize the cached grid
@@ -449,7 +451,9 @@ impl Terminal {
     /// Set a waker callback that will be called from the PTY thread when new output arrives.
     /// This allows the event loop to sleep with `ControlFlow::Wait` and be woken up on demand.
     pub fn set_waker(&self, f: Box<dyn Fn() + Send>) {
-        *self.waker.lock().unwrap() = Some(f);
+        if let Ok(mut guard) = self.waker.lock() {
+            *guard = Some(f);
+        }
     }
 
     /// Returns the child PID of the shell process.

@@ -710,14 +710,15 @@ impl App {
                     bp.set_visible(true);
 
                     // First responder management: when URL bar is NOT focused,
-                    // let the webview receive keyboard events directly
-                    if let (Some(wv), Some(win_ptr), Some(view_ptr)) =
-                        (&bp.webview, self.window_ptr, self.content_view_ptr)
+                    // let the webview receive keyboard events directly.
+                    // When URL bar IS focused, sync_ime_proxies() will focus
+                    // the browser pane's IME proxy to route keyboard input
+                    // through PlatformEvent for URL bar editing.
+                    if let (Some(wv), Some(win_ptr)) =
+                        (&bp.webview, self.window_ptr)
                     {
                         if !bp.url_input_focused {
                             unsafe { wv.make_first_responder(win_ptr); }
-                        } else {
-                            unsafe { wv.resign_first_responder(win_ptr, view_ptr); }
                         }
                     }
                 } else {

@@ -89,6 +89,8 @@ impl App {
             None => BrowserPane::new(new_id),
         };
         self.panes.insert(new_id, PaneKind::Browser(pane));
+        // Browser panes need an IME proxy for URL bar keyboard input
+        self.pending_ime_proxy_creates.push(new_id);
         if let Some(tid) = tid {
             if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                 tp.editors.push(new_id);
@@ -99,12 +101,11 @@ impl App {
         self.router.set_focused(new_id);
         self.focus_area = crate::ui_state::FocusArea::EditorDock;
         self.chrome_generation += 1;
-        if !panel_was_visible {
-            if !self.editor_panel_width_manual {
-                self.editor_panel_width = self.auto_editor_panel_width();
-            }
-            self.compute_layout();
+        if !panel_was_visible && !self.editor_panel_width_manual {
+            self.editor_panel_width = self.auto_editor_panel_width();
         }
+        // Always recompute layout so the WKWebView is created and positioned
+        self.compute_layout();
         self.scroll_to_active_panel_tab();
     }
 

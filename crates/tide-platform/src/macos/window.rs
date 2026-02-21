@@ -100,7 +100,13 @@ impl MacosWindow {
             let _: () = msg_send![&ns_window, setBackgroundColor: &*bg_color];
         }
 
-        // Center and show — dark background is already set so no white flash
+        // Start invisible — show_window() reveals after the first frame renders,
+        // so the user never sees a blank window during GPU initialization.
+        unsafe {
+            let _: () = msg_send![&ns_window, setAlphaValue: 0.0_f64];
+        }
+
+        // Center and show (invisible due to alpha=0, but events still flow)
         ns_window.center();
         ns_window.makeKeyAndOrderFront(None);
 
@@ -230,5 +236,11 @@ impl PlatformWindow for MacosWindow {
 
     fn window_ptr(&self) -> Option<*mut std::ffi::c_void> {
         Some(Retained::as_ptr(&self.ns_window) as *mut std::ffi::c_void)
+    }
+
+    fn show_window(&self) {
+        unsafe {
+            let _: () = msg_send![&self.ns_window, setAlphaValue: 1.0_f64];
+        }
     }
 }

@@ -24,6 +24,8 @@ impl App {
         if let Some(target) = self.effective_ime_target() {
             self.pane_generations.remove(&target);
         }
+        // Invalidate chrome for browser URL bar preedit display
+        self.chrome_generation += 1;
         self.needs_redraw = true;
     }
 }

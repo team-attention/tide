@@ -101,6 +101,11 @@ impl App {
             }
         }
 
+        // Keep webview visibility/frame in sync with the active editor tab.
+        // This ensures webviews are hidden when switching to non-browser tabs,
+        // even if the tab-switch code path didn't call compute_layout().
+        self.sync_browser_webview_frames();
+
         // Keep file tree/CWD in sync with terminal output (works for RedrawRequested path too).
         if had_terminal_output {
             self.update_file_tree_cwd();

@@ -507,7 +507,7 @@ impl App {
                 if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&active_id) {
                     bp.url_input_focused = true;
                     bp.url_input = bp.url.clone();
-                    bp.url_input_cursor = bp.url_input.len();
+                    bp.url_input_cursor = bp.url_input.chars().count();
                 }
             }
             _ => {}

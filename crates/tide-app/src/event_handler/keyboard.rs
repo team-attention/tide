@@ -131,7 +131,7 @@ impl App {
                             if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&active_id) {
                                 bp.url_input_focused = true;
                                 bp.url_input = bp.url.clone();
-                                bp.url_input_cursor = bp.url_input.len();
+                                bp.url_input_cursor = bp.url_input.chars().count();
                                 self.chrome_generation += 1;
                                 self.needs_redraw = true;
                             }
@@ -801,7 +801,7 @@ impl App {
                 // Unfocus, revert text to current URL
                 if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&pane_id) {
                     bp.url_input = bp.url.clone();
-                    bp.url_input_cursor = bp.url_input.len();
+                    bp.url_input_cursor = bp.url_input.chars().count();
                     bp.url_input_focused = false;
                 }
             }
@@ -809,14 +809,16 @@ impl App {
                 if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&pane_id) {
                     if bp.url_input_cursor > 0 {
                         bp.url_input_cursor -= 1;
-                        bp.url_input.remove(bp.url_input_cursor);
+                        let byte_off = bp.cursor_byte_offset();
+                        bp.url_input.remove(byte_off);
                     }
                 }
             }
             Key::Delete => {
                 if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&pane_id) {
-                    if bp.url_input_cursor < bp.url_input.len() {
-                        bp.url_input.remove(bp.url_input_cursor);
+                    if bp.url_input_cursor < bp.url_input_char_len() {
+                        let byte_off = bp.cursor_byte_offset();
+                        bp.url_input.remove(byte_off);
                     }
                 }
             }
@@ -829,7 +831,7 @@ impl App {
             }
             Key::Right => {
                 if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&pane_id) {
-                    if bp.url_input_cursor < bp.url_input.len() {
+                    if bp.url_input_cursor < bp.url_input_char_len() {
                         bp.url_input_cursor += 1;
                     }
                 }
@@ -837,7 +839,8 @@ impl App {
             Key::Char(ch) => {
                 if !modifiers.ctrl && !modifiers.meta {
                     if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&pane_id) {
-                        bp.url_input.insert(bp.url_input_cursor, ch);
+                        let byte_off = bp.cursor_byte_offset();
+                        bp.url_input.insert(byte_off, ch);
                         bp.url_input_cursor += 1;
                     }
                 }
