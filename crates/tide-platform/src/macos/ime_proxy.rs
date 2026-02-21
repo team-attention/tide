@@ -277,6 +277,8 @@ impl ImeProxyView {
             super::app::with_main_window(|window| {
                 if let Ok(mut cb) = self.ivars().callback.try_borrow_mut() {
                     cb(event.clone(), window);
+                } else {
+                    log::warn!("ImeProxyView: event dropped (re-entrancy): {:?}", event);
                 }
             });
         }));
