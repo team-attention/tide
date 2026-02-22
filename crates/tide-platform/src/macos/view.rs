@@ -136,6 +136,26 @@ declare_class!(
                 };
 
                 if !is_editing_shortcut {
+                    // If the first responder is NOT an ImeProxyView (e.g. it's
+                    // a WKWebView), emit WebViewFocused so the app layer can set
+                    // focus_area = EditorDock before processing the shortcut.
+                    unsafe {
+                        let window: Option<Retained<objc2_app_kit::NSWindow>> =
+                            msg_send_id![self, window];
+                        if let Some(window) = window {
+                            let responder: Option<
+                                Retained<objc2::runtime::AnyObject>,
+                            > = msg_send_id![&window, firstResponder];
+                            if let Some(responder) = responder {
+                                let cls = (*responder).class();
+                                let name = cls.name();
+                                if name != "ImeProxyView" && name != "TideView" {
+                                    self.emit(PlatformEvent::WebViewFocused);
+                                }
+                            }
+                        }
+                    }
+
                     // Intercept: emit as KeyDown and claim the event
                     let chars = unsafe { event.characters().map(|s| s.to_string()) };
                     self.emit(PlatformEvent::KeyDown { key, modifiers, chars });
@@ -232,6 +252,38 @@ declare_class!(
                 }
             };
             self.emit(PlatformEvent::Scroll { dx, dy, position: pos });
+        }
+
+        /// Detect left-mouse-down clicks on non-Tide subviews (e.g. WKWebView)
+        /// and emit WebViewFocused so the app updates focus_area visually.
+        #[method(hitTest:)]
+        fn hit_test(&self, point: NSPoint) -> *mut AnyObject {
+            let target: *mut AnyObject = unsafe {
+                msg_send![super(self), hitTest: point]
+            };
+            if target.is_null() {
+                return target;
+            }
+            unsafe {
+                let app_cls = objc2::runtime::AnyClass::get("NSApplication").unwrap();
+                let ns_app: *mut AnyObject = msg_send![app_cls, sharedApplication];
+                let current_event: *mut AnyObject = msg_send![ns_app, currentEvent];
+                if !current_event.is_null() {
+                    let event_type: usize = msg_send![current_event, type];
+                    // NSEventTypeLeftMouseDown = 1
+                    if event_type == 1 {
+                        let self_ptr = self as *const Self as *const AnyObject;
+                        if (target as *const AnyObject) != self_ptr {
+                            let cls = (*(target as *const AnyObject)).class();
+                            let name = cls.name();
+                            if name != "ImeProxyView" && name != "TideView" {
+                                self.emit(PlatformEvent::WebViewFocused);
+                            }
+                        }
+                    }
+                }
+            }
+            target
         }
 
         #[method(acceptsFirstMouse:)]
@@ -452,7 +504,7 @@ pub(super) fn key_and_modifiers_from_event(event: &NSEvent) -> (Key, Modifiers) 
     let flags = unsafe { event.modifierFlags() };
     let modifiers = modifiers_from_flags(flags);
 
-    if modifiers.meta || modifiers.ctrl {
+    if modifiers.meta || modifiers.ctrl || modifiers.alt {
         return (key_from_keycode(keycode), modifiers);
     }
 

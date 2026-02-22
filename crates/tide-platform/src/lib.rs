@@ -67,6 +67,11 @@ pub enum PlatformEvent {
     CloseRequested,
     RedrawRequested,
     Fullscreen(bool),
+
+    /// The window's first responder is a non-Tide view (e.g. WKWebView).
+    /// Emitted from performKeyEquivalent so the app can update focus state
+    /// before processing the shortcut.
+    WebViewFocused,
 }
 
 /// Mouse button identifiers.

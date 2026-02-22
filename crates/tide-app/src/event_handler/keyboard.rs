@@ -119,6 +119,16 @@ impl App {
                 return;
             }
             FocusArea::EditorDock => {
+                // Global hotkeys take priority over URL bar input
+                if modifiers.meta || (modifiers.ctrl && modifiers.shift) {
+                    let input = InputEvent::KeyPress { key, modifiers };
+                    let action = self.router.process(input, &self.pane_rects);
+                    if !matches!(action, tide_input::Action::RouteToPane(_)) {
+                        self.handle_action(action, Some(input));
+                        return;
+                    }
+                }
+
                 // Browser URL bar keyboard handling
                 if let Some(active_id) = self.active_editor_tab() {
                     if let Some(PaneKind::Browser(bp)) = self.panes.get(&active_id) {
