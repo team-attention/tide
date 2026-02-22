@@ -23,6 +23,7 @@ impl App {
             | Some(HoverTarget::EmptyPanelOpenFile)
             | Some(HoverTarget::FileFinderItem(_))
             | Some(HoverTarget::TitlebarSwap)
+            | Some(HoverTarget::TitlebarSettings)
             | Some(HoverTarget::TitlebarFileTree)
             | Some(HoverTarget::TitlebarPaneArea)
             | Some(HoverTarget::TitlebarDock)
@@ -150,6 +151,31 @@ impl App {
         false
     }
 
+    /// Hit-test the git switcher popup tab bar. Returns the mode for the clicked tab.
+    pub(crate) fn git_switcher_tab_at(&self, pos: tide_core::Vec2) -> Option<crate::GitSwitcherMode> {
+        let gs = self.git_switcher.as_ref()?;
+        let cell_size = self.renderer.as_ref()?.cell_size();
+        let cell_height = cell_size.height;
+        let logical = self.logical_size();
+        let geo = gs.geometry(cell_height, logical.width, logical.height);
+
+        // Tab bar is between input and list area
+        let tab_y = geo.popup_y + 2.0 + geo.input_h;
+        let tab_h = geo.tab_h;
+        if pos.y < tab_y || pos.y > tab_y + tab_h {
+            return None;
+        }
+        if pos.x < geo.popup_x || pos.x > geo.popup_x + geo.popup_w {
+            return None;
+        }
+        let half_w = geo.popup_w / 2.0;
+        if pos.x < geo.popup_x + half_w {
+            Some(crate::GitSwitcherMode::Branches)
+        } else {
+            Some(crate::GitSwitcherMode::Worktrees)
+        }
+    }
+
     /// Hit-test the git switcher popup for button clicks (both Branches and Worktrees tabs).
     pub(crate) fn git_switcher_button_at(&self, pos: tide_core::Vec2) -> Option<crate::SwitcherButton> {
         let gs = self.git_switcher.as_ref()?;
@@ -187,24 +213,37 @@ impl App {
         let item_pad = 12.0_f32;
         let btn_gap = 8.0_f32;
 
-        // Create row: only Switch and NewPane buttons (no create when busy)
+        // Create row: buttons vary by mode (no create when busy)
         if gs.is_create_row(fi) {
             if busy { return None; }
-            let mut btn_right = geo.popup_x + geo.popup_w - item_pad;
+            let btn_right = geo.popup_x + geo.popup_w - item_pad;
 
-            let new_pane_label = "New Pane";
-            let new_pane_w = new_pane_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
-            let new_pane_x = btn_right - new_pane_w;
-            if pos.x >= new_pane_x && pos.x <= new_pane_x + new_pane_w {
-                return Some(crate::SwitcherButton::NewPane(fi));
-            }
-            btn_right = new_pane_x - btn_gap;
+            if gs.mode == crate::GitSwitcherMode::Worktrees {
+                // Worktrees: single "New Pane" button
+                let new_pane_label = "New Pane";
+                let new_pane_w = new_pane_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
+                let new_pane_x = btn_right - new_pane_w;
+                if pos.x >= new_pane_x && pos.x <= new_pane_x + new_pane_w {
+                    return Some(crate::SwitcherButton::NewPane(fi));
+                }
+            } else {
+                // Branches: "New Pane" + "Switch"
+                let mut cur_right = btn_right;
 
-            let switch_label = "Switch";
-            let switch_w = switch_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
-            let switch_x = btn_right - switch_w;
-            if pos.x >= switch_x && pos.x <= switch_x + switch_w {
-                return Some(crate::SwitcherButton::Switch(fi));
+                let new_pane_label = "New Pane";
+                let new_pane_w = new_pane_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
+                let new_pane_x = cur_right - new_pane_w;
+                if pos.x >= new_pane_x && pos.x <= new_pane_x + new_pane_w {
+                    return Some(crate::SwitcherButton::NewPane(fi));
+                }
+                cur_right = new_pane_x - btn_gap;
+
+                let switch_label = "Switch";
+                let switch_w = switch_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
+                let switch_x = cur_right - switch_w;
+                if pos.x >= switch_x && pos.x <= switch_x + switch_w {
+                    return Some(crate::SwitcherButton::Switch(fi));
+                }
             }
             return None;
         }
@@ -246,26 +285,14 @@ impl App {
                     return None;
                 }
 
-                let mut btn_right = geo.popup_x + geo.popup_w - item_pad;
+                let btn_right = geo.popup_x + geo.popup_w - item_pad;
 
-                // [New Pane] button
+                // Worktrees: single "New Pane" button (no Switch)
                 let new_pane_label = "New Pane";
                 let new_pane_w = new_pane_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
                 let new_pane_x = btn_right - new_pane_w;
                 if pos.x >= new_pane_x && pos.x <= new_pane_x + new_pane_w {
                     return Some(crate::SwitcherButton::NewPane(fi));
-                }
-
-                if !busy {
-                    btn_right = new_pane_x - btn_gap;
-
-                    // [Switch] button — hidden when busy
-                    let switch_label = "Switch";
-                    let switch_w = switch_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
-                    let switch_x = btn_right - switch_w;
-                    if pos.x >= switch_x && pos.x <= switch_x + switch_w {
-                        return Some(crate::SwitcherButton::Switch(fi));
-                    }
                 }
             }
         }
