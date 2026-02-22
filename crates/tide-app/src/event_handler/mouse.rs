@@ -142,6 +142,17 @@ impl App {
             }
 
             if self.git_switcher.is_some() {
+                // Tab click: switch between Branches / Worktrees
+                if let Some(mode) = self.git_switcher_tab_at(self.last_cursor_pos) {
+                    if let Some(ref mut gs) = self.git_switcher {
+                        if gs.mode != mode {
+                            gs.set_mode(mode);
+                            self.chrome_generation += 1;
+                        }
+                    }
+                    self.needs_redraw = true;
+                    return;
+                }
                 if let Some(btn) = self.git_switcher_button_at(self.last_cursor_pos) {
                     self.handle_git_switcher_button(btn);
                     self.needs_redraw = true;
@@ -345,6 +356,10 @@ impl App {
             // Titlebar buttons
             if self.top_inset > 0.0 {
                 match &self.hover_target {
+                    Some(crate::drag_drop::HoverTarget::TitlebarSettings) => {
+                        self.toggle_config_page();
+                        return;
+                    }
                     Some(crate::drag_drop::HoverTarget::TitlebarSwap) => {
                         self.dock_side = match self.dock_side {
                             crate::LayoutSide::Left => crate::LayoutSide::Right,

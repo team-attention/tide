@@ -272,6 +272,9 @@ pub(crate) fn render_hover(
                 drag_drop::HoverTarget::BrowserUrlBar => {
                     // No additional overlay for URL bar hover
                 }
+                drag_drop::HoverTarget::TitlebarSettings => {
+                    // Hover is rendered via chrome.rs (bg on settings gear icon)
+                }
             }
         }
     }
