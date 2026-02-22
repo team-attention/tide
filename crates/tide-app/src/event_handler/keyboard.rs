@@ -200,9 +200,19 @@ impl App {
                 }
             }
             Key::Enter => {
-                let selected = self.git_switcher.as_ref().map(|gs| gs.selected);
-                if let Some(selected) = selected {
-                    self.handle_git_switcher_button(crate::SwitcherButton::Switch(selected));
+                let info = self.git_switcher.as_ref().map(|gs| (gs.selected, gs.mode));
+                if let Some((selected, mode)) = info {
+                    let btn = if modifiers.meta {
+                        // Cmd+Enter → always New Pane
+                        crate::SwitcherButton::NewPane(selected)
+                    } else {
+                        match mode {
+                            crate::GitSwitcherMode::Branches => crate::SwitcherButton::Switch(selected),
+                            // Worktrees: Enter triggers NewPane (no Switch action)
+                            crate::GitSwitcherMode::Worktrees => crate::SwitcherButton::NewPane(selected),
+                        }
+                    };
+                    self.handle_git_switcher_button(btn);
                 }
                 return;
             }

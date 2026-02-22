@@ -88,10 +88,39 @@ pub(crate) fn render_chrome(
             renderer.draw_chrome_rect(Rect::new(o.x, o.y, bw, o.height), outline_color);
             renderer.draw_chrome_rect(Rect::new(o.x + o.width - bw, o.y, bw, o.height), outline_color);
 
-            // Titlebar toggle buttons: [Sidebar] [PaneArea] [Dock] [gap] [Swap icon]
-            // Positioned right-to-left from the swap icon
-            // Hints are dynamic based on current layout slot assignment
-            let btn_right = icon_x - 4.0 - TITLEBAR_BUTTON_GAP;
+            // Settings gear icon (left of swap icon)
+            {
+                let gear_pad = 4.0_f32;
+                let gear_icon = "\u{f013}"; // FontAwesome gear
+                let gear_w = cs.width + gear_pad * 2.0;
+                let gear_h = cs.height + 6.0;
+                let gear_x = icon_x - gear_w - 8.0;
+                let gear_y = (app.top_inset - gear_h) / 2.0;
+                let gear_hovered = matches!(app.hover_target, Some(HoverTarget::TitlebarSettings));
+                if gear_hovered {
+                    let bg_rect = Rect::new(gear_x, gear_y, gear_w, gear_h);
+                    renderer.draw_chrome_rounded_rect(bg_rect, p.badge_bg, 4.0);
+                }
+                let gear_text_y = gear_y + (gear_h - cs.height) / 2.0;
+                let gear_color = if app.config_page.is_some() { p.dock_tab_underline } else { p.tab_text };
+                renderer.draw_chrome_text(
+                    gear_icon,
+                    Vec2::new(gear_x + gear_pad, gear_text_y),
+                    TextStyle {
+                        foreground: gear_color,
+                        background: None,
+                        bold: false, dim: false, italic: false, underline: false,
+                    },
+                    tb,
+                );
+            }
+
+            // Titlebar toggle buttons: [Sidebar] [PaneArea] [Dock] [gap] [Settings] [Swap icon]
+            // Positioned right-to-left from the settings icon
+            let settings_pad = 4.0_f32;
+            let settings_w = cs.width + settings_pad * 2.0;
+            let settings_x = icon_x - settings_w - 8.0;
+            let btn_right = settings_x - TITLEBAR_BUTTON_GAP;
             let tb_clip = Rect::new(0.0, 0.0, logical.width, app.top_inset);
 
             // Helper: render a titlebar toggle button (icon + ⌘N hint, badge style)

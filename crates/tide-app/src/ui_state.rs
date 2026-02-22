@@ -518,10 +518,15 @@ impl GitSwitcherState {
     }
 
     pub fn toggle_mode(&mut self) {
-        self.mode = match self.mode {
+        let new_mode = match self.mode {
             GitSwitcherMode::Branches => GitSwitcherMode::Worktrees,
             GitSwitcherMode::Worktrees => GitSwitcherMode::Branches,
         };
+        self.set_mode(new_mode);
+    }
+
+    pub fn set_mode(&mut self, mode: GitSwitcherMode) {
+        self.mode = mode;
         self.selected = 0;
         self.scroll_offset = 0;
         self.filter();

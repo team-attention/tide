@@ -673,7 +673,12 @@ fn render_git_switcher(
     let new_pane_btn_w = "New Pane".len() as f32 * cell_size.width + btn_pad_h * 2.0;
     let switch_btn_w = "Switch".len() as f32 * cell_size.width + btn_pad_h * 2.0;
     let gap = 8.0_f32; // flex gap between items (matches Pen)
-    let buttons_zone_w = new_pane_btn_w + gap + switch_btn_w;
+    let is_worktree_mode = gs.mode == crate::GitSwitcherMode::Worktrees;
+    let buttons_zone_w = if is_worktree_mode {
+        new_pane_btn_w
+    } else {
+        new_pane_btn_w + gap + switch_btn_w
+    };
 
     // Branch item style constants
     let accent_color = p.dock_tab_underline; // #C4B8A6
@@ -687,45 +692,29 @@ fn render_git_switcher(
 
     let busy = gs.shell_busy;
 
-    // Helper: render action buttons ("Switch" filled + "New Pane" outlined), right-aligned in row.
-    // When `busy` is true, only "New Pane" is shown.
+    // Helper: render action buttons, right-aligned in row.
+    // For branches: "Switch" (filled) + "New Pane" (outlined).
+    // For worktrees: only "New Pane" (filled, primary action).
+    // When `busy` is true, only "New Pane" is shown (branches) or same (worktrees).
     let render_action_buttons = |renderer: &mut tide_renderer::WgpuRenderer,
                                   y: f32, _item_y: f32, _show_delete: bool| {
         let btn_h = cell_height + 4.0; // taller buttons for 36px rows
         let btn_y = y + (line_height - btn_h) / 2.0;
         let btn_radius = 4.0_f32;
-        let mut btn_right = popup_x + popup_w - item_pad;
-
-        // "New Pane" button — outlined
-        let new_pane_label = "New Pane";
-        let new_pane_w = new_pane_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
-        let new_pane_x = btn_right - new_pane_w;
-        renderer.draw_top_rounded_rect(
-            Rect::new(new_pane_x, btn_y, new_pane_w, btn_h),
-            new_pane_border_color,
-            btn_radius,
-        );
-        renderer.draw_top_rounded_rect(
-            Rect::new(new_pane_x + 1.0, btn_y + 1.0, new_pane_w - 2.0, btn_h - 2.0),
-            p.popup_bg,
-            (btn_radius - 1.0).max(0.0),
-        );
-        let new_pane_style = text_style(text_gray);
+        let btn_right = popup_x + popup_w - item_pad;
         let btn_text_y = btn_y + (btn_h - cell_height) / 2.0;
-        renderer.draw_top_text(new_pane_label, Vec2::new(new_pane_x + btn_pad_h, btn_text_y), new_pane_style, list_clip);
-        btn_right = new_pane_x - gap;
 
-        if !busy {
-            // "Switch" button — filled accent
-            let switch_label = "Switch";
-            let switch_w = switch_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
-            let switch_x = btn_right - switch_w;
+        if is_worktree_mode {
+            // Worktrees: single "New Pane" button (filled, primary action)
+            let label = "New Pane";
+            let w = label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
+            let x = btn_right - w;
             renderer.draw_top_rounded_rect(
-                Rect::new(switch_x, btn_y, switch_w, btn_h),
+                Rect::new(x, btn_y, w, btn_h),
                 switch_btn_bg,
                 btn_radius,
             );
-            let switch_style = TextStyle {
+            let style = TextStyle {
                 foreground: switch_btn_text_color,
                 background: None,
                 bold: true,
@@ -733,7 +722,49 @@ fn render_git_switcher(
                 italic: false,
                 underline: false,
             };
-            renderer.draw_top_text(switch_label, Vec2::new(switch_x + btn_pad_h, btn_text_y), switch_style, list_clip);
+            renderer.draw_top_text(label, Vec2::new(x + btn_pad_h, btn_text_y), style, list_clip);
+        } else {
+            // Branches: "New Pane" (outlined) + "Switch" (filled)
+            let mut cur_right = btn_right;
+
+            // "New Pane" button — outlined
+            let new_pane_label = "New Pane";
+            let new_pane_w = new_pane_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
+            let new_pane_x = cur_right - new_pane_w;
+            renderer.draw_top_rounded_rect(
+                Rect::new(new_pane_x, btn_y, new_pane_w, btn_h),
+                new_pane_border_color,
+                btn_radius,
+            );
+            renderer.draw_top_rounded_rect(
+                Rect::new(new_pane_x + 1.0, btn_y + 1.0, new_pane_w - 2.0, btn_h - 2.0),
+                p.popup_bg,
+                (btn_radius - 1.0).max(0.0),
+            );
+            let new_pane_style = text_style(text_gray);
+            renderer.draw_top_text(new_pane_label, Vec2::new(new_pane_x + btn_pad_h, btn_text_y), new_pane_style, list_clip);
+            cur_right = new_pane_x - gap;
+
+            if !busy {
+                // "Switch" button — filled accent
+                let switch_label = "Switch";
+                let switch_w = switch_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
+                let switch_x = cur_right - switch_w;
+                renderer.draw_top_rounded_rect(
+                    Rect::new(switch_x, btn_y, switch_w, btn_h),
+                    switch_btn_bg,
+                    btn_radius,
+                );
+                let switch_style = TextStyle {
+                    foreground: switch_btn_text_color,
+                    background: None,
+                    bold: true,
+                    dim: false,
+                    italic: false,
+                    underline: false,
+                };
+                renderer.draw_top_text(switch_label, Vec2::new(switch_x + btn_pad_h, btn_text_y), switch_style, list_clip);
+            }
         }
     };
 
@@ -958,7 +989,11 @@ fn render_git_switcher(
     // Top border of hint bar
     renderer.draw_top_rect(Rect::new(popup_x, hint_bar_y, popup_w, 1.0), hint_bar_border);
     // Hint text centered
-    let hint_text = "\u{21B5} switch  \u{2318}\u{21B5} new pane  esc close";
+    let hint_text = if is_worktree_mode {
+        "\u{21B5} new pane  esc close"
+    } else {
+        "\u{21B5} switch  \u{2318}\u{21B5} new pane  esc close"
+    };
     let hint_text_w = hint_text.len() as f32 * cell_size.width;
     let hint_text_x = popup_x + (popup_w - hint_text_w) / 2.0;
     let hint_text_y = hint_bar_y + (hint_bar_h - cell_height) / 2.0;
