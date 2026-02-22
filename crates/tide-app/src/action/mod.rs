@@ -542,7 +542,21 @@ impl App {
                 self.split_pane(SplitDirection::Horizontal, cwd);
             }
             GlobalAction::ClosePane => {
-                if let Some(focused) = self.focused {
+                if self.focus_area == FocusArea::EditorDock {
+                    // Close the active dock tab (editor/browser/diff)
+                    if let Some(tab_id) = self.active_editor_tab() {
+                        self.close_editor_panel_tab(tab_id);
+                    } else {
+                        // No active tab (empty panel) — hide it
+                        self.show_editor_panel = false;
+                        self.editor_panel_auto_shown = false;
+                        self.editor_panel_maximized = false;
+                        self.editor_panel_width_manual = false;
+                        self.focus_area = FocusArea::PaneArea;
+                        self.chrome_generation += 1;
+                        self.compute_layout();
+                    }
+                } else if let Some(focused) = self.focused {
                     self.close_specific_pane(focused);
                 }
             }

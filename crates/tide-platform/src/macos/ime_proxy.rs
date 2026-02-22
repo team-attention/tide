@@ -293,6 +293,8 @@ declare_class!(
                 s if s == sel!(moveDown:) => Some(Key::Down),
                 s if s == sel!(moveLeft:) => Some(Key::Left),
                 s if s == sel!(moveRight:) => Some(Key::Right),
+                s if s == sel!(moveWordLeft:) => Some(Key::Left),
+                s if s == sel!(moveWordRight:) => Some(Key::Right),
                 s if s == sel!(insertNewline:) => Some(Key::Enter),
                 s if s == sel!(deleteBackward:) => Some(Key::Backspace),
                 s if s == sel!(deleteForward:) => Some(Key::Delete),

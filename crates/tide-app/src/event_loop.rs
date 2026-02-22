@@ -8,6 +8,7 @@ use tide_platform::{PlatformEvent, PlatformWindow};
 use crate::pane::PaneKind;
 use crate::session;
 use crate::theme::*;
+use crate::ui_state::FocusArea;
 use crate::App;
 
 impl App {
@@ -75,6 +76,13 @@ impl App {
 
         match event {
             PlatformEvent::RedrawRequested => {
+                // Poll background events (PTY output, file watcher, git) so that
+                // waker-triggered redraws detect new terminal output and set
+                // needs_redraw.  Without this, PTY output that arrives after the
+                // previous render is missed and the character only appears on the
+                // *next* keystroke ("one-beat delay").
+                self.poll_background_events(window);
+
                 if self.needs_redraw {
                     self.update();
                     self.render();
@@ -86,6 +94,14 @@ impl App {
                         window.show_window();
                         self.window_shown = true;
                     }
+
+                    // Schedule a follow-up poll to catch streaming output.
+                    // The waker coalesces rapid wakeups, so output that arrives
+                    // during the render may not trigger a new triggerRedraw.
+                    // This follow-up ensures the next batch is rendered promptly.
+                    // Natural frame pacing is provided by wgpu/CAMetalLayer vsync
+                    // (nextDrawable blocks when all drawables are in use).
+                    window.request_redraw();
                 }
                 return;
             }
@@ -120,6 +136,13 @@ impl App {
                 self.top_inset = if fs { 0.0 } else { TITLEBAR_HEIGHT };
                 self.compute_layout();
                 self.ime_cursor_dirty = true;
+            }
+            PlatformEvent::WebViewFocused => {
+                // WKWebView has first responder — set focus to EditorDock
+                // so shortcuts like Cmd+W close the browser tab, not a terminal.
+                self.focus_area = FocusArea::EditorDock;
+                self.chrome_generation += 1;
+                self.needs_redraw = true;
             }
             PlatformEvent::ImeCommit(text) => {
                 self.handle_ime_commit(&text);
