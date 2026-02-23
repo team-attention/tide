@@ -1,133 +1,69 @@
+<div align="center">
+
+![Tide](assets/icon.png)
+
 # Tide
 
-A terminal that doesn't make you leave.
+**A GPU-rendered terminal workspace for macOS**
 
-## What
+[![Release](https://img.shields.io/github/v/release/eatnug/tide?style=flat-square&color=blue)](https://github.com/eatnug/tide/releases)
+[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square)
+![Rust](https://img.shields.io/badge/rust-2021-orange?style=flat-square)
 
-Working in the terminal, you lose context constantly. Open VS Code to read a file, Finder to browse directories, another window for diffs. One task, three apps.
+</div>
 
-Tide keeps everything in one screen. A file tree sits next to your terminal. Click a file and the editor opens beside it. The terminal stays right where it is.
-
-Long-term, Tide aims to be an integrated workspace built around the terminal — what [Wave Terminal](https://waveterm.dev) does with web tech, but with native GPU rendering in Rust.
-
-## Core Ideas
-
-- **Don't break context** — view and edit files without leaving the terminal
-- **The terminal is the center** — this is not an IDE. Only what the terminal needs, nothing more
-- **Native performance** — no Electron, GPU-rendered directly via wgpu
+Everything you need stays in one window. Terminals, files, editor, browser — split them, stack them, zoom into one. Context stays with you however you work.
 
 ## Features
 
-### Split Panes
-
-Split your terminal horizontally or vertically. Drag borders to resize. Each pane has its own shell, scrollback, and working directory.
-
-Switch to stacked mode to show one pane at a time with a tab bar.
-
-### File Tree
-
-Follows the working directory of the focused terminal. Switch pane focus and the tree updates.
-
-- Real-time filesystem watching
-- Git status badges
-- Click to open in the editor dock
-
-### Editor Dock
-
-View and edit files alongside your terminal.
-
-- Syntax highlighting
-- Search
-- Git diff view
-- Disk change detection (notifies when files change externally)
-- Tabbed file management
-
-### Focus System
-
-Switch between three areas with `Cmd+1/2/3`.
-
-| Key | Area |
-|---|---|
-| `Cmd+1` | File Tree |
-| `Cmd+2` | Pane Area |
-| `Cmd+3` | Editor Dock |
-
-Each key cycles through **show + focus → focus → hide**. Use `Cmd+H/J/K/L` to navigate within areas, `Cmd+Enter` for fullscreen zoom.
-
-### Drag & Drop
-
-Drag panes to rearrange layouts. Drop zones for top/bottom/left/right + swap.
-
-### Session Restore
-
-Layout, open tabs, split ratios, and focus state are saved automatically and restored on next launch.
+- **Split panes** — tile terminals side by side, drag to resize
+- **File tree** — always in sync with what you're working on
+- **Editor dock** — code, diffs, browser, markdown preview alongside your terminal
+- **Stacked mode** — collapse into tabs for focused single-pane work
+- **Session restore** — pick up exactly where you left off
+- **GPU rendering** — powered by wgpu for smooth, low-latency output
 
 ## Keybindings
 
 Customizable via `~/.config/tide/settings.json`.
 
-### Navigation
-
 | Key | Action |
 |---|---|
-| `Cmd+1` / `2` / `3` | Toggle area |
+| `Cmd+1` / `2` / `3` | Toggle file tree / pane area / editor dock |
 | `Cmd+H/J/K/L` | Navigate within area |
-| `Cmd+Enter` | Toggle zoom |
-| `Cmd+I` / `Cmd+O` | Dock tab prev / next |
-
-### Panes
-
-| Key | Action |
-|---|---|
-| `Cmd+T` | Split horizontal (home) |
-| `Cmd+Shift+T` | Split vertical (home) |
-| `Cmd+\` | Split horizontal (cwd) |
-| `Cmd+Shift+\` | Split vertical (cwd) |
+| `Cmd+Enter` | Toggle fullscreen zoom |
+| `Cmd+T` | New split (horizontal) |
+| `Cmd+Shift+T` | New split (vertical) |
 | `Cmd+W` | Close pane |
-
-### General
-
-| Key | Action |
-|---|---|
+| `Cmd+I` / `Cmd+O` | Dock tab prev / next |
 | `Cmd+Shift+O` | File finder |
-| `Cmd+F` | Terminal search |
-| `Cmd+Shift+D` | Toggle dark / light |
-| `Cmd+=` / `Cmd+-` | Font size up / down |
-| `Cmd+,` | Settings |
+| `Cmd+F` | Search |
 
-## Tech Stack
+## Install
 
-| | |
-|---|---|
-| Language | Rust |
-| GPU | wgpu |
-| Text | cosmic-text + CoreText fallback |
-| Terminal | alacritty_terminal |
-| Syntax | syntect |
-| Window | tide-platform (native macOS) |
-| File watch | notify |
+Download the latest `.dmg` from [Releases](https://github.com/eatnug/tide/releases).
 
-## Architecture
-
-```
-tide/
-  crates/
-    tide-core/        shared types, traits
-    tide-renderer/    wgpu GPU rendering
-    tide-terminal/    PTY, terminal emulation
-    tide-layout/      split pane layout engine
-    tide-tree/        file tree
-    tide-input/       keybinding, input routing
-    tide-editor/      editor, diff viewer
-    tide-platform/    native macOS platform layer
-    tide-app/         app entry point
-```
-
-## Build
+## Build from Source
 
 ```sh
 cargo build --release                    # binary
 cargo bundle --release -p tide-app       # macOS .app bundle
+./scripts/build-dmg.sh                   # signed + notarized DMG
+```
+
+## Architecture
+
+```
+tide-app          Application entry, event loop, rendering
+tide-platform     Native macOS platform layer (NSApplication/NSWindow/NSView)
+tide-renderer     wgpu-based GPU renderer
+tide-terminal     Terminal emulation (alacritty_terminal backend)
+tide-editor       Built-in editor
+tide-layout       Pane layout engine
+tide-tree         File tree
+tide-input        Keybinding & input handling
+tide-core         Shared types and utilities
 ```
 
 ## License
