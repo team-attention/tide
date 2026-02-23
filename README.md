@@ -123,6 +123,25 @@ tide/
     tide-app/         app entry point
 ```
 
+## Roadmap
+
+**Phase 1 — Polish the Core**
+Passkey support in browser panel, editor improvements (find & replace, multi-cursor), better terminal search UX, clipboard image support.
+
+**Phase 2 — Document Panel**
+A first-class document pane for writing and organizing markdown alongside terminals and code. Internal linking, full-text search, inline images.
+
+**Phase 3 — Extensibility**
+Plugin system, custom widgets/blocks, CLI tool to control Tide from the terminal, theming API.
+
+**Phase 4 — Cross-Platform**
+Linux (Wayland + X11) and Windows support.
+
+### Non-Goals
+
+- **Full IDE** — no LSP, debugger, or project-level refactoring. Tide is a workspace, not an IDE.
+- **App Store distribution** — direct DMG distribution only.
+
 ## Build
 
 ```sh
