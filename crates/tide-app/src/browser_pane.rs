@@ -28,6 +28,8 @@ pub struct BrowserPane {
     pub last_sync: Instant,
     /// Whether this browser pane currently holds first responder status.
     pub is_first_responder: bool,
+    /// Whether the webview needs to navigate to `url` once visible with a proper frame.
+    pub needs_initial_navigate: bool,
 }
 
 impl BrowserPane {
@@ -45,6 +47,7 @@ impl BrowserPane {
             generation: 0,
             last_sync: Instant::now(),
             is_first_responder: false,
+            needs_initial_navigate: false,
         }
     }
 
@@ -64,6 +67,7 @@ impl BrowserPane {
             generation: 0,
             last_sync: Instant::now(),
             is_first_responder: false,
+            needs_initial_navigate: true,
         }
     }
 

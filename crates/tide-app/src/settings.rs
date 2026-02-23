@@ -65,17 +65,48 @@ pub struct WorktreeSettings {
     /// Example: "{repo_root}.worktree/{branch}"
     #[serde(default)]
     pub base_dir_pattern: Option<String>,
+    /// Files to copy from repo root to newly created worktrees.
+    /// Relative paths, e.g. [".env", ".vscode/settings.json"]
+    #[serde(default)]
+    pub copy_files: Option<Vec<String>>,
 }
 
 impl Default for WorktreeSettings {
     fn default() -> Self {
         Self {
             base_dir_pattern: None,
+            copy_files: None,
         }
     }
 }
 
 impl WorktreeSettings {
+    /// Copy configured files from repo root into a newly created worktree.
+    /// Logs errors but does not fail.
+    pub fn copy_files_to_worktree(&self, repo_root: &std::path::Path, worktree_path: &std::path::Path) {
+        let files = match &self.copy_files {
+            Some(f) if !f.is_empty() => f,
+            _ => return,
+        };
+        for rel in files {
+            let src = repo_root.join(rel);
+            let dst = worktree_path.join(rel);
+            if !src.exists() {
+                log::warn!("copy_files: source does not exist: {}", src.display());
+                continue;
+            }
+            if let Some(parent) = dst.parent() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    log::error!("copy_files: failed to create dir {}: {}", parent.display(), e);
+                    continue;
+                }
+            }
+            if let Err(e) = std::fs::copy(&src, &dst) {
+                log::error!("copy_files: failed to copy {} -> {}: {}", src.display(), dst.display(), e);
+            }
+        }
+    }
+
     /// Compute the worktree path for a given branch name and repo root.
     pub fn compute_worktree_path(&self, repo_root: &std::path::Path, branch: &str) -> PathBuf {
         let sanitized_branch = branch.replace('/', "-");
