@@ -64,15 +64,27 @@ impl App {
         for entry in entries {
             let git_status = parse_git_status_code(&entry.status);
             if let Some(gs) = git_status {
-                // status_files returns paths relative to the repo root
-                let abs_path = git_root.join(&entry.path);
+                // status_files returns paths relative to the repo root.
+                // Git reports untracked directories with a trailing slash (e.g. "docs/").
+                // Strip the slash so the path matches the filesystem entry.
+                let rel = if entry.path.ends_with('/') {
+                    &entry.path[..entry.path.len() - 1]
+                } else {
+                    &entry.path
+                };
+                let abs_path = git_root.join(rel);
                 status_map.insert(abs_path, gs);
             }
         }
 
-        // Pre-compute directory git status by walking ancestors of each file
+        // Pre-compute directory git status by walking ancestors of each file.
+        // If the entry itself is a directory (exists on disk as dir), include it too.
         let mut dir_status: HashMap<PathBuf, FileGitStatus> = HashMap::new();
         for (path, &status) in &status_map {
+            if path.is_dir() {
+                let entry = dir_status.entry(path.clone()).or_insert(status);
+                *entry = merge_git_status(*entry, status);
+            }
             let mut ancestor = path.parent();
             while let Some(dir) = ancestor {
                 if dir < tree_root {
