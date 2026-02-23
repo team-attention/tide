@@ -15,6 +15,7 @@ use crate::App;
 /// Where text input should be directed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TextInputTarget {
+    ConfigPageCopyFiles,
     ConfigPageWorktree,
     FileTreeRename,
     GitSwitcher,
@@ -36,7 +37,9 @@ impl App {
     pub(crate) fn text_input_target(&self) -> TextInputTarget {
         // Modal overlays (highest priority)
         if let Some(ref page) = self.config_page {
-            return if page.worktree_editing {
+            return if page.copy_files_editing {
+                TextInputTarget::ConfigPageCopyFiles
+            } else if page.worktree_editing {
                 TextInputTarget::ConfigPageWorktree
             } else {
                 TextInputTarget::Consumed
@@ -94,6 +97,15 @@ impl App {
     pub(crate) fn send_text_to_target(&mut self, text: &str) {
         let target = self.text_input_target();
         match target {
+            TextInputTarget::ConfigPageCopyFiles => {
+                if let Some(ref mut page) = self.config_page {
+                    for ch in text.chars() {
+                        page.copy_files_input.insert_char(ch);
+                    }
+                    page.dirty = true;
+                    self.chrome_generation += 1;
+                }
+            }
             TextInputTarget::ConfigPageWorktree => {
                 if let Some(ref mut page) = self.config_page {
                     for ch in text.chars() {

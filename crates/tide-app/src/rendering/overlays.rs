@@ -1467,6 +1467,11 @@ fn render_config_page(
             }
         }
         ConfigSection::Worktree => {
+            let input_h = cell_height + POPUP_INPUT_PADDING;
+            let selected_field = page.selected_field;
+            let selected_border = accent_color;
+
+            // ── Base dir pattern ──
             let y = content_top + 8.0;
             let item_y = y + (line_height - cell_height) / 2.0;
 
@@ -1476,15 +1481,15 @@ fn render_config_page(
                 Rect::new(popup_x, y, popup_w, line_height));
 
             // Input field
-            let input_y = y + line_height + 4.0;
-            let input_h = cell_height + POPUP_INPUT_PADDING;
-            let input_rect = Rect::new(popup_x + item_pad, input_y, popup_w - 2.0 * item_pad, input_h);
-            renderer.draw_top_rect(input_rect, if page.worktree_editing { p.popup_selected } else { p.surface_bg });
-            draw_popup_border(renderer, input_rect, p.popup_border);
+            let wt_input_y = y + line_height + 4.0;
+            let wt_input_rect = Rect::new(popup_x + item_pad, wt_input_y, popup_w - 2.0 * item_pad, input_h);
+            renderer.draw_top_rect(wt_input_rect, if page.worktree_editing { p.popup_selected } else { p.surface_bg });
+            let wt_border = if selected_field == 0 && !page.worktree_editing && !page.copy_files_editing { selected_border } else { p.popup_border };
+            draw_popup_border(renderer, wt_input_rect, wt_border);
 
             let text_x = popup_x + item_pad + POPUP_TEXT_INSET;
-            let text_y = input_y + (input_h - cell_height) / 2.0;
-            let text_clip = Rect::new(text_x, input_y, popup_w - 2.0 * item_pad - 2.0 * POPUP_TEXT_INSET, input_h);
+            let text_y = wt_input_y + (input_h - cell_height) / 2.0;
+            let text_clip = Rect::new(text_x, wt_input_y, popup_w - 2.0 * item_pad - 2.0 * POPUP_TEXT_INSET, input_h);
 
             if page.worktree_input.is_empty() && !page.worktree_editing {
                 let placeholder = "{repo_root}.worktree/{branch}";
@@ -1502,16 +1507,48 @@ fn render_config_page(
             }
 
             // Help text
-            let help_y = input_y + input_h + 12.0;
+            let help_y = wt_input_y + input_h + 8.0;
             let help_text = "Variables: {repo_root}, {branch}";
             let help_style = text_style(hint_text_color);
             renderer.draw_top_text(help_text, Vec2::new(popup_x + item_pad, help_y),
                 help_style, Rect::new(popup_x, help_y, popup_w, cell_height + 4.0));
 
-            let example_y = help_y + cell_height + 4.0;
-            let example_text = "Default: {repo_root}.worktree/{branch}";
-            renderer.draw_top_text(example_text, Vec2::new(popup_x + item_pad, example_y),
-                help_style, Rect::new(popup_x, example_y, popup_w, cell_height + 4.0));
+            // ── Copy files ──
+            let cf_label_y = help_y + cell_height + 12.0;
+            let cf_label_item_y = cf_label_y + (line_height - cell_height) / 2.0;
+            renderer.draw_top_text("Copy files:", Vec2::new(popup_x + item_pad, cf_label_item_y), label_style,
+                Rect::new(popup_x, cf_label_y, popup_w, line_height));
+
+            let cf_input_y = cf_label_y + line_height + 4.0;
+            let cf_input_rect = Rect::new(popup_x + item_pad, cf_input_y, popup_w - 2.0 * item_pad, input_h);
+            renderer.draw_top_rect(cf_input_rect, if page.copy_files_editing { p.popup_selected } else { p.surface_bg });
+            let cf_border = if selected_field == 1 && !page.worktree_editing && !page.copy_files_editing { selected_border } else { p.popup_border };
+            draw_popup_border(renderer, cf_input_rect, cf_border);
+
+            let cf_text_x = popup_x + item_pad + POPUP_TEXT_INSET;
+            let cf_text_y = cf_input_y + (input_h - cell_height) / 2.0;
+            let cf_text_clip = Rect::new(cf_text_x, cf_input_y, popup_w - 2.0 * item_pad - 2.0 * POPUP_TEXT_INSET, input_h);
+
+            if page.copy_files_input.is_empty() && !page.copy_files_editing {
+                let cf_placeholder = ".env, .vscode/settings.json";
+                let muted_style = text_style(tab_inactive_color);
+                renderer.draw_top_text(cf_placeholder, Vec2::new(cf_text_x, cf_text_y), muted_style, cf_text_clip);
+            } else {
+                let ts = text_style(p.tab_text_focused);
+                renderer.draw_top_text(&page.copy_files_input.text, Vec2::new(cf_text_x, cf_text_y), ts, cf_text_clip);
+            }
+
+            // Cursor beam when editing
+            if page.copy_files_editing {
+                let cx = cf_text_x + visual_width(&page.copy_files_input.text[..page.copy_files_input.cursor]) as f32 * cell_size.width;
+                draw_cursor_beam(renderer, cx, cf_text_y, cell_height, p.cursor_accent);
+            }
+
+            // Help text for copy files
+            let cf_help_y = cf_input_y + input_h + 8.0;
+            let cf_help_text = "Comma-separated relative paths to copy into new worktrees";
+            renderer.draw_top_text(cf_help_text, Vec2::new(popup_x + item_pad, cf_help_y),
+                help_style, Rect::new(popup_x, cf_help_y, popup_w, cell_height + 4.0));
         }
     }
 
@@ -1527,10 +1564,10 @@ fn render_config_page(
             }
         }
         ConfigSection::Worktree => {
-            if page.worktree_editing {
+            if page.worktree_editing || page.copy_files_editing {
                 "\u{21B5} done  Esc cancel"
             } else {
-                "Esc close  Tab section  \u{21B5} edit"
+                "Esc close  Tab section  \u{2191}\u{2193} select  \u{21B5} edit"
             }
         }
     };

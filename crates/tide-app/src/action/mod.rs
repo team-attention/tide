@@ -797,7 +797,12 @@ impl App {
             .clone()
             .unwrap_or_default();
 
-        self.config_page = Some(crate::ConfigPageState::new(bindings, worktree_pattern));
+        let copy_files = self.settings.worktree.copy_files
+            .as_ref()
+            .map(|v| v.join(", "))
+            .unwrap_or_default();
+
+        self.config_page = Some(crate::ConfigPageState::new(bindings, worktree_pattern, copy_files));
         self.chrome_generation += 1;
     }
 
@@ -837,6 +842,19 @@ impl App {
                 None
             } else {
                 Some(wt_text)
+            };
+
+            // Save copy files
+            let cf_text = page.copy_files_input.text.trim().to_string();
+            self.settings.worktree.copy_files = if cf_text.is_empty() {
+                None
+            } else {
+                let files: Vec<String> = cf_text
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if files.is_empty() { None } else { Some(files) }
             };
 
             crate::settings::save_settings(&self.settings);
