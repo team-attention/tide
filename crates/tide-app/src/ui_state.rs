@@ -810,12 +810,20 @@ pub(crate) struct ConfigPageState {
     pub recording: Option<RecordingState>,
     pub worktree_input: InputLine,
     pub worktree_editing: bool,
+    pub copy_files_input: InputLine,
+    pub copy_files_editing: bool,
+    /// Which field is selected in Worktree tab (0 = base_dir_pattern, 1 = copy_files)
+    pub selected_field: usize,
     pub bindings: Vec<(tide_input::GlobalAction, tide_input::Hotkey)>,
     pub dirty: bool,
 }
 
 impl ConfigPageState {
-    pub fn new(bindings: Vec<(tide_input::GlobalAction, tide_input::Hotkey)>, worktree_pattern: String) -> Self {
+    pub fn new(
+        bindings: Vec<(tide_input::GlobalAction, tide_input::Hotkey)>,
+        worktree_pattern: String,
+        copy_files: String,
+    ) -> Self {
         Self {
             section: ConfigSection::Keybindings,
             selected: 0,
@@ -823,6 +831,9 @@ impl ConfigPageState {
             recording: None,
             worktree_input: InputLine::with_text(worktree_pattern),
             worktree_editing: false,
+            copy_files_input: InputLine::with_text(copy_files),
+            copy_files_editing: false,
+            selected_field: 0,
             bindings,
             dirty: false,
         }

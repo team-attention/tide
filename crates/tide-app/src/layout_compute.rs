@@ -731,11 +731,6 @@ impl App {
                 };
                 if let Some(handle) = handle {
                     bp.webview = Some(handle);
-                    // Navigate to initial URL if set
-                    if !bp.url.is_empty() {
-                        let url = bp.url.clone();
-                        bp.webview.as_ref().unwrap().navigate(&url);
-                    }
                 }
             }
 
@@ -759,6 +754,14 @@ impl App {
                     // WKWebView uses point coordinates (not pixels), so divide back by scale
                     bp.set_frame(x / scale_factor, y / scale_factor, w / scale_factor, h / scale_factor);
                     bp.set_visible(true);
+
+                    // Navigate AFTER the webview has a proper frame and is visible.
+                    // Navigating on a hidden 100x100 webview can produce blank pages.
+                    if bp.needs_initial_navigate && !bp.url.is_empty() {
+                        let url = bp.url.clone();
+                        bp.webview.as_ref().unwrap().navigate(&url);
+                        bp.needs_initial_navigate = false;
+                    }
 
                     // First responder management: when URL bar is NOT focused,
                     // let the webview receive keyboard events directly.

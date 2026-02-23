@@ -813,6 +813,7 @@ impl App {
                                 let new_branch = !tide_terminal::git::branch_exists(&cwd, &query);
                                 match tide_terminal::git::add_worktree(&cwd, &wt_path, &query, new_branch) {
                                     Ok(()) => {
+                                        settings.worktree.copy_files_to_worktree(&root, &wt_path);
                                         if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&pane_id) {
                                             if pane.shell_idle {
                                                 let cmd = format!("cd {}\n", shell_escape(&wt_path.to_string_lossy()));
@@ -1000,6 +1001,7 @@ impl App {
                                 let new_branch = !tide_terminal::git::branch_exists(&cwd, &query);
                                 match tide_terminal::git::add_worktree(&cwd, &wt_path, &query, new_branch) {
                                     Ok(()) => {
+                                        settings.worktree.copy_files_to_worktree(&root, &wt_path);
                                         use tide_core::{LayoutEngine, SplitDirection};
                                         let new_id = self.layout.split(pane_id, SplitDirection::Horizontal);
                                         self.create_terminal_pane(new_id, Some(wt_path));
@@ -1146,11 +1148,24 @@ impl App {
                         }
                     }
                     ConfigSection::Worktree => {
-                        // Click on the input field area
-                        let input_y = content_top + 8.0 + line_height + 4.0;
                         let input_h = cell_height + crate::theme::POPUP_INPUT_PADDING;
-                        if pos.y >= input_y && pos.y < input_y + input_h {
+
+                        // Base dir pattern input field
+                        let wt_input_y = content_top + 8.0 + line_height + 4.0;
+                        if pos.y >= wt_input_y && pos.y < wt_input_y + input_h {
+                            page.selected_field = 0;
                             page.worktree_editing = true;
+                            page.copy_files_editing = false;
+                        }
+
+                        // Copy files input field
+                        let help_y = wt_input_y + input_h + 8.0;
+                        let cf_label_y = help_y + cell_height + 12.0;
+                        let cf_input_y = cf_label_y + line_height + 4.0;
+                        if pos.y >= cf_input_y && pos.y < cf_input_y + input_h {
+                            page.selected_field = 1;
+                            page.copy_files_editing = true;
+                            page.worktree_editing = false;
                         }
                     }
                 }

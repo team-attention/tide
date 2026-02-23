@@ -732,6 +732,39 @@ impl App {
             return;
         }
 
+        if page.copy_files_editing {
+            match key {
+                Key::Escape | Key::Enter => {
+                    page.copy_files_editing = false;
+                    page.dirty = true;
+                }
+                Key::Backspace => {
+                    page.copy_files_input.backspace();
+                    page.dirty = true;
+                }
+                Key::Delete => {
+                    page.copy_files_input.delete_char();
+                    page.dirty = true;
+                }
+                Key::Left => {
+                    page.copy_files_input.move_cursor_left();
+                }
+                Key::Right => {
+                    page.copy_files_input.move_cursor_right();
+                }
+                Key::Char(ch) => {
+                    if !modifiers.ctrl && !modifiers.meta {
+                        page.copy_files_input.insert_char(ch);
+                        page.dirty = true;
+                    }
+                }
+                _ => {}
+            }
+            self.chrome_generation += 1;
+            self.needs_redraw = true;
+            return;
+        }
+
         if page.worktree_editing {
             match key {
                 Key::Escape | Key::Enter => {
@@ -782,10 +815,19 @@ impl App {
             Key::Up | Key::Char('k') => {
                 if !modifiers.ctrl && !modifiers.meta {
                     if let Some(page) = self.config_page.as_mut() {
-                        if page.selected > 0 {
-                            page.selected -= 1;
-                            if page.selected < page.scroll_offset {
-                                page.scroll_offset = page.selected;
+                        match page.section {
+                            ConfigSection::Keybindings => {
+                                if page.selected > 0 {
+                                    page.selected -= 1;
+                                    if page.selected < page.scroll_offset {
+                                        page.scroll_offset = page.selected;
+                                    }
+                                }
+                            }
+                            ConfigSection::Worktree => {
+                                if page.selected_field > 0 {
+                                    page.selected_field -= 1;
+                                }
                             }
                         }
                     }
@@ -805,7 +847,11 @@ impl App {
                                     }
                                 }
                             }
-                            ConfigSection::Worktree => {}
+                            ConfigSection::Worktree => {
+                                if page.selected_field < 1 {
+                                    page.selected_field += 1;
+                                }
+                            }
                         }
                     }
                 }
@@ -819,7 +865,11 @@ impl App {
                             });
                         }
                         ConfigSection::Worktree => {
-                            page.worktree_editing = true;
+                            match page.selected_field {
+                                0 => page.worktree_editing = true,
+                                1 => page.copy_files_editing = true,
+                                _ => {}
+                            }
                         }
                     }
                 }
