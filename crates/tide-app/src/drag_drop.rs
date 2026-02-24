@@ -47,6 +47,31 @@ pub(crate) enum HoverTarget {
     EditorScrollbar(PaneId),
 }
 
+impl HoverTarget {
+    /// Returns true if this hover target's visual feedback is rendered in the chrome layer.
+    /// When transitioning to/from these targets, chrome_generation must be bumped.
+    pub(crate) fn affects_chrome(&self) -> bool {
+        matches!(
+            self,
+            HoverTarget::TitlebarSwap
+                | HoverTarget::TitlebarSettings
+                | HoverTarget::TitlebarTheme
+                | HoverTarget::TitlebarFileTree
+                | HoverTarget::TitlebarPaneArea
+                | HoverTarget::TitlebarDock
+                | HoverTarget::DockMaximize
+                | HoverTarget::PaneAreaMaximize
+                | HoverTarget::PaneModeToggle
+                | HoverTarget::DockPreviewToggle
+                | HoverTarget::BrowserBack
+                | HoverTarget::BrowserForward
+                | HoverTarget::BrowserRefresh
+                | HoverTarget::PanelTabClose(_)
+                | HoverTarget::PanelTabItemClose(_)
+        )
+    }
+}
+
 // ──────────────────────────────────────────────
 // Drop destination: tree pane or editor panel
 // ──────────────────────────────────────────────

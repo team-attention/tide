@@ -10,7 +10,7 @@ mod overlay;
 mod shaders;
 mod vertex;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use cosmic_text::{FontSystem, SwashCache};
@@ -129,6 +129,12 @@ pub struct WgpuRenderer {
 
     // Clear color (gap / background)
     pub clear_color: Color,
+
+    // Incremental grid assembly: per-pane ranges, dirty tracking, partial upload
+    pub(crate) pane_grid_ranges: HashMap<u64, grid::PaneGridRange>,
+    pub(crate) last_pane_order: Vec<u64>,
+    pub(crate) grid_dirty_panes: HashSet<u64>,
+    pub(crate) grid_partial_uploads: Vec<grid::PaneGridRange>,
 
     // Atlas overflow tracking
     pub(crate) atlas_reset_count: u64,

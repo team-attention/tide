@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use tide_core::{Color, Size};
@@ -341,6 +341,11 @@ impl WgpuRenderer {
             cached_cell_size,
             surface_format: format,
             clear_color: Color::new(0.02, 0.02, 0.02, 1.0),
+            // Incremental grid assembly
+            pane_grid_ranges: HashMap::new(),
+            last_pane_order: Vec::new(),
+            grid_dirty_panes: HashSet::new(),
+            grid_partial_uploads: Vec::new(),
             atlas_reset_count: 0,
             last_atlas_reset_count: 0,
             last_uniform_screen: [0.0, 0.0],

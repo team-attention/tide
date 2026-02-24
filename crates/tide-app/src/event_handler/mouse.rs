@@ -906,8 +906,15 @@ impl App {
             // Hover target
             let new_hover = self.compute_hover_target(pos);
             if new_hover != self.hover_target {
+                // Bump chrome_generation only when entering/leaving chrome-rendered hover targets
+                let chrome_affected =
+                    self.hover_target.as_ref().map_or(false, |h| h.affects_chrome())
+                    || new_hover.as_ref().map_or(false, |h| h.affects_chrome());
                 self.hover_target = new_hover;
                 self.update_cursor_icon(window);
+                if chrome_affected {
+                    self.chrome_generation += 1;
+                }
                 self.needs_redraw = true;
             }
 

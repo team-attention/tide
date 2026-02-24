@@ -22,6 +22,15 @@ impl PaneGridCache {
     }
 }
 
+/// Tracks a pane's vertex range in the assembled grid arrays for incremental updates.
+#[derive(Clone, Debug)]
+pub(crate) struct PaneGridRange {
+    pub rect_vert_start: usize,
+    pub rect_vert_count: usize,
+    pub glyph_vert_start: usize,
+    pub glyph_vert_count: usize,
+}
+
 impl WgpuRenderer {
     // ── Per-pane cache API ──────────────────────────────────
 
@@ -37,12 +46,14 @@ impl WgpuRenderer {
             let mut cache = self.pane_grid_caches.remove(&id).unwrap_or_default();
             std::mem::swap(&mut cache, &mut self.active_pane_cache);
             self.pane_grid_caches.insert(id, cache);
+            self.grid_dirty_panes.insert(id);
         }
     }
 
     /// Remove a pane's cached vertices (call when pane is closed).
     pub fn remove_pane_cache(&mut self, pane_id: u64) {
         self.pane_grid_caches.remove(&pane_id);
+        self.pane_grid_ranges.remove(&pane_id);
     }
 
     /// Keep only pane caches whose IDs are present in `pane_ids`.
@@ -54,25 +65,64 @@ impl WgpuRenderer {
     /// Invalidate all per-pane caches (atlas reset, scale change, etc.).
     pub fn invalidate_all_pane_caches(&mut self) {
         self.pane_grid_caches.clear();
+        self.pane_grid_ranges.clear();
+        self.last_pane_order.clear();
+        self.grid_dirty_panes.clear();
+        self.grid_partial_uploads.clear();
     }
 
     /// Assemble all per-pane caches into the global grid arrays, in the given order.
-    /// Also removes caches for panes not in the order list.
+    /// Uses incremental update when only some panes changed and vertex counts match.
     pub fn assemble_grid(&mut self, pane_order: &[u64]) {
+        // Nothing dirty and order unchanged → skip entirely
+        if self.grid_dirty_panes.is_empty() && pane_order == &self.last_pane_order[..] {
+            return;
+        }
+
+        // Try incremental path: same pane order, dirty panes' vertex counts unchanged
+        if pane_order == &self.last_pane_order[..] && !self.grid_dirty_panes.is_empty() {
+            let can_incremental = self.grid_dirty_panes.iter().all(|id| {
+                match (self.pane_grid_caches.get(id), self.pane_grid_ranges.get(id)) {
+                    (Some(cache), Some(range)) => {
+                        cache.rect_vertices.len() == range.rect_vert_count
+                            && cache.glyph_vertices.len() == range.glyph_vert_count
+                    }
+                    _ => false,
+                }
+            });
+
+            if can_incremental {
+                self.assemble_grid_incremental();
+                return;
+            }
+        }
+
+        // Full assembly
         self.grid_rect_vertices.clear();
         self.grid_rect_indices.clear();
         self.grid_glyph_vertices.clear();
         self.grid_glyph_indices.clear();
+        self.pane_grid_ranges.clear();
 
         for &id in pane_order {
             if let Some(cache) = self.pane_grid_caches.get(&id) {
-                let rect_base = self.grid_rect_vertices.len() as u32;
+                let rect_vert_start = self.grid_rect_vertices.len();
+                let glyph_vert_start = self.grid_glyph_vertices.len();
+
+                let rect_base = rect_vert_start as u32;
                 self.grid_rect_vertices.extend_from_slice(&cache.rect_vertices);
                 self.grid_rect_indices.extend(cache.rect_indices.iter().map(|i| i + rect_base));
 
-                let glyph_base = self.grid_glyph_vertices.len() as u32;
+                let glyph_base = glyph_vert_start as u32;
                 self.grid_glyph_vertices.extend_from_slice(&cache.glyph_vertices);
                 self.grid_glyph_indices.extend(cache.glyph_indices.iter().map(|i| i + glyph_base));
+
+                self.pane_grid_ranges.insert(id, PaneGridRange {
+                    rect_vert_start,
+                    rect_vert_count: cache.rect_vertices.len(),
+                    glyph_vert_start,
+                    glyph_vert_count: cache.glyph_vertices.len(),
+                });
             }
         }
 
@@ -80,7 +130,35 @@ impl WgpuRenderer {
         let keep: HashSet<u64> = pane_order.iter().copied().collect();
         self.pane_grid_caches.retain(|id, _| keep.contains(id));
 
+        self.last_pane_order = pane_order.to_vec();
+        self.grid_dirty_panes.clear();
+        self.grid_partial_uploads.clear();
         self.grid_needs_upload = true;
+    }
+
+    /// Incremental assembly: only replace vertex data for dirty panes (same vertex counts).
+    /// Indices are unchanged because pane vertex offsets haven't moved.
+    fn assemble_grid_incremental(&mut self) {
+        self.grid_partial_uploads.clear();
+
+        let dirty: Vec<u64> = self.grid_dirty_panes.drain().collect();
+        for id in dirty {
+            let (cache, range) = match (
+                self.pane_grid_caches.get(&id),
+                self.pane_grid_ranges.get(&id),
+            ) {
+                (Some(c), Some(r)) => (c, r.clone()),
+                _ => continue,
+            };
+
+            // In-place vertex replacement (indices stay the same)
+            self.grid_rect_vertices[range.rect_vert_start..range.rect_vert_start + range.rect_vert_count]
+                .copy_from_slice(&cache.rect_vertices);
+            self.grid_glyph_vertices[range.glyph_vert_start..range.glyph_vert_start + range.glyph_vert_count]
+                .copy_from_slice(&cache.glyph_vertices);
+
+            self.grid_partial_uploads.push(range);
+        }
     }
 
     // ── Existing API ────────────────────────────────────────
