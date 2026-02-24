@@ -121,8 +121,9 @@ impl WgpuRenderer {
             self.last_uniform_screen = screen_phys;
         }
 
-        // ── Upload grid layer (only when content changed) ──
+        // ── Upload grid layer ──
         if self.grid_needs_upload {
+            // Full upload: all vertices + indices
             if !self.grid_rect_vertices.is_empty() {
                 let vb_bytes = bytemuck::cast_slice(&self.grid_rect_vertices);
                 Self::ensure_buffer_capacity(&self.device, &mut self.grid_rect_vb, &mut self.grid_rect_vb_capacity, vb_bytes.len(), vb_usage, "grid_rect_vb");
@@ -140,6 +141,25 @@ impl WgpuRenderer {
                 self.queue.write_buffer(&self.grid_glyph_ib, 0, ib_bytes);
             }
             self.grid_needs_upload = false;
+        } else if !self.grid_partial_uploads.is_empty() {
+            // Partial upload: only dirty panes' vertex ranges (indices unchanged)
+            let rect_stride = std::mem::size_of::<crate::vertex::RectVertex>();
+            let glyph_stride = std::mem::size_of::<crate::vertex::GlyphVertex>();
+            for range in &self.grid_partial_uploads {
+                if range.rect_vert_count > 0 {
+                    let start = range.rect_vert_start;
+                    let end = start + range.rect_vert_count;
+                    let data = bytemuck::cast_slice(&self.grid_rect_vertices[start..end]);
+                    self.queue.write_buffer(&self.grid_rect_vb, (start * rect_stride) as u64, data);
+                }
+                if range.glyph_vert_count > 0 {
+                    let start = range.glyph_vert_start;
+                    let end = start + range.glyph_vert_count;
+                    let data = bytemuck::cast_slice(&self.grid_glyph_vertices[start..end]);
+                    self.queue.write_buffer(&self.grid_glyph_vb, (start * glyph_stride) as u64, data);
+                }
+            }
+            self.grid_partial_uploads.clear();
         }
 
         // ── Upload chrome layer (only when chrome changed) ──

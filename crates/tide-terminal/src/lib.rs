@@ -121,6 +121,10 @@ pub struct Terminal {
     waker: Arc<Mutex<Option<Box<dyn Fn() + Send>>>>,
     /// Detected URL ranges per row: Vec of (start_col, end_col) for each row
     url_ranges: Vec<Vec<(usize, usize)>>,
+    /// Throttle: last time detect_urls ran (avoid regex on every sync_grid)
+    last_url_detect: Instant,
+    /// Reusable buffer for detect_urls row text (avoids per-row String allocation)
+    url_row_buf: String,
     /// Pending PTY resize notification (debounced to avoid SIGWINCH storms during animations)
     pending_pty_resize: Option<(WindowSize, Instant)>,
 }
@@ -215,6 +219,8 @@ impl Terminal {
             inverse_cursor: None,
             waker,
             url_ranges: Vec::new(),
+            last_url_detect: Instant::now(),
+            url_row_buf: String::new(),
             pending_pty_resize: None,
         })
     }
@@ -383,9 +389,12 @@ impl Terminal {
         self.cached_grid.cols = cols as u16;
         self.cached_grid.rows = total_lines as u16;
 
-        // Scan for URLs in the grid
-        if any_changed || !same_size {
+        // Scan for URLs in the grid (throttled to avoid regex cost on rapid output)
+        if (any_changed || !same_size)
+            && self.last_url_detect.elapsed().as_millis() >= 200
+        {
             self.detect_urls();
+            self.last_url_detect = Instant::now();
         }
     }
 
@@ -401,12 +410,13 @@ impl Terminal {
 
         for (row_idx, row) in self.cached_grid.cells.iter().enumerate() {
             self.url_ranges[row_idx].clear();
-            let row_text: String = row.iter().map(|c| {
-                if c.character == '\0' { ' ' } else { c.character }
-            }).collect();
-            for m in re.find_iter(&row_text) {
-                // Convert byte offsets to char (column) indices
-                let start_col = row_text[..m.start()].chars().count();
+            // Reuse buffer to avoid per-row String allocation
+            self.url_row_buf.clear();
+            for c in row.iter() {
+                self.url_row_buf.push(if c.character == '\0' { ' ' } else { c.character });
+            }
+            for m in re.find_iter(&self.url_row_buf) {
+                let start_col = self.url_row_buf[..m.start()].chars().count();
                 let end_col = start_col + m.as_str().chars().count();
                 self.url_ranges[row_idx].push((start_col, end_col));
             }
