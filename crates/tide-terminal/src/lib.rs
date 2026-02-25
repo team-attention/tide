@@ -341,11 +341,6 @@ impl Terminal {
                 }
 
                 let mut fg_color = Self::convert_color(dark_mode, &fg, &self.palette_buf);
-                if dark_mode {
-                    fg_color = Self::ensure_dark_fg_contrast(fg_color);
-                } else {
-                    fg_color = Self::ensure_light_fg_contrast(fg_color);
-                }
                 let mut bg_color = Self::convert_color(dark_mode, &bg, &self.palette_buf);
                 let mut bg_is_default = matches!(bg, AnsiColor::Named(NamedColor::Background));
 
@@ -353,15 +348,14 @@ impl Terminal {
                 if flags.contains(CellFlags::INVERSE) {
                     std::mem::swap(&mut fg_color, &mut bg_color);
                     bg_is_default = false;
-                    // After swap, the new fg (originally the bg color) was never
-                    // contrast-checked against the pane background. Re-apply the
-                    // check so the text is always readable — even if the explicit
-                    // cell background fails to render on top of the pane bg.
-                    if dark_mode {
-                        fg_color = Self::ensure_dark_fg_contrast(fg_color);
-                    } else {
-                        fg_color = Self::ensure_light_fg_contrast(fg_color);
-                    }
+                }
+
+                // Contrast-check the final fg color against the pane background,
+                // whether or not it was swapped by INVERSE above.
+                if dark_mode {
+                    fg_color = Self::ensure_dark_fg_contrast(fg_color);
+                } else {
+                    fg_color = Self::ensure_light_fg_contrast(fg_color);
                 }
 
                 let background = if bg_is_default {

@@ -600,8 +600,14 @@ impl App {
                                         let mut data = Vec::new();
                                         if bracketed {
                                             data.extend_from_slice(b"\x1b[200~");
+                                            // Sanitize: strip the bracket-close sequence from
+                                            // clipboard text to prevent pastejacking attacks
+                                            // that escape bracketed paste mode.
+                                            let safe = text.replace("\x1b[201~", "");
+                                            data.extend_from_slice(safe.as_bytes());
+                                        } else {
+                                            data.extend_from_slice(text.as_bytes());
                                         }
-                                        data.extend_from_slice(text.as_bytes());
                                         if bracketed {
                                             data.extend_from_slice(b"\x1b[201~");
                                             // Nudge shell to redraw and clear paste standout
