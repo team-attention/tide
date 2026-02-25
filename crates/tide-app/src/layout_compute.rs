@@ -662,12 +662,13 @@ impl App {
 
         // Resize terminal backends to match the actual visible content area.
         // Uses visual rects + PANE_PADDING to match the render inner rect exactly.
-        // During border drag or window resize, skip PTY resize to avoid SIGWINCH spam.
-        let is_dragging = self.router.is_dragging_border()
+        // During border drag, skip PTY resize to avoid SIGWINCH spam and drift.
+        // During window resize, always apply PTY resize so content reflows
+        // incrementally instead of jumping all at once when the drag ends.
+        let skip_pty_resize = self.router.is_dragging_border()
             || self.panel_border_dragging
-            || self.file_tree_border_dragging
-            || self.resize_deferred_at.is_some();
-        if !is_dragging {
+            || self.file_tree_border_dragging;
+        if !skip_pty_resize {
             let content_top = self.pane_area_mode.content_top();
             let cell_size = self.cell_size();
             if cell_size.width > 0.0 {

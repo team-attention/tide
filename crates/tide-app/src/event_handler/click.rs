@@ -1,4 +1,4 @@
-use tide_core::{FileTreeSource, Rect, Renderer, SplitDirection, TerminalBackend, Vec2};
+use tide_core::{FileTreeSource, Rect, SplitDirection, TerminalBackend, Vec2};
 
 use crate::drag_drop::{DropDestination, HoverTarget};
 use crate::header::{HeaderHitAction, HeaderHitZone};
@@ -108,77 +108,74 @@ impl App {
         // Dock close, maximize, and preview toggle badges (checked before DockHandle
         // so clicks on badges in the tab bar aren't intercepted as handle drags)
         if let Some(panel_rect) = self.editor_panel_rect {
-            if let Some(renderer) = &self.renderer {
-                let cell_w = renderer.cell_size().width;
-                let tab_bar_y = panel_rect.y + PANE_CORNER_RADIUS;
-                let badge_gap = 6.0_f32;
+            let cs = self.cell_size();
+            let cell_w = cs.width;
+            let tab_bar_y = panel_rect.y + PANE_CORNER_RADIUS;
+            let badge_gap = 6.0_f32;
 
-                // Close button (far right)
-                let close_w = cell_w + BADGE_PADDING_H * 2.0;
-                let close_x = panel_rect.x + panel_rect.width - PANE_PADDING - close_w;
+            // Close button (far right)
+            let close_w = cell_w + BADGE_PADDING_H * 2.0;
+            let close_x = panel_rect.x + panel_rect.width - PANE_PADDING - close_w;
 
-                // Maximize button (left of close)
-                let max_w = cell_w + BADGE_PADDING_H * 2.0;
-                let max_x = close_x - badge_gap - max_w;
-                let max_rect = Rect::new(max_x, tab_bar_y, max_w, PANEL_TAB_HEIGHT);
-                if max_rect.contains(pos) {
-                    return Some(HoverTarget::DockMaximize);
-                }
+            // Maximize button (left of close)
+            let max_w = cell_w + BADGE_PADDING_H * 2.0;
+            let max_x = close_x - badge_gap - max_w;
+            let max_rect = Rect::new(max_x, tab_bar_y, max_w, PANEL_TAB_HEIGHT);
+            if max_rect.contains(pos) {
+                return Some(HoverTarget::DockMaximize);
+            }
 
-                // Dock preview toggle badge (left of maximize)
-                if let Some(active_id) = self.active_editor_tab() {
-                    if let Some(PaneKind::Editor(ep)) = self.panes.get(&active_id) {
-                        if ep.is_markdown() && !ep.diff_mode {
-                            let preview_text = if ep.preview_mode { "edit" } else { "preview" };
-                            let badge_w = preview_text.len() as f32 * cell_w + BADGE_PADDING_H * 2.0;
-                            let badge_x = max_x - BADGE_GAP - badge_w;
-                            let badge_rect = Rect::new(badge_x, tab_bar_y, badge_w, PANEL_TAB_HEIGHT);
-                            if badge_rect.contains(pos) {
-                                return Some(HoverTarget::DockPreviewToggle);
-                            }
+            // Dock preview toggle badge (left of maximize)
+            if let Some(active_id) = self.active_editor_tab() {
+                if let Some(PaneKind::Editor(ep)) = self.panes.get(&active_id) {
+                    if ep.is_markdown() && !ep.diff_mode {
+                        let preview_text = if ep.preview_mode { "edit" } else { "preview" };
+                        let badge_w = preview_text.len() as f32 * cell_w + BADGE_PADDING_H * 2.0;
+                        let badge_x = max_x - BADGE_GAP - badge_w;
+                        let badge_rect = Rect::new(badge_x, tab_bar_y, badge_w, PANEL_TAB_HEIGHT);
+                        if badge_rect.contains(pos) {
+                            return Some(HoverTarget::DockPreviewToggle);
                         }
                     }
                 }
+            }
 
-                // Browser nav bar hover targets
-                if let Some(active_id) = self.active_editor_tab() {
-                    if let Some(PaneKind::Browser(_bp)) = self.panes.get(&active_id) {
-                        let cell_height = cell_w; // square-ish cells, use same calc as chrome
-                        let cell_height_actual = renderer.cell_size().height;
-                        let _ = cell_height;
-                        let nav_h = (cell_height_actual * 1.5).round();
-                        let nav_y = panel_rect.y + PANEL_TAB_HEIGHT + 2.0;
-                        let nav_x = panel_rect.x + PANE_PADDING;
-                        let nav_w = panel_rect.width - PANE_PADDING * 2.0;
+            // Browser nav bar hover targets
+            if let Some(active_id) = self.active_editor_tab() {
+                if let Some(PaneKind::Browser(_bp)) = self.panes.get(&active_id) {
+                    let cell_height_actual = cs.height;
+                    let nav_h = (cell_height_actual * 1.5).round();
+                    let nav_y = panel_rect.y + PANEL_TAB_HEIGHT + 2.0;
+                    let nav_x = panel_rect.x + PANE_PADDING;
+                    let nav_w = panel_rect.width - PANE_PADDING * 2.0;
 
-                        if pos.y >= nav_y && pos.y <= nav_y + nav_h
-                            && pos.x >= nav_x && pos.x <= nav_x + nav_w
-                        {
-                            let mut cx = nav_x + 8.0;
-                            let btn_w = cell_w * 2.0;
+                    if pos.y >= nav_y && pos.y <= nav_y + nav_h
+                        && pos.x >= nav_x && pos.x <= nav_x + nav_w
+                    {
+                        let mut cx = nav_x + 8.0;
+                        let btn_w = cell_w * 2.0;
 
-                            // Back button
-                            if pos.x >= cx && pos.x < cx + btn_w {
-                                return Some(HoverTarget::BrowserBack);
-                            }
-                            cx += btn_w;
+                        // Back button
+                        if pos.x >= cx && pos.x < cx + btn_w {
+                            return Some(HoverTarget::BrowserBack);
+                        }
+                        cx += btn_w;
 
-                            // Forward button
-                            if pos.x >= cx && pos.x < cx + btn_w {
-                                return Some(HoverTarget::BrowserForward);
-                            }
-                            cx += btn_w;
+                        // Forward button
+                        if pos.x >= cx && pos.x < cx + btn_w {
+                            return Some(HoverTarget::BrowserForward);
+                        }
+                        cx += btn_w;
 
-                            // Refresh button
-                            if pos.x >= cx && pos.x < cx + btn_w {
-                                return Some(HoverTarget::BrowserRefresh);
-                            }
-                            cx += btn_w + 4.0;
+                        // Refresh button
+                        if pos.x >= cx && pos.x < cx + btn_w {
+                            return Some(HoverTarget::BrowserRefresh);
+                        }
+                        cx += btn_w + 4.0;
 
-                            // URL bar (rest of nav area)
-                            if pos.x >= cx {
-                                return Some(HoverTarget::BrowserUrlBar);
-                            }
+                        // URL bar (rest of nav area)
+                        if pos.x >= cx {
+                            return Some(HoverTarget::BrowserUrlBar);
                         }
                     }
                 }
@@ -243,37 +240,36 @@ impl App {
         // Stacked mode: [mode toggle] [maximize] [close] — right side controls
         if let PaneAreaMode::Stacked(_) = self.pane_area_mode {
             if let Some(&(_, rect)) = self.visual_pane_rects.first() {
-                if let Some(renderer) = &self.renderer {
-                    let cell_w = renderer.cell_size().width;
-                    let cell_h = renderer.cell_size().height;
-                    let content_right = rect.x + rect.width - PANE_PADDING;
-                    let close_w = cell_w + BADGE_PADDING_H * 2.0;
-                    let close_x = content_right - close_w;
-                    let badge_gap = 6.0_f32;
-                    let badge_pad = 6.0_f32;
-                    let badge_h = cell_h + 4.0;
+                let cs = self.cell_size();
+                let cell_w = cs.width;
+                let cell_h = cs.height;
+                let content_right = rect.x + rect.width - PANE_PADDING;
+                let close_w = cell_w + BADGE_PADDING_H * 2.0;
+                let close_x = content_right - close_w;
+                let badge_gap = 6.0_f32;
+                let badge_pad = 6.0_f32;
+                let badge_h = cell_h + 4.0;
 
-                    // Maximize button (between mode toggle and close)
-                    let max_badge_w = cell_w + badge_pad * 2.0;
-                    let max_badge_x = close_x - badge_gap - max_badge_w;
-                    let max_badge_y = rect.y + (TAB_BAR_HEIGHT - badge_h) / 2.0;
-                    if pos.x >= max_badge_x && pos.x <= max_badge_x + max_badge_w
-                        && pos.y >= max_badge_y && pos.y <= max_badge_y + badge_h
-                    {
-                        return Some(HoverTarget::PaneAreaMaximize);
-                    }
+                // Maximize button (between mode toggle and close)
+                let max_badge_w = cell_w + badge_pad * 2.0;
+                let max_badge_x = close_x - badge_gap - max_badge_w;
+                let max_badge_y = rect.y + (TAB_BAR_HEIGHT - badge_h) / 2.0;
+                if pos.x >= max_badge_x && pos.x <= max_badge_x + max_badge_w
+                    && pos.y >= max_badge_y && pos.y <= max_badge_y + badge_h
+                {
+                    return Some(HoverTarget::PaneAreaMaximize);
+                }
 
-                    // Mode toggle badge (leftmost of right-side controls)
-                    let mode_hint_len = 2;
-                    let mode_badge_chars = (1 + 1 + mode_hint_len) as f32;
-                    let mode_badge_w = mode_badge_chars * cell_w + badge_pad * 2.0;
-                    let mode_badge_x = max_badge_x - badge_gap - mode_badge_w;
-                    let mode_badge_y = rect.y + (TAB_BAR_HEIGHT - badge_h) / 2.0;
-                    if pos.x >= mode_badge_x && pos.x <= mode_badge_x + mode_badge_w
-                        && pos.y >= mode_badge_y && pos.y <= mode_badge_y + badge_h
-                    {
-                        return Some(HoverTarget::PaneModeToggle);
-                    }
+                // Mode toggle badge (leftmost of right-side controls)
+                let mode_hint_len = 2;
+                let mode_badge_chars = (1 + 1 + mode_hint_len) as f32;
+                let mode_badge_w = mode_badge_chars * cell_w + badge_pad * 2.0;
+                let mode_badge_x = max_badge_x - badge_gap - mode_badge_w;
+                let mode_badge_y = rect.y + (TAB_BAR_HEIGHT - badge_h) / 2.0;
+                if pos.x >= mode_badge_x && pos.x <= mode_badge_x + mode_badge_w
+                    && pos.y >= mode_badge_y && pos.y <= mode_badge_y + badge_h
+                {
+                    return Some(HoverTarget::PaneModeToggle);
                 }
             }
         }
@@ -317,28 +313,26 @@ impl App {
 
         // File tree entry
         if self.show_file_tree && self.file_tree_rect.is_some_and(|r| pos.x >= r.x && pos.x < r.x + r.width) {
-            if let Some(renderer) = &self.renderer {
-                let ft_rect = self.file_tree_rect.unwrap();
-                let cell_size = renderer.cell_size();
-                let line_height = cell_size.height * FILE_TREE_LINE_SPACING;
-                let content_y = ft_rect.y + PANE_CORNER_RADIUS;
-                if pos.y < content_y + FILE_TREE_HEADER_HEIGHT {
-                    return None;
-                }
-                let adjusted_y = pos.y - content_y - FILE_TREE_HEADER_HEIGHT;
-                let index = ((adjusted_y + self.file_tree_scroll) / line_height) as usize;
-                if let Some(tree) = &self.file_tree {
-                    let entries = tree.visible_entries();
-                    if index < entries.len() {
-                        return Some(HoverTarget::FileTreeEntry(index));
-                    }
+            let ft_rect = self.file_tree_rect.unwrap();
+            let cell_size = self.cell_size();
+            let line_height = cell_size.height * FILE_TREE_LINE_SPACING;
+            let content_y = ft_rect.y + PANE_CORNER_RADIUS;
+            if pos.y < content_y + FILE_TREE_HEADER_HEIGHT {
+                return None;
+            }
+            let adjusted_y = pos.y - content_y - FILE_TREE_HEADER_HEIGHT;
+            let index = ((adjusted_y + self.file_tree_scroll) / line_height) as usize;
+            if let Some(tree) = &self.file_tree {
+                let entries = tree.visible_entries();
+                if index < entries.len() {
+                    return Some(HoverTarget::FileTreeEntry(index));
                 }
             }
         }
 
         // Editor scrollbar hover (pane area or dock panel)
-        if let Some(renderer) = &self.renderer {
-            let cell_size = renderer.cell_size();
+        {
+            let cell_size = self.cell_size();
             // Check dock panel scrollbar
             if let (Some(active_id), Some(panel_rect)) = (self.active_editor_tab(), self.editor_panel_rect) {
                 if let Some(PaneKind::Editor(pane)) = self.panes.get(&active_id) {
