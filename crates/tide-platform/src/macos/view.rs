@@ -365,9 +365,12 @@ impl TideView {
     }
 
     fn mouse_pos(&self, event: &NSEvent) -> (f64, f64) {
+        // isFlipped == YES, so convertPoint:fromView:nil already returns
+        // top-down coordinates in the view's bounds space.  No manual
+        // y-flip needed.
         let point = unsafe { event.locationInWindow() };
-        let local: NSPoint = unsafe { msg_send![self, convertPoint: point, fromView: std::ptr::null::<NSView>()] };
-        (local.x, local.y)
+        let converted: NSPoint = unsafe { msg_send![self, convertPoint:point fromView:std::ptr::null::<NSView>()] };
+        (converted.x, converted.y)
     }
 
     fn backing_scale(&self) -> f64 {

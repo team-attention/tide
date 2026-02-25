@@ -168,7 +168,10 @@ impl App {
             PlatformEvent::Resized { width, height } => {
                 self.window_size = (width, height);
                 self.reconfigure_surface();
-                self.resize_deferred_at = Some(Instant::now() + Duration::from_millis(100));
+                // Defer ratio snapping during continuous resize (drag).
+                // PTY resize happens immediately via compute_layout() so
+                // terminal content reflows incrementally, not all-at-once.
+                self.resize_deferred_at = Some(Instant::now() + Duration::from_millis(50));
                 self.compute_layout();
                 self.ime_cursor_dirty = true;
                 self.needs_redraw = true;
@@ -193,6 +196,21 @@ impl App {
             PlatformEvent::Fullscreen(fs) => {
                 self.is_fullscreen = fs;
                 self.top_inset = if fs { 0.0 } else { TITLEBAR_HEIGHT };
+                // Clear deferred resize — the fullscreen animation Resized events
+                // set resize_deferred_at, but the animation is now complete.
+                // PTY must resize immediately to match the final window dimensions.
+                self.resize_deferred_at = None;
+
+                // The Resized event from setFrameSize: is often dropped due to
+                // re-entrancy (callback already borrowed when macOS resizes the
+                // view during the fullscreen transition).  Query the actual size
+                // from the window so we don't render with stale dimensions.
+                let (w, h) = window.inner_size();
+                if (w, h) != self.window_size {
+                    self.window_size = (w, h);
+                    self.reconfigure_surface();
+                }
+
                 self.compute_layout();
                 self.ime_cursor_dirty = true;
                 self.chrome_generation += 1;
