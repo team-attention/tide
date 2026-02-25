@@ -268,15 +268,9 @@ impl WgpuRenderer {
                 occlusion_query_set: None,
             });
 
-            // Draw order: grid rects → chrome rects → overlay rects → grid glyphs → chrome glyphs → overlay glyphs
-            pass.set_pipeline(&self.rect_pipeline);
-            pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-
-            if grid_rect_count > 0 {
-                pass.set_vertex_buffer(0, self.grid_rect_vb.slice(..));
-                pass.set_index_buffer(self.grid_rect_ib.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..grid_rect_count, 0, 0..1);
-            }
+            // Draw order: chrome rects → grid rects → overlay rects → chrome glyphs → grid glyphs → overlay glyphs
+            // Chrome rects (pane backgrounds, panel backgrounds) are drawn first so that
+            // grid cell backgrounds (e.g. INVERSE/standout for paste highlighting) show on top.
 
             // Chrome rects use the SDF rounded rect pipeline
             if chrome_rect_count > 0 {
@@ -285,9 +279,15 @@ impl WgpuRenderer {
                 pass.set_vertex_buffer(0, self.chrome_rect_vb.slice(..));
                 pass.set_index_buffer(self.chrome_rect_ib.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..chrome_rect_count, 0, 0..1);
-                // Restore rect pipeline for overlay
-                pass.set_pipeline(&self.rect_pipeline);
-                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+            }
+
+            pass.set_pipeline(&self.rect_pipeline);
+            pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+
+            if grid_rect_count > 0 {
+                pass.set_vertex_buffer(0, self.grid_rect_vb.slice(..));
+                pass.set_index_buffer(self.grid_rect_ib.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..grid_rect_count, 0, 0..1);
             }
 
             if overlay_rect_count > 0 {
@@ -300,16 +300,16 @@ impl WgpuRenderer {
             pass.set_bind_group(0, &self.uniform_bind_group, &[]);
             pass.set_bind_group(1, &self.atlas_bind_group, &[]);
 
-            if grid_glyph_count > 0 {
-                pass.set_vertex_buffer(0, self.grid_glyph_vb.slice(..));
-                pass.set_index_buffer(self.grid_glyph_ib.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..grid_glyph_count, 0, 0..1);
-            }
-
             if chrome_glyph_count > 0 {
                 pass.set_vertex_buffer(0, self.chrome_glyph_vb.slice(..));
                 pass.set_index_buffer(self.chrome_glyph_ib.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..chrome_glyph_count, 0, 0..1);
+            }
+
+            if grid_glyph_count > 0 {
+                pass.set_vertex_buffer(0, self.grid_glyph_vb.slice(..));
+                pass.set_index_buffer(self.grid_glyph_ib.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..grid_glyph_count, 0, 0..1);
             }
 
             if overlay_glyph_count > 0 {

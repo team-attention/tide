@@ -341,11 +341,6 @@ impl Terminal {
                 }
 
                 let mut fg_color = Self::convert_color(dark_mode, &fg, &self.palette_buf);
-                if dark_mode {
-                    fg_color = Self::ensure_dark_fg_contrast(fg_color);
-                } else {
-                    fg_color = Self::ensure_light_fg_contrast(fg_color);
-                }
                 let mut bg_color = Self::convert_color(dark_mode, &bg, &self.palette_buf);
                 let mut bg_is_default = matches!(bg, AnsiColor::Named(NamedColor::Background));
 
@@ -353,6 +348,14 @@ impl Terminal {
                 if flags.contains(CellFlags::INVERSE) {
                     std::mem::swap(&mut fg_color, &mut bg_color);
                     bg_is_default = false;
+                }
+
+                // Contrast-check the final fg color against the pane background,
+                // whether or not it was swapped by INVERSE above.
+                if dark_mode {
+                    fg_color = Self::ensure_dark_fg_contrast(fg_color);
+                } else {
+                    fg_color = Self::ensure_light_fg_contrast(fg_color);
                 }
 
                 let background = if bg_is_default {
@@ -624,6 +627,13 @@ impl Terminal {
     pub fn history_size(&self) -> usize {
         let term = self.term.lock();
         term.grid().history_size()
+    }
+
+    /// Check if the terminal has bracketed paste mode enabled.
+    /// When enabled, paste text should be wrapped with `\x1b[200~...\x1b[201~`.
+    pub fn is_bracketed_paste_mode(&self) -> bool {
+        let term = self.term.lock();
+        term.mode().contains(TermMode::BRACKETED_PASTE)
     }
 
     /// Set dark/light mode for the terminal color palette.
