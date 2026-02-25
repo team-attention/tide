@@ -148,7 +148,7 @@ impl Terminal {
     pub(crate) fn ensure_dark_fg_contrast(color: Color) -> Color {
         // Relative luminance of dark pane_bg ≈ (0.055, 0.055, 0.063)
         const BG_LUM: f32 = 0.056;
-        const MIN_CONTRAST: f32 = 3.0;
+        const MIN_CONTRAST: f32 = 4.5;
 
         let fg_lum = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
 

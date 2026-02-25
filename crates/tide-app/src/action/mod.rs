@@ -592,10 +592,24 @@ impl App {
                             if let Ok(mut clipboard) = arboard::Clipboard::new() {
                                 if let Ok(text) = clipboard.get_text() {
                                     if !text.is_empty() {
+                                        // Scroll to bottom so pasted text is visible
+                                        if pane.backend.display_offset() > 0 {
+                                            pane.backend.request_scroll_to_bottom();
+                                        }
+                                        let bracketed = pane.backend.is_bracketed_paste_mode();
                                         let mut data = Vec::new();
-                                        data.extend_from_slice(b"\x1b[200~");
+                                        if bracketed {
+                                            data.extend_from_slice(b"\x1b[200~");
+                                        }
                                         data.extend_from_slice(text.as_bytes());
-                                        data.extend_from_slice(b"\x1b[201~");
+                                        if bracketed {
+                                            data.extend_from_slice(b"\x1b[201~");
+                                            // Nudge shell to redraw and clear paste standout
+                                            // (left + right arrow = net-zero cursor move that
+                                            // triggers zsh/bash/fish to re-render without
+                                            // the INVERSE highlight on pasted text).
+                                            data.extend_from_slice(b"\x1b[D\x1b[C");
+                                        }
                                         pane.backend.write(&data);
                                         self.input_just_sent = true;
                                         self.input_sent_at = Some(Instant::now());
