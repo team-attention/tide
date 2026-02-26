@@ -178,7 +178,9 @@ impl EditorPane {
                     // For blank lines, use indent of nearest non-blank line above
                     if line_text.trim().is_empty() {
                         let mut level = 0usize;
-                        for prev_line in (0..abs_line).rev() {
+                        // Limit backward scan to avoid O(file_size) per blank line.
+                        let scan_start = abs_line.saturating_sub(100);
+                        for prev_line in (scan_start..abs_line).rev() {
                             if let Some(prev) = self.editor.buffer.line(prev_line) {
                                 if !prev.trim().is_empty() {
                                     level = prev.chars()
