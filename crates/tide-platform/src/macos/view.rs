@@ -19,7 +19,7 @@ use objc2_quartz_core::CAMetalLayer;
 
 use tide_core::{Key, Modifiers};
 
-use crate::{EventCallback, MouseButton, PlatformEvent};
+use crate::{EventCallback, MouseButton, PlatformEvent, PlatformWindow};
 
 // ──────────────────────────────────────────────
 // TideView — NSView subclass
@@ -414,6 +414,17 @@ declare_class!(
 
         #[method(windowDidBecomeKey:)]
         fn window_did_become_key(&self, _notification: &objc2_foundation::NSNotification) {
+            // Re-establish first responder immediately on the main thread.
+            // macOS may reset it to TideView (the initial first responder)
+            // when the window becomes key (e.g., app activation, alt-tab).
+            // Doing this synchronously avoids the async round-trip through
+            // the app thread, which would leave a gap where input is dropped.
+            let pane_id = super::LAST_IME_TARGET.load(std::sync::atomic::Ordering::Relaxed);
+            if pane_id != 0 {
+                super::app::with_main_window(|window| {
+                    window.focus_ime_proxy(pane_id);
+                });
+            }
             self.emit(PlatformEvent::Focused(true));
         }
 

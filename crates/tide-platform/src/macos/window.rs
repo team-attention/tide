@@ -227,6 +227,7 @@ impl PlatformWindow for MacosWindow {
     }
 
     fn focus_ime_proxy(&self, pane_id: u64) {
+        super::LAST_IME_TARGET.store(pane_id, std::sync::atomic::Ordering::Relaxed);
         let proxies = self.ime_proxies.borrow();
         if let Some(proxy) = proxies.get(&pane_id) {
             let responder: &objc2_app_kit::NSResponder = proxy;

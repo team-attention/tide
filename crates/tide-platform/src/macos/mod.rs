@@ -11,8 +11,14 @@ pub use window::MacosWindow;
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::atomic::AtomicU64;
 
 use crate::{EventCallback, PlatformEvent};
+
+/// Last IME target pane ID, updated by `focus_ime_proxy`.
+/// Used by `windowDidBecomeKey` to re-establish the first responder immediately
+/// on the main thread, without waiting for the app thread round-trip.
+pub(crate) static LAST_IME_TARGET: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
     /// Queue for events that arrive during re-entrancy (callback already borrowed).

@@ -50,6 +50,17 @@ impl MacosApp {
             cell.replace(Some(window));
         });
 
+        // Emit a synthetic event to trigger Phase 1 initialization immediately,
+        // before the run loop starts. Without this, Phase 1 may be delayed until
+        // the first event arrives from the run loop (e.g., windowDidBecomeKey),
+        // leaving TideView as the first responder. TideView's keyDown is a no-op,
+        // so any key presses before Phase 1 are silently dropped.
+        super::emit_event(
+            &callback,
+            crate::PlatformEvent::RedrawRequested,
+            "MacosApp::init",
+        );
+
         // activate() requires macOS 14.0+; keep deprecated variant for macOS 13 compat.
         #[allow(deprecated)]
         app.activateIgnoringOtherApps(true);
