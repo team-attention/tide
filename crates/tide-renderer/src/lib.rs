@@ -18,7 +18,7 @@ use tide_core::{Color, Rect, Renderer, Size, TextStyle, Vec2};
 
 use atlas::GlyphAtlas;
 use grid::PaneGridCache;
-use vertex::{ChromeRectVertex, GlyphVertex, RectVertex};
+use vertex::{ChromeRectVertex, GlyphVertex, GridBgInstance, GridGlyphInstance, RectVertex};
 
 // ──────────────────────────────────────────────
 // WgpuRenderer
@@ -47,22 +47,20 @@ pub struct WgpuRenderer {
     pub(crate) active_pane_cache: PaneGridCache,
     pub(crate) active_pane_id: Option<u64>,
 
-    // Cached grid layer — only rebuilt when grid content changes
-    pub(crate) grid_rect_vertices: Vec<RectVertex>,
-    pub(crate) grid_rect_indices: Vec<u32>,
-    pub(crate) grid_glyph_vertices: Vec<GlyphVertex>,
-    pub(crate) grid_glyph_indices: Vec<u32>,
+    // Instanced grid pipelines (GPU generates quad corners from vertex_index)
+    pub(crate) grid_bg_pipeline: wgpu::RenderPipeline,
+    pub(crate) grid_glyph_pipeline: wgpu::RenderPipeline,
+
+    // Cached grid layer — only rebuilt when grid content changes (instanced)
+    pub(crate) grid_bg_instances: Vec<GridBgInstance>,
+    pub(crate) grid_glyph_instances: Vec<GridGlyphInstance>,
     pub(crate) grid_needs_upload: bool,
 
-    // Grid GPU buffers
-    pub(crate) grid_rect_vb: wgpu::Buffer,
-    pub(crate) grid_rect_ib: wgpu::Buffer,
-    pub(crate) grid_glyph_vb: wgpu::Buffer,
-    pub(crate) grid_glyph_ib: wgpu::Buffer,
-    pub(crate) grid_rect_vb_capacity: usize,
-    pub(crate) grid_rect_ib_capacity: usize,
-    pub(crate) grid_glyph_vb_capacity: usize,
-    pub(crate) grid_glyph_ib_capacity: usize,
+    // Grid GPU instance buffers
+    pub(crate) grid_bg_inst_buf: wgpu::Buffer,
+    pub(crate) grid_glyph_inst_buf: wgpu::Buffer,
+    pub(crate) grid_bg_inst_buf_capacity: usize,
+    pub(crate) grid_glyph_inst_buf_capacity: usize,
 
     // Chrome layer — cached for panel backgrounds and file tree
     pub(crate) chrome_rect_vertices: Vec<ChromeRectVertex>,

@@ -115,3 +115,94 @@ impl GlyphVertex {
         ],
     };
 }
+
+// ── Instanced grid vertex types ──
+// GPU generates quad corners from vertex_index (0..5); one instance = one cell.
+
+/// Instance data for a grid cell background (colored rect).
+/// 32 bytes per instance (vs ~120 bytes per indexed quad = 3.75x reduction).
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct GridBgInstance {
+    pub position: [f32; 2],  // top-left corner (physical px)
+    pub size: [f32; 2],      // width, height (physical px)
+    pub color: [f32; 4],     // RGBA
+}
+
+impl GridBgInstance {
+    pub const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
+        array_stride: std::mem::size_of::<GridBgInstance>() as wgpu::BufferAddress,
+        step_mode: wgpu::VertexStepMode::Instance,
+        attributes: &[
+            // position
+            wgpu::VertexAttribute {
+                offset: 0,
+                shader_location: 0,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            // size
+            wgpu::VertexAttribute {
+                offset: 8,
+                shader_location: 1,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            // color
+            wgpu::VertexAttribute {
+                offset: 16,
+                shader_location: 2,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+        ],
+    };
+}
+
+/// Instance data for a grid glyph (textured rect from atlas).
+/// 48 bytes per instance (vs ~136 bytes per indexed quad = 2.8x reduction).
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct GridGlyphInstance {
+    pub position: [f32; 2],  // top-left corner (physical px)
+    pub size: [f32; 2],      // width, height (physical px)
+    pub uv_min: [f32; 2],    // atlas UV min
+    pub uv_max: [f32; 2],    // atlas UV max
+    pub color: [f32; 4],     // RGBA
+}
+
+impl GridGlyphInstance {
+    pub const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
+        array_stride: std::mem::size_of::<GridGlyphInstance>() as wgpu::BufferAddress,
+        step_mode: wgpu::VertexStepMode::Instance,
+        attributes: &[
+            // position
+            wgpu::VertexAttribute {
+                offset: 0,
+                shader_location: 0,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            // size
+            wgpu::VertexAttribute {
+                offset: 8,
+                shader_location: 1,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            // uv_min
+            wgpu::VertexAttribute {
+                offset: 16,
+                shader_location: 2,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            // uv_max
+            wgpu::VertexAttribute {
+                offset: 24,
+                shader_location: 3,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            // color
+            wgpu::VertexAttribute {
+                offset: 32,
+                shader_location: 4,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+        ],
+    };
+}

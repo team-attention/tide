@@ -5,8 +5,8 @@ use tide_core::{Color, Size};
 
 use crate::atlas::GlyphAtlas;
 use crate::grid::PaneGridCache;
-use crate::shaders::{CHROME_RECT_SHADER, GLYPH_SHADER, RECT_SHADER};
-use crate::vertex::{ChromeRectVertex, GlyphVertex, RectVertex};
+use crate::shaders::{CHROME_RECT_SHADER, GLYPH_SHADER, GRID_BG_INSTANCED_SHADER, GRID_GLYPH_INSTANCED_SHADER, RECT_SHADER};
+use crate::vertex::{ChromeRectVertex, GlyphVertex, GridBgInstance, GridGlyphInstance, RectVertex};
 use crate::WgpuRenderer;
 
 impl WgpuRenderer {
@@ -241,6 +241,100 @@ impl WgpuRenderer {
             cache: None,
         });
 
+        // --- Instanced grid bg pipeline ---
+        let grid_bg_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("grid_bg_instanced_shader"),
+            source: wgpu::ShaderSource::Wgsl(GRID_BG_INSTANCED_SHADER.into()),
+        });
+
+        let grid_bg_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("grid_bg_pipeline_layout"),
+                bind_group_layouts: &[&uniform_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let grid_bg_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("grid_bg_pipeline"),
+            layout: Some(&grid_bg_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &grid_bg_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[GridBgInstance::LAYOUT],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &grid_bg_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        // --- Instanced grid glyph pipeline ---
+        let grid_glyph_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("grid_glyph_instanced_shader"),
+            source: wgpu::ShaderSource::Wgsl(GRID_GLYPH_INSTANCED_SHADER.into()),
+        });
+
+        let grid_glyph_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("grid_glyph_pipeline_layout"),
+                bind_group_layouts: &[&uniform_bind_group_layout, &atlas_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let grid_glyph_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("grid_glyph_pipeline"),
+            layout: Some(&grid_glyph_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &grid_glyph_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[GridGlyphInstance::LAYOUT],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &grid_glyph_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
         // --- Font system ---
         let mut font_system = cosmic_text::FontSystem::new();
         let swash_cache = cosmic_text::SwashCache::new();
@@ -266,6 +360,8 @@ impl WgpuRenderer {
             rect_pipeline,
             chrome_rounded_pipeline,
             glyph_pipeline,
+            grid_bg_pipeline,
+            grid_glyph_pipeline,
             uniform_buffer,
             uniform_bind_group,
             atlas,
@@ -276,20 +372,14 @@ impl WgpuRenderer {
             pane_grid_caches: HashMap::new(),
             active_pane_cache: PaneGridCache::default(),
             active_pane_id: None,
-            // Grid layer (cached)
-            grid_rect_vertices: Vec::with_capacity(8192),
-            grid_rect_indices: Vec::with_capacity(12288),
-            grid_glyph_vertices: Vec::with_capacity(16384),
-            grid_glyph_indices: Vec::with_capacity(24576),
+            // Grid layer (instanced)
+            grid_bg_instances: Vec::with_capacity(4096),
+            grid_glyph_instances: Vec::with_capacity(8192),
             grid_needs_upload: true,
-            grid_rect_vb: create_buf("grid_rect_vb", vb_usage),
-            grid_rect_ib: create_buf("grid_rect_ib", ib_usage),
-            grid_glyph_vb: create_buf("grid_glyph_vb", vb_usage),
-            grid_glyph_ib: create_buf("grid_glyph_ib", ib_usage),
-            grid_rect_vb_capacity: initial_buf_size as usize,
-            grid_rect_ib_capacity: initial_buf_size as usize,
-            grid_glyph_vb_capacity: initial_buf_size as usize,
-            grid_glyph_ib_capacity: initial_buf_size as usize,
+            grid_bg_inst_buf: create_buf("grid_bg_inst_buf", vb_usage),
+            grid_glyph_inst_buf: create_buf("grid_glyph_inst_buf", vb_usage),
+            grid_bg_inst_buf_capacity: initial_buf_size as usize,
+            grid_glyph_inst_buf_capacity: initial_buf_size as usize,
             // Chrome layer (cached for borders and file tree)
             chrome_rect_vertices: Vec::with_capacity(4096),
             chrome_rect_indices: Vec::with_capacity(6144),

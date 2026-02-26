@@ -292,6 +292,12 @@ struct App {
     pub(crate) drawable_wait_us: u64,
 }
 
+// Safety: App contains raw pointers (content_view_ptr, window_ptr) and browser
+// WebViewHandles that are not inherently Send. These are only used for webview
+// management which will be dispatched back to the main thread via WindowCommand.
+// All other fields (wgpu resources, channels, atomics) are Send-safe.
+unsafe impl Send for App {}
+
 impl App {
     fn new() -> Self {
         Self {
@@ -584,8 +590,36 @@ fn main() {
 
     env_logger::init();
 
+    // ── Channels ──────────────────────────────────────────────────────
+    // event channel: main thread → app thread (platform events + wake signals)
+    // command channel: app thread → main thread (window mutations)
+    let (event_tx, event_rx) = std::sync::mpsc::channel::<event_loop::AppEvent>();
+    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<tide_platform::WindowCommand>();
+
+    // ── Wakers ────────────────────────────────────────────────────────
+    // Main thread waker: posts NSEvent + triggerRedraw to wake the main run loop
+    // and cause the callback to fire (which drains window commands).
+    let main_waker = tide_platform::macos::MacosApp::create_waker();
+
+    // Combined waker for background threads (PTY, file watcher, render thread):
+    // wakes both the app thread (via event channel) and the main thread (via NSEvent).
+    let waker_tx = std::sync::Arc::new(std::sync::Mutex::new(event_tx.clone()));
+    let combined_waker: tide_platform::WakeCallback = std::sync::Arc::new({
+        let main_waker = main_waker.clone();
+        let waker_tx = waker_tx.clone();
+        move || {
+            let _ = waker_tx.lock().unwrap().send(event_loop::AppEvent::Wake);
+            main_waker();
+        }
+    });
+
+    // ── WindowProxy ──────────────────────────────────────────────────
+    // App thread uses this to send commands back to the main thread.
+    let window_proxy = tide_platform::WindowProxy::new(cmd_tx, main_waker.clone());
+
+    // ── App setup ────────────────────────────────────────────────────
     let mut app = App::new();
-    app.event_loop_waker = Some(tide_platform::macos::MacosApp::create_waker());
+    app.event_loop_waker = Some(combined_waker);
 
     // Initialize keybinding map from saved settings
     if !app.settings.keybindings.is_empty() {
@@ -609,10 +643,61 @@ fn main() {
         transparent_titlebar: true,
     };
 
+    // ── Phase 1 handoff state ────────────────────────────────────────
+    // Shared between the main thread callback and Phase 1 initialization.
+    // After Phase 1, the App + event_rx + proxy are moved to the app thread.
+    let init_state = std::sync::Arc::new(std::sync::Mutex::new(Some((
+        app,
+        event_rx,
+        window_proxy.clone(),
+    ))));
+    let init_state_cb = init_state.clone();
+    let initialized = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let initialized_cb = initialized.clone();
+
+    // ── Run the macOS event loop ─────────────────────────────────────
+    // Phase 1: first event triggers GPU init on main thread, then spawns app thread.
+    // Phase 2: all subsequent events are forwarded to the app thread.
     tide_platform::macos::MacosApp::run(
         config,
         Box::new(move |event, window| {
-            app.handle_platform_event(event, window);
+            // Phase 1: one-time initialization (main thread)
+            if !initialized_cb.load(std::sync::atomic::Ordering::Acquire) {
+                if let Some((mut app, rx, proxy)) = init_state_cb.lock().unwrap().take() {
+                    // GPU init, session restore, pane creation (needs real window)
+                    app.init_phase1(window);
+
+                    // Sync IME proxies using WindowProxy (commands go to cmd_tx)
+                    app.sync_ime_proxies(&proxy);
+                    app.compute_layout();
+
+                    // Drain any window commands generated during init
+                    while let Ok(cmd) = cmd_rx.try_recv() {
+                        tide_platform::execute_window_command(window, cmd);
+                    }
+
+                    // Spawn the app thread
+                    std::thread::Builder::new()
+                        .name("app-thread".into())
+                        .spawn(move || {
+                            app.app_thread_run(rx, proxy);
+                        })
+                        .expect("failed to spawn app thread");
+
+                    initialized_cb.store(true, std::sync::atomic::Ordering::Release);
+                }
+                return;
+            }
+
+            // Phase 2: drain commands FIRST so IME proxy focus etc. execute
+            // before macOS dispatches the next event to first responder.
+            while let Ok(cmd) = cmd_rx.try_recv() {
+                tide_platform::execute_window_command(window, cmd);
+            }
+            // Forward event to app thread
+            if !matches!(event, tide_platform::PlatformEvent::RedrawRequested) {
+                let _ = event_tx.send(event_loop::AppEvent::Platform(event));
+            }
         }),
     );
 }
