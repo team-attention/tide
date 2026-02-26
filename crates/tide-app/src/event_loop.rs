@@ -398,6 +398,8 @@ impl App {
     /// Commit text directly to a specific pane (terminal write or editor insert).
     fn commit_text_to_pane(&mut self, pane_id: tide_core::PaneId, text: &str) {
         use crate::pane::PaneKind;
+        // Compute visible size before mutable borrow of panes
+        let editor_size = self.visible_editor_size(pane_id);
         match self.panes.get_mut(&pane_id) {
             Some(PaneKind::Terminal(pane)) => {
                 pane.backend.write(text.as_bytes());
@@ -414,27 +416,7 @@ impl App {
                         pane.editor.handle_action(action);
                     }
                     // Ensure cursor stays visible after editing
-                    let cs = self.cached_cell_size;
-                    let content_top = self.pane_area_mode.content_top();
-                    let (visible_rows, visible_cols) = {
-                        let tree_rect = self.visual_pane_rects.iter()
-                            .find(|(pid, _)| *pid == pane_id)
-                            .map(|(_, r)| *r);
-                        if let Some(r) = tree_rect {
-                            let rows = ((r.height - content_top - crate::theme::PANE_PADDING) / cs.height).floor() as usize;
-                            let gutter_width = crate::editor_pane::GUTTER_WIDTH_CELLS as f32 * cs.width;
-                            let cols = ((r.width - 2.0 * crate::theme::PANE_PADDING - 2.0 * gutter_width) / cs.width).floor() as usize;
-                            (rows.max(1), cols.max(1))
-                        } else if let Some(pr) = self.editor_panel_rect {
-                            let content_height = (pr.height - crate::theme::PANE_PADDING - crate::theme::PANEL_TAB_HEIGHT - crate::theme::PANE_GAP - crate::theme::PANE_PADDING).max(1.0);
-                            let rows = (content_height / cs.height).floor() as usize;
-                            let gutter_width = crate::editor_pane::GUTTER_WIDTH_CELLS as f32 * cs.width;
-                            let cols = ((pr.width - 2.0 * crate::theme::PANE_PADDING - 2.0 * gutter_width) / cs.width).floor() as usize;
-                            (rows.max(1), cols.max(1))
-                        } else {
-                            (30, 80)
-                        }
-                    };
+                    let (visible_rows, visible_cols) = editor_size;
                     pane.editor.ensure_cursor_visible(visible_rows);
                     pane.editor.ensure_cursor_visible_h(visible_cols);
                     self.pane_generations.remove(&pane_id);

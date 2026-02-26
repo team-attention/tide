@@ -116,13 +116,9 @@ impl EditorState {
                     String::new()
                 };
                 let new_pos = self.buffer.insert_newline(self.cursor.position);
-                if !indent.is_empty() {
-                    // Insert the indent on the new line as a single text insert (one undo entry)
-                    let end_pos = self.buffer.insert_text(new_pos, &indent);
-                    self.cursor.set_position(end_pos);
-                } else {
-                    self.cursor.set_position(new_pos);
-                }
+                // Insert the indent on the new line (handles empty string gracefully)
+                let end_pos = self.buffer.insert_text(new_pos, &indent);
+                self.cursor.set_position(end_pos);
                 self.generation += 1;
             }
             EditorAction::MoveUp => self.cursor.move_up(&self.buffer),

@@ -92,6 +92,30 @@ impl App {
         }
     }
 
+    /// Compute visible editor rows and columns for a given pane.
+    /// Used by text routing and IME commit paths to keep cursor visible.
+    pub(crate) fn visible_editor_size(&self, pane_id: tide_core::PaneId) -> (usize, usize) {
+        let cs = self.cached_cell_size;
+        let content_top = self.pane_area_mode.content_top();
+        let tree_rect = self.visual_pane_rects.iter()
+            .find(|(pid, _)| *pid == pane_id)
+            .map(|(_, r)| *r);
+        if let Some(r) = tree_rect {
+            let rows = ((r.height - content_top - crate::theme::PANE_PADDING) / cs.height).floor() as usize;
+            let gutter_width = crate::editor_pane::GUTTER_WIDTH_CELLS as f32 * cs.width;
+            let cols = ((r.width - 2.0 * crate::theme::PANE_PADDING - 2.0 * gutter_width) / cs.width).floor() as usize;
+            (rows.max(1), cols.max(1))
+        } else if let Some(pr) = self.editor_panel_rect {
+            let content_height = (pr.height - crate::theme::PANE_PADDING - crate::theme::PANEL_TAB_HEIGHT - crate::theme::PANE_GAP - crate::theme::PANE_PADDING).max(1.0);
+            let rows = (content_height / cs.height).floor() as usize;
+            let gutter_width = crate::editor_pane::GUTTER_WIDTH_CELLS as f32 * cs.width;
+            let cols = ((pr.width - 2.0 * crate::theme::PANE_PADDING - 2.0 * gutter_width) / cs.width).floor() as usize;
+            (rows.max(1), cols.max(1))
+        } else {
+            (30, 80)
+        }
+    }
+
     /// Route a text string to the current input target.
     /// Handles all side effects (chrome_generation, input_sent_at, scroll-to-bottom, etc.).
     pub(crate) fn send_text_to_target(&mut self, text: &str) {
@@ -177,6 +201,8 @@ impl App {
                         return;
                     }
                 }
+                // Compute visible size before mutable borrow of panes
+                let editor_size = self.visible_editor_size(id);
                 match self.panes.get_mut(&id) {
                     Some(PaneKind::Terminal(pane)) => {
                         if pane.backend.display_offset() > 0 {
@@ -204,27 +230,7 @@ impl App {
                             pane.editor.handle_action(action);
                         }
                         // Ensure cursor stays visible after editing (matches keybinding path)
-                        let cs = self.cached_cell_size;
-                        let content_top = self.pane_area_mode.content_top();
-                        let (visible_rows, visible_cols) = {
-                            let tree_rect = self.visual_pane_rects.iter()
-                                .find(|(pid, _)| *pid == id)
-                                .map(|(_, r)| *r);
-                            if let Some(r) = tree_rect {
-                                let rows = ((r.height - content_top - crate::theme::PANE_PADDING) / cs.height).floor() as usize;
-                                let gutter_width = crate::editor_pane::GUTTER_WIDTH_CELLS as f32 * cs.width;
-                                let cols = ((r.width - 2.0 * crate::theme::PANE_PADDING - 2.0 * gutter_width) / cs.width).floor() as usize;
-                                (rows.max(1), cols.max(1))
-                            } else if let Some(pr) = self.editor_panel_rect {
-                                let content_height = (pr.height - crate::theme::PANE_PADDING - crate::theme::PANEL_TAB_HEIGHT - crate::theme::PANE_GAP - crate::theme::PANE_PADDING).max(1.0);
-                                let rows = (content_height / cs.height).floor() as usize;
-                                let gutter_width = crate::editor_pane::GUTTER_WIDTH_CELLS as f32 * cs.width;
-                                let cols = ((pr.width - 2.0 * crate::theme::PANE_PADDING - 2.0 * gutter_width) / cs.width).floor() as usize;
-                                (rows.max(1), cols.max(1))
-                            } else {
-                                (30, 80)
-                            }
-                        };
+                        let (visible_rows, visible_cols) = editor_size;
                         pane.editor.ensure_cursor_visible(visible_rows);
                         pane.editor.ensure_cursor_visible_h(visible_cols);
                         // Redraw tab label when modified indicator changes
