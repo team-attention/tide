@@ -131,20 +131,19 @@ declare_class!(
         }
 
         /// On modifier changes (including Caps Lock input method toggle),
-        /// commit any active preedit, clear the virtual text buffer, and
-        /// prime the NSTextInputContext by cycling through a setMarkedText/
-        /// unmarkText sequence. The priming nudges the context's internal
-        /// state so the Korean IME's inline composition works reliably
-        /// after an input method switch.
+        /// clear the preedit overlay and virtual text buffer, then prime the
+        /// NSTextInputContext. The deactivating IME will call `insertText:`
+        /// to commit any composing text — we must NOT commit it manually
+        /// here, or the text gets committed twice (the IME commit + ours).
         #[method(flagsChanged:)]
         fn flags_changed(&self, event: &NSEvent) {
-            // Commit any in-progress preedit so composing text isn't lost
-            // when the input method deactivates.
+            // Clear the preedit overlay immediately (visual feedback).
+            // Don't manually commit the composing text — the deactivating
+            // IME will call insertText: to do that.
             {
-                let preedit = self.ivars().marked_text.borrow().clone();
-                if !preedit.is_empty() {
-                    self.ivars().marked_text.borrow_mut().clear();
-                    self.emit(PlatformEvent::ImeCommit(preedit));
+                let had_preedit = !self.ivars().marked_text.borrow().is_empty();
+                self.ivars().marked_text.borrow_mut().clear();
+                if had_preedit {
                     self.emit(PlatformEvent::ImePreedit {
                         text: String::new(),
                         cursor: None,
