@@ -77,13 +77,8 @@ impl App {
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
             };
 
-            // Process the received event
-            if let Some(AppEvent::Platform(event)) = event {
-                self.handle_platform_event(event, &window);
-            }
-
-            // Drain all pending events (batch processing for throughput)
-            while let Ok(app_event) = event_rx.try_recv() {
+            // Process the received event and drain the queue
+            for app_event in event.into_iter().chain(event_rx.try_iter()) {
                 if let AppEvent::Platform(event) = app_event {
                     self.handle_platform_event(event, &window);
                 }
