@@ -6,7 +6,7 @@
 
 **A GPU-rendered terminal workspace for macOS**
 
-[![Release](https://img.shields.io/github/v/release/eatnug/tide?style=flat-square&color=blue)](https://github.com/eatnug/tide/releases)
+[![Release](https://img.shields.io/github/v/release/team-attention/tide?style=flat-square&color=blue)](https://github.com/team-attention/tide/releases)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat-square)
 ![Rust](https://img.shields.io/badge/rust-2021-orange?style=flat-square)
@@ -42,7 +42,7 @@ Customizable via `~/.config/tide/settings.json`.
 
 ## Install
 
-Download the latest `.dmg` from [Releases](https://github.com/eatnug/tide/releases).
+Download the latest `.dmg` from [Releases](https://github.com/team-attention/tide/releases).
 
 ## Build from Source
 
