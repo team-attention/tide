@@ -66,7 +66,13 @@ pub enum PlatformEvent {
     Focused(bool),
     CloseRequested,
     RedrawRequested,
-    Fullscreen(bool),
+    Fullscreen {
+        is_fullscreen: bool,
+        /// Current window inner size at the time of the fullscreen transition.
+        /// Included so the app thread doesn't need to query the window.
+        width: u32,
+        height: u32,
+    },
     /// The window's occlusion state changed (fully obscured or visible again).
     Occluded(bool),
 
@@ -188,3 +194,106 @@ pub type EventCallback = Box<dyn FnMut(PlatformEvent, &dyn PlatformWindow)>;
 /// Callback to wake the event loop from a background thread.
 /// Uses Arc so it can be cloned and sent to multiple background threads.
 pub type WakeCallback = std::sync::Arc<dyn Fn() + Send + Sync + 'static>;
+
+// ──────────────────────────────────────────────
+// Window commands (app thread → main thread)
+// ──────────────────────────────────────────────
+
+/// Commands that the app thread sends to the main thread for execution.
+/// These wrap all `PlatformWindow` methods that mutate UI state.
+#[derive(Debug)]
+pub enum WindowCommand {
+    RequestRedraw,
+    ShowWindow,
+    SetFullscreen(bool),
+    SetCursorIcon(CursorIcon),
+    CreateImeProxy(u64),
+    RemoveImeProxy(u64),
+    FocusImeProxy(u64),
+    SetImeCursorArea {
+        pane_id: u64,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+    },
+}
+
+/// Execute a `WindowCommand` on the main thread using the actual window.
+pub fn execute_window_command(window: &dyn PlatformWindow, cmd: WindowCommand) {
+    match cmd {
+        WindowCommand::RequestRedraw => window.request_redraw(),
+        WindowCommand::ShowWindow => window.show_window(),
+        WindowCommand::SetFullscreen(fs) => window.set_fullscreen(fs),
+        WindowCommand::SetCursorIcon(icon) => window.set_cursor_icon(icon),
+        WindowCommand::CreateImeProxy(id) => window.create_ime_proxy(id),
+        WindowCommand::RemoveImeProxy(id) => window.remove_ime_proxy(id),
+        WindowCommand::FocusImeProxy(id) => window.focus_ime_proxy(id),
+        WindowCommand::SetImeCursorArea { pane_id, x, y, w, h } => {
+            window.set_ime_proxy_cursor_area(pane_id, x, y, w, h);
+        }
+    }
+}
+
+// ──────────────────────────────────────────────
+// Window proxy (Send, for app thread)
+// ──────────────────────────────────────────────
+
+/// A thread-safe proxy for sending window commands from the app thread.
+/// Commands are queued and executed on the main thread.
+#[derive(Clone)]
+pub struct WindowProxy {
+    cmd_tx: std::sync::mpsc::Sender<WindowCommand>,
+    waker: WakeCallback,
+}
+
+impl WindowProxy {
+    pub fn new(
+        cmd_tx: std::sync::mpsc::Sender<WindowCommand>,
+        waker: WakeCallback,
+    ) -> Self {
+        Self { cmd_tx, waker }
+    }
+
+    fn send(&self, cmd: WindowCommand) {
+        let _ = self.cmd_tx.send(cmd);
+    }
+
+    /// Send commands and wake the main thread to execute them.
+    fn send_and_wake(&self, cmd: WindowCommand) {
+        self.send(cmd);
+        (self.waker)();
+    }
+
+    pub fn request_redraw(&self) {
+        self.send_and_wake(WindowCommand::RequestRedraw);
+    }
+
+    pub fn show_window(&self) {
+        self.send_and_wake(WindowCommand::ShowWindow);
+    }
+
+    pub fn set_fullscreen(&self, fullscreen: bool) {
+        self.send_and_wake(WindowCommand::SetFullscreen(fullscreen));
+    }
+
+    pub fn set_cursor_icon(&self, icon: CursorIcon) {
+        self.send(WindowCommand::SetCursorIcon(icon));
+    }
+
+    pub fn create_ime_proxy(&self, pane_id: u64) {
+        self.send_and_wake(WindowCommand::CreateImeProxy(pane_id));
+    }
+
+    pub fn remove_ime_proxy(&self, pane_id: u64) {
+        self.send_and_wake(WindowCommand::RemoveImeProxy(pane_id));
+    }
+
+    pub fn focus_ime_proxy(&self, pane_id: u64) {
+        self.send_and_wake(WindowCommand::FocusImeProxy(pane_id));
+    }
+
+    pub fn set_ime_proxy_cursor_area(&self, pane_id: u64, x: f64, y: f64, w: f64, h: f64) {
+        self.send(WindowCommand::SetImeCursorArea { pane_id, x, y, w, h });
+    }
+}

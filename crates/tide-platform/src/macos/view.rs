@@ -12,7 +12,7 @@ use objc2::{
 use objc2_foundation::MainThreadMarker;
 use objc2_app_kit::{
     NSEvent, NSEventModifierFlags, NSTrackingArea,
-    NSTrackingAreaOptions, NSView,
+    NSTrackingAreaOptions, NSView, NSWindow,
 };
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use objc2_quartz_core::CAMetalLayer;
@@ -423,13 +423,15 @@ declare_class!(
         }
 
         #[method(windowDidEnterFullScreen:)]
-        fn window_did_enter_full_screen(&self, _notification: &objc2_foundation::NSNotification) {
-            self.emit(PlatformEvent::Fullscreen(true));
+        fn window_did_enter_full_screen(&self, notification: &objc2_foundation::NSNotification) {
+            let (w, h) = Self::window_size_from_notification(notification);
+            self.emit(PlatformEvent::Fullscreen { is_fullscreen: true, width: w, height: h });
         }
 
         #[method(windowDidExitFullScreen:)]
-        fn window_did_exit_full_screen(&self, _notification: &objc2_foundation::NSNotification) {
-            self.emit(PlatformEvent::Fullscreen(false));
+        fn window_did_exit_full_screen(&self, notification: &objc2_foundation::NSNotification) {
+            let (w, h) = Self::window_size_from_notification(notification);
+            self.emit(PlatformEvent::Fullscreen { is_fullscreen: false, width: w, height: h });
         }
 
         #[method(windowDidChangeOcclusionState:)]
@@ -468,6 +470,23 @@ impl TideWindowDelegate {
 
     fn emit(&self, event: PlatformEvent) {
         super::emit_event(&self.ivars().callback, event, "TideWindowDelegate");
+    }
+
+    /// Extract the window's content view size from a notification.
+    fn window_size_from_notification(notification: &objc2_foundation::NSNotification) -> (u32, u32) {
+        unsafe {
+            let obj = notification.object();
+            if let Some(obj) = obj {
+                let window: &NSWindow = msg_send![&*obj, self];
+                let view: Option<Retained<NSView>> = msg_send_id![window, contentView];
+                if let Some(view) = view {
+                    let bounds: NSRect = msg_send![&*view, bounds];
+                    let backing: NSSize = msg_send![&*view, convertSizeToBacking: bounds.size];
+                    return (backing.width as u32, backing.height as u32);
+                }
+            }
+        }
+        (0, 0)
     }
 }
 

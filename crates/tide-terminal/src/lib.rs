@@ -1,5 +1,13 @@
-// Terminal backend implementation (Stream B)
+// Terminal backend implementation
 // Implements tide_core::TerminalBackend using alacritty_terminal
+//
+// Threading model:
+//   PTY Thread (alacritty EventLoop) — reads PTY, parses VT, updates Term state
+//   Sync Thread — copies grid state from Term, converts colors, produces snapshots
+//   Main Thread — swaps in latest snapshot, renders, handles input
+//
+// The sync thread decouples expensive grid synchronization from the main thread,
+// so input events are never blocked by terminal output processing.
 
 use std::borrow::Cow;
 use std::path::PathBuf;
@@ -54,15 +62,31 @@ impl Dimensions for TermDimensions {
     }
 }
 
+// ──────────────────────────────────────────────
+// Shared snapshot: exchange point between sync thread and main thread
+// ──────────────────────────────────────────────
+
+struct SharedSnapshot {
+    grid: TerminalGrid,
+    inverse_cursor: Option<(u16, u16)>,
+    url_ranges: Vec<Vec<(usize, usize)>>,
+    generation: u64,
+    cursor: CursorState,
+}
+
+// ──────────────────────────────────────────────
+// Event listener (PTY thread → sync thread signaling)
+// ──────────────────────────────────────────────
+
 /// Event listener that sets a dirty flag when the terminal has new output,
-/// and forwards PtyWrite events back to the PTY (needed for DSR/CPR responses).
+/// forwards PtyWrite events back to the PTY, and wakes the sync thread.
 #[derive(Clone)]
 struct TermEventListener {
     dirty: Arc<AtomicBool>,
     /// Lazily initialized after EventLoop creation so PtyWrite can be forwarded.
     pty_writer: Arc<Mutex<Option<Notifier>>>,
-    /// Optional callback to wake the event loop when new output arrives.
-    waker: Arc<Mutex<Option<Box<dyn Fn() + Send>>>>,
+    /// Handle to the grid sync thread — unparked when new output arrives.
+    sync_thread: Arc<Mutex<Option<std::thread::Thread>>>,
 }
 
 impl EventListener for TermEventListener {
@@ -75,191 +99,57 @@ impl EventListener for TermEventListener {
             }
         }
         self.dirty.store(true, Ordering::Relaxed);
-        if let Ok(guard) = self.waker.lock() {
-            if let Some(f) = guard.as_ref() {
-                f();
+        // Wake the sync thread to process new output
+        if let Ok(guard) = self.sync_thread.lock() {
+            if let Some(ref thread) = *guard {
+                thread.unpark();
             }
         }
     }
 }
 
-/// Terminal backend using alacritty_terminal for PTY management and terminal emulation.
-pub struct Terminal {
-    /// The alacritty terminal emulator state, wrapped in a FairMutex for thread safety
+// ──────────────────────────────────────────────
+// GridSyncer: owns all state for grid synchronization (runs on sync thread)
+// ──────────────────────────────────────────────
+
+struct GridSyncer {
     term: Arc<FairMutex<Term<TermEventListener>>>,
-    /// Notifier to send messages to the PTY event loop
-    notifier: Notifier,
-    /// Cached grid for the trait's grid() -> &TerminalGrid method
-    cached_grid: TerminalGrid,
-    /// Detected current working directory (from OSC 7 or fallback)
-    current_dir: Option<PathBuf>,
-    /// Current column count
-    cols: u16,
-    /// Current row count
-    rows: u16,
-    /// The child process ID for CWD detection fallback
-    child_pid: Option<u32>,
-    /// Dirty flag — set by PTY thread when terminal has new output
-    dirty: Arc<AtomicBool>,
-    /// Pre-allocated buffer for raw cell data (avoids allocation in sync_grid)
     raw_buf: Vec<(char, AnsiColor, AnsiColor, CellFlags)>,
-    /// Previous frame's raw cell data for diffing
     prev_raw_buf: Vec<(char, AnsiColor, AnsiColor, CellFlags)>,
-    /// Copied color palette for out-of-lock conversion
     palette_buf: [Option<AnsiRgb>; 256],
-    /// Grid generation counter — incremented when grid content changes
-    grid_generation: u64,
-    /// Stay-at-bottom mode: applied on every sync_grid until user scrolls away
-    stay_at_bottom: bool,
-    /// Dark/light mode — affects terminal ANSI color palette
-    dark_mode: bool,
-    /// Last INVERSE cell position detected during sync_grid.
-    /// TUI apps (Ink/Claude Code) draw their visual cursor as INVERSE text
-    /// while hiding the real terminal cursor, so this tracks the actual input position.
+    grid: TerminalGrid,
     inverse_cursor: Option<(u16, u16)>,
-    /// Shared waker callback for event loop wakeup
-    waker: Arc<Mutex<Option<Box<dyn Fn() + Send>>>>,
-    /// Detected URL ranges per row: Vec of (start_col, end_col) for each row
+    cached_cursor: CursorState,
     url_ranges: Vec<Vec<(usize, usize)>>,
-    /// Throttle: last time detect_urls ran (avoid regex on every sync_grid)
-    last_url_detect: Instant,
-    /// Reusable buffer for detect_urls row text (avoids per-row String allocation)
+    grid_generation: u64,
     url_row_buf: String,
-    /// Pending PTY resize notification (debounced to avoid SIGWINCH storms during animations)
-    pending_pty_resize: Option<(WindowSize, Instant)>,
+    last_url_detect: Instant,
+    dark_mode: Arc<AtomicBool>,
+    dark_mode_changed: Arc<AtomicBool>,
+    stay_at_bottom: Arc<AtomicBool>,
 }
 
-impl Terminal {
-    /// Create a new terminal backend with the given dimensions.
-    pub fn new(cols: u16, rows: u16) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::with_cwd(cols, rows, None, true)
-    }
-
-    /// Create a new terminal backend, optionally starting in the given directory.
-    pub fn with_cwd(cols: u16, rows: u16, cwd: Option<PathBuf>, dark_mode: bool) -> Result<Self, Box<dyn std::error::Error>> {
-        let cell_width = 8;
-        let cell_height = 16;
-
-        let window_size = WindowSize {
-            num_cols: cols,
-            num_lines: rows,
-            cell_width,
-            cell_height,
-        };
-
-        let term_size = TermDimensions::new(cols as usize, rows as usize);
-
-        let dirty = Arc::new(AtomicBool::new(true));
-        let pty_writer = Arc::new(Mutex::new(None));
-        let waker: Arc<Mutex<Option<Box<dyn Fn() + Send>>>> = Arc::new(Mutex::new(None));
-        let listener = TermEventListener { dirty: dirty.clone(), pty_writer: pty_writer.clone(), waker: waker.clone() };
-
-        let config = TermConfig::default();
-        let term = Term::new(config, &term_size, listener.clone());
-        let term = Arc::new(FairMutex::new(term));
-
-        // Determine the shell to use
-        let shell = Self::detect_shell();
-
-        // Use provided cwd, or fall back to $HOME so .app bundles don't land in /
-        let working_directory = cwd.or_else(|| std::env::var("HOME").ok().map(PathBuf::from));
-        let mut env = std::collections::HashMap::new();
-        env.insert(String::from("TERM"), String::from("xterm-256color"));
-        // Advertise 24-bit true color support so apps (Claude Code, etc.)
-        // use their RGB theme instead of mapping to the 16-color ANSI palette.
-        env.insert(String::from("COLORTERM"), String::from("truecolor"));
-        // Suppress zsh's partial-line indicator (%) on initial startup
-        env.insert(String::from("PROMPT_EOL_MARK"), String::new());
-        // Signal dark/light mode to the shell (many prompts and tools read this)
-        if dark_mode {
-            env.insert(String::from("COLORFGBG"), String::from("15;0"));
-        } else {
-            env.insert(String::from("COLORFGBG"), String::from("0;15"));
+impl GridSyncer {
+    /// Run one grid synchronization cycle.
+    /// Phase 1: Lock Term briefly to copy raw cell data + palette.
+    /// Phase 2: Convert colors and diff against previous frame (no lock held).
+    fn sync(&mut self) {
+        // Check if dark mode changed — force full re-render
+        if self.dark_mode_changed.swap(false, Ordering::Relaxed) {
+            self.prev_raw_buf.clear();
         }
-        let pty_config = tty::Options {
-            shell: Some(tty::Shell::new(shell, vec![String::from("--login")])),
-            working_directory,
-            env,
-            ..tty::Options::default()
-        };
 
-        // Spawn the PTY
-        let pty = tty::new(&pty_config, window_size, 0)?;
+        let dark_mode = self.dark_mode.load(Ordering::Relaxed);
+        let stay_at_bottom = self.stay_at_bottom.load(Ordering::Relaxed);
 
-        // Get child PID before moving pty into the event loop
-        let child_pid = pty.child().id();
-
-        // Create the event loop that bridges PTY I/O with the terminal emulator
-        let event_loop = EventLoop::new(term.clone(), listener, pty, false, false)?;
-        let notifier = Notifier(event_loop.channel());
-        // Allow the event listener to forward PtyWrite events (e.g. DSR/CPR responses) back to PTY
-        if let Ok(mut guard) = pty_writer.lock() {
-            *guard = Some(Notifier(event_loop.channel()));
-        }
-        event_loop.spawn();
-
-        // Initialize the cached grid
-        let cached_grid = Self::build_empty_grid(cols, rows);
-
-        Ok(Terminal {
-            term,
-            notifier,
-            cached_grid,
-            current_dir: None,
-            cols,
-            rows,
-            child_pid: Some(child_pid),
-            dirty,
-            raw_buf: Vec::new(),
-            prev_raw_buf: Vec::new(),
-            palette_buf: [None; 256],
-            grid_generation: 0,
-            stay_at_bottom: false,
-            dark_mode,
-            inverse_cursor: None,
-            waker,
-            url_ranges: Vec::new(),
-            last_url_detect: Instant::now(),
-            url_row_buf: String::new(),
-            pending_pty_resize: None,
-        })
-    }
-
-    /// Detect the user's preferred shell
-    fn detect_shell() -> String {
-        std::env::var("SHELL").unwrap_or_else(|_| {
-            // Fallback: try /bin/zsh, then /bin/bash
-            if std::path::Path::new("/bin/zsh").exists() {
-                "/bin/zsh".to_string()
-            } else {
-                "/bin/bash".to_string()
-            }
-        })
-    }
-
-    /// Build an empty grid filled with default cells
-    fn build_empty_grid(cols: u16, rows: u16) -> TerminalGrid {
-        let cells = (0..rows as usize)
-            .map(|_| {
-                (0..cols as usize)
-                    .map(|_| TerminalCell::default())
-                    .collect()
-            })
-            .collect();
-        TerminalGrid { cols, rows, cells }
-    }
-
-    /// Read the grid state from alacritty_terminal and update our cached grid.
-    /// Two-phase: fast lock (raw copy) then convert colors outside the lock.
-    fn sync_grid(&mut self) {
+        // Phase 1: Hold lock briefly — copy raw cell data + palette + cursor
         let (cols, total_lines) = {
-            // Phase 1: Hold lock briefly — copy raw cell data + palette
             let mut term = self.term.lock();
 
-            // Apply stay-at-bottom: scroll to bottom on every sync while active
-            if self.stay_at_bottom {
+            if stay_at_bottom {
                 term.scroll_display(Scroll::Bottom);
             }
+
             let grid = term.grid();
             let cols = grid.columns();
             let total_lines = grid.screen_lines();
@@ -273,8 +163,10 @@ impl Terminal {
             }
 
             // Copy raw cell data into flat buffer
-            // When scrolled (display_offset > 0), read from scrollback history
-            self.raw_buf.resize(total_cells, (' ', AnsiColor::Named(NamedColor::Foreground), AnsiColor::Named(NamedColor::Background), CellFlags::empty()));
+            self.raw_buf.resize(
+                total_cells,
+                (' ', AnsiColor::Named(NamedColor::Foreground), AnsiColor::Named(NamedColor::Background), CellFlags::empty()),
+            );
             for line_idx in 0..total_lines {
                 let line = Line(line_idx as i32 - display_offset as i32);
                 let base = line_idx * cols;
@@ -285,21 +177,32 @@ impl Terminal {
                 }
             }
 
+            // Read cursor state while we have the lock
+            let cursor_point = grid.cursor.point;
+            let cursor_shape = match term.cursor_style().shape {
+                alacritty_terminal::vte::ansi::CursorShape::Block => CursorShape::Block,
+                alacritty_terminal::vte::ansi::CursorShape::Beam => CursorShape::Beam,
+                alacritty_terminal::vte::ansi::CursorShape::Underline => CursorShape::Underline,
+                _ => CursorShape::Block,
+            };
+            let cursor_visible = term.mode().contains(TermMode::SHOW_CURSOR);
+
+            self.cached_cursor = CursorState {
+                row: cursor_point.line.0 as u16,
+                col: cursor_point.column.0 as u16,
+                visible: cursor_visible,
+                shape: cursor_shape,
+            };
+
             (cols, total_lines)
         }; // Lock released here!
 
         // Phase 2: Diff with previous frame — only convert changed cells
         let total_cells = cols * total_lines;
         let same_size = self.prev_raw_buf.len() == total_cells;
-        let dark_mode = self.dark_mode;
 
         // Scan for the last INVERSE cell — TUI apps (Ink/Claude Code) draw their
         // visual cursor as an INVERSE cell while hiding the real terminal cursor.
-        // We track this position to use as the effective cursor for block cursor
-        // rendering and IME preedit overlay positioning.
-        // Skip WIDE_CHAR_SPACER cells so that the detected position is always
-        // the main (first) cell of a wide character — this ensures the cursor
-        // overlay covers the full character width instead of just the spacer.
         self.inverse_cursor = None;
         for idx in (0..total_cells).rev() {
             let flags = self.raw_buf[idx].3;
@@ -313,7 +216,15 @@ impl Terminal {
             }
         }
 
-        let cells = &mut self.cached_grid.cells;
+        // Apply INVERSE cursor fallback to cached_cursor
+        if !self.cached_cursor.visible {
+            if let Some((inv_row, inv_col)) = self.inverse_cursor {
+                self.cached_cursor.row = inv_row;
+                self.cached_cursor.col = inv_col;
+            }
+        }
+
+        let cells = &mut self.grid.cells;
         cells.resize_with(total_lines, || vec![TerminalCell::default(); cols]);
 
         let mut any_changed = false;
@@ -340,8 +251,8 @@ impl Terminal {
                     continue;
                 }
 
-                let mut fg_color = Self::convert_color(dark_mode, &fg, &self.palette_buf);
-                let mut bg_color = Self::convert_color(dark_mode, &bg, &self.palette_buf);
+                let mut fg_color = Terminal::convert_color(dark_mode, &fg, &self.palette_buf);
+                let mut bg_color = Terminal::convert_color(dark_mode, &bg, &self.palette_buf);
                 let mut bg_is_default = matches!(bg, AnsiColor::Named(NamedColor::Background));
 
                 // SGR 7: swap foreground and background
@@ -350,12 +261,10 @@ impl Terminal {
                     bg_is_default = false;
                 }
 
-                // Contrast-check the final fg color against the pane background,
-                // whether or not it was swapped by INVERSE above.
                 if dark_mode {
-                    fg_color = Self::ensure_dark_fg_contrast(fg_color);
+                    fg_color = Terminal::ensure_dark_fg_contrast(fg_color);
                 } else {
-                    fg_color = Self::ensure_light_fg_contrast(fg_color);
+                    fg_color = Terminal::ensure_light_fg_contrast(fg_color);
                 }
 
                 let background = if bg_is_default {
@@ -389,8 +298,8 @@ impl Terminal {
         }
 
         cells.truncate(total_lines);
-        self.cached_grid.cols = cols as u16;
-        self.cached_grid.rows = total_lines as u16;
+        self.grid.cols = cols as u16;
+        self.grid.rows = total_lines as u16;
 
         // Scan for URLs in the grid (throttled to avoid regex cost on rapid output)
         if (any_changed || !same_size)
@@ -401,19 +310,18 @@ impl Terminal {
         }
     }
 
-    /// Detect URLs in the cached grid and store column ranges per row.
+    /// Detect URLs in the grid and store column ranges per row.
     fn detect_urls(&mut self) {
         static URL_RE: OnceLock<regex::Regex> = OnceLock::new();
         let re = URL_RE.get_or_init(|| {
             regex::Regex::new(r#"https?://[^\s<>"{}|\\^`\[\]]+"#).unwrap()
         });
 
-        let rows = self.cached_grid.cells.len();
+        let rows = self.grid.cells.len();
         self.url_ranges.resize(rows, Vec::new());
 
-        for (row_idx, row) in self.cached_grid.cells.iter().enumerate() {
+        for (row_idx, row) in self.grid.cells.iter().enumerate() {
             self.url_ranges[row_idx].clear();
-            // Reuse buffer to avoid per-row String allocation
             self.url_row_buf.clear();
             for c in row.iter() {
                 self.url_row_buf.push(if c.character == '\0' { ' ' } else { c.character });
@@ -426,17 +334,292 @@ impl Terminal {
         }
         self.url_ranges.truncate(rows);
     }
+}
+
+// ──────────────────────────────────────────────
+// Sync thread entry point
+// ──────────────────────────────────────────────
+
+fn grid_sync_thread_main(
+    thread_handle: Arc<Mutex<Option<std::thread::Thread>>>,
+    mut syncer: GridSyncer,
+    dirty: Arc<AtomicBool>,
+    snapshot: Arc<Mutex<SharedSnapshot>>,
+    snapshot_ready: Arc<AtomicBool>,
+    waker: Arc<Mutex<Option<Box<dyn Fn() + Send>>>>,
+    shutdown: Arc<AtomicBool>,
+) {
+    // Install our thread handle so PTY thread / main thread can unpark us
+    {
+        let mut guard = thread_handle.lock().unwrap();
+        *guard = Some(std::thread::current());
+    }
+
+    loop {
+        // Process all pending dirty flags before parking
+        while dirty.swap(false, Ordering::Relaxed) {
+            if shutdown.load(Ordering::Relaxed) {
+                return;
+            }
+
+            syncer.sync();
+
+            // Copy results into shared snapshot
+            {
+                let mut snap = snapshot.lock().unwrap();
+                snap.grid.clone_from(&syncer.grid);
+                snap.inverse_cursor = syncer.inverse_cursor;
+                snap.url_ranges.clone_from(&syncer.url_ranges);
+                snap.generation = syncer.grid_generation;
+                snap.cursor = syncer.cached_cursor;
+            }
+            snapshot_ready.store(true, Ordering::Relaxed);
+
+            // Wake main thread event loop
+            if let Ok(guard) = waker.lock() {
+                if let Some(f) = guard.as_ref() {
+                    f();
+                }
+            }
+        }
+
+        // Park until PTY thread or main thread unparks us
+        std::thread::park();
+
+        if shutdown.load(Ordering::Relaxed) {
+            return;
+        }
+    }
+}
+
+// ──────────────────────────────────────────────
+// Terminal backend
+// ──────────────────────────────────────────────
+
+/// Terminal backend using alacritty_terminal for PTY management and terminal emulation.
+pub struct Terminal {
+    /// The alacritty terminal emulator state, wrapped in a FairMutex for thread safety
+    term: Arc<FairMutex<Term<TermEventListener>>>,
+    /// Notifier to send messages to the PTY event loop
+    notifier: Notifier,
+    /// Cached grid — swapped in from the sync thread's SharedSnapshot
+    cached_grid: TerminalGrid,
+    /// Detected current working directory (from OSC 7 or fallback)
+    current_dir: Option<PathBuf>,
+    /// Current column count
+    cols: u16,
+    /// Current row count
+    rows: u16,
+    /// The child process ID for CWD detection fallback
+    child_pid: Option<u32>,
+    /// Atomic flag: sync thread has a new snapshot ready to consume
+    snapshot_ready: Arc<AtomicBool>,
+    /// Shared snapshot for grid exchange with sync thread
+    snapshot: Arc<Mutex<SharedSnapshot>>,
+    /// Last INVERSE cell position (read from snapshot)
+    inverse_cursor: Option<(u16, u16)>,
+    /// Cached cursor state (read from snapshot)
+    cached_cursor: CursorState,
+    /// Detected URL ranges per row (read from snapshot)
+    url_ranges: Vec<Vec<(usize, usize)>>,
+    /// Grid generation counter
+    grid_generation: u64,
+    /// Stay-at-bottom mode (shared with sync thread via atomic)
+    stay_at_bottom: Arc<AtomicBool>,
+    /// Dark/light mode (shared with sync thread via atomic)
+    dark_mode: Arc<AtomicBool>,
+    /// Signal to sync thread: dark mode changed, force full re-render
+    dark_mode_changed: Arc<AtomicBool>,
+    /// Dirty flag (shared with PTY thread and sync thread)
+    dirty: Arc<AtomicBool>,
+    /// Shared waker callback — installed by main thread, called by sync thread
+    waker: Arc<Mutex<Option<Box<dyn Fn() + Send>>>>,
+    /// Pending PTY resize notification (debounced to avoid SIGWINCH storms)
+    pending_pty_resize: Option<(WindowSize, Instant)>,
+    /// Handle to sync thread for unparking
+    sync_thread_handle: Arc<Mutex<Option<std::thread::Thread>>>,
+    /// Shutdown flag for sync thread
+    sync_shutdown: Arc<AtomicBool>,
+    /// Sync thread join handle (joined on Drop)
+    _sync_join: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Terminal {
+    /// Create a new terminal backend with the given dimensions.
+    pub fn new(cols: u16, rows: u16) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::with_cwd(cols, rows, None, true)
+    }
+
+    /// Create a new terminal backend, optionally starting in the given directory.
+    pub fn with_cwd(cols: u16, rows: u16, cwd: Option<PathBuf>, dark_mode: bool) -> Result<Self, Box<dyn std::error::Error>> {
+        let cell_width = 8;
+        let cell_height = 16;
+
+        let window_size = WindowSize {
+            num_cols: cols,
+            num_lines: rows,
+            cell_width,
+            cell_height,
+        };
+
+        let term_size = TermDimensions::new(cols as usize, rows as usize);
+
+        let dirty = Arc::new(AtomicBool::new(true));
+        let pty_writer = Arc::new(Mutex::new(None));
+        let sync_thread_handle: Arc<Mutex<Option<std::thread::Thread>>> = Arc::new(Mutex::new(None));
+        let listener = TermEventListener {
+            dirty: dirty.clone(),
+            pty_writer: pty_writer.clone(),
+            sync_thread: sync_thread_handle.clone(),
+        };
+
+        let config = TermConfig::default();
+        let term = Term::new(config, &term_size, listener.clone());
+        let term = Arc::new(FairMutex::new(term));
+
+        // Determine the shell to use
+        let shell = Self::detect_shell();
+
+        // Use provided cwd, or fall back to $HOME so .app bundles don't land in /
+        let working_directory = cwd.or_else(|| std::env::var("HOME").ok().map(PathBuf::from));
+        let mut env = std::collections::HashMap::new();
+        env.insert(String::from("TERM"), String::from("xterm-256color"));
+        env.insert(String::from("COLORTERM"), String::from("truecolor"));
+        env.insert(String::from("PROMPT_EOL_MARK"), String::new());
+        if dark_mode {
+            env.insert(String::from("COLORFGBG"), String::from("15;0"));
+        } else {
+            env.insert(String::from("COLORFGBG"), String::from("0;15"));
+        }
+        let pty_config = tty::Options {
+            shell: Some(tty::Shell::new(shell, vec![String::from("--login")])),
+            working_directory,
+            env,
+            ..tty::Options::default()
+        };
+
+        // Spawn the PTY
+        let pty = tty::new(&pty_config, window_size, 0)?;
+
+        // Get child PID before moving pty into the event loop
+        let child_pid = pty.child().id();
+
+        // Create the event loop that bridges PTY I/O with the terminal emulator
+        let event_loop = EventLoop::new(term.clone(), listener, pty, false, false)?;
+        let notifier = Notifier(event_loop.channel());
+        if let Ok(mut guard) = pty_writer.lock() {
+            *guard = Some(Notifier(event_loop.channel()));
+        }
+        event_loop.spawn();
+
+        // Initialize shared state for the sync thread
+        let cached_grid = Self::build_empty_grid(cols, rows);
+        let stay_at_bottom = Arc::new(AtomicBool::new(false));
+        let dark_mode_flag = Arc::new(AtomicBool::new(dark_mode));
+        let dark_mode_changed = Arc::new(AtomicBool::new(false));
+        let snapshot_ready = Arc::new(AtomicBool::new(false));
+        let sync_shutdown = Arc::new(AtomicBool::new(false));
+        let waker: Arc<Mutex<Option<Box<dyn Fn() + Send>>>> = Arc::new(Mutex::new(None));
+
+        let snapshot = Arc::new(Mutex::new(SharedSnapshot {
+            grid: Self::build_empty_grid(cols, rows),
+            inverse_cursor: None,
+            url_ranges: Vec::new(),
+            generation: 0,
+            cursor: CursorState { row: 0, col: 0, visible: true, shape: CursorShape::Block },
+        }));
+
+        // Create the GridSyncer with all sync-related state
+        let syncer = GridSyncer {
+            term: term.clone(),
+            raw_buf: Vec::new(),
+            prev_raw_buf: Vec::new(),
+            palette_buf: [None; 256],
+            grid: Self::build_empty_grid(cols, rows),
+            inverse_cursor: None,
+            cached_cursor: CursorState { row: 0, col: 0, visible: true, shape: CursorShape::Block },
+            url_ranges: Vec::new(),
+            grid_generation: 0,
+            url_row_buf: String::new(),
+            last_url_detect: Instant::now(),
+            dark_mode: dark_mode_flag.clone(),
+            dark_mode_changed: dark_mode_changed.clone(),
+            stay_at_bottom: stay_at_bottom.clone(),
+        };
+
+        // Spawn the grid sync thread
+        let sync_join = {
+            let handle = sync_thread_handle.clone();
+            let dirty = dirty.clone();
+            let snapshot = snapshot.clone();
+            let snapshot_ready = snapshot_ready.clone();
+            let waker = waker.clone();
+            let shutdown = sync_shutdown.clone();
+            std::thread::Builder::new()
+                .name("grid-sync".to_string())
+                .spawn(move || {
+                    grid_sync_thread_main(handle, syncer, dirty, snapshot, snapshot_ready, waker, shutdown);
+                })
+                .expect("failed to spawn grid sync thread")
+        };
+
+        Ok(Terminal {
+            term,
+            notifier,
+            cached_grid,
+            current_dir: None,
+            cols,
+            rows,
+            child_pid: Some(child_pid),
+            snapshot_ready,
+            snapshot,
+            inverse_cursor: None,
+            cached_cursor: CursorState { row: 0, col: 0, visible: true, shape: CursorShape::Block },
+            url_ranges: Vec::new(),
+            grid_generation: 0,
+            stay_at_bottom,
+            dark_mode: dark_mode_flag,
+            dark_mode_changed,
+            dirty,
+            waker,
+            pending_pty_resize: None,
+            sync_thread_handle,
+            sync_shutdown,
+            _sync_join: Some(sync_join),
+        })
+    }
+
+    /// Detect the user's preferred shell
+    fn detect_shell() -> String {
+        std::env::var("SHELL").unwrap_or_else(|_| {
+            if std::path::Path::new("/bin/zsh").exists() {
+                "/bin/zsh".to_string()
+            } else {
+                "/bin/bash".to_string()
+            }
+        })
+    }
+
+    /// Build an empty grid filled with default cells
+    fn build_empty_grid(cols: u16, rows: u16) -> TerminalGrid {
+        let cells = (0..rows as usize)
+            .map(|_| {
+                (0..cols as usize)
+                    .map(|_| TerminalCell::default())
+                    .collect()
+            })
+            .collect();
+        TerminalGrid { cols, rows, cells }
+    }
 
     /// Detect the CWD of the child process using native OS APIs (no subprocess).
     #[cfg(target_os = "macos")]
     pub fn detect_cwd_fallback(&self) -> Option<PathBuf> {
         let pid = self.child_pid? as i32;
 
-        // Use proc_pidinfo with PROC_PIDVNODEPATHINFO to get CWD directly.
-        // This is a direct kernel call — no subprocess spawn, effectively instant.
         const PROC_PIDVNODEPATHINFO: i32 = 9;
-        const BUF_SIZE: usize = 2352; // sizeof(proc_vnodepathinfo)
-        const PATH_OFFSET: usize = 152; // sizeof(vnode_info) — path follows
+        const BUF_SIZE: usize = 2352;
+        const PATH_OFFSET: usize = 152;
         const MAXPATHLEN: usize = 1024;
 
         let mut buf = [0u8; BUF_SIZE];
@@ -474,11 +657,36 @@ impl Terminal {
             None
         }
     }
+
+    /// Unpark the sync thread so it processes pending dirty flags.
+    fn notify_sync_thread(&self) {
+        if let Ok(guard) = self.sync_thread_handle.lock() {
+            if let Some(ref thread) = *guard {
+                thread.unpark();
+            }
+        }
+    }
+
+    /// Consume the latest snapshot from the sync thread (if available).
+    fn consume_snapshot(&mut self) {
+        if !self.snapshot_ready.load(Ordering::Relaxed) {
+            return;
+        }
+        if let Ok(mut snap) = self.snapshot.lock() {
+            std::mem::swap(&mut self.cached_grid, &mut snap.grid);
+            self.inverse_cursor = snap.inverse_cursor;
+            std::mem::swap(&mut self.url_ranges, &mut snap.url_ranges);
+            self.grid_generation = snap.generation;
+            self.cached_cursor = snap.cursor;
+        }
+        self.snapshot_ready.store(false, Ordering::Relaxed);
+    }
 }
 
 impl Terminal {
-    /// Set a waker callback that will be called from the PTY thread when new output arrives.
-    /// This allows the event loop to sleep with `ControlFlow::Wait` and be woken up on demand.
+    /// Set a waker callback that will be called from the sync thread when a new
+    /// grid snapshot is ready. This allows the event loop to sleep with
+    /// `ControlFlow::Wait` and be woken up on demand.
     pub fn set_waker(&self, f: Box<dyn Fn() + Send>) {
         if let Ok(mut guard) = self.waker.lock() {
             *guard = Some(f);
@@ -491,15 +699,12 @@ impl Terminal {
     }
 
     /// Detect whether the shell is idle (no foreground child process running).
-    /// Uses native kernel API — no subprocess spawn.
     #[cfg(target_os = "macos")]
     pub fn is_shell_idle(&self) -> bool {
         let pid = match self.child_pid {
             Some(p) => p,
             None => return false,
         };
-        // Use proc_listchildpids to check if shell has any child processes.
-        // This is a direct kernel call — no subprocess spawn, effectively instant.
         let mut pids = [0i32; 16];
         let ret = unsafe {
             libc::proc_listchildpids(
@@ -508,7 +713,6 @@ impl Terminal {
                 (pids.len() * std::mem::size_of::<i32>()) as i32,
             )
         };
-        // ret = number of child PIDs found. 0 means no children → shell is idle.
         ret <= 0
     }
 
@@ -518,11 +722,9 @@ impl Terminal {
             Some(p) => p,
             None => return false,
         };
-        // Linux: check /proc/PID/stat for foreground process group
         let stat_path = format!("/proc/{}/stat", pid);
         if let Ok(contents) = std::fs::read_to_string(&stat_path) {
             let fields: Vec<&str> = contents.split_whitespace().collect();
-            // Field 4 = pgrp, field 7 = tpgid (foreground process group)
             if fields.len() > 7 {
                 let pgrp = fields[4].parse::<i32>().unwrap_or(0);
                 let tpgid = fields[7].parse::<i32>().unwrap_or(-1);
@@ -532,9 +734,10 @@ impl Terminal {
         false
     }
 
-    /// Returns true if the terminal has new output since the last process() call.
+    /// Returns true if the sync thread has produced a new snapshot since the
+    /// last `process()` call.
     pub fn has_new_output(&self) -> bool {
-        self.dirty.load(Ordering::Relaxed)
+        self.snapshot_ready.load(Ordering::Relaxed)
     }
 
     /// Returns the grid generation counter. Increments when grid content changes.
@@ -543,11 +746,16 @@ impl Terminal {
     }
 
     /// Force a sync_grid cycle for benchmarking purposes.
-    /// Sets the dirty flag and calls process() to trigger the full sync pipeline.
+    /// Sets the dirty flag, wakes the sync thread, and spins until the snapshot is ready.
     #[doc(hidden)]
     pub fn bench_sync_grid(&mut self) {
         self.dirty.store(true, Ordering::Relaxed);
-        self.sync_grid();
+        self.notify_sync_thread();
+        // Spin until snapshot is ready
+        while !self.snapshot_ready.load(Ordering::Relaxed) {
+            std::thread::yield_now();
+        }
+        self.consume_snapshot();
     }
 
     /// Inject bytes directly into the terminal emulator for benchmarking.
@@ -591,9 +799,7 @@ impl Terminal {
         let history_len = grid.history_size();
         let cols = grid.columns();
 
-        // Iterate history lines (from oldest to newest) then screen lines
         for abs_line in 0..(history_len + total_lines) {
-            // History lines: negative Line indices; screen lines: 0..total_lines
             let line_idx = Line(abs_line as i32 - history_len as i32);
             let mut row_text = String::with_capacity(cols);
             for col_idx in 0..cols {
@@ -603,13 +809,11 @@ impl Terminal {
             }
 
             let row_lower = row_text.to_lowercase();
-            let mut start = 0; // byte offset for string slicing
+            let mut start = 0;
             while let Some(byte_pos) = row_lower[start..].find(&query_lower) {
                 let byte_col = start + byte_pos;
-                // Convert byte offset to char column index
                 let char_col = row_text[..byte_col].chars().count();
                 results.push((abs_line, char_col, query_char_len));
-                // Advance by one character (not one byte) to find overlapping matches
                 start = byte_col + row_lower[byte_col..].chars().next().map_or(1, |c| c.len_utf8());
             }
         }
@@ -630,35 +834,34 @@ impl Terminal {
     }
 
     /// Check if the terminal has bracketed paste mode enabled.
-    /// When enabled, paste text should be wrapped with `\x1b[200~...\x1b[201~`.
     pub fn is_bracketed_paste_mode(&self) -> bool {
         let term = self.term.lock();
         term.mode().contains(TermMode::BRACKETED_PASTE)
     }
 
     /// Set dark/light mode for the terminal color palette.
-    /// Forces a full grid re-render so all colors are updated.
+    /// Signals the sync thread to force a full grid re-render.
     pub fn set_dark_mode(&mut self, dark: bool) {
-        if self.dark_mode != dark {
-            self.dark_mode = dark;
-            // Clear prev_raw_buf to force full re-render of all cells
-            self.prev_raw_buf.clear();
+        if self.dark_mode.load(Ordering::Relaxed) != dark {
+            self.dark_mode.store(dark, Ordering::Relaxed);
+            self.dark_mode_changed.store(true, Ordering::Relaxed);
             self.dirty.store(true, Ordering::Relaxed);
+            self.notify_sync_thread();
         }
     }
 
     /// Enter stay-at-bottom mode: every sync_grid will scroll to bottom until
     /// the user explicitly scrolls away via scroll_display().
     pub fn request_scroll_to_bottom(&mut self) {
-        self.stay_at_bottom = true;
+        self.stay_at_bottom.store(true, Ordering::Relaxed);
         self.dirty.store(true, Ordering::Relaxed);
+        self.notify_sync_thread();
     }
 
     /// Scroll the terminal display by the given delta (positive = scroll up into history).
     /// Cancels stay-at-bottom mode since the user is explicitly scrolling.
     pub fn scroll_display(&mut self, delta: i32) {
-        // User is explicitly scrolling — cancel stay-at-bottom
-        self.stay_at_bottom = false;
+        self.stay_at_bottom.store(false, Ordering::Relaxed);
 
         let mut term = self.term.lock();
         let old_offset = term.grid().display_offset();
@@ -667,15 +870,14 @@ impl Terminal {
         drop(term);
 
         if old_offset != new_offset {
-            // Force a grid sync on the next frame
             self.dirty.store(true, Ordering::Relaxed);
+            self.notify_sync_thread();
         }
     }
 }
 
 impl TerminalBackend for Terminal {
     fn write(&mut self, data: &[u8]) {
-        // Send bytes to the PTY via the notifier channel
         let _ = self.notifier.0.send(Msg::Input(Cow::Owned(data.to_vec())));
     }
 
@@ -688,10 +890,8 @@ impl TerminalBackend for Terminal {
             }
         }
 
-        // Only sync when the PTY thread has produced new output
-        if self.dirty.swap(false, Ordering::Relaxed) {
-            self.sync_grid();
-        }
+        // Consume the latest snapshot from the sync thread (cheap: just pointer swaps)
+        self.consume_snapshot();
     }
 
     fn grid(&self) -> &TerminalGrid {
@@ -717,15 +917,17 @@ impl TerminalBackend for Terminal {
 
         let term_size = TermDimensions::new(cols as usize, rows as usize);
 
-        // Resize the terminal grid immediately (for correct rendering)
         {
             let mut term = self.term.lock();
             term.resize(term_size);
         }
 
         // Debounce PTY resize notification (SIGWINCH) to avoid prompt artifacts
-        // during rapid resize events (e.g. macOS maximize/restore animation)
         self.pending_pty_resize = Some((window_size, Instant::now()));
+
+        // Trigger a sync so the grid reflects the new dimensions promptly
+        self.dirty.store(true, Ordering::Relaxed);
+        self.notify_sync_thread();
     }
 
     fn cwd(&self) -> Option<PathBuf> {
@@ -733,45 +935,20 @@ impl TerminalBackend for Terminal {
     }
 
     fn cursor(&self) -> CursorState {
-        let term = self.term.lock();
-        let cursor = &term.grid().cursor;
-        let point = cursor.point;
-
-        let shape = match term.cursor_style().shape {
-            alacritty_terminal::vte::ansi::CursorShape::Block => CursorShape::Block,
-            alacritty_terminal::vte::ansi::CursorShape::Beam => CursorShape::Beam,
-            alacritty_terminal::vte::ansi::CursorShape::Underline => CursorShape::Underline,
-            _ => CursorShape::Block,
-        };
-
-        // SHOW_CURSOR mode flag is set when DECTCEM is enabled (cursor visible)
-        let visible = term.mode().contains(TermMode::SHOW_CURSOR);
-
-        // When the terminal cursor is hidden (TUI apps like Claude Code / Ink),
-        // the real cursor position is unreliable.  Use the INVERSE cell position
-        // detected during sync_grid as the effective cursor location instead.
-        let (row, col) = if !visible {
-            if let Some((inv_row, inv_col)) = self.inverse_cursor {
-                (inv_row, inv_col)
-            } else {
-                (point.line.0 as u16, point.column.0 as u16)
-            }
-        } else {
-            (point.line.0 as u16, point.column.0 as u16)
-        };
-
-        CursorState {
-            row,
-            col,
-            visible,
-            shape,
-        }
+        self.cached_cursor
     }
 }
 
 impl Drop for Terminal {
     fn drop(&mut self) {
-        // Signal the event loop to shut down
+        // Signal the sync thread to shut down and wait for it
+        self.sync_shutdown.store(true, Ordering::Relaxed);
+        self.notify_sync_thread();
+        if let Some(handle) = self._sync_join.take() {
+            let _ = handle.join();
+        }
+
+        // Signal the PTY event loop to shut down
         #[allow(unused)]
         let _ = self.notifier.0.send(Msg::Shutdown);
     }

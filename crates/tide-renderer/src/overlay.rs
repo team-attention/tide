@@ -121,42 +121,36 @@ impl WgpuRenderer {
             self.last_uniform_screen = screen_phys;
         }
 
-        // ── Upload grid layer ──
+        // ── Upload grid layer (instanced) ──
         if self.grid_needs_upload {
-            // Full upload: all vertices + indices
-            if !self.grid_rect_vertices.is_empty() {
-                let vb_bytes = bytemuck::cast_slice(&self.grid_rect_vertices);
-                Self::ensure_buffer_capacity(&self.device, &mut self.grid_rect_vb, &mut self.grid_rect_vb_capacity, vb_bytes.len(), vb_usage, "grid_rect_vb");
-                self.queue.write_buffer(&self.grid_rect_vb, 0, vb_bytes);
-                let ib_bytes = bytemuck::cast_slice(&self.grid_rect_indices);
-                Self::ensure_buffer_capacity(&self.device, &mut self.grid_rect_ib, &mut self.grid_rect_ib_capacity, ib_bytes.len(), ib_usage, "grid_rect_ib");
-                self.queue.write_buffer(&self.grid_rect_ib, 0, ib_bytes);
+            // Full upload: all instances
+            if !self.grid_bg_instances.is_empty() {
+                let data = bytemuck::cast_slice(&self.grid_bg_instances);
+                Self::ensure_buffer_capacity(&self.device, &mut self.grid_bg_inst_buf, &mut self.grid_bg_inst_buf_capacity, data.len(), vb_usage, "grid_bg_inst_buf");
+                self.queue.write_buffer(&self.grid_bg_inst_buf, 0, data);
             }
-            if !self.grid_glyph_vertices.is_empty() {
-                let vb_bytes = bytemuck::cast_slice(&self.grid_glyph_vertices);
-                Self::ensure_buffer_capacity(&self.device, &mut self.grid_glyph_vb, &mut self.grid_glyph_vb_capacity, vb_bytes.len(), vb_usage, "grid_glyph_vb");
-                self.queue.write_buffer(&self.grid_glyph_vb, 0, vb_bytes);
-                let ib_bytes = bytemuck::cast_slice(&self.grid_glyph_indices);
-                Self::ensure_buffer_capacity(&self.device, &mut self.grid_glyph_ib, &mut self.grid_glyph_ib_capacity, ib_bytes.len(), ib_usage, "grid_glyph_ib");
-                self.queue.write_buffer(&self.grid_glyph_ib, 0, ib_bytes);
+            if !self.grid_glyph_instances.is_empty() {
+                let data = bytemuck::cast_slice(&self.grid_glyph_instances);
+                Self::ensure_buffer_capacity(&self.device, &mut self.grid_glyph_inst_buf, &mut self.grid_glyph_inst_buf_capacity, data.len(), vb_usage, "grid_glyph_inst_buf");
+                self.queue.write_buffer(&self.grid_glyph_inst_buf, 0, data);
             }
             self.grid_needs_upload = false;
         } else if !self.grid_partial_uploads.is_empty() {
-            // Partial upload: only dirty panes' vertex ranges (indices unchanged)
-            let rect_stride = std::mem::size_of::<crate::vertex::RectVertex>();
-            let glyph_stride = std::mem::size_of::<crate::vertex::GlyphVertex>();
+            // Partial upload: only dirty panes' instance ranges
+            let bg_stride = std::mem::size_of::<crate::vertex::GridBgInstance>();
+            let glyph_stride = std::mem::size_of::<crate::vertex::GridGlyphInstance>();
             for range in &self.grid_partial_uploads {
-                if range.rect_vert_count > 0 {
-                    let start = range.rect_vert_start;
-                    let end = start + range.rect_vert_count;
-                    let data = bytemuck::cast_slice(&self.grid_rect_vertices[start..end]);
-                    self.queue.write_buffer(&self.grid_rect_vb, (start * rect_stride) as u64, data);
+                if range.bg_inst_count > 0 {
+                    let start = range.bg_inst_start;
+                    let end = start + range.bg_inst_count;
+                    let data = bytemuck::cast_slice(&self.grid_bg_instances[start..end]);
+                    self.queue.write_buffer(&self.grid_bg_inst_buf, (start * bg_stride) as u64, data);
                 }
-                if range.glyph_vert_count > 0 {
-                    let start = range.glyph_vert_start;
-                    let end = start + range.glyph_vert_count;
-                    let data = bytemuck::cast_slice(&self.grid_glyph_vertices[start..end]);
-                    self.queue.write_buffer(&self.grid_glyph_vb, (start * glyph_stride) as u64, data);
+                if range.glyph_inst_count > 0 {
+                    let start = range.glyph_inst_start;
+                    let end = start + range.glyph_inst_count;
+                    let data = bytemuck::cast_slice(&self.grid_glyph_instances[start..end]);
+                    self.queue.write_buffer(&self.grid_glyph_inst_buf, (start * glyph_stride) as u64, data);
                 }
             }
             self.grid_partial_uploads.clear();
@@ -237,8 +231,8 @@ impl WgpuRenderer {
             self.queue.write_buffer(&self.top_glyph_ib, 0, ib_bytes);
         }
 
-        let grid_rect_count = self.grid_rect_indices.len() as u32;
-        let grid_glyph_count = self.grid_glyph_indices.len() as u32;
+        let grid_bg_instance_count = self.grid_bg_instances.len() as u32;
+        let grid_glyph_instance_count = self.grid_glyph_instances.len() as u32;
         let chrome_rect_count = self.chrome_rect_indices.len() as u32;
         let chrome_glyph_count = self.chrome_glyph_indices.len() as u32;
         let overlay_rect_count = self.rect_indices.len() as u32;
@@ -268,7 +262,8 @@ impl WgpuRenderer {
                 occlusion_query_set: None,
             });
 
-            // Draw order: chrome rects → grid rects → overlay rects → chrome glyphs → grid glyphs → overlay glyphs
+            // Draw order: chrome rects → grid bg (instanced) → overlay rects →
+            //             chrome glyphs → grid glyphs (instanced) → overlay glyphs
             // Chrome rects (pane backgrounds, panel backgrounds) are drawn first so that
             // grid cell backgrounds (e.g. INVERSE/standout for paste highlighting) show on top.
 
@@ -281,38 +276,47 @@ impl WgpuRenderer {
                 pass.draw_indexed(0..chrome_rect_count, 0, 0..1);
             }
 
-            pass.set_pipeline(&self.rect_pipeline);
-            pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-
-            if grid_rect_count > 0 {
-                pass.set_vertex_buffer(0, self.grid_rect_vb.slice(..));
-                pass.set_index_buffer(self.grid_rect_ib.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..grid_rect_count, 0, 0..1);
+            // Grid backgrounds — instanced (GPU generates quad from vertex_index)
+            if grid_bg_instance_count > 0 {
+                pass.set_pipeline(&self.grid_bg_pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                pass.set_vertex_buffer(0, self.grid_bg_inst_buf.slice(..));
+                pass.draw(0..6, 0..grid_bg_instance_count);
             }
 
+            // Overlay rects — indexed (traditional)
             if overlay_rect_count > 0 {
+                pass.set_pipeline(&self.rect_pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
                 pass.set_vertex_buffer(0, self.rect_vb.slice(..));
                 pass.set_index_buffer(self.rect_ib.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..overlay_rect_count, 0, 0..1);
             }
 
-            pass.set_pipeline(&self.glyph_pipeline);
-            pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            pass.set_bind_group(1, &self.atlas_bind_group, &[]);
-
+            // Chrome glyphs — indexed (traditional)
             if chrome_glyph_count > 0 {
+                pass.set_pipeline(&self.glyph_pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                pass.set_bind_group(1, &self.atlas_bind_group, &[]);
                 pass.set_vertex_buffer(0, self.chrome_glyph_vb.slice(..));
                 pass.set_index_buffer(self.chrome_glyph_ib.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..chrome_glyph_count, 0, 0..1);
             }
 
-            if grid_glyph_count > 0 {
-                pass.set_vertex_buffer(0, self.grid_glyph_vb.slice(..));
-                pass.set_index_buffer(self.grid_glyph_ib.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..grid_glyph_count, 0, 0..1);
+            // Grid glyphs — instanced (GPU generates quad from vertex_index)
+            if grid_glyph_instance_count > 0 {
+                pass.set_pipeline(&self.grid_glyph_pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                pass.set_bind_group(1, &self.atlas_bind_group, &[]);
+                pass.set_vertex_buffer(0, self.grid_glyph_inst_buf.slice(..));
+                pass.draw(0..6, 0..grid_glyph_instance_count);
             }
 
+            // Overlay glyphs — indexed (traditional)
             if overlay_glyph_count > 0 {
+                pass.set_pipeline(&self.glyph_pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                pass.set_bind_group(1, &self.atlas_bind_group, &[]);
                 pass.set_vertex_buffer(0, self.glyph_vb.slice(..));
                 pass.set_index_buffer(self.glyph_ib.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..overlay_glyph_count, 0, 0..1);
