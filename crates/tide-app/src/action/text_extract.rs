@@ -79,7 +79,12 @@ impl App {
         let inner_x = visual_rect.x + PANE_PADDING;
         let inner_y = visual_rect.y + content_top;
 
-        let col = ((position.x - inner_x) / cell_size.width) as usize;
+        // Center offset matching render_grid
+        let max_cols = ((visual_rect.width - 2.0 * PANE_PADDING) / cell_size.width).floor() as usize;
+        let actual_width = max_cols as f32 * cell_size.width;
+        let extra_x = ((visual_rect.width - 2.0 * PANE_PADDING) - actual_width) / 2.0;
+
+        let col = ((position.x - inner_x - extra_x) / cell_size.width) as usize;
         let row = ((position.y - inner_y) / cell_size.height) as usize;
 
         let grid = pane.backend.grid();
