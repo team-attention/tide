@@ -2,6 +2,7 @@
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+use pulldown_cmark::Alignment;
 use tide_core::{Color, TextStyle};
 
 use crate::highlight::StyledSpan;
@@ -70,6 +71,150 @@ pub struct PreviewLine {
     pub bg_color: Option<Color>,
 }
 
+/// Render a collected table into preview lines.
+fn render_table(
+    rows: &[Vec<String>],
+    alignments: &[Alignment],
+    header_count: usize,
+    theme: &MarkdownTheme,
+    indent: usize,
+    effective_width: usize,
+    result: &mut Vec<PreviewLine>,
+) {
+    if rows.is_empty() {
+        return;
+    }
+    let num_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    if num_cols == 0 {
+        return;
+    }
+
+    // Calculate column widths (minimum 3 for readability)
+    let mut col_widths: Vec<usize> = vec![3; num_cols];
+    for row in rows {
+        for (i, cell) in row.iter().enumerate() {
+            if i < num_cols {
+                col_widths[i] = col_widths[i].max(cell.width());
+            }
+        }
+    }
+
+    // Clamp total width to effective_width
+    let border_overhead = num_cols + 1; // one │ per column + closing │
+    let padding_overhead = num_cols * 2; // 1 space on each side of each cell
+    let total_content_width: usize = col_widths.iter().sum();
+    let total_width = total_content_width + border_overhead + padding_overhead;
+    if total_width > effective_width && total_content_width > 0 {
+        let available = effective_width.saturating_sub(border_overhead + padding_overhead);
+        let scale = available as f64 / total_content_width as f64;
+        for w in &mut col_widths {
+            *w = ((*w as f64 * scale).floor() as usize).max(1);
+        }
+    }
+
+    let border_style = TextStyle {
+        foreground: theme.blockquote,
+        background: None,
+        bold: false, dim: false, italic: false, underline: false,
+    };
+    let header_style = TextStyle {
+        foreground: theme.bold,
+        background: None,
+        bold: true, dim: false, italic: false, underline: false,
+    };
+    let cell_style = TextStyle {
+        foreground: theme.body,
+        background: None,
+        bold: false, dim: false, italic: false, underline: false,
+    };
+
+    // Helper: build a horizontal rule line (top, separator, or bottom)
+    let make_rule = |left: &str, mid: &str, right: &str, fill: &str| -> PreviewLine {
+        let mut text = String::new();
+        text.push_str(left);
+        for (i, w) in col_widths.iter().enumerate() {
+            text.push_str(&fill.repeat(*w + 2)); // +2 for padding
+            if i + 1 < num_cols {
+                text.push_str(mid);
+            }
+        }
+        text.push_str(right);
+        let mut spans = vec![StyledSpan {
+            text: " ".repeat(indent),
+            style: TextStyle {
+                foreground: theme.body,
+                background: None,
+                bold: false, dim: false, italic: false, underline: false,
+            },
+        }];
+        spans.push(StyledSpan { text, style: border_style });
+        PreviewLine { spans, bg_color: None }
+    };
+
+    // Helper: build a data row
+    let make_row = |row: &[String], is_header: bool| -> PreviewLine {
+        let mut spans = vec![StyledSpan {
+            text: " ".repeat(indent),
+            style: TextStyle {
+                foreground: theme.body,
+                background: None,
+                bold: false, dim: false, italic: false, underline: false,
+            },
+        }];
+        let style = if is_header { header_style } else { cell_style };
+        spans.push(StyledSpan { text: "\u{2502}".to_string(), style: border_style });
+        for (i, w) in col_widths.iter().enumerate() {
+            let cell_text = row.get(i).map(|s| s.as_str()).unwrap_or("");
+            let cell_w = cell_text.width();
+            let align = alignments.get(i).copied().unwrap_or(Alignment::None);
+            let (pad_left, pad_right) = match align {
+                Alignment::Center => {
+                    let total_pad = w.saturating_sub(cell_w);
+                    let left = total_pad / 2;
+                    (left, total_pad - left)
+                }
+                Alignment::Right => (w.saturating_sub(cell_w), 0),
+                _ => (0, w.saturating_sub(cell_w)),
+            };
+            let padded = format!(" {}{}{} ",
+                " ".repeat(pad_left),
+                // Truncate cell if wider than column
+                if cell_w > *w {
+                    let mut truncated = String::new();
+                    let mut tw = 0;
+                    for ch in cell_text.chars() {
+                        let cw = ch.width().unwrap_or(1);
+                        if tw + cw > *w { break; }
+                        truncated.push(ch);
+                        tw += cw;
+                    }
+                    truncated
+                } else {
+                    cell_text.to_string()
+                },
+                " ".repeat(pad_right),
+            );
+            spans.push(StyledSpan { text: padded, style });
+            spans.push(StyledSpan { text: "\u{2502}".to_string(), style: border_style });
+        }
+        PreviewLine { spans, bg_color: None }
+    };
+
+    // Top border
+    result.push(make_rule("\u{250C}", "\u{252C}", "\u{2510}", "\u{2500}"));
+
+    for (ri, row) in rows.iter().enumerate() {
+        result.push(make_row(row, ri < header_count));
+        if ri + 1 == header_count && ri + 1 < rows.len() {
+            // Separator after header
+            result.push(make_rule("\u{251C}", "\u{253C}", "\u{2524}", "\u{2500}"));
+        }
+    }
+
+    // Bottom border
+    result.push(make_rule("\u{2514}", "\u{2534}", "\u{2518}", "\u{2500}"));
+}
+
 /// Render markdown content into styled preview lines with word wrapping.
 pub fn render_markdown_preview(
     lines: &[String],
@@ -94,6 +239,15 @@ pub fn render_markdown_preview(
     let mut list_depth: usize = 0;
     let mut ordered_counters: Vec<u64> = Vec::new();
     let mut pending_list_marker: Option<String> = None;
+
+    // Table state
+    let mut in_table = false;
+    let mut table_alignments: Vec<Alignment> = Vec::new();
+    let mut table_rows: Vec<Vec<String>> = Vec::new(); // rows of cells
+    let mut table_current_row: Vec<String> = Vec::new();
+    let mut table_cell_text = String::new();
+    let mut in_table_cell = false;
+    let mut table_header_rows: usize = 0;
 
     // Current line accumulator
     let mut current_spans: Vec<StyledSpan> = Vec::new();
@@ -194,7 +348,69 @@ pub fn render_markdown_preview(
     };
 
     for event in parser {
+        // When inside a table, intercept events to collect cell text
+        if in_table {
+            match event {
+                Event::Start(Tag::TableHead) => {}
+                Event::End(TagEnd::TableHead) => {
+                    table_header_rows = table_rows.len();
+                }
+                Event::Start(Tag::TableRow) => {
+                    table_current_row.clear();
+                }
+                Event::End(TagEnd::TableRow) => {
+                    table_rows.push(table_current_row.clone());
+                    table_current_row.clear();
+                }
+                Event::Start(Tag::TableCell) => {
+                    in_table_cell = true;
+                    table_cell_text.clear();
+                }
+                Event::End(TagEnd::TableCell) => {
+                    in_table_cell = false;
+                    table_current_row.push(table_cell_text.clone());
+                    table_cell_text.clear();
+                }
+                Event::Text(ref text) if in_table_cell => {
+                    table_cell_text.push_str(text);
+                }
+                Event::Code(ref code) if in_table_cell => {
+                    table_cell_text.push_str(code);
+                }
+                Event::End(TagEnd::Table) => {
+                    // Render the collected table
+                    let header_count = table_header_rows;
+                    if !result.is_empty() {
+                        push_empty_line(&mut result);
+                    }
+                    render_table(&table_rows, &table_alignments, header_count, theme, indent, effective_width, &mut result);
+                    push_empty_line(&mut result);
+                    in_table = false;
+                    table_rows.clear();
+                    table_alignments.clear();
+                    table_current_row.clear();
+                    table_header_rows = 0;
+                }
+                _ => {
+                    // Capture any other text-like events inside cells
+                    if in_table_cell {
+                        if let Event::SoftBreak = event {
+                            table_cell_text.push(' ');
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
         match event {
+            Event::Start(Tag::Table(alignments)) => {
+                in_table = true;
+                table_alignments = alignments;
+                table_rows.clear();
+                table_current_row.clear();
+                table_header_rows = 0;
+            }
             Event::Start(Tag::Heading { level, .. }) => {
                 heading_level = Some(level);
                 // Add spacing before headings
@@ -323,10 +539,13 @@ pub fn render_markdown_preview(
                 let style = style_for(theme, &heading_level, bold, italic, in_link, in_code_block, in_blockquote);
 
                 if in_code_block {
-                    // Code blocks: render line by line, no word wrapping
-                    for line in text.split('\n') {
-                        if current_col > 0 && current_spans.iter().any(|s| s.text.chars().any(|c| c != ' ')) {
-                            // Continue existing line? No, code blocks get line-by-line
+                    // Code blocks: render line by line, no word wrapping.
+                    // Each line from split gets its own output line.
+                    let code_lines: Vec<&str> = text.split('\n').collect();
+                    let last_idx = code_lines.len() - 1;
+                    for (li, line) in code_lines.iter().enumerate() {
+                        // Flush previous code line if there's content accumulated
+                        if current_col > 0 {
                             flush_line(&mut current_spans, &current_bg, &mut result, &mut current_col);
                         }
                         if !line.is_empty() {
@@ -336,12 +555,20 @@ pub fn render_markdown_preview(
                                 text: padded,
                                 style,
                             });
+                        } else if !(li == last_idx && text.ends_with('\n')) {
+                            // Empty line in code block — emit blank line with bg
+                            result.push(PreviewLine {
+                                spans: vec![StyledSpan {
+                                    text: " ".repeat(indent),
+                                    style: TextStyle {
+                                        foreground: theme.body,
+                                        background: None,
+                                        bold: false, dim: false, italic: false, underline: false,
+                                    },
+                                }],
+                                bg_color: current_bg,
+                            });
                         }
-                        // Don't flush here — let the next newline or End(CodeBlock) do it
-                    }
-                    // If text ended with \n, we already accumulated lines. Handle specially.
-                    if text.ends_with('\n') && !current_spans.is_empty() {
-                        flush_line(&mut current_spans, &current_bg, &mut result, &mut current_col);
                     }
                 } else {
                     // Normal text: word wrap at effective_width

@@ -398,12 +398,16 @@ impl App {
     /// Commit text directly to a specific pane (terminal write or editor insert).
     fn commit_text_to_pane(&mut self, pane_id: tide_core::PaneId, text: &str) {
         use crate::pane::PaneKind;
+        // Compute visible size before mutable borrow of panes
+        let editor_size = self.visible_editor_size(pane_id);
         match self.panes.get_mut(&pane_id) {
             Some(PaneKind::Terminal(pane)) => {
                 pane.backend.write(text.as_bytes());
             }
             Some(PaneKind::Editor(pane)) => {
                 if !pane.preview_mode {
+                    pane.delete_selection();
+                    pane.selection = None;
                     for ch in text.chars() {
                         let action = match ch {
                             ch if ch.is_control() => continue,
@@ -411,6 +415,10 @@ impl App {
                         };
                         pane.editor.handle_action(action);
                     }
+                    // Ensure cursor stays visible after editing
+                    let (visible_rows, visible_cols) = editor_size;
+                    pane.editor.ensure_cursor_visible(visible_rows);
+                    pane.editor.ensure_cursor_visible_h(visible_cols);
                     self.pane_generations.remove(&pane_id);
                 }
             }
