@@ -9,7 +9,7 @@ use crate::ui_state::LayoutSide;
 use crate::{App, PaneAreaMode};
 
 impl App {
-    pub(crate) fn update_cursor_icon(&self, window: &dyn tide_platform::PlatformWindow) {
+    pub(crate) fn update_cursor_icon(&self, window: &tide_platform::WindowProxy) {
         use tide_platform::CursorIcon;
         let icon = match &self.hover_target {
             Some(HoverTarget::FileTreeEntry(_))

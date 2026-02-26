@@ -1,7 +1,7 @@
 //! Mouse event handling — platform-agnostic.
 
 use tide_core::{FileTreeSource, InputEvent, LayoutEngine, MouseButton, Rect, Vec2};
-use tide_platform::PlatformWindow;
+use tide_platform::WindowProxy;
 
 use crate::drag_drop::PaneDragState;
 use crate::pane::{PaneKind, Selection};
@@ -10,7 +10,7 @@ use crate::ui_state::FocusArea;
 use crate::{App, PaneAreaMode};
 
 impl App {
-    pub(crate) fn handle_mouse_down(&mut self, button: MouseButton, window: &dyn PlatformWindow) {
+    pub(crate) fn handle_mouse_down(&mut self, button: MouseButton, window: &WindowProxy) {
         if button == MouseButton::Left {
             self.mouse_left_pressed = true;
 
@@ -393,7 +393,7 @@ impl App {
         self.needs_redraw = true;
     }
 
-    fn handle_mouse_input_core(&mut self, button: MouseButton, _window: &dyn PlatformWindow) {
+    fn handle_mouse_input_core(&mut self, button: MouseButton, _window: &WindowProxy) {
         if button == MouseButton::Left {
             // Titlebar buttons
             if self.top_inset > 0.0 {
@@ -658,7 +658,7 @@ impl App {
     pub(crate) fn handle_cursor_moved_logical(
         &mut self,
         pos: Vec2,
-        window: &dyn PlatformWindow,
+        window: &WindowProxy,
     ) {
         self.last_cursor_pos = pos;
 

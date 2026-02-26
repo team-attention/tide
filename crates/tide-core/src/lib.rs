@@ -188,6 +188,7 @@ pub enum FileGitStatus {
 // Terminal types
 // ──────────────────────────────────────────────
 
+#[derive(Clone)]
 pub struct TerminalGrid {
     pub cols: u16,
     pub rows: u16,
@@ -209,6 +210,7 @@ impl Default for TerminalCell {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct CursorState {
     pub row: u16,
     pub col: u16,

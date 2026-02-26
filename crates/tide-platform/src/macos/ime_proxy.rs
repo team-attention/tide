@@ -55,6 +55,11 @@ pub struct ImeProxyViewIvars {
     deferring: Cell<bool>,
     /// Accumulated events during interpretKeyEvents. Flushed after it returns.
     deferred_events: RefCell<Vec<PlatformEvent>>,
+    /// When true, suppress all event emission and committed_text mutation.
+    /// Used during the flagsChanged priming cycle, which calls setMarkedText/
+    /// unmarkText to nudge NSTextInputContext but should not produce app-visible
+    /// side-effects.
+    priming: Cell<bool>,
 }
 
 declare_class!(
@@ -126,13 +131,34 @@ declare_class!(
         }
 
         /// On modifier changes (including Caps Lock input method toggle),
+        /// commit any active preedit, clear the virtual text buffer, and
         /// prime the NSTextInputContext by cycling through a setMarkedText/
-        /// unmarkText sequence. This nudges the context's internal state so
-        /// the Korean IME's inline composition (via replacementRange) works
-        /// more reliably after an input method switch.
+        /// unmarkText sequence. The priming nudges the context's internal
+        /// state so the Korean IME's inline composition works reliably
+        /// after an input method switch.
         #[method(flagsChanged:)]
         fn flags_changed(&self, event: &NSEvent) {
-            self.ivars().ime_handled.set(true); // prevent side-effect emissions
+            // Commit any in-progress preedit so composing text isn't lost
+            // when the input method deactivates.
+            {
+                let preedit = self.ivars().marked_text.borrow().clone();
+                if !preedit.is_empty() {
+                    self.ivars().marked_text.borrow_mut().clear();
+                    self.emit(PlatformEvent::ImeCommit(preedit));
+                    self.emit(PlatformEvent::ImePreedit {
+                        text: String::new(),
+                        cursor: None,
+                    });
+                }
+            }
+            // Clear committed_text so the incoming IME starts from a clean
+            // state and doesn't reference stale text via replacement ranges.
+            self.ivars().committed_text.borrow_mut().clear();
+
+            // Priming cycle: suppress event emission — the calls are only
+            // meant to nudge NSTextInputContext, not produce app-visible events.
+            self.ivars().priming.set(true);
+            self.ivars().ime_handled.set(true);
             unsafe {
                 let empty = NSString::from_str("");
                 let range = NSRange::new(0, 0);
@@ -144,6 +170,7 @@ declare_class!(
                 ];
                 let _: () = msg_send![self, unmarkText];
             }
+            self.ivars().priming.set(false);
             self.ivars().ime_handled.set(false);
             // Forward to next responder (TideView) for ModifiersChanged emission
             unsafe {
@@ -195,17 +222,6 @@ declare_class!(
 
             self.ivars().ime_handled.set(true);
             self.emit(PlatformEvent::ImeCommit(commit_text));
-
-            // Clear committed_text after each commit so the IME never sees
-            // stale text on the next keystroke.  Without this, the IME uses
-            // replacement ranges (insertText:replacementRange:) for inline
-            // composition, which emits DEL bytes to erase old characters.
-            // In a terminal, the cursor may have moved (TUI redraws, etc.),
-            // making the replacement count wrong — causing "devouring."
-            // Clearing matches iTerm2/Ghostty behavior (no committed_text
-            // buffer) and forces the IME to use the clean setMarkedText →
-            // insertText(NSNotFound) path for all composition.
-            self.ivars().committed_text.borrow_mut().clear();
         }
 
         #[method(setMarkedText:selectedRange:replacementRange:)]
@@ -213,9 +229,43 @@ declare_class!(
             &self,
             string: &AnyObject,
             _selected_range: NSRange,
-            _replacement_range: NSRange,
+            replacement_range: NSRange,
         ) {
             let text = nsstring_from_anyobject(string);
+
+            // Handle replacement range: the IME wants to replace previously
+            // committed text with the new preedit (e.g., Korean IME replacing
+            // committed ㄱ with composing 가).  Erase the replaced characters
+            // from the terminal so the preedit overlay renders at the correct
+            // cursor position.
+            if replacement_range.location != NSNotFound as usize {
+                let committed_utf16 = utf16_len(&self.ivars().committed_text.borrow());
+                if replacement_range.location < committed_utf16 {
+                    let replace_end = (replacement_range.location + replacement_range.length)
+                        .min(committed_utf16);
+                    let clipped = NSRange::new(
+                        replacement_range.location,
+                        replace_end - replacement_range.location,
+                    );
+                    let (byte_start, byte_end, replaced_chars) = {
+                        let buf = self.ivars().committed_text.borrow();
+                        let (s, e) = utf16_range_to_byte_range(&buf, clipped);
+                        (s, e, buf[s..e].chars().count())
+                    };
+                    if replaced_chars > 0 {
+                        let mut dels = String::with_capacity(replaced_chars);
+                        for _ in 0..replaced_chars {
+                            dels.push('\x7f');
+                        }
+                        self.emit(PlatformEvent::ImeCommit(dels));
+                        self.ivars()
+                            .committed_text
+                            .borrow_mut()
+                            .replace_range(byte_start..byte_end, "");
+                    }
+                }
+            }
+
             *self.ivars().marked_text.borrow_mut() = text.clone();
             self.ivars().ime_handled.set(true);
             self.emit(PlatformEvent::ImePreedit { text, cursor: None });
@@ -389,6 +439,7 @@ impl ImeProxyView {
             committed_text: RefCell::new(String::new()),
             deferring: Cell::new(false),
             deferred_events: RefCell::new(Vec::new()),
+            priming: Cell::new(false),
         });
         unsafe { msg_send_id![super(this), initWithFrame: NSRect::ZERO] }
     }
@@ -405,6 +456,9 @@ impl ImeProxyView {
     }
 
     fn emit(&self, event: PlatformEvent) {
+        if self.ivars().priming.get() {
+            return; // Suppress during flagsChanged priming cycle
+        }
         if self.ivars().deferring.get() {
             self.ivars().deferred_events.borrow_mut().push(event);
         } else {

@@ -1,9 +1,9 @@
-// Platform event dispatch.
+// Platform event dispatch and app thread main loop.
 
 use std::time::{Duration, Instant};
 
 use tide_core::TerminalBackend;
-use tide_platform::{PlatformEvent, PlatformWindow};
+use tide_platform::{PlatformEvent, PlatformWindow, WindowProxy};
 
 use crate::pane::PaneKind;
 use crate::session;
@@ -11,89 +11,188 @@ use crate::theme::*;
 use crate::ui_state::FocusArea;
 use crate::App;
 
+/// Events delivered to the app thread.
+pub(crate) enum AppEvent {
+    /// A platform event forwarded from the main thread.
+    Platform(PlatformEvent),
+    /// Wake signal from a background thread (PTY output, file watcher, etc.).
+    Wake,
+}
+
 impl App {
-    /// Main entry point for all platform events.
-    /// Called by the native run loop for every key, mouse, IME, resize, etc.
-    pub(crate) fn handle_platform_event(
-        &mut self,
-        event: PlatformEvent,
-        window: &dyn PlatformWindow,
-    ) {
-        // One-time initialization on first event
-        if self.render_thread.is_none() {
-            // Capture platform pointers for webview management
-            self.content_view_ptr = window.content_view_ptr();
-            self.window_ptr = window.window_ptr();
+    // ── Phase 1: one-time initialization on the main thread ──────────
 
-            let saved_session = session::load_session();
-            let is_crash = session::is_crash_recovery();
+    /// Perform one-time initialization that requires the real window handle
+    /// (GPU surface creation, PTY pre-spawn, session restore).
+    /// Called on the main thread before the app thread is spawned.
+    pub(crate) fn init_phase1(&mut self, window: &dyn PlatformWindow) {
+        self.content_view_ptr = window.content_view_ptr();
+        self.window_ptr = window.window_ptr();
 
-            // Pre-spawn PTY with estimated dimensions (80×24) BEFORE GPU init.
-            // The shell starts loading ~/.zshrc in parallel with GPU initialization,
-            // so the prompt appears sooner after launch.
-            let early_terminal = tide_terminal::Terminal::with_cwd(80, 24, None, self.dark_mode).ok();
+        let saved_session = session::load_session();
+        let is_crash = session::is_crash_recovery();
 
-            self.init_gpu(window); // Shell is loading in parallel
+        // Pre-spawn PTY with estimated dimensions (80x24) BEFORE GPU init.
+        // The shell starts loading ~/.zshrc in parallel with GPU initialization,
+        // so the prompt appears sooner after launch.
+        let early_terminal =
+            tide_terminal::Terminal::with_cwd(80, 24, None, self.dark_mode).ok();
 
-            if is_crash {
-                if let Some(session) = saved_session {
-                    if !self.restore_from_session(session) {
-                        self.create_initial_pane(early_terminal);
-                    }
-                    // Crash recovery succeeded: early_terminal dropped (kills extra shell)
-                } else {
+        self.init_gpu(window); // Shell is loading in parallel
+
+        if is_crash {
+            if let Some(session) = saved_session {
+                if !self.restore_from_session(session) {
                     self.create_initial_pane(early_terminal);
                 }
-            } else if let Some(ref session) = saved_session {
-                self.restore_preferences(session, early_terminal);
+                // Crash recovery succeeded: early_terminal dropped (kills extra shell)
             } else {
                 self.create_initial_pane(early_terminal);
             }
-
-            session::create_running_marker();
-            // Create IME proxy views for all panes created during init
-            self.sync_ime_proxies(window, false);
-            self.compute_layout();
+        } else if let Some(ref session) = saved_session {
+            self.restore_preferences(session, early_terminal);
+        } else {
+            self.create_initial_pane(early_terminal);
         }
 
-        // Determine if this is an input event for low-latency frame pacing (0ms vs 16ms).
-        // Mouse events are always treated as input events so that drag operations
-        // (border resize, text selection, pane drag) render immediately without
-        // the 16ms throttle that would otherwise cap them at 60fps.
-        let is_input_event = matches!(
-            event,
-            PlatformEvent::KeyDown { .. }
-                | PlatformEvent::ImeCommit(_)
-                | PlatformEvent::ImePreedit { .. }
-                | PlatformEvent::BatchEnd
-                | PlatformEvent::Scroll { .. }
-                | PlatformEvent::MouseDown { .. }
-                | PlatformEvent::MouseUp { .. }
-                | PlatformEvent::MouseMoved { .. }
-        );
-        let input_event_start = if is_input_event {
-            Some(Instant::now())
-        } else {
-            None
-        };
+        session::create_running_marker();
+    }
 
-        // Keyboard/IME/modifier events should NOT trigger redundant
-        // makeFirstResponder calls — the resign/become cycle resets
-        // NSTextInputContext, which breaks Korean IME composition on the
-        // first character after an input method switch.
-        // Only mouse, resize, and focus events may need to re-establish
-        // the first responder (e.g. after clicking a WKWebView).
-        let skip_ime_refocus = matches!(
-            event,
-            PlatformEvent::KeyDown { .. }
-                | PlatformEvent::KeyUp { .. }
-                | PlatformEvent::ImeCommit(_)
-                | PlatformEvent::ImePreedit { .. }
-                | PlatformEvent::ModifiersChanged(_)
-                | PlatformEvent::BatchStart
-                | PlatformEvent::BatchEnd
-        );
+    // ── Phase 2: app thread main loop ────────────────────────────────
 
+    /// Run the app thread event loop.  Blocks on the event channel, processes
+    /// events, polls background sources, and renders when needed.
+    pub(crate) fn app_thread_run(
+        mut self,
+        event_rx: std::sync::mpsc::Receiver<AppEvent>,
+        window: WindowProxy,
+    ) {
+        loop {
+            let timeout = self.next_timeout();
+
+            // Block until an event arrives or a timer fires
+            let event = match event_rx.recv_timeout(timeout) {
+                Ok(e) => Some(e),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            };
+
+            // Process the received event
+            if let Some(AppEvent::Platform(event)) = event {
+                self.handle_platform_event(event, &window);
+            }
+
+            // Drain all pending events (batch processing for throughput)
+            while let Ok(app_event) = event_rx.try_recv() {
+                if let AppEvent::Platform(event) = app_event {
+                    self.handle_platform_event(event, &window);
+                }
+            }
+
+            // Poll background sources (PTY output, file watcher, git)
+            self.poll_background_events(&window);
+
+            // Cursor blink
+            let blink_elapsed = Instant::now().duration_since(self.cursor_blink_at);
+            let blink_phase = (blink_elapsed.as_millis() / 530) % 2 == 0;
+            if blink_phase != self.cursor_visible {
+                self.cursor_visible = blink_phase;
+                self.needs_redraw = true;
+            }
+
+            // Render if needed
+            if self.needs_redraw && !self.is_occluded && self.batch_depth == 0 {
+                let now = Instant::now();
+                let skip_coalesce = self.input_just_sent
+                    || self.input_sent_at.map_or(false, |at| {
+                        now.duration_since(at) < Duration::from_millis(16)
+                    });
+                if skip_coalesce
+                    || now.duration_since(self.last_frame) >= Duration::from_millis(2)
+                {
+                    self.update();
+                    if self.render() {
+                        self.needs_redraw = false;
+                        self.last_frame = now;
+
+                        // Reveal window after first frame
+                        if !self.window_shown {
+                            window.show_window();
+                            // Re-establish first responder: macOS may reset
+                            // it during window lifecycle initialization
+                            // (delegate is set after makeKeyAndOrderFront,
+                            // so the initial Focused event is missed).
+                            if let Some(target) = self.effective_ime_target() {
+                                window.focus_ime_proxy(target);
+                            }
+                            self.window_shown = true;
+                        }
+                    }
+                    // If render() returned false (render thread busy),
+                    // the render thread waker will wake us when it finishes.
+                }
+            }
+        }
+    }
+
+    /// Compute the timeout for the next `recv_timeout` call.
+    fn next_timeout(&self) -> Duration {
+        let now = Instant::now();
+        let mut timeout = Duration::from_millis(100); // default max sleep
+
+        // Cursor blink: next toggle
+        if self.focused.is_some() {
+            let blink_elapsed = now.duration_since(self.cursor_blink_at);
+            let next_toggle_ms = 530 - (blink_elapsed.as_millis() % 530) as u64;
+            timeout = timeout.min(Duration::from_millis(next_toggle_ms));
+        }
+
+        // Deferred resize
+        if let Some(at) = self.resize_deferred_at {
+            if at > now {
+                timeout = timeout.min(at - now);
+            } else {
+                return Duration::ZERO;
+            }
+        }
+
+        // Badge check
+        if let Some(at) = self.badge_check_at {
+            if at > now {
+                timeout = timeout.min(at - now);
+            } else {
+                return Duration::ZERO;
+            }
+        }
+
+        // Frame pacing: if we need to render but are within 2ms coalescing window
+        if self.needs_redraw && !self.is_occluded && self.batch_depth == 0 {
+            let skip_coalesce = self.input_just_sent
+                || self.input_sent_at.map_or(false, |at| {
+                    now.duration_since(at) < Duration::from_millis(16)
+                });
+            if skip_coalesce {
+                return Duration::ZERO; // render immediately
+            }
+            let since_last = now.duration_since(self.last_frame);
+            if since_last < Duration::from_millis(2) {
+                timeout = timeout.min(Duration::from_millis(2) - since_last);
+            } else {
+                return Duration::ZERO; // past coalescing window, render now
+            }
+        }
+
+        timeout
+    }
+
+    // ── Event handler (runs on app thread) ───────────────────────────
+
+    /// Process a single platform event.  Called from the app thread loop.
+    pub(crate) fn handle_platform_event(
+        &mut self,
+        event: PlatformEvent,
+        window: &WindowProxy,
+    ) {
         match event {
             PlatformEvent::BatchStart => {
                 self.batch_depth += 1;
@@ -101,64 +200,12 @@ impl App {
             }
             PlatformEvent::BatchEnd => {
                 self.batch_depth = self.batch_depth.saturating_sub(1);
-                // Fall through to rendering decision below
+                // Fall through to IME sync below
             }
             PlatformEvent::RedrawRequested => {
-                if self.is_occluded { return; }
-
-                // Poll background events (PTY output, file watcher, git) so that
-                // waker-triggered redraws detect new terminal output and set
-                // needs_redraw.  Without this, PTY output that arrives after the
-                // previous render is missed and the character only appears on the
-                // *next* keystroke ("one-beat delay").
-                self.poll_background_events(window);
-
-                // Cursor blink timer: toggle every 530ms
-                let blink_elapsed = Instant::now().duration_since(self.cursor_blink_at);
-                let blink_phase = (blink_elapsed.as_millis() / 530) % 2 == 0;
-                if blink_phase != self.cursor_visible {
-                    self.cursor_visible = blink_phase;
-                    self.needs_redraw = true;
-                }
-                // Schedule next redraw for blink toggle
-                if self.focus_area == FocusArea::EditorDock || matches!(self.focused, Some(_)) {
-                    let next_toggle_ms = 530 - (blink_elapsed.as_millis() % 530) as u64;
-                    if next_toggle_ms < 100 {
-                        window.request_redraw();
-                    }
-                }
-
-                if self.needs_redraw {
-                    // Apply frame pacing: if we rendered very recently (< 2ms),
-                    // defer so rapid PTY echoes are coalesced into one frame.
-                    // This prevents flicker when the terminal processes multi-part
-                    // output (e.g. Backspace echo then commit echo during Korean
-                    // IME replacement) across separate read chunks.
-                    // 2ms is enough to coalesce fragmented echoes while keeping
-                    // input-to-pixel latency minimal.
-                    let now = Instant::now();
-                    if now.duration_since(self.last_frame) < Duration::from_millis(2) {
-                        window.request_redraw();
-                        return;
-                    }
-
-                    self.update();
-                    if self.render() {
-                        self.needs_redraw = false;
-                        self.last_frame = now;
-
-                        // Reveal window after first frame so the user never sees a blank window
-                        if !self.window_shown {
-                            window.show_window();
-                            self.window_shown = true;
-                        }
-                    }
-                    // If render() returned false (render thread busy),
-                    // do nothing — the render thread will call the waker
-                    // when it finishes, which triggers a new RedrawRequested.
-                    // Busy-retrying here would starve the compositor and
-                    // prevent nextDrawable() from returning.
-                }
+                // Rendering is handled by the app thread loop, not here.
+                // RedrawRequested from the main thread is just a wake signal.
+                self.needs_redraw = true;
                 return;
             }
             PlatformEvent::CloseRequested => {
@@ -170,10 +217,8 @@ impl App {
             PlatformEvent::Resized { width, height } => {
                 self.window_size = (width, height);
                 self.reconfigure_surface();
-                // Defer ratio snapping during continuous resize (drag).
-                // PTY resize happens immediately via compute_layout() so
-                // terminal content reflows incrementally, not all-at-once.
-                self.resize_deferred_at = Some(Instant::now() + Duration::from_millis(50));
+                self.resize_deferred_at =
+                    Some(Instant::now() + Duration::from_millis(50));
                 self.compute_layout();
                 self.ime_cursor_dirty = true;
                 self.needs_redraw = true;
@@ -191,25 +236,29 @@ impl App {
             PlatformEvent::Focused(focused) => {
                 if focused {
                     self.modifiers = tide_core::Modifiers::default();
-                    // Re-establish first responder for the current focused pane
-                    self.sync_ime_proxies(window, false);
+                    self.sync_ime_proxies(window);
+                    // Re-establish first responder unconditionally: macOS may
+                    // reset it during window lifecycle events (e.g., app switch).
+                    // sync_ime_proxies skips focus_ime_proxy when the target
+                    // hasn't changed, but the first responder can still be lost.
+                    if let Some(target) = self.effective_ime_target() {
+                        window.focus_ime_proxy(target);
+                    }
                 }
             }
-            PlatformEvent::Fullscreen(fs) => {
-                self.is_fullscreen = fs;
-                self.top_inset = if fs { 0.0 } else { TITLEBAR_HEIGHT };
-                // Clear deferred resize — the fullscreen animation Resized events
-                // set resize_deferred_at, but the animation is now complete.
-                // PTY must resize immediately to match the final window dimensions.
+            PlatformEvent::Fullscreen {
+                is_fullscreen,
+                width,
+                height,
+            } => {
+                self.is_fullscreen = is_fullscreen;
+                self.top_inset = if is_fullscreen { 0.0 } else { TITLEBAR_HEIGHT };
                 self.resize_deferred_at = None;
 
-                // The Resized event from setFrameSize: is often dropped due to
-                // re-entrancy (callback already borrowed when macOS resizes the
-                // view during the fullscreen transition).  Query the actual size
-                // from the window so we don't render with stale dimensions.
-                let (w, h) = window.inner_size();
-                if (w, h) != self.window_size {
-                    self.window_size = (w, h);
+                // Use the size included in the event (avoids querying window
+                // from the app thread, which would require a cross-thread call).
+                if (width, height) != self.window_size {
+                    self.window_size = (width, height);
                     self.reconfigure_surface();
                 }
 
@@ -225,8 +274,6 @@ impl App {
                 }
             }
             PlatformEvent::WebViewFocused => {
-                // WKWebView has first responder — set focus to EditorDock
-                // so shortcuts like Cmd+W close the browser tab, not a terminal.
                 self.focus_area = FocusArea::EditorDock;
                 self.chrome_generation += 1;
                 self.needs_redraw = true;
@@ -243,16 +290,17 @@ impl App {
                 self.cursor_blink_at = Instant::now();
                 self.cursor_visible = true;
             }
-            PlatformEvent::KeyDown { key, modifiers, chars } => {
+            PlatformEvent::KeyDown {
+                key,
+                modifiers,
+                chars,
+            } => {
                 self.handle_key_down(key, modifiers, chars);
                 self.ime_cursor_dirty = true;
                 self.cursor_blink_at = Instant::now();
                 self.cursor_visible = true;
             }
-            PlatformEvent::KeyUp { .. } => {
-                // Native IME handles all text routing via ImeCommit/ImePreedit,
-                // so we don't need to process KeyUp events for text input.
-            }
+            PlatformEvent::KeyUp { .. } => {}
             PlatformEvent::MouseDown { button, position } => {
                 let pos = self.physical_to_logical(position);
                 self.last_cursor_pos = pos;
@@ -276,93 +324,34 @@ impl App {
                 let pos = self.physical_to_logical(position);
                 self.handle_cursor_moved_logical(pos, window);
             }
-            PlatformEvent::Scroll { dx, dy, position } => {
+            PlatformEvent::Scroll {
+                dx,
+                dy,
+                position,
+            } => {
                 let pos = self.physical_to_logical(position);
                 self.last_cursor_pos = pos;
                 self.handle_scroll(dx, dy);
             }
         }
 
-        // Process deferred fullscreen toggle (action handler has no window access)
+        // Process deferred fullscreen toggle
         if self.pending_fullscreen_toggle {
             self.pending_fullscreen_toggle = false;
             window.set_fullscreen(!self.is_fullscreen);
         }
 
-        // Sync IME proxy views: create/remove proxies and focus the right one.
-        // Proxy view first-responder transitions automatically call unmarkText,
-        // which clears any in-progress Korean IME composition.
-        self.sync_ime_proxies(window, skip_ime_refocus);
-
-        // Frame pacing: check if we need to redraw
-        self.poll_background_events(window);
-
-        // Frame-paced rendering: input events render immediately (0ms) for
-        // lowest possible keypress-to-pixel latency; other events use 16ms / ~60fps cap.
-        // PTY echo coalescing (2ms) is handled in the RedrawRequested path.
-        //
-        // With the dedicated render thread, get_current_texture() no longer
-        // blocks this thread.  However, if the render thread is still busy
-        // (renderer not returned), render() returns false and we retry later.
-        if self.needs_redraw && !self.is_occluded && self.batch_depth == 0 {
-            let now = Instant::now();
-            let min_interval = if is_input_event {
-                Duration::ZERO
-            } else {
-                Duration::from_millis(16)
-            };
-            if now.duration_since(self.last_frame) >= min_interval {
-                self.update();
-                if self.render() {
-                    self.needs_redraw = false;
-                    self.last_frame = now;
-
-                    if let Some(start) = input_event_start {
-                        log::trace!("input->render: {}us", start.elapsed().as_micros());
-                    }
-
-                    if !self.window_shown {
-                        window.show_window();
-                        self.window_shown = true;
-                    }
-                }
-                // If render() returned false, the render thread will
-                // wake us via the waker when it finishes.
-            } else {
-                if let Some(start) = input_event_start {
-                    let since_last = now.duration_since(self.last_frame).as_micros();
-                    log::trace!(
-                        "input deferred ({}us since last frame, min={}ms)",
-                        since_last,
-                        min_interval.as_millis()
-                    );
-                    let _ = start; // suppress unused warning
-                }
-                window.request_redraw();
-            }
-        }
+        // Sync IME proxy views
+        self.sync_ime_proxies(window);
     }
 
     /// Process pending IME proxy view operations and focus the correct proxy.
-    /// `skip_refocus`: when true, skip redundant `makeFirstResponder` calls
-    /// if the IME target hasn't changed.  Keyboard/IME/modifier events set
-    /// this to avoid the resign→become cycle that resets NSTextInputContext
-    /// and breaks Korean IME composition after an input method switch.
-    fn sync_ime_proxies(&mut self, window: &dyn PlatformWindow, skip_refocus: bool) {
-        // Early return when there's nothing to do at all
+    pub(crate) fn sync_ime_proxies(&mut self, window: &WindowProxy) {
         if self.pending_ime_proxy_creates.is_empty()
             && self.pending_ime_proxy_removes.is_empty()
         {
             let target = self.effective_ime_target();
             if target == self.last_ime_target {
-                // Re-focus the proxy only for mouse/focus events —
-                // macOS may have changed first responder (e.g. clicking WKWebView).
-                // Skip for key/IME events to preserve NSTextInputContext state.
-                if !skip_refocus {
-                    if let Some(target) = target {
-                        window.focus_ime_proxy(target);
-                    }
-                }
                 return;
             }
         }
@@ -374,11 +363,8 @@ impl App {
             window.remove_ime_proxy(id);
         }
 
-        // Focus the proxy for the current effective target
         let target = self.effective_ime_target();
         if target != self.last_ime_target {
-            // IME target changed — commit preedit to the *old* target pane,
-            // then clear app-level IME state.
             if !self.ime_preedit.is_empty() {
                 if let Some(old_target) = self.last_ime_target {
                     self.commit_text_to_pane(old_target, &self.ime_preedit.clone());
@@ -395,7 +381,7 @@ impl App {
         }
     }
 
-    /// Commit text directly to a specific pane (terminal write or editor insert).
+    /// Commit text directly to a specific pane.
     fn commit_text_to_pane(&mut self, pane_id: tide_core::PaneId, text: &str) {
         use crate::pane::PaneKind;
         match self.panes.get_mut(&pane_id) {
@@ -419,10 +405,6 @@ impl App {
     }
 
     /// The effective pane that will receive IME input, considering focus area.
-    ///
-    /// Returns `None` when the active browser tab's URL bar is NOT focused,
-    /// so the WKWebView retains first responder and receives keyboard input
-    /// for web content directly.
     pub(crate) fn effective_ime_target(&self) -> Option<tide_core::PaneId> {
         use crate::ui_state::FocusArea;
         let target = if self.focus_area == FocusArea::EditorDock {
@@ -430,8 +412,6 @@ impl App {
         } else {
             self.focused
         };
-        // When a browser pane is the target but its URL bar is not focused,
-        // return None so sync_ime_proxies won't steal first responder from WKWebView.
         if let Some(id) = target {
             if let Some(PaneKind::Browser(bp)) = self.panes.get(&id) {
                 if !bp.url_input_focused {
@@ -442,19 +422,14 @@ impl App {
         target
     }
 
-    /// Convert logical position (from NSView, already in view coords) to our logical coords
     fn physical_to_logical(&self, pos: (f64, f64)) -> tide_core::Vec2 {
-        // NSView positions are already in logical (point) coordinates when isFlipped
         tide_core::Vec2::new(pos.0 as f32, pos.1 as f32)
     }
 
-    /// Poll background events (PTY output, file watcher, git poller) and manage frame pacing.
-    pub(crate) fn poll_background_events(&mut self, window: &dyn PlatformWindow) {
-        // Retrieve the renderer from the render thread if it finished.
-        // Called here (not just in render()) so the renderer is available
-        // promptly for the next frame, especially during resize or after
-        // the render thread completes while the main thread is idle.
+    /// Poll background events (PTY output, file watcher, git).
+    pub(crate) fn poll_background_events(&mut self, window: &WindowProxy) {
         self.poll_render_result();
+
         // Deferred PTY resize
         if let Some(at) = self.resize_deferred_at {
             if Instant::now() >= at {
@@ -521,13 +496,12 @@ impl App {
             }
         }
 
-        // Update IME cursor area so the candidate window follows the text cursor
+        // Update IME cursor area
         self.update_ime_cursor_area(window);
     }
 
-    /// Update the IME cursor area on the proxy view so the candidate window
-    /// appears next to the text cursor. Only recomputes when `ime_cursor_dirty` is set.
-    fn update_ime_cursor_area(&mut self, window: &dyn PlatformWindow) {
+    /// Update the IME cursor area on the proxy view.
+    fn update_ime_cursor_area(&mut self, window: &WindowProxy) {
         if !self.ime_cursor_dirty {
             return;
         }
@@ -537,7 +511,6 @@ impl App {
 
         let cell_size = self.cell_size();
 
-        // Determine the effective target pane
         let target_id = if self.focus_area == FocusArea::EditorDock {
             self.active_editor_tab().or(self.focused)
         } else {
@@ -550,15 +523,21 @@ impl App {
 
         match self.panes.get(&target_id) {
             Some(PaneKind::Terminal(pane)) => {
-                // Find the visual rect for this pane
-                if let Some((_, rect)) = self.visual_pane_rects.iter().find(|(id, _)| *id == target_id) {
+                if let Some((_, rect)) = self
+                    .visual_pane_rects
+                    .iter()
+                    .find(|(id, _)| *id == target_id)
+                {
                     let cursor = pane.backend.cursor();
                     let inner_w = rect.width - 2.0 * crate::theme::PANE_PADDING;
                     let max_cols = (inner_w / cell_size.width).floor() as usize;
                     let actual_w = max_cols as f32 * cell_size.width;
                     let center_x = (inner_w - actual_w) / 2.0;
                     let top = self.pane_area_mode.content_top();
-                    let cx = rect.x + crate::theme::PANE_PADDING + center_x + cursor.col as f32 * cell_size.width;
+                    let cx = rect.x
+                        + crate::theme::PANE_PADDING
+                        + center_x
+                        + cursor.col as f32 * cell_size.width;
                     let cy = rect.y + top + cursor.row as f32 * cell_size.height;
                     window.set_ime_proxy_cursor_area(
                         target_id,
@@ -577,24 +556,31 @@ impl App {
                     return;
                 }
                 let visual_row = pos.line - scroll;
-                let cursor_char_col = if let Some(line_text) = pane.editor.buffer.line(pos.line) {
-                    let byte_col = pos.col.min(line_text.len());
-                    line_text[..byte_col].chars().count()
-                } else {
-                    0
-                };
+                let cursor_char_col =
+                    if let Some(line_text) = pane.editor.buffer.line(pos.line) {
+                        let byte_col = pos.col.min(line_text.len());
+                        line_text[..byte_col].chars().count()
+                    } else {
+                        0
+                    };
                 if cursor_char_col < h_scroll {
                     return;
                 }
                 let visual_col = cursor_char_col - h_scroll;
                 let gutter_cells = crate::editor_pane::GUTTER_WIDTH_CELLS;
 
-                // Check visual rect first (tree editor), then panel rect
-                let (inner_x, inner_y) = if let Some((_, rect)) = self.visual_pane_rects.iter().find(|(id, _)| *id == target_id) {
+                let (inner_x, inner_y) = if let Some((_, rect)) = self
+                    .visual_pane_rects
+                    .iter()
+                    .find(|(id, _)| *id == target_id)
+                {
                     let top = self.pane_area_mode.content_top();
                     (rect.x + crate::theme::PANE_PADDING, rect.y + top)
                 } else if let Some(panel_rect) = self.editor_panel_rect {
-                    let content_top = panel_rect.y + crate::theme::PANE_PADDING + crate::theme::PANEL_TAB_HEIGHT + crate::theme::PANE_GAP;
+                    let content_top = panel_rect.y
+                        + crate::theme::PANE_PADDING
+                        + crate::theme::PANEL_TAB_HEIGHT
+                        + crate::theme::PANE_GAP;
                     (panel_rect.x + crate::theme::PANE_PADDING, content_top)
                 } else {
                     return;

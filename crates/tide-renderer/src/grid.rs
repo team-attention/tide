@@ -2,33 +2,29 @@ use std::collections::HashSet;
 
 use tide_core::{Color, Rect, Size, TextStyle, Vec2};
 
-use crate::vertex::{GlyphVertex, RectVertex};
+use crate::vertex::{GridBgInstance, GridGlyphInstance};
 use crate::WgpuRenderer;
 
 #[derive(Default)]
 pub struct PaneGridCache {
-    pub rect_vertices: Vec<RectVertex>,
-    pub rect_indices: Vec<u32>,
-    pub glyph_vertices: Vec<GlyphVertex>,
-    pub glyph_indices: Vec<u32>,
+    pub bg_instances: Vec<GridBgInstance>,
+    pub glyph_instances: Vec<GridGlyphInstance>,
 }
 
 impl PaneGridCache {
     fn clear(&mut self) {
-        self.rect_vertices.clear();
-        self.rect_indices.clear();
-        self.glyph_vertices.clear();
-        self.glyph_indices.clear();
+        self.bg_instances.clear();
+        self.glyph_instances.clear();
     }
 }
 
-/// Tracks a pane's vertex range in the assembled grid arrays for incremental updates.
+/// Tracks a pane's instance range in the assembled grid arrays for incremental updates.
 #[derive(Clone, Debug)]
 pub(crate) struct PaneGridRange {
-    pub rect_vert_start: usize,
-    pub rect_vert_count: usize,
-    pub glyph_vert_start: usize,
-    pub glyph_vert_count: usize,
+    pub bg_inst_start: usize,
+    pub bg_inst_count: usize,
+    pub glyph_inst_start: usize,
+    pub glyph_inst_count: usize,
 }
 
 impl WgpuRenderer {
@@ -50,7 +46,7 @@ impl WgpuRenderer {
         }
     }
 
-    /// Remove a pane's cached vertices (call when pane is closed).
+    /// Remove a pane's cached instances (call when pane is closed).
     pub fn remove_pane_cache(&mut self, pane_id: u64) {
         self.pane_grid_caches.remove(&pane_id);
         self.pane_grid_ranges.remove(&pane_id);
@@ -72,20 +68,20 @@ impl WgpuRenderer {
     }
 
     /// Assemble all per-pane caches into the global grid arrays, in the given order.
-    /// Uses incremental update when only some panes changed and vertex counts match.
+    /// Uses incremental update when only some panes changed and instance counts match.
     pub fn assemble_grid(&mut self, pane_order: &[u64]) {
         // Nothing dirty and order unchanged → skip entirely
         if self.grid_dirty_panes.is_empty() && pane_order == &self.last_pane_order[..] {
             return;
         }
 
-        // Try incremental path: same pane order, dirty panes' vertex counts unchanged
+        // Try incremental path: same pane order, dirty panes' instance counts unchanged
         if pane_order == &self.last_pane_order[..] && !self.grid_dirty_panes.is_empty() {
             let can_incremental = self.grid_dirty_panes.iter().all(|id| {
                 match (self.pane_grid_caches.get(id), self.pane_grid_ranges.get(id)) {
                     (Some(cache), Some(range)) => {
-                        cache.rect_vertices.len() == range.rect_vert_count
-                            && cache.glyph_vertices.len() == range.glyph_vert_count
+                        cache.bg_instances.len() == range.bg_inst_count
+                            && cache.glyph_instances.len() == range.glyph_inst_count
                     }
                     _ => false,
                 }
@@ -98,30 +94,23 @@ impl WgpuRenderer {
         }
 
         // Full assembly
-        self.grid_rect_vertices.clear();
-        self.grid_rect_indices.clear();
-        self.grid_glyph_vertices.clear();
-        self.grid_glyph_indices.clear();
+        self.grid_bg_instances.clear();
+        self.grid_glyph_instances.clear();
         self.pane_grid_ranges.clear();
 
         for &id in pane_order {
             if let Some(cache) = self.pane_grid_caches.get(&id) {
-                let rect_vert_start = self.grid_rect_vertices.len();
-                let glyph_vert_start = self.grid_glyph_vertices.len();
+                let bg_inst_start = self.grid_bg_instances.len();
+                let glyph_inst_start = self.grid_glyph_instances.len();
 
-                let rect_base = rect_vert_start as u32;
-                self.grid_rect_vertices.extend_from_slice(&cache.rect_vertices);
-                self.grid_rect_indices.extend(cache.rect_indices.iter().map(|i| i + rect_base));
-
-                let glyph_base = glyph_vert_start as u32;
-                self.grid_glyph_vertices.extend_from_slice(&cache.glyph_vertices);
-                self.grid_glyph_indices.extend(cache.glyph_indices.iter().map(|i| i + glyph_base));
+                self.grid_bg_instances.extend_from_slice(&cache.bg_instances);
+                self.grid_glyph_instances.extend_from_slice(&cache.glyph_instances);
 
                 self.pane_grid_ranges.insert(id, PaneGridRange {
-                    rect_vert_start,
-                    rect_vert_count: cache.rect_vertices.len(),
-                    glyph_vert_start,
-                    glyph_vert_count: cache.glyph_vertices.len(),
+                    bg_inst_start,
+                    bg_inst_count: cache.bg_instances.len(),
+                    glyph_inst_start,
+                    glyph_inst_count: cache.glyph_instances.len(),
                 });
             }
         }
@@ -136,8 +125,7 @@ impl WgpuRenderer {
         self.grid_needs_upload = true;
     }
 
-    /// Incremental assembly: only replace vertex data for dirty panes (same vertex counts).
-    /// Indices are unchanged because pane vertex offsets haven't moved.
+    /// Incremental assembly: only replace instance data for dirty panes (same counts).
     fn assemble_grid_incremental(&mut self) {
         self.grid_partial_uploads.clear();
 
@@ -151,38 +139,36 @@ impl WgpuRenderer {
                 _ => continue,
             };
 
-            // In-place vertex replacement (indices stay the same)
-            self.grid_rect_vertices[range.rect_vert_start..range.rect_vert_start + range.rect_vert_count]
-                .copy_from_slice(&cache.rect_vertices);
-            self.grid_glyph_vertices[range.glyph_vert_start..range.glyph_vert_start + range.glyph_vert_count]
-                .copy_from_slice(&cache.glyph_vertices);
+            // In-place instance replacement
+            self.grid_bg_instances[range.bg_inst_start..range.bg_inst_start + range.bg_inst_count]
+                .copy_from_slice(&cache.bg_instances);
+            self.grid_glyph_instances[range.glyph_inst_start..range.glyph_inst_start + range.glyph_inst_count]
+                .copy_from_slice(&cache.glyph_instances);
 
             self.grid_partial_uploads.push(range);
         }
     }
 
-    // ── Existing API ────────────────────────────────────────
+    // ── Grid drawing API ────────────────────────────────────
 
-    /// Draw a rect into the cached grid layer (or active pane cache).
+    /// Draw a rect into the cached grid layer (or active pane cache) as an instance.
     pub fn draw_grid_rect(&mut self, rect: Rect, color: Color) {
         let x = rect.x * self.scale_factor;
         let y = rect.y * self.scale_factor;
         let w = rect.width * self.scale_factor;
         let h = rect.height * self.scale_factor;
-        let c = [color.r, color.g, color.b, color.a];
 
-        let (rv, ri) = if self.active_pane_id.is_some() {
-            (&mut self.active_pane_cache.rect_vertices, &mut self.active_pane_cache.rect_indices)
-        } else {
-            (&mut self.grid_rect_vertices, &mut self.grid_rect_indices)
+        let inst = GridBgInstance {
+            position: [x, y],
+            size: [w, h],
+            color: [color.r, color.g, color.b, color.a],
         };
 
-        let base = rv.len() as u32;
-        rv.push(RectVertex { position: [x, y], color: c });
-        rv.push(RectVertex { position: [x + w, y], color: c });
-        rv.push(RectVertex { position: [x + w, y + h], color: c });
-        rv.push(RectVertex { position: [x, y + h], color: c });
-        ri.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        if self.active_pane_id.is_some() {
+            self.active_pane_cache.bg_instances.push(inst);
+        } else {
+            self.grid_bg_instances.push(inst);
+        }
     }
 
     /// Check if the atlas was reset since last check (all UV coords are stale).
@@ -194,14 +180,12 @@ impl WgpuRenderer {
 
     /// Signal that the grid content has changed and needs a full rebuild.
     pub fn invalidate_grid(&mut self) {
-        self.grid_rect_vertices.clear();
-        self.grid_rect_indices.clear();
-        self.grid_glyph_vertices.clear();
-        self.grid_glyph_indices.clear();
+        self.grid_bg_instances.clear();
+        self.grid_glyph_instances.clear();
         self.grid_needs_upload = true;
     }
 
-    /// Draw a cell into the cached grid layer (or active pane cache).
+    /// Draw a cell into the cached grid layer (or active pane cache) as instances.
     pub fn draw_grid_cell(
         &mut self,
         character: char,
@@ -230,48 +214,36 @@ impl WgpuRenderer {
         };
 
         // Determine target arrays
-        let (rv, ri, gv, gi) = if self.active_pane_id.is_some() {
-            (
-                &mut self.active_pane_cache.rect_vertices,
-                &mut self.active_pane_cache.rect_indices,
-                &mut self.active_pane_cache.glyph_vertices,
-                &mut self.active_pane_cache.glyph_indices,
-            )
+        let (bg, gl) = if self.active_pane_id.is_some() {
+            (&mut self.active_pane_cache.bg_instances, &mut self.active_pane_cache.glyph_instances)
         } else {
-            (
-                &mut self.grid_rect_vertices,
-                &mut self.grid_rect_indices,
-                &mut self.grid_glyph_vertices,
-                &mut self.grid_glyph_indices,
-            )
+            (&mut self.grid_bg_instances, &mut self.grid_glyph_instances)
         };
 
-        // Draw background
-        if let Some(bg) = style.background {
-            let base = rv.len() as u32;
-            let c = [bg.r, bg.g, bg.b, bg.a];
-            rv.push(RectVertex { position: [px, py], color: c });
-            rv.push(RectVertex { position: [px + cw, py], color: c });
-            rv.push(RectVertex { position: [px + cw, py + ch], color: c });
-            rv.push(RectVertex { position: [px, py + ch], color: c });
-            ri.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        // Background instance
+        if let Some(bg_color) = style.background {
+            bg.push(GridBgInstance {
+                position: [px, py],
+                size: [cw, ch],
+                color: [bg_color.r, bg_color.g, bg_color.b, bg_color.a],
+            });
         }
 
-        // Draw character
+        // Glyph instance
         if let Some(region) = glyph_region {
             let baseline_y = ch * 0.8;
             let gx = px + region.left;
             let gy = py + baseline_y - region.top;
             let gw = region.width as f32;
             let gh = region.height as f32;
-            let c = [style.foreground.r, style.foreground.g, style.foreground.b, style.foreground.a];
 
-            let base = gv.len() as u32;
-            gv.push(GlyphVertex { position: [gx, gy], uv: [region.uv_min[0], region.uv_min[1]], color: c });
-            gv.push(GlyphVertex { position: [gx + gw, gy], uv: [region.uv_max[0], region.uv_min[1]], color: c });
-            gv.push(GlyphVertex { position: [gx + gw, gy + gh], uv: [region.uv_max[0], region.uv_max[1]], color: c });
-            gv.push(GlyphVertex { position: [gx, gy + gh], uv: [region.uv_min[0], region.uv_max[1]], color: c });
-            gi.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+            gl.push(GridGlyphInstance {
+                position: [gx, gy],
+                size: [gw, gh],
+                uv_min: region.uv_min,
+                uv_max: region.uv_max,
+                color: [style.foreground.r, style.foreground.g, style.foreground.b, style.foreground.a],
+            });
         }
     }
 }

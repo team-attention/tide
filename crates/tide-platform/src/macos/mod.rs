@@ -14,11 +14,18 @@ use std::rc::Rc;
 
 use crate::{EventCallback, PlatformEvent};
 
+thread_local! {
+    /// Queue for events that arrive during re-entrancy (callback already borrowed).
+    /// Drained after the outer callback returns, so no events are lost.
+    static REENTRANT_QUEUE: RefCell<Vec<PlatformEvent>> = RefCell::new(Vec::new());
+}
+
 /// Emit a platform event through the callback, catching panics at the FFI boundary.
 ///
 /// Objective-C → Rust callbacks abort the process on panic, so we wrap every
-/// event emission in `catch_unwind`. Re-entrancy (e.g. waker firing during
-/// NSTextInputContext processing) is handled via `try_borrow_mut`.
+/// event emission in `catch_unwind`. Re-entrant events (e.g. waker firing during
+/// NSTextInputContext processing) are queued and drained after the outer callback
+/// returns, so they are never lost.
 pub(crate) fn emit_event(
     callback: &Rc<RefCell<EventCallback>>,
     event: PlatformEvent,
@@ -28,8 +35,40 @@ pub(crate) fn emit_event(
         app::with_main_window(|window| {
             if let Ok(mut cb) = callback.try_borrow_mut() {
                 cb(event.clone(), window);
+
+                // Drain any events that were queued during re-entrancy.
+                // Loop until empty because processing queued events may
+                // trigger further re-entrant events.
+                loop {
+                    let queued: Vec<PlatformEvent> = REENTRANT_QUEUE.with(|q| {
+                        let mut q = q.borrow_mut();
+                        if q.is_empty() { return Vec::new(); }
+                        std::mem::take(&mut *q)
+                    });
+                    if queued.is_empty() {
+                        break;
+                    }
+                    for queued_event in queued {
+                        cb(queued_event, window);
+                    }
+                }
             } else {
-                log::warn!("{source}: event dropped (re-entrancy): {event:?}");
+                // Callback is already borrowed — queue for later delivery.
+                //
+                // Empty ImePreedit events during re-entrancy are artifacts of
+                // internal focus management: makeFirstResponder → resignFirstResponder
+                // → unmarkText emits ImePreedit("").  These must be dropped (not
+                // queued) to prevent resetting Korean IME composition state.
+                // Before the re-entrancy queue was added, ALL re-entrant events
+                // were dropped, which masked this.
+                if matches!(&event, PlatformEvent::ImePreedit { text, .. } if text.is_empty()) {
+                    log::trace!("{source}: dropping empty ImePreedit (re-entrancy artifact)");
+                } else {
+                    log::trace!("{source}: event queued (re-entrancy): {event:?}");
+                    REENTRANT_QUEUE.with(|q| {
+                        q.borrow_mut().push(event.clone());
+                    });
+                }
             }
         });
     }));
