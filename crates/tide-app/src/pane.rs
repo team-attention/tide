@@ -145,8 +145,8 @@ impl TerminalPane {
                     break;
                 }
                 let cell = &grid.cells[row][col];
-                if cell.character == '\0'
-                    || (cell.character == ' ' && cell.style.background.is_none())
+                if (cell.character == '\0' || cell.character == ' ')
+                    && cell.style.background.is_none()
                 {
                     continue;
                 }

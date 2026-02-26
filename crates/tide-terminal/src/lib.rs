@@ -247,7 +247,16 @@ impl GridSyncer {
 
                 if flags.contains(CellFlags::WIDE_CHAR_SPACER) {
                     tc.character = '\0';
-                    tc.style.background = None;
+                    // Preserve background for selection/ANSI highlights on
+                    // the second half of wide characters (Korean, CJK, etc.).
+                    let mut bg_color = Terminal::convert_color(dark_mode, &bg, &self.palette_buf);
+                    let mut bg_is_default = matches!(bg, AnsiColor::Named(NamedColor::Background));
+                    if flags.contains(CellFlags::INVERSE) {
+                        let fg_color = Terminal::convert_color(dark_mode, &fg, &self.palette_buf);
+                        bg_color = fg_color;
+                        bg_is_default = false;
+                    }
+                    tc.style.background = if bg_is_default { None } else { Some(bg_color) };
                     continue;
                 }
 
