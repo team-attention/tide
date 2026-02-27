@@ -308,6 +308,7 @@ fn render_preview_selection(
     }
     let sel_color = p.selection;
     let scroll = pane.preview_scroll;
+    let h_scroll = pane.preview_h_scroll;
     let visible_rows = (inner.height / cell_size.height).ceil() as usize;
     let preview_lines = pane.preview_lines();
 
@@ -331,9 +332,15 @@ fn render_preview_selection(
         if col_start >= col_end {
             continue;
         }
-        let rx = inner.x + col_start as f32 * cell_size.width;
+        // Apply horizontal scroll offset: skip columns before h_scroll
+        let vis_start = col_start.saturating_sub(h_scroll);
+        let vis_end = col_end.saturating_sub(h_scroll);
+        if vis_start >= vis_end {
+            continue;
+        }
+        let rx = inner.x + vis_start as f32 * cell_size.width;
         let ry = inner.y + visual_row as f32 * cell_size.height;
-        let rw = (col_end - col_start) as f32 * cell_size.width;
+        let rw = (vis_end - vis_start) as f32 * cell_size.width;
         renderer.draw_rect(Rect::new(rx, ry, rw, cell_size.height), sel_color);
     }
 }

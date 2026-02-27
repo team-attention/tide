@@ -116,8 +116,8 @@ impl App {
             if panel_rect.contains(self.last_cursor_pos) {
                 // Route scroll to active panel editor
                 if let Some(active_id) = self.active_editor_tab() {
+                    let cs = self.cell_size();
                     let (visible_rows, visible_cols) = {
-                        let cs = self.cell_size();
                         let content_height = (panel_rect.height - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING).max(1.0);
                         let gutter_width = crate::editor_pane::GUTTER_WIDTH_CELLS as f32 * cs.width;
                         let content_width = (panel_rect.width - 2.0 * PANE_PADDING - 2.0 * gutter_width).max(1.0);
@@ -134,6 +134,18 @@ impl App {
                                 pane.preview_scroll = pane.preview_scroll.saturating_sub(scroll_lines);
                             } else if editor_dy < 0.0 {
                                 pane.preview_scroll = (pane.preview_scroll + scroll_lines).min(max_scroll);
+                            }
+                            // Horizontal scroll (preview has no gutter, so recompute visible_cols)
+                            if editor_dx != 0.0 {
+                                let preview_visible_cols = (panel_rect.width / cs.width).floor() as usize;
+                                let delta = (editor_dx.abs() * 3.0).ceil() as usize;
+                                let max_w = pane.preview_max_line_width();
+                                let max_h_scroll = max_w.saturating_sub(preview_visible_cols);
+                                if editor_dx > 0.0 {
+                                    pane.preview_h_scroll = pane.preview_h_scroll.saturating_sub(delta);
+                                } else {
+                                    pane.preview_h_scroll = (pane.preview_h_scroll + delta).min(max_h_scroll);
+                                }
                             }
                             self.pane_generations.remove(&active_id);
                             self.needs_redraw = true;
@@ -203,6 +215,19 @@ impl App {
                 let cs = self.cell_size();
                 let scroll_top_off = self.pane_area_mode.content_top();
                 match self.panes.get_mut(&pid) {
+                    Some(PaneKind::Editor(pane)) if pane.preview_mode => {
+                        let delta = (editor_dx.abs() * 3.0).ceil() as usize;
+                        let max_w = pane.preview_max_line_width();
+                        let preview_visible_cols = (rect.width / cs.width).floor() as usize;
+                        let max_h_scroll = max_w.saturating_sub(preview_visible_cols);
+                        if editor_dx > 0.0 {
+                            pane.preview_h_scroll = pane.preview_h_scroll.saturating_sub(delta);
+                        } else {
+                            pane.preview_h_scroll = (pane.preview_h_scroll + delta).min(max_h_scroll);
+                        }
+                        self.pane_generations.remove(&pid);
+                        self.needs_redraw = true;
+                    }
                     Some(PaneKind::Editor(pane)) => {
                         use tide_editor::input::EditorAction;
                         let visible_cols = {

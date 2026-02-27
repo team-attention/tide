@@ -71,6 +71,32 @@ pub struct PreviewLine {
     pub bg_color: Option<Color>,
 }
 
+/// Wrap text into lines that fit within `max_width` display columns.
+fn wrap_cell_text(text: &str, max_width: usize) -> Vec<String> {
+    use unicode_width::UnicodeWidthChar;
+    if max_width == 0 {
+        return vec![String::new()];
+    }
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    let mut current_width = 0usize;
+    for ch in text.chars() {
+        let cw = ch.width().unwrap_or(1);
+        if current_width + cw > max_width && current_width > 0 {
+            lines.push(current);
+            current = String::new();
+            current_width = 0;
+        }
+        current.push(ch);
+        current_width += cw;
+    }
+    lines.push(current);
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
+
 /// Render a collected table into preview lines.
 fn render_table(
     rows: &[Vec<String>],
@@ -127,8 +153,13 @@ fn render_table(
         background: None,
         bold: false, dim: false, italic: false, underline: false,
     };
+    let indent_style = TextStyle {
+        foreground: theme.body,
+        background: None,
+        bold: false, dim: false, italic: false, underline: false,
+    };
 
-    // Helper: build a horizontal rule line (top, separator, or bottom)
+    // Helper: build a horizontal rule line
     let make_rule = |left: &str, mid: &str, right: &str, fill: &str| -> PreviewLine {
         let mut text = String::new();
         text.push_str(left);
@@ -139,79 +170,59 @@ fn render_table(
             }
         }
         text.push_str(right);
-        let mut spans = vec![StyledSpan {
-            text: " ".repeat(indent),
-            style: TextStyle {
-                foreground: theme.body,
-                background: None,
-                bold: false, dim: false, italic: false, underline: false,
-            },
-        }];
-        spans.push(StyledSpan { text, style: border_style });
-        PreviewLine { spans, bg_color: None }
+        PreviewLine {
+            spans: vec![
+                StyledSpan { text: " ".repeat(indent), style: indent_style },
+                StyledSpan { text, style: border_style },
+            ],
+            bg_color: None,
+        }
     };
 
-    // Helper: build a data row
-    let make_row = |row: &[String], is_header: bool| -> PreviewLine {
-        let mut spans = vec![StyledSpan {
-            text: " ".repeat(indent),
-            style: TextStyle {
-                foreground: theme.body,
-                background: None,
-                bold: false, dim: false, italic: false, underline: false,
-            },
-        }];
+    // Helper: build one visual line of a (possibly multi-line) row
+    let make_visual_line = |wrapped_cells: &[Vec<String>], line_idx: usize, is_header: bool| -> PreviewLine {
         let style = if is_header { header_style } else { cell_style };
-        spans.push(StyledSpan { text: "\u{2502}".to_string(), style: border_style });
+        let mut spans = vec![
+            StyledSpan { text: " ".repeat(indent), style: indent_style },
+            StyledSpan { text: "\u{2502}".to_string(), style: border_style },
+        ];
         for (i, w) in col_widths.iter().enumerate() {
-            let cell_text = row.get(i).map(|s| s.as_str()).unwrap_or("");
-            let cell_w = cell_text.width();
-            let align = alignments.get(i).copied().unwrap_or(Alignment::None);
-            let (pad_left, pad_right) = match align {
-                Alignment::Center => {
-                    let total_pad = w.saturating_sub(cell_w);
-                    let left = total_pad / 2;
-                    (left, total_pad - left)
-                }
-                Alignment::Right => (w.saturating_sub(cell_w), 0),
-                _ => (0, w.saturating_sub(cell_w)),
-            };
-            let padded = format!(" {}{}{} ",
-                " ".repeat(pad_left),
-                // Truncate cell if wider than column
-                if cell_w > *w {
-                    let mut truncated = String::new();
-                    let mut tw = 0;
-                    for ch in cell_text.chars() {
-                        let cw = ch.width().unwrap_or(1);
-                        if tw + cw > *w { break; }
-                        truncated.push(ch);
-                        tw += cw;
-                    }
-                    truncated
-                } else {
-                    cell_text.to_string()
-                },
-                " ".repeat(pad_right),
-            );
+            let line_text = wrapped_cells.get(i)
+                .and_then(|lines| lines.get(line_idx))
+                .map(|s| s.as_str())
+                .unwrap_or("");
+            let line_w = line_text.width();
+            let pad_right = w.saturating_sub(line_w);
+            let padded = format!(" {}{} ", line_text, " ".repeat(pad_right));
             spans.push(StyledSpan { text: padded, style });
             spans.push(StyledSpan { text: "\u{2502}".to_string(), style: border_style });
         }
         PreviewLine { spans, bg_color: None }
     };
 
-    // Top border
+    // Top border ┌───┬───┐
     result.push(make_rule("\u{250C}", "\u{252C}", "\u{2510}", "\u{2500}"));
 
     for (ri, row) in rows.iter().enumerate() {
-        result.push(make_row(row, ri < header_count));
-        if ri + 1 == header_count && ri + 1 < rows.len() {
-            // Separator after header
+        // Row separator ├───┼───┤ (between every row, including between data rows)
+        if ri > 0 {
             result.push(make_rule("\u{251C}", "\u{253C}", "\u{2524}", "\u{2500}"));
+        }
+
+        // Wrap each cell to fit its column width
+        let wrapped_cells: Vec<Vec<String>> = (0..num_cols).map(|i| {
+            let cell_text = row.get(i).map(|s| s.as_str()).unwrap_or("");
+            wrap_cell_text(cell_text, col_widths[i])
+        }).collect();
+        let row_height = wrapped_cells.iter().map(|lines| lines.len()).max().unwrap_or(1);
+        let is_header = ri < header_count;
+
+        for line_idx in 0..row_height {
+            result.push(make_visual_line(&wrapped_cells, line_idx, is_header));
         }
     }
 
-    // Bottom border
+    // Bottom border └───┴───┘
     result.push(make_rule("\u{2514}", "\u{2534}", "\u{2518}", "\u{2500}"));
 }
 

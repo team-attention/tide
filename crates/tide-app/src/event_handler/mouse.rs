@@ -74,7 +74,7 @@ impl App {
                         Some(PaneKind::Browser(_)) => {}
                         Some(PaneKind::Editor(pane)) => {
                             if pane.preview_mode {
-                                // Preview mode: no gutter, use preview_scroll
+                                // Preview mode: no gutter, use preview_scroll/h_scroll
                                 let cs = Some(cell_size_cached);
                                 if let (Some(cs), Some((_, rect))) = (cs, self.visual_pane_rects.iter().find(|(id, _)| *id == pid)) {
                                     let cx = rect.x + PANE_PADDING;
@@ -83,7 +83,7 @@ impl App {
                                     let rr = ((self.last_cursor_pos.y - cy) / cs.height).floor() as isize;
                                     if rr >= 0 && rc >= 0 {
                                         let line = pane.preview_scroll + rr as usize;
-                                        let col = rc as usize;
+                                        let col = pane.preview_h_scroll + rc as usize;
                                         pane.selection = Some(Selection {
                                             anchor: (line, col),
                                             end: (line, col),
@@ -851,7 +851,7 @@ impl App {
                                     if rr >= 0 && rc >= 0 {
                                         sel.end = (
                                             pane.preview_scroll + rr as usize,
-                                            rc as usize,
+                                            pane.preview_h_scroll + rc as usize,
                                         );
                                     }
                                 }
