@@ -30,6 +30,11 @@ pub struct EditorPane {
     pub preview_mode: bool,
     preview_cache: Option<(u64, usize, bool, Vec<PreviewLine>)>,
     pub preview_scroll: usize,
+    pub preview_h_scroll: usize,
+    /// Last wrap_width passed to `ensure_preview_cache`, used to detect
+    /// when the width has stabilised after a resize so we can defer the
+    /// expensive markdown re-parse during continuous resize.
+    preview_last_width: Option<usize>,
     /// Cached `is_modified()` for detecting transitions (drives tab ● indicator).
     pub last_is_modified: bool,
     /// Generation counter at the time of the last `is_modified()` check.
@@ -40,7 +45,7 @@ pub struct EditorPane {
 impl EditorPane {
     pub fn new_empty(id: PaneId) -> Self {
         let editor = EditorState::new_empty();
-        Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: false, preview_cache: None, preview_scroll: 0, last_is_modified: false, last_checked_gen: 0 }
+        Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: false, preview_cache: None, preview_scroll: 0, preview_h_scroll: 0, preview_last_width: None, last_is_modified: false, last_checked_gen: 0 }
     }
 
     pub fn open(id: PaneId, path: &Path) -> io::Result<Self> {
@@ -49,7 +54,7 @@ impl EditorPane {
             .and_then(|ext| ext.to_str())
             .map(|ext| matches!(ext, "md" | "markdown" | "mdown" | "mkd"))
             .unwrap_or(false);
-        Ok(Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: is_markdown, preview_cache: None, preview_scroll: 0, last_is_modified: false, last_checked_gen: 0 })
+        Ok(Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: is_markdown, preview_cache: None, preview_scroll: 0, preview_h_scroll: 0, preview_last_width: None, last_is_modified: false, last_checked_gen: 0 })
     }
 
     /// Whether this pane needs a notification bar (diff mode or file deleted).
@@ -209,7 +214,13 @@ impl EditorPane {
     /// Get the generation counter for dirty checking.
     pub fn generation(&self) -> u64 {
         if self.preview_mode {
-            self.editor.generation().wrapping_add(self.preview_scroll as u64)
+            let cache_width = self.preview_cache.as_ref()
+                .map(|(_, w, _, _)| *w as u64)
+                .unwrap_or(0);
+            self.editor.generation()
+                .wrapping_add(self.preview_scroll as u64)
+                .wrapping_add(self.preview_h_scroll as u64)
+                .wrapping_add(cache_width)
         } else {
             self.editor.generation()
         }
@@ -228,10 +239,18 @@ impl EditorPane {
     pub fn toggle_preview(&mut self) {
         self.preview_mode = !self.preview_mode;
         self.preview_scroll = 0;
+        self.preview_h_scroll = 0;
         self.preview_cache = None;
     }
 
     /// Ensure the preview cache is up to date.
+    ///
+    /// During continuous resize the wrap_width changes every frame.  Re-parsing
+    /// the full markdown each time is expensive, so we defer when only the width
+    /// changed.  The cache is rebuilt once the width stabilises (same value for
+    /// two consecutive calls), which typically happens on the first frame after
+    /// the resize stops — the deferred PTY-resize timer fires 50 ms later and
+    /// triggers a redraw that picks this up.
     pub fn ensure_preview_cache(&mut self, wrap_width: usize, dark: bool) {
         let gen = self.editor.generation();
         if let Some((cached_gen, cached_width, cached_dark, _)) = &self.preview_cache {
@@ -239,6 +258,23 @@ impl EditorPane {
                 return;
             }
         }
+
+        // Detect mid-resize: width_stable is true only when the requested
+        // wrap_width equals the value from the previous call.
+        let width_stable = self.preview_last_width == Some(wrap_width);
+        self.preview_last_width = Some(wrap_width);
+
+        if !width_stable {
+            // Width just changed — likely mid-resize.  If only the width
+            // differs (content and theme unchanged), skip the expensive
+            // recomputation and keep showing the stale cache.
+            if let Some((cached_gen, _, cached_dark, _)) = &self.preview_cache {
+                if *cached_gen == gen && *cached_dark == dark {
+                    return;
+                }
+            }
+        }
+
         let theme = if dark { MarkdownTheme::dark() } else { MarkdownTheme::light() };
         let lines = render_markdown_preview(&self.editor.buffer.lines, &theme, wrap_width);
         self.preview_cache = Some((gen, wrap_width, dark, lines));
@@ -258,5 +294,15 @@ impl EditorPane {
             Some((_, _, _, lines)) => lines.len(),
             None => 0,
         }
+    }
+
+    /// Maximum display-width across all preview lines (for h-scroll clamping).
+    pub fn preview_max_line_width(&self) -> usize {
+        use unicode_width::UnicodeWidthChar;
+        self.preview_lines().iter().map(|line| {
+            line.spans.iter().map(|s| {
+                s.text.chars().filter(|c| *c != '\n').map(|c| c.width().unwrap_or(1)).sum::<usize>()
+            }).sum::<usize>()
+        }).max().unwrap_or(0)
     }
 }

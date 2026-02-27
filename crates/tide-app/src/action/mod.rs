@@ -324,6 +324,21 @@ impl App {
                                             self.needs_redraw = true;
                                         }
                                     }
+                                    tide_core::Key::Char('l') | tide_core::Key::Right => {
+                                        let max_w = pane.preview_max_line_width();
+                                        if pane.preview_h_scroll < max_w {
+                                            pane.preview_h_scroll += 2;
+                                            self.pane_generations.remove(&id);
+                                            self.needs_redraw = true;
+                                        }
+                                    }
+                                    tide_core::Key::Char('h') | tide_core::Key::Left => {
+                                        if pane.preview_h_scroll > 0 {
+                                            pane.preview_h_scroll = pane.preview_h_scroll.saturating_sub(2);
+                                            self.pane_generations.remove(&id);
+                                            self.needs_redraw = true;
+                                        }
+                                    }
                                     tide_core::Key::PageDown => {
                                         pane.preview_scroll = (pane.preview_scroll + 30).min(max_scroll);
                                         self.pane_generations.remove(&id);

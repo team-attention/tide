@@ -378,17 +378,23 @@ impl EditorPane {
                 renderer.draw_grid_rect(row_rect, bg);
             }
 
-            // Draw styled spans
-            let mut display_col = 0usize;
+            // Draw styled spans with horizontal scroll
+            let h_scroll = self.preview_h_scroll;
+            let visible_cols = (content_width / cell_size.width).floor() as usize;
+            let mut abs_col = 0usize; // absolute column before h_scroll
             for span in &line.spans {
                 for ch in span.text.chars() {
                     if ch == '\n' {
                         continue;
                     }
                     let char_w = ch.width().unwrap_or(1);
-                    let px = rect.x + display_col as f32 * cell_size.width;
-                    if px >= rect.x + content_width {
-                        break;
+                    if abs_col + char_w <= h_scroll {
+                        abs_col += char_w;
+                        continue; // before visible region
+                    }
+                    let display_col = abs_col.saturating_sub(h_scroll);
+                    if display_col >= visible_cols {
+                        break; // past visible region
                     }
                     if ch != ' ' || span.style.background.is_some() {
                         renderer.draw_grid_cell(
@@ -400,7 +406,7 @@ impl EditorPane {
                             Vec2::new(rect.x, rect.y),
                         );
                     }
-                    display_col += char_w;
+                    abs_col += char_w;
                 }
             }
         }
