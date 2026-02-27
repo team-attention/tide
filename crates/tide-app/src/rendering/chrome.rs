@@ -703,19 +703,22 @@ pub(crate) fn render_chrome(
                 }
             }
 
+            // Clip rect for tab content — ends at tabs_stop so tabs don't overlap controls
+            let tab_content_clip = Rect::new(
+                panel_rect.x + PANE_PADDING,
+                tab_bar_top,
+                tabs_stop - (panel_rect.x + PANE_PADDING),
+                PANEL_TAB_HEIGHT,
+            );
+
             // Variable-width tabs (matching stacked mode style)
             let mut tx = panel_rect.x + PANE_PADDING - app.panel_tab_scroll;
             for &tab_id in editor_panel_tabs.iter() {
                 let title = panel_tab_title(&app.panes, tab_id);
                 let tab_w = stacked_tab_width(&title, cell_w);
 
-                // Don't overlap with maximize control
-                if tx + tab_w > tabs_stop {
-                    break;
-                }
-
-                // Skip tabs outside visible area
-                if tx + tab_w < panel_rect.x || tx > panel_rect.x + panel_rect.width {
+                // Skip tabs entirely outside the visible tab content area
+                if tx + tab_w < tab_content_clip.x || tx > tab_content_clip.x + tab_content_clip.width {
                     tx += tab_w;
                     continue;
                 }
@@ -746,7 +749,7 @@ pub(crate) fn render_chrome(
                         background: None,
                         bold: false, dim: false, italic: false, underline: false,
                     },
-                    tab_bar_clip,
+                    tab_content_clip,
                 );
 
                 // Tab title (after icon + space)
@@ -767,7 +770,7 @@ pub(crate) fn render_chrome(
                         bold: is_active,
                         dim: false, italic: false, underline: false,
                     },
-                    tab_bar_clip,
+                    tab_content_clip,
                 );
 
                 // Per-tab close/modified indicator (right side of tab)
@@ -784,7 +787,7 @@ pub(crate) fn render_chrome(
                                 background: None,
                                 bold: false, dim: false, italic: false, underline: false,
                             },
-                            tab_bar_clip,
+                            tab_content_clip,
                         );
                     } else if is_tab_hovered {
                         // Hovered: close X
@@ -796,7 +799,7 @@ pub(crate) fn render_chrome(
                                 background: None,
                                 bold: false, dim: false, italic: false, underline: false,
                             },
-                            tab_bar_clip,
+                            tab_content_clip,
                         );
                     }
                     // Not modified + not hovered: nothing (clean look)
