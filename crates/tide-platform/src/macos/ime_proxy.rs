@@ -93,6 +93,18 @@ declare_class!(
             Bool::YES
         }
 
+        /// Report as AXTextArea so external apps (e.g. STT tools) recognise
+        /// this view as a text input field via the Accessibility API.
+        #[method_id(accessibilityRole)]
+        fn accessibility_role(&self) -> Option<Retained<NSString>> {
+            Some(NSString::from_str("AXTextArea"))
+        }
+
+        #[method(isAccessibilityElement)]
+        fn is_accessibility_element(&self) -> Bool {
+            Bool::YES
+        }
+
         #[method(keyDown:)]
         fn key_down(&self, event: &NSEvent) {
             *self.ivars().current_event.borrow_mut() = Some(event.retain());
