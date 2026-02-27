@@ -243,6 +243,16 @@ unsafe extern "C" fn resign_first_responder_on_main_thread(ctx_ptr: *mut std::ff
     let _: Bool = msg_send![window, makeFirstResponder: view];
 }
 
+struct RemoveFromParentCtx {
+    webview: *const AnyObject,
+}
+
+/// Trampoline called on the main thread by `dispatch_sync_f`.
+unsafe extern "C" fn remove_from_parent_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
+    let ctx = &*(ctx_ptr as *const RemoveFromParentCtx);
+    let _: () = msg_send![ctx.webview, removeFromSuperview];
+}
+
 impl WebViewHandle {
     /// Create a new WKWebView and add it as a subview of the given parent NSView.
     ///
@@ -501,9 +511,24 @@ impl WebViewHandle {
     }
 
     /// Remove the webview from its superview.
+    ///
+    /// AppKit's `removeFromSuperview` **must** run on the main thread.
     pub fn remove_from_parent(&self) {
+        if MainThreadMarker::new().is_some() {
+            unsafe {
+                let _: () = msg_send![&self.webview, removeFromSuperview];
+            }
+            return;
+        }
+        let mut ctx = RemoveFromParentCtx {
+            webview: &*self.webview as *const AnyObject,
+        };
         unsafe {
-            let _: () = msg_send![&self.webview, removeFromSuperview];
+            dispatch_sync_f(
+                &_dispatch_main_q as *const std::ffi::c_void,
+                &mut ctx as *mut RemoveFromParentCtx as *mut std::ffi::c_void,
+                remove_from_parent_on_main_thread,
+            );
         }
     }
 
