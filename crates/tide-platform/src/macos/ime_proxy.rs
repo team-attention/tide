@@ -105,6 +105,88 @@ declare_class!(
             Bool::YES
         }
 
+        /// Return the parent view's screen frame so the accessibility system
+        /// discovers this element during tree walks. Without this, the
+        /// zero-frame ImeProxyView is invisible to accessibility clients.
+        #[method(accessibilityFrame)]
+        fn accessibility_frame(&self) -> NSRect {
+            unsafe {
+                if let Some(superview) = self.superview() {
+                    let window: Option<Retained<objc2_app_kit::NSWindow>> =
+                        msg_send_id![&*superview, window];
+                    if let Some(window) = window {
+                        let view_bounds = superview.bounds();
+                        let window_rect: NSRect = msg_send![
+                            &*superview,
+                            convertRect: view_bounds,
+                            toView: std::ptr::null::<NSView>()
+                        ];
+                        let screen_rect = window.convertRectToScreen(window_rect);
+                        return screen_rect;
+                    }
+                }
+                NSRect::ZERO
+            }
+        }
+
+        /// Return committed text as accessibility value so external tools
+        /// (e.g. STT apps) recognise this as a writable text input.
+        #[method_id(accessibilityValue)]
+        fn accessibility_value_getter(&self) -> Option<Retained<NSString>> {
+            let text = self.ivars().committed_text.borrow();
+            Some(NSString::from_str(&text))
+        }
+
+        /// Accept text from accessibility clients (e.g. Nobs Whisper).
+        /// Treats the incoming value as text to type into the terminal.
+        #[method(setAccessibilityValue:)]
+        fn set_accessibility_value(&self, value: &AnyObject) {
+            let text = nsstring_from_anyobject(value);
+            if !text.is_empty() {
+                self.ivars().committed_text.borrow_mut().clear();
+                self.ivars().committed_text.borrow_mut().push_str(&text);
+                self.emit(PlatformEvent::ImeCommit(text));
+            }
+        }
+
+        #[method_id(accessibilitySelectedText)]
+        fn accessibility_selected_text(&self) -> Option<Retained<NSString>> {
+            Some(NSString::from_str(""))
+        }
+
+        /// Insert text at the cursor via accessibility — the primary method
+        /// STT tools use to inject transcribed text.
+        #[method(setAccessibilitySelectedText:)]
+        fn set_accessibility_selected_text(&self, value: &AnyObject) {
+            let text = nsstring_from_anyobject(value);
+            if !text.is_empty() {
+                self.ivars().committed_text.borrow_mut().push_str(&text);
+                self.emit(PlatformEvent::ImeCommit(text));
+            }
+        }
+
+        #[method(accessibilitySelectedTextRange)]
+        fn accessibility_selected_text_range(&self) -> NSRange {
+            let len = utf16_len(&self.ivars().committed_text.borrow());
+            NSRange::new(len, 0)
+        }
+
+        #[method(accessibilityNumberOfCharacters)]
+        fn accessibility_number_of_characters(&self) -> isize {
+            utf16_len(&self.ivars().committed_text.borrow()) as isize
+        }
+
+        /// Override NSResponder's `insertText:` for tools that call it
+        /// directly, bypassing NSTextInputClient's `insertText:replacementRange:`.
+        #[method(insertText:)]
+        fn insert_text_responder(&self, string: &AnyObject) {
+            let text = nsstring_from_anyobject(string);
+            self.ivars().marked_text.borrow_mut().clear();
+            self.ivars().committed_text.borrow_mut().push_str(&text);
+            self.ivars().ime_handled.set(true);
+            self.emit(PlatformEvent::ImeCommit(text));
+        }
+
         #[method(keyDown:)]
         fn key_down(&self, event: &NSEvent) {
             *self.ivars().current_event.borrow_mut() = Some(event.retain());

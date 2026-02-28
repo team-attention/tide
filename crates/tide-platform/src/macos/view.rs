@@ -321,6 +321,24 @@ declare_class!(
             Bool::YES
         }
 
+        /// Report the focused ImeProxyView as the accessibility focused element.
+        /// STT tools (e.g. Nobs Whisper) query AXFocusedUIElement to detect
+        /// whether a text input field has focus. Without this explicit override,
+        /// the zero-frame ImeProxyView may not be discovered during the default
+        /// accessibility tree walk.
+        #[method_id(accessibilityFocusedUIElement)]
+        fn accessibility_focused_ui_element(&self) -> Option<Retained<AnyObject>> {
+            unsafe {
+                let window: Option<Retained<objc2_app_kit::NSWindow>> =
+                    msg_send_id![self, window];
+                window.and_then(|w| {
+                    let responder: Option<Retained<AnyObject>> =
+                        msg_send_id![&w, firstResponder];
+                    responder.filter(|r| (**r).class().name() == "ImeProxyView")
+                })
+            }
+        }
+
         /// Called from background threads via performSelectorOnMainThread
         /// to wake the main thread and trigger a render.
         #[method(triggerRedraw)]
