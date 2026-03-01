@@ -148,6 +148,8 @@ struct App {
 
     // Track dock active tab to force grid reassembly on change
     pub(crate) last_editor_panel_active: Option<PaneId>,
+    // Track editor panel rect to invalidate grid on size change (zoom toggle, window resize)
+    pub(crate) prev_editor_panel_rect: Option<Rect>,
 
     // Input latency: skip 8ms sleep after keypress while awaiting PTY response
     pub(crate) input_just_sent: bool,
@@ -360,6 +362,7 @@ impl App {
             chrome_generation: 0,
             last_chrome_generation: u64::MAX,
             last_editor_panel_active: None,
+            prev_editor_panel_rect: None,
             input_just_sent: false,
             input_sent_at: None,
             pane_drag: PaneDragState::Idle,

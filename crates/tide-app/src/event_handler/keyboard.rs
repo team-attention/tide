@@ -28,11 +28,21 @@ impl App {
 
         // If the key produced text and no command modifiers are held,
         // route via the text input system.
+        // Exception: skip text routing when the active editor is in preview mode,
+        // so keys like j/k/d/u fall through to the preview scroll handler.
         if let Some(ref text) = chars {
             if !modifiers.meta && !modifiers.ctrl && !modifiers.alt {
-                self.send_text_to_target(text);
-                self.needs_redraw = true;
-                return;
+                let in_preview = self.focus_area == FocusArea::EditorDock
+                    && self
+                        .active_editor_tab()
+                        .and_then(|id| self.panes.get(&id))
+                        .map(|p| matches!(p, PaneKind::Editor(ep) if ep.preview_mode))
+                        .unwrap_or(false);
+                if !in_preview {
+                    self.send_text_to_target(text);
+                    self.needs_redraw = true;
+                    return;
+                }
             }
         }
 
@@ -141,6 +151,35 @@ impl App {
                 return;
             }
             FocusArea::EditorDock => {
+                // Preview mode: intercept Cmd+J/K/D/U before the router
+                // turns them into Navigate actions
+                if modifiers.meta && !modifiers.ctrl && !modifiers.shift && !modifiers.alt {
+                    let is_scroll_key = matches!(
+                        key,
+                        Key::Char('j') | Key::Char('k') | Key::Char('d') | Key::Char('u')
+                    );
+                    if is_scroll_key {
+                        if let Some(active_id) = self.active_editor_tab() {
+                            let in_preview = self
+                                .panes
+                                .get(&active_id)
+                                .map(|p| {
+                                    matches!(p, PaneKind::Editor(ep) if ep.preview_mode)
+                                })
+                                .unwrap_or(false);
+                            if in_preview {
+                                let input = InputEvent::KeyPress { key, modifiers: Modifiers { meta: false, ..modifiers } };
+                                self.handle_action(
+                                    tide_input::Action::RouteToPane(active_id),
+                                    Some(input),
+                                );
+                                self.needs_redraw = true;
+                                return;
+                            }
+                        }
+                    }
+                }
+
                 // Global hotkeys take priority over URL bar input
                 if modifiers.meta || (modifiers.ctrl && modifiers.shift) {
                     let input = InputEvent::KeyPress { key, modifiers };

@@ -307,11 +307,22 @@ impl App {
 
                             // In preview mode, only allow Escape, scroll keys
                             if pane.preview_mode {
-                                // Compute visible rows for scroll clamping
-                                let visible_rows = self.visual_pane_rects.iter().find(|(pid, _)| *pid == id)
-                                    .map(|(_, rect)| {
-                                        let content_top = self.pane_area_mode.content_top();
-                                        ((rect.height - content_top - PANE_PADDING) / cs_for_keys.height).floor() as usize
+                                // Compute visible rows for scroll clamping.
+                                // Editor panel panes are NOT in visual_pane_rects,
+                                // so check editor_panel_rect first.
+                                let visible_rows = self.editor_panel_rect
+                                    .map(|r| {
+                                        let content_h = (r.height
+                                            - PANE_PADDING - PANEL_TAB_HEIGHT - PANE_GAP - PANE_PADDING)
+                                            .max(1.0);
+                                        (content_h / cs_for_keys.height).floor() as usize
+                                    })
+                                    .or_else(|| {
+                                        self.visual_pane_rects.iter().find(|(pid, _)| *pid == id)
+                                            .map(|(_, rect)| {
+                                                let content_top = self.pane_area_mode.content_top();
+                                                ((rect.height - content_top - PANE_PADDING) / cs_for_keys.height).floor() as usize
+                                            })
                                     })
                                     .unwrap_or(30);
                                 let total = pane.preview_line_count();
@@ -351,6 +362,28 @@ impl App {
                                             self.pane_generations.remove(&id);
                                             self.needs_redraw = true;
                                         }
+                                    }
+                                    tide_core::Key::Char('d') => {
+                                        let half = visible_rows / 2;
+                                        pane.preview_scroll = (pane.preview_scroll + half).min(max_scroll);
+                                        self.pane_generations.remove(&id);
+                                        self.needs_redraw = true;
+                                    }
+                                    tide_core::Key::Char('u') => {
+                                        let half = visible_rows / 2;
+                                        pane.preview_scroll = pane.preview_scroll.saturating_sub(half);
+                                        self.pane_generations.remove(&id);
+                                        self.needs_redraw = true;
+                                    }
+                                    tide_core::Key::Char('g') => {
+                                        pane.preview_scroll = 0;
+                                        self.pane_generations.remove(&id);
+                                        self.needs_redraw = true;
+                                    }
+                                    tide_core::Key::Char('G') => {
+                                        pane.preview_scroll = max_scroll;
+                                        self.pane_generations.remove(&id);
+                                        self.needs_redraw = true;
                                     }
                                     tide_core::Key::PageDown => {
                                         pane.preview_scroll = (pane.preview_scroll + 30).min(max_scroll);
