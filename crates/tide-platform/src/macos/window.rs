@@ -5,12 +5,15 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use objc2::rc::Retained;
-use objc2::msg_send;
+use objc2::runtime::{AnyObject, Bool};
+use objc2::{declare_class, msg_send, msg_send_id, mutability, ClassType, DeclaredClass};
 use objc2_foundation::MainThreadMarker;
 use objc2_app_kit::{
-    NSBackingStoreType, NSWindow, NSWindowStyleMask,
+    NSBackingStoreType, NSView, NSWindow, NSWindowStyleMask,
 };
-use objc2_foundation::{CGFloat, NSPoint, NSRect, NSSize, NSString};
+use objc2_foundation::{
+    CGFloat, NSMutableArray, NSPoint, NSRect, NSSize, NSString,
+};
 use raw_window_handle::{
     AppKitDisplayHandle, AppKitWindowHandle, DisplayHandle, HandleError, HasDisplayHandle,
     HasWindowHandle, RawDisplayHandle, RawWindowHandle, WindowHandle,
@@ -26,6 +29,86 @@ const INITIAL_BG_BLUE: f64 = 0.10;
 
 use super::ime_proxy::ImeProxyView;
 use super::view::TideView;
+
+// ── TideWindow: NSWindow subclass for accessibility ──
+
+declare_class!(
+    pub struct TideWindow;
+
+    unsafe impl ClassType for TideWindow {
+        type Super = NSWindow;
+        type Mutability = mutability::MainThreadOnly;
+        const NAME: &'static str = "TideWindow";
+    }
+
+    impl DeclaredClass for TideWindow {
+        type Ivars = ();
+    }
+
+    unsafe impl TideWindow {
+        /// Legacy accessibility API override. macOS queries NSWindow
+        /// accessibility attributes via this method, not the modern
+        /// property-based API.
+        #[method_id(accessibilityAttributeValue:)]
+        fn accessibility_attribute_value(
+            &self,
+            attribute: &NSString,
+        ) -> Option<Retained<AnyObject>> {
+            unsafe {
+                let attr = attribute.to_string();
+
+                if attr == "AXFocusedUIElement" {
+                    let responder: Option<Retained<AnyObject>> =
+                        msg_send_id![self, firstResponder];
+                    let ime_cls = objc2::runtime::AnyClass::get("ImeProxyView");
+                    let is_ime_proxy = responder.as_ref().map_or(false, |r| {
+                        ime_cls.map_or(false, |c| {
+                            let yes: Bool = msg_send![&**r, isKindOfClass: c];
+                            yes.as_bool()
+                        })
+                    });
+                    if is_ime_proxy {
+                        responder
+                    } else {
+                        msg_send_id![super(self), accessibilityAttributeValue: attribute]
+                    }
+                } else if attr == "AXChildren" {
+                    let arr: Retained<NSMutableArray> = msg_send_id![
+                        objc2::runtime::AnyClass::get("NSMutableArray")
+                            .expect("NSMutableArray"),
+                        new
+                    ];
+                    let default: Option<Retained<AnyObject>> =
+                        msg_send_id![super(self), accessibilityAttributeValue: attribute];
+                    if let Some(ref def) = default {
+                        // default is an NSArray
+                        let _: () = msg_send![&*arr, addObjectsFromArray: &**def];
+                    }
+                    let content_view: Option<Retained<NSView>> =
+                        msg_send_id![self, contentView];
+                    if let Some(cv) = content_view {
+                        let subviews = cv.subviews();
+                        let ime_cls = objc2::runtime::AnyClass::get("ImeProxyView");
+                        for i in 0..subviews.len() {
+                            let sv = subviews.objectAtIndex(i);
+                            let is_ime = ime_cls.map_or(false, |c| {
+                                let yes: Bool = msg_send![&*sv, isKindOfClass: c];
+                                yes.as_bool()
+                            });
+                            if is_ime {
+                                let _: () = msg_send![&*arr, addObject: &*sv];
+                            }
+                        }
+                    }
+                    let obj: Retained<AnyObject> = Retained::cast(arr);
+                    Some(obj)
+                } else {
+                    msg_send_id![super(self), accessibilityAttributeValue: attribute]
+                }
+            }
+        }
+    }
+);
 
 /// macOS window backed by NSWindow + TideView.
 pub struct MacosWindow {
@@ -56,16 +139,17 @@ impl MacosWindow {
             style |= NSWindowStyleMask::FullSizeContentView;
         }
 
-        let ns_window = unsafe {
-            NSWindow::initWithContentRect_styleMask_backing_defer(
-                mtm.alloc(),
-                content_rect,
-                style,
-                NSBackingStoreType::NSBackingStoreBuffered,
-                false,
-            )
+        let ns_window: Retained<NSWindow> = unsafe {
+            let allocated = mtm.alloc::<TideWindow>().set_ivars(());
+            let window: Retained<TideWindow> = msg_send_id![
+                super(allocated),
+                initWithContentRect: content_rect,
+                styleMask: style,
+                backing: NSBackingStoreType::NSBackingStoreBuffered,
+                defer: false
+            ];
+            Retained::into_super(window)
         };
-
         if config.transparent_titlebar {
             ns_window.setTitlebarAppearsTransparent(true);
             ns_window.setTitleVisibility(
