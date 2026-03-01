@@ -1035,16 +1035,12 @@ impl App {
                         match mode {
                             crate::GitSwitcherMode::Branches => {
                                 // new pane in same repo + git checkout -b <query>
-                                use tide_core::{LayoutEngine, SplitDirection};
-                                let new_id = self.layout.split(pane_id, SplitDirection::Horizontal);
-                                self.create_terminal_pane(new_id, Some(cwd));
-                                if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&new_id) {
-                                    let cmd = format!("git checkout -b {}\n", shell_escape(&query));
-                                    pane.backend.write(cmd.as_bytes());
+                                if let Some(new_id) = self.split_pane_from(pane_id, SplitDirection::Horizontal, Some(cwd)) {
+                                    if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&new_id) {
+                                        let cmd = format!("git checkout -b {}\n", shell_escape(&query));
+                                        pane.backend.write(cmd.as_bytes());
+                                    }
                                 }
-                                self.focused = Some(new_id);
-                                self.router.set_focused(new_id);
-                                self.compute_layout();
                             }
                             crate::GitSwitcherMode::Worktrees => {
                                 // add_worktree + new pane in path
@@ -1055,17 +1051,7 @@ impl App {
                                 match tide_terminal::git::add_worktree(&cwd, &wt_path, &query, new_branch) {
                                     Ok(()) => {
                                         settings.worktree.copy_files_to_worktree(&root, &wt_path);
-                                        use tide_core::{LayoutEngine, SplitDirection};
-                                        let new_id = self.layout.split(pane_id, SplitDirection::Horizontal);
-                                        self.create_terminal_pane(new_id, Some(wt_path));
-                                        if matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
-                                            self.pane_area_mode = PaneAreaMode::Stacked(new_id);
-                                        }
-                                        self.focused = Some(new_id);
-                                        self.router.set_focused(new_id);
-                                        self.chrome_generation += 1;
-                                        self.compute_layout();
-                                        self.scroll_to_active_stacked_tab();
+                                        self.split_pane_from(pane_id, SplitDirection::Horizontal, Some(wt_path));
                                     }
                                     Err(e) => {
                                         log::error!("Failed to create worktree: {}", e);
@@ -1098,25 +1084,17 @@ impl App {
                             let pane_cwd = self.panes.get(&pane_id)
                                 .and_then(|pk| if let PaneKind::Terminal(p) = pk { p.cwd.clone() } else { None });
                             self.git_switcher = None;
-                            use tide_core::{LayoutEngine, SplitDirection};
                             if let Some(wt_path) = action.1 {
                                 // Has worktree → new pane in worktree path
-                                let new_id = self.layout.split(pane_id, SplitDirection::Horizontal);
-                                self.create_terminal_pane(new_id, Some(wt_path));
-                                self.focused = Some(new_id);
-                                self.router.set_focused(new_id);
-                                self.compute_layout();
+                                self.split_pane_from(pane_id, SplitDirection::Horizontal, Some(wt_path));
                             } else {
                                 // No worktree → new pane in same repo + git checkout
-                                let new_id = self.layout.split(pane_id, SplitDirection::Horizontal);
-                                self.create_terminal_pane(new_id, pane_cwd);
-                                if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&new_id) {
-                                    let cmd = format!("git checkout {}\n", shell_escape(&action.0));
-                                    pane.backend.write(cmd.as_bytes());
+                                if let Some(new_id) = self.split_pane_from(pane_id, SplitDirection::Horizontal, pane_cwd) {
+                                    if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&new_id) {
+                                        let cmd = format!("git checkout {}\n", shell_escape(&action.0));
+                                        pane.backend.write(cmd.as_bytes());
+                                    }
                                 }
-                                self.focused = Some(new_id);
-                                self.router.set_focused(new_id);
-                                self.compute_layout();
                             }
                         }
                         crate::GitSwitcherMode::Worktrees => {
@@ -1126,12 +1104,7 @@ impl App {
                             });
                             self.git_switcher = None;
                             if let Some(wt_path) = wt_path {
-                                use tide_core::{LayoutEngine, SplitDirection};
-                                let new_id = self.layout.split(pane_id, SplitDirection::Horizontal);
-                                self.create_terminal_pane(new_id, Some(wt_path));
-                                self.focused = Some(new_id);
-                                self.router.set_focused(new_id);
-                                self.compute_layout();
+                                self.split_pane_from(pane_id, SplitDirection::Horizontal, Some(wt_path));
                             }
                         }
                     }
