@@ -577,17 +577,30 @@ impl App {
 
     pub(crate) fn split_pane(&mut self, direction: SplitDirection, cwd: Option<std::path::PathBuf>) {
         if let Some(focused) = self.focused {
-            let new_id = self.layout.split(focused, direction);
-            self.create_terminal_pane(new_id, cwd);
-            if matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
-                self.pane_area_mode = PaneAreaMode::Stacked(new_id);
-            }
-            self.focused = Some(new_id);
-            self.router.set_focused(new_id);
-            self.chrome_generation += 1;
-            self.compute_layout();
-            self.scroll_to_active_stacked_tab();
+            self.split_pane_from(focused, direction, cwd);
         }
+    }
+
+    /// Split from a specific source pane, creating a new terminal pane with
+    /// proper stacked-mode focus, chrome updates, and tab scrolling.
+    /// Returns the new pane ID on success.
+    pub(crate) fn split_pane_from(
+        &mut self,
+        source: tide_core::PaneId,
+        direction: SplitDirection,
+        cwd: Option<std::path::PathBuf>,
+    ) -> Option<tide_core::PaneId> {
+        let new_id = self.layout.split(source, direction);
+        self.create_terminal_pane(new_id, cwd);
+        if matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
+            self.pane_area_mode = PaneAreaMode::Stacked(new_id);
+        }
+        self.focused = Some(new_id);
+        self.router.set_focused(new_id);
+        self.chrome_generation += 1;
+        self.compute_layout();
+        self.scroll_to_active_stacked_tab();
+        Some(new_id)
     }
 
     pub(crate) fn handle_global_action(&mut self, action: GlobalAction) {
