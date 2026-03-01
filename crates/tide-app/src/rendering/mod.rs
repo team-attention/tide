@@ -168,6 +168,14 @@ impl App {
             self.last_editor_panel_active = editor_panel_active;
         }
 
+        // Detect editor panel rect change (zoom toggle, window resize) → force grid rebuild
+        if editor_panel_rect != self.prev_editor_panel_rect {
+            if let Some(active_id) = editor_panel_active {
+                self.pane_generations.remove(&active_id);
+            }
+            self.prev_editor_panel_rect = editor_panel_rect;
+        }
+
         // Per-pane dirty checking: only rebuild panes whose content changed
         let _any_dirty = grid::render_grid(
             self, &mut renderer, &p,
