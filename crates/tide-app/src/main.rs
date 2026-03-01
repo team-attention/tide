@@ -498,8 +498,16 @@ impl App {
         let logical_w = self.window_size.0 as f32 / self.scale_factor;
         let logical_h = self.window_size.1 as f32 / self.scale_factor;
 
-        let cols = (logical_w / cell_size.width).max(1.0) as u16;
-        let rows = (logical_h / cell_size.height).max(1.0) as u16;
+        let cols = if cell_size.width > 0.0 {
+            ((logical_w / cell_size.width).max(1.0).min(1000.0)) as u16
+        } else {
+            80
+        };
+        let rows = if cell_size.height > 0.0 {
+            ((logical_h / cell_size.height).max(1.0).min(500.0)) as u16
+        } else {
+            24
+        };
 
         let result = if let Some(mut terminal) = early_terminal {
             // Resize pre-spawned terminal to actual dimensions
