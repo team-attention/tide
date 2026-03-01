@@ -190,6 +190,11 @@ struct App {
     pub(crate) editor_panel_width_manual: bool,
     pub(crate) panel_tab_scroll: f32,
     pub(crate) panel_tab_scroll_target: f32,
+    pub(crate) stacked_tab_scroll: f32,
+    pub(crate) stacked_tab_scroll_target: f32,
+    /// Actual visible tab area width (set during chrome rendering, accounts for dynamic badges).
+    pub(crate) stacked_tab_area_width: f32,
+    pub(crate) dock_tab_area_width: f32,
 
     // Save-as input (inline filename entry for untitled files)
     pub(crate) save_as_input: Option<SaveAsInput>,
@@ -371,6 +376,10 @@ impl App {
             editor_panel_width_manual: false,
             panel_tab_scroll: 0.0,
             panel_tab_scroll_target: 0.0,
+            stacked_tab_scroll: 0.0,
+            stacked_tab_scroll_target: 0.0,
+            stacked_tab_area_width: 0.0,
+            dock_tab_area_width: 0.0,
             save_as_input: None,
             save_confirm: None,
             pending_terminal_close: None,

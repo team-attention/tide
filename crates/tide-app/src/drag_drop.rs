@@ -1,7 +1,8 @@
 use tide_core::{DropZone, PaneId, Rect, SplitDirection, Vec2};
 
 use crate::theme::*;
-use crate::ui::{dock_tab_x, dock_tabs_total_width, panel_tab_title, stacked_tab_width};
+use crate::ui::{dock_tab_x, dock_tabs_total_width, panel_tab_title, stacked_tab_width, stacked_tabs_total_width, stacked_tab_x};
+use crate::pane::PaneKind;
 use crate::{App, PaneAreaMode};
 
 /// Threshold for outer zone detection (0–12% of pane extent).
@@ -112,11 +113,15 @@ impl App {
         }
         let cell_w = self.cell_size().width;
         let pane_ids = self.layout.pane_ids();
-        let mut tx = rect.x + PANE_PADDING;
+        let visible_left = rect.x + PANE_PADDING;
+        let visible_right = rect.x + rect.width - PANE_PADDING;
+        let mut tx = rect.x + PANE_PADDING - self.stacked_tab_scroll;
         for &tab_id in pane_ids.iter() {
             let title = crate::ui::pane_title(&self.panes, tab_id);
             let tab_w = stacked_tab_width(&title, cell_w);
-            if pos.x >= tx && pos.x <= tx + tab_w {
+            if pos.x >= tx && pos.x <= tx + tab_w
+                && pos.x >= visible_left && pos.x <= visible_right
+            {
                 return Some(tab_id);
             }
             tx += tab_w;
@@ -284,6 +289,22 @@ impl App {
         None
     }
 
+    /// Check if the cursor is in the stacked tab bar area.
+    pub(crate) fn is_over_stacked_tab_bar(&self, pos: Vec2) -> bool {
+        if !matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
+            return false;
+        }
+        if let Some(&(_, rect)) = self.visual_pane_rects.first() {
+            let header_top = rect.y;
+            pos.x >= rect.x
+                && pos.x <= rect.x + rect.width
+                && pos.y >= header_top
+                && pos.y <= header_top + TAB_BAR_HEIGHT
+        } else {
+            false
+        }
+    }
+
     /// Check if the cursor is in the panel tab bar area.
     pub(crate) fn is_over_panel_tab_bar(&self, pos: Vec2) -> bool {
         if let Some(ref panel_rect) = self.editor_panel_rect {
@@ -305,37 +326,135 @@ impl App {
         (panel_width - 2.0 * PANE_PADDING - right_reserved).max(0.0)
     }
 
+    /// Compute visible tab area width for the current active stacked pane.
+    /// Replicates the badge layout logic from chrome.rs so the value is always
+    /// accurate for the *current* active pane (not stale from previous render).
+    fn effective_stacked_tab_width(&self) -> f32 {
+        let Some(&(_, rect)) = self.visual_pane_rects.first() else {
+            return 0.0;
+        };
+        let cell_w = self.cell_size().width;
+        let badge_pad = 6.0_f32;
+        let badge_gap = 6.0_f32;
+
+        // Fixed controls: close + maximize + mode toggle
+        let close_w = cell_w + 2.0 * BADGE_PADDING_H;
+        let close_x = rect.x + rect.width - PANE_PADDING - close_w;
+        let max_w = cell_w + 2.0 * badge_pad;
+        let max_x = close_x - badge_gap - max_w;
+        let mode_w = 4.0 * cell_w + 2.0 * badge_pad;
+        let mode_x = max_x - badge_gap - mode_w;
+        let mut tabs_stop = mode_x - badge_gap;
+
+        // Dynamic git badges for the active pane
+        if let PaneAreaMode::Stacked(active) = self.pane_area_mode {
+            if let Some(PaneKind::Terminal(pane)) = self.panes.get(&active) {
+                if let Some(ref git) = pane.git_info {
+                    // Git status badge
+                    if git.status.changed_files > 0 {
+                        let stat_text = format!(
+                            "{} +{} -{}",
+                            git.status.changed_files, git.status.additions, git.status.deletions
+                        );
+                        let stat_w = stat_text.len() as f32 * cell_w + BADGE_PADDING_H * 2.0;
+                        let stat_x = tabs_stop - stat_w;
+                        if stat_x > rect.x + PANE_PADDING + 60.0 {
+                            tabs_stop = stat_x - badge_gap;
+                        }
+                    }
+                    // Git branch badge
+                    let branch_display = format!("\u{e0a0} {}", git.branch);
+                    let branch_w = branch_display.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0;
+                    let branch_x = tabs_stop - branch_w;
+                    if branch_x > rect.x + PANE_PADDING + 60.0 {
+                        tabs_stop = branch_x - badge_gap;
+                    }
+                }
+            }
+        }
+
+        let tab_content_left = rect.x + PANE_PADDING;
+        (tabs_stop - 12.0 - tab_content_left).max(0.0)
+    }
+
+    /// Clamp the stacked tab scroll to valid range.
+    pub(crate) fn clamp_stacked_tab_scroll(&mut self) {
+        if matches!(self.pane_area_mode, PaneAreaMode::Stacked(_)) {
+            let cell_w = self.cell_size().width;
+            let pane_ids = self.layout.pane_ids();
+            let total_width = stacked_tabs_total_width(&self.panes, &pane_ids, cell_w);
+            let visible_width = self.effective_stacked_tab_width();
+            let max_scroll = (total_width - visible_width).max(0.0);
+            self.stacked_tab_scroll_target = self.stacked_tab_scroll_target.clamp(0.0, max_scroll);
+            self.stacked_tab_scroll = self.stacked_tab_scroll.clamp(0.0, max_scroll);
+        }
+    }
+
+    /// Auto-scroll to make the active stacked tab visible.
+    pub(crate) fn scroll_to_active_stacked_tab(&mut self) {
+        if let PaneAreaMode::Stacked(active) = self.pane_area_mode {
+            let cell_w = self.cell_size().width;
+            let pane_ids = self.layout.pane_ids();
+            if let Some(idx) = pane_ids.iter().position(|&id| id == active) {
+                let tab_left = stacked_tab_x(&self.panes, &pane_ids, idx, cell_w);
+                let title = panel_tab_title(&self.panes, active);
+                let tab_right = tab_left + stacked_tab_width(&title, cell_w);
+                let visible_width = self.effective_stacked_tab_width();
+
+                if tab_left < self.stacked_tab_scroll_target {
+                    self.stacked_tab_scroll_target = tab_left;
+                } else if tab_right > self.stacked_tab_scroll_target + visible_width {
+                    self.stacked_tab_scroll_target = tab_right - visible_width;
+                }
+                // Snap immediately — no animation for programmatic scroll
+                self.stacked_tab_scroll = self.stacked_tab_scroll_target;
+                self.clamp_stacked_tab_scroll();
+            }
+        }
+    }
+
+    /// Effective dock tab area width (dynamic, from last chrome render).
+    /// Falls back to static estimate if chrome hasn't rendered yet.
+    fn effective_dock_tab_width(&self) -> f32 {
+        if self.dock_tab_area_width > 0.0 {
+            self.dock_tab_area_width
+        } else if let Some(ref panel_rect) = self.editor_panel_rect {
+            let cell_w = self.cell_size().width;
+            Self::dock_tab_visible_width(panel_rect.width, cell_w)
+        } else {
+            0.0
+        }
+    }
+
     /// Clamp the panel tab scroll to valid range.
     pub(crate) fn clamp_panel_tab_scroll(&mut self) {
-        if let Some(ref panel_rect) = self.editor_panel_rect {
-            let cell_w = self.cell_size().width;
-            let tabs = self.active_editor_tabs();
-            let total_width = dock_tabs_total_width(&self.panes, &tabs, cell_w);
-            let visible_width = Self::dock_tab_visible_width(panel_rect.width, cell_w);
-            let max_scroll = (total_width - visible_width).max(0.0);
-            self.panel_tab_scroll_target = self.panel_tab_scroll_target.clamp(0.0, max_scroll);
-            self.panel_tab_scroll = self.panel_tab_scroll.clamp(0.0, max_scroll);
-        }
+        let cell_w = self.cell_size().width;
+        let tabs = self.active_editor_tabs();
+        let total_width = dock_tabs_total_width(&self.panes, &tabs, cell_w);
+        let visible_width = self.effective_dock_tab_width();
+        let max_scroll = (total_width - visible_width).max(0.0);
+        self.panel_tab_scroll_target = self.panel_tab_scroll_target.clamp(0.0, max_scroll);
+        self.panel_tab_scroll = self.panel_tab_scroll.clamp(0.0, max_scroll);
     }
 
     /// Auto-scroll to make the active panel tab visible.
     pub(crate) fn scroll_to_active_panel_tab(&mut self) {
-        if let (Some(active), Some(ref panel_rect)) =
-            (self.active_editor_tab(), self.editor_panel_rect)
-        {
+        if let Some(active) = self.active_editor_tab() {
             let cell_w = self.cell_size().width;
             let tabs = self.active_editor_tabs();
             if let Some(idx) = tabs.iter().position(|&id| id == active) {
                 let tab_left = dock_tab_x(&self.panes, &tabs, idx, cell_w);
                 let title = panel_tab_title(&self.panes, active);
                 let tab_right = tab_left + stacked_tab_width(&title, cell_w);
-                let visible_width = Self::dock_tab_visible_width(panel_rect.width, cell_w);
+                let visible_width = self.effective_dock_tab_width();
 
                 if tab_left < self.panel_tab_scroll_target {
                     self.panel_tab_scroll_target = tab_left;
                 } else if tab_right > self.panel_tab_scroll_target + visible_width {
                     self.panel_tab_scroll_target = tab_right - visible_width;
                 }
+                // Snap immediately — no animation for programmatic scroll
+                self.panel_tab_scroll = self.panel_tab_scroll_target;
                 self.clamp_panel_tab_scroll();
             }
         }

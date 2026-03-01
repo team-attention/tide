@@ -112,6 +112,7 @@ impl App {
                 self.pane_area_mode = PaneAreaMode::Stacked(next_id);
                 self.focus_terminal(next_id);
                 self.compute_layout();
+                self.scroll_to_active_stacked_tab();
                 return;
             }
         }

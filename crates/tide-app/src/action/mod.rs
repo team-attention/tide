@@ -107,6 +107,8 @@ impl App {
         if self.pane_area_maximized && target != FocusArea::PaneArea {
             self.pane_area_maximized = false;
             self.pane_area_mode = PaneAreaMode::Split;
+            self.stacked_tab_scroll = 0.0;
+            self.stacked_tab_scroll_target = 0.0;
             self.compute_layout();
         }
 
@@ -156,12 +158,16 @@ impl App {
                         match self.pane_area_mode {
                             PaneAreaMode::Split => {
                                 self.pane_area_mode = PaneAreaMode::Stacked(focused);
+                                self.compute_layout();
+                                self.scroll_to_active_stacked_tab();
                             }
                             PaneAreaMode::Stacked(_) => {
                                 self.pane_area_mode = PaneAreaMode::Split;
+                                self.stacked_tab_scroll = 0.0;
+                                self.stacked_tab_scroll_target = 0.0;
+                                self.compute_layout();
                             }
                         }
-                        self.compute_layout();
                     }
                 } else {
                     // Not focused → focus terminal
@@ -208,6 +214,8 @@ impl App {
                         // Unzoom: restore split mode
                         self.pane_area_maximized = false;
                         self.pane_area_mode = PaneAreaMode::Split;
+                        self.stacked_tab_scroll = 0.0;
+                        self.stacked_tab_scroll_target = 0.0;
                     } else {
                         // Zoom: stacked + maximize (hide dock)
                         self.pane_area_maximized = true;
@@ -215,6 +223,7 @@ impl App {
                     }
                     self.chrome_generation += 1;
                     self.compute_layout();
+                    self.scroll_to_active_stacked_tab();
                 }
             }
             FocusArea::FileTree => {
@@ -544,6 +553,7 @@ impl App {
             self.router.set_focused(new_id);
             self.chrome_generation += 1;
             self.compute_layout();
+            self.scroll_to_active_stacked_tab();
         }
     }
 

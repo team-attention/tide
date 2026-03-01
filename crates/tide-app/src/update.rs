@@ -300,6 +300,9 @@ impl App {
         // Smooth scroll animation
         const SCROLL_LERP: f32 = 0.45;
         const SCROLL_SNAP: f32 = 0.5;
+        // Tab scroll: fast lerp + aggressive snap to feel crisp (~3 frames at 60fps)
+        const TAB_SCROLL_LERP: f32 = 0.75;
+        const TAB_SCROLL_SNAP: f32 = 2.0;
 
         let ft_diff = self.file_tree_scroll_target - self.file_tree_scroll;
         if ft_diff.abs() > SCROLL_SNAP {
@@ -313,12 +316,25 @@ impl App {
         }
 
         let pt_diff = self.panel_tab_scroll_target - self.panel_tab_scroll;
-        if pt_diff.abs() > SCROLL_SNAP {
-            self.panel_tab_scroll += pt_diff * SCROLL_LERP;
+        if pt_diff.abs() > TAB_SCROLL_SNAP {
+            self.panel_tab_scroll += pt_diff * TAB_SCROLL_LERP;
             self.chrome_generation += 1;
             self.needs_redraw = true;
         } else if pt_diff.abs() > 0.0 {
             self.panel_tab_scroll = self.panel_tab_scroll_target;
+            self.chrome_generation += 1;
+            self.needs_redraw = true;
+        }
+
+        let st_diff = self.stacked_tab_scroll_target - self.stacked_tab_scroll;
+        if st_diff.abs() > TAB_SCROLL_SNAP {
+            self.stacked_tab_scroll += st_diff * TAB_SCROLL_LERP;
+            self.chrome_generation += 1;
+            self.needs_redraw = true;
+        } else if st_diff.abs() > 0.0 {
+            self.stacked_tab_scroll = self.stacked_tab_scroll_target;
+            self.chrome_generation += 1;
+            self.needs_redraw = true;
         }
 
         // Consume git info from background poller (non-blocking).
