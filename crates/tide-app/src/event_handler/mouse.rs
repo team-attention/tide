@@ -540,6 +540,8 @@ impl App {
                 Some(crate::drag_drop::HoverTarget::PaneModeToggle)
             ) {
                 self.pane_area_mode = PaneAreaMode::Split;
+                self.stacked_tab_scroll = 0.0;
+                self.stacked_tab_scroll_target = 0.0;
                 self.pane_area_maximized = false;
                 self.compute_layout();
                 self.chrome_generation += 1;
@@ -563,6 +565,7 @@ impl App {
                 self.pane_area_mode = PaneAreaMode::Stacked(tab_id);
                 self.focus_terminal(tab_id);
                 self.compute_layout();
+                self.scroll_to_active_stacked_tab();
                 return;
             }
 
@@ -749,6 +752,8 @@ impl App {
                 && matches!(self.pane_area_mode, PaneAreaMode::Stacked(_))
             {
                 self.pane_area_mode = PaneAreaMode::Split;
+                self.stacked_tab_scroll = 0.0;
+                self.stacked_tab_scroll_target = 0.0;
                 self.compute_layout();
             }
         }

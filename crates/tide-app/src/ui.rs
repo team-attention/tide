@@ -66,6 +66,21 @@ pub(crate) fn dock_tab_x(panes: &HashMap<PaneId, PaneKind>, tabs: &[PaneId], ind
         .sum()
 }
 
+/// Total width of all stacked tabs (for scroll clamping).
+pub(crate) fn stacked_tabs_total_width(panes: &HashMap<PaneId, PaneKind>, pane_ids: &[PaneId], cell_w: f32) -> f32 {
+    pane_ids.iter()
+        .map(|&id| stacked_tab_width(&panel_tab_title(panes, id), cell_w))
+        .sum()
+}
+
+/// Cumulative x offset of the stacked tab at `index`.
+pub(crate) fn stacked_tab_x(panes: &HashMap<PaneId, PaneKind>, pane_ids: &[PaneId], index: usize, cell_w: f32) -> f32 {
+    pane_ids.iter()
+        .take(index)
+        .map(|&id| stacked_tab_width(&panel_tab_title(panes, id), cell_w))
+        .sum()
+}
+
 /// Stacked pane tab width: pad + icon + space + text + indicator_space + pad.
 pub(crate) fn stacked_tab_width(title: &str, cell_w: f32) -> f32 {
     // 2 chars for icon+space, 2 chars for close/modified indicator space

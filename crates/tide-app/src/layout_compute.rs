@@ -627,6 +627,8 @@ impl App {
                 rects = vec![(active_id, full_rect)];
             } else {
                 self.pane_area_mode = PaneAreaMode::Split;
+                self.stacked_tab_scroll = 0.0;
+                self.stacked_tab_scroll_target = 0.0;
             }
         }
 

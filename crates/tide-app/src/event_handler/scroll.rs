@@ -107,11 +107,17 @@ impl App {
                 self.chrome_generation += 1;
                 self.needs_redraw = true;
             }
+        } else if self.is_over_stacked_tab_bar(self.last_cursor_pos) {
+            self.stacked_tab_scroll_target -= dx * 20.0;
+            self.stacked_tab_scroll_target -= dy * 20.0;
+            self.clamp_stacked_tab_scroll();
+            self.needs_redraw = true;
         } else if self.is_over_panel_tab_bar(self.last_cursor_pos) {
             // Horizontal scroll for panel tab bar
             self.panel_tab_scroll_target -= dx * 20.0;
             self.panel_tab_scroll_target -= dy * 20.0;
             self.clamp_panel_tab_scroll();
+            self.needs_redraw = true;
         } else if let Some(panel_rect) = self.editor_panel_rect {
             if panel_rect.contains(self.last_cursor_pos) {
                 // Route scroll to active panel editor

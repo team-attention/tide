@@ -704,10 +704,12 @@ pub(crate) fn render_chrome(
             }
 
             // Clip rect for tab content — ends at tabs_stop so tabs don't overlap controls
+            let dock_tab_content_width = (tabs_stop - (panel_rect.x + PANE_PADDING)).max(0.0);
+            app.dock_tab_area_width = dock_tab_content_width;
             let tab_content_clip = Rect::new(
                 panel_rect.x + PANE_PADDING,
                 tab_bar_top,
-                tabs_stop - (panel_rect.x + PANE_PADDING),
+                dock_tab_content_width,
                 PANEL_TAB_HEIGHT,
             );
 
@@ -1054,11 +1056,12 @@ pub(crate) fn render_chrome(
     // Stacked mode: render dock-style tab bar; Split mode: render per-pane headers
     let mut all_hit_zones = Vec::new();
     if let PaneAreaMode::Stacked(stacked_active) = pane_area_mode {
-        let zones = render_stacked_tab_bar(
+        let (zones, tab_area_w) = render_stacked_tab_bar(
             app, renderer, p,
             visual_pane_rects, all_pane_ids,
             stacked_active, focused,
         );
+        app.stacked_tab_area_width = tab_area_w;
         all_hit_zones.extend(zones);
     } else {
         // Split mode: Header (title + badges + close) for each pane
@@ -1084,10 +1087,10 @@ fn render_stacked_tab_bar(
     all_pane_ids: &[u64],
     stacked_active: u64,
     _focused: Option<u64>,
-) -> Vec<header::HeaderHitZone> {
+) -> (Vec<header::HeaderHitZone>, f32) {
     let mut zones = Vec::new();
     let Some(&(_, rect)) = visual_pane_rects.first() else {
-        return zones;
+        return (zones, 0.0);
     };
     let cell_size = renderer.cell_size();
     let cell_height = cell_size.height;
@@ -1220,14 +1223,24 @@ fn render_stacked_tab_bar(
         }
     }
 
-    // Left side: inline pane tabs (variable width)
-    let mut tx = rect.x + PANE_PADDING;
+    // Left side: inline pane tabs (variable width) with horizontal scroll
+    let tab_content_left = rect.x + PANE_PADDING;
+    let tab_content_width = (tabs_stop - 12.0 - tab_content_left).max(0.0);
+    let tab_content_clip = Rect::new(tab_content_left, header_top, tab_content_width, header_h);
+    let mut tx = rect.x + PANE_PADDING - app.stacked_tab_scroll;
     for &tab_id in all_pane_ids.iter() {
         let title = crate::ui::pane_title(&app.panes, tab_id);
         let tab_w = stacked_tab_width(&title, cell_w);
 
-        if tx + tab_w > tabs_stop - 12.0 {
-            break; // don't overlap with badges/controls
+        // Skip tabs entirely off-screen to the right
+        if tx > tabs_stop - 12.0 {
+            tx += tab_w;
+            continue;
+        }
+        // Skip tabs entirely off-screen to the left
+        if tx + tab_w < tab_content_left {
+            tx += tab_w;
+            continue;
         }
 
         let is_active = stacked_active == tab_id;
@@ -1235,7 +1248,7 @@ fn render_stacked_tab_bar(
         // Active tab: underline
         if is_active {
             renderer.draw_chrome_rect(
-                Rect::new(tx, header_top + header_h - 2.0, tab_w, 2.0),
+                Rect::new(tx, header_top + header_h - 2.0, tab_w, 2.0).clip_to(&tab_content_clip),
                 p.dock_tab_underline,
             );
         }
@@ -1254,10 +1267,10 @@ fn render_stacked_tab_bar(
                 bold: is_active,
                 dim: false, italic: false, underline: false,
             },
-            header_clip,
+            tab_content_clip,
         );
 
         tx += tab_w;
     }
-    zones
+    (zones, tab_content_width)
 }

@@ -47,7 +47,7 @@ pub(crate) fn render_hover(
                             if let Some(&(_, rect)) = app.visual_pane_rects.first() {
                                 let cell_w = renderer.cell_size().width;
                                 let pane_ids = app.layout.pane_ids();
-                                let mut tx = rect.x + PANE_PADDING;
+                                let mut tx = rect.x + PANE_PADDING - app.stacked_tab_scroll;
                                 for &pid in pane_ids.iter() {
                                     let title = crate::ui::pane_title(&app.panes, pid);
                                     let tab_w = crate::ui::stacked_tab_width(&title, cell_w);

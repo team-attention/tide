@@ -23,6 +23,15 @@ impl Rect {
             && point.y >= self.y
             && point.y <= self.y + self.height
     }
+
+    /// Return the intersection of this rect with another (clip to bounds).
+    pub fn clip_to(&self, clip: &Rect) -> Rect {
+        let x1 = self.x.max(clip.x);
+        let y1 = self.y.max(clip.y);
+        let x2 = (self.x + self.width).min(clip.x + clip.width);
+        let y2 = (self.y + self.height).min(clip.y + clip.height);
+        Rect::new(x1, y1, (x2 - x1).max(0.0), (y2 - y1).max(0.0))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -517,6 +517,8 @@ impl App {
                 } else {
                     // Last pane — exit Stacked mode
                     self.pane_area_mode = PaneAreaMode::Split;
+                    self.stacked_tab_scroll = 0.0;
+                    self.stacked_tab_scroll_target = 0.0;
                 }
             }
         }
@@ -573,6 +575,8 @@ impl App {
             self.panel_tab_scroll = 0.0;
             self.panel_tab_scroll_target = 0.0;
         }
+        self.clamp_stacked_tab_scroll();
+        self.scroll_to_active_stacked_tab();
     }
 
     /// Save and close the pane from the save confirm bar.
