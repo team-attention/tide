@@ -397,7 +397,7 @@ impl App {
             let pane_ids = self.layout.pane_ids();
             if let Some(idx) = pane_ids.iter().position(|&id| id == active) {
                 let tab_left = stacked_tab_x(&self.panes, &pane_ids, idx, cell_w);
-                let title = panel_tab_title(&self.panes, active);
+                let title = crate::ui::pane_title(&self.panes, active);
                 let tab_right = tab_left + stacked_tab_width(&title, cell_w);
                 let visible_width = self.effective_stacked_tab_width();
 

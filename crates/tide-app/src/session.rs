@@ -258,8 +258,16 @@ impl App {
         // Create terminal panes
         let cell_size = self.cell_size();
         let logical = self.logical_size();
-        let cols = (logical.width / 2.0 / cell_size.width).max(1.0) as u16;
-        let rows = (logical.height / cell_size.height).max(1.0) as u16;
+        let cols = if cell_size.width > 0.0 {
+            ((logical.width / 2.0 / cell_size.width).max(1.0).min(1000.0)) as u16
+        } else {
+            80
+        };
+        let rows = if cell_size.height > 0.0 {
+            ((logical.height / cell_size.height).max(1.0).min(500.0)) as u16
+        } else {
+            24
+        };
 
         for (pane_id, cwd) in &pane_infos {
             match crate::pane::TerminalPane::with_cwd(*pane_id, cols, rows, cwd.clone(), self.dark_mode) {

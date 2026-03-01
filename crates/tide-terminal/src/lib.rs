@@ -908,6 +908,10 @@ impl TerminalBackend for Terminal {
     }
 
     fn resize(&mut self, cols: u16, rows: u16) {
+        // Clamp to sane maximums to prevent catastrophic allocation
+        // (e.g. 65535×65535 grid ≈ 100GB)
+        let cols = cols.min(1000);
+        let rows = rows.min(500);
         if self.cols == cols && self.rows == rows {
             return;
         }

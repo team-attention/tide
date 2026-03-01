@@ -10,9 +10,13 @@ use crate::{App, PaneAreaMode};
 impl App {
     pub(crate) fn create_terminal_pane(&mut self, id: tide_core::PaneId, cwd: Option<std::path::PathBuf>) {
         let cell_size = self.cell_size();
+        if cell_size.width <= 0.0 || cell_size.height <= 0.0 {
+            log::error!("Cannot create terminal pane: cell_size is zero ({:?})", cell_size);
+            return;
+        }
         let logical = self.logical_size();
-        let cols = (logical.width / 2.0 / cell_size.width).max(1.0) as u16;
-        let rows = (logical.height / cell_size.height).max(1.0) as u16;
+        let cols = ((logical.width / 2.0 / cell_size.width).max(1.0).min(1000.0)) as u16;
+        let rows = ((logical.height / cell_size.height).max(1.0).min(500.0)) as u16;
 
         match TerminalPane::with_cwd(id, cols, rows, cwd, self.dark_mode) {
             Ok(pane) => {
