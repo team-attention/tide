@@ -97,16 +97,9 @@ mod tests {
         let ops = compute_diff(&disk, &buffer);
 
         // Expected: Equal(a), Delete(b), Insert(x), Equal(c), Equal(d), Insert(e)
-        let mut equals = 0;
-        let mut inserts = 0;
-        let mut deletes = 0;
-        for op in &ops {
-            match op {
-                DiffOp::Equal(_) => equals += 1,
-                DiffOp::Insert(_) => inserts += 1,
-                DiffOp::Delete(_) => deletes += 1,
-            }
-        }
+        let equals = ops.iter().filter(|op| matches!(op, DiffOp::Equal(_))).count();
+        let inserts = ops.iter().filter(|op| matches!(op, DiffOp::Insert(_))).count();
+        let deletes = ops.iter().filter(|op| matches!(op, DiffOp::Delete(_))).count();
         assert_eq!(equals, 3); // a, c, d
         assert_eq!(deletes, 1); // b
         assert_eq!(inserts, 2); // x, e
