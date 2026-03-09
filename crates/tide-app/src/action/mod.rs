@@ -519,6 +519,11 @@ impl App {
         direction: SplitDirection,
         cwd: Option<std::path::PathBuf>,
     ) -> Option<tide_core::PaneId> {
+        // Unzoom before splitting so both panes are visible
+        if self.zoomed_pane.is_some() {
+            self.zoomed_pane = None;
+            self.pane_generations.clear();
+        }
         let new_id = self.layout.split(source, direction);
         self.create_terminal_pane(new_id, cwd);
         self.focused = Some(new_id);
@@ -530,19 +535,11 @@ impl App {
 
     pub(crate) fn handle_global_action(&mut self, action: GlobalAction) {
         match action {
-            GlobalAction::SplitVertical => {
-                self.split_pane(SplitDirection::Vertical, None);
+            GlobalAction::SplitVertical | GlobalAction::SplitVerticalHere => {
+                self.split_with_launcher(SplitDirection::Vertical);
             }
-            GlobalAction::SplitHorizontal => {
-                self.split_pane(SplitDirection::Horizontal, None);
-            }
-            GlobalAction::SplitVerticalHere => {
-                let cwd = self.focused_terminal_cwd();
-                self.split_pane(SplitDirection::Vertical, cwd);
-            }
-            GlobalAction::SplitHorizontalHere => {
-                let cwd = self.focused_terminal_cwd();
-                self.split_pane(SplitDirection::Horizontal, cwd);
+            GlobalAction::SplitHorizontal | GlobalAction::SplitHorizontalHere => {
+                self.split_with_launcher(SplitDirection::Horizontal);
             }
             GlobalAction::ClosePane => {
                 if let Some(focused) = self.focused {
@@ -554,13 +551,17 @@ impl App {
                 self.handle_focus_area(target);
             }
             GlobalAction::WorkspacePrev => {
-                if self.active_workspace > 0 {
-                    self.switch_workspace(self.active_workspace - 1);
+                let len = self.workspaces.len();
+                if len > 0 {
+                    let prev = if self.active_workspace == 0 { len - 1 } else { self.active_workspace - 1 };
+                    self.switch_workspace(prev);
                 }
             }
             GlobalAction::WorkspaceNext => {
-                if self.active_workspace + 1 < self.workspaces.len() {
-                    self.switch_workspace(self.active_workspace + 1);
+                let len = self.workspaces.len();
+                if len > 0 {
+                    let next = if self.active_workspace + 1 >= len { 0 } else { self.active_workspace + 1 };
+                    self.switch_workspace(next);
                 }
             }
             GlobalAction::NewWorkspace => {

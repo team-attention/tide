@@ -82,6 +82,9 @@ impl App {
         self.layout.set_active_tab(new_id);
         self.focused = Some(new_id);
         self.router.set_focused(new_id);
+        if self.zoomed_pane.is_some() {
+            self.zoomed_pane = Some(new_id);
+        }
         self.focus_area = crate::ui_state::FocusArea::PaneArea;
         self.chrome_generation += 1;
         self.compute_layout();
@@ -101,6 +104,9 @@ impl App {
         self.layout.set_active_tab(new_id);
         self.focused = Some(new_id);
         self.router.set_focused(new_id);
+        if self.zoomed_pane.is_some() {
+            self.zoomed_pane = Some(new_id);
+        }
         self.focus_area = crate::ui_state::FocusArea::PaneArea;
         self.chrome_generation += 1;
         self.compute_layout();
@@ -137,6 +143,26 @@ impl App {
         self.compute_layout();
     }
 
+
+    /// Split the focused pane and show a Launcher in the new tab group.
+    /// Used by keyboard-initiated splits (Cmd+\, etc.).
+    pub(crate) fn split_with_launcher(&mut self, direction: tide_core::SplitDirection) {
+        let focused = match self.focused {
+            Some(id) => id,
+            None => return,
+        };
+        if self.zoomed_pane.is_some() {
+            self.zoomed_pane = None;
+            self.pane_generations.clear();
+        }
+        let new_id = self.layout.split(focused, direction);
+        self.panes.insert(new_id, PaneKind::Launcher(new_id));
+        self.pending_ime_proxy_creates.push(new_id);
+        self.focused = Some(new_id);
+        self.router.set_focused(new_id);
+        self.chrome_generation += 1;
+        self.compute_layout();
+    }
 
     /// Open a browser pane as a tab in the focused pane's tab group.
     pub(crate) fn open_browser_pane(&mut self, url: Option<String>) {

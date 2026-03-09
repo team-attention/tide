@@ -308,7 +308,28 @@ pub(crate) fn render_chrome(
                 );
             }
 
+            // Draw drag drop indicator line before this item (gap == i)
+            if let Some((src, press_y, gap)) = app.ws_drag {
+                let dragging = (app.last_cursor_pos.y - press_y).abs() > crate::theme::DRAG_THRESHOLD;
+                if dragging && gap == i && gap != src && gap != src + 1 {
+                    let line_y = y - item_gap / 2.0;
+                    let line_rect = Rect::new(content_x + 4.0, line_y - 1.0, content_w - 8.0, 2.0);
+                    renderer.draw_chrome_rounded_rect(line_rect, p.border_focused, 1.0);
+                }
+            }
+
             y += item_h + item_gap;
+        }
+
+        // Draw drop indicator after the last item (gap == len)
+        if let Some((src, press_y, gap)) = app.ws_drag {
+            let dragging = (app.last_cursor_pos.y - press_y).abs() > crate::theme::DRAG_THRESHOLD;
+            let len = app.workspaces.len();
+            if dragging && gap == len && gap != src + 1 {
+                let line_y = y - item_gap / 2.0;
+                let line_rect = Rect::new(content_x + 4.0, line_y - 1.0, content_w - 8.0, 2.0);
+                renderer.draw_chrome_rounded_rect(line_rect, p.border_focused, 1.0);
+            }
         }
 
         // "+ New Workspace" button at bottom
@@ -653,10 +674,15 @@ pub(crate) fn render_chrome(
         let tab_group = app.layout.tab_group_containing(id);
         let is_zoomed = app.zoomed_pane == Some(id);
 
-        // Zoomed pane: tint the tab bar area so it's visually distinct from single-tab panes
+        // Zoomed pane: tint the tab bar area so it's clearly distinct
         if is_zoomed {
-            let tint = tide_core::Color::new(p.badge_git_branch.r, p.badge_git_branch.g, p.badge_git_branch.b, 0.06);
-            let tab_bar_rect = Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT);
+            let tint = tide_core::Color::new(p.badge_git_branch.r, p.badge_git_branch.g, p.badge_git_branch.b, 0.18);
+            let tab_bar_rect = Rect::new(
+                rect.x + 2.0,
+                rect.y + 2.0,
+                rect.width - 4.0,
+                TAB_BAR_HEIGHT - 2.0,
+            );
             renderer.draw_chrome_rect(tab_bar_rect, tint);
         }
 

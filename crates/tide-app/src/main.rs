@@ -228,6 +228,8 @@ struct App {
     // Workspace sidebar (left panel showing workspace list)
     pub(crate) show_workspace_sidebar: bool,
     pub(crate) workspace_sidebar_rect: Option<Rect>,
+    /// Workspace sidebar drag state: (dragged index, press Y, current drop index)
+    pub(crate) ws_drag: Option<(usize, f32, usize)>,
 
     // File tree keyboard cursor index (visible entry index)
     pub(crate) file_tree_cursor: usize,
@@ -373,6 +375,7 @@ impl App {
             active_workspace: 0,
             show_workspace_sidebar: true,
             workspace_sidebar_rect: None,
+            ws_drag: None,
             file_tree_cursor: 0,
             file_tree_rename: None,
             branch_cleanup: None,

@@ -32,6 +32,11 @@ impl App {
         let saved_session = session::load_session();
         let is_crash = session::is_crash_recovery();
 
+        // Clean up stale shell init lock files (pyenv rehash, rbenv rehash, etc.)
+        // before spawning any terminals. These tools use file-based locks that can
+        // become stale if the shell process is killed mid-rehash (e.g. on app quit).
+        cleanup_stale_shell_locks();
+
         // Pre-spawn PTY with estimated dimensions (80x24) BEFORE GPU init.
         // The shell starts loading ~/.zshrc in parallel with GPU initialization,
         // so the prompt appears sooner after launch.
@@ -627,5 +632,28 @@ fn platform_button_to_core(
         tide_platform::MouseButton::Right => Some(tide_core::MouseButton::Right),
         tide_platform::MouseButton::Middle => Some(tide_core::MouseButton::Middle),
         _ => None,
+    }
+}
+
+/// Remove stale lock files left by shell init tools (pyenv, rbenv, nodenv).
+/// These tools use file-based locks during `rehash` that become stale if the
+/// shell is killed mid-rehash (e.g. when the app quits). A stale lock causes
+/// every subsequent shell startup to fail with a "cannot acquire lock" error.
+fn cleanup_stale_shell_locks() {
+    if let Some(home) = dirs::home_dir() {
+        let lock_files = [
+            home.join(".pyenv/shims/.pyenv-shim"),
+            home.join(".rbenv/shims/.rbenv-shim"),
+            home.join(".nodenv/shims/.nodenv-shim"),
+        ];
+        for path in &lock_files {
+            if path.exists() {
+                if let Err(e) = std::fs::remove_file(path) {
+                    log::warn!("Failed to remove stale lock {:?}: {}", path, e);
+                } else {
+                    log::info!("Removed stale shell lock: {:?}", path);
+                }
+            }
+        }
     }
 }

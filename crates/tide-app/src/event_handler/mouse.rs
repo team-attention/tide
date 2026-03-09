@@ -293,7 +293,8 @@ impl App {
             match &self.hover_target {
                 Some(crate::drag_drop::HoverTarget::WorkspaceSidebarItem(idx)) => {
                     let idx = *idx;
-                    self.switch_workspace(idx);
+                    // Start pending drag
+                    self.ws_drag = Some((idx, self.last_cursor_pos.y, idx));
                     return;
                 }
                 Some(crate::drag_drop::HoverTarget::WorkspaceSidebarNewBtn) => {
@@ -386,6 +387,32 @@ impl App {
             self.mouse_left_pressed = false;
         }
 
+        // End workspace sidebar drag
+        // ws_drag = (source_index, press_y, gap_index)
+        if let Some((src, press_y, gap)) = self.ws_drag.take() {
+            let moved = (self.last_cursor_pos.y - press_y).abs() > DRAG_THRESHOLD;
+            // Convert gap to target index: gap after src position is a no-op
+            let target = if gap <= src { gap } else { gap - 1 };
+            if moved && target != src {
+                let ws = self.workspaces.remove(src);
+                self.workspaces.insert(target, ws);
+                // Fix active_workspace index
+                if self.active_workspace == src {
+                    self.active_workspace = target;
+                } else if src < self.active_workspace && target >= self.active_workspace {
+                    self.active_workspace -= 1;
+                } else if src > self.active_workspace && target <= self.active_workspace {
+                    self.active_workspace += 1;
+                }
+            } else if !moved {
+                // Click without drag — switch to workspace
+                self.switch_workspace(src);
+            }
+            self.chrome_generation += 1;
+            self.needs_redraw = true;
+            return;
+        }
+
         // End scrollbar drag
         if self.scrollbar_dragging.is_some() {
             self.scrollbar_dragging = None;
@@ -449,6 +476,37 @@ impl App {
         window: &WindowProxy,
     ) {
         self.last_cursor_pos = pos;
+
+        // Handle workspace sidebar drag
+        // ws_drag stores (source_index, press_y, gap_index)
+        // gap_index is the insertion gap: 0 = before first, N = after last
+        if let Some((src, press_y, _)) = self.ws_drag {
+            if (pos.y - press_y).abs() > DRAG_THRESHOLD {
+                let gap = if let Some(ws_rect) = self.workspace_sidebar_rect {
+                    let cs = self.cell_size();
+                    let edge_inset = PANE_CORNER_RADIUS;
+                    let mut y = ws_rect.y + edge_inset + 10.0;
+                    let item_gap = 6.0_f32;
+                    let item_h = 8.0 * 2.0 + cs.height + 3.0 + cs.height * 0.85;
+
+                    let mut result = self.workspaces.len();
+                    for i in 0..self.workspaces.len() {
+                        if pos.y < y + item_h / 2.0 {
+                            result = i;
+                            break;
+                        }
+                        y += item_h + item_gap;
+                    }
+                    result
+                } else {
+                    src
+                };
+                self.ws_drag = Some((src, press_y, gap));
+                self.chrome_generation += 1;
+                self.needs_redraw = true;
+            }
+            return;
+        }
 
         // Handle scrollbar drag
         if let (Some(pane_id), Some(rect)) = (self.scrollbar_dragging, self.scrollbar_drag_rect) {
