@@ -63,6 +63,7 @@ impl HoverTarget {
 pub(crate) enum DropDestination {
     TreePane(PaneId, DropZone),
     TreeRoot(DropZone),
+    Workspace(usize),
 }
 
 // ──────────────────────────────────────────────
@@ -148,7 +149,67 @@ impl App {
         mouse: Vec2,
         source: PaneId,
     ) -> Option<DropDestination> {
+        // Check workspace sidebar first — allow cross-workspace pane moves
+        if let Some(idx) = self.workspace_sidebar_item_at_pos(mouse) {
+            if idx != self.active_workspace {
+                return Some(DropDestination::Workspace(idx));
+            }
+        }
         self.compute_tree_drop_target(mouse, source)
+    }
+
+    /// Hit-test workspace sidebar items. Returns the 0-based workspace index if hit.
+    fn workspace_sidebar_item_at_pos(&self, pos: Vec2) -> Option<usize> {
+        if !self.show_workspace_sidebar {
+            return None;
+        }
+        let ws_rect = self.workspace_sidebar_rect?;
+        let cs = self.cell_size();
+        let edge_inset = PANE_CORNER_RADIUS;
+        let content_x = ws_rect.x + 10.0;
+        let content_w = ws_rect.width - 20.0;
+        let mut y = ws_rect.y + edge_inset + 10.0;
+        let item_gap = 6.0_f32;
+
+        for i in 0..self.workspaces.len() {
+            let name_h = cs.height;
+            let sub_h = cs.height * 0.85;
+            let item_pad_v = 8.0_f32;
+            let line_gap = 3.0_f32;
+            let item_h = item_pad_v * 2.0 + name_h + line_gap + sub_h;
+
+            let item_rect = Rect::new(content_x, y, content_w, item_h);
+            if item_rect.contains(pos) {
+                return Some(i);
+            }
+            y += item_h + item_gap;
+        }
+        None
+    }
+
+    /// Get the visual rect of a workspace sidebar item (for rendering drag highlights).
+    pub(crate) fn workspace_sidebar_item_rect(&self, idx: usize) -> Option<Rect> {
+        let ws_rect = self.workspace_sidebar_rect?;
+        let cs = self.cell_size();
+        let edge_inset = PANE_CORNER_RADIUS;
+        let content_x = ws_rect.x + 10.0;
+        let content_w = ws_rect.width - 20.0;
+        let mut y = ws_rect.y + edge_inset + 10.0;
+        let item_gap = 6.0_f32;
+
+        for i in 0..self.workspaces.len() {
+            let name_h = cs.height;
+            let sub_h = cs.height * 0.85;
+            let item_pad_v = 8.0_f32;
+            let line_gap = 3.0_f32;
+            let item_h = item_pad_v * 2.0 + name_h + line_gap + sub_h;
+
+            if i == idx {
+                return Some(Rect::new(content_x, y, content_w, item_h));
+            }
+            y += item_h + item_gap;
+        }
+        None
     }
 
     /// Compute tree pane drop target (pane + zone) for drag.

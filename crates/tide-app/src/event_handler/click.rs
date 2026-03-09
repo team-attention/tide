@@ -1116,6 +1116,9 @@ impl App {
                 self.chrome_generation += 1;
                 self.compute_layout();
             }
+            DropDestination::Workspace(target_idx) => {
+                self.move_pane_to_workspace(source, target_idx);
+            }
         }
     }
 }
