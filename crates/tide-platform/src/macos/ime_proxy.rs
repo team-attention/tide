@@ -5,15 +5,17 @@
 //! is the first responder, giving each pane an independent NSTextInputContext.
 //! This prevents Korean IME composition from carrying over when switching panes.
 //!
-//! ## Korean IME inline composition
+//! ## Korean IME composition strategy
 //!
-//! The Korean IME on macOS may commit the first consonant via `insertText:`
-//! instead of `setMarkedText:` after an input method switch. Subsequent
-//! characters are then composed inline using `insertText:replacementRange:`
-//! — the IME reads back the committed text via `attributedSubstringForProposedRange:`
-//! and replaces it with the composed syllable. To support this, we maintain a
-//! virtual text buffer (`committed_text`) and emit Backspace events before each
-//! replacement commit so the terminal stays in sync.
+//! The Korean IME composes syllables by reading back committed text via
+//! `attributedSubstringForProposedRange:` and replacing it with the
+//! composed syllable.  To support this we maintain a virtual text buffer
+//! (`committed_text`) and emit DEL bytes before each replacement commit.
+//!
+//! To prevent the buffer from desyncing with TUI apps (which transform
+//! and redraw independently), `committed_text` is cleared on every fresh
+//! insert (no replacement range) and on every non-IME keystroke.  This
+//! limits the buffer to only the current composition context.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -221,6 +223,10 @@ declare_class!(
             self.flush_deferred_events();
 
             if !self.ivars().ime_handled.get() {
+                // Non-IME keystroke: clear committed_text so it doesn't
+                // accumulate stale data across keystrokes that change the
+                // terminal state without going through the IME.
+                self.ivars().committed_text.borrow_mut().clear();
                 let (key, modifiers) = key_and_modifiers_from_event(event);
                 let chars = unsafe { event.characters().map(|s| s.to_string()) };
                 self.emit(PlatformEvent::KeyDown { key, modifiers, chars });
@@ -295,15 +301,9 @@ declare_class!(
             let text = nsstring_from_anyobject(string);
             self.ivars().marked_text.borrow_mut().clear();
 
-            // Handle replacement range: the IME wants to replace previously
-            // committed text (e.g., Korean IME composing syllables inline).
-            // Prepend DEL (0x7F) bytes to erase the old characters so the
-            // entire replacement is emitted as a single ImeCommit.  This
-            // ensures a single atomic PTY write — separate Backspace events
-            // would be two write() calls that TUI apps (Claude Code) may
-            // process in different read chunks, causing the delete to land
-            // before the replacement text arrives.
             let commit_text = if replacement_range.location != NSNotFound as usize {
+                // Replacement: the IME is composing a syllable inline.
+                // Prepend DEL bytes to erase the old characters atomically.
                 let (byte_start, byte_end, replaced_chars) = {
                     let buf = self.ivars().committed_text.borrow();
                     let (s, e) = utf16_range_to_byte_range(&buf, replacement_range);
@@ -320,7 +320,12 @@ declare_class!(
                 buf.replace_range(byte_start..byte_end, &text);
                 combined
             } else {
-                self.ivars().committed_text.borrow_mut().push_str(&text);
+                // Fresh insert (no replacement): clear the buffer so it only
+                // holds the current composition context — not the entire
+                // typing history which desyncs from TUI apps.
+                let mut buf = self.ivars().committed_text.borrow_mut();
+                buf.clear();
+                buf.push_str(&text);
                 text
             };
 
@@ -337,11 +342,8 @@ declare_class!(
         ) {
             let text = nsstring_from_anyobject(string);
 
-            // Handle replacement range: the IME wants to replace previously
-            // committed text with the new preedit (e.g., Korean IME replacing
-            // committed ㄱ with composing 가).  Erase the replaced characters
-            // from the terminal so the preedit overlay renders at the correct
-            // cursor position.
+            // If the IME wants to replace committed text with the new preedit,
+            // erase the replaced characters from the terminal first.
             if replacement_range.location != NSNotFound as usize {
                 let committed_utf16 = utf16_len(&self.ivars().committed_text.borrow());
                 if replacement_range.location < committed_utf16 {
@@ -415,7 +417,6 @@ declare_class!(
             range: NSRange,
             actual_range: *mut NSRange,
         ) -> Option<Retained<NSAttributedString>> {
-            // Build virtual text: committed + marked
             let committed = self.ivars().committed_text.borrow();
             let marked = self.ivars().marked_text.borrow();
             let mut full_text = committed.clone();
@@ -636,6 +637,19 @@ fn utf16_len(s: &str) -> usize {
 
 /// Convert an NSRange (in UTF-16 code units) to a byte range in a Rust string.
 fn utf16_range_to_byte_range(s: &str, range: NSRange) -> (usize, usize) {
+    // Zero-length range: find the byte offset for the insertion point,
+    // return an empty range (start == end).
+    if range.length == 0 {
+        let mut utf16_pos = 0;
+        for (byte_idx, ch) in s.char_indices() {
+            if utf16_pos == range.location {
+                return (byte_idx, byte_idx);
+            }
+            utf16_pos += ch.len_utf16();
+        }
+        return (s.len(), s.len());
+    }
+
     let mut utf16_pos = 0;
     let mut byte_start = s.len();
     let mut byte_end = s.len();
