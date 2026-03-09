@@ -401,6 +401,12 @@ pub const BADGE_RADIUS: f32 = 100.0;
 pub const FILE_TREE_HEADER_HEIGHT: f32 = 32.0;
 pub const TITLEBAR_BUTTON_GAP: f32 = 8.0;
 pub const WORKSPACE_SIDEBAR_WIDTH: f32 = 180.0;
+pub const WS_SIDEBAR_PADDING: f32 = 10.0;
+pub const WS_SIDEBAR_ITEM_GAP: f32 = 6.0;
+pub const WS_SIDEBAR_ITEM_PAD_V: f32 = 8.0;
+pub const WS_SIDEBAR_ITEM_PAD_H: f32 = 10.0;
+pub const WS_SIDEBAR_LINE_GAP: f32 = 3.0;
+pub const WS_SIDEBAR_SUB_SCALE: f32 = 0.85;
 
 // ── Popup layout constants ──
 pub const POPUP_CORNER_RADIUS: f32 = 8.0;     // 팝업 라운드 코너 반지름

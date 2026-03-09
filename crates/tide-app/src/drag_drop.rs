@@ -7,6 +7,27 @@ use crate::App;
 const OUTER_ZONE_THRESHOLD: f32 = 0.12;
 
 // ──────────────────────────────────────────────
+// Workspace sidebar item geometry (shared layout computation)
+// ──────────────────────────────────────────────
+
+/// Precomputed layout geometry for workspace sidebar items.
+pub(crate) struct WsSidebarGeometry {
+    pub content_x: f32,
+    pub content_w: f32,
+    pub start_y: f32,
+    pub item_h: f32,
+    pub item_gap: f32,
+}
+
+impl WsSidebarGeometry {
+    /// Get the rect of the nth workspace sidebar item.
+    pub fn item_rect(&self, idx: usize) -> Rect {
+        let y = self.start_y + idx as f32 * (self.item_h + self.item_gap);
+        Rect::new(self.content_x, y, self.content_w, self.item_h)
+    }
+}
+
+// ──────────────────────────────────────────────
 // Hover target: tracks which interactive element the mouse is over
 // ──────────────────────────────────────────────
 
@@ -158,58 +179,43 @@ impl App {
         self.compute_tree_drop_target(mouse, source)
     }
 
+    /// Compute workspace sidebar item layout geometry.
+    pub(crate) fn ws_sidebar_geometry(&self) -> Option<WsSidebarGeometry> {
+        let ws_rect = self.workspace_sidebar_rect?;
+        let cs = self.cell_size();
+        let name_h = cs.height;
+        let sub_h = cs.height * WS_SIDEBAR_SUB_SCALE;
+        Some(WsSidebarGeometry {
+            content_x: ws_rect.x + WS_SIDEBAR_PADDING,
+            content_w: ws_rect.width - WS_SIDEBAR_PADDING * 2.0,
+            start_y: ws_rect.y + PANE_CORNER_RADIUS + WS_SIDEBAR_PADDING,
+            item_h: WS_SIDEBAR_ITEM_PAD_V * 2.0 + name_h + WS_SIDEBAR_LINE_GAP + sub_h,
+            item_gap: WS_SIDEBAR_ITEM_GAP,
+        })
+    }
+
     /// Hit-test workspace sidebar items. Returns the 0-based workspace index if hit.
     fn workspace_sidebar_item_at_pos(&self, pos: Vec2) -> Option<usize> {
         if !self.show_workspace_sidebar {
             return None;
         }
-        let ws_rect = self.workspace_sidebar_rect?;
-        let cs = self.cell_size();
-        let edge_inset = PANE_CORNER_RADIUS;
-        let content_x = ws_rect.x + 10.0;
-        let content_w = ws_rect.width - 20.0;
-        let mut y = ws_rect.y + edge_inset + 10.0;
-        let item_gap = 6.0_f32;
-
+        let geo = self.ws_sidebar_geometry()?;
         for i in 0..self.workspaces.len() {
-            let name_h = cs.height;
-            let sub_h = cs.height * 0.85;
-            let item_pad_v = 8.0_f32;
-            let line_gap = 3.0_f32;
-            let item_h = item_pad_v * 2.0 + name_h + line_gap + sub_h;
-
-            let item_rect = Rect::new(content_x, y, content_w, item_h);
-            if item_rect.contains(pos) {
+            if geo.item_rect(i).contains(pos) {
                 return Some(i);
             }
-            y += item_h + item_gap;
         }
         None
     }
 
     /// Get the visual rect of a workspace sidebar item (for rendering drag highlights).
     pub(crate) fn workspace_sidebar_item_rect(&self, idx: usize) -> Option<Rect> {
-        let ws_rect = self.workspace_sidebar_rect?;
-        let cs = self.cell_size();
-        let edge_inset = PANE_CORNER_RADIUS;
-        let content_x = ws_rect.x + 10.0;
-        let content_w = ws_rect.width - 20.0;
-        let mut y = ws_rect.y + edge_inset + 10.0;
-        let item_gap = 6.0_f32;
-
-        for i in 0..self.workspaces.len() {
-            let name_h = cs.height;
-            let sub_h = cs.height * 0.85;
-            let item_pad_v = 8.0_f32;
-            let line_gap = 3.0_f32;
-            let item_h = item_pad_v * 2.0 + name_h + line_gap + sub_h;
-
-            if i == idx {
-                return Some(Rect::new(content_x, y, content_w, item_h));
-            }
-            y += item_h + item_gap;
+        let geo = self.ws_sidebar_geometry()?;
+        if idx < self.workspaces.len() {
+            Some(geo.item_rect(idx))
+        } else {
+            None
         }
-        None
     }
 
     /// Compute tree pane drop target (pane + zone) for drag.
