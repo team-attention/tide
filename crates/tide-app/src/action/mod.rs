@@ -19,9 +19,9 @@ use crate::App;
 
 impl App {
     fn cleanup_closed_pane_state(&mut self, pane_id: tide_core::PaneId) {
-        self.pane_generations.remove(&pane_id);
-        self.scroll_accumulator.remove(&pane_id);
-        self.pending_ime_proxy_removes.push(pane_id);
+        self.cache.pane_generations.remove(&pane_id);
+        self.interaction.scroll_accumulator.remove(&pane_id);
+        self.ime.pending_removes.push(pane_id);
         if let Some(renderer) = self.renderer.as_mut() {
             renderer.remove_pane_cache(pane_id);
         }
@@ -35,7 +35,7 @@ impl App {
         }
         self.focused = Some(id);
         self.router.set_focused(id);
-        self.chrome_generation += 1;
+        self.cache.chrome_generation += 1;
         self.update_file_tree_cwd();
         // Immediately sync webview visibility so the browser hides/shows
         // without waiting for the next update() tick (which may be gated by
@@ -46,13 +46,6 @@ impl App {
     /// Resolve the effective target pane for actions like Copy/Paste/Find.
     fn action_target_id(&self) -> Option<tide_core::PaneId> {
         self.focused
-    }
-
-    /// Reverse-resolve a FocusArea to its slot number (1 or 2) based on current layout.
-    /// Used by titlebar buttons to show the correct shortcut hint.
-    pub(crate) fn slot_number_for_area(&self, target: FocusArea) -> u8 {
-        let areas = self.area_ordering();
-        areas.iter().position(|&a| a == target).map(|i| (i + 1) as u8).unwrap_or(0)
     }
 
     /// Build the left-to-right ordering of focus areas based on sidebar_side.
@@ -84,16 +77,16 @@ impl App {
             FocusArea::FileTree => {
                 if self.focus_area == FocusArea::FileTree {
                     // Focused → hide + return to PaneArea
-                    self.show_file_tree = false;
+                    self.ft.visible = false;
                     self.focus_area = FocusArea::PaneArea;
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                     self.compute_layout();
-                } else if self.show_file_tree {
+                } else if self.ft.visible {
                     // Visible but not focused → focus
                     self.focus_area = FocusArea::FileTree;
                 } else {
                     // Hidden → show + focus
-                    self.show_file_tree = true;
+                    self.ft.visible = true;
                     self.focus_area = FocusArea::FileTree;
                     self.update_file_tree_cwd();
                     self.compute_layout();
@@ -110,8 +103,8 @@ impl App {
                 }
             }
         }
-        self.chrome_generation += 1;
-        self.needs_redraw = true;
+        self.cache.chrome_generation += 1;
+        self.cache.needs_redraw = true;
     }
 
     /// Handle Navigate(direction) — route based on focus_area.
@@ -138,8 +131,8 @@ impl App {
                         // Zoom the focused pane
                         self.zoomed_pane = Some(focused);
                     }
-                    self.pane_generations.clear();
-                    self.chrome_generation += 1;
+                    self.cache.pane_generations.clear();
+                    self.cache.chrome_generation += 1;
                     self.compute_layout();
                 }
             }
@@ -217,9 +210,9 @@ impl App {
                                 if let tide_core::Key::Char('m') | tide_core::Key::Char('M') = &key {
                                     if pane.is_markdown() {
                                         pane.toggle_preview();
-                                        self.chrome_generation += 1;
-                                        self.pane_generations.remove(&id);
-                                        self.needs_redraw = true;
+                                        self.cache.chrome_generation += 1;
+                                        self.cache.pane_generations.remove(&id);
+                                        self.cache.needs_redraw = true;
                                         return;
                                     }
                                 }
@@ -236,75 +229,39 @@ impl App {
                                     .unwrap_or(30);
                                 let total = pane.preview_line_count();
                                 let max_scroll = total.saturating_sub(visible_rows);
-                                match &key {
+                                // Map keys to the shared preview scroll chars
+                                let scroll_char = match &key {
+                                    tide_core::Key::Char(c @ ('j' | 'k' | 'h' | 'l' | 'd' | 'u' | 'g' | 'G')) => Some(*c),
+                                    tide_core::Key::Down => Some('j'),
+                                    tide_core::Key::Up => Some('k'),
+                                    tide_core::Key::Right => Some('l'),
+                                    tide_core::Key::Left => Some('h'),
                                     tide_core::Key::Escape => {
                                         pane.toggle_preview();
-                                        self.chrome_generation += 1;
-                                        self.pane_generations.remove(&id);
-                                        self.needs_redraw = true;
-                                    }
-                                    tide_core::Key::Char('j') | tide_core::Key::Down => {
-                                        if pane.preview_scroll < max_scroll {
-                                            pane.preview_scroll += 1;
-                                            self.pane_generations.remove(&id);
-                                            self.needs_redraw = true;
-                                        }
-                                    }
-                                    tide_core::Key::Char('k') | tide_core::Key::Up => {
-                                        if pane.preview_scroll > 0 {
-                                            pane.preview_scroll -= 1;
-                                            self.pane_generations.remove(&id);
-                                            self.needs_redraw = true;
-                                        }
-                                    }
-                                    tide_core::Key::Char('l') | tide_core::Key::Right => {
-                                        let max_w = pane.preview_max_line_width();
-                                        if pane.preview_h_scroll < max_w {
-                                            pane.preview_h_scroll += 2;
-                                            self.pane_generations.remove(&id);
-                                            self.needs_redraw = true;
-                                        }
-                                    }
-                                    tide_core::Key::Char('h') | tide_core::Key::Left => {
-                                        if pane.preview_h_scroll > 0 {
-                                            pane.preview_h_scroll = pane.preview_h_scroll.saturating_sub(2);
-                                            self.pane_generations.remove(&id);
-                                            self.needs_redraw = true;
-                                        }
-                                    }
-                                    tide_core::Key::Char('d') => {
-                                        let half = visible_rows / 2;
-                                        pane.preview_scroll = (pane.preview_scroll + half).min(max_scroll);
-                                        self.pane_generations.remove(&id);
-                                        self.needs_redraw = true;
-                                    }
-                                    tide_core::Key::Char('u') => {
-                                        let half = visible_rows / 2;
-                                        pane.preview_scroll = pane.preview_scroll.saturating_sub(half);
-                                        self.pane_generations.remove(&id);
-                                        self.needs_redraw = true;
-                                    }
-                                    tide_core::Key::Char('g') => {
-                                        pane.preview_scroll = 0;
-                                        self.pane_generations.remove(&id);
-                                        self.needs_redraw = true;
-                                    }
-                                    tide_core::Key::Char('G') => {
-                                        pane.preview_scroll = max_scroll;
-                                        self.pane_generations.remove(&id);
-                                        self.needs_redraw = true;
+                                        self.cache.chrome_generation += 1;
+                                        self.cache.pane_generations.remove(&id);
+                                        self.cache.needs_redraw = true;
+                                        None
                                     }
                                     tide_core::Key::PageDown => {
                                         pane.preview_scroll = (pane.preview_scroll + 30).min(max_scroll);
-                                        self.pane_generations.remove(&id);
-                                        self.needs_redraw = true;
+                                        self.cache.pane_generations.remove(&id);
+                                        self.cache.needs_redraw = true;
+                                        None
                                     }
                                     tide_core::Key::PageUp => {
                                         pane.preview_scroll = pane.preview_scroll.saturating_sub(30);
-                                        self.pane_generations.remove(&id);
-                                        self.needs_redraw = true;
+                                        self.cache.pane_generations.remove(&id);
+                                        self.cache.needs_redraw = true;
+                                        None
                                     }
-                                    _ => {} // Block all other input
+                                    _ => None,
+                                };
+                                if let Some(ch) = scroll_char {
+                                    if pane.apply_preview_scroll_key(ch, visible_rows) {
+                                        self.cache.pane_generations.remove(&id);
+                                        self.cache.needs_redraw = true;
+                                    }
                                 }
                                 return;
                             }
@@ -335,7 +292,7 @@ impl App {
                                         .find(|(pid, _)| *pid == id)
                                         .map(|(_, r)| tide_core::Rect::new(r.x, r.y, r.width, crate::theme::TAB_BAR_HEIGHT))
                                         .unwrap_or_else(|| tide_core::Rect::new(0.0, 0.0, 0.0, 0.0));
-                                    self.save_as_input = Some(crate::SaveAsInput::new(id, base_dir, anchor));
+                                    self.modal.save_as_input = Some(crate::SaveAsInput::new(id, base_dir, anchor));
                                     return;
                                 }
                                 let was_modified = pane.editor.is_modified();
@@ -366,15 +323,15 @@ impl App {
                                 }
                                 // Redraw tab label when modified indicator changes
                                 if pane.editor.is_modified() != was_modified || is_save {
-                                    self.chrome_generation += 1;
+                                    self.cache.chrome_generation += 1;
                                 }
                                 // Refresh git status on save (async via git poller)
                                 if is_save {
                                     self.trigger_git_poll();
                                 }
                                 // Invalidate cached pane texture and request redraw
-                                self.pane_generations.remove(&id);
-                                self.needs_redraw = true;
+                                self.cache.pane_generations.remove(&id);
+                                self.cache.needs_redraw = true;
                             }
                         }
                         Some(PaneKind::Diff(_)) => {} // Diff pane has no keyboard input
@@ -428,29 +385,41 @@ impl App {
                     };
                     match self.panes.get_mut(&id) {
                         Some(PaneKind::Editor(pane)) if pane.preview_mode => {
-                            let total = pane.preview_line_count();
-                            let max_scroll = total.saturating_sub(visible_rows);
-                            let scroll_amount = delta.abs() as usize;
-                            if delta > 0.0 {
-                                pane.preview_scroll = pane.preview_scroll.saturating_sub(scroll_amount);
-                            } else {
-                                pane.preview_scroll = (pane.preview_scroll + scroll_amount).min(max_scroll);
+                            let acc = self.interaction.scroll_accumulator.entry(id).or_insert(0.0);
+                            *acc += delta;
+                            let lines = acc.trunc() as i32;
+                            if lines != 0 {
+                                *acc -= lines as f32;
+                                let total = pane.preview_line_count();
+                                let max_scroll = total.saturating_sub(visible_rows);
+                                if lines > 0 {
+                                    pane.preview_scroll = pane.preview_scroll.saturating_sub(lines.unsigned_abs() as usize);
+                                } else {
+                                    pane.preview_scroll = (pane.preview_scroll + lines.unsigned_abs() as usize).min(max_scroll);
+                                }
+                                self.cache.pane_generations.remove(&id);
+                                self.cache.needs_redraw = true;
                             }
-                            self.pane_generations.remove(&id);
-                            self.needs_redraw = true;
                         }
                         Some(PaneKind::Editor(pane)) => {
-                            if delta > 0.0 {
-                                pane.handle_action_with_size(EditorAction::ScrollUp(delta.abs()), visible_rows, visible_cols);
-                            } else {
-                                pane.handle_action_with_size(EditorAction::ScrollDown(delta.abs()), visible_rows, visible_cols);
+                            // Accumulate sub-pixel scroll deltas (like terminal)
+                            let acc = self.interaction.scroll_accumulator.entry(id).or_insert(0.0);
+                            *acc += delta;
+                            let lines = acc.trunc();
+                            if lines.abs() >= 1.0 {
+                                *acc -= lines;
+                                if lines > 0.0 {
+                                    pane.handle_action_with_size(EditorAction::ScrollUp(lines.abs()), visible_rows, visible_cols);
+                                } else {
+                                    pane.handle_action_with_size(EditorAction::ScrollDown(lines.abs()), visible_rows, visible_cols);
+                                }
+                                self.cache.pane_generations.remove(&id);
+                                self.cache.needs_redraw = true;
                             }
-                            self.pane_generations.remove(&id);
-                            self.needs_redraw = true;
                         }
                         Some(PaneKind::Terminal(pane)) => {
                             // Accumulate sub-pixel scroll deltas to prevent jitter
-                            let acc = self.scroll_accumulator.entry(id).or_insert(0.0);
+                            let acc = self.interaction.scroll_accumulator.entry(id).or_insert(0.0);
                             *acc += delta;
                             let lines = acc.trunc() as i32;
                             if lines != 0 {
@@ -460,8 +429,8 @@ impl App {
                                 // so the grid is up-to-date for the next render.
                                 std::thread::yield_now();
                                 pane.backend.process();
-                                self.pane_generations.remove(&id);
-                                self.needs_redraw = true;
+                                self.cache.pane_generations.remove(&id);
+                                self.cache.needs_redraw = true;
                             }
                         }
                         Some(PaneKind::Diff(dp)) => {
@@ -469,8 +438,8 @@ impl App {
                             dp.scroll_target = (dp.scroll_target - delta).clamp(0.0, total.max(0.0));
                             dp.scroll = dp.scroll_target;
                             dp.generation = dp.generation.wrapping_add(1);
-                            self.pane_generations.remove(&id);
-                            self.needs_redraw = true;
+                            self.cache.pane_generations.remove(&id);
+                            self.cache.needs_redraw = true;
                         }
                         Some(PaneKind::Browser(_)) => {} // Scroll handled by native WKWebView
                         Some(PaneKind::Launcher(_)) => {}
@@ -485,10 +454,10 @@ impl App {
                 let logical = self.logical_size();
                 let mut left = 0.0_f32;
                 let mut right = 0.0_f32;
-                if self.show_file_tree {
+                if self.ft.visible {
                     match self.sidebar_side {
-                        crate::LayoutSide::Left => left += self.file_tree_width,
-                        crate::LayoutSide::Right => right += self.file_tree_width,
+                        crate::LayoutSide::Left => left += self.ft.width,
+                        crate::LayoutSide::Right => right += self.ft.width,
                     }
                 }
                 let drag_pos = Vec2::new(pos.x - left, pos.y);
@@ -522,13 +491,13 @@ impl App {
         // Unzoom before splitting so both panes are visible
         if self.zoomed_pane.is_some() {
             self.zoomed_pane = None;
-            self.pane_generations.clear();
+            self.cache.pane_generations.clear();
         }
         let new_id = self.layout.split(source, direction);
         self.create_terminal_pane(new_id, cwd);
         self.focused = Some(new_id);
         self.router.set_focused(new_id);
-        self.chrome_generation += 1;
+        self.cache.chrome_generation += 1;
         self.compute_layout();
         Some(new_id)
     }
@@ -551,16 +520,16 @@ impl App {
                 self.handle_focus_area(target);
             }
             GlobalAction::WorkspacePrev => {
-                let len = self.workspaces.len();
+                let len = self.ws.workspaces.len();
                 if len > 0 {
-                    let prev = if self.active_workspace == 0 { len - 1 } else { self.active_workspace - 1 };
+                    let prev = if self.ws.active == 0 { len - 1 } else { self.ws.active - 1 };
                     self.switch_workspace(prev);
                 }
             }
             GlobalAction::WorkspaceNext => {
-                let len = self.workspaces.len();
+                let len = self.ws.workspaces.len();
                 if len > 0 {
-                    let next = if self.active_workspace + 1 >= len { 0 } else { self.active_workspace + 1 };
+                    let next = if self.ws.active + 1 >= len { 0 } else { self.ws.active + 1 };
                     self.switch_workspace(next);
                 }
             }
@@ -574,8 +543,8 @@ impl App {
                 self.handle_focus_area(FocusArea::FileTree);
             }
             GlobalAction::ToggleWorkspaceSidebar => {
-                self.show_workspace_sidebar = !self.show_workspace_sidebar;
-                self.chrome_generation += 1;
+                self.ws.show_sidebar = !self.ws.show_sidebar;
+                self.cache.chrome_generation += 1;
                 self.compute_layout();
             }
             GlobalAction::Navigate(direction) => {
@@ -761,9 +730,9 @@ impl App {
                         crate::pane::PaneKind::Launcher(_) => {}
                     }
                 }
-                self.chrome_generation += 1;
-                self.layout_generation = self.layout_generation.wrapping_add(1);
-                self.pane_generations.clear();
+                self.cache.chrome_generation += 1;
+                self.cache.layout_generation = self.cache.layout_generation.wrapping_add(1);
+                self.cache.pane_generations.clear();
             }
             GlobalAction::ScrollHalfPageUp => {
                 self.scroll_half_page(tide_input::Direction::Up);
@@ -775,12 +744,12 @@ impl App {
     }
 
     pub(crate) fn toggle_config_page(&mut self) {
-        if self.config_page.is_some() {
+        if self.modal.config_page.is_some() {
             self.close_config_page();
         } else {
             self.open_config_page();
         }
-        self.needs_redraw = true;
+        self.cache.needs_redraw = true;
     }
 
     fn open_config_page(&mut self) {
@@ -815,12 +784,12 @@ impl App {
             .map(|v| v.join(", "))
             .unwrap_or_default();
 
-        self.config_page = Some(crate::ConfigPageState::new(bindings, worktree_pattern, copy_files));
-        self.chrome_generation += 1;
+        self.modal.config_page = Some(crate::ConfigPageState::new(bindings, worktree_pattern, copy_files));
+        self.cache.chrome_generation += 1;
     }
 
     pub(crate) fn close_config_page(&mut self) {
-        let page = match self.config_page.take() {
+        let page = match self.modal.config_page.take() {
             Some(p) => p,
             None => return,
         };
@@ -883,7 +852,7 @@ impl App {
             }
         }
 
-        self.chrome_generation += 1;
+        self.cache.chrome_generation += 1;
     }
 
     /// Navigate tabs within the current pane's tab group (Left = prev, Right = next).
@@ -918,16 +887,16 @@ impl App {
             tg.tabs[new_idx]
         };
         self.layout.set_active_tab(new_tab);
-        self.pane_generations.remove(&current_id);
-        self.pane_generations.remove(&new_tab);
+        self.cache.pane_generations.remove(&current_id);
+        self.cache.pane_generations.remove(&new_tab);
         self.focused = Some(new_tab);
         self.router.set_focused(new_tab);
         // Keep zoom on the new tab so it stays fullscreen
         if self.zoomed_pane.is_some() {
             self.zoomed_pane = Some(new_tab);
         }
-        self.chrome_generation += 1;
-        self.needs_redraw = true;
+        self.cache.chrome_generation += 1;
+        self.cache.needs_redraw = true;
         self.compute_layout();
     }
 }

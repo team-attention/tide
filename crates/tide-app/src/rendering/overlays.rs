@@ -195,7 +195,7 @@ fn render_notification_bars(
 
     for (pane_id, bar_rect) in bar_panes {
         // Check for branch cleanup bar
-        if let Some(ref bc) = app.branch_cleanup {
+        if let Some(ref bc) = app.modal.branch_cleanup {
             if bc.pane_id == pane_id {
                 renderer.draw_top_rect(bar_rect, p.conflict_bar_bg);
                 let text_y = bar_rect.y + (CONFLICT_BAR_HEIGHT - cell_size.height) / 2.0;
@@ -242,7 +242,7 @@ fn render_notification_bars(
         }
 
         // Check for save confirm bar first
-        if let Some(ref sc) = app.save_confirm {
+        if let Some(ref sc) = app.modal.save_confirm {
             if sc.pane_id == pane_id {
                 // Render save confirm bar
                 renderer.draw_top_rect(bar_rect, p.conflict_bar_bg);
@@ -332,7 +332,7 @@ fn render_save_as(
     p: &ThemePalette,
     visual_pane_rects: &[(u64, Rect)],
 ) {
-    let save_as = match app.save_as_input {
+    let save_as = match app.modal.save_as_input {
         Some(ref s) => s,
         None => return,
     };
@@ -424,7 +424,7 @@ fn render_file_finder(
     renderer: &mut tide_renderer::WgpuRenderer,
     p: &ThemePalette,
 ) {
-    let finder = match app.file_finder {
+    let finder = match app.modal.file_finder {
         Some(ref f) => f,
         None => return,
     };
@@ -589,7 +589,7 @@ fn render_git_switcher(
     renderer: &mut tide_renderer::WgpuRenderer,
     p: &ThemePalette,
 ) {
-    let gs = match app.git_switcher {
+    let gs = match app.modal.git_switcher {
         Some(ref gs) => gs,
         None => return,
     };
@@ -1136,7 +1136,7 @@ fn render_context_menu(
     renderer: &mut tide_renderer::WgpuRenderer,
     p: &ThemePalette,
 ) {
-    let menu = match app.context_menu {
+    let menu = match app.modal.context_menu {
         Some(ref m) => m,
         None => return,
     };
@@ -1196,7 +1196,7 @@ fn render_config_page(
     renderer: &mut tide_renderer::WgpuRenderer,
     p: &ThemePalette,
 ) {
-    let page = match app.config_page {
+    let page = match app.modal.config_page {
         Some(ref page) => page,
         None => return,
     };

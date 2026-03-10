@@ -22,7 +22,7 @@ impl App {
             }
         }
         // 3. File tree root
-        if let Some(ref tree) = self.file_tree {
+        if let Some(ref tree) = self.ft.tree {
             let root = tree.root();
             if root.is_dir() {
                 return root.to_path_buf();
@@ -43,8 +43,8 @@ impl App {
 
         let mut state = crate::FileFinderState::new(base_dir, entries);
         state.replace_pane_id = replace_pane_id;
-        self.file_finder = Some(state);
-        self.chrome_generation += 1;
+        self.modal.file_finder = Some(state);
+        self.cache.chrome_generation += 1;
         // Hide browser webviews so they don't cover the popup
         self.sync_browser_webview_frames();
     }
@@ -56,9 +56,9 @@ impl App {
 
     /// Close the file finder UI.
     pub(crate) fn close_file_finder(&mut self) {
-        if self.file_finder.is_some() {
-            self.file_finder = None;
-            self.chrome_generation += 1;
+        if self.modal.file_finder.is_some() {
+            self.modal.file_finder = None;
+            self.cache.chrome_generation += 1;
             // Re-show browser webviews that were hidden for the popup
             self.sync_browser_webview_frames();
         }
@@ -113,8 +113,8 @@ impl App {
                     self.layout.set_active_tab(tab_id);
                     self.focused = Some(tab_id);
                     self.router.set_focused(tab_id);
-                    self.chrome_generation += 1;
-                    self.pane_generations.remove(&tab_id);
+                    self.cache.chrome_generation += 1;
+                    self.cache.pane_generations.remove(&tab_id);
                     return;
                 }
             }
@@ -128,7 +128,7 @@ impl App {
         self.layout.set_active_tab(new_id);
         self.focused = Some(new_id);
         self.router.set_focused(new_id);
-        self.chrome_generation += 1;
+        self.cache.chrome_generation += 1;
         self.compute_layout();
     }
 }

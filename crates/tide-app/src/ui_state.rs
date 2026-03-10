@@ -765,6 +765,218 @@ pub(crate) struct FileTreeRenameState {
     pub input: InputLine,
 }
 
+// ──────────────────────────────────────────────
+// Extracted sub-modules for App testability
+// ──────────────────────────────────────────────
+
+/// IME composition state — groups all IME-related fields.
+pub(crate) struct ImeState {
+    pub composing: bool,
+    pub preedit: String,
+    pub last_target: Option<u64>,
+    pub pending_creates: Vec<u64>,
+    pub pending_removes: Vec<u64>,
+    pub cursor_dirty: bool,
+}
+
+impl ImeState {
+    pub fn new() -> Self {
+        Self {
+            composing: false,
+            preedit: String::new(),
+            last_target: None,
+            pending_creates: Vec::new(),
+            pending_removes: Vec::new(),
+            cursor_dirty: true,
+        }
+    }
+
+    /// Clear composition state (replaces 12+ inline pairs).
+    #[allow(dead_code)]
+    pub fn clear_composition(&mut self) {
+        self.composing = false;
+        self.preedit.clear();
+    }
+
+    /// Update preedit text and composing flag together.
+    #[allow(dead_code)]
+    pub fn set_preedit(&mut self, text: &str) {
+        self.composing = !text.is_empty();
+        self.preedit = text.to_string();
+    }
+}
+
+/// Modal/popup overlay state — groups all mutually-exclusive popup fields.
+pub(crate) struct ModalStack {
+    pub file_finder: Option<FileFinderState>,
+    pub git_switcher: Option<GitSwitcherState>,
+    pub config_page: Option<ConfigPageState>,
+    pub save_as_input: Option<SaveAsInput>,
+    pub save_confirm: Option<SaveConfirmState>,
+    pub context_menu: Option<ContextMenuState>,
+    pub file_tree_rename: Option<FileTreeRenameState>,
+    pub branch_cleanup: Option<BranchCleanupState>,
+}
+
+impl ModalStack {
+    pub fn new() -> Self {
+        Self {
+            file_finder: None,
+            git_switcher: None,
+            config_page: None,
+            save_as_input: None,
+            save_confirm: None,
+            context_menu: None,
+            file_tree_rename: None,
+            branch_cleanup: None,
+        }
+    }
+
+    /// Whether any popup/modal overlay is currently open.
+    #[allow(dead_code)]
+    pub fn is_any_open(&self) -> bool {
+        self.file_finder.is_some()
+            || self.git_switcher.is_some()
+            || self.config_page.is_some()
+            || self.save_as_input.is_some()
+            || self.save_confirm.is_some()
+            || self.context_menu.is_some()
+            || self.file_tree_rename.is_some()
+            || self.branch_cleanup.is_some()
+    }
+
+    /// Close all popups/modals.
+    #[allow(dead_code)]
+    pub fn close_all(&mut self) {
+        self.file_finder = None;
+        self.git_switcher = None;
+        self.config_page = None;
+        self.save_as_input = None;
+        self.save_confirm = None;
+        self.context_menu = None;
+        self.file_tree_rename = None;
+        self.branch_cleanup = None;
+    }
+}
+
+/// Mouse/drag/scroll interaction state.
+pub(crate) struct InteractionState {
+    pub pane_drag: super::PaneDragState,
+    pub scroll_accumulator: std::collections::HashMap<PaneId, f32>,
+    pub mouse_left_pressed: bool,
+    pub scrollbar_dragging: Option<PaneId>,
+    pub scrollbar_drag_rect: Option<Rect>,
+    pub hover_target: Option<super::HoverTarget>,
+}
+
+impl InteractionState {
+    pub fn new() -> Self {
+        Self {
+            pane_drag: super::PaneDragState::Idle,
+            scroll_accumulator: std::collections::HashMap::new(),
+            mouse_left_pressed: false,
+            scrollbar_dragging: None,
+            scrollbar_drag_rect: None,
+            hover_target: None,
+        }
+    }
+}
+
+/// Render generation tracking and dirty flags.
+pub(crate) struct RenderCache {
+    pub pane_generations: std::collections::HashMap<PaneId, u64>,
+    pub layout_generation: u64,
+    pub chrome_generation: u64,
+    pub last_chrome_generation: u64,
+    pub needs_redraw: bool,
+}
+
+impl RenderCache {
+    pub fn new() -> Self {
+        Self {
+            pane_generations: std::collections::HashMap::new(),
+            layout_generation: 0,
+            chrome_generation: 0,
+            last_chrome_generation: u64::MAX,
+            needs_redraw: true,
+        }
+    }
+
+    /// Bump chrome generation and mark redraw needed.
+    #[allow(dead_code)]
+    pub fn invalidate_chrome(&mut self) {
+        self.chrome_generation += 1;
+        self.needs_redraw = true;
+    }
+
+    /// Remove a pane's cached generation and mark redraw needed.
+    #[allow(dead_code)]
+    pub fn invalidate_pane(&mut self, id: PaneId) {
+        self.pane_generations.remove(&id);
+        self.needs_redraw = true;
+    }
+
+    /// Whether chrome needs re-rendering.
+    #[allow(dead_code)]
+    pub fn is_chrome_dirty(&self) -> bool {
+        self.chrome_generation != self.last_chrome_generation
+    }
+}
+
+/// File tree state — navigation, scroll, git status.
+pub(crate) struct FileTreeModel {
+    pub tree: Option<super::FsTree>,
+    pub visible: bool,
+    pub scroll: f32,
+    pub scroll_target: f32,
+    pub width: f32,
+    pub border_dragging: bool,
+    pub rect: Option<Rect>,
+    pub cursor: usize,
+    pub git_status: std::collections::HashMap<PathBuf, tide_core::FileGitStatus>,
+    pub dir_git_status: std::collections::HashMap<PathBuf, tide_core::FileGitStatus>,
+    pub git_root: Option<PathBuf>,
+}
+
+impl FileTreeModel {
+    pub fn new(default_width: f32) -> Self {
+        Self {
+            tree: None,
+            visible: false,
+            scroll: 0.0,
+            scroll_target: 0.0,
+            width: default_width,
+            border_dragging: false,
+            rect: None,
+            cursor: 0,
+            git_status: std::collections::HashMap::new(),
+            dir_git_status: std::collections::HashMap::new(),
+            git_root: None,
+        }
+    }
+}
+
+/// Workspace management state.
+pub(crate) struct WorkspaceManager {
+    pub workspaces: Vec<super::Workspace>,
+    pub active: usize,
+    pub show_sidebar: bool,
+    pub sidebar_rect: Option<Rect>,
+    pub drag: Option<(usize, f32, usize)>,
+}
+
+impl WorkspaceManager {
+    pub fn new() -> Self {
+        Self {
+            workspaces: Vec::new(),
+            active: 0,
+            show_sidebar: true,
+            sidebar_rect: None,
+            drag: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1015,5 +1227,177 @@ mod tests {
         assert_eq!(sa.active_field, SaveAsField::Directory);
         sa.toggle_field();
         assert_eq!(sa.active_field, SaveAsField::Filename);
+    }
+
+    // ── ImeState ──
+
+    #[test]
+    fn ime_state_new_defaults() {
+        let ime = ImeState::new();
+        assert!(!ime.composing);
+        assert!(ime.preedit.is_empty());
+        assert_eq!(ime.last_target, None);
+        assert!(ime.pending_creates.is_empty());
+        assert!(ime.pending_removes.is_empty());
+        assert!(ime.cursor_dirty);
+    }
+
+    #[test]
+    fn ime_state_clear_composition() {
+        let mut ime = ImeState::new();
+        ime.composing = true;
+        ime.preedit = "ㅎ".to_string();
+        ime.clear_composition();
+        assert!(!ime.composing);
+        assert!(ime.preedit.is_empty());
+    }
+
+    #[test]
+    fn ime_state_set_preedit_nonempty() {
+        let mut ime = ImeState::new();
+        ime.set_preedit("ㅎ");
+        assert!(ime.composing);
+        assert_eq!(ime.preedit, "ㅎ");
+    }
+
+    #[test]
+    fn ime_state_set_preedit_empty_clears() {
+        let mut ime = ImeState::new();
+        ime.composing = true;
+        ime.preedit = "ㅎ".to_string();
+        ime.set_preedit("");
+        assert!(!ime.composing);
+        assert!(ime.preedit.is_empty());
+    }
+
+    #[test]
+    fn ime_state_pending_queues() {
+        let mut ime = ImeState::new();
+        ime.pending_creates.push(1);
+        ime.pending_creates.push(2);
+        ime.pending_removes.push(3);
+        assert_eq!(ime.pending_creates.len(), 2);
+        assert_eq!(ime.pending_removes.len(), 1);
+    }
+
+    // ── ModalStack ──
+
+    #[test]
+    fn modal_stack_new_all_none() {
+        let ms = ModalStack::new();
+        assert!(ms.file_finder.is_none());
+        assert!(ms.git_switcher.is_none());
+        assert!(ms.config_page.is_none());
+        assert!(ms.save_as_input.is_none());
+        assert!(ms.save_confirm.is_none());
+        assert!(ms.context_menu.is_none());
+        assert!(ms.file_tree_rename.is_none());
+        assert!(ms.branch_cleanup.is_none());
+    }
+
+    #[test]
+    fn modal_stack_is_any_open_empty() {
+        let ms = ModalStack::new();
+        assert!(!ms.is_any_open());
+    }
+
+    #[test]
+    fn modal_stack_is_any_open_file_finder() {
+        let mut ms = ModalStack::new();
+        ms.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
+        assert!(ms.is_any_open());
+    }
+
+    #[test]
+    fn modal_stack_is_any_open_config_page() {
+        let mut ms = ModalStack::new();
+        ms.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
+        assert!(ms.is_any_open());
+    }
+
+    #[test]
+    fn modal_stack_close_all() {
+        let mut ms = ModalStack::new();
+        ms.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
+        ms.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
+        ms.close_all();
+        assert!(!ms.is_any_open());
+    }
+
+    // ── RenderCache ──
+
+    #[test]
+    fn render_cache_new_defaults() {
+        let rc = RenderCache::new();
+        assert!(rc.needs_redraw);
+        assert!(rc.pane_generations.is_empty());
+        assert_eq!(rc.chrome_generation, 0);
+        assert_eq!(rc.layout_generation, 0);
+    }
+
+    #[test]
+    fn render_cache_invalidate_chrome() {
+        let mut rc = RenderCache::new();
+        rc.needs_redraw = false;
+        let gen_before = rc.chrome_generation;
+        rc.invalidate_chrome();
+        assert_eq!(rc.chrome_generation, gen_before + 1);
+        assert!(rc.needs_redraw);
+    }
+
+    #[test]
+    fn render_cache_invalidate_pane() {
+        let mut rc = RenderCache::new();
+        rc.pane_generations.insert(42, 100);
+        rc.needs_redraw = false;
+        rc.invalidate_pane(42);
+        assert!(!rc.pane_generations.contains_key(&42));
+        assert!(rc.needs_redraw);
+    }
+
+    #[test]
+    fn render_cache_is_chrome_dirty() {
+        let mut rc = RenderCache::new();
+        rc.last_chrome_generation = 0;
+        rc.chrome_generation = 0;
+        assert!(!rc.is_chrome_dirty());
+        rc.chrome_generation = 1;
+        assert!(rc.is_chrome_dirty());
+    }
+
+    // ── InteractionState ──
+
+    #[test]
+    fn interaction_state_new_defaults() {
+        let is = InteractionState::new();
+        assert!(!is.mouse_left_pressed);
+        assert!(is.scrollbar_dragging.is_none());
+        assert!(is.hover_target.is_none());
+        assert!(is.scroll_accumulator.is_empty());
+    }
+
+    // ── FileTreeModel ──
+
+    #[test]
+    fn file_tree_model_new_defaults() {
+        let ft = FileTreeModel::new(200.0);
+        assert_eq!(ft.width, 200.0);
+        assert!(!ft.visible);
+        assert!(ft.tree.is_none());
+        assert_eq!(ft.scroll, 0.0);
+        assert_eq!(ft.cursor, 0);
+        assert!(ft.git_status.is_empty());
+    }
+
+    // ── WorkspaceManager ──
+
+    #[test]
+    fn workspace_manager_new_defaults() {
+        let wm = WorkspaceManager::new();
+        assert!(wm.workspaces.is_empty());
+        assert_eq!(wm.active, 0);
+        assert!(wm.show_sidebar);
+        assert!(wm.sidebar_rect.is_none());
+        assert!(wm.drag.is_none());
     }
 }

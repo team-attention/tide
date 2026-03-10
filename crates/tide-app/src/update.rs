@@ -74,7 +74,7 @@ impl App {
             if let PaneKind::Terminal(terminal) = pane {
                 if terminal.cursor_suppress > 0 {
                     terminal.cursor_suppress -= 1;
-                    self.needs_redraw = true;
+                    self.cache.needs_redraw = true;
                 }
                 let old_gen = terminal.backend.grid_generation();
                 let t0 = std::time::Instant::now();
@@ -119,17 +119,17 @@ impl App {
 
         // Poll file tree events — skip during rapid updates
         if !is_rapid {
-            if let Some(tree) = self.file_tree.as_mut() {
+            if let Some(tree) = self.ft.tree.as_mut() {
                 let had_changes = tree.poll_events();
                 if had_changes {
                     // Trigger git poller to refresh status asynchronously
                     // instead of blocking the app-thread with synchronous git calls.
                     self.trigger_git_poll();
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 } else if tree.has_pending_events() {
                     // Events are pending but deferred by debounce — keep the event
                     // loop alive so they are processed after the debounce window.
-                    self.needs_redraw = true;
+                    self.cache.needs_redraw = true;
                 }
             }
         }
@@ -153,7 +153,7 @@ impl App {
                 }
             }
             if modified_changed {
-                self.chrome_generation += 1;
+                self.cache.chrome_generation += 1;
             }
         }
 
@@ -226,8 +226,8 @@ impl App {
                                 editor_pane.disk_changed = true;
                             }
                         }
-                        self.chrome_generation += 1;
-                        self.pane_generations.remove(&id);
+                        self.cache.chrome_generation += 1;
+                        self.cache.pane_generations.remove(&id);
                     }
                 }
             }
@@ -258,8 +258,8 @@ impl App {
                             // Exit diff mode — disk content is stale
                             editor_pane.diff_mode = false;
                             editor_pane.disk_content = None;
-                            self.chrome_generation += 1;
-                            self.pane_generations.remove(&id);
+                            self.cache.chrome_generation += 1;
+                            self.cache.pane_generations.remove(&id);
                         }
                     }
                 }
@@ -273,15 +273,15 @@ impl App {
         const SCROLL_LERP: f32 = 0.45;
         const SCROLL_SNAP: f32 = 0.5;
 
-        let ft_diff = self.file_tree_scroll_target - self.file_tree_scroll;
+        let ft_diff = self.ft.scroll_target - self.ft.scroll;
         if ft_diff.abs() > SCROLL_SNAP {
-            self.file_tree_scroll += ft_diff * SCROLL_LERP;
-            self.chrome_generation += 1;
-            self.needs_redraw = true;
+            self.ft.scroll += ft_diff * SCROLL_LERP;
+            self.cache.chrome_generation += 1;
+            self.cache.needs_redraw = true;
         } else if ft_diff.abs() > 0.0 {
             // Final snap (< 0.5px) — set position but skip chrome rebuild.
             // Next natural chrome rebuild will use the correct final value.
-            self.file_tree_scroll = self.file_tree_scroll_target;
+            self.ft.scroll = self.ft.scroll_target;
         }
 
         // Consume git info from background poller (non-blocking).
@@ -311,13 +311,13 @@ impl App {
             }
             if !newly_dead.is_empty() {
                 for id in &newly_dead {
-                    self.pane_generations.remove(id);
+                    self.cache.pane_generations.remove(id);
                 }
-                self.chrome_generation += 1;
-                self.needs_redraw = true;
+                self.cache.chrome_generation += 1;
+                self.cache.needs_redraw = true;
             }
             // Background workspace panes
-            for ws in &mut self.workspaces {
+            for ws in &mut self.ws.workspaces {
                 for pane in ws.panes.values_mut() {
                     if let PaneKind::Terminal(t) = pane {
                         if !t.child_dead && !t.backend.is_child_alive() {

@@ -26,6 +26,9 @@ mod ui_state;
 mod update;
 mod workspace;
 
+#[cfg(test)]
+mod behavior_tests;
+
 pub(crate) use ui_state::*;
 
 use std::collections::HashMap;
@@ -70,14 +73,8 @@ struct App {
     pub(crate) router: Router,
     pub(crate) focused: Option<PaneId>,
 
-    // File tree
-    pub(crate) file_tree: Option<FsTree>,
-    pub(crate) show_file_tree: bool,
-    pub(crate) file_tree_scroll: f32,
-    pub(crate) file_tree_scroll_target: f32,
-    pub(crate) file_tree_width: f32,
-    pub(crate) file_tree_border_dragging: bool,
-    pub(crate) file_tree_rect: Option<Rect>,
+    // File tree (grouped state)
+    pub(crate) ft: ui_state::FileTreeModel,
 
     // Sidebar layout side
     pub(crate) sidebar_side: LayoutSide,
@@ -107,8 +104,7 @@ struct App {
     /// update promptly regardless of whether user or AI agent changed dirs.
     badge_check_at: Option<Instant>,
 
-    // Frame pacing
-    pub(crate) needs_redraw: bool,
+    // Frame pacing (needs_redraw moved to cache)
     pub(crate) last_frame: Instant,
     /// Last time we checked child process liveness (throttled to ~2s).
     pub(crate) last_child_check: Instant,
@@ -117,19 +113,8 @@ struct App {
     /// While Some, compute_layout skips PTY resize to avoid SIGWINCH spam.
     pub(crate) resize_deferred_at: Option<Instant>,
 
-    // IME composition state (used for rendering preedit overlays)
-    pub(crate) ime_composing: bool,
-    pub(crate) ime_preedit: String,
-
-    // Tracks which proxy was last focused so we can clear IME state on change
-    pub(crate) last_ime_target: Option<u64>,
-
-    // Pending IME proxy view operations (processed in handle_platform_event)
-    pub(crate) pending_ime_proxy_creates: Vec<u64>,
-    pub(crate) pending_ime_proxy_removes: Vec<u64>,
-
-    // IME cursor area dirty flag: only recompute geometry when cursor may have moved
-    pub(crate) ime_cursor_dirty: bool,
+    // IME composition state (grouped)
+    pub(crate) ime: ui_state::ImeState,
 
     // Computed pane rects: tiling rects (hit-testing/drag) and visual rects (gap-inset, rendering)
     pub(crate) pane_rects: Vec<(PaneId, Rect)>,
@@ -139,48 +124,26 @@ struct App {
     // The overall rect available for pane tiling (excluding file tree and editor panel)
     pub(crate) pane_area_rect: Option<Rect>,
 
-    // Grid generation tracking for vertex caching
-    pub(crate) pane_generations: HashMap<PaneId, u64>,
-    pub(crate) layout_generation: u64,
-
-    // Chrome generation tracking (borders + file tree)
-    pub(crate) chrome_generation: u64,
-    pub(crate) last_chrome_generation: u64,
-
+    // Render generation tracking (grouped)
+    pub(crate) cache: ui_state::RenderCache,
 
     // Input latency: skip 8ms sleep after keypress while awaiting PTY response
     pub(crate) input_just_sent: bool,
     pub(crate) input_sent_at: Option<Instant>,
 
-    // Pane drag & drop
-    pub(crate) pane_drag: PaneDragState,
-
-    // Scroll accumulator for sub-pixel precision (prevents jitter from PixelDelta)
-    pub(crate) scroll_accumulator: HashMap<PaneId, f32>,
-
-    // Mouse state for text selection
-    pub(crate) mouse_left_pressed: bool,
-
-    // Scrollbar drag state (editor pane scrollbar click-drag)
-    pub(crate) scrollbar_dragging: Option<PaneId>,
-    pub(crate) scrollbar_drag_rect: Option<Rect>,
+    // Mouse/drag/scroll interaction (grouped)
+    pub(crate) interaction: ui_state::InteractionState,
 
     // Search focus: which pane's search bar has keyboard focus
     pub(crate) search_focus: Option<PaneId>,
 
 
-    // Save-as input (inline filename entry for untitled files)
-    pub(crate) save_as_input: Option<SaveAsInput>,
-
-    // Save confirm state (inline bar when closing dirty editors)
-    pub(crate) save_confirm: Option<SaveConfirmState>,
+    // Modal/popup overlay state (grouped)
+    pub(crate) modal: ui_state::ModalStack,
 
     // Pending terminal close: set when closing a terminal that has dirty editors.
     // After each save-confirm resolution, retries closing the terminal.
     pub(crate) pending_terminal_close: Option<tide_core::PaneId>,
-
-    // File finder state (floating popup file search/open UI)
-    pub(crate) file_finder: Option<FileFinderState>,
 
     // Shift+Shift double-tap detection
     pub(crate) last_shift_up: Option<Instant>,
@@ -199,49 +162,14 @@ struct App {
     // Header hit zones (for badge click handling)
     pub(crate) header_hit_zones: Vec<header::HeaderHitZone>,
 
-    // Git switcher popup (integrated branch + worktree)
-    pub(crate) git_switcher: Option<GitSwitcherState>,
-
-
-    // Hover target for interactive feedback
-    pub(crate) hover_target: Option<HoverTarget>,
-
-    // Context menu (right-click on file tree)
-    pub(crate) context_menu: Option<ContextMenuState>,
-
     // FocusArea: which area currently has keyboard focus
     pub(crate) focus_area: FocusArea,
 
-    // Workspaces: each workspace has its own layout, panes, and focus.
-    // The active workspace's data is swapped into self.layout/focused/panes.
-    pub(crate) workspaces: Vec<Workspace>,
-    pub(crate) active_workspace: usize,
-
-    // Workspace sidebar (left panel showing workspace list)
-    pub(crate) show_workspace_sidebar: bool,
-    pub(crate) workspace_sidebar_rect: Option<Rect>,
-    /// Workspace sidebar drag state: (dragged index, press Y, current drop index)
-    pub(crate) ws_drag: Option<(usize, f32, usize)>,
-
-    // File tree keyboard cursor index (visible entry index)
-    pub(crate) file_tree_cursor: usize,
-
-    // File tree inline rename
-    pub(crate) file_tree_rename: Option<FileTreeRenameState>,
-
-    // Branch cleanup confirmation (when closing terminal on feature branch)
-    pub(crate) branch_cleanup: Option<BranchCleanupState>,
-
-    // Config page overlay
-    pub(crate) config_page: Option<ConfigPageState>,
+    // Workspace management (grouped)
+    pub(crate) ws: ui_state::WorkspaceManager,
 
     // Loaded settings
     pub(crate) settings: settings::TideSettings,
-
-    // Git status for file tree entries
-    pub(crate) file_tree_git_status: std::collections::HashMap<PathBuf, tide_core::FileGitStatus>,
-    pub(crate) file_tree_dir_git_status: std::collections::HashMap<PathBuf, tide_core::FileGitStatus>,
-    pub(crate) file_tree_git_root: Option<PathBuf>,
 
     // File watcher for external change detection in editor panes
     pub(crate) file_watcher: Option<notify::RecommendedWatcher>,
@@ -302,13 +230,7 @@ impl App {
             layout: SplitLayout::new(),
             router: Router::new(),
             focused: None,
-            file_tree: None,
-            show_file_tree: false,
-            file_tree_scroll: 0.0,
-            file_tree_scroll_target: 0.0,
-            file_tree_width: FILE_TREE_WIDTH,
-            file_tree_border_dragging: false,
-            file_tree_rect: None,
+            ft: ui_state::FileTreeModel::new(FILE_TREE_WIDTH),
             sidebar_side: LayoutSide::Left,
             sidebar_handle_dragging: false,
             scale_factor: 1.0,
@@ -321,36 +243,21 @@ impl App {
             last_cursor_pos: tide_core::Vec2::new(0.0, 0.0),
             last_cwd: None,
             badge_check_at: None,
-            needs_redraw: true,
             last_frame: Instant::now(),
             last_child_check: Instant::now(),
             resize_deferred_at: None,
-            ime_composing: false,
-            ime_preedit: String::new(),
-            last_ime_target: None,
-            pending_ime_proxy_creates: Vec::new(),
-            pending_ime_proxy_removes: Vec::new(),
-            ime_cursor_dirty: true,
+            ime: ui_state::ImeState::new(),
             pane_rects: Vec::new(),
             visual_pane_rects: Vec::new(),
             prev_visual_pane_rects: Vec::new(),
             pane_area_rect: None,
-            pane_generations: HashMap::new(),
-            layout_generation: 0,
-            chrome_generation: 0,
-            last_chrome_generation: u64::MAX,
+            cache: ui_state::RenderCache::new(),
             input_just_sent: false,
             input_sent_at: None,
-            pane_drag: PaneDragState::Idle,
-            scroll_accumulator: HashMap::new(),
-            mouse_left_pressed: false,
-            scrollbar_dragging: None,
-            scrollbar_drag_rect: None,
+            interaction: ui_state::InteractionState::new(),
             search_focus: None,
-            save_as_input: None,
-            save_confirm: None,
+            modal: ui_state::ModalStack::new(),
             pending_terminal_close: None,
-            file_finder: None,
             last_shift_up: None,
             shift_tap_clean: false,
             dark_mode: true,
@@ -359,23 +266,9 @@ impl App {
             pending_fullscreen_toggle: false,
             is_occluded: false,
             header_hit_zones: Vec::new(),
-            git_switcher: None,
-            hover_target: None,
-            context_menu: None,
             focus_area: FocusArea::PaneArea,
-            workspaces: Vec::new(),
-            active_workspace: 0,
-            show_workspace_sidebar: true,
-            workspace_sidebar_rect: None,
-            ws_drag: None,
-            file_tree_cursor: 0,
-            file_tree_rename: None,
-            branch_cleanup: None,
-            config_page: None,
+            ws: ui_state::WorkspaceManager::new(),
             settings: settings::load_settings(),
-            file_tree_git_status: std::collections::HashMap::new(),
-            file_tree_dir_git_status: std::collections::HashMap::new(),
-            file_tree_git_root: None,
             file_watcher: None,
             file_watch_rx: None,
             file_watch_dirty: Arc::new(AtomicBool::new(false)),
@@ -441,7 +334,7 @@ impl App {
             Ok(pane) => {
                 self.install_pty_waker(&pane);
                 self.panes.insert(pane_id, PaneKind::Terminal(pane));
-                self.pending_ime_proxy_creates.push(pane_id);
+                self.ime.pending_creates.push(pane_id);
                 self.focused = Some(pane_id);
                 self.router.set_focused(pane_id);
             }
@@ -453,17 +346,17 @@ impl App {
         // Initialize file tree with CWD
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
         let tree = FsTree::new(cwd.clone());
-        self.file_tree = Some(tree);
+        self.ft.tree = Some(tree);
         self.last_cwd = Some(cwd);
 
         // Create the first workspace (placeholder — active data lives on App fields)
-        self.workspaces.push(Workspace {
+        self.ws.workspaces.push(Workspace {
             name: "Workspace 1".to_string(),
             layout: SplitLayout::new(),
             focused: None,
             panes: HashMap::new(),
         });
-        self.active_workspace = 0;
+        self.ws.active = 0;
     }
 
     pub(crate) fn logical_size(&self) -> Size {
@@ -504,9 +397,9 @@ impl App {
             self.pending_font_size = Some(size);
         }
 
-        self.pane_generations.clear();
-        self.chrome_generation += 1;
-        self.layout_generation = self.layout_generation.wrapping_add(1);
+        self.cache.pane_generations.clear();
+        self.cache.chrome_generation += 1;
+        self.cache.layout_generation = self.cache.layout_generation.wrapping_add(1);
         self.compute_layout();
     }
 
