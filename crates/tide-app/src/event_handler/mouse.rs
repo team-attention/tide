@@ -12,11 +12,11 @@ use crate::App;
 impl App {
     pub(crate) fn handle_mouse_down(&mut self, button: MouseButton, window: &WindowProxy) {
         if button == MouseButton::Left {
-            self.mouse_left_pressed = true;
+            self.interaction.mouse_left_pressed = true;
 
             // Check editor scrollbar click
             if self.check_scrollbar_click(self.last_cursor_pos) {
-                self.needs_redraw = true;
+                self.cache.needs_redraw = true;
                 return;
             }
 
@@ -110,82 +110,82 @@ impl App {
         // Handle search bar clicks
         if button == MouseButton::Left {
             if self.check_search_bar_click() {
-                self.needs_redraw = true;
+                self.cache.needs_redraw = true;
                 return;
             }
         }
 
         // Handle file finder click
         if button == MouseButton::Left {
-            if self.context_menu.is_some() {
+            if self.modal.context_menu.is_some() {
                 if let Some(idx) = self.context_menu_item_at(self.last_cursor_pos) {
                     self.execute_context_menu_action(idx);
                 }
-                self.context_menu = None;
-                self.needs_redraw = true;
+                self.modal.context_menu = None;
+                self.cache.needs_redraw = true;
                 return;
             }
 
-            if self.save_as_input.is_some() {
+            if self.modal.save_as_input.is_some() {
                 if !self.save_as_contains(self.last_cursor_pos) {
-                    self.save_as_input = None;
+                    self.modal.save_as_input = None;
                 }
-                self.needs_redraw = true;
+                self.cache.needs_redraw = true;
                 return;
             }
 
-            if self.file_finder.is_some() {
+            if self.modal.file_finder.is_some() {
                 if let Some(idx) = self.file_finder_item_at(self.last_cursor_pos) {
-                    if let Some(ref finder) = self.file_finder {
+                    if let Some(ref finder) = self.modal.file_finder {
                         if let Some(&entry_idx) = finder.filtered.get(idx) {
                             let path = finder.base_dir.join(&finder.entries[entry_idx]);
                             self.close_file_finder();
                             self.open_editor_pane(path);
-                            self.needs_redraw = true;
+                            self.cache.needs_redraw = true;
                             return;
                         }
                     }
                 } else if !self.file_finder_contains(self.last_cursor_pos) {
                     self.close_file_finder();
                 }
-                self.needs_redraw = true;
+                self.cache.needs_redraw = true;
                 return;
             }
 
-            if self.git_switcher.is_some() {
+            if self.modal.git_switcher.is_some() {
                 // Tab click: switch between Branches / Worktrees
                 if let Some(mode) = self.git_switcher_tab_at(self.last_cursor_pos) {
-                    if let Some(ref mut gs) = self.git_switcher {
+                    if let Some(ref mut gs) = self.modal.git_switcher {
                         if gs.mode != mode {
                             gs.set_mode(mode);
-                            self.chrome_generation += 1;
+                            self.cache.chrome_generation += 1;
                         }
                     }
-                    self.needs_redraw = true;
+                    self.cache.needs_redraw = true;
                     return;
                 }
                 if let Some(btn) = self.git_switcher_button_at(self.last_cursor_pos) {
                     self.handle_git_switcher_button(btn);
-                    self.needs_redraw = true;
+                    self.cache.needs_redraw = true;
                     return;
                 }
                 if let Some(idx) = self.git_switcher_item_at(self.last_cursor_pos) {
-                    if let Some(ref mut gs) = self.git_switcher {
+                    if let Some(ref mut gs) = self.modal.git_switcher {
                         gs.selected = idx;
-                        self.chrome_generation += 1;
+                        self.cache.chrome_generation += 1;
                     }
-                    self.needs_redraw = true;
+                    self.cache.needs_redraw = true;
                     return;
                 } else if !self.git_switcher_contains(self.last_cursor_pos) {
-                    self.git_switcher = None;
-                    self.needs_redraw = true;
+                    self.modal.git_switcher = None;
+                    self.cache.needs_redraw = true;
                     return;
                 }
             }
         }
 
         // Branch cleanup bar clicks
-        if button == MouseButton::Left && self.branch_cleanup.is_some() {
+        if button == MouseButton::Left && self.modal.branch_cleanup.is_some() {
             if self.handle_branch_cleanup_click(self.last_cursor_pos) {
                 return;
             }
@@ -209,15 +209,15 @@ impl App {
         if button == MouseButton::Left {
             if let Some(pane_id) = self.pane_tab_close_at(self.last_cursor_pos) {
                 self.close_specific_pane(pane_id);
-                self.needs_redraw = true;
+                self.cache.needs_redraw = true;
                 return;
             }
         }
 
         // Right-click on file tree
         if button == MouseButton::Right {
-            if self.show_file_tree {
-                if let Some(ft_rect) = self.file_tree_rect {
+            if self.ft.visible {
+                if let Some(ft_rect) = self.ft.rect {
                     let pos = self.last_cursor_pos;
                     if pos.x >= ft_rect.x
                         && pos.x < ft_rect.x + ft_rect.width
@@ -229,19 +229,19 @@ impl App {
                             let content_y = ft_rect.y + PANE_CORNER_RADIUS;
                             let adjusted_y = pos.y - content_y - FILE_TREE_HEADER_HEIGHT;
                             let index =
-                                ((adjusted_y + self.file_tree_scroll) / line_height) as usize;
+                                ((adjusted_y + self.ft.scroll) / line_height) as usize;
 
-                            if let Some(tree) = self.file_tree.as_ref() {
+                            if let Some(tree) = self.ft.tree.as_ref() {
                                 let entries = tree.visible_entries();
                                 if index < entries.len() {
                                     let entry = &entries[index];
-                                    self.context_menu = None;
-                                    self.file_tree_rename = None;
+                                    self.modal.context_menu = None;
+                                    self.modal.file_tree_rename = None;
                                     let shell_idle = self.focused
                                         .and_then(|tid| self.panes.get(&tid))
                                         .map(|pk| if let crate::PaneKind::Terminal(tp) = pk { tp.shell_idle } else { false })
                                         .unwrap_or(false);
-                                    self.context_menu = Some(crate::ContextMenuState {
+                                    self.modal.context_menu = Some(crate::ContextMenuState {
                                         entry_index: index,
                                         path: entry.entry.path.clone(),
                                         is_dir: entry.entry.is_dir,
@@ -249,7 +249,7 @@ impl App {
                                         position: pos,
                                         selected: 0,
                                     });
-                                    self.needs_redraw = true;
+                                    self.cache.needs_redraw = true;
                                     return;
                                 }
                             }
@@ -261,8 +261,8 @@ impl App {
 
         // File tree clicks
         if button == MouseButton::Left {
-            if self.show_file_tree {
-                if let Some(ft_rect) = self.file_tree_rect {
+            if self.ft.visible {
+                if let Some(ft_rect) = self.ft.rect {
                     let pos = self.last_cursor_pos;
                     if pos.x >= ft_rect.x
                         && pos.x < ft_rect.x + ft_rect.width
@@ -276,25 +276,25 @@ impl App {
         }
 
         // Config page
-        if button == MouseButton::Left && self.config_page.is_some() {
+        if button == MouseButton::Left && self.modal.config_page.is_some() {
             self.handle_config_page_click(self.last_cursor_pos);
-            self.needs_redraw = true;
+            self.cache.needs_redraw = true;
             return;
         }
 
         // General mouse input routing
         self.handle_mouse_input_core(button, window);
-        self.needs_redraw = true;
+        self.cache.needs_redraw = true;
     }
 
     fn handle_mouse_input_core(&mut self, button: MouseButton, _window: &WindowProxy) {
         if button == MouseButton::Left {
             // Workspace sidebar (always clickable, including fullscreen)
-            match &self.hover_target {
+            match &self.interaction.hover_target {
                 Some(crate::drag_drop::HoverTarget::WorkspaceSidebarItem(idx)) => {
                     let idx = *idx;
                     // Start pending drag
-                    self.ws_drag = Some((idx, self.last_cursor_pos.y, idx));
+                    self.ws.drag = Some((idx, self.last_cursor_pos.y, idx));
                     return;
                 }
                 Some(crate::drag_drop::HoverTarget::WorkspaceSidebarNewBtn) => {
@@ -306,7 +306,7 @@ impl App {
 
             // Titlebar buttons (only when titlebar is visible)
             if self.top_inset > 0.0 {
-                match &self.hover_target {
+                match &self.interaction.hover_target {
                     Some(crate::drag_drop::HoverTarget::TitlebarSettings) => {
                         self.toggle_config_page();
                         return;
@@ -321,8 +321,8 @@ impl App {
                             crate::LayoutSide::Right => crate::LayoutSide::Left,
                         };
                         self.compute_layout();
-                        self.chrome_generation += 1;
-                        self.needs_redraw = true;
+                        self.cache.chrome_generation += 1;
+                        self.cache.needs_redraw = true;
                         return;
                     }
                     Some(crate::drag_drop::HoverTarget::TitlebarFileTree) => {
@@ -339,7 +339,7 @@ impl App {
 
 
             // Browser navigation bar clicks
-            match &self.hover_target {
+            match &self.interaction.hover_target {
                 Some(target @ crate::drag_drop::HoverTarget::BrowserBack)
                 | Some(target @ crate::drag_drop::HoverTarget::BrowserForward)
                 | Some(target @ crate::drag_drop::HoverTarget::BrowserRefresh)
@@ -361,7 +361,7 @@ impl App {
             }
 
             // Handle drags — sidebar handle
-            if let Some(ft_rect) = self.file_tree_rect {
+            if let Some(ft_rect) = self.ft.rect {
                 if self.last_cursor_pos.y >= ft_rect.y
                     && self.last_cursor_pos.y < ft_rect.y + PANE_PADDING
                     && self.last_cursor_pos.x >= ft_rect.x
@@ -373,26 +373,41 @@ impl App {
             }
 
             // Sidebar border
-            if let Some(ft_rect) = self.file_tree_rect {
+            if let Some(ft_rect) = self.ft.rect {
                 let border_x = if self.sidebar_side == crate::LayoutSide::Left {
                     ft_rect.x + ft_rect.width + PANE_GAP
                 } else {
                     ft_rect.x - PANE_GAP
                 };
                 if (self.last_cursor_pos.x - border_x).abs() < 5.0 {
-                    self.file_tree_border_dragging = true;
+                    self.ft.border_dragging = true;
                     return;
                 }
             }
 
-            // Pane tab drag init
-            if let Some(pane_id) = self.pane_at_tab_bar(self.last_cursor_pos) {
-                self.pane_drag = PaneDragState::PendingDrag {
-                    source_pane: pane_id,
-                    press_pos: self.last_cursor_pos,
-                };
-                self.focus_terminal(pane_id);
-                return;
+            // Pane tab drag init — check header_hit_zones first for accurate tab ID
+            // in multi-tab groups (visual_pane_rects only contains the active tab).
+            {
+                let pos = self.last_cursor_pos;
+                let mut tab_pane_id = None;
+                for zone in &self.header_hit_zones {
+                    if zone.rect.contains(pos) {
+                        if let crate::header::HeaderHitAction::Tab(id) = zone.action {
+                            tab_pane_id = Some(id);
+                            break;
+                        }
+                    }
+                }
+                // Fall back to pane_at_tab_bar for single-pane headers (no Tab hit zones).
+                let drag_pane = tab_pane_id.or_else(|| self.pane_at_tab_bar(pos));
+                if let Some(pane_id) = drag_pane {
+                    self.interaction.pane_drag = PaneDragState::PendingDrag {
+                        source_pane: pane_id,
+                        press_pos: pos,
+                    };
+                    self.focus_terminal(pane_id);
+                    return;
+                }
             }
         }
 
@@ -406,39 +421,39 @@ impl App {
 
     pub(crate) fn handle_mouse_up(&mut self, button: MouseButton) {
         if button == MouseButton::Left {
-            self.mouse_left_pressed = false;
+            self.interaction.mouse_left_pressed = false;
         }
 
         // End workspace sidebar drag
         // ws_drag = (source_index, press_y, gap_index)
-        if let Some((src, press_y, gap)) = self.ws_drag.take() {
+        if let Some((src, press_y, gap)) = self.ws.drag.take() {
             let moved = (self.last_cursor_pos.y - press_y).abs() > DRAG_THRESHOLD;
             // Convert gap to target index: gap after src position is a no-op
             let target = if gap <= src { gap } else { gap - 1 };
             if moved && target != src {
-                let ws = self.workspaces.remove(src);
-                self.workspaces.insert(target, ws);
+                let ws = self.ws.workspaces.remove(src);
+                self.ws.workspaces.insert(target, ws);
                 // Fix active_workspace index
-                if self.active_workspace == src {
-                    self.active_workspace = target;
-                } else if src < self.active_workspace && target >= self.active_workspace {
-                    self.active_workspace -= 1;
-                } else if src > self.active_workspace && target <= self.active_workspace {
-                    self.active_workspace += 1;
+                if self.ws.active == src {
+                    self.ws.active = target;
+                } else if src < self.ws.active && target >= self.ws.active {
+                    self.ws.active -= 1;
+                } else if src > self.ws.active && target <= self.ws.active {
+                    self.ws.active += 1;
                 }
             } else if !moved {
                 // Click without drag — switch to workspace
                 self.switch_workspace(src);
             }
-            self.chrome_generation += 1;
-            self.needs_redraw = true;
+            self.cache.chrome_generation += 1;
+            self.cache.needs_redraw = true;
             return;
         }
 
         // End scrollbar drag
-        if self.scrollbar_dragging.is_some() {
-            self.scrollbar_dragging = None;
-            self.scrollbar_drag_rect = None;
+        if self.interaction.scrollbar_dragging.is_some() {
+            self.interaction.scrollbar_dragging = None;
+            self.interaction.scrollbar_drag_rect = None;
             return;
         }
 
@@ -446,17 +461,17 @@ impl App {
         if self.sidebar_handle_dragging {
             self.sidebar_handle_dragging = false;
             self.compute_layout();
-            self.chrome_generation += 1;
+            self.cache.chrome_generation += 1;
             return;
         }
 
-        if self.file_tree_border_dragging {
-            self.file_tree_border_dragging = false;
+        if self.ft.border_dragging {
+            self.ft.border_dragging = false;
             self.compute_layout();
             return;
         }
 
-        let drag_state = std::mem::replace(&mut self.pane_drag, PaneDragState::Idle);
+        let drag_state = std::mem::replace(&mut self.interaction.pane_drag, PaneDragState::Idle);
         match drag_state {
             PaneDragState::Dragging {
                 source_pane,
@@ -472,10 +487,10 @@ impl App {
                 self.focused = Some(source_pane);
                 self.router.set_focused(source_pane);
                 self.focus_area = FocusArea::PaneArea;
-                self.chrome_generation += 1;
-                self.pane_generations.clear();
+                self.cache.chrome_generation += 1;
+                self.cache.pane_generations.clear();
                 self.compute_layout();
-                self.needs_redraw = true;
+                self.cache.needs_redraw = true;
                 return;
             }
             PaneDragState::Dragging { .. } => {
@@ -502,11 +517,11 @@ impl App {
         // Handle workspace sidebar drag
         // ws_drag stores (source_index, press_y, gap_index)
         // gap_index is the insertion gap: 0 = before first, N = after last
-        if let Some((src, press_y, _)) = self.ws_drag {
+        if let Some((src, press_y, _)) = self.ws.drag {
             if (pos.y - press_y).abs() > DRAG_THRESHOLD {
                 let gap = if let Some(geo) = self.ws_sidebar_geometry() {
-                    let mut result = self.workspaces.len();
-                    for i in 0..self.workspaces.len() {
+                    let mut result = self.ws.workspaces.len();
+                    for i in 0..self.ws.workspaces.len() {
                         let r = geo.item_rect(i);
                         if pos.y < r.y + r.height / 2.0 {
                             result = i;
@@ -517,35 +532,35 @@ impl App {
                 } else {
                     src
                 };
-                self.ws_drag = Some((src, press_y, gap));
-                self.chrome_generation += 1;
-                self.needs_redraw = true;
+                self.ws.drag = Some((src, press_y, gap));
+                self.cache.chrome_generation += 1;
+                self.cache.needs_redraw = true;
             }
             return;
         }
 
         // Handle scrollbar drag
-        if let (Some(pane_id), Some(rect)) = (self.scrollbar_dragging, self.scrollbar_drag_rect) {
+        if let (Some(pane_id), Some(rect)) = (self.interaction.scrollbar_dragging, self.interaction.scrollbar_drag_rect) {
             self.apply_scrollbar_drag(pane_id, rect, pos.y);
-            self.needs_redraw = true;
+            self.cache.needs_redraw = true;
             return;
         }
 
         // Handle border resizes
-        if self.file_tree_border_dragging {
+        if self.ft.border_dragging {
             let logical = self.logical_size();
             let max_w = (logical.width - 100.0).max(120.0);
             let new_width = match self.sidebar_side {
                 crate::LayoutSide::Left => {
-                    let ft_x = self.file_tree_rect.map(|r| r.x).unwrap_or(0.0);
+                    let ft_x = self.ft.rect.map(|r| r.x).unwrap_or(0.0);
                     (pos.x - ft_x).max(120.0).min(max_w)
                 }
                 crate::LayoutSide::Right => (logical.width - pos.x).max(120.0).min(max_w),
             };
-            self.file_tree_width = new_width;
+            self.ft.width = new_width;
             self.compute_layout();
-            self.chrome_generation += 1;
-            self.needs_redraw = true;
+            self.cache.chrome_generation += 1;
+            self.cache.needs_redraw = true;
             return;
         }
 
@@ -560,13 +575,13 @@ impl App {
             };
             self.sidebar_side = target_side;
             self.compute_layout();
-            self.chrome_generation += 1;
-            self.needs_redraw = true;
+            self.cache.chrome_generation += 1;
+            self.cache.needs_redraw = true;
             return;
         }
 
         // Handle pane drag
-        match &self.pane_drag {
+        match &self.interaction.pane_drag {
             PaneDragState::PendingDrag {
                 source_pane,
                 press_pos,
@@ -576,22 +591,35 @@ impl App {
                 if (dx * dx + dy * dy).sqrt() >= DRAG_THRESHOLD {
                     let source = *source_pane;
                     let target = self.compute_drop_destination(pos, source);
-                    self.pane_drag = PaneDragState::Dragging {
+                    let preview = self.compute_drop_preview_rect(source, &target);
+                    self.interaction.pane_drag = PaneDragState::Dragging {
                         source_pane: source,
                         drop_target: target,
+                        cached_preview_rect: preview,
                     };
                 }
-                self.needs_redraw = true;
+                self.cache.needs_redraw = true;
                 return;
             }
-            PaneDragState::Dragging { source_pane, .. } => {
+            PaneDragState::Dragging { source_pane, drop_target: prev_target, .. } => {
                 let source = *source_pane;
-                let target = self.compute_drop_destination(pos, source);
-                self.pane_drag = PaneDragState::Dragging {
-                    source_pane: source,
-                    drop_target: target,
+                let prev_target = prev_target.clone();
+                let new_target = self.compute_drop_destination(pos, source);
+                // Only recompute expensive simulate_drop when target actually changes
+                let preview = if new_target == prev_target {
+                    match &self.interaction.pane_drag {
+                        PaneDragState::Dragging { cached_preview_rect, .. } => *cached_preview_rect,
+                        _ => None,
+                    }
+                } else {
+                    self.compute_drop_preview_rect(source, &new_target)
                 };
-                self.needs_redraw = true;
+                self.interaction.pane_drag = PaneDragState::Dragging {
+                    source_pane: source,
+                    drop_target: new_target,
+                    cached_preview_rect: preview,
+                };
+                self.cache.needs_redraw = true;
                 return;
             }
             PaneDragState::Idle => {}
@@ -599,16 +627,16 @@ impl App {
 
         if self.router.is_dragging_border() {
             let mut left = 0.0_f32;
-            if self.show_file_tree && self.sidebar_side == crate::LayoutSide::Left {
-                left += self.file_tree_width;
+            if self.ft.visible && self.sidebar_side == crate::LayoutSide::Left {
+                left += self.ft.width;
             }
             let drag_pos = Vec2::new(pos.x - left, pos.y);
             self.layout.drag_border(drag_pos);
             self.compute_layout();
-            self.needs_redraw = true;
+            self.cache.needs_redraw = true;
         } else {
             // Text selection drag
-            if self.mouse_left_pressed {
+            if self.interaction.mouse_left_pressed {
                 let cell_size = Some(self.cell_size());
                 let drag_top_offset = TAB_BAR_HEIGHT;
 
@@ -678,22 +706,22 @@ impl App {
                         None => {}
                     }
                 }
-                self.needs_redraw = true;
+                self.cache.needs_redraw = true;
             }
 
             // Hover target
             let new_hover = self.compute_hover_target(pos);
-            if new_hover != self.hover_target {
+            if new_hover != self.interaction.hover_target {
                 // Bump chrome_generation only when entering/leaving chrome-rendered hover targets
                 let chrome_affected =
-                    self.hover_target.as_ref().map_or(false, |h| h.affects_chrome())
+                    self.interaction.hover_target.as_ref().map_or(false, |h| h.affects_chrome())
                     || new_hover.as_ref().map_or(false, |h| h.affects_chrome());
-                self.hover_target = new_hover;
+                self.interaction.hover_target = new_hover;
                 self.update_cursor_icon(window);
                 if chrome_affected {
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
-                self.needs_redraw = true;
+                self.cache.needs_redraw = true;
             }
 
             let input = InputEvent::MouseMove { position: pos };
@@ -724,8 +752,8 @@ impl App {
                     && pos.y >= inner.y && pos.y <= inner.y + inner.height
                     && pane.needs_scrollbar(inner, cell_height)
                 {
-                    self.scrollbar_dragging = Some(pid);
-                    self.scrollbar_drag_rect = Some(inner);
+                    self.interaction.scrollbar_dragging = Some(pid);
+                    self.interaction.scrollbar_drag_rect = Some(inner);
                     self.apply_scrollbar_drag(pid, inner, pos.y);
                     return true;
                 }
@@ -757,22 +785,8 @@ impl App {
             } else {
                 pane.editor.set_scroll_offset(target);
             }
-            self.pane_generations.remove(&pane_id);
+            self.cache.pane_generations.remove(&pane_id);
         }
     }
 
-    /// Compute bar offset for an editor pane (conflict bar / save confirm height).
-    fn editor_bar_offset(&self, pane_id: tide_core::PaneId) -> f32 {
-        if let Some(ref sc) = self.save_confirm {
-            if sc.pane_id == pane_id {
-                return CONFLICT_BAR_HEIGHT;
-            }
-        }
-        if let Some(PaneKind::Editor(pane)) = self.panes.get(&pane_id) {
-            if pane.needs_notification_bar() {
-                return CONFLICT_BAR_HEIGHT;
-            }
-        }
-        0.0
-    }
 }

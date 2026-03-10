@@ -23,15 +23,15 @@ pub(crate) fn render_cursor_and_highlights(
 
     // Compute the effective IME target and preedit width for editor cursor offset
     let ime_target = app.effective_ime_target();
-    let preedit_width_cells: usize = if !app.ime_preedit.is_empty() {
-        app.ime_preedit.chars().map(|c| c.width().unwrap_or(1)).sum()
+    let preedit_width_cells: usize = if !app.ime.preedit.is_empty() {
+        app.ime.preedit.chars().map(|c| c.width().unwrap_or(1)).sum()
     } else {
         0
     };
 
     // Always render cursor (overlay layer) — cursor blinks/moves independently
     for &(id, rect) in visual_pane_rects {
-        let pane_bar = bar_offset_for(id, &app.panes, &app.save_confirm);
+        let pane_bar = bar_offset_for(id, &app.panes, &app.modal.save_confirm);
         let inner = Rect::new(
             rect.x + PANE_PADDING,
             rect.y + top_offset + pane_bar,
@@ -42,7 +42,7 @@ pub(crate) fn render_cursor_and_highlights(
             Some(PaneKind::Terminal(pane)) => {
                 // Only render cursor on the focused pane (and hide when search bar is active
                 // or IME preedit is composing — preedit overlay replaces the cursor).
-                if focused == Some(id) && search_focus != Some(id) && app.ime_preedit.is_empty() {
+                if focused == Some(id) && search_focus != Some(id) && app.ime.preedit.is_empty() {
                     pane.render_cursor(inner, renderer, p.cursor_accent);
                 }
                 // Render URL underlines when Cmd/Meta is held
@@ -142,7 +142,7 @@ pub(crate) fn render_cursor_and_highlights(
                     }
                 }
                 // Render editor scrollbar with search match markers
-                let sb_hovered = matches!(app.hover_target, Some(crate::drag_drop::HoverTarget::EditorScrollbar(hid)) if hid == id);
+                let sb_hovered = matches!(app.interaction.hover_target, Some(crate::drag_drop::HoverTarget::EditorScrollbar(hid)) if hid == id);
                 pane.render_scrollbar(inner, renderer, pane.search.as_ref(), p, sb_hovered);
             }
             Some(PaneKind::Diff(_)) => {}

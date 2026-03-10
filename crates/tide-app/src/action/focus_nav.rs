@@ -6,13 +6,10 @@ use crate::pane::PaneKind;
 use crate::ui_state::FocusArea;
 use crate::App;
 
-/// Number of lines to scroll per Cmd+J/K press.
-const KEYBOARD_SCROLL_LINES: f32 = 3.0;
-
 impl App {
     /// Navigate file tree cursor: J(Down) = next, K(Up) = prev. H/L ignored.
     pub(super) fn navigate_file_tree(&mut self, direction: Direction) {
-        let entry_count = self.file_tree.as_ref()
+        let entry_count = self.ft.tree.as_ref()
             .map(|t| t.visible_entries().len())
             .unwrap_or(0);
         if entry_count == 0 {
@@ -20,28 +17,28 @@ impl App {
         }
         match direction {
             Direction::Down => {
-                if self.file_tree_cursor + 1 < entry_count {
-                    self.file_tree_cursor += 1;
-                    self.chrome_generation += 1;
+                if self.ft.cursor + 1 < entry_count {
+                    self.ft.cursor += 1;
+                    self.cache.chrome_generation += 1;
                     self.auto_scroll_file_tree_cursor();
                 }
             }
             Direction::Up => {
-                if self.file_tree_cursor > 0 {
-                    self.file_tree_cursor -= 1;
-                    self.chrome_generation += 1;
+                if self.ft.cursor > 0 {
+                    self.ft.cursor -= 1;
+                    self.cache.chrome_generation += 1;
                     self.auto_scroll_file_tree_cursor();
                 }
             }
             _ => {} // H/L ignored in file tree
         }
-        self.needs_redraw = true;
+        self.cache.needs_redraw = true;
     }
 
     /// Handle MoveFocus direction navigation between panes.
     pub(super) fn handle_move_focus(&mut self, direction: Direction) {
         self.focus_area = FocusArea::PaneArea;
-        self.save_as_input = None;
+        self.modal.save_as_input = None;
         let current_id = match self.focused {
             Some(id) => id,
             None => return,
@@ -143,33 +140,8 @@ impl App {
             }
             _ => return,
         }
-        self.pane_generations.remove(&pane_id);
-        self.needs_redraw = true;
+        self.cache.pane_generations.remove(&pane_id);
+        self.cache.needs_redraw = true;
     }
 
-    /// Scroll a pane's content by a fixed number of lines (Cmd+J / Cmd+K).
-    fn scroll_pane_content(&mut self, pane_id: tide_core::PaneId, direction: Direction) {
-        match self.panes.get_mut(&pane_id) {
-            Some(PaneKind::Terminal(tp)) => {
-                let lines = match direction {
-                    Direction::Up => KEYBOARD_SCROLL_LINES as i32,
-                    Direction::Down => -(KEYBOARD_SCROLL_LINES as i32),
-                    _ => return,
-                };
-                tp.scroll_display(lines);
-            }
-            Some(PaneKind::Editor(ep)) => {
-                let action = match direction {
-                    Direction::Up => EditorAction::ScrollUp(KEYBOARD_SCROLL_LINES),
-                    Direction::Down => EditorAction::ScrollDown(KEYBOARD_SCROLL_LINES),
-                    _ => return,
-                };
-                let visible_rows = 30; // approximate; scroll amount is fixed lines
-                ep.handle_action(action, visible_rows);
-            }
-            _ => return,
-        }
-        self.pane_generations.remove(&pane_id);
-        self.needs_redraw = true;
-    }
 }

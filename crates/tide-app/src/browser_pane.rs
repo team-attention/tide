@@ -1,11 +1,8 @@
-use std::time::Instant;
-
 use tide_core::PaneId;
 use tide_platform::macos::webview::WebViewHandle;
 
 /// A browser pane backed by a native WKWebView.
 pub struct BrowserPane {
-    pub id: PaneId,
     /// Current URL displayed by the webview.
     pub url: String,
     /// Editable URL bar text.
@@ -24,8 +21,6 @@ pub struct BrowserPane {
     pub webview: Option<WebViewHandle>,
     /// Generation counter for dirty tracking.
     pub generation: u64,
-    /// Last time sync_from_webview() actually ran (for throttling).
-    pub last_sync: Instant,
     /// Whether this browser pane currently holds first responder status.
     pub is_first_responder: bool,
     /// Whether the webview needs to navigate to `url` once visible with a proper frame.
@@ -33,9 +28,8 @@ pub struct BrowserPane {
 }
 
 impl BrowserPane {
-    pub fn new(id: PaneId) -> Self {
+    pub fn new(_id: PaneId) -> Self {
         Self {
-            id,
             url: String::new(),
             url_input: String::new(),
             url_input_cursor: 0,
@@ -45,17 +39,15 @@ impl BrowserPane {
             can_go_forward: false,
             webview: None,
             generation: 0,
-            last_sync: Instant::now(),
             is_first_responder: false,
             needs_initial_navigate: false,
         }
     }
 
-    pub fn with_url(id: PaneId, url: String) -> Self {
+    pub fn with_url(_id: PaneId, url: String) -> Self {
         let url_input = url.clone();
         let cursor = url_input.chars().count();
         Self {
-            id,
             url: url.clone(),
             url_input,
             url_input_cursor: cursor,
@@ -65,7 +57,6 @@ impl BrowserPane {
             can_go_forward: false,
             webview: None,
             generation: 0,
-            last_sync: Instant::now(),
             is_first_responder: false,
             needs_initial_navigate: true,
         }
@@ -121,38 +112,6 @@ impl BrowserPane {
     pub fn reload(&mut self) {
         if let Some(ref wv) = self.webview {
             wv.reload();
-        }
-    }
-
-    /// Sync state from the native WKWebView (URL, title, loading, navigation state).
-    /// Throttled to at most once per 500ms to reduce ObjC IPC overhead.
-    pub fn sync_from_webview(&mut self) {
-        const SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
-        let now = Instant::now();
-        if now.duration_since(self.last_sync) < SYNC_INTERVAL {
-            return;
-        }
-        self.last_sync = now;
-
-        let Some(ref wv) = self.webview else { return };
-
-        let new_url = wv.current_url().unwrap_or_default();
-        let new_loading = wv.is_loading();
-        let new_back = wv.can_go_back();
-        let new_forward = wv.can_go_forward();
-
-        if new_url != self.url || new_loading != self.loading
-            || new_back != self.can_go_back || new_forward != self.can_go_forward
-        {
-            self.url = new_url.clone();
-            if !self.url_input_focused {
-                self.url_input = new_url;
-                self.url_input_cursor = self.url_input.chars().count();
-            }
-            self.loading = new_loading;
-            self.can_go_back = new_back;
-            self.can_go_forward = new_forward;
-            self.generation = self.generation.wrapping_add(1);
         }
     }
 

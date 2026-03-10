@@ -19,7 +19,7 @@ pub struct HeaderHitZone {
 }
 
 /// Action triggered by clicking a header hit zone.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum HeaderHitAction {
     Close,
     GitBranch,
@@ -34,6 +34,59 @@ pub enum HeaderHitAction {
     Tab(PaneId),
     /// Click the close button on a specific tab in a multi-tab header.
     TabClose(PaneId),
+}
+
+/// Badge specification for editor pane headers.
+/// Computed by `editor_header_badges()` and consumed by both single-pane
+/// and tab-bar rendering paths to ensure badge consistency.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct EditorBadge {
+    pub text: String,
+    pub action: Option<HeaderHitAction>,
+}
+
+/// Compute which right-side badges an editor pane should display.
+/// This is the single source of truth — both `render_pane_header` and
+/// `render_tab_bar` use this, preventing badge divergence between paths.
+pub(crate) fn editor_header_badges(ep: &crate::editor_pane::EditorPane) -> Vec<EditorBadge> {
+    let mut badges = Vec::new();
+
+    // Markdown preview toggle
+    if ep.is_markdown() && !ep.diff_mode {
+        let text = if ep.preview_mode { "edit" } else { "preview" };
+        badges.push(EditorBadge {
+            text: text.to_string(),
+            action: Some(HeaderHitAction::MarkdownPreview),
+        });
+    }
+
+    // Diff mode back button
+    if ep.diff_mode {
+        badges.push(EditorBadge {
+            text: "back".to_string(),
+            action: Some(HeaderHitAction::EditorBack),
+        });
+    } else if ep.disk_changed && ep.editor.is_modified() && !ep.file_deleted {
+        // Conflict: compare button + label
+        badges.push(EditorBadge {
+            text: "compare".to_string(),
+            action: Some(HeaderHitAction::EditorCompare),
+        });
+        badges.push(EditorBadge {
+            text: "conflict".to_string(),
+            action: None,
+        });
+    }
+
+    // Deleted badge
+    if ep.file_deleted {
+        badges.push(EditorBadge {
+            text: "deleted".to_string(),
+            action: None,
+        });
+    }
+
+    badges
 }
 
 /// Render the header for a pane (or tab bar for multi-tab groups).
@@ -224,71 +277,32 @@ pub fn render_pane_header(
             }
         }
         Some(PaneKind::Editor(ep)) => {
-
-            // Markdown preview toggle badge
-            if ep.is_markdown() && !ep.diff_mode {
-                let preview_text = if ep.preview_mode { "edit" } else { "preview" };
-                let preview_w = preview_text.len() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
-                let preview_x = badge_right - preview_w;
-                if preview_x > content_left + 40.0 {
-                    let preview_color = if is_focused { p.badge_text } else { p.tab_text };
-                    render_badge_colored(renderer, preview_x, text_y, preview_w, cell_height, preview_text, preview_color, badge_bg, BADGE_RADIUS);
-                    zones.push(HeaderHitZone {
-                        pane_id: id,
-                        rect: Rect::new(preview_x, rect.y, preview_w, TAB_BAR_HEIGHT),
-                        action: HeaderHitAction::MarkdownPreview,
-                    });
-                    badge_right = preview_x - BADGE_GAP;
-                }
-            }
-
-            if ep.diff_mode {
-                // Diff mode: show [back] button only
-                let back_text = "back";
-                let back_w = back_text.len() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
-                let back_x = badge_right - back_w;
-                if back_x > content_left + 40.0 {
-                    render_badge_colored(renderer, back_x, text_y, back_w, cell_height, back_text, p.badge_text, p.conflict_bar_btn, BADGE_RADIUS);
-                    zones.push(HeaderHitZone {
-                        pane_id: id,
-                        rect: Rect::new(back_x, rect.y, back_w, TAB_BAR_HEIGHT),
-                        action: HeaderHitAction::EditorBack,
-                    });
-                    badge_right = back_x - BADGE_GAP;
-                }
-            } else if ep.disk_changed && ep.editor.is_modified() && !ep.file_deleted {
-                // Conflict state: show "conflict" label + [compare] button
-                let cmp_text = "compare";
-                let cmp_w = cmp_text.len() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
-                let cmp_x = badge_right - cmp_w;
-                if cmp_x > content_left + 60.0 {
-                    render_badge_colored(renderer, cmp_x, text_y, cmp_w, cell_height, cmp_text, p.badge_text, p.conflict_bar_btn, BADGE_RADIUS);
-                    zones.push(HeaderHitZone {
-                        pane_id: id,
-                        rect: Rect::new(cmp_x, rect.y, cmp_w, TAB_BAR_HEIGHT),
-                        action: HeaderHitAction::EditorCompare,
-                    });
-                    badge_right = cmp_x - BADGE_GAP;
-                }
-
-                // "conflict" label
-                let conf_text = "conflict";
-                let conf_w = conf_text.len() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
-                let conf_x = badge_right - conf_w;
-                if conf_x > content_left + 40.0 {
-                    render_badge_colored(renderer, conf_x, text_y, conf_w, cell_height, conf_text, p.badge_conflict, badge_bg, BADGE_RADIUS);
-                    badge_right = conf_x - BADGE_GAP;
-                }
-            }
-
-            // Deleted badge
-            if ep.file_deleted {
-                let del_text = "deleted";
-                let del_w = del_text.len() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
-                let del_x = badge_right - del_w;
-                if del_x > content_left + 40.0 {
-                    render_badge_colored(renderer, del_x, text_y, del_w, cell_height, del_text, p.badge_deleted, badge_bg, BADGE_RADIUS);
-                    badge_right = del_x - BADGE_GAP;
+            // Right-side badges from shared logic
+            for badge in editor_header_badges(ep) {
+                let badge_w = badge.text.len() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
+                let badge_x = badge_right - badge_w;
+                let min_x = if badge.text == "compare" { content_left + 60.0 } else { content_left + 40.0 };
+                if badge_x > min_x {
+                    let (text_color, bg) = match badge.action {
+                        Some(HeaderHitAction::EditorBack) | Some(HeaderHitAction::EditorCompare) => {
+                            (p.badge_text, p.conflict_bar_btn)
+                        }
+                        None if badge.text == "deleted" => (p.badge_deleted, badge_bg),
+                        None if badge.text == "conflict" => (p.badge_conflict, badge_bg),
+                        _ => {
+                            let c = if is_focused { p.badge_text } else { p.tab_text };
+                            (c, badge_bg)
+                        }
+                    };
+                    render_badge_colored(renderer, badge_x, text_y, badge_w, cell_height, &badge.text, text_color, bg, BADGE_RADIUS);
+                    if let Some(action) = badge.action {
+                        zones.push(HeaderHitZone {
+                            pane_id: id,
+                            rect: Rect::new(badge_x, rect.y, badge_w, TAB_BAR_HEIGHT),
+                            action,
+                        });
+                    }
+                    badge_right = badge_x - BADGE_GAP;
                 }
             }
 
@@ -479,6 +493,37 @@ fn render_tab_bar(
                     rect: Rect::new(badge_x, rect.y, badge_w, TAB_BAR_HEIGHT),
                     action: HeaderHitAction::GitBranch,
                 });
+                badge_right = badge_x - BADGE_GAP;
+            }
+        }
+    }
+
+    // Editor badges for the active pane (shared logic with single-pane path)
+    if let Some(PaneKind::Editor(ep)) = panes.get(&active_pane) {
+        for badge in editor_header_badges(ep) {
+            let badge_w = badge.text.len() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
+            let badge_x = badge_right - badge_w;
+            let min_x = if badge.text == "compare" { content_left + 60.0 } else { content_left + 40.0 };
+            if badge_x > min_x {
+                let (text_color, bg) = match badge.action {
+                    Some(HeaderHitAction::EditorBack) | Some(HeaderHitAction::EditorCompare) => {
+                        (p.badge_text, p.conflict_bar_btn)
+                    }
+                    None if badge.text == "deleted" => (p.badge_deleted, badge_bg),
+                    None if badge.text == "conflict" => (p.badge_conflict, badge_bg),
+                    _ => {
+                        let c = if is_group_focused { p.badge_text } else { p.tab_text };
+                        (c, badge_bg)
+                    }
+                };
+                render_badge_colored(renderer, badge_x, text_y, badge_w, cell_height, &badge.text, text_color, bg, BADGE_RADIUS);
+                if let Some(action) = badge.action {
+                    zones.push(HeaderHitZone {
+                        pane_id: active_pane,
+                        rect: Rect::new(badge_x, rect.y, badge_w, TAB_BAR_HEIGHT),
+                        action,
+                    });
+                }
                 badge_right = badge_x - BADGE_GAP;
             }
         }
@@ -694,5 +739,130 @@ pub(crate) fn render_badge_colored(
         style,
         Rect::new(x, badge_y, width, badge_h),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use tide_core::PaneId;
+    use crate::editor_pane::EditorPane;
+
+    fn make_editor(id: PaneId) -> EditorPane {
+        EditorPane::new_empty(id)
+    }
+
+    fn make_markdown_editor(id: PaneId) -> EditorPane {
+        let mut ep = make_editor(id);
+        ep.editor.buffer.file_path = Some(PathBuf::from("README.md"));
+        ep
+    }
+
+    #[test]
+    fn plain_file_no_badges() {
+        let ep = make_editor(1);
+        let badges = editor_header_badges(&ep);
+        assert!(badges.is_empty());
+    }
+
+    #[test]
+    fn markdown_shows_preview_badge() {
+        let ep = make_markdown_editor(1);
+        let badges = editor_header_badges(&ep);
+        assert_eq!(badges.len(), 1);
+        assert_eq!(badges[0].text, "preview");
+        assert_eq!(badges[0].action, Some(HeaderHitAction::MarkdownPreview));
+    }
+
+    #[test]
+    fn markdown_preview_mode_shows_edit_badge() {
+        let mut ep = make_markdown_editor(1);
+        ep.preview_mode = true;
+        let badges = editor_header_badges(&ep);
+        assert_eq!(badges.len(), 1);
+        assert_eq!(badges[0].text, "edit");
+        assert_eq!(badges[0].action, Some(HeaderHitAction::MarkdownPreview));
+    }
+
+    #[test]
+    fn markdown_diff_mode_shows_back_not_preview() {
+        let mut ep = make_markdown_editor(1);
+        ep.diff_mode = true;
+        let badges = editor_header_badges(&ep);
+        // diff_mode suppresses preview badge, shows back instead
+        assert_eq!(badges.len(), 1);
+        assert_eq!(badges[0].text, "back");
+        assert_eq!(badges[0].action, Some(HeaderHitAction::EditorBack));
+    }
+
+    #[test]
+    fn diff_mode_shows_back_badge() {
+        let mut ep = make_editor(1);
+        ep.diff_mode = true;
+        let badges = editor_header_badges(&ep);
+        assert_eq!(badges.len(), 1);
+        assert_eq!(badges[0].text, "back");
+        assert_eq!(badges[0].action, Some(HeaderHitAction::EditorBack));
+    }
+
+    #[test]
+    fn conflict_shows_compare_and_label() {
+        let mut ep = make_editor(1);
+        ep.disk_changed = true;
+        // Make the editor modified by inserting text
+        ep.editor.handle_action(tide_editor::EditorActionKind::InsertChar('x'));
+        assert!(ep.editor.is_modified());
+        let badges = editor_header_badges(&ep);
+        assert_eq!(badges.len(), 2);
+        assert_eq!(badges[0].text, "compare");
+        assert_eq!(badges[0].action, Some(HeaderHitAction::EditorCompare));
+        assert_eq!(badges[1].text, "conflict");
+        assert_eq!(badges[1].action, None);
+    }
+
+    #[test]
+    fn file_deleted_shows_deleted_badge() {
+        let mut ep = make_editor(1);
+        ep.file_deleted = true;
+        let badges = editor_header_badges(&ep);
+        assert_eq!(badges.len(), 1);
+        assert_eq!(badges[0].text, "deleted");
+        assert_eq!(badges[0].action, None);
+    }
+
+    #[test]
+    fn deleted_and_conflict_skips_conflict_when_deleted() {
+        let mut ep = make_editor(1);
+        ep.disk_changed = true;
+        ep.file_deleted = true;
+        ep.editor.handle_action(tide_editor::EditorActionKind::InsertChar('x'));
+        let badges = editor_header_badges(&ep);
+        // file_deleted suppresses the compare/conflict badges (condition: !ep.file_deleted)
+        assert_eq!(badges.len(), 1);
+        assert_eq!(badges[0].text, "deleted");
+    }
+
+    #[test]
+    fn diff_mode_suppresses_conflict() {
+        let mut ep = make_editor(1);
+        ep.diff_mode = true;
+        ep.disk_changed = true;
+        ep.editor.handle_action(tide_editor::EditorActionKind::InsertChar('x'));
+        let badges = editor_header_badges(&ep);
+        // diff_mode takes priority over conflict
+        assert_eq!(badges.len(), 1);
+        assert_eq!(badges[0].text, "back");
+    }
+
+    #[test]
+    fn markdown_extensions_all_recognized() {
+        for ext in &["md", "markdown", "mdown", "mkd"] {
+            let mut ep = make_editor(1);
+            ep.editor.buffer.file_path = Some(PathBuf::from(format!("file.{}", ext)));
+            let badges = editor_header_badges(&ep);
+            assert!(!badges.is_empty(), "expected badge for .{} file", ext);
+            assert_eq!(badges[0].text, "preview");
+        }
+    }
 }
 

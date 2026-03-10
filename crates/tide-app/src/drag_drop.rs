@@ -80,7 +80,7 @@ impl HoverTarget {
 // Drop destination: tree pane
 // ──────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum DropDestination {
     TreePane(PaneId, DropZone),
     TreeRoot(DropZone),
@@ -100,6 +100,8 @@ pub(crate) enum PaneDragState {
     Dragging {
         source_pane: PaneId,
         drop_target: Option<DropDestination>,
+        /// Cached simulate_drop result to avoid cloning the layout tree every frame.
+        cached_preview_rect: Option<Rect>,
     },
 }
 
@@ -172,16 +174,41 @@ impl App {
     ) -> Option<DropDestination> {
         // Check workspace sidebar first — allow cross-workspace pane moves
         if let Some(idx) = self.workspace_sidebar_item_at_pos(mouse) {
-            if idx != self.active_workspace {
+            if idx != self.ws.active {
                 return Some(DropDestination::Workspace(idx));
             }
         }
         self.compute_tree_drop_target(mouse, source)
     }
 
+    /// Pre-compute the simulate_drop preview rect for a given drop destination.
+    /// Called only when drop_target changes, not every frame.
+    pub(crate) fn compute_drop_preview_rect(
+        &self,
+        source: PaneId,
+        target: &Option<DropDestination>,
+    ) -> Option<Rect> {
+        let dest = target.as_ref()?;
+        match dest {
+            DropDestination::TreeRoot(zone) | DropDestination::TreePane(_, zone) => {
+                if *zone == tide_core::DropZone::Center {
+                    return None; // swap preview uses target rect directly, no simulate_drop needed
+                }
+                let target_id = match dest {
+                    DropDestination::TreePane(tid, _) => Some(*tid),
+                    _ => None,
+                };
+                let pane_area = self.pane_area_rect?;
+                let pane_area_size = tide_core::Size::new(pane_area.width, pane_area.height);
+                self.layout.simulate_drop(source, target_id, *zone, true, pane_area_size)
+            }
+            DropDestination::Workspace(_) => None,
+        }
+    }
+
     /// Compute workspace sidebar item layout geometry.
     pub(crate) fn ws_sidebar_geometry(&self) -> Option<WsSidebarGeometry> {
-        let ws_rect = self.workspace_sidebar_rect?;
+        let ws_rect = self.ws.sidebar_rect?;
         let cs = self.cell_size();
         let name_h = cs.height;
         let sub_h = cs.height * WS_SIDEBAR_SUB_SCALE;
@@ -196,11 +223,11 @@ impl App {
 
     /// Hit-test workspace sidebar items. Returns the 0-based workspace index if hit.
     fn workspace_sidebar_item_at_pos(&self, pos: Vec2) -> Option<usize> {
-        if !self.show_workspace_sidebar {
+        if !self.ws.show_sidebar {
             return None;
         }
         let geo = self.ws_sidebar_geometry()?;
-        for i in 0..self.workspaces.len() {
+        for i in 0..self.ws.workspaces.len() {
             if geo.item_rect(i).contains(pos) {
                 return Some(i);
             }
@@ -211,7 +238,7 @@ impl App {
     /// Get the visual rect of a workspace sidebar item (for rendering drag highlights).
     pub(crate) fn workspace_sidebar_item_rect(&self, idx: usize) -> Option<Rect> {
         let geo = self.ws_sidebar_geometry()?;
-        if idx < self.workspaces.len() {
+        if idx < self.ws.workspaces.len() {
             Some(geo.item_rect(idx))
         } else {
             None

@@ -363,7 +363,6 @@ pub static LIGHT: ThemePalette = ThemePalette {
 
 pub const BORDER_WIDTH: f32 = 1.0;
 pub const PANE_GAP: f32 = 4.0;
-pub const OUTER_PADDING: f32 = 6.0;
 pub const PANE_PADDING: f32 = 12.0;
 pub const PANE_CORNER_RADIUS: f32 = 6.0;
 pub const FILE_TREE_LINE_SPACING: f32 = 1.5;
@@ -417,7 +416,6 @@ pub const POPUP_BORDER_WIDTH: f32 = 1.0;      // 팝업 테두리 두께
 pub const POPUP_SEPARATOR: f32 = 1.0;         // 구분선 두께
 pub const POPUP_SEPARATOR_INSET: f32 = 4.0;   // 구분선 좌우 인셋
 pub const POPUP_SELECTED_INSET: f32 = 2.0;    // 선택 하이라이트 좌우 인셋
-pub const POPUP_MAX_VISIBLE: usize = 10;      // 리스트 최대 표시 항목
 pub const CURSOR_BEAM_WIDTH: f32 = 1.5;       // 텍스트 커서 beam 너비
 pub const SAVE_AS_POPUP_W: f32 = 310.0;       // Save-as 팝업 최대 너비
 pub const CONTEXT_MENU_W: f32 = 140.0;        // 컨텍스트 메뉴 너비
