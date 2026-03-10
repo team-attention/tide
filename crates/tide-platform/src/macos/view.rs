@@ -280,7 +280,7 @@ declare_class!(
                 if has_precise.as_bool() {
                     let sdx: f64 = msg_send![event, scrollingDeltaX];
                     let sdy: f64 = msg_send![event, scrollingDeltaY];
-                    (sdx as f32 / 10.0, sdy as f32 / 10.0)
+                    (sdx as f32 / 6.0, sdy as f32 / 6.0)
                 } else {
                     let sdx: f64 = msg_send![event, scrollingDeltaX];
                     let sdy: f64 = msg_send![event, scrollingDeltaY];

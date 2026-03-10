@@ -660,8 +660,14 @@ impl Router {
             }
             // Cmd+E -> toggle file tree
             Key::Char('e') | Key::Char('E') => Some(GlobalAction::ToggleFileTree),
-            // Cmd+B -> toggle workspace sidebar
-            Key::Char('b') | Key::Char('B') => Some(GlobalAction::ToggleWorkspaceSidebar),
+            // Cmd+B -> toggle workspace sidebar, Cmd+Shift+B -> open browser
+            Key::Char('b') | Key::Char('B') => {
+                if modifiers.shift {
+                    Some(GlobalAction::OpenBrowser)
+                } else {
+                    Some(GlobalAction::ToggleWorkspaceSidebar)
+                }
+            }
             // Cmd+Shift+[ / Cmd+Shift+] -> workspace prev/next
             // Cmd+[ / Cmd+] -> browser back/forward (handled below)
             // Cmd+Arrow -> Navigate
@@ -700,14 +706,6 @@ impl Router {
             Key::Char('0') => Some(GlobalAction::FontSizeReset),
             // Cmd+, -> open config
             Key::Char(',') => Some(GlobalAction::OpenConfig),
-            // Cmd+Shift+B -> open browser
-            Key::Char('b') | Key::Char('B') => {
-                if modifiers.shift {
-                    Some(GlobalAction::OpenBrowser)
-                } else {
-                    None
-                }
-            }
             // Cmd+[ -> workspace prev
             Key::Char('[') => Some(GlobalAction::WorkspacePrev),
             // Cmd+] -> workspace next

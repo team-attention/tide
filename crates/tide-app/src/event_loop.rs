@@ -103,11 +103,11 @@ impl App {
             let blink_phase = (blink_elapsed.as_millis() / 530) % 2 == 0;
             if blink_phase != self.cursor_visible {
                 self.cursor_visible = blink_phase;
-                self.needs_redraw = true;
+                self.cache.needs_redraw = true;
             }
 
             // Render if needed
-            if self.needs_redraw && !self.is_occluded && self.batch_depth == 0 {
+            if self.cache.needs_redraw && !self.is_occluded && self.batch_depth == 0 {
                 let now = Instant::now();
                 let skip_coalesce = self.input_just_sent
                     || self.input_sent_at.map_or(false, |at| {
@@ -118,7 +118,7 @@ impl App {
                 {
                     self.update();
                     if self.render() {
-                        self.needs_redraw = false;
+                        self.cache.needs_redraw = false;
                         self.last_frame = now;
 
                         // Reveal window after first frame
@@ -172,7 +172,7 @@ impl App {
         }
 
         // Frame pacing: if we need to render but are within 2ms coalescing window
-        if self.needs_redraw && !self.is_occluded && self.batch_depth == 0 {
+        if self.cache.needs_redraw && !self.is_occluded && self.batch_depth == 0 {
             let skip_coalesce = self.input_just_sent
                 || self.input_sent_at.map_or(false, |at| {
                     now.duration_since(at) < Duration::from_millis(16)
@@ -211,7 +211,7 @@ impl App {
             PlatformEvent::RedrawRequested => {
                 // Rendering is handled by the app thread loop, not here.
                 // RedrawRequested from the main thread is just a wake signal.
-                self.needs_redraw = true;
+                self.cache.needs_redraw = true;
                 return;
             }
             PlatformEvent::CloseRequested => {
@@ -226,15 +226,15 @@ impl App {
                 self.resize_deferred_at =
                     Some(Instant::now() + Duration::from_millis(50));
                 self.compute_layout();
-                self.ime_cursor_dirty = true;
-                self.needs_redraw = true;
+                self.ime.cursor_dirty = true;
+                self.cache.needs_redraw = true;
             }
             PlatformEvent::ScaleFactorChanged(scale) => {
                 self.scale_factor = scale as f32;
                 self.reconfigure_surface();
                 self.compute_layout();
-                self.chrome_generation += 1;
-                self.needs_redraw = true;
+                self.cache.chrome_generation += 1;
+                self.cache.needs_redraw = true;
             }
             PlatformEvent::ModifiersChanged(modifiers) => {
                 let old_shift = self.modifiers.shift;
@@ -244,7 +244,7 @@ impl App {
 
                 // Meta key toggles link underlines — redraw immediately
                 if old_meta != modifiers.meta {
-                    self.needs_redraw = true;
+                    self.cache.needs_redraw = true;
                 }
 
                 // Shift+Shift double-tap detection
@@ -256,12 +256,12 @@ impl App {
                                 // Double-tap detected
                                 self.last_shift_up = None;
                                 self.shift_tap_clean = false;
-                                if self.file_finder.is_some() {
+                                if self.modal.file_finder.is_some() {
                                     self.close_file_finder();
                                 } else {
                                     self.open_file_finder();
                                 }
-                                self.needs_redraw = true;
+                                self.cache.needs_redraw = true;
                             } else {
                                 self.last_shift_up = Some(Instant::now());
                             }
@@ -312,32 +312,32 @@ impl App {
                 }
 
                 self.compute_layout();
-                self.ime_cursor_dirty = true;
-                self.chrome_generation += 1;
-                self.needs_redraw = true;
+                self.ime.cursor_dirty = true;
+                self.cache.chrome_generation += 1;
+                self.cache.needs_redraw = true;
             }
             PlatformEvent::Occluded(occluded) => {
                 self.is_occluded = occluded;
                 if !occluded {
-                    self.needs_redraw = true;
+                    self.cache.needs_redraw = true;
                 }
             }
             PlatformEvent::WebViewFocused => {
                 self.focus_area = FocusArea::PaneArea;
-                self.chrome_generation += 1;
-                self.needs_redraw = true;
+                self.cache.chrome_generation += 1;
+                self.cache.needs_redraw = true;
             }
             PlatformEvent::ImeCommit(text) => {
                 self.shift_tap_clean = false;
                 self.handle_ime_commit(&text);
-                self.ime_cursor_dirty = true;
+                self.ime.cursor_dirty = true;
                 self.cursor_blink_at = Instant::now();
                 self.cursor_visible = true;
             }
             PlatformEvent::ImePreedit { text, cursor: _ } => {
                 self.shift_tap_clean = false;
                 self.handle_ime_preedit(&text);
-                self.ime_cursor_dirty = true;
+                self.ime.cursor_dirty = true;
                 self.cursor_blink_at = Instant::now();
                 self.cursor_visible = true;
             }
@@ -349,7 +349,7 @@ impl App {
                 // Invalidate Shift+Shift detection on any real key press
                 self.shift_tap_clean = false;
                 self.handle_key_down(key, modifiers, chars);
-                self.ime_cursor_dirty = true;
+                self.ime.cursor_dirty = true;
                 self.cursor_blink_at = Instant::now();
                 self.cursor_visible = true;
             }
@@ -361,7 +361,7 @@ impl App {
                 if let Some(btn) = btn {
                     self.handle_mouse_down(btn, window);
                 }
-                self.ime_cursor_dirty = true;
+                self.ime.cursor_dirty = true;
                 self.cursor_blink_at = Instant::now();
                 self.cursor_visible = true;
             }
@@ -404,25 +404,25 @@ impl App {
     /// changed. macOS may unpredictably reset the first responder during event
     /// processing, so we must re-establish it unconditionally.
     pub(crate) fn sync_ime_proxies(&mut self, window: &WindowProxy) {
-        for id in self.pending_ime_proxy_creates.drain(..) {
+        for id in self.ime.pending_creates.drain(..) {
             window.create_ime_proxy(id);
         }
-        for id in self.pending_ime_proxy_removes.drain(..) {
+        for id in self.ime.pending_removes.drain(..) {
             window.remove_ime_proxy(id);
         }
 
         let target = self.effective_ime_target();
-        if target != self.last_ime_target {
-            if !self.ime_preedit.is_empty() {
-                if let Some(old_target) = self.last_ime_target {
-                    self.commit_text_to_pane(old_target, &self.ime_preedit.clone());
+        if target != self.ime.last_target {
+            if !self.ime.preedit.is_empty() {
+                if let Some(old_target) = self.ime.last_target {
+                    self.commit_text_to_pane(old_target, &self.ime.preedit.clone());
                 }
             }
-            self.ime_composing = false;
-            self.ime_preedit.clear();
-            self.needs_redraw = true;
-            self.ime_cursor_dirty = true;
-            self.last_ime_target = target;
+            self.ime.composing = false;
+            self.ime.preedit.clear();
+            self.cache.needs_redraw = true;
+            self.ime.cursor_dirty = true;
+            self.ime.last_target = target;
         }
         if let Some(target) = target {
             window.focus_ime_proxy(target);
@@ -460,7 +460,7 @@ impl App {
                     let (visible_rows, visible_cols) = editor_size;
                     pane.editor.ensure_cursor_visible(visible_rows);
                     pane.editor.ensure_cursor_visible_h(visible_cols);
-                    self.pane_generations.remove(&pane_id);
+                    self.cache.pane_generations.remove(&pane_id);
                 }
             }
             _ => {}
@@ -493,7 +493,7 @@ impl App {
             if Instant::now() >= at {
                 self.resize_deferred_at = None;
                 self.compute_layout();
-                self.needs_redraw = true;
+                self.cache.needs_redraw = true;
             }
         }
 
@@ -502,8 +502,8 @@ impl App {
         for pane in self.panes.values() {
             if let PaneKind::Terminal(terminal) = pane {
                 if terminal.backend.has_new_output() {
-                    self.needs_redraw = true;
-                    self.ime_cursor_dirty = true;
+                    self.cache.needs_redraw = true;
+                    self.ime.cursor_dirty = true;
                     self.input_just_sent = false;
                     self.input_sent_at = None;
                     had_pty_output = true;
@@ -521,13 +521,13 @@ impl App {
             .file_watch_dirty
             .swap(false, std::sync::atomic::Ordering::Relaxed)
         {
-            self.needs_redraw = true;
+            self.cache.needs_redraw = true;
         }
 
         // Git poller
         if self.consume_git_poll_results() {
-            self.chrome_generation += 1;
-            self.needs_redraw = true;
+            self.cache.chrome_generation += 1;
+            self.cache.needs_redraw = true;
         }
 
         // Badge check
@@ -560,10 +560,10 @@ impl App {
 
     /// Update the IME cursor area on the proxy view.
     fn update_ime_cursor_area(&mut self, window: &WindowProxy) {
-        if !self.ime_cursor_dirty {
+        if !self.ime.cursor_dirty {
             return;
         }
-        self.ime_cursor_dirty = false;
+        self.ime.cursor_dirty = false;
         use tide_core::TerminalBackend;
 
         let cell_size = self.cell_size();

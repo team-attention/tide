@@ -142,8 +142,8 @@ impl Session {
         Session {
             layout,
             focused_pane_id: app.focused,
-            show_file_tree: app.show_file_tree,
-            file_tree_width: app.file_tree_width,
+            show_file_tree: app.ft.visible,
+            file_tree_width: app.ft.width,
             dark_mode: app.dark_mode,
             window_width: logical_w,
             window_height: logical_h,
@@ -223,7 +223,7 @@ impl App {
                 Ok(pane) => {
                     self.install_pty_waker(&pane);
                     self.panes.insert(*pane_id, PaneKind::Terminal(pane));
-                    self.pending_ime_proxy_creates.push(*pane_id);
+                    self.ime.pending_creates.push(*pane_id);
                 }
                 Err(e) => {
                     log::error!("Failed to create terminal pane {}: {}", pane_id, e);
@@ -233,8 +233,8 @@ impl App {
         }
 
         // Restore UI state
-        self.show_file_tree = session.show_file_tree;
-        self.file_tree_width = session.file_tree_width;
+        self.ft.visible = session.show_file_tree;
+        self.ft.width = session.file_tree_width;
         self.sidebar_side = match session.sidebar_side.as_str() {
             "right" => crate::LayoutSide::Right,
             _ => crate::LayoutSide::Left,
@@ -269,7 +269,7 @@ impl App {
             .and_then(|(_, c)| c.clone())
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")));
         let tree = tide_tree::FsTree::new(cwd.clone());
-        self.file_tree = Some(tree);
+        self.ft.tree = Some(tree);
         self.last_cwd = Some(cwd);
 
         true
@@ -278,7 +278,7 @@ impl App {
     /// Restore only preferences (window size, theme, panel widths) from a session,
     /// then create a fresh initial pane. Used after intentional quit.
     pub(crate) fn restore_preferences(&mut self, session: &Session, early_terminal: Option<tide_terminal::Terminal>) {
-        self.file_tree_width = session.file_tree_width;
+        self.ft.width = session.file_tree_width;
         self.dark_mode = session.dark_mode;
         self.sidebar_side = match session.sidebar_side.as_str() {
             "right" => crate::LayoutSide::Right,

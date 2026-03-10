@@ -12,39 +12,39 @@ impl App {
     pub(crate) fn handle_ime_commit(&mut self, text: &str) {
         // Modal popups intercept text BEFORE any pane-level handling.
         // On macOS, all text arrives via ImeCommit, so popups must be checked here.
-        if self.file_finder.is_some() {
+        if self.modal.file_finder.is_some() {
             for ch in text.chars() {
-                if let Some(ref mut finder) = self.file_finder {
+                if let Some(ref mut finder) = self.modal.file_finder {
                     finder.insert_char(ch);
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
-            self.ime_composing = false;
-            self.ime_preedit.clear();
-            self.needs_redraw = true;
+            self.ime.composing = false;
+            self.ime.preedit.clear();
+            self.cache.needs_redraw = true;
             return;
         }
-        if self.save_as_input.is_some() {
+        if self.modal.save_as_input.is_some() {
             for ch in text.chars() {
-                if let Some(ref mut input) = self.save_as_input {
+                if let Some(ref mut input) = self.modal.save_as_input {
                     input.insert_char(ch);
                 }
             }
-            self.ime_composing = false;
-            self.ime_preedit.clear();
-            self.needs_redraw = true;
+            self.ime.composing = false;
+            self.ime.preedit.clear();
+            self.cache.needs_redraw = true;
             return;
         }
-        if self.git_switcher.is_some() {
+        if self.modal.git_switcher.is_some() {
             for ch in text.chars() {
-                if let Some(ref mut gs) = self.git_switcher {
+                if let Some(ref mut gs) = self.modal.git_switcher {
                     gs.insert_char(ch);
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
-            self.ime_composing = false;
-            self.ime_preedit.clear();
-            self.needs_redraw = true;
+            self.ime.composing = false;
+            self.ime.preedit.clear();
+            self.cache.needs_redraw = true;
             return;
         }
         // Browser URL bar text input
@@ -58,10 +58,10 @@ impl App {
                             bp.url_input_cursor += 1;
                         }
                     }
-                    self.chrome_generation += 1;
-                    self.ime_composing = false;
-                    self.ime_preedit.clear();
-                    self.needs_redraw = true;
+                    self.cache.chrome_generation += 1;
+                    self.ime.composing = false;
+                    self.ime.preedit.clear();
+                    self.cache.needs_redraw = true;
                     return;
                 }
             }
@@ -92,75 +92,19 @@ impl App {
                     })
                     .unwrap_or(30);
                 if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&id) {
-                    let total = pane.preview_line_count();
-                    let max_scroll = total.saturating_sub(visible_rows);
                     let mut changed = false;
                     for ch in text.chars() {
-                        match ch {
-                            'j' => {
-                                if pane.preview_scroll < max_scroll {
-                                    pane.preview_scroll += 1;
-                                    changed = true;
-                                }
-                            }
-                            'k' => {
-                                if pane.preview_scroll > 0 {
-                                    pane.preview_scroll -= 1;
-                                    changed = true;
-                                }
-                            }
-                            'd' => {
-                                let half = visible_rows / 2;
-                                let new = (pane.preview_scroll + half).min(max_scroll);
-                                if new != pane.preview_scroll {
-                                    pane.preview_scroll = new;
-                                    changed = true;
-                                }
-                            }
-                            'u' => {
-                                let half = visible_rows / 2;
-                                let new = pane.preview_scroll.saturating_sub(half);
-                                if new != pane.preview_scroll {
-                                    pane.preview_scroll = new;
-                                    changed = true;
-                                }
-                            }
-                            'g' => {
-                                if pane.preview_scroll != 0 {
-                                    pane.preview_scroll = 0;
-                                    changed = true;
-                                }
-                            }
-                            'G' => {
-                                if pane.preview_scroll != max_scroll {
-                                    pane.preview_scroll = max_scroll;
-                                    changed = true;
-                                }
-                            }
-                            'h' => {
-                                if pane.preview_h_scroll > 0 {
-                                    pane.preview_h_scroll =
-                                        pane.preview_h_scroll.saturating_sub(2);
-                                    changed = true;
-                                }
-                            }
-                            'l' => {
-                                let max_w = pane.preview_max_line_width();
-                                if pane.preview_h_scroll < max_w {
-                                    pane.preview_h_scroll += 2;
-                                    changed = true;
-                                }
-                            }
-                            _ => {}
+                        if pane.apply_preview_scroll_key(ch, visible_rows) {
+                            changed = true;
                         }
                     }
                     if changed {
-                        self.pane_generations.remove(&id);
+                        self.cache.pane_generations.remove(&id);
                     }
                 }
-                self.ime_composing = false;
-                self.ime_preedit.clear();
-                self.needs_redraw = true;
+                self.ime.composing = false;
+                self.ime.preedit.clear();
+                self.cache.needs_redraw = true;
                 return;
             }
         }
@@ -178,37 +122,61 @@ impl App {
                     };
                     if let Some(c) = choice {
                         self.resolve_launcher(id, c);
-                        self.ime_composing = false;
-                        self.ime_preedit.clear();
-                        self.needs_redraw = true;
+                        self.ime.composing = false;
+                        self.ime.preedit.clear();
+                        self.cache.needs_redraw = true;
                         return;
                     }
                 }
                 // Non-matching text: ignore for launcher
-                self.ime_composing = false;
-                self.ime_preedit.clear();
-                self.needs_redraw = true;
+                self.ime.composing = false;
+                self.ime.preedit.clear();
+                self.cache.needs_redraw = true;
                 return;
             }
         }
 
         self.send_text_to_target(text);
-        self.ime_composing = false;
-        self.ime_preedit.clear();
-        self.needs_redraw = true;
+        self.ime.composing = false;
+        self.ime.preedit.clear();
+        self.cache.needs_redraw = true;
     }
 
     /// Handle IME preedit update (composition in progress).
     pub(crate) fn handle_ime_preedit(&mut self, text: &str) {
-        self.ime_composing = !text.is_empty();
-        self.ime_preedit = text.to_string();
+        // Launcher pane: immediately resolve on preedit so Korean IME
+        // doesn't require a second keystroke to commit the character.
+        if !text.is_empty() {
+            if let Some(id) = self.focused {
+                if matches!(self.panes.get(&id), Some(PaneKind::Launcher(_))) {
+                    let first_char = text.chars().next();
+                    let choice = match first_char {
+                        Some('ㅅ') => Some(crate::action::LauncherChoice::Terminal),
+                        Some('ㄷ') => Some(crate::action::LauncherChoice::NewFile),
+                        Some('ㅐ') => Some(crate::action::LauncherChoice::OpenFile),
+                        Some('ㅠ') => Some(crate::action::LauncherChoice::Browser),
+                        _ => None,
+                    };
+                    if let Some(c) = choice {
+                        self.resolve_launcher(id, c);
+                        self.ime.composing = false;
+                        self.ime.preedit.clear();
+                        self.cache.needs_redraw = true;
+                        return;
+                    }
+                }
+            }
+        }
+
+        self.ime.composing = !text.is_empty();
+        self.ime.preedit = text.to_string();
         // Invalidate the grid cache for the target editor pane so the preedit
         // shift is re-rendered (editor generation doesn't change for preedit).
         if let Some(target) = self.effective_ime_target() {
-            self.pane_generations.remove(&target);
+            self.cache.pane_generations.remove(&target);
         }
         // Invalidate chrome for browser URL bar preedit display
-        self.chrome_generation += 1;
-        self.needs_redraw = true;
+        self.cache.chrome_generation += 1;
+        self.cache.needs_redraw = true;
     }
 }
