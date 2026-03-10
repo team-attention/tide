@@ -21,8 +21,8 @@ pub(crate) struct Workspace {
 impl App {
     /// Save the active workspace's state back into the workspaces vec.
     pub(crate) fn save_active_workspace(&mut self) {
-        if self.workspaces.is_empty() { return; }
-        let ws = &mut self.workspaces[self.active_workspace];
+        if self.ws.workspaces.is_empty() { return; }
+        let ws = &mut self.ws.workspaces[self.ws.active];
         std::mem::swap(&mut self.layout, &mut ws.layout);
         std::mem::swap(&mut self.focused, &mut ws.focused);
         std::mem::swap(&mut self.panes, &mut ws.panes);
@@ -30,8 +30,8 @@ impl App {
 
     /// Load the active workspace's state from the workspaces vec into App fields.
     pub(crate) fn load_active_workspace(&mut self) {
-        if self.workspaces.is_empty() { return; }
-        let ws = &mut self.workspaces[self.active_workspace];
+        if self.ws.workspaces.is_empty() { return; }
+        let ws = &mut self.ws.workspaces[self.ws.active];
         std::mem::swap(&mut self.layout, &mut ws.layout);
         std::mem::swap(&mut self.focused, &mut ws.focused);
         std::mem::swap(&mut self.panes, &mut ws.panes);
@@ -39,7 +39,7 @@ impl App {
 
     /// Switch to workspace at the given 0-based index.
     pub(crate) fn switch_workspace(&mut self, idx: usize) {
-        if idx == self.active_workspace || idx >= self.workspaces.len() { return; }
+        if idx == self.ws.active || idx >= self.ws.workspaces.len() { return; }
         // Hide all browser WebViews in the current workspace before saving,
         // since native NSViews persist across workspace swaps.
         for pane in self.panes.values_mut() {
@@ -49,7 +49,7 @@ impl App {
             }
         }
         self.save_active_workspace();
-        self.active_workspace = idx;
+        self.ws.active = idx;
         self.load_active_workspace();
 
         if let Some(id) = self.focused {
@@ -57,8 +57,8 @@ impl App {
         }
         self.pane_rects.clear();
         self.visual_pane_rects.clear();
-        self.pane_generations.clear();
-        self.chrome_generation += 1;
+        self.cache.pane_generations.clear();
+        self.cache.chrome_generation += 1;
         self.compute_layout();
         self.update_file_tree_cwd();
         self.sync_browser_webview_frames();
@@ -80,29 +80,29 @@ impl App {
         self.focused = Some(pane_id);
         self.panes = HashMap::new();
 
-        let ws_name = format!("Workspace {}", self.workspaces.len() + 1);
-        self.workspaces.push(Workspace {
+        let ws_name = format!("Workspace {}", self.ws.workspaces.len() + 1);
+        self.ws.workspaces.push(Workspace {
             name: ws_name,
             layout: SplitLayout::new(),
             focused: None,
             panes: HashMap::new(),
         });
-        self.active_workspace = self.workspaces.len() - 1;
+        self.ws.active = self.ws.workspaces.len() - 1;
 
         self.create_terminal_pane(pane_id, None);
         self.router.set_focused(pane_id);
         self.focus_area = FocusArea::PaneArea;
         self.pane_rects.clear();
         self.visual_pane_rects.clear();
-        self.pane_generations.clear();
-        self.chrome_generation += 1;
+        self.cache.pane_generations.clear();
+        self.cache.chrome_generation += 1;
         self.compute_layout();
         self.update_file_tree_cwd();
     }
 
     /// Move a pane from the active workspace to a different workspace, then switch to it.
     pub(crate) fn move_pane_to_workspace(&mut self, pane_id: PaneId, target_idx: usize) {
-        if target_idx == self.active_workspace || target_idx >= self.workspaces.len() {
+        if target_idx == self.ws.active || target_idx >= self.ws.workspaces.len() {
             return;
         }
 
@@ -114,7 +114,7 @@ impl App {
         };
 
         // Clean up renderer cache
-        self.pane_generations.remove(&pane_id);
+        self.cache.pane_generations.remove(&pane_id);
         if let Some(renderer) = self.renderer.as_mut() {
             renderer.remove_pane_cache(pane_id);
         }
@@ -128,7 +128,7 @@ impl App {
         }
 
         // Insert pane into the target workspace (stored, not active)
-        let target_ws = &mut self.workspaces[target_idx];
+        let target_ws = &mut self.ws.workspaces[target_idx];
         target_ws.layout.insert_at_root(pane_id, DropZone::Right);
         target_ws.focused = Some(pane_id);
         target_ws.panes.insert(pane_id, pane);
@@ -139,7 +139,7 @@ impl App {
 
     /// Close the current workspace (only if more than one exists).
     pub(crate) fn close_workspace(&mut self) {
-        if self.workspaces.len() <= 1 { return; }
+        if self.ws.workspaces.len() <= 1 { return; }
 
         // Destroy all panes in the current workspace
         let pane_ids: Vec<PaneId> = self.panes.keys().copied().collect();
@@ -148,18 +148,18 @@ impl App {
                 bp.destroy();
             }
             self.panes.remove(&id);
-            self.pending_ime_proxy_removes.push(id);
-            self.pane_generations.remove(&id);
-            self.scroll_accumulator.remove(&id);
+            self.ime.pending_removes.push(id);
+            self.cache.pane_generations.remove(&id);
+            self.interaction.scroll_accumulator.remove(&id);
             if let Some(renderer) = self.renderer.as_mut() {
                 renderer.remove_pane_cache(id);
             }
         }
 
         // Remove workspace from vec
-        self.workspaces.remove(self.active_workspace);
-        if self.active_workspace >= self.workspaces.len() {
-            self.active_workspace = self.workspaces.len() - 1;
+        self.ws.workspaces.remove(self.ws.active);
+        if self.ws.active >= self.ws.workspaces.len() {
+            self.ws.active = self.ws.workspaces.len() - 1;
         }
 
         // Load the new active workspace
@@ -170,8 +170,8 @@ impl App {
         self.focus_area = FocusArea::PaneArea;
         self.pane_rects.clear();
         self.visual_pane_rects.clear();
-        self.pane_generations.clear();
-        self.chrome_generation += 1;
+        self.cache.pane_generations.clear();
+        self.cache.chrome_generation += 1;
         self.compute_layout();
         self.update_file_tree_cwd();
         self.sync_browser_webview_frames();
@@ -193,24 +193,24 @@ mod tests {
     #[test]
     fn save_load_roundtrip() {
         let mut app = test_app();
-        app.workspaces.push(Workspace {
+        app.ws.workspaces.push(Workspace {
             name: "WS1".into(),
             layout: SplitLayout::new(),
             focused: None,
             panes: HashMap::new(),
         });
-        app.active_workspace = 0;
+        app.ws.active = 0;
         app.focused = Some(42);
 
         // Save: swaps app.focused ↔ ws[0].focused
         app.save_active_workspace();
-        assert_eq!(app.workspaces[0].focused, Some(42));
+        assert_eq!(app.ws.workspaces[0].focused, Some(42));
         assert_eq!(app.focused, None); // swapped out
 
         // Load: swaps back
         app.load_active_workspace();
         assert_eq!(app.focused, Some(42));
-        assert_eq!(app.workspaces[0].focused, None);
+        assert_eq!(app.ws.workspaces[0].focused, None);
     }
 
     #[test]
@@ -230,13 +230,13 @@ mod tests {
         let mut app = test_app();
 
         // Create two workspaces with different focused pane IDs
-        app.workspaces.push(Workspace {
+        app.ws.workspaces.push(Workspace {
             name: "WS1".into(),
             layout: SplitLayout::new(),
             focused: None,
             panes: HashMap::new(),
         });
-        app.workspaces.push(Workspace {
+        app.ws.workspaces.push(Workspace {
             name: "WS2".into(),
             layout: SplitLayout::new(),
             focused: None,
@@ -244,72 +244,72 @@ mod tests {
         });
 
         // Set up WS1 as active with focused pane 100
-        app.active_workspace = 0;
+        app.ws.active = 0;
         app.focused = Some(100);
 
         // Save WS1's state, switch to WS2
         // First save WS2 state manually so there's something to load
         app.save_active_workspace();
-        app.active_workspace = 1;
+        app.ws.active = 1;
         app.focused = Some(200);
         app.save_active_workspace();
 
         // Now load WS1 back
-        app.active_workspace = 0;
+        app.ws.active = 0;
         app.load_active_workspace();
         assert_eq!(app.focused, Some(100));
 
         // Switch to WS2 via the method
         app.switch_workspace(1);
-        assert_eq!(app.active_workspace, 1);
+        assert_eq!(app.ws.active, 1);
         assert_eq!(app.focused, Some(200));
 
         // Switch back to WS1
         app.switch_workspace(0);
-        assert_eq!(app.active_workspace, 0);
+        assert_eq!(app.ws.active, 0);
         assert_eq!(app.focused, Some(100));
     }
 
     #[test]
     fn switch_workspace_same_index_is_noop() {
         let mut app = test_app();
-        app.workspaces.push(Workspace {
+        app.ws.workspaces.push(Workspace {
             name: "WS1".into(),
             layout: SplitLayout::new(),
             focused: None,
             panes: HashMap::new(),
         });
-        app.active_workspace = 0;
+        app.ws.active = 0;
         app.focused = Some(42);
 
-        let gen_before = app.chrome_generation;
+        let gen_before = app.cache.chrome_generation;
         app.switch_workspace(0); // same index
         // Should not have changed anything
         assert_eq!(app.focused, Some(42));
-        assert_eq!(app.chrome_generation, gen_before);
+        assert_eq!(app.cache.chrome_generation, gen_before);
     }
 
     #[test]
     fn switch_workspace_out_of_bounds_is_noop() {
         let mut app = test_app();
-        app.workspaces.push(Workspace {
+        app.ws.workspaces.push(Workspace {
             name: "WS1".into(),
             layout: SplitLayout::new(),
             focused: None,
             panes: HashMap::new(),
         });
-        app.active_workspace = 0;
+        app.ws.active = 0;
         app.focused = Some(42);
 
         app.switch_workspace(99); // out of bounds
         assert_eq!(app.focused, Some(42));
-        assert_eq!(app.active_workspace, 0);
+        assert_eq!(app.ws.active, 0);
     }
 
     #[test]
     fn close_workspace_with_single_workspace_is_noop() {
         let mut app = test_app();
-        app.workspaces.push(Workspace {
+        app.ws.workspaces.push(Workspace {
             name: "WS1".into(),
             layout: SplitLayout::new(),
             focused: None,
@@ -317,7 +317,7 @@ mod tests {
         });
 
         app.close_workspace();
-        assert_eq!(app.workspaces.len(), 1); // still 1
+        assert_eq!(app.ws.workspaces.len(), 1); // still 1
     }
 
     #[test]
@@ -325,27 +325,27 @@ mod tests {
         let mut app = test_app();
 
         // Set up two workspaces
-        app.workspaces.push(Workspace {
+        app.ws.workspaces.push(Workspace {
             name: "WS1".into(),
             layout: SplitLayout::new(),
             focused: None,
             panes: HashMap::new(),
         });
-        app.workspaces.push(Workspace {
+        app.ws.workspaces.push(Workspace {
             name: "WS2".into(),
             layout: SplitLayout::new(),
             focused: Some(200),
             panes: HashMap::new(),
         });
-        app.active_workspace = 0;
+        app.ws.active = 0;
         app.focused = Some(100);
 
         // Close the first workspace
         app.close_workspace();
 
-        assert_eq!(app.workspaces.len(), 1);
-        assert_eq!(app.active_workspace, 0);
-        assert_eq!(app.workspaces[0].name, "WS2");
+        assert_eq!(app.ws.workspaces.len(), 1);
+        assert_eq!(app.ws.active, 0);
+        assert_eq!(app.ws.workspaces[0].name, "WS2");
         // After close, the remaining workspace's state is loaded
         assert_eq!(app.focused, Some(200));
     }

@@ -36,8 +36,8 @@ pub(crate) fn render_chrome(
         // Centered title: show "Tide" or "Tide · N" when multiple workspaces
         let cs = renderer.cell_size();
         {
-            let title_text = if app.workspaces.len() > 1 {
-                format!("Tide · {}", app.active_workspace + 1)
+            let title_text = if app.ws.workspaces.len() > 1 {
+                format!("Tide · {}", app.ws.active + 1)
             } else {
                 "Tide".to_string()
             };
@@ -71,13 +71,13 @@ pub(crate) fn render_chrome(
                 let gear_h = cs.height + 6.0;
                 let gear_x = icon_x - gear_w - 8.0;
                 let gear_y = (app.top_inset - gear_h) / 2.0;
-                let gear_hovered = matches!(app.hover_target, Some(HoverTarget::TitlebarSettings));
+                let gear_hovered = matches!(app.interaction.hover_target, Some(HoverTarget::TitlebarSettings));
                 if gear_hovered {
                     let bg_rect = Rect::new(gear_x, gear_y, gear_w, gear_h);
                     renderer.draw_chrome_rounded_rect(bg_rect, p.badge_bg, 4.0);
                 }
                 let gear_text_y = gear_y + (gear_h - cs.height) / 2.0;
-                let gear_color = if app.config_page.is_some() { p.dock_tab_underline } else { p.tab_text };
+                let gear_color = if app.modal.config_page.is_some() { p.dock_tab_underline } else { p.tab_text };
                 renderer.draw_chrome_text(
                     gear_icon,
                     Vec2::new(gear_x + gear_pad, gear_text_y),
@@ -102,7 +102,7 @@ pub(crate) fn render_chrome(
             let theme_h = cs.height + 6.0;
             let theme_x = settings_x - theme_w - 8.0;
             let theme_y = (app.top_inset - theme_h) / 2.0;
-            let theme_hovered = matches!(app.hover_target, Some(HoverTarget::TitlebarTheme));
+            let theme_hovered = matches!(app.interaction.hover_target, Some(HoverTarget::TitlebarTheme));
             if theme_hovered {
                 let bg_rect = Rect::new(theme_x, theme_y, theme_w, theme_h);
                 renderer.draw_chrome_rounded_rect(bg_rect, p.badge_bg, 4.0);
@@ -193,10 +193,10 @@ pub(crate) fn render_chrome(
                 let slot = i + 1;
                 let hint = format!("\u{2318}{}", slot);
                 let (icon, is_active, hover_variant) = match area {
-                    FocusArea::FileTree => ("\u{f07b}", app.show_file_tree, HoverTarget::TitlebarFileTree),
+                    FocusArea::FileTree => ("\u{f07b}", app.ft.visible, HoverTarget::TitlebarFileTree),
                     FocusArea::PaneArea => (pane_icon, app.focus_area == FocusArea::PaneArea, HoverTarget::TitlebarPaneArea),
                 };
-                let is_hovered = app.hover_target.as_ref() == Some(&hover_variant);
+                let is_hovered = app.interaction.hover_target.as_ref() == Some(&hover_variant);
                 let w = render_titlebar_btn(
                     renderer, icon, &hint, 2, cur_right, is_active, is_hovered,
                 );
@@ -206,7 +206,7 @@ pub(crate) fn render_chrome(
     }
 
     // Draw workspace sidebar if visible
-    if let Some(ws_rect) = app.workspace_sidebar_rect {
+    if let Some(ws_rect) = app.ws.sidebar_rect {
         let cs = renderer.cell_size();
         let edge_inset = PANE_CORNER_RADIUS;
 
@@ -238,9 +238,9 @@ pub(crate) fn render_chrome(
 
         // Collect workspace info: for the active workspace, use live App data;
         // for others, read from the stored workspace vec.
-        for i in 0..app.workspaces.len() {
-            let is_active = i == app.active_workspace;
-            let ws_name = app.workspaces[i].name.clone();
+        for i in 0..app.ws.workspaces.len() {
+            let is_active = i == app.ws.active;
+            let ws_name = app.ws.workspaces[i].name.clone();
 
             let item_rect = geo.item_rect(i);
 
@@ -258,7 +258,7 @@ pub(crate) fn render_chrome(
                 renderer.draw_chrome_rounded_rect(inner, p.pane_bg, (PANE_CORNER_RADIUS - 1.0).max(0.0));
             } else {
                 // Hover highlight
-                if matches!(app.hover_target, Some(HoverTarget::WorkspaceSidebarItem(idx)) if idx == i) {
+                if matches!(app.interaction.hover_target, Some(HoverTarget::WorkspaceSidebarItem(idx)) if idx == i) {
                     renderer.draw_chrome_rounded_rect(item_rect, p.badge_bg, PANE_CORNER_RADIUS);
                 }
             }
@@ -302,7 +302,7 @@ pub(crate) fn render_chrome(
             }
 
             // Draw drag drop indicator line before this item (gap == i)
-            if let Some((src, press_y, gap)) = app.ws_drag {
+            if let Some((src, press_y, gap)) = app.ws.drag {
                 let dragging = (app.last_cursor_pos.y - press_y).abs() > crate::theme::DRAG_THRESHOLD;
                 if dragging && gap == i && gap != src && gap != src + 1 {
                     let line_y = item_rect.y - item_gap / 2.0;
@@ -313,9 +313,9 @@ pub(crate) fn render_chrome(
         }
 
         // Draw drop indicator after the last item (gap == len)
-        if let Some((src, press_y, gap)) = app.ws_drag {
+        if let Some((src, press_y, gap)) = app.ws.drag {
             let dragging = (app.last_cursor_pos.y - press_y).abs() > crate::theme::DRAG_THRESHOLD;
-            let len = app.workspaces.len();
+            let len = app.ws.workspaces.len();
             if dragging && gap == len && gap != src + 1 {
                 let last_bottom = geo.item_rect(len - 1);
                 let line_y = last_bottom.y + last_bottom.height + item_gap / 2.0;
@@ -329,7 +329,7 @@ pub(crate) fn render_chrome(
         let btn_y = ws_rect.y + ws_rect.height - edge_inset - btn_h - WS_SIDEBAR_PADDING;
         let btn_rect = Rect::new(content_x, btn_y, content_w, btn_h);
 
-        if matches!(app.hover_target, Some(HoverTarget::WorkspaceSidebarNewBtn)) {
+        if matches!(app.interaction.hover_target, Some(HoverTarget::WorkspaceSidebarNewBtn)) {
             renderer.draw_chrome_rounded_rect(btn_rect, p.badge_bg, PANE_CORNER_RADIUS);
         }
 
@@ -351,10 +351,10 @@ pub(crate) fn render_chrome(
 
     // Draw file tree panel if visible (rounded border like panes)
     if show_file_tree {
-        let tree_visual_rect = app.file_tree_rect.unwrap_or(Rect::new(
+        let tree_visual_rect = app.ft.rect.unwrap_or(Rect::new(
             0.0,
             app.top_inset,
-            app.file_tree_width,
+            app.ft.width,
             logical.height - app.top_inset,
         ));
 
@@ -396,7 +396,7 @@ pub(crate) fn render_chrome(
             tree_visual_rect.height - edge_inset * 2.0,
         );
 
-        if let Some(tree) = app.file_tree.as_ref() {
+        if let Some(tree) = app.ft.tree.as_ref() {
             let cell_size = renderer.cell_size();
             let line_height = cell_size.height * FILE_TREE_LINE_SPACING;
             let indent_width = cell_size.width * 1.5;
@@ -461,7 +461,7 @@ pub(crate) fn render_chrome(
             let text_offset_y = (line_height - cell_size.height) / 2.0;
             for (i, entry) in entries.iter().enumerate() {
                 // Skip entries that are being inline-renamed
-                if app.file_tree_rename.as_ref().is_some_and(|r| r.entry_index == i) {
+                if app.modal.file_tree_rename.as_ref().is_some_and(|r| r.entry_index == i) {
                     let y = tree_visual_rect.y + FILE_TREE_HEADER_HEIGHT + i as f32 * line_height - file_tree_scroll;
                     if y + line_height < tree_visual_rect.y || y > tree_visual_rect.y + tree_visual_rect.height {
                         continue;
@@ -481,7 +481,7 @@ pub(crate) fn render_chrome(
 
                     // Draw inline rename input
                     let name_x = x + cell_size.width * 2.0;
-                    let rename = app.file_tree_rename.as_ref().unwrap();
+                    let rename = app.modal.file_tree_rename.as_ref().unwrap();
                     let input_w = tree_visual_rect.x + tree_visual_rect.width - name_x - PANE_PADDING;
                     let input_rect = Rect::new(name_x - 2.0, y, input_w + 2.0, line_height);
                     renderer.draw_chrome_rect(input_rect, p.popup_bg);
@@ -524,9 +524,9 @@ pub(crate) fn render_chrome(
 
                 // Look up git status for this entry (O(1) via pre-computed cache)
                 let git_color = if entry.entry.is_dir {
-                    app.file_tree_dir_git_status.get(&entry.entry.path).copied()
+                    app.ft.dir_git_status.get(&entry.entry.path).copied()
                 } else {
-                    app.file_tree_git_status.get(&entry.entry.path).copied()
+                    app.ft.git_status.get(&entry.entry.path).copied()
                 };
 
                 let status_color = git_color.and_then(|gs| match gs {
@@ -611,8 +611,8 @@ pub(crate) fn render_chrome(
             }
 
             // File tree keyboard cursor highlight (when focus_area == FileTree)
-            if app.focus_area == FocusArea::FileTree && app.file_tree_cursor < entries.len() {
-                let cursor_y = tree_visual_rect.y + FILE_TREE_HEADER_HEIGHT + app.file_tree_cursor as f32 * line_height - file_tree_scroll;
+            if app.focus_area == FocusArea::FileTree && app.ft.cursor < entries.len() {
+                let cursor_y = tree_visual_rect.y + FILE_TREE_HEADER_HEIGHT + app.ft.cursor as f32 * line_height - file_tree_scroll;
                 if cursor_y + line_height > tree_visual_rect.y && cursor_y < tree_visual_rect.y + tree_visual_rect.height {
                     let row_rect = Rect::new(
                         tree_visual_rect.x + left_padding / 2.0,
@@ -764,7 +764,7 @@ fn render_browser_nav_bar(
 
         let max_cols = (url_w / cell_w).floor() as usize;
         if bp.url_input_focused {
-            let preedit = &app.ime_preedit;
+            let preedit = &app.ime.preedit;
             let before: String = bp.url_input.chars().take(bp.url_input_cursor).collect();
             let after: String = bp.url_input.chars().skip(bp.url_input_cursor).collect();
             let display = format!("{}{}{}", before, preedit, after);

@@ -158,22 +158,6 @@ impl DiffPane {
         map
     }
 
-    /// Toggle expand/collapse of a file entry.
-    pub fn toggle_expand(&mut self, index: usize) {
-        if self.expanded.contains(&index) {
-            self.expanded.remove(&index);
-        } else {
-            // Lazily load diff
-            if !self.diff_cache.contains_key(&index) {
-                if let Some(entry) = self.files.get(index) {
-                    let lines = self.load_diff_lines(&entry.path);
-                    self.diff_cache.insert(index, lines);
-                }
-            }
-            self.expanded.insert(index);
-        }
-        self.generation = self.generation.wrapping_add(1);
-    }
 
     fn load_diff_lines(&self, path: &str) -> Vec<DiffLine> {
         match git::file_diff(&self.cwd, path) {
@@ -495,26 +479,6 @@ impl DiffPane {
         }
     }
 
-    /// Get the file index at a visual row (accounting for scroll and expanded diffs).
-    pub fn file_at_row(&self, visual_row: usize) -> Option<usize> {
-        let target_row = self.scroll as usize + visual_row;
-        let mut row_idx = 0;
-        for (fi, _) in self.files.iter().enumerate() {
-            if row_idx == target_row {
-                return Some(fi);
-            }
-            row_idx += 1;
-            if self.expanded.contains(&fi) {
-                if let Some(lines) = self.diff_cache.get(&fi) {
-                    row_idx += lines.len();
-                }
-            }
-            if row_idx > target_row {
-                return None; // clicked on a diff line, not a file header
-            }
-        }
-        None
-    }
 
     pub fn generation(&self) -> u64 {
         self.generation

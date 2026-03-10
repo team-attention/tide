@@ -11,7 +11,7 @@ use crate::App;
 impl App {
     pub(crate) fn update_cursor_icon(&self, window: &tide_platform::WindowProxy) {
         use tide_platform::CursorIcon;
-        let icon = match &self.hover_target {
+        let icon = match &self.interaction.hover_target {
             Some(HoverTarget::FileTreeEntry(_))
             | Some(HoverTarget::PaneTabBar(_))
             | Some(HoverTarget::PaneTabClose(_))
@@ -40,7 +40,7 @@ impl App {
 
     /// Check if a position is on a file finder item. Returns the index into filtered list.
     pub(crate) fn file_finder_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
-        let finder = self.file_finder.as_ref()?;
+        let finder = self.modal.file_finder.as_ref()?;
         let cell_size = self.cell_size();
         let logical = self.logical_size();
         let geo = finder.geometry(cell_size.height, logical.width, logical.height);
@@ -64,7 +64,7 @@ impl App {
 
     /// Hit-test the git switcher popup. Returns the filtered index of the item under pos.
     pub(crate) fn git_switcher_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
-        let gs = self.git_switcher.as_ref()?;
+        let gs = self.modal.git_switcher.as_ref()?;
         let cell_size = self.cell_size();
         let logical = self.logical_size();
         let geo = gs.geometry(cell_size.height, logical.width, logical.height);
@@ -89,7 +89,7 @@ impl App {
 
     /// Check if a position is inside the git switcher popup area.
     pub(crate) fn git_switcher_contains(&self, pos: tide_core::Vec2) -> bool {
-        if let Some(ref gs) = self.git_switcher {
+        if let Some(ref gs) = self.modal.git_switcher {
             let cs = self.cell_size();
             let logical = self.logical_size();
             let geo = gs.geometry(cs.height, logical.width, logical.height);
@@ -101,7 +101,7 @@ impl App {
 
     /// Hit-test the git switcher popup tab bar. Returns the mode for the clicked tab.
     pub(crate) fn git_switcher_tab_at(&self, pos: tide_core::Vec2) -> Option<crate::GitSwitcherMode> {
-        let gs = self.git_switcher.as_ref()?;
+        let gs = self.modal.git_switcher.as_ref()?;
         let cell_size = self.cell_size();
         let cell_height = cell_size.height;
         let logical = self.logical_size();
@@ -126,7 +126,7 @@ impl App {
 
     /// Hit-test the git switcher popup for button clicks (both Branches and Worktrees tabs).
     pub(crate) fn git_switcher_button_at(&self, pos: tide_core::Vec2) -> Option<crate::SwitcherButton> {
-        let gs = self.git_switcher.as_ref()?;
+        let gs = self.modal.git_switcher.as_ref()?;
         let cell_size = self.cell_size();
         let cell_height = cell_size.height;
         let logical = self.logical_size();
@@ -274,7 +274,7 @@ impl App {
 
     /// Check if a position is inside the file finder popup area.
     pub(crate) fn file_finder_contains(&self, pos: tide_core::Vec2) -> bool {
-        if let Some(ref finder) = self.file_finder {
+        if let Some(ref finder) = self.modal.file_finder {
             let cell_size = self.cell_size();
             let logical = self.logical_size();
             let geo = finder.geometry(cell_size.height, logical.width, logical.height);
@@ -287,7 +287,7 @@ impl App {
     /// Check if a position is inside the save-as popup area.
     /// Uses the anchor_rect from the save-as input to position the popup.
     pub(crate) fn save_as_contains(&self, pos: tide_core::Vec2) -> bool {
-        if let Some(ref save_as) = self.save_as_input {
+        if let Some(ref save_as) = self.modal.save_as_input {
             let cell_size = self.cell_size();
             let cell_height = cell_size.height;
             let logical = self.logical_size();
@@ -309,7 +309,7 @@ impl App {
 
     /// Hit-test the context menu. Returns the item index.
     pub(crate) fn context_menu_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
-        let menu = self.context_menu.as_ref()?;
+        let menu = self.modal.context_menu.as_ref()?;
         let cell_size = self.cell_size();
         let logical = self.logical_size();
         let rect = menu.geometry(cell_size.height, logical.width, logical.height);
@@ -340,18 +340,18 @@ impl App {
         let top = self.top_inset;
         let pane_ids = self.layout.pane_ids();
 
-        let show_file_tree = self.show_file_tree;
-        let show_ws_sidebar = self.show_workspace_sidebar;
+        let show_file_tree = self.ft.visible;
+        let show_ws_sidebar = self.ws.show_sidebar;
 
         // Workspace sidebar: 180px on the left
         let ws_sidebar_width = if show_ws_sidebar { WORKSPACE_SIDEBAR_WIDTH } else { 0.0 };
 
         // Clamp file tree width so it never exceeds the window (leave at least 100px for panes).
         let max_sidebar = (logical.width - ws_sidebar_width - 100.0).max(0.0);
-        if show_file_tree && self.file_tree_width > max_sidebar {
-            self.file_tree_width = max_sidebar;
+        if show_file_tree && self.ft.width > max_sidebar {
+            self.ft.width = max_sidebar;
         }
-        let sidebar_width = if show_file_tree { self.file_tree_width } else { 0.0 };
+        let sidebar_width = if show_file_tree { self.ft.width } else { 0.0 };
 
         let mut left_reserved = 0.0_f32;
         let mut right_reserved = 0.0_f32;
@@ -381,14 +381,14 @@ impl App {
 
         // Compute workspace sidebar rect
         if show_ws_sidebar {
-            self.workspace_sidebar_rect = Some(Rect::new(
+            self.ws.sidebar_rect = Some(Rect::new(
                 PANE_GAP,
                 top,
                 ws_sidebar_width,
                 logical.height - top,
             ));
         } else {
-            self.workspace_sidebar_rect = None;
+            self.ws.sidebar_rect = None;
         }
 
         // Compute file_tree_rect
@@ -397,14 +397,14 @@ impl App {
                 LayoutSide::Left => left_reserved - sidebar_width,
                 LayoutSide::Right => logical.width - sidebar_width - PANE_GAP,
             };
-            self.file_tree_rect = Some(Rect::new(
+            self.ft.rect = Some(Rect::new(
                 sidebar_x,
                 top,
                 sidebar_width,
                 logical.height - top,
             ));
         } else {
-            self.file_tree_rect = None;
+            self.ft.rect = None;
         }
 
         // Store the pane area rect for root-level drop zone detection
@@ -413,7 +413,7 @@ impl App {
         // Snap ratios to cell boundaries, then recompute with snapped ratios.
         // Skip during active border drags to prevent cumulative drift.
         let is_dragging = self.router.is_dragging_border()
-            || self.file_tree_border_dragging;
+            || self.ft.border_dragging;
         if !is_dragging {
             let cell_size = self.cell_size();
             if cell_size.width > 0.0 {
@@ -484,7 +484,7 @@ impl App {
         // During window resize, always apply PTY resize so content reflows
         // incrementally instead of jumping all at once when the drag ends.
         let skip_pty_resize = self.router.is_dragging_border()
-            || self.file_tree_border_dragging;
+            || self.ft.border_dragging;
         if !skip_pty_resize {
             let content_top = TAB_BAR_HEIGHT;
             let cell_size = self.cell_size();
@@ -504,11 +504,11 @@ impl App {
         }
 
         if rects_changed {
-            self.layout_generation += 1;
+            self.cache.layout_generation += 1;
             // Don't clear all pane_generations -- render() handles per-pane
             // invalidation via prev_visual_pane_rects comparison, only rebuilding
             // grids for panes whose rects actually changed.
-            self.chrome_generation += 1;
+            self.cache.chrome_generation += 1;
         }
 
         // Store window size for layout drag operations
@@ -560,10 +560,10 @@ impl App {
 
             // Hide browser webview when a modal popup is open (file finder, etc.)
             // because native NSView sits on top of wgpu-rendered overlays.
-            let popup_open = self.file_finder.is_some()
-                || self.save_as_input.is_some()
-                || self.git_switcher.is_some()
-                || self.config_page.is_some();
+            let popup_open = self.modal.file_finder.is_some()
+                || self.modal.save_as_input.is_some()
+                || self.modal.git_switcher.is_some()
+                || self.modal.config_page.is_some();
 
             if let Some(vr) = visual_rect {
                 if popup_open {

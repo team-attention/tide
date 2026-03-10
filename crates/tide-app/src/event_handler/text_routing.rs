@@ -35,7 +35,7 @@ impl App {
     /// handlers all use this instead of maintaining separate if-else chains.
     pub(crate) fn text_input_target(&self) -> TextInputTarget {
         // Modal overlays (highest priority)
-        if let Some(ref page) = self.config_page {
+        if let Some(ref page) = self.modal.config_page {
             return if page.copy_files_editing {
                 TextInputTarget::ConfigPageCopyFiles
             } else if page.worktree_editing {
@@ -44,20 +44,20 @@ impl App {
                 TextInputTarget::Consumed
             };
         }
-        if self.context_menu.is_some() || self.save_confirm.is_some() {
+        if self.modal.context_menu.is_some() || self.modal.save_confirm.is_some() {
             return TextInputTarget::Consumed;
         }
         // Text-input popups
-        if self.file_tree_rename.is_some() {
+        if self.modal.file_tree_rename.is_some() {
             return TextInputTarget::FileTreeRename;
         }
-        if self.git_switcher.is_some() {
+        if self.modal.git_switcher.is_some() {
             return TextInputTarget::GitSwitcher;
         }
-        if self.file_finder.is_some() {
+        if self.modal.file_finder.is_some() {
             return TextInputTarget::FileFinder;
         }
-        if self.save_as_input.is_some() {
+        if self.modal.save_as_input.is_some() {
             return TextInputTarget::SaveAsInput;
         }
         // Inline search bar
@@ -109,49 +109,49 @@ impl App {
         let target = self.text_input_target();
         match target {
             TextInputTarget::ConfigPageCopyFiles => {
-                if let Some(ref mut page) = self.config_page {
+                if let Some(ref mut page) = self.modal.config_page {
                     for ch in text.chars() {
                         page.copy_files_input.insert_char(ch);
                     }
                     page.dirty = true;
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             TextInputTarget::ConfigPageWorktree => {
-                if let Some(ref mut page) = self.config_page {
+                if let Some(ref mut page) = self.modal.config_page {
                     for ch in text.chars() {
                         page.worktree_input.insert_char(ch);
                     }
                     page.dirty = true;
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             TextInputTarget::FileTreeRename => {
-                if let Some(ref mut rename) = self.file_tree_rename {
+                if let Some(ref mut rename) = self.modal.file_tree_rename {
                     for ch in text.chars() {
                         rename.input.insert_char(ch);
                     }
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             TextInputTarget::GitSwitcher => {
-                if let Some(ref mut gs) = self.git_switcher {
+                if let Some(ref mut gs) = self.modal.git_switcher {
                     for ch in text.chars() {
                         gs.insert_char(ch);
                     }
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             TextInputTarget::FileFinder => {
-                if let Some(ref mut finder) = self.file_finder {
+                if let Some(ref mut finder) = self.modal.file_finder {
                     for ch in text.chars() {
                         finder.insert_char(ch);
                     }
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             TextInputTarget::SaveAsInput => {
-                if let Some(ref mut input) = self.save_as_input {
+                if let Some(ref mut input) = self.modal.save_as_input {
                     for ch in text.chars() {
                         input.insert_char(ch);
                     }
@@ -170,13 +170,13 @@ impl App {
                         bp.url_input_cursor += 1;
                     }
                 }
-                self.chrome_generation += 1;
+                self.cache.chrome_generation += 1;
             }
             TextInputTarget::Pane(id) => {
                 // Block text input in preview mode
                 if let Some(PaneKind::Editor(pane)) = self.panes.get(&id) {
                     if pane.preview_mode {
-                        self.needs_redraw = true;
+                        self.cache.needs_redraw = true;
                         return;
                     }
                 }
@@ -218,17 +218,180 @@ impl App {
                         pane.editor.ensure_cursor_visible_h(visible_cols);
                         // Redraw tab label when modified indicator changes
                         if pane.editor.is_modified() != was_modified {
-                            self.chrome_generation += 1;
+                            self.cache.chrome_generation += 1;
                         }
                         // Editor has no PTY output loop — must invalidate cache explicitly
-                        self.pane_generations.remove(&id);
+                        self.cache.pane_generations.remove(&id);
                     }
                     Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) | Some(PaneKind::Launcher(_)) | None => {}
                 }
             }
             TextInputTarget::Consumed => {}
         }
-        self.needs_redraw = true;
+        self.cache.needs_redraw = true;
     }
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui_state::*;
+    use tide_core::Rect;
+    use std::path::PathBuf;
+
+    fn test_app() -> App {
+        let mut app = App::new();
+        app.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+        app.window_size = (960, 640);
+        app
+    }
+
+    #[test]
+    fn default_no_focus_consumed() {
+        let app = test_app();
+        assert_eq!(app.text_input_target(), TextInputTarget::Consumed);
+    }
+
+    #[test]
+    fn focused_editor_routes_to_pane() {
+        let mut app = test_app();
+        let id: tide_core::PaneId = 1;
+        app.panes.insert(id, PaneKind::Editor(crate::editor_pane::EditorPane::new_empty(id)));
+        app.focused = Some(id);
+        assert_eq!(app.text_input_target(), TextInputTarget::Pane(id));
+    }
+
+    #[test]
+    fn file_finder_overrides_pane() {
+        let mut app = test_app();
+        let id: tide_core::PaneId = 1;
+        app.panes.insert(id, PaneKind::Editor(crate::editor_pane::EditorPane::new_empty(id)));
+        app.focused = Some(id);
+        app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
+        assert_eq!(app.text_input_target(), TextInputTarget::FileFinder);
+    }
+
+    #[test]
+    fn git_switcher_overrides_pane() {
+        let mut app = test_app();
+        let id: tide_core::PaneId = 1;
+        app.panes.insert(id, PaneKind::Editor(crate::editor_pane::EditorPane::new_empty(id)));
+        app.focused = Some(id);
+        app.modal.git_switcher = Some(GitSwitcherState::new(
+            id,
+            GitSwitcherMode::Branches,
+            vec![],
+            vec![],
+            Rect::new(0.0, 0.0, 100.0, 30.0),
+        ));
+        assert_eq!(app.text_input_target(), TextInputTarget::GitSwitcher);
+    }
+
+    #[test]
+    fn config_page_consumed_by_default() {
+        let mut app = test_app();
+        app.modal.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
+        assert_eq!(app.text_input_target(), TextInputTarget::Consumed);
+    }
+
+    #[test]
+    fn config_page_copy_files_editing() {
+        let mut app = test_app();
+        let mut cp = ConfigPageState::new(vec![], String::new(), String::new());
+        cp.copy_files_editing = true;
+        app.modal.config_page = Some(cp);
+        assert_eq!(app.text_input_target(), TextInputTarget::ConfigPageCopyFiles);
+    }
+
+    #[test]
+    fn config_page_worktree_editing() {
+        let mut app = test_app();
+        let mut cp = ConfigPageState::new(vec![], String::new(), String::new());
+        cp.worktree_editing = true;
+        app.modal.config_page = Some(cp);
+        assert_eq!(app.text_input_target(), TextInputTarget::ConfigPageWorktree);
+    }
+
+    #[test]
+    fn config_page_overrides_file_finder() {
+        let mut app = test_app();
+        app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
+        app.modal.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
+        // config_page has higher priority
+        assert_eq!(app.text_input_target(), TextInputTarget::Consumed);
+    }
+
+    #[test]
+    fn search_bar_routes_to_search() {
+        let mut app = test_app();
+        let id: tide_core::PaneId = 1;
+        app.panes.insert(id, PaneKind::Editor(crate::editor_pane::EditorPane::new_empty(id)));
+        app.focused = Some(id);
+        app.search_focus = Some(id);
+        assert_eq!(app.text_input_target(), TextInputTarget::SearchBar(id));
+    }
+
+    #[test]
+    fn file_tree_focus_consumed() {
+        let mut app = test_app();
+        let id: tide_core::PaneId = 1;
+        app.panes.insert(id, PaneKind::Editor(crate::editor_pane::EditorPane::new_empty(id)));
+        app.focused = Some(id);
+        app.focus_area = FocusArea::FileTree;
+        assert_eq!(app.text_input_target(), TextInputTarget::Consumed);
+    }
+
+    #[test]
+    fn save_as_input_routes() {
+        let mut app = test_app();
+        app.modal.save_as_input = Some(SaveAsInput::new(1, PathBuf::from("/tmp"), Rect::new(0.0, 0.0, 100.0, 30.0)));
+        assert_eq!(app.text_input_target(), TextInputTarget::SaveAsInput);
+    }
+
+    #[test]
+    fn file_tree_rename_routes() {
+        let mut app = test_app();
+        app.modal.file_tree_rename = Some(FileTreeRenameState {
+            entry_index: 0,
+            original_path: PathBuf::from("/tmp/file.txt"),
+            input: InputLine::with_text("file.txt".to_string()),
+        });
+        assert_eq!(app.text_input_target(), TextInputTarget::FileTreeRename);
+    }
+
+    #[test]
+    fn context_menu_consumed() {
+        let mut app = test_app();
+        let id: tide_core::PaneId = 1;
+        app.panes.insert(id, PaneKind::Editor(crate::editor_pane::EditorPane::new_empty(id)));
+        app.focused = Some(id);
+        app.modal.context_menu = Some(ContextMenuState {
+            entry_index: 0,
+            path: PathBuf::from("/tmp"),
+            is_dir: false,
+            shell_idle: true,
+            position: tide_core::Vec2::new(0.0, 0.0),
+            selected: 0,
+        });
+        assert_eq!(app.text_input_target(), TextInputTarget::Consumed);
+    }
+
+    #[test]
+    fn priority_git_switcher_over_search_bar() {
+        let mut app = test_app();
+        let id: tide_core::PaneId = 1;
+        app.panes.insert(id, PaneKind::Editor(crate::editor_pane::EditorPane::new_empty(id)));
+        app.focused = Some(id);
+        app.search_focus = Some(id);
+        app.modal.git_switcher = Some(GitSwitcherState::new(
+            id,
+            GitSwitcherMode::Branches,
+            vec![],
+            vec![],
+            Rect::new(0.0, 0.0, 100.0, 30.0),
+        ));
+        // git_switcher has higher priority than search_focus
+        assert_eq!(app.text_input_target(), TextInputTarget::GitSwitcher);
+    }
 }

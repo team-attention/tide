@@ -79,20 +79,3 @@ pub(crate) fn file_icon(name: &str, is_dir: bool, expanded: bool) -> char {
     }
 }
 
-/// Return the icon color for a file extension (maps to theme colors).
-pub(crate) fn file_icon_color(name: &str, p: &crate::theme::ThemePalette) -> tide_core::Color {
-    let ext = name.rsplit('.').next().unwrap_or("");
-    match ext {
-        "rs"   => tide_core::Color::new(0.87, 0.52, 0.22, 1.0), // Rust orange
-        "js" | "mjs" | "jsx" => tide_core::Color::new(0.95, 0.85, 0.30, 1.0), // JS yellow
-        "ts" | "mts" | "tsx" => tide_core::Color::new(0.19, 0.54, 0.82, 1.0), // TS blue
-        "py"   => tide_core::Color::new(0.35, 0.65, 0.85, 1.0), // Python blue
-        "md" | "markdown" => tide_core::Color::new(0.50, 0.70, 0.90, 1.0), // Markdown light blue
-        "json" | "toml" | "yaml" | "yml" => p.tree_dir_icon, // config warm
-        "html" | "htm" => tide_core::Color::new(0.90, 0.45, 0.25, 1.0), // HTML orange
-        "css" | "scss" | "sass" | "less" => tide_core::Color::new(0.35, 0.55, 0.90, 1.0), // CSS blue
-        "go"   => tide_core::Color::new(0.30, 0.75, 0.85, 1.0), // Go cyan
-        "swift" => tide_core::Color::new(0.95, 0.45, 0.25, 1.0), // Swift orange
-        _      => p.tree_icon,
-    }
-}

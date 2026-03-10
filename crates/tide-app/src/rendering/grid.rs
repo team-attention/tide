@@ -49,10 +49,10 @@ pub(crate) fn render_grid(
             Some(PaneKind::Launcher(_)) => 0, // static content, always render on first check
             None => continue,
         };
-        let prev = app.pane_generations.get(&id).copied().unwrap_or(u64::MAX);
+        let prev = app.cache.pane_generations.get(&id).copied().unwrap_or(u64::MAX);
         if gen != prev {
             any_dirty = true;
-            let pane_bar = bar_offset_for(id, &app.panes, &app.save_confirm);
+            let pane_bar = bar_offset_for(id, &app.panes, &app.modal.save_confirm);
             let inner = Rect::new(
                 rect.x + PANE_PADDING,
                 rect.y + top_offset + pane_bar,
@@ -84,22 +84,22 @@ pub(crate) fn render_grid(
                             strip,
                         );
                     }
-                    app.pane_generations.insert(id, pane.backend.grid_generation());
+                    app.cache.pane_generations.insert(id, pane.backend.grid_generation());
                 }
                 Some(PaneKind::Editor(pane)) => {
-                    let preedit = if ime_target_id == Some(id) { &app.ime_preedit } else { "" };
+                    let preedit = if ime_target_id == Some(id) { &app.ime.preedit } else { "" };
                     pane.render_grid_full(inner, renderer, p.gutter_text, p.gutter_active_text,
                         Some(p.diff_added_bg), Some(p.diff_removed_bg),
                         Some(p.diff_added_gutter), Some(p.diff_removed_gutter),
                         preedit, p.current_line_bg, p.indent_guide);
-                    app.pane_generations.insert(id, pane.generation());
+                    app.cache.pane_generations.insert(id, pane.generation());
                 }
                 Some(PaneKind::Diff(dp)) => {
                     dp.render_grid(inner, renderer, p.tab_text_focused, p.tab_text,
                         p.diff_added_bg, p.diff_removed_bg,
                         p.diff_added_gutter, p.diff_removed_gutter,
                         p.border_subtle);
-                    app.pane_generations.insert(id, dp.generation());
+                    app.cache.pane_generations.insert(id, dp.generation());
                 }
                 Some(PaneKind::Browser(_)) => {} // webview renders natively
                 Some(PaneKind::Launcher(_launcher_id)) => {

@@ -20,11 +20,11 @@ pub(crate) fn render_ime_and_drop_preview(
     // Render IME preedit overlay for terminal and editor panes.
     // Skip when a text-intercepting popup is active (file finder, git switcher, etc.)
     // — the popup draws its own input field with the preedit text.
-    let popup_active = app.file_finder.is_some()
-        || app.git_switcher.is_some()
-        || app.save_as_input.is_some()
-        || app.file_tree_rename.is_some();
-    if !app.ime_preedit.is_empty() && !popup_active {
+    let popup_active = app.modal.file_finder.is_some()
+        || app.modal.git_switcher.is_some()
+        || app.modal.save_as_input.is_some()
+        || app.modal.file_tree_rename.is_some();
+    if !app.ime.preedit.is_empty() && !popup_active {
         let effective_id = focused;
         if let Some(target_id) = effective_id {
             // Try editor pane first (both tree editors and panel editors)
@@ -48,7 +48,7 @@ pub(crate) fn render_ime_and_drop_preview(
                     let cy = inner_offset.y + cursor.row as f32 * cell_size.height;
 
                     // Draw preedit background
-                    let preedit_chars: Vec<char> = app.ime_preedit.chars().collect();
+                    let preedit_chars: Vec<char> = app.ime.preedit.chars().collect();
                     let pw = preedit_chars.iter()
                         .map(|c| UnicodeWidthChar::width(*c).unwrap_or(1))
                         .sum::<usize>()
@@ -88,7 +88,8 @@ pub(crate) fn render_ime_and_drop_preview(
     if let PaneDragState::Dragging {
         source_pane,
         drop_target: ref maybe_dest,
-    } = &app.pane_drag {
+        cached_preview_rect,
+    } = &app.interaction.pane_drag {
         // Dim overlay on the source pane being dragged
         if let Some(&(_, source_rect)) = visual_pane_rects.iter().find(|(id, _)| *id == *source_pane) {
             renderer.draw_rect(source_rect, p.drag_source_dim);
@@ -107,17 +108,9 @@ pub(crate) fn render_ime_and_drop_preview(
                             }
                         }
                     } else {
-                        // Use simulate_drop for accurate preview
-                        let target_id = match dest {
-                            DropDestination::TreePane(tid, _) => Some(*tid),
-                            _ => None,
-                        };
-                        if let Some(pane_area) = app.pane_area_rect {
-                            let pane_area_size = tide_core::Size::new(pane_area.width, pane_area.height);
-                            if let Some(preview_rect) = app.layout.simulate_drop(
-                                *source_pane, target_id, *zone, true, pane_area_size,
-                            ) {
-                                // Offset from layout space to screen space
+                        // Use cached preview rect (computed on mouse move, not every frame)
+                        if let Some(preview_rect) = cached_preview_rect {
+                            if let Some(pane_area) = app.pane_area_rect {
                                 let screen_rect = Rect::new(
                                     preview_rect.x + pane_area.x,
                                     preview_rect.y + pane_area.y,
@@ -197,7 +190,7 @@ fn render_editor_ime_preedit(
     let cy = inner_y + visual_row as f32 * cell_size.height;
 
     // Draw preedit background
-    let preedit_chars: Vec<char> = app.ime_preedit.chars().collect();
+    let preedit_chars: Vec<char> = app.ime.preedit.chars().collect();
     let pw = preedit_chars.iter()
         .map(|c| UnicodeWidthChar::width(*c).unwrap_or(1))
         .sum::<usize>()

@@ -22,7 +22,7 @@ impl App {
             Ok(pane) => {
                 self.install_pty_waker(&pane);
                 self.panes.insert(id, PaneKind::Terminal(pane));
-                self.pending_ime_proxy_creates.push(id);
+                self.ime.pending_creates.push(id);
             }
             Err(e) => {
                 log::error!("Failed to create terminal pane: {}", e);
@@ -41,8 +41,8 @@ impl App {
         // Remove old terminal and create a new one in-place
         self.panes.remove(&id);
         self.create_terminal_pane(id, cwd);
-        self.pane_generations.remove(&id);
-        self.chrome_generation += 1;
+        self.cache.pane_generations.remove(&id);
+        self.cache.chrome_generation += 1;
         self.compute_layout();
     }
 
@@ -77,7 +77,7 @@ impl App {
         let mut pane = EditorPane::new_empty(new_id);
         pane.editor.set_dark_mode(self.dark_mode);
         self.panes.insert(new_id, PaneKind::Editor(pane));
-        self.pending_ime_proxy_creates.push(new_id);
+        self.ime.pending_creates.push(new_id);
         self.layout.add_tab(focused, new_id);
         self.layout.set_active_tab(new_id);
         self.focused = Some(new_id);
@@ -86,7 +86,7 @@ impl App {
             self.zoomed_pane = Some(new_id);
         }
         self.focus_area = crate::ui_state::FocusArea::PaneArea;
-        self.chrome_generation += 1;
+        self.cache.chrome_generation += 1;
         self.compute_layout();
     }
 
@@ -100,7 +100,7 @@ impl App {
         let new_id = self.layout.alloc_id();
         self.layout.add_tab(focused, new_id);
         self.panes.insert(new_id, PaneKind::Launcher(new_id));
-        self.pending_ime_proxy_creates.push(new_id);
+        self.ime.pending_creates.push(new_id);
         self.layout.set_active_tab(new_id);
         self.focused = Some(new_id);
         self.router.set_focused(new_id);
@@ -108,7 +108,7 @@ impl App {
             self.zoomed_pane = Some(new_id);
         }
         self.focus_area = crate::ui_state::FocusArea::PaneArea;
-        self.chrome_generation += 1;
+        self.cache.chrome_generation += 1;
         self.compute_layout();
     }
 
@@ -138,8 +138,8 @@ impl App {
         }
         self.focused = Some(launcher_id);
         self.router.set_focused(launcher_id);
-        self.chrome_generation += 1;
-        self.pane_generations.clear();
+        self.cache.chrome_generation += 1;
+        self.cache.pane_generations.clear();
         self.compute_layout();
     }
 
@@ -153,14 +153,14 @@ impl App {
         };
         if self.zoomed_pane.is_some() {
             self.zoomed_pane = None;
-            self.pane_generations.clear();
+            self.cache.pane_generations.clear();
         }
         let new_id = self.layout.split(focused, direction);
         self.panes.insert(new_id, PaneKind::Launcher(new_id));
-        self.pending_ime_proxy_creates.push(new_id);
+        self.ime.pending_creates.push(new_id);
         self.focused = Some(new_id);
         self.router.set_focused(new_id);
-        self.chrome_generation += 1;
+        self.cache.chrome_generation += 1;
         self.compute_layout();
     }
 
@@ -176,13 +176,13 @@ impl App {
             None => BrowserPane::new(new_id),
         };
         self.panes.insert(new_id, PaneKind::Browser(pane));
-        self.pending_ime_proxy_creates.push(new_id);
+        self.ime.pending_creates.push(new_id);
         self.layout.add_tab(focused, new_id);
         self.layout.set_active_tab(new_id);
         self.focused = Some(new_id);
         self.router.set_focused(new_id);
         self.focus_area = crate::ui_state::FocusArea::PaneArea;
-        self.chrome_generation += 1;
+        self.cache.chrome_generation += 1;
         self.compute_layout();
     }
 
@@ -195,7 +195,7 @@ impl App {
                 if editor.editor.file_path() == Some(path.as_path()) {
                     // File already open — focus it and close the launcher
                     self.layout.set_active_tab(id);
-                    self.pane_generations.remove(&id);
+                    self.cache.pane_generations.remove(&id);
                     self.focused = Some(id);
                     self.router.set_focused(id);
                     self.focus_area = crate::ui_state::FocusArea::PaneArea;
@@ -203,7 +203,7 @@ impl App {
                     self.layout.remove(pane_id);
                     self.panes.remove(&pane_id);
                     self.cleanup_closed_pane_state(pane_id);
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                     self.compute_layout();
                     return;
                 }
@@ -218,8 +218,8 @@ impl App {
                 self.focused = Some(pane_id);
                 self.router.set_focused(pane_id);
                 self.focus_area = crate::ui_state::FocusArea::PaneArea;
-                self.chrome_generation += 1;
-                self.pane_generations.clear();
+                self.cache.chrome_generation += 1;
+                self.cache.pane_generations.clear();
                 self.watch_file(&path);
                 self.compute_layout();
             }
@@ -241,11 +241,11 @@ impl App {
             if let PaneKind::Editor(editor) = pane {
                 if editor.editor.file_path() == Some(path.as_path()) {
                     self.layout.set_active_tab(id);
-                    self.pane_generations.remove(&id);
+                    self.cache.pane_generations.remove(&id);
                     self.focused = Some(id);
                     self.router.set_focused(id);
                     self.focus_area = crate::ui_state::FocusArea::PaneArea;
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                     self.compute_layout();
                     return;
                 }
@@ -258,13 +258,13 @@ impl App {
             Ok(mut pane) => {
                 pane.editor.set_dark_mode(self.dark_mode);
                 self.panes.insert(new_id, PaneKind::Editor(pane));
-                self.pending_ime_proxy_creates.push(new_id);
+                self.ime.pending_creates.push(new_id);
                 self.layout.add_tab(focused, new_id);
                 self.layout.set_active_tab(new_id);
                 self.focused = Some(new_id);
                 self.router.set_focused(new_id);
                 self.focus_area = crate::ui_state::FocusArea::PaneArea;
-                self.chrome_generation += 1;
+                self.cache.chrome_generation += 1;
                 // Watch the file for external changes
                 self.watch_file(&path);
                 self.compute_layout();
@@ -304,13 +304,13 @@ impl App {
         // Check if editor is dirty -> show save confirm bar (skip for untitled files)
         if let Some(PaneKind::Editor(pane)) = self.panes.get(&tab_id) {
             if pane.editor.is_modified() && pane.editor.file_path().is_some() {
-                self.save_confirm = Some(crate::SaveConfirmState { pane_id: tab_id });
+                self.modal.save_confirm = Some(crate::SaveConfirmState { pane_id: tab_id });
                 // Ensure this tab is active and focused so the bar is visible
                 self.layout.set_active_tab(tab_id);
                 self.focused = Some(tab_id);
                 self.router.set_focused(tab_id);
-                self.chrome_generation += 1;
-                self.pane_generations.remove(&tab_id);
+                self.cache.chrome_generation += 1;
+                self.cache.pane_generations.remove(&tab_id);
                 return;
             }
         }
@@ -324,12 +324,12 @@ impl App {
             bp.destroy();
         }
         // Cancel save-as if the target pane is being closed
-        if self.save_as_input.as_ref().is_some_and(|s| s.pane_id == tab_id) {
-            self.save_as_input = None;
+        if self.modal.save_as_input.as_ref().is_some_and(|s| s.pane_id == tab_id) {
+            self.modal.save_as_input = None;
         }
         // Cancel save confirm if the target pane is being closed
-        if self.save_confirm.as_ref().is_some_and(|s| s.pane_id == tab_id) {
-            self.save_confirm = None;
+        if self.modal.save_confirm.as_ref().is_some_and(|s| s.pane_id == tab_id) {
+            self.modal.save_confirm = None;
         }
         // Save the file's parent dir before removing (for focus matching)
         let closed_file_dir = if let Some(PaneKind::Editor(editor)) = self.panes.get(&tab_id) {
@@ -388,8 +388,8 @@ impl App {
             std::process::exit(0);
         }
 
-        self.pane_generations.clear();
-        self.chrome_generation += 1;
+        self.cache.pane_generations.clear();
+        self.cache.chrome_generation += 1;
         self.compute_layout();
     }
 
@@ -418,7 +418,7 @@ impl App {
         }
 
         self.watch_file(&path);
-        self.chrome_generation += 1;
+        self.cache.chrome_generation += 1;
     }
 
     /// Close a specific pane by its ID (used by close button clicks).
@@ -426,12 +426,12 @@ impl App {
         // Check if editor is dirty -> show save confirm bar
         if let Some(PaneKind::Editor(pane)) = self.panes.get(&pane_id) {
             if pane.editor.is_modified() && pane.editor.file_path().is_some() {
-                self.save_confirm = Some(crate::SaveConfirmState { pane_id });
+                self.modal.save_confirm = Some(crate::SaveConfirmState { pane_id });
                 self.layout.set_active_tab(pane_id);
                 self.focused = Some(pane_id);
                 self.router.set_focused(pane_id);
-                self.chrome_generation += 1;
-                self.pane_generations.remove(&pane_id);
+                self.cache.chrome_generation += 1;
+                self.cache.pane_generations.remove(&pane_id);
                 return;
             }
         }
@@ -451,12 +451,12 @@ impl App {
     /// May show branch cleanup confirmation for terminals on non-main branches.
     pub(crate) fn force_close_specific_pane(&mut self, pane_id: tide_core::PaneId) {
         // Cancel save-as if the target pane is being closed
-        if self.save_as_input.as_ref().is_some_and(|s| s.pane_id == pane_id) {
-            self.save_as_input = None;
+        if self.modal.save_as_input.as_ref().is_some_and(|s| s.pane_id == pane_id) {
+            self.modal.save_as_input = None;
         }
         // Cancel save confirm
-        if self.save_confirm.as_ref().is_some_and(|s| s.pane_id == pane_id) {
-            self.save_confirm = None;
+        if self.modal.save_confirm.as_ref().is_some_and(|s| s.pane_id == pane_id) {
+            self.modal.save_confirm = None;
         }
 
         // Non-terminal panes: close directly
@@ -468,13 +468,13 @@ impl App {
 
         // If branch cleanup bar is already showing for this pane, block the close —
         // the user must resolve it via Delete/Keep/Cancel first.
-        if self.branch_cleanup.as_ref().is_some_and(|bc| bc.pane_id == pane_id) {
+        if self.modal.branch_cleanup.as_ref().is_some_and(|bc| bc.pane_id == pane_id) {
             return;
         }
 
         // Branch cleanup check: if this is a terminal on a non-main branch,
         // prompt before closing (unless cleanup is already active for another pane).
-        if self.branch_cleanup.is_none() {
+        if self.modal.branch_cleanup.is_none() {
             if let Some(PaneKind::Terminal(pane)) = self.panes.get(&pane_id) {
                 if let (Some(ref gi), Some(ref cwd)) = (&pane.git_info, &pane.cwd) {
                     let branch = &gi.branch;
@@ -497,14 +497,14 @@ impl App {
                                 .find(|wt| wt.is_current && !wt.is_main)
                                 .map(|wt| wt.path.clone());
 
-                            self.branch_cleanup = Some(crate::BranchCleanupState {
+                            self.modal.branch_cleanup = Some(crate::BranchCleanupState {
                                 pane_id,
                                 branch: branch.clone(),
                                 worktree_path: wt_path,
                                 cwd: cwd.clone(),
                             });
-                            self.chrome_generation += 1;
-                            self.needs_redraw = true;
+                            self.cache.chrome_generation += 1;
+                            self.cache.needs_redraw = true;
                             return;
                         }
                     }
@@ -549,14 +549,14 @@ impl App {
             self.focused = None;
         }
 
-        self.chrome_generation += 1;
+        self.cache.chrome_generation += 1;
         self.compute_layout();
         self.update_file_tree_cwd();
     }
 
     /// Save and close the pane from the save confirm bar.
     pub(crate) fn confirm_save_and_close(&mut self) {
-        let pane_id = match self.save_confirm.take() {
+        let pane_id = match self.modal.save_confirm.take() {
             Some(sc) => sc.pane_id,
             None => return,
         };
@@ -569,7 +569,7 @@ impl App {
                     .find(|(id, _)| *id == pane_id)
                     .map(|(_, r)| tide_core::Rect::new(r.x, r.y, r.width, crate::theme::TAB_BAR_HEIGHT))
                     .unwrap_or_else(|| tide_core::Rect::new(0.0, 0.0, 0.0, 0.0));
-                self.save_as_input = Some(crate::SaveAsInput::new(pane_id, base_dir, anchor));
+                self.modal.save_as_input = Some(crate::SaveAsInput::new(pane_id, base_dir, anchor));
                 return;
             }
             if let Err(e) = pane.editor.buffer.save() {
@@ -590,7 +590,7 @@ impl App {
 
     /// Discard changes and close the pane from the save confirm bar.
     pub(crate) fn confirm_discard_and_close(&mut self) {
-        let pane_id = match self.save_confirm.take() {
+        let pane_id = match self.modal.save_confirm.take() {
             Some(sc) => sc.pane_id,
             None => return,
         };
@@ -605,17 +605,17 @@ impl App {
 
     /// Cancel the save confirm bar.
     pub(crate) fn cancel_save_confirm(&mut self) {
-        if self.save_confirm.is_some() {
-            self.save_confirm = None;
+        if self.modal.save_confirm.is_some() {
+            self.modal.save_confirm = None;
             self.pending_terminal_close = None;
-            self.chrome_generation += 1;
-            self.pane_generations.clear();
+            self.cache.chrome_generation += 1;
+            self.cache.pane_generations.clear();
         }
     }
 
     /// Delete the branch/worktree and proceed with closing the terminal pane.
     pub(crate) fn confirm_branch_delete(&mut self) {
-        let bc = match self.branch_cleanup.take() {
+        let bc = match self.modal.branch_cleanup.take() {
             Some(bc) => bc,
             None => return,
         };
@@ -646,7 +646,7 @@ impl App {
 
     /// Keep the branch and proceed with closing the terminal pane.
     pub(crate) fn confirm_branch_keep(&mut self) {
-        let bc = match self.branch_cleanup.take() {
+        let bc = match self.modal.branch_cleanup.take() {
             Some(bc) => bc,
             None => return,
         };
@@ -655,10 +655,10 @@ impl App {
 
     /// Cancel the branch cleanup (abort the close entirely).
     pub(crate) fn cancel_branch_cleanup(&mut self) {
-        if self.branch_cleanup.is_some() {
-            self.branch_cleanup = None;
-            self.chrome_generation += 1;
-            self.needs_redraw = true;
+        if self.modal.branch_cleanup.is_some() {
+            self.modal.branch_cleanup = None;
+            self.cache.chrome_generation += 1;
+            self.cache.needs_redraw = true;
         }
     }
 }

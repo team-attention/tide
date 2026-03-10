@@ -9,7 +9,7 @@ impl App {
     /// dx/dy are in "line" units (platform normalizes pixel/line deltas).
     pub(crate) fn handle_scroll(&mut self, dx: f32, dy: f32) {
         // Popup scroll: config page
-        if let Some(ref mut cp) = self.config_page {
+        if let Some(ref mut cp) = self.modal.config_page {
             if matches!(cp.section, crate::ui_state::ConfigSection::Keybindings) {
                 let lines = if dy.abs() >= 1.0 { dy.abs().ceil() as usize } else { 1 };
                 let max_visible = CONFIG_PAGE_MAX_VISIBLE;
@@ -19,15 +19,15 @@ impl App {
                     let max_off = cp.bindings.len().saturating_sub(max_visible);
                     cp.scroll_offset = (cp.scroll_offset + lines).min(max_off);
                 }
-                self.chrome_generation += 1;
+                self.cache.chrome_generation += 1;
             }
-            self.needs_redraw = true;
+            self.cache.needs_redraw = true;
             return;
         }
 
         // Popup scroll: git switcher
-        if self.git_switcher.is_some() && self.git_switcher_contains(self.last_cursor_pos) {
-            if let Some(ref mut gs) = self.git_switcher {
+        if self.modal.git_switcher.is_some() && self.git_switcher_contains(self.last_cursor_pos) {
+            if let Some(ref mut gs) = self.modal.git_switcher {
                 let max_visible = crate::GIT_SWITCHER_MAX_VISIBLE;
                 let lines = if dy.abs() >= 1.0 { dy.abs().ceil() as usize } else { 1 };
                 let filtered_len = gs.current_filtered_len();
@@ -37,9 +37,9 @@ impl App {
                     let max_off = filtered_len.saturating_sub(max_visible);
                     gs.scroll_offset = (gs.scroll_offset + lines).min(max_off);
                 }
-                self.chrome_generation += 1;
+                self.cache.chrome_generation += 1;
             }
-            self.needs_redraw = true;
+            self.cache.needs_redraw = true;
             return;
         }
 
@@ -51,14 +51,14 @@ impl App {
         };
 
         // Check if scrolling over the file tree
-        if self.show_file_tree && self.file_tree_rect.is_some_and(|r| self.last_cursor_pos.x >= r.x && self.last_cursor_pos.x < r.x + r.width) {
+        if self.ft.visible && self.ft.rect.is_some_and(|r| self.last_cursor_pos.x >= r.x && self.last_cursor_pos.x < r.x + r.width) {
             let max_scroll = self.file_tree_max_scroll();
-            let new_val = (self.file_tree_scroll - dy * 30.0).clamp(0.0, max_scroll);
-            if new_val != self.file_tree_scroll {
-                self.file_tree_scroll = new_val;
-                self.file_tree_scroll_target = new_val;
-                self.chrome_generation += 1;
-                self.needs_redraw = true;
+            let new_val = (self.ft.scroll - dy * 18.0).clamp(0.0, max_scroll);
+            if new_val != self.ft.scroll {
+                self.ft.scroll = new_val;
+                self.ft.scroll_target = new_val;
+                self.cache.chrome_generation += 1;
+                self.cache.needs_redraw = true;
             }
         } else {
             // Route scroll to the pane under the cursor via the input router
@@ -89,8 +89,8 @@ impl App {
                         } else {
                             pane.preview_h_scroll = (pane.preview_h_scroll + delta).min(max_h_scroll);
                         }
-                        self.pane_generations.remove(&pid);
-                        self.needs_redraw = true;
+                        self.cache.pane_generations.remove(&pid);
+                        self.cache.needs_redraw = true;
                     }
                     Some(PaneKind::Editor(pane)) => {
                         use tide_editor::input::EditorAction;
@@ -106,8 +106,8 @@ impl App {
                         } else {
                             pane.handle_action_with_size(EditorAction::ScrollRight(editor_dx.abs()), visible_rows, visible_cols);
                         }
-                        self.pane_generations.remove(&pid);
-                        self.needs_redraw = true;
+                        self.cache.pane_generations.remove(&pid);
+                        self.cache.needs_redraw = true;
                     }
                     Some(PaneKind::Diff(dp)) => {
                         let delta = (editor_dx.abs() * 3.0).ceil() as usize;
@@ -121,8 +121,8 @@ impl App {
                             dp.h_scroll = (dp.h_scroll + delta).min(max_h);
                         }
                         dp.generation = dp.generation.wrapping_add(1);
-                        self.pane_generations.remove(&pid);
-                        self.needs_redraw = true;
+                        self.cache.pane_generations.remove(&pid);
+                        self.cache.needs_redraw = true;
                     }
                     _ => {}
                 }

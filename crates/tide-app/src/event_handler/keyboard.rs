@@ -18,10 +18,10 @@ impl App {
         chars: Option<String>,
     ) {
         // Cancel pane drag on Escape
-        if !matches!(self.pane_drag, PaneDragState::Idle) {
+        if !matches!(self.interaction.pane_drag, PaneDragState::Idle) {
             if matches!(key, Key::Escape) {
-                self.pane_drag = PaneDragState::Idle;
-                self.needs_redraw = true;
+                self.interaction.pane_drag = PaneDragState::Idle;
+                self.cache.needs_redraw = true;
                 return;
             }
         }
@@ -38,7 +38,7 @@ impl App {
                     .unwrap_or(false);
                 if !in_preview {
                     self.send_text_to_target(text);
-                    self.needs_redraw = true;
+                    self.cache.needs_redraw = true;
                     return;
                 }
             }
@@ -58,46 +58,46 @@ impl App {
         }
 
         // Config page interception
-        if self.config_page.is_some() {
+        if self.modal.config_page.is_some() {
             self.handle_config_page_key(key, &modifiers);
             return;
         }
 
         // Context menu interception
-        if self.context_menu.is_some() {
+        if self.modal.context_menu.is_some() {
             self.handle_context_menu_key(key);
             return;
         }
 
         // File tree inline rename interception
-        if self.file_tree_rename.is_some() {
+        if self.modal.file_tree_rename.is_some() {
             self.handle_file_tree_rename_key(key, &modifiers);
             return;
         }
 
         // Git switcher popup interception
-        if self.git_switcher.is_some() {
+        if self.modal.git_switcher.is_some() {
             self.handle_git_switcher_key(key, &modifiers);
             return;
         }
 
         // File finder interception
-        if self.file_finder.is_some() {
+        if self.modal.file_finder.is_some() {
             self.handle_file_finder_key(key, &modifiers);
             return;
         }
 
         // Save-as input interception
-        if self.save_as_input.is_some() {
+        if self.modal.save_as_input.is_some() {
             self.handle_save_as_key(key, &modifiers);
             return;
         }
 
         // Branch cleanup bar interception
-        if let Some(ref bc) = self.branch_cleanup {
+        if let Some(ref bc) = self.modal.branch_cleanup {
             // Safety: clear stale state if the pane no longer exists
             if !self.panes.contains_key(&bc.pane_id) {
-                self.branch_cleanup = None;
+                self.modal.branch_cleanup = None;
             } else {
                 match key {
                     Key::Escape => {
@@ -109,17 +109,17 @@ impl App {
                     }
                     _ => {}
                 }
-                self.needs_redraw = true;
+                self.cache.needs_redraw = true;
                 return;
             }
         }
 
         // Save confirm bar interception
-        if self.save_confirm.is_some() {
+        if self.modal.save_confirm.is_some() {
             if matches!(key, Key::Escape) {
                 self.cancel_save_confirm();
             }
-            self.needs_redraw = true;
+            self.cache.needs_redraw = true;
             return;
         }
 
@@ -136,7 +136,7 @@ impl App {
                     if !matches!(action, tide_input::Action::RouteToPane(_)) {
                         self.handle_action(action, Some(input));
                     }
-                    self.needs_redraw = true;
+                    self.cache.needs_redraw = true;
                     return;
                 }
                 self.handle_file_tree_nav_key(key, &modifiers);
@@ -165,7 +165,7 @@ impl App {
                                     tide_input::Action::RouteToPane(focused_id),
                                     Some(input),
                                 );
-                                self.needs_redraw = true;
+                                self.cache.needs_redraw = true;
                                 return;
                             }
                         }
@@ -182,7 +182,7 @@ impl App {
                                 let action = self.router.process(input, &self.pane_rects);
                                 if !matches!(action, tide_input::Action::RouteToPane(_)) {
                                     self.handle_action(action, Some(input));
-                                    self.needs_redraw = true;
+                                    self.cache.needs_redraw = true;
                                     return;
                                 }
                             }
@@ -195,8 +195,8 @@ impl App {
                                 bp.url_input_focused = true;
                                 bp.url_input = bp.url.clone();
                                 bp.url_input_cursor = bp.url_input.chars().count();
-                                self.chrome_generation += 1;
-                                self.needs_redraw = true;
+                                self.cache.chrome_generation += 1;
+                                self.cache.needs_redraw = true;
                             }
                             return;
                         }
@@ -209,6 +209,36 @@ impl App {
                     return;
                 }
 
+                // Editor pane: intercept Cmd+Arrow before the router
+                // turns them into Navigate actions — these should map to
+                // Home/End/DocStart/DocEnd in the editor.
+                if modifiers.meta && !modifiers.ctrl && !modifiers.shift && !modifiers.alt {
+                    let is_arrow = matches!(
+                        key,
+                        Key::Up | Key::Down | Key::Left | Key::Right
+                    );
+                    if is_arrow {
+                        if let Some(focused_id) = self.focused {
+                            let in_editor = self
+                                .panes
+                                .get(&focused_id)
+                                .map(|p| {
+                                    matches!(p, PaneKind::Editor(ep) if !ep.preview_mode)
+                                })
+                                .unwrap_or(false);
+                            if in_editor {
+                                let input = InputEvent::KeyPress { key, modifiers };
+                                self.handle_action(
+                                    tide_input::Action::RouteToPane(focused_id),
+                                    Some(input),
+                                );
+                                self.cache.needs_redraw = true;
+                                return;
+                            }
+                        }
+                    }
+                }
+
                 // Fall through to normal routing
             }
         }
@@ -216,13 +246,13 @@ impl App {
         let input = InputEvent::KeyPress { key, modifiers };
         let action = self.router.process(input, &self.pane_rects);
         self.handle_action(action, Some(input));
-        self.needs_redraw = true;
+        self.cache.needs_redraw = true;
     }
 
     fn handle_git_switcher_key(&mut self, key: Key, modifiers: &Modifiers) {
         // Cmd+Backspace → delete selected item
         if matches!(key, Key::Backspace) && modifiers.meta && !modifiers.ctrl && !modifiers.alt {
-            let selected = self.git_switcher.as_ref().map(|gs| gs.selected);
+            let selected = self.modal.git_switcher.as_ref().map(|gs| gs.selected);
             if let Some(selected) = selected {
                 self.handle_git_switcher_button(crate::SwitcherButton::Delete(selected));
             }
@@ -232,25 +262,25 @@ impl App {
         match key {
             Key::Escape => {
                 // If delete confirmation is active, cancel it first
-                if let Some(ref mut gs) = self.git_switcher {
+                if let Some(ref mut gs) = self.modal.git_switcher {
                     if gs.delete_confirm.is_some() {
                         gs.delete_confirm = None;
-                        self.chrome_generation += 1;
-                        self.needs_redraw = true;
+                        self.cache.chrome_generation += 1;
+                        self.cache.needs_redraw = true;
                         return;
                     }
                 }
-                self.git_switcher = None;
+                self.modal.git_switcher = None;
             }
             Key::Tab => {
-                if let Some(ref mut gs) = self.git_switcher {
+                if let Some(ref mut gs) = self.modal.git_switcher {
                     gs.delete_confirm = None;
                     gs.toggle_mode();
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             Key::Enter => {
-                let info = self.git_switcher.as_ref().map(|gs| (gs.selected, gs.mode));
+                let info = self.modal.git_switcher.as_ref().map(|gs| (gs.selected, gs.mode));
                 if let Some((selected, mode)) = info {
                     let btn = if modifiers.meta {
                         // Cmd+Enter → always New Pane
@@ -267,76 +297,76 @@ impl App {
                 return;
             }
             Key::Up => {
-                if let Some(ref mut gs) = self.git_switcher {
+                if let Some(ref mut gs) = self.modal.git_switcher {
                     gs.delete_confirm = None;
                     gs.select_up();
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             Key::Down => {
-                if let Some(ref mut gs) = self.git_switcher {
+                if let Some(ref mut gs) = self.modal.git_switcher {
                     gs.delete_confirm = None;
                     gs.select_down();
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             Key::Backspace => {
-                if let Some(ref mut gs) = self.git_switcher {
+                if let Some(ref mut gs) = self.modal.git_switcher {
                     gs.delete_confirm = None;
                     gs.backspace();
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             Key::Delete => {
-                if let Some(ref mut gs) = self.git_switcher {
+                if let Some(ref mut gs) = self.modal.git_switcher {
                     gs.delete_char();
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             Key::Left => {
-                if let Some(ref mut gs) = self.git_switcher {
+                if let Some(ref mut gs) = self.modal.git_switcher {
                     gs.move_cursor_left();
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             Key::Right => {
-                if let Some(ref mut gs) = self.git_switcher {
+                if let Some(ref mut gs) = self.modal.git_switcher {
                     gs.move_cursor_right();
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             Key::Char(ch) => {
                 if !modifiers.ctrl && !modifiers.meta {
-                    if let Some(ref mut gs) = self.git_switcher {
+                    if let Some(ref mut gs) = self.modal.git_switcher {
                         gs.insert_char(ch);
-                        self.chrome_generation += 1;
+                        self.cache.chrome_generation += 1;
                     }
                 }
             }
             _ => {}
         }
-        self.needs_redraw = true;
+        self.cache.needs_redraw = true;
     }
 
     fn handle_file_finder_key(&mut self, key: Key, modifiers: &Modifiers) {
         if (modifiers.meta || modifiers.ctrl)
             && matches!(key, Key::Char('k') | Key::Char('K'))
         {
-            if let Some(ref mut finder) = self.file_finder {
+            if let Some(ref mut finder) = self.modal.file_finder {
                 finder.select_up();
-                self.chrome_generation += 1;
+                self.cache.chrome_generation += 1;
             }
-            self.needs_redraw = true;
+            self.cache.needs_redraw = true;
             return;
         }
         if (modifiers.meta || modifiers.ctrl)
             && matches!(key, Key::Char('j') | Key::Char('J'))
         {
-            if let Some(ref mut finder) = self.file_finder {
+            if let Some(ref mut finder) = self.modal.file_finder {
                 finder.select_down();
-                self.chrome_generation += 1;
+                self.cache.chrome_generation += 1;
             }
-            self.needs_redraw = true;
+            self.cache.needs_redraw = true;
             return;
         }
         match key {
@@ -344,8 +374,8 @@ impl App {
                 self.close_file_finder();
             }
             Key::Enter => {
-                let path = self.file_finder.as_ref().and_then(|f| f.selected_path());
-                let replace_id = self.file_finder.as_ref().and_then(|f| f.replace_pane_id);
+                let path = self.modal.file_finder.as_ref().and_then(|f| f.selected_path());
+                let replace_id = self.modal.file_finder.as_ref().and_then(|f| f.replace_pane_id);
                 self.close_file_finder();
                 if let Some(path) = path {
                     if let Some(pane_id) = replace_id {
@@ -357,230 +387,230 @@ impl App {
                 }
             }
             Key::Up => {
-                if let Some(ref mut finder) = self.file_finder {
+                if let Some(ref mut finder) = self.modal.file_finder {
                     finder.select_up();
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             Key::Down => {
-                if let Some(ref mut finder) = self.file_finder {
+                if let Some(ref mut finder) = self.modal.file_finder {
                     finder.select_down();
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             Key::Backspace => {
-                if let Some(ref mut finder) = self.file_finder {
+                if let Some(ref mut finder) = self.modal.file_finder {
                     finder.backspace();
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             Key::Delete => {
-                if let Some(ref mut finder) = self.file_finder {
+                if let Some(ref mut finder) = self.modal.file_finder {
                     finder.delete_char();
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             Key::Left => {
-                if let Some(ref mut finder) = self.file_finder {
+                if let Some(ref mut finder) = self.modal.file_finder {
                     finder.move_cursor_left();
                 }
             }
             Key::Right => {
-                if let Some(ref mut finder) = self.file_finder {
+                if let Some(ref mut finder) = self.modal.file_finder {
                     finder.move_cursor_right();
                 }
             }
             Key::Char(ch) => {
                 if !modifiers.ctrl && !modifiers.meta {
-                    if let Some(ref mut finder) = self.file_finder {
+                    if let Some(ref mut finder) = self.modal.file_finder {
                         finder.insert_char(ch);
-                        self.chrome_generation += 1;
+                        self.cache.chrome_generation += 1;
                     }
                 }
             }
             _ => {}
         }
-        self.needs_redraw = true;
+        self.cache.needs_redraw = true;
     }
 
     fn handle_save_as_key(&mut self, key: Key, modifiers: &Modifiers) {
         match key {
             Key::Escape => {
-                self.save_as_input = None;
+                self.modal.save_as_input = None;
             }
             Key::Tab => {
-                if let Some(ref mut input) = self.save_as_input {
+                if let Some(ref mut input) = self.modal.save_as_input {
                     input.toggle_field();
                 }
             }
             Key::Enter => {
-                let resolved = self.save_as_input.as_ref().and_then(|input| {
+                let resolved = self.modal.save_as_input.as_ref().and_then(|input| {
                     let pane_id = input.pane_id;
                     input.resolve_path().map(|p| (pane_id, p))
                 });
-                self.save_as_input = None;
+                self.modal.save_as_input = None;
                 if let Some((pane_id, path)) = resolved {
                     let path_str = path.to_string_lossy().to_string();
                     self.complete_save_as(pane_id, &path_str);
                 }
             }
             Key::Backspace => {
-                if let Some(ref mut input) = self.save_as_input {
+                if let Some(ref mut input) = self.modal.save_as_input {
                     input.backspace();
                 }
             }
             Key::Delete => {
-                if let Some(ref mut input) = self.save_as_input {
+                if let Some(ref mut input) = self.modal.save_as_input {
                     input.delete_char();
                 }
             }
             Key::Left => {
-                if let Some(ref mut input) = self.save_as_input {
+                if let Some(ref mut input) = self.modal.save_as_input {
                     input.move_cursor_left();
                 }
             }
             Key::Right => {
-                if let Some(ref mut input) = self.save_as_input {
+                if let Some(ref mut input) = self.modal.save_as_input {
                     input.move_cursor_right();
                 }
             }
             Key::Char(ch) => {
                 if !modifiers.ctrl && !modifiers.meta {
-                    if let Some(ref mut input) = self.save_as_input {
+                    if let Some(ref mut input) = self.modal.save_as_input {
                         input.insert_char(ch);
                     }
                 }
             }
             _ => {}
         }
-        self.needs_redraw = true;
+        self.cache.needs_redraw = true;
     }
 
     fn handle_context_menu_key(&mut self, key: Key) {
         match key {
             Key::Escape => {
-                self.context_menu = None;
+                self.modal.context_menu = None;
             }
             Key::Up => {
-                if let Some(ref mut menu) = self.context_menu {
+                if let Some(ref mut menu) = self.modal.context_menu {
                     if menu.selected > 0 {
                         menu.selected -= 1;
                     }
                 }
             }
             Key::Down => {
-                if let Some(ref mut menu) = self.context_menu {
+                if let Some(ref mut menu) = self.modal.context_menu {
                     if menu.selected + 1 < menu.items().len() {
                         menu.selected += 1;
                     }
                 }
             }
             Key::Enter => {
-                let selected = self.context_menu.as_ref().map(|m| m.selected);
+                let selected = self.modal.context_menu.as_ref().map(|m| m.selected);
                 if let Some(idx) = selected {
                     self.execute_context_menu_action(idx);
                 }
-                self.context_menu = None;
+                self.modal.context_menu = None;
             }
             _ => {}
         }
-        self.needs_redraw = true;
+        self.cache.needs_redraw = true;
     }
 
     fn handle_file_tree_rename_key(&mut self, key: Key, modifiers: &Modifiers) {
         match key {
             Key::Escape => {
-                self.file_tree_rename = None;
-                self.chrome_generation += 1;
+                self.modal.file_tree_rename = None;
+                self.cache.chrome_generation += 1;
             }
             Key::Enter => {
                 self.complete_file_tree_rename();
             }
             Key::Backspace => {
-                if let Some(ref mut rename) = self.file_tree_rename {
+                if let Some(ref mut rename) = self.modal.file_tree_rename {
                     rename.input.backspace();
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             Key::Delete => {
-                if let Some(ref mut rename) = self.file_tree_rename {
+                if let Some(ref mut rename) = self.modal.file_tree_rename {
                     rename.input.delete_char();
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             Key::Left => {
-                if let Some(ref mut rename) = self.file_tree_rename {
+                if let Some(ref mut rename) = self.modal.file_tree_rename {
                     rename.input.move_cursor_left();
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             Key::Right => {
-                if let Some(ref mut rename) = self.file_tree_rename {
+                if let Some(ref mut rename) = self.modal.file_tree_rename {
                     rename.input.move_cursor_right();
-                    self.chrome_generation += 1;
+                    self.cache.chrome_generation += 1;
                 }
             }
             Key::Char(ch) => {
                 if !modifiers.ctrl && !modifiers.meta {
-                    if let Some(ref mut rename) = self.file_tree_rename {
+                    if let Some(ref mut rename) = self.modal.file_tree_rename {
                         rename.input.insert_char(ch);
-                        self.chrome_generation += 1;
+                        self.cache.chrome_generation += 1;
                     }
                 }
             }
             _ => {}
         }
-        self.needs_redraw = true;
+        self.cache.needs_redraw = true;
     }
 
     fn handle_file_tree_nav_key(&mut self, key: Key, _modifiers: &Modifiers) {
         let entry_count = self
-            .file_tree
+            .ft.tree
             .as_ref()
             .map(|t| t.visible_entries().len())
             .unwrap_or(0);
         if entry_count == 0 {
-            self.needs_redraw = true;
+            self.cache.needs_redraw = true;
             return;
         }
 
         match key {
             Key::Char('j') | Key::Down => {
-                if self.file_tree_cursor + 1 < entry_count {
-                    self.file_tree_cursor += 1;
-                    self.chrome_generation += 1;
+                if self.ft.cursor + 1 < entry_count {
+                    self.ft.cursor += 1;
+                    self.cache.chrome_generation += 1;
                     self.auto_scroll_file_tree_cursor();
                 }
             }
             Key::Char('k') | Key::Up => {
-                if self.file_tree_cursor > 0 {
-                    self.file_tree_cursor -= 1;
-                    self.chrome_generation += 1;
+                if self.ft.cursor > 0 {
+                    self.ft.cursor -= 1;
+                    self.cache.chrome_generation += 1;
                     self.auto_scroll_file_tree_cursor();
                 }
             }
             Key::Char('g') => {
-                self.file_tree_cursor = 0;
-                self.chrome_generation += 1;
+                self.ft.cursor = 0;
+                self.cache.chrome_generation += 1;
                 self.auto_scroll_file_tree_cursor();
             }
             Key::Char('G') => {
                 if entry_count > 0 {
-                    self.file_tree_cursor = entry_count - 1;
-                    self.chrome_generation += 1;
+                    self.ft.cursor = entry_count - 1;
+                    self.cache.chrome_generation += 1;
                     self.auto_scroll_file_tree_cursor();
                 }
             }
             Key::Enter => {
-                if let Some(tree) = &self.file_tree {
+                if let Some(tree) = &self.ft.tree {
                     let entries = tree.visible_entries();
-                    if let Some(entry) = entries.get(self.file_tree_cursor) {
+                    if let Some(entry) = entries.get(self.ft.cursor) {
                         if entry.entry.is_dir {
                             let path = entry.entry.path.clone();
-                            if let Some(tree) = &mut self.file_tree {
+                            if let Some(tree) = &mut self.ft.tree {
                                 tree.toggle(&path);
                             }
-                            self.chrome_generation += 1;
+                            self.cache.chrome_generation += 1;
                         } else {
                             let path = entry.entry.path.clone();
                             self.open_editor_pane(path);
@@ -590,26 +620,26 @@ impl App {
             }
             _ => {}
         }
-        self.needs_redraw = true;
+        self.cache.needs_redraw = true;
     }
 
     pub(crate) fn auto_scroll_file_tree_cursor(&mut self) {
-        if let Some(tree_rect) = self.file_tree_rect {
+        if let Some(tree_rect) = self.ft.rect {
             let cell_size = self.cell_size();
             let line_height = cell_size.height * crate::theme::FILE_TREE_LINE_SPACING;
             let padding = crate::theme::PANE_PADDING;
 
-            let cursor_y = padding + self.file_tree_cursor as f32 * line_height;
-            let visible_top = self.file_tree_scroll;
-            let visible_bottom = self.file_tree_scroll + tree_rect.height - padding * 2.0;
+            let cursor_y = padding + self.ft.cursor as f32 * line_height;
+            let visible_top = self.ft.scroll;
+            let visible_bottom = self.ft.scroll + tree_rect.height - padding * 2.0;
 
             if cursor_y < visible_top {
-                self.file_tree_scroll_target = cursor_y;
-                self.file_tree_scroll = cursor_y;
+                self.ft.scroll_target = cursor_y;
+                self.ft.scroll = cursor_y;
             } else if cursor_y + line_height > visible_bottom {
-                self.file_tree_scroll_target =
+                self.ft.scroll_target =
                     cursor_y + line_height - (tree_rect.height - padding * 2.0);
-                self.file_tree_scroll = self.file_tree_scroll_target;
+                self.ft.scroll = self.ft.scroll_target;
             }
         }
     }
@@ -617,7 +647,7 @@ impl App {
     fn handle_config_page_key(&mut self, key: Key, modifiers: &Modifiers) {
         use crate::ui_state::ConfigSection;
 
-        let page = match self.config_page.as_mut() {
+        let page = match self.modal.config_page.as_mut() {
             Some(p) => p,
             None => return,
         };
@@ -652,8 +682,8 @@ impl App {
                 }
                 page.recording = None;
             }
-            self.chrome_generation += 1;
-            self.needs_redraw = true;
+            self.cache.chrome_generation += 1;
+            self.cache.needs_redraw = true;
             return;
         }
 
@@ -685,8 +715,8 @@ impl App {
                 }
                 _ => {}
             }
-            self.chrome_generation += 1;
-            self.needs_redraw = true;
+            self.cache.chrome_generation += 1;
+            self.cache.needs_redraw = true;
             return;
         }
 
@@ -718,8 +748,8 @@ impl App {
                 }
                 _ => {}
             }
-            self.chrome_generation += 1;
-            self.needs_redraw = true;
+            self.cache.chrome_generation += 1;
+            self.cache.needs_redraw = true;
             return;
         }
 
@@ -728,7 +758,7 @@ impl App {
                 self.close_config_page();
             }
             Key::Tab => {
-                if let Some(page) = self.config_page.as_mut() {
+                if let Some(page) = self.modal.config_page.as_mut() {
                     page.section = match page.section {
                         ConfigSection::Keybindings => ConfigSection::Worktree,
                         ConfigSection::Worktree => ConfigSection::Keybindings,
@@ -739,7 +769,7 @@ impl App {
             }
             Key::Up | Key::Char('k') => {
                 if !modifiers.ctrl && !modifiers.meta {
-                    if let Some(page) = self.config_page.as_mut() {
+                    if let Some(page) = self.modal.config_page.as_mut() {
                         match page.section {
                             ConfigSection::Keybindings => {
                                 if page.selected > 0 {
@@ -760,7 +790,7 @@ impl App {
             }
             Key::Down | Key::Char('j') => {
                 if !modifiers.ctrl && !modifiers.meta {
-                    if let Some(page) = self.config_page.as_mut() {
+                    if let Some(page) = self.modal.config_page.as_mut() {
                         match page.section {
                             ConfigSection::Keybindings => {
                                 if page.selected + 1 < page.bindings.len() {
@@ -782,7 +812,7 @@ impl App {
                 }
             }
             Key::Enter => {
-                if let Some(page) = self.config_page.as_mut() {
+                if let Some(page) = self.modal.config_page.as_mut() {
                     match page.section {
                         ConfigSection::Keybindings => {
                             page.recording = Some(crate::RecordingState {
@@ -800,7 +830,7 @@ impl App {
                 }
             }
             Key::Backspace => {
-                if let Some(page) = self.config_page.as_mut() {
+                if let Some(page) = self.modal.config_page.as_mut() {
                     if page.section == ConfigSection::Keybindings
                         && page.selected < page.bindings.len()
                     {
@@ -818,8 +848,8 @@ impl App {
             }
             _ => {}
         }
-        self.chrome_generation += 1;
-        self.needs_redraw = true;
+        self.cache.chrome_generation += 1;
+        self.cache.needs_redraw = true;
     }
 
     fn handle_browser_url_bar_key(
@@ -891,8 +921,8 @@ impl App {
             }
             _ => {}
         }
-        self.chrome_generation += 1;
-        self.needs_redraw = true;
+        self.cache.chrome_generation += 1;
+        self.cache.needs_redraw = true;
     }
 
     fn handle_search_bar_key(

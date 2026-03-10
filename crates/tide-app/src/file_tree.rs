@@ -19,7 +19,7 @@ pub(crate) struct GitPollCwdResult {
 
 impl App {
     pub(crate) fn update_file_tree_cwd(&mut self) {
-        if !self.show_file_tree {
+        if !self.ft.visible {
             return;
         }
 
@@ -36,14 +36,14 @@ impl App {
                     Some(None) => cwd, // not in a git repo
                     None => cwd,       // not cached yet — will update when poller finishes
                 };
-                let current_root = self.file_tree.as_ref().map(|t| t.root().to_path_buf());
+                let current_root = self.ft.tree.as_ref().map(|t| t.root().to_path_buf());
                 if current_root.as_ref() != Some(&tree_root) {
-                    if let Some(tree) = self.file_tree.as_mut() {
+                    if let Some(tree) = self.ft.tree.as_mut() {
                         tree.set_root(tree_root);
                     }
-                    self.file_tree_scroll = 0.0;
-                    self.file_tree_scroll_target = 0.0;
-                    self.chrome_generation += 1;
+                    self.ft.scroll = 0.0;
+                    self.ft.scroll_target = 0.0;
+                    self.cache.chrome_generation += 1;
                     // File tree git status will be updated when git poller results arrive.
                 }
             }
@@ -57,7 +57,7 @@ impl App {
         git_root: &PathBuf,
         entries: &[tide_terminal::git::StatusEntry],
     ) {
-        let tree_root = match self.file_tree.as_ref() {
+        let tree_root = match self.ft.tree.as_ref() {
             Some(tree) => tree.root().to_path_buf(),
             None => return,
         };
@@ -97,9 +97,9 @@ impl App {
             }
         }
 
-        self.file_tree_git_status = status_map;
-        self.file_tree_dir_git_status = dir_status;
-        self.file_tree_git_root = Some(git_root.clone());
+        self.ft.git_status = status_map;
+        self.ft.dir_git_status = dir_status;
+        self.ft.git_root = Some(git_root.clone());
     }
 
     /// Trigger the git poller to re-run for the current CWDs.
@@ -123,7 +123,7 @@ impl App {
 
     pub(crate) fn file_tree_max_scroll(&self) -> f32 {
         let entry_count = self
-            .file_tree
+            .ft.tree
             .as_ref()
             .map(|t| t.visible_entries().len())
             .unwrap_or(0);
@@ -160,8 +160,8 @@ impl App {
         }
 
         if self.consume_git_poll_results() || changed {
-            self.chrome_generation += 1;
-            self.needs_redraw = true;
+            self.cache.chrome_generation += 1;
+            self.cache.needs_redraw = true;
         }
     }
 
@@ -220,7 +220,7 @@ impl App {
         }
 
         // Update file tree git status from poller results
-        if let Some(tree) = self.file_tree.as_ref() {
+        if let Some(tree) = self.ft.tree.as_ref() {
             let tree_root = tree.root().to_path_buf();
             // Find the result whose repo_root matches the current tree root
             for result in git_results.values() {
@@ -233,7 +233,7 @@ impl App {
         }
 
         // Trigger file tree CWD update with newly cached repo roots
-        if self.show_file_tree {
+        if self.ft.visible {
             let cwd = self.focused.and_then(|id| {
                 match self.panes.get(&id) {
                     Some(PaneKind::Terminal(p)) => p.cwd.clone(),
@@ -242,14 +242,14 @@ impl App {
             });
             if let Some(cwd) = cwd {
                 if let Some(Some(root)) = self.cached_repo_roots.get(&cwd) {
-                    let current_root = self.file_tree.as_ref().map(|t| t.root().to_path_buf());
+                    let current_root = self.ft.tree.as_ref().map(|t| t.root().to_path_buf());
                     if current_root.as_ref() != Some(root) {
                         let root = root.clone();
-                        if let Some(tree) = self.file_tree.as_mut() {
+                        if let Some(tree) = self.ft.tree.as_mut() {
                             tree.set_root(root);
                         }
-                        self.file_tree_scroll = 0.0;
-                        self.file_tree_scroll_target = 0.0;
+                        self.ft.scroll = 0.0;
+                        self.ft.scroll_target = 0.0;
                         changed = true;
                     }
                 }
@@ -320,7 +320,7 @@ impl App {
 
     /// Execute a context menu action.
     pub(crate) fn execute_context_menu_action(&mut self, action_index: usize) {
-        let menu = match self.context_menu.take() {
+        let menu = match self.modal.context_menu.take() {
             Some(m) => m,
             None => return,
         };
@@ -357,11 +357,11 @@ impl App {
                 if let Err(e) = result {
                     log::error!("Failed to delete {:?}: {}", menu.path, e);
                 }
-                if let Some(tree) = self.file_tree.as_mut() {
+                if let Some(tree) = self.ft.tree.as_mut() {
                     tree.refresh();
                 }
                 self.trigger_git_poll();
-                self.chrome_generation += 1;
+                self.cache.chrome_generation += 1;
             }
             crate::ContextMenuAction::RevealInFinder => {
                 if menu.is_dir {
@@ -379,20 +379,20 @@ impl App {
                 let file_name = menu.path.file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
-                self.file_tree_rename = Some(crate::FileTreeRenameState {
+                self.modal.file_tree_rename = Some(crate::FileTreeRenameState {
                     entry_index: menu.entry_index,
                     original_path: menu.path,
                     input: crate::InputLine::with_text(file_name),
                 });
-                self.chrome_generation += 1;
+                self.cache.chrome_generation += 1;
             }
         }
-        self.needs_redraw = true;
+        self.cache.needs_redraw = true;
     }
 
     /// Complete an inline file tree rename: move the file, refresh the tree.
     pub(crate) fn complete_file_tree_rename(&mut self) {
-        let rename = match self.file_tree_rename.take() {
+        let rename = match self.modal.file_tree_rename.take() {
             Some(r) => r,
             None => return,
         };
@@ -400,7 +400,7 @@ impl App {
         let new_name = rename.input.text.trim().to_string();
         if new_name.is_empty() || new_name == rename.original_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default() {
             // No change or empty — cancel
-            self.chrome_generation += 1;
+            self.cache.chrome_generation += 1;
             return;
         }
 
@@ -411,25 +411,25 @@ impl App {
         if let Err(e) = std::fs::rename(&rename.original_path, &new_path) {
             log::error!("Failed to rename {:?} → {:?}: {}", rename.original_path, new_path, e);
         }
-        if let Some(tree) = self.file_tree.as_mut() {
+        if let Some(tree) = self.ft.tree.as_mut() {
             tree.refresh();
         }
         self.trigger_git_poll();
-        self.chrome_generation += 1;
-        self.needs_redraw = true;
+        self.cache.chrome_generation += 1;
+        self.cache.needs_redraw = true;
     }
 
     pub(crate) fn handle_file_tree_click(&mut self, position: Vec2) {
         // Dismiss context menu and complete/cancel rename on any left click
-        self.context_menu = None;
-        if self.file_tree_rename.is_some() {
+        self.modal.context_menu = None;
+        if self.modal.file_tree_rename.is_some() {
             self.complete_file_tree_rename();
         }
 
-        if !self.show_file_tree {
+        if !self.ft.visible {
             return;
         }
-        let ft_rect = match self.file_tree_rect {
+        let ft_rect = match self.ft.rect {
             Some(r) => r,
             None => return,
         };
@@ -442,21 +442,21 @@ impl App {
         let line_height = cell_size.height * FILE_TREE_LINE_SPACING;
         // Account for inset content rect and header offset.
         let content_y = self
-            .file_tree_rect
+            .ft.rect
             .map(|r| r.y + PANE_CORNER_RADIUS)
             .unwrap_or(self.top_inset + PANE_CORNER_RADIUS);
         let adjusted_y = position.y - content_y - FILE_TREE_HEADER_HEIGHT;
-        let index = ((adjusted_y + self.file_tree_scroll) / line_height) as usize;
+        let index = ((adjusted_y + self.ft.scroll) / line_height) as usize;
 
         // Extract click info from file tree (borrow released before open_editor_pane)
-        let click_result = if let Some(tree) = self.file_tree.as_mut() {
+        let click_result = if let Some(tree) = self.ft.tree.as_mut() {
             let entries = tree.visible_entries();
             if index < entries.len() {
                 let entry = entries[index].clone();
                 if entry.entry.is_dir {
                     tree.toggle(&entry.entry.path);
-                    self.chrome_generation += 1;
-                    self.needs_redraw = true;
+                    self.cache.chrome_generation += 1;
+                    self.cache.needs_redraw = true;
                     None
                 } else {
                     Some(entry.entry.path.clone())

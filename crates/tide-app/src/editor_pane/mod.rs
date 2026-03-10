@@ -17,6 +17,74 @@ use crate::pane::Selection;
 /// Width of the gutter (line numbers) in cells.
 pub(crate) const GUTTER_WIDTH_CELLS: usize = 6;
 
+/// Pure preview scroll computation — shared by keyboard and IME paths.
+/// Returns `true` if scroll position changed.
+pub(crate) fn apply_preview_scroll(
+    ch: char,
+    v_scroll: &mut usize,
+    h_scroll: &mut usize,
+    max_v: usize,
+    max_h: usize,
+    visible_rows: usize,
+) -> bool {
+    match ch {
+        'j' => {
+            if *v_scroll < max_v {
+                *v_scroll += 1;
+                return true;
+            }
+        }
+        'k' => {
+            if *v_scroll > 0 {
+                *v_scroll -= 1;
+                return true;
+            }
+        }
+        'd' => {
+            let half = visible_rows / 2;
+            let new = (*v_scroll + half).min(max_v);
+            if new != *v_scroll {
+                *v_scroll = new;
+                return true;
+            }
+        }
+        'u' => {
+            let half = visible_rows / 2;
+            let new = v_scroll.saturating_sub(half);
+            if new != *v_scroll {
+                *v_scroll = new;
+                return true;
+            }
+        }
+        'g' => {
+            if *v_scroll != 0 {
+                *v_scroll = 0;
+                return true;
+            }
+        }
+        'G' => {
+            if *v_scroll != max_v {
+                *v_scroll = max_v;
+                return true;
+            }
+        }
+        'h' => {
+            if *h_scroll > 0 {
+                *h_scroll = h_scroll.saturating_sub(2);
+                return true;
+            }
+        }
+        'l' => {
+            if *h_scroll < max_h {
+                *h_scroll += 2;
+                return true;
+            }
+        }
+        _ => {}
+    }
+    false
+}
+
 pub struct EditorPane {
     #[allow(dead_code)]
     pub id: PaneId,
@@ -307,6 +375,23 @@ impl EditorPane {
         }
     }
 
+    /// Apply a preview-mode scroll key and return whether anything changed.
+    /// Pure logic shared between the keyboard (action/mod.rs) and IME
+    /// (event_handler/ime.rs) paths so they can never diverge.
+    pub fn apply_preview_scroll_key(&mut self, ch: char, visible_rows: usize) -> bool {
+        let total = self.preview_line_count();
+        let max_scroll = total.saturating_sub(visible_rows);
+        let max_h = self.preview_max_line_width();
+        apply_preview_scroll(
+            ch,
+            &mut self.preview_scroll,
+            &mut self.preview_h_scroll,
+            max_scroll,
+            max_h,
+            visible_rows,
+        )
+    }
+
     /// Check if this file is a markdown file.
     pub fn is_markdown(&self) -> bool {
         self.editor.file_path()
@@ -408,5 +493,127 @@ impl EditorPane {
                 s.text.chars().filter(|c| *c != '\n').map(|c| c.width().unwrap_or(1)).sum::<usize>()
             }).sum::<usize>()
         }).max().unwrap_or(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── apply_preview_scroll ──
+
+    #[test]
+    fn scroll_j_increments() {
+        let (mut v, mut h) = (5, 0);
+        assert!(apply_preview_scroll('j', &mut v, &mut h, 100, 0, 30));
+        assert_eq!(v, 6);
+    }
+
+    #[test]
+    fn scroll_j_at_max_no_change() {
+        let (mut v, mut h) = (100, 0);
+        assert!(!apply_preview_scroll('j', &mut v, &mut h, 100, 0, 30));
+        assert_eq!(v, 100);
+    }
+
+    #[test]
+    fn scroll_k_decrements() {
+        let (mut v, mut h) = (5, 0);
+        assert!(apply_preview_scroll('k', &mut v, &mut h, 100, 0, 30));
+        assert_eq!(v, 4);
+    }
+
+    #[test]
+    fn scroll_k_at_zero_no_change() {
+        let (mut v, mut h) = (0, 0);
+        assert!(!apply_preview_scroll('k', &mut v, &mut h, 100, 0, 30));
+        assert_eq!(v, 0);
+    }
+
+    #[test]
+    fn scroll_d_half_page_down() {
+        let (mut v, mut h) = (0, 0);
+        assert!(apply_preview_scroll('d', &mut v, &mut h, 100, 0, 30));
+        assert_eq!(v, 15); // 30/2
+    }
+
+    #[test]
+    fn scroll_d_clamps_to_max() {
+        let (mut v, mut h) = (95, 0);
+        assert!(apply_preview_scroll('d', &mut v, &mut h, 100, 0, 30));
+        assert_eq!(v, 100);
+    }
+
+    #[test]
+    fn scroll_u_half_page_up() {
+        let (mut v, mut h) = (30, 0);
+        assert!(apply_preview_scroll('u', &mut v, &mut h, 100, 0, 30));
+        assert_eq!(v, 15);
+    }
+
+    #[test]
+    fn scroll_u_clamps_to_zero() {
+        let (mut v, mut h) = (5, 0);
+        assert!(apply_preview_scroll('u', &mut v, &mut h, 100, 0, 30));
+        assert_eq!(v, 0);
+    }
+
+    #[test]
+    fn scroll_g_goes_to_top() {
+        let (mut v, mut h) = (50, 0);
+        assert!(apply_preview_scroll('g', &mut v, &mut h, 100, 0, 30));
+        assert_eq!(v, 0);
+    }
+
+    #[test]
+    fn scroll_g_at_zero_no_change() {
+        let (mut v, mut h) = (0, 0);
+        assert!(!apply_preview_scroll('g', &mut v, &mut h, 100, 0, 30));
+    }
+
+    #[test]
+    fn scroll_big_g_goes_to_bottom() {
+        let (mut v, mut h) = (0, 0);
+        assert!(apply_preview_scroll('G', &mut v, &mut h, 100, 0, 30));
+        assert_eq!(v, 100);
+    }
+
+    #[test]
+    fn scroll_big_g_at_max_no_change() {
+        let (mut v, mut h) = (100, 0);
+        assert!(!apply_preview_scroll('G', &mut v, &mut h, 100, 0, 30));
+    }
+
+    #[test]
+    fn scroll_h_decrements_h_scroll() {
+        let (mut v, mut h) = (0, 10);
+        assert!(apply_preview_scroll('h', &mut v, &mut h, 100, 50, 30));
+        assert_eq!(h, 8);
+    }
+
+    #[test]
+    fn scroll_h_at_zero_no_change() {
+        let (mut v, mut h) = (0, 0);
+        assert!(!apply_preview_scroll('h', &mut v, &mut h, 100, 50, 30));
+    }
+
+    #[test]
+    fn scroll_l_increments_h_scroll() {
+        let (mut v, mut h) = (0, 0);
+        assert!(apply_preview_scroll('l', &mut v, &mut h, 100, 50, 30));
+        assert_eq!(h, 2);
+    }
+
+    #[test]
+    fn scroll_l_at_max_no_change() {
+        let (mut v, mut h) = (0, 50);
+        assert!(!apply_preview_scroll('l', &mut v, &mut h, 100, 50, 30));
+    }
+
+    #[test]
+    fn unknown_key_no_change() {
+        let (mut v, mut h) = (5, 5);
+        assert!(!apply_preview_scroll('x', &mut v, &mut h, 100, 50, 30));
+        assert_eq!((v, h), (5, 5));
     }
 }

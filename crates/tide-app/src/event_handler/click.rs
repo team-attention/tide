@@ -95,12 +95,12 @@ impl App {
         }
 
         // Workspace sidebar items
-        if let Some(ws_rect) = self.workspace_sidebar_rect {
+        if let Some(ws_rect) = self.ws.sidebar_rect {
             if pos.x >= ws_rect.x && pos.x < ws_rect.x + ws_rect.width
                 && pos.y >= ws_rect.y && pos.y < ws_rect.y + ws_rect.height
             {
                 if let Some(geo) = self.ws_sidebar_geometry() {
-                    for i in 0..self.workspaces.len() {
+                    for i in 0..self.ws.workspaces.len() {
                         if geo.item_rect(i).contains(pos) {
                             return Some(HoverTarget::WorkspaceSidebarItem(i));
                         }
@@ -120,7 +120,7 @@ impl App {
         }
 
         // Top-edge drag handles (top strip of sidebar)
-        if let Some(ft_rect) = self.file_tree_rect {
+        if let Some(ft_rect) = self.ft.rect {
             if pos.y >= ft_rect.y && pos.y < ft_rect.y + PANE_PADDING
                 && pos.x >= ft_rect.x && pos.x < ft_rect.x + ft_rect.width
             {
@@ -155,7 +155,7 @@ impl App {
         }
 
         // File tree border (resize handle) — position depends on sidebar side
-        if let Some(ft_rect) = self.file_tree_rect {
+        if let Some(ft_rect) = self.ft.rect {
             let border_x = if self.sidebar_side == crate::LayoutSide::Left {
                 ft_rect.x + ft_rect.width + PANE_GAP
             } else {
@@ -167,8 +167,8 @@ impl App {
         }
 
         // File tree entry
-        if self.show_file_tree && self.file_tree_rect.is_some_and(|r| pos.x >= r.x && pos.x < r.x + r.width) {
-            let ft_rect = self.file_tree_rect.unwrap();
+        if self.ft.visible && self.ft.rect.is_some_and(|r| pos.x >= r.x && pos.x < r.x + r.width) {
+            let ft_rect = self.ft.rect.unwrap();
             let cell_size = self.cell_size();
             let line_height = cell_size.height * FILE_TREE_LINE_SPACING;
             let content_y = ft_rect.y + PANE_CORNER_RADIUS;
@@ -176,8 +176,8 @@ impl App {
                 return None;
             }
             let adjusted_y = pos.y - content_y - FILE_TREE_HEADER_HEIGHT;
-            let index = ((adjusted_y + self.file_tree_scroll) / line_height) as usize;
-            if let Some(tree) = &self.file_tree {
+            let index = ((adjusted_y + self.ft.scroll) / line_height) as usize;
+            if let Some(tree) = &self.ft.tree {
                 let entries = tree.visible_entries();
                 if index < entries.len() {
                     return Some(HoverTarget::FileTreeEntry(index));
@@ -262,12 +262,12 @@ impl App {
                 match zone.action {
                     HeaderHitAction::Close => {
                         self.close_specific_pane(zone.pane_id);
-                        self.needs_redraw = true;
+                        self.cache.needs_redraw = true;
                         return true;
                     }
                     HeaderHitAction::GitBranch => {
                         self.open_git_switcher(zone.pane_id, GitSwitcherMode::Branches, zone.rect);
-                        self.needs_redraw = true;
+                        self.cache.needs_redraw = true;
                         return true;
                     }
                     HeaderHitAction::GitStatus => {
@@ -279,7 +279,7 @@ impl App {
                         if let Some(cwd) = cwd {
                             self.open_diff_pane(cwd);
                         }
-                        self.needs_redraw = true;
+                        self.cache.needs_redraw = true;
                         return true;
                     }
                     HeaderHitAction::EditorCompare => {
@@ -297,9 +297,9 @@ impl App {
                                 }
                             }
                         }
-                        self.chrome_generation += 1;
-                        self.pane_generations.remove(&zone.pane_id);
-                        self.needs_redraw = true;
+                        self.cache.chrome_generation += 1;
+                        self.cache.pane_generations.remove(&zone.pane_id);
+                        self.cache.needs_redraw = true;
                         return true;
                     }
                     HeaderHitAction::EditorBack => {
@@ -307,47 +307,47 @@ impl App {
                             pane.diff_mode = false;
                             pane.disk_content = None;
                         }
-                        self.chrome_generation += 1;
-                        self.pane_generations.remove(&zone.pane_id);
-                        self.needs_redraw = true;
+                        self.cache.chrome_generation += 1;
+                        self.cache.pane_generations.remove(&zone.pane_id);
+                        self.cache.needs_redraw = true;
                         return true;
                     }
                     HeaderHitAction::MarkdownPreview => {
                         if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&zone.pane_id) {
                             pane.toggle_preview();
                         }
-                        self.chrome_generation += 1;
-                        self.pane_generations.remove(&zone.pane_id);
-                        self.needs_redraw = true;
+                        self.cache.chrome_generation += 1;
+                        self.cache.pane_generations.remove(&zone.pane_id);
+                        self.cache.needs_redraw = true;
                         return true;
                     }
                     HeaderHitAction::EditorFileName => {
                         // No file switcher popup in new architecture
-                        self.needs_redraw = true;
+                        self.cache.needs_redraw = true;
                         return true;
                     }
                     HeaderHitAction::DiffRefresh => {
                         if let Some(PaneKind::Diff(dp)) = self.panes.get_mut(&zone.pane_id) {
                             dp.refresh();
                         }
-                        self.chrome_generation += 1;
-                        self.pane_generations.remove(&zone.pane_id);
-                        self.needs_redraw = true;
+                        self.cache.chrome_generation += 1;
+                        self.cache.pane_generations.remove(&zone.pane_id);
+                        self.cache.needs_redraw = true;
                         return true;
                     }
                     HeaderHitAction::Maximize => {
                         // Toggle zoom for this pane
                         self.focus_terminal(zone.pane_id);
-                        self.chrome_generation += 1;
+                        self.cache.chrome_generation += 1;
                         self.compute_layout();
-                        self.needs_redraw = true;
+                        self.cache.needs_redraw = true;
                         return true;
                     }
                     HeaderHitAction::Tab(pane_id) => {
                         // Initiate pending drag for this specific tab.
                         // On mouse up without drag → switch to tab.
                         // On mouse move past threshold → start dragging this tab.
-                        self.pane_drag = crate::drag_drop::PaneDragState::PendingDrag {
+                        self.interaction.pane_drag = crate::drag_drop::PaneDragState::PendingDrag {
                             source_pane: pane_id,
                             press_pos: self.last_cursor_pos,
                         };
@@ -356,7 +356,7 @@ impl App {
                     HeaderHitAction::TabClose(pane_id) => {
                         // Close the specific tab
                         self.close_specific_pane(pane_id);
-                        self.needs_redraw = true;
+                        self.cache.needs_redraw = true;
                         return true;
                     }
                 }
@@ -441,15 +441,15 @@ impl App {
             }
             _ => {}
         }
-        self.chrome_generation += 1;
-        self.needs_redraw = true;
+        self.cache.chrome_generation += 1;
+        self.cache.needs_redraw = true;
     }
 
     /// Handle notification bar button clicks (conflict bar + save confirm bar).
     /// Checks all editor panes. Returns true if the click was consumed.
     pub(crate) fn handle_notification_bar_click(&mut self, pos: Vec2) -> bool {
         // Try save confirm bar first
-        if let Some(ref sc) = self.save_confirm {
+        if let Some(ref sc) = self.modal.save_confirm {
             let pane_id = sc.pane_id;
             if let Some(bar_rect) = self.notification_bar_rect(pane_id) {
                 if pos.y >= bar_rect.y && pos.y <= bar_rect.y + bar_rect.height
@@ -477,7 +477,7 @@ impl App {
                     } else if pos.x >= save_x {
                         self.confirm_save_and_close();
                     }
-                    self.needs_redraw = true;
+                    self.cache.needs_redraw = true;
                     return true;
                 }
             }
@@ -569,9 +569,9 @@ impl App {
             }
         }
 
-        self.chrome_generation += 1;
-        self.pane_generations.remove(&pane_id);
-        self.needs_redraw = true;
+        self.cache.chrome_generation += 1;
+        self.cache.pane_generations.remove(&pane_id);
+        self.cache.needs_redraw = true;
         true
     }
 
@@ -579,9 +579,9 @@ impl App {
     /// Clicking the same badge again closes the popup (toggle behavior).
     fn open_git_switcher(&mut self, pane_id: tide_core::PaneId, mode: GitSwitcherMode, anchor_rect: Rect) {
         // Toggle: close if already open for the same pane and mode
-        if let Some(ref gs) = self.git_switcher {
+        if let Some(ref gs) = self.modal.git_switcher {
             if gs.pane_id == pane_id && gs.mode == mode {
-                self.git_switcher = None;
+                self.modal.git_switcher = None;
                 return;
             }
         }
@@ -594,14 +594,14 @@ impl App {
                     pane_id, mode, branches, worktrees, anchor_rect,
                 );
                 gs.shell_busy = shell_busy;
-                self.git_switcher = Some(gs);
+                self.modal.git_switcher = Some(gs);
             }
         }
     }
 
     /// Get the cwd of the terminal pane associated with the git switcher.
     fn git_switcher_pane_cwd(&self) -> Option<std::path::PathBuf> {
-        let gs = self.git_switcher.as_ref()?;
+        let gs = self.modal.git_switcher.as_ref()?;
         match self.panes.get(&gs.pane_id) {
             Some(PaneKind::Terminal(p)) => p.cwd.clone(),
             _ => None,
@@ -612,7 +612,7 @@ impl App {
     pub(crate) fn handle_git_switcher_button(&mut self, btn: crate::SwitcherButton) {
         match btn {
             crate::SwitcherButton::Switch(fi) => {
-                let gs = match self.git_switcher.as_ref() {
+                let gs = match self.modal.git_switcher.as_ref() {
                     Some(gs) => gs,
                     None => return,
                 };
@@ -623,7 +623,7 @@ impl App {
                     let query = gs.input.text.trim().to_string();
                     let mode = gs.mode;
                     let cwd = self.git_switcher_pane_cwd();
-                    self.git_switcher = None;
+                    self.modal.git_switcher = None;
                     if let Some(cwd) = cwd {
                         match mode {
                             crate::GitSwitcherMode::Branches => {
@@ -662,10 +662,10 @@ impl App {
                             let action = {
                                 let entry_idx = match gs.filtered_branches.get(fi) {
                                     Some(&i) => i,
-                                    None => { self.git_switcher = None; return; }
+                                    None => { self.modal.git_switcher = None; return; }
                                 };
                                 let branch = &gs.branches[entry_idx];
-                                if branch.is_current { self.git_switcher = None; return; }
+                                if branch.is_current { self.modal.git_switcher = None; return; }
                                 let has_wt = gs.worktree_branch_names.contains(&branch.name);
                                 if has_wt {
                                     let wt_path = gs.worktrees.iter()
@@ -676,7 +676,7 @@ impl App {
                                     (branch.name.clone(), None)
                                 }
                             };
-                            self.git_switcher = None;
+                            self.modal.git_switcher = None;
                             if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&pane_id) {
                                 if pane.shell_idle {
                                     let cmd = if let Some(wt_path) = action.1 {
@@ -693,7 +693,7 @@ impl App {
                                 let wt = gs.worktrees.get(entry_idx)?;
                                 Some(wt.path.to_string_lossy().to_string())
                             });
-                            self.git_switcher = None;
+                            self.modal.git_switcher = None;
                             if let Some(path) = action {
                                 if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&pane_id) {
                                     if pane.shell_idle {
@@ -707,21 +707,21 @@ impl App {
                 }
             }
             crate::SwitcherButton::Delete(fi) => {
-                let (is_create, already_confirmed, mode) = match self.git_switcher.as_ref() {
+                let (is_create, already_confirmed, mode) = match self.modal.git_switcher.as_ref() {
                     Some(gs) => (gs.is_create_row(fi), gs.delete_confirm == Some(fi), gs.mode),
                     None => return,
                 };
                 if is_create { return; }
 
                 if !already_confirmed {
-                    if let Some(ref mut gs) = self.git_switcher {
+                    if let Some(ref mut gs) = self.modal.git_switcher {
                         gs.delete_confirm = Some(fi);
                     }
-                    self.chrome_generation += 1;
-                    self.needs_redraw = true;
+                    self.cache.chrome_generation += 1;
+                    self.cache.needs_redraw = true;
                     return;
                 }
-                if let Some(ref mut gs) = self.git_switcher {
+                if let Some(ref mut gs) = self.modal.git_switcher {
                     gs.delete_confirm = None;
                 }
 
@@ -730,7 +730,7 @@ impl App {
                 match mode {
                     crate::GitSwitcherMode::Branches => {
                         let (branch_name, wt_path) = {
-                            let gs = self.git_switcher.as_ref().unwrap();
+                            let gs = self.modal.git_switcher.as_ref().unwrap();
                             let entry_idx = match gs.filtered_branches.get(fi) {
                                 Some(&i) => i,
                                 None => return,
@@ -755,7 +755,7 @@ impl App {
                     }
                     crate::GitSwitcherMode::Worktrees => {
                         let (wt_path, branch_name, is_main) = {
-                            let gs = self.git_switcher.as_ref().unwrap();
+                            let gs = self.modal.git_switcher.as_ref().unwrap();
                             let entry_idx = match gs.filtered_worktrees.get(fi) {
                                 Some(&i) => i,
                                 None => return,
@@ -782,12 +782,12 @@ impl App {
                 }
 
                 self.refresh_git_switcher();
-                self.chrome_generation += 1;
-                self.needs_redraw = true;
+                self.cache.chrome_generation += 1;
+                self.cache.needs_redraw = true;
                 return;
             }
             crate::SwitcherButton::NewPane(fi) => {
-                let gs = match self.git_switcher.as_ref() {
+                let gs = match self.modal.git_switcher.as_ref() {
                     Some(gs) => gs,
                     None => return,
                 };
@@ -797,7 +797,7 @@ impl App {
                     let query = gs.input.text.trim().to_string();
                     let mode = gs.mode;
                     let cwd = self.git_switcher_pane_cwd();
-                    self.git_switcher = None;
+                    self.modal.git_switcher = None;
                     if let Some(cwd) = cwd {
                         match mode {
                             crate::GitSwitcherMode::Branches => {
@@ -831,10 +831,10 @@ impl App {
                             let action = {
                                 let entry_idx = match gs.filtered_branches.get(fi) {
                                     Some(&i) => i,
-                                    None => { self.git_switcher = None; return; }
+                                    None => { self.modal.git_switcher = None; return; }
                                 };
                                 let branch = &gs.branches[entry_idx];
-                                if branch.is_current { self.git_switcher = None; return; }
+                                if branch.is_current { self.modal.git_switcher = None; return; }
                                 let has_wt = gs.worktree_branch_names.contains(&branch.name);
                                 if has_wt {
                                     let wt_path = gs.worktrees.iter()
@@ -847,7 +847,7 @@ impl App {
                             };
                             let pane_cwd = self.panes.get(&pane_id)
                                 .and_then(|pk| if let PaneKind::Terminal(p) = pk { p.cwd.clone() } else { None });
-                            self.git_switcher = None;
+                            self.modal.git_switcher = None;
                             if let Some(wt_path) = action.1 {
                                 self.split_pane_from(pane_id, SplitDirection::Horizontal, Some(wt_path));
                             } else {
@@ -864,7 +864,7 @@ impl App {
                                 let wt = gs.worktrees.get(entry_idx)?;
                                 Some(wt.path.clone())
                             });
-                            self.git_switcher = None;
+                            self.modal.git_switcher = None;
                             if let Some(wt_path) = wt_path {
                                 self.split_pane_from(pane_id, SplitDirection::Horizontal, Some(wt_path));
                             }
@@ -873,8 +873,8 @@ impl App {
                 }
             }
         }
-        self.chrome_generation += 1;
-        self.needs_redraw = true;
+        self.cache.chrome_generation += 1;
+        self.cache.needs_redraw = true;
     }
 
     /// Handle click when config page is open.
@@ -908,7 +908,7 @@ impl App {
 
         // Click on tab bar → switch section
         if pos.y >= tab_y && pos.y < tab_y + tab_h {
-            if let Some(ref mut page) = self.config_page {
+            if let Some(ref mut page) = self.modal.config_page {
                 if pos.x < popup_x + half_w {
                     page.section = ConfigSection::Keybindings;
                 } else {
@@ -917,7 +917,7 @@ impl App {
                 page.selected = 0;
                 page.scroll_offset = 0;
             }
-            self.chrome_generation += 1;
+            self.cache.chrome_generation += 1;
             return;
         }
 
@@ -928,7 +928,7 @@ impl App {
         let line_height = 32.0_f32.max(cell_height + crate::theme::POPUP_LINE_EXTRA);
 
         if pos.y >= content_top && pos.y < content_bottom {
-            if let Some(ref mut page) = self.config_page {
+            if let Some(ref mut page) = self.modal.config_page {
                 match page.section {
                     ConfigSection::Keybindings => {
                         let vi = ((pos.y - content_top) / line_height).floor() as usize;
@@ -960,13 +960,13 @@ impl App {
                     }
                 }
             }
-            self.chrome_generation += 1;
+            self.cache.chrome_generation += 1;
         }
     }
 
     /// Refresh the git switcher popup in-place after a delete operation.
     fn refresh_git_switcher(&mut self) {
-        let gs = match self.git_switcher.as_ref() {
+        let gs = match self.modal.git_switcher.as_ref() {
             Some(gs) => gs,
             None => return,
         };
@@ -1011,14 +1011,14 @@ impl App {
             if new_gs.selected >= len && len > 0 {
                 new_gs.selected = len - 1;
             }
-            self.git_switcher = Some(new_gs);
+            self.modal.git_switcher = Some(new_gs);
         }
     }
 
     /// Handle branch cleanup bar button clicks.
     /// Returns true if the click was consumed.
     pub(crate) fn handle_branch_cleanup_click(&mut self, pos: tide_core::Vec2) -> bool {
-        let bc_pane_id = match self.branch_cleanup {
+        let bc_pane_id = match self.modal.branch_cleanup {
             Some(ref bc) => bc.pane_id,
             None => return false,
         };
@@ -1053,7 +1053,7 @@ impl App {
         } else if pos.x >= delete_x {
             self.confirm_branch_delete();
         }
-        self.needs_redraw = true;
+        self.cache.needs_redraw = true;
         true
     }
 
@@ -1070,7 +1070,7 @@ impl App {
                 // Insert at root level
                 self.layout.insert_at_root(source, zone);
                 self.focused = Some(source);
-                self.chrome_generation += 1;
+                self.cache.chrome_generation += 1;
                 self.compute_layout();
             }
             DropDestination::TreePane(target_id, DropZone::Center) => {
@@ -1084,7 +1084,7 @@ impl App {
                 self.layout.add_tab(target_id, source);
                 self.layout.set_active_tab(source);
                 self.focused = Some(source);
-                self.chrome_generation += 1;
+                self.cache.chrome_generation += 1;
                 self.compute_layout();
             }
             DropDestination::TreePane(target_id, zone) => {
@@ -1102,7 +1102,7 @@ impl App {
                 self.layout.remove(source);
                 self.layout.insert_pane(target_id, source, direction, insert_first);
                 self.focused = Some(source);
-                self.chrome_generation += 1;
+                self.cache.chrome_generation += 1;
                 self.compute_layout();
             }
             DropDestination::Workspace(target_idx) => {

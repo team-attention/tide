@@ -90,8 +90,8 @@ impl App {
         let logical = self.logical_size();
         let focused = self.focused;
         let search_focus = self.search_focus;
-        let show_file_tree = self.show_file_tree;
-        let file_tree_scroll = self.file_tree_scroll;
+        let show_file_tree = self.ft.visible;
+        let file_tree_scroll = self.ft.scroll;
         let visual_pane_rects = self.visual_pane_rects.clone();
         let alive_pane_ids: Vec<u64> = self.panes.keys().copied().collect();
         let all_pane_ids = self.layout.pane_ids();
@@ -99,14 +99,14 @@ impl App {
         let p = self.palette();
 
         // Keep runtime caches bounded to currently alive panes.
-        self.pane_generations.retain(|id, _| self.panes.contains_key(id));
+        self.cache.pane_generations.retain(|id, _| self.panes.contains_key(id));
         renderer.retain_pane_caches(&alive_pane_ids);
 
         // Atlas reset -> all cached UV coords are stale, force full rebuild
         if renderer.atlas_was_reset() {
-            self.pane_generations.clear();
+            self.cache.pane_generations.clear();
             renderer.invalidate_all_pane_caches();
-            self.last_chrome_generation = self.chrome_generation.wrapping_sub(1);
+            self.cache.last_chrome_generation = self.cache.chrome_generation.wrapping_sub(1);
         }
 
         // Layout change -> invalidate only panes whose rects changed
@@ -116,14 +116,14 @@ impl App {
                 self.prev_visual_pane_rects.iter().copied().collect();
             for &(id, rect) in &visual_pane_rects {
                 if prev_map.get(&id) != Some(&rect) {
-                    self.pane_generations.remove(&id);
+                    self.cache.pane_generations.remove(&id);
                     renderer.remove_pane_cache(id);
                 }
             }
             // Also invalidate panes that were removed from the layout
             for &(id, _) in &self.prev_visual_pane_rects {
                 if !visual_pane_rects.iter().any(|(vid, _)| *vid == id) {
-                    self.pane_generations.remove(&id);
+                    self.cache.pane_generations.remove(&id);
                     renderer.remove_pane_cache(id);
                 }
             }
@@ -133,7 +133,7 @@ impl App {
         renderer.begin_frame(logical);
 
         // Rebuild chrome layer only when chrome content changed (panel backgrounds, file tree)
-        let chrome_dirty = self.chrome_generation != self.last_chrome_generation;
+        let chrome_dirty = self.cache.chrome_generation != self.cache.last_chrome_generation;
         if chrome_dirty {
             chrome::render_chrome(
                 self, &mut renderer, &p, logical,
@@ -141,7 +141,7 @@ impl App {
                 &visual_pane_rects, &all_pane_ids,
             );
 
-            self.last_chrome_generation = self.chrome_generation;
+            self.cache.last_chrome_generation = self.cache.chrome_generation;
         }
 
         let t_chrome = t0.elapsed();

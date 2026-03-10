@@ -16,13 +16,13 @@ pub(crate) fn render_hover(
     show_file_tree: bool,
     file_tree_scroll: f32,
 ) {
-    if let Some(ref hover) = app.hover_target {
+    if let Some(ref hover) = app.interaction.hover_target {
         // Skip hover rendering during drag
-        if matches!(app.pane_drag, PaneDragState::Idle) && !app.file_tree_border_dragging {
+        if matches!(app.interaction.pane_drag, PaneDragState::Idle) && !app.ft.border_dragging {
             match hover {
                 drag_drop::HoverTarget::FileTreeEntry(index) => {
                     if show_file_tree {
-                        if let Some(ft_rect) = app.file_tree_rect {
+                        if let Some(ft_rect) = app.ft.rect {
                             let cell_size = renderer.cell_size();
                             let line_height = cell_size.height * FILE_TREE_LINE_SPACING;
                             // File tree rows are rendered in an inset content rect.
@@ -94,7 +94,7 @@ pub(crate) fn render_hover(
                     }
                 }
                 drag_drop::HoverTarget::FileTreeBorder => {
-                    if let Some(ft_rect) = app.file_tree_rect {
+                    if let Some(ft_rect) = app.ft.rect {
                         let border_x = if app.sidebar_side == crate::LayoutSide::Left {
                             ft_rect.x + ft_rect.width
                         } else {
@@ -105,7 +105,7 @@ pub(crate) fn render_hover(
                     }
                 }
                 drag_drop::HoverTarget::SidebarHandle => {
-                    if let Some(ft_rect) = app.file_tree_rect {
+                    if let Some(ft_rect) = app.ft.rect {
                         // Highlight top edge of file tree panel
                         let handle_rect = Rect::new(ft_rect.x, ft_rect.y, ft_rect.width, PANE_PADDING);
                         renderer.draw_rect(handle_rect, p.hover_panel_border);
