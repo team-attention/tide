@@ -154,6 +154,14 @@ impl App {
             return Some(HoverTarget::PaneTabBar(pane_id));
         }
 
+        // Workspace sidebar border (resize handle)
+        if let Some(ws_rect) = self.ws.sidebar_rect {
+            let border_x = ws_rect.x + ws_rect.width + PANE_GAP;
+            if (pos.x - border_x).abs() < 5.0 {
+                return Some(HoverTarget::WsSidebarBorder);
+            }
+        }
+
         // File tree border (resize handle) — position depends on sidebar side
         if let Some(ft_rect) = self.ft.rect {
             let border_x = if self.sidebar_side == crate::LayoutSide::Left {

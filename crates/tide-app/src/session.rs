@@ -25,6 +25,8 @@ pub struct Session {
     pub sidebar_side: String,
     #[serde(default = "default_sidebar_outer")]
     pub sidebar_outer: bool,
+    #[serde(default = "default_ws_sidebar_width")]
+    pub ws_sidebar_width: f32,
 }
 
 fn default_sidebar_side() -> String {
@@ -33,6 +35,10 @@ fn default_sidebar_side() -> String {
 
 fn default_sidebar_outer() -> bool {
     true
+}
+
+fn default_ws_sidebar_width() -> f32 {
+    crate::theme::WORKSPACE_SIDEBAR_WIDTH
 }
 
 #[derive(Serialize, Deserialize)]
@@ -152,6 +158,7 @@ impl Session {
                 crate::LayoutSide::Right => "right".to_string(),
             },
             sidebar_outer: true, // sidebar is always outermost
+            ws_sidebar_width: app.ws.width,
         }
     }
 }
@@ -235,6 +242,7 @@ impl App {
         // Restore UI state
         self.ft.visible = session.show_file_tree;
         self.ft.width = session.file_tree_width;
+        self.ws.width = session.ws_sidebar_width;
         self.sidebar_side = match session.sidebar_side.as_str() {
             "right" => crate::LayoutSide::Right,
             _ => crate::LayoutSide::Left,
@@ -279,6 +287,7 @@ impl App {
     /// then create a fresh initial pane. Used after intentional quit.
     pub(crate) fn restore_preferences(&mut self, session: &Session, early_terminal: Option<tide_terminal::Terminal>) {
         self.ft.width = session.file_tree_width;
+        self.ws.width = session.ws_sidebar_width;
         self.dark_mode = session.dark_mode;
         self.sidebar_side = match session.sidebar_side.as_str() {
             "right" => crate::LayoutSide::Right,
@@ -400,6 +409,7 @@ mod tests {
             window_height: 640.0,
             sidebar_side: "left".to_string(),
             sidebar_outer: true,
+            ws_sidebar_width: 200.0,
         };
         let json = serde_json::to_string(&session).unwrap();
         let restored: Session = serde_json::from_str(&json).unwrap();
@@ -407,6 +417,7 @@ mod tests {
         assert_eq!(restored.focused_pane_id, Some(1));
         assert!(restored.show_file_tree);
         assert!((restored.file_tree_width - 250.0).abs() < f32::EPSILON);
+        assert!((restored.ws_sidebar_width - 200.0).abs() < f32::EPSILON);
         assert!(restored.dark_mode);
     }
 

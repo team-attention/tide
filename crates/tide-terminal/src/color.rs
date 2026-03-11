@@ -46,7 +46,8 @@ impl Terminal {
         }
     }
 
-    /// Light mode ANSI palette — dark text on light background
+    /// Light mode ANSI palette — dark text on light background.
+    /// White/BrightWhite stay light so they work as background colors.
     fn named_color_light(named: NamedColor) -> Color {
         match named {
             // Normal colors — high-contrast variants for warm beige bg
@@ -57,17 +58,17 @@ impl Terminal {
             NamedColor::Blue => Color::rgb(0.10, 0.22, 0.65),
             NamedColor::Magenta => Color::rgb(0.48, 0.15, 0.65),
             NamedColor::Cyan => Color::rgb(0.0, 0.35, 0.42),
-            NamedColor::White => Color::rgb(0.30, 0.28, 0.25),
+            NamedColor::White => Color::rgb(0.85, 0.83, 0.80),
 
-            // Bright colors — darker than usual for light bg readability
-            NamedColor::BrightBlack => Color::rgb(0.25, 0.23, 0.20),
+            // Bright colors
+            NamedColor::BrightBlack => Color::rgb(0.40, 0.38, 0.35),
             NamedColor::BrightRed => Color::rgb(0.75, 0.12, 0.10),
             NamedColor::BrightGreen => Color::rgb(0.08, 0.48, 0.12),
             NamedColor::BrightYellow => Color::rgb(0.52, 0.40, 0.0),
             NamedColor::BrightBlue => Color::rgb(0.12, 0.30, 0.75),
             NamedColor::BrightMagenta => Color::rgb(0.55, 0.22, 0.75),
             NamedColor::BrightCyan => Color::rgb(0.05, 0.45, 0.50),
-            NamedColor::BrightWhite => Color::rgb(0.50, 0.48, 0.44),
+            NamedColor::BrightWhite => Color::rgb(0.95, 0.93, 0.90),
 
             // Special
             NamedColor::Foreground => Color::rgb(0.10, 0.08, 0.05),  // Warm near-black
@@ -200,8 +201,44 @@ impl Terminal {
         }
     }
 
+    /// Remap a dark true-color background for light mode.
+    /// Extracts the hue direction from the original color, then applies it
+    /// as a subtle tint on the warm beige pane_bg. Preserves green → green,
+    /// red → red, etc.
+    pub(crate) fn remap_bg_for_light(color: Color) -> Color {
+        let max = color.r.max(color.g).max(color.b).max(0.01);
+        let hr = color.r / max;
+        let hg = color.g / max;
+        let hb = color.b / max;
+        // Tint the light pane_bg: subtract more from channels that are NOT dominant
+        let strength = 0.12;
+        Color::new(
+            (0.94 - (1.0 - hr) * strength).clamp(0.0, 1.0),
+            (0.92 - (1.0 - hg) * strength).clamp(0.0, 1.0),
+            (0.89 - (1.0 - hb) * strength).clamp(0.0, 1.0),
+            color.a,
+        )
+    }
+
+    /// Remap a bright true-color background for dark mode.
+    /// Extracts the hue direction, applies it as a subtle tint on the
+    /// dark pane_bg.
+    pub(crate) fn remap_bg_for_dark(color: Color) -> Color {
+        let max = color.r.max(color.g).max(color.b).max(0.01);
+        let hr = color.r / max;
+        let hg = color.g / max;
+        let hb = color.b / max;
+        let strength = 0.08;
+        Color::new(
+            (0.055 + hr * strength).clamp(0.0, 1.0),
+            (0.055 + hg * strength).clamp(0.0, 1.0),
+            (0.063 + hb * strength).clamp(0.0, 1.0),
+            color.a,
+        )
+    }
+
     /// Map indexed color 0-15 to the corresponding NamedColor.
-    fn index_to_named(idx: u8) -> NamedColor {
+    pub(crate) fn index_to_named(idx: u8) -> NamedColor {
         match idx {
             0 => NamedColor::Black,
             1 => NamedColor::Red,

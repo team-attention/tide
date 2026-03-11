@@ -962,6 +962,8 @@ pub(crate) struct WorkspaceManager {
     pub active: usize,
     pub show_sidebar: bool,
     pub sidebar_rect: Option<Rect>,
+    pub width: f32,
+    pub border_dragging: bool,
     pub drag: Option<(usize, f32, usize)>,
 }
 
@@ -972,6 +974,8 @@ impl WorkspaceManager {
             active: 0,
             show_sidebar: true,
             sidebar_rect: None,
+            width: crate::theme::WORKSPACE_SIDEBAR_WIDTH,
+            border_dragging: false,
             drag: None,
         }
     }

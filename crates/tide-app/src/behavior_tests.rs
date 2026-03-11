@@ -1406,6 +1406,7 @@ mod session_behavior {
             window_height: 600.0,
             sidebar_side: "left".to_string(),
             sidebar_outer: true,
+            ws_sidebar_width: 180.0,
         };
         let json = serde_json::to_string(&session).unwrap();
         let restored: Session = serde_json::from_str(&json).unwrap();
@@ -1424,6 +1425,7 @@ mod session_behavior {
             window_height: 800.0,
             sidebar_side: "right".to_string(),
             sidebar_outer: true,
+            ws_sidebar_width: 180.0,
         };
         let json = serde_json::to_string(&session).unwrap();
         let restored: Session = serde_json::from_str(&json).unwrap();

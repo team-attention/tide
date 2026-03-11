@@ -87,16 +87,107 @@ struct TermEventListener {
     pty_writer: Arc<Mutex<Option<Notifier>>>,
     /// Handle to the grid sync thread — unparked when new output arrives.
     sync_thread: Arc<Mutex<Option<std::thread::Thread>>>,
+    /// Dark/light mode — used to resolve OSC 10/11 color queries.
+    dark_mode: Arc<AtomicBool>,
+    /// Mode 2031: app opted in to dark/light color-scheme notifications.
+    mode_2031: Arc<AtomicBool>,
+}
+
+impl TermEventListener {
+    /// Resolve a color index to an RGB value for OSC 10/11/12 responses.
+    ///
+    /// Index mapping (from vte/alacritty_terminal):
+    ///   0-15   = Named ANSI colors (Black..BrightWhite)
+    ///   16-255 = 256-color palette
+    ///   256    = Foreground (OSC 10)
+    ///   257    = Background (OSC 11)
+    ///   258    = Cursor     (OSC 12)
+    fn resolve_color(&self, index: usize) -> AnsiRgb {
+        let dark = self.dark_mode.load(Ordering::Relaxed);
+        match index {
+            // Foreground (OSC 10)
+            256 => {
+                if dark {
+                    AnsiRgb { r: 230, g: 232, b: 242 } // dark fg: (0.9, 0.91, 0.95)
+                } else {
+                    AnsiRgb { r: 26, g: 20, b: 13 }    // light fg: (0.10, 0.08, 0.05)
+                }
+            }
+            // Background (OSC 11) — report the actual visible pane background
+            257 => {
+                if dark {
+                    AnsiRgb { r: 14, g: 14, b: 16 }    // dark pane_bg: (0.055, 0.055, 0.063)
+                } else {
+                    AnsiRgb { r: 240, g: 235, b: 227 }  // light pane_bg: (0.94, 0.92, 0.89)
+                }
+            }
+            // Cursor (OSC 12) — use foreground color
+            258 => {
+                if dark {
+                    AnsiRgb { r: 230, g: 232, b: 242 }
+                } else {
+                    AnsiRgb { r: 26, g: 20, b: 13 }
+                }
+            }
+            // Named ANSI colors (0-15)
+            0..=15 => {
+                let color = Terminal::named_color_to_rgb(dark, Terminal::index_to_named(index as u8));
+                AnsiRgb {
+                    r: (color.r * 255.0) as u8,
+                    g: (color.g * 255.0) as u8,
+                    b: (color.b * 255.0) as u8,
+                }
+            }
+            // 256-color palette (16-255)
+            16..=255 => {
+                let color = Terminal::indexed_color_fallback(index as u8);
+                AnsiRgb {
+                    r: (color.r * 255.0) as u8,
+                    g: (color.g * 255.0) as u8,
+                    b: (color.b * 255.0) as u8,
+                }
+            }
+            _ => AnsiRgb { r: 0, g: 0, b: 0 },
+        }
+    }
 }
 
 impl EventListener for TermEventListener {
     fn send_event(&self, event: Event) {
-        if let Event::PtyWrite(text) = &event {
-            if let Ok(guard) = self.pty_writer.lock() {
-                if let Some(notifier) = guard.as_ref() {
-                    let _ = notifier.0.send(Msg::Input(Cow::Owned(text.clone().into_bytes())));
+        match &event {
+            Event::PtyWrite(text) => {
+                if let Ok(guard) = self.pty_writer.lock() {
+                    if let Some(notifier) = guard.as_ref() {
+                        let _ = notifier.0.send(Msg::Input(Cow::Owned(text.clone().into_bytes())));
+                    }
                 }
             }
+            Event::ColorRequest(index, formatter) => {
+                let rgb = self.resolve_color(*index);
+                let response = formatter(rgb);
+                if let Ok(guard) = self.pty_writer.lock() {
+                    if let Some(notifier) = guard.as_ref() {
+                        let _ = notifier.0.send(Msg::Input(Cow::Owned(response.into_bytes())));
+                    }
+                }
+                return; // No need to mark dirty or wake sync thread
+            }
+            Event::PrivateModeUpdate(2031, enabled) => {
+                // Mode 2031: app opts in/out of color-scheme change notifications.
+                self.mode_2031.store(*enabled, Ordering::Relaxed);
+                // Immediately report current mode: CSI ? 997 ; N n (1=dark, 2=light)
+                if *enabled {
+                    let mode = if self.dark_mode.load(Ordering::Relaxed) { 1 } else { 2 };
+                    let response = format!("\x1b[?997;{}n", mode);
+                    if let Ok(guard) = self.pty_writer.lock() {
+                        if let Some(notifier) = guard.as_ref() {
+                            let _ = notifier.0.send(Msg::Input(Cow::Owned(response.into_bytes())));
+                        }
+                    }
+                }
+                return;
+            }
+            _ => {}
         }
         self.dirty.store(true, Ordering::Relaxed);
         // Wake the sync thread to process new output
@@ -255,6 +346,18 @@ impl GridSyncer {
                         bg_color = fg_color;
                         bg_is_default = false;
                     }
+                    // Remap mismatched true-color backgrounds (see main cell path below).
+                    let effective_bg = if flags.contains(CellFlags::INVERSE) { &fg } else { &bg };
+                    if !bg_is_default {
+                        if let AnsiColor::Spec(_) = effective_bg {
+                            let bg_lum = 0.2126 * bg_color.r + 0.7152 * bg_color.g + 0.0722 * bg_color.b;
+                            if !dark_mode && bg_lum < 0.5 {
+                                bg_color = Terminal::remap_bg_for_light(bg_color);
+                            } else if dark_mode && bg_lum > 0.7 {
+                                bg_color = Terminal::remap_bg_for_dark(bg_color);
+                            }
+                        }
+                    }
                     tc.style.background = if bg_is_default { None } else { Some(bg_color) };
                     continue;
                 }
@@ -267,6 +370,23 @@ impl GridSyncer {
                 if flags.contains(CellFlags::INVERSE) {
                     std::mem::swap(&mut fg_color, &mut bg_color);
                     bg_is_default = false;
+                }
+
+                // Remap mismatched true-color (Spec) backgrounds for the current
+                // theme. Apps that haven't detected the theme change via OSC 11
+                // or Mode 2031 send dark bgs in light mode (or bright bgs in dark
+                // mode). Remap them to theme-appropriate equivalents.
+                // Named/indexed colors are already mode-aware via our palette.
+                let effective_bg = if flags.contains(CellFlags::INVERSE) { &fg } else { &bg };
+                if !bg_is_default {
+                    if let AnsiColor::Spec(_) = effective_bg {
+                        let bg_lum = 0.2126 * bg_color.r + 0.7152 * bg_color.g + 0.0722 * bg_color.b;
+                        if !dark_mode && bg_lum < 0.5 {
+                            bg_color = Terminal::remap_bg_for_light(bg_color);
+                        } else if dark_mode && bg_lum > 0.7 {
+                            bg_color = Terminal::remap_bg_for_dark(bg_color);
+                        }
+                    }
                 }
 
                 if dark_mode {
@@ -465,6 +585,8 @@ pub struct Terminal {
     dark_mode: Arc<AtomicBool>,
     /// Signal to sync thread: dark mode changed, force full re-render
     dark_mode_changed: Arc<AtomicBool>,
+    /// Mode 2031: app opted in to color-scheme notifications (shared with listener)
+    mode_2031: Arc<AtomicBool>,
     /// Dirty flag (shared with PTY thread and sync thread)
     dirty: Arc<AtomicBool>,
     /// Shared waker callback — installed by main thread, called by sync thread
@@ -502,10 +624,14 @@ impl Terminal {
         let dirty = Arc::new(AtomicBool::new(true));
         let pty_writer = Arc::new(Mutex::new(None));
         let sync_thread_handle: Arc<Mutex<Option<std::thread::Thread>>> = Arc::new(Mutex::new(None));
+        let dark_mode_flag = Arc::new(AtomicBool::new(dark_mode));
+        let mode_2031_flag = Arc::new(AtomicBool::new(false));
         let listener = TermEventListener {
             dirty: dirty.clone(),
             pty_writer: pty_writer.clone(),
             sync_thread: sync_thread_handle.clone(),
+            dark_mode: dark_mode_flag.clone(),
+            mode_2031: mode_2031_flag.clone(),
         };
 
         let config = TermConfig::default();
@@ -550,7 +676,6 @@ impl Terminal {
         // Initialize shared state for the sync thread
         let cached_grid = Self::build_empty_grid(cols, rows);
         let stay_at_bottom = Arc::new(AtomicBool::new(false));
-        let dark_mode_flag = Arc::new(AtomicBool::new(dark_mode));
         let dark_mode_changed = Arc::new(AtomicBool::new(false));
         let snapshot_ready = Arc::new(AtomicBool::new(false));
         let sync_shutdown = Arc::new(AtomicBool::new(false));
@@ -614,6 +739,7 @@ impl Terminal {
             stay_at_bottom,
             dark_mode: dark_mode_flag,
             dark_mode_changed,
+            mode_2031: mode_2031_flag,
             dirty,
             waker,
             pending_pty_resize: None,
@@ -886,12 +1012,25 @@ impl Terminal {
 
     /// Set dark/light mode for the terminal color palette.
     /// Signals the sync thread to force a full grid re-render.
+    /// The listener's `dark_mode` atomic is shared, so subsequent OSC 10/11
+    /// queries from apps will automatically return the updated colors.
+    ///
+    /// If Mode 2031 is enabled (app opted in via CSI ? 2031 h), sends a
+    /// color-scheme notification (CSI ? 997 ; N n) so the app can auto-switch.
     pub fn set_dark_mode(&mut self, dark: bool) {
         if self.dark_mode.load(Ordering::Relaxed) != dark {
             self.dark_mode.store(dark, Ordering::Relaxed);
             self.dark_mode_changed.store(true, Ordering::Relaxed);
             self.dirty.store(true, Ordering::Relaxed);
             self.notify_sync_thread();
+
+            // Send Mode 2031 notification only if the app opted in.
+            if self.mode_2031.load(Ordering::Relaxed) {
+                let mode = if dark { 1 } else { 2 };
+                let _ = self.notifier.0.send(Msg::Input(
+                    Cow::Owned(format!("\x1b[?997;{}n", mode).into_bytes()),
+                ));
+            }
         }
     }
 

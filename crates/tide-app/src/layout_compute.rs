@@ -30,7 +30,7 @@ impl App {
             | Some(HoverTarget::WorkspaceSidebarNewBtn) => CursorIcon::Pointer,
             Some(HoverTarget::EditorScrollbar(_)) => CursorIcon::Default,
             Some(HoverTarget::SidebarHandle) => CursorIcon::Grab,
-            Some(HoverTarget::FileTreeBorder) => CursorIcon::ColResize,
+            Some(HoverTarget::FileTreeBorder) | Some(HoverTarget::WsSidebarBorder) => CursorIcon::ColResize,
             Some(HoverTarget::SplitBorder(SplitDirection::Horizontal)) => CursorIcon::ColResize,
             Some(HoverTarget::SplitBorder(SplitDirection::Vertical)) => CursorIcon::RowResize,
             None => CursorIcon::Default,
@@ -343,8 +343,12 @@ impl App {
         let show_file_tree = self.ft.visible;
         let show_ws_sidebar = self.ws.show_sidebar;
 
-        // Workspace sidebar: 180px on the left
-        let ws_sidebar_width = if show_ws_sidebar { WORKSPACE_SIDEBAR_WIDTH } else { 0.0 };
+        // Clamp workspace sidebar width
+        let max_ws = (logical.width - 200.0).max(80.0);
+        if show_ws_sidebar && self.ws.width > max_ws {
+            self.ws.width = max_ws;
+        }
+        let ws_sidebar_width = if show_ws_sidebar { self.ws.width } else { 0.0 };
 
         // Clamp file tree width so it never exceeds the window (leave at least 100px for panes).
         let max_sidebar = (logical.width - ws_sidebar_width - 100.0).max(0.0);
@@ -413,7 +417,8 @@ impl App {
         // Snap ratios to cell boundaries, then recompute with snapped ratios.
         // Skip during active border drags to prevent cumulative drift.
         let is_dragging = self.router.is_dragging_border()
-            || self.ft.border_dragging;
+            || self.ft.border_dragging
+            || self.ws.border_dragging;
         if !is_dragging {
             let cell_size = self.cell_size();
             if cell_size.width > 0.0 {
@@ -484,7 +489,8 @@ impl App {
         // During window resize, always apply PTY resize so content reflows
         // incrementally instead of jumping all at once when the drag ends.
         let skip_pty_resize = self.router.is_dragging_border()
-            || self.ft.border_dragging;
+            || self.ft.border_dragging
+            || self.ws.border_dragging;
         if !skip_pty_resize {
             let content_top = TAB_BAR_HEIGHT;
             let cell_size = self.cell_size();
