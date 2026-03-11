@@ -434,6 +434,50 @@ impl Node {
         }
     }
 
+    /// Find the active pane of the TabGroup immediately to the right of
+    /// the given pane's TabGroup. Traverses the tree upward from the pane's
+    /// leaf, looking for the first Horizontal split where the pane is in
+    /// the left subtree, then returns the leftmost leaf's active pane from
+    /// the right subtree.
+    pub(crate) fn find_right_neighbor(&self, pane: PaneId) -> Option<PaneId> {
+        self.find_right_neighbor_impl(pane).1
+    }
+
+    /// Returns (pane_found_in_subtree, right_neighbor_pane).
+    fn find_right_neighbor_impl(&self, pane: PaneId) -> (bool, Option<PaneId>) {
+        match self {
+            Node::Leaf(tg) => (tg.contains(pane), None),
+            Node::Split { direction, left, right, .. } => {
+                // Check left subtree
+                let (found_left, neighbor) = left.find_right_neighbor_impl(pane);
+                if found_left {
+                    if neighbor.is_some() {
+                        // Already found a right neighbor deeper in the left subtree
+                        return (true, neighbor);
+                    }
+                    if *direction == SplitDirection::Horizontal {
+                        // Pane is in left child of horizontal split →
+                        // right neighbor is the leftmost leaf of right child
+                        return (true, Some(right.leftmost_active_pane()));
+                    }
+                    // Vertical split: propagate up
+                    return (true, None);
+                }
+                // Check right subtree
+                let (found_right, neighbor) = right.find_right_neighbor_impl(pane);
+                (found_right, neighbor)
+            }
+        }
+    }
+
+    /// Return the active pane of the leftmost leaf in this subtree.
+    fn leftmost_active_pane(&self) -> PaneId {
+        match self {
+            Node::Leaf(tg) => tg.active_pane(),
+            Node::Split { left, .. } => left.leftmost_active_pane(),
+        }
+    }
+
     /// Find the TabGroup containing the given pane, returning an immutable reference.
     pub(crate) fn find_tab_group(&self, pane: PaneId) -> Option<&TabGroup> {
         match self {

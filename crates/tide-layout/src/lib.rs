@@ -455,6 +455,14 @@ impl SplitLayout {
     pub fn tab_group_containing(&self, pane: PaneId) -> Option<&TabGroup> {
         self.root.as_ref().and_then(|r| r.find_tab_group(pane))
     }
+
+    /// Find the active pane of the TabGroup immediately to the right of
+    /// the given pane's TabGroup. Returns `None` if the pane is already
+    /// in the rightmost position (no horizontal split ancestor with the
+    /// pane on the left side).
+    pub fn right_neighbor_pane(&self, pane: PaneId) -> Option<PaneId> {
+        self.root.as_ref().and_then(|r| r.find_right_neighbor(pane))
+    }
 }
 
 // ──────────────────────────────────────────────
