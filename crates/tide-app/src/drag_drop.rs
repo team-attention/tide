@@ -260,10 +260,47 @@ impl App {
 
         // Iterate tiling rects for hit-testing (covers gap areas between panes)
         for &(id, tiling_rect) in &self.pane_rects {
-            if id == source {
+            if !tiling_rect.contains(mouse) {
                 continue;
             }
-            if !tiling_rect.contains(mouse) {
+
+            // When dragging the active tab from a multi-tab group, allow edge
+            // drops on the group's own rect using a sibling tab as the target.
+            // This lets users pull a tab out of a group to create a new split.
+            if id == source {
+                let sibling = self.layout.tab_group_containing(source)
+                    .filter(|tg| tg.len() > 1)
+                    .and_then(|tg| tg.tabs.iter().find(|&&t| t != source).copied());
+                if let Some(sibling_id) = sibling {
+                    let visual_rect = self.visual_pane_rects
+                        .iter()
+                        .find(|(vid, _)| *vid == id)
+                        .map(|(_, r)| *r)
+                        .unwrap_or(tiling_rect);
+
+                    let rel_x = (mouse.x - visual_rect.x) / visual_rect.width;
+                    let rel_y = (mouse.y - visual_rect.y) / visual_rect.height;
+
+                    // Use nearest-edge detection so every position has a valid
+                    // drop zone (no dead Center region).
+                    let dist_left = rel_x;
+                    let dist_right = 1.0 - rel_x;
+                    let dist_top = rel_y;
+                    let dist_bottom = 1.0 - rel_y;
+                    let min_dist = dist_left.min(dist_right).min(dist_top).min(dist_bottom);
+
+                    let zone = if min_dist == dist_top {
+                        DropZone::Top
+                    } else if min_dist == dist_bottom {
+                        DropZone::Bottom
+                    } else if min_dist == dist_left {
+                        DropZone::Left
+                    } else {
+                        DropZone::Right
+                    };
+
+                    return Some(DropDestination::TreePane(sibling_id, zone));
+                }
                 continue;
             }
 

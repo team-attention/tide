@@ -164,7 +164,9 @@ impl App {
         self.compute_layout();
     }
 
-    /// Open a browser pane as a tab in the focused pane's tab group.
+    /// Open a browser pane to the right of the focused pane's tab group.
+    /// If a tab group already exists to the right, the browser is added there.
+    /// Otherwise a new horizontal split is created.
     pub(crate) fn open_browser_pane(&mut self, url: Option<String>) {
         let focused = match self.focused {
             Some(id) => id,
@@ -177,7 +179,7 @@ impl App {
         };
         self.panes.insert(new_id, PaneKind::Browser(pane));
         self.ime.pending_creates.push(new_id);
-        self.layout.add_tab(focused, new_id);
+        self.add_pane_to_right(focused, new_id);
         self.layout.set_active_tab(new_id);
         self.focused = Some(new_id);
         self.router.set_focused(new_id);
@@ -229,7 +231,10 @@ impl App {
         }
     }
 
-    /// Open a file in the split tree as a tab. If already open, activate its tab.
+    /// Open a file to the right of the focused pane's tab group.
+    /// If a tab group already exists to the right, the editor is added there.
+    /// Otherwise a new horizontal split is created.
+    /// If already open, activate its tab.
     pub(crate) fn open_editor_pane(&mut self, path: PathBuf) {
         let focused = match self.focused {
             Some(id) => id,
@@ -252,14 +257,14 @@ impl App {
             }
         }
 
-        // Create new editor pane as a tab
+        // Create new editor pane to the right
         let new_id = self.layout.alloc_id();
         match EditorPane::open(new_id, &path) {
             Ok(mut pane) => {
                 pane.editor.set_dark_mode(self.dark_mode);
                 self.panes.insert(new_id, PaneKind::Editor(pane));
                 self.ime.pending_creates.push(new_id);
-                self.layout.add_tab(focused, new_id);
+                self.add_pane_to_right(focused, new_id);
                 self.layout.set_active_tab(new_id);
                 self.focused = Some(new_id);
                 self.router.set_focused(new_id);
@@ -669,6 +674,19 @@ impl App {
             self.modal.branch_cleanup = None;
             self.cache.chrome_generation += 1;
             self.cache.needs_redraw = true;
+        }
+    }
+
+    /// Add a pane to the right of the focused pane's tab group.
+    /// If a tab group already exists to the right, add there.
+    /// Otherwise split horizontally to create a new tab group on the right.
+    fn add_pane_to_right(&mut self, focused: tide_core::PaneId, new_id: tide_core::PaneId) {
+        if let Some(right_pane) = self.layout.right_neighbor_pane(focused) {
+            // Right neighbor exists — add as a tab in that group
+            self.layout.add_tab(right_pane, new_id);
+        } else {
+            // No right neighbor — split the focused pane horizontally
+            self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Horizontal, false);
         }
     }
 }

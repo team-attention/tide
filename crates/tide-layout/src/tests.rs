@@ -1303,4 +1303,66 @@ mod tests {
             assert!(restored_ids.contains(id));
         }
     }
+
+    // ──────────────────────────────────────────
+    // right_neighbor_pane
+    // ──────────────────────────────────────────
+
+    #[test]
+    fn test_right_neighbor_single_pane_returns_none() {
+        let (layout, p1) = SplitLayout::with_initial_pane();
+        assert_eq!(layout.right_neighbor_pane(p1), None);
+    }
+
+    #[test]
+    fn test_right_neighbor_horizontal_split() {
+        // p1 | p2  →  right neighbor of p1 is p2
+        let (mut layout, p1) = SplitLayout::with_initial_pane();
+        let p2 = layout.split(p1, SplitDirection::Horizontal);
+        assert_eq!(layout.right_neighbor_pane(p1), Some(p2));
+        // p2 has no right neighbor
+        assert_eq!(layout.right_neighbor_pane(p2), None);
+    }
+
+    #[test]
+    fn test_right_neighbor_vertical_split_returns_none() {
+        // p1 / p2 (top/bottom) → no horizontal right neighbor
+        let (mut layout, p1) = SplitLayout::with_initial_pane();
+        let p2 = layout.split(p1, SplitDirection::Vertical);
+        assert_eq!(layout.right_neighbor_pane(p1), None);
+        assert_eq!(layout.right_neighbor_pane(p2), None);
+    }
+
+    #[test]
+    fn test_right_neighbor_nested_splits() {
+        // (p1 / p2) | p3  →  right neighbor of p1 is p3, p2 is p3
+        let (mut layout, p1) = SplitLayout::with_initial_pane();
+        let p3 = layout.split(p1, SplitDirection::Horizontal);
+        let p2 = layout.split(p1, SplitDirection::Vertical);
+        assert_eq!(layout.right_neighbor_pane(p1), Some(p3));
+        assert_eq!(layout.right_neighbor_pane(p2), Some(p3));
+        assert_eq!(layout.right_neighbor_pane(p3), None);
+    }
+
+    #[test]
+    fn test_right_neighbor_with_tab_group() {
+        // [p1, p3] | p2  →  right neighbor of p1 and p3 is p2
+        let (mut layout, p1) = SplitLayout::with_initial_pane();
+        let p2 = layout.split(p1, SplitDirection::Horizontal);
+        let p3 = layout.alloc_id();
+        layout.add_tab(p1, p3);
+        assert_eq!(layout.right_neighbor_pane(p1), Some(p2));
+        assert_eq!(layout.right_neighbor_pane(p3), Some(p2));
+    }
+
+    #[test]
+    fn test_right_neighbor_three_way_horizontal() {
+        // p1 | p2 | p3  →  right of p1 is p2, right of p2 is p3
+        let (mut layout, p1) = SplitLayout::with_initial_pane();
+        let p2 = layout.split(p1, SplitDirection::Horizontal);
+        let p3 = layout.split(p2, SplitDirection::Horizontal);
+        assert_eq!(layout.right_neighbor_pane(p1), Some(p2));
+        assert_eq!(layout.right_neighbor_pane(p2), Some(p3));
+        assert_eq!(layout.right_neighbor_pane(p3), None);
+    }
 }
