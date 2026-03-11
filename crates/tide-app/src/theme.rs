@@ -302,8 +302,8 @@ pub static LIGHT: ThemePalette = ThemePalette {
     ime_preedit_bg: Color::new(0.88, 0.85, 0.80, 1.0),  // warm beige
     ime_preedit_fg: Color::new(0.10, 0.08, 0.05, 1.0),  // warm dark
 
-    // Selection — warm brown
-    selection: Color::new(0.30, 0.25, 0.10, 0.25),
+    // Selection — soft warm highlight
+    selection: Color::new(0.55, 0.45, 0.20, 0.18),
 
     // Cursor accent — chestnut brown
     cursor_accent: Color::new(0.30, 0.22, 0.12, 1.0),
