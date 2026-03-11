@@ -372,6 +372,15 @@ impl App {
                 }
             }
 
+            // Workspace sidebar border
+            if let Some(ws_rect) = self.ws.sidebar_rect {
+                let border_x = ws_rect.x + ws_rect.width + PANE_GAP;
+                if (self.last_cursor_pos.x - border_x).abs() < 5.0 {
+                    self.ws.border_dragging = true;
+                    return;
+                }
+            }
+
             // Sidebar border
             if let Some(ft_rect) = self.ft.rect {
                 let border_x = if self.sidebar_side == crate::LayoutSide::Left {
@@ -471,6 +480,12 @@ impl App {
             return;
         }
 
+        if self.ws.border_dragging {
+            self.ws.border_dragging = false;
+            self.compute_layout();
+            return;
+        }
+
         let drag_state = std::mem::replace(&mut self.interaction.pane_drag, PaneDragState::Idle);
         match drag_state {
             PaneDragState::Dragging {
@@ -542,6 +557,19 @@ impl App {
         // Handle scrollbar drag
         if let (Some(pane_id), Some(rect)) = (self.interaction.scrollbar_dragging, self.interaction.scrollbar_drag_rect) {
             self.apply_scrollbar_drag(pane_id, rect, pos.y);
+            self.cache.needs_redraw = true;
+            return;
+        }
+
+        // Handle workspace sidebar border resize
+        if self.ws.border_dragging {
+            let logical = self.logical_size();
+            let ws_x = self.ws.sidebar_rect.map(|r| r.x).unwrap_or(PANE_GAP);
+            let max_w = (logical.width - 200.0).max(80.0);
+            let new_width = (pos.x - ws_x).max(80.0).min(max_w);
+            self.ws.width = new_width;
+            self.compute_layout();
+            self.cache.chrome_generation += 1;
             self.cache.needs_redraw = true;
             return;
         }

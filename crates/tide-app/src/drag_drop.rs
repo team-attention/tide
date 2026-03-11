@@ -53,6 +53,7 @@ pub(crate) enum HoverTarget {
     EditorScrollbar(PaneId),
     WorkspaceSidebarItem(usize),
     WorkspaceSidebarNewBtn,
+    WsSidebarBorder,
 }
 
 impl HoverTarget {
