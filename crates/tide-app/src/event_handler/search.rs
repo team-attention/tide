@@ -187,8 +187,13 @@ impl App {
                 }
             }
             Some(PaneKind::Editor(pane)) => {
-                if let Some(ref mut s) = pane.search {
-                    search::execute_search_editor(s, &pane.editor.buffer.lines);
+                if pane.preview_mode {
+                    // Search against preview lines so match coordinates are in preview space
+                    pane.execute_preview_search();
+                } else {
+                    if let Some(ref mut s) = pane.search {
+                        search::execute_search_editor(s, &pane.editor.buffer.lines);
+                    }
                 }
             }
             Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) | Some(PaneKind::Launcher(_)) => {}
@@ -220,19 +225,23 @@ impl App {
                 }
             }
             Some(PaneKind::Editor(pane)) => {
-                if let Some(ref s) = pane.search {
-                    if let Some(idx) = s.current {
-                        let m = &s.matches[idx];
+                let match_info = pane.search.as_ref()
+                    .and_then(|s| s.current.map(|idx| (s.matches[idx].line, s.matches[idx].col, s.matches[idx].len)));
+                if let Some((m_line, m_col, m_len)) = match_info {
+                    if pane.preview_mode {
+                        let line_count = pane.preview_line_count();
+                        let max_scroll = line_count.saturating_sub(visible_rows);
+                        pane.preview_scroll = m_line.saturating_sub(visible_rows / 2).min(max_scroll);
+                    } else {
                         let line_count = pane.editor.buffer.line_count();
                         let max_scroll = line_count.saturating_sub(visible_rows);
-                        let offset = m.line.saturating_sub(visible_rows / 2).min(max_scroll);
+                        let offset = m_line.saturating_sub(visible_rows / 2).min(max_scroll);
                         pane.editor.set_scroll_offset(offset);
-                        // Horizontal scroll: ensure match column is visible
                         let h_scroll = pane.editor.h_scroll_offset();
-                        if m.col < h_scroll {
-                            pane.editor.set_h_scroll_offset(m.col.saturating_sub(4));
-                        } else if m.col + m.len > h_scroll + visible_cols {
-                            pane.editor.set_h_scroll_offset((m.col + m.len).saturating_sub(visible_cols).saturating_add(4));
+                        if m_col < h_scroll {
+                            pane.editor.set_h_scroll_offset(m_col.saturating_sub(4));
+                        } else if m_col + m_len > h_scroll + visible_cols {
+                            pane.editor.set_h_scroll_offset((m_col + m_len).saturating_sub(visible_cols).saturating_add(4));
                         }
                     }
                 }
@@ -266,19 +275,28 @@ impl App {
                 }
             }
             Some(PaneKind::Editor(pane)) => {
-                if let Some(ref mut s) = pane.search {
+                // Extract match info before accessing other pane fields (borrow splitting)
+                let match_info = if let Some(ref mut s) = pane.search {
                     s.next_match();
-                    if let Some(idx) = s.current {
-                        let m = &s.matches[idx];
+                    s.current.map(|idx| (s.matches[idx].line, s.matches[idx].col, s.matches[idx].len))
+                } else {
+                    None
+                };
+                if let Some((m_line, m_col, m_len)) = match_info {
+                    if pane.preview_mode {
+                        let line_count = pane.preview_line_count();
+                        let max_scroll = line_count.saturating_sub(visible_rows);
+                        pane.preview_scroll = m_line.saturating_sub(visible_rows / 2).min(max_scroll);
+                    } else {
                         let line_count = pane.editor.buffer.line_count();
                         let max_scroll = line_count.saturating_sub(visible_rows);
-                        let offset = m.line.saturating_sub(visible_rows / 2).min(max_scroll);
+                        let offset = m_line.saturating_sub(visible_rows / 2).min(max_scroll);
                         pane.editor.set_scroll_offset(offset);
                         let h_scroll = pane.editor.h_scroll_offset();
-                        if m.col < h_scroll {
-                            pane.editor.set_h_scroll_offset(m.col.saturating_sub(4));
-                        } else if m.col + m.len > h_scroll + visible_cols {
-                            pane.editor.set_h_scroll_offset((m.col + m.len).saturating_sub(visible_cols).saturating_add(4));
+                        if m_col < h_scroll {
+                            pane.editor.set_h_scroll_offset(m_col.saturating_sub(4));
+                        } else if m_col + m_len > h_scroll + visible_cols {
+                            pane.editor.set_h_scroll_offset((m_col + m_len).saturating_sub(visible_cols).saturating_add(4));
                         }
                     }
                 }
@@ -312,19 +330,27 @@ impl App {
                 }
             }
             Some(PaneKind::Editor(pane)) => {
-                if let Some(ref mut s) = pane.search {
+                let match_info = if let Some(ref mut s) = pane.search {
                     s.prev_match();
-                    if let Some(idx) = s.current {
-                        let m = &s.matches[idx];
+                    s.current.map(|idx| (s.matches[idx].line, s.matches[idx].col, s.matches[idx].len))
+                } else {
+                    None
+                };
+                if let Some((m_line, m_col, m_len)) = match_info {
+                    if pane.preview_mode {
+                        let line_count = pane.preview_line_count();
+                        let max_scroll = line_count.saturating_sub(visible_rows);
+                        pane.preview_scroll = m_line.saturating_sub(visible_rows / 2).min(max_scroll);
+                    } else {
                         let line_count = pane.editor.buffer.line_count();
                         let max_scroll = line_count.saturating_sub(visible_rows);
-                        let offset = m.line.saturating_sub(visible_rows / 2).min(max_scroll);
+                        let offset = m_line.saturating_sub(visible_rows / 2).min(max_scroll);
                         pane.editor.set_scroll_offset(offset);
                         let h_scroll = pane.editor.h_scroll_offset();
-                        if m.col < h_scroll {
-                            pane.editor.set_h_scroll_offset(m.col.saturating_sub(4));
-                        } else if m.col + m.len > h_scroll + visible_cols {
-                            pane.editor.set_h_scroll_offset((m.col + m.len).saturating_sub(visible_cols).saturating_add(4));
+                        if m_col < h_scroll {
+                            pane.editor.set_h_scroll_offset(m_col.saturating_sub(4));
+                        } else if m_col + m_len > h_scroll + visible_cols {
+                            pane.editor.set_h_scroll_offset((m_col + m_len).saturating_sub(visible_cols).saturating_add(4));
                         }
                     }
                 }

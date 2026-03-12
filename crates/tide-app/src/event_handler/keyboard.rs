@@ -28,14 +28,16 @@ impl App {
 
         // If the key produced text and no command modifiers are held,
         // route via the text input system.
-        // Exception: skip text routing when the active editor is in preview mode,
-        // so keys like j/k/d/u fall through to the preview scroll handler.
+        // Exception: skip text routing when the active editor is in preview mode
+        // AND no search bar is active, so keys like j/k/d/u fall through to
+        // the preview scroll handler.
         if let Some(ref text) = chars {
             if !modifiers.meta && !modifiers.ctrl && !modifiers.alt {
-                let in_preview = self.focused
-                    .and_then(|id| self.panes.get(&id))
-                    .map(|p| matches!(p, PaneKind::Editor(ep) if ep.preview_mode))
-                    .unwrap_or(false);
+                let in_preview = self.search_focus.is_none()
+                    && self.focused
+                        .and_then(|id| self.panes.get(&id))
+                        .map(|p| matches!(p, PaneKind::Editor(ep) if ep.preview_mode))
+                        .unwrap_or(false);
                 if !in_preview {
                     self.send_text_to_target(text);
                     self.cache.needs_redraw = true;
@@ -923,5 +925,6 @@ impl App {
             }
             _ => {}
         }
+        self.cache.needs_redraw = true;
     }
 }

@@ -372,6 +372,12 @@ impl EditorState {
         self.generation.wrapping_add(self.buffer.generation())
     }
 
+    /// Generation that only changes when buffer content changes (not scroll).
+    /// Used by preview cache to avoid expensive markdown re-parse on scroll.
+    pub fn content_generation(&self) -> u64 {
+        self.buffer.generation()
+    }
+
     pub fn is_modified(&self) -> bool {
         self.buffer.is_modified()
     }
