@@ -371,36 +371,46 @@ impl App {
             self.unwatch_file(&path);
         }
 
+        // Determine next focus target BEFORE removal so we can find the
+        // same TabGroup or a layout neighbor while the tree is still intact.
+        let next_focus = if self.focused == Some(tab_id) {
+            if let Some(tg) = self.layout.tab_group_containing(tab_id) {
+                if tg.len() > 1 {
+                    // Same TabGroup has other tabs — pick the one that
+                    // TabGroup::remove_tab would promote to active.
+                    let idx = tg.tabs.iter().position(|&t| t == tab_id).unwrap();
+                    if idx + 1 < tg.tabs.len() {
+                        // Next tab in the group (right neighbor)
+                        Some(tg.tabs[idx + 1])
+                    } else {
+                        // Was last tab — previous tab
+                        Some(tg.tabs[idx - 1])
+                    }
+                } else {
+                    // Last tab in group — group will be removed, find layout neighbor.
+                    self.layout.right_neighbor_pane(tab_id)
+                        .or_else(|| {
+                            // No right neighbor — pick any remaining pane
+                            self.layout.pane_ids().iter()
+                                .find(|&&id| id != tab_id)
+                                .copied()
+                        })
+                }
+            } else {
+                None
+            }
+        } else {
+            None // Focused pane is not being closed
+        };
+
         // Remove from layout (handles multi-tab groups automatically)
         self.layout.remove(tab_id);
         self.panes.remove(&tab_id);
         self.cleanup_closed_pane_state(tab_id);
 
-        // If focused pane was the closed tab, switch focus to the layout's
-        // active tab in the same group (set by TabGroup::remove_tab).
+        // Apply the pre-computed focus target
         if self.focused == Some(tab_id) {
-            let remaining = self.layout.pane_ids();
-            let target = if remaining.is_empty() {
-                None
-            } else {
-                // The layout already adjusted the active tab index in the
-                // group that contained tab_id. Find which pane is now active
-                // by checking each remaining pane's group.
-                // First, try the first remaining pane's group active pane
-                // (covers single-group and multi-group cases).
-                let mut active_in_group = None;
-                for &id in &remaining {
-                    if let Some(tg) = self.layout.tab_group_containing(id) {
-                        let ap = tg.active_pane();
-                        if active_in_group.is_none() {
-                            active_in_group = Some(ap);
-                            break;
-                        }
-                    }
-                }
-                active_in_group.or_else(|| remaining.first().copied())
-            };
-            if let Some(id) = target {
+            if let Some(id) = next_focus {
                 self.focused = Some(id);
                 self.router.set_focused(id);
                 self.layout.set_active_tab(id);
@@ -568,18 +578,27 @@ impl App {
             std::process::exit(0);
         }
 
-        // Determine which pane to focus before removing: prefer previous (left/above)
-        let pane_ids = self.layout.pane_ids();
-        let pos = pane_ids.iter().position(|&id| id == pane_id);
-        let next_focus = pos.and_then(|p| {
-            if p > 0 {
-                Some(pane_ids[p - 1]) // previous (left/above)
-            } else if p + 1 < pane_ids.len() {
-                Some(pane_ids[p + 1]) // next (right/below)
+        // Determine next focus target BEFORE removal so we can find the
+        // same TabGroup or a layout neighbor while the tree is still intact.
+        let next_focus = if let Some(tg) = self.layout.tab_group_containing(pane_id) {
+            if tg.len() > 1 {
+                let idx = tg.tabs.iter().position(|&t| t == pane_id).unwrap();
+                if idx + 1 < tg.tabs.len() {
+                    Some(tg.tabs[idx + 1])
+                } else {
+                    Some(tg.tabs[idx - 1])
+                }
             } else {
-                None
+                self.layout.right_neighbor_pane(pane_id)
+                    .or_else(|| {
+                        self.layout.pane_ids().iter()
+                            .find(|&&id| id != pane_id)
+                            .copied()
+                    })
             }
-        });
+        } else {
+            None
+        };
 
         self.layout.remove(pane_id);
         self.panes.remove(&pane_id);

@@ -4,7 +4,11 @@ A DDD-style living specification of the Tide terminal emulator.
 
 ## How to Read This
 
-Each document maps to a **Bounded Context** — a self-contained area of the system with its own language and rules. Start with the glossary, then explore the context that interests you.
+Start with the **glossary** for domain language. Read **specs** for Use Cases and Business Rules. Check **behavior tests** to see those rules verified in code. The traceability chain is:
+
+```
+Glossary → Spec (UC + BR) → Behavior Test (BR comment) → Code
+```
 
 ## Documents
 
@@ -25,12 +29,19 @@ Each document maps to a **Bounded Context** — a self-contained area of the sys
 ### Application Layer
 - **[App Orchestrator](domain/app.md)** — The App aggregate: sub-modules, state management, the update/render loop. (`tide-app`)
 
-### Domain Flows (Use Cases)
-- **[Keystroke → Action](flows/keystroke-to-action.md)** — How a keypress becomes a system mutation.
-- **[Pane Lifecycle](flows/pane-lifecycle.md)** — Create, split, tab, drag, close panes.
-- **[Terminal Output](flows/terminal-output.md)** — PTY bytes → grid cells → GPU pixels.
-- **[Workspace Switch](flows/workspace-switch.md)** — Save/load/switch workspace state.
-- **[Modal Interactions](flows/modal-interactions.md)** — File finder, git switcher, save confirm, context menu.
+### Specs (Use Cases + Business Rules)
+- **[Pane Lifecycle](specs/pane-lifecycle.md)** — Create, split, resolve, open, close, drag Panes.
+- **[Input Routing](specs/input-routing.md)** — Keystroke resolution, text routing, focus, GlobalAction dispatch.
+- **[Modal](specs/modal.md)** — Modal interception, dismiss, lifecycle.
+- **[Workspace](specs/workspace.md)** — Switch, close, sidebar, cross-workspace drag.
+- **[Terminal Sync](specs/terminal-sync.md)** — PTY → grid sync, render cache invalidation.
+- **[Editor](specs/editor.md)** — Text editing, preview mode, scroll.
+- **[Launcher](specs/launcher.md)** — Launcher resolution to concrete PaneKind.
+- **[Search](specs/search.md)** — In-pane text search and match navigation.
+- **[IME](specs/ime.md)** — Input method composition lifecycle and cleanup.
+- **[Session](specs/session.md)** — Save/load App state across launches.
+- **[Theme](specs/theme.md)** — Theme toggle and font defaults.
+- **[File Tree](specs/file-tree.md)** — File tree scroll clamping.
 
 ### Living Tests
 - **[Behavior Test Guide](testing/behavior-tests.md)** — How to read and write behavioral tests as specification.

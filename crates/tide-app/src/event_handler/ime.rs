@@ -63,17 +63,19 @@ impl App {
             }
         }
 
-        // Preview mode: ignore text input (scroll via Cmd+D/U and mouse/trackpad)
-        if let Some(id) = self.focused {
-            let is_preview = self
-                .panes
-                .get(&id)
-                .map(|p| matches!(p, PaneKind::Editor(ep) if ep.preview_mode))
-                .unwrap_or(false);
-            if is_preview {
-                self.ime.clear_composition();
-                self.cache.needs_redraw = true;
-                return;
+        // Preview mode: ignore text input UNLESS search bar is active
+        if self.search_focus.is_none() {
+            if let Some(id) = self.focused {
+                let is_preview = self
+                    .panes
+                    .get(&id)
+                    .map(|p| matches!(p, PaneKind::Editor(ep) if ep.preview_mode))
+                    .unwrap_or(false);
+                if is_preview {
+                    self.ime.clear_composition();
+                    self.cache.needs_redraw = true;
+                    return;
+                }
             }
         }
         // Launcher pane: intercept single-char text to resolve launcher choice.
