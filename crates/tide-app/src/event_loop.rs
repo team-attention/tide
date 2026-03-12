@@ -421,11 +421,16 @@ impl App {
     /// changed. macOS may unpredictably reset the first responder during event
     /// processing, so we must re-establish it unconditionally.
     pub(crate) fn sync_ime_proxies(&mut self, window: &WindowProxy) {
-        for id in self.ime.pending_creates.drain(..) {
-            window.create_ime_proxy(id);
-        }
+        // Process removes BEFORE creates so that re-created proxies (same
+        // PaneId, e.g. Launcher → Terminal via resolve_launcher) work
+        // correctly.  The old proxy must be gone before create_ime_proxy's
+        // idempotent contains_key check runs, otherwise the create is a
+        // no-op and the subsequent remove deletes the only proxy.
         for id in self.ime.pending_removes.drain(..) {
             window.remove_ime_proxy(id);
+        }
+        for id in self.ime.pending_creates.drain(..) {
+            window.create_ime_proxy(id);
         }
 
         let target = self.effective_ime_target();
