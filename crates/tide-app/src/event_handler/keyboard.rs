@@ -797,9 +797,9 @@ impl App {
     ) {
         match key {
             Key::Enter => {
-                // Navigate to URL and unfocus
+                // Navigate to trimmed URL and unfocus
                 let url = if let Some(PaneKind::Browser(bp)) = self.panes.get(&pane_id) {
-                    bp.url_input.clone()
+                    bp.url_input.trim().to_string()
                 } else {
                     return;
                 };

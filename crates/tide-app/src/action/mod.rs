@@ -578,6 +578,20 @@ impl App {
                                 }
                             }
                         }
+                        Some(PaneKind::Browser(bp)) if bp.url_input_focused => {
+                            if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                                if let Ok(text) = clipboard.get_text() {
+                                    if !text.is_empty() {
+                                        for ch in text.chars() {
+                                            let byte_off = bp.cursor_byte_offset();
+                                            bp.url_input.insert(byte_off, ch);
+                                            bp.url_input_cursor += 1;
+                                        }
+                                        self.cache.invalidate_chrome();
+                                    }
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }

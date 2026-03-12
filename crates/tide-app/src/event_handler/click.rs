@@ -437,10 +437,37 @@ impl App {
                 }
             }
             HoverTarget::BrowserUrlBar => {
+                // Compute geometry before mutably borrowing panes.
+                let cell_w = self.cell_size().width;
+                let click_x = self.last_cursor_pos.x;
+                let pane_rect = self.visual_pane_rects.iter()
+                    .find(|(id, _)| *id == focused_id)
+                    .map(|&(_, r)| r);
+
                 if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&focused_id) {
-                    bp.url_input_focused = true;
-                    bp.url_input = bp.url.clone();
-                    bp.url_input_cursor = bp.url_input.chars().count();
+                    if !bp.url_input_focused {
+                        bp.url_input_focused = true;
+                        bp.url_input = bp.url.clone();
+                    }
+                    // Position cursor at click location.
+                    if let Some(rect) = pane_rect {
+                        let nav_x = rect.x + crate::theme::PANE_PADDING;
+                        let url_text_x = nav_x + 8.0 + cell_w * 6.0 + 4.0 + 4.0;
+                        let relative_x = (click_x - url_text_x).max(0.0);
+                        let mut col_px = 0.0_f32;
+                        let mut char_idx = 0;
+                        for ch in bp.url_input.chars() {
+                            let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1) as f32 * cell_w;
+                            if relative_x < col_px + w * 0.5 {
+                                break;
+                            }
+                            col_px += w;
+                            char_idx += 1;
+                        }
+                        bp.url_input_cursor = char_idx;
+                    } else {
+                        bp.url_input_cursor = bp.url_input.chars().count();
+                    }
                 }
             }
             _ => {}
