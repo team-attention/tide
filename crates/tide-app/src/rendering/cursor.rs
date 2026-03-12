@@ -123,6 +123,10 @@ pub(crate) fn render_cursor_and_highlights(
                     if let Some(ref sel) = pane.selection {
                         render_preview_selection(pane, inner, renderer, p, sel);
                     }
+                    // Render preview search highlights (matches are in preview-line coords)
+                    if let Some(ref search) = pane.search {
+                        render_preview_search_highlights(pane, inner, renderer, p, search);
+                    }
                 } else {
                     if focused == Some(id) && search_focus != Some(id) && app.cursor_visible {
                         let pw = if ime_target == Some(id) { preedit_width_cells } else { 0 };
@@ -347,5 +351,50 @@ fn render_bracket_highlight(
         renderer.draw_rect(Rect::new(rx, ry + rh - border_w, rw, border_w), p.bracket_match_border);
         renderer.draw_rect(Rect::new(rx, ry, border_w, rh), p.bracket_match_border);
         renderer.draw_rect(Rect::new(rx + rw - border_w, ry, border_w, rh), p.bracket_match_border);
+    }
+}
+
+/// Render search match highlights for a preview-mode editor pane.
+/// Match coordinates are in preview-line space (line = preview line index,
+/// col/len = display-cell units), so no buffer-to-preview mapping is needed.
+fn render_preview_search_highlights(
+    pane: &crate::editor_pane::EditorPane,
+    inner: Rect,
+    renderer: &mut tide_renderer::WgpuRenderer,
+    p: &ThemePalette,
+    search: &crate::search::SearchState,
+) {
+    if !search.visible || search.input.is_empty() {
+        return;
+    }
+    let cell_size = renderer.cell_size();
+    let scroll = pane.preview_scroll;
+    let h_scroll = pane.preview_h_scroll;
+    let visible_rows = (inner.height / cell_size.height).ceil() as usize;
+
+    for (mi, m) in search.matches.iter().enumerate() {
+        if m.line < scroll || m.line >= scroll + visible_rows {
+            continue;
+        }
+        // m.col and m.len are in display-cell units; apply h_scroll
+        if m.col + m.len <= h_scroll {
+            continue;
+        }
+        let visual_row = m.line - scroll;
+        let visual_col = if m.col >= h_scroll { m.col - h_scroll } else { 0 };
+        let draw_len = if m.col >= h_scroll {
+            m.len
+        } else {
+            m.len - (h_scroll - m.col)
+        };
+        let rx = inner.x + visual_col as f32 * cell_size.width;
+        let ry = inner.y + visual_row as f32 * cell_size.height;
+        let rw = draw_len as f32 * cell_size.width;
+        let color = if search.current == Some(mi) {
+            p.search_current_bg
+        } else {
+            p.search_match_bg
+        };
+        renderer.draw_rect(Rect::new(rx, ry, rw, cell_size.height), color);
     }
 }

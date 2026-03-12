@@ -32,14 +32,49 @@ Each crate is a bounded context. Know which one you're touching:
 | `tide-renderer` | GPU rendering pipeline | WgpuRenderer, GlyphAtlas |
 | `tide-app` | Orchestrator | App, WorkspaceManager, ModalStack |
 
-## Behavior-First Development
+## Feature Development (MUST)
 
-When adding a new feature or fixing a bug:
+When adding a new feature or fixing a bug, follow this order. **Do not skip steps or reverse the order.**
 
-1. **Write behavior tests first** in `crates/tide-app/src/behavior_tests.rs`
-2. Test name = natural language sentence: `fn closing_last_pane_in_workspace_shows_launcher()`
-3. Place test in the correct domain module (see existing modules in the file)
-4. Then implement until tests pass
+```
+1. Spec   → Understand the system → Clarify requirements with user → Write spec
+2. Test   → Write behavior tests for each Business Rule (crates/tide-app/src/behavior_tests.rs)
+3. Code   → Write code that passes the tests
+```
+
+- Never skip or reverse this order
+- No code without a spec, no implementation without tests
+- Same applies when modifying existing specs: spec change → test change → code change
+- Use domain terms from `docs/glossary.md` when writing specs. Add new terms to glossary first if needed.
+
+### Spec Format (`docs/specs/{feature}.md`)
+
+```markdown
+# Spec: {Name}
+
+## Overview
+### As-Is             ← Current state and problems (concrete, code-based)
+### To-Be             ← Target state after changes
+### Approach          ← Step-by-step plan to get there
+## Bounded Contexts    ← Related crates
+## Use Cases           ← Actor, Trigger, Precondition, Flow, Postcondition, Business Rules
+## Invariants          ← Invariants that must hold
+## Tests               ← UC ↔ BR ↔ test function mapping table
+## Location            ← Code location
+```
+
+### Test Conventions
+
+- Test module comment: `// Spec: docs/specs/{feature}.md`
+- UC section comment: `// --- UC-N: {Name} ---`
+- Each test references its BR: `// UC-N BR-M: {rule description}`
+- Test name = natural language sentence: `fn closing_last_pane_in_workspace_shows_launcher()`
+
+### Naming Rule
+
+- Glossary Term = code type name (must match)
+- Spec Use Case name = test section comment (must match)
+- Business Rule number = referenced in test function comment
 
 See `docs/testing/behavior-tests.md` for the full guide.
 
@@ -60,10 +95,20 @@ Extract GridSyncer dirty tracking in tide-terminal
 ## PR Description
 
 Follow the template in `.github/PULL_REQUEST_TEMPLATE.md`. Must include:
+- Which Spec(s) and Use Case(s) are affected (e.g. `pane-lifecycle UC-5: ClosePane`)
 - Which Bounded Context(s) are touched
 - Which Entities/Aggregates are modified
 - Which Invariants are preserved or changed
-- Which behavior tests were added
+- Which behavior tests were added (with BR references)
+
+## No Guessing
+
+Never assume or guess when uncertain. Always:
+1. **Read the code** — verify behavior by reading the actual implementation
+2. **Search** — use grep/glob to find evidence before making claims
+3. **Ask** — if no evidence exists, ask the user instead of speculating
+
+This applies to everything: how code works, what a function does, whether something is used, side effects of a change, external library APIs and their behavior, etc. Do not assume how a library or API works — read the docs or source.
 
 ## Architecture Invariants
 
@@ -81,6 +126,6 @@ These must NEVER be violated:
 - `docs/glossary.md` — Single source of truth for all domain terms
 - `docs/context-map.md` — How bounded contexts relate
 - `docs/domain/*.md` — Per-context deep dives
-- `docs/flows/*.md` — Cross-cutting use case flows
+- `docs/specs/*.md` — Use Case specs with Business Rules (testable)
 - `docs/testing/behavior-tests.md` — How to write behavior tests
 - `crates/tide-app/src/behavior_tests.rs` — Living specification (117+ tests)

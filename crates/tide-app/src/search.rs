@@ -95,6 +95,61 @@ pub fn execute_search_terminal(state: &mut SearchState, terminal: &Terminal) {
     }
 }
 
+/// Execute search over preview lines (case-insensitive).
+/// Each preview line's text is the concatenation of its span texts (excluding newlines).
+/// Match coordinates are in preview-line space so highlights and navigation work directly.
+pub fn execute_search_preview(state: &mut SearchState, preview_lines: &[tide_editor::markdown::PreviewLine]) {
+    use unicode_width::UnicodeWidthChar;
+
+    let prev_pos = state.current
+        .and_then(|i| state.matches.get(i))
+        .map(|m| (m.line, m.col));
+
+    state.matches.clear();
+    state.current = None;
+
+    if state.input.is_empty() {
+        return;
+    }
+
+    let query_lower = state.input.text.to_lowercase();
+    let query_display_width: usize = state.input.text.chars().map(|c| c.width().unwrap_or(1)).sum();
+
+    for (line_idx, pline) in preview_lines.iter().enumerate() {
+        // Build the full text of this preview line from spans
+        let line_text: String = pline.spans.iter()
+            .flat_map(|s| s.text.chars())
+            .filter(|c| *c != '\n')
+            .collect();
+        let line_lower = line_text.to_lowercase();
+
+        let mut start = 0;
+        while let Some(byte_pos) = line_lower[start..].find(&query_lower) {
+            let byte_col = start + byte_pos;
+            // Convert byte offset to display-cell column
+            let display_col: usize = line_text[..byte_col].chars()
+                .map(|c| c.width().unwrap_or(1))
+                .sum();
+            state.matches.push(SearchMatch {
+                line: line_idx,
+                col: display_col,
+                len: query_display_width,
+            });
+            start = byte_col + line_lower[byte_col..].chars().next().map_or(1, |c| c.len_utf8());
+        }
+    }
+
+    if !state.matches.is_empty() {
+        state.current = if let Some((line, col)) = prev_pos {
+            state.matches.iter()
+                .position(|m| m.line == line && m.col == col)
+                .or(Some(0))
+        } else {
+            Some(0)
+        };
+    }
+}
+
 /// Execute search over an editor buffer's lines (case-insensitive).
 /// Preserves the current match position across re-executions.
 pub fn execute_search_editor(state: &mut SearchState, lines: &[String]) {
