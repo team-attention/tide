@@ -404,6 +404,20 @@ impl EditorPane {
         self.preview_mode = !self.preview_mode;
         self.preview_h_scroll = 0;
         self.preview_cache = None;
+        // Re-execute search in the new coordinate space
+        if self.preview_mode {
+            // Edit → Preview: cache not built yet; clear matches now,
+            // ensure_preview_cache will re-execute after building.
+            if let Some(ref mut s) = self.search {
+                s.matches.clear();
+                s.current = None;
+            }
+        } else {
+            // Preview → Edit: buffer is always available, re-execute immediately
+            if let Some(ref mut s) = self.search {
+                crate::search::execute_search_editor(s, &self.editor.buffer.lines);
+            }
+        }
     }
 
     /// Ensure the preview cache is up to date.
@@ -415,7 +429,9 @@ impl EditorPane {
     /// the resize stops — the deferred PTY-resize timer fires 50 ms later and
     /// triggers a redraw that picks this up.
     pub fn ensure_preview_cache(&mut self, wrap_width: usize, dark: bool) {
-        let gen = self.editor.generation();
+        // Use content_generation (not generation) so scroll changes don't
+        // invalidate the expensive markdown parse cache.
+        let gen = self.editor.content_generation();
         if let Some((cached_gen, cached_width, cached_dark, _)) = &self.preview_cache {
             if *cached_gen == gen && *cached_width == wrap_width && *cached_dark == dark {
                 return;
@@ -450,6 +466,9 @@ impl EditorPane {
                 self.preview_scroll = self.preview_scroll.min(line_count.saturating_sub(1));
             }
         }
+
+        // Re-execute search against newly built preview lines
+        self.execute_preview_search();
     }
 
     /// Get a reference to the cached preview lines.
@@ -465,6 +484,17 @@ impl EditorPane {
         match &self.preview_cache {
             Some((_, _, _, lines)) => lines.len(),
             None => 0,
+        }
+    }
+
+    /// Execute search against preview lines (field-level borrow splitting).
+    pub fn execute_preview_search(&mut self) {
+        let preview_lines = match &self.preview_cache {
+            Some((_, _, _, lines)) => lines.as_slice(),
+            None => &[],
+        };
+        if let Some(ref mut s) = self.search {
+            crate::search::execute_search_preview(s, preview_lines);
         }
     }
 
