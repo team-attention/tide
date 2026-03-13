@@ -25,6 +25,7 @@ mod ui;
 mod ui_state;
 mod update;
 mod workspace;
+mod lsp_integration;
 
 #[cfg(test)]
 mod behavior_tests;
@@ -231,6 +232,9 @@ struct App {
     // Retained contexts: when a terminal is closed, its TerminalContext is preserved here
     // so associated panes can still resolve cwd for file tree display.
     pub(crate) retained_contexts: HashMap<PaneId, crate::pane::TerminalContext>,
+
+    // LSP: language server manager for code completion
+    pub(crate) lsp: Option<tide_lsp::LspManager>,
 }
 
 // Safety: App contains raw pointers (content_view_ptr, window_ptr) and browser
@@ -318,6 +322,7 @@ impl App {
             last_session_save: Instant::now(),
             associated_terminal: HashMap::new(),
             retained_contexts: HashMap::new(),
+            lsp: None,
         }
     }
 
