@@ -176,7 +176,8 @@ impl App {
                 // create_ime_proxy() skips creation — leaving first responder on the
                 // old proxy and routing keyboard input to the wrong pane.
                 self.ime.pending_removes.push(launcher_id);
-                let cwd = self.focused_terminal_cwd();
+                // New terminals always start at home directory
+                let cwd = dirs::home_dir();
                 // Terminal resolves don't get association (they ARE terminals)
                 self.associated_terminal.remove(&launcher_id);
                 self.panes.remove(&launcher_id);
@@ -252,6 +253,8 @@ impl App {
                 }
             }
             _ => {
+                // Resolve context terminal BEFORE changing focus
+                let context_tid = self.focused_terminal_id();
                 // Split in the main terminal layout
                 let new_id = self.layout.split(focused, direction);
                 self.panes.insert(new_id, PaneKind::Launcher(new_id));
@@ -259,7 +262,7 @@ impl App {
                 self.focused = Some(new_id);
                 self.router.set_focused(new_id);
                 self.focus_area = crate::ui_state::FocusArea::Stage;
-                if let Some(tid) = self.focused_terminal_id() {
+                if let Some(tid) = context_tid {
                     self.associated_terminal.insert(new_id, tid);
                 }
             }
@@ -493,8 +496,10 @@ impl App {
         // Check if pane is in a Terminal's dock
         if self.is_pane_in_dock(tab_id) {
             self.retain_terminal_context(tab_id);
-            self.panes.remove(&tab_id);
+            // Remove from dock_layout BEFORE removing from panes,
+            // so terminal_owning() can still find the owner terminal.
             self.remove_pane_from_dock(tab_id);
+            self.panes.remove(&tab_id);
             self.cleanup_closed_pane_state(tab_id);
             self.cache.invalidate_chrome();
             self.compute_layout();
@@ -594,14 +599,21 @@ impl App {
             }
         }
 
-        // Browser panes and clean editors close immediately
-        if matches!(self.panes.get(&pane_id), Some(PaneKind::Editor(_) | PaneKind::Browser(_) | PaneKind::Diff(_))) {
+        // Non-terminal panes (editors, browsers, diff, launchers) close immediately
+        if matches!(self.panes.get(&pane_id), Some(PaneKind::Editor(_) | PaneKind::Browser(_) | PaneKind::Diff(_) | PaneKind::Launcher(_))) {
             self.force_close_editor_panel_tab(pane_id);
             self.update_file_tree_cwd();
             return;
         }
 
-        // Terminal pane: proceed to force close (with branch cleanup check)
+        // Terminal in dock: close via dock removal path
+        if self.is_pane_in_dock(pane_id) {
+            self.force_close_editor_panel_tab(pane_id);
+            self.update_file_tree_cwd();
+            return;
+        }
+
+        // Terminal pane in Stage: proceed to force close (with branch cleanup check)
         self.force_close_specific_pane(pane_id);
     }
 

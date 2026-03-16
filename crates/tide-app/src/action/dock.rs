@@ -24,9 +24,10 @@ impl App {
             .find(|&id| matches!(self.panes.get(&id), Some(PaneKind::Terminal(_) | PaneKind::Launcher(_))))
     }
 
-    /// Which Terminal owns this pane (via dock_layout or associated_terminal)?
+    /// Which Terminal owns this pane via dock_layout?
+    /// Only checks actual dock_layout membership, not associated_terminal
+    /// (which tracks CWD context, not layout ownership).
     pub(crate) fn terminal_owning(&self, pane_id: PaneId) -> Option<PaneId> {
-        // First check dock_layout on Terminal panes
         for (&id, pane) in &self.panes {
             if let PaneKind::Terminal(tp) = pane {
                 if tp.dock_layout.all_pane_ids().contains(&pane_id) {
@@ -34,8 +35,7 @@ impl App {
                 }
             }
         }
-        // Fallback: check associated_terminal
-        self.associated_terminal.get(&pane_id).copied()
+        None
     }
 
     /// Check if a pane is in any terminal's dock_layout.
@@ -211,16 +211,18 @@ impl App {
     }
 
     /// Swap Dock content when terminal focus changes.
-    /// Updates dock_open based on whether the incoming terminal has dock panes.
-    pub(crate) fn swap_dock_state(&mut self, incoming_terminal: PaneId) {
-        let has_dock_panes = match self.panes.get(&incoming_terminal) {
-            Some(PaneKind::Terminal(tp)) => !tp.dock_layout.all_pane_ids().is_empty(),
-            _ => {
-                // For Launcher or other pane types, check if any pane is associated with this terminal
-                self.associated_terminal.values().any(|&tid| tid == incoming_terminal)
-            }
-        };
-        self.dock_open = has_dock_panes;
+    /// Dock stays open if any terminal has dock panes (prevents layout jumping).
+    /// Closes only when NO terminal has dock panes at all.
+    pub(crate) fn swap_dock_state(&mut self, _incoming_terminal: PaneId) {
+        // Check if ANY terminal has dock panes — if none, close the dock.
+        let any_has_dock = self.panes.values().any(|pk| {
+            if let PaneKind::Terminal(tp) = pk {
+                !tp.dock_layout.all_pane_ids().is_empty()
+            } else { false }
+        });
+        if !any_has_dock {
+            self.dock_open = false;
+        }
         self.cache.pane_generations.clear();
         self.cache.invalidate_chrome();
         self.compute_layout();

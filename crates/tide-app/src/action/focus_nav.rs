@@ -37,7 +37,8 @@ impl App {
         self.cache.needs_redraw = true;
     }
 
-    /// Handle MoveFocus direction navigation between panes.
+    /// Handle MoveFocus direction navigation between Stage panes only.
+    /// HJKL never crosses into the Dock — use Cmd+I/O for Dock navigation.
     pub(super) fn handle_move_focus(&mut self, direction: Direction) {
         self.focus_area = FocusArea::Stage;
         self.modal.save_as_input = None;
@@ -46,13 +47,19 @@ impl App {
             None => return,
         };
 
-        // Spatial navigation in the split tree
-        let all_rects = self.pane_rects.clone();
-        if all_rects.len() < 2 {
+        // Only consider Stage pane rects (exclude dock panes)
+        let stage_ids: std::collections::HashSet<tide_core::PaneId> =
+            self.layout.pane_ids().into_iter().collect();
+        let stage_rects: Vec<(tide_core::PaneId, tide_core::Rect)> = self.pane_rects.iter()
+            .filter(|(id, _)| stage_ids.contains(id))
+            .copied()
+            .collect();
+
+        if stage_rects.len() < 2 {
             return;
         }
 
-        let current_rect = match all_rects.iter().find(|(id, _)| *id == current_id) {
+        let current_rect = match stage_rects.iter().find(|(id, _)| *id == current_id) {
             Some((_, r)) => *r,
             None => return,
         };
@@ -60,7 +67,7 @@ impl App {
         let cy = current_rect.y + current_rect.height / 2.0;
 
         let mut best: Option<(tide_core::PaneId, f32)> = None;
-        for &(id, rect) in &all_rects {
+        for &(id, rect) in &stage_rects {
             if id == current_id {
                 continue;
             }
@@ -103,22 +110,7 @@ impl App {
         }
 
         if let Some((next_id, _)) = best {
-            // Detect which region the target pane is in
-            if self.is_pane_in_dock(next_id) {
-                self.focus_area = FocusArea::Dock;
-                self.focused = Some(next_id);
-                self.router.set_focused(next_id);
-                // Update the dock_focused on the owning terminal
-                if let Some(tid) = self.terminal_owning(next_id) {
-                    if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                        tp.dock_focused = Some(next_id);
-                        tp.dock_layout.set_active_tab(next_id);
-                    }
-                }
-                self.cache.invalidate_chrome();
-            } else {
-                self.focus_terminal(next_id);
-            }
+            self.focus_terminal(next_id);
         }
     }
 

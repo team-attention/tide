@@ -217,6 +217,8 @@ struct App {
     pub(crate) dock_open: bool,
     pub(crate) dock_width: f32,
     pub(crate) dock_border_dragging: bool,
+    /// When set, only this dock pane is shown (fills the entire dock area).
+    pub(crate) dock_zoomed_pane: Option<tide_core::PaneId>,
 
     // Terminal Context: each non-terminal pane remembers which terminal provides its cwd context.
     pub(crate) associated_terminal: HashMap<PaneId, PaneId>,
@@ -305,6 +307,7 @@ impl App {
             dock_open: false,
             dock_width: 400.0,
             dock_border_dragging: false,
+            dock_zoomed_pane: None,
             associated_terminal: HashMap::new(),
             retained_contexts: HashMap::new(),
         }
