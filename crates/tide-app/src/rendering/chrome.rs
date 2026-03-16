@@ -766,17 +766,16 @@ pub(crate) fn render_chrome(
     }
 
     // Dock zoomed: collect all dock tabs for the tab bar (flat list)
-    let dock_zoomed_tabs: Option<Vec<u64>> = if let Some(zp) = app.dock_zoomed_pane {
-        if app.is_pane_in_dock(zp) {
-            app.focused_terminal_id().and_then(|tid| {
-                app.panes.get(&tid).and_then(|pk| {
-                    if let crate::pane::PaneKind::Terminal(tp) = pk {
-                        let tabs = tp.dock_layout.all_tabs_flat();
-                        if tabs.len() > 1 { Some(tabs) } else { None }
-                    } else { None }
-                })
+    let dock_zoomed_pane = app.dock_zoomed_pane();
+    let dock_zoomed_tabs: Option<Vec<u64>> = if dock_zoomed_pane.is_some() {
+        app.focused_terminal_id().and_then(|tid| {
+            app.panes.get(&tid).and_then(|pk| {
+                if let crate::pane::PaneKind::Terminal(tp) = pk {
+                    let tabs = tp.dock_layout.all_tabs_flat();
+                    if tabs.len() > 1 { Some(tabs) } else { None }
+                } else { None }
             })
-        } else { None }
+        })
     } else { None };
 
     // Collect Stage pane IDs for stacked tab bar
@@ -789,7 +788,7 @@ pub(crate) fn render_chrome(
             continue;
         }
         let is_zoomed = app.zoomed_pane == Some(id);
-        let is_dock_zoomed = app.dock_zoomed_pane == Some(id);
+        let is_dock_zoomed = dock_zoomed_pane == Some(id);
         let has_dock_tab_bar = dock_tab_groups.contains_key(&id);
         let has_stage_tab_bar = is_zoomed && show_stage_tabs;
 

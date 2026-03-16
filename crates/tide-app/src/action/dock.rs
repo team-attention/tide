@@ -1,4 +1,4 @@
-use tide_core::{LayoutEngine, PaneId};
+use tide_core::{LayoutEngine, PaneId, SplitDirection};
 
 use crate::pane::PaneKind;
 use crate::ui_state::FocusArea;
@@ -264,6 +264,37 @@ impl App {
             }
         }
         None
+    }
+
+    /// Split Dock with a new TabGroup (Cmd+\ / Cmd+Shift+\).
+    /// Always targets the Dock regardless of current focus_area.
+    /// Opens Dock if not already open.
+    pub(crate) fn dock_split_new_tab_group(&mut self, direction: SplitDirection) {
+        let tid = match self.focused_terminal_id() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let new_id = self.layout.alloc_id();
+        self.panes.insert(new_id, PaneKind::Launcher(new_id));
+        self.ime.pending_creates.push(new_id);
+        self.associated_terminal.insert(new_id, tid);
+
+        if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+            if let Some(dock_focused) = tp.dock_focused {
+                tp.dock_layout.split_with_leaf_group(dock_focused, new_id, direction);
+            } else {
+                tp.dock_layout.insert_leaf_group(new_id);
+            }
+            tp.dock_focused = Some(new_id);
+        }
+
+        self.dock_open = true;
+        self.focus_area = FocusArea::Dock;
+        self.focused = Some(new_id);
+        self.router.set_focused(new_id);
+        self.cache.invalidate_chrome();
+        self.compute_layout();
     }
 
     /// Swap Dock content when terminal focus changes.

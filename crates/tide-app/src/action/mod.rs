@@ -264,10 +264,10 @@ impl App {
         match self.focus_area {
             FocusArea::Dock => {
                 // Toggle Dock zoom: show only the focused dock pane
-                if self.dock_zoomed_pane.is_some() {
-                    self.dock_zoomed_pane = None;
-                } else {
-                    self.dock_zoomed_pane = self.focused;
+                if let Some(tid) = self.focused_terminal_id() {
+                    if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                        tp.dock_zoomed = !tp.dock_zoomed;
+                    }
                 }
                 self.cache.pane_generations.clear();
                 self.cache.invalidate_chrome();
@@ -325,7 +325,7 @@ impl App {
             Some(PaneKind::Terminal(tp)) => tp.dock_layout.all_tabs_flat(),
             _ => return,
         };
-        if pane_ids.is_empty() { return; }
+        if pane_ids.len() <= 1 { return; }
 
         // Find current position in the flat tab list
         let current = match self.panes.get(&tid) {
@@ -351,10 +351,6 @@ impl App {
             self.router.set_focused(next_id);
         }
         self.dock_open = true;
-        // Update dock zoom target if zoomed
-        if self.dock_zoomed_pane.is_some() {
-            self.dock_zoomed_pane = Some(next_id);
-        }
         self.cache.invalidate_chrome();
         self.compute_layout();
     }
@@ -677,11 +673,19 @@ impl App {
 
     pub(crate) fn handle_global_action(&mut self, action: GlobalAction) {
         match action {
-            GlobalAction::SplitVertical | GlobalAction::SplitVerticalHere => {
+            GlobalAction::SplitVertical => {
                 self.split_with_launcher(SplitDirection::Vertical);
             }
-            GlobalAction::SplitHorizontal | GlobalAction::SplitHorizontalHere => {
+            GlobalAction::SplitHorizontal => {
                 self.split_with_launcher(SplitDirection::Horizontal);
+            }
+            GlobalAction::SplitHorizontalHere => {
+                // Cmd+\: always split Dock right (new TabGroup)
+                self.dock_split_new_tab_group(SplitDirection::Horizontal);
+            }
+            GlobalAction::SplitVerticalHere => {
+                // Cmd+Shift+\: always split Dock below (new TabGroup)
+                self.dock_split_new_tab_group(SplitDirection::Vertical);
             }
             GlobalAction::ClosePane => {
                 if let Some(focused) = self.focused {

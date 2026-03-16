@@ -217,8 +217,7 @@ struct App {
     pub(crate) dock_open: bool,
     pub(crate) dock_width: f32,
     pub(crate) dock_border_dragging: bool,
-    /// When set, only this dock pane is shown (fills the entire dock area).
-    pub(crate) dock_zoomed_pane: Option<tide_core::PaneId>,
+
 
     // Periodic session auto-save for crash recovery
     pub(crate) last_session_save: Instant,
@@ -310,7 +309,6 @@ impl App {
             dock_open: false,
             dock_width: 400.0,
             dock_border_dragging: false,
-            dock_zoomed_pane: None,
             last_session_save: Instant::now(),
             associated_terminal: HashMap::new(),
             retained_contexts: HashMap::new(),
@@ -318,6 +316,18 @@ impl App {
     }
 
     // ── Helpers ──
+
+    /// Derive the dock zoomed pane from the focused terminal's per-terminal state.
+    /// Returns `Some(pane_id)` if the focused terminal's dock is in zoomed mode.
+    pub(crate) fn dock_zoomed_pane(&self) -> Option<PaneId> {
+        let tid = self.focused_terminal_id()?;
+        if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+            if tp.dock_zoomed {
+                return tp.dock_focused;
+            }
+        }
+        None
+    }
 
     /// Install an event-loop waker on a terminal pane so the PTY thread
     /// can wake us from sleep when new output arrives.
