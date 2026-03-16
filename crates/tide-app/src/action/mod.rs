@@ -394,10 +394,24 @@ impl App {
                                 let rel_row = ((position.y - inner_y) / cell_size.height).floor() as isize;
 
                                 if rel_row >= 0 && rel_col >= 0 {
-                                    let line = pane.editor.scroll_offset() + rel_row as usize;
-                                    let col = pane.editor.h_scroll_offset() + rel_col as usize;
                                     let visible_rows = ((rect.height - content_top - PANE_PADDING) / cell_size.height).floor() as usize;
-                                    pane.handle_action(EditorAction::SetCursor { line, col }, visible_rows);
+
+                                    if pane.effective_soft_wrap() {
+                                        // In soft wrap mode, map visual row → logical line via WrapMap
+                                        if let Some(wrap_map) = pane.wrap_map() {
+                                            let scroll_vr = wrap_map.visual_row_of_line(pane.editor.scroll_offset());
+                                            let abs_visual_row = scroll_vr + rel_row as usize;
+                                            if let Some(info) = wrap_map.visual_row_to_line_info(abs_visual_row, &pane.editor.buffer.lines) {
+                                                // col is relative to the sub-row, add the char offset
+                                                let col = info.char_offset + rel_col as usize;
+                                                pane.handle_action(EditorAction::SetCursor { line: info.logical_line, col }, visible_rows);
+                                            }
+                                        }
+                                    } else {
+                                        let line = pane.editor.scroll_offset() + rel_row as usize;
+                                        let col = pane.editor.h_scroll_offset() + rel_col as usize;
+                                        pane.handle_action(EditorAction::SetCursor { line, col }, visible_rows);
+                                    }
                                 }
                             }
                         }
