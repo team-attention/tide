@@ -226,11 +226,6 @@ impl App {
             Some(id) => id,
             None => return,
         };
-        if self.zoomed_pane.is_some() {
-            self.zoomed_pane = None;
-            self.cache.pane_generations.clear();
-        }
-
         match self.focus_area {
             crate::ui_state::FocusArea::Dock => {
                 // Split in the dock layout
@@ -253,6 +248,11 @@ impl App {
                 }
             }
             _ => {
+                // Unzoom Stage if stacked
+                if self.zoomed_pane.is_some() {
+                    self.zoomed_pane = None;
+                    self.cache.pane_generations.clear();
+                }
                 // Resolve context terminal BEFORE changing focus
                 let context_tid = self.focused_terminal_id();
                 // Split in the main terminal layout
@@ -313,7 +313,11 @@ impl App {
                     self.cache.invalidate_pane(id);
                     self.focused = Some(id);
                     self.router.set_focused(id);
-                    self.focus_area = crate::ui_state::FocusArea::Stage;
+                    if self.is_pane_in_dock(id) {
+                        self.focus_area = crate::ui_state::FocusArea::Dock;
+                    } else {
+                        self.focus_area = crate::ui_state::FocusArea::Stage;
+                    }
                     // Remove the launcher pane
                     self.layout.remove(pane_id);
                     self.panes.remove(&pane_id);
@@ -342,7 +346,12 @@ impl App {
                 if let Some(tid) = context_terminal {
                     self.associated_terminal.insert(pane_id, tid);
                 }
-                self.focus_area = crate::ui_state::FocusArea::Stage;
+                // Preserve focus area: if pane is in dock, stay in Dock
+                if self.is_pane_in_dock(pane_id) {
+                    self.focus_area = crate::ui_state::FocusArea::Dock;
+                } else {
+                    self.focus_area = crate::ui_state::FocusArea::Stage;
+                }
                 self.cache.invalidate_chrome();
                 self.cache.pane_generations.clear();
                 self.watch_file(&path);

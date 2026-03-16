@@ -696,21 +696,18 @@ pub(crate) fn render_chrome(
         }
     }
 
-    // Cross-region highlights: when one region is focused, the other gets a subtle indicator
-    let owner_terminal_id = if app.focus_area == FocusArea::Dock {
-        app.focused_terminal_id()
-    } else {
-        None
-    };
-    // When Stage is focused, the dock's active pane gets a subtle highlight
-    let dock_active_pane = if app.focus_area == FocusArea::Stage && app.dock_open {
-        app.focused_terminal_id().and_then(|tid| {
-            if let Some(crate::pane::PaneKind::Terminal(tp)) = app.panes.get(&tid) {
-                tp.dock_focused
-            } else { None }
-        })
-    } else {
-        None
+    // Cross-region highlight: show which Stage terminal owns the Dock (or vice versa)
+    let companion_id = match app.focus_area {
+        FocusArea::Dock => app.focused_terminal_id(), // highlight owner terminal in Stage
+        FocusArea::Stage if app.dock_open => {
+            // highlight dock's active pane
+            app.focused_terminal_id().and_then(|tid| {
+                if let Some(crate::pane::PaneKind::Terminal(tp)) = app.panes.get(&tid) {
+                    tp.dock_focused
+                } else { None }
+            })
+        }
+        _ => None,
     };
 
     // Draw pane backgrounds + borders with rounded corners
@@ -718,27 +715,22 @@ pub(crate) fn render_chrome(
         if !app.panes.contains_key(&id) { continue; }
         // Only show pane focus highlight when focus is in the pane area
         let is_focused = focused == Some(id) && matches!(app.focus_area, FocusArea::Stage | FocusArea::Dock);
-        // Cross-region subtle highlight
-        let is_companion = owner_terminal_id == Some(id) || dock_active_pane == Some(id);
+        let is_companion = companion_id == Some(id);
         let border_color = if is_focused {
             p.border_focused
         } else if is_companion {
-            p.border_focused
+            // Dimmed version of border_focused — same hue, lower alpha, no glow
+            tide_core::Color::new(p.border_focused.r, p.border_focused.g, p.border_focused.b, p.border_focused.a * 0.6)
         } else {
             p.border_subtle
         };
-        let top_border = if is_focused { 2.0 } else if is_companion { 1.5 } else { 1.0 };
-        let side_border = if is_focused { 2.0_f32 } else if is_companion { 1.5_f32 } else { 1.0_f32 };
+        let top_border = if is_focused { 2.0 } else { 1.0 };
+        let side_border = if is_focused { 2.0_f32 } else { 1.0_f32 };
 
         // Focused pane: draw outer glow shadow
         if is_focused {
             let shadow_color = tide_core::Color::new(0.769, 0.722, 0.651, 0.25);
             renderer.draw_chrome_shadow(rect, shadow_color, PANE_CORNER_RADIUS, 16.0, -4.0);
-        }
-        // Companion pane: subtle glow
-        if is_companion && !is_focused {
-            let shadow_color = tide_core::Color::new(0.769, 0.722, 0.651, 0.12);
-            renderer.draw_chrome_shadow(rect, shadow_color, PANE_CORNER_RADIUS, 8.0, -2.0);
         }
 
         // Outer rounded rect (border color)
