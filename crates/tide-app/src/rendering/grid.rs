@@ -35,7 +35,9 @@ pub(crate) fn render_grid(
             } else if pane.effective_soft_wrap() {
                 let cell_w = renderer.cell_size().width;
                 let gutter_width = crate::editor_pane::GUTTER_WIDTH_CELLS as f32 * cell_w;
-                let content_width = (rect.width - 2.0 * PANE_PADDING - gutter_width - SCROLLBAR_WIDTH).max(0.0);
+                // Reserve right padding (matching left gutter visual balance)
+                let right_pad = PANE_PADDING;
+                let content_width = (rect.width - 2.0 * PANE_PADDING - gutter_width - SCROLLBAR_WIDTH - right_pad).max(0.0);
                 let wrap_cols = (content_width / cell_w).floor() as usize;
                 if wrap_cols > 0 {
                     pane.ensure_wrap_map(wrap_cols);

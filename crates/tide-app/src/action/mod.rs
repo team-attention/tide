@@ -403,7 +403,8 @@ impl App {
                                             let abs_visual_row = scroll_vr + rel_row as usize;
                                             if let Some(info) = wrap_map.visual_row_to_line_info(abs_visual_row, &pane.editor.buffer.lines) {
                                                 // col is relative to the sub-row, add the char offset
-                                                let col = info.char_offset + rel_col as usize;
+                                                // Clamp to char_end to avoid jumping to next visual row
+                                                let col = (info.char_offset + rel_col as usize).min(info.char_end);
                                                 pane.handle_action(EditorAction::SetCursor { line: info.logical_line, col }, visible_rows);
                                             }
                                         }

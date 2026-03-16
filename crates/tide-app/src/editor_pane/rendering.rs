@@ -242,7 +242,7 @@ impl EditorPane {
             0.0
         };
         let content_width = (rect.width - gutter_width - scrollbar_reserved).max(0.0);
-        let wrap_cols = (content_width / cell_size.width).floor() as usize;
+        let wrap_cols = wrap_map.wrap_width();
 
         let visible_rows = (rect.height / cell_size.height).floor() as usize;
         let scroll = self.editor.scroll_offset();

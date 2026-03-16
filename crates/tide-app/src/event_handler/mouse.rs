@@ -90,6 +90,21 @@ impl App {
                                         });
                                     }
                                 }
+                            } else if pane.effective_soft_wrap() {
+                                // Soft wrap mode: map visual row → logical line via WrapMap
+                                if let Some((rr, rc)) = editor_cell {
+                                    if let Some(wrap_map) = pane.wrap_map() {
+                                        let scroll_vr = wrap_map.visual_row_of_line(pane.editor.scroll_offset());
+                                        let abs_vr = scroll_vr + rr;
+                                        if let Some(info) = wrap_map.visual_row_to_line_info(abs_vr, &pane.editor.buffer.lines) {
+                                            let col = (info.char_offset + rc).min(info.char_end);
+                                            pane.selection = Some(Selection {
+                                                anchor: (info.logical_line, col),
+                                                end: (info.logical_line, col),
+                                            });
+                                        }
+                                    }
+                                }
                             } else if let Some((rr, rc)) = editor_cell {
                                 let line = pane.editor.scroll_offset() + rr;
                                 let col = pane.editor.h_scroll_offset() + rc;
@@ -740,6 +755,21 @@ impl App {
                                         sel.end = (
                                             pane.preview_scroll + rr as usize,
                                             pane.preview_h_scroll + rc as usize,
+                                        );
+                                    }
+                                }
+                            } else if pane.effective_soft_wrap() {
+                                if let Some((rel_row, rel_col)) = editor_cell {
+                                    // Compute mapped position before mutating selection
+                                    let mapped = pane.wrap_map().and_then(|wrap_map| {
+                                        let scroll_vr = wrap_map.visual_row_of_line(pane.editor.scroll_offset());
+                                        let abs_vr = scroll_vr + rel_row;
+                                        wrap_map.visual_row_to_line_info(abs_vr, &pane.editor.buffer.lines)
+                                    });
+                                    if let (Some(ref mut sel), Some(info)) = (&mut pane.selection, mapped) {
+                                        sel.end = (
+                                            info.logical_line,
+                                            (info.char_offset + rel_col).min(info.char_end),
                                         );
                                     }
                                 }
