@@ -77,6 +77,8 @@ pub struct TerminalPane {
     pub dock_layout: tide_layout::SplitLayout,
     /// Last focused pane in this terminal's Dock.
     pub dock_focused: Option<PaneId>,
+    /// Whether this terminal's Dock is in zoomed (stacked) mode.
+    pub dock_zoomed: bool,
 }
 
 impl TerminalPane {
@@ -87,6 +89,7 @@ impl TerminalPane {
             context: TerminalContext::default(),
             dock_layout: tide_layout::SplitLayout::new(),
             dock_focused: None,
+            dock_zoomed: false,
         })
     }
 
@@ -99,6 +102,7 @@ impl TerminalPane {
             context: TerminalContext::default(),
             dock_layout: tide_layout::SplitLayout::new(),
             dock_focused: None,
+            dock_zoomed: false,
         }
     }
 

@@ -150,7 +150,7 @@ impl App {
             _ => {
                 // Stage: create Terminal directly
                 let new_id = self.layout.alloc_id();
-                self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Vertical, false);
+                self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Horizontal, false);
                 if self.zoomed_pane.is_some() {
                     self.zoomed_pane = Some(new_id);
                 }
@@ -304,20 +304,39 @@ impl App {
         for (&id, pane) in &self.panes {
             if let PaneKind::Editor(editor) = pane {
                 if editor.editor.file_path() == Some(path.as_path()) {
-                    // File already open — focus it and close the launcher
+                    // File already open — remove the launcher, then focus existing editor.
+                    // Remove from dock_layout directly (not remove_pane_from_dock
+                    // which would overwrite focused/focus_area).
+                    if let Some(tid) = self.terminal_owning(pane_id) {
+                        if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                            tp.dock_layout.remove(pane_id);
+                            // If the launcher was dock_focused, point to the existing editor
+                            if tp.dock_focused == Some(pane_id) {
+                                tp.dock_focused = Some(id);
+                                tp.dock_layout.set_active_tab(id);
+                            }
+                        }
+                    } else {
+                        self.layout.remove(pane_id);
+                    }
+                    self.panes.remove(&pane_id);
+                    self.associated_terminal.remove(&pane_id);
+                    self.cleanup_closed_pane_state(pane_id);
+                    // Now focus the existing editor
                     self.cache.invalidate_pane(id);
                     self.focused = Some(id);
                     self.router.set_focused(id);
                     if self.is_pane_in_dock(id) {
                         self.focus_area = crate::ui_state::FocusArea::Dock;
+                        if let Some(tid) = self.terminal_owning(id) {
+                            if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                                tp.dock_focused = Some(id);
+                                tp.dock_layout.set_active_tab(id);
+                            }
+                        }
                     } else {
                         self.focus_area = crate::ui_state::FocusArea::Stage;
                     }
-                    // Remove the launcher pane
-                    self.layout.remove(pane_id);
-                    self.panes.remove(&pane_id);
-                    self.associated_terminal.remove(&pane_id);
-                    self.cleanup_closed_pane_state(pane_id);
                     self.cache.invalidate_chrome();
                     self.compute_layout();
                     return;

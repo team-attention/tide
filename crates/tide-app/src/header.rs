@@ -478,7 +478,42 @@ fn render_tab_bar_impl(
         action: HeaderHitAction::Maximize,
     });
 
-    let tabs_right = max_x - BADGE_GAP;
+    // Editor badges for the active pane (e.g., markdown preview toggle)
+    let mut badge_right = max_x - BADGE_GAP;
+    if is_dock {
+        if let Some(PaneKind::Editor(ep)) = panes.get(&active_pane) {
+            let badge_bg = if is_focused { p.badge_bg } else { p.badge_bg_unfocused };
+            for badge in editor_header_badges(ep) {
+                let badge_w = badge.text.len() as f32 * cell_w + BADGE_PADDING_H * 2.0;
+                let badge_x = badge_right - badge_w;
+                if badge_x < content_left + 40.0 {
+                    break;
+                }
+                let (text_color, bg) = match badge.action {
+                    Some(HeaderHitAction::EditorBack) | Some(HeaderHitAction::EditorCompare) => {
+                        (p.badge_text, p.conflict_bar_btn)
+                    }
+                    None if badge.text == "deleted" => (p.badge_deleted, badge_bg),
+                    None if badge.text == "conflict" => (p.badge_conflict, badge_bg),
+                    _ => {
+                        let c = if is_focused { p.badge_text } else { p.tab_text };
+                        (c, badge_bg)
+                    }
+                };
+                render_badge_colored(renderer, badge_x, text_y, badge_w, cell_height, &badge.text, text_color, bg, BADGE_RADIUS);
+                if let Some(action) = badge.action {
+                    zones.push(HeaderHitZone {
+                        pane_id: active_pane,
+                        rect: Rect::new(badge_x, rect.y, badge_w, TAB_BAR_HEIGHT),
+                        action,
+                    });
+                }
+                badge_right = badge_x - BADGE_GAP;
+            }
+        }
+    }
+
+    let tabs_right = badge_right;
     let max_tabs_w = tabs_right - content_left;
     if max_tabs_w < 40.0 {
         return zones;
