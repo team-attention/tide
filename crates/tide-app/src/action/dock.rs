@@ -174,7 +174,13 @@ impl App {
                     self.focused = Some(tid);
                     self.router.set_focused(tid);
                 } else {
-                    let next = remaining[0];
+                    // After remove, tab group adjusts its active index.
+                    // Use the visible (active) pane from the same area, or previous dock_focused.
+                    let visible = tp.dock_layout.pane_ids();
+                    let next = tp.dock_focused
+                        .filter(|f| remaining.contains(f))
+                        .or_else(|| visible.first().copied())
+                        .unwrap_or(remaining[0]);
                     tp.dock_focused = Some(next);
                     tp.dock_layout.set_active_tab(next);
                     self.focused = Some(next);
