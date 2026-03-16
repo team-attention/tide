@@ -67,7 +67,7 @@ impl App {
         // Focus area
         match self.focus_area {
             FocusArea::FileTree => TextInputTarget::Consumed,
-            FocusArea::PaneArea => {
+            FocusArea::Stage | FocusArea::Dock => {
                 // Check if focused pane is a browser with URL bar focused
                 if let Some(id) = self.focused {
                     if let Some(PaneKind::Browser(bp)) = self.panes.get(&id) {

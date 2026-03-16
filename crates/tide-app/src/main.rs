@@ -48,7 +48,7 @@ use drag_drop::{HoverTarget, PaneDragState};
 use pane::{PaneKind, TerminalPane};
 use theme::*;
 
-pub(crate) use workspace::Workspace;
+pub(crate) use workspace::{Workspace, WorkspaceExtras};
 
 // ──────────────────────────────────────────────
 // App state
@@ -212,6 +212,12 @@ struct App {
     // Zoomed pane: when Some, this pane fills the entire pane area (Cmd+Enter toggle)
     pub(crate) zoomed_pane: Option<PaneId>,
 
+    // Layout V2: Stage + Dock
+    pub(crate) terminal_view_mode: ui_state::ViewMode,
+    pub(crate) dock_open: bool,
+    pub(crate) dock_width: f32,
+    pub(crate) dock_border_dragging: bool,
+
     // Terminal Context: each non-terminal pane remembers which terminal provides its cwd context.
     pub(crate) associated_terminal: HashMap<PaneId, PaneId>,
     // Retained contexts: when a terminal is closed, its TerminalContext is preserved here
@@ -275,7 +281,7 @@ impl App {
             pending_fullscreen_toggle: false,
             is_occluded: false,
             header_hit_zones: Vec::new(),
-            focus_area: FocusArea::PaneArea,
+            focus_area: FocusArea::Stage,
             ws: ui_state::WorkspaceManager::new(),
             settings: settings::load_settings(),
             file_watcher: None,
@@ -295,6 +301,10 @@ impl App {
             batch_depth: 0,
             drawable_wait_us: 0,
             zoomed_pane: None,
+            terminal_view_mode: ui_state::ViewMode::Split,
+            dock_open: false,
+            dock_width: 400.0,
+            dock_border_dragging: false,
             associated_terminal: HashMap::new(),
             retained_contexts: HashMap::new(),
         }
@@ -367,6 +377,7 @@ impl App {
             focused: None,
             panes: HashMap::new(),
         });
+        self.ws.workspace_extras.push(WorkspaceExtras::new());
         self.ws.active = 0;
     }
 

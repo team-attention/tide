@@ -187,7 +187,7 @@ declare_class!(
                 }
 
                 // Do NOT emit WebViewFocused here — it would reset focus_area
-                // to PaneArea before the KeyDown handler runs, breaking
+                // to TerminalArea before the KeyDown handler runs, breaking
                 // ToggleFileTree (Cmd+E) when the file tree is focused.
                 // Mouse clicks already emit WebViewFocused via hitTest:.
 

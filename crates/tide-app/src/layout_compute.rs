@@ -30,7 +30,7 @@ impl App {
             | Some(HoverTarget::WorkspaceSidebarNewBtn) => CursorIcon::Pointer,
             Some(HoverTarget::EditorScrollbar(_)) => CursorIcon::Default,
             Some(HoverTarget::SidebarHandle) => CursorIcon::Grab,
-            Some(HoverTarget::FileTreeBorder) | Some(HoverTarget::WsSidebarBorder) => CursorIcon::ColResize,
+            Some(HoverTarget::FileTreeBorder) | Some(HoverTarget::WsSidebarBorder) | Some(HoverTarget::DockBorder) => CursorIcon::ColResize,
             Some(HoverTarget::SplitBorder(SplitDirection::Horizontal)) => CursorIcon::ColResize,
             Some(HoverTarget::SplitBorder(SplitDirection::Vertical)) => CursorIcon::RowResize,
             None => CursorIcon::Default,
@@ -376,6 +376,18 @@ impl App {
             }
         }
 
+        // Reserve Dock space on the right (when open)
+        let show_dock = self.dock_open;
+        let dock_width = if show_dock {
+            let max_ctx = (logical.width - left_reserved - right_reserved - 200.0).max(100.0);
+            self.dock_width.min(max_ctx)
+        } else {
+            0.0
+        };
+        if show_dock {
+            right_reserved += PANE_GAP + dock_width;
+        }
+
         let terminal_area = Size::new(
             (logical.width - left_reserved - right_reserved).max(100.0),
             logical.height - top,
@@ -453,25 +465,79 @@ impl App {
             }
         }
 
+        // Dock: compute rects from the focused terminal's dock_layout
+        if show_dock {
+            let ctx_offset_x = terminal_offset_x + terminal_area.width + PANE_GAP;
+            let ctx_size = Size::new(dock_width, logical.height - top);
+
+            let owner_terminal = self.focused_terminal_id();
+            if let Some(tid) = owner_terminal {
+                if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                    let dock_pane_ids = tp.dock_layout.pane_ids();
+                    if !dock_pane_ids.is_empty() {
+                        let mut cr = tp.dock_layout.compute(ctx_size, &dock_pane_ids, tp.dock_focused);
+                        for (_, rect) in &mut cr {
+                            rect.x += ctx_offset_x;
+                            rect.y += top;
+                        }
+                        rects.extend(cr);
+                    }
+                }
+            }
+        }
+
         // Force grid rebuild if rects changed
         let rects_changed = rects != self.pane_rects;
         self.pane_rects = rects;
 
         // Compute visual rects: half-gap between panes, edge-inset at window boundaries.
-        // Window edges get larger inset so the pane corner radius is visible.
+        // Each pane uses bounds from its own region (TerminalArea or ContextArea).
         let half = PANE_GAP / 2.0;
         let edge_inset = PANE_CORNER_RADIUS.max(half);
-        let area_x = terminal_offset_x;
-        let area_y = top;
-        let area_right = terminal_offset_x + terminal_area.width;
-        let area_bottom = top + terminal_area.height;
+        let term_area_x = terminal_offset_x;
+        let term_area_y = top;
+        let term_area_right = terminal_offset_x + terminal_area.width;
+        let term_area_bottom = top + terminal_area.height;
+
+        let ctx_area_x = if show_dock { term_area_right + PANE_GAP } else { 0.0 };
+        let ctx_area_right = if show_dock { ctx_area_x + dock_width } else { 0.0 };
+
+        // Collect all dock pane IDs across all terminals
+        let dock_pane_ids: std::collections::HashSet<u64> = self.panes.iter()
+            .filter_map(|(_, pk)| {
+                if let PaneKind::Terminal(tp) = pk {
+                    Some(tp.dock_layout.all_pane_ids())
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .collect();
+
         self.visual_pane_rects = self
             .pane_rects
             .iter()
             .map(|&(id, r)| {
-                let l = if (r.x - area_x).abs() < 1.0 { edge_inset } else { half };
+                let is_dock = dock_pane_ids.contains(&id);
+                let (area_x, area_right) = if is_dock {
+                    (ctx_area_x, ctx_area_right)
+                } else {
+                    (term_area_x, term_area_right)
+                };
+                let area_y = term_area_y;
+                let area_bottom = term_area_bottom;
+
+                // At the boundary between Stage and Dock, use half gap
+                // (not edge_inset) so the gap matches FileTree↔Stage
+                let at_left_edge = (r.x - area_x).abs() < 1.0;
+                let at_right_edge = ((r.x + r.width) - area_right).abs() < 1.0;
+                let l = if at_left_edge {
+                    if is_dock { half } else { edge_inset } // dock left = inter-region gap
+                } else { half };
                 let t = if (r.y - area_y).abs() < 1.0 { edge_inset } else { half };
-                let ri = if ((r.x + r.width) - area_right).abs() < 1.0 { edge_inset } else { half };
+                let ri = if at_right_edge {
+                    if !is_dock && show_dock { half } else { edge_inset } // terminal right = inter-region gap
+                } else { half };
                 let b = if ((r.y + r.height) - area_bottom).abs() < 1.0 { edge_inset } else { half };
                 let vr = Rect::new(
                     r.x + l,

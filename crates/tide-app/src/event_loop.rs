@@ -341,7 +341,7 @@ impl App {
                     self.focused = Some(pid);
                     self.router.set_focused(pid);
                 }
-                self.focus_area = FocusArea::PaneArea;
+                self.focus_area = FocusArea::Stage;
                 self.cache.invalidate_chrome();
             }
             PlatformEvent::ImeCommit(text) => {
