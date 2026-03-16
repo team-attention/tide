@@ -2,6 +2,7 @@ mod pane_lifecycle;
 mod focus_nav;
 mod text_extract;
 mod file_ops;
+mod dock;
 
 pub(crate) use pane_lifecycle::LauncherChoice;
 
@@ -50,14 +51,18 @@ impl App {
         }
     }
 
-    /// Switch primary focus to a pane, setting focus to PaneArea.
+    /// Switch primary focus to a pane, setting focus to Stage.
     pub(crate) fn focus_terminal(&mut self, id: tide_core::PaneId) {
-        self.focus_area = FocusArea::PaneArea;
+        self.focus_area = FocusArea::Stage;
         if self.focused == Some(id) {
             return;
         }
         self.focused = Some(id);
         self.router.set_focused(id);
+        // Swap drawer state when switching between terminals
+        if matches!(self.panes.get(&id), Some(crate::pane::PaneKind::Terminal(_)) | Some(crate::pane::PaneKind::Launcher(_))) {
+            self.swap_dock_state(id);
+        }
         self.cache.invalidate_chrome();
         self.update_file_tree_cwd();
         // Immediately sync webview visibility so the browser hides/shows
@@ -75,33 +80,34 @@ impl App {
     pub(crate) fn area_ordering(&self) -> Vec<FocusArea> {
         let mut areas = Vec::with_capacity(2);
         if self.sidebar_side == crate::LayoutSide::Left { areas.push(FocusArea::FileTree); }
-        areas.push(FocusArea::PaneArea);
+        areas.push(FocusArea::Stage);
         if self.sidebar_side == crate::LayoutSide::Right { areas.push(FocusArea::FileTree); }
         areas
     }
 
-    /// Resolve an AreaSlot (Cmd+1/2) to a FocusArea based on sidebar_side.
-    /// Slot1 = leftmost, Slot2 = rightmost.
+    /// Resolve an AreaSlot to a FocusArea.
+    /// Slot1 = WorkspaceSidebar (handled specially), Slot2 = FileTree,
+    /// Slot3 = Stage, Slot4 = Dock.
     fn resolve_slot(&self, slot: AreaSlot) -> FocusArea {
-        let areas = self.area_ordering();
-
         match slot {
-            AreaSlot::Slot1 => areas[0],
-            AreaSlot::Slot2 => if areas.len() >= 2 { areas[1] } else { areas[0] },
-            AreaSlot::Slot3 => areas.last().copied().unwrap_or(FocusArea::PaneArea),
+            AreaSlot::Slot1 => FocusArea::Stage, // handled by workspace sidebar toggle
+            AreaSlot::Slot2 => FocusArea::FileTree,
+            AreaSlot::Slot3 => FocusArea::Stage,
+            AreaSlot::Slot4 => FocusArea::Dock,
         }
     }
 
     /// Handle FocusArea(slot) — toggle:
-    /// FileTree: hidden→show+focus / unfocused→focus / focused→hide+PaneArea
-    /// PaneArea: unfocused→focus
+    /// FileTree: hidden→show+focus / unfocused→focus / focused→hide+Stage
+    /// Stage: unfocused→focus
+    /// Dock: toggle dock
     pub(crate) fn handle_focus_area(&mut self, target: FocusArea) {
         match target {
             FocusArea::FileTree => {
                 if self.focus_area == FocusArea::FileTree {
-                    // Focused → hide + return to PaneArea
+                    // Focused → hide + return to Stage
                     self.ft.visible = false;
-                    self.focus_area = FocusArea::PaneArea;
+                    self.focus_area = FocusArea::Stage;
                     self.cache.invalidate_chrome();
                     self.compute_layout();
                 } else if self.ft.visible {
@@ -115,15 +121,20 @@ impl App {
                     self.compute_layout();
                 }
             }
-            FocusArea::PaneArea => {
-                if self.focus_area != FocusArea::PaneArea {
-                    // Not focused → focus
-                    if let Some(focused) = self.focused {
-                        self.focus_terminal(focused);
+            FocusArea::Stage => {
+                if self.focus_area != FocusArea::Stage {
+                    // Find the owner terminal (not the drawer pane)
+                    let terminal_id = self.focused_terminal_id();
+                    if let Some(tid) = terminal_id {
+                        self.focus_terminal(tid);
                     } else {
-                        self.focus_area = FocusArea::PaneArea;
+                        self.focus_area = FocusArea::Stage;
                     }
                 }
+            }
+            FocusArea::Dock => {
+                self.toggle_dock();
+                // compute_layout() already called inside toggle_dock
             }
         }
         self.cache.invalidate_chrome();
@@ -135,30 +146,122 @@ impl App {
             FocusArea::FileTree => {
                 self.navigate_file_tree(direction);
             }
-            FocusArea::PaneArea => {
+            FocusArea::Stage | FocusArea::Dock => {
                 self.handle_move_focus(direction);
             }
         }
     }
 
-    /// Handle ToggleZoom — context-dependent zoom.
-    fn handle_toggle_zoom(&mut self) {
+    /// Handle ToggleStacked — toggle between Split and Stacked ViewMode.
+    /// Stage (when focused on terminal): toggles terminal_view_mode and zoomed_pane.
+    /// Dock: toggles dock_view_mode (TODO: add dock_view_mode field if needed).
+    pub(crate) fn handle_toggle_stacked(&mut self) {
         match self.focus_area {
-            FocusArea::PaneArea => {
-                if let Some(focused) = self.focused {
-                    if self.zoomed_pane == Some(focused) {
-                        // Unzoom
-                        self.zoomed_pane = None;
-                    } else {
-                        // Zoom the focused pane
-                        self.zoomed_pane = Some(focused);
+            FocusArea::Dock => {
+                // Toggle Dock between Split and Stacked — currently no-op
+                // (Dock stacked mode will be implemented with a separate ViewMode field)
+                self.cache.pane_generations.clear();
+                self.cache.invalidate_chrome();
+                self.compute_layout();
+            }
+            FocusArea::Stage => {
+                // Toggle Stage between Split and Stacked
+                if self.terminal_view_mode == crate::ui_state::ViewMode::Split {
+                    self.terminal_view_mode = crate::ui_state::ViewMode::Stacked;
+                } else {
+                    self.terminal_view_mode = crate::ui_state::ViewMode::Split;
+                }
+                // Update zoomed_pane to match: stacked = zoom focused, split = unzoom
+                if self.terminal_view_mode == crate::ui_state::ViewMode::Stacked {
+                    self.zoomed_pane = self.focused;
+                } else {
+                    self.zoomed_pane = None;
+                }
+                self.cache.pane_generations.clear();
+                self.cache.invalidate_chrome();
+                self.compute_layout();
+            }
+            FocusArea::FileTree => {} // no-op
+        }
+    }
+
+    /// Reorder a pane to the position of another pane (used by tab drag in stacked mode).
+    /// Swaps the two panes' positions in the SplitLayout of the current focus area.
+    pub(crate) fn reorder_stacked_tab(&mut self, source: tide_core::PaneId, target: tide_core::PaneId) {
+        match self.focus_area {
+            FocusArea::Stage => {
+                self.layout.swap_panes(source, target);
+            }
+            FocusArea::Dock => {
+                if let Some(tid) = self.focused_terminal_id() {
+                    if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                        tp.dock_layout.swap_panes(source, target);
                     }
-                    self.cache.pane_generations.clear();
-                    self.cache.invalidate_chrome();
-                    self.compute_layout();
                 }
             }
-            FocusArea::FileTree => {}
+            _ => {}
+        }
+        self.cache.invalidate_chrome();
+    }
+
+    /// Cycle through panes in the current area's stacked mode, or navigate
+    /// between panes in split mode.
+    fn cycle_tab(&mut self, direction: i32) {
+        match self.focus_area {
+            FocusArea::Dock => {
+                // Dock tab cycling: use all_tabs_flat for linear navigation
+                if let Some(tid) = self.focused_terminal_id() {
+                    if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                        let pane_ids = tp.dock_layout.all_tabs_flat();
+                        if pane_ids.len() < 2 { return; }
+                        let current = tp.dock_focused;
+                        if let Some(current) = current {
+                            if let Some(pos) = pane_ids.iter().position(|&id| id == current) {
+                                let next_pos = if direction > 0 {
+                                    (pos + 1) % pane_ids.len()
+                                } else {
+                                    (pos + pane_ids.len() - 1) % pane_ids.len()
+                                };
+                                let next_id = pane_ids[next_pos];
+                                // Update dock_focused and active tab
+                                if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                                    tp.dock_focused = Some(next_id);
+                                    tp.dock_layout.set_active_tab(next_id);
+                                }
+                                self.focused = Some(next_id);
+                                self.router.set_focused(next_id);
+                                self.cache.invalidate_chrome();
+                                self.compute_layout();
+                            }
+                        }
+                    }
+                }
+            }
+            FocusArea::Stage => {
+                if self.terminal_view_mode == crate::ui_state::ViewMode::Stacked {
+                    // Stage stacked: cycle through terminals in the layout
+                    let terminal_ids = self.layout.pane_ids();
+                    if terminal_ids.len() < 2 { return; }
+                    if let Some(current) = self.focused {
+                        if let Some(pos) = terminal_ids.iter().position(|&id| id == current) {
+                            let next_pos = if direction > 0 {
+                                (pos + 1) % terminal_ids.len()
+                            } else {
+                                (pos + terminal_ids.len() - 1) % terminal_ids.len()
+                            };
+                            let next_id = terminal_ids[next_pos];
+                            self.zoomed_pane = Some(next_id);
+                            self.focus_terminal(next_id);
+                            self.swap_dock_state(next_id);
+                            self.compute_layout();
+                        }
+                    }
+                } else {
+                    // Split mode: cycle through panes in the layout
+                    self.navigate_panes(direction);
+                }
+            }
+            FocusArea::FileTree => {} // no-op
         }
     }
 
@@ -492,8 +595,15 @@ impl App {
                 }
             }
             GlobalAction::FocusArea(slot) => {
-                let target = self.resolve_slot(slot);
-                self.handle_focus_area(target);
+                if matches!(slot, AreaSlot::Slot1) {
+                    // Cmd+1: toggle workspace sidebar
+                    self.ws.show_sidebar = !self.ws.show_sidebar;
+                    self.cache.invalidate_chrome();
+                    self.compute_layout();
+                } else {
+                    let target = self.resolve_slot(slot);
+                    self.handle_focus_area(target);
+                }
             }
             GlobalAction::WorkspacePrev => {
                 let len = self.ws.workspaces.len();
@@ -527,18 +637,16 @@ impl App {
                 self.handle_navigate(direction);
             }
             GlobalAction::ToggleZoom => {
-                self.handle_toggle_zoom();
+                self.handle_toggle_stacked();
             }
             GlobalAction::TabPrev => {
-                // Navigate to previous tab in the current tab group
-                self.navigate_tab_group(tide_input::Direction::Left);
+                self.cycle_tab(-1);
             }
             GlobalAction::TabNext => {
-                // Navigate to next tab in the current tab group
-                self.navigate_tab_group(tide_input::Direction::Right);
+                self.cycle_tab(1);
             }
             GlobalAction::NewTab => {
-                // Open a new terminal tab in the focused pane's TabGroup
+                // Open a new terminal pane next to the focused pane
                 self.new_terminal_tab();
             }
             GlobalAction::FileFinder => {
@@ -730,6 +838,9 @@ impl App {
             GlobalAction::ScrollHalfPageDown => {
                 self.scroll_half_page(tide_input::Direction::Down);
             }
+            GlobalAction::ToggleStacked => {
+                self.handle_toggle_stacked();
+            }
         }
     }
 
@@ -845,45 +956,34 @@ impl App {
         self.cache.invalidate_chrome();
     }
 
-    /// Navigate tabs within the current pane's tab group (Left = prev, Right = next).
-    fn navigate_tab_group(&mut self, direction: tide_input::Direction) {
+    /// Navigate between panes in the layout (cycle through all panes).
+    fn navigate_panes(&mut self, direction: i32) {
         let current_id = match self.focused {
             Some(id) => id,
             None => return,
         };
-        // Scope the immutable borrow of self.layout so it's dropped before set_active_tab
-        let new_tab = {
-            let tg = match self.layout.tab_group_containing(current_id) {
-                Some(tg) => tg,
-                None => return,
-            };
-            if tg.tabs.len() < 2 {
-                return;
-            }
-            let idx = match tg.tabs.iter().position(|&id| id == current_id) {
-                Some(i) => i,
-                None => return,
-            };
-            let len = tg.tabs.len();
-            let new_idx = match direction {
-                tide_input::Direction::Left => {
-                    if idx > 0 { idx - 1 } else { len - 1 }
-                }
-                tide_input::Direction::Right => {
-                    if idx + 1 < len { idx + 1 } else { 0 }
-                }
-                _ => return,
-            };
-            tg.tabs[new_idx]
+        let pane_ids = self.layout.pane_ids();
+        if pane_ids.len() < 2 {
+            return;
+        }
+        let idx = match pane_ids.iter().position(|&id| id == current_id) {
+            Some(i) => i,
+            None => return,
         };
-        self.layout.set_active_tab(new_tab);
+        let len = pane_ids.len();
+        let new_idx = if direction > 0 {
+            (idx + 1) % len
+        } else {
+            (idx + len - 1) % len
+        };
+        let new_pane = pane_ids[new_idx];
         self.cache.invalidate_pane(current_id);
-        self.cache.invalidate_pane(new_tab);
-        self.focused = Some(new_tab);
-        self.router.set_focused(new_tab);
-        // Keep zoom on the new tab so it stays fullscreen
+        self.cache.invalidate_pane(new_pane);
+        self.focused = Some(new_pane);
+        self.router.set_focused(new_pane);
+        // Keep zoom on the new pane so it stays fullscreen
         if self.zoomed_pane.is_some() {
-            self.zoomed_pane = Some(new_tab);
+            self.zoomed_pane = Some(new_pane);
         }
         self.cache.invalidate_chrome();
         self.compute_layout();

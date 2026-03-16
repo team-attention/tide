@@ -87,7 +87,7 @@ impl App {
                 {
                     return Some(match area {
                         FocusArea::FileTree => HoverTarget::TitlebarFileTree,
-                        FocusArea::PaneArea => HoverTarget::TitlebarPaneArea,
+                        FocusArea::Stage | FocusArea::Dock => HoverTarget::TitlebarPaneArea,
                     });
                 }
                 cur_right -= btn_w + TITLEBAR_BUTTON_GAP;
@@ -159,6 +159,16 @@ impl App {
             let border_x = ws_rect.x + ws_rect.width + PANE_GAP;
             if (pos.x - border_x).abs() < 5.0 {
                 return Some(HoverTarget::WsSidebarBorder);
+            }
+        }
+
+        // Context area border (resize handle) — right edge of pane area
+        if self.dock_open {
+            if let Some(pa_rect) = self.pane_area_rect {
+                let border_x = pa_rect.x + pa_rect.width;
+                if (pos.x - border_x).abs() < 5.0 {
+                    return Some(HoverTarget::DockBorder);
+                }
             }
         }
 
@@ -347,19 +357,20 @@ impl App {
                         self.cache.needs_redraw = true;
                         return true;
                     }
-                    HeaderHitAction::Tab(pane_id) => {
-                        // Initiate pending drag for this specific tab.
-                        // On mouse up without drag → switch to tab.
-                        // On mouse move past threshold → start dragging this tab.
-                        self.interaction.pane_drag = crate::drag_drop::PaneDragState::PendingDrag {
-                            source_pane: pane_id,
-                            press_pos: self.last_cursor_pos,
-                        };
-                        return true;
-                    }
-                    HeaderHitAction::TabClose(pane_id) => {
-                        // Close the specific tab
-                        self.close_specific_pane(pane_id);
+                    HeaderHitAction::DockTab(target_pane_id) => {
+                        // Switch to the clicked tab in the Dock TabGroup
+                        if let Some(tid) = self.focused_terminal_id() {
+                            if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                                tp.dock_focused = Some(target_pane_id);
+                                tp.dock_layout.set_active_tab(target_pane_id);
+                            }
+                            self.focused = Some(target_pane_id);
+                            self.router.set_focused(target_pane_id);
+                            self.focus_area = crate::ui_state::FocusArea::Dock;
+                        }
+                        self.cache.invalidate_chrome();
+                        self.cache.pane_generations.clear();
+                        self.compute_layout();
                         self.cache.needs_redraw = true;
                         return true;
                     }
@@ -1086,14 +1097,13 @@ impl App {
     }
 
     /// Handle a completed drop operation.
-    /// Tab-aware: Center zone adds source as a tab in target's TabGroup.
-    /// Directional zones remove source from its group and create a new split leaf.
+    /// Center zone swaps source and target. Directional zones create a new split.
     pub(crate) fn handle_drop(&mut self, source: tide_core::PaneId, dest: DropDestination) {
         use tide_core::{DropZone, LayoutEngine, SplitDirection};
 
         match dest {
             DropDestination::TreeRoot(zone) => {
-                // Remove source from its current location (TabGroup or leaf)
+                // Remove source from its current location
                 self.layout.remove(source);
                 // Insert at root level
                 self.layout.insert_at_root(source, zone);
@@ -1101,22 +1111,8 @@ impl App {
                 self.cache.invalidate_chrome();
                 self.compute_layout();
             }
-            DropDestination::TreePane(target_id, DropZone::Center) => {
-                // Center drop: add source as a tab in target's TabGroup
-                if source == target_id {
-                    return;
-                }
-                // Remove source from its current location
-                self.layout.remove(source);
-                // Add as tab in target's group
-                self.layout.add_tab(target_id, source);
-                self.layout.set_active_tab(source);
-                self.focused = Some(source);
-                self.cache.invalidate_chrome();
-                self.compute_layout();
-            }
             DropDestination::TreePane(target_id, zone) => {
-                // Directional drop: remove source, insert as new split next to target
+                // Drop: remove source, insert as new split next to target
                 if source == target_id {
                     return;
                 }
@@ -1125,7 +1121,7 @@ impl App {
                     DropZone::Bottom => (SplitDirection::Vertical, false),
                     DropZone::Left => (SplitDirection::Horizontal, true),
                     DropZone::Right => (SplitDirection::Horizontal, false),
-                    DropZone::Center => unreachable!(),
+                    DropZone::Center => (SplitDirection::Vertical, false), // Center = add below
                 };
                 self.layout.remove(source);
                 self.layout.insert_pane(target_id, source, direction, insert_first);

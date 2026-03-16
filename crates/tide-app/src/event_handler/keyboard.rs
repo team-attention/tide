@@ -144,7 +144,7 @@ impl App {
                 self.handle_file_tree_nav_key(key, &modifiers);
                 return;
             }
-            FocusArea::PaneArea => {
+            FocusArea::Stage | FocusArea::Dock => {
                 // Browser URL bar keyboard handling
                 if let Some(focused_id) = self.focused {
                     if let Some(PaneKind::Browser(bp)) = self.panes.get(&focused_id) {

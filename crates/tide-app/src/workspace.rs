@@ -18,6 +18,23 @@ pub(crate) struct Workspace {
     pub panes: HashMap<PaneId, PaneKind>,
 }
 
+/// Per-workspace extras for dock state.
+/// Stored alongside workspaces in a parallel vec to avoid changing
+/// the Workspace struct (which is used in behavior_tests).
+pub(crate) struct WorkspaceExtras {
+    pub dock_open: bool,
+    pub dock_width: f32,
+}
+
+impl WorkspaceExtras {
+    pub fn new() -> Self {
+        Self {
+            dock_open: false,
+            dock_width: 400.0,
+        }
+    }
+}
+
 impl App {
     /// Save the active workspace's state back into the workspaces vec.
     pub(crate) fn save_active_workspace(&mut self) {
@@ -26,6 +43,13 @@ impl App {
         std::mem::swap(&mut self.layout, &mut ws.layout);
         std::mem::swap(&mut self.focused, &mut ws.focused);
         std::mem::swap(&mut self.panes, &mut ws.panes);
+        // Save extras (grow vec if needed)
+        while self.ws.workspace_extras.len() <= self.ws.active {
+            self.ws.workspace_extras.push(WorkspaceExtras::new());
+        }
+        let extras = &mut self.ws.workspace_extras[self.ws.active];
+        std::mem::swap(&mut self.dock_open, &mut extras.dock_open);
+        std::mem::swap(&mut self.dock_width, &mut extras.dock_width);
     }
 
     /// Load the active workspace's state from the workspaces vec into App fields.
@@ -35,6 +59,13 @@ impl App {
         std::mem::swap(&mut self.layout, &mut ws.layout);
         std::mem::swap(&mut self.focused, &mut ws.focused);
         std::mem::swap(&mut self.panes, &mut ws.panes);
+        // Load extras (grow vec if needed)
+        while self.ws.workspace_extras.len() <= self.ws.active {
+            self.ws.workspace_extras.push(WorkspaceExtras::new());
+        }
+        let extras = &mut self.ws.workspace_extras[self.ws.active];
+        std::mem::swap(&mut self.dock_open, &mut extras.dock_open);
+        std::mem::swap(&mut self.dock_width, &mut extras.dock_width);
     }
 
     /// Switch to workspace at the given 0-based index.
@@ -99,11 +130,12 @@ impl App {
             focused: None,
             panes: HashMap::new(),
         });
+        self.ws.workspace_extras.push(WorkspaceExtras::new());
         self.ws.active = self.ws.workspaces.len() - 1;
 
         self.create_terminal_pane(pane_id, None);
         self.router.set_focused(pane_id);
-        self.focus_area = FocusArea::PaneArea;
+        self.focus_area = FocusArea::Stage;
         self.pane_rects.clear();
         self.visual_pane_rects.clear();
         self.cache.pane_generations.clear();
@@ -113,8 +145,7 @@ impl App {
     }
 
     /// Move a pane from the active workspace to a different workspace, then switch to it.
-    /// If the pane is a terminal, all associated non-terminal panes move together,
-    /// preserving their original TabGroup structure.
+    /// If the pane is a terminal, all associated non-terminal panes move together.
     pub(crate) fn move_pane_to_workspace(&mut self, pane_id: PaneId, target_idx: usize) {
         if target_idx == self.ws.active || target_idx >= self.ws.workspaces.len() {
             return;
@@ -129,27 +160,6 @@ impl App {
         } else {
             Vec::new()
         };
-
-        // Snapshot TabGroup membership BEFORE removing from layout.
-        // Group associated panes by their TabGroup so we can reconstruct the structure.
-        let mut tab_groups: Vec<Vec<PaneId>> = Vec::new();
-        let mut grouped: std::collections::HashSet<PaneId> = std::collections::HashSet::new();
-        for &pid in &associated_panes {
-            if grouped.contains(&pid) {
-                continue;
-            }
-            if let Some(tg) = self.layout.tab_group_containing(pid) {
-                // Collect all associated panes that are in this same tab group
-                let members: Vec<PaneId> = tg.tabs.iter()
-                    .filter(|&&t| associated_panes.contains(&t))
-                    .copied()
-                    .collect();
-                for &m in &members {
-                    grouped.insert(m);
-                }
-                tab_groups.push(members);
-            }
-        }
 
         // All panes to move
         let all_panes_to_move: Vec<PaneId> = std::iter::once(pane_id)
@@ -170,7 +180,7 @@ impl App {
             }
         }
 
-        // Insert into target workspace, preserving TabGroup structure
+        // Insert into target workspace
         let target_ws = &mut self.ws.workspaces[target_idx];
 
         // 1. Insert the terminal pane
@@ -179,27 +189,7 @@ impl App {
             target_ws.panes.insert(pane_id, pane);
         }
 
-        // 2. Insert associated panes, grouped by original TabGroup
-        for group in &tab_groups {
-            if group.is_empty() {
-                continue;
-            }
-            // First pane in the group: insert as a new split
-            let first = group[0];
-            if let Some(pane) = moved_panes.remove(&first) {
-                target_ws.layout.insert_at_root(first, DropZone::Right);
-                target_ws.panes.insert(first, pane);
-            }
-            // Remaining panes: add as tabs in the same group
-            for &pid in &group[1..] {
-                if let Some(pane) = moved_panes.remove(&pid) {
-                    target_ws.layout.add_tab(first, pid);
-                    target_ws.panes.insert(pid, pane);
-                }
-            }
-        }
-
-        // 3. Insert any ungrouped associated panes (shouldn't happen, but safety)
+        // 2. Insert associated panes
         for (pid, pane) in moved_panes {
             target_ws.layout.insert_at_root(pid, DropZone::Right);
             target_ws.panes.insert(pid, pane);
@@ -242,6 +232,9 @@ impl App {
 
         // Remove workspace from vec
         self.ws.workspaces.remove(self.ws.active);
+        if self.ws.active < self.ws.workspace_extras.len() {
+            self.ws.workspace_extras.remove(self.ws.active);
+        }
         if self.ws.active >= self.ws.workspaces.len() {
             self.ws.active = self.ws.workspaces.len() - 1;
         }
@@ -251,7 +244,7 @@ impl App {
         if let Some(id) = self.focused {
             self.router.set_focused(id);
         }
-        self.focus_area = FocusArea::PaneArea;
+        self.focus_area = FocusArea::Stage;
         self.pane_rects.clear();
         self.visual_pane_rects.clear();
         self.cache.pane_generations.clear();

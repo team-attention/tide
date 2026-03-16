@@ -829,7 +829,6 @@ mod tests {
     ///   3(0,300,400,300)  | 4(400,300,400,300)
     fn make_quadrant_layout() -> SplitLayout {
         use crate::node::Node;
-        use crate::TabGroup;
 
         let root = Node::Split {
             direction: SplitDirection::Horizontal,
@@ -837,14 +836,14 @@ mod tests {
             left: Box::new(Node::Split {
                 direction: SplitDirection::Vertical,
                 ratio: 0.5,
-                left: Box::new(Node::Leaf(TabGroup::single(2))),
-                right: Box::new(Node::Leaf(TabGroup::single(3))),
+                left: Box::new(Node::Leaf(2)),
+                right: Box::new(Node::Leaf(3)),
             }),
             right: Box::new(Node::Split {
                 direction: SplitDirection::Vertical,
                 ratio: 0.5,
-                left: Box::new(Node::Leaf(TabGroup::single(1))),
-                right: Box::new(Node::Leaf(TabGroup::single(4))),
+                left: Box::new(Node::Leaf(1)),
+                right: Box::new(Node::Leaf(4)),
             }),
         };
 
@@ -1138,80 +1137,15 @@ mod tests {
     }
 
     // ──────────────────────────────────────────
-    // TabGroup operations
+    // Leaf operations (post-TabGroup removal)
     // ──────────────────────────────────────────
 
     #[test]
-    fn test_add_tab_to_group() {
-        let (mut layout, p1) = SplitLayout::with_initial_pane();
-
-        // Add a second tab to the only leaf
-        let p2 = layout.alloc_id();
-        assert!(layout.add_tab(p1, p2));
-
-        // Both panes should appear in pane_ids
-        let ids = layout.pane_ids();
-        assert!(ids.contains(&p1));
-        assert!(ids.contains(&p2));
-        assert_eq!(ids.len(), 2);
-
-        // Only the active tab (p2) should appear in compute
-        let rects = layout.compute(WINDOW, &[], None);
-        assert_eq!(rects.len(), 1);
-        assert_eq!(rects[0].0, p2);
-    }
-
-    #[test]
-    fn test_set_active_tab() {
-        let (mut layout, p1) = SplitLayout::with_initial_pane();
-        let p2 = layout.alloc_id();
-        layout.add_tab(p1, p2);
-
-        // Switch back to p1
-        assert!(layout.set_active_tab(p1));
-        let rects = layout.compute(WINDOW, &[], None);
-        assert_eq!(rects[0].0, p1);
-
-        // Switch to p2
-        assert!(layout.set_active_tab(p2));
-        let rects = layout.compute(WINDOW, &[], None);
-        assert_eq!(rects[0].0, p2);
-    }
-
-    #[test]
-    fn test_remove_tab_from_multi_tab_group() {
-        let (mut layout, p1) = SplitLayout::with_initial_pane();
-        let p2 = layout.alloc_id();
-        let p3 = layout.alloc_id();
-        layout.add_tab(p1, p2);
-        layout.add_tab(p2, p3);
-
-        // Remove p2 (middle tab). Active should adjust.
-        layout.remove(p2);
-        let ids = layout.pane_ids();
-        assert_eq!(ids.len(), 2);
-        assert!(ids.contains(&p1));
-        assert!(ids.contains(&p3));
-        assert!(!ids.contains(&p2));
-
-        // Layout should still have a root (not None)
-        assert!(layout.root.is_some());
-    }
-
-    #[test]
-    fn test_remove_last_tab_removes_leaf() {
+    fn test_remove_leaf_from_split() {
         let (mut layout, p1) = SplitLayout::with_initial_pane();
         let p2 = layout.split(p1, SplitDirection::Horizontal);
 
-        // Add a tab to p1's group, then remove both
-        let p3 = layout.alloc_id();
-        layout.add_tab(p1, p3);
-
-        // Remove p3 first (p1 is still there)
-        layout.remove(p3);
-        assert_eq!(layout.pane_ids().len(), 2); // p1 and p2
-
-        // Remove p1 (last tab in group) — leaf should collapse
+        // Remove p1 — p2 should remain
         layout.remove(p1);
         let ids = layout.pane_ids();
         assert_eq!(ids.len(), 1);
@@ -1219,80 +1153,30 @@ mod tests {
     }
 
     #[test]
-    fn test_tab_group_containing() {
+    fn test_split_creates_two_leaves() {
         let (mut layout, p1) = SplitLayout::with_initial_pane();
-        let p2 = layout.alloc_id();
-        layout.add_tab(p1, p2);
 
-        let tg = layout.tab_group_containing(p1).unwrap();
-        assert_eq!(tg.tabs.len(), 2);
-        assert!(tg.contains(p1));
-        assert!(tg.contains(p2));
+        // Split the pane
+        let p2 = layout.split(p1, SplitDirection::Horizontal);
 
-        // p2 is in the same group
-        let tg2 = layout.tab_group_containing(p2).unwrap();
-        assert_eq!(tg2.tabs.len(), 2);
-
-        // Nonexistent pane
-        assert!(layout.tab_group_containing(999).is_none());
-    }
-
-    #[test]
-    fn test_active_index_correction_on_remove() {
-        let (mut layout, p1) = SplitLayout::with_initial_pane();
-        let p2 = layout.alloc_id();
-        let p3 = layout.alloc_id();
-        layout.add_tab(p1, p2);
-        layout.add_tab(p2, p3);
-
-        // Active is now p3 (index 2)
-        let rects = layout.compute(WINDOW, &[], None);
-        assert_eq!(rects[0].0, p3);
-
-        // Remove p3 (active). Active should fall back to p2 (last item).
-        layout.remove(p3);
-        let rects = layout.compute(WINDOW, &[], None);
-        assert_eq!(rects[0].0, p2);
-
-        // Remove p1 (index 0, before active p2). Active should shift.
-        layout.remove(p1);
-        let rects = layout.compute(WINDOW, &[], None);
-        assert_eq!(rects[0].0, p2);
-    }
-
-    #[test]
-    fn test_add_tab_nonexistent_target() {
-        let (mut layout, _p1) = SplitLayout::with_initial_pane();
-        let p2 = layout.alloc_id();
-        assert!(!layout.add_tab(999, p2));
-    }
-
-    #[test]
-    fn test_split_with_tabs_preserves_groups() {
-        let (mut layout, p1) = SplitLayout::with_initial_pane();
-        let p2 = layout.alloc_id();
-        layout.add_tab(p1, p2);
-
-        // Split the pane (p2 is active)
-        let p3 = layout.split(p2, SplitDirection::Horizontal);
-
-        // After split, all three panes should exist
+        // After split, both panes should exist
         let ids = layout.pane_ids();
         assert!(ids.contains(&p1));
         assert!(ids.contains(&p2));
-        assert!(ids.contains(&p3));
+        assert_eq!(ids.len(), 2);
+
+        // Both should have rects
+        let rects = layout.compute(WINDOW, &[], None);
+        assert_eq!(rects.len(), 2);
     }
 
     #[test]
-    fn test_snapshot_roundtrip_with_tabs() {
+    fn test_snapshot_roundtrip() {
         let (mut layout, p1) = SplitLayout::with_initial_pane();
-        let p2 = layout.alloc_id();
-        let p3 = layout.alloc_id();
-        layout.add_tab(p1, p2);
 
         // Split to create a more complex tree
-        let _p4 = layout.split(p2, SplitDirection::Horizontal);
-        layout.add_tab(p1, p3);
+        let p2 = layout.split(p1, SplitDirection::Horizontal);
+        let _p3 = layout.split(p2, SplitDirection::Vertical);
 
         let snap = layout.snapshot().unwrap();
         let restored = SplitLayout::from_snapshot(snap);
@@ -1345,12 +1229,11 @@ mod tests {
     }
 
     #[test]
-    fn test_right_neighbor_with_tab_group() {
-        // [p1, p3] | p2  →  right neighbor of p1 and p3 is p2
+    fn test_right_neighbor_with_vertical_then_horizontal() {
+        // (p1 / p3) | p2  →  right neighbor of p1 and p3 is p2
         let (mut layout, p1) = SplitLayout::with_initial_pane();
         let p2 = layout.split(p1, SplitDirection::Horizontal);
-        let p3 = layout.alloc_id();
-        layout.add_tab(p1, p3);
+        let p3 = layout.split(p1, SplitDirection::Vertical);
         assert_eq!(layout.right_neighbor_pane(p1), Some(p2));
         assert_eq!(layout.right_neighbor_pane(p3), Some(p2));
     }
