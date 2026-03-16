@@ -98,6 +98,15 @@ impl App {
             // Poll background sources (PTY output, file watcher, git)
             self.poll_background_events(&window);
 
+            // Periodic session auto-save for crash recovery (every 30s)
+            {
+                let now = Instant::now();
+                if now.duration_since(self.last_session_save) >= Duration::from_secs(30) {
+                    self.save_full_session();
+                    self.last_session_save = now;
+                }
+            }
+
             // Cursor blink
             let blink_elapsed = Instant::now().duration_since(self.cursor_blink_at);
             let blink_phase = (blink_elapsed.as_millis() / 530) % 2 == 0;
@@ -221,8 +230,7 @@ impl App {
                 return;
             }
             PlatformEvent::CloseRequested => {
-                let session = session::Session::from_app(self);
-                session::save_session(&session);
+                self.save_full_session();
                 session::delete_running_marker();
                 std::process::exit(0);
             }

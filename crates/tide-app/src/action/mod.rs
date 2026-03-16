@@ -93,13 +93,11 @@ impl App {
         self.focused
     }
 
-    /// Build the left-to-right ordering of focus areas based on sidebar_side.
-    pub(crate) fn area_ordering(&self) -> Vec<FocusArea> {
-        let mut areas = Vec::with_capacity(2);
-        if self.sidebar_side == crate::LayoutSide::Left { areas.push(FocusArea::FileTree); }
-        areas.push(FocusArea::Stage);
-        if self.sidebar_side == crate::LayoutSide::Right { areas.push(FocusArea::FileTree); }
-        areas
+    /// Save session and exit the app.
+    pub(crate) fn exit_app(&self) {
+        self.save_full_session();
+        crate::session::delete_running_marker();
+        std::process::exit(0);
     }
 
     /// Resolve an AreaSlot to a FocusArea.
@@ -160,6 +158,57 @@ impl App {
             }
         }
         self.cache.invalidate_chrome();
+    }
+
+    /// Toggle FileTree visibility only (for titlebar button).
+    /// Does NOT move focus on open. Fallback focus on close if FileTree was focused.
+    pub(crate) fn toggle_file_tree_visibility(&mut self) {
+        if self.ft.visible {
+            self.ft.visible = false;
+            if self.focus_area == FocusArea::FileTree {
+                if self.focused.map(|f| self.is_pane_in_dock(f)).unwrap_or(false) {
+                    self.focus_area = FocusArea::Dock;
+                } else {
+                    self.focus_area = FocusArea::Stage;
+                }
+            }
+        } else {
+            self.ft.visible = true;
+            self.update_file_tree_cwd();
+        }
+        self.cache.invalidate_chrome();
+        self.compute_layout();
+    }
+
+    /// Toggle Dock visibility only (for titlebar button).
+    /// Does NOT move focus on open. Fallback focus on close if Dock was focused.
+    pub(crate) fn toggle_dock_visibility(&mut self) {
+        if self.dock_open {
+            self.dock_open = false;
+            if self.focus_area == FocusArea::Dock {
+                let owner = self.focused_terminal_id();
+                self.focus_area = FocusArea::Stage;
+                if let Some(tid) = owner {
+                    self.focused = Some(tid);
+                    self.router.set_focused(tid);
+                }
+            }
+        } else {
+            // Set dock_open first so ensure_dock_placeholder doesn't early-return
+            self.dock_open = true;
+            if let Some(tid) = self.focused_terminal_id() {
+                let has_panes = if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                    !tp.dock_layout.all_pane_ids().is_empty()
+                } else {
+                    false
+                };
+                if !has_panes {
+                    self.ensure_dock_placeholder();
+                }
+            }
+        }
+        self.cache.invalidate_chrome();
+        self.compute_layout();
     }
 
     /// Handle Navigate(direction) — route based on focus_area.

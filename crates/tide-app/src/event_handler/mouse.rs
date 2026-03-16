@@ -324,12 +324,18 @@ impl App {
                         self.cache.invalidate_chrome();
                         return;
                     }
-                    Some(crate::drag_drop::HoverTarget::TitlebarFileTree) => {
-                        self.handle_focus_area(FocusArea::FileTree);
+                    Some(crate::drag_drop::HoverTarget::TitlebarWorkspace) => {
+                        self.ws.show_sidebar = !self.ws.show_sidebar;
+                        self.cache.invalidate_chrome();
+                        self.compute_layout();
                         return;
                     }
-                    Some(crate::drag_drop::HoverTarget::TitlebarPaneArea) => {
-                        self.handle_focus_area(FocusArea::Stage);
+                    Some(crate::drag_drop::HoverTarget::TitlebarFileTree) => {
+                        self.toggle_file_tree_visibility();
+                        return;
+                    }
+                    Some(crate::drag_drop::HoverTarget::TitlebarDock) => {
+                        self.toggle_dock_visibility();
                         return;
                     }
                     _ => {}
