@@ -220,6 +220,9 @@ struct App {
     /// When set, only this dock pane is shown (fills the entire dock area).
     pub(crate) dock_zoomed_pane: Option<tide_core::PaneId>,
 
+    // Periodic session auto-save for crash recovery
+    pub(crate) last_session_save: Instant,
+
     // Terminal Context: each non-terminal pane remembers which terminal provides its cwd context.
     pub(crate) associated_terminal: HashMap<PaneId, PaneId>,
     // Retained contexts: when a terminal is closed, its TerminalContext is preserved here
@@ -308,6 +311,7 @@ impl App {
             dock_width: 400.0,
             dock_border_dragging: false,
             dock_zoomed_pane: None,
+            last_session_save: Instant::now(),
             associated_terminal: HashMap::new(),
             retained_contexts: HashMap::new(),
         }

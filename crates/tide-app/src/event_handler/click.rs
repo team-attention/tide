@@ -4,7 +4,6 @@ use crate::drag_drop::{DropDestination, HoverTarget};
 use crate::header::{HeaderHitAction, HeaderHitZone};
 use crate::pane::PaneKind;
 use crate::theme::*;
-use crate::ui_state::FocusArea;
 use crate::{App, GitSwitcherMode, GitSwitcherState, shell_escape};
 
 impl App {
@@ -71,24 +70,25 @@ impl App {
                 return Some(HoverTarget::TitlebarTheme);
             }
 
-            // Titlebar toggle buttons
+            // Titlebar toggle buttons (right-to-left: Dock, FileTree, Workspace)
             let btn_pad_h = 6.0_f32;
             let btn_chars = 4.0_f32;
             let btn_w = btn_chars * cs.width + btn_pad_h * 2.0;
             let btn_h = cs.height + 6.0;
             let btn_y = (self.top_inset - btn_h) / 2.0;
 
-            let areas = self.area_ordering();
             let mut cur_right = theme_x - TITLEBAR_BUTTON_GAP;
-            for area in areas.iter().rev() {
+            let buttons = [
+                HoverTarget::TitlebarDock,
+                HoverTarget::TitlebarFileTree,
+                HoverTarget::TitlebarWorkspace,
+            ];
+            for hover in &buttons {
                 let btn_x = cur_right - btn_w;
                 if pos.x >= btn_x && pos.x <= btn_x + btn_w
                     && pos.y >= btn_y && pos.y <= btn_y + btn_h
                 {
-                    return Some(match area {
-                        FocusArea::FileTree => HoverTarget::TitlebarFileTree,
-                        FocusArea::Stage | FocusArea::Dock => HoverTarget::TitlebarPaneArea,
-                    });
+                    return Some(hover.clone());
                 }
                 cur_right -= btn_w + TITLEBAR_BUTTON_GAP;
             }
