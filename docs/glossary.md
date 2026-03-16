@@ -88,3 +88,5 @@ Terms used consistently across the Tide codebase. When adding new code, use thes
 | **IME Proxy** | Per-pane `NSTextInputClient` view for Input Method Editor composition. |
 | **Glyph Atlas** | GPU texture cache of rendered font glyphs (MSDF format). |
 | **Dirty Tracking** | Generation-based system to skip re-rendering unchanged panes/chrome. |
+| **WrapMap** | Cached mapping from logical lines to visual rows for soft-wrap rendering. Built per EditorPane when soft wrap is active. |
+| **Soft Wrap** | Automatic line wrapping at viewport width. Enabled for prose files (`.md`, `.txt`). Line numbers only on first visual row. |
