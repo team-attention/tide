@@ -557,14 +557,17 @@ impl EditorPane {
         }
     }
 
-    /// Maximum display-width across all preview lines (for h-scroll clamping).
+    /// Maximum display-width across code block lines only (for h-scroll clamping).
+    /// Normal text is already wrapped, so only code blocks need horizontal scroll.
     pub fn preview_max_line_width(&self) -> usize {
         use unicode_width::UnicodeWidthChar;
-        self.preview_lines().iter().map(|line| {
-            line.spans.iter().map(|s| {
-                s.text.chars().filter(|c| *c != '\n').map(|c| c.width().unwrap_or(1)).sum::<usize>()
-            }).sum::<usize>()
-        }).max().unwrap_or(0)
+        self.preview_lines().iter()
+            .filter(|line| line.bg_color.is_some())
+            .map(|line| {
+                line.spans.iter().map(|s| {
+                    s.text.chars().filter(|c| *c != '\n').map(|c| c.width().unwrap_or(1)).sum::<usize>()
+                }).sum::<usize>()
+            }).max().unwrap_or(0)
     }
 }
 

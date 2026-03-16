@@ -554,6 +554,9 @@ impl EditorPane {
             0.0
         };
         let content_width = (rect.width - scrollbar_reserved).max(0.0);
+        // 2-cell right padding for code block bg to match the 2-cell left indent
+        let right_pad = 2.0 * cell_size.width;
+        let bg_width = (content_width - right_pad).max(0.0);
         let visible_rows = (rect.height / cell_size.height).floor() as usize;
         let preview_lines = self.preview_lines();
 
@@ -566,13 +569,16 @@ impl EditorPane {
 
             // Draw full-row background if present (for code blocks)
             if let Some(bg) = line.bg_color {
-                let row_rect = Rect::new(rect.x, y, content_width, cell_size.height);
+                let row_rect = Rect::new(rect.x, y, bg_width, cell_size.height);
                 renderer.draw_grid_rect(row_rect, bg);
             }
 
-            // Draw styled spans with horizontal scroll
-            let h_scroll = self.preview_h_scroll;
-            let visible_cols = (content_width / cell_size.width).floor() as usize;
+            // Draw styled spans with horizontal scroll.
+            // h-scroll only applies to code block lines; normal text is already wrapped.
+            let is_code_block = line.bg_color.is_some();
+            let h_scroll = if is_code_block { self.preview_h_scroll } else { 0 };
+            let effective_width = if is_code_block { bg_width } else { content_width };
+            let visible_cols = (effective_width / cell_size.width).floor() as usize;
             let mut abs_col = 0usize; // absolute column before h_scroll
             for span in &line.spans {
                 for ch in span.text.chars() {
