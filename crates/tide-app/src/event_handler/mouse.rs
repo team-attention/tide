@@ -409,6 +409,26 @@ impl App {
                         return;
                     }
                 }
+
+                // Intra-dock split border drag
+                if let Some(dock_rect) = self.dock_area_rect {
+                    if dock_rect.contains(self.last_cursor_pos) {
+                        let local_pos = Vec2::new(
+                            self.last_cursor_pos.x - dock_rect.x,
+                            self.last_cursor_pos.y - dock_rect.y,
+                        );
+                        let dock_size = tide_core::Size::new(dock_rect.width, dock_rect.height);
+                        if let Some(tid) = self.focused_terminal_id() {
+                            if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                                tp.dock_layout.begin_drag(local_pos, dock_size);
+                                if tp.dock_layout.is_dragging() {
+                                    self.dock_split_dragging = true;
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // Sidebar border
@@ -514,6 +534,18 @@ impl App {
             return;
         }
 
+        if self.dock_split_dragging {
+            self.dock_split_dragging = false;
+            if let Some(tid) = self.focused_terminal_id() {
+                if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                    tp.dock_layout.end_drag();
+                }
+            }
+            self.compute_layout();
+            self.cache.invalidate_chrome();
+            return;
+        }
+
         let drag_state = std::mem::replace(&mut self.interaction.pane_drag, PaneDragState::Idle);
         match drag_state {
             PaneDragState::Dragging {
@@ -606,9 +638,30 @@ impl App {
             let logical = self.logical_size();
             let max_w = (logical.width - 200.0).max(100.0);
             let new_width = (logical.width - pos.x - PANE_GAP).max(100.0).min(max_w);
+            // Update per-terminal dock_width and global fallback
+            if let Some(tid) = self.focused_terminal_id() {
+                if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                    tp.dock_width = new_width;
+                }
+            }
             self.dock_width = new_width;
             self.compute_layout();
             self.cache.invalidate_chrome();
+            return;
+        }
+
+        // Handle intra-dock split border resize
+        if self.dock_split_dragging {
+            if let Some(dock_rect) = self.dock_area_rect {
+                let local_pos = Vec2::new(pos.x - dock_rect.x, pos.y - dock_rect.y);
+                if let Some(tid) = self.focused_terminal_id() {
+                    if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                        tp.dock_layout.drag_border(local_pos);
+                    }
+                }
+                self.compute_layout();
+                self.cache.needs_redraw = true;
+            }
             return;
         }
 
@@ -661,6 +714,8 @@ impl App {
                         drop_target: target,
                         cached_preview_rect: preview,
                     };
+                    // Hide browser webviews so drag preview renders on top
+                    self.sync_browser_webview_frames();
                 }
                 self.cache.needs_redraw = true;
                 return;

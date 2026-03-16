@@ -156,9 +156,7 @@ impl App {
                 }
                 let cwd = self.focused_terminal_cwd();
                 self.create_terminal_pane(new_id, cwd);
-                self.focus_area = crate::ui_state::FocusArea::Stage;
-                self.focused = Some(new_id);
-                self.router.set_focused(new_id);
+                self.focus_terminal(new_id);
             }
         }
 
@@ -177,8 +175,14 @@ impl App {
                 // create_ime_proxy() skips creation — leaving first responder on the
                 // old proxy and routing keyboard input to the wrong pane.
                 self.ime.pending_removes.push(launcher_id);
-                // New terminals always start at home directory
-                let cwd = dirs::home_dir();
+                // Use owning terminal's CWD if in dock, otherwise home directory
+                let cwd = context_terminal
+                    .and_then(|tid| {
+                        if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                            tp.context.cwd.clone()
+                        } else { None }
+                    })
+                    .or_else(|| dirs::home_dir());
                 // Terminal resolves don't get association (they ARE terminals)
                 self.associated_terminal.remove(&launcher_id);
                 self.panes.remove(&launcher_id);
@@ -237,7 +241,7 @@ impl App {
                     self.associated_terminal.insert(new_id, tid);
                     if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                         if let Some(dock_focused) = tp.dock_focused {
-                            tp.dock_layout.split_with_leaf_group(dock_focused, new_id, direction);
+                            tp.dock_layout.split_with_leaf_group(dock_focused, new_id, direction, false);
                         } else {
                             tp.dock_layout.insert_leaf_group(new_id);
                         }
@@ -718,9 +722,10 @@ impl App {
                 self.close_workspace();
                 return;
             }
-            // Show confirmation before closing the last pane
-            self.modal.close_app_confirm = true;
-            self.cache.invalidate_chrome();
+            // Show native confirmation before closing the app
+            if tide_platform::show_close_confirm() {
+                self.exit_app();
+            }
             return;
         }
 

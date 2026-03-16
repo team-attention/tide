@@ -90,7 +90,6 @@ pub(crate) fn render_overlays(
     render_git_switcher(app, renderer, p);
     render_context_menu(app, renderer, p);
     render_config_page(app, renderer, p);
-    render_close_app_confirm(app, renderer, p);
 }
 
 /// Render search bar UI for panes that have search visible.
@@ -1468,51 +1467,4 @@ fn render_config_page(
     let hint_style = text_style(hint_text_color);
     let hint_clip = Rect::new(popup_x, hint_bar_y, popup_w, hint_bar_h);
     renderer.draw_top_text(hint_text, Vec2::new(hint_text_x, hint_text_y), hint_style, hint_clip);
-}
-
-/// Render close-app confirmation bar centered in the window.
-fn render_close_app_confirm(
-    app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
-    p: &ThemePalette,
-) {
-    if !app.modal.close_app_confirm {
-        return;
-    }
-
-    let logical = app.logical_size();
-    let cell_size = renderer.cell_size();
-    let cell_height = cell_size.height;
-    let cell_w = cell_size.width;
-
-    let msg = "Close Tide?  Enter confirm  Esc cancel";
-    let msg_w = msg.len() as f32 * cell_w;
-    let bar_w = msg_w + 32.0;
-    let bar_h = cell_height + 16.0;
-    let bar_x = (logical.width - bar_w) / 2.0;
-    let bar_y = (logical.height - bar_h) / 2.0;
-
-    // Dim background
-    let dim = Color::new(0.0, 0.0, 0.0, 0.5);
-    renderer.draw_top_rect(Rect::new(0.0, 0.0, logical.width, logical.height), dim);
-
-    // Bar background + border
-    let border_rect = Rect::new(bar_x - 1.0, bar_y - 1.0, bar_w + 2.0, bar_h + 2.0);
-    let bar_rect = Rect::new(bar_x, bar_y, bar_w, bar_h);
-    renderer.draw_top_rounded_rect(border_rect, p.popup_border, 9.0);
-    renderer.draw_top_rounded_rect(bar_rect, p.popup_bg, 8.0);
-
-    // Text
-    let text_x = bar_x + (bar_w - msg_w) / 2.0;
-    let text_y = bar_y + (bar_h - cell_height) / 2.0;
-    renderer.draw_top_text(
-        msg,
-        Vec2::new(text_x, text_y),
-        TextStyle {
-            foreground: p.tab_text_focused,
-            background: None,
-            bold: false, dim: false, italic: false, underline: false,
-        },
-        bar_rect,
-    );
 }
