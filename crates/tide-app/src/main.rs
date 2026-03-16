@@ -123,6 +123,8 @@ struct App {
 
     // The overall rect available for pane tiling (excluding file tree and editor panel)
     pub(crate) pane_area_rect: Option<Rect>,
+    // The rect available for dock panes (right of pane area)
+    pub(crate) dock_area_rect: Option<Rect>,
 
     // Render generation tracking (grouped)
     pub(crate) cache: ui_state::RenderCache,
@@ -217,6 +219,8 @@ struct App {
     pub(crate) dock_open: bool,
     pub(crate) dock_width: f32,
     pub(crate) dock_border_dragging: bool,
+    /// True when dragging a split border inside the dock area.
+    pub(crate) dock_split_dragging: bool,
 
 
     // Periodic session auto-save for crash recovery
@@ -269,6 +273,7 @@ impl App {
             visual_pane_rects: Vec::new(),
             prev_visual_pane_rects: Vec::new(),
             pane_area_rect: None,
+            dock_area_rect: None,
             cache: ui_state::RenderCache::new(),
             input_just_sent: false,
             input_sent_at: None,
@@ -309,6 +314,7 @@ impl App {
             dock_open: false,
             dock_width: 400.0,
             dock_border_dragging: false,
+            dock_split_dragging: false,
             last_session_save: Instant::now(),
             associated_terminal: HashMap::new(),
             retained_contexts: HashMap::new(),

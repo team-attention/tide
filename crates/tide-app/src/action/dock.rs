@@ -282,7 +282,7 @@ impl App {
 
         if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
             if let Some(dock_focused) = tp.dock_focused {
-                tp.dock_layout.split_with_leaf_group(dock_focused, new_id, direction);
+                tp.dock_layout.split_with_leaf_group(dock_focused, new_id, direction, false);
             } else {
                 tp.dock_layout.insert_leaf_group(new_id);
             }

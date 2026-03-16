@@ -97,7 +97,8 @@ pub(crate) fn render_ime_and_drop_preview(
 
         if let Some(ref dest) = maybe_dest {
             match dest {
-                DropDestination::TreeRoot(zone) | DropDestination::TreePane(_, zone) => {
+                DropDestination::TreeRoot(zone) | DropDestination::TreePane(_, zone)
+                | DropDestination::DockRoot(zone) => {
                     let is_swap = *zone == tide_core::DropZone::Center;
 
                     if is_swap {
@@ -110,10 +111,21 @@ pub(crate) fn render_ime_and_drop_preview(
                     } else {
                         // Use cached preview rect (computed on mouse move, not every frame)
                         if let Some(preview_rect) = cached_preview_rect {
-                            if let Some(pane_area) = app.pane_area_rect {
+                            // Dock drops use dock_area_rect offset, stage drops use pane_area_rect
+                            let is_dock_drop = match dest {
+                                DropDestination::DockRoot(_) => true,
+                                DropDestination::TreePane(tid, _) => app.is_pane_in_dock(*tid),
+                                _ => false,
+                            };
+                            let area = if is_dock_drop {
+                                app.dock_area_rect
+                            } else {
+                                app.pane_area_rect
+                            };
+                            if let Some(area_rect) = area {
                                 let screen_rect = Rect::new(
-                                    preview_rect.x + pane_area.x,
-                                    preview_rect.y + pane_area.y,
+                                    preview_rect.x + area_rect.x,
+                                    preview_rect.y + area_rect.y,
                                     preview_rect.width,
                                     preview_rect.height,
                                 );

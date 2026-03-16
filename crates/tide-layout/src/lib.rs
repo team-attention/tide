@@ -76,6 +76,11 @@ impl SplitLayout {
         }
     }
 
+    /// Returns true if a border drag is in progress.
+    pub fn is_dragging(&self) -> bool {
+        self.active_drag.is_some()
+    }
+
     /// End the current drag.
     pub fn end_drag(&mut self) {
         self.active_drag = None;
@@ -486,6 +491,13 @@ impl SplitLayout {
 
     fn add_tab_in_node(node: &mut Node, target: PaneId, new_pane: PaneId) -> bool {
         match node {
+            Node::Leaf(id) if *id == target => {
+                // Convert Leaf to LeafGroup with both panes
+                let mut tg = TabGroup::single(*id);
+                tg.add_tab(new_pane);
+                *node = Node::LeafGroup(tg);
+                true
+            }
             Node::Leaf(_) => false,
             Node::LeafGroup(tg) => {
                 if tg.contains(target) {
@@ -572,9 +584,10 @@ impl SplitLayout {
 
     /// Split a node and create a new LeafGroup in the new position.
     /// Used for Dock splits where new panes should be TabGroups.
-    pub fn split_with_leaf_group(&mut self, target: PaneId, new_pane: PaneId, direction: SplitDirection) -> bool {
+    /// `insert_first`: if true, the new pane goes left/top; if false, right/bottom.
+    pub fn split_with_leaf_group(&mut self, target: PaneId, new_pane: PaneId, direction: SplitDirection, insert_first: bool) -> bool {
         if let Some(ref mut root) = self.root {
-            root.split_pane_as_group(target, new_pane, direction)
+            root.split_pane_as_group(target, new_pane, direction, insert_first)
         } else {
             false
         }

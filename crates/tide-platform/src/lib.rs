@@ -219,6 +219,54 @@ pub enum WindowCommand {
     },
 }
 
+/// Show a native macOS confirm dialog for window close.
+/// Returns true if the user confirms, false if cancelled.
+/// Safe to call from any thread — dispatches to main thread via dispatch_sync.
+#[cfg(target_os = "macos")]
+pub fn show_close_confirm() -> bool {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    extern "C" {
+        static _dispatch_main_q: std::ffi::c_void;
+        fn dispatch_sync_f(
+            queue: *const std::ffi::c_void,
+            context: *mut std::ffi::c_void,
+            work: unsafe extern "C" fn(*mut std::ffi::c_void),
+        );
+    }
+
+    unsafe extern "C" fn show_alert(ctx: *mut std::ffi::c_void) {
+        use objc2::msg_send;
+        use objc2::msg_send_id;
+        use objc2::runtime::{AnyClass, AnyObject};
+        use objc2::rc::Retained;
+        use objc2_foundation::NSString;
+
+        let result = &*(ctx as *const AtomicBool);
+        unsafe {
+            let alert_cls = AnyClass::get("NSAlert").expect("NSAlert class must exist");
+            let alert: Retained<AnyObject> = msg_send_id![alert_cls, new];
+            let _: () = msg_send![&alert, setMessageText: &*NSString::from_str("Close this window?")];
+            let _: () = msg_send![&alert, setInformativeText: &*NSString::from_str("All running processes will be terminated.")];
+            let _: () = msg_send![&alert, addButtonWithTitle: &*NSString::from_str("Close")];
+            let _: () = msg_send![&alert, addButtonWithTitle: &*NSString::from_str("Cancel")];
+            let _: () = msg_send![&alert, setAlertStyle: 0_isize];
+            let response: isize = msg_send![&alert, runModal];
+            result.store(response == 1000, Ordering::SeqCst);
+        }
+    }
+
+    let confirmed = AtomicBool::new(false);
+    unsafe {
+        dispatch_sync_f(
+            std::ptr::addr_of!(_dispatch_main_q),
+            (&confirmed as *const AtomicBool as *mut AtomicBool).cast(),
+            show_alert,
+        );
+    }
+    confirmed.load(Ordering::SeqCst)
+}
+
 /// Execute a `WindowCommand` on the main thread using the actual window.
 pub fn execute_window_command(window: &dyn PlatformWindow, cmd: WindowCommand) {
     match cmd {

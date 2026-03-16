@@ -39,16 +39,18 @@ impl Node {
         target: PaneId,
         new_id: PaneId,
         direction: SplitDirection,
+        insert_first: bool,
     ) -> bool {
         match self {
             Node::Leaf(id) if *id == target => {
                 let original = Node::Leaf(*id);
                 let new_leaf = Node::LeafGroup(TabGroup::single(new_id));
+                let (l, r) = if insert_first { (new_leaf, original) } else { (original, new_leaf) };
                 *self = Node::Split {
                     direction,
                     ratio: 0.5,
-                    left: Box::new(original),
-                    right: Box::new(new_leaf),
+                    left: Box::new(l),
+                    right: Box::new(r),
                 };
                 true
             }
@@ -56,17 +58,18 @@ impl Node {
             Node::LeafGroup(tg) if tg.contains(target) => {
                 let original = Node::LeafGroup(tg.clone());
                 let new_leaf = Node::LeafGroup(TabGroup::single(new_id));
+                let (l, r) = if insert_first { (new_leaf, original) } else { (original, new_leaf) };
                 *self = Node::Split {
                     direction,
                     ratio: 0.5,
-                    left: Box::new(original),
-                    right: Box::new(new_leaf),
+                    left: Box::new(l),
+                    right: Box::new(r),
                 };
                 true
             }
             Node::LeafGroup(_) => false,
             Node::Split { direction: dir, ratio, left, right, .. } => {
-                if left.split_pane_as_group(target, new_id, direction) {
+                if left.split_pane_as_group(target, new_id, direction, insert_first) {
                     if *dir == direction {
                         let n_left = left.count_chain_leaves(*dir);
                         let n_right = right.count_chain_leaves(*dir);
@@ -74,7 +77,7 @@ impl Node {
                     }
                     return true;
                 }
-                if right.split_pane_as_group(target, new_id, direction) {
+                if right.split_pane_as_group(target, new_id, direction, insert_first) {
                     if *dir == direction {
                         let n_left = left.count_chain_leaves(*dir);
                         let n_right = right.count_chain_leaves(*dir);
