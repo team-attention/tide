@@ -21,6 +21,7 @@ const MIN_RATIO: f32 = 0.1;
 /// Border hit-test threshold in pixels.
 const BORDER_HIT_THRESHOLD: f32 = 8.0;
 
+#[derive(Clone)]
 pub struct SplitLayout {
     pub(crate) root: Option<Node>,
     next_id: PaneId,
@@ -44,7 +45,7 @@ impl SplitLayout {
     pub fn with_initial_pane() -> (Self, PaneId) {
         let id: PaneId = 1;
         let layout = Self {
-            root: Some(Node::Leaf(TabGroup::single(id))),
+            root: Some(Node::Leaf(id)),
             next_id: 2,
             active_drag: None,
             last_window_size: None,
@@ -80,7 +81,7 @@ impl SplitLayout {
         self.active_drag = None;
     }
 
-    /// Get all pane IDs in the layout (all tabs from all groups).
+    /// Get all pane IDs in the layout.
     pub fn pane_ids(&self) -> Vec<PaneId> {
         let mut ids = Vec::new();
         if let Some(ref root) = self.root {
@@ -89,9 +90,13 @@ impl SplitLayout {
         ids
     }
 
-    /// Alias for `pane_ids()` — returns all pane IDs across all TabGroups.
+    /// Return ALL pane IDs including all tabs in all TabGroups (not just active ones).
     pub fn all_pane_ids(&self) -> Vec<PaneId> {
-        self.pane_ids()
+        let mut ids = Vec::new();
+        if let Some(ref root) = self.root {
+            root.all_pane_ids(&mut ids);
+        }
+        ids
     }
 
     /// Equalize the root split's ratio based on same-direction chain leaf counts.
@@ -132,7 +137,7 @@ impl SplitLayout {
             root.insert_pane_at(target, new_pane, direction, insert_first)
         } else {
             // Tree is empty — make this the root
-            self.root = Some(Node::Leaf(TabGroup::single(new_pane)));
+            self.root = Some(Node::Leaf(new_pane));
             true
         }
     }
@@ -152,7 +157,7 @@ impl SplitLayout {
             DropZone::Center => unreachable!(),
         };
 
-        let new_node = Node::Leaf(TabGroup::single(new_pane));
+        let new_node = Node::Leaf(new_pane);
 
         match self.root.take() {
             Some(existing) => {
@@ -197,7 +202,7 @@ impl SplitLayout {
             }
             Some(None) => {
                 // Source was the only pane — can't do root-level move.
-                self.root = Some(Node::Leaf(TabGroup::single(source)));
+                self.root = Some(Node::Leaf(source));
                 return false;
             }
             None => return false,
@@ -213,7 +218,7 @@ impl SplitLayout {
             DropZone::Center => unreachable!(),
         };
 
-        let source_node = Node::Leaf(TabGroup::single(source));
+        let source_node = Node::Leaf(source);
         let (left, right) = if insert_first {
             (source_node, remaining)
         } else {
@@ -255,7 +260,7 @@ impl SplitLayout {
             }
             Some(None) => {
                 // Source was the only pane — can't move it.
-                self.root = Some(Node::Leaf(TabGroup::single(source)));
+                self.root = Some(Node::Leaf(source));
                 return false;
             }
             None => return false,
@@ -425,43 +430,167 @@ impl SplitLayout {
         rects.into_iter().find(|(id, _)| *id == source).map(|(_, r)| r)
     }
 
-    // ──────────────────────────────────────────────
-    // TabGroup operations
-    // ──────────────────────────────────────────────
-
-    /// Add a new tab to the TabGroup containing `target_pane`.
-    /// The new tab is inserted after the currently active tab and becomes active.
-    pub fn add_tab(&mut self, target_pane: PaneId, new_pane: PaneId) -> bool {
+    /// Swap the positions of two panes in the layout tree.
+    /// Returns true if the tree exists (swap applied), false if the tree is empty.
+    pub fn swap_panes(&mut self, a: PaneId, b: PaneId) -> bool {
         if let Some(ref mut root) = self.root {
-            if let Some(tg) = root.find_tab_group_mut(target_pane) {
-                tg.add_tab(new_pane);
-                return true;
-            }
+            root.swap_panes(a, b);
+            true
+        } else {
+            false
         }
-        false
     }
 
-    /// Set the active tab in the TabGroup containing `pane_id`.
-    pub fn set_active_tab(&mut self, pane_id: PaneId) -> bool {
-        if let Some(ref mut root) = self.root {
-            if let Some(tg) = root.find_tab_group_mut(pane_id) {
-                return tg.set_active(pane_id);
-            }
-        }
-        false
-    }
-
-    /// Get the TabGroup containing the given pane.
-    pub fn tab_group_containing(&self, pane: PaneId) -> Option<&TabGroup> {
-        self.root.as_ref().and_then(|r| r.find_tab_group(pane))
-    }
-
-    /// Find the active pane of the TabGroup immediately to the right of
-    /// the given pane's TabGroup. Returns `None` if the pane is already
-    /// in the rightmost position (no horizontal split ancestor with the
-    /// pane on the left side).
+    /// Find the pane immediately to the right of the given pane.
+    /// Returns `None` if the pane is already in the rightmost position.
     pub fn right_neighbor_pane(&self, pane: PaneId) -> Option<PaneId> {
         self.root.as_ref().and_then(|r| r.find_right_neighbor(pane))
+    }
+
+    // ── TabGroup methods (for Dock layouts) ──
+
+    /// Insert a new LeafGroup with a single tab as the root (or alongside existing root).
+    pub fn insert_leaf_group(&mut self, pane_id: PaneId) {
+        let new_node = Node::LeafGroup(TabGroup::single(pane_id));
+        match self.root.take() {
+            Some(existing) => {
+                self.root = Some(Node::Split {
+                    direction: SplitDirection::Vertical,
+                    ratio: 0.5,
+                    left: Box::new(existing),
+                    right: Box::new(new_node),
+                });
+                self.equalize_root_chain();
+            }
+            None => {
+                self.root = Some(new_node);
+            }
+        }
+    }
+
+    /// Add a tab to the TabGroup containing `target_pane`. Returns true if found.
+    pub fn add_tab(&mut self, target_pane: PaneId, new_pane: PaneId) -> bool {
+        if let Some(ref mut root) = self.root {
+            Self::add_tab_in_node(root, target_pane, new_pane)
+        } else {
+            false
+        }
+    }
+
+    fn add_tab_in_node(node: &mut Node, target: PaneId, new_pane: PaneId) -> bool {
+        match node {
+            Node::Leaf(_) => false,
+            Node::LeafGroup(tg) => {
+                if tg.contains(target) {
+                    tg.add_tab(new_pane);
+                    true
+                } else {
+                    false
+                }
+            }
+            Node::Split { left, right, .. } => {
+                Self::add_tab_in_node(left, target, new_pane)
+                    || Self::add_tab_in_node(right, target, new_pane)
+            }
+        }
+    }
+
+    /// Add a tab to the first TabGroup found in traversal order. Returns true if found.
+    pub fn add_tab_to_first_group(&mut self, new_pane: PaneId) -> bool {
+        if let Some(ref mut root) = self.root {
+            Self::add_tab_to_first_group_in_node(root, new_pane)
+        } else {
+            false
+        }
+    }
+
+    fn add_tab_to_first_group_in_node(node: &mut Node, new_pane: PaneId) -> bool {
+        match node {
+            Node::Leaf(_) => false,
+            Node::LeafGroup(tg) => {
+                tg.add_tab(new_pane);
+                true
+            }
+            Node::Split { left, right, .. } => {
+                Self::add_tab_to_first_group_in_node(left, new_pane)
+                    || Self::add_tab_to_first_group_in_node(right, new_pane)
+            }
+        }
+    }
+
+    /// Set the active tab in the TabGroup containing `pane_id`. Returns true if found.
+    pub fn set_active_tab(&mut self, pane_id: PaneId) -> bool {
+        if let Some(ref mut root) = self.root {
+            Self::set_active_tab_in_node(root, pane_id)
+        } else {
+            false
+        }
+    }
+
+    fn set_active_tab_in_node(node: &mut Node, pane_id: PaneId) -> bool {
+        match node {
+            Node::Leaf(_) => false,
+            Node::LeafGroup(tg) => tg.set_active(pane_id),
+            Node::Split { left, right, .. } => {
+                Self::set_active_tab_in_node(left, pane_id)
+                    || Self::set_active_tab_in_node(right, pane_id)
+            }
+        }
+    }
+
+    /// Find the first LeafGroup in traversal order.
+    pub fn first_tab_group(&self) -> Option<&TabGroup> {
+        self.root.as_ref().and_then(Self::first_tab_group_in_node)
+    }
+
+    fn first_tab_group_in_node(node: &Node) -> Option<&TabGroup> {
+        match node {
+            Node::Leaf(_) => None,
+            Node::LeafGroup(tg) => Some(tg),
+            Node::Split { left, right, .. } => {
+                Self::first_tab_group_in_node(left)
+                    .or_else(|| Self::first_tab_group_in_node(right))
+            }
+        }
+    }
+
+    /// Find the TabGroup containing `pane`, if any.
+    pub fn tab_group_containing(&self, pane: PaneId) -> Option<&TabGroup> {
+        if let Some(ref root) = self.root {
+            root.find_tab_group(pane)
+        } else {
+            None
+        }
+    }
+
+    /// Split a node and create a new LeafGroup in the new position.
+    /// Used for Dock splits where new panes should be TabGroups.
+    pub fn split_with_leaf_group(&mut self, target: PaneId, new_pane: PaneId, direction: SplitDirection) -> bool {
+        if let Some(ref mut root) = self.root {
+            root.split_pane_as_group(target, new_pane, direction)
+        } else {
+            false
+        }
+    }
+
+    /// Flatten all TabGroups' tabs in traversal order (for Cmd+I/O navigation).
+    pub fn all_tabs_flat(&self) -> Vec<PaneId> {
+        let mut out = Vec::new();
+        if let Some(ref root) = self.root {
+            Self::all_tabs_flat_in_node(root, &mut out);
+        }
+        out
+    }
+
+    fn all_tabs_flat_in_node(node: &Node, out: &mut Vec<PaneId>) {
+        match node {
+            Node::Leaf(id) => out.push(*id),
+            Node::LeafGroup(tg) => out.extend_from_slice(&tg.tabs),
+            Node::Split { left, right, .. } => {
+                Self::all_tabs_flat_in_node(left, out);
+                Self::all_tabs_flat_in_node(right, out);
+            }
+        }
     }
 }
 
@@ -474,6 +603,12 @@ impl SplitLayout {
 #[derive(Debug, Clone)]
 pub enum LayoutSnapshot {
     Leaf {
+        /// For backward compatibility, old snapshots stored multiple tabs.
+        /// New snapshots always have exactly one pane_id here.
+        tabs: Vec<PaneId>,
+        active: usize,
+    },
+    LeafGroup {
         tabs: Vec<PaneId>,
         active: usize,
     },
@@ -493,7 +628,11 @@ impl SplitLayout {
 
     fn node_to_snapshot(node: &Node) -> LayoutSnapshot {
         match node {
-            Node::Leaf(tg) => LayoutSnapshot::Leaf {
+            Node::Leaf(id) => LayoutSnapshot::Leaf {
+                tabs: vec![*id],
+                active: 0,
+            },
+            Node::LeafGroup(tg) => LayoutSnapshot::LeafGroup {
                 tabs: tg.tabs.clone(),
                 active: tg.active,
             },
@@ -508,6 +647,8 @@ impl SplitLayout {
 
     /// Reconstruct a `SplitLayout` from a `LayoutSnapshot`.
     /// The `next_id` is set to one past the maximum PaneId found.
+    /// For backward compatibility: if an old snapshot has multiple tabs in a leaf,
+    /// only the active tab is used.
     pub fn from_snapshot(snap: LayoutSnapshot) -> Self {
         let max_id = Self::max_id_in_snapshot(&snap);
         Self {
@@ -521,7 +662,12 @@ impl SplitLayout {
     fn snapshot_to_node(snap: &LayoutSnapshot) -> Node {
         match snap {
             LayoutSnapshot::Leaf { tabs, active } => {
-                Node::Leaf(TabGroup {
+                // Backward compatibility: use the active tab from old multi-tab snapshots
+                let id = tabs.get(*active).or_else(|| tabs.first()).copied().unwrap_or(0);
+                Node::Leaf(id)
+            }
+            LayoutSnapshot::LeafGroup { tabs, active } => {
+                Node::LeafGroup(TabGroup {
                     tabs: tabs.clone(),
                     active: *active,
                 })
@@ -537,7 +683,7 @@ impl SplitLayout {
 
     fn max_id_in_snapshot(snap: &LayoutSnapshot) -> PaneId {
         match snap {
-            LayoutSnapshot::Leaf { tabs, .. } => {
+            LayoutSnapshot::Leaf { tabs, .. } | LayoutSnapshot::LeafGroup { tabs, .. } => {
                 tabs.iter().copied().max().unwrap_or(0)
             }
             LayoutSnapshot::Split { left, right, .. } => {

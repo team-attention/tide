@@ -12,6 +12,24 @@ use crate::App;
 // Serializable session types
 // ──────────────────────────────────────────────
 
+#[derive(Serialize, Deserialize, Default)]
+pub struct DrawerStateSnapshot {
+    pub pane_ids: Vec<u64>,
+    pub focused: Option<u64>,
+    pub layout: Option<SessionLayout>,
+    #[serde(default)]
+    pub view_mode: String,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+pub struct SessionContextArea {
+    pub context_area_open: bool,
+    #[serde(default = "default_context_area_width")]
+    pub context_area_width: f32,
+    #[serde(default)]
+    pub drawer_states: std::collections::HashMap<u64, DrawerStateSnapshot>,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Session {
     pub layout: SessionLayout,
@@ -41,6 +59,10 @@ fn default_ws_sidebar_width() -> f32 {
     crate::theme::WORKSPACE_SIDEBAR_WIDTH
 }
 
+fn default_context_area_width() -> f32 {
+    400.0
+}
+
 #[derive(Serialize, Deserialize)]
 pub enum SessionLayout {
     Leaf {
@@ -62,6 +84,27 @@ pub enum SessionLayout {
 fn session_path() -> Option<PathBuf> {
     let config_dir = dirs::config_dir()?;
     Some(config_dir.join("tide").join("session.json"))
+}
+
+fn context_area_session_path() -> Option<PathBuf> {
+    let config_dir = dirs::config_dir()?;
+    Some(config_dir.join("tide").join("session_context_area.json"))
+}
+
+pub fn save_context_area_session(data: &SessionContextArea) {
+    let path = match context_area_session_path() {
+        Some(p) => p,
+        None => return,
+    };
+    if let Ok(json) = serde_json::to_string_pretty(data) {
+        let _ = std::fs::write(&path, json);
+    }
+}
+
+pub fn load_context_area_session() -> Option<SessionContextArea> {
+    let path = context_area_session_path()?;
+    let data = std::fs::read_to_string(&path).ok()?;
+    serde_json::from_str(&data).ok()
 }
 
 pub fn save_session(session: &Session) {
@@ -163,10 +206,53 @@ impl Session {
     }
 }
 
+impl SessionContextArea {
+    pub fn from_app(app: &App) -> Self {
+        // Collect dock state from all terminal panes
+        let mut drawer_states = std::collections::HashMap::new();
+        for (&tid, pane) in &app.panes {
+            if let crate::pane::PaneKind::Terminal(tp) = pane {
+                let dock_pane_ids = tp.dock_layout.all_pane_ids();
+                if !dock_pane_ids.is_empty() {
+                    let snap_layout = tp.dock_layout.snapshot().map(|s| snapshot_to_session_layout(&s, app));
+                    drawer_states.insert(tid, DrawerStateSnapshot {
+                        pane_ids: dock_pane_ids,
+                        focused: tp.dock_focused,
+                        layout: snap_layout,
+                        view_mode: "split".to_string(),
+                    });
+                }
+            }
+        }
+        SessionContextArea {
+            context_area_open: app.dock_open,
+            context_area_width: app.dock_width,
+            drawer_states,
+        }
+    }
+}
+
+fn snapshot_to_session_layout(snap: &LayoutSnapshot, app: &App) -> SessionLayout {
+    snapshot_to_session(snap, app)
+}
+
 fn snapshot_to_session(snap: &LayoutSnapshot, app: &App) -> SessionLayout {
     match snap {
         LayoutSnapshot::Leaf { tabs, active } => {
-            let id = tabs[*active];
+            // Each leaf now has a single pane; use active index for backward compat
+            let id = tabs.get(*active).or_else(|| tabs.first()).copied().unwrap_or(0);
+            let cwd = match app.panes.get(&id) {
+                Some(PaneKind::Terminal(pane)) => pane.backend.detect_cwd_fallback(),
+                _ => None,
+            };
+            SessionLayout::Leaf {
+                pane_id: id,
+                cwd,
+            }
+        }
+        LayoutSnapshot::LeafGroup { tabs, active } => {
+            // LeafGroup: use the active tab for session save
+            let id = tabs.get(*active).or_else(|| tabs.first()).copied().unwrap_or(0);
             let cwd = match app.panes.get(&id) {
                 Some(PaneKind::Terminal(pane)) => pane.backend.detect_cwd_fallback(),
                 _ => None,
@@ -243,6 +329,23 @@ impl App {
         self.ft.visible = session.show_file_tree;
         self.ft.width = session.file_tree_width;
         self.ws.width = session.ws_sidebar_width;
+        // Restore dock data from separate file
+        if let Some(ctx) = load_context_area_session() {
+            self.dock_open = ctx.context_area_open;
+            self.dock_width = ctx.context_area_width;
+            // Restore dock_layout into each terminal's TerminalPane
+            for (tid, snap) in &ctx.drawer_states {
+                if let Some(ref sl) = snap.layout {
+                    let mut pane_infos_inner: Vec<(PaneId, Option<PathBuf>)> = Vec::new();
+                    if let Some(layout_snap) = session_to_snapshot(sl, &mut pane_infos_inner) {
+                        if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(tid) {
+                            tp.dock_layout = SplitLayout::from_snapshot(layout_snap);
+                            tp.dock_focused = snap.focused;
+                        }
+                    }
+                }
+            }
+        }
         self.sidebar_side = match session.sidebar_side.as_str() {
             "right" => crate::LayoutSide::Right,
             _ => crate::LayoutSide::Left,

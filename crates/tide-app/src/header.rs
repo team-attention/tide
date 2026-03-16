@@ -1,10 +1,8 @@
 // Per-pane header rendering: title + close button + kind-specific badges.
-// When a TabGroup has multiple tabs, renders a tab bar instead of single-pane header.
 
 use std::collections::HashMap;
 
 use tide_core::{PaneId, Rect, Renderer, TextStyle, Vec2};
-use tide_layout::TabGroup;
 use tide_renderer::WgpuRenderer;
 
 use crate::pane::PaneKind;
@@ -30,10 +28,8 @@ pub enum HeaderHitAction {
     MarkdownPreview,
     DiffRefresh,
     Maximize,
-    /// Click on a tab in a multi-tab header to switch to it.
-    Tab(PaneId),
-    /// Click the close button on a specific tab in a multi-tab header.
-    TabClose(PaneId),
+    /// Click on a Dock TabGroup tab — switch to this pane.
+    DockTab(tide_core::PaneId),
 }
 
 /// Badge specification for editor pane headers.
@@ -89,25 +85,17 @@ pub(crate) fn editor_header_badges(ep: &crate::editor_pane::EditorPane) -> Vec<E
     badges
 }
 
-/// Render the header for a pane (or tab bar for multi-tab groups).
-/// When `tab_group` has more than 1 tab, renders a tab bar.
-/// Otherwise renders the single-pane header as before.
+/// Render the header for a single pane.
 /// Returns hit zones for click handling.
 pub fn render_pane_header(
     id: PaneId,
     rect: Rect,
     panes: &HashMap<PaneId, PaneKind>,
     focused: Option<PaneId>,
-    tab_group: Option<&TabGroup>,
-    is_zoomed: bool,
+    _is_zoomed: bool,
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
 ) -> Vec<HeaderHitZone> {
-    // Always render tab bar style (consistent look whether 1 tab or many)
-    if let Some(tg) = tab_group {
-        return render_tab_bar(tg, rect, panes, focused, is_zoomed, p, renderer);
-    }
-
     let mut zones = Vec::new();
     let cell_size = renderer.cell_size();
     let cell_height = cell_size.height;
@@ -394,315 +382,126 @@ pub fn render_pane_header(
     zones
 }
 
-/// Render a tab bar for a TabGroup with multiple tabs.
-/// Each tab shows: icon + name + close(x). Active tab has accent underline.
-fn render_tab_bar(
-    tg: &TabGroup,
+/// Render a dock TabGroup tab bar inside a pane's header.
+/// Shows tab labels for all tabs in the group; the active tab is highlighted.
+/// Returns hit zones for tab clicks.
+pub fn render_dock_tab_bar(
+    pane_id: PaneId,
     rect: Rect,
+    tab_group: &tide_layout::TabGroup,
     panes: &HashMap<PaneId, PaneKind>,
     focused: Option<PaneId>,
-    is_zoomed: bool,
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
 ) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
     let cell_size = renderer.cell_size();
     let cell_height = cell_size.height;
-    let active_pane = tg.active_pane();
-    let is_group_focused = focused == Some(active_pane);
+    let cell_w = cell_size.width;
 
-    let text_y = rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
+    // Tab bar sits at the bottom of the header area
+    let tab_y = rect.y + TAB_BAR_HEIGHT - cell_height - 4.0;
+    let tab_h = cell_height + 4.0;
     let content_left = rect.x + PANE_PADDING;
-    let grid_cols = ((rect.width - 2.0 * PANE_PADDING) / cell_size.width).floor();
-    let content_right = rect.x + PANE_PADDING + grid_cols * cell_size.width;
+    let content_right = rect.x + rect.width - PANE_PADDING;
+    let max_w = content_right - content_left;
 
-    // Maximize/minimize button stays at rightmost position
-    let max_icon = if is_zoomed { "\u{f066}" } else { "\u{f065}" }; // compress / expand
-    let max_w = cell_size.width + BADGE_PADDING_H * 2.0;
-    let max_x = content_right - max_w;
-    {
-        let max_style = TextStyle {
-            foreground: if is_zoomed { p.badge_git_branch } else { p.close_icon },
-            background: None,
-            bold: false, dim: false, italic: false, underline: false,
-        };
-        renderer.draw_chrome_text(
-            max_icon,
-            Vec2::new(max_x + BADGE_PADDING_H, text_y),
-            max_style,
-            Rect::new(max_x, text_y - 1.0, max_w, cell_height + 2.0),
-        );
-    }
-    zones.push(HeaderHitZone {
-        pane_id: active_pane,
-        rect: Rect::new(max_x, rect.y, max_w, TAB_BAR_HEIGHT),
-        action: HeaderHitAction::Maximize,
-    });
-
-    // Render git badges for the active pane (right-aligned, left of maximize button)
-    let badge_bg = if is_group_focused { p.badge_bg } else { p.badge_bg_unfocused };
-    let mut badge_right = max_x - BADGE_GAP;
-
-    if let Some(PaneKind::Terminal(pane)) = panes.get(&active_pane) {
-        // Dead process badge
-        if pane.context.child_dead {
-            let dead_text = "exited";
-            let dead_w = dead_text.len() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
-            let dead_x = badge_right - dead_w;
-            if dead_x > content_left + 40.0 {
-                render_badge_colored(renderer, dead_x, text_y, dead_w, cell_height, dead_text, p.badge_deleted, badge_bg, BADGE_RADIUS);
-                badge_right = dead_x - BADGE_GAP;
-            }
-        }
-
-        // Git status badge (e.g. "3 +10 -2") — only when focused
-        if is_group_focused {
-            if let Some(ref git) = pane.context.git_info {
-                if git.status.changed_files > 0 {
-                    let stat_text = format!(
-                        "{} +{} -{}",
-                        git.status.changed_files, git.status.additions, git.status.deletions
-                    );
-                    let stat_color = p.git_added;
-                    let stat_bg = tide_core::Color::new(p.git_added.r, p.git_added.g, p.git_added.b, 0.094);
-                    let badge_w = stat_text.len() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
-                    let badge_x = badge_right - badge_w;
-                    if badge_x > content_left + 60.0 {
-                        render_badge_colored(renderer, badge_x, text_y, badge_w, cell_height, &stat_text, stat_color, stat_bg, BADGE_RADIUS);
-                        zones.push(HeaderHitZone {
-                            pane_id: active_pane,
-                            rect: Rect::new(badge_x, rect.y, badge_w, TAB_BAR_HEIGHT),
-                            action: HeaderHitAction::GitStatus,
-                        });
-                        badge_right = badge_x - BADGE_GAP;
-                    }
-                }
-            }
-        }
-
-        // Git branch badge
-        if let Some(ref git) = pane.context.git_info {
-            let branch_display = format!("\u{e0a0} {}", git.branch);
-            let branch_color = if is_group_focused { p.badge_git_branch } else { p.tab_text };
-            let badge_w = branch_display.chars().count() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
-            let badge_x = badge_right - badge_w;
-            if badge_x > content_left + 60.0 {
-                render_badge_colored(renderer, badge_x, text_y, badge_w, cell_height, &branch_display, branch_color, badge_bg, BADGE_RADIUS);
-                zones.push(HeaderHitZone {
-                    pane_id: active_pane,
-                    rect: Rect::new(badge_x, rect.y, badge_w, TAB_BAR_HEIGHT),
-                    action: HeaderHitAction::GitBranch,
-                });
-                badge_right = badge_x - BADGE_GAP;
-            }
-        }
+    if max_w < 40.0 || tab_group.tabs.len() < 2 {
+        return zones;
     }
 
-    // Editor badges for the active pane (shared logic with single-pane path)
-    if let Some(PaneKind::Editor(ep)) = panes.get(&active_pane) {
-        for badge in editor_header_badges(ep) {
-            let badge_w = badge.text.len() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
-            let badge_x = badge_right - badge_w;
-            let min_x = if badge.text == "compare" { content_left + 60.0 } else { content_left + 40.0 };
-            if badge_x > min_x {
-                let (text_color, bg) = match badge.action {
-                    Some(HeaderHitAction::EditorBack) | Some(HeaderHitAction::EditorCompare) => {
-                        (p.badge_text, p.conflict_bar_btn)
-                    }
-                    None if badge.text == "deleted" => (p.badge_deleted, badge_bg),
-                    None if badge.text == "conflict" => (p.badge_conflict, badge_bg),
-                    _ => {
-                        let c = if is_group_focused { p.badge_text } else { p.tab_text };
-                        (c, badge_bg)
-                    }
-                };
-                render_badge_colored(renderer, badge_x, text_y, badge_w, cell_height, &badge.text, text_color, bg, BADGE_RADIUS);
-                if let Some(action) = badge.action {
-                    zones.push(HeaderHitZone {
-                        pane_id: active_pane,
-                        rect: Rect::new(badge_x, rect.y, badge_w, TAB_BAR_HEIGHT),
-                        action,
-                    });
-                }
-                badge_right = badge_x - BADGE_GAP;
-            }
-        }
+    // Draw a subtle separator line above the tabs
+    renderer.draw_chrome_rect(
+        Rect::new(content_left, tab_y - 1.0, max_w, 1.0),
+        p.border_subtle,
+    );
+
+    // Compute tab labels and widths
+    let tab_gap = 2.0_f32;
+    let tab_pad = 8.0_f32;
+    let mut tabs_info: Vec<(PaneId, String, f32)> = Vec::new();
+    for &tid in &tab_group.tabs {
+        let label = dock_tab_label(panes, tid);
+        let w = label.chars().count() as f32 * cell_w + tab_pad * 2.0;
+        tabs_info.push((tid, label, w));
     }
 
-    // Render tabs left-to-right with horizontal scrolling.
-    // When tabs overflow, auto-scroll so the active tab is always visible.
-    let tab_right_limit = badge_right;
-    let available_w = tab_right_limit - content_left;
+    // Total width needed
+    let total_w: f32 = tabs_info.iter().map(|(_, _, w)| *w + tab_gap).sum::<f32>() - tab_gap;
 
-    // Maximum characters for a tab label (truncate with ellipsis beyond this).
-    let max_name_chars: usize = 24;
+    // If total exceeds available, truncate tab widths proportionally
+    let scale = if total_w > max_w { max_w / total_w } else { 1.0 };
 
-    // Pre-compute all tab widths to determine total width and scroll offset.
-    let tab_widths: Vec<f32> = tg.tabs.iter().map(|&tab_id| {
-        let name = crate::ui::pane_title(panes, tab_id);
-        let name_char_count = name.chars().count().min(max_name_chars);
-        let tab_content_chars = 1 + 1 + name_char_count + 1 + 1; // icon + gap + name + gap + close
-        BADGE_PADDING_H * 2.0 + tab_content_chars as f32 * cell_size.width + BADGE_GAP
-    }).collect();
-    let total_w: f32 = tab_widths.iter().sum();
-
-    // Compute scroll offset to ensure active tab is visible
-    let scroll_offset = if total_w <= available_w {
-        0.0
-    } else {
-        let active_start: f32 = tab_widths[..tg.active].iter().sum();
-        let active_end = active_start + tab_widths[tg.active];
-        // Scroll so active tab is fully visible, preferring minimal scroll
-        let mut offset = 0.0;
-        if active_end > available_w {
-            offset = active_end - available_w;
-        }
-        if active_start < offset {
-            offset = active_start;
-        }
-        offset
-    };
-
-    let mut tab_x = content_left - scroll_offset;
-
-    for (i, &tab_id) in tg.tabs.iter().enumerate() {
-        let is_active = i == tg.active;
-
-        // Compute tab label: icon + name (truncate long names with ellipsis)
-        let full_name = crate::ui::pane_title(panes, tab_id);
-        let icon = tab_icon(panes, tab_id);
-        let name = if full_name.chars().count() > max_name_chars {
-            let truncated: String = full_name.chars().take(max_name_chars - 1).collect();
-            format!("{}\u{2026}", truncated) // append "…"
-        } else {
-            full_name
-        };
-        // Tab content: icon(1) + space(1) + name + space(1) + close_icon(1)
-        let name_char_count = name.chars().count();
-        let tab_content_chars = 1 + 1 + name_char_count + 1 + 1; // icon + gap + name + gap + close
-        let tab_w = BADGE_PADDING_H * 2.0 + tab_content_chars as f32 * cell_size.width;
-
-        // Skip tabs entirely to the left of viewport
-        if tab_x + tab_w + BADGE_GAP < content_left {
-            tab_x += tab_w + BADGE_GAP;
-            continue;
-        }
-        // Stop if tab starts past the right edge
-        if tab_x > tab_right_limit {
+    let mut cx = content_left;
+    for (tid, label, w) in &tabs_info {
+        let tw = (*w * scale).max(cell_w * 2.0);
+        if cx + tw > content_right + 1.0 {
             break;
         }
 
-        // Text color based on active/inactive state
-        let text_color = if is_active && is_group_focused {
+        let is_active = tab_group.active_pane() == *tid;
+        let is_focused_tab = focused == Some(*tid);
+        let tab_rect = Rect::new(cx, tab_y, tw, tab_h);
+
+        // Background
+        if is_active {
+            renderer.draw_chrome_rounded_rect(tab_rect, p.badge_bg, 3.0);
+            // Active underline
+            renderer.draw_chrome_rect(
+                Rect::new(cx + 2.0, tab_y + tab_h - 2.0, tw - 4.0, 2.0),
+                p.dock_tab_underline,
+            );
+        }
+
+        // Label text
+        let text_color = if is_focused_tab {
             p.tab_text_focused
         } else if is_active {
             p.tab_text_focused
         } else {
             p.tab_text
         };
+        let text_y = tab_y + (tab_h - cell_height) / 2.0;
 
-        let close_color = if is_active {
-            p.close_icon
-        } else {
-            p.tab_text
-        };
-
-        let style = TextStyle {
-            foreground: text_color,
-            background: None,
-            bold: false, dim: false, italic: false, underline: false,
-        };
-
-        // Clip rect: intersect tab rect with the visible tab area
-        let clip_left = tab_x.max(content_left);
-        let clip_right = (tab_x + tab_w).min(tab_right_limit);
-        let clip_w = (clip_right - clip_left).max(0.0);
-        let clip = Rect::new(clip_left, rect.y, clip_w, TAB_BAR_HEIGHT);
-
-        // Draw icon
-        let icon_x = tab_x + BADGE_PADDING_H;
+        // Truncate label to fit
+        let max_chars = ((tw - tab_pad * 2.0) / cell_w).floor() as usize;
+        let display: String = label.chars().take(max_chars).collect();
         renderer.draw_chrome_text(
-            &icon,
-            Vec2::new(icon_x, text_y),
-            style,
-            clip,
+            &display,
+            Vec2::new(cx + tab_pad, text_y),
+            TextStyle {
+                foreground: text_color,
+                background: None,
+                bold: is_active,
+                dim: false,
+                italic: false,
+                underline: false,
+            },
+            tab_rect,
         );
 
-        // Draw name
-        let name_x = icon_x + 2.0 * cell_size.width; // icon + space
-        renderer.draw_chrome_text(
-            &name,
-            Vec2::new(name_x, text_y),
-            style,
-            clip,
-        );
-
-        // Draw close icon (per-tab)
-        let is_modified = match panes.get(&tab_id) {
-            Some(PaneKind::Editor(ep)) => ep.editor.is_modified(),
-            _ => false,
-        };
-        let (close_icon_str, close_icon_color) = if is_modified {
-            ("\u{f111}", p.editor_modified) // filled circle for modified
-        } else {
-            ("\u{f00d}", close_color) // x icon
-        };
-        let close_icon_x = name_x + (name_char_count as f32 + 1.0) * cell_size.width;
-        let close_style = TextStyle {
-            foreground: close_icon_color,
-            background: None,
-            bold: false, dim: false, italic: false, underline: false,
-        };
-        renderer.draw_chrome_text(
-            close_icon_str,
-            Vec2::new(close_icon_x, text_y),
-            close_style,
-            clip,
-        );
-
-        // Hit zone for the close icon on this tab
-        let close_hit_w = cell_size.width + BADGE_PADDING_H;
+        // Hit zone
         zones.push(HeaderHitZone {
-            pane_id: tab_id,
-            rect: Rect::new(close_icon_x - BADGE_PADDING_H / 2.0, rect.y, close_hit_w, TAB_BAR_HEIGHT),
-            action: HeaderHitAction::TabClose(tab_id),
+            pane_id: pane_id, // The pane whose header we are rendering in
+            rect: Rect::new(cx, tab_y, tw, tab_h),
+            action: HeaderHitAction::DockTab(*tid),
         });
 
-        // Hit zone for the entire tab (for switching)
-        zones.push(HeaderHitZone {
-            pane_id: tab_id,
-            rect: Rect::new(tab_x, rect.y, tab_w, TAB_BAR_HEIGHT),
-            action: HeaderHitAction::Tab(tab_id),
-        });
-
-        // Active tab: draw bottom 2px accent bar
-        if is_active {
-            let accent_y = rect.y + TAB_BAR_HEIGHT - 2.0;
-            renderer.draw_chrome_rect(
-                Rect::new(tab_x, accent_y, tab_w, 2.0),
-                p.dock_tab_underline,
-            );
-        }
-
-        tab_x += tab_w + BADGE_GAP;
+        cx += tw + tab_gap;
     }
 
     zones
 }
 
-/// Get the icon character for a pane (used in tab bar labels).
-fn tab_icon(panes: &HashMap<PaneId, PaneKind>, id: PaneId) -> String {
+/// Get a short label for a pane in a dock tab bar.
+fn dock_tab_label(panes: &HashMap<PaneId, PaneKind>, id: PaneId) -> String {
     match panes.get(&id) {
-        Some(PaneKind::Terminal(_)) => "\u{f120}".to_string(), // terminal icon
-        Some(PaneKind::Editor(ep)) => {
-            let name = ep.title();
-            let icon = crate::ui::file_icon(&name, false, false);
-            icon.to_string()
-        }
-        Some(PaneKind::Diff(_)) => "\u{f126}".to_string(), // code-fork icon
-        Some(PaneKind::Browser(_)) => "\u{f0ac}".to_string(), // globe icon
-        Some(PaneKind::Launcher(_)) => "+".to_string(), // plus icon for launcher
-        None => "\u{f15b}".to_string(), // generic file icon
+        Some(PaneKind::Terminal(_)) => "Terminal".to_string(),
+        Some(PaneKind::Editor(ep)) => ep.title(),
+        Some(PaneKind::Browser(_)) => "Browser".to_string(),
+        Some(PaneKind::Diff(_)) => "Changes".to_string(),
+        Some(PaneKind::Launcher(_)) => "New Tab".to_string(),
+        None => format!("Pane {}", id),
     }
 }
 

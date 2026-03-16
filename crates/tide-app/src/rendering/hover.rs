@@ -18,7 +18,7 @@ pub(crate) fn render_hover(
 ) {
     if let Some(ref hover) = app.interaction.hover_target {
         // Skip hover rendering during drag
-        if matches!(app.interaction.pane_drag, PaneDragState::Idle) && !app.ft.border_dragging && !app.ws.border_dragging {
+        if matches!(app.interaction.pane_drag, PaneDragState::Idle) && !app.ft.border_dragging && !app.ws.border_dragging && !app.dock_border_dragging {
             match hover {
                 drag_drop::HoverTarget::FileTreeEntry(index) => {
                     if show_file_tree {
@@ -108,6 +108,13 @@ pub(crate) fn render_hover(
                             ft_rect.x - PANE_GAP
                         };
                         let border_rect = Rect::new(border_x, ft_rect.y, 4.0, ft_rect.height);
+                        renderer.draw_rect(border_rect, p.hover_panel_border);
+                    }
+                }
+                drag_drop::HoverTarget::DockBorder => {
+                    if let Some(pa_rect) = app.pane_area_rect {
+                        let border_x = pa_rect.x + pa_rect.width;
+                        let border_rect = Rect::new(border_x, pa_rect.y, 4.0, pa_rect.height);
                         renderer.draw_rect(border_rect, p.hover_panel_border);
                     }
                 }
