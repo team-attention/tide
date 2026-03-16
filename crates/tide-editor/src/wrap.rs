@@ -26,6 +26,9 @@ pub struct VisualRowInfo {
     pub byte_offset: usize,
     /// Character index in the logical line where this visual row starts.
     pub char_offset: usize,
+    /// Character index where the NEXT visual row starts (or total chars if last sub-row).
+    /// Use this to clamp click coordinates to avoid jumping to the next visual row.
+    pub char_end: usize,
 }
 
 impl WrapMap {
@@ -103,15 +106,26 @@ impl WrapMap {
         };
         let row_within_line = visual_row - self.offsets[logical_line];
         let line = lines.get(logical_line)?;
+        let total_sub_rows = self.visual_rows_for(logical_line);
 
         // Walk the line to find the byte/char offset for this visual sub-row.
         let (byte_offset, char_offset) =
             offset_for_visual_sub_row(line, self.wrap_width, row_within_line);
 
+        // Compute char_end: start of next sub-row, or total chars if last sub-row
+        let char_end = if row_within_line + 1 < total_sub_rows {
+            let (_, next_char) =
+                offset_for_visual_sub_row(line, self.wrap_width, row_within_line + 1);
+            next_char
+        } else {
+            line.chars().count()
+        };
+
         Some(VisualRowInfo {
             logical_line,
             byte_offset,
             char_offset,
+            char_end,
         })
     }
 
@@ -307,21 +321,24 @@ mod tests {
         assert_eq!(info.logical_line, 0);
         assert_eq!(info.byte_offset, 0);
 
-        // visual row 1 → line 1, first sub-row
+        // visual row 1 → line 1, first sub-row (chars 0..40)
         let info = map.visual_row_to_line_info(1, &l).unwrap();
         assert_eq!(info.logical_line, 1);
         assert_eq!(info.byte_offset, 0);
+        assert_eq!(info.char_end, 40); // next sub-row starts at char 40
 
-        // visual row 2 → line 1, second sub-row (offset 40)
+        // visual row 2 → line 1, second sub-row (chars 40..50)
         let info = map.visual_row_to_line_info(2, &l).unwrap();
         assert_eq!(info.logical_line, 1);
         assert_eq!(info.byte_offset, 40);
         assert_eq!(info.char_offset, 40);
+        assert_eq!(info.char_end, 50); // last sub-row, total chars = 50
 
         // visual row 3 → line 2
         let info = map.visual_row_to_line_info(3, &l).unwrap();
         assert_eq!(info.logical_line, 2);
         assert_eq!(info.byte_offset, 0);
+        assert_eq!(info.char_end, 3); // "end" = 3 chars
     }
 
     #[test]
