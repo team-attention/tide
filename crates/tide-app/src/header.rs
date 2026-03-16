@@ -406,11 +406,13 @@ pub fn render_dock_tab_bar(
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
 ) -> Vec<HeaderHitZone> {
-    render_tab_bar_impl(pane_id, rect, &tab_group.tabs, tab_group.active_pane(), panes, focused, p, renderer, true)
+    render_tab_bar_impl(pane_id, rect, &tab_group.tabs, tab_group.active_pane(), panes, focused, p, renderer, true, false)
 }
 
 /// Shared tab bar rendering for both Dock and Stage stacked mode.
 /// `is_dock` determines the hit action type (DockTab vs StageTab).
+/// `is_stacked` true = zoomed/stacked mode (layers icon + bottom border),
+///              false = tab group within split (per-tab underline).
 fn render_tab_bar_impl(
     pane_id: PaneId,
     rect: Rect,
@@ -421,6 +423,7 @@ fn render_tab_bar_impl(
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
     is_dock: bool,
+    is_stacked: bool,
 ) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
     let cell_size = renderer.cell_size();
@@ -431,9 +434,31 @@ fn render_tab_bar_impl(
     // Tab bar vertically centered in header (same position as title text)
     let tab_h = cell_height + 4.0;
     let tab_y = rect.y + (TAB_BAR_HEIGHT - tab_h) / 2.0;
-    let content_left = rect.x + PANE_PADDING;
+    let mut content_left = rect.x + PANE_PADDING;
     let grid_cols = ((rect.width - 2.0 * PANE_PADDING) / cell_w).floor();
     let content_right = rect.x + PANE_PADDING + grid_cols * cell_w;
+
+    // Stacked mode: render layers icon and bottom border line
+    if is_stacked {
+        let icon = "\u{f24d}"; // fa-clone (stacked layers)
+        let icon_y = rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
+        let icon_color = p.tab_text; // subtle gray, no background
+
+        renderer.draw_chrome_text(
+            icon,
+            Vec2::new(content_left, icon_y),
+            TextStyle { foreground: icon_color, background: None, bold: false, dim: false, italic: false, underline: false },
+            Rect::new(content_left, rect.y, cell_w + 4.0, TAB_BAR_HEIGHT),
+        );
+        content_left += cell_w + 6.0;
+
+        // Full-width bottom border
+        let line_color = if is_focused { p.dock_tab_underline } else { p.border_color };
+        renderer.draw_chrome_rect(
+            Rect::new(rect.x + PANE_PADDING, rect.y + TAB_BAR_HEIGHT - 1.0, rect.width - PANE_PADDING * 2.0, 1.0),
+            line_color,
+        );
+    }
 
     if content_right - content_left < 40.0 {
         return zones;
@@ -546,10 +571,13 @@ fn render_tab_bar_impl(
         if is_active {
             let bg = if is_focused { p.badge_bg } else { p.badge_bg_unfocused };
             renderer.draw_chrome_rounded_rect(tab_rect, bg, 3.0);
-            renderer.draw_chrome_rect(
-                Rect::new(cx + 2.0, tab_y + tab_h - 2.0, tw - 4.0, 2.0),
-                p.dock_tab_underline,
-            );
+            if !is_stacked {
+                // Per-tab underline for tab groups only (stacked uses full-width line)
+                renderer.draw_chrome_rect(
+                    Rect::new(cx + 2.0, tab_y + tab_h - 2.0, tw - 4.0, 2.0),
+                    p.dock_tab_underline,
+                );
+            }
         }
 
         let text_color = if is_focused_tab || is_active {
@@ -602,7 +630,7 @@ pub fn render_stage_tab_bar(
     if stage_pane_ids.len() < 2 {
         return Vec::new();
     }
-    render_tab_bar_impl(zoomed_pane, rect, stage_pane_ids, zoomed_pane, panes, focused, p, renderer, false)
+    render_tab_bar_impl(zoomed_pane, rect, stage_pane_ids, zoomed_pane, panes, focused, p, renderer, false, true)
 }
 
 /// Get a short label for a pane in a dock tab bar.

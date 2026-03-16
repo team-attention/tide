@@ -391,9 +391,17 @@ impl App {
 
         // Reserve Dock space on the right (when open)
         let show_dock = self.dock_open;
+        // Use per-terminal dock_width; fall back to global dock_width
+        let effective_dock_width = self.focused_terminal_id()
+            .and_then(|tid| {
+                if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                    Some(tp.dock_width)
+                } else { None }
+            })
+            .unwrap_or(self.dock_width);
         let dock_width = if show_dock {
             let max_ctx = (logical.width - left_reserved - right_reserved - 200.0).max(100.0);
-            self.dock_width.min(max_ctx)
+            effective_dock_width.min(max_ctx)
         } else {
             0.0
         };
@@ -439,11 +447,21 @@ impl App {
         // Store the pane area rect for root-level drop zone detection
         self.pane_area_rect = Some(Rect::new(terminal_offset_x, top, terminal_area.width, terminal_area.height));
 
+        // Store dock area rect for dock drop preview
+        if show_dock {
+            let ctx_offset_x = terminal_offset_x + terminal_area.width + PANE_GAP;
+            self.dock_area_rect = Some(Rect::new(ctx_offset_x, top, dock_width, logical.height - top));
+        } else {
+            self.dock_area_rect = None;
+        }
+
         // Snap ratios to cell boundaries, then recompute with snapped ratios.
         // Skip during active border drags to prevent cumulative drift.
         let is_dragging = self.router.is_dragging_border()
             || self.ft.border_dragging
-            || self.ws.border_dragging;
+            || self.ws.border_dragging
+            || self.dock_border_dragging
+            || self.dock_split_dragging;
         if !is_dragging {
             let cell_size = self.cell_size();
             if cell_size.width > 0.0 {
@@ -662,7 +680,10 @@ impl App {
             let popup_open = self.modal.file_finder.is_some()
                 || self.modal.save_as_input.is_some()
                 || self.modal.git_switcher.is_some()
-                || self.modal.config_page.is_some();
+                || self.modal.config_page.is_some()
+                || self.modal.save_confirm.is_some()
+                || self.modal.branch_cleanup.is_some()
+                || matches!(self.interaction.pane_drag, crate::drag_drop::PaneDragState::Dragging { .. });
 
             if let Some(vr) = visual_rect {
                 if popup_open {
