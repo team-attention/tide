@@ -19,7 +19,11 @@ pub struct DrawerStateSnapshot {
     pub layout: Option<SessionLayout>,
     #[serde(default)]
     pub view_mode: String,
+    #[serde(default = "default_dock_width")]
+    pub dock_width: f32,
 }
+
+fn default_dock_width() -> f32 { 400.0 }
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct SessionContextArea {
@@ -226,6 +230,7 @@ impl SessionContextArea {
                         focused: tp.dock_focused,
                         layout: snap_layout,
                         view_mode: "split".to_string(),
+                        dock_width: tp.dock_width,
                     });
                 }
             }
@@ -348,6 +353,7 @@ impl App {
                         if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(tid) {
                             tp.dock_layout = SplitLayout::from_snapshot(layout_snap);
                             tp.dock_focused = snap.focused;
+                            tp.dock_width = snap.dock_width;
                         }
                     }
                 }

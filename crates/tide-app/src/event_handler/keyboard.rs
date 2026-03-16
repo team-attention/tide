@@ -66,22 +66,6 @@ impl App {
             std::process::exit(0);
         }
 
-        // Close app confirmation interception
-        if self.modal.close_app_confirm {
-            match key {
-                Key::Enter => {
-                    self.modal.close_app_confirm = false;
-                    self.exit_app();
-                }
-                Key::Escape => {
-                    self.modal.close_app_confirm = false;
-                    self.cache.invalidate_chrome();
-                }
-                _ => {}
-            }
-            return;
-        }
-
         // Config page interception
         if self.modal.config_page.is_some() {
             self.handle_config_page_key(key, &modifiers);

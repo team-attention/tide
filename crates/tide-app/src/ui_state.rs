@@ -831,8 +831,6 @@ pub(crate) struct ModalStack {
     pub context_menu: Option<ContextMenuState>,
     pub file_tree_rename: Option<FileTreeRenameState>,
     pub branch_cleanup: Option<BranchCleanupState>,
-    /// Confirmation before closing the last pane (which exits Tide).
-    pub close_app_confirm: bool,
 }
 
 impl ModalStack {
@@ -846,7 +844,6 @@ impl ModalStack {
             context_menu: None,
             file_tree_rename: None,
             branch_cleanup: None,
-            close_app_confirm: false,
         }
     }
 
@@ -861,7 +858,6 @@ impl ModalStack {
             || self.context_menu.is_some()
             || self.file_tree_rename.is_some()
             || self.branch_cleanup.is_some()
-            || self.close_app_confirm
     }
 
     /// Close all popups/modals.
@@ -875,7 +871,6 @@ impl ModalStack {
         self.context_menu = None;
         self.file_tree_rename = None;
         self.branch_cleanup = None;
-        self.close_app_confirm = false;
     }
 }
 

@@ -337,7 +337,12 @@ impl App {
                         return true;
                     }
                     HeaderHitAction::EditorFileName => {
-                        // No file switcher popup in new architecture
+                        // Allow drag from editor filename area
+                        self.interaction.pane_drag = crate::drag_drop::PaneDragState::PendingDrag {
+                            source_pane: zone.pane_id,
+                            press_pos: self.last_cursor_pos,
+                        };
+                        self.focus_terminal(zone.pane_id);
                         self.cache.needs_redraw = true;
                         return true;
                     }
@@ -374,17 +379,13 @@ impl App {
                         return true;
                     }
                     HeaderHitAction::DockTab(target_pane_id) => {
-                        // Switch to the clicked tab in the Dock TabGroup
-                        if let Some(tid) = self.terminal_owning(target_pane_id) {
-                            if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                                tp.dock_focused = Some(target_pane_id);
-                                tp.dock_layout.set_active_tab(target_pane_id);
-                            }
-                            self.focused = Some(target_pane_id);
-                            self.router.set_focused(target_pane_id);
-                            self.focus_area = crate::ui_state::FocusArea::Dock;
-                        }
-                        // dock_zoomed follows dock_focused automatically (per-terminal)
+                        // Switch tab immediately for visual feedback, but also
+                        // set PendingDrag to allow drag-and-drop reordering.
+                        self.focus_terminal(target_pane_id);
+                        self.interaction.pane_drag = crate::drag_drop::PaneDragState::PendingDrag {
+                            source_pane: target_pane_id,
+                            press_pos: self.last_cursor_pos,
+                        };
                         self.cache.invalidate_chrome();
                         self.cache.pane_generations.clear();
                         self.compute_layout();
@@ -1137,12 +1138,26 @@ impl App {
                 self.cache.invalidate_chrome();
                 self.compute_layout();
             }
+            DropDestination::DockRoot(zone) => {
+                // Root-level dock drop: insert at dock layout root
+                if let Some(tid) = self.focused_terminal_id() {
+                    if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                        tp.dock_layout.remove(source);
+                        tp.dock_layout.insert_at_root(source, zone);
+                        tp.dock_focused = Some(source);
+                        tp.dock_layout.set_active_tab(source);
+                    }
+                }
+                self.focused = Some(source);
+                self.cache.invalidate_chrome();
+                self.compute_layout();
+            }
             DropDestination::TreePane(target_id, zone) => {
                 // Drop: remove source, insert as new split next to target
-                if source == target_id {
-                    return;
+                if source == target_id && zone == DropZone::Center {
+                    return; // Can't drop on self as tab
                 }
-                let (direction, _insert_first) = match zone {
+                let (direction, insert_first) = match zone {
                     DropZone::Top => (SplitDirection::Vertical, true),
                     DropZone::Bottom => (SplitDirection::Vertical, false),
                     DropZone::Left => (SplitDirection::Horizontal, true),
@@ -1157,14 +1172,24 @@ impl App {
                     // Both panes in dock — route to the owning terminal's dock_layout
                     if let Some(tid) = self.terminal_owning(source) {
                         if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                            tp.dock_layout.remove(source);
-                            if zone == DropZone::Center {
-                                // Center drop = add as tab in target's TabGroup
-                                if !tp.dock_layout.add_tab(target_id, source) {
-                                    tp.dock_layout.add_tab_to_first_group(source);
+                            if source == target_id {
+                                // Self-drop from tab group: find a sibling tab to use as split target
+                                if let Some(tg) = tp.dock_layout.tab_group_containing(source) {
+                                    let sibling = tg.tabs.iter().find(|&&t| t != source).copied();
+                                    if let Some(sib) = sibling {
+                                        tp.dock_layout.remove(source);
+                                        tp.dock_layout.split_with_leaf_group(sib, source, direction, insert_first);
+                                    }
                                 }
                             } else {
-                                tp.dock_layout.split_with_leaf_group(target_id, source, direction);
+                                tp.dock_layout.remove(source);
+                                if zone == DropZone::Center {
+                                    if !tp.dock_layout.add_tab(target_id, source) {
+                                        tp.dock_layout.add_tab_to_first_group(source);
+                                    }
+                                } else {
+                                    tp.dock_layout.split_with_leaf_group(target_id, source, direction, insert_first);
+                                }
                             }
                             tp.dock_layout.set_active_tab(source);
                         }

@@ -230,6 +230,18 @@ impl App {
                 return;
             }
             PlatformEvent::CloseRequested => {
+                // Check if there are running terminals or dirty editors
+                let has_terminals = self.panes.values().any(|pk| matches!(pk, crate::pane::PaneKind::Terminal(_)));
+                let has_dirty = self.panes.values().any(|pk| {
+                    if let crate::pane::PaneKind::Editor(ep) = pk {
+                        ep.editor.is_modified() && ep.editor.file_path().is_some()
+                    } else { false }
+                });
+                if has_terminals || has_dirty {
+                    if !tide_platform::show_close_confirm() {
+                        return;
+                    }
+                }
                 self.save_full_session();
                 session::delete_running_marker();
                 std::process::exit(0);

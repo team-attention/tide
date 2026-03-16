@@ -94,6 +94,7 @@ impl HoverTarget {
 pub(crate) enum DropDestination {
     TreePane(PaneId, DropZone),
     TreeRoot(DropZone),
+    DockRoot(DropZone),
     Workspace(usize),
 }
 
@@ -211,14 +212,45 @@ impl App {
     ) -> Option<Rect> {
         let dest = target.as_ref()?;
         match dest {
-            DropDestination::TreeRoot(zone) | DropDestination::TreePane(_, zone) => {
+            DropDestination::TreeRoot(zone) | DropDestination::TreePane(_, zone)
+            | DropDestination::DockRoot(zone) => {
                 if *zone == tide_core::DropZone::Center {
-                    return None; // swap preview uses target rect directly, no simulate_drop needed
+                    return None;
                 }
                 let target_id = match dest {
                     DropDestination::TreePane(tid, _) => Some(*tid),
                     _ => None,
                 };
+
+                // Use dock layout for dock drops
+                let use_dock = matches!(dest, DropDestination::DockRoot(_))
+                    || target_id.map(|t| self.is_pane_in_dock(t)).unwrap_or(false);
+
+                if use_dock {
+                    let dock_area = self.dock_area_rect?;
+                    let dock_size = tide_core::Size::new(dock_area.width, dock_area.height);
+
+                    // Self-drop from tab group: compute preview rect directly
+                    // (simulate_drop fails because active tab's rect gets filtered out)
+                    if target_id == Some(source) {
+                        let (w, h) = (dock_size.width, dock_size.height);
+                        return Some(match *zone {
+                            tide_core::DropZone::Top => Rect::new(0.0, 0.0, w, h * 0.5),
+                            tide_core::DropZone::Bottom => Rect::new(0.0, h * 0.5, w, h * 0.5),
+                            tide_core::DropZone::Left => Rect::new(0.0, 0.0, w * 0.5, h),
+                            tide_core::DropZone::Right => Rect::new(w * 0.5, 0.0, w * 0.5, h),
+                            _ => return None,
+                        });
+                    }
+
+                    if let Some(tid) = self.focused_terminal_id() {
+                        if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                            return tp.dock_layout.simulate_drop(source, target_id, *zone, true, dock_size);
+                        }
+                    }
+                    return None;
+                }
+
                 let pane_area = self.pane_area_rect?;
                 let pane_area_size = tide_core::Size::new(pane_area.width, pane_area.height);
                 self.layout.simulate_drop(source, target_id, *zone, true, pane_area_size)
@@ -286,9 +318,23 @@ impl App {
                 continue;
             }
 
-            // Skip if dragging onto self
+            // Skip if dragging onto self — UNLESS source is in a dock tab group
+            // (allows splitting a tab out of its group by dropping on directional zones)
             if id == source {
-                continue;
+                // Check if source is in a dock tab group with multiple tabs
+                let in_multi_tab_group = self.is_pane_in_dock(source) && {
+                    self.focused_terminal_id()
+                        .and_then(|tid| {
+                            if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                                tp.dock_layout.tab_group_containing(source)
+                                    .map(|tg| tg.tabs.len() > 1)
+                            } else { None }
+                        })
+                        .unwrap_or(false)
+                };
+                if !in_multi_tab_group {
+                    continue;
+                }
             }
 
             // Use visual rect for zone computation: rel coords outside [0,1] = in gap → edge zone
@@ -314,10 +360,20 @@ impl App {
             };
 
             // Check for outer zone: if the zone is directional and the target pane's
-            // tiling rect edge touches the pane_area_rect boundary, AND the relative
+            // tiling rect edge touches the area boundary, AND the relative
             // position is within the outer threshold → Root-level drop.
+            // Use dock_area_rect for dock panes, pane_area_rect for stage panes.
             if zone != DropZone::Center {
-                if let Some(area) = self.pane_area_rect {
+                let (area_opt, is_dock_area) = if let Some(dock_rect) = self.dock_area_rect {
+                    if dock_rect.contains(mouse) {
+                        (Some(dock_rect), true)
+                    } else {
+                        (self.pane_area_rect, false)
+                    }
+                } else {
+                    (self.pane_area_rect, false)
+                };
+                if let Some(area) = area_opt {
                     let touches_boundary = match zone {
                         DropZone::Top => tiling_rect.y <= area.y + 0.5,
                         DropZone::Bottom => tiling_rect.y + tiling_rect.height >= area.y + area.height - 0.5,
@@ -366,7 +422,11 @@ impl App {
                         };
 
                         if !source_redundant {
-                            return Some(DropDestination::TreeRoot(zone));
+                            return Some(if is_dock_area {
+                                DropDestination::DockRoot(zone)
+                            } else {
+                                DropDestination::TreeRoot(zone)
+                            });
                         }
                     }
                 }
