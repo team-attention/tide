@@ -61,10 +61,25 @@ impl App {
             && !modifiers.shift
             && !modifiers.alt
         {
-            let session = crate::session::Session::from_app(self);
-            crate::session::save_session(&session);
+            self.save_full_session();
             crate::session::delete_running_marker();
             std::process::exit(0);
+        }
+
+        // Close app confirmation interception
+        if self.modal.close_app_confirm {
+            match key {
+                Key::Enter => {
+                    self.modal.close_app_confirm = false;
+                    self.exit_app();
+                }
+                Key::Escape => {
+                    self.modal.close_app_confirm = false;
+                    self.cache.invalidate_chrome();
+                }
+                _ => {}
+            }
+            return;
         }
 
         // Config page interception

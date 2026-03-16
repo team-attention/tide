@@ -831,6 +831,8 @@ pub(crate) struct ModalStack {
     pub context_menu: Option<ContextMenuState>,
     pub file_tree_rename: Option<FileTreeRenameState>,
     pub branch_cleanup: Option<BranchCleanupState>,
+    /// Confirmation before closing the last pane (which exits Tide).
+    pub close_app_confirm: bool,
 }
 
 impl ModalStack {
@@ -844,6 +846,7 @@ impl ModalStack {
             context_menu: None,
             file_tree_rename: None,
             branch_cleanup: None,
+            close_app_confirm: false,
         }
     }
 
@@ -858,6 +861,7 @@ impl ModalStack {
             || self.context_menu.is_some()
             || self.file_tree_rename.is_some()
             || self.branch_cleanup.is_some()
+            || self.close_app_confirm
     }
 
     /// Close all popups/modals.
@@ -871,6 +875,7 @@ impl ModalStack {
         self.context_menu = None;
         self.file_tree_rename = None;
         self.branch_cleanup = None;
+        self.close_app_confirm = false;
     }
 }
 
@@ -987,7 +992,7 @@ impl WorkspaceManager {
             workspaces: Vec::new(),
             workspace_extras: Vec::new(),
             active: 0,
-            show_sidebar: true,
+            show_sidebar: false,
             sidebar_rect: None,
             width: crate::theme::WORKSPACE_SIDEBAR_WIDTH,
             border_dragging: false,
@@ -1415,7 +1420,7 @@ mod tests {
         let wm = WorkspaceManager::new();
         assert!(wm.workspaces.is_empty());
         assert_eq!(wm.active, 0);
-        assert!(wm.show_sidebar);
+        assert!(!wm.show_sidebar);
         assert!(wm.sidebar_rect.is_none());
         assert!(wm.drag.is_none());
     }

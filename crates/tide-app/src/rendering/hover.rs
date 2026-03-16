@@ -131,8 +131,11 @@ pub(crate) fn render_hover(
                 drag_drop::HoverTarget::TitlebarFileTree => {
                     // Hover is rendered via chrome.rs (badge_bg on sidebar button)
                 }
-                drag_drop::HoverTarget::TitlebarPaneArea => {
-                    // Hover is rendered via chrome.rs (badge_bg on pane area button)
+                drag_drop::HoverTarget::TitlebarWorkspace => {
+                    // Hover is rendered via chrome.rs (badge_bg on workspace button)
+                }
+                drag_drop::HoverTarget::TitlebarDock => {
+                    // Hover is rendered via chrome.rs (badge_bg on dock button)
                 }
                 drag_drop::HoverTarget::PaneMaximize(pane_id) => {
                     // Highlight maximize icon on split pane header
