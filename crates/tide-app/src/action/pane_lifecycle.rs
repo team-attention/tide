@@ -85,7 +85,7 @@ impl App {
         self.last_cwd.clone()
     }
 
-    /// Create a new empty editor pane as a tab in the focused pane's tab group.
+    /// Create a new empty editor pane next to the focused pane.
     pub(crate) fn new_editor_pane(&mut self) {
         let focused = match self.focused {
             Some(id) => id,
@@ -97,45 +97,70 @@ impl App {
         pane.editor.set_dark_mode(self.dark_mode);
         self.panes.insert(new_id, PaneKind::Editor(pane));
         self.ime.pending_creates.push(new_id);
-        // Route to a non-terminal tab group
-        self.add_to_non_terminal_group(focused, new_id);
-        self.layout.set_active_tab(new_id);
+        // Route to Dock if an owner terminal exists
+        if let Some(tid) = self.focused_terminal_id().or(context_terminal) {
+            self.add_pane_to_dock(new_id);
+            self.associated_terminal.insert(new_id, tid);
+            self.focus_area = crate::ui_state::FocusArea::Dock;
+        } else {
+            self.add_to_non_terminal_group(focused, new_id);
+            if let Some(tid) = context_terminal {
+                self.associated_terminal.insert(new_id, tid);
+            }
+            self.focus_area = crate::ui_state::FocusArea::Stage;
+        }
         self.focused = Some(new_id);
         self.router.set_focused(new_id);
-        if self.zoomed_pane.is_some() {
-            self.zoomed_pane = Some(new_id);
-        }
-        if let Some(tid) = context_terminal {
-            self.associated_terminal.insert(new_id, tid);
-        }
-        self.focus_area = crate::ui_state::FocusArea::PaneArea;
         self.cache.invalidate_chrome();
         self.compute_layout();
     }
 
-    /// Create a new Launcher tab in the focused pane's tab group.
-    /// The Launcher shows a type-selection screen (T/E/O/B).
+    /// Create a new Launcher pane. Routes by FocusArea:
+    /// - Stage → split in Stage layout (creates new terminal slot)
+    /// - Dock → add tab to current TabGroup in Dock
     pub(crate) fn new_terminal_tab(&mut self) {
         let focused = match self.focused {
             Some(id) => id,
             None => return,
         };
-        let context_terminal = self.resolve_context_terminal_id();
+
         let new_id = self.layout.alloc_id();
-        self.layout.add_tab(focused, new_id);
         self.panes.insert(new_id, PaneKind::Launcher(new_id));
         self.ime.pending_creates.push(new_id);
-        self.layout.set_active_tab(new_id);
+
+        match self.focus_area {
+            crate::ui_state::FocusArea::Dock => {
+                // Add as tab in the Dock
+                if let Some(tid) = self.focused_terminal_id() {
+                    self.associated_terminal.insert(new_id, tid);
+                    if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                        if let Some(dock_focused) = tp.dock_focused {
+                            tp.dock_layout.add_tab(dock_focused, new_id);
+                        } else {
+                            tp.dock_layout.insert_leaf_group(new_id);
+                        }
+                        tp.dock_focused = Some(new_id);
+                        tp.dock_layout.set_active_tab(new_id);
+                    }
+                    self.dock_open = true;
+                    self.focus_area = crate::ui_state::FocusArea::Dock;
+                }
+            }
+            _ => {
+                // Split in Stage layout
+                self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Vertical, false);
+                if self.zoomed_pane.is_some() {
+                    self.zoomed_pane = Some(new_id);
+                }
+                if let Some(tid) = self.focused_terminal_id() {
+                    self.associated_terminal.insert(new_id, tid);
+                }
+                self.focus_area = crate::ui_state::FocusArea::Stage;
+            }
+        }
+
         self.focused = Some(new_id);
         self.router.set_focused(new_id);
-        if self.zoomed_pane.is_some() {
-            self.zoomed_pane = Some(new_id);
-        }
-        // Pre-set association so resolve_launcher can find the context terminal's cwd
-        if let Some(tid) = context_terminal {
-            self.associated_terminal.insert(new_id, tid);
-        }
-        self.focus_area = crate::ui_state::FocusArea::PaneArea;
         self.cache.invalidate_chrome();
         self.compute_layout();
     }
@@ -191,32 +216,59 @@ impl App {
     }
 
 
-    /// Split the focused pane and show a Launcher in the new tab group.
-    /// Used by keyboard-initiated splits (Cmd+\, etc.).
+    /// Split the focused pane and show a Launcher.
+    /// Routes to the correct layout based on focus_area:
+    /// - Stage → split in main layout
+    /// - Dock → split in dock layout (new LeafGroup with Launcher)
     pub(crate) fn split_with_launcher(&mut self, direction: tide_core::SplitDirection) {
         let focused = match self.focused {
             Some(id) => id,
             None => return,
         };
-        let context_terminal = self.resolve_context_terminal_id();
         if self.zoomed_pane.is_some() {
             self.zoomed_pane = None;
             self.cache.pane_generations.clear();
         }
-        let new_id = self.layout.split(focused, direction);
-        self.panes.insert(new_id, PaneKind::Launcher(new_id));
-        self.ime.pending_creates.push(new_id);
-        self.focused = Some(new_id);
-        self.router.set_focused(new_id);
-        // Pre-set association so resolve_launcher can find the context terminal's cwd
-        if let Some(tid) = context_terminal {
-            self.associated_terminal.insert(new_id, tid);
+
+        match self.focus_area {
+            crate::ui_state::FocusArea::Dock => {
+                // Split in the dock layout
+                if let Some(tid) = self.focused_terminal_id() {
+                    let new_id = self.layout.alloc_id();
+                    self.panes.insert(new_id, PaneKind::Launcher(new_id));
+                    self.ime.pending_creates.push(new_id);
+                    self.associated_terminal.insert(new_id, tid);
+                    if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                        if let Some(dock_focused) = tp.dock_focused {
+                            // Split the node containing the focused pane, creating a LeafGroup
+                            tp.dock_layout.split_with_leaf_group(dock_focused, new_id, direction);
+                        } else {
+                            tp.dock_layout.insert_leaf_group(new_id);
+                        }
+                        tp.dock_focused = Some(new_id);
+                    }
+                    self.focused = Some(new_id);
+                    self.router.set_focused(new_id);
+                }
+            }
+            _ => {
+                // Split in the main terminal layout
+                let new_id = self.layout.split(focused, direction);
+                self.panes.insert(new_id, PaneKind::Launcher(new_id));
+                self.ime.pending_creates.push(new_id);
+                self.focused = Some(new_id);
+                self.router.set_focused(new_id);
+                self.focus_area = crate::ui_state::FocusArea::Stage;
+                if let Some(tid) = self.focused_terminal_id() {
+                    self.associated_terminal.insert(new_id, tid);
+                }
+            }
         }
         self.cache.invalidate_chrome();
         self.compute_layout();
     }
 
-    /// Open a browser pane in a non-terminal tab group.
+    /// Open a browser pane next to the focused pane.
     pub(crate) fn open_browser_pane(&mut self, url: Option<String>) {
         let focused = match self.focused {
             Some(id) => id,
@@ -230,31 +282,35 @@ impl App {
         };
         self.panes.insert(new_id, PaneKind::Browser(pane));
         self.ime.pending_creates.push(new_id);
-        self.add_to_non_terminal_group(focused, new_id);
-        self.layout.set_active_tab(new_id);
+        if let Some(tid) = self.focused_terminal_id().or(context_terminal) {
+            self.add_pane_to_dock(new_id);
+            self.associated_terminal.insert(new_id, tid);
+            self.focus_area = crate::ui_state::FocusArea::Dock;
+        } else {
+            self.add_to_non_terminal_group(focused, new_id);
+            if let Some(tid) = context_terminal {
+                self.associated_terminal.insert(new_id, tid);
+            }
+            self.focus_area = crate::ui_state::FocusArea::Stage;
+        }
         self.focused = Some(new_id);
         self.router.set_focused(new_id);
-        if let Some(tid) = context_terminal {
-            self.associated_terminal.insert(new_id, tid);
-        }
-        self.focus_area = crate::ui_state::FocusArea::PaneArea;
         self.cache.invalidate_chrome();
         self.compute_layout();
     }
 
     /// Replace an existing pane (e.g. a Launcher) with an editor for the given file.
-    /// The editor reuses the same layout slot (PaneId stays in the same TabGroup position).
+    /// The editor reuses the same layout slot.
     pub(crate) fn replace_pane_with_editor(&mut self, pane_id: tide_core::PaneId, path: PathBuf) {
         // Check if already open anywhere -> activate & focus (and close the launcher)
         for (&id, pane) in &self.panes {
             if let PaneKind::Editor(editor) = pane {
                 if editor.editor.file_path() == Some(path.as_path()) {
                     // File already open — focus it and close the launcher
-                    self.layout.set_active_tab(id);
                     self.cache.invalidate_pane(id);
                     self.focused = Some(id);
                     self.router.set_focused(id);
-                    self.focus_area = crate::ui_state::FocusArea::PaneArea;
+                    self.focus_area = crate::ui_state::FocusArea::Stage;
                     // Remove the launcher pane
                     self.layout.remove(pane_id);
                     self.panes.remove(&pane_id);
@@ -283,7 +339,7 @@ impl App {
                 if let Some(tid) = context_terminal {
                     self.associated_terminal.insert(pane_id, tid);
                 }
-                self.focus_area = crate::ui_state::FocusArea::PaneArea;
+                self.focus_area = crate::ui_state::FocusArea::Stage;
                 self.cache.invalidate_chrome();
                 self.cache.pane_generations.clear();
                 self.watch_file(&path);
@@ -295,25 +351,37 @@ impl App {
         }
     }
 
-    /// Open a file in a non-terminal tab group.
+    /// Open a file in a split next to the focused pane.
     /// If focused is a terminal → add to right (split if needed).
-    /// If focused is non-terminal → add as tab in the same group.
-    /// If already open, activate its tab.
+    /// If focused is non-terminal → add as split next to the same pane.
+    /// If already open, focus it.
     pub(crate) fn open_editor_pane(&mut self, path: PathBuf) {
         let focused = match self.focused {
             Some(id) => id,
             None => return,
         };
 
-        // Check if already open anywhere -> activate & focus
+        // Check if already open anywhere -> focus
         for (&id, pane) in &self.panes {
             if let PaneKind::Editor(editor) = pane {
                 if editor.editor.file_path() == Some(path.as_path()) {
-                    self.layout.set_active_tab(id);
                     self.cache.invalidate_pane(id);
                     self.focused = Some(id);
                     self.router.set_focused(id);
-                    self.focus_area = crate::ui_state::FocusArea::PaneArea;
+                    // If the pane is in a dock, open Dock and focus there
+                    if self.is_pane_in_dock(id) {
+                        self.dock_open = true;
+                        self.focus_area = crate::ui_state::FocusArea::Dock;
+                        // Update dock_focused on the owning terminal
+                        if let Some(tid) = self.terminal_owning(id) {
+                            if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                                tp.dock_focused = Some(id);
+                                tp.dock_layout.set_active_tab(id);
+                            }
+                        }
+                    } else {
+                        self.focus_area = crate::ui_state::FocusArea::Stage;
+                    }
                     self.cache.invalidate_chrome();
                     self.compute_layout();
                     return;
@@ -322,21 +390,26 @@ impl App {
         }
 
         let context_terminal = self.resolve_context_terminal_id();
-        // Create new editor pane, routed to correct tab group
+        // Create new editor pane, routed to a split next to the focused pane
         let new_id = self.layout.alloc_id();
         match EditorPane::open(new_id, &path) {
             Ok(mut pane) => {
                 pane.editor.set_dark_mode(self.dark_mode);
                 self.panes.insert(new_id, PaneKind::Editor(pane));
                 self.ime.pending_creates.push(new_id);
-                self.add_to_non_terminal_group(focused, new_id);
-                self.layout.set_active_tab(new_id);
+                if let Some(tid) = self.focused_terminal_id().or(context_terminal) {
+                    self.add_pane_to_dock(new_id);
+                    self.associated_terminal.insert(new_id, tid);
+                    self.focus_area = crate::ui_state::FocusArea::Dock;
+                } else {
+                    self.add_to_non_terminal_group(focused, new_id);
+                    if let Some(tid) = context_terminal {
+                        self.associated_terminal.insert(new_id, tid);
+                    }
+                    self.focus_area = crate::ui_state::FocusArea::Stage;
+                }
                 self.focused = Some(new_id);
                 self.router.set_focused(new_id);
-                if let Some(tid) = context_terminal {
-                    self.associated_terminal.insert(new_id, tid);
-                }
-                self.focus_area = crate::ui_state::FocusArea::PaneArea;
                 self.cache.invalidate_chrome();
                 // Watch the file for external changes
                 self.watch_file(&path);
@@ -378,8 +451,7 @@ impl App {
         if let Some(PaneKind::Editor(pane)) = self.panes.get(&tab_id) {
             if pane.editor.is_modified() && pane.editor.file_path().is_some() {
                 self.modal.save_confirm = Some(crate::SaveConfirmState { pane_id: tab_id });
-                // Ensure this tab is active and focused so the bar is visible
-                self.layout.set_active_tab(tab_id);
+                // Ensure this pane is focused so the bar is visible
                 self.focused = Some(tab_id);
                 self.router.set_focused(tab_id);
                 self.cache.invalidate_chrome();
@@ -418,34 +490,27 @@ impl App {
             self.unwatch_file(&path);
         }
 
-        // Determine next focus target BEFORE removal so we can find the
-        // same TabGroup or a layout neighbor while the tree is still intact.
+        // Check if pane is in a Terminal's dock
+        if self.is_pane_in_dock(tab_id) {
+            self.retain_terminal_context(tab_id);
+            self.panes.remove(&tab_id);
+            self.remove_pane_from_dock(tab_id);
+            self.cleanup_closed_pane_state(tab_id);
+            self.cache.invalidate_chrome();
+            self.compute_layout();
+            return;
+        }
+
+        // Determine next focus target BEFORE removal so we can find a
+        // layout neighbor while the tree is still intact.
         let next_focus = if self.focused == Some(tab_id) {
-            if let Some(tg) = self.layout.tab_group_containing(tab_id) {
-                if tg.len() > 1 {
-                    // Same TabGroup has other tabs — pick the one that
-                    // TabGroup::remove_tab would promote to active.
-                    let idx = tg.tabs.iter().position(|&t| t == tab_id).unwrap();
-                    if idx + 1 < tg.tabs.len() {
-                        // Next tab in the group (right neighbor)
-                        Some(tg.tabs[idx + 1])
-                    } else {
-                        // Was last tab — previous tab
-                        Some(tg.tabs[idx - 1])
-                    }
-                } else {
-                    // Last tab in group — group will be removed, find layout neighbor.
-                    self.layout.right_neighbor_pane(tab_id)
-                        .or_else(|| {
-                            // No right neighbor — pick any remaining pane
-                            self.layout.pane_ids().iter()
-                                .find(|&&id| id != tab_id)
-                                .copied()
-                        })
-                }
-            } else {
-                None
-            }
+            self.layout.right_neighbor_pane(tab_id)
+                .or_else(|| {
+                    // No right neighbor — pick any remaining pane
+                    self.layout.pane_ids().iter()
+                        .find(|&&id| id != tab_id)
+                        .copied()
+                })
         } else {
             None // Focused pane is not being closed
         };
@@ -453,7 +518,7 @@ impl App {
         // Retain terminal context before removing (soft delete)
         self.retain_terminal_context(tab_id);
 
-        // Remove from layout (handles multi-tab groups automatically)
+        // Remove from layout
         self.layout.remove(tab_id);
         self.panes.remove(&tab_id);
         self.cleanup_closed_pane_state(tab_id);
@@ -463,11 +528,10 @@ impl App {
             if let Some(id) = next_focus {
                 self.focused = Some(id);
                 self.router.set_focused(id);
-                self.layout.set_active_tab(id);
             } else {
                 self.focused = None;
             }
-            self.focus_area = crate::ui_state::FocusArea::PaneArea;
+            self.focus_area = crate::ui_state::FocusArea::Stage;
         }
 
         // Check if layout is now empty
@@ -522,7 +586,6 @@ impl App {
         if let Some(PaneKind::Editor(pane)) = self.panes.get(&pane_id) {
             if pane.editor.is_modified() && pane.editor.file_path().is_some() {
                 self.modal.save_confirm = Some(crate::SaveConfirmState { pane_id });
-                self.layout.set_active_tab(pane_id);
                 self.focused = Some(pane_id);
                 self.router.set_focused(pane_id);
                 self.cache.invalidate_chrome();
@@ -628,27 +691,14 @@ impl App {
             std::process::exit(0);
         }
 
-        // Determine next focus target BEFORE removal so we can find the
-        // same TabGroup or a layout neighbor while the tree is still intact.
-        let next_focus = if let Some(tg) = self.layout.tab_group_containing(pane_id) {
-            if tg.len() > 1 {
-                let idx = tg.tabs.iter().position(|&t| t == pane_id).unwrap();
-                if idx + 1 < tg.tabs.len() {
-                    Some(tg.tabs[idx + 1])
-                } else {
-                    Some(tg.tabs[idx - 1])
-                }
-            } else {
-                self.layout.right_neighbor_pane(pane_id)
-                    .or_else(|| {
-                        self.layout.pane_ids().iter()
-                            .find(|&&id| id != pane_id)
-                            .copied()
-                    })
-            }
-        } else {
-            None
-        };
+        // Determine next focus target BEFORE removal so we can find a
+        // layout neighbor while the tree is still intact.
+        let next_focus = self.layout.right_neighbor_pane(pane_id)
+            .or_else(|| {
+                self.layout.pane_ids().iter()
+                    .find(|&&id| id != pane_id)
+                    .copied()
+            });
 
         // Retain terminal context before removing (soft delete)
         self.retain_terminal_context(pane_id);
@@ -788,27 +838,20 @@ impl App {
         }
     }
 
-    /// Add a pane to the right of the focused pane's tab group.
-    /// If a tab group already exists to the right, add there.
-    /// Otherwise split horizontally to create a new tab group on the right.
+    /// Add a pane to the right of the focused pane.
+    /// Splits the focused pane horizontally.
     fn add_pane_to_right(&mut self, focused: tide_core::PaneId, new_id: tide_core::PaneId) {
-        if let Some(right_pane) = self.layout.right_neighbor_pane(focused) {
-            // Right neighbor exists — add as a tab in that group
-            self.layout.add_tab(right_pane, new_id);
-        } else {
-            // No right neighbor — split the focused pane horizontally
-            self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Horizontal, false);
-        }
+        self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Horizontal, false);
     }
 
-    /// Route a non-terminal pane to the correct tab group.
-    /// If focused is a terminal → add to right (split if needed).
-    /// If focused is non-terminal → add as tab in the same tab group.
+    /// Route a non-terminal pane next to the correct pane.
+    /// If focused is a terminal → add to right (split horizontally).
+    /// If focused is non-terminal → add as vertical split next to the same pane.
     fn add_to_non_terminal_group(&mut self, focused: tide_core::PaneId, new_id: tide_core::PaneId) {
         if matches!(self.panes.get(&focused), Some(PaneKind::Terminal(_))) {
             self.add_pane_to_right(focused, new_id);
         } else {
-            self.layout.add_tab(focused, new_id);
+            self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Vertical, false);
         }
     }
 }

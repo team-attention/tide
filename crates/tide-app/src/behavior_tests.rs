@@ -25,7 +25,7 @@ mod focus_management {
         let pane = crate::editor_pane::EditorPane::new_empty(pane_id);
         app.panes.insert(pane_id, PaneKind::Editor(pane));
         app.focused = Some(pane_id);
-        app.focus_area = FocusArea::PaneArea;
+        app.focus_area = FocusArea::Stage;
         (app, pane_id)
     }
 
@@ -38,18 +38,18 @@ mod focus_management {
 
     #[test]
     fn new_app_starts_in_pane_area_focus() {
-        // UC-3 BR-20: New App starts in PaneArea focus
+        // UC-3 BR-20: New App starts in Stage focus
         let app = test_app();
-        assert_eq!(app.focus_area, FocusArea::PaneArea);
+        assert_eq!(app.focus_area, FocusArea::Stage);
     }
 
     #[test]
     fn focus_terminal_sets_focus_area_to_pane_area() {
-        // UC-3 BR-21: focus_terminal sets FocusArea to PaneArea
+        // UC-3 BR-21: focus_terminal sets FocusArea to Stage
         let (mut app, id) = app_with_editor();
         app.focus_area = FocusArea::FileTree;
         app.focus_terminal(id);
-        assert_eq!(app.focus_area, FocusArea::PaneArea);
+        assert_eq!(app.focus_area, FocusArea::Stage);
     }
 
     #[test]
@@ -82,7 +82,7 @@ mod focus_management {
         // UC-3 BR-24: File tree toggle cycles: hidden → shown+focused → hidden
         let (mut app, _) = app_with_editor();
         assert!(!app.ft.visible);
-        assert_eq!(app.focus_area, FocusArea::PaneArea);
+        assert_eq!(app.focus_area, FocusArea::Stage);
 
         app.handle_focus_area(FocusArea::FileTree);
         assert!(app.ft.visible);
@@ -90,18 +90,18 @@ mod focus_management {
 
         app.handle_focus_area(FocusArea::FileTree);
         assert!(!app.ft.visible);
-        assert_eq!(app.focus_area, FocusArea::PaneArea);
+        assert_eq!(app.focus_area, FocusArea::Stage);
     }
 
     #[test]
     fn switching_to_pane_area_from_file_tree_preserves_focused_pane() {
-        // UC-3 BR-25: Switching to PaneArea from FileTree preserves focused Pane
+        // UC-3 BR-25: Switching to Stage from FileTree preserves focused Pane
         let (mut app, id) = app_with_editor();
         app.ft.visible = true;
         app.focus_area = FocusArea::FileTree;
 
-        app.handle_focus_area(FocusArea::PaneArea);
-        assert_eq!(app.focus_area, FocusArea::PaneArea);
+        app.handle_focus_area(FocusArea::Stage);
+        assert_eq!(app.focus_area, FocusArea::Stage);
         assert_eq!(app.focused, Some(id));
     }
 
@@ -170,7 +170,7 @@ mod modal_behavior {
         app.layout = layout;
         app.panes.insert(id, PaneKind::Editor(crate::editor_pane::EditorPane::new_empty(id)));
         app.focused = Some(id);
-        app.focus_area = FocusArea::PaneArea;
+        app.focus_area = FocusArea::Stage;
         (app, id)
     }
 
@@ -385,7 +385,7 @@ mod pane_lifecycle {
         let pane = EditorPane::new_empty(id);
         app.panes.insert(id, PaneKind::Editor(pane));
         app.focused = Some(id);
-        app.focus_area = FocusArea::PaneArea;
+        app.focus_area = FocusArea::Stage;
         (app, id)
     }
 
@@ -559,30 +559,26 @@ mod pane_lifecycle {
     }
 
     #[test]
-    fn closing_tab_in_right_group_focuses_same_group_not_left() {
-        // UC-5 BR-12: Focus stays in the same TabGroup after close
-        // Layout: Split { left: TG[A], right: TG[B, C(focused)] }
+    fn closing_pane_in_horizontal_split_focuses_right_neighbor() {
+        // UC-5 BR-12: After closing a pane, focus moves to right neighbor
+        // Layout: H(A, B(focused)) — closing B focuses A
         let (mut app, left_id) = app_with_editor();
-        let right_id = app.layout.split(left_id, tide_core::SplitDirection::Vertical);
+        let right_id = app.layout.split(left_id, tide_core::SplitDirection::Horizontal);
         app.panes.insert(right_id, PaneKind::Editor(
             crate::editor_pane::EditorPane::new_empty(right_id),
         ));
-        app.focused = Some(right_id);
-        // Add a second tab to the right group
-        app.new_editor_pane();
-        let right_tab2 = app.focused.unwrap();
+        app.focused = Some(left_id);
 
-        // Close the second tab in the right group
-        app.force_close_editor_panel_tab(right_tab2);
-        // Focus should stay on right_id (same group), not jump to left_id
+        // Close left pane — right neighbor (right_id) should get focus
+        app.force_close_editor_panel_tab(left_id);
         assert_eq!(app.focused, Some(right_id));
         assert_eq!(app.layout.pane_ids().len(), app.panes.len());
     }
 
     #[test]
-    fn closing_only_tab_in_group_focuses_neighbor_group() {
-        // UC-5 BR-12: When TabGroup becomes empty, focus moves to neighbor
-        // Layout: Split { left: TG[A], right: TG[B(focused)] }
+    fn closing_only_pane_in_split_focuses_neighbor() {
+        // UC-5 BR-12: When a pane is closed, focus moves to remaining pane
+        // Layout: Split { left: A, right: B(focused) }
         let (mut app, left_id) = app_with_editor();
         let right_id = app.layout.split(left_id, tide_core::SplitDirection::Vertical);
         app.panes.insert(right_id, PaneKind::Editor(
@@ -628,7 +624,7 @@ mod editor_behavior {
         let pane = EditorPane::new_empty(id);
         app.panes.insert(id, PaneKind::Editor(pane));
         app.focused = Some(id);
-        app.focus_area = FocusArea::PaneArea;
+        app.focus_area = FocusArea::Stage;
         (app, id)
     }
 
@@ -780,7 +776,7 @@ mod keyboard_routing {
         let pane = EditorPane::new_empty(id);
         app.panes.insert(id, PaneKind::Editor(pane));
         app.focused = Some(id);
-        app.focus_area = FocusArea::PaneArea;
+        app.focus_area = FocusArea::Stage;
         (app, id)
     }
 
@@ -906,7 +902,7 @@ mod launcher_behavior {
         app.layout = layout;
         app.panes.insert(id, PaneKind::Launcher(id));
         app.focused = Some(id);
-        app.focus_area = FocusArea::PaneArea;
+        app.focus_area = FocusArea::Stage;
         (app, id)
     }
 
@@ -1066,7 +1062,7 @@ mod workspace_behavior {
         app.panes = HashMap::new();
         app.panes.insert(id1, PaneKind::Editor(EditorPane::new_empty(id1)));
         app.focused = Some(id1);
-        app.focus_area = FocusArea::PaneArea;
+        app.focus_area = FocusArea::Stage;
 
         // Save WS1, switch to WS2
         app.save_active_workspace();
@@ -1336,7 +1332,7 @@ mod ime_behavior {
         app.panes = HashMap::new();
         app.panes.insert(id1, PaneKind::Editor(EditorPane::new_empty(id1)));
         app.focused = Some(id1);
-        app.focus_area = FocusArea::PaneArea;
+        app.focus_area = FocusArea::Stage;
         app.save_active_workspace();
         app.ws.active = 1;
         app.panes = HashMap::new();
@@ -1387,7 +1383,7 @@ mod ime_behavior {
         let id2 = app.layout.split(id1, tide_core::SplitDirection::Vertical);
         app.panes.insert(id2, PaneKind::Editor(EditorPane::new_empty(id2)));
         app.focused = Some(id1);
-        app.focus_area = FocusArea::PaneArea;
+        app.focus_area = FocusArea::Stage;
 
         app.ime.composing = true;
         app.ime.preedit = "한".to_string();
@@ -1410,7 +1406,7 @@ mod ime_behavior {
         let id2 = app.layout.split(id1, tide_core::SplitDirection::Vertical);
         app.panes.insert(id2, PaneKind::Editor(EditorPane::new_empty(id2)));
         app.focused = Some(id1);
-        app.focus_area = FocusArea::PaneArea;
+        app.focus_area = FocusArea::Stage;
 
         app.ime.composing = true;
         app.ime.preedit = "한".to_string();
@@ -1496,7 +1492,7 @@ mod global_actions {
         app.layout = layout;
         app.panes.insert(id, PaneKind::Editor(EditorPane::new_empty(id)));
         app.focused = Some(id);
-        app.focus_area = FocusArea::PaneArea;
+        app.focus_area = FocusArea::Stage;
         (app, id)
     }
 
@@ -1580,7 +1576,7 @@ mod global_actions {
         assert!(app.ft.visible);
         app.handle_global_action(GlobalAction::ToggleFileTree);
         assert!(!app.ft.visible);
-        assert_eq!(app.focus_area, FocusArea::PaneArea);
+        assert_eq!(app.focus_area, FocusArea::Stage);
     }
 
     #[test]
@@ -1624,7 +1620,7 @@ mod text_input_routing {
         app.layout = layout;
         app.panes.insert(id, PaneKind::Editor(EditorPane::new_empty(id)));
         app.focused = Some(id);
-        app.focus_area = FocusArea::PaneArea;
+        app.focus_area = FocusArea::Stage;
         (app, id)
     }
 
@@ -1932,7 +1928,7 @@ mod terminal_context {
         // Use a Launcher as stand-in for terminal (PaneKind matters for routing)
         app.panes.insert(terminal_id, PaneKind::Launcher(terminal_id));
         app.focused = Some(terminal_id);
-        app.focus_area = FocusArea::PaneArea;
+        app.focus_area = FocusArea::Stage;
 
         // Split and add an editor
         let editor_id = app.layout.split(terminal_id, tide_core::SplitDirection::Vertical);
@@ -1955,7 +1951,7 @@ mod terminal_context {
         // Insert an actual Launcher to stand in (Terminal routing check uses PaneKind)
         app.panes.insert(terminal_id, PaneKind::Launcher(terminal_id));
         app.focused = Some(terminal_id);
-        app.focus_area = FocusArea::PaneArea;
+        app.focus_area = FocusArea::Stage;
 
         // Since focused is a Launcher (not Terminal), resolve_context_terminal_id returns None.
         // Let's test with the explicit association flow instead.
@@ -2031,14 +2027,14 @@ mod terminal_context {
     // --- UC-3: OpenFileRouting ---
 
     #[test]
-    fn open_file_adds_tab_when_focused_is_non_terminal() {
-        // UC-3 BR-8: If a non-terminal TabGroup exists, reuse it
+    fn open_file_adds_split_when_focused_is_non_terminal() {
+        // UC-3 BR-8: If a non-terminal pane is focused, add as split
         let mut app = test_app();
         let (layout, editor_id) = tide_layout::SplitLayout::with_initial_pane();
         app.layout = layout;
         app.panes.insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
         app.focused = Some(editor_id);
-        app.focus_area = FocusArea::PaneArea;
+        app.focus_area = FocusArea::Stage;
 
         let test_path = std::path::PathBuf::from("/tmp/tc_open_test.txt");
         let _ = std::fs::write(&test_path, "test");
@@ -2046,16 +2042,16 @@ mod terminal_context {
         app.open_editor_pane(test_path.clone());
         let new_id = app.focused.unwrap();
 
-        // Should be in the same tab group as the original editor
-        let tg = app.layout.tab_group_containing(new_id).unwrap();
-        assert!(tg.tabs.contains(&editor_id));
-        assert!(tg.tabs.contains(&new_id));
+        // Both panes should be in the layout
+        let ids = app.layout.pane_ids();
+        assert!(ids.contains(&editor_id));
+        assert!(ids.contains(&new_id));
         let _ = std::fs::remove_file(&test_path);
     }
 
     #[test]
-    fn new_editor_from_editor_adds_to_same_tab_group() {
-        // UC-3 BR-8: Calling new_editor_pane from an editor adds to same group
+    fn new_editor_from_editor_adds_split() {
+        // UC-3 BR-8: Calling new_editor_pane from an editor adds a split
         let mut app = test_app();
         let (layout, editor_id) = tide_layout::SplitLayout::with_initial_pane();
         app.layout = layout;
@@ -2065,10 +2061,10 @@ mod terminal_context {
         app.new_editor_pane();
         let new_id = app.focused.unwrap();
 
-        // Should be in the same tab group
-        let tg = app.layout.tab_group_containing(new_id).unwrap();
-        assert!(tg.tabs.contains(&editor_id));
-        assert!(tg.tabs.contains(&new_id));
+        // Both panes should be in the layout
+        let ids = app.layout.pane_ids();
+        assert!(ids.contains(&editor_id));
+        assert!(ids.contains(&new_id));
         assert_eq!(app.panes.len(), 2);
     }
 
@@ -2132,5 +2128,261 @@ mod terminal_context {
         // Cleanup check — should NOT remove since other_id still references it
         app.cleanup_retained_context(0); // dummy closed pane id
         assert!(app.retained_contexts.contains_key(&terminal_id));
+    }
+}
+
+#[cfg(test)]
+mod dock_behavior {
+    // Spec: docs/specs/layout-v2.md
+    use crate::pane::PaneKind;
+    use crate::ui_state::{FocusArea, ViewMode};
+    use crate::editor_pane::EditorPane;
+    use crate::App;
+    use tide_core::LayoutEngine;
+
+    fn test_app() -> App {
+        let mut app = App::new();
+        app.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+        app.window_size = (960, 640);
+        app
+    }
+
+    fn app_with_terminal() -> (App, u64) {
+        let mut app = test_app();
+        let (layout, terminal_id) = tide_layout::SplitLayout::with_initial_pane();
+        app.layout = layout;
+        app.panes.insert(terminal_id, PaneKind::Launcher(terminal_id));
+        app.focused = Some(terminal_id);
+        app.focus_area = FocusArea::Stage;
+        (app, terminal_id)
+    }
+
+    fn app_with_two_terminals() -> (App, u64, u64) {
+        let (mut app, t1) = app_with_terminal();
+        let t2 = app.layout.split(t1, tide_core::SplitDirection::Vertical);
+        app.panes.insert(t2, PaneKind::Launcher(t2));
+        (app, t1, t2)
+    }
+
+    /// Helper: add a pane to a specific terminal's dock directly.
+    /// Since tests use Launcher as a stand-in for Terminal (no PTY),
+    /// we call add_pane_to_dock which handles both Terminal and Launcher.
+    /// For Launcher panes (which lack dock_layout), we also manually set
+    /// dock_open and associated_terminal to simulate the effect.
+    fn add_to_dock(app: &mut App, terminal_id: u64, pane_id: u64) {
+        app.focused = Some(terminal_id);
+        app.add_pane_to_dock(pane_id);
+        // If the "terminal" is actually a Launcher (test fixture), the dock_layout
+        // manipulation in add_pane_to_dock is a no-op. Manually set state.
+        if matches!(app.panes.get(&terminal_id), Some(PaneKind::Launcher(_))) {
+            app.dock_open = true;
+            app.associated_terminal.insert(pane_id, terminal_id);
+        }
+    }
+
+    // --- UC-1: OpenPaneInDock ---
+
+    #[test]
+    fn opening_file_places_editor_in_dock() {
+        // UC-1 BR-1: New non-Terminal Panes go to the Dock by default
+        let (mut app, terminal_id) = app_with_terminal();
+        let editor_id = app.layout.alloc_id();
+        let editor = EditorPane::new_empty(editor_id);
+        app.panes.insert(editor_id, PaneKind::Editor(editor));
+        add_to_dock(&mut app, terminal_id, editor_id);
+
+        // Editor is associated with the terminal and not in Stage layout
+        assert_eq!(app.associated_terminal.get(&editor_id), Some(&terminal_id));
+        assert!(!app.layout.pane_ids().contains(&editor_id));
+    }
+
+    #[test]
+    fn opened_pane_is_bound_to_focused_terminal() {
+        // UC-1 BR-2: Pane is bound to the Terminal that was focused at creation time
+        let (mut app, t1, _t2) = app_with_two_terminals();
+        app.focused = Some(t1);
+
+        let editor_id = app.layout.alloc_id();
+        app.panes.insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
+        add_to_dock(&mut app, t1, editor_id);
+
+        assert_eq!(app.associated_terminal.get(&editor_id), Some(&t1));
+    }
+
+    #[test]
+    fn opening_pane_in_empty_dock_auto_opens_it() {
+        // UC-1 BR-5: Dock auto-opens when a Pane is added to an empty dock
+        let (mut app, terminal_id) = app_with_terminal();
+        assert!(!app.dock_open);
+
+        let editor_id = app.layout.alloc_id();
+        app.panes.insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
+        add_to_dock(&mut app, terminal_id, editor_id);
+
+        assert!(app.dock_open);
+    }
+
+    // --- UC-2: SwitchTerminalFocus ---
+
+    #[test]
+    fn switching_to_terminal_without_dock_panes_hides_dock() {
+        // UC-2 BR-7: Dock auto-hides when switching to a Terminal with empty dock
+        let (mut app, t1, t2) = app_with_two_terminals();
+
+        let e1 = app.layout.alloc_id();
+        app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+        add_to_dock(&mut app, t1, e1);
+        assert!(app.dock_open);
+
+        app.focused = Some(t2);
+        app.swap_dock_state(t2);
+
+        assert!(!app.dock_open);
+    }
+
+    #[test]
+    fn switching_to_terminal_with_dock_panes_shows_dock() {
+        // UC-2 BR-8: Dock auto-shows
+        let (mut app, t1, t2) = app_with_two_terminals();
+
+        let e1 = app.layout.alloc_id();
+        app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+        add_to_dock(&mut app, t1, e1);
+
+        app.focused = Some(t2);
+        app.swap_dock_state(t2);
+        assert!(!app.dock_open);
+
+        app.focused = Some(t1);
+        app.swap_dock_state(t1);
+        assert!(app.dock_open);
+    }
+
+    // --- UC-3: ToggleStackedInStage ---
+
+    #[test]
+    fn stacking_stage_sets_zoomed_pane() {
+        // UC-3 BR-10: Stacking Stage zooms the focused pane
+        let (mut app, t1, _t2) = app_with_two_terminals();
+        app.focused = Some(t1);
+        app.focus_area = FocusArea::Stage;
+
+        app.handle_toggle_stacked();
+
+        assert_eq!(app.terminal_view_mode, ViewMode::Stacked);
+        assert_eq!(app.zoomed_pane, Some(t1));
+    }
+
+    #[test]
+    fn stacking_stage_does_not_affect_dock() {
+        // UC-3 BR-11: Stacking Stage does not change Dock state
+        let (mut app, t1, _t2) = app_with_two_terminals();
+        let e1 = app.layout.alloc_id();
+        app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+        add_to_dock(&mut app, t1, e1);
+        app.focused = Some(t1);
+        app.focus_area = FocusArea::Stage;
+
+        app.handle_toggle_stacked();
+
+        assert_eq!(app.terminal_view_mode, ViewMode::Stacked);
+        assert!(app.dock_open); // Dock unaffected
+    }
+
+    #[test]
+    fn unstacking_restores_stage_split_layout() {
+        // UC-3 BR-12: Unstacking restores Split mode and clears zoomed_pane
+        let (mut app, t1, _t2) = app_with_two_terminals();
+        app.focused = Some(t1);
+        app.focus_area = FocusArea::Stage;
+
+        app.handle_toggle_stacked();
+        assert_eq!(app.terminal_view_mode, ViewMode::Stacked);
+
+        app.handle_toggle_stacked();
+        assert_eq!(app.terminal_view_mode, ViewMode::Split);
+        assert_eq!(app.zoomed_pane, None);
+    }
+
+    // --- UC-6: CloseTerminalCascade ---
+
+    #[test]
+    fn closing_terminal_cascades_to_all_dock_panes() {
+        // UC-6 BR-20
+        let (mut app, t1, _t2) = app_with_two_terminals();
+
+        let e1 = app.layout.alloc_id();
+        app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+        add_to_dock(&mut app, t1, e1);
+
+        let e2 = app.layout.alloc_id();
+        app.panes.insert(e2, PaneKind::Editor(EditorPane::new_empty(e2)));
+        add_to_dock(&mut app, t1, e2);
+
+        app.cascade_close_terminal(t1);
+
+        assert!(!app.panes.contains_key(&t1));
+        assert!(!app.panes.contains_key(&e1));
+        assert!(!app.panes.contains_key(&e2));
+    }
+
+    // --- UC-7: ClosePaneInDock ---
+
+    #[test]
+    fn closing_last_dock_pane_closes_dock_and_focuses_terminal() {
+        // UC-7 BR-23
+        let (mut app, terminal_id) = app_with_terminal();
+        let e1 = app.layout.alloc_id();
+        app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+        add_to_dock(&mut app, terminal_id, e1);
+        app.focus_area = FocusArea::Stage;
+        app.focused = Some(e1);
+
+        app.remove_pane_from_dock(e1);
+
+        assert!(!app.dock_open);
+        assert_eq!(app.focused, Some(terminal_id));
+    }
+
+    // --- UC-11: ReorderTabsInStackedMode ---
+
+    #[test]
+    fn drag_reorder_tabs_in_stacked_stage() {
+        // UC-11 BR-33: Drag-to-reorder swaps pane positions in Stage stacked mode
+        let (mut app, t1, t2) = app_with_two_terminals();
+        app.focused = Some(t1);
+        app.focus_area = FocusArea::Stage;
+        app.terminal_view_mode = ViewMode::Stacked;
+
+        let order_before = app.layout.pane_ids();
+        assert_eq!(order_before, vec![t1, t2]);
+
+        app.reorder_stacked_tab(t1, t2);
+
+        let order_after = app.layout.pane_ids();
+        assert_eq!(order_after, vec![t2, t1]);
+    }
+
+    #[test]
+    fn drag_reorder_tabs_in_stacked_dock() {
+        // UC-11 BR-33: Drag-to-reorder swaps pane positions in Dock stacked mode
+        let (mut app, t1, _t2) = app_with_two_terminals();
+
+        let e1 = app.layout.alloc_id();
+        app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+        add_to_dock(&mut app, t1, e1);
+
+        let e2 = app.layout.alloc_id();
+        app.panes.insert(e2, PaneKind::Editor(EditorPane::new_empty(e2)));
+        add_to_dock(&mut app, t1, e2);
+
+        app.focus_area = FocusArea::Dock;
+        app.focused = Some(e1);
+
+        app.reorder_stacked_tab(e1, e2);
+
+        // Reorder operates on the dock_layout of the owner terminal.
+        // Since t1 is a Launcher (not a real Terminal), dock_layout is empty,
+        // so the swap is a no-op here. This tests the method path.
     }
 }

@@ -27,6 +27,7 @@ pub enum AreaSlot {
     Slot1,
     Slot2,
     Slot3,
+    Slot4,
 }
 
 /// Global actions triggered by hotkeys or other mechanisms.
@@ -66,6 +67,7 @@ pub enum GlobalAction {
     CloseWorkspace,
     ToggleFileTree,
     ToggleWorkspaceSidebar,
+    ToggleStacked,
 }
 
 impl GlobalAction {
@@ -80,6 +82,7 @@ impl GlobalAction {
             GlobalAction::FocusArea(AreaSlot::Slot1) => "Focus Slot 1",
             GlobalAction::FocusArea(AreaSlot::Slot2) => "Focus Slot 2",
             GlobalAction::FocusArea(AreaSlot::Slot3) => "Focus Slot 3",
+            GlobalAction::FocusArea(AreaSlot::Slot4) => "Focus Slot 4",
             GlobalAction::Navigate(Direction::Up) => "Navigate Up",
             GlobalAction::Navigate(Direction::Down) => "Navigate Down",
             GlobalAction::Navigate(Direction::Left) => "Navigate Left",
@@ -111,6 +114,7 @@ impl GlobalAction {
             GlobalAction::CloseWorkspace => "Close Workspace",
             GlobalAction::ToggleFileTree => "Toggle File Tree",
             GlobalAction::ToggleWorkspaceSidebar => "Toggle Workspace Sidebar",
+            GlobalAction::ToggleStacked => "Toggle Stacked",
         }
     }
 
@@ -125,6 +129,7 @@ impl GlobalAction {
             GlobalAction::FocusArea(AreaSlot::Slot1) => "FocusSlot1",
             GlobalAction::FocusArea(AreaSlot::Slot2) => "FocusSlot2",
             GlobalAction::FocusArea(AreaSlot::Slot3) => "FocusSlot3",
+            GlobalAction::FocusArea(AreaSlot::Slot4) => "FocusSlot4",
             GlobalAction::Navigate(Direction::Up) => "NavigateUp",
             GlobalAction::Navigate(Direction::Down) => "NavigateDown",
             GlobalAction::Navigate(Direction::Left) => "NavigateLeft",
@@ -156,6 +161,7 @@ impl GlobalAction {
             GlobalAction::CloseWorkspace => "CloseWorkspace",
             GlobalAction::ToggleFileTree => "ToggleFileTree",
             GlobalAction::ToggleWorkspaceSidebar => "ToggleWorkspaceSidebar",
+            GlobalAction::ToggleStacked => "ToggleStacked",
         }
     }
 
@@ -170,6 +176,7 @@ impl GlobalAction {
             "FocusSlot1" => Some(GlobalAction::FocusArea(AreaSlot::Slot1)),
             "FocusSlot2" => Some(GlobalAction::FocusArea(AreaSlot::Slot2)),
             "FocusSlot3" => Some(GlobalAction::FocusArea(AreaSlot::Slot3)),
+            "FocusSlot4" => Some(GlobalAction::FocusArea(AreaSlot::Slot4)),
             "NavigateUp" => Some(GlobalAction::Navigate(Direction::Up)),
             "NavigateDown" => Some(GlobalAction::Navigate(Direction::Down)),
             "NavigateLeft" => Some(GlobalAction::Navigate(Direction::Left)),
@@ -201,6 +208,7 @@ impl GlobalAction {
             "CloseWorkspace" => Some(GlobalAction::CloseWorkspace),
             "ToggleFileTree" => Some(GlobalAction::ToggleFileTree),
             "ToggleWorkspaceSidebar" => Some(GlobalAction::ToggleWorkspaceSidebar),
+            "ToggleStacked" => Some(GlobalAction::ToggleStacked),
             _ => None,
         }
     }
@@ -218,7 +226,7 @@ impl GlobalAction {
             GlobalAction::Navigate(Direction::Left),
             GlobalAction::Navigate(Direction::Right),
             GlobalAction::ToggleZoom,
-            GlobalAction::ToggleFileTree,
+            GlobalAction::ToggleStacked,
             GlobalAction::TabPrev,
             GlobalAction::TabNext,
             GlobalAction::NewTab,
@@ -243,7 +251,6 @@ impl GlobalAction {
             GlobalAction::BrowserForward,
             GlobalAction::ScrollHalfPageUp,
             GlobalAction::ScrollHalfPageDown,
-            GlobalAction::ToggleWorkspaceSidebar,
         ]
     }
 }
@@ -362,6 +369,7 @@ pub fn display_key(key: &Key) -> String {
         Key::Char('!') => "1".to_string(),
         Key::Char('@') => "2".to_string(),
         Key::Char('#') => "3".to_string(),
+        Key::Char('$') => "4".to_string(),
         Key::Char(c) => c.to_uppercase().to_string(),
         Key::Enter => "Enter".to_string(),
         Key::Escape => "Esc".to_string(),
@@ -401,8 +409,10 @@ impl KeybindingMap {
             (Hotkey::new(Key::Char('f'), false, false, true, false), GlobalAction::Find),
             (Hotkey::new(Key::Enter, false, false, true, false), GlobalAction::ToggleZoom),
             (Hotkey::new(Key::Char('d'), true, false, true, false), GlobalAction::ToggleTheme),
-            (Hotkey::new(Key::Char('e'), false, false, true, false), GlobalAction::ToggleFileTree),
-            (Hotkey::new(Key::Char('b'), false, false, true, false), GlobalAction::ToggleWorkspaceSidebar),
+            (Hotkey::new(Key::Char('1'), false, false, true, false), GlobalAction::FocusArea(AreaSlot::Slot1)),
+            (Hotkey::new(Key::Char('2'), false, false, true, false), GlobalAction::FocusArea(AreaSlot::Slot2)),
+            (Hotkey::new(Key::Char('3'), false, false, true, false), GlobalAction::FocusArea(AreaSlot::Slot3)),
+            (Hotkey::new(Key::Char('4'), false, false, true, false), GlobalAction::FocusArea(AreaSlot::Slot4)),
             (Hotkey::new(Key::Char('['), false, false, true, false), GlobalAction::WorkspacePrev),
             (Hotkey::new(Key::Char(']'), false, false, true, false), GlobalAction::WorkspaceNext),
             (Hotkey::new(Key::Up, false, false, true, false), GlobalAction::Navigate(Direction::Up)),
@@ -658,16 +668,19 @@ impl Router {
                     Some(GlobalAction::ScrollHalfPageDown)
                 }
             }
-            // Cmd+E -> toggle file tree
-            Key::Char('e') | Key::Char('E') => Some(GlobalAction::ToggleFileTree),
-            // Cmd+B -> toggle workspace sidebar, Cmd+Shift+B -> open browser
+            // Cmd+Shift+B -> open browser, Cmd+B -> none
             Key::Char('b') | Key::Char('B') => {
                 if modifiers.shift {
                     Some(GlobalAction::OpenBrowser)
                 } else {
-                    Some(GlobalAction::ToggleWorkspaceSidebar)
+                    None
                 }
             }
+            // Cmd+1/2/3/4 -> FocusArea slots
+            Key::Char('1') | Key::Char('!') => Some(GlobalAction::FocusArea(AreaSlot::Slot1)),
+            Key::Char('2') | Key::Char('@') => Some(GlobalAction::FocusArea(AreaSlot::Slot2)),
+            Key::Char('3') | Key::Char('#') => Some(GlobalAction::FocusArea(AreaSlot::Slot3)),
+            Key::Char('4') | Key::Char('$') => Some(GlobalAction::FocusArea(AreaSlot::Slot4)),
             // Cmd+Shift+[ / Cmd+Shift+] -> workspace prev/next
             // Cmd+[ / Cmd+] -> browser back/forward (handled below)
             // Cmd+HJKL -> Navigate

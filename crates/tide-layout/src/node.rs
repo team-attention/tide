@@ -8,7 +8,8 @@ use crate::tab_group::TabGroup;
 
 #[derive(Debug, Clone)]
 pub(crate) enum Node {
-    Leaf(TabGroup),
+    Leaf(PaneId),
+    LeafGroup(TabGroup),
     Split {
         direction: SplitDirection,
         ratio: f32,
@@ -18,19 +19,90 @@ pub(crate) enum Node {
 }
 
 impl Node {
+    /// Find the TabGroup containing the given pane, if any.
+    pub(crate) fn find_tab_group(&self, pane: PaneId) -> Option<&TabGroup> {
+        match self {
+            Node::Leaf(_) => None,
+            Node::LeafGroup(tg) => {
+                if tg.contains(pane) { Some(tg) } else { None }
+            }
+            Node::Split { left, right, .. } => {
+                left.find_tab_group(pane).or_else(|| right.find_tab_group(pane))
+            }
+        }
+    }
+
+    /// Replace a leaf containing `target` with a split containing the original
+    /// and a new LeafGroup (TabGroup) for the new pane.
+    pub(crate) fn split_pane_as_group(
+        &mut self,
+        target: PaneId,
+        new_id: PaneId,
+        direction: SplitDirection,
+    ) -> bool {
+        match self {
+            Node::Leaf(id) if *id == target => {
+                let original = Node::Leaf(*id);
+                let new_leaf = Node::LeafGroup(TabGroup::single(new_id));
+                *self = Node::Split {
+                    direction,
+                    ratio: 0.5,
+                    left: Box::new(original),
+                    right: Box::new(new_leaf),
+                };
+                true
+            }
+            Node::Leaf(_) => false,
+            Node::LeafGroup(tg) if tg.contains(target) => {
+                let original = Node::LeafGroup(tg.clone());
+                let new_leaf = Node::LeafGroup(TabGroup::single(new_id));
+                *self = Node::Split {
+                    direction,
+                    ratio: 0.5,
+                    left: Box::new(original),
+                    right: Box::new(new_leaf),
+                };
+                true
+            }
+            Node::LeafGroup(_) => false,
+            Node::Split { direction: dir, ratio, left, right, .. } => {
+                if left.split_pane_as_group(target, new_id, direction) {
+                    if *dir == direction {
+                        let n_left = left.count_chain_leaves(*dir);
+                        let n_right = right.count_chain_leaves(*dir);
+                        *ratio = n_left as f32 / (n_left + n_right) as f32;
+                    }
+                    return true;
+                }
+                if right.split_pane_as_group(target, new_id, direction) {
+                    if *dir == direction {
+                        let n_left = left.count_chain_leaves(*dir);
+                        let n_right = right.count_chain_leaves(*dir);
+                        *ratio = n_left as f32 / (n_left + n_right) as f32;
+                    }
+                    return true;
+                }
+                false
+            }
+        }
+    }
+
     /// Returns true if this node (or any descendant) contains the given pane.
     #[cfg(test)]
     pub(crate) fn contains(&self, pane: PaneId) -> bool {
         match self {
-            Node::Leaf(tg) => tg.contains(pane),
+            Node::Leaf(id) => *id == pane,
+            Node::LeafGroup(tg) => tg.contains(pane),
             Node::Split { left, right, .. } => left.contains(pane) || right.contains(pane),
         }
     }
 
-    /// Collect all leaf PaneIds in this subtree (all tabs from all groups).
+    /// Collect active/visible leaf PaneIds in this subtree.
+    /// For LeafGroup, only returns the active tab.
     pub(crate) fn pane_ids(&self, out: &mut Vec<PaneId>) {
         match self {
-            Node::Leaf(tg) => out.extend_from_slice(&tg.tabs),
+            Node::Leaf(id) => out.push(*id),
+            Node::LeafGroup(tg) => out.push(tg.active_pane()),
             Node::Split { left, right, .. } => {
                 left.pane_ids(out);
                 right.pane_ids(out);
@@ -38,11 +110,26 @@ impl Node {
         }
     }
 
-    /// Traverse the tree and compute the rect for every active pane in each leaf.
-    /// Only the active tab of each TabGroup gets a rect (preserving existing behavior).
+    /// Collect ALL PaneIds in this subtree, including all tabs in TabGroups.
+    pub(crate) fn all_pane_ids(&self, out: &mut Vec<PaneId>) {
+        match self {
+            Node::Leaf(id) => out.push(*id),
+            Node::LeafGroup(tg) => out.extend_from_slice(&tg.tabs),
+            Node::Split { left, right, .. } => {
+                left.all_pane_ids(out);
+                right.all_pane_ids(out);
+            }
+        }
+    }
+
+    /// Traverse the tree and compute the rect for every pane in each leaf.
+    /// For LeafGroup, only the active tab gets a rect.
     pub(crate) fn compute_rects(&self, rect: Rect, out: &mut Vec<(PaneId, Rect)>) {
         match self {
-            Node::Leaf(tg) => {
+            Node::Leaf(id) => {
+                out.push((*id, rect));
+            }
+            Node::LeafGroup(tg) => {
                 out.push((tg.active_pane(), rect));
             }
             Node::Split {
@@ -62,7 +149,7 @@ impl Node {
     /// A node with a different split direction or a leaf counts as 1.
     pub(crate) fn count_chain_leaves(&self, dir: SplitDirection) -> usize {
         match self {
-            Node::Leaf(_) => 1,
+            Node::Leaf(_) | Node::LeafGroup(_) => 1,
             Node::Split { direction, left, right, .. } if *direction == dir => {
                 left.count_chain_leaves(dir) + right.count_chain_leaves(dir)
             }
@@ -71,7 +158,7 @@ impl Node {
     }
 
     /// Replace a leaf containing `target` with a split node containing the original leaf
-    /// and a new leaf with a single-tab TabGroup.
+    /// and a new leaf.
     /// When the new split has the same direction as a parent split, ratios are
     /// adjusted so all leaves in the same-direction chain get equal space.
     pub(crate) fn split_pane(
@@ -81,11 +168,9 @@ impl Node {
         direction: SplitDirection,
     ) -> bool {
         match self {
-            Node::Leaf(tg) if tg.contains(target) => {
-                // Split the entire TabGroup leaf: original group stays,
-                // new leaf with single tab is added as sibling.
-                let original = Node::Leaf(tg.clone());
-                let new_leaf = Node::Leaf(TabGroup::single(new_id));
+            Node::Leaf(id) if *id == target => {
+                let original = Node::Leaf(*id);
+                let new_leaf = Node::Leaf(new_id);
                 *self = Node::Split {
                     direction,
                     ratio: 0.5,
@@ -95,6 +180,19 @@ impl Node {
                 true
             }
             Node::Leaf(_) => false,
+            Node::LeafGroup(tg) if tg.contains(target) => {
+                // Split the LeafGroup node itself
+                let original = Node::LeafGroup(tg.clone());
+                let new_leaf = Node::Leaf(new_id);
+                *self = Node::Split {
+                    direction,
+                    ratio: 0.5,
+                    left: Box::new(original),
+                    right: Box::new(new_leaf),
+                };
+                true
+            }
+            Node::LeafGroup(_) => false,
             Node::Split { direction: dir, ratio, left, right, .. } => {
                 if left.split_pane(target, new_id, direction) {
                     if *dir == direction {
@@ -117,25 +215,29 @@ impl Node {
         }
     }
 
-    /// Remove a pane from the tree. If the pane is one of multiple tabs, it's just
-    /// removed from its TabGroup. If it's the last tab, the leaf is removed.
+    /// Remove a pane from the tree.
     /// Returns:
     /// - Some(Some(node)) if the pane was found and a sibling remains
     /// - Some(None) if the pane was found and this entire node should be removed (leaf case)
     /// - None if the pane was not found in this subtree
     pub(crate) fn remove_pane(&mut self, target: PaneId) -> Option<Option<Node>> {
         match self {
-            Node::Leaf(tg) if tg.contains(target) => {
-                if tg.len() > 1 {
-                    // Just remove the tab from the group
-                    tg.remove_tab(target);
-                    Some(Some(self.clone()))
-                } else {
-                    // Last tab — this leaf should be removed
-                    Some(None)
-                }
+            Node::Leaf(id) if *id == target => {
+                // This leaf should be removed
+                Some(None)
             }
             Node::Leaf(_) => None,
+            Node::LeafGroup(tg) if tg.contains(target) => {
+                tg.remove_tab(target);
+                if tg.is_empty() {
+                    // TabGroup is now empty, remove this node
+                    Some(None)
+                } else {
+                    // TabGroup still has tabs, keep the node
+                    Some(Some(self.clone()))
+                }
+            }
+            Node::LeafGroup(_) => None,
             Node::Split { direction, ratio, left, right } => {
                 let dir = *direction;
 
@@ -276,7 +378,12 @@ impl Node {
     /// Replace all occurrences of `from` PaneId with `to` in leaf nodes.
     pub(crate) fn replace_pane_id(&mut self, from: PaneId, to: PaneId) {
         match self {
-            Node::Leaf(tg) => {
+            Node::Leaf(id) => {
+                if *id == from {
+                    *id = to;
+                }
+            }
+            Node::LeafGroup(tg) => {
                 for tab in &mut tg.tabs {
                     if *tab == from {
                         *tab = to;
@@ -380,9 +487,9 @@ impl Node {
         insert_first: bool,
     ) -> bool {
         match self {
-            Node::Leaf(tg) if tg.contains(target) => {
-                let target_node = Node::Leaf(tg.clone());
-                let new_node = Node::Leaf(TabGroup::single(new_pane));
+            Node::Leaf(id) if *id == target => {
+                let target_node = Node::Leaf(*id);
+                let new_node = Node::Leaf(new_pane);
                 let (left, right) = if insert_first {
                     (new_node, target_node)
                 } else {
@@ -397,6 +504,24 @@ impl Node {
                 true
             }
             Node::Leaf(_) => false,
+            Node::LeafGroup(tg) if tg.contains(target) => {
+                // Split the LeafGroup node
+                let target_node = Node::LeafGroup(tg.clone());
+                let new_node = Node::Leaf(new_pane);
+                let (left, right) = if insert_first {
+                    (new_node, target_node)
+                } else {
+                    (target_node, new_node)
+                };
+                *self = Node::Split {
+                    direction,
+                    ratio: 0.5,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                };
+                true
+            }
+            Node::LeafGroup(_) => false,
             Node::Split { direction: dir, ratio, left, right, .. } => {
                 if left.insert_pane_at(target, new_pane, direction, insert_first) {
                     if *dir == direction {
@@ -419,26 +544,10 @@ impl Node {
         }
     }
 
-    /// Find the TabGroup containing the given pane, returning a mutable reference.
-    pub(crate) fn find_tab_group_mut(&mut self, pane: PaneId) -> Option<&mut TabGroup> {
-        match self {
-            Node::Leaf(tg) if tg.contains(pane) => Some(tg),
-            Node::Leaf(_) => None,
-            Node::Split { left, right, .. } => {
-                if let Some(tg) = left.find_tab_group_mut(pane) {
-                    Some(tg)
-                } else {
-                    right.find_tab_group_mut(pane)
-                }
-            }
-        }
-    }
-
-    /// Find the active pane of the TabGroup immediately to the right of
-    /// the given pane's TabGroup. Traverses the tree upward from the pane's
-    /// leaf, looking for the first Horizontal split where the pane is in
-    /// the left subtree, then returns the leftmost leaf's active pane from
-    /// the right subtree.
+    /// Find the pane immediately to the right of the given pane.
+    /// Traverses the tree upward from the pane's leaf, looking for the first
+    /// Horizontal split where the pane is in the left subtree, then returns
+    /// the leftmost leaf from the right subtree.
     pub(crate) fn find_right_neighbor(&self, pane: PaneId) -> Option<PaneId> {
         self.find_right_neighbor_impl(pane).1
     }
@@ -446,21 +555,18 @@ impl Node {
     /// Returns (pane_found_in_subtree, right_neighbor_pane).
     fn find_right_neighbor_impl(&self, pane: PaneId) -> (bool, Option<PaneId>) {
         match self {
-            Node::Leaf(tg) => (tg.contains(pane), None),
+            Node::Leaf(id) => (*id == pane, None),
+            Node::LeafGroup(tg) => (tg.contains(pane), None),
             Node::Split { direction, left, right, .. } => {
                 // Check left subtree
                 let (found_left, neighbor) = left.find_right_neighbor_impl(pane);
                 if found_left {
                     if neighbor.is_some() {
-                        // Already found a right neighbor deeper in the left subtree
                         return (true, neighbor);
                     }
                     if *direction == SplitDirection::Horizontal {
-                        // Pane is in left child of horizontal split →
-                        // right neighbor is the leftmost leaf of right child
-                        return (true, Some(right.leftmost_active_pane()));
+                        return (true, Some(right.leftmost_pane()));
                     }
-                    // Vertical split: propagate up
                     return (true, None);
                 }
                 // Check right subtree
@@ -470,26 +576,12 @@ impl Node {
         }
     }
 
-    /// Return the active pane of the leftmost leaf in this subtree.
-    fn leftmost_active_pane(&self) -> PaneId {
+    /// Return the leftmost leaf pane in this subtree.
+    fn leftmost_pane(&self) -> PaneId {
         match self {
-            Node::Leaf(tg) => tg.active_pane(),
-            Node::Split { left, .. } => left.leftmost_active_pane(),
-        }
-    }
-
-    /// Find the TabGroup containing the given pane, returning an immutable reference.
-    pub(crate) fn find_tab_group(&self, pane: PaneId) -> Option<&TabGroup> {
-        match self {
-            Node::Leaf(tg) if tg.contains(pane) => Some(tg),
-            Node::Leaf(_) => None,
-            Node::Split { left, right, .. } => {
-                if let Some(tg) = left.find_tab_group(pane) {
-                    Some(tg)
-                } else {
-                    right.find_tab_group(pane)
-                }
-            }
+            Node::Leaf(id) => *id,
+            Node::LeafGroup(tg) => tg.active_pane(),
+            Node::Split { left, .. } => left.leftmost_pane(),
         }
     }
 }
@@ -605,7 +697,7 @@ pub(crate) fn build_tree_from_rects(
 ) -> Option<Node> {
     match pane_rects.len() {
         0 => None,
-        1 => Some(Node::Leaf(TabGroup::single(pane_rects[0].0))),
+        1 => Some(Node::Leaf(pane_rects[0].0)),
         _ => {
             let secondary = match primary {
                 SplitDirection::Horizontal => SplitDirection::Vertical,
@@ -621,13 +713,13 @@ pub(crate) fn build_tree_from_rects(
                 } else {
                     // Fallback below
                     return {
-                        let mut node = Node::Leaf(TabGroup::single(pane_rects[0].0));
+                        let mut node = Node::Leaf(pane_rects[0].0);
                         for &(id, _) in &pane_rects[1..] {
                             node = Node::Split {
                                 direction: primary,
                                 ratio: 0.5,
                                 left: Box::new(node),
-                                right: Box::new(Node::Leaf(TabGroup::single(id))),
+                                right: Box::new(Node::Leaf(id)),
                             };
                         }
                         Some(node)

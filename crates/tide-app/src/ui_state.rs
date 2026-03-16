@@ -103,12 +103,29 @@ pub(crate) fn shell_escape(s: &str) -> String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FocusArea {
     FileTree,
-    PaneArea,
+    Stage,
+    Dock,
 }
 
 impl Default for FocusArea {
     fn default() -> Self {
-        FocusArea::PaneArea
+        FocusArea::Stage
+    }
+}
+
+// ──────────────────────────────────────────────
+// ViewMode — how panes in an area are arranged
+// ──────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ViewMode {
+    Split,
+    Stacked,
+}
+
+impl Default for ViewMode {
+    fn default() -> Self {
+        ViewMode::Split
     }
 }
 
@@ -955,6 +972,7 @@ impl FileTreeModel {
 /// Workspace management state.
 pub(crate) struct WorkspaceManager {
     pub workspaces: Vec<super::Workspace>,
+    pub workspace_extras: Vec<super::WorkspaceExtras>,
     pub active: usize,
     pub show_sidebar: bool,
     pub sidebar_rect: Option<Rect>,
@@ -967,6 +985,7 @@ impl WorkspaceManager {
     pub fn new() -> Self {
         Self {
             workspaces: Vec::new(),
+            workspace_extras: Vec::new(),
             active: 0,
             show_sidebar: true,
             sidebar_rect: None,

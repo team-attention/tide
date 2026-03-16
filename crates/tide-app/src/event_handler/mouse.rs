@@ -329,7 +329,7 @@ impl App {
                         return;
                     }
                     Some(crate::drag_drop::HoverTarget::TitlebarPaneArea) => {
-                        self.handle_focus_area(FocusArea::PaneArea);
+                        self.handle_focus_area(FocusArea::Stage);
                         return;
                     }
                     _ => {}
@@ -380,6 +380,17 @@ impl App {
                 }
             }
 
+            // Context area border
+            if self.dock_open {
+                if let Some(pa_rect) = self.pane_area_rect {
+                    let border_x = pa_rect.x + pa_rect.width;
+                    if (self.last_cursor_pos.x - border_x).abs() < 5.0 {
+                        self.dock_border_dragging = true;
+                        return;
+                    }
+                }
+            }
+
             // Sidebar border
             if let Some(ft_rect) = self.ft.rect {
                 let border_x = if self.sidebar_side == crate::LayoutSide::Left {
@@ -394,20 +405,10 @@ impl App {
             }
 
             // Pane tab drag init — check header_hit_zones first for accurate tab ID
-            // in multi-tab groups (visual_pane_rects only contains the active tab).
+            // Initiate pane drag from header tab bar click.
             {
                 let pos = self.last_cursor_pos;
-                let mut tab_pane_id = None;
-                for zone in &self.header_hit_zones {
-                    if zone.rect.contains(pos) {
-                        if let crate::header::HeaderHitAction::Tab(id) = zone.action {
-                            tab_pane_id = Some(id);
-                            break;
-                        }
-                    }
-                }
-                // Fall back to pane_at_tab_bar for single-pane headers (no Tab hit zones).
-                let drag_pane = tab_pane_id.or_else(|| self.pane_at_tab_bar(pos));
+                let drag_pane = self.pane_at_tab_bar(pos);
                 if let Some(pane_id) = drag_pane {
                     self.interaction.pane_drag = PaneDragState::PendingDrag {
                         source_pane: pane_id,
@@ -486,6 +487,13 @@ impl App {
             return;
         }
 
+        if self.dock_border_dragging {
+            self.dock_border_dragging = false;
+            self.compute_layout();
+            self.cache.invalidate_chrome();
+            return;
+        }
+
         let drag_state = std::mem::replace(&mut self.interaction.pane_drag, PaneDragState::Idle);
         match drag_state {
             PaneDragState::Dragging {
@@ -497,11 +505,10 @@ impl App {
                 return;
             }
             PaneDragState::PendingDrag { source_pane, .. } => {
-                // Switch to the clicked tab (handles both single and multi-tab groups)
-                self.layout.set_active_tab(source_pane);
+                // Focus the clicked pane
                 self.focused = Some(source_pane);
                 self.router.set_focused(source_pane);
-                self.focus_area = FocusArea::PaneArea;
+                self.focus_area = FocusArea::Stage;
                 if self.zoomed_pane.is_some() {
                     self.zoomed_pane = Some(source_pane);
                 }
@@ -570,6 +577,17 @@ impl App {
             let max_w = (logical.width - 200.0).max(80.0);
             let new_width = (pos.x - ws_x).max(80.0).min(max_w);
             self.ws.width = new_width;
+            self.compute_layout();
+            self.cache.invalidate_chrome();
+            return;
+        }
+
+        // Handle context area border resize
+        if self.dock_border_dragging {
+            let logical = self.logical_size();
+            let max_w = (logical.width - 200.0).max(100.0);
+            let new_width = (logical.width - pos.x - PANE_GAP).max(100.0).min(max_w);
+            self.dock_width = new_width;
             self.compute_layout();
             self.cache.invalidate_chrome();
             return;

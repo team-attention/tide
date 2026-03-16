@@ -72,6 +72,11 @@ pub struct TerminalPane {
     pub cursor_suppress: u8,
     /// Cached terminal context (cwd, git info, shell state).
     pub context: TerminalContext,
+    /// Panes bound to this terminal, displayed in the Dock.
+    /// SplitLayout with LeafGroup (TabGroup) leaves.
+    pub dock_layout: tide_layout::SplitLayout,
+    /// Last focused pane in this terminal's Dock.
+    pub dock_focused: Option<PaneId>,
 }
 
 impl TerminalPane {
@@ -80,6 +85,8 @@ impl TerminalPane {
         Ok(Self {
             id, backend, selection: None, search: None, cursor_suppress: 3,
             context: TerminalContext::default(),
+            dock_layout: tide_layout::SplitLayout::new(),
+            dock_focused: None,
         })
     }
 
@@ -90,6 +97,8 @@ impl TerminalPane {
         Self {
             id, backend, selection: None, search: None, cursor_suppress: 3,
             context: TerminalContext::default(),
+            dock_layout: tide_layout::SplitLayout::new(),
+            dock_focused: None,
         }
     }
 

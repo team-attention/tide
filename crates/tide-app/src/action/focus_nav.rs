@@ -3,6 +3,8 @@ use tide_editor::input::EditorAction;
 use tide_input::Direction;
 
 use crate::pane::PaneKind;
+#[allow(unused_imports)]
+use tide_core::LayoutEngine;
 use crate::ui_state::FocusArea;
 use crate::App;
 
@@ -37,7 +39,7 @@ impl App {
 
     /// Handle MoveFocus direction navigation between panes.
     pub(super) fn handle_move_focus(&mut self, direction: Direction) {
-        self.focus_area = FocusArea::PaneArea;
+        self.focus_area = FocusArea::Stage;
         self.modal.save_as_input = None;
         let current_id = match self.focused {
             Some(id) => id,
@@ -101,7 +103,22 @@ impl App {
         }
 
         if let Some((next_id, _)) = best {
-            self.focus_terminal(next_id);
+            // Detect which region the target pane is in
+            if self.is_pane_in_dock(next_id) {
+                self.focus_area = FocusArea::Dock;
+                self.focused = Some(next_id);
+                self.router.set_focused(next_id);
+                // Update the dock_focused on the owning terminal
+                if let Some(tid) = self.terminal_owning(next_id) {
+                    if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                        tp.dock_focused = Some(next_id);
+                        tp.dock_layout.set_active_tab(next_id);
+                    }
+                }
+                self.cache.invalidate_chrome();
+            } else {
+                self.focus_terminal(next_id);
+            }
         }
     }
 

@@ -113,7 +113,6 @@ impl App {
             if let PaneKind::Diff(dp) = pane {
                 if dp.cwd == cwd {
                     dp.refresh();
-                    self.layout.set_active_tab(tab_id);
                     self.focused = Some(tab_id);
                     self.router.set_focused(tab_id);
                     self.cache.invalidate_chrome();
@@ -123,12 +122,11 @@ impl App {
             }
         }
 
-        // Create new DiffPane as a tab
+        // Create new DiffPane as a split next to focused
         let new_id = self.layout.alloc_id();
         let dp = crate::diff_pane::DiffPane::new(new_id, cwd);
         self.panes.insert(new_id, PaneKind::Diff(dp));
-        self.layout.add_tab(focused, new_id);
-        self.layout.set_active_tab(new_id);
+        self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Vertical, false);
         self.focused = Some(new_id);
         self.router.set_focused(new_id);
         self.cache.invalidate_chrome();
