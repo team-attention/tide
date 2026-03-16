@@ -6,6 +6,7 @@ pub mod highlight;
 pub mod input;
 pub mod markdown;
 mod undo;
+pub mod wrap;
 
 use std::io;
 use std::path::Path;

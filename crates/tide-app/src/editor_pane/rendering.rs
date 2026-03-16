@@ -32,6 +32,10 @@ impl EditorPane {
             self.render_preview_grid(rect, renderer);
             return;
         }
+        if self.effective_soft_wrap() {
+            self.render_soft_wrap_grid(rect, renderer, gutter_text, gutter_active_text, ime_preedit, current_line_bg);
+            return;
+        }
         if self.diff_mode {
             if let Some(ref disk_content) = self.disk_content {
                 self.render_diff_grid(rect, renderer, gutter_text, disk_content,
@@ -211,6 +215,194 @@ impl EditorPane {
                     col += tab_size;
                 }
             }
+        }
+    }
+
+    /// Render the editor grid with soft wrapping (prose files).
+    fn render_soft_wrap_grid(
+        &self,
+        rect: Rect,
+        renderer: &mut WgpuRenderer,
+        gutter_text: Color,
+        gutter_active_text: Color,
+        ime_preedit: &str,
+        current_line_bg: Color,
+    ) {
+        let wrap_map = match self.wrap_map() {
+            Some(m) => m,
+            None => return,
+        };
+
+        let cell_size = renderer.cell_size();
+        let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+        let content_x = rect.x + gutter_width;
+        let scrollbar_reserved = if self.needs_scrollbar_soft_wrap(rect, cell_size.height) {
+            SCROLLBAR_WIDTH
+        } else {
+            0.0
+        };
+        let content_width = (rect.width - gutter_width - scrollbar_reserved).max(0.0);
+        let wrap_cols = (content_width / cell_size.width).floor() as usize;
+
+        let visible_rows = (rect.height / cell_size.height).floor() as usize;
+        let scroll = self.editor.scroll_offset();
+        let cursor_pos = self.editor.cursor_position();
+        let cursor_line = cursor_pos.line;
+
+        // Calculate preedit width
+        let preedit_width = if !ime_preedit.is_empty() {
+            ime_preedit.chars()
+                .map(|c| c.width().unwrap_or(1))
+                .sum::<usize>()
+        } else {
+            0
+        };
+        let cursor_char_col = if preedit_width > 0 {
+            if let Some(line_text) = self.editor.buffer.line(cursor_line) {
+                let byte_col = cursor_pos.col.min(line_text.len());
+                line_text[..byte_col].chars().count()
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
+        // Get highlighted lines: we need enough logical lines to fill visible_rows visual rows.
+        // Start from scroll_offset and fetch enough lines.
+        // Worst case: every line is 1 visual row, so we need visible_rows logical lines.
+        // Best case: one line fills everything. Fetch up to visible_rows as a start,
+        // but may need more if lines don't wrap much.
+        let line_count = self.editor.buffer.line_count();
+        let fetch_lines = visible_rows.min(line_count.saturating_sub(scroll));
+        let highlighted = self.editor.visible_highlighted_lines(fetch_lines);
+
+        // Render: iterate logical lines, expanding each into visual sub-rows.
+        let mut vi = 0; // current visual row index on screen
+        for (li_offset, spans) in highlighted.iter().enumerate() {
+            let abs_line = scroll + li_offset;
+            if vi >= visible_rows {
+                break;
+            }
+
+            let sub_rows = wrap_map.visual_rows_for(abs_line);
+
+            for sub_row in 0..sub_rows {
+                if vi >= visible_rows {
+                    break;
+                }
+
+                let y = rect.y + vi as f32 * cell_size.height;
+                if y + cell_size.height > rect.y + rect.height {
+                    break;
+                }
+
+                // Current line highlight
+                if abs_line == cursor_line {
+                    let row_rect = Rect::new(rect.x, y, rect.width, cell_size.height);
+                    renderer.draw_grid_rect(row_rect, current_line_bg);
+                }
+
+                // Gutter: line number only on first sub-row
+                if sub_row == 0 {
+                    let line_num = format!("{:>4}  ", abs_line + 1);
+                    let gutter_color = if abs_line == cursor_line {
+                        gutter_active_text
+                    } else {
+                        gutter_text
+                    };
+                    let gutter_style = TextStyle {
+                        foreground: gutter_color,
+                        background: None,
+                        bold: false,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    };
+                    for (ci, ch) in line_num.chars().enumerate() {
+                        if ch != ' ' {
+                            renderer.draw_grid_cell(
+                                ch, vi, ci, gutter_style, cell_size,
+                                Vec2::new(rect.x, rect.y),
+                            );
+                        }
+                    }
+                }
+
+                // Content: draw characters for this sub-row.
+                // Compute the character range for this sub-row.
+                let sub_row_start_col = sub_row * wrap_cols;
+                let sub_row_end_col = sub_row_start_col + wrap_cols;
+
+                let mut display_col_abs = 0usize; // absolute display column in the line
+                let mut display_col = 0usize; // display column within this sub-row
+                let mut char_idx = 0usize;
+                let mut preedit_shifted = false;
+
+                // Walk spans to find characters belonging to this sub-row
+                for span in spans {
+                    for ch in span.text.chars() {
+                        if ch == '\n' {
+                            continue;
+                        }
+                        let char_w = ch.width().unwrap_or(1);
+
+                        // Check if this char starts on or after sub_row_end_col
+                        if display_col_abs >= sub_row_end_col {
+                            break;
+                        }
+
+                        // Check if this char is in this sub-row's range
+                        if display_col_abs + char_w > sub_row_start_col {
+                            // Handle wide char that would exceed sub-row boundary
+                            if display_col_abs < sub_row_start_col {
+                                // This wide char straddles the sub-row start — skip
+                                display_col_abs += char_w;
+                                char_idx += 1;
+                                continue;
+                            }
+
+                            // IME preedit shift
+                            if !preedit_shifted && preedit_width > 0
+                                && abs_line == cursor_line
+                                && char_idx >= cursor_char_col
+                            {
+                                display_col += preedit_width;
+                                preedit_shifted = true;
+                            }
+
+                            let px = content_x + display_col as f32 * cell_size.width;
+                            if px < content_x + content_width {
+                                if ch != ' ' || span.style.background.is_some() {
+                                    renderer.draw_grid_cell(
+                                        ch, vi, GUTTER_WIDTH_CELLS + display_col,
+                                        span.style, cell_size,
+                                        Vec2::new(rect.x, rect.y),
+                                    );
+                                }
+                            }
+                            display_col += char_w;
+                        }
+
+                        display_col_abs += char_w;
+                        char_idx += 1;
+                    }
+                    if display_col_abs >= sub_row_end_col {
+                        break;
+                    }
+                }
+
+                vi += 1;
+            }
+        }
+    }
+
+    /// Whether soft-wrapped content needs a scrollbar.
+    fn needs_scrollbar_soft_wrap(&self, rect: Rect, cell_height: f32) -> bool {
+        let visible_rows = (rect.height / cell_height).floor() as usize;
+        match self.wrap_map() {
+            Some(map) => map.total_visual_rows() > visible_rows,
+            None => self.editor.buffer.line_count() > visible_rows,
         }
     }
 
@@ -421,6 +613,11 @@ impl EditorPane {
     /// Render the editor cursor into the overlay layer (always redrawn).
     /// `preedit_width_cells` shifts the cursor rightward during IME composition.
     pub fn render_cursor(&self, rect: Rect, renderer: &mut WgpuRenderer, cursor_color: Color, preedit_width_cells: usize) {
+        if self.effective_soft_wrap() {
+            self.render_cursor_soft_wrap(rect, renderer, cursor_color, preedit_width_cells);
+            return;
+        }
+
         let cell_size = renderer.cell_size();
         let pos = self.editor.cursor_position();
         let scroll = self.editor.scroll_offset();
@@ -495,6 +692,53 @@ impl EditorPane {
         renderer.draw_top_rect(Rect::new(cx, cy, 2.0, cell_size.height), cursor_color);
     }
 
+    /// Render cursor for soft-wrapped mode.
+    fn render_cursor_soft_wrap(
+        &self,
+        rect: Rect,
+        renderer: &mut WgpuRenderer,
+        cursor_color: Color,
+        preedit_width_cells: usize,
+    ) {
+        let wrap_map = match self.wrap_map() {
+            Some(m) => m,
+            None => return,
+        };
+        let cell_size = renderer.cell_size();
+        let pos = self.editor.cursor_position();
+        let scroll = self.editor.scroll_offset();
+
+        // Compute the visual row offset from the top of the viewport.
+        // scroll_offset is in logical lines, so we need to compute visual rows
+        // consumed by lines before the cursor line that are above scroll.
+        let scroll_visual_row = wrap_map.visual_row_of_line(scroll);
+        let cursor_visual_row = wrap_map.buffer_pos_to_visual_row(
+            pos.line, pos.col, &self.editor.buffer.lines,
+        );
+        if cursor_visual_row < scroll_visual_row {
+            return;
+        }
+        let visual_row = cursor_visual_row - scroll_visual_row;
+
+        let visual_col_offset = wrap_map.buffer_pos_to_visual_col(
+            pos.line, pos.col, &self.editor.buffer.lines,
+        );
+        let visual_col = GUTTER_WIDTH_CELLS + visual_col_offset + preedit_width_cells;
+
+        let cx = rect.x + visual_col as f32 * cell_size.width;
+        let cy = rect.y + visual_row as f32 * cell_size.height;
+
+        if cy + cell_size.height > rect.y + rect.height {
+            return;
+        }
+        let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+        if cx > rect.x + rect.width || cx < rect.x + gutter_width {
+            return;
+        }
+
+        renderer.draw_top_rect(Rect::new(cx, cy, 2.0, cell_size.height), cursor_color);
+    }
+
     /// Whether the file is long enough to need a scrollbar.
     pub fn needs_scrollbar(&self, rect: Rect, cell_height: f32) -> bool {
         let visible_rows = (rect.height / cell_height).floor() as usize;
@@ -510,6 +754,13 @@ impl EditorPane {
         // In preview mode, use preview line count and scroll
         let (total_lines, scroll) = if self.preview_mode {
             (self.preview_line_count(), self.preview_scroll)
+        } else if self.effective_soft_wrap() {
+            if let Some(ref map) = self.wrap_map {
+                let scroll_vr = map.visual_row_of_line(self.editor.scroll_offset());
+                (map.total_visual_rows(), scroll_vr)
+            } else {
+                (self.editor.buffer.line_count(), self.editor.scroll_offset())
+            }
         } else {
             (self.editor.buffer.line_count(), self.editor.scroll_offset())
         };

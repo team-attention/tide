@@ -232,12 +232,14 @@ impl App {
         let ws_rect = self.ws.sidebar_rect?;
         let cs = self.cell_size();
         let name_h = cs.height;
+        let content_w = ws_rect.width - WS_SIDEBAR_PADDING * 2.0;
         let sub_h = cs.height * WS_SIDEBAR_SUB_SCALE;
+        let item_h = WS_SIDEBAR_ITEM_PAD_V * 2.0 + name_h + WS_SIDEBAR_LINE_GAP + sub_h;
         Some(WsSidebarGeometry {
             content_x: ws_rect.x + WS_SIDEBAR_PADDING,
-            content_w: ws_rect.width - WS_SIDEBAR_PADDING * 2.0,
+            content_w,
             start_y: ws_rect.y + PANE_CORNER_RADIUS + WS_SIDEBAR_PADDING,
-            item_h: WS_SIDEBAR_ITEM_PAD_V * 2.0 + name_h + WS_SIDEBAR_LINE_GAP + sub_h,
+            item_h,
             item_gap: WS_SIDEBAR_ITEM_GAP,
         })
     }

@@ -24,7 +24,7 @@ pub(crate) fn render_grid(
         }
     }
 
-    // Pre-compute preview caches for editor panes in preview mode
+    // Pre-compute preview caches and wrap maps for editor panes
     for &(id, rect) in visual_pane_rects {
         if let Some(PaneKind::Editor(pane)) = app.panes.get_mut(&id) {
             if pane.preview_mode {
@@ -32,6 +32,14 @@ pub(crate) fn render_grid(
                 // Reserve scrollbar width so wrapping matches the visible content area
                 let wrap_width = ((rect.width - 2.0 * PANE_PADDING - SCROLLBAR_WIDTH) / cell_w).floor() as usize;
                 pane.ensure_preview_cache(wrap_width, app.dark_mode);
+            } else if pane.effective_soft_wrap() {
+                let cell_w = renderer.cell_size().width;
+                let gutter_width = crate::editor_pane::GUTTER_WIDTH_CELLS as f32 * cell_w;
+                let content_width = (rect.width - 2.0 * PANE_PADDING - gutter_width - SCROLLBAR_WIDTH).max(0.0);
+                let wrap_cols = (content_width / cell_w).floor() as usize;
+                if wrap_cols > 0 {
+                    pane.ensure_wrap_map(wrap_cols);
+                }
             }
         }
     }
