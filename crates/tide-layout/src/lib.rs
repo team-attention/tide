@@ -441,6 +441,13 @@ impl SplitLayout {
         }
     }
 
+    /// Replace one pane ID with another in the layout tree (both Leaf and LeafGroup nodes).
+    pub fn replace_pane(&mut self, from: PaneId, to: PaneId) {
+        if let Some(ref mut root) = self.root {
+            root.replace_pane_id(from, to);
+        }
+    }
+
     /// Find the pane immediately to the right of the given pane.
     /// Returns `None` if the pane is already in the rightmost position.
     pub fn right_neighbor_pane(&self, pane: PaneId) -> Option<PaneId> {
