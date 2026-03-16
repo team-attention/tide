@@ -28,11 +28,19 @@ impl App {
 
         // If the key produced text and no command modifiers are held,
         // route via the text input system.
-        // Exception: skip text routing when the active editor is in preview mode
+        // Exception 1: navigation keys (arrows, Escape, Enter, Tab, Backspace, Delete)
+        // should not be routed as text even if the IME produced chars alongside them
+        // (e.g., Korean IME commits composition on arrow press).
+        // Exception 2: skip text routing when the active editor is in preview mode
         // AND no search bar is active, so keys like j/k/d/u fall through to
         // the preview scroll handler.
+        let is_navigation_key = matches!(key,
+            Key::Up | Key::Down | Key::Left | Key::Right |
+            Key::Escape | Key::Enter | Key::Tab | Key::Backspace | Key::Delete |
+            Key::Home | Key::End | Key::PageUp | Key::PageDown
+        );
         if let Some(ref text) = chars {
-            if !modifiers.meta && !modifiers.ctrl && !modifiers.alt {
+            if !is_navigation_key && !modifiers.meta && !modifiers.ctrl && !modifiers.alt {
                 let in_preview = self.search_focus.is_none()
                     && self.focused
                         .and_then(|id| self.panes.get(&id))

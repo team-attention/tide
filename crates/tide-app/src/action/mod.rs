@@ -122,9 +122,14 @@ impl App {
         match target {
             FocusArea::FileTree => {
                 if self.focus_area == FocusArea::FileTree {
-                    // Focused → hide + return to Stage
+                    // Focused → hide + return to previous area
                     self.ft.visible = false;
-                    self.focus_area = FocusArea::Stage;
+                    // Restore focus to Dock if focused pane is in dock, otherwise Stage
+                    if self.focused.map(|f| self.is_pane_in_dock(f)).unwrap_or(false) {
+                        self.focus_area = FocusArea::Dock;
+                    } else {
+                        self.focus_area = FocusArea::Stage;
+                    }
                     self.cache.invalidate_chrome();
                     self.compute_layout();
                 } else if self.ft.visible {
@@ -259,10 +264,8 @@ impl App {
         self.cache.invalidate_chrome();
     }
 
-    /// Cycle through panes in the current area's stacked mode, or navigate
-    /// between panes in split mode.
-    /// Cmd+I/O: cycle tabs within the Dock only.
-    /// If the Dock has panes, cycles through them (switching focus to Dock if needed).
+    /// Cmd+I/O: cycle tabs within the Dock without changing focus_area.
+    /// Updates dock_focused and active tab, but keeps keyboard focus where it is.
     /// No-op if the focused terminal has no dock panes.
     fn cycle_tab(&mut self, direction: i32) {
         let tid = match self.focused_terminal_id() {
@@ -288,14 +291,16 @@ impl App {
         };
         let next_id = pane_ids[next_pos];
 
-        // Update dock state
+        // Update dock tab state
         if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
             tp.dock_focused = Some(next_id);
             tp.dock_layout.set_active_tab(next_id);
         }
-        self.focused = Some(next_id);
-        self.router.set_focused(next_id);
-        self.focus_area = FocusArea::Dock;
+        // If Dock is focused, move the focus cursor too (so border follows)
+        if self.focus_area == FocusArea::Dock {
+            self.focused = Some(next_id);
+            self.router.set_focused(next_id);
+        }
         self.dock_open = true;
         // Update dock zoom target if zoomed
         if self.dock_zoomed_pane.is_some() {
