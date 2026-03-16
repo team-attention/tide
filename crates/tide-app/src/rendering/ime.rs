@@ -150,31 +150,6 @@ fn render_editor_ime_preedit(
     let pos = pane.editor.cursor_position();
     let scroll = pane.editor.scroll_offset();
     let h_scroll = pane.editor.h_scroll_offset();
-
-    if pos.line < scroll {
-        return;
-    }
-    let visual_row = pos.line - scroll;
-
-    // Convert byte offset to char index
-    let cursor_char_col = if let Some(line_text) = pane.editor.buffer.line(pos.line) {
-        let byte_col = pos.col.min(line_text.len());
-        line_text[..byte_col].chars().count()
-    } else {
-        0
-    };
-    if cursor_char_col < h_scroll {
-        return;
-    }
-    let visual_col_offset = if let Some(line_text) = pane.editor.buffer.line(pos.line) {
-        line_text.chars()
-            .skip(h_scroll)
-            .take(cursor_char_col - h_scroll)
-            .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
-            .sum::<usize>()
-    } else {
-        cursor_char_col - h_scroll
-    };
     let gutter_cells = crate::editor_pane::GUTTER_WIDTH_CELLS;
 
     // Determine the rect for this editor pane
@@ -186,6 +161,53 @@ fn render_editor_ime_preedit(
     };
 
     let gutter_width = gutter_cells as f32 * cell_size.width;
+
+    // Compute visual row and column — soft wrap aware
+    let (visual_row, visual_col_offset) = if pane.effective_soft_wrap() {
+        if let Some(wrap_map) = pane.wrap_map() {
+            let scroll_vr = wrap_map.visual_row_of_line(scroll);
+            let cursor_vr = wrap_map.buffer_pos_to_visual_row(
+                pos.line, pos.col, &pane.editor.buffer.lines,
+            );
+            if cursor_vr < scroll_vr {
+                return;
+            }
+            let vr = cursor_vr - scroll_vr;
+            let vc = wrap_map.buffer_pos_to_visual_col(
+                pos.line, pos.col, &pane.editor.buffer.lines,
+            );
+            (vr, vc)
+        } else {
+            return;
+        }
+    } else {
+        if pos.line < scroll {
+            return;
+        }
+        let visual_row = pos.line - scroll;
+
+        // Convert byte offset to char index
+        let cursor_char_col = if let Some(line_text) = pane.editor.buffer.line(pos.line) {
+            let byte_col = pos.col.min(line_text.len());
+            line_text[..byte_col].chars().count()
+        } else {
+            0
+        };
+        if cursor_char_col < h_scroll {
+            return;
+        }
+        let visual_col_offset = if let Some(line_text) = pane.editor.buffer.line(pos.line) {
+            line_text.chars()
+                .skip(h_scroll)
+                .take(cursor_char_col - h_scroll)
+                .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
+                .sum::<usize>()
+        } else {
+            cursor_char_col - h_scroll
+        };
+        (visual_row, visual_col_offset)
+    };
+
     let cx = inner_x + gutter_width + visual_col_offset as f32 * cell_size.width;
     let cy = inner_y + visual_row as f32 * cell_size.height;
 
