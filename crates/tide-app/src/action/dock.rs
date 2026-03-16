@@ -44,7 +44,28 @@ impl App {
     }
 
     /// Add a pane to the focused Terminal's dock.
+    /// If dock_focused is a placeholder Launcher, replaces it instead of adding a sibling tab.
     pub(crate) fn add_pane_to_dock(&mut self, new_pane_id: PaneId) {
+        // Check if we should replace a placeholder Launcher
+        let launcher_to_replace = self.dock_launcher_id()
+            .filter(|&lid| lid != new_pane_id); // don't replace self (e.g., ensure_dock_placeholder)
+
+        if let Some(launcher_id) = launcher_to_replace {
+            let tid = self.focused_terminal_id();
+            if let Some(tid) = tid {
+                if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                    tp.dock_layout.replace_pane(launcher_id, new_pane_id);
+                    tp.dock_focused = Some(new_pane_id);
+                    tp.dock_layout.set_active_tab(new_pane_id);
+                }
+                self.panes.remove(&launcher_id);
+                self.cleanup_closed_pane_state(launcher_id);
+                self.dock_open = true;
+                self.associated_terminal.insert(new_pane_id, tid);
+            }
+            return;
+        }
+
         if let Some(tid) = self.focused_terminal_id() {
             if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                 // Find first TabGroup and add as tab, or create new LeafGroup
@@ -210,9 +231,44 @@ impl App {
         self.dock_open = false;
     }
 
+    /// If Dock is open and the focused Terminal's dock_layout is empty,
+    /// create a placeholder Launcher so the Dock is never visually empty.
+    pub(crate) fn ensure_dock_placeholder(&mut self) {
+        if !self.dock_open { return; }
+        let tid = match self.focused_terminal_id() {
+            Some(id) => id,
+            None => return,
+        };
+        let is_empty = matches!(self.panes.get(&tid), Some(PaneKind::Terminal(tp)) if tp.dock_layout.all_pane_ids().is_empty());
+        if !is_empty { return; }
+
+        let new_id = self.layout.alloc_id();
+        self.panes.insert(new_id, PaneKind::Launcher(new_id));
+        self.ime.pending_creates.push(new_id);
+        // Temporarily focus the terminal so add_pane_to_dock routes correctly
+        let prev_focused = self.focused;
+        self.focused = Some(tid);
+        self.add_pane_to_dock(new_id);
+        self.focused = prev_focused;
+    }
+
+    /// Returns the dock_focused PaneId if it's a Launcher (placeholder).
+    /// Used to decide whether to replace the placeholder when opening a real pane.
+    pub(crate) fn dock_launcher_id(&self) -> Option<PaneId> {
+        let tid = self.focused_terminal_id()?;
+        if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+            if let Some(focused_id) = tp.dock_focused {
+                if matches!(self.panes.get(&focused_id), Some(PaneKind::Launcher(_))) {
+                    return Some(focused_id);
+                }
+            }
+        }
+        None
+    }
+
     /// Swap Dock content when terminal focus changes.
-    /// Dock stays open if any terminal has dock panes (prevents layout jumping).
-    /// Closes only when NO terminal has dock panes at all.
+    /// If Dock is open and the incoming terminal has no dock panes,
+    /// creates a placeholder Launcher.
     pub(crate) fn swap_dock_state(&mut self, _incoming_terminal: PaneId) {
         // Check if ANY terminal has dock panes — if none, close the dock.
         let any_has_dock = self.panes.values().any(|pk| {
@@ -223,6 +279,7 @@ impl App {
         if !any_has_dock {
             self.dock_open = false;
         }
+        self.ensure_dock_placeholder();
         self.cache.pane_generations.clear();
         self.cache.invalidate_chrome();
         self.compute_layout();
