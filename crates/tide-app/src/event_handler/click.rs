@@ -352,14 +352,30 @@ impl App {
                     HeaderHitAction::Maximize => {
                         // Toggle zoom for this pane
                         self.focus_terminal(zone.pane_id);
+                        if self.is_pane_in_dock(zone.pane_id) {
+                            // Dock pane: toggle dock_zoomed on the owning terminal
+                            if let Some(tid) = self.terminal_owning(zone.pane_id) {
+                                if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                                    tp.dock_zoomed = !tp.dock_zoomed;
+                                }
+                            }
+                        } else {
+                            // Stage pane: toggle zoomed_pane
+                            if self.zoomed_pane == Some(zone.pane_id) {
+                                self.zoomed_pane = None;
+                            } else {
+                                self.zoomed_pane = Some(zone.pane_id);
+                            }
+                        }
                         self.cache.invalidate_chrome();
+                        self.cache.pane_generations.clear();
                         self.compute_layout();
                         self.cache.needs_redraw = true;
                         return true;
                     }
                     HeaderHitAction::DockTab(target_pane_id) => {
                         // Switch to the clicked tab in the Dock TabGroup
-                        if let Some(tid) = self.focused_terminal_id() {
+                        if let Some(tid) = self.terminal_owning(target_pane_id) {
                             if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                                 tp.dock_focused = Some(target_pane_id);
                                 tp.dock_layout.set_active_tab(target_pane_id);
