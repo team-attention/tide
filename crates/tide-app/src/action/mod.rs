@@ -53,13 +53,30 @@ impl App {
 
     /// Switch primary focus to a pane, setting focus to Stage.
     pub(crate) fn focus_terminal(&mut self, id: tide_core::PaneId) {
+        // If the pane is in the Dock, focus it there without disrupting dock state
+        if self.is_pane_in_dock(id) {
+            self.focus_area = FocusArea::Dock;
+            self.focused = Some(id);
+            self.router.set_focused(id);
+            // Update dock_focused on the owning terminal
+            if let Some(tid) = self.terminal_owning(id) {
+                if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                    tp.dock_focused = Some(id);
+                    tp.dock_layout.set_active_tab(id);
+                }
+            }
+            self.cache.invalidate_chrome();
+            self.sync_browser_webview_frames();
+            return;
+        }
+
         self.focus_area = FocusArea::Stage;
         if self.focused == Some(id) {
             return;
         }
         self.focused = Some(id);
         self.router.set_focused(id);
-        // Swap drawer state when switching between terminals
+        // Swap dock state when switching between terminals
         if matches!(self.panes.get(&id), Some(crate::pane::PaneKind::Terminal(_)) | Some(crate::pane::PaneKind::Launcher(_))) {
             self.swap_dock_state(id);
         }
@@ -147,7 +164,41 @@ impl App {
                 self.navigate_file_tree(direction);
             }
             FocusArea::Stage | FocusArea::Dock => {
-                self.handle_move_focus(direction);
+                // HJKL always operates in Stage — navigate between terminals.
+                // If focus is in Dock, first resolve the owning Stage terminal.
+                let stage_current = self.focused_terminal_id();
+
+                if self.zoomed_pane.is_some() {
+                    // Stacked mode: H/L cycle terminals, J/K ignored
+                    let dir = match direction {
+                        tide_input::Direction::Left => -1,
+                        tide_input::Direction::Right => 1,
+                        _ => return,
+                    };
+                    let ids = self.layout.pane_ids();
+                    if ids.len() < 2 { return; }
+                    let current = stage_current.unwrap_or_else(|| self.focused.unwrap_or(0));
+                    if let Some(pos) = ids.iter().position(|&id| id == current) {
+                        let next_pos = if dir > 0 {
+                            (pos + 1) % ids.len()
+                        } else {
+                            (pos + ids.len() - 1) % ids.len()
+                        };
+                        let next_id = ids[next_pos];
+                        self.zoomed_pane = Some(next_id);
+                        self.focus_terminal(next_id);
+                        self.compute_layout();
+                    }
+                } else {
+                    // Split mode: if focus was in Dock, move focus to the owning terminal first
+                    if self.focus_area == FocusArea::Dock {
+                        if let Some(tid) = stage_current {
+                            self.focused = Some(tid);
+                            self.router.set_focused(tid);
+                        }
+                    }
+                    self.handle_move_focus(direction);
+                }
             }
         }
     }
@@ -158,8 +209,12 @@ impl App {
     pub(crate) fn handle_toggle_stacked(&mut self) {
         match self.focus_area {
             FocusArea::Dock => {
-                // Toggle Dock between Split and Stacked — currently no-op
-                // (Dock stacked mode will be implemented with a separate ViewMode field)
+                // Toggle Dock zoom: show only the focused dock pane
+                if self.dock_zoomed_pane.is_some() {
+                    self.dock_zoomed_pane = None;
+                } else {
+                    self.dock_zoomed_pane = self.focused;
+                }
                 self.cache.pane_generations.clear();
                 self.cache.invalidate_chrome();
                 self.compute_layout();
@@ -206,63 +261,48 @@ impl App {
 
     /// Cycle through panes in the current area's stacked mode, or navigate
     /// between panes in split mode.
+    /// Cmd+I/O: cycle tabs within the Dock only.
+    /// If the Dock has panes, cycles through them (switching focus to Dock if needed).
+    /// No-op if the focused terminal has no dock panes.
     fn cycle_tab(&mut self, direction: i32) {
-        match self.focus_area {
-            FocusArea::Dock => {
-                // Dock tab cycling: use all_tabs_flat for linear navigation
-                if let Some(tid) = self.focused_terminal_id() {
-                    if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
-                        let pane_ids = tp.dock_layout.all_tabs_flat();
-                        if pane_ids.len() < 2 { return; }
-                        let current = tp.dock_focused;
-                        if let Some(current) = current {
-                            if let Some(pos) = pane_ids.iter().position(|&id| id == current) {
-                                let next_pos = if direction > 0 {
-                                    (pos + 1) % pane_ids.len()
-                                } else {
-                                    (pos + pane_ids.len() - 1) % pane_ids.len()
-                                };
-                                let next_id = pane_ids[next_pos];
-                                // Update dock_focused and active tab
-                                if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                                    tp.dock_focused = Some(next_id);
-                                    tp.dock_layout.set_active_tab(next_id);
-                                }
-                                self.focused = Some(next_id);
-                                self.router.set_focused(next_id);
-                                self.cache.invalidate_chrome();
-                                self.compute_layout();
-                            }
-                        }
-                    }
-                }
-            }
-            FocusArea::Stage => {
-                if self.terminal_view_mode == crate::ui_state::ViewMode::Stacked {
-                    // Stage stacked: cycle through terminals in the layout
-                    let terminal_ids = self.layout.pane_ids();
-                    if terminal_ids.len() < 2 { return; }
-                    if let Some(current) = self.focused {
-                        if let Some(pos) = terminal_ids.iter().position(|&id| id == current) {
-                            let next_pos = if direction > 0 {
-                                (pos + 1) % terminal_ids.len()
-                            } else {
-                                (pos + terminal_ids.len() - 1) % terminal_ids.len()
-                            };
-                            let next_id = terminal_ids[next_pos];
-                            self.zoomed_pane = Some(next_id);
-                            self.focus_terminal(next_id);
-                            self.swap_dock_state(next_id);
-                            self.compute_layout();
-                        }
-                    }
-                } else {
-                    // Split mode: cycle through panes in the layout
-                    self.navigate_panes(direction);
-                }
-            }
-            FocusArea::FileTree => {} // no-op
+        let tid = match self.focused_terminal_id() {
+            Some(id) => id,
+            None => return,
+        };
+        let pane_ids = match self.panes.get(&tid) {
+            Some(PaneKind::Terminal(tp)) => tp.dock_layout.all_tabs_flat(),
+            _ => return,
+        };
+        if pane_ids.is_empty() { return; }
+
+        // Find current position in the flat tab list
+        let current = match self.panes.get(&tid) {
+            Some(PaneKind::Terminal(tp)) => tp.dock_focused,
+            _ => None,
+        };
+        let pos = current.and_then(|c| pane_ids.iter().position(|&id| id == c)).unwrap_or(0);
+        let next_pos = if direction > 0 {
+            (pos + 1) % pane_ids.len()
+        } else {
+            (pos + pane_ids.len() - 1) % pane_ids.len()
+        };
+        let next_id = pane_ids[next_pos];
+
+        // Update dock state
+        if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+            tp.dock_focused = Some(next_id);
+            tp.dock_layout.set_active_tab(next_id);
         }
+        self.focused = Some(next_id);
+        self.router.set_focused(next_id);
+        self.focus_area = FocusArea::Dock;
+        self.dock_open = true;
+        // Update dock zoom target if zoomed
+        if self.dock_zoomed_pane.is_some() {
+            self.dock_zoomed_pane = Some(next_id);
+        }
+        self.cache.invalidate_chrome();
+        self.compute_layout();
     }
 
     pub(crate) fn handle_action(&mut self, action: Action, event: Option<InputEvent>) {
