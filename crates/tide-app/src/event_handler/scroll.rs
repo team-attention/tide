@@ -83,7 +83,17 @@ impl App {
                     Some(PaneKind::Editor(pane)) if pane.preview_mode => {
                         let delta = (editor_dx.abs() * 3.0).ceil() as usize;
                         let max_w = pane.preview_max_line_width();
-                        let preview_visible_cols = (rect.width / cs.width).floor() as usize;
+                        // Match render_preview_grid's code block visible_cols:
+                        // inner_w = visual_rect.width - 2*PANE_PADDING (same as render inner rect)
+                        // bg_width = inner_w - scrollbar_reserved - 2*cell_width (right padding)
+                        let inner_w = rect.width - 2.0 * PANE_PADDING;
+                        let scrollbar_reserved = if pane.preview_line_count() > ((rect.height - TAB_BAR_HEIGHT - PANE_PADDING) / cs.height).floor() as usize {
+                            SCROLLBAR_WIDTH
+                        } else {
+                            0.0
+                        };
+                        let code_block_w = (inner_w - scrollbar_reserved - 2.0 * cs.width).max(0.0);
+                        let preview_visible_cols = (code_block_w / cs.width).floor() as usize;
                         let max_h_scroll = max_w.saturating_sub(preview_visible_cols);
                         if editor_dx > 0.0 {
                             pane.preview_h_scroll = pane.preview_h_scroll.saturating_sub(delta);

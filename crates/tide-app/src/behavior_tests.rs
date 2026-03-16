@@ -1156,6 +1156,59 @@ mod workspace_behavior {
         assert_eq!(app.ws.workspaces.len(), 1);
     }
 
+    #[test]
+    fn switching_workspace_preserves_view_mode() {
+        // UC-1 BR-10: Switching preserves each Workspace's ViewMode (Split/Stacked)
+        use crate::ui_state::ViewMode;
+        let mut app = app_with_two_workspaces();
+        assert_eq!(app.ws.active, 0);
+
+        // Set WS1 to Stacked
+        app.terminal_view_mode = ViewMode::Stacked;
+
+        // Switch to WS2 — should be Split (default)
+        app.switch_workspace(1);
+        assert_eq!(app.terminal_view_mode, ViewMode::Split);
+
+        // Switch back to WS1 — should be Stacked
+        app.switch_workspace(0);
+        assert_eq!(app.terminal_view_mode, ViewMode::Stacked);
+    }
+
+    #[test]
+    fn switching_workspace_preserves_zoomed_pane() {
+        // UC-1 BR-11: Switching preserves each Workspace's zoomed_pane
+        let mut app = app_with_two_workspaces();
+
+        // Set WS1 zoomed_pane
+        app.zoomed_pane = Some(100);
+
+        // Switch to WS2 — should have no zoomed pane
+        app.switch_workspace(1);
+        assert_eq!(app.zoomed_pane, None);
+
+        // Switch back to WS1 — should restore zoomed_pane
+        app.switch_workspace(0);
+        assert_eq!(app.zoomed_pane, Some(100));
+    }
+
+    #[test]
+    fn switching_workspace_preserves_focus_area() {
+        // UC-1 BR-12: Switching preserves each Workspace's FocusArea
+        let mut app = app_with_two_workspaces();
+
+        // Set WS1 to Dock focus
+        app.focus_area = FocusArea::Dock;
+
+        // Switch to WS2 — should be Stage (default)
+        app.switch_workspace(1);
+        assert_eq!(app.focus_area, FocusArea::Stage);
+
+        // Switch back to WS1 — should restore Dock
+        app.switch_workspace(0);
+        assert_eq!(app.focus_area, FocusArea::Dock);
+    }
+
     // --- UC-3: ToggleWorkspaceSidebar ---
 
     #[test]

@@ -40,6 +40,9 @@ Switching = **save current → update index → load target**.
   - BR-4: WorkspacePrev wraps from first to last
   - BR-5: WorkspaceNext wraps from last to first
   - BR-6: Full pane_generations invalidation on switch (forces complete redraw)
+  - BR-10: Switching preserves each Workspace's ViewMode (Split/Stacked)
+  - BR-11: Switching preserves each Workspace's zoomed_pane
+  - BR-12: Switching preserves each Workspace's FocusArea
 
 ### UC-2: CloseWorkspace
 
@@ -86,6 +89,7 @@ Switching = **save current → update index → load target**.
 2. **No shared PaneIds**: A PaneId belongs to exactly one Workspace
 3. **Full invalidation on switch**: All pane_generations cleared to force complete redraw
 4. **IME proxy sync**: After load, IME proxies must be recreated for new panes
+5. **Per-workspace view state**: ViewMode, zoomed_pane, and FocusArea are per-Workspace state stored in WorkspaceExtras
 
 ## Tests
 
@@ -99,6 +103,9 @@ Switching = **save current → update index → load target**.
 | UC-2: CloseWorkspace | BR-7 | `closing_only_workspace_in_workspace_manager_is_a_no_op` |
 | UC-2: CloseWorkspace | BR-8 | `closing_workspace_removes_from_workspace_manager_and_switches` |
 | UC-3: ToggleSidebar | BR-9 | `toggling_workspace_sidebar_toggles_visibility` |
+| UC-1: SwitchWorkspace | BR-10 | `switching_workspace_preserves_view_mode` |
+| UC-1: SwitchWorkspace | BR-11 | `switching_workspace_preserves_zoomed_pane` |
+| UC-1: SwitchWorkspace | BR-12 | `switching_workspace_preserves_focus_area` |
 
 ## Location
 
