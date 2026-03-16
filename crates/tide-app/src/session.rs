@@ -45,6 +45,10 @@ pub struct Session {
     pub sidebar_outer: bool,
     #[serde(default = "default_ws_sidebar_width")]
     pub ws_sidebar_width: f32,
+    #[serde(default)]
+    pub show_workspace_sidebar: bool,
+    #[serde(default)]
+    pub dock_open: bool,
 }
 
 fn default_sidebar_side() -> String {
@@ -202,6 +206,8 @@ impl Session {
             },
             sidebar_outer: true, // sidebar is always outermost
             ws_sidebar_width: app.ws.width,
+            show_workspace_sidebar: app.ws.show_sidebar,
+            dock_open: app.dock_open,
         }
     }
 }
@@ -329,6 +335,7 @@ impl App {
         self.ft.visible = session.show_file_tree;
         self.ft.width = session.file_tree_width;
         self.ws.width = session.ws_sidebar_width;
+        self.ws.show_sidebar = session.show_workspace_sidebar;
         // Restore dock data from separate file
         if let Some(ctx) = load_context_area_session() {
             self.dock_open = ctx.context_area_open;
@@ -389,8 +396,11 @@ impl App {
     /// Restore only preferences (window size, theme, panel widths) from a session,
     /// then create a fresh initial pane. Used after intentional quit.
     pub(crate) fn restore_preferences(&mut self, session: &Session, early_terminal: Option<tide_terminal::Terminal>) {
+        self.ft.visible = session.show_file_tree;
         self.ft.width = session.file_tree_width;
         self.ws.width = session.ws_sidebar_width;
+        self.ws.show_sidebar = session.show_workspace_sidebar;
+        self.dock_open = session.dock_open;
         self.dark_mode = session.dark_mode;
         self.sidebar_side = match session.sidebar_side.as_str() {
             "right" => crate::LayoutSide::Right,
@@ -404,6 +414,17 @@ impl App {
         }
 
         self.create_initial_pane(early_terminal);
+    }
+}
+
+impl App {
+    /// Save both session files (main + context area).
+    /// Used by all exit/auto-save paths.
+    pub(crate) fn save_full_session(&self) {
+        let session = Session::from_app(self);
+        save_session(&session);
+        let context_area = SessionContextArea::from_app(self);
+        save_context_area_session(&context_area);
     }
 }
 
@@ -513,6 +534,8 @@ mod tests {
             sidebar_side: "left".to_string(),
             sidebar_outer: true,
             ws_sidebar_width: 200.0,
+            show_workspace_sidebar: false,
+            dock_open: false,
         };
         let json = serde_json::to_string(&session).unwrap();
         let restored: Session = serde_json::from_str(&json).unwrap();

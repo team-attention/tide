@@ -115,22 +115,21 @@ impl App {
         self.compute_layout();
     }
 
-    /// Create a new Launcher pane. Routes by FocusArea:
-    /// - Stage → split in Stage layout (creates new terminal slot)
-    /// - Dock → add tab to current TabGroup in Dock
+    /// Create a new pane. Routes by FocusArea:
+    /// - Stage → create Terminal directly (no Launcher)
+    /// - Dock → add Launcher tab to current TabGroup in Dock
     pub(crate) fn new_terminal_tab(&mut self) {
         let focused = match self.focused {
             Some(id) => id,
             None => return,
         };
 
-        let new_id = self.layout.alloc_id();
-        self.panes.insert(new_id, PaneKind::Launcher(new_id));
-        self.ime.pending_creates.push(new_id);
-
         match self.focus_area {
             crate::ui_state::FocusArea::Dock => {
-                // Add as tab in the Dock
+                // Dock: Launcher for multi-type pane selection
+                let new_id = self.layout.alloc_id();
+                self.panes.insert(new_id, PaneKind::Launcher(new_id));
+                self.ime.pending_creates.push(new_id);
                 if let Some(tid) = self.focused_terminal_id() {
                     self.associated_terminal.insert(new_id, tid);
                     if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
@@ -145,22 +144,24 @@ impl App {
                     self.dock_open = true;
                     self.focus_area = crate::ui_state::FocusArea::Dock;
                 }
+                self.focused = Some(new_id);
+                self.router.set_focused(new_id);
             }
             _ => {
-                // Split in Stage layout
+                // Stage: create Terminal directly
+                let new_id = self.layout.alloc_id();
                 self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Vertical, false);
                 if self.zoomed_pane.is_some() {
                     self.zoomed_pane = Some(new_id);
                 }
-                if let Some(tid) = self.focused_terminal_id() {
-                    self.associated_terminal.insert(new_id, tid);
-                }
+                let cwd = self.focused_terminal_cwd();
+                self.create_terminal_pane(new_id, cwd);
                 self.focus_area = crate::ui_state::FocusArea::Stage;
+                self.focused = Some(new_id);
+                self.router.set_focused(new_id);
             }
         }
 
-        self.focused = Some(new_id);
-        self.router.set_focused(new_id);
         self.cache.invalidate_chrome();
         self.compute_layout();
     }
@@ -217,9 +218,9 @@ impl App {
     }
 
 
-    /// Split the focused pane and show a Launcher.
+    /// Split the focused pane.
     /// Routes to the correct layout based on focus_area:
-    /// - Stage → split in main layout
+    /// - Stage → create Terminal directly in main layout
     /// - Dock → split in dock layout (new LeafGroup with Launcher)
     pub(crate) fn split_with_launcher(&mut self, direction: tide_core::SplitDirection) {
         let focused = match self.focused {
@@ -228,7 +229,7 @@ impl App {
         };
         match self.focus_area {
             crate::ui_state::FocusArea::Dock => {
-                // Split in the dock layout
+                // Split in the dock layout (Launcher for multi-type selection)
                 if let Some(tid) = self.focused_terminal_id() {
                     let new_id = self.layout.alloc_id();
                     self.panes.insert(new_id, PaneKind::Launcher(new_id));
@@ -236,7 +237,6 @@ impl App {
                     self.associated_terminal.insert(new_id, tid);
                     if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                         if let Some(dock_focused) = tp.dock_focused {
-                            // Split the node containing the focused pane, creating a LeafGroup
                             tp.dock_layout.split_with_leaf_group(dock_focused, new_id, direction);
                         } else {
                             tp.dock_layout.insert_leaf_group(new_id);
@@ -253,18 +253,13 @@ impl App {
                     self.zoomed_pane = None;
                     self.cache.pane_generations.clear();
                 }
-                // Resolve context terminal BEFORE changing focus
-                let context_tid = self.focused_terminal_id();
-                // Split in the main terminal layout
+                // Stage: create Terminal directly
+                let cwd = self.focused_terminal_cwd();
                 let new_id = self.layout.split(focused, direction);
-                self.panes.insert(new_id, PaneKind::Launcher(new_id));
-                self.ime.pending_creates.push(new_id);
+                self.create_terminal_pane(new_id, cwd);
                 self.focused = Some(new_id);
                 self.router.set_focused(new_id);
                 self.focus_area = crate::ui_state::FocusArea::Stage;
-                if let Some(tid) = context_tid {
-                    self.associated_terminal.insert(new_id, tid);
-                }
             }
         }
         self.cache.invalidate_chrome();
@@ -555,10 +550,7 @@ impl App {
                 self.close_workspace();
                 return;
             }
-            let session = crate::session::Session::from_app(self);
-            crate::session::save_session(&session);
-            crate::session::delete_running_marker();
-            std::process::exit(0);
+            self.exit_app();
         }
 
         self.cache.pane_generations.clear();
@@ -707,9 +699,10 @@ impl App {
                 self.close_workspace();
                 return;
             }
-            let session = crate::session::Session::from_app(self);
-            crate::session::save_session(&session);
-            std::process::exit(0);
+            // Show confirmation before closing the last pane
+            self.modal.close_app_confirm = true;
+            self.cache.invalidate_chrome();
+            return;
         }
 
         // Determine next focus target BEFORE removal so we can find a

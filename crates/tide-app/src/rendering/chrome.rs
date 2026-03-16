@@ -185,23 +185,28 @@ pub(crate) fn render_chrome(
                 btn_w
             };
 
-            // Render buttons: [Sidebar] [PaneArea] right-to-left
-            let areas = app.area_ordering();
-            let pane_icon = "\u{f009}"; // grid icon (split)
+            // Render buttons right-to-left: [Dock ⌘4] [FileTree ⌘2] [Workspace ⌘1]
             let mut cur_right = btn_right;
-            for (i, area) in areas.iter().enumerate().rev() {
-                let slot = i + 1;
-                let hint = format!("\u{2318}{}", slot);
-                let (icon, is_active, hover_variant) = match area {
-                    FocusArea::FileTree => ("\u{f07b}", app.ft.visible, HoverTarget::TitlebarFileTree),
-                    FocusArea::Stage | FocusArea::Dock => (pane_icon, matches!(app.focus_area, FocusArea::Stage | FocusArea::Dock), HoverTarget::TitlebarPaneArea),
-                };
-                let is_hovered = app.interaction.hover_target.as_ref() == Some(&hover_variant);
-                let w = render_titlebar_btn(
-                    renderer, icon, &hint, 2, cur_right, is_active, is_hovered,
-                );
-                cur_right -= w + TITLEBAR_BUTTON_GAP;
-            }
+
+            // Dock button
+            let w = render_titlebar_btn(
+                renderer, "\u{f009}", "\u{2318}4", 2, cur_right, app.dock_open,
+                app.interaction.hover_target.as_ref() == Some(&HoverTarget::TitlebarDock),
+            );
+            cur_right -= w + TITLEBAR_BUTTON_GAP;
+
+            // FileTree button
+            let w = render_titlebar_btn(
+                renderer, "\u{f07b}", "\u{2318}2", 2, cur_right, app.ft.visible,
+                app.interaction.hover_target.as_ref() == Some(&HoverTarget::TitlebarFileTree),
+            );
+            cur_right -= w + TITLEBAR_BUTTON_GAP;
+
+            // Workspace sidebar button
+            let _w = render_titlebar_btn(
+                renderer, "\u{f24d}", "\u{2318}1", 2, cur_right, app.ws.show_sidebar,
+                app.interaction.hover_target.as_ref() == Some(&HoverTarget::TitlebarWorkspace),
+            );
         }
     }
 

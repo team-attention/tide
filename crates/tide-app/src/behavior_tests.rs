@@ -427,12 +427,12 @@ mod pane_lifecycle {
     }
 
     #[test]
-    fn new_terminal_tab_creates_launcher_pane() {
-        // UC-1 BR-1: New tab is always a Launcher
+    fn new_terminal_tab_creates_terminal_pane_in_stage() {
+        // UC-1 BR-1: New tab in Stage creates a Terminal directly
         let (mut app, _) = app_with_editor();
         app.new_terminal_tab();
         let new_id = app.focused.unwrap();
-        assert!(matches!(app.panes.get(&new_id), Some(PaneKind::Launcher(_))));
+        assert!(matches!(app.panes.get(&new_id), Some(PaneKind::Terminal(_))));
         // Invariant: PaneId sync
         assert_eq!(app.layout.pane_ids().len(), app.panes.len());
     }
@@ -451,13 +451,13 @@ mod pane_lifecycle {
     }
 
     #[test]
-    fn split_focuses_new_launcher_pane() {
-        // UC-2 BR-4: Split always creates a Launcher
+    fn split_focuses_new_terminal_pane_in_stage() {
+        // UC-2 BR-4: Split in Stage creates a Terminal directly
         let (mut app, first_id) = app_with_editor();
         app.split_with_launcher(tide_core::SplitDirection::Vertical);
         assert_ne!(app.focused, Some(first_id));
         let new_id = app.focused.unwrap();
-        assert!(matches!(app.panes.get(&new_id), Some(PaneKind::Launcher(_))));
+        assert!(matches!(app.panes.get(&new_id), Some(PaneKind::Terminal(_))));
         // Invariant: PaneId sync
         assert_eq!(app.layout.pane_ids().len(), app.panes.len());
     }
@@ -476,15 +476,14 @@ mod pane_lifecycle {
     #[test]
     fn resolving_launcher_as_new_file_replaces_pane_kind_with_editor() {
         // UC-3 BR-7: Launcher is replaced in-place — PaneId does not change
+        // Launchers now only exist in Dock, so test with a Dock Launcher
         let (mut app, _first_id) = app_with_editor();
-        app.split_with_launcher(tide_core::SplitDirection::Vertical);
-        let launcher_id = app.focused.unwrap();
+        let launcher_id = app.layout.alloc_id();
+        app.panes.insert(launcher_id, PaneKind::Launcher(launcher_id));
         assert!(matches!(app.panes.get(&launcher_id), Some(PaneKind::Launcher(_))));
 
         app.resolve_launcher(launcher_id, crate::action::LauncherChoice::NewFile);
         assert!(matches!(app.panes.get(&launcher_id), Some(PaneKind::Editor(_))));
-        // Invariant: PaneId sync
-        assert_eq!(app.layout.pane_ids().len(), app.panes.len());
     }
 
     // --- UC-4: OpenFile ---
@@ -1161,13 +1160,13 @@ mod workspace_behavior {
 
     #[test]
     fn toggling_workspace_sidebar_toggles_visibility() {
-        // UC-3 BR-9: Toggle flips visibility state
+        // UC-3 BR-9: Toggle flips visibility state (default: closed)
         let mut app = test_app();
-        assert!(app.ws.show_sidebar);
-        app.handle_global_action(tide_input::GlobalAction::ToggleWorkspaceSidebar);
         assert!(!app.ws.show_sidebar);
         app.handle_global_action(tide_input::GlobalAction::ToggleWorkspaceSidebar);
         assert!(app.ws.show_sidebar);
+        app.handle_global_action(tide_input::GlobalAction::ToggleWorkspaceSidebar);
+        assert!(!app.ws.show_sidebar);
     }
 }
 
@@ -1549,12 +1548,12 @@ mod global_actions {
     }
 
     #[test]
-    fn new_tab_global_action_creates_launcher_pane() {
-        // UC-4 BR-29: NewTab creates Launcher Pane
+    fn new_tab_global_action_creates_terminal_pane_in_stage() {
+        // UC-4 BR-29: NewTab in Stage creates Terminal directly
         let (mut app, _) = app_with_editor();
         app.handle_global_action(GlobalAction::NewTab);
         let new_id = app.focused.unwrap();
-        assert!(matches!(app.panes.get(&new_id), Some(PaneKind::Launcher(_))));
+        assert!(matches!(app.panes.get(&new_id), Some(PaneKind::Terminal(_))));
         assert_eq!(app.layout.pane_ids().len(), app.panes.len());
     }
 
@@ -1724,6 +1723,8 @@ mod session_behavior {
             sidebar_side: "left".to_string(),
             sidebar_outer: true,
             ws_sidebar_width: 180.0,
+            show_workspace_sidebar: false,
+            dock_open: false,
         };
         let json = serde_json::to_string(&session).unwrap();
         let restored: Session = serde_json::from_str(&json).unwrap();
@@ -1744,6 +1745,8 @@ mod session_behavior {
             sidebar_side: "right".to_string(),
             sidebar_outer: true,
             ws_sidebar_width: 180.0,
+            show_workspace_sidebar: false,
+            dock_open: false,
         };
         let json = serde_json::to_string(&session).unwrap();
         let restored: Session = serde_json::from_str(&json).unwrap();
@@ -2653,5 +2656,129 @@ mod dock_placeholder_behavior {
         } else {
             panic!("t2 should be a Terminal");
         }
+    }
+}
+
+#[cfg(test)]
+mod titlebar_toggle_behavior {
+    // Spec: docs/specs/titlebar-buttons.md
+    use crate::pane::{PaneKind, TerminalPane};
+    use crate::editor_pane::EditorPane;
+    use crate::ui_state::FocusArea;
+    use crate::App;
+
+    fn test_app() -> App {
+        let mut app = App::new();
+        app.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+        app.window_size = (960, 640);
+        app
+    }
+
+    fn app_with_real_terminal() -> (App, u64) {
+        let mut app = test_app();
+        let (layout, tid) = tide_layout::SplitLayout::with_initial_pane();
+        app.layout = layout;
+        let tp = TerminalPane::with_cwd(tid, 80, 24, None, true).unwrap();
+        app.panes.insert(tid, PaneKind::Terminal(tp));
+        app.focused = Some(tid);
+        app.focus_area = FocusArea::Stage;
+        (app, tid)
+    }
+
+    // --- UC-1: ToggleFileTreeVisibility ---
+
+    #[test]
+    // UC-1 BR-1: Opening FileTree does not move focus
+    fn toggle_file_tree_visibility_opens_without_moving_focus() {
+        let (mut app, tid) = app_with_real_terminal();
+        app.ft.visible = false;
+        app.focus_area = FocusArea::Stage;
+
+        app.toggle_file_tree_visibility();
+
+        assert!(app.ft.visible);
+        assert_eq!(app.focus_area, FocusArea::Stage, "focus should stay on Stage");
+        assert_eq!(app.focused, Some(tid));
+    }
+
+    #[test]
+    // UC-1 BR-2: Closing FileTree when focused falls back to Stage
+    fn toggle_file_tree_visibility_closes_with_fallback_when_focused() {
+        let (mut app, _tid) = app_with_real_terminal();
+        app.ft.visible = true;
+        app.focus_area = FocusArea::FileTree;
+
+        app.toggle_file_tree_visibility();
+
+        assert!(!app.ft.visible);
+        assert_eq!(app.focus_area, FocusArea::Stage, "focus should fall back to Stage");
+    }
+
+    #[test]
+    // UC-1 BR-3: Closing FileTree when unfocused does not change focus
+    fn toggle_file_tree_visibility_closes_without_fallback_when_unfocused() {
+        let (mut app, tid) = app_with_real_terminal();
+        app.ft.visible = true;
+        app.focus_area = FocusArea::Stage;
+
+        app.toggle_file_tree_visibility();
+
+        assert!(!app.ft.visible);
+        assert_eq!(app.focus_area, FocusArea::Stage, "focus should remain on Stage");
+        assert_eq!(app.focused, Some(tid));
+    }
+
+    // --- UC-2: ToggleDockVisibility ---
+
+    #[test]
+    // UC-2 BR-1: Opening Dock does not move focus
+    fn toggle_dock_visibility_opens_without_moving_focus() {
+        let (mut app, tid) = app_with_real_terminal();
+        app.dock_open = false;
+        app.focus_area = FocusArea::Stage;
+
+        app.toggle_dock_visibility();
+
+        assert!(app.dock_open);
+        assert_eq!(app.focus_area, FocusArea::Stage, "focus should stay on Stage");
+        assert_eq!(app.focused, Some(tid));
+    }
+
+    #[test]
+    // UC-2 BR-2: Closing Dock when focused falls back to Stage
+    fn toggle_dock_visibility_closes_with_fallback_when_focused() {
+        let (mut app, tid) = app_with_real_terminal();
+        // Set up dock with a pane
+        let e1 = app.layout.alloc_id();
+        app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+        app.add_pane_to_dock(e1);
+        app.dock_open = true;
+        app.focus_area = FocusArea::Dock;
+        app.focused = Some(e1);
+
+        app.toggle_dock_visibility();
+
+        assert!(!app.dock_open);
+        assert_eq!(app.focus_area, FocusArea::Stage, "focus should fall back to Stage");
+        assert_eq!(app.focused, Some(tid), "focus should return to owner terminal");
+    }
+
+    #[test]
+    // UC-2 BR-3: Closing Dock when unfocused does not change focus
+    fn toggle_dock_visibility_closes_without_fallback_when_unfocused() {
+        let (mut app, tid) = app_with_real_terminal();
+        // Set up dock with a pane
+        let e1 = app.layout.alloc_id();
+        app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+        app.add_pane_to_dock(e1);
+        app.dock_open = true;
+        app.focus_area = FocusArea::Stage;
+        app.focused = Some(tid);
+
+        app.toggle_dock_visibility();
+
+        assert!(!app.dock_open);
+        assert_eq!(app.focus_area, FocusArea::Stage, "focus should remain on Stage");
+        assert_eq!(app.focused, Some(tid));
     }
 }
