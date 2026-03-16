@@ -368,10 +368,7 @@ impl App {
                             self.router.set_focused(target_pane_id);
                             self.focus_area = crate::ui_state::FocusArea::Dock;
                         }
-                        // Update dock zoom target if zoomed
-                        if self.dock_zoomed_pane.is_some() {
-                            self.dock_zoomed_pane = Some(target_pane_id);
-                        }
+                        // dock_zoomed follows dock_focused automatically (per-terminal)
                         self.cache.invalidate_chrome();
                         self.cache.pane_generations.clear();
                         self.compute_layout();
