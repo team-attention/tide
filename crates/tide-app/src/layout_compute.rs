@@ -483,23 +483,17 @@ impl App {
             let ctx_offset_x = terminal_offset_x + terminal_area.width + PANE_GAP;
             let ctx_size = Size::new(dock_width, logical.height - top);
 
-            // Clear dock zoom if the pane no longer exists
-            if let Some(zp) = self.dock_zoomed_pane {
-                if !self.panes.contains_key(&zp) {
-                    self.dock_zoomed_pane = None;
-                }
-            }
-
             let owner_terminal = self.focused_terminal_id();
             if let Some(tid) = owner_terminal {
                 if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
-                    // Dock zoom: show only the zoomed pane if it belongs to this terminal
-                    let is_dock_zoomed = self.dock_zoomed_pane
-                        .map(|zp| tp.dock_layout.all_pane_ids().contains(&zp))
-                        .unwrap_or(false);
+                    // Dock zoom: show only the focused dock pane when zoomed
+                    let dock_zoomed_pane = if tp.dock_zoomed {
+                        tp.dock_focused.filter(|zp| self.panes.contains_key(zp))
+                    } else {
+                        None
+                    };
 
-                    if is_dock_zoomed {
-                        let zp = self.dock_zoomed_pane.unwrap();
+                    if let Some(zp) = dock_zoomed_pane {
                         rects.push((zp, Rect::new(
                             ctx_offset_x, top,
                             dock_width, logical.height - top,
