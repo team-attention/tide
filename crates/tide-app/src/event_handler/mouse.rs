@@ -6,7 +6,6 @@ use tide_platform::WindowProxy;
 use crate::drag_drop::PaneDragState;
 use crate::pane::{PaneKind, Selection};
 use crate::theme::*;
-use crate::ui_state::FocusArea;
 use crate::App;
 
 impl App {
@@ -526,11 +525,10 @@ impl App {
                 return;
             }
             PaneDragState::PendingDrag { source_pane, .. } => {
-                // Focus the clicked pane
-                self.focused = Some(source_pane);
-                self.router.set_focused(source_pane);
-                self.focus_area = FocusArea::Stage;
-                if self.zoomed_pane.is_some() {
+                // Focus the clicked pane (handles Stage vs Dock correctly)
+                self.focus_terminal(source_pane);
+                // Only update zoomed_pane for stage panes
+                if self.zoomed_pane.is_some() && !self.is_pane_in_dock(source_pane) {
                     self.zoomed_pane = Some(source_pane);
                 }
                 self.cache.invalidate_chrome();

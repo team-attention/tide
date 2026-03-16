@@ -466,9 +466,9 @@ impl App {
         }
 
         // Zoom: if a pane is zoomed, override rects so only that pane is shown fullscreen.
-        // Clear zoom if the zoomed pane no longer exists.
+        // Clear zoom if the zoomed pane no longer exists or is a dock pane.
         if let Some(zp) = self.zoomed_pane {
-            if !self.panes.contains_key(&zp) {
+            if !self.panes.contains_key(&zp) || self.is_pane_in_dock(zp) {
                 self.zoomed_pane = None;
             } else {
                 rects = vec![(zp, Rect::new(
