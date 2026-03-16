@@ -362,6 +362,14 @@ impl App {
                 if let Some(InputEvent::MouseClick { position, .. }) = event {
                     self.focus_terminal(id);
 
+                    // Clicking webview content unfocuses the URL bar
+                    if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&id) {
+                        if bp.url_input_focused {
+                            bp.url_input_focused = false;
+                            self.cache.invalidate_chrome();
+                        }
+                    }
+
                     // Ctrl+Click / Cmd+Click on terminal -> try to open URL or file at click position
                     let mods = self.modifiers;
                     if mods.ctrl || mods.meta {
