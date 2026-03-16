@@ -8,6 +8,7 @@ use std::path::Path;
 use tide_core::PaneId;
 use tide_editor::input::EditorAction;
 use tide_editor::EditorState;
+use tide_editor::wrap::WrapMap;
 
 use tide_editor::markdown::{PreviewLine, render_markdown_preview, MarkdownTheme};
 
@@ -110,12 +111,16 @@ pub struct EditorPane {
     /// Generation counter at the time of the last `is_modified()` check.
     /// Avoids expensive Vec<String> comparison every frame.
     pub last_checked_gen: u64,
+    /// Whether soft wrap is enabled for this pane (prose files: md, txt).
+    pub soft_wrap: bool,
+    /// Cached wrap map for soft-wrapped rendering.
+    wrap_map: Option<WrapMap>,
 }
 
 impl EditorPane {
     pub fn new_empty(id: PaneId) -> Self {
         let editor = EditorState::new_empty();
-        Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: false, preview_cache: None, preview_scroll: 0, preview_h_scroll: 0, preview_last_width: None, preview_scroll_pending_ratio: None, last_is_modified: false, last_checked_gen: 0 }
+        Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: false, preview_cache: None, preview_scroll: 0, preview_h_scroll: 0, preview_last_width: None, preview_scroll_pending_ratio: None, last_is_modified: false, last_checked_gen: 0, soft_wrap: false, wrap_map: None }
     }
 
     pub fn open(id: PaneId, path: &Path) -> io::Result<Self> {
@@ -124,7 +129,8 @@ impl EditorPane {
             .and_then(|ext| ext.to_str())
             .map(|ext| matches!(ext, "md" | "markdown" | "mdown" | "mkd"))
             .unwrap_or(false);
-        Ok(Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: is_markdown, preview_cache: None, preview_scroll: 0, preview_h_scroll: 0, preview_last_width: None, preview_scroll_pending_ratio: None, last_is_modified: false, last_checked_gen: 0 })
+        let soft_wrap = Self::is_prose_extension(path);
+        Ok(Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: is_markdown, preview_cache: None, preview_scroll: 0, preview_h_scroll: 0, preview_last_width: None, preview_scroll_pending_ratio: None, last_is_modified: false, last_checked_gen: 0, soft_wrap, wrap_map: None })
     }
 
     /// Whether this pane needs a notification bar (disk changed, diff mode, or file deleted).
@@ -134,25 +140,43 @@ impl EditorPane {
 
     /// Handle an editor action (visible_cols defaults to 80 for scroll clamping).
     pub fn handle_action(&mut self, action: EditorAction, visible_rows: usize) {
+        // Block horizontal scroll when soft wrap is active
+        if self.effective_soft_wrap() {
+            if matches!(action, EditorAction::ScrollLeft(_) | EditorAction::ScrollRight(_)) {
+                return;
+            }
+        }
         let is_scroll = matches!(action, EditorAction::ScrollUp(_) | EditorAction::ScrollDown(_) | EditorAction::ScrollLeft(_) | EditorAction::ScrollRight(_));
         self.editor.handle_action(action);
         if !is_scroll {
             self.editor.ensure_cursor_visible(visible_rows);
         }
         self.clamp_scroll(visible_rows);
-        self.clamp_h_scroll(80);
+        if !self.effective_soft_wrap() {
+            self.clamp_h_scroll(80);
+        }
     }
 
     /// Handle an editor action with both vertical and horizontal visibility.
     pub fn handle_action_with_size(&mut self, action: EditorAction, visible_rows: usize, visible_cols: usize) {
+        // Block horizontal scroll when soft wrap is active
+        if self.effective_soft_wrap() {
+            if matches!(action, EditorAction::ScrollLeft(_) | EditorAction::ScrollRight(_)) {
+                return;
+            }
+        }
         let is_scroll = matches!(action, EditorAction::ScrollUp(_) | EditorAction::ScrollDown(_) | EditorAction::ScrollLeft(_) | EditorAction::ScrollRight(_));
         self.editor.handle_action(action);
         if !is_scroll {
             self.editor.ensure_cursor_visible(visible_rows);
-            self.editor.ensure_cursor_visible_h(visible_cols);
+            if !self.effective_soft_wrap() {
+                self.editor.ensure_cursor_visible_h(visible_cols);
+            }
         }
         self.clamp_scroll(visible_rows);
-        self.clamp_h_scroll(visible_cols);
+        if !self.effective_soft_wrap() {
+            self.clamp_h_scroll(visible_cols);
+        }
     }
 
     /// Prevent vertical over-scrolling: last line should stick to bottom.
@@ -382,6 +406,41 @@ impl EditorPane {
             .and_then(|ext| ext.to_str())
             .map(|ext| matches!(ext, "md" | "markdown" | "mdown" | "mkd"))
             .unwrap_or(false)
+    }
+
+    /// Whether a file path has a prose extension (markdown or plain text).
+    fn is_prose_extension(path: &Path) -> bool {
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| matches!(ext, "md" | "markdown" | "mdown" | "mkd" | "txt" | "text"))
+            .unwrap_or(false)
+    }
+
+    /// Effective soft wrap: true only when soft_wrap is set AND not in diff/preview mode.
+    pub fn effective_soft_wrap(&self) -> bool {
+        self.soft_wrap && !self.diff_mode && !self.preview_mode
+    }
+
+    /// Ensure the wrap map is up to date for the current content and width.
+    /// Returns true if the map was rebuilt.
+    pub fn ensure_wrap_map(&mut self, wrap_width: usize) -> bool {
+        if !self.effective_soft_wrap() {
+            self.wrap_map = None;
+            return false;
+        }
+        let gen = self.editor.generation();
+        if let Some(ref map) = self.wrap_map {
+            if map.generation() == gen && map.wrap_width() == wrap_width {
+                return false;
+            }
+        }
+        self.wrap_map = Some(WrapMap::build(&self.editor.buffer.lines, wrap_width, gen));
+        true
+    }
+
+    /// Get a reference to the current wrap map, if any.
+    pub fn wrap_map(&self) -> Option<&WrapMap> {
+        self.wrap_map.as_ref()
     }
 
     /// Toggle preview mode on/off, syncing scroll position proportionally.

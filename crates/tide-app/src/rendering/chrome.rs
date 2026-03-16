@@ -241,6 +241,10 @@ pub(crate) fn render_chrome(
         let item_gap = geo.item_gap;
         let name_h = cs.height;
 
+        // Determine available text width for compact mode detection
+        let text_avail_w = content_w - WS_SIDEBAR_ITEM_PAD_H * 2.0;
+        let compact = text_avail_w < cs.width * 12.0; // < 12 chars → compact
+
         // Collect workspace info: for the active workspace, use live App data;
         // for others, read from the stored workspace vec.
         for i in 0..app.ws.workspaces.len() {
@@ -268,13 +272,38 @@ pub(crate) fn render_chrome(
                 }
             }
 
-            // Name text
+            // Name text — use "W{n}" when sidebar is too narrow
+            let display_name = if compact {
+                format!("W{}", i + 1)
+            } else {
+                // Truncate name to fit available width
+                let max_chars = (text_avail_w / cs.width).floor() as usize;
+                if ws_name.chars().count() > max_chars && max_chars > 1 {
+                    let truncated: String = ws_name.chars().take(max_chars.saturating_sub(1)).collect();
+                    format!("{}…", truncated)
+                } else {
+                    ws_name
+                }
+            };
             let name_color = if is_active { p.tab_text_focused } else {
                 tide_core::Color::new(0.627, 0.627, 0.647, 1.0) // #A0A0A5
             };
+            // Center text horizontally and vertically in compact mode
+            let (name_text_x, name_text_y) = if compact {
+                let name_w = display_name.len() as f32 * cs.width;
+                (
+                    content_x + (content_w - name_w) / 2.0,
+                    item_rect.y + (item_rect.height - cs.height) / 2.0,
+                )
+            } else {
+                (
+                    content_x + WS_SIDEBAR_ITEM_PAD_H,
+                    item_rect.y + WS_SIDEBAR_ITEM_PAD_V,
+                )
+            };
             renderer.draw_chrome_text(
-                &ws_name,
-                Vec2::new(content_x + WS_SIDEBAR_ITEM_PAD_H, item_rect.y + WS_SIDEBAR_ITEM_PAD_V),
+                &display_name,
+                Vec2::new(name_text_x, name_text_y),
                 TextStyle {
                     foreground: name_color,
                     background: None,
@@ -284,26 +313,36 @@ pub(crate) fn render_chrome(
                 inset,
             );
 
-            // CWD text (second line)
-            let cwd_text = if is_active {
-                // Use live cwd from the focused terminal
-                app.focused_terminal_cwd()
-                    .map(|p| crate::ui_state::abbreviate_path(&p))
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            };
-            if !cwd_text.is_empty() {
-                renderer.draw_chrome_text(
-                    &cwd_text,
-                    Vec2::new(content_x + WS_SIDEBAR_ITEM_PAD_H, item_rect.y + WS_SIDEBAR_ITEM_PAD_V + name_h + WS_SIDEBAR_LINE_GAP),
-                    TextStyle {
-                        foreground: p.tab_text,
-                        background: None,
-                        bold: false, dim: false, italic: false, underline: false,
-                    },
-                    inset,
-                );
+            // CWD text (second line) — hide in compact mode
+            if !compact {
+                let cwd_text = if is_active {
+                    // Use live cwd from the focused terminal
+                    app.focused_terminal_cwd()
+                        .map(|p| crate::ui_state::abbreviate_path(&p))
+                        .unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                if !cwd_text.is_empty() {
+                    // Truncate cwd to fit
+                    let max_chars = (text_avail_w / cs.width).floor() as usize;
+                    let display_cwd = if cwd_text.chars().count() > max_chars && max_chars > 1 {
+                        let truncated: String = cwd_text.chars().take(max_chars.saturating_sub(1)).collect();
+                        format!("{}…", truncated)
+                    } else {
+                        cwd_text
+                    };
+                    renderer.draw_chrome_text(
+                        &display_cwd,
+                        Vec2::new(content_x + WS_SIDEBAR_ITEM_PAD_H, item_rect.y + WS_SIDEBAR_ITEM_PAD_V + name_h + WS_SIDEBAR_LINE_GAP),
+                        TextStyle {
+                            foreground: p.tab_text,
+                            background: None,
+                            bold: false, dim: false, italic: false, underline: false,
+                        },
+                        inset,
+                    );
+                }
             }
 
             // Draw drag drop indicator line before this item (gap == i)
@@ -329,7 +368,7 @@ pub(crate) fn render_chrome(
             }
         }
 
-        // "+ New Workspace" button at bottom
+        // "+ New Workspace" button at bottom — use "+" when narrow
         let btn_h = cs.height + 12.0;
         let btn_y = ws_rect.y + ws_rect.height - edge_inset - btn_h - WS_SIDEBAR_PADDING;
         let btn_rect = Rect::new(content_x, btn_y, content_w, btn_h);
@@ -338,7 +377,7 @@ pub(crate) fn render_chrome(
             renderer.draw_chrome_rounded_rect(btn_rect, p.badge_bg, PANE_CORNER_RADIUS);
         }
 
-        let btn_text = "+ New Workspace";
+        let btn_text = if compact { "+" } else { "+ New Workspace" };
         let btn_text_w = btn_text.len() as f32 * cs.width;
         let btn_text_x = content_x + (content_w - btn_text_w) / 2.0;
         let btn_text_y = btn_y + (btn_h - cs.height) / 2.0;
