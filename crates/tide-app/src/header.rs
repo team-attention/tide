@@ -30,6 +30,8 @@ pub enum HeaderHitAction {
     Maximize,
     /// Click on a Dock TabGroup tab — switch to this pane.
     DockTab(tide_core::PaneId),
+    /// Click on a Stage tab in stacked mode — switch zoomed pane.
+    StageTab(tide_core::PaneId),
 }
 
 /// Badge specification for editor pane headers.
@@ -87,12 +89,15 @@ pub(crate) fn editor_header_badges(ep: &crate::editor_pane::EditorPane) -> Vec<E
 
 /// Render the header for a single pane.
 /// Returns hit zones for click handling.
+/// When `has_dock_tab_bar` is true, skips the title badge and pane-specific badges
+/// because the dock tab bar already shows tab labels in the same header area.
 pub fn render_pane_header(
     id: PaneId,
     rect: Rect,
     panes: &HashMap<PaneId, PaneKind>,
     focused: Option<PaneId>,
     _is_zoomed: bool,
+    has_dock_tab_bar: bool,
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
 ) -> Vec<HeaderHitZone> {
@@ -166,6 +171,12 @@ pub fn render_pane_header(
     let mut badge_right = max_x - BADGE_GAP;
     let available_w = content_right - content_left;
     if available_w < 20.0 {
+        return zones;
+    }
+
+    // When a dock tab bar is present, skip pane-specific title and badges
+    // to avoid overlapping with the tab labels rendered below.
+    if has_dock_tab_bar {
         return zones;
     }
 
@@ -384,6 +395,7 @@ pub fn render_pane_header(
 
 /// Render a dock TabGroup tab bar inside a pane's header.
 /// Shows tab labels for all tabs in the group; the active tab is highlighted.
+/// Includes close/maximize buttons on the right side.
 /// Returns hit zones for tab clicks.
 pub fn render_dock_tab_bar(
     pane_id: PaneId,
@@ -394,97 +406,146 @@ pub fn render_dock_tab_bar(
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
 ) -> Vec<HeaderHitZone> {
+    render_tab_bar_impl(pane_id, rect, &tab_group.tabs, tab_group.active_pane(), panes, focused, p, renderer, true)
+}
+
+/// Shared tab bar rendering for both Dock and Stage stacked mode.
+/// `is_dock` determines the hit action type (DockTab vs StageTab).
+fn render_tab_bar_impl(
+    pane_id: PaneId,
+    rect: Rect,
+    tab_ids: &[PaneId],
+    active_pane: PaneId,
+    panes: &HashMap<PaneId, PaneKind>,
+    focused: Option<PaneId>,
+    p: &ThemePalette,
+    renderer: &mut WgpuRenderer,
+    is_dock: bool,
+) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
     let cell_size = renderer.cell_size();
     let cell_height = cell_size.height;
     let cell_w = cell_size.width;
+    let is_focused = focused == Some(pane_id);
 
-    // Tab bar sits at the bottom of the header area
-    let tab_y = rect.y + TAB_BAR_HEIGHT - cell_height - 4.0;
+    // Tab bar vertically centered in header (same position as title text)
     let tab_h = cell_height + 4.0;
+    let tab_y = rect.y + (TAB_BAR_HEIGHT - tab_h) / 2.0;
     let content_left = rect.x + PANE_PADDING;
-    let content_right = rect.x + rect.width - PANE_PADDING;
-    let max_w = content_right - content_left;
+    let grid_cols = ((rect.width - 2.0 * PANE_PADDING) / cell_w).floor();
+    let content_right = rect.x + PANE_PADDING + grid_cols * cell_w;
 
-    if max_w < 40.0 || tab_group.tabs.len() < 2 {
+    if content_right - content_left < 40.0 {
         return zones;
     }
 
-    // Draw a subtle separator line above the tabs
-    renderer.draw_chrome_rect(
-        Rect::new(content_left, tab_y - 1.0, max_w, 1.0),
-        p.border_subtle,
+    // Close button (rightmost)
+    let text_y = rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
+    let is_modified = match panes.get(&active_pane) {
+        Some(PaneKind::Editor(ep)) => ep.editor.is_modified(),
+        _ => false,
+    };
+    let (close_icon, close_color) = if is_modified {
+        ("\u{f111}", p.editor_modified)
+    } else {
+        ("\u{f00d}", p.close_icon)
+    };
+    let btn_w = cell_w + BADGE_PADDING_H * 2.0;
+    let close_x = content_right - btn_w;
+    renderer.draw_chrome_text(
+        close_icon,
+        Vec2::new(close_x + BADGE_PADDING_H, text_y),
+        TextStyle { foreground: close_color, background: None, bold: false, dim: false, italic: false, underline: false },
+        Rect::new(close_x, text_y - 1.0, btn_w, cell_height + 2.0),
     );
+    zones.push(HeaderHitZone {
+        pane_id: active_pane,
+        rect: Rect::new(close_x, rect.y, btn_w, TAB_BAR_HEIGHT),
+        action: HeaderHitAction::Close,
+    });
+
+    // Maximize button (left of close)
+    let max_x = close_x - BADGE_GAP - btn_w;
+    renderer.draw_chrome_text(
+        "\u{f065}",
+        Vec2::new(max_x + BADGE_PADDING_H, text_y),
+        TextStyle { foreground: p.close_icon, background: None, bold: false, dim: false, italic: false, underline: false },
+        Rect::new(max_x, text_y - 1.0, btn_w, cell_height + 2.0),
+    );
+    zones.push(HeaderHitZone {
+        pane_id: active_pane,
+        rect: Rect::new(max_x, rect.y, btn_w, TAB_BAR_HEIGHT),
+        action: HeaderHitAction::Maximize,
+    });
+
+    let tabs_right = max_x - BADGE_GAP;
+    let max_tabs_w = tabs_right - content_left;
+    if max_tabs_w < 40.0 {
+        return zones;
+    }
 
     // Compute tab labels and widths
     let tab_gap = 2.0_f32;
     let tab_pad = 8.0_f32;
     let mut tabs_info: Vec<(PaneId, String, f32)> = Vec::new();
-    for &tid in &tab_group.tabs {
+    for &tid in tab_ids {
         let label = dock_tab_label(panes, tid);
         let w = label.chars().count() as f32 * cell_w + tab_pad * 2.0;
         tabs_info.push((tid, label, w));
     }
 
-    // Total width needed
     let total_w: f32 = tabs_info.iter().map(|(_, _, w)| *w + tab_gap).sum::<f32>() - tab_gap;
-
-    // If total exceeds available, truncate tab widths proportionally
-    let scale = if total_w > max_w { max_w / total_w } else { 1.0 };
+    let scale = if total_w > max_tabs_w { max_tabs_w / total_w } else { 1.0 };
 
     let mut cx = content_left;
     for (tid, label, w) in &tabs_info {
         let tw = (*w * scale).max(cell_w * 2.0);
-        if cx + tw > content_right + 1.0 {
+        if cx + tw > tabs_right + 1.0 {
             break;
         }
 
-        let is_active = tab_group.active_pane() == *tid;
+        let is_active = *tid == active_pane;
         let is_focused_tab = focused == Some(*tid);
         let tab_rect = Rect::new(cx, tab_y, tw, tab_h);
 
-        // Background
         if is_active {
-            renderer.draw_chrome_rounded_rect(tab_rect, p.badge_bg, 3.0);
-            // Active underline
+            let bg = if is_focused { p.badge_bg } else { p.badge_bg_unfocused };
+            renderer.draw_chrome_rounded_rect(tab_rect, bg, 3.0);
             renderer.draw_chrome_rect(
                 Rect::new(cx + 2.0, tab_y + tab_h - 2.0, tw - 4.0, 2.0),
                 p.dock_tab_underline,
             );
         }
 
-        // Label text
-        let text_color = if is_focused_tab {
-            p.tab_text_focused
-        } else if is_active {
+        let text_color = if is_focused_tab || is_active {
             p.tab_text_focused
         } else {
             p.tab_text
         };
-        let text_y = tab_y + (tab_h - cell_height) / 2.0;
-
-        // Truncate label to fit
+        let label_y = tab_y + (tab_h - cell_height) / 2.0;
         let max_chars = ((tw - tab_pad * 2.0) / cell_w).floor() as usize;
         let display: String = label.chars().take(max_chars).collect();
         renderer.draw_chrome_text(
             &display,
-            Vec2::new(cx + tab_pad, text_y),
+            Vec2::new(cx + tab_pad, label_y),
             TextStyle {
                 foreground: text_color,
                 background: None,
                 bold: is_active,
-                dim: false,
-                italic: false,
-                underline: false,
+                dim: false, italic: false, underline: false,
             },
             tab_rect,
         );
 
-        // Hit zone
+        let action = if is_dock {
+            HeaderHitAction::DockTab(*tid)
+        } else {
+            HeaderHitAction::StageTab(*tid)
+        };
         zones.push(HeaderHitZone {
-            pane_id: pane_id, // The pane whose header we are rendering in
-            rect: Rect::new(cx, tab_y, tw, tab_h),
-            action: HeaderHitAction::DockTab(*tid),
+            pane_id: pane_id,
+            rect: Rect::new(cx, rect.y, tw, TAB_BAR_HEIGHT),
+            action,
         });
 
         cx += tw + tab_gap;
@@ -493,10 +554,35 @@ pub fn render_dock_tab_bar(
     zones
 }
 
+/// Render a Stage stacked-mode tab bar showing all Stage terminals.
+pub fn render_stage_tab_bar(
+    zoomed_pane: PaneId,
+    rect: Rect,
+    stage_pane_ids: &[PaneId],
+    panes: &HashMap<PaneId, PaneKind>,
+    focused: Option<PaneId>,
+    p: &ThemePalette,
+    renderer: &mut WgpuRenderer,
+) -> Vec<HeaderHitZone> {
+    if stage_pane_ids.len() < 2 {
+        return Vec::new();
+    }
+    render_tab_bar_impl(zoomed_pane, rect, stage_pane_ids, zoomed_pane, panes, focused, p, renderer, false)
+}
+
 /// Get a short label for a pane in a dock tab bar.
 fn dock_tab_label(panes: &HashMap<PaneId, PaneKind>, id: PaneId) -> String {
     match panes.get(&id) {
-        Some(PaneKind::Terminal(_)) => "Terminal".to_string(),
+        Some(PaneKind::Terminal(tp)) => {
+            // Use CWD directory name (matches the per-pane header title)
+            if let Some(ref cwd) = tp.context.cwd {
+                cwd.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| cwd.display().to_string())
+            } else {
+                format!("Terminal {}", id)
+            }
+        }
         Some(PaneKind::Editor(ep)) => ep.title(),
         Some(PaneKind::Browser(_)) => "Browser".to_string(),
         Some(PaneKind::Diff(_)) => "Changes".to_string(),

@@ -636,63 +636,107 @@ pub(crate) fn render_chrome(
 
     // Draw Dock background (subtle visual separation from Stage)
     if app.dock_open {
-        // Find the bounding rect of all dock panes
-        let dock_pane_ids: std::collections::HashSet<u64> = app.panes.iter()
-            .filter_map(|(_, pk)| {
-                if let crate::pane::PaneKind::Terminal(tp) = pk {
-                    Some(tp.dock_layout.all_pane_ids())
-                } else {
-                    None
-                }
-            })
-            .flatten()
-            .collect();
-        let mut min_x = f32::MAX;
-        let mut _max_right = 0.0_f32;
-        for &(id, rect) in visual_pane_rects {
-            if dock_pane_ids.contains(&id) {
-                min_x = min_x.min(rect.x);
-                _max_right = _max_right.max(rect.x + rect.width);
-            }
-        }
-        if min_x < f32::MAX {
-            // Draw a subtle vertical separator line at the left edge of the Dock
-            let sep_x = min_x - PANE_GAP / 2.0;
+        if let Some(pa_rect) = app.pane_area_rect {
+            // Dock area starts right after the Stage pane area
+            let dock_x = pa_rect.x + pa_rect.width + PANE_GAP;
+
+            // Draw separator line at the Stage↔Dock boundary
+            let sep_x = pa_rect.x + pa_rect.width + PANE_GAP / 2.0;
             let sep_rect = Rect::new(sep_x, app.top_inset, 1.0, logical.height - app.top_inset);
             renderer.draw_chrome_rect(sep_rect, p.border_subtle);
+
+            // Check if the dock is empty (no dock panes for the focused terminal)
+            let dock_has_panes = app.focused_terminal_id()
+                .and_then(|tid| app.panes.get(&tid))
+                .map(|pk| {
+                    if let crate::pane::PaneKind::Terminal(tp) = pk {
+                        !tp.dock_layout.all_pane_ids().is_empty()
+                    } else { false }
+                })
+                .unwrap_or(false);
+
+            if !dock_has_panes {
+                // Empty dock placeholder
+                let cs = renderer.cell_size();
+                let dock_w = app.dock_width;
+                let edge_inset = PANE_CORNER_RADIUS;
+
+                // Draw a rounded pane background for the empty dock area
+                let placeholder_rect = Rect::new(
+                    dock_x + edge_inset,
+                    app.top_inset + edge_inset,
+                    dock_w - edge_inset * 2.0,
+                    logical.height - app.top_inset - edge_inset * 2.0,
+                );
+                renderer.draw_chrome_rounded_rect(placeholder_rect, p.border_subtle, PANE_CORNER_RADIUS);
+                let inner = Rect::new(
+                    placeholder_rect.x + 1.0,
+                    placeholder_rect.y + 1.0,
+                    placeholder_rect.width - 2.0,
+                    placeholder_rect.height - 2.0,
+                );
+                renderer.draw_chrome_rounded_rect(inner, p.pane_bg, (PANE_CORNER_RADIUS - 1.0).max(0.0));
+
+                // Centered hint text
+                let hint = "Cmd+4";
+                let hint_w = hint.len() as f32 * cs.width;
+                let hint_x = dock_x + (dock_w - hint_w) / 2.0;
+                let hint_y = app.top_inset + (logical.height - app.top_inset) / 2.0 - cs.height / 2.0;
+                renderer.draw_chrome_text(
+                    hint,
+                    Vec2::new(hint_x, hint_y),
+                    TextStyle {
+                        foreground: p.badge_text_dimmed,
+                        background: None,
+                        bold: false, dim: false, italic: false, underline: false,
+                    },
+                    inner,
+                );
+            }
         }
     }
 
-    // Determine the owner terminal for Dock highlight
+    // Cross-region highlights: when one region is focused, the other gets a subtle indicator
     let owner_terminal_id = if app.focus_area == FocusArea::Dock {
         app.focused_terminal_id()
+    } else {
+        None
+    };
+    // When Stage is focused, the dock's active pane gets a subtle highlight
+    let dock_active_pane = if app.focus_area == FocusArea::Stage && app.dock_open {
+        app.focused_terminal_id().and_then(|tid| {
+            if let Some(crate::pane::PaneKind::Terminal(tp)) = app.panes.get(&tid) {
+                tp.dock_focused
+            } else { None }
+        })
     } else {
         None
     };
 
     // Draw pane backgrounds + borders with rounded corners
     for &(id, rect) in visual_pane_rects {
+        if !app.panes.contains_key(&id) { continue; }
         // Only show pane focus highlight when focus is in the pane area
         let is_focused = focused == Some(id) && matches!(app.focus_area, FocusArea::Stage | FocusArea::Dock);
-        // Owner terminal gets a subtle highlight when Dock has focus
-        let is_owner_terminal = owner_terminal_id == Some(id);
+        // Cross-region subtle highlight
+        let is_companion = owner_terminal_id == Some(id) || dock_active_pane == Some(id);
         let border_color = if is_focused {
             p.border_focused
-        } else if is_owner_terminal {
+        } else if is_companion {
             p.border_focused
         } else {
             p.border_subtle
         };
-        let top_border = if is_focused { 2.0 } else if is_owner_terminal { 1.5 } else { 1.0 };
-        let side_border = if is_focused { 2.0_f32 } else if is_owner_terminal { 1.5_f32 } else { 1.0_f32 };
+        let top_border = if is_focused { 2.0 } else if is_companion { 1.5 } else { 1.0 };
+        let side_border = if is_focused { 2.0_f32 } else if is_companion { 1.5_f32 } else { 1.0_f32 };
 
         // Focused pane: draw outer glow shadow
         if is_focused {
             let shadow_color = tide_core::Color::new(0.769, 0.722, 0.651, 0.25);
             renderer.draw_chrome_shadow(rect, shadow_color, PANE_CORNER_RADIUS, 16.0, -4.0);
         }
-        // Owner terminal: draw subtle glow when Dock focused
-        if is_owner_terminal && !is_focused {
+        // Companion pane: subtle glow
+        if is_companion && !is_focused {
             let shadow_color = tide_core::Color::new(0.769, 0.722, 0.651, 0.12);
             renderer.draw_chrome_shadow(rect, shadow_color, PANE_CORNER_RADIUS, 8.0, -2.0);
         }
@@ -712,48 +756,85 @@ pub(crate) fn render_chrome(
     // Render per-pane headers (title + badges + close, or tab bar for multi-tab groups)
     let mut all_hit_zones = Vec::new();
 
-    // Collect dock TabGroup info for rendering tab bars
-    // Maps pane_id -> (owner_terminal_id, TabGroup clone) for panes in multi-tab groups
+    // Collect dock TabGroup info for ALL dock panes (always show tab bar in Dock)
     let mut dock_tab_groups: std::collections::HashMap<u64, tide_layout::TabGroup> = std::collections::HashMap::new();
     for (_, pk) in &app.panes {
         if let crate::pane::PaneKind::Terminal(tp) = pk {
-            // Check each visible dock pane for its TabGroup
             for &(pid, _) in visual_pane_rects {
                 if let Some(tg) = tp.dock_layout.tab_group_containing(pid) {
-                    if tg.tabs.len() > 1 {
-                        dock_tab_groups.insert(pid, tg.clone());
-                    }
+                    dock_tab_groups.insert(pid, tg.clone());
                 }
             }
         }
     }
 
+    // Dock zoomed: collect all dock tabs for the tab bar (flat list)
+    let dock_zoomed_tabs: Option<Vec<u64>> = if let Some(zp) = app.dock_zoomed_pane {
+        if app.is_pane_in_dock(zp) {
+            app.focused_terminal_id().and_then(|tid| {
+                app.panes.get(&tid).and_then(|pk| {
+                    if let crate::pane::PaneKind::Terminal(tp) = pk {
+                        let tabs = tp.dock_layout.all_tabs_flat();
+                        if tabs.len() > 1 { Some(tabs) } else { None }
+                    } else { None }
+                })
+            })
+        } else { None }
+    } else { None };
+
+    // Collect Stage pane IDs for stacked tab bar
+    let stage_pane_ids = app.layout.pane_ids();
+    let show_stage_tabs = app.zoomed_pane.is_some() && stage_pane_ids.len() > 1;
+
     for &(id, rect) in visual_pane_rects {
-        let is_zoomed = app.zoomed_pane == Some(id);
-
-        // Zoomed pane: tint the tab bar area so it's clearly distinct
-        if is_zoomed {
-            let tint = tide_core::Color::new(p.badge_git_branch.r, p.badge_git_branch.g, p.badge_git_branch.b, 0.18);
-            let tab_bar_rect = Rect::new(
-                rect.x + 2.0,
-                rect.y + 2.0,
-                rect.width - 4.0,
-                TAB_BAR_HEIGHT - 2.0,
-            );
-            renderer.draw_chrome_rect(tab_bar_rect, tint);
+        // Skip stale pane rects (pane was removed but layout not yet recomputed)
+        if !app.panes.contains_key(&id) {
+            continue;
         }
+        let is_zoomed = app.zoomed_pane == Some(id);
+        let is_dock_zoomed = app.dock_zoomed_pane == Some(id);
+        let has_dock_tab_bar = dock_tab_groups.contains_key(&id);
+        let has_stage_tab_bar = is_zoomed && show_stage_tabs;
 
-        let zones = header::render_pane_header(
-            id, rect, &app.panes, focused, is_zoomed, p, renderer,
-        );
-        all_hit_zones.extend(zones);
-
-        // Render dock tab bar if this pane is in a multi-tab TabGroup
-        if let Some(tg) = dock_tab_groups.get(&id) {
+        if is_dock_zoomed {
+            // Dock zoomed: show flat tab bar of all dock tabs (like stage stacked)
+            if let Some(ref tabs) = dock_zoomed_tabs {
+                let tab_zones = header::render_stage_tab_bar(
+                    id, rect, tabs, &app.panes, focused, p, renderer,
+                );
+                // Remap StageTab actions to DockTab for dock panes
+                for mut z in tab_zones {
+                    if let header::HeaderHitAction::StageTab(pid) = z.action {
+                        z.action = header::HeaderHitAction::DockTab(pid);
+                    }
+                    all_hit_zones.push(z);
+                }
+            } else {
+                // Single dock pane zoomed — render normal header
+                let zones = header::render_pane_header(
+                    id, rect, &app.panes, focused, false, false, p, renderer,
+                );
+                all_hit_zones.extend(zones);
+            }
+        } else if has_dock_tab_bar {
+            // Dock pane: render ONLY the tab bar (includes close/maximize)
+            let tg = dock_tab_groups.get(&id).unwrap();
             let tab_zones = header::render_dock_tab_bar(
                 id, rect, tg, &app.panes, focused, p, renderer,
             );
             all_hit_zones.extend(tab_zones);
+        } else if has_stage_tab_bar {
+            // Stage stacked: render ONLY the tab bar (includes close/maximize)
+            let tab_zones = header::render_stage_tab_bar(
+                id, rect, &stage_pane_ids, &app.panes, focused, p, renderer,
+            );
+            all_hit_zones.extend(tab_zones);
+        } else {
+            // Normal pane: render per-pane header
+            let zones = header::render_pane_header(
+                id, rect, &app.panes, focused, is_zoomed, false, p, renderer,
+            );
+            all_hit_zones.extend(zones);
         }
     }
     app.header_hit_zones = all_hit_zones;

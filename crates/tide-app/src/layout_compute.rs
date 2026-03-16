@@ -376,6 +376,18 @@ impl App {
             }
         }
 
+        // Safety: close dock if no terminal has dock panes
+        if self.dock_open {
+            let any_has_dock = self.panes.values().any(|pk| {
+                if let PaneKind::Terminal(tp) = pk {
+                    !tp.dock_layout.all_pane_ids().is_empty()
+                } else { false }
+            });
+            if !any_has_dock {
+                self.dock_open = false;
+            }
+        }
+
         // Reserve Dock space on the right (when open)
         let show_dock = self.dock_open;
         let dock_width = if show_dock {
@@ -470,17 +482,38 @@ impl App {
             let ctx_offset_x = terminal_offset_x + terminal_area.width + PANE_GAP;
             let ctx_size = Size::new(dock_width, logical.height - top);
 
+            // Clear dock zoom if the pane no longer exists
+            if let Some(zp) = self.dock_zoomed_pane {
+                if !self.panes.contains_key(&zp) {
+                    self.dock_zoomed_pane = None;
+                }
+            }
+
             let owner_terminal = self.focused_terminal_id();
             if let Some(tid) = owner_terminal {
                 if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
-                    let dock_pane_ids = tp.dock_layout.pane_ids();
-                    if !dock_pane_ids.is_empty() {
-                        let mut cr = tp.dock_layout.compute(ctx_size, &dock_pane_ids, tp.dock_focused);
-                        for (_, rect) in &mut cr {
-                            rect.x += ctx_offset_x;
-                            rect.y += top;
+                    // Dock zoom: show only the zoomed pane filling the dock area
+                    if let Some(zp) = self.dock_zoomed_pane {
+                        if tp.dock_layout.all_pane_ids().contains(&zp) {
+                            rects.push((zp, Rect::new(
+                                ctx_offset_x, top,
+                                dock_width, logical.height - top,
+                            )));
+                        } else {
+                            self.dock_zoomed_pane = None;
                         }
-                        rects.extend(cr);
+                    }
+
+                    if self.dock_zoomed_pane.is_none() {
+                        let dock_pane_ids = tp.dock_layout.pane_ids();
+                        if !dock_pane_ids.is_empty() {
+                            let mut cr = tp.dock_layout.compute(ctx_size, &dock_pane_ids, tp.dock_focused);
+                            for (_, rect) in &mut cr {
+                                rect.x += ctx_offset_x;
+                                rect.y += top;
+                            }
+                            rects.extend(cr);
+                        }
                     }
                 }
             }

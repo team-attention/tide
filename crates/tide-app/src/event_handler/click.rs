@@ -368,7 +368,20 @@ impl App {
                             self.router.set_focused(target_pane_id);
                             self.focus_area = crate::ui_state::FocusArea::Dock;
                         }
+                        // Update dock zoom target if zoomed
+                        if self.dock_zoomed_pane.is_some() {
+                            self.dock_zoomed_pane = Some(target_pane_id);
+                        }
                         self.cache.invalidate_chrome();
+                        self.cache.pane_generations.clear();
+                        self.compute_layout();
+                        self.cache.needs_redraw = true;
+                        return true;
+                    }
+                    HeaderHitAction::StageTab(target_pane_id) => {
+                        // Switch zoomed pane in Stage stacked mode
+                        self.zoomed_pane = Some(target_pane_id);
+                        self.focus_terminal(target_pane_id);
                         self.cache.pane_generations.clear();
                         self.compute_layout();
                         self.cache.needs_redraw = true;
@@ -1116,15 +1129,41 @@ impl App {
                 if source == target_id {
                     return;
                 }
-                let (direction, insert_first) = match zone {
+                let (direction, _insert_first) = match zone {
                     DropZone::Top => (SplitDirection::Vertical, true),
                     DropZone::Bottom => (SplitDirection::Vertical, false),
                     DropZone::Left => (SplitDirection::Horizontal, true),
                     DropZone::Right => (SplitDirection::Horizontal, false),
                     DropZone::Center => (SplitDirection::Vertical, false), // Center = add below
                 };
-                self.layout.remove(source);
-                self.layout.insert_pane(target_id, source, direction, insert_first);
+
+                let source_in_dock = self.is_pane_in_dock(source);
+                let target_in_dock = self.is_pane_in_dock(target_id);
+
+                if source_in_dock && target_in_dock {
+                    // Both panes in dock — route to the owning terminal's dock_layout
+                    if let Some(tid) = self.terminal_owning(source) {
+                        if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                            tp.dock_layout.remove(source);
+                            if zone == DropZone::Center {
+                                // Center drop = add as tab in target's TabGroup
+                                if !tp.dock_layout.add_tab(target_id, source) {
+                                    tp.dock_layout.add_tab_to_first_group(source);
+                                }
+                            } else {
+                                tp.dock_layout.split_with_leaf_group(target_id, source, direction);
+                            }
+                            tp.dock_layout.set_active_tab(source);
+                        }
+                    }
+                } else {
+                    let insert_first = match zone {
+                        DropZone::Top | DropZone::Left => true,
+                        _ => false,
+                    };
+                    self.layout.remove(source);
+                    self.layout.insert_pane(target_id, source, direction, insert_first);
+                }
                 self.focused = Some(source);
                 self.cache.invalidate_chrome();
                 self.compute_layout();
