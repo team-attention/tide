@@ -65,6 +65,19 @@ Editor Pane behavior: text input, dirty tracking, preview mode, and scroll.
   - BR-14: G scrolls to bottom
   - BR-15: Scroll clamps to max
 
+### UC-4: PreviewRendering
+
+- **Actor**: System
+- **Trigger**: Markdown preview mode rendering
+- **Precondition**: Editor is in preview mode with cached PreviewLines
+- **Flow**:
+  1. render_preview_grid() iterates visible PreviewLines
+  2. For lines with bg_color (code blocks), draw background rect with right padding
+  3. Render styled text spans
+- **Postcondition**: Preview rendered with proper margins
+- **Business Rules**:
+  - BR-16: Code block background has 2-cell right padding matching left indent
+
 ## Tests
 
 | UC | BR | Test module | Test |
@@ -87,6 +100,7 @@ Editor Pane behavior: text input, dirty tracking, preview mode, and scroll.
 | UC-3 | BR-13 | `preview_scroll` | `g_scrolls_to_top` |
 | UC-3 | BR-14 | `preview_scroll` | `capital_g_scrolls_to_bottom` |
 | UC-3 | BR-15 | `preview_scroll` | `scroll_clamps_to_max` |
+| UC-4 | BR-16 | `preview_rendering` | `code_block_background_has_right_padding` |
 
 ## Location
 
