@@ -503,11 +503,11 @@ fn render_tab_bar_impl(
         action: HeaderHitAction::Maximize,
     });
 
-    // Editor badges for the active pane (e.g., markdown preview toggle)
+    // Pane-specific badges for the active pane
     let mut badge_right = max_x - BADGE_GAP;
-    if is_dock {
-        if let Some(PaneKind::Editor(ep)) = panes.get(&active_pane) {
-            let badge_bg = if is_focused { p.badge_bg } else { p.badge_bg_unfocused };
+    let badge_bg = if is_focused { p.badge_bg } else { p.badge_bg_unfocused };
+    match panes.get(&active_pane) {
+        Some(PaneKind::Editor(ep)) if is_dock => {
             for badge in editor_header_badges(ep) {
                 let badge_w = badge.text.len() as f32 * cell_w + BADGE_PADDING_H * 2.0;
                 let badge_x = badge_right - badge_w;
@@ -536,6 +536,49 @@ fn render_tab_bar_impl(
                 badge_right = badge_x - BADGE_GAP;
             }
         }
+        Some(PaneKind::Terminal(pane)) if is_stacked => {
+            // Git status badge (focused only)
+            if is_focused {
+                if let Some(ref git) = pane.context.git_info {
+                    if git.status.changed_files > 0 {
+                        let stat_text = format!(
+                            "{} +{} -{}",
+                            git.status.changed_files, git.status.additions, git.status.deletions
+                        );
+                        let stat_color = p.git_added;
+                        let stat_bg = tide_core::Color::new(p.git_added.r, p.git_added.g, p.git_added.b, 0.094);
+                        let sw = stat_text.len() as f32 * cell_w + BADGE_PADDING_H * 2.0;
+                        let sx = badge_right - sw;
+                        if sx > content_left + 60.0 {
+                            render_badge_colored(renderer, sx, text_y, sw, cell_height, &stat_text, stat_color, stat_bg, BADGE_RADIUS);
+                            zones.push(HeaderHitZone {
+                                pane_id: active_pane,
+                                rect: Rect::new(sx, rect.y, sw, TAB_BAR_HEIGHT),
+                                action: HeaderHitAction::GitStatus,
+                            });
+                            badge_right = sx - BADGE_GAP;
+                        }
+                    }
+                }
+            }
+            // Git branch + worktree badge
+            if let Some(ref git) = pane.context.git_info {
+                let branch_display = format!("\u{e0a0} {}", git.branch);
+                let branch_color = if is_focused { p.badge_git_branch } else { p.tab_text };
+                let bw = branch_display.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0;
+                let bx = badge_right - bw;
+                if bx > content_left + 60.0 {
+                    render_badge_colored(renderer, bx, text_y, bw, cell_height, &branch_display, branch_color, badge_bg, BADGE_RADIUS);
+                    zones.push(HeaderHitZone {
+                        pane_id: active_pane,
+                        rect: Rect::new(bx, rect.y, bw, TAB_BAR_HEIGHT),
+                        action: HeaderHitAction::GitBranch,
+                    });
+                    badge_right = bx - BADGE_GAP;
+                }
+            }
+        }
+        _ => {}
     }
 
     let tabs_right = badge_right;
