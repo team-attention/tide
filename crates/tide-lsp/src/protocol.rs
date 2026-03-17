@@ -196,6 +196,8 @@ pub struct LspCompletionItem {
     #[serde(rename = "filterText")]
     pub filter_text: Option<String>,
     pub detail: Option<String>,
+    #[serde(default)]
+    pub preselect: Option<bool>,
     #[serde(rename = "textEdit")]
     pub text_edit: Option<serde_json::Value>,
 }

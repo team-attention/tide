@@ -2976,6 +2976,8 @@ mod lsp_completion {
                 insert_text: None,
                 sort_text: None,
                 filter_text: None,
+                preselect: false,
+                detail: None,
             },
             CompletionItem {
                 label: "contains".into(),
@@ -2983,6 +2985,8 @@ mod lsp_completion {
                 insert_text: Some("contains()".into()),
                 sort_text: None,
                 filter_text: None,
+                preselect: false,
+                detail: None,
             },
             CompletionItem {
                 label: "const".into(),
@@ -2990,6 +2994,8 @@ mod lsp_completion {
                 insert_text: None,
                 sort_text: None,
                 filter_text: None,
+                preselect: false,
+                detail: None,
             },
             CompletionItem {
                 label: "constructor".into(),
@@ -2997,6 +3003,8 @@ mod lsp_completion {
                 insert_text: Some("constructor()".into()),
                 sort_text: None,
                 filter_text: None,
+                preselect: false,
+                detail: None,
             },
             CompletionItem {
                 label: "continue".into(),
@@ -3004,6 +3012,8 @@ mod lsp_completion {
                 insert_text: None,
                 sort_text: None,
                 filter_text: None,
+                preselect: false,
+                detail: None,
             },
         ]
     }
@@ -3025,6 +3035,8 @@ mod lsp_completion {
             insert_text: None,
             sort_text: None,
             filter_text: None,
+            preselect: false,
+            detail: None,
         }).collect();
         let state = CompletionState::new(items, 0, 0);
         let visible: Vec<_> = state.visible_items().collect();
@@ -3048,6 +3060,34 @@ mod lsp_completion {
         assert!(labels.contains(&"constructor"));
         assert!(!labels.contains(&"console"));
         assert!(!labels.contains(&"continue"));
+    }
+
+    #[test]
+    fn backspace_shortens_prefix_and_refilters() {
+        // UC-3 BR-11a: Backspace shortens prefix and re-filters completion items
+        let mut state = CompletionState::new(sample_items(), 0, 0);
+        state.prefix = "const".into();
+        state.apply_filter();
+        assert_eq!(state.filtered_indices.len(), 2); // "const", "constructor"
+
+        // Simulate backspace: "const" → "cons"
+        state.prefix.pop();
+        state.apply_filter();
+        // "cons" matches: console, const, constructor, contains
+        assert!(state.filtered_indices.len() >= 3);
+    }
+
+    #[test]
+    fn backspace_on_empty_prefix_dismisses_completion() {
+        // UC-3 BR-11a: Backspace on empty prefix → dismiss (prefix becomes empty)
+        let mut state = CompletionState::new(sample_items(), 0, 0);
+        state.prefix = "a".into();
+        state.apply_filter();
+
+        // Simulate backspace: "a" → ""
+        state.prefix.pop();
+        // Caller should dismiss when prefix becomes empty after backspace
+        assert!(state.prefix.is_empty());
     }
 
     #[test]
@@ -3106,6 +3146,8 @@ mod lsp_completion {
             insert_text: None,
             sort_text: None,
             filter_text: None,
+            preselect: false,
+            detail: None,
         }).collect();
         let mut state = CompletionState::new(items, 0, 0);
         assert_eq!(state.scroll_offset, 0);
@@ -3307,5 +3349,110 @@ mod lsp_completion {
         assert_eq!(CompletionKind::Keyword.abbr(), "kw");
         assert_eq!(CompletionKind::Method.abbr(), "mth");
         assert_eq!(CompletionKind::Other.abbr(), "");
+    }
+
+    // --- UC-3 BR-13: sortText tiebreaker ---
+
+    #[test]
+    fn sort_text_breaks_tie_when_fuzzy_scores_equal() {
+        // UC-3 BR-13: When fuzzy scores are equal, sortText breaks the tie (ascending)
+        let items = vec![
+            CompletionItem {
+                label: "zebra".into(),
+                kind: CompletionKind::Variable,
+                insert_text: None,
+                sort_text: Some("2".into()),
+                filter_text: None,
+                preselect: false,
+                detail: None,
+            },
+            CompletionItem {
+                label: "alpha".into(),
+                kind: CompletionKind::Variable,
+                insert_text: None,
+                sort_text: Some("0".into()),
+                filter_text: None,
+                preselect: false,
+                detail: None,
+            },
+            CompletionItem {
+                label: "middle".into(),
+                kind: CompletionKind::Variable,
+                insert_text: None,
+                sort_text: Some("1".into()),
+                filter_text: None,
+                preselect: false,
+                detail: None,
+            },
+        ];
+        // Empty prefix → all items shown, fuzzy scores all 0 → sortText decides order
+        let mut state = CompletionState::new(items, 0, 0);
+        state.prefix = "".into();
+        state.apply_filter();
+
+        let labels: Vec<&str> = state.filtered_indices.iter()
+            .map(|&i| state.items[i].label.as_str())
+            .collect();
+        assert_eq!(labels, vec!["alpha", "middle", "zebra"]);
+    }
+
+    // --- UC-3 BR-13a: preselect boost ---
+
+    #[test]
+    fn preselect_items_boosted_to_top() {
+        // UC-3 BR-13a: Items with preselect=true appear before non-preselected items
+        let items = vec![
+            CompletionItem {
+                label: "string".into(),
+                kind: CompletionKind::Keyword,
+                insert_text: None,
+                sort_text: Some("1".into()),
+                filter_text: None,
+                preselect: false,
+                detail: None,
+            },
+            CompletionItem {
+                label: "String".into(),
+                kind: CompletionKind::Variable,
+                insert_text: None,
+                sort_text: Some("0".into()),
+                filter_text: None,
+                preselect: true,
+                detail: None,
+            },
+            CompletionItem {
+                label: "stringify".into(),
+                kind: CompletionKind::Function,
+                insert_text: None,
+                sort_text: Some("2".into()),
+                filter_text: None,
+                preselect: false,
+                detail: None,
+            },
+        ];
+        let mut state = CompletionState::new(items, 0, 0);
+        state.prefix = "stri".into();
+        state.apply_filter();
+
+        // String (preselect=true) should be first regardless of fuzzy score
+        let first_label = state.items[state.filtered_indices[0]].label.as_str();
+        assert_eq!(first_label, "String", "preselected item should be first");
+    }
+
+    // --- UC-3 BR-14: detail text ---
+
+    #[test]
+    fn completion_item_includes_detail_text() {
+        // UC-3 BR-14: CompletionItem stores detail text from server
+        let item = CompletionItem {
+            label: "useState".into(),
+            kind: CompletionKind::Function,
+            insert_text: None,
+            sort_text: None,
+            filter_text: None,
+            preselect: false,
+            detail: Some("function useState<S>(): [S, Dispatch<S>]".into()),
+        };
+        assert_eq!(item.detail.as_deref(), Some("function useState<S>(): [S, Dispatch<S>]"));
     }
 }

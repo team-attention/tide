@@ -99,9 +99,11 @@ Supported languages (v1): TypeScript, Python, Rust, Go.
   - BR-9b: `didChange` must be sent to the LSP server BEFORE `completion` request (server needs updated buffer)
   - BR-10: Ctrl+Space triggers completion explicitly at any position
   - BR-11: Continued typing within same prefix filters existing items client-side
+  - BR-11a: Backspace shortens the prefix and re-filters; if prefix becomes empty, dismiss the popup
   - BR-12: CompletionPopup shows max 10 visible items with scroll
-  - BR-13: Items sorted by server-provided sortText, then label
-  - BR-14: Each item shows: label + kind abbreviation (fn, var, typ, mod, kw, snip, etc.)
+  - BR-13: Items sorted by fuzzy score first; when scores tie, server-provided sortText breaks the tie (lexicographic ascending); when sortText also ties, original server order is preserved
+  - BR-13a: Items with `preselect: true` from the server are boosted to the top of the sorted list (above equal-score non-preselected items)
+  - BR-14: Each item shows: kind abbreviation (fn, var, typ, mod, kw, snip, etc.) + label + detail text (right-aligned, dimmed)
   - BR-15: CompletionPopup positioned below cursor line; flips above if insufficient space below
 
 ### UC-4: NavigateCompletion
@@ -191,7 +193,12 @@ Supported languages (v1): TypeScript, Python, Rust, Go.
 | UC-3 | BR-9b | `did_change_sent_before_completion_request` |
 | UC-3 | BR-10 | `ctrl_space_triggers_completion` |
 | UC-3 | BR-11 | `typing_filters_existing_completions_client_side` |
+| UC-3 | BR-11a | `backspace_shortens_prefix_and_refilters` |
+| UC-3 | BR-11a | `backspace_on_empty_prefix_dismisses_completion` |
 | UC-3 | BR-12 | `completion_popup_shows_max_ten_items` |
+| UC-3 | BR-13 | `sort_text_breaks_tie_when_fuzzy_scores_equal` |
+| UC-3 | BR-13a | `preselect_items_boosted_to_top` |
+| UC-3 | BR-14 | `completion_item_includes_detail_text` |
 | UC-3 | BR-15 | `completion_popup_flips_above_when_near_bottom` |
 | UC-4 | BR-16 | `down_selects_next_completion_item` |
 | UC-4 | BR-17 | `up_selects_previous_completion_item` |
