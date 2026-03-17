@@ -113,6 +113,8 @@ pub struct CompletionItemData {
     pub insert_text: Option<String>,
     pub sort_text: Option<String>,
     pub filter_text: Option<String>,
+    pub preselect: bool,
+    pub detail: Option<String>,
 }
 
 /// Manages all language server instances.
@@ -386,6 +388,8 @@ fn parse_completion_response(value: serde_json::Value, uri: &str) -> Option<Comp
             insert_text: item.insert_text,
             sort_text: item.sort_text,
             filter_text: item.filter_text,
+            preselect: item.preselect.unwrap_or(false),
+            detail: item.detail,
         }
     }).collect();
 

@@ -173,9 +173,31 @@ impl App {
                             self.dismiss_completion(focused_id);
                             // Fall through to normal handling
                         }
-                        // Modifier-only and printable char keys fall through
-                        // without dismissing — text_routing handles filtering.
-                        Key::Char(_) | Key::Backspace => {}
+                        // Backspace shortens the prefix and re-filters (BR-11a).
+                        // If prefix becomes empty, dismiss the popup.
+                        Key::Backspace => {
+                            if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&focused_id) {
+                                let should_dismiss = if let Some(ref mut cs) = pane.completion {
+                                    cs.prefix.pop();
+                                    if cs.prefix.is_empty() {
+                                        true
+                                    } else {
+                                        cs.apply_filter();
+                                        cs.is_empty()
+                                    }
+                                } else {
+                                    false
+                                };
+                                if should_dismiss {
+                                    pane.completion = None;
+                                }
+                            }
+                            self.cache.invalidate_pane(focused_id);
+                            // Fall through to normal backspace handling
+                        }
+                        // Printable char keys fall through —
+                        // text_routing handles filtering.
+                        Key::Char(_) => {}
                         _ => {
                             // Other non-text keys dismiss completion
                             // and fall through to normal handling
