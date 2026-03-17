@@ -3,10 +3,22 @@
 //! Uses raw `objc2` message sends to interact with WebKit classes,
 //! avoiding a direct WebKit crate dependency.
 
+use std::sync::Mutex;
+
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Bool};
 use objc2::{declare_class, msg_send, msg_send_id, mutability, ClassType, DeclaredClass};
 use objc2_foundation::{CGFloat, MainThreadMarker, NSObject, NSRect, NSPoint, NSSize, NSString};
+
+/// Global queue for URLs that should open in a new browser tab.
+/// Populated by the WKUIDelegate when Cmd+click triggers a new window request.
+static NEW_TAB_URLS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Drain all pending new-tab URLs. Call from the app event loop.
+pub fn drain_new_tab_urls() -> Vec<String> {
+    let mut queue = NEW_TAB_URLS.lock().unwrap_or_else(|e| e.into_inner());
+    std::mem::take(&mut *queue)
+}
 
 // ---------------------------------------------------------------------------
 // WKUIDelegate — handles popups, JavaScript dialogs, etc.
@@ -31,7 +43,7 @@ declare_class!(
             unsafe { msg_send_id![super(this), init] }
         }
 
-        /// Handle window.open() by loading in the same webview (no popup windows).
+        /// Handle window.open() / target=_blank — load in same webview (no popup windows).
         #[method_id(webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:)]
         fn create_webview(
             &self,
@@ -132,6 +144,101 @@ declare_class!(
     }
 );
 
+// ---------------------------------------------------------------------------
+// WKNavigationDelegate — handles download responses
+// ---------------------------------------------------------------------------
+declare_class!(
+    struct TideNavigationDelegate;
+
+    unsafe impl ClassType for TideNavigationDelegate {
+        type Super = NSObject;
+        type Mutability = mutability::MainThreadOnly;
+        const NAME: &'static str = "TideNavigationDelegate";
+    }
+
+    impl DeclaredClass for TideNavigationDelegate {
+        type Ivars = ();
+    }
+
+    unsafe impl TideNavigationDelegate {
+        #[method_id(init)]
+        fn init(this: objc2::rc::Allocated<Self>) -> Option<Retained<Self>> {
+            let this = this.set_ivars(());
+            unsafe { msg_send_id![super(this), init] }
+        }
+
+        /// Handle navigation action — intercept Cmd+click to open in new tab.
+        /// WKNavigationActionPolicy: .cancel = 0, .allow = 1
+        #[method(webView:decidePolicyForNavigationAction:decisionHandler:)]
+        fn decide_policy_for_action(
+            &self,
+            _webview: &AnyObject,
+            navigation_action: &AnyObject,
+            decision_handler: &block2::Block<dyn Fn(i64)>,
+        ) {
+            unsafe {
+                // Check modifier flags for Cmd key (NSEventModifierFlagCommand = 1 << 20)
+                let modifier_flags: usize = msg_send![navigation_action, modifierFlags];
+                let cmd_held = modifier_flags & (1 << 20) != 0;
+
+                // WKNavigationType: linkActivated = 0
+                let nav_type: isize = msg_send![navigation_action, navigationType];
+                let is_link_click = nav_type == 0;
+
+                if cmd_held && is_link_click {
+                    // Cmd+click on a link: queue URL for new tab, cancel navigation
+                    let request: Retained<AnyObject> = msg_send_id![navigation_action, request];
+                    let url_obj: Option<Retained<AnyObject>> = msg_send_id![&request, URL];
+                    if let Some(url) = url_obj {
+                        let abs: Option<Retained<AnyObject>> = msg_send_id![&url, absoluteString];
+                        if let Some(s) = abs {
+                            let utf8: *const std::ffi::c_char = msg_send![&s, UTF8String];
+                            if !utf8.is_null() {
+                                let url_str = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
+                                if let Ok(mut queue) = NEW_TAB_URLS.lock() {
+                                    queue.push(url_str);
+                                }
+                            }
+                        }
+                    }
+                    decision_handler.call((0,)); // .cancel — don't navigate current webview
+                    return;
+                }
+
+                decision_handler.call((1,)); // .allow
+            }
+        }
+
+        /// Handle navigation response — detect downloads and open in system browser.
+        /// WKNavigationResponsePolicy: .allow = 1, .cancel = 0, .download = 2
+        #[method(webView:decidePolicyForNavigationResponse:decisionHandler:)]
+        fn decide_policy_for_response(
+            &self,
+            _webview: &AnyObject,
+            navigation_response: &AnyObject,
+            decision_handler: &block2::Block<dyn Fn(i64)>,
+        ) {
+            unsafe {
+                let can_show: Bool = msg_send![navigation_response, canShowMIMEType];
+                if can_show.as_bool() {
+                    // WebView can render this content — allow it
+                    decision_handler.call((1,)); // .allow
+                } else {
+                    // WebView can't render (likely a download) — open in system browser
+                    let response: Retained<AnyObject> = msg_send_id![navigation_response, response];
+                    let url: Option<Retained<AnyObject>> = msg_send_id![&response, URL];
+                    if let Some(url) = url {
+                        let workspace_cls = AnyClass::get("NSWorkspace").expect("NSWorkspace class");
+                        let shared: Retained<AnyObject> = msg_send_id![workspace_cls, sharedWorkspace];
+                        let _: Bool = msg_send![&shared, openURL: &*url];
+                    }
+                    decision_handler.call((0,)); // .cancel
+                }
+            }
+        }
+    }
+);
+
 // Raw libdispatch FFI for dispatching WebView creation to the main thread.
 // `dispatch_get_main_queue()` is a C macro; the actual symbol is `_dispatch_main_q`.
 extern "C" {
@@ -148,6 +255,8 @@ pub struct WebViewHandle {
     webview: Retained<AnyObject>,
     /// Retained so the weak UIDelegate reference stays valid.
     _ui_delegate: Retained<TideUIDelegate>,
+    /// Retained so the weak NavigationDelegate reference stays valid.
+    _nav_delegate: Retained<TideNavigationDelegate>,
 }
 
 /// Context passed through `dispatch_sync_f` to create a WKWebView on the main thread.
@@ -334,10 +443,16 @@ impl WebViewHandle {
         };
         let _: () = msg_send![&webview, setUIDelegate: &*delegate];
 
+        // Set up navigation delegate for download handling
+        let nav_delegate: Retained<TideNavigationDelegate> = unsafe {
+            msg_send_id![mtm.alloc::<TideNavigationDelegate>(), init]
+        };
+        let _: () = msg_send![&webview, setNavigationDelegate: &*nav_delegate];
+
         // Add as subview
         let _: () = msg_send![parent, addSubview: &*webview];
 
-        Some(Self { webview, _ui_delegate: delegate })
+        Some(Self { webview, _ui_delegate: delegate, _nav_delegate: nav_delegate })
     }
 
     /// Navigate to a URL string.
@@ -499,6 +614,29 @@ impl WebViewHandle {
             } else {
                 Some(std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned())
             }
+        }
+    }
+
+    /// Execute a find-in-page search using WKWebView's performTextSearch API.
+    /// Falls back to JavaScript window.find() for broad compatibility.
+    pub fn find_string(&self, query: &str, forward: bool) {
+        let escaped = query.replace('\\', "\\\\").replace('\'', "\\'");
+        let js = if forward {
+            format!("window.find('{}', false, false, true)", escaped)
+        } else {
+            format!("window.find('{}', false, true, true)", escaped)
+        };
+        let ns_js = NSString::from_str(&js);
+        unsafe {
+            let _: () = msg_send![&self.webview, evaluateJavaScript: &*ns_js completionHandler: std::ptr::null::<AnyObject>()];
+        }
+    }
+
+    /// Clear find-in-page highlight by deselecting.
+    pub fn clear_find(&self) {
+        let ns_js = NSString::from_str("window.getSelection().removeAllRanges()");
+        unsafe {
+            let _: () = msg_send![&self.webview, evaluateJavaScript: &*ns_js completionHandler: std::ptr::null::<AnyObject>()];
         }
     }
 

@@ -323,12 +323,12 @@ pub fn render_pane_header(
         }
         Some(PaneKind::Browser(_bp)) => {
             // Browser panes render their own header via the nav bar; no header badges needed.
-            let title = "Browser";
+            let title = _bp.title();
             let title_color = if is_focused { p.tab_text_focused } else { p.tab_text };
             let title_w = (title.chars().count() as f32 * cell_size.width + BADGE_PADDING_H * 2.0)
                 .min(badge_right - content_left);
             if title_w > 20.0 {
-                render_badge_colored(renderer, content_left, text_y, title_w, cell_height, title, title_color, badge_bg, BADGE_RADIUS);
+                render_badge_colored(renderer, content_left, text_y, title_w, cell_height, &title, title_color, badge_bg, BADGE_RADIUS);
             }
         }
         Some(PaneKind::Diff(dp)) => {
@@ -690,7 +690,7 @@ fn dock_tab_label(panes: &HashMap<PaneId, PaneKind>, id: PaneId) -> String {
             }
         }
         Some(PaneKind::Editor(ep)) => ep.title(),
-        Some(PaneKind::Browser(_)) => "Browser".to_string(),
+        Some(PaneKind::Browser(bp)) => bp.title(),
         Some(PaneKind::Diff(_)) => "Changes".to_string(),
         Some(PaneKind::Launcher(_)) => "New Tab".to_string(),
         None => format!("Pane {}", id),

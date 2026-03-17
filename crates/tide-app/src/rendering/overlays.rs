@@ -115,6 +115,10 @@ fn render_search_bars(
                 Some(s) if s.visible => (s.input.text.clone(), s.current_display(), s.input.cursor, true),
                 _ => continue,
             },
+            Some(PaneKind::Browser(bp)) => match &bp.search {
+                Some(s) if s.visible => (s.input.text.clone(), String::new(), s.input.cursor, true),
+                _ => continue,
+            },
             _ => continue,
         };
         if visible {

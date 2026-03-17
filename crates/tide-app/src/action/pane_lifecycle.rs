@@ -148,15 +148,43 @@ impl App {
                 self.router.set_focused(new_id);
             }
             _ => {
-                // Stage: create Terminal directly
-                let new_id = self.layout.alloc_id();
-                self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Horizontal, false);
-                if self.zoomed_pane.is_some() {
-                    self.zoomed_pane = Some(new_id);
+                // Stage: if focused pane is in a TabGroup, add a new tab there;
+                // otherwise create a horizontal split with a new Terminal.
+                let in_tab_group = self.layout.tab_group_containing(focused).is_some();
+                if in_tab_group {
+                    // Add Launcher tab to the same TabGroup for pane type selection
+                    let new_id = self.layout.alloc_id();
+                    if self.layout.add_tab(focused, new_id) {
+                        self.panes.insert(new_id, PaneKind::Launcher(new_id));
+                        self.ime.pending_creates.push(new_id);
+                        if let Some(tid) = self.resolve_context_terminal_id() {
+                            self.associated_terminal.insert(new_id, tid);
+                        }
+                        if self.zoomed_pane.is_some() {
+                            self.zoomed_pane = Some(new_id);
+                        }
+                        self.focused = Some(new_id);
+                        self.router.set_focused(new_id);
+                    } else {
+                        // No TabGroup — fall through to split
+                        let cwd = self.focused_terminal_cwd();
+                        self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Horizontal, false);
+                        if self.zoomed_pane.is_some() {
+                            self.zoomed_pane = Some(new_id);
+                        }
+                        self.create_terminal_pane(new_id, cwd);
+                        self.focus_terminal(new_id);
+                    }
+                } else {
+                    let new_id = self.layout.alloc_id();
+                    self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Horizontal, false);
+                    if self.zoomed_pane.is_some() {
+                        self.zoomed_pane = Some(new_id);
+                    }
+                    let cwd = self.focused_terminal_cwd();
+                    self.create_terminal_pane(new_id, cwd);
+                    self.focus_terminal(new_id);
                 }
-                let cwd = self.focused_terminal_cwd();
-                self.create_terminal_pane(new_id, cwd);
-                self.focus_terminal(new_id);
             }
         }
 
@@ -289,7 +317,14 @@ impl App {
             self.associated_terminal.insert(new_id, tid);
             self.focus_area = crate::ui_state::FocusArea::Dock;
         } else {
-            self.add_to_non_terminal_group(focused, new_id);
+            // Add to the same TabGroup as the focused pane (not a split)
+            if !self.layout.add_tab(focused, new_id) {
+                // Fallback: create a split if no TabGroup exists
+                self.add_to_non_terminal_group(focused, new_id);
+            }
+            if self.zoomed_pane.is_some() {
+                self.zoomed_pane = Some(new_id);
+            }
             if let Some(tid) = context_terminal {
                 self.associated_terminal.insert(new_id, tid);
             }

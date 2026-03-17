@@ -940,6 +940,20 @@ fn render_browser_nav_bar(
     );
     cx += cell_w * 2.0 + 4.0;
 
+    // Loading progress bar (thin line below nav bar)
+    if bp.loading {
+        let progress_h = 2.0;
+        let progress_y = nav_y + nav_h - progress_h;
+        // Indeterminate: animate a sliding bar using generation as pseudo-time
+        let phase = (bp.generation % 60) as f32 / 60.0;
+        let bar_w = nav_w * 0.3;
+        let bar_x = nav_x + (nav_w - bar_w) * phase;
+        renderer.draw_chrome_rect(
+            Rect::new(bar_x, progress_y, bar_w, progress_h),
+            p.cursor_accent,
+        );
+    }
+
     // URL bar
     let url_w = nav_x + nav_w - cx - 8.0;
     if url_w > 40.0 {
