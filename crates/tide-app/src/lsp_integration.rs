@@ -213,6 +213,8 @@ impl App {
                         insert_text: item.insert_text,
                         sort_text: item.sort_text,
                         filter_text: item.filter_text,
+                        preselect: item.preselect,
+                        detail: item.detail,
                     }
                 }).collect();
 
