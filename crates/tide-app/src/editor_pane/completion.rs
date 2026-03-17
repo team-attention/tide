@@ -9,6 +9,10 @@ pub struct CompletionItem {
     pub insert_text: Option<String>,
     pub sort_text: Option<String>,
     pub filter_text: Option<String>,
+    /// Server hint that this item should be pre-selected (boosted to top).
+    pub preselect: bool,
+    /// Short description (e.g. type signature) shown right-aligned in popup.
+    pub detail: Option<String>,
 }
 
 /// Kind of a completion item, shown as an abbreviation in the popup.
@@ -123,9 +127,31 @@ impl CompletionState {
     /// Re-filter and sort items using fuzzy matching (VS Code-style).
     /// Characters in the prefix must appear in order in the candidate.
     /// Scoring: consecutive matches, word boundary matches, prefix matches get bonuses.
+    ///
+    /// Sort order (BR-13, BR-13a):
+    ///   1. preselect items first (BR-13a)
+    ///   2. fuzzy score descending
+    ///   3. sortText ascending as tiebreaker (BR-13)
+    ///   4. original server order
     pub fn apply_filter(&mut self) {
         if self.prefix.is_empty() {
-            self.filtered_indices = (0..self.items.len()).collect();
+            // No prefix: sort by preselect → sortText → original order
+            let mut indices: Vec<(usize, bool, Option<&str>)> = self.items.iter().enumerate()
+                .map(|(i, item)| (i, item.preselect, item.sort_text.as_deref()))
+                .collect();
+            indices.sort_by(|a, b| {
+                b.1.cmp(&a.1) // preselect first
+                    .then_with(|| {
+                        match (a.2, b.2) {
+                            (Some(sa), Some(sb)) => sa.cmp(sb),
+                            (Some(_), None) => std::cmp::Ordering::Less,
+                            (None, Some(_)) => std::cmp::Ordering::Greater,
+                            (None, None) => std::cmp::Ordering::Equal,
+                        }
+                    })
+                    .then(a.0.cmp(&b.0))
+            });
+            self.filtered_indices = indices.into_iter().map(|(i, _, _)| i).collect();
             self.selected_index = 0;
             self.scroll_offset = 0;
             return;
@@ -134,17 +160,31 @@ impl CompletionState {
         let pattern: Vec<char> = self.prefix.to_lowercase().chars().collect();
 
         // Score each item with fuzzy matching
-        let mut scored: Vec<(usize, i32)> = self.items.iter().enumerate()
+        let mut scored: Vec<(usize, i32, bool, Option<&str>)> = self.items.iter().enumerate()
             .filter_map(|(i, item)| {
                 let text = item.filter_text.as_deref().unwrap_or(&item.label);
-                fuzzy_score(&pattern, text).map(|score| (i, score))
+                fuzzy_score(&pattern, text).map(|score| {
+                    (i, score, item.preselect, item.sort_text.as_deref())
+                })
             })
             .collect();
 
-        // Sort by score descending (higher = better), then by original index
-        scored.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        // Sort: preselect first → score descending → sortText ascending → original index
+        scored.sort_by(|a, b| {
+            b.2.cmp(&a.2) // preselect first
+                .then(b.1.cmp(&a.1)) // score descending
+                .then_with(|| {
+                    match (a.3, b.3) {
+                        (Some(sa), Some(sb)) => sa.cmp(sb),
+                        (Some(_), None) => std::cmp::Ordering::Less,
+                        (None, Some(_)) => std::cmp::Ordering::Greater,
+                        (None, None) => std::cmp::Ordering::Equal,
+                    }
+                })
+                .then(a.0.cmp(&b.0))
+        });
 
-        self.filtered_indices = scored.into_iter().map(|(i, _)| i).collect();
+        self.filtered_indices = scored.into_iter().map(|(i, _, _, _)| i).collect();
         self.selected_index = 0;
         self.scroll_offset = 0;
     }

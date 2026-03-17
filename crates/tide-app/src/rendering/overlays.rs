@@ -478,7 +478,16 @@ fn render_completion_popups(
             .map(|(_, item)| visual_width(&item.label))
             .max()
             .unwrap_or(10);
-        let popup_w = (kind_col_width + (max_label_len as f32 + 2.0) * cell_size.width)
+        let max_detail_len = visible.iter()
+            .filter_map(|(_, item)| item.detail.as_ref().map(|d| visual_width(d).min(30)))
+            .max()
+            .unwrap_or(0);
+        let detail_col_width = if max_detail_len > 0 {
+            (max_detail_len as f32 + 2.0) * cell_size.width
+        } else {
+            0.0
+        };
+        let popup_w = (kind_col_width + (max_label_len as f32 + 2.0) * cell_size.width + detail_col_width)
             .max(min_label_width + kind_col_width)
             .min(pane_rect.width * 0.8);
         let popup_h = visible_count as f32 * line_height + 2.0 * popup_padding;
@@ -572,8 +581,31 @@ fn render_completion_popups(
                 italic: false,
                 underline: false,
             };
-            let label_clip = Rect::new(label_x, y, popup_w - kind_col_width - 12.0, line_height);
+            let label_avail = popup_w - kind_col_width - 12.0 - detail_col_width;
+            let label_clip = Rect::new(label_x, y, label_avail, line_height);
             renderer.draw_top_text(&item.label, Vec2::new(label_x, item_y), label_style, label_clip);
+
+            // Detail text (right-aligned, dimmed)
+            if let Some(ref detail) = item.detail {
+                let detail_str: String = detail.chars().take(30).collect();
+                let detail_w = visual_width(&detail_str) as f32 * cell_size.width;
+                let detail_x = popup_x + popup_w - detail_w - 8.0;
+                let detail_style = TextStyle {
+                    foreground: p.tab_text,
+                    background: None,
+                    bold: false,
+                    dim: true,
+                    italic: false,
+                    underline: false,
+                };
+                let detail_clip = Rect::new(
+                    popup_x + popup_w - detail_col_width - 4.0,
+                    y,
+                    detail_col_width,
+                    line_height,
+                );
+                renderer.draw_top_text(&detail_str, Vec2::new(detail_x, item_y), detail_style, detail_clip);
+            }
         }
     }
 }
