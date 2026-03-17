@@ -1,5 +1,6 @@
 // Editor pane: wraps EditorState with rendering helpers (mirrors TerminalPane).
 
+pub(crate) mod completion;
 mod rendering;
 
 use std::io;
@@ -115,12 +116,14 @@ pub struct EditorPane {
     pub soft_wrap: bool,
     /// Cached wrap map for soft-wrapped rendering.
     wrap_map: Option<WrapMap>,
+    /// Inline completion popup state. NOT part of ModalStack.
+    pub completion: Option<completion::CompletionState>,
 }
 
 impl EditorPane {
     pub fn new_empty(id: PaneId) -> Self {
         let editor = EditorState::new_empty();
-        Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: false, preview_cache: None, preview_scroll: 0, preview_h_scroll: 0, preview_last_width: None, preview_scroll_pending_ratio: None, last_is_modified: false, last_checked_gen: 0, soft_wrap: false, wrap_map: None }
+        Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: false, preview_cache: None, preview_scroll: 0, preview_h_scroll: 0, preview_last_width: None, preview_scroll_pending_ratio: None, last_is_modified: false, last_checked_gen: 0, soft_wrap: false, wrap_map: None, completion: None }
     }
 
     pub fn open(id: PaneId, path: &Path) -> io::Result<Self> {
@@ -130,7 +133,7 @@ impl EditorPane {
             .map(|ext| matches!(ext, "md" | "markdown" | "mdown" | "mkd"))
             .unwrap_or(false);
         let soft_wrap = Self::is_prose_extension(path);
-        Ok(Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: is_markdown, preview_cache: None, preview_scroll: 0, preview_h_scroll: 0, preview_last_width: None, preview_scroll_pending_ratio: None, last_is_modified: false, last_checked_gen: 0, soft_wrap, wrap_map: None })
+        Ok(Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: is_markdown, preview_cache: None, preview_scroll: 0, preview_h_scroll: 0, preview_last_width: None, preview_scroll_pending_ratio: None, last_is_modified: false, last_checked_gen: 0, soft_wrap, wrap_map: None, completion: None })
     }
 
     /// Whether this pane needs a notification bar (disk changed, diff mode, or file deleted).

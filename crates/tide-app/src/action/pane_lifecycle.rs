@@ -373,6 +373,7 @@ impl App {
                 self.cache.invalidate_chrome();
                 self.cache.pane_generations.clear();
                 self.watch_file(&path);
+                self.notify_lsp_did_open(pane_id);
                 self.compute_layout();
             }
             Err(e) => {
@@ -443,6 +444,7 @@ impl App {
                 self.cache.invalidate_chrome();
                 // Watch the file for external changes
                 self.watch_file(&path);
+                self.notify_lsp_did_open(new_id);
                 self.compute_layout();
             }
             Err(e) => {
