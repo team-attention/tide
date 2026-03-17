@@ -708,6 +708,11 @@ impl App {
                     bp.needs_initial_navigate = false;
                 }
 
+                // Poll webview for state changes (URL, loading, back/forward)
+                if bp.sync_webview_state() {
+                    self.cache.invalidate_chrome();
+                }
+
                 // First responder management: only the focused browser pane
                 // should become first responder. A visible-but-unfocused
                 // browser pane must NOT steal first responder from the

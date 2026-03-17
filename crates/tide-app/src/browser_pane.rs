@@ -1,6 +1,8 @@
 use tide_core::PaneId;
 use tide_platform::macos::webview::WebViewHandle;
 
+use crate::search::SearchState;
+
 /// A browser pane backed by a native WKWebView.
 pub struct BrowserPane {
     /// Current URL displayed by the webview.
@@ -25,6 +27,8 @@ pub struct BrowserPane {
     pub is_first_responder: bool,
     /// Whether the webview needs to navigate to `url` once visible with a proper frame.
     pub needs_initial_navigate: bool,
+    /// Find-in-page search state (Cmd+F).
+    pub search: Option<SearchState>,
 }
 
 impl BrowserPane {
@@ -41,6 +45,7 @@ impl BrowserPane {
             generation: 0,
             is_first_responder: false,
             needs_initial_navigate: false,
+            search: None,
         }
     }
 
@@ -59,6 +64,7 @@ impl BrowserPane {
             generation: 0,
             is_first_responder: false,
             needs_initial_navigate: true,
+            search: None,
         }
     }
 
@@ -141,6 +147,54 @@ impl BrowserPane {
     /// Number of characters in the URL input.
     pub fn url_input_char_len(&self) -> usize {
         self.url_input.chars().count()
+    }
+
+    /// Poll the webview for state changes (URL, loading, back/forward).
+    /// Returns true if any state changed (caller should invalidate chrome).
+    pub fn sync_webview_state(&mut self) -> bool {
+        let wv = match self.webview {
+            Some(ref wv) => wv,
+            None => return false,
+        };
+
+        let mut changed = false;
+
+        // Sync URL: update url + url_input when webview navigated internally
+        if let Some(current) = wv.current_url() {
+            if current != self.url && !current.is_empty() {
+                self.url = current.clone();
+                // Only update the input text if user isn't actively editing
+                if !self.url_input_focused {
+                    self.url_input = current.clone();
+                    self.url_input_cursor = current.chars().count();
+                }
+                changed = true;
+            }
+        }
+
+        // Sync loading state
+        let loading = wv.is_loading();
+        if loading != self.loading {
+            self.loading = loading;
+            changed = true;
+        }
+
+        // Sync back/forward availability
+        let back = wv.can_go_back();
+        if back != self.can_go_back {
+            self.can_go_back = back;
+            changed = true;
+        }
+        let fwd = wv.can_go_forward();
+        if fwd != self.can_go_forward {
+            self.can_go_forward = fwd;
+            changed = true;
+        }
+
+        if changed {
+            self.generation = self.generation.wrapping_add(1);
+        }
+        changed
     }
 
     /// Remove the webview from the view hierarchy and drop the handle.

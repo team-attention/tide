@@ -972,7 +972,13 @@ impl App {
                 Some(PaneKind::Editor(pane)) => {
                     pane.search = None;
                 }
-                Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) | Some(PaneKind::Launcher(_)) => {}
+                Some(PaneKind::Browser(bp)) => {
+                    if let Some(ref wv) = bp.webview {
+                        wv.clear_find();
+                    }
+                    bp.search = None;
+                }
+                Some(PaneKind::Diff(_)) | Some(PaneKind::Launcher(_)) => {}
                 None => {}
             }
             self.search_focus = None;
@@ -988,7 +994,13 @@ impl App {
                     Some(PaneKind::Editor(pane)) => {
                         pane.search = None;
                     }
-                    Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) | Some(PaneKind::Launcher(_)) => {}
+                    Some(PaneKind::Browser(bp)) => {
+                        if let Some(ref wv) = bp.webview {
+                            wv.clear_find();
+                        }
+                        bp.search = None;
+                    }
+                    Some(PaneKind::Diff(_)) | Some(PaneKind::Launcher(_)) => {}
                     None => {}
                 }
                 self.search_focus = None;

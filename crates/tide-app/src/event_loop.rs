@@ -363,8 +363,15 @@ impl App {
                     let pid = *pane_id;
                     self.focused = Some(pid);
                     self.router.set_focused(pid);
+                    // Set correct focus area based on whether pane is in dock
+                    if self.is_pane_in_dock(pid) {
+                        self.focus_area = FocusArea::Dock;
+                    } else {
+                        self.focus_area = FocusArea::Stage;
+                    }
+                } else {
+                    self.focus_area = FocusArea::Stage;
                 }
-                self.focus_area = FocusArea::Stage;
                 self.cache.invalidate_chrome();
             }
             PlatformEvent::ImeCommit(text) => {
@@ -586,6 +593,12 @@ impl App {
         // LSP completion responses
         if self.poll_lsp() {
             // poll_lsp already invalidates the pane cache
+        }
+
+        // Browser Cmd+click new-tab requests
+        let new_tab_urls = tide_platform::macos::webview::drain_new_tab_urls();
+        for url in new_tab_urls {
+            self.open_browser_pane(Some(url));
         }
 
         // Badge check
