@@ -911,6 +911,7 @@ impl App {
                     let has_search = match self.panes.get(&target_id) {
                         Some(PaneKind::Terminal(pane)) => pane.search.is_some(),
                         Some(PaneKind::Editor(pane)) => pane.search.is_some(),
+                        Some(PaneKind::Browser(bp)) => bp.search.is_some(),
                         _ => false,
                     };
                     if has_search {
@@ -922,6 +923,9 @@ impl App {
                             }
                             Some(PaneKind::Editor(pane)) => {
                                 pane.search = Some(SearchState::new());
+                            }
+                            Some(PaneKind::Browser(bp)) => {
+                                bp.search = Some(SearchState::new());
                             }
                             _ => {}
                         }
@@ -960,6 +964,13 @@ impl App {
                 if let Some(focused) = self.focused {
                     if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&focused) {
                         bp.go_forward();
+                    }
+                }
+            }
+            GlobalAction::BrowserReload => {
+                if let Some(focused) = self.focused {
+                    if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&focused) {
+                        bp.reload();
                     }
                 }
             }

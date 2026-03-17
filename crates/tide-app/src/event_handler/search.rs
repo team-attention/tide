@@ -108,7 +108,17 @@ impl App {
                     s.input.insert_char(ch);
                 }
             }
-            Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) | Some(PaneKind::Launcher(_)) => return,
+            Some(PaneKind::Browser(bp)) => {
+                if let Some(ref mut s) = bp.search {
+                    s.input.insert_char(ch);
+                    let query = s.input.text.clone();
+                    if let Some(ref wv) = bp.webview {
+                        wv.find_string(&query, true);
+                    }
+                }
+                return;
+            }
+            Some(PaneKind::Diff(_)) | Some(PaneKind::Launcher(_)) => return,
             None => return,
         }
         self.execute_search(pane_id);
@@ -127,7 +137,21 @@ impl App {
                     s.input.backspace();
                 }
             }
-            Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) | Some(PaneKind::Launcher(_)) => return,
+            Some(PaneKind::Browser(bp)) => {
+                if let Some(ref mut s) = bp.search {
+                    s.input.backspace();
+                    let query = s.input.text.clone();
+                    if let Some(ref wv) = bp.webview {
+                        if query.is_empty() {
+                            wv.clear_find();
+                        } else {
+                            wv.find_string(&query, true);
+                        }
+                    }
+                }
+                return;
+            }
+            Some(PaneKind::Diff(_)) | Some(PaneKind::Launcher(_)) => return,
             None => return,
         }
         self.execute_search(pane_id);
@@ -146,7 +170,21 @@ impl App {
                     s.input.delete_char();
                 }
             }
-            Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) | Some(PaneKind::Launcher(_)) => return,
+            Some(PaneKind::Browser(bp)) => {
+                if let Some(ref mut s) = bp.search {
+                    s.input.delete_char();
+                    let query = s.input.text.clone();
+                    if let Some(ref wv) = bp.webview {
+                        if query.is_empty() {
+                            wv.clear_find();
+                        } else {
+                            wv.find_string(&query, true);
+                        }
+                    }
+                }
+                return;
+            }
+            Some(PaneKind::Diff(_)) | Some(PaneKind::Launcher(_)) => return,
             None => return,
         }
         self.execute_search(pane_id);
@@ -161,7 +199,10 @@ impl App {
             Some(PaneKind::Editor(pane)) => {
                 if let Some(ref mut s) = pane.search { s.input.move_cursor_left(); }
             }
-            Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) | Some(PaneKind::Launcher(_)) => {}
+            Some(PaneKind::Browser(bp)) => {
+                if let Some(ref mut s) = bp.search { s.input.move_cursor_left(); }
+            }
+            Some(PaneKind::Diff(_)) | Some(PaneKind::Launcher(_)) => {}
             None => {}
         }
     }
@@ -174,7 +215,10 @@ impl App {
             Some(PaneKind::Editor(pane)) => {
                 if let Some(ref mut s) = pane.search { s.input.move_cursor_right(); }
             }
-            Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) | Some(PaneKind::Launcher(_)) => {}
+            Some(PaneKind::Browser(bp)) => {
+                if let Some(ref mut s) = bp.search { s.input.move_cursor_right(); }
+            }
+            Some(PaneKind::Diff(_)) | Some(PaneKind::Launcher(_)) => {}
             None => {}
         }
     }
@@ -301,7 +345,17 @@ impl App {
                     }
                 }
             }
-            Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) | Some(PaneKind::Launcher(_)) => {}
+            Some(PaneKind::Browser(bp)) => {
+                if let Some(ref s) = bp.search {
+                    let query = s.input.text.clone();
+                    if !query.is_empty() {
+                        if let Some(ref wv) = bp.webview {
+                            wv.find_string(&query, true);
+                        }
+                    }
+                }
+            }
+            Some(PaneKind::Diff(_)) | Some(PaneKind::Launcher(_)) => {}
             None => {}
         }
     }
@@ -355,7 +409,17 @@ impl App {
                     }
                 }
             }
-            Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) | Some(PaneKind::Launcher(_)) => {}
+            Some(PaneKind::Browser(bp)) => {
+                if let Some(ref s) = bp.search {
+                    let query = s.input.text.clone();
+                    if !query.is_empty() {
+                        if let Some(ref wv) = bp.webview {
+                            wv.find_string(&query, false);
+                        }
+                    }
+                }
+            }
+            Some(PaneKind::Diff(_)) | Some(PaneKind::Launcher(_)) => {}
             None => {}
         }
     }
