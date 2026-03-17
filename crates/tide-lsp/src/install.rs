@@ -187,13 +187,10 @@ fn get_latest_github_release(owner: &str, repo: &str) -> Result<String, String> 
         return Err("GitHub API request failed".to_string());
     }
 
-    let body = String::from_utf8_lossy(&output.stdout);
-    // Simple JSON parsing for "tag_name": "..."
-    let tag = body
-        .split("\"tag_name\"")
-        .nth(1)
-        .and_then(|s| s.split('"').nth(1))
-        .ok_or_else(|| "Failed to parse release tag from GitHub API".to_string())?;
+    let body: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("Failed to parse GitHub API response: {}", e))?;
+    let tag = body["tag_name"].as_str()
+        .ok_or_else(|| "Failed to find 'tag_name' in GitHub API response".to_string())?;
 
     Ok(tag.to_string())
 }

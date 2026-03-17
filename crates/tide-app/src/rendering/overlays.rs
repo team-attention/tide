@@ -475,7 +475,7 @@ fn render_completion_popups(
         // Compute popup dimensions
         let visible_count = visible.len().min(COMPLETION_VISIBLE_COUNT);
         let max_label_len = visible.iter()
-            .map(|(_, item)| item.label.len())
+            .map(|(_, item)| visual_width(&item.label))
             .max()
             .unwrap_or(10);
         let popup_w = (kind_col_width + (max_label_len as f32 + 2.0) * cell_size.width)

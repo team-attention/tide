@@ -223,7 +223,10 @@ impl App {
                         let prefix = if let Some(line_text) = pane.editor.buffer.line(pos.line) {
                             let byte_col = pos.col.min(line_text.len());
                             let before_cursor = &line_text[..byte_col];
-                            // Walk backwards to find word start
+                            // Walk backwards to find word start.
+                            // Word chars: alphanumeric + underscore. Sufficient for currently
+                            // supported languages (TS, Python, Rust, Go). Languages like CSS
+                            // that use hyphens in identifiers would need per-language rules.
                             let word_start = before_cursor.rfind(|ch: char| !ch.is_alphanumeric() && ch != '_')
                                 .map(|i| i + before_cursor[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1))
                                 .unwrap_or(0);

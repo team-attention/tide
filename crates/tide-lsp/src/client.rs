@@ -2,6 +2,7 @@
 // Runs a background reader thread that forwards server responses to the main thread.
 
 use std::collections::HashMap;
+use std::fs;
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -59,11 +60,22 @@ impl LspClient {
         waker: Option<Arc<dyn Fn() + Send + Sync>>,
         shell_path: &str,
     ) -> Option<Self> {
+        // Redirect stderr to a log file for diagnostics
+        let log_dir = dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("/tmp"))
+            .join(".tide")
+            .join("lsp")
+            .join("logs");
+        let _ = fs::create_dir_all(&log_dir);
+        let stderr_cfg = fs::File::create(log_dir.join(format!("{}.stderr.log", command.replace('/', "_"))))
+            .map(Stdio::from)
+            .unwrap_or_else(|_| Stdio::null());
+
         let mut child = Command::new(command)
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(stderr_cfg)
             .current_dir(root_path)
             .env("PATH", shell_path)
             .spawn()

@@ -173,8 +173,11 @@ impl App {
                             self.dismiss_completion(focused_id);
                             // Fall through to normal handling
                         }
+                        // Modifier-only and printable char keys fall through
+                        // without dismissing — text_routing handles filtering.
+                        Key::Char(_) | Key::Backspace => {}
                         _ => {
-                            // Other keys (Backspace, etc.) dismiss completion
+                            // Other non-text keys dismiss completion
                             // and fall through to normal handling
                             self.dismiss_completion(focused_id);
                         }

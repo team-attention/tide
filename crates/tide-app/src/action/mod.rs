@@ -110,10 +110,11 @@ impl App {
             if let Some(ref completion) = pane.completion {
                 if let Some(text) = completion.insert_text() {
                     let prefix_len = completion.prefix.len();
-                    // Delete the typed prefix by backspacing
-                    for _ in 0..prefix_len {
-                        pane.editor.handle_action(EditorAction::Backspace);
-                    }
+                    // Delete the typed prefix using range delete
+                    let end = pane.editor.cursor_position();
+                    let start = tide_editor::buffer::Position { line: end.line, col: end.col.saturating_sub(prefix_len) };
+                    let new_pos = pane.editor.buffer.delete_range(start, end);
+                    pane.editor.cursor.set_position(new_pos);
                     // Insert the completion text
                     pane.editor.insert_text(&text);
                 }
