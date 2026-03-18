@@ -718,7 +718,8 @@ impl App {
                 // browser pane must NOT steal first responder from the
                 // terminal's IME proxy (causes input loss after app switch).
                 let is_focused_pane = self.focused == Some(id);
-                let should_be_first_responder = is_focused_pane && !bp.url_input_focused;
+                let search_bar_active = self.search_focus == Some(id);
+                let should_be_first_responder = is_focused_pane && !bp.url_input_focused && !search_bar_active;
                 if should_be_first_responder && !bp.is_first_responder {
                     if let (Some(wv), Some(win_ptr)) =
                         (&bp.webview, self.window_ptr)

@@ -164,6 +164,7 @@ impl App {
             }
             TextInputTarget::BrowserUrlBar(pane_id) => {
                 if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&pane_id) {
+                    bp.url_delete_selection();
                     for ch in text.chars() {
                         let byte_off = bp.cursor_byte_offset();
                         bp.url_input.insert(byte_off, ch);

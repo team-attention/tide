@@ -65,17 +65,27 @@ pub(crate) fn render_cursor_and_highlights(
                         let max_cols = (inner.width / cell_size.width).floor() as usize;
                         let visible_rows = (grid.rows as usize).min(max_rows);
                         let visible_cols = (grid.cols as usize).min(max_cols);
+                        // Selection coords are absolute; convert to screen-relative
+                        // using display_offset, matching how search highlights work.
+                        let history_size = pane.backend.history_size();
+                        let display_offset = pane.backend.display_offset();
+                        let visible_start = history_size.saturating_sub(display_offset);
+                        let visible_end = visible_start + visible_rows;
                         // Center offset matching terminal grid
                         let actual_w = max_cols as f32 * cell_size.width;
                         let center_x = (inner.width - actual_w) / 2.0;
-                        for row in start.0..=end.0.min(visible_rows.saturating_sub(1)) {
+                        // Clamp iteration to visible absolute row range
+                        let row_lo = start.0.max(visible_start);
+                        let row_hi = end.0.min(visible_end.saturating_sub(1));
+                        for row in row_lo..=row_hi {
                             let col_start = if row == start.0 { start.1 } else { 0 };
                             let col_end = if row == end.0 { end.1 } else { visible_cols };
                             if col_start >= col_end {
                                 continue;
                             }
+                            let visual_row = row - visible_start;
                             let rx = inner.x + center_x + col_start as f32 * cell_size.width;
-                            let ry = inner.y + row as f32 * cell_size.height;
+                            let ry = inner.y + visual_row as f32 * cell_size.height;
                             let rw = (col_end - col_start) as f32 * cell_size.width;
                             renderer.draw_rect(
                                 Rect::new(rx, ry, rw, cell_size.height),
