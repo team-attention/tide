@@ -415,6 +415,23 @@ impl App {
                     }
                 }
 
+                // Pinned group ↔ terminal dock border drag
+                if let Some(dock_rect) = self.dock_area_rect {
+                    let has_term_dock = self.focused_terminal_id().map(|tid| {
+                        if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                            !tp.dock_layout.pane_ids().is_empty()
+                        } else { false }
+                    }).unwrap_or(false);
+                    if self.has_pinned_panes() && has_term_dock {
+                        let pinned_w = (dock_rect.width * self.pinned_dock_ratio).max(60.0).min(dock_rect.width - 60.0);
+                        let border_x = dock_rect.x + pinned_w;
+                        if (self.last_cursor_pos.x - border_x).abs() < 5.0 {
+                            self.pinned_border_dragging = true;
+                            return;
+                        }
+                    }
+                }
+
                 // Intra-dock split border drag
                 if let Some(dock_rect) = self.dock_area_rect {
                     if dock_rect.contains(self.last_cursor_pos) {
@@ -539,6 +556,13 @@ impl App {
             return;
         }
 
+        if self.pinned_border_dragging {
+            self.pinned_border_dragging = false;
+            self.compute_layout();
+            self.cache.invalidate_chrome();
+            return;
+        }
+
         if self.dock_split_dragging {
             self.dock_split_dragging = false;
             if let Some(tid) = self.focused_terminal_id() {
@@ -643,15 +667,21 @@ impl App {
             let logical = self.logical_size();
             let max_w = (logical.width - 200.0).max(100.0);
             let new_width = (logical.width - pos.x - PANE_GAP).max(100.0).min(max_w);
-            // Update per-terminal dock_width and global fallback
-            if let Some(tid) = self.focused_terminal_id() {
-                if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                    tp.dock_width = new_width;
-                }
-            }
             self.dock_width = new_width;
             self.compute_layout();
             self.cache.invalidate_chrome();
+            return;
+        }
+
+        // Handle pinned group ↔ terminal dock border resize
+        if self.pinned_border_dragging {
+            if let Some(dock_rect) = self.dock_area_rect {
+                let local_x = pos.x - dock_rect.x;
+                let new_ratio = (local_x / dock_rect.width).clamp(0.1, 0.9);
+                self.pinned_dock_ratio = new_ratio;
+                self.compute_layout();
+                self.cache.invalidate_chrome();
+            }
             return;
         }
 

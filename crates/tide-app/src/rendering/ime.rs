@@ -140,6 +140,14 @@ pub(crate) fn render_ime_and_drop_preview(
                         App::draw_insert_preview(renderer, item_rect, p);
                     }
                 }
+                DropDestination::PinnedGroup => {
+                    // Highlight the pinned group area
+                    if let Some(dock_rect) = app.dock_area_rect {
+                        let pinned_w = (dock_rect.width * app.pinned_dock_ratio).max(60.0).min(dock_rect.width - 60.0);
+                        let pinned_rect = Rect::new(dock_rect.x, dock_rect.y, pinned_w, dock_rect.height);
+                        App::draw_insert_preview(renderer, pinned_rect, p);
+                    }
+                }
             }
         }
     }
