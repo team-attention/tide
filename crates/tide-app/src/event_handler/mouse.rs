@@ -64,9 +64,14 @@ impl App {
                     match self.panes.get_mut(&pid) {
                         Some(PaneKind::Terminal(pane)) => {
                             if let Some(cell) = term_cell {
+                                // Convert screen-relative row to absolute row
+                                // so selection stays tied to content when scrolling.
+                                let visible_start = pane.backend.history_size()
+                                    .saturating_sub(pane.backend.display_offset());
+                                let abs = (cell.0 + visible_start, cell.1);
                                 pane.selection = Some(Selection {
-                                    anchor: cell,
-                                    end: cell,
+                                    anchor: abs,
+                                    end: abs,
                                 });
                             }
                         }
@@ -754,6 +759,46 @@ impl App {
             self.compute_layout();
             self.cache.needs_redraw = true;
         } else {
+            // URL bar drag selection
+            if self.interaction.mouse_left_pressed {
+                if let Some(focused_id) = self.focused {
+                    let is_url_focused = matches!(
+                        self.panes.get(&focused_id),
+                        Some(PaneKind::Browser(bp)) if bp.url_input_focused
+                    );
+                    if is_url_focused {
+                        let cell_w = self.cell_size().width;
+                        if let Some((_, rect)) = self.visual_pane_rects.iter().find(|(id, _)| *id == focused_id) {
+                            let nav_x = rect.x + PANE_PADDING;
+                            let url_text_x = nav_x + 8.0 + cell_w * 6.0 + 4.0 + 4.0;
+                            let relative_x = (pos.x - url_text_x).max(0.0);
+                            let mut col_px = 0.0_f32;
+                            let mut char_idx = 0;
+                            if let Some(PaneKind::Browser(bp)) = self.panes.get(&focused_id) {
+                                for ch in bp.url_input.chars() {
+                                    let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1) as f32 * cell_w;
+                                    if relative_x < col_px + w * 0.5 {
+                                        break;
+                                    }
+                                    col_px += w;
+                                    char_idx += 1;
+                                }
+                            }
+                            if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&focused_id) {
+                                let anchor = match bp.url_selection {
+                                    Some((a, _)) => a,
+                                    None => bp.url_input_cursor,
+                                };
+                                bp.url_selection = Some((anchor, char_idx));
+                                bp.url_input_cursor = char_idx;
+                                self.cache.invalidate_chrome();
+                                self.cache.needs_redraw = true;
+                            }
+                        }
+                    }
+                }
+            }
+
             // Text selection drag
             if self.interaction.mouse_left_pressed {
                 let cell_size = Some(self.cell_size());
@@ -793,7 +838,9 @@ impl App {
                     match self.panes.get_mut(&pid) {
                         Some(PaneKind::Terminal(pane)) => {
                             if let (Some(ref mut sel), Some(c)) = (&mut pane.selection, cell) {
-                                sel.end = c;
+                                let visible_start = pane.backend.history_size()
+                                    .saturating_sub(pane.backend.display_offset());
+                                sel.end = (c.0 + visible_start, c.1);
                             }
                         }
                         Some(PaneKind::Browser(_)) => {}

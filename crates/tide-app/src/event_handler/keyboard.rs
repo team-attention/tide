@@ -241,27 +241,94 @@ impl App {
             FocusArea::Stage | FocusArea::Dock => {
                 // Browser URL bar keyboard handling
                 if let Some(focused_id) = self.focused {
-                    if let Some(PaneKind::Browser(bp)) = self.panes.get(&focused_id) {
-                        if bp.url_input_focused {
-                            // Global hotkeys take priority over URL bar input
-                            if modifiers.meta || (modifiers.ctrl && modifiers.shift) {
-                                let input = InputEvent::KeyPress { key, modifiers };
-                                let action = self.router.process(input, &self.pane_rects);
-                                if !matches!(action, tide_input::Action::RouteToPane(_)) {
-                                    self.handle_action(action, Some(input));
-                                    self.cache.needs_redraw = true;
+                    let is_browser_url_focused = matches!(
+                        self.panes.get(&focused_id),
+                        Some(PaneKind::Browser(bp)) if bp.url_input_focused
+                    );
+                    if is_browser_url_focused {
+                        // URL bar editing shortcuts (Cmd+A/C/V/X) must be
+                        // handled here, before the global hotkey router
+                        // intercepts them as Copy/Paste actions.
+                        if modifiers.meta && !modifiers.ctrl && !modifiers.alt {
+                            match key {
+                                Key::Char('a') | Key::Char('A') => {
+                                    if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&focused_id) {
+                                        let len = bp.url_input_char_len();
+                                        bp.url_selection = Some((0, len));
+                                        bp.url_input_cursor = len;
+                                    }
+                                    self.cache.invalidate_chrome();
                                     return;
                                 }
+                                Key::Char('c') | Key::Char('C') => {
+                                    if let Some(PaneKind::Browser(bp)) = self.panes.get(&focused_id) {
+                                        let text = bp.url_selected_text()
+                                            .unwrap_or_else(|| bp.url_input.clone());
+                                        if !text.is_empty() {
+                                            if let Ok(mut cb) = arboard::Clipboard::new() {
+                                                let _ = cb.set_text(&text);
+                                            }
+                                        }
+                                    }
+                                    return;
+                                }
+                                Key::Char('x') | Key::Char('X') => {
+                                    let text = self.panes.get(&focused_id).and_then(|p| {
+                                        if let PaneKind::Browser(bp) = p { bp.url_selected_text() } else { None }
+                                    });
+                                    if let Some(text) = text {
+                                        if let Ok(mut cb) = arboard::Clipboard::new() {
+                                            let _ = cb.set_text(&text);
+                                        }
+                                        if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&focused_id) {
+                                            bp.url_delete_selection();
+                                        }
+                                    }
+                                    self.cache.invalidate_chrome();
+                                    return;
+                                }
+                                Key::Char('v') | Key::Char('V') => {
+                                    if let Ok(mut cb) = arboard::Clipboard::new() {
+                                        if let Ok(text) = cb.get_text() {
+                                            let text: String = text.chars()
+                                                .take_while(|c| *c != '\n' && *c != '\r')
+                                                .collect();
+                                            if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&focused_id) {
+                                                bp.url_delete_selection();
+                                                let byte_off = bp.cursor_byte_offset();
+                                                bp.url_input.insert_str(byte_off, &text);
+                                                bp.url_input_cursor += text.chars().count();
+                                            }
+                                        }
+                                    }
+                                    self.cache.invalidate_chrome();
+                                    return;
+                                }
+                                _ => {}
                             }
-                            self.handle_browser_url_bar_key(focused_id, key, &modifiers);
-                            return;
                         }
-                        // Cmd+L → focus URL bar
+                        // Global hotkeys take priority over URL bar input
+                        if modifiers.meta || (modifiers.ctrl && modifiers.shift) {
+                            let input = InputEvent::KeyPress { key, modifiers };
+                            let action = self.router.process(input, &self.pane_rects);
+                            if !matches!(action, tide_input::Action::RouteToPane(_)) {
+                                self.handle_action(action, Some(input));
+                                self.cache.needs_redraw = true;
+                                return;
+                            }
+                        }
+                        self.handle_browser_url_bar_key(focused_id, key, &modifiers);
+                        return;
+                    }
+                    if let Some(PaneKind::Browser(_)) = self.panes.get(&focused_id) {
+                        // Cmd+L → focus URL bar with select-all
                         if modifiers.meta && matches!(key, Key::Char('l') | Key::Char('L')) {
                             if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&focused_id) {
                                 bp.url_input_focused = true;
                                 bp.url_input = bp.url.clone();
-                                bp.url_input_cursor = bp.url_input.chars().count();
+                                let len = bp.url_input.chars().count();
+                                bp.url_input_cursor = len;
+                                bp.url_selection = Some((0, len));
                                 self.cache.invalidate_chrome();
                             }
                             return;
@@ -891,7 +958,6 @@ impl App {
     ) {
         match key {
             Key::Enter => {
-                // Navigate to trimmed URL and unfocus
                 let url = if let Some(PaneKind::Browser(bp)) = self.panes.get(&pane_id) {
                     bp.url_input.trim().to_string()
                 } else {
@@ -899,20 +965,23 @@ impl App {
                 };
                 if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&pane_id) {
                     bp.url_input_focused = false;
+                    bp.url_selection = None;
                     bp.navigate(&url);
                 }
             }
             Key::Escape => {
-                // Unfocus, revert text to current URL
                 if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&pane_id) {
                     bp.url_input = bp.url.clone();
                     bp.url_input_cursor = bp.url_input.chars().count();
                     bp.url_input_focused = false;
+                    bp.url_selection = None;
                 }
             }
             Key::Backspace => {
                 if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&pane_id) {
-                    if bp.url_input_cursor > 0 {
+                    if bp.url_selection.is_some() {
+                        bp.url_delete_selection();
+                    } else if bp.url_input_cursor > 0 {
                         bp.url_input_cursor -= 1;
                         let byte_off = bp.cursor_byte_offset();
                         bp.url_input.remove(byte_off);
@@ -921,7 +990,9 @@ impl App {
             }
             Key::Delete => {
                 if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&pane_id) {
-                    if bp.url_input_cursor < bp.url_input_char_len() {
+                    if bp.url_selection.is_some() {
+                        bp.url_delete_selection();
+                    } else if bp.url_input_cursor < bp.url_input_char_len() {
                         let byte_off = bp.cursor_byte_offset();
                         bp.url_input.remove(byte_off);
                     }
@@ -929,21 +1000,35 @@ impl App {
             }
             Key::Left => {
                 if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&pane_id) {
-                    if bp.url_input_cursor > 0 {
+                    if modifiers.meta {
+                        // Cmd+Left: move to start
+                        bp.url_input_cursor = 0;
+                    } else if let Some((s, e)) = bp.url_selection {
+                        // Arrow clears selection, cursor goes to start
+                        bp.url_input_cursor = s.min(e);
+                    } else if bp.url_input_cursor > 0 {
                         bp.url_input_cursor -= 1;
                     }
+                    bp.url_selection = None;
                 }
             }
             Key::Right => {
                 if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&pane_id) {
-                    if bp.url_input_cursor < bp.url_input_char_len() {
+                    if modifiers.meta {
+                        // Cmd+Right: move to end
+                        bp.url_input_cursor = bp.url_input_char_len();
+                    } else if let Some((s, e)) = bp.url_selection {
+                        bp.url_input_cursor = s.max(e);
+                    } else if bp.url_input_cursor < bp.url_input_char_len() {
                         bp.url_input_cursor += 1;
                     }
+                    bp.url_selection = None;
                 }
             }
             Key::Char(ch) => {
                 if !modifiers.ctrl && !modifiers.meta {
                     if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&pane_id) {
+                        bp.url_delete_selection();
                         let byte_off = bp.cursor_byte_offset();
                         bp.url_input.insert(byte_off, ch);
                         bp.url_input_cursor += 1;
