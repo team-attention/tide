@@ -377,28 +377,22 @@ impl App {
             }
         }
 
-        // Safety: close dock if no terminal has dock panes
+        // Safety: close dock if no terminal has dock panes and no pinned panes
         if self.dock_open {
             let any_has_dock = self.panes.values().any(|pk| {
                 if let PaneKind::Terminal(tp) = pk {
                     !tp.dock_layout.all_pane_ids().is_empty()
                 } else { false }
             });
-            if !any_has_dock {
+            if !any_has_dock && !self.has_pinned_panes() {
                 self.dock_open = false;
             }
         }
 
         // Reserve Dock space on the right (when open)
         let show_dock = self.dock_open;
-        // Use per-terminal dock_width; fall back to global dock_width
-        let effective_dock_width = self.focused_terminal_id()
-            .and_then(|tid| {
-                if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
-                    Some(tp.dock_width)
-                } else { None }
-            })
-            .unwrap_or(self.dock_width);
+        // Dock width is global (not per-terminal)
+        let effective_dock_width = self.dock_width;
         let dock_width = if show_dock {
             let max_ctx = (logical.width - left_reserved - right_reserved - 200.0).max(100.0);
             effective_dock_width.min(max_ctx)
@@ -461,7 +455,8 @@ impl App {
             || self.ft.border_dragging
             || self.ws.border_dragging
             || self.dock_border_dragging
-            || self.dock_split_dragging;
+            || self.dock_split_dragging
+            || self.pinned_border_dragging;
         if !is_dragging {
             let cell_size = self.cell_size();
             if cell_size.width > 0.0 {
@@ -496,35 +491,73 @@ impl App {
             }
         }
 
-        // Dock: compute rects from the focused terminal's dock_layout
+        // Dock: compute rects from pinned_dock_layout + focused terminal's dock_layout
         if show_dock {
             let ctx_offset_x = terminal_offset_x + terminal_area.width + PANE_GAP;
-            let ctx_size = Size::new(dock_width, logical.height - top);
+            let dock_height = logical.height - top;
 
-            let owner_terminal = self.focused_terminal_id();
-            if let Some(tid) = owner_terminal {
+            // Check if dock is in zoomed/stacked mode
+            let is_dock_zoomed = self.focused_terminal_id().map(|tid| {
                 if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
-                    // Dock zoom: show only the focused dock pane when zoomed
-                    let dock_zoomed_pane = if tp.dock_zoomed {
-                        tp.dock_focused.filter(|zp| self.panes.contains_key(zp))
-                    } else {
-                        None
-                    };
+                    tp.dock_zoomed
+                } else { false }
+            }).unwrap_or(false);
 
-                    if let Some(zp) = dock_zoomed_pane {
-                        rects.push((zp, Rect::new(
-                            ctx_offset_x, top,
-                            dock_width, logical.height - top,
-                        )));
-                    } else {
-                        let dock_pane_ids = tp.dock_layout.pane_ids();
-                        if !dock_pane_ids.is_empty() {
-                            let mut cr = tp.dock_layout.compute(ctx_size, &dock_pane_ids, tp.dock_focused);
-                            for (_, rect) in &mut cr {
-                                rect.x += ctx_offset_x;
-                                rect.y += top;
+            if is_dock_zoomed {
+                // Zoomed: show the active dock pane (pinned or terminal dock)
+                let zoomed_pane = self.focused.filter(|id| self.is_pane_in_dock(*id));
+                if let Some(zp) = zoomed_pane {
+                    rects.push((zp, Rect::new(ctx_offset_x, top, dock_width, dock_height)));
+                }
+            } else {
+                // Normal: split between pinned and terminal dock
+                let has_pinned = self.has_pinned_panes();
+                let owner_terminal = self.focused_terminal_id();
+                let has_terminal_dock_panes = owner_terminal.map(|tid| {
+                    if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                        !tp.dock_layout.pane_ids().is_empty()
+                    } else { false }
+                }).unwrap_or(false);
+
+                let (pinned_width, terminal_dock_offset_x, terminal_dock_width) = if !has_pinned {
+                    (0.0, ctx_offset_x, dock_width)
+                } else if !has_terminal_dock_panes {
+                    (dock_width, ctx_offset_x, 0.0)
+                } else {
+                    let pw = (dock_width * self.pinned_dock_ratio).max(60.0).min(dock_width - 60.0);
+                    let tw = dock_width - pw - PANE_GAP;
+                    (pw, ctx_offset_x + pw + PANE_GAP, tw.max(0.0))
+                };
+
+                // Render pinned dock layout
+                if has_pinned && pinned_width > 0.0 {
+                    let pinned_pane_ids = self.pinned_dock_layout.pane_ids();
+                    if !pinned_pane_ids.is_empty() {
+                        let pinned_size = Size::new(pinned_width, dock_height);
+                        let pinned_focused = self.focused.filter(|id| self.is_pane_pinned(*id));
+                    let mut pr = self.pinned_dock_layout.compute(pinned_size, &pinned_pane_ids, pinned_focused);
+                        for (_, rect) in &mut pr {
+                            rect.x += ctx_offset_x;
+                            rect.y += top;
+                        }
+                        rects.extend(pr);
+                    }
+                }
+
+                // Render terminal's dock_layout
+                if terminal_dock_width > 0.0 {
+                    if let Some(tid) = owner_terminal {
+                        if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                            let dock_pane_ids = tp.dock_layout.pane_ids();
+                            if !dock_pane_ids.is_empty() {
+                                let ctx_size = Size::new(terminal_dock_width, dock_height);
+                                let mut cr = tp.dock_layout.compute(ctx_size, &dock_pane_ids, tp.dock_focused);
+                                for (_, rect) in &mut cr {
+                                    rect.x += terminal_dock_offset_x;
+                                    rect.y += top;
+                                }
+                                rects.extend(cr);
                             }
-                            rects.extend(cr);
                         }
                     }
                 }
@@ -547,8 +580,8 @@ impl App {
         let ctx_area_x = if show_dock { term_area_right + PANE_GAP } else { 0.0 };
         let ctx_area_right = if show_dock { ctx_area_x + dock_width } else { 0.0 };
 
-        // Collect all dock pane IDs across all terminals
-        let dock_pane_ids: std::collections::HashSet<u64> = self.panes.iter()
+        // Collect all dock pane IDs across all terminals + pinned dock
+        let mut dock_pane_ids: std::collections::HashSet<u64> = self.panes.iter()
             .filter_map(|(_, pk)| {
                 if let PaneKind::Terminal(tp) = pk {
                     Some(tp.dock_layout.all_pane_ids())
@@ -558,6 +591,9 @@ impl App {
             })
             .flatten()
             .collect();
+        for pid in self.pinned_dock_layout.all_pane_ids() {
+            dock_pane_ids.insert(pid);
+        }
 
         self.visual_pane_rects = self
             .pane_rects

@@ -222,7 +222,15 @@ struct App {
     pub(crate) dock_border_dragging: bool,
     /// True when dragging a split border inside the dock area.
     pub(crate) dock_split_dragging: bool,
-
+    /// Which Stage terminal is active. Only changes on terminal click / HJKL navigate.
+    /// Dock operations never change this.
+    pub(crate) stage_focused: Option<PaneId>,
+    /// Layout for pinned dock panes. Pinned panes live here, not in any terminal's dock_layout.
+    pub(crate) pinned_dock_layout: tide_layout::SplitLayout,
+    /// Split ratio between pinned group (left) and terminal dock content (right).
+    pub(crate) pinned_dock_ratio: f32,
+    /// True when dragging the border between pinned group and terminal dock.
+    pub(crate) pinned_border_dragging: bool,
 
     // Periodic session auto-save for crash recovery
     pub(crate) last_session_save: Instant,
@@ -319,6 +327,10 @@ impl App {
             dock_width: 400.0,
             dock_border_dragging: false,
             dock_split_dragging: false,
+            stage_focused: None,
+            pinned_dock_layout: tide_layout::SplitLayout::new(),
+            pinned_dock_ratio: 0.5,
+            pinned_border_dragging: false,
             last_session_save: Instant::now(),
             associated_terminal: HashMap::new(),
             retained_contexts: HashMap::new(),
@@ -328,13 +340,12 @@ impl App {
 
     // ── Helpers ──
 
-    /// Derive the dock zoomed pane from the focused terminal's per-terminal state.
-    /// Returns `Some(pane_id)` if the focused terminal's dock is in zoomed mode.
+    /// Returns the focused dock pane if the dock is in zoomed/stacked mode.
     pub(crate) fn dock_zoomed_pane(&self) -> Option<PaneId> {
         let tid = self.focused_terminal_id()?;
         if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
             if tp.dock_zoomed {
-                return tp.dock_focused;
+                return self.focused.filter(|id| self.is_pane_in_dock(*id));
             }
         }
         None

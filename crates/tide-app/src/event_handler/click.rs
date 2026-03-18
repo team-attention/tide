@@ -1145,16 +1145,48 @@ impl App {
                 self.compute_layout();
             }
             DropDestination::DockRoot(zone) => {
-                // Root-level dock drop: insert at dock layout root
-                if let Some(tid) = self.focused_terminal_id() {
-                    if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                        tp.dock_layout.remove(source);
-                        tp.dock_layout.insert_at_root(source, zone);
-                        tp.dock_focused = Some(source);
-                        tp.dock_layout.set_active_tab(source);
+                let was_pinned = self.is_pane_pinned(source);
+                if was_pinned {
+                    self.pinned_dock_layout.remove(source);
+                    let assoc_tid = self.associated_terminal.get(&source).copied();
+                    let current_tid = self.focused_terminal_id();
+                    if assoc_tid == current_tid {
+                        // Same terminal: place with drop zone (normal behavior)
+                        if let Some(tid) = current_tid {
+                            if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                                tp.dock_layout.insert_at_root(source, zone);
+                                tp.dock_focused = Some(source);
+                                tp.dock_layout.set_active_tab(source);
+                            }
+                        }
+                    } else {
+                        // Different terminal: just unpin to associated terminal, no placement
+                        if let Some(tid) = assoc_tid {
+                            if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                                if tp.dock_layout.all_pane_ids().is_empty() {
+                                    tp.dock_layout.insert_leaf_group(source);
+                                } else {
+                                    tp.dock_layout.add_tab_to_first_group(source);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    if let Some(tid) = self.terminal_owning(source) {
+                        if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                            tp.dock_layout.remove(source);
+                        }
+                    }
+                    // Insert into focused terminal's dock_layout
+                    if let Some(tid) = self.focused_terminal_id() {
+                        if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                            tp.dock_layout.insert_at_root(source, zone);
+                            tp.dock_focused = Some(source);
+                            tp.dock_layout.set_active_tab(source);
+                        }
+                        self.associated_terminal.insert(source, tid);
                     }
                 }
-                self.focused = Some(source);
                 self.cache.invalidate_chrome();
                 self.compute_layout();
             }
@@ -1175,6 +1207,28 @@ impl App {
                 let target_in_dock = self.is_pane_in_dock(target_id);
 
                 if source_in_dock && target_in_dock {
+                    let source_was_pinned = self.is_pane_pinned(source);
+                    if source_was_pinned {
+                        self.pinned_dock_layout.remove(source);
+                        // If dropping on a non-owning terminal, just unpin to associated terminal
+                        let assoc_tid = self.associated_terminal.get(&source).copied();
+                        let current_tid = self.focused_terminal_id();
+                        if assoc_tid != current_tid {
+                            if let Some(tid) = assoc_tid {
+                                if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                                    if tp.dock_layout.all_pane_ids().is_empty() {
+                                        tp.dock_layout.insert_leaf_group(source);
+                                    } else {
+                                        tp.dock_layout.add_tab_to_first_group(source);
+                                    }
+                                }
+                            }
+                            self.cache.invalidate_chrome();
+                            self.compute_layout();
+                            self.cache.needs_redraw = true;
+                            return;
+                        }
+                    }
                     // Both panes in dock — route to the owning terminal's dock_layout
                     if let Some(tid) = self.terminal_owning(source) {
                         if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
@@ -1215,6 +1269,16 @@ impl App {
             DropDestination::Workspace(target_idx) => {
                 // move_pane_to_workspace calls switch_workspace which sets needs_redraw
                 self.move_pane_to_workspace(source, target_idx);
+            }
+            DropDestination::PinnedGroup => {
+                // Drag into pinned group = pin the pane (use toggle_dock_pin logic)
+                if !self.is_pane_pinned(source) {
+                    // Temporarily focus the source so toggle_dock_pin finds it
+                    let prev = self.focused;
+                    self.focused = Some(source);
+                    self.toggle_dock_pin();
+                    self.focused = prev;
+                }
             }
         }
         self.cache.needs_redraw = true;
