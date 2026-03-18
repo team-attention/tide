@@ -164,13 +164,20 @@ declare_class!(
                 // Edit menu.  Sending the action via NSApplication routes it
                 // through the responder chain just like a menu item would.
                 if is_editing_shortcut && first_responder_is_webview {
+                    // Undo/redo in web content is handled by the JavaScript
+                    // engine, not by the Cocoa NSUndoManager. Sending the
+                    // undo:/redo: selector via sendAction doesn't trigger
+                    // the web page's undo. Return NO so macOS delivers
+                    // keyDown to the WKWebView, which processes Cmd+Z
+                    // through its normal event handling.
+                    if matches!(key, Key::Char('z')) {
+                        return Bool::NO;
+                    }
                     let sel = match key {
                         Key::Char('c') => Some(objc2::sel!(copy:)),
                         Key::Char('v') => Some(objc2::sel!(paste:)),
                         Key::Char('x') => Some(objc2::sel!(cut:)),
                         Key::Char('a') => Some(objc2::sel!(selectAll:)),
-                        Key::Char('z') if modifiers.shift => Some(objc2::sel!(redo:)),
-                        Key::Char('z') => Some(objc2::sel!(undo:)),
                         _ => None,
                     };
                     if let Some(sel) = sel {
@@ -190,6 +197,21 @@ declare_class!(
                 // to TerminalArea before the KeyDown handler runs, breaking
                 // ToggleFileTree (Cmd+E) when the file tree is focused.
                 // Mouse clicks already emit WebViewFocused via hitTest:.
+
+                // When a WKWebView is the first responder, let navigation
+                // and browser-standard shortcuts pass through so the webview
+                // can handle them (e.g. Cmd+Arrow for text cursor movement
+                // in input fields, Cmd+Shift+Arrow for text selection).
+                // Returning NO causes macOS to deliver keyDown to the
+                // first responder (the WKWebView) instead of Tide.
+                if first_responder_is_webview {
+                    let is_webview_passthrough = matches!(key,
+                        Key::Up | Key::Down | Key::Left | Key::Right
+                    );
+                    if is_webview_passthrough {
+                        return Bool::NO;
+                    }
+                }
 
                 // Intercept: emit as KeyDown and claim the event
                 let chars = unsafe { event.characters().map(|s| s.to_string()) };

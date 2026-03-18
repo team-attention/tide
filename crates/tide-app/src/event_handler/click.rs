@@ -486,25 +486,31 @@ impl App {
                     if !bp.url_input_focused {
                         bp.url_input_focused = true;
                         bp.url_input = bp.url.clone();
-                    }
-                    // Position cursor at click location.
-                    if let Some(rect) = pane_rect {
-                        let nav_x = rect.x + crate::theme::PANE_PADDING;
-                        let url_text_x = nav_x + 8.0 + cell_w * 6.0 + 4.0 + 4.0;
-                        let relative_x = (click_x - url_text_x).max(0.0);
-                        let mut col_px = 0.0_f32;
-                        let mut char_idx = 0;
-                        for ch in bp.url_input.chars() {
-                            let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1) as f32 * cell_w;
-                            if relative_x < col_px + w * 0.5 {
-                                break;
-                            }
-                            col_px += w;
-                            char_idx += 1;
-                        }
-                        bp.url_input_cursor = char_idx;
+                        // Select all on initial focus (standard browser behavior)
+                        let len = bp.url_input_char_len();
+                        bp.url_selection = Some((0, len));
+                        bp.url_input_cursor = len;
                     } else {
-                        bp.url_input_cursor = bp.url_input.chars().count();
+                        // Already focused: position cursor at click, clear selection
+                        bp.url_selection = None;
+                        if let Some(rect) = pane_rect {
+                            let nav_x = rect.x + crate::theme::PANE_PADDING;
+                            let url_text_x = nav_x + 8.0 + cell_w * 6.0 + 4.0 + 4.0;
+                            let relative_x = (click_x - url_text_x).max(0.0);
+                            let mut col_px = 0.0_f32;
+                            let mut char_idx = 0;
+                            for ch in bp.url_input.chars() {
+                                let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1) as f32 * cell_w;
+                                if relative_x < col_px + w * 0.5 {
+                                    break;
+                                }
+                                col_px += w;
+                                char_idx += 1;
+                            }
+                            bp.url_input_cursor = char_idx;
+                        } else {
+                            bp.url_input_cursor = bp.url_input.chars().count();
+                        }
                     }
                 }
             }
