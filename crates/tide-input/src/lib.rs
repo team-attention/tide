@@ -69,6 +69,7 @@ pub enum GlobalAction {
     ToggleFileTree,
     ToggleWorkspaceSidebar,
     ToggleStacked,
+    ToggleDockPin,
 }
 
 impl GlobalAction {
@@ -117,6 +118,7 @@ impl GlobalAction {
             GlobalAction::ToggleFileTree => "Toggle File Tree",
             GlobalAction::ToggleWorkspaceSidebar => "Toggle Workspace Sidebar",
             GlobalAction::ToggleStacked => "Toggle Stacked",
+            GlobalAction::ToggleDockPin => "Toggle Dock Pin",
         }
     }
 
@@ -165,6 +167,7 @@ impl GlobalAction {
             GlobalAction::ToggleFileTree => "ToggleFileTree",
             GlobalAction::ToggleWorkspaceSidebar => "ToggleWorkspaceSidebar",
             GlobalAction::ToggleStacked => "ToggleStacked",
+            GlobalAction::ToggleDockPin => "ToggleDockPin",
         }
     }
 
@@ -213,6 +216,7 @@ impl GlobalAction {
             "ToggleFileTree" => Some(GlobalAction::ToggleFileTree),
             "ToggleWorkspaceSidebar" => Some(GlobalAction::ToggleWorkspaceSidebar),
             "ToggleStacked" => Some(GlobalAction::ToggleStacked),
+            "ToggleDockPin" => Some(GlobalAction::ToggleDockPin),
             _ => None,
         }
     }
@@ -256,6 +260,7 @@ impl GlobalAction {
             GlobalAction::BrowserReload,
             GlobalAction::ScrollHalfPageUp,
             GlobalAction::ScrollHalfPageDown,
+            GlobalAction::ToggleDockPin,
         ]
     }
 }
@@ -444,6 +449,7 @@ impl KeybindingMap {
             (Hotkey::new(Key::Char('r'), false, false, true, false), GlobalAction::BrowserReload),
             (Hotkey::new(Key::Char('u'), false, false, true, false), GlobalAction::ScrollHalfPageUp),
             (Hotkey::new(Key::Char('d'), false, false, true, false), GlobalAction::ScrollHalfPageDown),
+            (Hotkey::new(Key::Char('p'), true, false, true, false), GlobalAction::ToggleDockPin),
         ]
     }
 
@@ -728,6 +734,14 @@ impl Router {
             Key::Char('{') => Some(GlobalAction::BrowserBack),
             // Cmd+Shift+] -> browser forward
             Key::Char('}') => Some(GlobalAction::BrowserForward),
+            // Cmd+Shift+P -> toggle dock pin
+            Key::Char('p') | Key::Char('P') => {
+                if modifiers.shift {
+                    Some(GlobalAction::ToggleDockPin)
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }

@@ -689,7 +689,24 @@ pub(crate) fn render_chrome(
             let sep_rect = Rect::new(sep_x, app.top_inset, 1.0, logical.height - app.top_inset);
             renderer.draw_chrome_rect(sep_rect, p.border_subtle);
 
-            // Check if the dock is empty (no dock panes for the focused terminal)
+            // Draw separator between pinned group and terminal dock
+            let has_pinned = app.has_pinned_panes();
+            let has_term_dock = app.focused_terminal_id()
+                .and_then(|tid| app.panes.get(&tid))
+                .map(|pk| {
+                    if let crate::pane::PaneKind::Terminal(tp) = pk {
+                        !tp.dock_layout.pane_ids().is_empty()
+                    } else { false }
+                })
+                .unwrap_or(false);
+            if has_pinned && has_term_dock {
+                let pinned_w = (app.dock_width * app.pinned_dock_ratio).max(60.0).min(app.dock_width - 60.0);
+                let pin_sep_x = dock_x + pinned_w + PANE_GAP / 2.0;
+                let pin_sep_rect = Rect::new(pin_sep_x, app.top_inset, 1.0, logical.height - app.top_inset);
+                renderer.draw_chrome_rect(pin_sep_rect, p.border_subtle);
+            }
+
+            // Check if the dock is empty (no dock panes and no pinned panes)
             let dock_has_panes = app.focused_terminal_id()
                 .and_then(|tid| app.panes.get(&tid))
                 .map(|pk| {
@@ -698,8 +715,7 @@ pub(crate) fn render_chrome(
                     } else { false }
                 })
                 .unwrap_or(false);
-
-            if !dock_has_panes {
+            if !dock_has_panes && !has_pinned {
                 // Empty dock placeholder
                 let cs = renderer.cell_size();
                 let dock_w = app.dock_width;
@@ -803,18 +819,23 @@ pub(crate) fn render_chrome(
             }
         }
     }
+    // Add TabGroup info for pinned dock panes
+    for &(pid, _) in visual_pane_rects {
+        if let Some(tg) = app.pinned_dock_layout.tab_group_containing(pid) {
+            dock_tab_groups.insert(pid, tg.clone());
+        }
+    }
 
-    // Dock zoomed: collect all dock tabs for the tab bar (flat list)
+    // Dock zoomed: collect all dock tabs (pinned + terminal) for the tab bar
     let dock_zoomed_pane = app.dock_zoomed_pane();
     let dock_zoomed_tabs: Option<Vec<u64>> = if dock_zoomed_pane.is_some() {
-        app.focused_terminal_id().and_then(|tid| {
-            app.panes.get(&tid).and_then(|pk| {
-                if let crate::pane::PaneKind::Terminal(tp) = pk {
-                    let tabs = tp.dock_layout.all_tabs_flat();
-                    if tabs.len() > 1 { Some(tabs) } else { None }
-                } else { None }
-            })
-        })
+        let mut tabs = app.pinned_dock_layout.all_tabs_flat();
+        if let Some(tid) = app.focused_terminal_id() {
+            if let Some(crate::pane::PaneKind::Terminal(tp)) = app.panes.get(&tid) {
+                tabs.extend(tp.dock_layout.all_tabs_flat());
+            }
+        }
+        if tabs.len() > 1 { Some(tabs) } else { None }
     } else { None };
 
     // Collect Stage pane IDs for stacked tab bar
@@ -855,7 +876,7 @@ pub(crate) fn render_chrome(
             // Dock pane: render ONLY the tab bar (includes close/maximize)
             let tg = dock_tab_groups.get(&id).unwrap();
             let tab_zones = header::render_dock_tab_bar(
-                id, rect, tg, &app.panes, focused, p, renderer,
+                id, rect, tg, &app.panes, focused, &app.pinned_dock_layout.all_pane_ids(), p, renderer,
             );
             all_hit_zones.extend(tab_zones);
         } else if has_stage_tab_bar {

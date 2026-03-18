@@ -96,6 +96,8 @@ pub(crate) enum DropDestination {
     TreeRoot(DropZone),
     DockRoot(DropZone),
     Workspace(usize),
+    /// Drop onto the pinned group — pins the source pane.
+    PinnedGroup,
 }
 
 // ──────────────────────────────────────────────
@@ -200,6 +202,26 @@ impl App {
                 return Some(DropDestination::Workspace(idx));
             }
         }
+
+        // Check pinned group area — detect drops onto the pinned group region
+        if self.dock_open && self.has_pinned_panes() {
+            if let Some(dock_rect) = self.dock_area_rect {
+                let has_term_dock = self.focused_terminal_id().map(|tid| {
+                    if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                        !tp.dock_layout.pane_ids().is_empty()
+                    } else { false }
+                }).unwrap_or(false);
+
+                if has_term_dock {
+                    let pinned_w = (dock_rect.width * self.pinned_dock_ratio).max(60.0).min(dock_rect.width - 60.0);
+                    let pinned_rect = Rect::new(dock_rect.x, dock_rect.y, pinned_w, dock_rect.height);
+                    if pinned_rect.contains(mouse) && !self.is_pane_pinned(source) {
+                        return Some(DropDestination::PinnedGroup);
+                    }
+                }
+            }
+        }
+
         self.compute_tree_drop_target(mouse, source)
     }
 
@@ -225,6 +247,14 @@ impl App {
                 // Use dock layout for dock drops
                 let use_dock = matches!(dest, DropDestination::DockRoot(_))
                     || target_id.map(|t| self.is_pane_in_dock(t)).unwrap_or(false);
+
+                // Pinned pane dropping on non-owning terminal: no preview
+                if use_dock && self.is_pane_pinned(source) {
+                    let assoc_tid = self.associated_terminal.get(&source).copied();
+                    if assoc_tid != self.focused_terminal_id() {
+                        return None;
+                    }
+                }
 
                 if use_dock {
                     let dock_area = self.dock_area_rect?;
@@ -256,6 +286,15 @@ impl App {
                 self.layout.simulate_drop(source, target_id, *zone, true, pane_area_size)
             }
             DropDestination::Workspace(_) => None,
+            DropDestination::PinnedGroup => {
+                // Show preview covering the pinned group area
+                if let Some(dock_rect) = self.dock_area_rect {
+                    let pinned_w = (dock_rect.width * self.pinned_dock_ratio).max(60.0).min(dock_rect.width - 60.0);
+                    Some(Rect::new(0.0, 0.0, pinned_w, dock_rect.height))
+                } else {
+                    None
+                }
+            }
         }
     }
 

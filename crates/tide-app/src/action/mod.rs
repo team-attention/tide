@@ -8,7 +8,7 @@ pub(crate) use pane_lifecycle::LauncherChoice;
 
 use std::time::Instant;
 
-use tide_core::{InputEvent, LayoutEngine, Size, SplitDirection, TerminalBackend, Vec2};
+use tide_core::{InputEvent, LayoutEngine, PaneId, Size, SplitDirection, TerminalBackend, Vec2};
 use tide_editor::input::EditorAction;
 use tide_input::{Action, AreaSlot, GlobalAction};
 use crate::search::SearchState;
@@ -54,35 +54,43 @@ impl App {
 
     /// Switch primary focus to a pane, setting focus to Stage.
     pub(crate) fn focus_terminal(&mut self, id: tide_core::PaneId) {
-        // If the pane is in the Dock, focus it there without disrupting dock state
+        // Dock pane (pinned or terminal-owned): focus it, don't change stage_focused
         if self.is_pane_in_dock(id) {
             self.focus_area = FocusArea::Dock;
             self.focused = Some(id);
             self.router.set_focused(id);
-            // Update dock_focused on the owning terminal
+            // Update dock_focused on the owning terminal (if not pinned)
             if let Some(tid) = self.terminal_owning(id) {
                 if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                     tp.dock_focused = Some(id);
                     tp.dock_layout.set_active_tab(id);
                 }
             }
+            // If pinned, set active tab in pinned layout
+            if self.is_pane_pinned(id) {
+                self.pinned_dock_layout.set_active_tab(id);
+            }
             self.cache.invalidate_chrome();
             self.sync_browser_webview_frames();
             return;
         }
 
+        // Stage pane: update stage_focused
         self.focus_area = FocusArea::Stage;
-        if self.focused == Some(id) {
+        let prev_stage = self.stage_focused;
+        if matches!(self.panes.get(&id), Some(crate::pane::PaneKind::Terminal(_)) | Some(crate::pane::PaneKind::Launcher(_))) {
+            self.stage_focused = Some(id);
+        }
+        if self.focused == Some(id) && prev_stage == self.stage_focused {
             return;
         }
-        // Dismiss completion on the previously focused editor pane
         if let Some(prev_id) = self.focused {
             self.dismiss_completion(prev_id);
         }
         self.focused = Some(id);
         self.router.set_focused(id);
         // Swap dock state when switching between terminals
-        if matches!(self.panes.get(&id), Some(crate::pane::PaneKind::Terminal(_)) | Some(crate::pane::PaneKind::Launcher(_))) {
+        if prev_stage != self.stage_focused {
             self.swap_dock_state(id);
         }
         self.cache.invalidate_chrome();
@@ -280,7 +288,7 @@ impl App {
                         self.compute_layout();
                     }
                 } else {
-                    // Split mode: if focus was in Dock, move focus to the owning terminal first
+                    // Split mode: if focus was in Dock, move focus to the Stage terminal first
                     if self.focus_area == FocusArea::Dock {
                         if let Some(tid) = stage_current {
                             self.focused = Some(tid);
@@ -299,10 +307,20 @@ impl App {
     pub(crate) fn handle_toggle_stacked(&mut self) {
         match self.focus_area {
             FocusArea::Dock => {
-                // Toggle Dock zoom: show only the focused dock pane
+                // Toggle Dock zoom: show only the focused dock pane (covers both pinned and terminal dock)
                 if let Some(tid) = self.focused_terminal_id() {
                     if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                         tp.dock_zoomed = !tp.dock_zoomed;
+                    }
+                } else if self.has_pinned_panes() {
+                    // No terminal but pinned panes exist — toggle on first terminal we can find
+                    // (dock_zoomed is per-terminal, we need at least one)
+                    let first_tid = self.layout.pane_ids().into_iter()
+                        .find(|&id| matches!(self.panes.get(&id), Some(PaneKind::Terminal(_))));
+                    if let Some(tid) = first_tid {
+                        if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                            tp.dock_zoomed = !tp.dock_zoomed;
+                        }
                     }
                 }
                 self.cache.pane_generations.clear();
@@ -349,25 +367,25 @@ impl App {
         self.cache.invalidate_chrome();
     }
 
-    /// Cmd+I/O: cycle tabs within the Dock without changing focus_area.
-    /// Updates dock_focused and active tab, but keeps keyboard focus where it is.
-    /// No-op if the focused terminal has no dock panes.
+    /// Cmd+I/O: cycle through all dock tabs (pinned + terminal dock).
+    /// Sets focused to the next tab and focus_area to Dock.
+    /// stage_focused is never changed.
     fn cycle_tab(&mut self, direction: i32) {
-        let tid = match self.focused_terminal_id() {
+        let tid = match self.stage_focused {
             Some(id) => id,
             None => return,
         };
-        let pane_ids = match self.panes.get(&tid) {
+
+        // Build combined tab list: pinned tabs + terminal dock tabs
+        let mut pane_ids: Vec<PaneId> = self.pinned_dock_layout.all_tabs_flat();
+        let terminal_tabs = match self.panes.get(&tid) {
             Some(PaneKind::Terminal(tp)) => tp.dock_layout.all_tabs_flat(),
-            _ => return,
+            _ => Vec::new(),
         };
+        pane_ids.extend(terminal_tabs);
         if pane_ids.len() <= 1 { return; }
 
-        // Find current position in the flat tab list
-        let current = match self.panes.get(&tid) {
-            Some(PaneKind::Terminal(tp)) => tp.dock_focused,
-            _ => None,
-        };
+        let current = self.focused.filter(|id| pane_ids.contains(id));
         let pos = current.and_then(|c| pane_ids.iter().position(|&id| id == c)).unwrap_or(0);
         let next_pos = if direction > 0 {
             (pos + 1) % pane_ids.len()
@@ -376,15 +394,16 @@ impl App {
         };
         let next_id = pane_ids[next_pos];
 
-        // Update dock tab state
-        if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+        // Just set focused — stage_focused stays unchanged
+        self.focus_area = FocusArea::Dock;
+        self.focused = Some(next_id);
+        self.router.set_focused(next_id);
+        // Update active tab in the appropriate layout
+        if self.is_pane_pinned(next_id) {
+            self.pinned_dock_layout.set_active_tab(next_id);
+        } else if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
             tp.dock_focused = Some(next_id);
             tp.dock_layout.set_active_tab(next_id);
-        }
-        // If Dock is focused, move the focus cursor too (so border follows)
-        if self.focus_area == FocusArea::Dock {
-            self.focused = Some(next_id);
-            self.router.set_focused(next_id);
         }
         self.dock_open = true;
         self.cache.invalidate_chrome();
@@ -1009,6 +1028,9 @@ impl App {
             }
             GlobalAction::ToggleStacked => {
                 self.handle_toggle_stacked();
+            }
+            GlobalAction::ToggleDockPin => {
+                self.toggle_dock_pin();
             }
         }
     }
