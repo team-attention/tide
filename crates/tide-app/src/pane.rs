@@ -79,8 +79,6 @@ pub struct TerminalPane {
     pub dock_focused: Option<PaneId>,
     /// Whether this terminal's Dock is in zoomed (stacked) mode.
     pub dock_zoomed: bool,
-    /// Per-terminal dock width (when this terminal is focused, dock uses this width).
-    pub dock_width: f32,
 }
 
 impl TerminalPane {
@@ -92,7 +90,6 @@ impl TerminalPane {
             dock_layout: tide_layout::SplitLayout::new(),
             dock_focused: None,
             dock_zoomed: false,
-            dock_width: 400.0,
         })
     }
 
@@ -106,7 +103,6 @@ impl TerminalPane {
             dock_layout: tide_layout::SplitLayout::new(),
             dock_focused: None,
             dock_zoomed: false,
-            dock_width: 400.0,
         }
     }
 

@@ -403,10 +403,11 @@ pub fn render_dock_tab_bar(
     tab_group: &tide_layout::TabGroup,
     panes: &HashMap<PaneId, PaneKind>,
     focused: Option<PaneId>,
+    pinned_ids: &[PaneId],
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
 ) -> Vec<HeaderHitZone> {
-    render_tab_bar_impl(pane_id, rect, &tab_group.tabs, tab_group.active_pane(), panes, focused, p, renderer, true, false)
+    render_tab_bar_impl(pane_id, rect, &tab_group.tabs, tab_group.active_pane(), panes, focused, pinned_ids, p, renderer, true, false)
 }
 
 /// Shared tab bar rendering for both Dock and Stage stacked mode.
@@ -420,6 +421,7 @@ fn render_tab_bar_impl(
     active_pane: PaneId,
     panes: &HashMap<PaneId, PaneKind>,
     focused: Option<PaneId>,
+    pinned_ids: &[PaneId],
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
     is_dock: bool,
@@ -592,7 +594,10 @@ fn render_tab_bar_impl(
     let tab_pad = 8.0_f32;
     let mut tabs_info: Vec<(PaneId, String, f32)> = Vec::new();
     for &tid in tab_ids {
-        let label = dock_tab_label(panes, tid);
+        let mut label = dock_tab_label(panes, tid);
+        if pinned_ids.contains(&tid) {
+            label = format!("\u{f08d} {}", label); // fa-thumb-tack pin icon
+        }
         let w = label.chars().count() as f32 * cell_w + tab_pad * 2.0;
         tabs_info.push((tid, label, w));
     }
@@ -673,7 +678,7 @@ pub fn render_stage_tab_bar(
     if stage_pane_ids.len() < 2 {
         return Vec::new();
     }
-    render_tab_bar_impl(zoomed_pane, rect, stage_pane_ids, zoomed_pane, panes, focused, p, renderer, false, true)
+    render_tab_bar_impl(zoomed_pane, rect, stage_pane_ids, zoomed_pane, panes, focused, &[], p, renderer, false, true)
 }
 
 /// Get a short label for a pane in a dock tab bar.

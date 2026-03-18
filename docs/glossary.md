@@ -81,6 +81,7 @@ Terms used consistently across the Tide codebase. When adding new code, use thes
 | **Generation** | `u64` | Monotonic counter for cache invalidation. Incremented on state change. |
 | **Ratio** | `f32` | Split position (0.0–1.0). Clamped to [0.1, 0.9] minimum. |
 | **Cell Size** | `Size` | Pixel dimensions of one terminal character cell (font-dependent). |
+| **Pinned Pane** | concept | A dock pane marked as pinned. Visible from all terminals within the workspace, displayed in a dedicated pinned TabGroup on the left side of the dock when viewed from a non-owning terminal. |
 
 ## Infrastructure Concepts
 

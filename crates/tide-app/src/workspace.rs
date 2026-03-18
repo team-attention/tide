@@ -23,20 +23,22 @@ pub(crate) struct Workspace {
 /// the Workspace struct (which is used in behavior_tests).
 pub(crate) struct WorkspaceExtras {
     pub dock_open: bool,
-    pub dock_width: f32,
     pub terminal_view_mode: ViewMode,
     pub zoomed_pane: Option<PaneId>,
     pub focus_area: FocusArea,
+    pub stage_focused: Option<PaneId>,
+    pub pinned_dock_layout: tide_layout::SplitLayout,
 }
 
 impl WorkspaceExtras {
     pub fn new() -> Self {
         Self {
             dock_open: false,
-            dock_width: 400.0,
             terminal_view_mode: ViewMode::Split,
             zoomed_pane: None,
             focus_area: FocusArea::Stage,
+            stage_focused: None,
+            pinned_dock_layout: tide_layout::SplitLayout::new(),
         }
     }
 }
@@ -55,10 +57,11 @@ impl App {
         }
         let extras = &mut self.ws.workspace_extras[self.ws.active];
         std::mem::swap(&mut self.dock_open, &mut extras.dock_open);
-        std::mem::swap(&mut self.dock_width, &mut extras.dock_width);
         std::mem::swap(&mut self.terminal_view_mode, &mut extras.terminal_view_mode);
         std::mem::swap(&mut self.zoomed_pane, &mut extras.zoomed_pane);
         std::mem::swap(&mut self.focus_area, &mut extras.focus_area);
+        std::mem::swap(&mut self.stage_focused, &mut extras.stage_focused);
+        std::mem::swap(&mut self.pinned_dock_layout, &mut extras.pinned_dock_layout);
     }
 
     /// Load the active workspace's state from the workspaces vec into App fields.
@@ -74,10 +77,11 @@ impl App {
         }
         let extras = &mut self.ws.workspace_extras[self.ws.active];
         std::mem::swap(&mut self.dock_open, &mut extras.dock_open);
-        std::mem::swap(&mut self.dock_width, &mut extras.dock_width);
         std::mem::swap(&mut self.terminal_view_mode, &mut extras.terminal_view_mode);
         std::mem::swap(&mut self.zoomed_pane, &mut extras.zoomed_pane);
         std::mem::swap(&mut self.focus_area, &mut extras.focus_area);
+        std::mem::swap(&mut self.stage_focused, &mut extras.stage_focused);
+        std::mem::swap(&mut self.pinned_dock_layout, &mut extras.pinned_dock_layout);
     }
 
     /// Switch to workspace at the given 0-based index.
