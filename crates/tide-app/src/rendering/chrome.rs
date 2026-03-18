@@ -999,6 +999,20 @@ fn render_browser_nav_bar(
                 );
             }
 
+            // Selection highlight
+            if let Some((sel_lo, sel_hi)) = bp.url_selection_ordered() {
+                let sel_start_cols: usize = bp.url_input.chars().take(sel_lo)
+                    .map(|c| UnicodeWidthChar::width(c).unwrap_or(1)).sum();
+                let sel_end_cols: usize = bp.url_input.chars().take(sel_hi)
+                    .map(|c| UnicodeWidthChar::width(c).unwrap_or(1)).sum();
+                let sel_x = cx + 4.0 + sel_start_cols as f32 * cell_w;
+                let sel_w = (sel_end_cols - sel_start_cols) as f32 * cell_w;
+                renderer.draw_chrome_rect(
+                    Rect::new(sel_x, nav_y + 4.0, sel_w, nav_h - 8.0),
+                    p.selection,
+                );
+            }
+
             let cursor_cols = str_display_width(&before) + str_display_width(preedit);
             let cursor_x = cx + 4.0 + cursor_cols as f32 * cell_w;
             renderer.draw_chrome_rect(

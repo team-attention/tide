@@ -369,6 +369,12 @@ impl App {
                     } else {
                         self.focus_area = FocusArea::Stage;
                     }
+                    // Clicking webview content unfocuses the URL bar.
+                    // hitTest: returns the WKWebView so TideView's mouseDown
+                    // never fires — this is the only place to clear it.
+                    if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&pid) {
+                        bp.url_input_focused = false;
+                    }
                 } else {
                     self.focus_area = FocusArea::Stage;
                 }
@@ -531,7 +537,8 @@ impl App {
                     let has_text_modal = self.modal.file_finder.is_some()
                         || self.modal.git_switcher.is_some()
                         || self.modal.save_as_input.is_some()
-                        || self.modal.file_tree_rename.is_some();
+                        || self.modal.file_tree_rename.is_some()
+                        || self.search_focus == Some(id);
                     if !has_text_modal {
                         return None;
                     }

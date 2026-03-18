@@ -111,6 +111,8 @@ impl TerminalPane {
     }
 
     /// Extract selected text from the terminal grid.
+    /// Selection coords are absolute (accounting for scrollback history).
+    /// grid.cells is screen-relative, so we convert before indexing.
     pub fn selected_text(&self, sel: &Selection) -> String {
         let grid = self.backend.grid();
         let (start, end) = if sel.anchor < sel.end {
@@ -119,12 +121,20 @@ impl TerminalPane {
             (sel.end, sel.anchor)
         };
 
+        // Convert absolute row to screen-relative row
+        let history_size = self.backend.history_size();
+        let display_offset = self.backend.display_offset();
+        let visible_start = history_size.saturating_sub(display_offset);
+        let visible_end = visible_start + grid.cells.len();
+
         let mut result = String::new();
         for row in start.0..=end.0 {
-            if row >= grid.cells.len() {
-                break;
+            // Skip rows outside the visible screen
+            if row < visible_start || row >= visible_end {
+                continue;
             }
-            let line = &grid.cells[row];
+            let screen_row = row - visible_start;
+            let line = &grid.cells[screen_row];
             let col_start = if row == start.0 { start.1 } else { 0 };
             let col_end = if row == end.0 {
                 end.1.min(line.len())

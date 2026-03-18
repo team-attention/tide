@@ -29,6 +29,8 @@ pub struct BrowserPane {
     pub needs_initial_navigate: bool,
     /// Find-in-page search state (Cmd+F).
     pub search: Option<SearchState>,
+    /// URL bar text selection range (start_char, end_char). None = no selection.
+    pub url_selection: Option<(usize, usize)>,
 }
 
 impl BrowserPane {
@@ -46,6 +48,7 @@ impl BrowserPane {
             is_first_responder: false,
             needs_initial_navigate: false,
             search: None,
+            url_selection: None,
         }
     }
 
@@ -65,6 +68,7 @@ impl BrowserPane {
             is_first_responder: false,
             needs_initial_navigate: true,
             search: None,
+            url_selection: None,
         }
     }
 
@@ -195,6 +199,31 @@ impl BrowserPane {
             self.generation = self.generation.wrapping_add(1);
         }
         changed
+    }
+
+    /// Get the selected text in the URL bar, if any.
+    pub fn url_selected_text(&self) -> Option<String> {
+        let (start, end) = self.url_selection?;
+        let (lo, hi) = if start <= end { (start, end) } else { (end, start) };
+        let text: String = self.url_input.chars().skip(lo).take(hi - lo).collect();
+        if text.is_empty() { None } else { Some(text) }
+    }
+
+    /// Delete the selected text and place cursor at the start of the selection.
+    pub fn url_delete_selection(&mut self) {
+        if let Some((start, end)) = self.url_selection.take() {
+            let (lo, hi) = if start <= end { (start, end) } else { (end, start) };
+            let lo_byte = self.url_input.char_indices().nth(lo).map(|(i, _)| i).unwrap_or(self.url_input.len());
+            let hi_byte = self.url_input.char_indices().nth(hi).map(|(i, _)| i).unwrap_or(self.url_input.len());
+            self.url_input.replace_range(lo_byte..hi_byte, "");
+            self.url_input_cursor = lo;
+        }
+    }
+
+    /// Ordered selection bounds (lo, hi) in char indices.
+    pub fn url_selection_ordered(&self) -> Option<(usize, usize)> {
+        let (s, e) = self.url_selection?;
+        Some(if s <= e { (s, e) } else { (e, s) })
     }
 
     /// Remove the webview from the view hierarchy and drop the handle.
