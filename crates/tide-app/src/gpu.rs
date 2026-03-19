@@ -4,13 +4,13 @@ use tide_core::Renderer;
 use tide_platform::PlatformWindow;
 use tide_renderer::WgpuRenderer;
 
-use crate::render_thread::RenderThreadHandle;
+use crate::rendering::render_thread::RenderThreadHandle;
 use crate::App;
 
 impl App {
     pub(crate) fn init_gpu(&mut self, window: &dyn PlatformWindow) {
-        self.scale_factor = window.scale_factor() as f32;
-        self.window_size = window.inner_size();
+        self.window.scale_factor = window.scale_factor() as f32;
+        self.window.window_size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
@@ -67,8 +67,8 @@ impl App {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
-            width: self.window_size.0,
-            height: self.window_size.1,
+            width: self.window.window_size.0,
+            height: self.window.window_size.1,
             present_mode,
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
@@ -80,7 +80,7 @@ impl App {
             Arc::clone(&device),
             Arc::clone(&queue),
             format,
-            self.scale_factor,
+            self.window.scale_factor,
         );
 
         // Set initial clear color from theme palette
@@ -98,25 +98,25 @@ impl App {
             Arc::clone(&device),
             Arc::clone(&queue),
             config.clone(),
-            self.event_loop_waker.clone().expect("waker must be set before GPU init"),
+            self.bg.event_loop_waker.clone().expect("waker must be set before GPU init"),
         );
-        self.render_thread = Some(rt);
+        self.gpu.render_thread = Some(rt);
 
-        self.cached_cell_size = renderer.cell_size();
-        self.cell_size_table = renderer.cell_size_table().to_vec();
-        self.device = Some(device);
-        self.queue = Some(queue);
-        self.surface_config = Some(config);
-        self.renderer = Some(renderer);
+        self.window.cached_cell_size = renderer.cell_size();
+        self.window.cell_size_table = renderer.cell_size_table().to_vec();
+        self.gpu.device = Some(device);
+        self.gpu.queue = Some(queue);
+        self.gpu.surface_config = Some(config);
+        self.gpu.renderer = Some(renderer);
     }
 
     /// Queue a surface reconfiguration for the next render.
     /// The render thread will apply it before acquiring the next drawable.
     pub(crate) fn reconfigure_surface(&mut self) {
-        if let Some(config) = self.surface_config.as_mut() {
-            config.width = self.window_size.0.max(1);
-            config.height = self.window_size.1.max(1);
-            self.pending_surface_config = Some(config.clone());
+        if let Some(config) = self.gpu.surface_config.as_mut() {
+            config.width = self.window.window_size.0.max(1);
+            config.height = self.window.window_size.1.max(1);
+            self.gpu.pending_surface_config = Some(config.clone());
         }
     }
 }

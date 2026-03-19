@@ -1,7 +1,7 @@
 use tide_core::{LayoutEngine, PaneId, SplitDirection};
 
 use crate::pane::PaneKind;
-use crate::ui_state::FocusArea;
+use crate::state::FocusArea;
 use crate::App;
 
 impl App {
@@ -9,7 +9,7 @@ impl App {
     /// This only changes on terminal click / HJKL navigate / workspace switch.
     /// Dock operations never change this.
     pub(crate) fn focused_terminal_id(&self) -> Option<PaneId> {
-        self.stage_focused
+        self.focus.stage_focused
     }
 
     /// Which Terminal owns this pane via dock_layout?
@@ -27,17 +27,17 @@ impl App {
     /// Check if a pane is in any terminal's dock_layout OR in the pinned dock layout.
     pub(crate) fn is_pane_in_dock(&self, pane_id: PaneId) -> bool {
         self.terminal_owning(pane_id).is_some()
-            || self.pinned_dock_layout.all_pane_ids().contains(&pane_id)
+            || self.dock.pinned_dock_layout.all_pane_ids().contains(&pane_id)
     }
 
     /// Check if a pane is in the pinned dock layout.
     pub(crate) fn is_pane_pinned(&self, pane_id: PaneId) -> bool {
-        self.pinned_dock_layout.all_pane_ids().contains(&pane_id)
+        self.dock.is_pane_pinned(pane_id)
     }
 
     /// Whether the pinned dock has any panes.
     pub(crate) fn has_pinned_panes(&self) -> bool {
-        !self.pinned_dock_layout.all_pane_ids().is_empty()
+        !self.dock.pinned_dock_layout.all_pane_ids().is_empty()
     }
 
     /// Add a pane to the focused Terminal's dock.
@@ -55,8 +55,8 @@ impl App {
                 }
                 self.panes.remove(&launcher_id);
                 self.cleanup_closed_pane_state(launcher_id);
-                self.dock_open = true;
-                self.associated_terminal.insert(new_pane_id, tid);
+                self.dock.dock_open = true;
+                self.assoc.associated_terminal.insert(new_pane_id, tid);
             }
             return;
         }
@@ -75,31 +75,31 @@ impl App {
                 tp.dock_focused = Some(new_pane_id);
                 tp.dock_layout.set_active_tab(new_pane_id);
             }
-            self.dock_open = true;
-            self.associated_terminal.insert(new_pane_id, tid);
+            self.dock.dock_open = true;
+            self.assoc.associated_terminal.insert(new_pane_id, tid);
         }
     }
 
     /// Toggle Dock visibility (Cmd+4).
     pub(crate) fn toggle_dock(&mut self) {
-        if self.dock_open {
-            let focused_in_dock = self.focused.map(|f| self.is_pane_in_dock(f)).unwrap_or(false);
+        if self.dock.dock_open {
+            let focused_in_dock = self.focus.focused.map(|f| self.is_pane_in_dock(f)).unwrap_or(false);
 
             if focused_in_dock {
                 // Close + focus Stage terminal
-                self.dock_open = false;
-                self.focus_area = FocusArea::Stage;
-                if let Some(tid) = self.stage_focused {
-                    self.focused = Some(tid);
+                self.dock.dock_open = false;
+                self.focus.focus_area = FocusArea::Stage;
+                if let Some(tid) = self.focus.stage_focused {
+                    self.focus.focused = Some(tid);
                     self.router.set_focused(tid);
                 }
             } else {
                 // Focus the dock: try terminal dock pane, then pinned pane
-                self.focus_area = FocusArea::Dock;
-                if let Some(tid) = self.stage_focused {
+                self.focus.focus_area = FocusArea::Dock;
+                if let Some(tid) = self.focus.stage_focused {
                     if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
                         if let Some(df) = tp.dock_focused {
-                            self.focused = Some(df);
+                            self.focus.focused = Some(df);
                             self.router.set_focused(df);
                             self.cache.invalidate_chrome();
                             self.compute_layout();
@@ -108,14 +108,14 @@ impl App {
                     }
                 }
                 // No terminal dock pane — try pinned
-                if let Some(pf) = self.pinned_dock_layout.pane_ids().into_iter().next() {
-                    self.focused = Some(pf);
+                if let Some(pf) = self.dock.pinned_dock_layout.pane_ids().into_iter().next() {
+                    self.focus.focused = Some(pf);
                     self.router.set_focused(pf);
                 }
             }
         } else {
             // Open
-            let has_terminal_dock = self.stage_focused.map(|tid| {
+            let has_terminal_dock = self.focus.stage_focused.map(|tid| {
                 if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
                     !tp.dock_layout.all_pane_ids().is_empty()
                 } else { false }
@@ -123,40 +123,40 @@ impl App {
             let has_pinned = self.has_pinned_panes();
 
             if has_terminal_dock || has_pinned {
-                self.dock_open = true;
-                self.focus_area = FocusArea::Dock;
+                self.dock.dock_open = true;
+                self.focus.focus_area = FocusArea::Dock;
                 // Focus terminal dock pane first, then pinned
                 if has_terminal_dock {
-                    if let Some(tid) = self.stage_focused {
+                    if let Some(tid) = self.focus.stage_focused {
                         if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
                             if let Some(df) = tp.dock_focused {
-                                self.focused = Some(df);
+                                self.focus.focused = Some(df);
                                 self.router.set_focused(df);
                             }
                         }
                     }
-                } else if let Some(pf) = self.pinned_dock_layout.pane_ids().into_iter().next() {
-                    self.focused = Some(pf);
+                } else if let Some(pf) = self.dock.pinned_dock_layout.pane_ids().into_iter().next() {
+                    self.focus.focused = Some(pf);
                     self.router.set_focused(pf);
                 }
-            } else if let Some(_tid) = self.stage_focused {
+            } else if let Some(_tid) = self.focus.stage_focused {
                 // Create Launcher
                 let new_id = self.layout.alloc_id();
                 self.panes.insert(new_id, PaneKind::Launcher(new_id));
                 self.ime.pending_creates.push(new_id);
                 self.add_pane_to_dock(new_id);
-                self.focus_area = FocusArea::Dock;
-                self.focused = Some(new_id);
+                self.focus.focus_area = FocusArea::Dock;
+                self.focus.focused = Some(new_id);
                 self.router.set_focused(new_id);
             }
         }
         // Safety: ensure something is focused
-        if self.focused.is_none() {
+        if self.focus.focused.is_none() {
             if let Some(tid) = self.layout.pane_ids().into_iter()
                 .find(|&id| matches!(self.panes.get(&id), Some(PaneKind::Terminal(_)))) {
-                self.focused = Some(tid);
+                self.focus.focused = Some(tid);
                 self.router.set_focused(tid);
-                self.focus_area = FocusArea::Stage;
+                self.focus.focus_area = FocusArea::Stage;
             }
         }
         self.cache.pane_generations.clear();
@@ -169,8 +169,8 @@ impl App {
         let was_pinned = self.is_pane_pinned(pane_id);
 
         if was_pinned {
-            self.pinned_dock_layout.remove(pane_id);
-            self.associated_terminal.remove(&pane_id);
+            self.dock.pinned_dock_layout.remove(pane_id);
+            self.assoc.associated_terminal.remove(&pane_id);
             // Check if dock should close
             if !self.has_pinned_panes() {
                 let any_has_dock = self.panes.values().any(|pk| {
@@ -179,35 +179,35 @@ impl App {
                     } else { false }
                 });
                 if !any_has_dock {
-                    self.dock_open = false;
+                    self.dock.dock_open = false;
                 }
             }
             // Move focus to terminal dock or stage
-            if self.focused == Some(pane_id) {
-                if let Some(tid) = self.stage_focused {
+            if self.focus.focused == Some(pane_id) {
+                if let Some(tid) = self.focus.stage_focused {
                     if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
                         if let Some(df) = tp.dock_focused {
-                            self.focused = Some(df);
+                            self.focus.focused = Some(df);
                             self.router.set_focused(df);
                             return;
                         }
                     }
                     // Try next pinned pane
-                    if let Some(next) = self.pinned_dock_layout.pane_ids().into_iter().next() {
-                        self.focused = Some(next);
+                    if let Some(next) = self.dock.pinned_dock_layout.pane_ids().into_iter().next() {
+                        self.focus.focused = Some(next);
                         self.router.set_focused(next);
                         return;
                     }
-                    self.focused = Some(tid);
+                    self.focus.focused = Some(tid);
                     self.router.set_focused(tid);
-                    self.focus_area = FocusArea::Stage;
+                    self.focus.focus_area = FocusArea::Stage;
                 }
             }
             return;
         }
 
         if let Some(tid) = self.terminal_owning(pane_id) {
-            self.associated_terminal.remove(&pane_id);
+            self.assoc.associated_terminal.remove(&pane_id);
 
             if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                 tp.dock_layout.remove(pane_id);
@@ -215,11 +215,11 @@ impl App {
                 if remaining.is_empty() {
                     tp.dock_focused = None;
                     if !self.has_pinned_panes() {
-                        self.dock_open = false;
+                        self.dock.dock_open = false;
                     }
-                    self.focus_area = FocusArea::Stage;
-                    if let Some(st) = self.stage_focused {
-                        self.focused = Some(st);
+                    self.focus.focus_area = FocusArea::Stage;
+                    if let Some(st) = self.focus.stage_focused {
+                        self.focus.focused = Some(st);
                         self.router.set_focused(st);
                     }
                 } else {
@@ -230,24 +230,24 @@ impl App {
                         .unwrap_or(remaining[0]);
                     tp.dock_focused = Some(next);
                     tp.dock_layout.set_active_tab(next);
-                    self.focused = Some(next);
+                    self.focus.focused = Some(next);
                     self.router.set_focused(next);
                 }
             } else {
-                let remaining: Vec<PaneId> = self.associated_terminal.iter()
+                let remaining: Vec<PaneId> = self.assoc.associated_terminal.iter()
                     .filter(|(_, &t)| t == tid)
                     .map(|(&p, _)| p)
                     .collect();
                 if remaining.is_empty() {
-                    self.dock_open = false;
-                    self.focus_area = FocusArea::Stage;
-                    if let Some(st) = self.stage_focused {
-                        self.focused = Some(st);
+                    self.dock.dock_open = false;
+                    self.focus.focus_area = FocusArea::Stage;
+                    if let Some(st) = self.focus.stage_focused {
+                        self.focus.focused = Some(st);
                         self.router.set_focused(st);
                     }
                 } else {
                     let next = remaining[0];
-                    self.focused = Some(next);
+                    self.focus.focused = Some(next);
                     self.router.set_focused(next);
                 }
             }
@@ -261,7 +261,7 @@ impl App {
         } else {
             Vec::new()
         };
-        let associated: Vec<PaneId> = self.associated_terminal.iter()
+        let associated: Vec<PaneId> = self.assoc.associated_terminal.iter()
             .filter(|(_, &tid)| tid == terminal_id)
             .map(|(&pid, _)| pid)
             .collect();
@@ -271,24 +271,24 @@ impl App {
             }
         }
         for pid in dock_pane_ids {
-            self.pinned_dock_layout.remove(pid);
+            self.dock.pinned_dock_layout.remove(pid);
             self.panes.remove(&pid);
             self.cleanup_closed_pane_state(pid);
         }
         self.panes.remove(&terminal_id);
         self.layout.remove(terminal_id);
         self.cleanup_closed_pane_state(terminal_id);
-        self.dock_open = false;
+        self.dock.dock_open = false;
     }
 
     /// If Dock is open and empty (no terminal dock panes, no pinned panes),
     /// create a placeholder Launcher.
     /// If pinned panes exist, remove any placeholder Launchers.
     pub(crate) fn ensure_dock_placeholder(&mut self) {
-        if !self.dock_open { return; }
+        if !self.dock.dock_open { return; }
         if self.has_pinned_panes() {
             // Remove placeholder Launchers — pinned panes fill that role
-            if let Some(tid) = self.stage_focused {
+            if let Some(tid) = self.focus.stage_focused {
                 let launchers: Vec<PaneId> = if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
                     tp.dock_layout.all_pane_ids().into_iter()
                         .filter(|&pid| matches!(self.panes.get(&pid), Some(PaneKind::Launcher(_))))
@@ -297,6 +297,10 @@ impl App {
                 for lid in launchers {
                     if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                         tp.dock_layout.remove(lid);
+                        // Clear stale dock_focused so fallback chain works
+                        if tp.dock_focused == Some(lid) {
+                            tp.dock_focused = None;
+                        }
                     }
                     self.panes.remove(&lid);
                     self.cleanup_closed_pane_state(lid);
@@ -304,7 +308,7 @@ impl App {
             }
             return;
         }
-        let tid = match self.stage_focused {
+        let tid = match self.focus.stage_focused {
             Some(id) => id,
             None => return,
         };
@@ -314,15 +318,15 @@ impl App {
         let new_id = self.layout.alloc_id();
         self.panes.insert(new_id, PaneKind::Launcher(new_id));
         self.ime.pending_creates.push(new_id);
-        let prev_focused = self.focused;
-        self.focused = Some(tid);
+        let prev_focused = self.focus.focused;
+        self.focus.focused = Some(tid);
         self.add_pane_to_dock(new_id);
-        self.focused = prev_focused;
+        self.focus.focused = prev_focused;
     }
 
     /// Returns the dock_focused PaneId if it's a Launcher (placeholder).
     pub(crate) fn dock_launcher_id(&self) -> Option<PaneId> {
-        let tid = self.stage_focused?;
+        let tid = self.focus.stage_focused?;
         if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
             if let Some(focused_id) = tp.dock_focused {
                 if matches!(self.panes.get(&focused_id), Some(PaneKind::Launcher(_))) {
@@ -335,7 +339,7 @@ impl App {
 
     /// Split Dock with a new TabGroup.
     pub(crate) fn dock_split_new_tab_group(&mut self, direction: SplitDirection) {
-        let tid = match self.stage_focused {
+        let tid = match self.focus.stage_focused {
             Some(id) => id,
             None => return,
         };
@@ -343,7 +347,7 @@ impl App {
         let new_id = self.layout.alloc_id();
         self.panes.insert(new_id, PaneKind::Launcher(new_id));
         self.ime.pending_creates.push(new_id);
-        self.associated_terminal.insert(new_id, tid);
+        self.assoc.associated_terminal.insert(new_id, tid);
 
         if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
             if let Some(dock_focused) = tp.dock_focused {
@@ -354,9 +358,9 @@ impl App {
             tp.dock_focused = Some(new_id);
         }
 
-        self.dock_open = true;
-        self.focus_area = FocusArea::Dock;
-        self.focused = Some(new_id);
+        self.dock.dock_open = true;
+        self.focus.focus_area = FocusArea::Dock;
+        self.focus.focused = Some(new_id);
         self.router.set_focused(new_id);
         self.cache.invalidate_chrome();
         self.compute_layout();
@@ -364,19 +368,14 @@ impl App {
 
     /// Swap Dock content when terminal focus changes.
     pub(crate) fn swap_dock_state(&mut self, _incoming_terminal: PaneId) {
-        // Reset dock zoom on all terminals
-        for (_, pk) in &mut self.panes {
-            if let PaneKind::Terminal(tp) = pk {
-                tp.dock_zoomed = false;
-            }
-        }
+        // dock_zoomed is global (on DockState), so no per-terminal transfer needed.
         let any_has_dock = self.panes.values().any(|pk| {
             if let PaneKind::Terminal(tp) = pk {
                 !tp.dock_layout.all_pane_ids().is_empty()
             } else { false }
         });
         if !any_has_dock && !self.has_pinned_panes() {
-            self.dock_open = false;
+            self.dock.dock_open = false;
         }
         self.ensure_dock_placeholder();
         self.cache.pane_generations.clear();
@@ -386,18 +385,18 @@ impl App {
 
     /// Toggle pin state on the currently focused dock pane.
     pub(crate) fn toggle_dock_pin(&mut self) {
-        let pane_id = match self.focused {
+        let pane_id = match self.focus.focused {
             Some(id) if self.is_pane_in_dock(id) => id,
             _ => return,
         };
 
         if self.is_pane_pinned(pane_id) {
             // Unpin: move from pinned_dock_layout to associated terminal's dock_layout
-            self.pinned_dock_layout.remove(pane_id);
-            let target_tid = self.associated_terminal.get(&pane_id).copied()
-                .or_else(|| self.stage_focused);
+            self.dock.pinned_dock_layout.remove(pane_id);
+            let target_tid = self.assoc.associated_terminal.get(&pane_id).copied()
+                .or_else(|| self.focus.stage_focused);
             if let Some(tid) = target_tid {
-                let is_current = self.stage_focused == Some(tid);
+                let is_current = self.focus.stage_focused == Some(tid);
                 if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                     if tp.dock_layout.all_pane_ids().is_empty() {
                         tp.dock_layout.insert_leaf_group(pane_id);
@@ -409,7 +408,7 @@ impl App {
                         tp.dock_layout.set_active_tab(pane_id);
                     }
                 }
-                self.associated_terminal.insert(pane_id, tid);
+                self.assoc.associated_terminal.insert(pane_id, tid);
             }
         } else {
             // Pin: move from terminal's dock_layout to pinned_dock_layout
@@ -424,15 +423,15 @@ impl App {
                         }
                     }
                 }
-                self.associated_terminal.insert(pane_id, owner_tid);
+                self.assoc.associated_terminal.insert(pane_id, owner_tid);
             }
             // Add to pinned dock layout
-            if self.pinned_dock_layout.all_pane_ids().is_empty() {
-                self.pinned_dock_layout.insert_leaf_group(pane_id);
+            if self.dock.pinned_dock_layout.all_pane_ids().is_empty() {
+                self.dock.pinned_dock_layout.insert_leaf_group(pane_id);
             } else {
-                self.pinned_dock_layout.add_tab_to_first_group(pane_id);
+                self.dock.pinned_dock_layout.add_tab_to_first_group(pane_id);
             }
-            self.pinned_dock_layout.set_active_tab(pane_id);
+            self.dock.pinned_dock_layout.set_active_tab(pane_id);
         }
         // focused stays on pane_id — it's still a valid pane, just moved
         self.cache.invalidate_chrome();

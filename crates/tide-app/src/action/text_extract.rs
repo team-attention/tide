@@ -174,7 +174,7 @@ impl App {
             _ => return None,
         };
         let cwd = pane.backend.detect_cwd_fallback()?;
-        let root = self.cached_repo_roots.get(&cwd)?.as_ref()?;
+        let root = self.bg.cached_repo_roots.get(&cwd)?.as_ref()?;
         Self::find_file_recursive(root, filename, 10)
     }
 
