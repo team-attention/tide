@@ -2,10 +2,10 @@
 
 use tide_core::{LayoutEngine, PaneDecorations, Rect, Size, SplitDirection};
 
-use crate::drag_drop::HoverTarget;
+use crate::event_handler::drag_drop::HoverTarget;
 use crate::pane::PaneKind;
 use crate::theme::*;
-use crate::ui_state::LayoutSide;
+use crate::state::LayoutSide;
 use crate::App;
 
 impl App {
@@ -332,13 +332,13 @@ impl App {
 
 
     pub(crate) fn palette(&self) -> &'static ThemePalette {
-        if self.dark_mode { &DARK } else { &LIGHT }
+        if self.window.dark_mode { &DARK } else { &LIGHT }
     }
 
     /// Compute the full layout: sidebar (optional file tree) + pane area (split tree fills remaining space).
     pub(crate) fn compute_layout(&mut self) {
         let logical = self.logical_size();
-        let top = self.top_inset;
+        let top = self.window.top_inset;
         let pane_ids = self.layout.pane_ids();
 
         let show_file_tree = self.ft.visible;
@@ -367,7 +367,7 @@ impl App {
         }
 
         if show_file_tree {
-            match self.sidebar_side {
+            match self.window.sidebar_side {
                 LayoutSide::Left => {
                     left_reserved += PANE_GAP + sidebar_width;
                 }
@@ -378,21 +378,21 @@ impl App {
         }
 
         // Safety: close dock if no terminal has dock panes and no pinned panes
-        if self.dock_open {
+        if self.dock.dock_open {
             let any_has_dock = self.panes.values().any(|pk| {
                 if let PaneKind::Terminal(tp) = pk {
                     !tp.dock_layout.all_pane_ids().is_empty()
                 } else { false }
             });
             if !any_has_dock && !self.has_pinned_panes() {
-                self.dock_open = false;
+                self.dock.dock_open = false;
             }
         }
 
         // Reserve Dock space on the right (when open)
-        let show_dock = self.dock_open;
+        let show_dock = self.dock.dock_open;
         // Dock width is global (not per-terminal)
-        let effective_dock_width = self.dock_width;
+        let effective_dock_width = self.dock.dock_width;
         let dock_width = if show_dock {
             let max_ctx = (logical.width - left_reserved - right_reserved - 200.0).max(100.0);
             effective_dock_width.min(max_ctx)
@@ -424,7 +424,7 @@ impl App {
 
         // Compute file_tree_rect
         if show_file_tree {
-            let sidebar_x = match self.sidebar_side {
+            let sidebar_x = match self.window.sidebar_side {
                 LayoutSide::Left => left_reserved - sidebar_width,
                 LayoutSide::Right => logical.width - sidebar_width - PANE_GAP,
             };
@@ -454,9 +454,9 @@ impl App {
         let is_dragging = self.router.is_dragging_border()
             || self.ft.border_dragging
             || self.ws.border_dragging
-            || self.dock_border_dragging
-            || self.dock_split_dragging
-            || self.pinned_border_dragging;
+            || self.dock.dock_border_dragging
+            || self.dock.dock_split_dragging
+            || self.dock.pinned_border_dragging;
         if !is_dragging {
             let cell_size = self.cell_size();
             if cell_size.width > 0.0 {
@@ -470,7 +470,7 @@ impl App {
             }
         }
 
-        let mut rects = self.layout.compute(terminal_area, &pane_ids, self.focused);
+        let mut rects = self.layout.compute(terminal_area, &pane_ids, self.focus.focused);
 
         // Offset rects to account for file tree panel and titlebar inset
         for (_, rect) in &mut rects {
@@ -479,11 +479,23 @@ impl App {
         }
 
         // Zoom: if a pane is zoomed, override rects so only that pane is shown fullscreen.
-        // Clear zoom if the zoomed pane no longer exists or is a dock pane.
-        if let Some(zp) = self.zoomed_pane {
+        // If the zoomed pane no longer exists, transfer zoom to the focused pane
+        // to preserve stacked mode. Only clear zoom if no valid pane remains.
+        if let Some(zp) = self.focus.zoomed_pane {
             if !self.panes.contains_key(&zp) || self.is_pane_in_dock(zp) {
-                self.zoomed_pane = None;
-            } else {
+                // Zoomed pane gone — try to keep stacked mode on focused pane
+                if let Some(f) = self.focus.focused {
+                    if self.panes.contains_key(&f) && !self.is_pane_in_dock(f) {
+                        self.focus.zoomed_pane = Some(f);
+                    } else {
+                        self.focus.zoomed_pane = None;
+                    }
+                } else {
+                    self.focus.zoomed_pane = None;
+                }
+            }
+            // Re-check after potential transfer
+            if let Some(zp) = self.focus.zoomed_pane {
                 rects = vec![(zp, Rect::new(
                     terminal_offset_x, top,
                     terminal_area.width, terminal_area.height,
@@ -496,17 +508,10 @@ impl App {
             let ctx_offset_x = terminal_offset_x + terminal_area.width + PANE_GAP;
             let dock_height = logical.height - top;
 
-            // Check if dock is in zoomed/stacked mode
-            let is_dock_zoomed = self.focused_terminal_id().map(|tid| {
-                if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
-                    tp.dock_zoomed
-                } else { false }
-            }).unwrap_or(false);
+            let is_dock_zoomed = self.dock.dock_zoomed;
 
             if is_dock_zoomed {
-                // Zoomed: show the active dock pane (pinned or terminal dock)
-                let zoomed_pane = self.focused.filter(|id| self.is_pane_in_dock(*id));
-                if let Some(zp) = zoomed_pane {
+                if let Some(zp) = self.dock_zoomed_pane() {
                     rects.push((zp, Rect::new(ctx_offset_x, top, dock_width, dock_height)));
                 }
             } else {
@@ -524,18 +529,18 @@ impl App {
                 } else if !has_terminal_dock_panes {
                     (dock_width, ctx_offset_x, 0.0)
                 } else {
-                    let pw = (dock_width * self.pinned_dock_ratio).max(60.0).min(dock_width - 60.0);
+                    let pw = (dock_width * self.dock.pinned_dock_ratio).max(60.0).min(dock_width - 60.0);
                     let tw = dock_width - pw - PANE_GAP;
                     (pw, ctx_offset_x + pw + PANE_GAP, tw.max(0.0))
                 };
 
                 // Render pinned dock layout
                 if has_pinned && pinned_width > 0.0 {
-                    let pinned_pane_ids = self.pinned_dock_layout.pane_ids();
+                    let pinned_pane_ids = self.dock.pinned_dock_layout.pane_ids();
                     if !pinned_pane_ids.is_empty() {
                         let pinned_size = Size::new(pinned_width, dock_height);
-                        let pinned_focused = self.focused.filter(|id| self.is_pane_pinned(*id));
-                    let mut pr = self.pinned_dock_layout.compute(pinned_size, &pinned_pane_ids, pinned_focused);
+                        let pinned_focused = self.focus.focused.filter(|id| self.is_pane_pinned(*id));
+                    let mut pr = self.dock.pinned_dock_layout.compute(pinned_size, &pinned_pane_ids, pinned_focused);
                         for (_, rect) in &mut pr {
                             rect.x += ctx_offset_x;
                             rect.y += top;
@@ -591,7 +596,7 @@ impl App {
             })
             .flatten()
             .collect();
-        for pid in self.pinned_dock_layout.all_pane_ids() {
+        for pid in self.dock.pinned_dock_layout.all_pane_ids() {
             dock_pane_ids.insert(pid);
         }
 
@@ -674,7 +679,7 @@ impl App {
     /// Create/show/hide/reposition WKWebView instances for browser panes.
     /// Browser panes now live in the split tree and use visual_pane_rects for positioning.
     pub(crate) fn sync_browser_webview_frames(&mut self) {
-        let content_view = match self.content_view_ptr {
+        let content_view = match self.platform.content_view_ptr {
             Some(ptr) => ptr,
             None => return,
         };
@@ -719,14 +724,14 @@ impl App {
                 || self.modal.config_page.is_some()
                 || self.modal.save_confirm.is_some()
                 || self.modal.branch_cleanup.is_some()
-                || matches!(self.interaction.pane_drag, crate::drag_drop::PaneDragState::Dragging { .. });
+                || matches!(self.interaction.pane_drag, crate::event_handler::drag_drop::PaneDragState::Dragging { .. });
 
             if let Some(vr) = visual_rect {
                 if popup_open {
                     bp.set_visible(false);
                 } else {
                 // Position webview inside the pane's visual rect, below the tab bar + nav bar
-                let nav_bar_h = (self.cached_cell_size.height * 1.5).round() + 4.0; // 2px gap top + nav_h + 2px gap bottom
+                let nav_bar_h = (self.window.cached_cell_size.height * 1.5).round() + 4.0; // 2px gap top + nav_h + 2px gap bottom
                 let content_top = TAB_BAR_HEIGHT + nav_bar_h;
 
                 let x = (vr.x + PANE_PADDING) as f64;
@@ -753,12 +758,12 @@ impl App {
                 // should become first responder. A visible-but-unfocused
                 // browser pane must NOT steal first responder from the
                 // terminal's IME proxy (causes input loss after app switch).
-                let is_focused_pane = self.focused == Some(id);
-                let search_bar_active = self.search_focus == Some(id);
+                let is_focused_pane = self.focus.focused == Some(id);
+                let search_bar_active = self.focus.search_focus == Some(id);
                 let should_be_first_responder = is_focused_pane && !bp.url_input_focused && !search_bar_active;
                 if should_be_first_responder && !bp.is_first_responder {
                     if let (Some(wv), Some(win_ptr)) =
-                        (&bp.webview, self.window_ptr)
+                        (&bp.webview, self.platform.window_ptr)
                     {
                         unsafe { wv.make_first_responder(win_ptr); }
                     }
@@ -771,7 +776,7 @@ impl App {
                 // Browser pane not in the visible layout -- hide it
                 if bp.is_first_responder {
                     if let (Some(wv), Some(win_ptr), Some(view_ptr)) =
-                        (&bp.webview, self.window_ptr, self.content_view_ptr)
+                        (&bp.webview, self.platform.window_ptr, self.platform.content_view_ptr)
                     {
                         unsafe { wv.resign_first_responder(win_ptr, view_ptr); }
                     }

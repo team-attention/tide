@@ -46,7 +46,7 @@ pub(crate) fn render_cursor_and_highlights(
                     pane.render_cursor(inner, renderer, p.cursor_accent);
                 }
                 // Render URL underlines when Cmd/Meta is held
-                if app.modifiers.meta {
+                if app.window.modifiers.meta {
                     pane.render_url_underlines(inner, renderer, p.link_color);
                 }
                 // Render selection highlight
@@ -138,7 +138,7 @@ pub(crate) fn render_cursor_and_highlights(
                         render_preview_search_highlights(pane, inner, renderer, p, search);
                     }
                 } else {
-                    if focused == Some(id) && search_focus != Some(id) && app.cursor_visible {
+                    if focused == Some(id) && search_focus != Some(id) && app.timing.cursor_visible {
                         let pw = if ime_target == Some(id) { preedit_width_cells } else { 0 };
                         pane.render_cursor(inner, renderer, p.cursor_accent, pw);
                     }
@@ -156,7 +156,7 @@ pub(crate) fn render_cursor_and_highlights(
                     }
                 }
                 // Render editor scrollbar with search match markers
-                let sb_hovered = matches!(app.interaction.hover_target, Some(crate::drag_drop::HoverTarget::EditorScrollbar(hid)) if hid == id);
+                let sb_hovered = matches!(app.interaction.hover_target, Some(crate::event_handler::drag_drop::HoverTarget::EditorScrollbar(hid)) if hid == id);
                 pane.render_scrollbar(inner, renderer, pane.search.as_ref(), p, sb_hovered);
             }
             Some(PaneKind::Diff(_)) => {}
@@ -170,7 +170,7 @@ pub(crate) fn render_cursor_and_highlights(
 
 /// Render selection highlight for an editor pane.
 fn render_editor_selection(
-    pane: &crate::editor_pane::EditorPane,
+    pane: &crate::pane::editor::EditorPane,
     inner: Rect,
     renderer: &mut tide_renderer::WgpuRenderer,
     p: &ThemePalette,
@@ -186,7 +186,7 @@ fn render_editor_selection(
         let sel_color = p.selection;
         let scroll = pane.editor.scroll_offset();
         let h_scroll = pane.editor.h_scroll_offset();
-        let gutter_width = crate::editor_pane::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+        let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
         let visible_rows = (inner.height / cell_size.height).ceil() as usize;
         let visible_cols = ((inner.width - gutter_width) / cell_size.width).ceil() as usize;
         for row in start.0..=end.0 {
@@ -221,17 +221,17 @@ fn render_editor_selection(
 
 /// Render search match highlights for an editor pane.
 fn render_editor_search_highlights(
-    pane: &crate::editor_pane::EditorPane,
+    pane: &crate::pane::editor::EditorPane,
     inner: Rect,
     renderer: &mut tide_renderer::WgpuRenderer,
     p: &ThemePalette,
-    search: &crate::search::SearchState,
+    search: &crate::state::search::SearchState,
 ) {
     if search.visible && !search.input.is_empty() {
         let cell_size = renderer.cell_size();
         let scroll = pane.editor.scroll_offset();
         let h_scroll = pane.editor.h_scroll_offset();
-        let gutter_width = crate::editor_pane::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+        let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
         let visible_rows = (inner.height / cell_size.height).ceil() as usize;
         for (mi, m) in search.matches.iter().enumerate() {
             if m.line < scroll || m.line >= scroll + visible_rows {
@@ -262,7 +262,7 @@ fn render_editor_search_highlights(
 
 /// Render selection highlight for a markdown preview pane.
 fn render_preview_selection(
-    pane: &crate::editor_pane::EditorPane,
+    pane: &crate::pane::editor::EditorPane,
     inner: Rect,
     renderer: &mut tide_renderer::WgpuRenderer,
     p: &ThemePalette,
@@ -318,7 +318,7 @@ fn render_preview_selection(
 
 /// Render matching bracket highlights for an editor pane.
 fn render_bracket_highlight(
-    pane: &crate::editor_pane::EditorPane,
+    pane: &crate::pane::editor::EditorPane,
     inner: Rect,
     renderer: &mut tide_renderer::WgpuRenderer,
     p: &ThemePalette,
@@ -329,7 +329,7 @@ fn render_bracket_highlight(
     let cell_size = renderer.cell_size();
     let scroll = pane.editor.scroll_offset();
     let h_scroll = pane.editor.h_scroll_offset();
-    let gutter_width = crate::editor_pane::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+    let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
     let visible_rows = (inner.height / cell_size.height).ceil() as usize;
     let border_w = 1.0_f32;
 
@@ -368,11 +368,11 @@ fn render_bracket_highlight(
 /// Match coordinates are in preview-line space (line = preview line index,
 /// col/len = display-cell units), so no buffer-to-preview mapping is needed.
 fn render_preview_search_highlights(
-    pane: &crate::editor_pane::EditorPane,
+    pane: &crate::pane::editor::EditorPane,
     inner: Rect,
     renderer: &mut tide_renderer::WgpuRenderer,
     p: &ThemePalette,
-    search: &crate::search::SearchState,
+    search: &crate::state::search::SearchState,
 ) {
     if !search.visible || search.input.is_empty() {
         return;

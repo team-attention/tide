@@ -11,8 +11,8 @@ impl App {
     /// Check if the current mouse position clicks on a visible search bar.
     /// Returns true if the click was consumed.
     pub(crate) fn check_search_bar_click(&mut self) -> bool {
-        let pos = self.last_cursor_pos;
-        if self.renderer.is_none() {
+        let pos = self.window.last_cursor_pos;
+        if self.gpu.renderer.is_none() {
             return false;
         }
 
@@ -25,8 +25,8 @@ impl App {
         }
 
         // Click not on any search bar — clear search focus
-        if self.search_focus.is_some() {
-            self.search_focus = None;
+        if self.focus.search_focus.is_some() {
+            self.focus.search_focus = None;
         }
 
         false
@@ -64,12 +64,12 @@ impl App {
                 Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) | Some(PaneKind::Launcher(_)) => {}
                 None => {}
             }
-            if self.search_focus == Some(id) {
-                self.search_focus = None;
+            if self.focus.search_focus == Some(id) {
+                self.focus.search_focus = None;
             }
         } else {
             // Focus the search bar
-            self.search_focus = Some(id);
+            self.focus.search_focus = Some(id);
         }
 
         true
@@ -88,7 +88,7 @@ impl App {
 
     fn editor_visible_cols(&self, pane_id: tide_core::PaneId) -> usize {
         let cs = self.cell_size();
-        let gutter_width = crate::editor_pane::GUTTER_WIDTH_CELLS as f32 * cs.width;
+        let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cs.width;
         if let Some(&(_, rect)) = self.visual_pane_rects.iter().find(|(id, _)| *id == pane_id) {
             let cw = rect.width - 2.0 * PANE_PADDING - 2.0 * gutter_width;
             return (cw / cs.width).floor().max(1.0) as usize;

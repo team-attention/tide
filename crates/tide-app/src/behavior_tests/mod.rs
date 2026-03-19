@@ -1,0 +1,28 @@
+//! Behavioral tests — living documentation of what the system does.
+//!
+//! Each test name reads as a natural language sentence describing a system behavior.
+//! Organized by feature domain so tests serve as a browsable specification.
+
+mod focus_management;
+mod modal_behavior;
+mod pane_lifecycle;
+mod editor_behavior;
+mod keyboard_routing;
+mod launcher_behavior;
+mod theme_behavior;
+mod workspace_behavior;
+mod search_behavior;
+mod ime_behavior;
+mod render_cache_behavior;
+mod global_actions;
+mod text_input_routing;
+mod session_behavior;
+mod file_tree_scroll;
+mod preview_scroll;
+mod terminal_context;
+mod dock_behavior;
+mod dock_placeholder_behavior;
+mod titlebar_toggle_behavior;
+mod dock_global_behavior;
+mod soft_wrap_behavior;
+mod lsp_completion;

@@ -9,10 +9,10 @@ impl App {
     /// dx/dy are in "line" units (platform normalizes pixel/line deltas).
     pub(crate) fn handle_scroll(&mut self, dx: f32, dy: f32) {
         // Mark scroll activity so frame pacing skips coalescing
-        self.scroll_at = Some(std::time::Instant::now());
+        self.input.scroll_at = Some(std::time::Instant::now());
         // Popup scroll: config page
         if let Some(ref mut cp) = self.modal.config_page {
-            if matches!(cp.section, crate::ui_state::ConfigSection::Keybindings) {
+            if matches!(cp.section, crate::state::ConfigSection::Keybindings) {
                 let lines = if dy.abs() >= 1.0 { dy.abs().ceil() as usize } else { 1 };
                 let max_visible = CONFIG_PAGE_MAX_VISIBLE;
                 if dy > 0.0 {
@@ -28,7 +28,7 @@ impl App {
         }
 
         // Popup scroll: git switcher
-        if self.modal.git_switcher.is_some() && self.git_switcher_contains(self.last_cursor_pos) {
+        if self.modal.git_switcher.is_some() && self.git_switcher_contains(self.window.last_cursor_pos) {
             if let Some(ref mut gs) = self.modal.git_switcher {
                 let max_visible = crate::GIT_SWITCHER_MAX_VISIBLE;
                 let lines = if dy.abs() >= 1.0 { dy.abs().ceil() as usize } else { 1 };
@@ -53,7 +53,7 @@ impl App {
         };
 
         // Check if scrolling over the file tree
-        if self.ft.visible && self.ft.rect.is_some_and(|r| self.last_cursor_pos.x >= r.x && self.last_cursor_pos.x < r.x + r.width) {
+        if self.ft.visible && self.ft.rect.is_some_and(|r| self.window.last_cursor_pos.x >= r.x && self.window.last_cursor_pos.x < r.x + r.width) {
             let max_scroll = self.file_tree_max_scroll();
             let new_val = (self.ft.scroll - dy * 18.0).clamp(0.0, max_scroll);
             if new_val != self.ft.scroll {
@@ -65,7 +65,7 @@ impl App {
             // Route scroll to the pane under the cursor via the input router
             let input = InputEvent::MouseScroll {
                 delta: editor_dy,
-                position: self.last_cursor_pos,
+                position: self.window.last_cursor_pos,
             };
             let action = self.router.process(input, &self.pane_rects);
             self.handle_action(action, Some(input));
@@ -74,7 +74,7 @@ impl App {
         // Horizontal scroll for editor/diff panes (trackpad two-finger swipe)
         if editor_dx != 0.0 {
             let editor_pane_id = self.visual_pane_rects.iter()
-                .find(|(_, r)| r.contains(self.last_cursor_pos))
+                .find(|(_, r)| r.contains(self.window.last_cursor_pos))
                 .map(|(id, r)| (*id, *r));
             if let Some((pid, rect)) = editor_pane_id {
                 let cs = self.cell_size();
