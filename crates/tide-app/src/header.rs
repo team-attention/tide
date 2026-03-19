@@ -46,7 +46,7 @@ pub(crate) struct EditorBadge {
 /// Compute which right-side badges an editor pane should display.
 /// This is the single source of truth — both `render_pane_header` and
 /// `render_tab_bar` use this, preventing badge divergence between paths.
-pub(crate) fn editor_header_badges(ep: &crate::editor_pane::EditorPane) -> Vec<EditorBadge> {
+pub(crate) fn editor_header_badges(ep: &crate::pane::editor::EditorPane) -> Vec<EditorBadge> {
     let mut badges = Vec::new();
 
     // Markdown preview toggle
@@ -742,7 +742,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use tide_core::PaneId;
-    use crate::editor_pane::EditorPane;
+    use crate::pane::editor::EditorPane;
 
     fn make_editor(id: PaneId) -> EditorPane {
         EditorPane::new_empty(id)

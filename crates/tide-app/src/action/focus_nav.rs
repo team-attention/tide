@@ -5,7 +5,7 @@ use tide_input::Direction;
 use crate::pane::PaneKind;
 #[allow(unused_imports)]
 use tide_core::LayoutEngine;
-use crate::ui_state::FocusArea;
+use crate::state::FocusArea;
 use crate::App;
 
 impl App {
@@ -40,9 +40,9 @@ impl App {
     /// Handle MoveFocus direction navigation between Stage panes only.
     /// HJKL never crosses into the Dock — use Cmd+I/O for Dock navigation.
     pub(super) fn handle_move_focus(&mut self, direction: Direction) {
-        self.focus_area = FocusArea::Stage;
+        self.focus.focus_area = FocusArea::Stage;
         self.modal.save_as_input = None;
-        let current_id = match self.focused {
+        let current_id = match self.focus.focused {
             Some(id) => id,
             None => return,
         };
@@ -116,7 +116,7 @@ impl App {
 
     /// Scroll the focused pane by half a page (Cmd+U / Cmd+D).
     pub(super) fn scroll_half_page(&mut self, direction: Direction) {
-        let pane_id = match self.focused {
+        let pane_id = match self.focus.focused {
             Some(id) => id,
             None => return,
         };

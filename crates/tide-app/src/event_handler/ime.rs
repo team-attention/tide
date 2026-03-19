@@ -45,7 +45,7 @@ impl App {
             return;
         }
         // Browser URL bar text input
-        if let Some(focused_id) = self.focused {
+        if let Some(focused_id) = self.focus.focused {
             if let Some(PaneKind::Browser(bp)) = self.panes.get(&focused_id) {
                 if bp.url_input_focused {
                     for ch in text.chars() {
@@ -64,8 +64,8 @@ impl App {
         }
 
         // Preview mode: ignore text input UNLESS search bar is active
-        if self.search_focus.is_none() {
-            if let Some(id) = self.focused {
+        if self.focus.search_focus.is_none() {
+            if let Some(id) = self.focus.focused {
                 let is_preview = self
                     .panes
                     .get(&id)
@@ -80,7 +80,7 @@ impl App {
         }
         // Launcher pane: intercept single-char text to resolve launcher choice.
         // On macOS, plain keys (t/e/o/b) arrive via ImeCommit, not KeyDown.
-        if let Some(id) = self.focused {
+        if let Some(id) = self.focus.focused {
             if matches!(self.panes.get(&id), Some(PaneKind::Launcher(_))) {
                 for ch in text.chars() {
                     let choice = match ch {
@@ -114,7 +114,7 @@ impl App {
         // Launcher pane: immediately resolve on preedit so Korean IME
         // doesn't require a second keystroke to commit the character.
         if !text.is_empty() {
-            if let Some(id) = self.focused {
+            if let Some(id) = self.focus.focused {
                 if matches!(self.panes.get(&id), Some(PaneKind::Launcher(_))) {
                     let first_char = text.chars().next();
                     let choice = match first_char {
@@ -141,7 +141,7 @@ impl App {
             self.cache.invalidate_pane(target);
         }
         // Invalidate chrome only when browser URL bar has preedit
-        if self.focused.and_then(|id| self.panes.get(&id)).map_or(false, |p| {
+        if self.focus.focused.and_then(|id| self.panes.get(&id)).map_or(false, |p| {
             matches!(p, PaneKind::Browser(bp) if bp.url_input_focused)
         }) {
             self.cache.invalidate_chrome();

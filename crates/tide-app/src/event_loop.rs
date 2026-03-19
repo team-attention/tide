@@ -6,9 +6,9 @@ use tide_core::TerminalBackend;
 use tide_platform::{PlatformEvent, PlatformWindow, WindowProxy};
 
 use crate::pane::PaneKind;
-use crate::session;
+use crate::update::session;
 use crate::theme::*;
-use crate::ui_state::FocusArea;
+use crate::state::FocusArea;
 use crate::App;
 
 /// Events delivered to the app thread.
@@ -26,8 +26,8 @@ impl App {
     /// (GPU surface creation, PTY pre-spawn, session restore).
     /// Called on the main thread before the app thread is spawned.
     pub(crate) fn init_phase1(&mut self, window: &dyn PlatformWindow) {
-        self.content_view_ptr = window.content_view_ptr();
-        self.window_ptr = window.window_ptr();
+        self.platform.content_view_ptr = window.content_view_ptr();
+        self.platform.window_ptr = window.window_ptr();
 
         let saved_session = session::load_session();
         let is_crash = session::is_crash_recovery();
@@ -55,7 +55,7 @@ impl App {
             // The shell starts loading ~/.zshrc in parallel with GPU initialization,
             // so the prompt appears sooner after launch.
             let early_terminal =
-                tide_terminal::Terminal::with_cwd(80, 24, None, self.dark_mode).ok();
+                tide_terminal::Terminal::with_cwd(80, 24, None, self.window.dark_mode).ok();
 
             self.init_gpu(window); // Shell is loading in parallel
 
@@ -104,40 +104,40 @@ impl App {
             // Periodic session auto-save for crash recovery (every 30s)
             {
                 let now = Instant::now();
-                if now.duration_since(self.last_session_save) >= Duration::from_secs(30) {
+                if now.duration_since(self.timing.last_session_save) >= Duration::from_secs(30) {
                     self.save_full_session();
-                    self.last_session_save = now;
+                    self.timing.last_session_save = now;
                 }
             }
 
             // Cursor blink
-            let blink_elapsed = Instant::now().duration_since(self.cursor_blink_at);
+            let blink_elapsed = Instant::now().duration_since(self.timing.cursor_blink_at);
             let blink_phase = (blink_elapsed.as_millis() / 530) % 2 == 0;
-            if blink_phase != self.cursor_visible {
-                self.cursor_visible = blink_phase;
+            if blink_phase != self.timing.cursor_visible {
+                self.timing.cursor_visible = blink_phase;
                 self.cache.needs_redraw = true;
             }
 
             // Render if needed
-            if self.cache.needs_redraw && !self.is_occluded && self.batch_depth == 0 {
+            if self.cache.needs_redraw && !self.window.is_occluded && self.input.batch_depth == 0 {
                 let now = Instant::now();
-                let skip_coalesce = self.input_just_sent
-                    || self.input_sent_at.map_or(false, |at| {
+                let skip_coalesce = self.input.input_just_sent
+                    || self.input.input_sent_at.map_or(false, |at| {
                         now.duration_since(at) < Duration::from_millis(16)
                     })
-                    || self.scroll_at.map_or(false, |at| {
+                    || self.input.scroll_at.map_or(false, |at| {
                         now.duration_since(at) < Duration::from_millis(32)
                     });
                 if skip_coalesce
-                    || now.duration_since(self.last_frame) >= Duration::from_millis(2)
+                    || now.duration_since(self.timing.last_frame) >= Duration::from_millis(2)
                 {
                     self.update();
                     if self.render() {
                         self.cache.needs_redraw = false;
-                        self.last_frame = now;
+                        self.timing.last_frame = now;
 
                         // Reveal window after first frame
-                        if !self.window_shown {
+                        if !self.platform.window_shown {
                             window.show_window();
                             // Re-establish first responder: macOS may reset
                             // it during window lifecycle initialization
@@ -146,7 +146,7 @@ impl App {
                             if let Some(target) = self.effective_ime_target() {
                                 window.focus_ime_proxy(target);
                             }
-                            self.window_shown = true;
+                            self.platform.window_shown = true;
                         }
                     }
                     // If render() returned false (render thread busy),
@@ -162,14 +162,14 @@ impl App {
         let mut timeout = Duration::from_millis(100); // default max sleep
 
         // Cursor blink: next toggle
-        if self.focused.is_some() {
-            let blink_elapsed = now.duration_since(self.cursor_blink_at);
+        if self.focus.focused.is_some() {
+            let blink_elapsed = now.duration_since(self.timing.cursor_blink_at);
             let next_toggle_ms = 530 - (blink_elapsed.as_millis() % 530) as u64;
             timeout = timeout.min(Duration::from_millis(next_toggle_ms));
         }
 
         // Deferred resize
-        if let Some(at) = self.resize_deferred_at {
+        if let Some(at) = self.timing.resize_deferred_at {
             if at > now {
                 timeout = timeout.min(at - now);
             } else {
@@ -178,7 +178,7 @@ impl App {
         }
 
         // Badge check
-        if let Some(at) = self.badge_check_at {
+        if let Some(at) = self.timing.badge_check_at {
             if at > now {
                 timeout = timeout.min(at - now);
             } else {
@@ -187,18 +187,18 @@ impl App {
         }
 
         // Frame pacing: if we need to render but are within 2ms coalescing window
-        if self.cache.needs_redraw && !self.is_occluded && self.batch_depth == 0 {
-            let skip_coalesce = self.input_just_sent
-                || self.input_sent_at.map_or(false, |at| {
+        if self.cache.needs_redraw && !self.window.is_occluded && self.input.batch_depth == 0 {
+            let skip_coalesce = self.input.input_just_sent
+                || self.input.input_sent_at.map_or(false, |at| {
                     now.duration_since(at) < Duration::from_millis(16)
                 })
-                || self.scroll_at.map_or(false, |at| {
+                || self.input.scroll_at.map_or(false, |at| {
                     now.duration_since(at) < Duration::from_millis(32)
                 });
             if skip_coalesce {
                 return Duration::ZERO; // render immediately
             }
-            let since_last = now.duration_since(self.last_frame);
+            let since_last = now.duration_since(self.timing.last_frame);
             if since_last < Duration::from_millis(2) {
                 timeout = timeout.min(Duration::from_millis(2) - since_last);
             } else {
@@ -219,11 +219,11 @@ impl App {
     ) {
         match event {
             PlatformEvent::BatchStart => {
-                self.batch_depth += 1;
+                self.input.batch_depth += 1;
                 return;
             }
             PlatformEvent::BatchEnd => {
-                self.batch_depth = self.batch_depth.saturating_sub(1);
+                self.input.batch_depth = self.input.batch_depth.saturating_sub(1);
                 // Fall through to IME sync below
             }
             PlatformEvent::RedrawRequested => {
@@ -250,25 +250,25 @@ impl App {
                 std::process::exit(0);
             }
             PlatformEvent::Resized { width, height } => {
-                self.window_size = (width, height);
+                self.window.window_size = (width, height);
                 self.reconfigure_surface();
-                self.resize_deferred_at =
+                self.timing.resize_deferred_at =
                     Some(Instant::now() + Duration::from_millis(50));
                 self.compute_layout();
                 self.ime.cursor_dirty = true;
                 self.cache.needs_redraw = true;
             }
             PlatformEvent::ScaleFactorChanged(scale) => {
-                self.scale_factor = scale as f32;
+                self.window.scale_factor = scale as f32;
                 self.reconfigure_surface();
                 self.compute_layout();
                 self.cache.invalidate_chrome();
             }
             PlatformEvent::ModifiersChanged(modifiers) => {
-                let old_shift = self.modifiers.shift;
+                let old_shift = self.window.modifiers.shift;
                 let new_shift = modifiers.shift;
-                let old_meta = self.modifiers.meta;
-                self.modifiers = modifiers;
+                let old_meta = self.window.modifiers.meta;
+                self.window.modifiers = modifiers;
 
                 // Meta key toggles link underlines — redraw immediately
                 if old_meta != modifiers.meta {
@@ -278,12 +278,12 @@ impl App {
                 // Shift+Shift double-tap detection
                 if old_shift && !new_shift {
                     // Shift released: record timestamp
-                    if self.shift_tap_clean {
-                        if let Some(prev) = self.last_shift_up {
+                    if self.input.shift_tap_clean {
+                        if let Some(prev) = self.input.last_shift_up {
                             if prev.elapsed() < Duration::from_millis(400) {
                                 // Double-tap detected
-                                self.last_shift_up = None;
-                                self.shift_tap_clean = false;
+                                self.input.last_shift_up = None;
+                                self.input.shift_tap_clean = false;
                                 if self.modal.file_finder.is_some() {
                                     self.close_file_finder();
                                 } else {
@@ -291,24 +291,24 @@ impl App {
                                 }
                                 self.cache.needs_redraw = true;
                             } else {
-                                self.last_shift_up = Some(Instant::now());
+                                self.input.last_shift_up = Some(Instant::now());
                             }
                         } else {
-                            self.last_shift_up = Some(Instant::now());
+                            self.input.last_shift_up = Some(Instant::now());
                         }
                     } else {
                         // A key was pressed between taps, reset
-                        self.last_shift_up = Some(Instant::now());
-                        self.shift_tap_clean = true;
+                        self.input.last_shift_up = Some(Instant::now());
+                        self.input.shift_tap_clean = true;
                     }
                 } else if !old_shift && new_shift {
                     // Shift pressed: mark clean (will be invalidated by KeyDown if needed)
-                    self.shift_tap_clean = true;
+                    self.input.shift_tap_clean = true;
                 }
             }
             PlatformEvent::Focused(focused) => {
                 if focused {
-                    self.modifiers = tide_core::Modifiers::default();
+                    self.window.modifiers = tide_core::Modifiers::default();
                     // windowDidBecomeKey may have changed the actual first
                     // responder via LAST_IME_TARGET, making browser panes'
                     // is_first_responder flags stale.  Reset them so
@@ -323,8 +323,8 @@ impl App {
                     self.sync_browser_webview_frames();
                 } else {
                     // Cancel any in-progress drag when the window loses focus
-                    if !matches!(self.interaction.pane_drag, crate::drag_drop::PaneDragState::Idle) {
-                        self.interaction.pane_drag = crate::drag_drop::PaneDragState::Idle;
+                    if !matches!(self.interaction.pane_drag, crate::event_handler::drag_drop::PaneDragState::Idle) {
+                        self.interaction.pane_drag = crate::event_handler::drag_drop::PaneDragState::Idle;
                         self.cache.needs_redraw = true;
                     }
                 }
@@ -334,14 +334,14 @@ impl App {
                 width,
                 height,
             } => {
-                self.is_fullscreen = is_fullscreen;
-                self.top_inset = if is_fullscreen { 0.0 } else { TITLEBAR_HEIGHT };
-                self.resize_deferred_at = None;
+                self.window.is_fullscreen = is_fullscreen;
+                self.window.top_inset = if is_fullscreen { 0.0 } else { TITLEBAR_HEIGHT };
+                self.timing.resize_deferred_at = None;
 
                 // Use the size included in the event (avoids querying window
                 // from the app thread, which would require a cross-thread call).
-                if (width, height) != self.window_size {
-                    self.window_size = (width, height);
+                if (width, height) != self.window.window_size {
+                    self.window.window_size = (width, height);
                     self.reconfigure_surface();
                 }
 
@@ -350,7 +350,7 @@ impl App {
                 self.cache.invalidate_chrome();
             }
             PlatformEvent::Occluded(occluded) => {
-                self.is_occluded = occluded;
+                self.window.is_occluded = occluded;
                 if !occluded {
                     self.cache.needs_redraw = true;
                 }
@@ -358,16 +358,16 @@ impl App {
             PlatformEvent::WebViewFocused => {
                 // Find which browser pane was clicked using the last known cursor position
                 if let Some((pane_id, _)) = self.visual_pane_rects.iter().find(|(_, r)| {
-                    r.contains(self.last_cursor_pos)
+                    r.contains(self.window.last_cursor_pos)
                 }) {
                     let pid = *pane_id;
-                    self.focused = Some(pid);
+                    self.focus.focused = Some(pid);
                     self.router.set_focused(pid);
                     // Set correct focus area based on whether pane is in dock
                     if self.is_pane_in_dock(pid) {
-                        self.focus_area = FocusArea::Dock;
+                        self.focus.focus_area = FocusArea::Dock;
                     } else {
-                        self.focus_area = FocusArea::Stage;
+                        self.focus.focus_area = FocusArea::Stage;
                     }
                     // Clicking webview content unfocuses the URL bar.
                     // hitTest: returns the WKWebView so TideView's mouseDown
@@ -376,23 +376,23 @@ impl App {
                         bp.url_input_focused = false;
                     }
                 } else {
-                    self.focus_area = FocusArea::Stage;
+                    self.focus.focus_area = FocusArea::Stage;
                 }
                 self.cache.invalidate_chrome();
             }
             PlatformEvent::ImeCommit(text) => {
-                self.shift_tap_clean = false;
+                self.input.shift_tap_clean = false;
                 self.handle_ime_commit(&text);
                 self.ime.cursor_dirty = true;
-                self.cursor_blink_at = Instant::now();
-                self.cursor_visible = true;
+                self.timing.cursor_blink_at = Instant::now();
+                self.timing.cursor_visible = true;
             }
             PlatformEvent::ImePreedit { text, cursor: _ } => {
-                self.shift_tap_clean = false;
+                self.input.shift_tap_clean = false;
                 self.handle_ime_preedit(&text);
                 self.ime.cursor_dirty = true;
-                self.cursor_blink_at = Instant::now();
-                self.cursor_visible = true;
+                self.timing.cursor_blink_at = Instant::now();
+                self.timing.cursor_visible = true;
             }
             PlatformEvent::KeyDown {
                 key,
@@ -400,27 +400,27 @@ impl App {
                 chars,
             } => {
                 // Invalidate Shift+Shift detection on any real key press
-                self.shift_tap_clean = false;
+                self.input.shift_tap_clean = false;
                 self.handle_key_down(key, modifiers, chars);
                 self.ime.cursor_dirty = true;
-                self.cursor_blink_at = Instant::now();
-                self.cursor_visible = true;
+                self.timing.cursor_blink_at = Instant::now();
+                self.timing.cursor_visible = true;
             }
             PlatformEvent::KeyUp { .. } => {}
             PlatformEvent::MouseDown { button, position } => {
                 let pos = self.physical_to_logical(position);
-                self.last_cursor_pos = pos;
+                self.window.last_cursor_pos = pos;
                 let btn = platform_button_to_core(button);
                 if let Some(btn) = btn {
                     self.handle_mouse_down(btn, window);
                 }
                 self.ime.cursor_dirty = true;
-                self.cursor_blink_at = Instant::now();
-                self.cursor_visible = true;
+                self.timing.cursor_blink_at = Instant::now();
+                self.timing.cursor_visible = true;
             }
             PlatformEvent::MouseUp { button, position } => {
                 let pos = self.physical_to_logical(position);
-                self.last_cursor_pos = pos;
+                self.window.last_cursor_pos = pos;
                 let btn = platform_button_to_core(button);
                 if let Some(btn) = btn {
                     self.handle_mouse_up(btn);
@@ -436,15 +436,15 @@ impl App {
                 position,
             } => {
                 let pos = self.physical_to_logical(position);
-                self.last_cursor_pos = pos;
+                self.window.last_cursor_pos = pos;
                 self.handle_scroll(dx, dy);
             }
         }
 
         // Process deferred fullscreen toggle
-        if self.pending_fullscreen_toggle {
-            self.pending_fullscreen_toggle = false;
-            window.set_fullscreen(!self.is_fullscreen);
+        if self.window.pending_fullscreen_toggle {
+            self.window.pending_fullscreen_toggle = false;
+            window.set_fullscreen(!self.window.is_fullscreen);
         }
 
         // Sync IME proxy views
@@ -527,29 +527,16 @@ impl App {
 
     /// The effective pane that will receive IME input, considering focus area.
     pub(crate) fn effective_ime_target(&self) -> Option<tide_core::PaneId> {
-        let target = self.focused;
-        if let Some(id) = target {
-            if let Some(PaneKind::Browser(bp)) = self.panes.get(&id) {
-                if !bp.url_input_focused {
-                    // Text-input modals need an IME proxy as first responder
-                    // even when a browser pane is focused (browser panes
-                    // normally don't use their IME proxy).
-                    let has_text_modal = self.modal.file_finder.is_some()
-                        || self.modal.git_switcher.is_some()
-                        || self.modal.save_as_input.is_some()
-                        || self.modal.file_tree_rename.is_some()
-                        || self.search_focus == Some(id);
-                    if !has_text_modal {
-                        return None;
-                    }
-                }
-            }
-        }
-        target
+        effective_ime_target(
+            self.focus.focused,
+            self.focus.search_focus,
+            &self.modal,
+            &self.panes,
+        )
     }
 
     fn physical_to_logical(&self, pos: (f64, f64)) -> tide_core::Vec2 {
-        tide_core::Vec2::new(pos.0 as f32, pos.1 as f32)
+        physical_to_logical(pos)
     }
 
     /// Poll background events (PTY output, file watcher, git).
@@ -557,9 +544,9 @@ impl App {
         self.poll_render_result();
 
         // Deferred PTY resize
-        if let Some(at) = self.resize_deferred_at {
+        if let Some(at) = self.timing.resize_deferred_at {
             if Instant::now() >= at {
-                self.resize_deferred_at = None;
+                self.timing.resize_deferred_at = None;
                 self.compute_layout();
                 self.cache.needs_redraw = true;
             }
@@ -572,8 +559,8 @@ impl App {
                 if terminal.backend.has_new_output() {
                     self.cache.needs_redraw = true;
                     self.ime.cursor_dirty = true;
-                    self.input_just_sent = false;
-                    self.input_sent_at = None;
+                    self.input.input_just_sent = false;
+                    self.input.input_sent_at = None;
                     had_pty_output = true;
                     break;
                 }
@@ -581,12 +568,12 @@ impl App {
         }
 
         if had_pty_output {
-            self.badge_check_at = Some(Instant::now() + Duration::from_millis(150));
+            self.timing.badge_check_at = Some(Instant::now() + Duration::from_millis(150));
         }
 
         // File watcher
         if self
-            .file_watch_dirty
+            .bg.file_watch_dirty
             .swap(false, std::sync::atomic::Ordering::Relaxed)
         {
             self.cache.needs_redraw = true;
@@ -609,13 +596,13 @@ impl App {
         }
 
         // Badge check
-        if let Some(check_at) = self.badge_check_at {
+        if let Some(check_at) = self.timing.badge_check_at {
             if Instant::now() >= check_at {
-                self.badge_check_at = None;
+                self.timing.badge_check_at = None;
                 self.update_file_tree_cwd();
                 self.update_terminal_badges();
 
-                if let Some(ref tx) = self.git_poll_cwd_tx {
+                if let Some(ref tx) = self.bg.git_poll_cwd_tx {
                     let cwds: std::collections::HashSet<std::path::PathBuf> = self
                         .panes
                         .values()
@@ -646,7 +633,7 @@ impl App {
 
         let cell_size = self.cell_size();
 
-        let target_id = match self.focused {
+        let target_id = match self.focus.focused {
             Some(id) => id,
             None => return,
         };
@@ -697,7 +684,7 @@ impl App {
                     return;
                 }
                 let visual_col = cursor_char_col - h_scroll;
-                let gutter_cells = crate::editor_pane::GUTTER_WIDTH_CELLS;
+                let gutter_cells = crate::pane::editor::GUTTER_WIDTH_CELLS;
 
                 let (inner_x, inner_y) = if let Some((_, rect)) = self
                     .visual_pane_rects
@@ -724,6 +711,37 @@ impl App {
             _ => {}
         }
     }
+}
+
+/// Convert physical (f64) coordinates to logical Vec2.
+fn physical_to_logical(pos: (f64, f64)) -> tide_core::Vec2 {
+    tide_core::Vec2::new(pos.0 as f32, pos.1 as f32)
+}
+
+/// The effective pane that will receive IME input, considering focus area.
+/// Returns None when a browser pane is focused without URL bar and no text-input modal is open.
+pub(crate) fn effective_ime_target(
+    focused: Option<tide_core::PaneId>,
+    search_focus: Option<tide_core::PaneId>,
+    modal: &crate::state::ModalStack,
+    panes: &std::collections::HashMap<tide_core::PaneId, PaneKind>,
+) -> Option<tide_core::PaneId> {
+    let target = focused;
+    if let Some(id) = target {
+        if let Some(PaneKind::Browser(bp)) = panes.get(&id) {
+            if !bp.url_input_focused {
+                let has_text_modal = modal.file_finder.is_some()
+                    || modal.git_switcher.is_some()
+                    || modal.save_as_input.is_some()
+                    || modal.file_tree_rename.is_some()
+                    || search_focus == Some(id);
+                if !has_text_modal {
+                    return None;
+                }
+            }
+        }
+    }
+    target
 }
 
 fn platform_button_to_core(
