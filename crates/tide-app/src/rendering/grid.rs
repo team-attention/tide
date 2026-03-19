@@ -8,48 +8,18 @@ use crate::App;
 use super::bar_offset_for;
 
 /// Perform per-pane dirty checking and rebuild grid caches for panes whose content changed.
-/// Returns `true` if any pane was dirty (so the grid needs reassembly).
+/// Returns (pane_id, generation) pairs for caller to update pane_generations.
+/// Pre-computation (side_by_side, preview cache, wrap map) must be done before calling this.
 pub(crate) fn render_grid(
-    app: &mut App,
+    app: &App,
     renderer: &mut tide_renderer::WgpuRenderer,
     p: &ThemePalette,
     visual_pane_rects: &[(u64, Rect)],
-) -> bool {
+) -> Vec<(u64, u64)> {
     let top_offset = TAB_BAR_HEIGHT;
+    let ime_target_id = app.focus.focused;
 
-    // Set side-by-side mode on diff panes
-    for &(id, _) in visual_pane_rects {
-        if let Some(PaneKind::Diff(dp)) = app.panes.get_mut(&id) {
-            dp.side_by_side = true;
-        }
-    }
-
-    // Pre-compute preview caches and wrap maps for editor panes
-    for &(id, rect) in visual_pane_rects {
-        if let Some(PaneKind::Editor(pane)) = app.panes.get_mut(&id) {
-            if pane.preview_mode {
-                let cell_w = renderer.cell_size().width;
-                // Reserve scrollbar width so wrapping matches the visible content area
-                let wrap_width = ((rect.width - 2.0 * PANE_PADDING - SCROLLBAR_WIDTH) / cell_w).floor() as usize;
-                pane.ensure_preview_cache(wrap_width, app.dark_mode);
-            } else if pane.effective_soft_wrap() {
-                let cell_w = renderer.cell_size().width;
-                let gutter_width = crate::editor_pane::GUTTER_WIDTH_CELLS as f32 * cell_w;
-                // Reserve right padding (matching left gutter visual balance)
-                let right_pad = PANE_PADDING;
-                let content_width = (rect.width - 2.0 * PANE_PADDING - gutter_width - SCROLLBAR_WIDTH - right_pad).max(0.0);
-                let wrap_cols = (content_width / cell_w).floor() as usize;
-                if wrap_cols > 0 {
-                    pane.ensure_wrap_map(wrap_cols);
-                }
-            }
-        }
-    }
-
-    // Determine which pane is the effective IME target for preedit shift
-    let ime_target_id = app.focused;
-
-    let mut any_dirty = false;
+    let mut gen_updates = Vec::new();
     for &(id, rect) in visual_pane_rects {
         let gen = match app.panes.get(&id) {
             Some(PaneKind::Terminal(pane)) => pane.backend.grid_generation(),
@@ -61,7 +31,6 @@ pub(crate) fn render_grid(
         };
         let prev = app.cache.pane_generations.get(&id).copied().unwrap_or(u64::MAX);
         if gen != prev {
-            any_dirty = true;
             let pane_bar = bar_offset_for(id, &app.panes, &app.modal.save_confirm);
             let inner = Rect::new(
                 rect.x + PANE_PADDING,
@@ -94,7 +63,7 @@ pub(crate) fn render_grid(
                             strip,
                         );
                     }
-                    app.cache.pane_generations.insert(id, pane.backend.grid_generation());
+                    gen_updates.push((id, pane.backend.grid_generation()));
                 }
                 Some(PaneKind::Editor(pane)) => {
                     let preedit = if ime_target_id == Some(id) { &app.ime.preedit } else { "" };
@@ -102,14 +71,14 @@ pub(crate) fn render_grid(
                         Some(p.diff_added_bg), Some(p.diff_removed_bg),
                         Some(p.diff_added_gutter), Some(p.diff_removed_gutter),
                         preedit, p.current_line_bg, p.indent_guide);
-                    app.cache.pane_generations.insert(id, pane.generation());
+                    gen_updates.push((id, pane.generation()));
                 }
                 Some(PaneKind::Diff(dp)) => {
                     dp.render_grid(inner, renderer, p.tab_text_focused, p.tab_text,
                         p.diff_added_bg, p.diff_removed_bg,
                         p.diff_added_gutter, p.diff_removed_gutter,
                         p.border_subtle);
-                    app.cache.pane_generations.insert(id, dp.generation());
+                    gen_updates.push((id, dp.generation()));
                 }
                 Some(PaneKind::Browser(_)) => {} // webview renders natively
                 Some(PaneKind::Launcher(_launcher_id)) => {
@@ -151,5 +120,5 @@ pub(crate) fn render_grid(
         }
     }
 
-    any_dirty
+    gen_updates
 }

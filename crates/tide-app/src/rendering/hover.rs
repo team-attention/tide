@@ -1,7 +1,7 @@
 use tide_core::{Rect, Renderer};
 
-use crate::drag_drop;
-use crate::drag_drop::PaneDragState;
+use crate::event_handler::drag_drop;
+use crate::event_handler::drag_drop::PaneDragState;
 use crate::theme::*;
 use crate::App;
 
@@ -18,7 +18,7 @@ pub(crate) fn render_hover(
 ) {
     if let Some(ref hover) = app.interaction.hover_target {
         // Skip hover rendering during drag
-        if matches!(app.interaction.pane_drag, PaneDragState::Idle) && !app.ft.border_dragging && !app.ws.border_dragging && !app.dock_border_dragging {
+        if matches!(app.interaction.pane_drag, PaneDragState::Idle) && !app.ft.border_dragging && !app.ws.border_dragging && !app.dock.dock_border_dragging {
             match hover {
                 drag_drop::HoverTarget::FileTreeEntry(index) => {
                     if show_file_tree {
@@ -102,7 +102,7 @@ pub(crate) fn render_hover(
                 }
                 drag_drop::HoverTarget::FileTreeBorder => {
                     if let Some(ft_rect) = app.ft.rect {
-                        let border_x = if app.sidebar_side == crate::LayoutSide::Left {
+                        let border_x = if app.window.sidebar_side == crate::LayoutSide::Left {
                             ft_rect.x + ft_rect.width
                         } else {
                             ft_rect.x - PANE_GAP

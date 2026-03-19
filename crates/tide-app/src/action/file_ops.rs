@@ -37,7 +37,7 @@ impl App {
     /// instead of opening as a new tab.
     pub(crate) fn open_file_finder_with_replace(&mut self, replace_pane_id: Option<tide_core::PaneId>) {
         // Cancel any in-progress drag when opening a modal
-        self.interaction.pane_drag = crate::drag_drop::PaneDragState::Idle;
+        self.interaction.pane_drag = crate::event_handler::drag_drop::PaneDragState::Idle;
 
         let base_dir = self.resolve_base_dir();
         let mut entries: Vec<PathBuf> = Vec::new();
@@ -59,8 +59,7 @@ impl App {
 
     /// Close the file finder UI.
     pub(crate) fn close_file_finder(&mut self) {
-        if self.modal.file_finder.is_some() {
-            self.modal.file_finder = None;
+        if self.modal.clear_file_finder() {
             self.cache.invalidate_chrome();
             // Re-show browser webviews that were hidden for the popup
             self.sync_browser_webview_frames();
@@ -103,7 +102,7 @@ impl App {
     /// Open or focus a DiffPane for the given CWD.
     /// If a DiffPane with the same CWD already exists, focus and refresh it.
     pub(crate) fn open_diff_pane(&mut self, cwd: PathBuf) {
-        let focused = match self.focused {
+        let focused = match self.focus.focused {
             Some(id) => id,
             None => return,
         };
@@ -113,7 +112,7 @@ impl App {
             if let PaneKind::Diff(dp) = pane {
                 if dp.cwd == cwd {
                     dp.refresh();
-                    self.focused = Some(tab_id);
+                    self.focus.focused = Some(tab_id);
                     self.router.set_focused(tab_id);
                     self.cache.invalidate_chrome();
                     self.cache.invalidate_pane(tab_id);
@@ -124,10 +123,10 @@ impl App {
 
         // Create new DiffPane as a split next to focused
         let new_id = self.layout.alloc_id();
-        let dp = crate::diff_pane::DiffPane::new(new_id, cwd);
+        let dp = crate::pane::diff::DiffPane::new(new_id, cwd);
         self.panes.insert(new_id, PaneKind::Diff(dp));
         self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Vertical, false);
-        self.focused = Some(new_id);
+        self.focus.focused = Some(new_id);
         self.router.set_focused(new_id);
         self.cache.invalidate_chrome();
         self.compute_layout();

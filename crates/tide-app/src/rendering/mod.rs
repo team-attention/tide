@@ -4,6 +4,7 @@ mod grid;
 mod hover;
 mod ime;
 mod overlays;
+pub(crate) mod render_thread;
 
 use tide_core::{Rect, Renderer};
 
@@ -34,19 +35,19 @@ pub(super) fn bar_offset_for(
 
 impl App {
     /// Poll the render thread for completed frames.  Returns the renderer
-    /// to `self.renderer` and updates `drawable_wait_us`.
+    /// to `self.gpu.renderer` and updates `drawable_wait_us`.
     pub(crate) fn poll_render_result(&mut self) {
-        let rt = match self.render_thread.as_ref() {
+        let rt = match self.gpu.render_thread.as_ref() {
             Some(rt) => rt,
             None => return,
         };
         let mut surface_lost = false;
         while let Ok(result) = rt.result_rx.try_recv() {
-            self.drawable_wait_us = result.drawable_wait_us;
+            self.gpu.drawable_wait_us = result.drawable_wait_us;
             if result.surface_lost {
                 surface_lost = true;
             }
-            self.renderer = Some(result.renderer);
+            self.gpu.renderer = Some(result.renderer);
         }
         // Apply any font size change that was queued while the renderer was away.
         self.flush_pending_font_size();
@@ -67,17 +68,17 @@ impl App {
         // request_redraw() would require.  This catches the common case
         // where the render thread is just finishing up.
         self.poll_render_result();
-        let mut renderer = match self.renderer.take() {
+        let mut renderer = match self.gpu.renderer.take() {
             Some(r) => r,
             None => {
                 for _ in 0..20 {
                     std::thread::yield_now();
                     self.poll_render_result();
-                    if self.renderer.is_some() {
+                    if self.gpu.renderer.is_some() {
                         break;
                     }
                 }
-                match self.renderer.take() {
+                match self.gpu.renderer.take() {
                     Some(r) => r,
                     None => return false,
                 }
@@ -85,11 +86,11 @@ impl App {
         };
 
         // Sync renderer's scale factor in case it changed (e.g. display switch)
-        renderer.set_scale_factor(self.scale_factor);
+        renderer.set_scale_factor(self.window.scale_factor);
 
         let logical = self.logical_size();
-        let focused = self.focused;
-        let search_focus = self.search_focus;
+        let focused = self.focus.focused;
+        let search_focus = self.focus.search_focus;
         let show_file_tree = self.ft.visible;
         let file_tree_scroll = self.ft.scroll;
         let visual_pane_rects = self.visual_pane_rects.clone();
@@ -130,31 +131,51 @@ impl App {
             self.prev_visual_pane_rects = visual_pane_rects.clone();
         }
 
+        // ── Pre-render: mutable pane state preparation ──
+        for &(id, rect) in &visual_pane_rects {
+            if let Some(PaneKind::Diff(dp)) = self.panes.get_mut(&id) {
+                dp.side_by_side = true;
+            }
+            if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&id) {
+                if pane.preview_mode {
+                    let cell_w = renderer.cell_size().width;
+                    let wrap_width = ((rect.width - 2.0 * PANE_PADDING - SCROLLBAR_WIDTH) / cell_w).floor() as usize;
+                    pane.ensure_preview_cache(wrap_width, self.window.dark_mode);
+                } else if pane.effective_soft_wrap() {
+                    let cell_w = renderer.cell_size().width;
+                    let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_w;
+                    let right_pad = PANE_PADDING;
+                    let content_width = (rect.width - 2.0 * PANE_PADDING - gutter_width - SCROLLBAR_WIDTH - right_pad).max(0.0);
+                    let wrap_cols = (content_width / cell_w).floor() as usize;
+                    if wrap_cols > 0 {
+                        pane.ensure_wrap_map(wrap_cols);
+                    }
+                }
+            }
+        }
+
         renderer.begin_frame(logical);
 
-        // Rebuild chrome layer only when chrome content changed (panel backgrounds, file tree)
+        // ── Render: all sub-functions take &self (read-only App) ──
+
         let chrome_dirty = self.cache.chrome_generation != self.cache.last_chrome_generation;
-        if chrome_dirty {
-            chrome::render_chrome(
+        let chrome_hit_zones = if chrome_dirty {
+            Some(chrome::render_chrome(
                 self, &mut renderer, &p, logical,
                 focused, show_file_tree, file_tree_scroll,
                 &visual_pane_rects, &all_pane_ids,
-            );
-
-            self.cache.last_chrome_generation = self.cache.chrome_generation;
-        }
+            ))
+        } else {
+            None
+        };
 
         let t_chrome = t0.elapsed();
 
-        // Per-pane dirty checking: only rebuild panes whose content changed
-        let _any_dirty = grid::render_grid(
+        let gen_updates = grid::render_grid(
             self, &mut renderer, &p,
             &visual_pane_rects,
         );
 
-        // Assemble all pane caches into the global grid arrays.
-        // Always called — assemble_grid has an internal early return when nothing changed.
-        // This ensures stale grid vertices are cleared when panes are added/removed.
         {
             let order: Vec<u64> = visual_pane_rects.iter().map(|(id, _)| *id).collect();
             renderer.assemble_grid(&order);
@@ -162,30 +183,34 @@ impl App {
 
         let t_grid = t0.elapsed();
 
-        // Always render cursor (overlay layer) — cursor blinks/moves independently
         cursor::render_cursor_and_highlights(
             self, &mut renderer, &p,
             &visual_pane_rects, focused, search_focus,
         );
 
-        // Render hover highlights (overlay layer)
         hover::render_hover(
             self, &mut renderer, &p, logical,
             &visual_pane_rects, show_file_tree, file_tree_scroll,
         );
 
-        // Render overlay UI elements (search bars, notification bars, save-as, file finder,
-        // branch switcher)
         overlays::render_overlays(
             self, &mut renderer, &p,
             &visual_pane_rects,
         );
 
-        // Render IME preedit overlay and drag-drop preview
         ime::render_ime_and_drop_preview(
             self, &mut renderer, &p,
             &visual_pane_rects, focused,
         );
+
+        // ── Post-render: apply mutations returned by render functions ──
+        if let Some(zones) = chrome_hit_zones {
+            self.header_hit_zones = zones;
+            self.cache.last_chrome_generation = self.cache.chrome_generation;
+        }
+        for (id, gen) in gen_updates {
+            self.cache.pane_generations.insert(id, gen);
+        }
 
         renderer.end_frame();
 
@@ -195,13 +220,13 @@ impl App {
         // The render thread handles get_current_texture() (which may block
         // on CAMetalLayer.nextDrawable()), command encoding, queue submission,
         // presentation, and device polling — all without blocking this thread.
-        if let Some(ref rt) = self.render_thread {
-            let config_update = self.pending_surface_config.take();
-            let _ = rt.job_tx.send(crate::render_thread::RenderJob {
+        if let Some(ref rt) = self.gpu.render_thread {
+            let config_update = self.gpu.pending_surface_config.take();
+            let _ = rt.job_tx.send(crate::rendering::render_thread::RenderJob {
                 renderer,
                 config_update,
             });
-            // renderer is now on the render thread — self.renderer stays None
+            // renderer is now on the render thread — self.gpu.renderer stays None
             // until poll_render_result() retrieves it.
         }
 
