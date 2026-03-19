@@ -7,6 +7,7 @@ use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::state::LayoutSide;
 use crate::App;
+use crate::DockPort;
 
 impl App {
     pub(crate) fn update_cursor_icon(&self, window: &tide_platform::WindowProxy) {

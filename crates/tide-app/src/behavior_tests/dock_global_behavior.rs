@@ -3,6 +3,7 @@ use crate::pane::{PaneKind, TerminalPane};
 use crate::pane::editor::EditorPane;
 use crate::state::FocusArea;
 use crate::App;
+use crate::DockPort;
 use tide_core::LayoutEngine;
 
 fn test_app() -> App {

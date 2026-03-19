@@ -3,6 +3,7 @@ use crate::pane::{PaneKind, TerminalPane};
 use crate::pane::editor::EditorPane;
 use crate::state::FocusArea;
 use crate::App;
+use crate::DockPort;
 
 fn test_app() -> App {
     let mut app = App::new();
