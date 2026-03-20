@@ -1,9 +1,9 @@
-# Input Routing — tide-input
+# Input Routing
 
 **Role**: Resolves keyboard/mouse events into domain commands (GlobalAction or RouteToPane).
 Knows nothing about Pane content — only which Pane is focused and what keys were pressed.
 
-`crates/tide-input/src/lib.rs`
+`crates/tide-app/src/domain/input/`
 
 ## Aggregate: Router
 

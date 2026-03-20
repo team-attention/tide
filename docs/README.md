@@ -14,20 +14,20 @@ Glossary → Spec (UC + BR) → Behavior Test (BR comment) → Code
 
 ### Foundation
 - **[Glossary](glossary.md)** — Ubiquitous language. Every domain term defined in one place.
-- **[Context Map](context-map.md)** — How the 8 bounded contexts relate to each other.
+- **[Context Map](context-map.md)** — How the bounded contexts relate within the monocrate.
 
-### Bounded Contexts (by crate)
-- **[Core Types](domain/core-types.md)** — Value Objects and trait contracts shared across all contexts. (`tide-core`)
-- **[Layout](domain/layout.md)** — Binary split tree, tab groups, pane arrangement. (`tide-layout`)
-- **[Terminal](domain/terminal.md)** — PTY management, grid synchronization, threading. (`tide-terminal`)
-- **[Editor](domain/editor.md)** — Text buffer, cursor, syntax highlighting, undo. (`tide-editor`)
-- **[Input Routing](domain/input.md)** — Keybinding resolution, hotkey matching, action dispatch. (`tide-input`)
-- **[File Tree](domain/file-tree.md)** — Filesystem watching, directory traversal, git status. (`tide-tree`)
-- **[Platform](domain/platform.md)** — Native macOS windowing, IME, event sourcing. (`tide-platform`)
-- **[Renderer](domain/renderer.md)** — GPU pipeline, glyph atlas, dirty tracking. (`tide-renderer`)
+### Bounded Contexts (by module)
+- **[Core Types](domain/core-types.md)** — Value Objects and trait contracts shared across all contexts. (`domain/core_types.rs`)
+- **[Layout](domain/layout.md)** — Binary split tree, tab groups, pane arrangement. (`domain/layout/`)
+- **[Terminal](domain/terminal.md)** — PTY management, grid synchronization, threading. (`domain/terminal/`)
+- **[Editor](domain/editor.md)** — Text buffer, cursor, syntax highlighting, undo. (`domain/editor/`)
+- **[Input Routing](domain/input.md)** — Keybinding resolution, hotkey matching, action dispatch. (`domain/input/`)
+- **[File Tree](domain/file-tree.md)** — Filesystem watching, directory traversal, git status. (`domain/tree/`)
+- **[Platform](domain/platform.md)** — Native macOS windowing, IME, event sourcing. (`adapter/outward/platform_adapter/`)
+- **[Renderer](domain/renderer.md)** — GPU pipeline, glyph atlas, dirty tracking. (`adapter/outward/renderer_adapter/`)
 
 ### Application Layer
-- **[App Orchestrator](domain/app.md)** — The App aggregate: sub-modules, state management, the update/render loop. (`tide-app`)
+- **[App Orchestrator](domain/app.md)** — The App aggregate: sub-modules, state management, the update/render loop. (`app.rs`)
 
 ### Specs (Use Cases + Business Rules)
 - **[Pane Lifecycle](specs/pane-lifecycle.md)** — Create, split, resolve, open, close, drag Panes.

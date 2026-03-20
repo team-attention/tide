@@ -1,9 +1,9 @@
-# Platform — tide-platform
+# Platform
 
 **Role**: Anti-Corruption Layer between native macOS and the domain.
-Translates OS events into domain events. The only crate that touches Objective-C.
+Translates OS events into domain events. The only module that touches Objective-C.
 
-`crates/tide-platform/src/`
+`crates/tide-app/src/adapter/outward/platform_adapter/`
 
 ## PlatformEvent (20 variants)
 

@@ -19,15 +19,7 @@ category = "public.app-category.developer-tools"
 osx_minimum_system_version = "13.0"
 
 [dependencies]
-tide-core = { workspace = true }
-tide-renderer = { path = "../tide-renderer" }
-tide-terminal = { path = "../tide-terminal" }
-tide-editor = { path = "../tide-editor" }
-tide-layout = { path = "../tide-layout" }
-tide-tree = { path = "../tide-tree" }
-tide-input = { path = "../tide-input" }
-tide-platform = { path = "../tide-platform" }
-tide-lsp = { path = "../tide-lsp" }
+# ── Existing tide-app deps ──
 wgpu = "23"
 pollster = "0.4"
 env_logger = "0.11"
@@ -40,8 +32,73 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 dirs = { workspace = true }
 
+# ── From tide-terminal ──
+alacritty_terminal = "0.25"
+libc = "0.2"
+signal-hook = "0.3"
+regex = "1"
+
+# ── From tide-editor ──
+syntect = "5"
+pulldown-cmark = "0.12"
+
+# ── From tide-tree ──
+unicode-normalization = "0.1"
+
+# ── From tide-renderer ──
+cosmic-text = "0.12"
+bytemuck = { version = "1", features = ["derive"] }
+fdsm = "0.8"
+fdsm-ttf-parser = "0.2"
+ttf-parser = "0.25"
+nalgebra = "0.34"
+image = "0.25"
+fontdb = "0.16"
+
+# ── From tide-platform ──
+raw-window-handle = "0.6"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# ── From tide-renderer ──
+core-foundation = "0.10"
+core-text = "21"
+# ── From tide-platform ──
+block2 = "0.5"
+objc2 = "0.5"
+objc2-foundation = { version = "0.2", features = [
+    "NSArray",
+    "NSAttributedString",
+    "NSGeometry",
+    "NSNotification",
+    "NSRange",
+    "NSString",
+    "NSThread",
+    "NSValue",
+] }
+objc2-app-kit = { version = "0.2", features = [
+    "NSApplication",
+    "NSCursor",
+    "NSEvent",
+    "NSGraphics",
+    "NSMenu",
+    "NSRunningApplication",
+    "NSResponder",
+    "NSText",
+    "NSTextInputClient",
+    "NSTextInputContext",
+    "NSTrackingArea",
+    "NSView",
+    "NSWindow",
+    "NSScreen",
+] }
+objc2-quartz-core = { version = "0.2", features = [
+    "CALayer",
+    "CAMetalLayer",
+] }
+
 [dev-dependencies]
 criterion = { workspace = true }
+tempfile = "3"
 
 [[bench]]
 name = "git_status_lookup"
