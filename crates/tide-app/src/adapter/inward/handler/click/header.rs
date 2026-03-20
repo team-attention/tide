@@ -77,7 +77,7 @@ impl App {
                     }
                     HeaderHitAction::EditorFileName => {
                         // Allow drag from editor filename area
-                        self.interaction.pane_drag = crate::event_handler::drag_drop::PaneDragState::PendingDrag {
+                        self.interaction.pane_drag = crate::state::drag_types::PaneDragState::PendingDrag {
                             source_pane: zone.pane_id,
                             press_pos: self.window.last_cursor_pos,
                         };
@@ -116,7 +116,7 @@ impl App {
                         // Switch tab immediately for visual feedback, but also
                         // set PendingDrag to allow drag-and-drop reordering.
                         self.focus_terminal(target_pane_id);
-                        self.interaction.pane_drag = crate::event_handler::drag_drop::PaneDragState::PendingDrag {
+                        self.interaction.pane_drag = crate::state::drag_types::PaneDragState::PendingDrag {
                             source_pane: target_pane_id,
                             press_pos: self.window.last_cursor_pos,
                         };
@@ -145,7 +145,7 @@ impl App {
     /// Clicking the same badge again closes the popup (toggle behavior).
     fn open_git_switcher(&mut self, pane_id: crate::tide_core::PaneId, mode: GitSwitcherMode, anchor_rect: Rect) {
         // Cancel any in-progress drag when opening a modal
-        self.interaction.pane_drag = crate::event_handler::drag_drop::PaneDragState::Idle;
+        self.interaction.pane_drag = crate::state::drag_types::PaneDragState::Idle;
         // Toggle: close if already open for the same pane and mode
         if let Some(ref gs) = self.modal.git_switcher {
             if gs.pane_id == pane_id && gs.mode == mode {

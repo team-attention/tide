@@ -2,7 +2,7 @@
 
 use crate::tide_core::{LayoutEngine, PaneDecorations, Rect, Size, SplitDirection};
 
-use crate::event_handler::drag_drop::HoverTarget;
+use crate::state::drag_types::HoverTarget;
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::state::LayoutSide;
@@ -727,7 +727,7 @@ impl crate::application::ports::inward::LayoutPort for App {
                 || self.modal.config_page.is_some()
                 || self.modal.save_confirm.is_some()
                 || self.modal.branch_cleanup.is_some()
-                || matches!(self.interaction.pane_drag, crate::event_handler::drag_drop::PaneDragState::Dragging { .. });
+                || matches!(self.interaction.pane_drag, crate::state::drag_types::PaneDragState::Dragging { .. });
 
             if let Some(vr) = visual_rect {
                 if popup_open {

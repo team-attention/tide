@@ -11,14 +11,8 @@ use crate::ActionPort;
 use crate::PaneLifecyclePort;
 
 /// Results from the background git poller (one entry per CWD).
-pub(crate) type GitPollResults = HashMap<PathBuf, GitPollCwdResult>;
+use crate::state::background::{GitPollResults, GitPollCwdResult};
 
-pub(crate) struct GitPollCwdResult {
-    pub git_info: Option<crate::tide_terminal::git::GitInfo>,
-    pub worktree_count: usize,
-    pub repo_root: Option<PathBuf>,
-    pub status_entries: Vec<crate::tide_terminal::git::StatusEntry>,
-}
 
 impl App {
     pub(crate) fn update_file_tree_cwd(&mut self) {

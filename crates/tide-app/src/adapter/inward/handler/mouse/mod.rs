@@ -6,7 +6,7 @@ mod selection;
 use crate::tide_core::{FileTreeSource, InputEvent, MouseButton, Rect, Vec2};
 use crate::tide_platform::WindowProxy;
 
-use crate::event_handler::drag_drop::PaneDragState;
+use crate::state::drag_types::PaneDragState;
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
@@ -219,13 +219,13 @@ impl App {
         if button == MouseButton::Left {
             // Workspace sidebar (always clickable, including fullscreen)
             match &self.interaction.hover_target {
-                Some(crate::event_handler::drag_drop::HoverTarget::WorkspaceSidebarItem(idx)) => {
+                Some(crate::state::drag_types::HoverTarget::WorkspaceSidebarItem(idx)) => {
                     let idx = *idx;
                     // Start pending drag
                     self.ws.drag = Some((idx, self.window.last_cursor_pos.y, idx));
                     return;
                 }
-                Some(crate::event_handler::drag_drop::HoverTarget::WorkspaceSidebarNewBtn) => {
+                Some(crate::state::drag_types::HoverTarget::WorkspaceSidebarNewBtn) => {
                     self.new_workspace();
                     return;
                 }
@@ -235,15 +235,15 @@ impl App {
             // Titlebar buttons (only when titlebar is visible)
             if self.window.top_inset > 0.0 {
                 match &self.interaction.hover_target {
-                    Some(crate::event_handler::drag_drop::HoverTarget::TitlebarSettings) => {
+                    Some(crate::state::drag_types::HoverTarget::TitlebarSettings) => {
                         self.toggle_config_page();
                         return;
                     }
-                    Some(crate::event_handler::drag_drop::HoverTarget::TitlebarTheme) => {
+                    Some(crate::state::drag_types::HoverTarget::TitlebarTheme) => {
                         self.handle_global_action(crate::tide_input::GlobalAction::ToggleTheme);
                         return;
                     }
-                    Some(crate::event_handler::drag_drop::HoverTarget::TitlebarSwap) => {
+                    Some(crate::state::drag_types::HoverTarget::TitlebarSwap) => {
                         self.window.sidebar_side = match self.window.sidebar_side {
                             crate::LayoutSide::Left => crate::LayoutSide::Right,
                             crate::LayoutSide::Right => crate::LayoutSide::Left,
@@ -252,17 +252,17 @@ impl App {
                         self.cache.invalidate_chrome();
                         return;
                     }
-                    Some(crate::event_handler::drag_drop::HoverTarget::TitlebarWorkspace) => {
+                    Some(crate::state::drag_types::HoverTarget::TitlebarWorkspace) => {
                         self.ws.show_sidebar = !self.ws.show_sidebar;
                         self.cache.invalidate_chrome();
                         self.compute_layout();
                         return;
                     }
-                    Some(crate::event_handler::drag_drop::HoverTarget::TitlebarFileTree) => {
+                    Some(crate::state::drag_types::HoverTarget::TitlebarFileTree) => {
                         self.toggle_file_tree_visibility();
                         return;
                     }
-                    Some(crate::event_handler::drag_drop::HoverTarget::TitlebarDock) => {
+                    Some(crate::state::drag_types::HoverTarget::TitlebarDock) => {
                         self.toggle_dock_visibility();
                         return;
                     }
@@ -273,10 +273,10 @@ impl App {
 
             // Browser navigation bar clicks
             match &self.interaction.hover_target {
-                Some(target @ crate::event_handler::drag_drop::HoverTarget::BrowserBack)
-                | Some(target @ crate::event_handler::drag_drop::HoverTarget::BrowserForward)
-                | Some(target @ crate::event_handler::drag_drop::HoverTarget::BrowserRefresh)
-                | Some(target @ crate::event_handler::drag_drop::HoverTarget::BrowserUrlBar) => {
+                Some(target @ crate::state::drag_types::HoverTarget::BrowserBack)
+                | Some(target @ crate::state::drag_types::HoverTarget::BrowserForward)
+                | Some(target @ crate::state::drag_types::HoverTarget::BrowserRefresh)
+                | Some(target @ crate::state::drag_types::HoverTarget::BrowserUrlBar) => {
                     let target = target.clone();
                     // Focus the browser pane first
                     for &(id, rect) in &self.visual_pane_rects {

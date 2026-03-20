@@ -1,6 +1,6 @@
 use crate::tide_core::{Rect, Renderer, TextStyle, Vec2};
 
-use crate::event_handler::drag_drop::HoverTarget;
+use crate::state::drag_types::HoverTarget;
 use crate::theme::*;
 use crate::App;
 use crate::AppCorePort;

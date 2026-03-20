@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::tide_core::LayoutEngine;
 
-use crate::event_handler::drag_drop::PaneDragState;
+use crate::state::drag_types::PaneDragState;
 use crate::pane::browser::BrowserPane;
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};

@@ -8,7 +8,7 @@ mod preview;
 
 use crate::tide_core::{InputEvent, Key, Modifiers};
 
-use crate::event_handler::drag_drop::PaneDragState;
+use crate::state::drag_types::PaneDragState;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
 use crate::App;

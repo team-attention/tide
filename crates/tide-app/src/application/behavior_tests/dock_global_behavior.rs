@@ -285,7 +285,7 @@ fn placeholder_when_no_dock_panes_and_no_pinned() {
 #[test]
 fn drag_into_pinned_group_pins_pane() {
     // UC-5 BR-1: Dropping a pane onto pinned group pins it
-    use crate::event_handler::drag_drop::DropDestination;
+    use crate::state::drag_types::DropDestination;
 
     let (mut app, t1, _t2) = app_with_two_real_terminals();
     app.focus.focused = Some(t1);
@@ -304,7 +304,7 @@ fn drag_into_pinned_group_pins_pane() {
 #[test]
 fn drag_out_of_pinned_group_unpins_pane() {
     // UC-5 BR-2: Dropping a pinned pane onto dock root unpins it
-    use crate::event_handler::drag_drop::DropDestination;
+    use crate::state::drag_types::DropDestination;
 
     let (mut app, t1, _t2) = app_with_two_real_terminals();
     app.focus.focused = Some(t1);

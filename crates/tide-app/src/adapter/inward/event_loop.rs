@@ -332,8 +332,8 @@ impl App {
                     self.sync_browser_webview_frames();
                 } else {
                     // Cancel any in-progress drag when the window loses focus
-                    if !matches!(self.interaction.pane_drag, crate::event_handler::drag_drop::PaneDragState::Idle) {
-                        self.interaction.pane_drag = crate::event_handler::drag_drop::PaneDragState::Idle;
+                    if !matches!(self.interaction.pane_drag, crate::state::drag_types::PaneDragState::Idle) {
+                        self.interaction.pane_drag = crate::state::drag_types::PaneDragState::Idle;
                         self.cache.needs_redraw = true;
                     }
                 }

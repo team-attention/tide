@@ -2,7 +2,7 @@ use unicode_width::UnicodeWidthChar;
 
 use crate::tide_core::{Rect, Renderer, TerminalBackend, TextStyle, Vec2};
 
-use crate::event_handler::drag_drop::{DropDestination, PaneDragState};
+use crate::state::drag_types::{DropDestination, PaneDragState};
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;

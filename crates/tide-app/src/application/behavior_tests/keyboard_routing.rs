@@ -73,12 +73,12 @@ fn file_finder_intercepts_keys_before_pane() {
 fn escape_during_pane_drag_cancels_the_drag() {
     // UC-1 BR-6: Escape during pane drag cancels the drag
     let (mut app, _) = app_with_editor();
-    app.interaction.pane_drag = crate::event_handler::drag_drop::PaneDragState::PendingDrag {
+    app.interaction.pane_drag = crate::state::drag_types::PaneDragState::PendingDrag {
         source_pane: 1,
         press_pos: crate::tide_core::Vec2::new(0.0, 0.0),
     };
     app.handle_key_down(Key::Escape, Modifiers::default(), None);
-    assert!(matches!(app.interaction.pane_drag, crate::event_handler::drag_drop::PaneDragState::Idle));
+    assert!(matches!(app.interaction.pane_drag, crate::state::drag_types::PaneDragState::Idle));
 }
 
 #[test]

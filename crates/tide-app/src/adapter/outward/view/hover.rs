@@ -1,7 +1,7 @@
 use crate::tide_core::{Rect, Renderer};
 
-use crate::event_handler::drag_drop;
-use crate::event_handler::drag_drop::PaneDragState;
+use crate::state::drag_types;
+use crate::state::drag_types::PaneDragState;
 use crate::theme::*;
 use crate::App;
 use crate::AppCorePort;
@@ -21,7 +21,7 @@ pub(crate) fn render_hover(
         // Skip hover rendering during drag
         if matches!(app.interaction.pane_drag, PaneDragState::Idle) && !app.ft.border_dragging && !app.ws.border_dragging && !app.dock.dock_border_dragging {
             match hover {
-                drag_drop::HoverTarget::FileTreeEntry(index) => {
+                crate::state::drag_types::HoverTarget::FileTreeEntry(index) => {
                     if show_file_tree {
                         if let Some(ft_rect) = app.ft.rect {
                             let cell_size = renderer.cell_size();
@@ -37,13 +37,13 @@ pub(crate) fn render_hover(
                         }
                     }
                 }
-                drag_drop::HoverTarget::PaneTabBar(pane_id) => {
+                crate::state::drag_types::HoverTarget::PaneTabBar(pane_id) => {
                     if let Some(&(_, rect)) = visual_pane_rects.iter().find(|(id, _)| id == pane_id) {
                         let tab_rect = Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT);
                         renderer.draw_rect(tab_rect, p.hover_tab);
                     }
                 }
-                drag_drop::HoverTarget::PaneTabClose(pane_id) => {
+                crate::state::drag_types::HoverTarget::PaneTabClose(pane_id) => {
                     if let Some(&(_, rect)) = visual_pane_rects.iter().find(|(id, _)| id == pane_id) {
                         let cell_w = renderer.cell_size().width;
                         let grid_cols = ((rect.width - 2.0 * PANE_PADDING) / cell_w).floor();
@@ -55,13 +55,13 @@ pub(crate) fn render_hover(
                         renderer.draw_rect(close_rect, p.hover_close);
                     }
                 }
-                drag_drop::HoverTarget::FileFinderItem(_) => {
+                crate::state::drag_types::HoverTarget::FileFinderItem(_) => {
                     // File finder hover — rendered inline in overlays
                 }
-                drag_drop::HoverTarget::EditorScrollbar(_) => {
+                crate::state::drag_types::HoverTarget::EditorScrollbar(_) => {
                     // Scrollbar hover expansion handled in render_scrollbar
                 }
-                drag_drop::HoverTarget::SplitBorder(dir) => {
+                crate::state::drag_types::HoverTarget::SplitBorder(dir) => {
                     // Highlight the border line between adjacent panes
                     for &(id_a, rect_a) in visual_pane_rects {
                         match dir {
@@ -94,14 +94,14 @@ pub(crate) fn render_hover(
                         }
                     }
                 }
-                drag_drop::HoverTarget::WsSidebarBorder => {
+                crate::state::drag_types::HoverTarget::WsSidebarBorder => {
                     if let Some(ws_rect) = app.ws.sidebar_rect {
                         let border_x = ws_rect.x + ws_rect.width;
                         let border_rect = Rect::new(border_x, ws_rect.y, 4.0, ws_rect.height);
                         renderer.draw_rect(border_rect, p.hover_panel_border);
                     }
                 }
-                drag_drop::HoverTarget::FileTreeBorder => {
+                crate::state::drag_types::HoverTarget::FileTreeBorder => {
                     if let Some(ft_rect) = app.ft.rect {
                         let border_x = if app.window.sidebar_side == crate::LayoutSide::Left {
                             ft_rect.x + ft_rect.width
@@ -112,33 +112,33 @@ pub(crate) fn render_hover(
                         renderer.draw_rect(border_rect, p.hover_panel_border);
                     }
                 }
-                drag_drop::HoverTarget::DockBorder => {
+                crate::state::drag_types::HoverTarget::DockBorder => {
                     if let Some(pa_rect) = app.pane_area_rect {
                         let border_x = pa_rect.x + pa_rect.width;
                         let border_rect = Rect::new(border_x, pa_rect.y, 4.0, pa_rect.height);
                         renderer.draw_rect(border_rect, p.hover_panel_border);
                     }
                 }
-                drag_drop::HoverTarget::SidebarHandle => {
+                crate::state::drag_types::HoverTarget::SidebarHandle => {
                     if let Some(ft_rect) = app.ft.rect {
                         // Highlight top edge of file tree panel
                         let handle_rect = Rect::new(ft_rect.x, ft_rect.y, ft_rect.width, PANE_PADDING);
                         renderer.draw_rect(handle_rect, p.hover_panel_border);
                     }
                 }
-                drag_drop::HoverTarget::TitlebarSwap => {
+                crate::state::drag_types::HoverTarget::TitlebarSwap => {
                     // Hover is rendered via chrome.rs
                 }
-                drag_drop::HoverTarget::TitlebarFileTree => {
+                crate::state::drag_types::HoverTarget::TitlebarFileTree => {
                     // Hover is rendered via chrome.rs (badge_bg on sidebar button)
                 }
-                drag_drop::HoverTarget::TitlebarWorkspace => {
+                crate::state::drag_types::HoverTarget::TitlebarWorkspace => {
                     // Hover is rendered via chrome.rs (badge_bg on workspace button)
                 }
-                drag_drop::HoverTarget::TitlebarDock => {
+                crate::state::drag_types::HoverTarget::TitlebarDock => {
                     // Hover is rendered via chrome.rs (badge_bg on dock button)
                 }
-                drag_drop::HoverTarget::PaneMaximize(pane_id) => {
+                crate::state::drag_types::HoverTarget::PaneMaximize(pane_id) => {
                     // Highlight maximize icon on split pane header
                     if let Some(&(_, rect)) = visual_pane_rects.iter().find(|(id, _)| id == pane_id) {
                         let cell_w = renderer.cell_size().width;
@@ -156,23 +156,23 @@ pub(crate) fn render_hover(
                         );
                     }
                 }
-                drag_drop::HoverTarget::BrowserBack
-                | drag_drop::HoverTarget::BrowserForward
-                | drag_drop::HoverTarget::BrowserRefresh => {
+                crate::state::drag_types::HoverTarget::BrowserBack
+                | crate::state::drag_types::HoverTarget::BrowserForward
+                | crate::state::drag_types::HoverTarget::BrowserRefresh => {
                     // Hover highlight on browser nav buttons
                     // Rendered inline via chrome nav bar
                 }
-                drag_drop::HoverTarget::BrowserUrlBar => {
+                crate::state::drag_types::HoverTarget::BrowserUrlBar => {
                     // No additional overlay for URL bar hover
                 }
-                drag_drop::HoverTarget::TitlebarSettings => {
+                crate::state::drag_types::HoverTarget::TitlebarSettings => {
                     // Hover is rendered via chrome.rs (bg on settings gear icon)
                 }
-                drag_drop::HoverTarget::TitlebarTheme => {
+                crate::state::drag_types::HoverTarget::TitlebarTheme => {
                     // Hover is rendered via chrome.rs (bg on theme toggle icon)
                 }
-                drag_drop::HoverTarget::WorkspaceSidebarItem(_)
-                | drag_drop::HoverTarget::WorkspaceSidebarNewBtn => {
+                crate::state::drag_types::HoverTarget::WorkspaceSidebarItem(_)
+                | crate::state::drag_types::HoverTarget::WorkspaceSidebarNewBtn => {
                     // Hover is rendered via chrome.rs (workspace sidebar)
                 }
             }

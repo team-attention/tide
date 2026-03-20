@@ -1,5 +1,5 @@
 // Spec: docs/specs/session.md — UC-1: SaveLoadSession
-use crate::update::session::{Session, SessionLayout};
+use crate::application::ports::outward::persistence_port::{Session, SessionLayout};
 
 #[test]
 fn session_preserves_dark_mode_preference() {

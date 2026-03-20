@@ -3,7 +3,7 @@
 use crate::tide_core::{InputEvent, LayoutEngine, Vec2};
 use crate::tide_platform::WindowProxy;
 
-use crate::event_handler::drag_drop::PaneDragState;
+use crate::state::drag_types::PaneDragState;
 use crate::theme::*;
 use crate::App;
 use crate::DockPort;

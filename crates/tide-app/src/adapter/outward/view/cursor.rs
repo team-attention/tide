@@ -157,7 +157,7 @@ pub(crate) fn render_cursor_and_highlights(
                     }
                 }
                 // Render editor scrollbar with search match markers
-                let sb_hovered = matches!(app.interaction.hover_target, Some(crate::event_handler::drag_drop::HoverTarget::EditorScrollbar(hid)) if hid == id);
+                let sb_hovered = matches!(app.interaction.hover_target, Some(crate::state::drag_types::HoverTarget::EditorScrollbar(hid)) if hid == id);
                 pane.render_scrollbar(inner, renderer, pane.search.as_ref(), p, sb_hovered);
             }
             Some(PaneKind::Diff(_)) => {}

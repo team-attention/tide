@@ -1,6 +1,6 @@
 use crate::tide_core::{FileTreeSource, SplitDirection, Vec2};
 
-use crate::event_handler::drag_drop::HoverTarget;
+use crate::state::drag_types::HoverTarget;
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;

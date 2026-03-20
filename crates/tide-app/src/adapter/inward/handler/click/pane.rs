@@ -1,6 +1,6 @@
 use crate::tide_core::{Rect, Vec2};
 
-use crate::event_handler::drag_drop::{DropDestination, HoverTarget};
+use crate::state::drag_types::{DropDestination, HoverTarget};
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
