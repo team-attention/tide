@@ -8,21 +8,21 @@ How Tide's bounded contexts relate to each other within the monocrate (`crates/t
 │                                                         │
 │  Ports:  inward (10 port traits)                        │
 │          outward (11 port traits)                        │
-│  Services: action, dock, file_ops, file_tree,           │
-│            focus_nav, gpu_init, lsp, pane_close,        │
-│            pane_create, search, session, text_extract,   │
-│            update, workspace, workspace_infra            │
+│  Services (15): action, dock, file_ops, file_tree,      │
+│    focus_nav, gpu_init, lsp, pane_close, pane_create,   │
+│    search, session, text_extract, update, workspace,    │
+│    workspace_infra                                      │
 └────┬──────┬──────┬──────┬──────┬──────┬─────────────────┘
      │      │      │      │      │      │
      ▼      ▼      ▼      ▼      ▼      ▼
-┌────────┐┌──────┐┌──────┐┌──────┐┌─────┐┌──────┐
-│ input  ││layout││termi-││editor││tree ││modal │
-│        ││      ││nal   ││      ││     ││      │
-│Router  ││Split-││Termi-││Edit- ││FsT- ││Modal-│
-│Hotkey  ││Layout││nal   ││orSta-││ree  ││Stack │
-│Global- ││Tab-  ││      ││te    ││     ││      │
-│Action  ││Group ││      ││      ││     ││      │
-└────────┘└──────┘└──────┘└──────┘└─────┘└──────┘
+┌────────┐┌──────┐┌──────┐┌──────┐┌─────┐┌──────┐┌──────┐┌──────┐
+│ input  ││layout││termi-││editor││tree ││modal ││pane  ││state │
+│        ││      ││nal   ││      ││     ││      ││      ││      │
+│Router  ││Split-││Termi-││Edit- ││FsT- ││Modal-││Pane- ││Focus │
+│Hotkey  ││Layout││nal   ││orSta-││ree  ││Stack ││Kind  ││Window│
+│Global- ││Tab-  ││      ││te    ││     ││      ││      ││Cache │
+│Action  ││Group ││      ││      ││     ││      ││      ││      │
+└────────┘└──────┘└──────┘└──────┘└─────┘└──────┘└──────┘└──────┘
      │        │       │       │       │
      ▼        ▼       ▼       ▼       ▼
 ┌─────────────────────────────────────────────────────────┐

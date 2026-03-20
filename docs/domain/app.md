@@ -33,8 +33,10 @@ CJK input method composition state. Manages per-Pane IME proxy lifecycle.
 |-------|------|-------------|
 | `composing` | `bool` | Whether IME composition is active |
 | `preedit` | `String` | Uncommitted text |
+| `last_target` | `Option<u64>` | Last pane that received IME text |
 | `pending_creates` | `Vec<u64>` | IME proxies awaiting creation |
 | `pending_removes` | `Vec<u64>` | IME proxies awaiting removal |
+| `cursor_dirty` | `bool` | IME cursor area needs sync |
 
 ### ModalStack (`domain/modal/mod.rs`)
 **Invariant: At most one open at a time.** When `is_any_open()` is true, input routes to the modal.
@@ -125,16 +127,18 @@ render()  (when needs_redraw == true)
 This order **must never be skipped** (Invariant):
 
 ```
-1. config_page    (highest — blocks all input)
-2. context_menu   (ESC to dismiss)
-3. save_confirm   (Y/N/ESC)
-4. save_as_input  (text input + ESC)
-5. file_finder    (text input + arrows + ESC)
-6. git_switcher   (text input + arrows + ESC)
-7. file_tree_rename (text input + ESC)
-8. FocusArea dispatch (FileTree or PaneArea)
-9. Router.process() → GlobalAction
-10. Text input → send_text_to_target()
+1. config_page       (highest — blocks all input)
+2. context_menu      (ESC to dismiss)
+3. file_tree_rename  (text input + ESC)
+4. git_switcher      (text input + arrows + ESC)
+5. file_finder       (text input + arrows + ESC)
+6. save_as_input     (text input + ESC)
+7. branch_cleanup    (Enter/ESC)
+8. save_confirm      (ESC to cancel)
+9. Completion popup  (arrows + Enter + ESC)
+10. FocusArea dispatch (FileTree / Stage / Dock)
+11. Router.process() → GlobalAction
+12. Text input → send_text_to_target()
 ```
 
 ## Key Methods
@@ -143,12 +147,12 @@ This order **must never be skipped** (Invariant):
 |--------|------|------|
 | `handle_key_down()` | `adapter/inward/keyboard_adapter/` | Key event routing entry point |
 | `handle_global_action()` | `application/services/action_service/` | GlobalAction dispatch |
-| `handle_focus_area()` | `application/services/focus_nav_service/` | FocusArea 3-state toggle |
-| `focus_terminal()` | `application/services/focus_nav_service/` | Pane focus + Generation update |
+| `handle_focus_area()` | `application/services/workspace_service/` | FocusArea 3-state toggle |
+| `focus_terminal()` | `application/services/workspace_service/` | Pane focus + Generation update |
 | `new_editor_pane()` | `application/services/pane_create_service/` | Create editor tab |
 | `split_with_launcher()` | `application/services/pane_create_service/` | Split Pane |
 | `close_specific_pane()` | `application/services/pane_close_service/` | Close Pane (may trigger modal) |
-| `switch_workspace()` | `application/services/workspace_service/` | Workspace switch (swap pattern) |
+| `switch_workspace()` | `application/services/workspace_infra_service/` | Workspace switch (swap pattern) |
 | `compute_layout()` | `layout_compute.rs` | Window size → Pane Rect calculation |
 | `update()` | `application/services/update_service/` | Per-frame state update |
 
