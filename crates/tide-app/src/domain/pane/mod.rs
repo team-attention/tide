@@ -8,10 +8,10 @@ use std::path::PathBuf;
 
 use unicode_width::UnicodeWidthChar;
 
-use tide_core::{Color, CursorShape, Key, Modifiers, Rect, Renderer, Size, TerminalBackend, Vec2};
-use tide_renderer::WgpuRenderer;
-use tide_terminal::Terminal;
-use tide_terminal::git::GitInfo;
+use crate::tide_core::{Color, CursorShape, Key, Modifiers, Rect, Renderer, Size, TerminalBackend, Vec2};
+use crate::tide_renderer::WgpuRenderer;
+use crate::tide_terminal::Terminal;
+use crate::tide_terminal::git::GitInfo;
 
 use browser::BrowserPane;
 use diff::DiffPane;
@@ -19,7 +19,7 @@ use editor::EditorPane;
 use crate::state::search::SearchState;
 use crate::AppCorePort;
 
-pub type PaneId = tide_core::PaneId;
+pub type PaneId = crate::tide_core::PaneId;
 
 /// Polymorphic pane: terminal, editor, diff viewer, embedded browser, or launcher.
 pub enum PaneKind {
@@ -79,7 +79,7 @@ pub struct TerminalPane {
     pub context: TerminalContext,
     /// Panes bound to this terminal, displayed in the Dock.
     /// SplitLayout with LeafGroup (TabGroup) leaves.
-    pub dock_layout: tide_layout::SplitLayout,
+    pub dock_layout: crate::tide_layout::SplitLayout,
     /// Last focused pane in this terminal's Dock.
     pub dock_focused: Option<PaneId>,
 }
@@ -90,7 +90,7 @@ impl TerminalPane {
         Ok(Self {
             id, backend, selection: None, search: None, cursor_suppress: 3,
             context: TerminalContext::default(),
-            dock_layout: tide_layout::SplitLayout::new(),
+            dock_layout: crate::tide_layout::SplitLayout::new(),
             dock_focused: None,
         })
     }
@@ -102,7 +102,7 @@ impl TerminalPane {
         Self {
             id, backend, selection: None, search: None, cursor_suppress: 3,
             context: TerminalContext::default(),
-            dock_layout: tide_layout::SplitLayout::new(),
+            dock_layout: crate::tide_layout::SplitLayout::new(),
             dock_focused: None,
         }
     }

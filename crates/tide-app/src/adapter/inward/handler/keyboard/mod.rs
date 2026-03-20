@@ -6,7 +6,7 @@
 mod modal;
 mod preview;
 
-use tide_core::{InputEvent, Key, Modifiers};
+use crate::tide_core::{InputEvent, Key, Modifiers};
 
 use crate::event_handler::drag_drop::PaneDragState;
 use crate::pane::PaneKind;
@@ -235,7 +235,7 @@ impl App {
                 if modifiers.meta || (modifiers.ctrl && modifiers.shift) {
                     let input = InputEvent::KeyPress { key, modifiers };
                     let action = self.router.process(input, &self.pane_rects);
-                    if !matches!(action, tide_input::Action::RouteToPane(_)) {
+                    if !matches!(action, crate::tide_input::Action::RouteToPane(_)) {
                         self.handle_action(action, Some(input));
                     }
                     self.cache.needs_redraw = true;
@@ -311,7 +311,7 @@ impl App {
                         if modifiers.meta || (modifiers.ctrl && modifiers.shift) {
                             let input = InputEvent::KeyPress { key, modifiers };
                             let action = self.router.process(input, &self.pane_rects);
-                            if !matches!(action, tide_input::Action::RouteToPane(_)) {
+                            if !matches!(action, crate::tide_input::Action::RouteToPane(_)) {
                                 self.handle_action(action, Some(input));
                                 self.cache.needs_redraw = true;
                                 return;

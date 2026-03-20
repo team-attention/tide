@@ -1,6 +1,6 @@
 use unicode_width::UnicodeWidthChar;
 
-use tide_core::{Rect, Renderer, TerminalBackend};
+use crate::tide_core::{Rect, Renderer, TerminalBackend};
 
 use crate::pane::PaneKind;
 use crate::theme::*;
@@ -14,7 +14,7 @@ use super::bar_offset_for;
 /// for all panes (both tree panes and the active panel editor).
 pub(crate) fn render_cursor_and_highlights(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
     visual_pane_rects: &[(u64, Rect)],
     focused: Option<u64>,
@@ -173,7 +173,7 @@ pub(crate) fn render_cursor_and_highlights(
 fn render_editor_selection(
     pane: &crate::pane::editor::EditorPane,
     inner: Rect,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
     sel: &crate::pane::Selection,
 ) {
@@ -224,7 +224,7 @@ fn render_editor_selection(
 fn render_editor_search_highlights(
     pane: &crate::pane::editor::EditorPane,
     inner: Rect,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
     search: &crate::state::search::SearchState,
 ) {
@@ -265,7 +265,7 @@ fn render_editor_search_highlights(
 fn render_preview_selection(
     pane: &crate::pane::editor::EditorPane,
     inner: Rect,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
     sel: &crate::pane::Selection,
 ) {
@@ -321,7 +321,7 @@ fn render_preview_selection(
 fn render_bracket_highlight(
     pane: &crate::pane::editor::EditorPane,
     inner: Rect,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
 ) {
     let Some((open_pos, close_pos)) = pane.editor.matching_bracket() else {
@@ -371,7 +371,7 @@ fn render_bracket_highlight(
 fn render_preview_search_highlights(
     pane: &crate::pane::editor::EditorPane,
     inner: Rect,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
     search: &crate::state::search::SearchState,
 ) {

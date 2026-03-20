@@ -1,7 +1,7 @@
 // Search state and logic for Cmd+F search in terminal and editor panes.
 
 use crate::state::InputLine;
-use tide_terminal::Terminal;
+use crate::tide_terminal::Terminal;
 
 /// A single match location.
 #[derive(Debug, Clone)]
@@ -98,7 +98,7 @@ pub fn execute_search_terminal(state: &mut SearchState, terminal: &Terminal) {
 /// Execute search over preview lines (case-insensitive).
 /// Each preview line's text is the concatenation of its span texts (excluding newlines).
 /// Match coordinates are in preview-line space so highlights and navigation work directly.
-pub fn execute_search_preview(state: &mut SearchState, preview_lines: &[tide_editor::markdown::PreviewLine]) {
+pub fn execute_search_preview(state: &mut SearchState, preview_lines: &[crate::tide_editor::markdown::PreviewLine]) {
     use unicode_width::UnicodeWidthChar;
 
     let prev_pos = state.current

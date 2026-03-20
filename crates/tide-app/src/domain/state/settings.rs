@@ -39,15 +39,15 @@ pub struct KeybindingOverride {
 
 impl KeybindingOverride {
     /// Convert to a (Hotkey, GlobalAction) pair.
-    pub fn to_binding(&self) -> Option<(tide_input::Hotkey, tide_input::GlobalAction)> {
-        let action = tide_input::GlobalAction::from_action_key(&self.action)?;
-        let key = tide_input::Hotkey::key_from_name(&self.key)?;
-        let hotkey = tide_input::Hotkey::new(key, self.shift, self.ctrl, self.meta, self.alt);
+    pub fn to_binding(&self) -> Option<(crate::tide_input::Hotkey, crate::tide_input::GlobalAction)> {
+        let action = crate::tide_input::GlobalAction::from_action_key(&self.action)?;
+        let key = crate::tide_input::Hotkey::key_from_name(&self.key)?;
+        let hotkey = crate::tide_input::Hotkey::new(key, self.shift, self.ctrl, self.meta, self.alt);
         Some((hotkey, action))
     }
 
     /// Create from a Hotkey and GlobalAction.
-    pub fn from_binding(hotkey: &tide_input::Hotkey, action: &tide_input::GlobalAction) -> Self {
+    pub fn from_binding(hotkey: &crate::tide_input::Hotkey, action: &crate::tide_input::GlobalAction) -> Self {
         Self {
             action: action.action_key().to_string(),
             key: hotkey.key_name(),
@@ -178,15 +178,15 @@ pub fn save_settings(settings: &TideSettings) {
 }
 
 /// Build a KeybindingMap from settings overrides.
-pub fn build_keybinding_map(settings: &TideSettings) -> tide_input::KeybindingMap {
+pub fn build_keybinding_map(settings: &TideSettings) -> crate::tide_input::KeybindingMap {
     if settings.keybindings.is_empty() {
-        return tide_input::KeybindingMap::new();
+        return crate::tide_input::KeybindingMap::new();
     }
-    let overrides: Vec<(tide_input::Hotkey, tide_input::GlobalAction)> = settings
+    let overrides: Vec<(crate::tide_input::Hotkey, crate::tide_input::GlobalAction)> = settings
         .keybindings
         .iter()
         .filter_map(|o| o.to_binding())
         .collect();
-    tide_input::KeybindingMap::with_overrides(overrides)
+    crate::tide_input::KeybindingMap::with_overrides(overrides)
 }
 

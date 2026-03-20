@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use tide_core::{DropZone, LayoutEngine, PaneId};
-use tide_layout::SplitLayout;
+use crate::tide_core::{DropZone, LayoutEngine, PaneId};
+use crate::tide_layout::SplitLayout;
 
 use crate::pane::PaneKind;
 use crate::state::{FocusArea, ViewMode};
@@ -30,7 +30,7 @@ pub(crate) struct WorkspaceExtras {
     pub zoomed_pane: Option<PaneId>,
     pub focus_area: FocusArea,
     pub stage_focused: Option<PaneId>,
-    pub pinned_dock_layout: tide_layout::SplitLayout,
+    pub pinned_dock_layout: crate::tide_layout::SplitLayout,
 }
 
 impl WorkspaceExtras {
@@ -42,7 +42,7 @@ impl WorkspaceExtras {
             zoomed_pane: None,
             focus_area: FocusArea::Stage,
             stage_focused: None,
-            pinned_dock_layout: tide_layout::SplitLayout::new(),
+            pinned_dock_layout: crate::tide_layout::SplitLayout::new(),
         }
     }
 }
@@ -308,7 +308,7 @@ mod tests {
     fn test_app() -> App {
         let mut app = App::new();
         // Set a non-zero cell size so compute_layout doesn't degenerate
-        app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+        app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
         app.window.window_size = (960, 640);
         app
     }

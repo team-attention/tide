@@ -6,18 +6,18 @@ use crate::state::FocusArea;
 use crate::App;
 use crate::ClipboardSearchPort;
 use crate::WorkspaceNavPort;
-use tide_core::LayoutEngine;
+use crate::tide_core::LayoutEngine;
 
 fn test_app() -> App {
     let mut app = App::new();
-    app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
 }
 
 fn app_with_editor() -> (App, u64) {
     let mut app = test_app();
-    let (layout, id) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     let pane = EditorPane::new_empty(id);
     app.panes.insert(id, PaneKind::Editor(pane));
@@ -326,7 +326,7 @@ fn completion_dismissed_when_no_matches() {
 fn switching_pane_dismisses_completion() {
     // UC-6 BR-28: Switching pane dismisses completion
     let (mut app, id1) = app_with_editor();
-    let id2 = app.layout.split(id1, tide_core::SplitDirection::Vertical);
+    let id2 = app.layout.split(id1, crate::tide_core::SplitDirection::Vertical);
     app.panes.insert(id2, PaneKind::Editor(EditorPane::new_empty(id2)));
     editor_with_completion(&mut app, id1);
 

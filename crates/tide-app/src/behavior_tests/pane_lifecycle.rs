@@ -3,18 +3,18 @@ use crate::pane::PaneKind;
 use crate::state::FocusArea;
 use crate::App;
 use crate::PaneLifecyclePort;
-use tide_core::LayoutEngine;
+use crate::tide_core::LayoutEngine;
 
 fn test_app() -> App {
     let mut app = App::new();
-    app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
 }
 
 fn app_with_editor() -> (App, u64) {
     let mut app = test_app();
-    let (layout, id) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     let pane = EditorPane::new_empty(id);
     app.panes.insert(id, PaneKind::Editor(pane));
@@ -78,7 +78,7 @@ fn split_creates_new_pane_in_split_layout() {
     // UC-2: SplitPane
     let (mut app, _first_id) = app_with_editor();
     let pane_ids_before = app.layout.pane_ids().len();
-    app.split_with_launcher(tide_core::SplitDirection::Vertical);
+    app.split_with_launcher(crate::tide_core::SplitDirection::Vertical);
     assert_eq!(app.layout.pane_ids().len(), pane_ids_before + 1);
     // Invariant: PaneId sync
     assert_eq!(app.layout.pane_ids().len(), app.panes.len());
@@ -88,7 +88,7 @@ fn split_creates_new_pane_in_split_layout() {
 fn split_focuses_new_terminal_pane_in_stage() {
     // UC-2 BR-4: Split in Stage creates a Terminal directly
     let (mut app, first_id) = app_with_editor();
-    app.split_with_launcher(tide_core::SplitDirection::Vertical);
+    app.split_with_launcher(crate::tide_core::SplitDirection::Vertical);
     assert_ne!(app.focus.focused, Some(first_id));
     let new_id = app.focus.focused.unwrap();
     assert!(matches!(app.panes.get(&new_id), Some(PaneKind::Terminal(_))));
@@ -101,7 +101,7 @@ fn split_unzooms_focused_pane() {
     // UC-2 BR-5: If Pane was zoomed, unzoom before splitting
     let (mut app, first_id) = app_with_editor();
     app.focus.zoomed_pane = Some(first_id);
-    app.split_with_launcher(tide_core::SplitDirection::Vertical);
+    app.split_with_launcher(crate::tide_core::SplitDirection::Vertical);
     assert!(app.focus.zoomed_pane.is_none());
 }
 
@@ -196,7 +196,7 @@ fn closing_pane_in_horizontal_split_focuses_right_neighbor() {
     // UC-5 BR-12: After closing a pane, focus moves to right neighbor
     // Layout: H(A, B(focused)) — closing B focuses A
     let (mut app, left_id) = app_with_editor();
-    let right_id = app.layout.split(left_id, tide_core::SplitDirection::Horizontal);
+    let right_id = app.layout.split(left_id, crate::tide_core::SplitDirection::Horizontal);
     app.panes.insert(right_id, PaneKind::Editor(
         crate::pane::editor::EditorPane::new_empty(right_id),
     ));
@@ -213,7 +213,7 @@ fn closing_only_pane_in_split_focuses_neighbor() {
     // UC-5 BR-12: When a pane is closed, focus moves to remaining pane
     // Layout: Split { left: A, right: B(focused) }
     let (mut app, left_id) = app_with_editor();
-    let right_id = app.layout.split(left_id, tide_core::SplitDirection::Vertical);
+    let right_id = app.layout.split(left_id, crate::tide_core::SplitDirection::Vertical);
     app.panes.insert(right_id, PaneKind::Editor(
         crate::pane::editor::EditorPane::new_empty(right_id),
     ));

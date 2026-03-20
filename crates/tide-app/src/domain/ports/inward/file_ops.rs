@@ -2,7 +2,7 @@
 // Source: domain/action/file_ops.rs
 
 use std::path::PathBuf;
-use tide_core::PaneId;
+use crate::tide_core::PaneId;
 
 pub(crate) trait FileOpsPort {
     fn resolve_base_dir(&self) -> PathBuf;

@@ -9,6 +9,17 @@ mod theme;
 mod app;
 mod layout_compute;
 
+// ── Absorbed crate aliases (use tide_X:: paths still work) ──
+pub(crate) use domain::core_types as tide_core;
+pub(crate) use domain::terminal as tide_terminal;
+pub(crate) use domain::editor as tide_editor;
+pub(crate) use domain::layout as tide_layout;
+pub(crate) use domain::input as tide_input;
+pub(crate) use domain::tree as tide_tree;
+pub(crate) use adapter::outward::renderer as tide_renderer;
+pub(crate) use adapter::outward::platform_native as tide_platform;
+pub(crate) use adapter::outward::lsp_client as tide_lsp;
+
 // ── Facade re-exports (preserve existing crate-internal paths) ──
 pub(crate) use domain::state;
 pub(crate) use domain::pane;
@@ -57,17 +68,17 @@ fn main() {
     // event channel: main thread → app thread (platform events + wake signals)
     // command channel: app thread → main thread (window mutations)
     let (event_tx, event_rx) = std::sync::mpsc::channel::<event_loop::AppEvent>();
-    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<tide_platform::WindowCommand>();
+    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<crate::tide_platform::WindowCommand>();
 
     // ── Wakers ────────────────────────────────────────────────────────
     // Main thread waker: posts NSEvent + triggerRedraw to wake the main run loop
     // and cause the callback to fire (which drains window commands).
-    let main_waker = tide_platform::macos::MacosApp::create_waker();
+    let main_waker = crate::tide_platform::macos::MacosApp::create_waker();
 
     // Combined waker for background threads (PTY, file watcher, render thread):
     // wakes both the app thread (via event channel) and the main thread (via NSEvent).
     let waker_tx = std::sync::Arc::new(std::sync::Mutex::new(event_tx.clone()));
-    let combined_waker: tide_platform::WakeCallback = std::sync::Arc::new({
+    let combined_waker: crate::tide_platform::WakeCallback = std::sync::Arc::new({
         let main_waker = main_waker.clone();
         let waker_tx = waker_tx.clone();
         move || {
@@ -78,7 +89,7 @@ fn main() {
 
     // ── WindowProxy ──────────────────────────────────────────────────
     // App thread uses this to send commands back to the main thread.
-    let window_proxy = tide_platform::WindowProxy::new(cmd_tx, main_waker.clone());
+    let window_proxy = crate::tide_platform::WindowProxy::new(cmd_tx, main_waker.clone());
 
     // ── App setup ────────────────────────────────────────────────────
     let mut app = App::new();
@@ -98,7 +109,7 @@ fn main() {
         .map(|s| (s.window_width as f64, s.window_height as f64))
         .unwrap_or((960.0, 640.0));
 
-    let config = tide_platform::WindowConfig {
+    let config = crate::tide_platform::WindowConfig {
         title: "Tide".to_string(),
         width: win_w,
         height: win_h,
@@ -122,7 +133,7 @@ fn main() {
     // ── Run the macOS event loop ─────────────────────────────────────
     // Phase 1: first event triggers GPU init on main thread, then spawns app thread.
     // Phase 2: all subsequent events are forwarded to the app thread.
-    tide_platform::macos::MacosApp::run(
+    crate::tide_platform::macos::MacosApp::run(
         config,
         Box::new(move |event, window| {
             // Phase 1: one-time initialization (main thread)
@@ -137,7 +148,7 @@ fn main() {
 
                     // Drain any window commands generated during init
                     while let Ok(cmd) = cmd_rx.try_recv() {
-                        tide_platform::execute_window_command(window, cmd);
+                        crate::tide_platform::execute_window_command(window, cmd);
                     }
 
                     // Spawn the app thread
@@ -156,10 +167,10 @@ fn main() {
             // Phase 2: drain commands FIRST so IME proxy focus etc. execute
             // before macOS dispatches the next event to first responder.
             while let Ok(cmd) = cmd_rx.try_recv() {
-                tide_platform::execute_window_command(window, cmd);
+                crate::tide_platform::execute_window_command(window, cmd);
             }
             // Forward event to app thread
-            if !matches!(event, tide_platform::PlatformEvent::RedrawRequested) {
+            if !matches!(event, crate::tide_platform::PlatformEvent::RedrawRequested) {
                 let _ = event_tx.send(event_loop::AppEvent::Platform(event));
             }
         }),

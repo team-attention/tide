@@ -8,7 +8,7 @@ mod config_page;
 
 use unicode_width::UnicodeWidthChar;
 
-use tide_core::{Rect, Renderer, TextStyle, Vec2};
+use crate::tide_core::{Rect, Renderer, TextStyle, Vec2};
 
 use crate::pane::PaneKind;
 use crate::theme::*;
@@ -25,10 +25,10 @@ pub(super) fn visual_width(s: &str) -> usize {
 /// Draw a rounded popup background with border using SDF.
 /// Renders outer rounded rect (border color) then inner rounded rect (fill color).
 pub(super) fn draw_popup_rounded_bg(
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     rect: Rect,
-    fill: tide_core::Color,
-    border: tide_core::Color,
+    fill: crate::tide_core::Color,
+    border: crate::tide_core::Color,
     radius: f32,
 ) {
     let bw = POPUP_BORDER_WIDTH;
@@ -40,7 +40,7 @@ pub(super) fn draw_popup_rounded_bg(
 }
 
 /// Draw a 1px (or `POPUP_BORDER_WIDTH`) border around `rect`.
-pub(super) fn draw_popup_border(renderer: &mut tide_renderer::WgpuRenderer, rect: Rect, color: tide_core::Color) {
+pub(super) fn draw_popup_border(renderer: &mut crate::tide_renderer::WgpuRenderer, rect: Rect, color: crate::tide_core::Color) {
     let bw = POPUP_BORDER_WIDTH;
     renderer.draw_top_rect(Rect::new(rect.x, rect.y, rect.width, bw), color);
     renderer.draw_top_rect(Rect::new(rect.x, rect.y + rect.height - bw, rect.width, bw), color);
@@ -49,12 +49,12 @@ pub(super) fn draw_popup_border(renderer: &mut tide_renderer::WgpuRenderer, rect
 }
 
 /// Draw a cursor beam (vertical line) at the given position.
-pub(super) fn draw_cursor_beam(renderer: &mut tide_renderer::WgpuRenderer, x: f32, y: f32, height: f32, color: tide_core::Color) {
+pub(super) fn draw_cursor_beam(renderer: &mut crate::tide_renderer::WgpuRenderer, x: f32, y: f32, height: f32, color: crate::tide_core::Color) {
     renderer.draw_top_rect(Rect::new(x, y, CURSOR_BEAM_WIDTH, height), color);
 }
 
 /// Create a plain (non-bold) TextStyle with the given foreground color.
-pub(super) fn text_style(color: tide_core::Color) -> TextStyle {
+pub(super) fn text_style(color: crate::tide_core::Color) -> TextStyle {
     TextStyle {
         foreground: color,
         background: None,
@@ -66,7 +66,7 @@ pub(super) fn text_style(color: tide_core::Color) -> TextStyle {
 }
 
 /// Create a bold TextStyle with the given foreground color.
-pub(super) fn bold_style(color: tide_core::Color) -> TextStyle {
+pub(super) fn bold_style(color: crate::tide_core::Color) -> TextStyle {
     TextStyle {
         foreground: color,
         background: None,
@@ -79,7 +79,7 @@ pub(super) fn bold_style(color: tide_core::Color) -> TextStyle {
 
 
 /// Draw a full-screen dim overlay (scrim) behind floating popups.
-pub(super) fn draw_popup_scrim(renderer: &mut tide_renderer::WgpuRenderer, logical_size: tide_core::Size, color: tide_core::Color) {
+pub(super) fn draw_popup_scrim(renderer: &mut crate::tide_renderer::WgpuRenderer, logical_size: crate::tide_core::Size, color: crate::tide_core::Color) {
     renderer.draw_top_rect(Rect::new(0.0, 0.0, logical_size.width, logical_size.height), color);
 }
 
@@ -87,7 +87,7 @@ pub(super) fn draw_popup_scrim(renderer: &mut tide_renderer::WgpuRenderer, logic
 /// save-as inline edit, file finder, git switcher, and file switcher.
 pub(crate) fn render_overlays(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
     visual_pane_rects: &[(u64, Rect)],
 ) {
@@ -104,14 +104,14 @@ pub(crate) fn render_overlays(
 /// Render notification bars (conflict / save confirm) for all editor panes.
 fn render_notification_bars(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
     visual_pane_rects: &[(u64, Rect)],
 ) {
     let cell_size = renderer.cell_size();
 
     // Collect all panes that need notification bars
-    let mut bar_panes: Vec<(tide_core::PaneId, Rect)> = Vec::new();
+    let mut bar_panes: Vec<(crate::tide_core::PaneId, Rect)> = Vec::new();
 
     let content_top_off = TAB_BAR_HEIGHT;
     for &(id, rect) in visual_pane_rects {
@@ -161,7 +161,7 @@ fn render_notification_bars(
                 let delete_w = delete_text.len() as f32 * cell_size.width + btn_pad * 2.0;
                 let delete_x = keep_x - delete_w - 4.0;
                 let delete_rect = Rect::new(delete_x, btn_y, delete_w, btn_h);
-                let delete_bg = tide_core::Color::new(0.6, 0.2, 0.2, 1.0);
+                let delete_bg = crate::tide_core::Color::new(0.6, 0.2, 0.2, 1.0);
                 renderer.draw_top_rect(delete_rect, delete_bg);
                 renderer.draw_top_text(delete_text, Vec2::new(delete_x + btn_pad, text_y), btn_style, delete_rect);
 

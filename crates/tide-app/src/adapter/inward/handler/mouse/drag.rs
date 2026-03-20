@@ -1,7 +1,7 @@
 //! Mouse drag handling — border resize, pane drag, scrollbar drag, sidebar.
 
-use tide_core::{InputEvent, LayoutEngine, Vec2};
-use tide_platform::WindowProxy;
+use crate::tide_core::{InputEvent, LayoutEngine, Vec2};
+use crate::tide_platform::WindowProxy;
 
 use crate::event_handler::drag_drop::PaneDragState;
 use crate::theme::*;

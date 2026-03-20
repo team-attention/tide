@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use tide_core::PaneId;
+use crate::tide_core::PaneId;
 
 use crate::pane::PaneKind;
 

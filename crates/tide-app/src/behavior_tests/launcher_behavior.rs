@@ -5,14 +5,14 @@ use crate::App;
 
 fn test_app() -> App {
     let mut app = App::new();
-    app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
 }
 
 fn app_with_launcher() -> (App, u64) {
     let mut app = test_app();
-    let (layout, id) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     app.panes.insert(id, PaneKind::Launcher(id));
     app.focus.focused = Some(id);

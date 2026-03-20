@@ -8,8 +8,8 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Instant;
 
-use tide_platform::WakeCallback;
-use tide_renderer::WgpuRenderer;
+use crate::tide_platform::WakeCallback;
+use crate::tide_renderer::WgpuRenderer;
 
 pub(crate) struct RenderJob {
     pub renderer: WgpuRenderer,

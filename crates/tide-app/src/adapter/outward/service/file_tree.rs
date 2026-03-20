@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use tide_core::{FileGitStatus, FileTreeSource, TerminalBackend, Vec2};
+use crate::tide_core::{FileGitStatus, FileTreeSource, TerminalBackend, Vec2};
 
 use crate::pane::PaneKind;
 use crate::theme::*;
@@ -14,10 +14,10 @@ use crate::PaneLifecyclePort;
 pub(crate) type GitPollResults = HashMap<PathBuf, GitPollCwdResult>;
 
 pub(crate) struct GitPollCwdResult {
-    pub git_info: Option<tide_terminal::git::GitInfo>,
+    pub git_info: Option<crate::tide_terminal::git::GitInfo>,
     pub worktree_count: usize,
     pub repo_root: Option<PathBuf>,
-    pub status_entries: Vec<tide_terminal::git::StatusEntry>,
+    pub status_entries: Vec<crate::tide_terminal::git::StatusEntry>,
 }
 
 impl App {
@@ -58,7 +58,7 @@ impl App {
     fn apply_file_tree_git_status(
         &mut self,
         git_root: &PathBuf,
-        entries: &[tide_terminal::git::StatusEntry],
+        entries: &[crate::tide_terminal::git::StatusEntry],
     ) {
         let tree_root = match self.ft.tree.as_ref() {
             Some(tree) => tree.root().to_path_buf(),
@@ -142,7 +142,7 @@ impl App {
     /// Bumps chrome_generation if anything changed.
     pub(crate) fn update_terminal_badges(&mut self) {
         let mut changed = false;
-        let pane_ids: Vec<tide_core::PaneId> = self.panes.keys().copied().collect();
+        let pane_ids: Vec<crate::tide_core::PaneId> = self.panes.keys().copied().collect();
 
         for id in &pane_ids {
             if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(id) {
@@ -188,7 +188,7 @@ impl App {
         let mut changed = false;
 
         // Update cached repo roots and pane git info
-        let pane_ids: Vec<tide_core::PaneId> = self.panes.keys().copied().collect();
+        let pane_ids: Vec<crate::tide_core::PaneId> = self.panes.keys().copied().collect();
         for id in &pane_ids {
             if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(id) {
                 if let Some(ref cwd) = pane.context.cwd {
@@ -296,10 +296,10 @@ impl App {
                     if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
                         break;
                     }
-                    let git_info = tide_terminal::git::detect_git_info(&cwd);
-                    let worktree_count = tide_terminal::git::count_worktrees(&cwd);
-                    let repo_root = tide_terminal::git::repo_root(&cwd);
-                    let status_entries = tide_terminal::git::status_files(&cwd);
+                    let git_info = crate::tide_terminal::git::detect_git_info(&cwd);
+                    let worktree_count = crate::tide_terminal::git::count_worktrees(&cwd);
+                    let repo_root = crate::tide_terminal::git::repo_root(&cwd);
+                    let status_entries = crate::tide_terminal::git::status_files(&cwd);
                     results.insert(cwd, GitPollCwdResult {
                         git_info,
                         worktree_count,
@@ -346,7 +346,7 @@ impl App {
             }
             crate::ContextMenuAction::OpenTerminalHere => {
                 self.split_pane(
-                    tide_core::SplitDirection::Horizontal,
+                    crate::tide_core::SplitDirection::Horizontal,
                     Some(menu.path),
                 );
             }

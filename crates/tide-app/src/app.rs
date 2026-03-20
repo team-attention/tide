@@ -3,10 +3,10 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use tide_core::{PaneId, Rect, Size, TerminalBackend};
-use tide_input::Router;
-use tide_layout::SplitLayout;
-use tide_tree::FsTree;
+use crate::tide_core::{PaneId, Rect, Size, TerminalBackend};
+use crate::tide_input::Router;
+use crate::tide_layout::SplitLayout;
+use crate::tide_tree::FsTree;
 
 use crate::pane::{PaneKind, TerminalPane};
 use crate::theme::*;
@@ -137,7 +137,7 @@ impl App {
     }
 
     /// Create the initial terminal pane.
-    pub(crate) fn create_initial_pane(&mut self, early_terminal: Option<tide_terminal::Terminal>) {
+    pub(crate) fn create_initial_pane(&mut self, early_terminal: Option<crate::tide_terminal::Terminal>) {
         let (layout, pane_id) = SplitLayout::with_initial_pane();
         self.layout = layout;
 

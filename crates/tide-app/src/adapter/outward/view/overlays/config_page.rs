@@ -1,4 +1,4 @@
-use tide_core::{Rect, Renderer, TextStyle, Vec2};
+use crate::tide_core::{Rect, Renderer, TextStyle, Vec2};
 
 use crate::theme::*;
 use crate::App;
@@ -9,7 +9,7 @@ use super::{visual_width, draw_popup_rounded_bg, draw_popup_scrim, draw_popup_bo
 /// Render the config page overlay (settings modal).
 pub(super) fn render_config_page(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
 ) {
     let page = match app.modal.config_page {
@@ -34,7 +34,7 @@ pub(super) fn render_config_page(
     let popup_rect = Rect::new(popup_x, popup_y, popup_w, popup_h);
 
     // Shadow — always dark for depth
-    let shadow_color = tide_core::Color::new(0.0, 0.0, 0.0, 0.25);
+    let shadow_color = crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.25);
     renderer.draw_top_shadow(popup_rect, shadow_color, 8.0, 40.0, 0.0);
 
     // Background + border (rounded)

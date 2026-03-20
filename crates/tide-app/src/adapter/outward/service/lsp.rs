@@ -1,8 +1,8 @@
 // LSP integration: wires tide-lsp into the App event loop.
 // Spec: docs/specs/lsp-completion.md
 
-use tide_core::PaneId;
-use tide_lsp::manager::Language;
+use crate::tide_core::PaneId;
+use crate::tide_lsp::manager::Language;
 
 use crate::pane::editor::completion::{CompletionItem, CompletionKind, CompletionState};
 use crate::pane::PaneKind;
@@ -31,7 +31,7 @@ impl App {
                 Some(l) => l,
                 None => return,
             };
-            let uri = tide_lsp::manager::path_to_uri(path);
+            let uri = crate::tide_lsp::manager::path_to_uri(path);
             let text = pane.editor.buffer.lines.join("\n");
             (uri, lang, text)
         };
@@ -49,7 +49,7 @@ impl App {
                 Some(p) => p,
                 None => return,
             };
-            let uri = tide_lsp::manager::path_to_uri(path);
+            let uri = crate::tide_lsp::manager::path_to_uri(path);
             let text = pane.editor.buffer.lines.join("\n");
             (uri, text)
         };
@@ -64,7 +64,7 @@ impl App {
                 _ => return,
             };
             match pane.editor.file_path() {
-                Some(p) => tide_lsp::manager::path_to_uri(p),
+                Some(p) => crate::tide_lsp::manager::path_to_uri(p),
                 None => return,
             }
         };
@@ -79,7 +79,7 @@ impl App {
                 _ => return,
             };
             match pane.editor.file_path() {
-                Some(p) => tide_lsp::manager::path_to_uri(p),
+                Some(p) => crate::tide_lsp::manager::path_to_uri(p),
                 None => return,
             }
         };
@@ -118,12 +118,12 @@ impl App {
             }
 
             let (kind, tchar) = if is_trigger {
-                (tide_lsp::protocol::COMPLETION_TRIGGER_CHARACTER, Some(s))
+                (crate::tide_lsp::protocol::COMPLETION_TRIGGER_CHARACTER, Some(s))
             } else {
-                (tide_lsp::protocol::COMPLETION_TRIGGER_INVOKED, None)
+                (crate::tide_lsp::protocol::COMPLETION_TRIGGER_INVOKED, None)
             };
 
-            let uri = tide_lsp::manager::path_to_uri(path);
+            let uri = crate::tide_lsp::manager::path_to_uri(path);
             let pos = pane.editor.cursor_position();
             let char_col = if let Some(line_text) = pane.editor.buffer.line(pos.line) {
                 let byte_col = pos.col.min(line_text.len());
@@ -155,7 +155,7 @@ impl App {
                 return;
             }
 
-            let uri = tide_lsp::manager::path_to_uri(path);
+            let uri = crate::tide_lsp::manager::path_to_uri(path);
             let pos = pane.editor.cursor_position();
             let char_col = if let Some(line_text) = pane.editor.buffer.line(pos.line) {
                 let byte_col = pos.col.min(line_text.len());
@@ -168,7 +168,7 @@ impl App {
 
         self.ports.lsp.request_completion(
             &uri, line, character,
-            tide_lsp::protocol::COMPLETION_TRIGGER_INVOKED,
+            crate::tide_lsp::protocol::COMPLETION_TRIGGER_INVOKED,
             None,
         );
     }
@@ -224,7 +224,7 @@ impl App {
         for (&id, pane) in &self.panes {
             if let PaneKind::Editor(ep) = pane {
                 if let Some(path) = ep.editor.file_path() {
-                    if tide_lsp::manager::path_to_uri(path) == uri {
+                    if crate::tide_lsp::manager::path_to_uri(path) == uri {
                         return Some(id);
                     }
                 }
@@ -235,7 +235,7 @@ impl App {
 }
 
 fn lsp_kind_to_completion_kind(kind: Option<u32>) -> CompletionKind {
-    match tide_lsp::protocol::lsp_kind_to_u8(kind) {
+    match crate::tide_lsp::protocol::lsp_kind_to_u8(kind) {
         0 => CompletionKind::Function,
         1 => CompletionKind::Variable,
         2 => CompletionKind::Field,

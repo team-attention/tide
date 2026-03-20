@@ -2,8 +2,8 @@
 
 use std::time::Duration;
 
-use tide_core::TerminalBackend;
-use tide_platform::{PlatformEvent, PlatformWindow, WindowProxy};
+use crate::tide_core::TerminalBackend;
+use crate::tide_platform::{PlatformEvent, PlatformWindow, WindowProxy};
 
 use crate::pane::PaneKind;
 use crate::update::session;
@@ -250,7 +250,7 @@ impl App {
                     } else { false }
                 });
                 if has_terminals || has_dirty {
-                    if !tide_platform::show_close_confirm() {
+                    if !crate::tide_platform::show_close_confirm() {
                         return;
                     }
                 }
@@ -317,7 +317,7 @@ impl App {
             }
             PlatformEvent::Focused(focused) => {
                 if focused {
-                    self.window.modifiers = tide_core::Modifiers::default();
+                    self.window.modifiers = crate::tide_core::Modifiers::default();
                     // windowDidBecomeKey may have changed the actual first
                     // responder via LAST_IME_TARGET, making browser panes'
                     // is_first_responder flags stale.  Reset them so
@@ -504,7 +504,7 @@ impl App {
     }
 
     /// Commit text directly to a specific pane.
-    pub(crate) fn commit_text_to_pane(&mut self, pane_id: tide_core::PaneId, text: &str) {
+    pub(crate) fn commit_text_to_pane(&mut self, pane_id: crate::tide_core::PaneId, text: &str) {
         use crate::pane::PaneKind;
         // Compute visible size before mutable borrow of panes
         let editor_size = self.visible_editor_size(pane_id);
@@ -519,7 +519,7 @@ impl App {
                     for ch in text.chars() {
                         let action = match ch {
                             ch if ch.is_control() => continue,
-                            ch => tide_editor::EditorActionKind::InsertChar(ch),
+                            ch => crate::tide_editor::EditorActionKind::InsertChar(ch),
                         };
                         pane.editor.handle_action(action);
                     }
@@ -535,7 +535,7 @@ impl App {
     }
 
     /// The effective pane that will receive IME input, considering focus area.
-    pub(crate) fn effective_ime_target(&self) -> Option<tide_core::PaneId> {
+    pub(crate) fn effective_ime_target(&self) -> Option<crate::tide_core::PaneId> {
         effective_ime_target(
             self.focus.focused,
             self.focus.search_focus,
@@ -544,7 +544,7 @@ impl App {
         )
     }
 
-    fn physical_to_logical(&self, pos: (f64, f64)) -> tide_core::Vec2 {
+    fn physical_to_logical(&self, pos: (f64, f64)) -> crate::tide_core::Vec2 {
         physical_to_logical(pos)
     }
 
@@ -597,7 +597,7 @@ impl App {
         }
 
         // Browser Cmd+click new-tab requests
-        let new_tab_urls = tide_platform::macos::webview::drain_new_tab_urls();
+        let new_tab_urls = crate::tide_platform::macos::webview::drain_new_tab_urls();
         for url in new_tab_urls {
             self.open_browser_pane(Some(url));
         }
@@ -636,7 +636,7 @@ impl App {
             return;
         }
         self.ime.cursor_dirty = false;
-        use tide_core::TerminalBackend;
+        use crate::tide_core::TerminalBackend;
 
         let cell_size = self.cell_size();
 
@@ -721,18 +721,18 @@ impl App {
 }
 
 /// Convert physical (f64) coordinates to logical Vec2.
-fn physical_to_logical(pos: (f64, f64)) -> tide_core::Vec2 {
-    tide_core::Vec2::new(pos.0 as f32, pos.1 as f32)
+fn physical_to_logical(pos: (f64, f64)) -> crate::tide_core::Vec2 {
+    crate::tide_core::Vec2::new(pos.0 as f32, pos.1 as f32)
 }
 
 /// The effective pane that will receive IME input, considering focus area.
 /// Returns None when a browser pane is focused without URL bar and no text-input modal is open.
 pub(crate) fn effective_ime_target(
-    focused: Option<tide_core::PaneId>,
-    search_focus: Option<tide_core::PaneId>,
+    focused: Option<crate::tide_core::PaneId>,
+    search_focus: Option<crate::tide_core::PaneId>,
     modal: &crate::state::ModalStack,
-    panes: &std::collections::HashMap<tide_core::PaneId, PaneKind>,
-) -> Option<tide_core::PaneId> {
+    panes: &std::collections::HashMap<crate::tide_core::PaneId, PaneKind>,
+) -> Option<crate::tide_core::PaneId> {
     let target = focused;
     if let Some(id) = target {
         if let Some(PaneKind::Browser(bp)) = panes.get(&id) {
@@ -752,12 +752,12 @@ pub(crate) fn effective_ime_target(
 }
 
 fn platform_button_to_core(
-    button: tide_platform::MouseButton,
-) -> Option<tide_core::MouseButton> {
+    button: crate::tide_platform::MouseButton,
+) -> Option<crate::tide_core::MouseButton> {
     match button {
-        tide_platform::MouseButton::Left => Some(tide_core::MouseButton::Left),
-        tide_platform::MouseButton::Right => Some(tide_core::MouseButton::Right),
-        tide_platform::MouseButton::Middle => Some(tide_core::MouseButton::Middle),
+        crate::tide_platform::MouseButton::Left => Some(crate::tide_core::MouseButton::Left),
+        crate::tide_platform::MouseButton::Right => Some(crate::tide_core::MouseButton::Right),
+        crate::tide_platform::MouseButton::Middle => Some(crate::tide_core::MouseButton::Middle),
         _ => None,
     }
 }

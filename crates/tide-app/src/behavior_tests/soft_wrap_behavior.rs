@@ -48,7 +48,7 @@ fn soft_wrap_disabled_in_diff_mode() {
 #[test]
 fn horizontal_scroll_disabled_with_soft_wrap() {
     // UC-2 BR-7: h_scroll should stay 0 when soft wrap is active
-    use tide_editor::input::EditorAction;
+    use crate::tide_editor::input::EditorAction;
     let mut pane = editor_with_extension("txt");
     // Insert a very long line
     let long_text = "a".repeat(200);
@@ -63,7 +63,7 @@ fn horizontal_scroll_disabled_with_soft_wrap() {
 #[test]
 fn wrap_map_counts_visual_rows_correctly() {
     // UC-2 BR-5/BR-6: WrapMap correctly maps logical lines to visual rows
-    use tide_editor::wrap::WrapMap;
+    use crate::tide_editor::wrap::WrapMap;
     let lines: Vec<String> = vec![
         "short".to_string(),
         "a".repeat(100), // wraps to 3 rows at width 40
@@ -79,7 +79,7 @@ fn wrap_map_counts_visual_rows_correctly() {
 #[test]
 fn wide_characters_wrap_correctly() {
     // UC-2 BR-8: CJK characters (width 2) respected in wrapping
-    use tide_editor::wrap::WrapMap;
+    use crate::tide_editor::wrap::WrapMap;
     // 25 CJK chars = 50 display cols → 2 rows at width 40
     let cjk: String = std::iter::repeat('가').take(25).collect();
     let lines = vec![cjk];
@@ -92,7 +92,7 @@ fn wide_characters_wrap_correctly() {
 #[test]
 fn wrap_map_rebuilt_on_width_change() {
     // UC-5 BR-14: WrapMap must change when width changes
-    use tide_editor::wrap::WrapMap;
+    use crate::tide_editor::wrap::WrapMap;
     let lines = vec!["a".repeat(100)];
     let map40 = WrapMap::build(&lines, 40, 0);
     let map50 = WrapMap::build(&lines, 50, 0);

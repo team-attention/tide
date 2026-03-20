@@ -3,14 +3,14 @@
 // Abstracts the IO-heavy PTY spawn from domain logic.
 
 use std::path::Path;
-use tide_core::PaneId;
+use crate::tide_core::PaneId;
 use crate::pane::TerminalPane;
 
 type BoxErr = Box<dyn std::error::Error>;
 
 pub(crate) trait TerminalFactoryPort {
     fn create_terminal(&self, id: PaneId, cols: u16, rows: u16, cwd: Option<&Path>, dark_mode: bool) -> Result<TerminalPane, BoxErr>;
-    fn pre_spawn_terminal(&self, cols: u16, rows: u16, dark_mode: bool) -> Result<tide_terminal::Terminal, BoxErr>;
+    fn pre_spawn_terminal(&self, cols: u16, rows: u16, dark_mode: bool) -> Result<crate::tide_terminal::Terminal, BoxErr>;
 }
 
 // ── Real implementation (production) ──
@@ -22,8 +22,8 @@ impl TerminalFactoryPort for RealTerminalFactory {
         TerminalPane::with_cwd(id, cols, rows, cwd.map(|p| p.to_path_buf()), dark_mode)
     }
 
-    fn pre_spawn_terminal(&self, cols: u16, rows: u16, dark_mode: bool) -> Result<tide_terminal::Terminal, BoxErr> {
-        tide_terminal::Terminal::with_cwd(cols, rows, None, dark_mode)
+    fn pre_spawn_terminal(&self, cols: u16, rows: u16, dark_mode: bool) -> Result<crate::tide_terminal::Terminal, BoxErr> {
+        crate::tide_terminal::Terminal::with_cwd(cols, rows, None, dark_mode)
     }
 }
 
@@ -36,7 +36,7 @@ impl TerminalFactoryPort for NoopTerminalFactory {
         Err("NoopTerminalFactory: no terminal in tests".into())
     }
 
-    fn pre_spawn_terminal(&self, _cols: u16, _rows: u16, _dark_mode: bool) -> Result<tide_terminal::Terminal, BoxErr> {
+    fn pre_spawn_terminal(&self, _cols: u16, _rows: u16, _dark_mode: bool) -> Result<crate::tide_terminal::Terminal, BoxErr> {
         Err("NoopTerminalFactory: no terminal in tests".into())
     }
 }

@@ -1,4 +1,4 @@
-use tide_core::InputEvent;
+use crate::tide_core::InputEvent;
 
 use crate::pane::PaneKind;
 use crate::theme::*;
@@ -106,7 +106,7 @@ impl App {
                         self.cache.invalidate_pane(pid);
                     }
                     Some(PaneKind::Editor(pane)) => {
-                        use tide_editor::input::EditorAction;
+                        use crate::tide_editor::input::EditorAction;
                         let visible_cols = {
                             let gutter = 5.0 * cs.width;
                             ((rect.width - 2.0 * PANE_PADDING - 2.0 * gutter) / cs.width).floor() as usize

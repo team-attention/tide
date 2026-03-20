@@ -1,4 +1,4 @@
-use tide_core::{Rect, Renderer, Vec2};
+use crate::tide_core::{Rect, Renderer, Vec2};
 
 use crate::pane::PaneKind;
 use crate::theme::*;
@@ -10,7 +10,7 @@ use super::{visual_width, draw_popup_border, draw_cursor_beam, text_style};
 /// Render search bar UI for panes that have search visible.
 pub(super) fn render_search_bars(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
     visual_pane_rects: &[(u64, Rect)],
 ) {
@@ -18,7 +18,7 @@ pub(super) fn render_search_bars(
     let cell_size = renderer.cell_size();
 
     // Helper: render a search bar floating at top-right of a given rect
-    let mut search_bars: Vec<(tide_core::PaneId, Rect, String, String, usize, bool)> = Vec::new();
+    let mut search_bars: Vec<(crate::tide_core::PaneId, Rect, String, String, usize, bool)> = Vec::new();
     for &(id, rect) in visual_pane_rects {
         let (query, display, cursor_pos, visible) = match app.panes.get(&id) {
             Some(PaneKind::Terminal(pane)) => match &pane.search {

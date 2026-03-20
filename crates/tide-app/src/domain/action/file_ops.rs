@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use tide_core::FileTreeSource;
+use crate::tide_core::FileTreeSource;
 
 use crate::pane::PaneKind;
 use crate::App;
@@ -37,7 +37,7 @@ impl crate::FileOpsPort for App {
     /// Open the file finder UI (floating popup).
     /// If `replace_pane_id` is Some, the selected file will replace that pane
     /// instead of opening as a new tab.
-    fn open_file_finder_with_replace(&mut self, replace_pane_id: Option<tide_core::PaneId>) {
+    fn open_file_finder_with_replace(&mut self, replace_pane_id: Option<crate::tide_core::PaneId>) {
         // Cancel any in-progress drag when opening a modal
         self.interaction.pane_drag = crate::event_handler::drag_drop::PaneDragState::Idle;
 
@@ -94,7 +94,7 @@ impl crate::FileOpsPort for App {
         let new_id = self.layout.alloc_id();
         let dp = crate::pane::diff::DiffPane::new(new_id, cwd);
         self.panes.insert(new_id, PaneKind::Diff(dp));
-        self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Vertical, false);
+        self.layout.insert_pane(focused, new_id, crate::tide_core::SplitDirection::Vertical, false);
         self.focus.focused = Some(new_id);
         self.router.set_focused(new_id);
         self.cache.invalidate_chrome();

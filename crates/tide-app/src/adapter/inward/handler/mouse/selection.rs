@@ -1,6 +1,6 @@
 //! Mouse text selection — start and drag.
 
-use tide_core::{Rect, Vec2};
+use crate::tide_core::{Rect, Vec2};
 
 use crate::pane::{PaneKind, Selection};
 use crate::theme::*;

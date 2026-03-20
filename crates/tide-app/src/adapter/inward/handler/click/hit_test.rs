@@ -1,4 +1,4 @@
-use tide_core::{FileTreeSource, SplitDirection, Vec2};
+use crate::tide_core::{FileTreeSource, SplitDirection, Vec2};
 
 use crate::event_handler::drag_drop::HoverTarget;
 use crate::pane::PaneKind;
@@ -10,7 +10,7 @@ use crate::LayoutPort;
 impl App {
     /// Convert a pixel position to a terminal cell (row, col) within a pane's content area.
     /// Returns None if the position is outside any terminal pane's content area.
-    pub(crate) fn pixel_to_cell(&self, pos: Vec2, pane_id: tide_core::PaneId) -> Option<(usize, usize)> {
+    pub(crate) fn pixel_to_cell(&self, pos: Vec2, pane_id: crate::tide_core::PaneId) -> Option<(usize, usize)> {
         let (_, visual_rect) = self.visual_pane_rects.iter().find(|(id, _)| *id == pane_id)?;
         let cell_size = self.cell_size();
         let content_top = TAB_BAR_HEIGHT;
@@ -112,7 +112,7 @@ impl App {
                     let btn_h = cs.height + 12.0;
                     let edge_inset = PANE_CORNER_RADIUS;
                     let btn_y = ws_rect.y + ws_rect.height - edge_inset - btn_h - WS_SIDEBAR_PADDING;
-                    let btn_rect = tide_core::Rect::new(geo.content_x, btn_y, geo.content_w, btn_h);
+                    let btn_rect = crate::tide_core::Rect::new(geo.content_x, btn_y, geo.content_w, btn_h);
                     if btn_rect.contains(pos) {
                         return Some(HoverTarget::WorkspaceSidebarNewBtn);
                     }
@@ -252,7 +252,7 @@ impl App {
             let top_offset = TAB_BAR_HEIGHT;
             for &(id, rect) in &self.visual_pane_rects {
                 if let Some(PaneKind::Editor(pane)) = self.panes.get(&id) {
-                    let inner = tide_core::Rect::new(
+                    let inner = crate::tide_core::Rect::new(
                         rect.x + PANE_PADDING,
                         rect.y + top_offset,
                         rect.width - 2.0 * PANE_PADDING,

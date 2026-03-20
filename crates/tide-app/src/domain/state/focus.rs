@@ -33,11 +33,11 @@ pub(crate) enum LayoutSide {
 
 /// Focus tracking — which pane/area has keyboard focus.
 pub(crate) struct FocusState {
-    pub focused: Option<tide_core::PaneId>,
+    pub focused: Option<crate::tide_core::PaneId>,
     pub focus_area: FocusArea,
-    pub stage_focused: Option<tide_core::PaneId>,
-    pub zoomed_pane: Option<tide_core::PaneId>,
-    pub search_focus: Option<tide_core::PaneId>,
+    pub stage_focused: Option<crate::tide_core::PaneId>,
+    pub zoomed_pane: Option<crate::tide_core::PaneId>,
+    pub search_focus: Option<crate::tide_core::PaneId>,
 }
 
 impl FocusState {

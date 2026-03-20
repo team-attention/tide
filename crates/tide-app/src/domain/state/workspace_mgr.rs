@@ -1,6 +1,6 @@
 // WorkspaceManager — workspace management state.
 
-use tide_core::Rect;
+use crate::tide_core::Rect;
 
 pub(crate) struct WorkspaceManager {
     pub workspaces: Vec<crate::Workspace>,

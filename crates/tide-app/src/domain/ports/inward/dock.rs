@@ -1,7 +1,7 @@
 // DockPort — dock layout and terminal management.
 // Source: domain/action/dock.rs
 
-use tide_core::{PaneId, SplitDirection};
+use crate::tide_core::{PaneId, SplitDirection};
 
 pub(crate) trait DockPort {
     fn focused_terminal_id(&self) -> Option<PaneId>;

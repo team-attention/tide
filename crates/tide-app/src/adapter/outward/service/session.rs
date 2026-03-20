@@ -2,8 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tide_core::{PaneId, SplitDirection};
-use tide_layout::{LayoutSnapshot, SplitLayout};
+use crate::tide_core::{PaneId, SplitDirection};
+use crate::tide_layout::{LayoutSnapshot, SplitLayout};
 
 use crate::pane::PaneKind;
 use crate::App;
@@ -390,7 +390,7 @@ impl App {
             .first()
             .and_then(|(_, c)| c.clone())
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")));
-        let tree = tide_tree::FsTree::new(cwd.clone());
+        let tree = crate::tide_tree::FsTree::new(cwd.clone());
         self.ft.tree = Some(tree);
         self.timing.last_cwd = Some(cwd);
 
@@ -399,7 +399,7 @@ impl App {
 
     /// Restore only preferences (window size, theme, panel widths) from a session,
     /// then create a fresh initial pane. Used after intentional quit.
-    pub(crate) fn restore_preferences(&mut self, session: &Session, early_terminal: Option<tide_terminal::Terminal>) {
+    pub(crate) fn restore_preferences(&mut self, session: &Session, early_terminal: Option<crate::tide_terminal::Terminal>) {
         self.ft.visible = session.show_file_tree;
         self.ft.width = session.file_tree_width;
         self.ws.width = session.ws_sidebar_width;

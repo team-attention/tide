@@ -17,9 +17,9 @@ pub(crate) enum LauncherChoice {
 
 use std::time::Instant;
 
-use tide_core::{InputEvent, LayoutEngine, PaneId, Size, SplitDirection, TerminalBackend, Vec2};
-use tide_editor::input::EditorAction;
-use tide_input::{Action, AreaSlot, GlobalAction};
+use crate::tide_core::{InputEvent, LayoutEngine, PaneId, Size, SplitDirection, TerminalBackend, Vec2};
+use crate::tide_editor::input::EditorAction;
+use crate::tide_input::{Action, AreaSlot, GlobalAction};
 
 use crate::pane::PaneKind;
 use crate::theme::*;
@@ -37,7 +37,7 @@ use crate::ActionPort;
 use crate::PaneLifecyclePort;
 
 impl App {
-    fn cleanup_closed_pane_state(&mut self, pane_id: tide_core::PaneId) {
+    fn cleanup_closed_pane_state(&mut self, pane_id: crate::tide_core::PaneId) {
         self.notify_lsp_did_close(pane_id);
         self.cache.invalidate_pane(pane_id);
         self.interaction.scroll_accumulator.remove(&pane_id);
@@ -56,16 +56,16 @@ impl App {
     }
 
     /// Resolve the effective target pane for actions like Copy/Paste/Find.
-    fn action_target_id(&self) -> Option<tide_core::PaneId> {
+    fn action_target_id(&self) -> Option<crate::tide_core::PaneId> {
         action_target_id(self.focus.focused)
     }
 }
 
 impl crate::domain::ports::inward::ActionPort for App {
-    fn cleanup_retained_context(&mut self, _closed_pane_id: tide_core::PaneId) {
+    fn cleanup_retained_context(&mut self, _closed_pane_id: crate::tide_core::PaneId) {
         // Check if the closed pane's associated terminal is in retained_contexts
         // and no other pane still references it
-        let terminal_ids: Vec<tide_core::PaneId> = self.assoc.retained_contexts.keys().copied().collect();
+        let terminal_ids: Vec<crate::tide_core::PaneId> = self.assoc.retained_contexts.keys().copied().collect();
         for tid in terminal_ids {
             let still_referenced = self.assoc.associated_terminal.values().any(|&v| v == tid);
             if !still_referenced {
@@ -170,7 +170,7 @@ impl crate::domain::ports::inward::ActionPort for App {
                         Some(PaneKind::Editor(pane)) => {
                             // Cmd+Shift+M / Ctrl+Shift+M: toggle markdown preview
                             if (modifiers.meta || modifiers.ctrl) && modifiers.shift {
-                                if let tide_core::Key::Char('m') | tide_core::Key::Char('M') = &key {
+                                if let crate::tide_core::Key::Char('m') | crate::tide_core::Key::Char('M') = &key {
                                     if pane.is_markdown() {
                                         pane.toggle_preview();
                                         self.cache.invalidate_chrome();
@@ -183,7 +183,7 @@ impl crate::domain::ports::inward::ActionPort for App {
                             // Preview mode: Escape exits, all other keys ignored.
                             // Scrolling handled by Cmd+D/U (ScrollHalfPage) and mouse/trackpad.
                             if pane.preview_mode {
-                                if matches!(key, tide_core::Key::Escape) {
+                                if matches!(key, crate::tide_core::Key::Escape) {
                                     pane.toggle_preview();
                                     self.cache.invalidate_chrome();
                                     self.cache.invalidate_pane(id);
@@ -191,32 +191,32 @@ impl crate::domain::ports::inward::ActionPort for App {
                                 return;
                             }
 
-                            if let Some(action) = tide_editor::key_to_editor_action(&key, &modifiers) {
+                            if let Some(action) = crate::tide_editor::key_to_editor_action(&key, &modifiers) {
                                 // Handle SelectAll: set selection, don't clear it
-                                if matches!(action, tide_editor::EditorActionKind::SelectAll) {
+                                if matches!(action, crate::tide_editor::EditorActionKind::SelectAll) {
                                     pane.select_all();
                                     return;
                                 }
                                 // Delete selection on editing actions (insert, backspace, delete, enter)
                                 match &action {
-                                    tide_editor::EditorActionKind::InsertChar(_)
-                                    | tide_editor::EditorActionKind::Backspace
-                                    | tide_editor::EditorActionKind::Delete
-                                    | tide_editor::EditorActionKind::Enter => {
+                                    crate::tide_editor::EditorActionKind::InsertChar(_)
+                                    | crate::tide_editor::EditorActionKind::Backspace
+                                    | crate::tide_editor::EditorActionKind::Delete
+                                    | crate::tide_editor::EditorActionKind::Enter => {
                                         pane.delete_selection();
                                     }
                                     _ => {}
                                 }
                                 // Clear selection on movement and editing keys
                                 pane.selection = None;
-                                let is_save = matches!(action, tide_editor::EditorActionKind::Save);
+                                let is_save = matches!(action, crate::tide_editor::EditorActionKind::Save);
                                 // Intercept Save on untitled files -> open save-as input
                                 if is_save && pane.editor.file_path().is_none() {
                                     let base_dir = self.resolve_base_dir();
                                     let anchor = self.visual_pane_rects.iter()
                                         .find(|(pid, _)| *pid == id)
-                                        .map(|(_, r)| tide_core::Rect::new(r.x, r.y, r.width, crate::theme::TAB_BAR_HEIGHT))
-                                        .unwrap_or_else(|| tide_core::Rect::new(0.0, 0.0, 0.0, 0.0));
+                                        .map(|(_, r)| crate::tide_core::Rect::new(r.x, r.y, r.width, crate::theme::TAB_BAR_HEIGHT))
+                                        .unwrap_or_else(|| crate::tide_core::Rect::new(0.0, 0.0, 0.0, 0.0));
                                     self.modal.save_as_input = Some(crate::SaveAsInput::new(id, base_dir, anchor));
                                     return;
                                 }
@@ -264,19 +264,19 @@ impl crate::domain::ports::inward::ActionPort for App {
                         Some(PaneKind::Launcher(_)) => {
                             // Launcher key handling: T/E/O/B to select pane type, Escape to close
                             let choice = match key {
-                                tide_core::Key::Char('t') | tide_core::Key::Char('T') => {
+                                crate::tide_core::Key::Char('t') | crate::tide_core::Key::Char('T') => {
                                     Some(crate::action::LauncherChoice::Terminal)
                                 }
-                                tide_core::Key::Char('e') | tide_core::Key::Char('E') => {
+                                crate::tide_core::Key::Char('e') | crate::tide_core::Key::Char('E') => {
                                     Some(crate::action::LauncherChoice::NewFile)
                                 }
-                                tide_core::Key::Char('o') | tide_core::Key::Char('O') => {
+                                crate::tide_core::Key::Char('o') | crate::tide_core::Key::Char('O') => {
                                     Some(crate::action::LauncherChoice::OpenFile)
                                 }
-                                tide_core::Key::Char('b') | tide_core::Key::Char('B') => {
+                                crate::tide_core::Key::Char('b') | crate::tide_core::Key::Char('B') => {
                                     Some(crate::action::LauncherChoice::Browser)
                                 }
-                                tide_core::Key::Escape => {
+                                crate::tide_core::Key::Escape => {
                                     self.close_specific_pane(id);
                                     None
                                 }
@@ -402,10 +402,10 @@ impl crate::domain::ports::inward::ActionPort for App {
     /// Returns the new pane ID on success.
     fn split_pane_from(
         &mut self,
-        source: tide_core::PaneId,
+        source: crate::tide_core::PaneId,
         direction: SplitDirection,
         cwd: Option<std::path::PathBuf>,
-    ) -> Option<tide_core::PaneId> {
+    ) -> Option<crate::tide_core::PaneId> {
         // Unzoom before splitting so both panes are visible
         if self.focus.zoomed_pane.is_some() {
             self.focus.zoomed_pane = None;
@@ -578,10 +578,10 @@ impl crate::domain::ports::inward::ActionPort for App {
                 self.cache.pane_generations.clear();
             }
             GlobalAction::ScrollHalfPageUp => {
-                self.scroll_half_page(tide_input::Direction::Up);
+                self.scroll_half_page(crate::tide_input::Direction::Up);
             }
             GlobalAction::ScrollHalfPageDown => {
-                self.scroll_half_page(tide_input::Direction::Down);
+                self.scroll_half_page(crate::tide_input::Direction::Down);
             }
             GlobalAction::ToggleStacked => {
                 self.handle_toggle_stacked();
@@ -596,7 +596,7 @@ impl crate::domain::ports::inward::ActionPort for App {
 }
 
 /// Resolve the effective target pane for actions like Copy/Paste/Find.
-fn action_target_id(focused: Option<tide_core::PaneId>) -> Option<tide_core::PaneId> {
+fn action_target_id(focused: Option<crate::tide_core::PaneId>) -> Option<crate::tide_core::PaneId> {
     focused
 }
 
@@ -605,18 +605,18 @@ fn action_target_id(focused: Option<tide_core::PaneId>) -> Option<tide_core::Pan
 impl App {
     /// Add a pane to the right of the focused pane.
     /// Splits the focused pane horizontally.
-    fn add_pane_to_right(&mut self, focused: tide_core::PaneId, new_id: tide_core::PaneId) {
-        self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Horizontal, false);
+    fn add_pane_to_right(&mut self, focused: crate::tide_core::PaneId, new_id: crate::tide_core::PaneId) {
+        self.layout.insert_pane(focused, new_id, crate::tide_core::SplitDirection::Horizontal, false);
     }
 
     /// Route a non-terminal pane next to the correct pane.
     /// If focused is a terminal → add to right (split horizontally).
     /// If focused is non-terminal → add as vertical split next to the same pane.
-    fn add_to_non_terminal_group(&mut self, focused: tide_core::PaneId, new_id: tide_core::PaneId) {
+    fn add_to_non_terminal_group(&mut self, focused: crate::tide_core::PaneId, new_id: crate::tide_core::PaneId) {
         if matches!(self.panes.get(&focused), Some(crate::pane::PaneKind::Terminal(_))) {
             self.add_pane_to_right(focused, new_id);
         } else {
-            self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Vertical, false);
+            self.layout.insert_pane(focused, new_id, crate::tide_core::SplitDirection::Vertical, false);
         }
     }
 }

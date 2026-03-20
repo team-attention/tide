@@ -1,4 +1,4 @@
-use tide_core::LayoutEngine;
+use crate::tide_core::LayoutEngine;
 
 use crate::event_handler::drag_drop::PaneDragState;
 use crate::pane::PaneKind;
@@ -11,7 +11,7 @@ use crate::PaneLifecyclePort;
 impl App {
     /// Close a pane unconditionally (no dirty check, no branch cleanup check).
     /// Used by branch cleanup confirm/keep methods after cleanup is resolved.
-    pub(super) fn close_pane_final(&mut self, pane_id: tide_core::PaneId) {
+    pub(super) fn close_pane_final(&mut self, pane_id: crate::tide_core::PaneId) {
         // Cancel drag if the closing pane is the drag source
         if self.interaction.pane_drag.source_pane() == Some(pane_id) {
             self.interaction.pane_drag = PaneDragState::Idle;
@@ -24,7 +24,7 @@ impl App {
                 return;
             }
             // Show native confirmation before closing the app
-            if tide_platform::show_close_confirm() {
+            if crate::tide_platform::show_close_confirm() {
                 self.exit_app();
             }
             return;
@@ -64,7 +64,7 @@ impl App {
 
     /// Extract and retain a terminal's context before it is removed from panes.
     /// This allows associated panes to still resolve the terminal's cwd.
-    pub(super) fn retain_terminal_context(&mut self, pane_id: tide_core::PaneId) {
+    pub(super) fn retain_terminal_context(&mut self, pane_id: crate::tide_core::PaneId) {
         if let Some(PaneKind::Terminal(pane)) = self.panes.get(&pane_id) {
             // Only retain if some pane still references this terminal
             let has_dependents = self.assoc.associated_terminal.values().any(|&v| v == pane_id);

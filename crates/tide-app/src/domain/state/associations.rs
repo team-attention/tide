@@ -1,7 +1,7 @@
 // PaneAssociations — terminal ↔ pane associations.
 
 use std::collections::HashMap;
-use tide_core::PaneId;
+use crate::tide_core::PaneId;
 
 pub(crate) struct PaneAssociations {
     pub associated_terminal: HashMap<PaneId, PaneId>,

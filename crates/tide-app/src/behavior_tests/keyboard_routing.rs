@@ -3,19 +3,19 @@ use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::*;
 use crate::App;
-use tide_core::{Key, Modifiers};
+use crate::tide_core::{Key, Modifiers};
 use std::path::PathBuf;
 
 fn test_app() -> App {
     let mut app = App::new();
-    app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
 }
 
 fn app_with_editor() -> (App, u64) {
     let mut app = test_app();
-    let (layout, id) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     let pane = EditorPane::new_empty(id);
     app.panes.insert(id, PaneKind::Editor(pane));
@@ -75,7 +75,7 @@ fn escape_during_pane_drag_cancels_the_drag() {
     let (mut app, _) = app_with_editor();
     app.interaction.pane_drag = crate::event_handler::drag_drop::PaneDragState::PendingDrag {
         source_pane: 1,
-        press_pos: tide_core::Vec2::new(0.0, 0.0),
+        press_pos: crate::tide_core::Vec2::new(0.0, 0.0),
     };
     app.handle_key_down(Key::Escape, Modifiers::default(), None);
     assert!(matches!(app.interaction.pane_drag, crate::event_handler::drag_drop::PaneDragState::Idle));

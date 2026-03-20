@@ -3,8 +3,8 @@
 mod drag;
 mod selection;
 
-use tide_core::{FileTreeSource, InputEvent, MouseButton, Rect, Vec2};
-use tide_platform::WindowProxy;
+use crate::tide_core::{FileTreeSource, InputEvent, MouseButton, Rect, Vec2};
+use crate::tide_platform::WindowProxy;
 
 use crate::event_handler::drag_drop::PaneDragState;
 use crate::pane::PaneKind;
@@ -240,7 +240,7 @@ impl App {
                         return;
                     }
                     Some(crate::event_handler::drag_drop::HoverTarget::TitlebarTheme) => {
-                        self.handle_global_action(tide_input::GlobalAction::ToggleTheme);
+                        self.handle_global_action(crate::tide_input::GlobalAction::ToggleTheme);
                         return;
                     }
                     Some(crate::event_handler::drag_drop::HoverTarget::TitlebarSwap) => {
@@ -348,7 +348,7 @@ impl App {
                             self.window.last_cursor_pos.x - dock_rect.x,
                             self.window.last_cursor_pos.y - dock_rect.y,
                         );
-                        let dock_size = tide_core::Size::new(dock_rect.width, dock_rect.height);
+                        let dock_size = crate::tide_core::Size::new(dock_rect.width, dock_rect.height);
                         if let Some(tid) = self.focused_terminal_id() {
                             if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                                 tp.dock_layout.begin_drag(local_pos, dock_size);
@@ -550,7 +550,7 @@ impl App {
     }
 
     /// Apply scrollbar drag: set scroll position based on mouse Y within rect.
-    pub(super) fn apply_scrollbar_drag(&mut self, pane_id: tide_core::PaneId, rect: Rect, mouse_y: f32) {
+    pub(super) fn apply_scrollbar_drag(&mut self, pane_id: crate::tide_core::PaneId, rect: Rect, mouse_y: f32) {
         let cell_height = self.cell_size().height;
         let visible_rows = (rect.height / cell_height).floor() as usize;
         let ratio = ((mouse_y - rect.y) / rect.height).clamp(0.0, 1.0);

@@ -1,4 +1,4 @@
-use tide_core::{Rect, Vec2};
+use crate::tide_core::{Rect, Vec2};
 
 use crate::event_handler::drag_drop::{DropDestination, HoverTarget};
 use crate::pane::PaneKind;
@@ -125,7 +125,7 @@ impl App {
     }
 
     /// Get the notification bar rect for a pane.
-    fn notification_bar_rect(&self, pane_id: tide_core::PaneId) -> Option<Rect> {
+    fn notification_bar_rect(&self, pane_id: crate::tide_core::PaneId) -> Option<Rect> {
         let content_top_off = TAB_BAR_HEIGHT;
         if let Some(&(_, rect)) = self.visual_pane_rects.iter().find(|(id, _)| *id == pane_id) {
             let content_top = rect.y + content_top_off;
@@ -139,7 +139,7 @@ impl App {
     /// Handle conflict bar button click for any pane. Returns true if the click was consumed.
     fn handle_conflict_bar_click_inner(&mut self, pos: Vec2) -> bool {
         // Find which pane has a conflict bar under the click
-        let mut target_pane: Option<(tide_core::PaneId, Rect)> = None;
+        let mut target_pane: Option<(crate::tide_core::PaneId, Rect)> = None;
 
         let content_top_off = TAB_BAR_HEIGHT;
         for &(id, rect) in &self.visual_pane_rects {
@@ -296,7 +296,7 @@ impl App {
 
     /// Handle branch cleanup bar button clicks.
     /// Returns true if the click was consumed.
-    pub(crate) fn handle_branch_cleanup_click(&mut self, pos: tide_core::Vec2) -> bool {
+    pub(crate) fn handle_branch_cleanup_click(&mut self, pos: crate::tide_core::Vec2) -> bool {
         let bc_pane_id = match self.modal.branch_cleanup {
             Some(ref bc) => bc.pane_id,
             None => return false,
@@ -338,8 +338,8 @@ impl App {
 
     /// Handle a completed drop operation.
     /// Center zone swaps source and target. Directional zones create a new split.
-    pub(crate) fn handle_drop(&mut self, source: tide_core::PaneId, dest: DropDestination) {
-        use tide_core::{DropZone, LayoutEngine, SplitDirection};
+    pub(crate) fn handle_drop(&mut self, source: crate::tide_core::PaneId, dest: DropDestination) {
+        use crate::tide_core::{DropZone, LayoutEngine, SplitDirection};
 
         match dest {
             DropDestination::TreeRoot(zone) => {

@@ -6,7 +6,7 @@
 
 use std::time::Instant;
 
-use tide_core::TerminalBackend;
+use crate::tide_core::TerminalBackend;
 
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
@@ -23,9 +23,9 @@ pub(crate) enum TextInputTarget {
     GitSwitcher,
     FileFinder,
     SaveAsInput,
-    SearchBar(tide_core::PaneId),
-    BrowserUrlBar(tide_core::PaneId),
-    Pane(tide_core::PaneId),
+    SearchBar(crate::tide_core::PaneId),
+    BrowserUrlBar(crate::tide_core::PaneId),
+    Pane(crate::tide_core::PaneId),
     /// Input should be silently consumed (modal popup, file tree focus, etc.)
     Consumed,
 }
@@ -89,7 +89,7 @@ impl App {
 
     /// Compute visible editor rows and columns for a given pane.
     /// Used by text routing and IME commit paths to keep cursor visible.
-    pub(crate) fn visible_editor_size(&self, pane_id: tide_core::PaneId) -> (usize, usize) {
+    pub(crate) fn visible_editor_size(&self, pane_id: crate::tide_core::PaneId) -> (usize, usize) {
         let cs = self.window.cached_cell_size;
         let content_top = crate::theme::TAB_BAR_HEIGHT;
         let tree_rect = self.visual_pane_rects.iter()
@@ -208,10 +208,10 @@ impl App {
                         for ch in text.chars() {
                             // Map control characters to editor actions
                             let action = match ch {
-                                '\u{7f}' | '\u{8}' => tide_editor::EditorActionKind::Backspace,
-                                '\r' | '\n' => tide_editor::EditorActionKind::Enter,
+                                '\u{7f}' | '\u{8}' => crate::tide_editor::EditorActionKind::Backspace,
+                                '\r' | '\n' => crate::tide_editor::EditorActionKind::Enter,
                                 ch if ch.is_control() => continue,
-                                ch => tide_editor::EditorActionKind::InsertChar(ch),
+                                ch => crate::tide_editor::EditorActionKind::InsertChar(ch),
                             };
                             pane.editor.handle_action(action);
                         }
@@ -274,12 +274,12 @@ impl App {
 mod tests {
     use super::*;
     use crate::state::*;
-    use tide_core::Rect;
+    use crate::tide_core::Rect;
     use std::path::PathBuf;
 
     fn test_app() -> App {
         let mut app = App::new();
-        app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+        app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
         app.window.window_size = (960, 640);
         app
     }
@@ -293,7 +293,7 @@ mod tests {
     #[test]
     fn focused_editor_routes_to_pane() {
         let mut app = test_app();
-        let id: tide_core::PaneId = 1;
+        let id: crate::tide_core::PaneId = 1;
         app.panes.insert(id, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id)));
         app.focus.focused = Some(id);
         assert_eq!(app.text_input_target(), TextInputTarget::Pane(id));
@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn file_finder_overrides_pane() {
         let mut app = test_app();
-        let id: tide_core::PaneId = 1;
+        let id: crate::tide_core::PaneId = 1;
         app.panes.insert(id, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id)));
         app.focus.focused = Some(id);
         app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn git_switcher_overrides_pane() {
         let mut app = test_app();
-        let id: tide_core::PaneId = 1;
+        let id: crate::tide_core::PaneId = 1;
         app.panes.insert(id, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id)));
         app.focus.focused = Some(id);
         app.modal.git_switcher = Some(GitSwitcherState::new(
@@ -362,7 +362,7 @@ mod tests {
     #[test]
     fn search_bar_routes_to_search() {
         let mut app = test_app();
-        let id: tide_core::PaneId = 1;
+        let id: crate::tide_core::PaneId = 1;
         app.panes.insert(id, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id)));
         app.focus.focused = Some(id);
         app.focus.search_focus = Some(id);
@@ -372,7 +372,7 @@ mod tests {
     #[test]
     fn file_tree_focus_consumed() {
         let mut app = test_app();
-        let id: tide_core::PaneId = 1;
+        let id: crate::tide_core::PaneId = 1;
         app.panes.insert(id, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id)));
         app.focus.focused = Some(id);
         app.focus.focus_area = FocusArea::FileTree;
@@ -400,7 +400,7 @@ mod tests {
     #[test]
     fn context_menu_consumed() {
         let mut app = test_app();
-        let id: tide_core::PaneId = 1;
+        let id: crate::tide_core::PaneId = 1;
         app.panes.insert(id, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id)));
         app.focus.focused = Some(id);
         app.modal.context_menu = Some(ContextMenuState {
@@ -408,7 +408,7 @@ mod tests {
             path: PathBuf::from("/tmp"),
             is_dir: false,
             shell_idle: true,
-            position: tide_core::Vec2::new(0.0, 0.0),
+            position: crate::tide_core::Vec2::new(0.0, 0.0),
             selected: 0,
         });
         assert_eq!(app.text_input_target(), TextInputTarget::Consumed);
@@ -417,7 +417,7 @@ mod tests {
     #[test]
     fn priority_git_switcher_over_search_bar() {
         let mut app = test_app();
-        let id: tide_core::PaneId = 1;
+        let id: crate::tide_core::PaneId = 1;
         app.panes.insert(id, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id)));
         app.focus.focused = Some(id);
         app.focus.search_focus = Some(id);

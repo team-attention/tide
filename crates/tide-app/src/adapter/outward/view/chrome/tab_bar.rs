@@ -1,4 +1,4 @@
-use tide_core::{Rect, Renderer, TextStyle, Vec2};
+use crate::tide_core::{Rect, Renderer, TextStyle, Vec2};
 
 use crate::header;
 use crate::theme::*;
@@ -11,9 +11,9 @@ use crate::AppCorePort;
 /// and browser navigation bars. Returns the computed header hit zones.
 pub(super) fn render_pane_chrome(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
-    logical: tide_core::Size,
+    logical: crate::tide_core::Size,
     focused: Option<u64>,
     visual_pane_rects: &[(u64, Rect)],
 ) -> Vec<header::HeaderHitZone> {
@@ -119,7 +119,7 @@ pub(super) fn render_pane_chrome(
             p.border_focused
         } else if is_companion {
             // Dimmed version of border_focused -- same hue, lower alpha, no glow
-            tide_core::Color::new(p.border_focused.r, p.border_focused.g, p.border_focused.b, p.border_focused.a * 0.6)
+            crate::tide_core::Color::new(p.border_focused.r, p.border_focused.g, p.border_focused.b, p.border_focused.a * 0.6)
         } else {
             p.border_subtle
         };
@@ -128,7 +128,7 @@ pub(super) fn render_pane_chrome(
 
         // Focused pane: draw outer glow shadow
         if is_focused {
-            let shadow_color = tide_core::Color::new(0.769, 0.722, 0.651, 0.25);
+            let shadow_color = crate::tide_core::Color::new(0.769, 0.722, 0.651, 0.25);
             renderer.draw_chrome_shadow(rect, shadow_color, PANE_CORNER_RADIUS, 16.0, -4.0);
         }
 
@@ -148,7 +148,7 @@ pub(super) fn render_pane_chrome(
     let mut all_hit_zones = Vec::new();
 
     // Collect dock TabGroup info for ALL dock panes (always show tab bar in Dock)
-    let mut dock_tab_groups: std::collections::HashMap<u64, tide_layout::TabGroup> = std::collections::HashMap::new();
+    let mut dock_tab_groups: std::collections::HashMap<u64, crate::tide_layout::TabGroup> = std::collections::HashMap::new();
     for (_, pk) in &app.panes {
         if let crate::pane::PaneKind::Terminal(tp) = pk {
             for &(pid, _) in visual_pane_rects {
@@ -247,7 +247,7 @@ fn render_browser_nav_bar(
     bp: &crate::pane::browser::BrowserPane,
     pane_rect: Rect,
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
 ) {
     use unicode_width::UnicodeWidthChar;

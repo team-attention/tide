@@ -1,4 +1,4 @@
-use tide_core::{LayoutEngine, PaneId, SplitDirection};
+use crate::tide_core::{LayoutEngine, PaneId, SplitDirection};
 
 use crate::pane::PaneKind;
 use crate::state::FocusArea;

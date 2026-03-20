@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use tide_core::Renderer;
-use tide_platform::PlatformWindow;
-use tide_renderer::WgpuRenderer;
+use crate::tide_core::Renderer;
+use crate::tide_platform::PlatformWindow;
+use crate::tide_renderer::WgpuRenderer;
 
 use crate::rendering::render_thread::RenderThreadHandle;
 use crate::App;

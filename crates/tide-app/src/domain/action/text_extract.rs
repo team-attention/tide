@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use tide_core::{TerminalBackend, Vec2};
+use crate::tide_core::{TerminalBackend, Vec2};
 
 use crate::pane::PaneKind;
 use crate::theme::*;
@@ -10,7 +10,7 @@ use crate::AppCorePort;
 impl crate::TextExtractPort for App {
     /// Try to extract a URL from the terminal grid at the given click position.
     /// Checks if the click is within a detected URL range and extracts the URL string.
-    fn extract_url_at(&self, pane_id: tide_core::PaneId, position: Vec2) -> Option<String> {
+    fn extract_url_at(&self, pane_id: crate::tide_core::PaneId, position: Vec2) -> Option<String> {
         let pane = match self.panes.get(&pane_id) {
             Some(PaneKind::Terminal(p)) => p,
             _ => return None,
@@ -65,7 +65,7 @@ impl crate::TextExtractPort for App {
     /// Try to extract a file path from the terminal grid at the given click position.
     /// Scans the clicked row for path-like text and resolves against the terminal's CWD.
     /// Returns the resolved path and an optional line number (from `:42` suffix).
-    fn extract_file_path_at(&self, pane_id: tide_core::PaneId, position: Vec2) -> Option<(PathBuf, Option<usize>)> {
+    fn extract_file_path_at(&self, pane_id: crate::tide_core::PaneId, position: Vec2) -> Option<(PathBuf, Option<usize>)> {
         let pane = match self.panes.get(&pane_id) {
             Some(PaneKind::Terminal(p)) => p,
             _ => return None,
@@ -171,7 +171,7 @@ impl crate::TextExtractPort for App {
 
 impl App {
     /// Search for a file by name/relative-path in the project root directory.
-    fn find_file_in_project(&self, pane_id: tide_core::PaneId, filename: &str) -> Option<PathBuf> {
+    fn find_file_in_project(&self, pane_id: crate::tide_core::PaneId, filename: &str) -> Option<PathBuf> {
         let pane = match self.panes.get(&pane_id) {
             Some(PaneKind::Terminal(p)) => p,
             _ => return None,

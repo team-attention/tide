@@ -15,7 +15,7 @@ pub(crate) enum FileWatchEvent {
 }
 
 pub(crate) trait FileWatcherPort {
-    fn init(&mut self, waker: Option<tide_platform::WakeCallback>);
+    fn init(&mut self, waker: Option<crate::tide_platform::WakeCallback>);
     fn watch(&mut self, path: &Path);
     fn unwatch(&mut self, path: &Path);
     fn poll_events(&mut self) -> Vec<FileWatchEvent>;
@@ -29,7 +29,7 @@ pub(crate) struct RealFileWatcher {
     watcher: Option<notify::RecommendedWatcher>,
     rx: Option<std::sync::mpsc::Receiver<notify::Result<notify::Event>>>,
     dirty: Arc<AtomicBool>,
-    waker: Option<tide_platform::WakeCallback>,
+    waker: Option<crate::tide_platform::WakeCallback>,
 }
 
 impl RealFileWatcher {
@@ -70,7 +70,7 @@ impl RealFileWatcher {
 }
 
 impl FileWatcherPort for RealFileWatcher {
-    fn init(&mut self, waker: Option<tide_platform::WakeCallback>) {
+    fn init(&mut self, waker: Option<crate::tide_platform::WakeCallback>) {
         self.waker = waker;
     }
 
@@ -138,7 +138,7 @@ impl FileWatcherPort for RealFileWatcher {
 pub(crate) struct NoopFileWatcher;
 
 impl FileWatcherPort for NoopFileWatcher {
-    fn init(&mut self, _waker: Option<tide_platform::WakeCallback>) {}
+    fn init(&mut self, _waker: Option<crate::tide_platform::WakeCallback>) {}
     fn watch(&mut self, _path: &Path) {}
     fn unwatch(&mut self, _path: &Path) {}
     fn poll_events(&mut self) -> Vec<FileWatchEvent> { Vec::new() }

@@ -3,7 +3,7 @@
 //! Handles keyboard events for: file tree navigation, browser URL bar,
 //! and search bar.
 
-use tide_core::{FileTreeSource, Key, Modifiers};
+use crate::tide_core::{FileTreeSource, Key, Modifiers};
 
 use crate::pane::PaneKind;
 use crate::App;
@@ -94,7 +94,7 @@ impl App {
 
     pub(super) fn handle_browser_url_bar_key(
         &mut self,
-        pane_id: tide_core::PaneId,
+        pane_id: crate::tide_core::PaneId,
         key: Key,
         modifiers: &Modifiers,
     ) {
@@ -184,7 +184,7 @@ impl App {
 
     pub(super) fn handle_search_bar_key(
         &mut self,
-        search_pane_id: tide_core::PaneId,
+        search_pane_id: crate::tide_core::PaneId,
         key: Key,
         modifiers: &Modifiers,
     ) {

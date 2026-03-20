@@ -8,12 +8,12 @@ mod rendering;
 use std::io;
 use std::path::Path;
 
-use tide_core::PaneId;
-use tide_editor::input::EditorAction;
-use tide_editor::EditorState;
-use tide_editor::wrap::WrapMap;
+use crate::tide_core::PaneId;
+use crate::tide_editor::input::EditorAction;
+use crate::tide_editor::EditorState;
+use crate::tide_editor::wrap::WrapMap;
 
-use tide_editor::markdown::{PreviewLine, render_markdown_preview, MarkdownTheme};
+use crate::tide_editor::markdown::{PreviewLine, render_markdown_preview, MarkdownTheme};
 
 use crate::pane::Selection;
 use crate::ActionPort;
@@ -351,7 +351,7 @@ impl EditorPane {
 
     /// Convert a selection (char-indexed) to byte-offset positions for buffer operations.
     /// Returns (start, end) where start <= end in document order.
-    pub fn selection_byte_range(&self, sel: &Selection) -> (tide_editor::EditorPosition, tide_editor::EditorPosition) {
+    pub fn selection_byte_range(&self, sel: &Selection) -> (crate::tide_editor::EditorPosition, crate::tide_editor::EditorPosition) {
         let (start, end) = if sel.anchor <= sel.end {
             (sel.anchor, sel.end)
         } else {
@@ -360,8 +360,8 @@ impl EditorPane {
         let start_byte = self.char_col_to_byte(start.0, start.1);
         let end_byte = self.char_col_to_byte(end.0, end.1);
         (
-            tide_editor::EditorPosition { line: start.0, col: start_byte },
-            tide_editor::EditorPosition { line: end.0, col: end_byte },
+            crate::tide_editor::EditorPosition { line: start.0, col: start_byte },
+            crate::tide_editor::EditorPosition { line: end.0, col: end_byte },
         )
     }
 

@@ -1,10 +1,10 @@
-use tide_core::FileTreeSource;
-use tide_editor::input::EditorAction;
-use tide_input::Direction;
+use crate::tide_core::FileTreeSource;
+use crate::tide_editor::input::EditorAction;
+use crate::tide_input::Direction;
 
 use crate::pane::PaneKind;
 #[allow(unused_imports)]
-use tide_core::LayoutEngine;
+use crate::tide_core::LayoutEngine;
 use crate::state::FocusArea;
 use crate::App;
 use crate::FocusNavPort;
@@ -52,9 +52,9 @@ impl FocusNavPort for App {
         };
 
         // Only consider Stage pane rects (exclude dock panes)
-        let stage_ids: std::collections::HashSet<tide_core::PaneId> =
+        let stage_ids: std::collections::HashSet<crate::tide_core::PaneId> =
             self.layout.pane_ids().into_iter().collect();
-        let stage_rects: Vec<(tide_core::PaneId, tide_core::Rect)> = self.pane_rects.iter()
+        let stage_rects: Vec<(crate::tide_core::PaneId, crate::tide_core::Rect)> = self.pane_rects.iter()
             .filter(|(id, _)| stage_ids.contains(id))
             .copied()
             .collect();
@@ -70,7 +70,7 @@ impl FocusNavPort for App {
         let cx = current_rect.x + current_rect.width / 2.0;
         let cy = current_rect.y + current_rect.height / 2.0;
 
-        let mut best: Option<(tide_core::PaneId, f32)> = None;
+        let mut best: Option<(crate::tide_core::PaneId, f32)> = None;
         for &(id, rect) in &stage_rects {
             if id == current_id {
                 continue;

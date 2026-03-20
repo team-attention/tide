@@ -1,6 +1,6 @@
 // Layout computation and geometry utility methods extracted from main.rs
 
-use tide_core::{LayoutEngine, PaneDecorations, Rect, Size, SplitDirection};
+use crate::tide_core::{LayoutEngine, PaneDecorations, Rect, Size, SplitDirection};
 
 use crate::event_handler::drag_drop::HoverTarget;
 use crate::pane::PaneKind;
@@ -12,8 +12,8 @@ use crate::AppCorePort;
 use crate::LayoutPort;
 
 impl crate::domain::ports::inward::LayoutPort for App {
-    fn update_cursor_icon(&self, window: &tide_platform::WindowProxy) {
-        use tide_platform::CursorIcon;
+    fn update_cursor_icon(&self, window: &crate::tide_platform::WindowProxy) {
+        use crate::tide_platform::CursorIcon;
         let icon = match &self.interaction.hover_target {
             Some(HoverTarget::FileTreeEntry(_))
             | Some(HoverTarget::PaneTabBar(_))
@@ -43,7 +43,7 @@ impl crate::domain::ports::inward::LayoutPort for App {
     }
 
     /// Check if a position is on a file finder item. Returns the index into filtered list.
-    fn file_finder_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
+    fn file_finder_item_at(&self, pos: crate::tide_core::Vec2) -> Option<usize> {
         let finder = self.modal.file_finder.as_ref()?;
         let cell_size = self.cell_size();
         let logical = self.logical_size();
@@ -67,7 +67,7 @@ impl crate::domain::ports::inward::LayoutPort for App {
     }
 
     /// Hit-test the git switcher popup. Returns the filtered index of the item under pos.
-    fn git_switcher_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
+    fn git_switcher_item_at(&self, pos: crate::tide_core::Vec2) -> Option<usize> {
         let gs = self.modal.git_switcher.as_ref()?;
         let cell_size = self.cell_size();
         let logical = self.logical_size();
@@ -92,7 +92,7 @@ impl crate::domain::ports::inward::LayoutPort for App {
     }
 
     /// Check if a position is inside the git switcher popup area.
-    fn git_switcher_contains(&self, pos: tide_core::Vec2) -> bool {
+    fn git_switcher_contains(&self, pos: crate::tide_core::Vec2) -> bool {
         if let Some(ref gs) = self.modal.git_switcher {
             let cs = self.cell_size();
             let logical = self.logical_size();
@@ -104,7 +104,7 @@ impl crate::domain::ports::inward::LayoutPort for App {
     }
 
     /// Hit-test the git switcher popup tab bar. Returns the mode for the clicked tab.
-    fn git_switcher_tab_at(&self, pos: tide_core::Vec2) -> Option<crate::GitSwitcherMode> {
+    fn git_switcher_tab_at(&self, pos: crate::tide_core::Vec2) -> Option<crate::GitSwitcherMode> {
         let gs = self.modal.git_switcher.as_ref()?;
         let cell_size = self.cell_size();
         let cell_height = cell_size.height;
@@ -129,7 +129,7 @@ impl crate::domain::ports::inward::LayoutPort for App {
     }
 
     /// Hit-test the git switcher popup for button clicks (both Branches and Worktrees tabs).
-    fn git_switcher_button_at(&self, pos: tide_core::Vec2) -> Option<crate::SwitcherButton> {
+    fn git_switcher_button_at(&self, pos: crate::tide_core::Vec2) -> Option<crate::SwitcherButton> {
         let gs = self.modal.git_switcher.as_ref()?;
         let cell_size = self.cell_size();
         let cell_height = cell_size.height;
@@ -277,7 +277,7 @@ impl crate::domain::ports::inward::LayoutPort for App {
     }
 
     /// Check if a position is inside the file finder popup area.
-    fn file_finder_contains(&self, pos: tide_core::Vec2) -> bool {
+    fn file_finder_contains(&self, pos: crate::tide_core::Vec2) -> bool {
         if let Some(ref finder) = self.modal.file_finder {
             let cell_size = self.cell_size();
             let logical = self.logical_size();
@@ -290,7 +290,7 @@ impl crate::domain::ports::inward::LayoutPort for App {
 
     /// Check if a position is inside the save-as popup area.
     /// Uses the anchor_rect from the save-as input to position the popup.
-    fn save_as_contains(&self, pos: tide_core::Vec2) -> bool {
+    fn save_as_contains(&self, pos: crate::tide_core::Vec2) -> bool {
         if let Some(ref save_as) = self.modal.save_as_input {
             let cell_size = self.cell_size();
             let cell_height = cell_size.height;
@@ -312,7 +312,7 @@ impl crate::domain::ports::inward::LayoutPort for App {
     }
 
     /// Hit-test the context menu. Returns the item index.
-    fn context_menu_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
+    fn context_menu_item_at(&self, pos: crate::tide_core::Vec2) -> Option<usize> {
         let menu = self.modal.context_menu.as_ref()?;
         let cell_size = self.cell_size();
         let logical = self.logical_size();
@@ -688,7 +688,7 @@ impl crate::domain::ports::inward::LayoutPort for App {
         };
 
         // Collect browser pane IDs
-        let browser_ids: Vec<tide_core::PaneId> = self
+        let browser_ids: Vec<crate::tide_core::PaneId> = self
             .panes
             .iter()
             .filter_map(|(&id, pk)| {
@@ -712,7 +712,7 @@ impl crate::domain::ports::inward::LayoutPort for App {
             // Create webview if not yet initialized
             if bp.webview.is_none() {
                 let handle = unsafe {
-                    tide_platform::macos::webview::WebViewHandle::new(content_view)
+                    crate::tide_platform::macos::webview::WebViewHandle::new(content_view)
                 };
                 if let Some(handle) = handle {
                     bp.webview = Some(handle);

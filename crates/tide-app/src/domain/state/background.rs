@@ -1,7 +1,7 @@
 // BackgroundServices — git poll, event loop waker.
 
 pub(crate) struct BackgroundServices {
-    pub event_loop_waker: Option<tide_platform::WakeCallback>,
+    pub event_loop_waker: Option<crate::tide_platform::WakeCallback>,
     pub git_poll_rx: Option<std::sync::mpsc::Receiver<crate::update::file_tree::GitPollResults>>,
     pub git_poll_cwd_tx: Option<std::sync::mpsc::Sender<Vec<std::path::PathBuf>>>,
     pub git_poll_handle: Option<std::thread::JoinHandle<()>>,

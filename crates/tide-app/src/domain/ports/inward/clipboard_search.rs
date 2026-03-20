@@ -1,7 +1,7 @@
 // ClipboardSearchPort — clipboard operations and completion.
 // Source: domain/action/search.rs
 
-use tide_core::PaneId;
+use crate::tide_core::PaneId;
 
 pub(crate) trait ClipboardSearchPort {
     fn handle_paste(&mut self);

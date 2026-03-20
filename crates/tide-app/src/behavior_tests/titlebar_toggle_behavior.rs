@@ -8,14 +8,14 @@ use crate::WorkspaceNavPort;
 
 fn test_app() -> App {
     let mut app = App::new();
-    app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
 }
 
 fn app_with_real_terminal() -> (App, u64) {
     let mut app = test_app();
-    let (layout, tid) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, tid) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     let tp = TerminalPane::with_cwd(tid, 80, 24, None, true).unwrap();
     app.panes.insert(tid, PaneKind::Terminal(tp));

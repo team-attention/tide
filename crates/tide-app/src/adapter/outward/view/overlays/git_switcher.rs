@@ -1,4 +1,4 @@
-use tide_core::{Color, Rect, Renderer, TextStyle, Vec2};
+use crate::tide_core::{Color, Rect, Renderer, TextStyle, Vec2};
 
 use crate::theme::*;
 use crate::state::abbreviate_path;
@@ -10,7 +10,7 @@ use super::{visual_width, draw_popup_rounded_bg, draw_popup_scrim, draw_cursor_b
 /// Render git switcher popup overlay (integrated branch + worktree popup).
 pub(super) fn render_git_switcher(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
 ) {
     let gs = match app.modal.git_switcher {
@@ -165,7 +165,7 @@ pub(super) fn render_git_switcher(
     // When `busy` is true, Delete and Switch are hidden.
     // `show_delete` controls whether the delete button is shown (hidden for main worktree).
     // When `fi` matches `delete_confirm`, delete button shows "Delete?" filled red.
-    let render_action_buttons = |renderer: &mut tide_renderer::WgpuRenderer,
+    let render_action_buttons = |renderer: &mut crate::tide_renderer::WgpuRenderer,
                                   y: f32, _item_y: f32, show_delete: bool, fi: usize| {
         let confirming = delete_confirm_idx == Some(fi);
         let btn_h = cell_height + 4.0; // taller buttons for 36px rows

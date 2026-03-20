@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use tide_core::LayoutEngine;
+use crate::tide_core::LayoutEngine;
 
 use crate::event_handler::drag_drop::PaneDragState;
 use crate::pane::browser::BrowserPane;
@@ -18,7 +18,7 @@ use crate::PaneLifecyclePort;
 use super::LauncherChoice;
 
 impl crate::domain::ports::inward::PaneLifecyclePort for App {
-    fn create_terminal_pane(&mut self, id: tide_core::PaneId, cwd: Option<std::path::PathBuf>) {
+    fn create_terminal_pane(&mut self, id: crate::tide_core::PaneId, cwd: Option<std::path::PathBuf>) {
         let cell_size = self.cell_size();
         if cell_size.width <= 0.0 || cell_size.height <= 0.0 {
             log::error!("Cannot create terminal pane: cell_size is zero ({:?})", cell_size);
@@ -41,7 +41,7 @@ impl crate::domain::ports::inward::PaneLifecyclePort for App {
     }
 
     /// Respawn a new shell in a dead terminal pane, preserving its position in the layout.
-    fn respawn_terminal(&mut self, id: tide_core::PaneId) {
+    fn respawn_terminal(&mut self, id: crate::tide_core::PaneId) {
         // Get the CWD of the dead terminal before removing it
         let cwd = if let Some(PaneKind::Terminal(pane)) = self.panes.get(&id) {
             pane.context.cwd.clone().or_else(|| pane.backend.detect_cwd_fallback())
@@ -63,7 +63,7 @@ impl crate::domain::ports::inward::PaneLifecyclePort for App {
 
     /// Resolve the context terminal for the currently focused pane.
     /// If focused is a terminal, returns it. Otherwise follows the association chain.
-    fn resolve_context_terminal_id(&self) -> Option<tide_core::PaneId> {
+    fn resolve_context_terminal_id(&self) -> Option<crate::tide_core::PaneId> {
         let focused = self.focus.focused?;
         if matches!(self.panes.get(&focused), Some(PaneKind::Terminal(_))) {
             return Some(focused);
@@ -177,7 +177,7 @@ impl crate::domain::ports::inward::PaneLifecyclePort for App {
                     } else {
                         // No TabGroup — fall through to split
                         let cwd = self.focused_terminal_cwd();
-                        self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Horizontal, false);
+                        self.layout.insert_pane(focused, new_id, crate::tide_core::SplitDirection::Horizontal, false);
                         if self.focus.zoomed_pane.is_some() {
                             self.focus.zoomed_pane = Some(new_id);
                         }
@@ -186,7 +186,7 @@ impl crate::domain::ports::inward::PaneLifecyclePort for App {
                     }
                 } else {
                     let new_id = self.layout.alloc_id();
-                    self.layout.insert_pane(focused, new_id, tide_core::SplitDirection::Horizontal, false);
+                    self.layout.insert_pane(focused, new_id, crate::tide_core::SplitDirection::Horizontal, false);
                     if self.focus.zoomed_pane.is_some() {
                         self.focus.zoomed_pane = Some(new_id);
                     }
@@ -202,7 +202,7 @@ impl crate::domain::ports::inward::PaneLifecyclePort for App {
     }
 
     /// Replace a Launcher pane with the chosen pane type.
-    fn resolve_launcher(&mut self, launcher_id: tide_core::PaneId, choice: LauncherChoice) {
+    fn resolve_launcher(&mut self, launcher_id: crate::tide_core::PaneId, choice: LauncherChoice) {
         let context_terminal = self.resolve_context_terminal_id();
         match choice {
             LauncherChoice::Terminal => {
@@ -263,7 +263,7 @@ impl crate::domain::ports::inward::PaneLifecyclePort for App {
     /// Routes to the correct layout based on focus_area:
     /// - Stage → create Terminal directly in main layout
     /// - Dock → split in dock layout (new LeafGroup with Launcher)
-    fn split_with_launcher(&mut self, direction: tide_core::SplitDirection) {
+    fn split_with_launcher(&mut self, direction: crate::tide_core::SplitDirection) {
         let focused = match self.focus.focused {
             Some(id) => id,
             None => return,
@@ -347,7 +347,7 @@ impl crate::domain::ports::inward::PaneLifecyclePort for App {
 
     /// Replace an existing pane (e.g. a Launcher) with an editor for the given file.
     /// The editor reuses the same layout slot.
-    fn replace_pane_with_editor(&mut self, pane_id: tide_core::PaneId, path: PathBuf) {
+    fn replace_pane_with_editor(&mut self, pane_id: crate::tide_core::PaneId, path: PathBuf) {
         // Check if already open anywhere -> activate & focus (and close the launcher)
         for (&id, pane) in &self.panes {
             if let PaneKind::Editor(editor) = pane {
@@ -506,7 +506,7 @@ impl crate::domain::ports::inward::PaneLifecyclePort for App {
                 if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&active_id) {
                     let target_line = line.saturating_sub(1); // 1-based to 0-based
                     pane.handle_action(
-                        tide_editor::input::EditorAction::SetCursor { line: target_line, col: 0 },
+                        crate::tide_editor::input::EditorAction::SetCursor { line: target_line, col: 0 },
                         visible_rows,
                     );
                     pane.editor.ensure_cursor_visible(visible_rows.max(30));
@@ -517,7 +517,7 @@ impl crate::domain::ports::inward::PaneLifecyclePort for App {
 
     // ── Closing ──
 
-    fn close_editor_panel_tab(&mut self, tab_id: tide_core::PaneId) {
+    fn close_editor_panel_tab(&mut self, tab_id: crate::tide_core::PaneId) {
         // Browser panes close immediately (no dirty check)
         if matches!(self.panes.get(&tab_id), Some(PaneKind::Browser(_))) {
             self.force_close_editor_panel_tab(tab_id);
@@ -538,7 +538,7 @@ impl crate::domain::ports::inward::PaneLifecyclePort for App {
         self.force_close_editor_panel_tab(tab_id);
     }
 
-    fn force_close_editor_panel_tab(&mut self, tab_id: tide_core::PaneId) {
+    fn force_close_editor_panel_tab(&mut self, tab_id: crate::tide_core::PaneId) {
         // Cancel drag if the closing pane is the drag source
         if self.interaction.pane_drag.source_pane() == Some(tab_id) {
             self.interaction.pane_drag = PaneDragState::Idle;
@@ -626,7 +626,7 @@ impl crate::domain::ports::inward::PaneLifecyclePort for App {
         self.compute_layout();
     }
 
-    fn complete_save_as(&mut self, pane_id: tide_core::PaneId, filename: &str) {
+    fn complete_save_as(&mut self, pane_id: crate::tide_core::PaneId, filename: &str) {
         let path = if std::path::Path::new(filename).is_absolute() {
             PathBuf::from(filename)
         } else {
@@ -653,7 +653,7 @@ impl crate::domain::ports::inward::PaneLifecyclePort for App {
         self.cache.invalidate_chrome();
     }
 
-    fn close_specific_pane(&mut self, pane_id: tide_core::PaneId) {
+    fn close_specific_pane(&mut self, pane_id: crate::tide_core::PaneId) {
         // Check if editor is dirty -> show save confirm bar
         if let Some(PaneKind::Editor(pane)) = self.panes.get(&pane_id) {
             if pane.editor.is_modified() && pane.editor.file_path().is_some() {
@@ -684,7 +684,7 @@ impl crate::domain::ports::inward::PaneLifecyclePort for App {
         self.force_close_specific_pane(pane_id);
     }
 
-    fn force_close_specific_pane(&mut self, pane_id: tide_core::PaneId) {
+    fn force_close_specific_pane(&mut self, pane_id: crate::tide_core::PaneId) {
         // Cancel save-as if the target pane is being closed
         if self.modal.save_as_input.as_ref().is_some_and(|s| s.pane_id == pane_id) {
             self.modal.save_as_input = None;
@@ -761,8 +761,8 @@ impl crate::domain::ports::inward::PaneLifecyclePort for App {
                 let base_dir = self.resolve_base_dir();
                 let anchor = self.visual_pane_rects.iter()
                     .find(|(id, _)| *id == pane_id)
-                    .map(|(_, r)| tide_core::Rect::new(r.x, r.y, r.width, crate::theme::TAB_BAR_HEIGHT))
-                    .unwrap_or_else(|| tide_core::Rect::new(0.0, 0.0, 0.0, 0.0));
+                    .map(|(_, r)| crate::tide_core::Rect::new(r.x, r.y, r.width, crate::theme::TAB_BAR_HEIGHT))
+                    .unwrap_or_else(|| crate::tide_core::Rect::new(0.0, 0.0, 0.0, 0.0));
                 self.modal.save_as_input = Some(crate::SaveAsInput::new(pane_id, base_dir, anchor));
                 return;
             }

@@ -1,7 +1,7 @@
 // AppCorePort — core App helpers: sizing, font, dock zoom.
 // Source: app.rs
 
-use tide_core::{PaneId, Size};
+use crate::tide_core::{PaneId, Size};
 
 pub(crate) trait AppCorePort {
     fn dock_zoomed_pane(&self) -> Option<PaneId>;

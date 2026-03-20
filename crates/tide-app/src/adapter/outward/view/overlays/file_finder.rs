@@ -1,4 +1,4 @@
-use tide_core::{Color, Rect, Renderer, TextStyle, Vec2};
+use crate::tide_core::{Color, Rect, Renderer, TextStyle, Vec2};
 
 use crate::theme::*;
 use crate::ui::file_icon;
@@ -10,7 +10,7 @@ use super::{visual_width, draw_popup_rounded_bg, draw_popup_scrim, draw_cursor_b
 /// Render file finder UI on top layer (visible regardless of tab state).
 pub(super) fn render_file_finder(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
 ) {
     let finder = match app.modal.file_finder {

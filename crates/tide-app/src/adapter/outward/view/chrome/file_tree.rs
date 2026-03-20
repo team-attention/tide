@@ -1,4 +1,4 @@
-use tide_core::{FileTreeSource, Rect, Renderer, TextStyle, Vec2};
+use crate::tide_core::{FileTreeSource, Rect, Renderer, TextStyle, Vec2};
 
 use crate::theme::*;
 use crate::ui::file_icon;
@@ -9,9 +9,9 @@ use crate::AppCorePort;
 /// Render the file tree panel (rounded border, header, entries, cursor highlight).
 pub(super) fn render_file_tree(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
-    logical: tide_core::Size,
+    logical: crate::tide_core::Size,
     file_tree_scroll: f32,
 ) {
     let tree_visual_rect = app.ft.rect.unwrap_or(Rect::new(
@@ -36,7 +36,7 @@ pub(super) fn render_file_tree(
 
     // Shadow when focused (matches pane style)
     if tree_focused {
-        let shadow_color = tide_core::Color::new(0.769, 0.722, 0.651, 0.25);
+        let shadow_color = crate::tide_core::Color::new(0.769, 0.722, 0.651, 0.25);
         renderer.draw_chrome_shadow(r_border, shadow_color, PANE_CORNER_RADIUS, 16.0, -4.0);
     }
 
@@ -110,7 +110,7 @@ pub(super) fn render_file_tree(
             // Bottom separator line (accent when focused)
             let sep_color = if tree_focused {
                 let accent = p.dock_tab_underline;
-                tide_core::Color::new(accent.r, accent.g, accent.b, 0.35)
+                crate::tide_core::Color::new(accent.r, accent.g, accent.b, 0.35)
             } else {
                 p.border_subtle
             };
@@ -193,18 +193,18 @@ pub(super) fn render_file_tree(
             };
 
             let status_color = git_color.and_then(|gs| match gs {
-                tide_core::FileGitStatus::Modified => Some(p.git_modified),
-                tide_core::FileGitStatus::Added | tide_core::FileGitStatus::Untracked => Some(p.git_added),
-                tide_core::FileGitStatus::Conflict => Some(p.git_conflict),
-                tide_core::FileGitStatus::Deleted => None, // deleted files won't appear in tree
+                crate::tide_core::FileGitStatus::Modified => Some(p.git_modified),
+                crate::tide_core::FileGitStatus::Added | crate::tide_core::FileGitStatus::Untracked => Some(p.git_added),
+                crate::tide_core::FileGitStatus::Conflict => Some(p.git_conflict),
+                crate::tide_core::FileGitStatus::Deleted => None, // deleted files won't appear in tree
             });
 
             // Git status badge letter (right-aligned)
             let status_badge = git_color.and_then(|gs| match gs {
-                tide_core::FileGitStatus::Modified => Some("M"),
-                tide_core::FileGitStatus::Added | tide_core::FileGitStatus::Untracked => Some("U"),
-                tide_core::FileGitStatus::Conflict => Some("!"),
-                tide_core::FileGitStatus::Deleted => None,
+                crate::tide_core::FileGitStatus::Modified => Some("M"),
+                crate::tide_core::FileGitStatus::Added | crate::tide_core::FileGitStatus::Untracked => Some("U"),
+                crate::tide_core::FileGitStatus::Conflict => Some("!"),
+                crate::tide_core::FileGitStatus::Deleted => None,
             });
 
             // Icon -- directories always keep standard icon color (per Tide.pen)
@@ -285,7 +285,7 @@ pub(super) fn render_file_tree(
                 );
                 // Warm accent row highlight (more visible than hover)
                 let accent = p.dock_tab_underline;
-                let row_bg = tide_core::Color::new(accent.r, accent.g, accent.b, 0.12);
+                let row_bg = crate::tide_core::Color::new(accent.r, accent.g, accent.b, 0.12);
                 renderer.draw_chrome_rounded_rect(row_rect, row_bg, FILE_TREE_ROW_RADIUS);
                 // Left accent bar on cursor row
                 renderer.draw_chrome_rect(

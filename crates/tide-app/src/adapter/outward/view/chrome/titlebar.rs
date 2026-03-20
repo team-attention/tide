@@ -1,4 +1,4 @@
-use tide_core::{Rect, Renderer, TextStyle, Vec2};
+use crate::tide_core::{Rect, Renderer, TextStyle, Vec2};
 
 use crate::event_handler::drag_drop::HoverTarget;
 use crate::theme::*;
@@ -10,9 +10,9 @@ use crate::PaneLifecyclePort;
 /// Also renders the workspace sidebar if visible.
 pub(super) fn render_titlebar_and_sidebar(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
-    logical: tide_core::Size,
+    logical: crate::tide_core::Size,
 ) {
     // Draw titlebar background, border, and title (macOS transparent titlebar)
     if app.window.top_inset > 0.0 {
@@ -115,7 +115,7 @@ pub(super) fn render_titlebar_and_sidebar(
 
             // Helper: render a titlebar toggle button (icon + ⌘N hint, badge style)
             // Returns the total width consumed
-            let render_titlebar_btn = |renderer: &mut tide_renderer::WgpuRenderer,
+            let render_titlebar_btn = |renderer: &mut crate::tide_renderer::WgpuRenderer,
                                         icon_char: &str,
                                         hint: &str,
                                         hint_char_count: usize,
@@ -138,7 +138,7 @@ pub(super) fn render_titlebar_and_sidebar(
                 } else if is_active {
                     p.badge_bg_unfocused
                 } else {
-                    tide_core::Color::new(0.0, 0.0, 0.0, 0.0)
+                    crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.0)
                 };
                 if bg_color.a > 0.0 {
                     renderer.draw_chrome_rounded_rect(btn_rect, bg_color, 4.0);
@@ -276,7 +276,7 @@ pub(super) fn render_titlebar_and_sidebar(
                 }
             };
             let name_color = if is_active { p.tab_text_focused } else {
-                tide_core::Color::new(0.627, 0.627, 0.647, 1.0) // #A0A0A5
+                crate::tide_core::Color::new(0.627, 0.627, 0.647, 1.0) // #A0A0A5
             };
             // Center text horizontally and vertically in compact mode
             let (name_text_x, name_text_y) = if compact {

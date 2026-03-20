@@ -1,6 +1,6 @@
 use super::*;
 use std::path::PathBuf;
-use tide_core::Rect;
+use crate::tide_core::Rect;
 
 // ── InputLine ──
 

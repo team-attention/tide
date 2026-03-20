@@ -4,18 +4,18 @@ use crate::pane::editor::EditorPane;
 use crate::state::FocusArea;
 use crate::App;
 use crate::DockPort;
-use tide_core::LayoutEngine;
+use crate::tide_core::LayoutEngine;
 
 fn test_app() -> App {
     let mut app = App::new();
-    app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
 }
 
 fn app_with_real_terminal() -> (App, u64) {
     let mut app = test_app();
-    let (layout, tid) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, tid) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     let tp = TerminalPane::with_cwd(tid, 80, 24, None, true).unwrap();
     app.panes.insert(tid, PaneKind::Terminal(tp));
@@ -27,7 +27,7 @@ fn app_with_real_terminal() -> (App, u64) {
 
 fn app_with_two_real_terminals() -> (App, u64, u64) {
     let (mut app, t1) = app_with_real_terminal();
-    let t2 = app.layout.split(t1, tide_core::SplitDirection::Vertical);
+    let t2 = app.layout.split(t1, crate::tide_core::SplitDirection::Vertical);
     let tp2 = TerminalPane::with_cwd(t2, 80, 24, None, true).unwrap();
     app.panes.insert(t2, PaneKind::Terminal(tp2));
     (app, t1, t2)
@@ -319,7 +319,7 @@ fn drag_out_of_pinned_group_unpins_pane() {
     assert!(app.is_pane_pinned(e1));
 
     // Drop onto dock root = unpin
-    app.handle_drop(e1, DropDestination::DockRoot(tide_core::DropZone::Right));
+    app.handle_drop(e1, DropDestination::DockRoot(crate::tide_core::DropZone::Right));
 
     assert!(!app.is_pane_pinned(e1), "pane should be unpinned after drop out");
 }

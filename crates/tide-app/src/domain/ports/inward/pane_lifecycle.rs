@@ -2,7 +2,7 @@
 // Source: domain/action/pane_create.rs + domain/action/pane_close.rs
 
 use std::path::PathBuf;
-use tide_core::PaneId;
+use crate::tide_core::PaneId;
 
 pub(crate) trait PaneLifecyclePort {
     // ── Creation ──
@@ -13,7 +13,7 @@ pub(crate) trait PaneLifecyclePort {
     fn new_editor_pane(&mut self);
     fn new_terminal_tab(&mut self);
     fn resolve_launcher(&mut self, launcher_id: PaneId, choice: crate::action::LauncherChoice);
-    fn split_with_launcher(&mut self, direction: tide_core::SplitDirection);
+    fn split_with_launcher(&mut self, direction: crate::tide_core::SplitDirection);
     fn open_browser_pane(&mut self, url: Option<String>);
     fn replace_pane_with_editor(&mut self, pane_id: PaneId, path: PathBuf);
     fn open_editor_pane(&mut self, path: PathBuf);

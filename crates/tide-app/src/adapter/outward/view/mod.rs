@@ -8,7 +8,7 @@ mod overlays;
 pub(crate) mod render_thread;
 pub(crate) mod ui;
 
-use tide_core::{Rect, Renderer};
+use crate::tide_core::{Rect, Renderer};
 
 use crate::pane::PaneKind;
 use crate::theme::*;
@@ -20,8 +20,8 @@ use crate::LayoutPort;
 /// Compute the bar offset for a pane. Returns CONFLICT_BAR_HEIGHT if a notification bar
 /// (conflict or save confirm) is visible, else 0.
 pub(super) fn bar_offset_for(
-    pane_id: tide_core::PaneId,
-    panes: &std::collections::HashMap<tide_core::PaneId, PaneKind>,
+    pane_id: crate::tide_core::PaneId,
+    panes: &std::collections::HashMap<crate::tide_core::PaneId, PaneKind>,
     save_confirm: &Option<crate::SaveConfirmState>,
 ) -> f32 {
     if let Some(ref sc) = save_confirm {
@@ -253,7 +253,7 @@ impl App {
     }
 
     /// Insert preview: semi-transparent fill + thin border.
-    fn draw_insert_preview(renderer: &mut tide_renderer::WgpuRenderer, preview: Rect, p: &ThemePalette) {
+    fn draw_insert_preview(renderer: &mut crate::tide_renderer::WgpuRenderer, preview: Rect, p: &ThemePalette) {
         renderer.draw_rect(preview, p.drop_fill);
         let bw = DROP_PREVIEW_BORDER_WIDTH;
         renderer.draw_rect(Rect::new(preview.x, preview.y, preview.width, bw), p.drop_border);
@@ -263,7 +263,7 @@ impl App {
     }
 
     /// Swap preview: thick border only, no fill — visually distinct from insert.
-    fn draw_swap_preview(renderer: &mut tide_renderer::WgpuRenderer, preview: Rect, p: &ThemePalette) {
+    fn draw_swap_preview(renderer: &mut crate::tide_renderer::WgpuRenderer, preview: Rect, p: &ThemePalette) {
         let bw = SWAP_PREVIEW_BORDER_WIDTH;
         renderer.draw_rect(Rect::new(preview.x, preview.y, preview.width, bw), p.swap_border);
         renderer.draw_rect(Rect::new(preview.x, preview.y + preview.height - bw, preview.width, bw), p.swap_border);

@@ -2,7 +2,7 @@ mod file_tree;
 mod tab_bar;
 mod titlebar;
 
-use tide_core::Rect;
+use crate::tide_core::Rect;
 
 use crate::header;
 use crate::theme::*;
@@ -15,9 +15,9 @@ use crate::App;
 /// Returns the computed header hit zones for click handling.
 pub(crate) fn render_chrome(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
-    logical: tide_core::Size,
+    logical: crate::tide_core::Size,
     focused: Option<u64>,
     show_file_tree: bool,
     file_tree_scroll: f32,

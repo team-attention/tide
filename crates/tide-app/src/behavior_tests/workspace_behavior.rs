@@ -6,11 +6,11 @@ use crate::update::workspace::Workspace;
 use crate::App;
 use crate::ActionPort;
 use std::collections::HashMap;
-use tide_layout::SplitLayout;
+use crate::tide_layout::SplitLayout;
 
 fn test_app() -> App {
     let mut app = App::new();
-    app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
 }
@@ -97,7 +97,7 @@ fn workspace_prev_wraps_from_first_to_last() {
     // UC-1 BR-4: WorkspacePrev wraps from first to last
     let mut app = app_with_two_workspaces();
     assert_eq!(app.ws.active, 0);
-    app.handle_global_action(tide_input::GlobalAction::WorkspacePrev);
+    app.handle_global_action(crate::tide_input::GlobalAction::WorkspacePrev);
     assert_eq!(app.ws.active, 1);
 }
 
@@ -107,7 +107,7 @@ fn workspace_next_wraps_from_last_to_first() {
     let mut app = app_with_two_workspaces();
     app.switch_workspace(1);
     assert_eq!(app.ws.active, 1);
-    app.handle_global_action(tide_input::GlobalAction::WorkspaceNext);
+    app.handle_global_action(crate::tide_input::GlobalAction::WorkspaceNext);
     assert_eq!(app.ws.active, 0);
 }
 
@@ -196,8 +196,8 @@ fn toggling_workspace_sidebar_toggles_visibility() {
     // UC-3 BR-9: Toggle flips visibility state (default: closed)
     let mut app = test_app();
     assert!(!app.ws.show_sidebar);
-    app.handle_global_action(tide_input::GlobalAction::ToggleWorkspaceSidebar);
+    app.handle_global_action(crate::tide_input::GlobalAction::ToggleWorkspaceSidebar);
     assert!(app.ws.show_sidebar);
-    app.handle_global_action(tide_input::GlobalAction::ToggleWorkspaceSidebar);
+    app.handle_global_action(crate::tide_input::GlobalAction::ToggleWorkspaceSidebar);
     assert!(!app.ws.show_sidebar);
 }

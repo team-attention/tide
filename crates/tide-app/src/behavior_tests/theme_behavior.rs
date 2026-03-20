@@ -6,7 +6,7 @@ use crate::ActionPort;
 
 fn test_app() -> App {
     let mut app = App::new();
-    app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
 }
@@ -25,9 +25,9 @@ fn toggle_theme_switches_between_dark_and_light() {
     // UC-1 BR-2: Toggle switches between dark and light
     let mut app = test_app();
     assert!(app.window.dark_mode);
-    app.handle_global_action(tide_input::GlobalAction::ToggleTheme);
+    app.handle_global_action(crate::tide_input::GlobalAction::ToggleTheme);
     assert!(!app.window.dark_mode);
-    app.handle_global_action(tide_input::GlobalAction::ToggleTheme);
+    app.handle_global_action(crate::tide_input::GlobalAction::ToggleTheme);
     assert!(app.window.dark_mode);
 }
 
@@ -35,13 +35,13 @@ fn toggle_theme_switches_between_dark_and_light() {
 fn toggle_theme_clears_all_pane_generations_in_render_cache() {
     // UC-1 BR-3: Toggle clears all pane_generations in RenderCache
     let mut app = test_app();
-    let (layout, id) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     app.panes.insert(id, PaneKind::Editor(EditorPane::new_empty(id)));
     app.focus.focused = Some(id);
     app.cache.pane_generations.insert(id, 42);
 
-    app.handle_global_action(tide_input::GlobalAction::ToggleTheme);
+    app.handle_global_action(crate::tide_input::GlobalAction::ToggleTheme);
     assert!(app.cache.pane_generations.is_empty());
 }
 

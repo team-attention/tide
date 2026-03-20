@@ -1,7 +1,7 @@
 // InteractionState — mouse/drag/scroll interaction state.
 
 use std::collections::HashMap;
-use tide_core::{PaneId, Rect};
+use crate::tide_core::{PaneId, Rect};
 
 pub(crate) struct InteractionState {
     pub pane_drag: crate::event_handler::drag_drop::PaneDragState,

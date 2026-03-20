@@ -1,4 +1,4 @@
-use tide_core::{DropZone, PaneId, Rect, SplitDirection, Vec2};
+use crate::tide_core::{DropZone, PaneId, Rect, SplitDirection, Vec2};
 
 use crate::theme::*;
 use crate::App;
@@ -238,7 +238,7 @@ impl App {
         match dest {
             DropDestination::TreeRoot(zone) | DropDestination::TreePane(_, zone)
             | DropDestination::DockRoot(zone) => {
-                if *zone == tide_core::DropZone::Center {
+                if *zone == crate::tide_core::DropZone::Center {
                     return None;
                 }
                 let target_id = match dest {
@@ -260,17 +260,17 @@ impl App {
 
                 if use_dock {
                     let dock_area = self.dock_area_rect?;
-                    let dock_size = tide_core::Size::new(dock_area.width, dock_area.height);
+                    let dock_size = crate::tide_core::Size::new(dock_area.width, dock_area.height);
 
                     // Self-drop from tab group: compute preview rect directly
                     // (simulate_drop fails because active tab's rect gets filtered out)
                     if target_id == Some(source) {
                         let (w, h) = (dock_size.width, dock_size.height);
                         return Some(match *zone {
-                            tide_core::DropZone::Top => Rect::new(0.0, 0.0, w, h * 0.5),
-                            tide_core::DropZone::Bottom => Rect::new(0.0, h * 0.5, w, h * 0.5),
-                            tide_core::DropZone::Left => Rect::new(0.0, 0.0, w * 0.5, h),
-                            tide_core::DropZone::Right => Rect::new(w * 0.5, 0.0, w * 0.5, h),
+                            crate::tide_core::DropZone::Top => Rect::new(0.0, 0.0, w, h * 0.5),
+                            crate::tide_core::DropZone::Bottom => Rect::new(0.0, h * 0.5, w, h * 0.5),
+                            crate::tide_core::DropZone::Left => Rect::new(0.0, 0.0, w * 0.5, h),
+                            crate::tide_core::DropZone::Right => Rect::new(w * 0.5, 0.0, w * 0.5, h),
                             _ => return None,
                         });
                     }
@@ -284,7 +284,7 @@ impl App {
                 }
 
                 let pane_area = self.pane_area_rect?;
-                let pane_area_size = tide_core::Size::new(pane_area.width, pane_area.height);
+                let pane_area_size = crate::tide_core::Size::new(pane_area.width, pane_area.height);
                 self.layout.simulate_drop(source, target_id, *zone, true, pane_area_size)
             }
             DropDestination::Workspace(_) => None,

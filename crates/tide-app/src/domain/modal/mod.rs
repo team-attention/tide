@@ -1,7 +1,7 @@
 // ModalStack and all modal state types.
 
 use std::path::PathBuf;
-use tide_core::{PaneId, Rect, Vec2};
+use crate::tide_core::{PaneId, Rect, Vec2};
 use crate::theme::{POPUP_INPUT_PADDING, POPUP_LINE_EXTRA, CONTEXT_MENU_W};
 use super::state::input_line::{InputLine, abbreviate_path, expand_tilde};
 
@@ -119,7 +119,7 @@ pub(crate) struct FileFinderState {
     pub selected: usize,                // index into filtered
     pub scroll_offset: usize,           // scroll offset in filtered list
     /// When set, the selected file replaces this pane (e.g. a Launcher) instead of opening a new tab.
-    pub replace_pane_id: Option<tide_core::PaneId>,
+    pub replace_pane_id: Option<crate::tide_core::PaneId>,
 }
 
 impl FileFinderState {
@@ -267,8 +267,8 @@ pub(crate) struct GitSwitcherState {
     pub pane_id: PaneId,
     pub input: InputLine,
     pub mode: GitSwitcherMode,
-    pub branches: Vec<tide_terminal::git::BranchInfo>,
-    pub worktrees: Vec<tide_terminal::git::WorktreeInfo>,
+    pub branches: Vec<crate::tide_terminal::git::BranchInfo>,
+    pub worktrees: Vec<crate::tide_terminal::git::WorktreeInfo>,
     pub filtered_branches: Vec<usize>,
     pub filtered_worktrees: Vec<usize>,
     pub selected: usize,
@@ -286,8 +286,8 @@ impl GitSwitcherState {
     pub fn new(
         pane_id: PaneId,
         mode: GitSwitcherMode,
-        branches: Vec<tide_terminal::git::BranchInfo>,
-        worktrees: Vec<tide_terminal::git::WorktreeInfo>,
+        branches: Vec<crate::tide_terminal::git::BranchInfo>,
+        worktrees: Vec<crate::tide_terminal::git::WorktreeInfo>,
         anchor_rect: Rect,
     ) -> Self {
         let filtered_branches: Vec<usize> = (0..branches.len()).collect();
@@ -579,13 +579,13 @@ pub(crate) struct ConfigPageState {
     pub copy_files_editing: bool,
     /// Which field is selected in Worktree tab (0 = base_dir_pattern, 1 = copy_files)
     pub selected_field: usize,
-    pub bindings: Vec<(tide_input::GlobalAction, tide_input::Hotkey)>,
+    pub bindings: Vec<(crate::tide_input::GlobalAction, crate::tide_input::Hotkey)>,
     pub dirty: bool,
 }
 
 impl ConfigPageState {
     pub fn new(
-        bindings: Vec<(tide_input::GlobalAction, tide_input::Hotkey)>,
+        bindings: Vec<(crate::tide_input::GlobalAction, crate::tide_input::Hotkey)>,
         worktree_pattern: String,
         copy_files: String,
     ) -> Self {

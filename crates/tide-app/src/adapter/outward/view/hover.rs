@@ -1,4 +1,4 @@
-use tide_core::{Rect, Renderer};
+use crate::tide_core::{Rect, Renderer};
 
 use crate::event_handler::drag_drop;
 use crate::event_handler::drag_drop::PaneDragState;
@@ -10,9 +10,9 @@ use crate::AppCorePort;
 /// Render hover highlights (overlay layer) for the currently hovered UI element.
 pub(crate) fn render_hover(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
-    _logical: tide_core::Size,
+    _logical: crate::tide_core::Size,
     visual_pane_rects: &[(u64, Rect)],
     show_file_tree: bool,
     file_tree_scroll: f32,
@@ -65,7 +65,7 @@ pub(crate) fn render_hover(
                     // Highlight the border line between adjacent panes
                     for &(id_a, rect_a) in visual_pane_rects {
                         match dir {
-                            tide_core::SplitDirection::Horizontal => {
+                            crate::tide_core::SplitDirection::Horizontal => {
                                 let right_edge = rect_a.x + rect_a.width;
                                 for &(id_b, rect_b) in visual_pane_rects {
                                     if id_b != id_a && (rect_b.x - right_edge).abs() <= PANE_GAP + 1.0 {
@@ -78,7 +78,7 @@ pub(crate) fn render_hover(
                                     }
                                 }
                             }
-                            tide_core::SplitDirection::Vertical => {
+                            crate::tide_core::SplitDirection::Vertical => {
                                 let bottom_edge = rect_a.y + rect_a.height;
                                 for &(id_b, rect_b) in visual_pane_rects {
                                     if id_b != id_a && (rect_b.y - bottom_edge).abs() <= PANE_GAP + 1.0 {

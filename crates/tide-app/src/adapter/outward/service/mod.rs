@@ -9,7 +9,7 @@ pub(crate) mod workspace;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use tide_core::TerminalBackend;
+use crate::tide_core::TerminalBackend;
 
 use crate::pane::PaneKind;
 use crate::domain::ports::file_watcher::FileWatchEvent;
@@ -145,7 +145,7 @@ impl App {
             }
             for changed_path in &changed_paths {
                 // Find editor panes with this file path
-                let matching_ids: Vec<tide_core::PaneId> = self.panes.iter()
+                let matching_ids: Vec<crate::tide_core::PaneId> = self.panes.iter()
                     .filter_map(|(&id, pane)| {
                         if let PaneKind::Editor(editor) = pane {
                             if editor.editor.file_path() == Some(changed_path.as_path()) {
@@ -198,9 +198,9 @@ impl App {
             }
 
             // Handle removed files: close clean tabs, mark dirty tabs
-            let mut tabs_to_close: Vec<tide_core::PaneId> = Vec::new();
+            let mut tabs_to_close: Vec<crate::tide_core::PaneId> = Vec::new();
             for removed_path in &removed_paths {
-                let matching_ids: Vec<tide_core::PaneId> = self.panes.iter()
+                let matching_ids: Vec<crate::tide_core::PaneId> = self.panes.iter()
                     .filter_map(|(&id, pane)| {
                         if let PaneKind::Editor(editor) = pane {
                             if editor.editor.file_path() == Some(removed_path.as_path()) {

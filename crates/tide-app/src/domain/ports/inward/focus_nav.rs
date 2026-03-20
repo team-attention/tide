@@ -1,7 +1,7 @@
 // FocusNavPort — directional focus movement and scrolling.
 // Source: domain/action/focus_nav.rs
 
-use tide_input::Direction;
+use crate::tide_input::Direction;
 
 pub(crate) trait FocusNavPort {
     fn navigate_file_tree(&mut self, direction: Direction);

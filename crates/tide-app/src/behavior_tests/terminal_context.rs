@@ -5,11 +5,11 @@ use crate::state::FocusArea;
 use crate::App;
 use crate::ActionPort;
 use crate::PaneLifecyclePort;
-use tide_core::LayoutEngine;
+use crate::tide_core::LayoutEngine;
 
 fn test_app() -> App {
     let mut app = App::new();
-    app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
 }
@@ -19,7 +19,7 @@ fn test_app() -> App {
 /// associated_terminal map.
 fn app_with_terminal_and_editor() -> (App, u64, u64) {
     let mut app = test_app();
-    let (layout, terminal_id) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     // Use a Launcher as stand-in for terminal (PaneKind matters for routing)
     app.panes.insert(terminal_id, PaneKind::Launcher(terminal_id));
@@ -27,7 +27,7 @@ fn app_with_terminal_and_editor() -> (App, u64, u64) {
     app.focus.focus_area = FocusArea::Stage;
 
     // Split and add an editor
-    let editor_id = app.layout.split(terminal_id, tide_core::SplitDirection::Vertical);
+    let editor_id = app.layout.split(terminal_id, crate::tide_core::SplitDirection::Vertical);
     let editor = EditorPane::new_empty(editor_id);
     app.panes.insert(editor_id, PaneKind::Editor(editor));
     app.assoc.associated_terminal.insert(editor_id, terminal_id);
@@ -42,7 +42,7 @@ fn app_with_terminal_and_editor() -> (App, u64, u64) {
 fn new_editor_inherits_associated_terminal_from_focused_terminal() {
     // UC-1 BR-1: Non-terminal Pane inherits context terminal from creation context
     let mut app = test_app();
-    let (layout, terminal_id) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     // Insert an actual Launcher to stand in (Terminal routing check uses PaneKind)
     app.panes.insert(terminal_id, PaneKind::Launcher(terminal_id));
@@ -75,7 +75,7 @@ fn new_editor_inherits_associated_terminal_from_focused_editor() {
 fn pane_created_without_terminal_has_no_association() {
     // UC-1 BR-2: No terminal reachable → association is None
     let mut app = test_app();
-    let (layout, editor_id) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, editor_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     let editor = EditorPane::new_empty(editor_id);
     app.panes.insert(editor_id, PaneKind::Editor(editor));
@@ -110,7 +110,7 @@ fn focusing_editor_with_retained_context_uses_retained_cwd() {
 fn focusing_pane_without_association_returns_last_cwd() {
     // UC-2 BR-6: No association → falls back to last_cwd
     let mut app = test_app();
-    let (layout, editor_id) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, editor_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     app.panes.insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
     app.focus.focused = Some(editor_id);
@@ -126,7 +126,7 @@ fn focusing_pane_without_association_returns_last_cwd() {
 fn open_file_adds_split_when_focused_is_non_terminal() {
     // UC-3 BR-8: If a non-terminal pane is focused, add as split
     let mut app = test_app();
-    let (layout, editor_id) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, editor_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     app.panes.insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
     app.focus.focused = Some(editor_id);
@@ -149,7 +149,7 @@ fn open_file_adds_split_when_focused_is_non_terminal() {
 fn new_editor_from_editor_adds_split() {
     // UC-3 BR-8: Calling new_editor_pane from an editor adds a split
     let mut app = test_app();
-    let (layout, editor_id) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, editor_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     app.panes.insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
     app.focus.focused = Some(editor_id);

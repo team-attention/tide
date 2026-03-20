@@ -2,8 +2,8 @@
 
 use unicode_width::UnicodeWidthChar;
 
-use tide_core::{Color, Rect, Renderer, TextStyle, Vec2};
-use tide_renderer::WgpuRenderer;
+use crate::tide_core::{Color, Rect, Renderer, TextStyle, Vec2};
+use crate::tide_renderer::WgpuRenderer;
 
 use crate::state::search::SearchState;
 use crate::theme::SCROLLBAR_WIDTH;

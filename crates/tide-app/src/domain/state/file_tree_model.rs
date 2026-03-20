@@ -2,10 +2,10 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use tide_core::Rect;
+use crate::tide_core::Rect;
 
 pub(crate) struct FileTreeModel {
-    pub tree: Option<tide_tree::FsTree>,
+    pub tree: Option<crate::tide_tree::FsTree>,
     pub visible: bool,
     pub scroll: f32,
     pub scroll_target: f32,
@@ -13,8 +13,8 @@ pub(crate) struct FileTreeModel {
     pub border_dragging: bool,
     pub rect: Option<Rect>,
     pub cursor: usize,
-    pub git_status: HashMap<PathBuf, tide_core::FileGitStatus>,
-    pub dir_git_status: HashMap<PathBuf, tide_core::FileGitStatus>,
+    pub git_status: HashMap<PathBuf, crate::tide_core::FileGitStatus>,
+    pub dir_git_status: HashMap<PathBuf, crate::tide_core::FileGitStatus>,
     pub git_root: Option<PathBuf>,
 }
 

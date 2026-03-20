@@ -1,4 +1,4 @@
-use tide_core::{Color, Rect, Renderer, TextStyle, Vec2};
+use crate::tide_core::{Color, Rect, Renderer, TextStyle, Vec2};
 
 use crate::pane::PaneKind;
 use crate::theme::*;
@@ -10,7 +10,7 @@ use super::{visual_width, draw_popup_rounded_bg};
 /// Render completion popups for editor panes that have active completions.
 pub(super) fn render_completion_popups(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
     visual_pane_rects: &[(u64, Rect)],
 ) {

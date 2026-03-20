@@ -1,5 +1,5 @@
-use tide_core::PaneId;
-use tide_platform::macos::webview::WebViewHandle;
+use crate::tide_core::PaneId;
+use crate::tide_platform::macos::webview::WebViewHandle;
 
 use crate::state::search::SearchState;
 

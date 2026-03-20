@@ -1,4 +1,4 @@
-use tide_core::{Rect, Renderer, Vec2};
+use crate::tide_core::{Rect, Renderer, Vec2};
 
 use crate::theme::*;
 use crate::App;
@@ -9,7 +9,7 @@ use super::{visual_width, draw_popup_rounded_bg, draw_popup_scrim, draw_cursor_b
 /// Render the save-as popup (filename entry for untitled files).
 pub(super) fn render_save_as(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
     visual_pane_rects: &[(u64, Rect)],
 ) {

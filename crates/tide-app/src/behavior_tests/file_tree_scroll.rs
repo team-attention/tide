@@ -3,7 +3,7 @@ use crate::App;
 
 fn test_app_with_file_tree() -> App {
     let mut app = App::new();
-    app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app.ft.visible = true;
     app
@@ -37,7 +37,7 @@ fn scroll_target_clamped_independently() {
 fn hidden_file_tree_scroll_not_clamped() {
     // UC-1 BR-3: Hidden file tree scroll is not clamped
     let mut app = App::new();
-    app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app.ft.visible = false;
     app.ft.scroll = 999.0;

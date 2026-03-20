@@ -5,18 +5,18 @@ use crate::pane::editor::EditorPane;
 use crate::App;
 use crate::DockPort;
 use crate::WorkspaceNavPort;
-use tide_core::LayoutEngine;
+use crate::tide_core::LayoutEngine;
 
 fn test_app() -> App {
     let mut app = App::new();
-    app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
 }
 
 fn app_with_terminal() -> (App, u64) {
     let mut app = test_app();
-    let (layout, terminal_id) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     app.panes.insert(terminal_id, PaneKind::Launcher(terminal_id));
     app.focus.focused = Some(terminal_id);
@@ -27,7 +27,7 @@ fn app_with_terminal() -> (App, u64) {
 
 fn app_with_two_terminals() -> (App, u64, u64) {
     let (mut app, t1) = app_with_terminal();
-    let t2 = app.layout.split(t1, tide_core::SplitDirection::Vertical);
+    let t2 = app.layout.split(t1, crate::tide_core::SplitDirection::Vertical);
     app.panes.insert(t2, PaneKind::Launcher(t2));
     (app, t1, t2)
 }

@@ -1,4 +1,4 @@
-use tide_core::Rect;
+use crate::tide_core::Rect;
 
 use crate::pane::PaneKind;
 use crate::search;
@@ -33,7 +33,7 @@ impl App {
         false
     }
 
-    fn check_search_bar_at(&mut self, pos: tide_core::Vec2, id: tide_core::PaneId, rect: Rect) -> bool {
+    fn check_search_bar_at(&mut self, pos: crate::tide_core::Vec2, id: crate::tide_core::PaneId, rect: Rect) -> bool {
         let has_search = match self.panes.get(&id) {
             Some(PaneKind::Terminal(p)) => p.search.as_ref().is_some_and(|s| s.visible),
             Some(PaneKind::Editor(p)) => p.search.as_ref().is_some_and(|s| s.visible),
@@ -79,7 +79,7 @@ impl App {
     // ── Search bar helpers ──────────────────────
 
     /// Compute the number of visible rows for an editor pane.
-    fn editor_visible_rows(&self, pane_id: tide_core::PaneId) -> usize {
+    fn editor_visible_rows(&self, pane_id: crate::tide_core::PaneId) -> usize {
         let cs = self.cell_size();
         if let Some(&(_, rect)) = self.visual_pane_rects.iter().find(|(id, _)| *id == pane_id) {
             return ((rect.height - TAB_BAR_HEIGHT - PANE_PADDING) / cs.height).floor() as usize;
@@ -87,7 +87,7 @@ impl App {
         30
     }
 
-    fn editor_visible_cols(&self, pane_id: tide_core::PaneId) -> usize {
+    fn editor_visible_cols(&self, pane_id: crate::tide_core::PaneId) -> usize {
         let cs = self.cell_size();
         let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cs.width;
         if let Some(&(_, rect)) = self.visual_pane_rects.iter().find(|(id, _)| *id == pane_id) {
@@ -97,7 +97,7 @@ impl App {
         80
     }
 
-    pub(crate) fn search_bar_insert(&mut self, pane_id: tide_core::PaneId, ch: char) {
+    pub(crate) fn search_bar_insert(&mut self, pane_id: crate::tide_core::PaneId, ch: char) {
         match self.panes.get_mut(&pane_id) {
             Some(PaneKind::Terminal(pane)) => {
                 if let Some(ref mut s) = pane.search {
@@ -126,7 +126,7 @@ impl App {
         self.search_scroll_to_current(pane_id);
     }
 
-    pub(crate) fn search_bar_backspace(&mut self, pane_id: tide_core::PaneId) {
+    pub(crate) fn search_bar_backspace(&mut self, pane_id: crate::tide_core::PaneId) {
         match self.panes.get_mut(&pane_id) {
             Some(PaneKind::Terminal(pane)) => {
                 if let Some(ref mut s) = pane.search {
@@ -159,7 +159,7 @@ impl App {
         self.search_scroll_to_current(pane_id);
     }
 
-    pub(crate) fn search_bar_delete(&mut self, pane_id: tide_core::PaneId) {
+    pub(crate) fn search_bar_delete(&mut self, pane_id: crate::tide_core::PaneId) {
         match self.panes.get_mut(&pane_id) {
             Some(PaneKind::Terminal(pane)) => {
                 if let Some(ref mut s) = pane.search {
@@ -192,7 +192,7 @@ impl App {
         self.search_scroll_to_current(pane_id);
     }
 
-    pub(crate) fn search_bar_cursor_left(&mut self, pane_id: tide_core::PaneId) {
+    pub(crate) fn search_bar_cursor_left(&mut self, pane_id: crate::tide_core::PaneId) {
         match self.panes.get_mut(&pane_id) {
             Some(PaneKind::Terminal(pane)) => {
                 if let Some(ref mut s) = pane.search { s.input.move_cursor_left(); }
@@ -208,7 +208,7 @@ impl App {
         }
     }
 
-    pub(crate) fn search_bar_cursor_right(&mut self, pane_id: tide_core::PaneId) {
+    pub(crate) fn search_bar_cursor_right(&mut self, pane_id: crate::tide_core::PaneId) {
         match self.panes.get_mut(&pane_id) {
             Some(PaneKind::Terminal(pane)) => {
                 if let Some(ref mut s) = pane.search { s.input.move_cursor_right(); }
@@ -224,7 +224,7 @@ impl App {
         }
     }
 
-    fn execute_search(&mut self, pane_id: tide_core::PaneId) {
+    fn execute_search(&mut self, pane_id: crate::tide_core::PaneId) {
         match self.panes.get_mut(&pane_id) {
             Some(PaneKind::Terminal(pane)) => {
                 if let Some(ref mut s) = pane.search {
@@ -247,7 +247,7 @@ impl App {
     }
 
     /// Scroll the viewport to show the current match (without advancing).
-    fn search_scroll_to_current(&mut self, pane_id: tide_core::PaneId) {
+    fn search_scroll_to_current(&mut self, pane_id: crate::tide_core::PaneId) {
         let visible_rows = self.editor_visible_rows(pane_id);
         let visible_cols = self.editor_visible_cols(pane_id);
         match self.panes.get_mut(&pane_id) {
@@ -296,7 +296,7 @@ impl App {
         }
     }
 
-    pub(crate) fn search_next_match(&mut self, pane_id: tide_core::PaneId) {
+    pub(crate) fn search_next_match(&mut self, pane_id: crate::tide_core::PaneId) {
         let visible_rows = self.editor_visible_rows(pane_id);
         let visible_cols = self.editor_visible_cols(pane_id);
         match self.panes.get_mut(&pane_id) {
@@ -361,7 +361,7 @@ impl App {
         }
     }
 
-    pub(crate) fn search_prev_match(&mut self, pane_id: tide_core::PaneId) {
+    pub(crate) fn search_prev_match(&mut self, pane_id: crate::tide_core::PaneId) {
         let visible_rows = self.editor_visible_rows(pane_id);
         let visible_cols = self.editor_visible_cols(pane_id);
         match self.panes.get_mut(&pane_id) {

@@ -1,7 +1,7 @@
 // Workspace, focus, navigation, and config page management.
 
-use tide_core::{LayoutEngine, PaneId, SplitDirection};
-use tide_input::AreaSlot;
+use crate::tide_core::{LayoutEngine, PaneId, SplitDirection};
+use crate::tide_input::AreaSlot;
 
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
@@ -156,7 +156,7 @@ impl crate::domain::ports::inward::WorkspaceNavPort for App {
         self.compute_layout();
     }
 
-    fn handle_navigate(&mut self, direction: tide_input::Direction) {
+    fn handle_navigate(&mut self, direction: crate::tide_input::Direction) {
         match self.focus.focus_area {
             FocusArea::FileTree => {
                 self.navigate_file_tree(direction);
@@ -166,8 +166,8 @@ impl crate::domain::ports::inward::WorkspaceNavPort for App {
 
                 if self.focus.zoomed_pane.is_some() {
                     let dir = match direction {
-                        tide_input::Direction::Left => -1,
-                        tide_input::Direction::Right => 1,
+                        crate::tide_input::Direction::Left => -1,
+                        crate::tide_input::Direction::Right => 1,
                         _ => return,
                     };
                     let ids = self.layout.pane_ids();
@@ -323,7 +323,7 @@ impl crate::domain::ports::inward::WorkspaceNavPort for App {
         };
 
         if page.dirty {
-            let defaults = tide_input::KeybindingMap::default_bindings();
+            let defaults = crate::tide_input::KeybindingMap::default_bindings();
             let overrides: Vec<crate::state::settings::KeybindingOverride> = page
                 .bindings
                 .iter()
@@ -366,7 +366,7 @@ impl crate::domain::ports::inward::WorkspaceNavPort for App {
             self.ports.persistence.save_settings(&self.settings);
 
             let map = crate::state::settings::build_keybinding_map(&self.settings);
-            if map.bindings.len() == tide_input::KeybindingMap::default_bindings().len()
+            if map.bindings.len() == crate::tide_input::KeybindingMap::default_bindings().len()
                 && self.settings.keybindings.is_empty()
             {
                 self.router.keybinding_map = None;
@@ -381,12 +381,12 @@ impl crate::domain::ports::inward::WorkspaceNavPort for App {
 
 impl App {
     fn open_config_page(&mut self) {
-        use tide_input::{GlobalAction as GA, KeybindingMap};
+        use crate::tide_input::{GlobalAction as GA, KeybindingMap};
 
         let map = self.router.keybinding_map.as_ref();
         let all_actions = GA::all_actions();
 
-        let bindings: Vec<(GA, tide_input::Hotkey)> = all_actions
+        let bindings: Vec<(GA, crate::tide_input::Hotkey)> = all_actions
             .into_iter()
             .map(|action| {
                 let hotkey = map
@@ -395,8 +395,8 @@ impl App {
                         let defaults = KeybindingMap::new();
                         defaults.hotkey_for(&action).cloned()
                     })
-                    .unwrap_or(tide_input::Hotkey::new(
-                        tide_core::Key::Char('?'),
+                    .unwrap_or(crate::tide_input::Hotkey::new(
+                        crate::tide_core::Key::Char('?'),
                         false, false, false, false,
                     ));
                 (action, hotkey)

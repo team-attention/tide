@@ -1,6 +1,6 @@
 // Completion popup and clipboard (copy/paste/find) operations.
 
-use tide_core::{PaneId, TerminalBackend};
+use crate::tide_core::{PaneId, TerminalBackend};
 
 use crate::pane::PaneKind;
 use crate::state::search::SearchState;
@@ -26,7 +26,7 @@ impl ClipboardSearchPort for App {
                 if let Some(text) = completion.insert_text() {
                     let prefix_len = completion.prefix.len();
                     let end = pane.editor.cursor_position();
-                    let start = tide_editor::buffer::Position { line: end.line, col: end.col.saturating_sub(prefix_len) };
+                    let start = crate::tide_editor::buffer::Position { line: end.line, col: end.col.saturating_sub(prefix_len) };
                     let new_pos = pane.editor.buffer.delete_range(start, end);
                     pane.editor.cursor.set_position(new_pos);
                     pane.editor.insert_text(&text);

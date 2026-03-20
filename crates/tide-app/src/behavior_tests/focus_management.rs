@@ -4,18 +4,18 @@ use crate::state::FocusArea;
 use crate::App;
 use crate::WorkspaceNavPort;
 use crate::ActionPort;
-use tide_core::LayoutEngine;
+use crate::tide_core::LayoutEngine;
 
 fn test_app() -> App {
     let mut app = App::new();
-    app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
 }
 
 fn app_with_editor() -> (App, u64) {
     let mut app = test_app();
-    let (layout, pane_id) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, pane_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     let pane = crate::pane::editor::EditorPane::new_empty(pane_id);
     app.panes.insert(pane_id, PaneKind::Editor(pane));
@@ -51,10 +51,10 @@ fn focus_terminal_sets_focus_area_to_pane_area() {
 fn focus_terminal_updates_chrome_generation_when_changing_pane() {
     // UC-3 BR-22: Changing focused Pane increments chrome_generation
     let mut app = test_app();
-    let (layout, id1) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, id1) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     app.panes.insert(id1, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id1)));
-    let id2 = app.layout.split(id1, tide_core::SplitDirection::Vertical);
+    let id2 = app.layout.split(id1, crate::tide_core::SplitDirection::Vertical);
     app.panes.insert(id2, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id2)));
     app.focus.focused = Some(id1);
 
@@ -104,15 +104,15 @@ fn switching_to_pane_area_from_file_tree_preserves_focused_pane() {
 fn toggling_zoom_on_focused_pane_fills_entire_area() {
     // UC-3 BR-26: ToggleZoom sets zoomed_pane
     let mut app = test_app();
-    let (layout, id1) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, id1) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     app.panes.insert(id1, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id1)));
-    let id2 = app.layout.split(id1, tide_core::SplitDirection::Vertical);
+    let id2 = app.layout.split(id1, crate::tide_core::SplitDirection::Vertical);
     app.panes.insert(id2, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id2)));
     app.focus.focused = Some(id1);
 
     assert!(app.focus.zoomed_pane.is_none());
-    app.handle_global_action(tide_input::GlobalAction::ToggleZoom);
+    app.handle_global_action(crate::tide_input::GlobalAction::ToggleZoom);
     assert_eq!(app.focus.zoomed_pane, Some(id1));
 }
 
@@ -120,14 +120,14 @@ fn toggling_zoom_on_focused_pane_fills_entire_area() {
 fn toggling_zoom_again_restores_split_layout() {
     // UC-3 BR-26: ToggleZoom clears zoomed_pane
     let mut app = test_app();
-    let (layout, id1) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, id1) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     app.panes.insert(id1, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id1)));
     app.focus.focused = Some(id1);
 
-    app.handle_global_action(tide_input::GlobalAction::ToggleZoom);
+    app.handle_global_action(crate::tide_input::GlobalAction::ToggleZoom);
     assert_eq!(app.focus.zoomed_pane, Some(id1));
-    app.handle_global_action(tide_input::GlobalAction::ToggleZoom);
+    app.handle_global_action(crate::tide_input::GlobalAction::ToggleZoom);
     assert!(app.focus.zoomed_pane.is_none());
 }
 
@@ -138,6 +138,6 @@ fn zoom_has_no_effect_when_focus_area_is_file_tree() {
     app.ft.visible = true;
     app.focus.focus_area = FocusArea::FileTree;
 
-    app.handle_global_action(tide_input::GlobalAction::ToggleZoom);
+    app.handle_global_action(crate::tide_input::GlobalAction::ToggleZoom);
     assert!(app.focus.zoomed_pane.is_none());
 }

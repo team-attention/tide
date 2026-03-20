@@ -3,8 +3,8 @@
 // Owns the entire GpuState. All GPU access goes through this port.
 
 use std::sync::Arc;
-use tide_core::PaneId;
-use tide_renderer::WgpuRenderer;
+use crate::tide_core::PaneId;
+use crate::tide_renderer::WgpuRenderer;
 
 use crate::rendering::render_thread::RenderThreadHandle;
 
@@ -35,7 +35,7 @@ pub(crate) trait GpuPort {
 
     // Convenience: domain-level operations
     fn remove_pane_cache(&mut self, pane_id: PaneId);
-    fn set_clear_color(&mut self, color: tide_core::Color);
+    fn set_clear_color(&mut self, color: crate::tide_core::Color);
     fn set_font_size(&mut self, size: f32) -> bool;
 }
 
@@ -98,7 +98,7 @@ impl GpuPort for RealGpu {
             renderer.remove_pane_cache(pane_id);
         }
     }
-    fn set_clear_color(&mut self, color: tide_core::Color) {
+    fn set_clear_color(&mut self, color: crate::tide_core::Color) {
         if let Some(renderer) = self.renderer.as_mut() {
             renderer.clear_color = color;
         }
@@ -137,6 +137,6 @@ impl GpuPort for NoopGpu {
     fn set_device_and_queue(&mut self, _device: Arc<wgpu::Device>, _queue: Arc<wgpu::Queue>) {}
     fn set_renderer(&mut self, _renderer: WgpuRenderer) {}
     fn remove_pane_cache(&mut self, _pane_id: PaneId) {}
-    fn set_clear_color(&mut self, _color: tide_core::Color) {}
+    fn set_clear_color(&mut self, _color: crate::tide_core::Color) {}
     fn set_font_size(&mut self, _size: f32) -> bool { false }
 }

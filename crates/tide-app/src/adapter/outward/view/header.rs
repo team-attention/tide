@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use tide_core::{PaneId, Rect, Renderer, TextStyle, Vec2};
-use tide_renderer::WgpuRenderer;
+use crate::tide_core::{PaneId, Rect, Renderer, TextStyle, Vec2};
+use crate::tide_renderer::WgpuRenderer;
 
 use crate::pane::PaneKind;
 use crate::theme::*;
@@ -31,9 +31,9 @@ pub enum HeaderHitAction {
     DiffRefresh,
     Maximize,
     /// Click on a Dock TabGroup tab — switch to this pane.
-    DockTab(tide_core::PaneId),
+    DockTab(crate::tide_core::PaneId),
     /// Click on a Stage tab in stacked mode — switch zoomed pane.
-    StageTab(tide_core::PaneId),
+    StageTab(crate::tide_core::PaneId),
 }
 
 /// Badge specification for editor pane headers.
@@ -205,7 +205,7 @@ pub fn render_pane_header(
                             git.status.changed_files, git.status.additions, git.status.deletions
                         );
                         let stat_color = p.git_added;
-                        let stat_bg = tide_core::Color::new(p.git_added.r, p.git_added.g, p.git_added.b, 0.094);
+                        let stat_bg = crate::tide_core::Color::new(p.git_added.r, p.git_added.g, p.git_added.b, 0.094);
                         let badge_w = stat_text.len() as f32 * cell_size.width + BADGE_PADDING_H * 2.0;
                         let badge_x = badge_right - badge_w;
                         if badge_x > content_left + 60.0 {
@@ -402,7 +402,7 @@ pub fn render_pane_header(
 pub fn render_dock_tab_bar(
     pane_id: PaneId,
     rect: Rect,
-    tab_group: &tide_layout::TabGroup,
+    tab_group: &crate::tide_layout::TabGroup,
     panes: &HashMap<PaneId, PaneKind>,
     focused: Option<PaneId>,
     pinned_ids: &[PaneId],
@@ -550,7 +550,7 @@ fn render_tab_bar_impl(
                             git.status.changed_files, git.status.additions, git.status.deletions
                         );
                         let stat_color = p.git_added;
-                        let stat_bg = tide_core::Color::new(p.git_added.r, p.git_added.g, p.git_added.b, 0.094);
+                        let stat_bg = crate::tide_core::Color::new(p.git_added.r, p.git_added.g, p.git_added.b, 0.094);
                         let sw = stat_text.len() as f32 * cell_w + BADGE_PADDING_H * 2.0;
                         let sx = badge_right - sw;
                         if sx > content_left + 60.0 {
@@ -712,8 +712,8 @@ pub(crate) fn render_badge_colored(
     width: f32,
     cell_height: f32,
     text: &str,
-    text_color: tide_core::Color,
-    bg_color: tide_core::Color,
+    text_color: crate::tide_core::Color,
+    bg_color: crate::tide_core::Color,
     radius: f32,
 ) {
     let badge_y = text_y - 1.0;
@@ -743,7 +743,7 @@ pub(crate) fn render_badge_colored(
 mod tests {
     use super::*;
     use std::path::PathBuf;
-    use tide_core::PaneId;
+    use crate::tide_core::PaneId;
     use crate::pane::editor::EditorPane;
 
     fn make_editor(id: PaneId) -> EditorPane {
@@ -808,7 +808,7 @@ mod tests {
         let mut ep = make_editor(1);
         ep.disk_changed = true;
         // Make the editor modified by inserting text
-        ep.editor.handle_action(tide_editor::EditorActionKind::InsertChar('x'));
+        ep.editor.handle_action(crate::tide_editor::EditorActionKind::InsertChar('x'));
         assert!(ep.editor.is_modified());
         let badges = editor_header_badges(&ep);
         assert_eq!(badges.len(), 2);
@@ -833,7 +833,7 @@ mod tests {
         let mut ep = make_editor(1);
         ep.disk_changed = true;
         ep.file_deleted = true;
-        ep.editor.handle_action(tide_editor::EditorActionKind::InsertChar('x'));
+        ep.editor.handle_action(crate::tide_editor::EditorActionKind::InsertChar('x'));
         let badges = editor_header_badges(&ep);
         // file_deleted suppresses the compare/conflict badges (condition: !ep.file_deleted)
         assert_eq!(badges.len(), 1);
@@ -845,7 +845,7 @@ mod tests {
         let mut ep = make_editor(1);
         ep.diff_mode = true;
         ep.disk_changed = true;
-        ep.editor.handle_action(tide_editor::EditorActionKind::InsertChar('x'));
+        ep.editor.handle_action(crate::tide_editor::EditorActionKind::InsertChar('x'));
         let badges = editor_header_badges(&ep);
         // diff_mode takes priority over conflict
         assert_eq!(badges.len(), 1);

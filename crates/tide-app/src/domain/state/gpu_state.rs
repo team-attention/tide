@@ -4,7 +4,7 @@ pub(crate) struct GpuState {
     pub device: Option<std::sync::Arc<wgpu::Device>>,
     pub queue: Option<std::sync::Arc<wgpu::Queue>>,
     pub surface_config: Option<wgpu::SurfaceConfiguration>,
-    pub renderer: Option<tide_renderer::WgpuRenderer>,
+    pub renderer: Option<crate::tide_renderer::WgpuRenderer>,
     pub render_thread: Option<crate::rendering::render_thread::RenderThreadHandle>,
     pub pending_surface_config: Option<wgpu::SurfaceConfiguration>,
     pub drawable_wait_us: u64,

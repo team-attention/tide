@@ -1,7 +1,7 @@
 // RenderCache — render generation tracking and dirty flags.
 
 use std::collections::HashMap;
-use tide_core::PaneId;
+use crate::tide_core::PaneId;
 
 pub(crate) struct RenderCache {
     pub pane_generations: HashMap<PaneId, u64>,

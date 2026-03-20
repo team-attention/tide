@@ -1,4 +1,4 @@
-use tide_core::{Rect, Renderer, TextStyle, Vec2};
+use crate::tide_core::{Rect, Renderer, TextStyle, Vec2};
 
 use crate::theme::*;
 use crate::App;
@@ -9,7 +9,7 @@ use super::{draw_popup_rounded_bg, text_style};
 /// Render context menu popup (right-click on file tree).
 pub(super) fn render_context_menu(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
 ) {
     let menu = match app.modal.context_menu {

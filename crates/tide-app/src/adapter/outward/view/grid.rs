@@ -1,4 +1,4 @@
-use tide_core::{Rect, Renderer};
+use crate::tide_core::{Rect, Renderer};
 
 use crate::pane::PaneKind;
 use crate::theme::*;
@@ -13,7 +13,7 @@ use super::bar_offset_for;
 /// Pre-computation (side_by_side, preview cache, wrap map) must be done before calling this.
 pub(crate) fn render_grid(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
     visual_pane_rects: &[(u64, Rect)],
 ) -> Vec<(u64, u64)> {
@@ -51,12 +51,12 @@ pub(crate) fn render_grid(
                         let x = inner.x + (inner.width - msg_w) / 2.0;
                         let y = inner.y + inner.height - cs.height * 2.0;
                         // Semi-transparent background strip
-                        let strip = tide_core::Rect::new(inner.x, y - 4.0, inner.width, cs.height + 8.0);
-                        renderer.draw_rect(strip, tide_core::Color::new(0.0, 0.0, 0.0, 0.6));
+                        let strip = crate::tide_core::Rect::new(inner.x, y - 4.0, inner.width, cs.height + 8.0);
+                        renderer.draw_rect(strip, crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.6));
                         renderer.draw_text(
                             msg,
-                            tide_core::Vec2::new(x, y),
-                            tide_core::TextStyle {
+                            crate::tide_core::Vec2::new(x, y),
+                            crate::tide_core::TextStyle {
                                 foreground: p.tab_text_focused,
                                 background: None,
                                 bold: false, dim: false, italic: false, underline: false,
@@ -85,7 +85,7 @@ pub(crate) fn render_grid(
                 Some(PaneKind::Launcher(_launcher_id)) => {
                     // Render launcher type-selection UI
                     let cs = renderer.cell_size();
-                    let lines: [(&str, tide_core::Color); 4] = [
+                    let lines: [(&str, crate::tide_core::Color); 4] = [
                         ("\u{f120}  [T]  Terminal", p.tab_text_focused),
                         ("\u{f15c}  [E]  New File", p.tab_text),
                         ("\u{f07c}  [O]  Open File", p.tab_text),
@@ -100,8 +100,8 @@ pub(crate) fn render_grid(
                         let y = start_y + i as f32 * line_h;
                         renderer.draw_text(
                             text,
-                            tide_core::Vec2::new(x, y),
-                            tide_core::TextStyle {
+                            crate::tide_core::Vec2::new(x, y),
+                            crate::tide_core::TextStyle {
                                 foreground: *color,
                                 background: None,
                                 bold: i == 0,

@@ -6,8 +6,8 @@ use crate::update::workspace::Workspace;
 use crate::App;
 use crate::PaneLifecyclePort;
 use std::collections::HashMap;
-use tide_core::LayoutEngine;
-use tide_layout::SplitLayout;
+use crate::tide_core::LayoutEngine;
+use crate::tide_layout::SplitLayout;
 
 // --- UC-1: Composition ---
 
@@ -51,7 +51,7 @@ fn clear_composition_resets_all_state() {
 
 fn test_app() -> App {
     let mut app = App::new();
-    app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
 }
@@ -124,7 +124,7 @@ fn closing_pane_that_is_ime_target_clears_composition() {
     let (layout, id1) = SplitLayout::with_initial_pane();
     app.layout = layout;
     app.panes.insert(id1, PaneKind::Editor(EditorPane::new_empty(id1)));
-    let id2 = app.layout.split(id1, tide_core::SplitDirection::Vertical);
+    let id2 = app.layout.split(id1, crate::tide_core::SplitDirection::Vertical);
     app.panes.insert(id2, PaneKind::Editor(EditorPane::new_empty(id2)));
     app.focus.focused = Some(id1);
     app.focus.focus_area = FocusArea::Stage;
@@ -147,7 +147,7 @@ fn closing_pane_that_is_not_ime_target_preserves_composition() {
     let (layout, id1) = SplitLayout::with_initial_pane();
     app.layout = layout;
     app.panes.insert(id1, PaneKind::Editor(EditorPane::new_empty(id1)));
-    let id2 = app.layout.split(id1, tide_core::SplitDirection::Vertical);
+    let id2 = app.layout.split(id1, crate::tide_core::SplitDirection::Vertical);
     app.panes.insert(id2, PaneKind::Editor(EditorPane::new_empty(id2)));
     app.focus.focused = Some(id1);
     app.focus.focus_area = FocusArea::Stage;

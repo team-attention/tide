@@ -3,18 +3,18 @@ use crate::pane::PaneKind;
 use crate::state::*;
 use crate::App;
 use std::path::PathBuf;
-use tide_core::Rect;
+use crate::tide_core::Rect;
 
 fn test_app() -> App {
     let mut app = App::new();
-    app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
 }
 
 fn app_with_editor() -> (App, u64) {
     let mut app = test_app();
-    let (layout, id) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     app.panes.insert(id, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id)));
     app.focus.focused = Some(id);
@@ -67,7 +67,7 @@ fn context_menu_blocks_text_input() {
         path: PathBuf::from("/tmp"),
         is_dir: false,
         shell_idle: true,
-        position: tide_core::Vec2::new(0.0, 0.0),
+        position: crate::tide_core::Vec2::new(0.0, 0.0),
         selected: 0,
     });
     assert_eq!(
@@ -147,7 +147,7 @@ fn escape_closes_file_finder_modal() {
     // UC-2 BR-8: ESC closes file finder
     let (mut app, _id) = app_with_editor();
     app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
-    app.handle_key_down(tide_core::Key::Escape, tide_core::Modifiers::default(), None);
+    app.handle_key_down(crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
     assert!(app.modal.file_finder.is_none());
 }
 
@@ -159,7 +159,7 @@ fn escape_closes_git_switcher() {
         id, GitSwitcherMode::Branches, vec![], vec![],
         Rect::new(0.0, 0.0, 100.0, 30.0),
     ));
-    app.handle_key_down(tide_core::Key::Escape, tide_core::Modifiers::default(), None);
+    app.handle_key_down(crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
     assert!(app.modal.git_switcher.is_none());
 }
 
@@ -168,7 +168,7 @@ fn escape_closes_save_as_input() {
     // UC-2 BR-10: ESC closes save_as_input
     let (mut app, id) = app_with_editor();
     app.modal.save_as_input = Some(SaveAsInput::new(id, PathBuf::from("/tmp"), Rect::new(0.0, 0.0, 100.0, 30.0)));
-    app.handle_key_down(tide_core::Key::Escape, tide_core::Modifiers::default(), None);
+    app.handle_key_down(crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
     assert!(app.modal.save_as_input.is_none());
 }
 
@@ -181,10 +181,10 @@ fn escape_closes_context_menu() {
         path: PathBuf::from("/tmp"),
         is_dir: false,
         shell_idle: true,
-        position: tide_core::Vec2::new(0.0, 0.0),
+        position: crate::tide_core::Vec2::new(0.0, 0.0),
         selected: 0,
     });
-    app.handle_key_down(tide_core::Key::Escape, tide_core::Modifiers::default(), None);
+    app.handle_key_down(crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
     assert!(app.modal.context_menu.is_none());
 }
 
@@ -193,7 +193,7 @@ fn escape_cancels_save_confirm() {
     // UC-2 BR-12: ESC cancels save confirm
     let (mut app, id) = app_with_editor();
     app.modal.save_confirm = Some(crate::SaveConfirmState { pane_id: id });
-    app.handle_key_down(tide_core::Key::Escape, tide_core::Modifiers::default(), None);
+    app.handle_key_down(crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
     assert!(app.modal.save_confirm.is_none());
 }
 
@@ -206,6 +206,6 @@ fn escape_closes_file_tree_rename() {
         original_path: PathBuf::from("/tmp/file.txt"),
         input: InputLine::with_text("file.txt".to_string()),
     });
-    app.handle_key_down(tide_core::Key::Escape, tide_core::Modifiers::default(), None);
+    app.handle_key_down(crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
     assert!(app.modal.file_tree_rename.is_none());
 }

@@ -1,4 +1,4 @@
-use tide_core::{Rect, SplitDirection, TerminalBackend};
+use crate::tide_core::{Rect, SplitDirection, TerminalBackend};
 
 use crate::header::{HeaderHitAction, HeaderHitZone};
 use crate::pane::PaneKind;
@@ -143,7 +143,7 @@ impl App {
 
     /// Open the git switcher popup (works even when a process is running).
     /// Clicking the same badge again closes the popup (toggle behavior).
-    fn open_git_switcher(&mut self, pane_id: tide_core::PaneId, mode: GitSwitcherMode, anchor_rect: Rect) {
+    fn open_git_switcher(&mut self, pane_id: crate::tide_core::PaneId, mode: GitSwitcherMode, anchor_rect: Rect) {
         // Cancel any in-progress drag when opening a modal
         self.interaction.pane_drag = crate::event_handler::drag_drop::PaneDragState::Idle;
         // Toggle: close if already open for the same pane and mode

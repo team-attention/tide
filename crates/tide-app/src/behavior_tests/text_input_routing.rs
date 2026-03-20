@@ -5,18 +5,18 @@ use crate::state::*;
 use crate::event_handler::text_routing::TextInputTarget;
 use crate::App;
 use std::path::PathBuf;
-use tide_core::Rect;
+use crate::tide_core::Rect;
 
 fn test_app() -> App {
     let mut app = App::new();
-    app.window.cached_cell_size = tide_core::Size::new(8.0, 16.0);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
 }
 
 fn app_with_editor() -> (App, u64) {
     let mut app = test_app();
-    let (layout, id) = tide_layout::SplitLayout::with_initial_pane();
+    let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     app.panes.insert(id, PaneKind::Editor(EditorPane::new_empty(id)));
     app.focus.focused = Some(id);

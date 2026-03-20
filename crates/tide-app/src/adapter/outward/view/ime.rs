@@ -1,6 +1,6 @@
 use unicode_width::UnicodeWidthChar;
 
-use tide_core::{Rect, Renderer, TerminalBackend, TextStyle, Vec2};
+use crate::tide_core::{Rect, Renderer, TerminalBackend, TextStyle, Vec2};
 
 use crate::event_handler::drag_drop::{DropDestination, PaneDragState};
 use crate::pane::PaneKind;
@@ -14,7 +14,7 @@ use crate::AppCorePort;
 /// drag-drop preview overlays, and handle drag preview.
 pub(crate) fn render_ime_and_drop_preview(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
     visual_pane_rects: &[(u64, Rect)],
     focused: Option<u64>,
@@ -101,7 +101,7 @@ pub(crate) fn render_ime_and_drop_preview(
             match dest {
                 DropDestination::TreeRoot(zone) | DropDestination::TreePane(_, zone)
                 | DropDestination::DockRoot(zone) => {
-                    let is_swap = *zone == tide_core::DropZone::Center;
+                    let is_swap = *zone == crate::tide_core::DropZone::Center;
 
                     if is_swap {
                         // Swap preview: border-only outline around target's visual rect
@@ -159,7 +159,7 @@ pub(crate) fn render_ime_and_drop_preview(
 /// Render IME preedit overlay for an editor pane (tree editor or panel editor).
 fn render_editor_ime_preedit(
     app: &App,
-    renderer: &mut tide_renderer::WgpuRenderer,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
     visual_pane_rects: &[(u64, Rect)],
     target_id: u64,

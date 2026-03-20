@@ -3,7 +3,7 @@
 //! Handles keyboard events for: file finder, git switcher, config page,
 //! context menu, file tree rename, save-as, branch cleanup, and save confirm.
 
-use tide_core::{Key, Modifiers};
+use crate::tide_core::{Key, Modifiers};
 
 use crate::App;
 use crate::FileOpsPort;
@@ -336,7 +336,7 @@ impl App {
             if matches!(key, Key::Escape) {
                 page.recording = None;
             } else {
-                let hotkey = tide_input::Hotkey::new(
+                let hotkey = crate::tide_input::Hotkey::new(
                     key,
                     modifiers.shift,
                     modifiers.ctrl,
@@ -348,7 +348,7 @@ impl App {
                 if action_index < page.bindings.len() {
                     for (i, (_, existing)) in page.bindings.iter_mut().enumerate() {
                         if i != action_index && *existing == hotkey {
-                            *existing = tide_input::Hotkey::new(
+                            *existing = crate::tide_input::Hotkey::new(
                                 Key::Char('?'),
                                 false,
                                 false,
@@ -512,7 +512,7 @@ impl App {
                         && page.selected < page.bindings.len()
                     {
                         let action = &page.bindings[page.selected].0;
-                        let defaults = tide_input::KeybindingMap::default_bindings();
+                        let defaults = crate::tide_input::KeybindingMap::default_bindings();
                         if let Some((dh, _)) = defaults
                             .iter()
                             .find(|(_, da)| da.action_key() == action.action_key())
