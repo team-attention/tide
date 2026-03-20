@@ -6,7 +6,7 @@ use crate::tide_core::TerminalBackend;
 use crate::tide_platform::{PlatformEvent, PlatformWindow, WindowProxy};
 
 use crate::pane::PaneKind;
-use crate::update::session;
+use crate::update::session_service;
 use crate::theme::*;
 use crate::state::FocusArea;
 use crate::App;

@@ -28,15 +28,15 @@ pub(crate) use application as action;
 pub(crate) use domain::modal;
 pub(crate) use adapter::inward::handler as event_handler;
 pub(crate) use adapter::inward::handler::event_loop;
-pub(crate) use adapter::outward::infra as update;
+pub(crate) use application::services as update;
 pub(crate) use adapter::outward::view as rendering;
 pub(crate) use rendering::header;
 pub(crate) use rendering::ui;
-pub(crate) use update::gpu_init as gpu;
+pub(crate) use update::gpu_init_service as gpu;
 
 pub(crate) use state::*;
 pub(crate) use application::ports::*;
-pub(crate) use update::workspace::{Workspace, WorkspaceExtras};
+pub(crate) use update::workspace_infra_service::{Workspace, WorkspaceExtras};
 
 pub(crate) use app::App;
 
@@ -101,7 +101,7 @@ fn main() {
     }
 
     // Try loading a saved session to restore window size
-    let saved_session = update::session::load_session();
+    let saved_session = update::session_service::load_session();
     let (win_w, win_h) = saved_session
         .as_ref()
         .map(|s| (s.window_width as f64, s.window_height as f64))

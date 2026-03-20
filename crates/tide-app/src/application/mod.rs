@@ -1,5 +1,5 @@
 pub(crate) mod ports;
-mod services;
+pub(crate) mod services;
 
 #[cfg(test)]
 mod behavior_tests;

@@ -9,31 +9,31 @@ pub(crate) struct RealPersistence;
 
 impl PersistencePort for RealPersistence {
     fn save_session(&self, session: &Session) {
-        crate::update::session::save_session(session);
+        crate::update::session_service::save_session(session);
     }
 
     fn load_session(&self) -> Option<Session> {
-        crate::update::session::load_session()
+        crate::update::session_service::load_session()
     }
 
     fn save_context_area_session(&self, data: &SessionContextArea) {
-        crate::update::session::save_context_area_session(data);
+        crate::update::session_service::save_context_area_session(data);
     }
 
     fn load_context_area_session(&self) -> Option<SessionContextArea> {
-        crate::update::session::load_context_area_session()
+        crate::update::session_service::load_context_area_session()
     }
 
     fn create_running_marker(&self) {
-        crate::update::session::create_running_marker();
+        crate::update::session_service::create_running_marker();
     }
 
     fn delete_running_marker(&self) {
-        crate::update::session::delete_running_marker();
+        crate::update::session_service::delete_running_marker();
     }
 
     fn is_crash_recovery(&self) -> bool {
-        crate::update::session::is_crash_recovery()
+        crate::update::session_service::is_crash_recovery()
     }
 
     fn save_settings(&self, settings: &TideSettings) {

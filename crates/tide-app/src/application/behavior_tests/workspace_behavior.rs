@@ -2,7 +2,7 @@
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
-use crate::update::workspace::Workspace;
+use crate::update::workspace_infra_service::Workspace;
 use crate::App;
 use crate::ActionPort;
 use std::collections::HashMap;

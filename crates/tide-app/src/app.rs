@@ -11,7 +11,7 @@ use crate::tide_tree::FsTree;
 use crate::pane::{PaneKind, TerminalPane};
 use crate::theme::*;
 use crate::state;
-use crate::update::workspace::{Workspace, WorkspaceExtras};
+use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
 use crate::DockPort;
 use crate::AppCorePort;
 use crate::LayoutPort;
