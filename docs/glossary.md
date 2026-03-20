@@ -2,36 +2,38 @@
 
 Terms used consistently across the Tide codebase. When adding new code, use these terms exactly.
 
+All paths below are relative to `crates/tide-app/src/`.
+
 ## Entities (have identity)
 
 | Term | Type | Location | Description |
 |------|------|----------|-------------|
-| **Pane** | `PaneKind` | `tide-app/pane.rs` | A content container identified by `PaneId`. Can be Terminal, Editor, Diff, Browser, or Launcher. |
-| **PaneId** | `u64` | `tide-core` | Unique identity of a pane. Allocated incrementally by `SplitLayout::alloc_id()`. |
-| **Workspace** | `Workspace` | `tide-app/workspace.rs` | An isolated set of panes + layout + focus. Only one is active at a time. |
-| **TabGroup** | `TabGroup` | `tide-layout/tab_group.rs` | Multiple panes stacked in one layout slot. Only the active tab renders. |
-| **Terminal** | `Terminal` | `tide-terminal` | A PTY backend instance. Owns the shell process and grid state. |
-| **TerminalContext** | `TerminalContext` | `tide-app/pane.rs` | Lightweight cached terminal state (cwd, git_info, shell_idle, etc.) separated from the heavy PTY backend. Can outlive the terminal. |
-| **EditorState** | `EditorState` | `tide-editor` | A text buffer with cursor, undo stack, and syntax highlighting. |
-| **LspClient** | `LspClient` | `tide-lsp` | Manages communication with one language server process via JSON-RPC over stdio. |
-| **LspManager** | `LspManager` | `tide-app` | Owns all LspClient instances (one per language). Orchestrates start/stop and request routing. |
-| **CompletionPopup** | `CompletionState` | `tide-app` | Per-EditorPane inline autocomplete dropdown. NOT part of ModalStack — coexists with typing. |
+| **Pane** | `PaneKind` | `domain/pane/mod.rs` | A content container identified by `PaneId`. Can be Terminal, Editor, Diff, Browser, or Launcher. |
+| **PaneId** | `u64` | `domain/core_types.rs` | Unique identity of a pane. Allocated incrementally by `SplitLayout::alloc_id()`. |
+| **Workspace** | `Workspace` | `adapter/outward/service/workspace.rs` | An isolated set of panes + layout + focus. Only one is active at a time. |
+| **TabGroup** | `TabGroup` | `domain/layout/tab_group.rs` | Multiple panes stacked in one layout slot. Only the active tab renders. |
+| **Terminal** | `Terminal` | `domain/terminal/mod.rs` | A PTY backend instance. Owns the shell process and grid state. |
+| **TerminalContext** | `TerminalContext` | `domain/pane/mod.rs` | Lightweight cached terminal state (cwd, git_info, shell_idle, etc.) separated from the heavy PTY backend. Can outlive the terminal. |
+| **EditorState** | `EditorState` | `domain/editor/mod.rs` | A text buffer with cursor, undo stack, and syntax highlighting. |
+| **LspClient** | `LspClient` | `adapter/outward/lsp_client/client.rs` | Manages communication with one language server process via JSON-RPC over stdio. |
+| **LspManager** | `LspManager` | `adapter/outward/lsp_client/manager.rs` | Owns all LspClient instances (one per language). Orchestrates start/stop and request routing. |
+| **CompletionPopup** | `CompletionState` | `domain/pane/editor_completion.rs` | Per-EditorPane inline autocomplete dropdown. NOT part of ModalStack — coexists with typing. |
 
 ## Value Objects (identity-less, compared by value)
 
 | Term | Type | Location | Description |
 |------|------|----------|-------------|
-| **Rect** | `Rect` | `tide-core` | `{x, y, width, height}` — a positioned rectangle. |
-| **Size** | `Size` | `tide-core` | `{width, height}` — dimensions without position. |
-| **Key** | `Key` | `tide-core` | A keyboard key (`Char('a')`, `Enter`, `F(1)`, etc.). |
-| **Modifiers** | `Modifiers` | `tide-core` | `{shift, ctrl, alt, meta}` — modifier key state. |
-| **Hotkey** | `Hotkey` | `tide-input` | A `Key` + `Modifiers` combination that maps to a `GlobalAction`. |
-| **Color** | `Color` | `tide-core` | RGBA float color. |
-| **TextStyle** | `TextStyle` | `tide-core` | Bold/dim/italic/underline + fg/bg color. |
-| **TerminalCell** | `TerminalCell` | `tide-core` | One character + its `TextStyle`. |
-| **TerminalGrid** | `TerminalGrid` | `tide-core` | 2D array of `TerminalCell` — the terminal's visible content. |
-| **CursorState** | `CursorState` | `tide-core` | Position + visibility + shape of a terminal cursor. |
-| **DropTarget** | `DropTarget` | `tide-core` | Where a dragged pane can land: `Pane(id, zone)` or `Root(zone)`. |
+| **Rect** | `Rect` | `domain/core_types.rs` | `{x, y, width, height}` — a positioned rectangle. |
+| **Size** | `Size` | `domain/core_types.rs` | `{width, height}` — dimensions without position. |
+| **Key** | `Key` | `domain/core_types.rs` | A keyboard key (`Char('a')`, `Enter`, `F(1)`, etc.). |
+| **Modifiers** | `Modifiers` | `domain/core_types.rs` | `{shift, ctrl, alt, meta}` — modifier key state. |
+| **Hotkey** | `Hotkey` | `domain/input/mod.rs` | A `Key` + `Modifiers` combination that maps to a `GlobalAction`. |
+| **Color** | `Color` | `domain/core_types.rs` | RGBA float color. |
+| **TextStyle** | `TextStyle` | `domain/core_types.rs` | Bold/dim/italic/underline + fg/bg color. |
+| **TerminalCell** | `TerminalCell` | `domain/core_types.rs` | One character + its `TextStyle`. |
+| **TerminalGrid** | `TerminalGrid` | `domain/core_types.rs` | 2D array of `TerminalCell` — the terminal's visible content. |
+| **CursorState** | `CursorState` | `domain/core_types.rs` | Position + visibility + shape of a terminal cursor. |
+| **DropTarget** | `DropTarget` | `domain/core_types.rs` | Where a dragged pane can land: `Pane(id, zone)` or `Root(zone)`. |
 
 ## Aggregates (consistency boundaries)
 
@@ -46,17 +48,17 @@ Terms used consistently across the Tide codebase. When adding new code, use thes
 
 | Term | Type | Location | Description |
 |------|------|----------|-------------|
-| **PlatformEvent** | `PlatformEvent` | `tide-platform` | Raw OS event: key press, mouse click, resize, IME commit, etc. |
-| **InputEvent** | `InputEvent` | `tide-core` | Normalized input: `KeyPress`, `MouseClick`, `MouseScroll`, `Resize`. |
+| **PlatformEvent** | `PlatformEvent` | `adapter/outward/platform_native/mod.rs` | Raw OS event: key press, mouse click, resize, IME commit, etc. |
+| **InputEvent** | `InputEvent` | `domain/core_types.rs` | Normalized input: `KeyPress`, `MouseClick`, `MouseScroll`, `Resize`. |
 
 ## Commands (intent to mutate)
 
 | Term | Type | Location | Description |
 |------|------|----------|-------------|
-| **GlobalAction** | `GlobalAction` | `tide-input` | A user-intent command: `SplitVertical`, `ClosePane`, `Navigate(Up)`, `ToggleZoom`, etc. 31 variants. |
-| **Action** | `Action` | `tide-input` | Routing decision: `RouteToPane(id)`, `GlobalAction(...)`, `DragBorder(pos)`, or `None`. |
-| **EditorAction** | `EditorAction` | `tide-editor` | Editor-specific command: `InsertChar`, `Backspace`, `Save`, `Undo`, etc. |
-| **WindowCommand** | `WindowCommand` | `tide-platform` | App→window command: `RequestRedraw`, `SetFullscreen`, `CreateImeProxy`, etc. |
+| **GlobalAction** | `GlobalAction` | `domain/input/mod.rs` | A user-intent command: `SplitVertical`, `ClosePane`, `Navigate(Up)`, `ToggleZoom`, etc. 31 variants. |
+| **Action** | `Action` | `domain/input/mod.rs` | Routing decision: `RouteToPane(id)`, `GlobalAction(...)`, `DragBorder(pos)`, or `None`. |
+| **EditorAction** | `EditorAction` | `domain/editor/input.rs` | Editor-specific command: `InsertChar`, `Backspace`, `Save`, `Undo`, etc. |
+| **WindowCommand** | `WindowCommand` | `adapter/outward/platform_native/mod.rs` | App→window command: `RequestRedraw`, `SetFullscreen`, `CreateImeProxy`, etc. |
 
 ## Associations
 
@@ -89,7 +91,7 @@ Terms used consistently across the Tide codebase. When adding new code, use thes
 |------|-------------|
 | **PTY** | Pseudo-terminal. The OS mechanism connecting Tide to a shell process. |
 | **Sync Thread** | Background thread that copies terminal grid data, converts colors, and diffs changes. |
-| **Render Thread** | Dedicated background thread (`render_thread.rs`) for GPU drawable acquisition and frame submission. Decouples CAMetalLayer blocking from the main App thread. |
+| **Render Thread** | Dedicated background thread (`adapter/outward/view/render_thread.rs`) for GPU drawable acquisition and frame submission. Decouples CAMetalLayer blocking from the main App thread. |
 | **IME Proxy** | Per-pane `NSTextInputClient` view for Input Method Editor composition. |
 | **Glyph Atlas** | GPU texture cache of rendered font glyphs (MSDF format). |
 | **Dirty Tracking** | Generation-based system to skip re-rendering unchanged panes/chrome. |

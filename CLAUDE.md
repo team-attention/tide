@@ -38,21 +38,23 @@ Key terms to always use precisely:
 - **GlobalAction** — a user-intent command from keybinding (not "event", "message")
 - **Generation** — monotonic counter for cache invalidation (not "version", "revision")
 
-## Bounded Contexts (Crates)
+## Bounded Contexts (Modules)
 
-Each crate is a bounded context. Know which one you're touching:
+All code lives in tide-app (monocrate). Each module is a bounded context:
 
-| Crate | Responsibility | Key Entities |
-|-------|---------------|--------------|
-| `tide-core` | Shared types & traits | PaneId, Rect, Key, TerminalGrid |
-| `tide-layout` | Binary split tree | SplitLayout, TabGroup |
-| `tide-terminal` | PTY & grid sync | Terminal, GridSyncer |
-| `tide-editor` | Text buffer & cursor | EditorState |
-| `tide-input` | Keybinding resolution | Router, Hotkey, GlobalAction |
-| `tide-tree` | Filesystem & git status | FsTree |
-| `tide-platform` | Native macOS windowing | PlatformEvent, PlatformWindow |
-| `tide-renderer` | GPU rendering pipeline | WgpuRenderer, GlyphAtlas |
-| `tide-app` | Orchestrator | App, WorkspaceManager, ModalStack |
+| Module | Path | Responsibility | Key Entities |
+|--------|------|---------------|--------------|
+| core_types | `domain/core_types.rs` | Shared types & traits | PaneId, Rect, Key, TerminalGrid |
+| layout | `domain/layout/` | Binary split tree | SplitLayout, TabGroup |
+| terminal | `domain/terminal/` | PTY & grid sync | Terminal |
+| editor | `domain/editor/` | Text buffer & cursor | EditorState |
+| input | `domain/input/` | Keybinding resolution | Router, Hotkey, GlobalAction |
+| tree | `domain/tree/` | Filesystem & git status | FsTree |
+| platform | `adapter/outward/platform_native/` | Native macOS windowing | PlatformEvent, PlatformWindow |
+| renderer | `adapter/outward/renderer/` | GPU rendering pipeline | WgpuRenderer, GlyphAtlas |
+| lsp | `adapter/outward/lsp_client/` | Language server protocol | LspClient, LspManager |
+
+Aliases in `main.rs`: `pub(crate) use domain::terminal as tide_terminal;` etc. — `crate::tide_X::` paths work everywhere.
 
 ## Feature Development (MUST)
 
@@ -103,17 +105,17 @@ See `docs/testing/behavior-tests.md` for the full guide.
 
 ## Commit Messages
 
-Format: `<verb> <what> in <bounded-context>`
+Format: `<verb> <what> in <module>`
 
 ```
 Add pane drag preview in tide-app
-Fix TabGroup active index after close in tide-layout
-Extract GridSyncer dirty tracking in tide-terminal
+Fix TabGroup active index after layout
+Extract GridSyncer dirty tracking in terminal
 ```
 
 - Verb: Add (new feature), Fix (bug), Extract (refactor), Remove, Update
 - What: Use domain terms from glossary
-- Bounded context: Which crate is primarily affected
+- Module: Which bounded context module is primarily affected
 
 ## PR Description
 
@@ -142,4 +144,15 @@ These must NEVER be violated:
 - `docs/domain/*.md` — Per-context deep dives
 - `docs/specs/*.md` — Use Case specs with Business Rules (testable)
 - `docs/testing/behavior-tests.md` — How to write behavior tests
-- `crates/tide-app/src/behavior_tests.rs` — Living specification (117+ tests)
+- `crates/tide-app/src/behavior_tests/` — Living specification (537+ tests)
+
+## Tooling-Dictated Paths
+
+These paths are fixed by Cargo/build tooling and **cannot be moved** into the module tree:
+
+| Path | Reason |
+|------|--------|
+| `crates/alacritty_terminal/` | External library fork. `[patch.crates-io]` requires an independent crate with its own `Cargo.toml`. |
+| `crates/tide-app/benches/` | Cargo standard. `cargo bench` only discovers benchmarks in this path. |
+| `crates/tide-app/build.rs` | Cargo standard. Build scripts must be at the crate root. |
+| `domain/editor/syntaxes/` | `include_str!` requires files relative to the source file. Data files live near the module that includes them. |

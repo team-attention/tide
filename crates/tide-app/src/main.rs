@@ -4,6 +4,7 @@
 
 // ── Module declarations ──
 mod domain;
+mod application;
 mod adapter;
 mod theme;
 mod app;
@@ -23,7 +24,7 @@ pub(crate) use adapter::outward::lsp_client as tide_lsp;
 // ── Facade re-exports (preserve existing crate-internal paths) ──
 pub(crate) use domain::state;
 pub(crate) use domain::pane;
-pub(crate) use domain::action;
+pub(crate) use application as action;
 pub(crate) use domain::modal;
 pub(crate) use adapter::inward::handler as event_handler;
 pub(crate) use adapter::inward::event_loop;
@@ -42,9 +43,6 @@ pub(crate) use app::App;
 // Expose types that other modules reference as `crate::X`
 use pane::{PaneKind, TerminalPane};
 use theme::*;
-
-#[cfg(test)]
-mod behavior_tests;
 
 // ──────────────────────────────────────────────
 // Entry point

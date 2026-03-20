@@ -7,6 +7,9 @@ mod dock;
 mod workspace;
 mod search;
 
+#[cfg(test)]
+mod behavior_tests;
+
 /// Launcher type selection choices.
 pub(crate) enum LauncherChoice {
     Terminal,
