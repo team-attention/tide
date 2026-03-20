@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Tide — GPU terminal emulator with native macOS platform layer.
 // Wires all crates together: native window, wgpu surface, renderer, terminal panes,
 // layout engine, input router, file tree, and CWD following.
@@ -17,22 +18,19 @@ pub(crate) use domain::editor as tide_editor;
 pub(crate) use domain::layout as tide_layout;
 pub(crate) use domain::input as tide_input;
 pub(crate) use domain::tree as tide_tree;
-pub(crate) use adapter::outward::renderer as tide_renderer;
-pub(crate) use adapter::outward::platform_native as tide_platform;
-pub(crate) use adapter::outward::lsp_client as tide_lsp;
+pub(crate) use adapter::outward::renderer_adapter as tide_renderer;
+pub(crate) use adapter::outward::platform_adapter as tide_platform;
+pub(crate) use adapter::outward::lsp_adapter as tide_lsp;
 
 // ── Facade re-exports (preserve existing crate-internal paths) ──
 pub(crate) use domain::state;
 pub(crate) use domain::pane;
 pub(crate) use application as action;
-pub(crate) use domain::modal;
-pub(crate) use adapter::inward::handler as event_handler;
-pub(crate) use adapter::inward::handler::event_loop;
+pub(crate) use adapter::inward::event_loop_adapter as event_loop;
 pub(crate) use application::services as update;
 pub(crate) use adapter::outward::view as rendering;
 pub(crate) use rendering::header;
 pub(crate) use rendering::ui;
-pub(crate) use update::gpu_init_service as gpu;
 
 pub(crate) use state::*;
 pub(crate) use application::ports::*;
@@ -41,8 +39,7 @@ pub(crate) use update::workspace_infra_service::{Workspace, WorkspaceExtras};
 pub(crate) use app::App;
 
 // Expose types that other modules reference as `crate::X`
-use pane::{PaneKind, TerminalPane};
-use theme::*;
+use pane::PaneKind;
 
 // ──────────────────────────────────────────────
 // Entry point

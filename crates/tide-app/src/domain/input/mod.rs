@@ -695,11 +695,11 @@ impl Router {
             Key::Char('4') | Key::Char('$') => Some(GlobalAction::FocusArea(AreaSlot::Slot4)),
             // Cmd+Shift+[ / Cmd+Shift+] -> workspace prev/next
             // Cmd+[ / Cmd+] -> browser back/forward (handled below)
-            // Cmd+HJKL -> Navigate
-            Key::Char('h') | Key::Char('H') => Some(GlobalAction::Navigate(Direction::Left)),
-            Key::Char('j') | Key::Char('J') => Some(GlobalAction::Navigate(Direction::Down)),
-            Key::Char('k') | Key::Char('K') => Some(GlobalAction::Navigate(Direction::Up)),
-            Key::Char('l') | Key::Char('L') => Some(GlobalAction::Navigate(Direction::Right)),
+            // Cmd+HJKL / Cmd+Arrow -> Navigate
+            Key::Char('h') | Key::Char('H') | Key::Left => Some(GlobalAction::Navigate(Direction::Left)),
+            Key::Char('j') | Key::Char('J') | Key::Down => Some(GlobalAction::Navigate(Direction::Down)),
+            Key::Char('k') | Key::Char('K') | Key::Up => Some(GlobalAction::Navigate(Direction::Up)),
+            Key::Char('l') | Key::Char('L') | Key::Right => Some(GlobalAction::Navigate(Direction::Right)),
             // Cmd+I -> tab prev
             Key::Char('i') | Key::Char('I') => Some(GlobalAction::TabPrev),
             // Cmd+O -> tab next, Cmd+Shift+O -> file finder

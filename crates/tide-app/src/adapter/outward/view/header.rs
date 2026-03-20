@@ -7,8 +7,6 @@ use crate::tide_renderer::WgpuRenderer;
 
 use crate::pane::PaneKind;
 use crate::theme::*;
-use crate::AppCorePort;
-use crate::ActionPort;
 
 /// Clickable zone within a pane header.
 #[derive(Debug, Clone)]

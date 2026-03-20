@@ -13,7 +13,6 @@ use crate::tide_core::{Rect, Renderer, TextStyle, Vec2};
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
-use crate::AppCorePort;
 
 /// Sum of display widths for characters in `s`, treating wide (CJK) chars as 2 columns.
 pub(super) fn visual_width(s: &str) -> usize {

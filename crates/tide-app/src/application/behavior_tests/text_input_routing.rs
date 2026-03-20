@@ -2,7 +2,7 @@
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::*;
-use crate::event_handler::text_routing::TextInputTarget;
+use crate::adapter::inward::text_routing_adapter::TextInputTarget;
 use crate::App;
 use std::path::PathBuf;
 use crate::tide_core::Rect;

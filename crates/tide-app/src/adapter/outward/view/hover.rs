@@ -1,10 +1,8 @@
 use crate::tide_core::{Rect, Renderer};
 
-use crate::state::drag_types;
 use crate::state::drag_types::PaneDragState;
 use crate::theme::*;
 use crate::App;
-use crate::AppCorePort;
 
 
 /// Render hover highlights (overlay layer) for the currently hovered UI element.

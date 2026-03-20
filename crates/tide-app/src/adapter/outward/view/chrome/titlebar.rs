@@ -3,7 +3,6 @@ use crate::tide_core::{Rect, Renderer, TextStyle, Vec2};
 use crate::state::drag_types::HoverTarget;
 use crate::theme::*;
 use crate::App;
-use crate::AppCorePort;
 use crate::PaneLifecyclePort;
 
 /// Render the titlebar background, title text, icons, and toggle buttons.

@@ -7,7 +7,6 @@ use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
 use crate::DockPort;
-use crate::AppCorePort;
 
 
 /// Render IME preedit overlay (Korean composition in progress) for terminal panes,

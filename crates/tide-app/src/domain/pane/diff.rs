@@ -6,7 +6,6 @@ use std::path::PathBuf;
 use crate::tide_core::{Color, PaneId, Rect, Renderer, TextStyle, Vec2};
 use crate::tide_renderer::WgpuRenderer;
 use crate::tide_terminal::git;
-use crate::AppCorePort;
 
 /// A line in a unified diff.
 #[derive(Debug, Clone)]

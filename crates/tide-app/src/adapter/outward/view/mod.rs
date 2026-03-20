@@ -5,7 +5,6 @@ pub(crate) mod header;
 mod hover;
 mod ime;
 mod overlays;
-pub(crate) mod render_thread;
 pub(crate) mod ui;
 
 use crate::tide_core::{Rect, Renderer};
@@ -233,7 +232,7 @@ impl App {
         {
             let config_update = self.ports.gpu.take_pending_surface_config();
             if let Some(rt) = self.ports.gpu.render_thread() {
-                let _ = rt.job_tx.send(crate::rendering::render_thread::RenderJob {
+                let _ = rt.job_tx.send(crate::tide_renderer::render_thread::RenderJob {
                     renderer,
                     config_update,
                 });

@@ -15,7 +15,72 @@ use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
 use crate::DockPort;
 use crate::AppCorePort;
 use crate::LayoutPort;
-use crate::PaneLifecyclePort;
+
+// Adapter implementations
+use crate::adapter::outward::clock_adapter::{SystemClock, FixedClock};
+use crate::adapter::outward::clipboard_adapter::{SystemClipboard, NoopClipboard};
+use crate::adapter::outward::fs_adapter::{RealFileSystem, NoopFileSystem};
+use crate::adapter::outward::process_adapter::{SystemProcess, NoopProcess};
+use crate::adapter::outward::persistence_adapter::{RealPersistence, NoopPersistence};
+use crate::adapter::outward::git_adapter::{RealGit, NoopGit};
+use crate::adapter::outward::terminal_factory_adapter::RealTerminalFactory;
+use crate::adapter::outward::file_watcher_adapter::{RealFileWatcher, NoopFileWatcher};
+use crate::adapter::outward::lsp_adapter::{RealLsp, NoopLsp};
+use crate::adapter::outward::renderer_adapter::port_impl::{RealGpu, NoopGpu};
+use crate::adapter::outward::platform_adapter::{RealPlatform, NoopPlatform};
+
+use crate::application::ports::outward::{
+    ClockPort, ClipboardPort, FileSystemPort, ProcessPort, PersistencePort,
+    GitPort, TerminalFactoryPort, FileWatcherPort, LspPort, GpuPort, PlatformPort,
+};
+
+/// Aggregates all outward port implementations. Injected into App.
+pub(crate) struct Ports {
+    pub clock: Box<dyn ClockPort>,
+    pub clipboard: Box<dyn ClipboardPort>,
+    pub fs: Box<dyn FileSystemPort>,
+    pub process: Box<dyn ProcessPort>,
+    pub persistence: Box<dyn PersistencePort>,
+    pub git: Box<dyn GitPort>,
+    pub terminal_factory: Box<dyn TerminalFactoryPort>,
+    pub file_watcher: Box<dyn FileWatcherPort>,
+    pub lsp: Box<dyn LspPort>,
+    pub gpu: Box<dyn GpuPort>,
+    pub platform: Box<dyn PlatformPort>,
+}
+
+impl Ports {
+    pub fn noop() -> Self {
+        Self {
+            clock: Box::new(FixedClock { instant: std::time::Instant::now() }),
+            clipboard: Box::new(NoopClipboard),
+            fs: Box::new(NoopFileSystem),
+            process: Box::new(NoopProcess),
+            persistence: Box::new(NoopPersistence),
+            git: Box::new(NoopGit),
+            terminal_factory: Box::new(RealTerminalFactory),
+            file_watcher: Box::new(NoopFileWatcher),
+            lsp: Box::new(NoopLsp),
+            gpu: Box::new(NoopGpu),
+            platform: Box::new(NoopPlatform),
+        }
+    }
+    pub fn real() -> Self {
+        Self {
+            clock: Box::new(SystemClock),
+            clipboard: Box::new(SystemClipboard),
+            fs: Box::new(RealFileSystem),
+            process: Box::new(SystemProcess),
+            persistence: Box::new(RealPersistence),
+            git: Box::new(RealGit),
+            terminal_factory: Box::new(RealTerminalFactory),
+            file_watcher: Box::new(RealFileWatcher::new()),
+            lsp: Box::new(RealLsp::new()),
+            gpu: Box::new(RealGpu::new()),
+            platform: Box::new(RealPlatform::new()),
+        }
+    }
+}
 
 // ──────────────────────────────────────────────
 // App state
@@ -23,7 +88,7 @@ use crate::PaneLifecyclePort;
 
 pub(crate) struct App {
     // Port abstractions for external boundaries
-    pub(crate) ports: crate::application::ports::outward::Ports,
+    pub(crate) ports: Ports,
 
     // Panes
     pub(crate) panes: HashMap<PaneId, PaneKind>,
@@ -98,7 +163,7 @@ impl App {
     pub(crate) fn new() -> Self {
         let top_inset = if cfg!(target_os = "macos") { TITLEBAR_HEIGHT } else { 0.0 };
         Self {
-            ports: crate::application::ports::outward::Ports::noop(),
+            ports: Ports::noop(),
             panes: HashMap::new(),
             layout: SplitLayout::new(),
             router: Router::new(),

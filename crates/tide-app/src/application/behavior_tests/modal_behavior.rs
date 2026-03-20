@@ -54,7 +54,7 @@ fn config_page_blocks_all_text_input() {
     app.modal.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
     assert_eq!(
         app.text_input_target(),
-        crate::event_handler::text_routing::TextInputTarget::Consumed,
+        crate::adapter::inward::text_routing_adapter::TextInputTarget::Consumed,
     );
 }
 
@@ -72,7 +72,7 @@ fn context_menu_blocks_text_input() {
     });
     assert_eq!(
         app.text_input_target(),
-        crate::event_handler::text_routing::TextInputTarget::Consumed,
+        crate::adapter::inward::text_routing_adapter::TextInputTarget::Consumed,
     );
 }
 
@@ -83,7 +83,7 @@ fn save_confirm_blocks_text_input() {
     app.modal.save_confirm = Some(crate::SaveConfirmState { pane_id: id });
     assert_eq!(
         app.text_input_target(),
-        crate::event_handler::text_routing::TextInputTarget::Consumed,
+        crate::adapter::inward::text_routing_adapter::TextInputTarget::Consumed,
     );
 }
 
@@ -94,7 +94,7 @@ fn file_finder_captures_text_instead_of_pane() {
     app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
     assert_eq!(
         app.text_input_target(),
-        crate::event_handler::text_routing::TextInputTarget::FileFinder,
+        crate::adapter::inward::text_routing_adapter::TextInputTarget::FileFinder,
     );
 }
 
@@ -108,7 +108,7 @@ fn git_switcher_captures_text_instead_of_pane() {
     ));
     assert_eq!(
         app.text_input_target(),
-        crate::event_handler::text_routing::TextInputTarget::GitSwitcher,
+        crate::adapter::inward::text_routing_adapter::TextInputTarget::GitSwitcher,
     );
 }
 
@@ -120,7 +120,7 @@ fn modal_stack_has_higher_input_priority_than_search_bar() {
     app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
     assert_eq!(
         app.text_input_target(),
-        crate::event_handler::text_routing::TextInputTarget::FileFinder,
+        crate::adapter::inward::text_routing_adapter::TextInputTarget::FileFinder,
     );
 }
 
@@ -136,7 +136,7 @@ fn config_page_has_highest_priority_in_modal_stack() {
     app.modal.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
     assert_eq!(
         app.text_input_target(),
-        crate::event_handler::text_routing::TextInputTarget::Consumed,
+        crate::adapter::inward::text_routing_adapter::TextInputTarget::Consumed,
     );
 }
 

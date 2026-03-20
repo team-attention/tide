@@ -7,4 +7,3 @@ pub(crate) mod outward;
 pub(crate) use inward::*;
 
 // Re-export outward ports and Ports struct
-pub(crate) use outward::*;

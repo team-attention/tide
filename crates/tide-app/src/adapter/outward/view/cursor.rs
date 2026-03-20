@@ -5,7 +5,6 @@ use crate::tide_core::{Rect, Renderer, TerminalBackend};
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
-use crate::AppCorePort;
 
 
 use super::bar_offset_for;

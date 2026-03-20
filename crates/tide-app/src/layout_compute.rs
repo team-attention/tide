@@ -9,7 +9,6 @@ use crate::state::LayoutSide;
 use crate::App;
 use crate::DockPort;
 use crate::AppCorePort;
-use crate::LayoutPort;
 
 impl crate::application::ports::inward::LayoutPort for App {
     fn update_cursor_icon(&self, window: &crate::tide_platform::WindowProxy) {

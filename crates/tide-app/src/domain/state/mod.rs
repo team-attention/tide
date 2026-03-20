@@ -21,7 +21,7 @@ mod associations;
 mod workspace_mgr;
 mod file_tree_model;
 // Re-export all public types
-pub(crate) use input_line::{InputLine, shell_escape, expand_tilde, abbreviate_path};
+pub(crate) use input_line::{InputLine, shell_escape, abbreviate_path};
 pub(crate) use focus::{FocusArea, FocusState, ViewMode, LayoutSide};
 pub(crate) use window::WindowState;
 pub(crate) use timing::TimingState;
@@ -29,8 +29,6 @@ pub(crate) use ime::ImeState;
 pub(crate) use cache::RenderCache;
 pub(crate) use interaction::InteractionState;
 pub(crate) use dock::DockState;
-pub(crate) use gpu_state::GpuState;
-pub(crate) use platform::PlatformPtrs;
 pub(crate) use input_latency::InputLatencyState;
 pub(crate) use background::BackgroundServices;
 pub(crate) use associations::PaneAssociations;

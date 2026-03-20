@@ -18,7 +18,6 @@ use input::EditorAction;
 use syntect::parsing::SyntaxReference;
 
 pub use buffer::Position as EditorPosition;
-pub use highlight::StyledSpan as EditorStyledSpan;
 pub use input::{key_to_editor_action, EditorAction as EditorActionKind};
 
 /// The main editor state orchestrator.

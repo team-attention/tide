@@ -3,7 +3,6 @@ use crate::tide_core::{Rect, Renderer, Vec2};
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
-use crate::AppCorePort;
 
 use super::{visual_width, draw_popup_border, draw_cursor_beam, text_style};
 
