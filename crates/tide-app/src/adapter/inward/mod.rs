@@ -1,4 +1,3 @@
-// Inward (driving) adapters: outside world → domain.
+// Inward (driving) adapters: outside world → application.
 
 pub(crate) mod handler;
-pub(crate) mod event_loop;

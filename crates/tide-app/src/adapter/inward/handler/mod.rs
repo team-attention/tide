@@ -1,3 +1,4 @@
+pub(crate) mod event_loop;
 mod click;
 pub(crate) mod drag_drop;
 pub(crate) mod ime;

@@ -1,6 +1,7 @@
 // Outward (driven) adapters: domain → outside world.
 
-pub(crate) mod service;
+pub(crate) mod infra;
+pub(crate) mod port_impl;
 pub(crate) mod view;
 
 // Absorbed crate modules
