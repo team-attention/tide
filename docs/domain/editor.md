@@ -1,9 +1,9 @@
-# Editor — tide-editor
+# Editor
 
 **Role**: Text buffer management, cursor navigation, undo/redo, syntax highlighting.
 Pure state — no GPU, no PTY, no IO except file save/load.
 
-`crates/tide-editor/src/`
+`crates/tide-app/src/domain/editor/`
 
 ## Aggregate: EditorState
 

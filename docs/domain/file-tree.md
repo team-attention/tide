@@ -1,8 +1,8 @@
-# File Tree — tide-tree
+# File Tree
 
 **Role**: Filesystem directory tree with lazy loading and filesystem watching.
 
-`crates/tide-tree/src/lib.rs`
+`crates/tide-app/src/domain/tree/`
 
 ## Aggregate: FsTree
 

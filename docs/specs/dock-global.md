@@ -193,12 +193,12 @@
 
 | Item | Path |
 |------|------|
-| Pin state fields | `crates/tide-app/src/main.rs` (App struct) |
-| Pin/unpin actions | `crates/tide-app/src/action/dock.rs` |
+| Pin state fields | `crates/tide-app/src/app.rs` (App struct) |
+| Pin/unpin actions | `crates/tide-app/src/application/services/dock_service/` |
 | Composite dock layout | `crates/tide-app/src/layout_compute.rs` |
-| Pin visual rendering | `crates/tide-app/src/rendering/chrome.rs` |
-| GlobalAction variant | `crates/tide-input/src/lib.rs` |
-| Drag-and-drop pin | `crates/tide-app/src/event_handler/mouse.rs` |
-| Session save/restore | `crates/tide-app/src/session.rs` |
-| Workspace swap | `crates/tide-app/src/workspace.rs` |
-| Behavior tests | `crates/tide-app/src/behavior_tests.rs` |
+| Pin visual rendering | `crates/tide-app/src/adapter/outward/view/chrome/` |
+| GlobalAction variant | `crates/tide-app/src/domain/input/mod.rs` |
+| Drag-and-drop pin | `crates/tide-app/src/adapter/inward/mouse_adapter/` |
+| Session save/restore | `crates/tide-app/src/application/services/session_service/` |
+| Workspace swap | `crates/tide-app/src/application/services/workspace_service/` |
+| Behavior tests | `crates/tide-app/src/application/behavior_tests/` |

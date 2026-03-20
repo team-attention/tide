@@ -1,9 +1,9 @@
-# Core Types — tide-core
+# Core Types
 
-**Role**: Shared Kernel. Every crate depends on tide-core for common types and trait contracts.
+**Role**: Shared Kernel. All modules depend on core_types for common types and trait contracts.
 Changing a type here affects the entire system.
 
-`crates/tide-core/src/lib.rs`
+`crates/tide-app/src/domain/core_types.rs`
 
 ## Value Objects
 

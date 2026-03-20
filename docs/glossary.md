@@ -10,13 +10,13 @@ All paths below are relative to `crates/tide-app/src/`.
 |------|------|----------|-------------|
 | **Pane** | `PaneKind` | `domain/pane/mod.rs` | A content container identified by `PaneId`. Can be Terminal, Editor, Diff, Browser, or Launcher. |
 | **PaneId** | `u64` | `domain/core_types.rs` | Unique identity of a pane. Allocated incrementally by `SplitLayout::alloc_id()`. |
-| **Workspace** | `Workspace` | `adapter/outward/service/workspace.rs` | An isolated set of panes + layout + focus. Only one is active at a time. |
+| **Workspace** | `Workspace` | `application/services/workspace_infra_service/mod.rs` | An isolated set of panes + layout + focus. Only one is active at a time. |
 | **TabGroup** | `TabGroup` | `domain/layout/tab_group.rs` | Multiple panes stacked in one layout slot. Only the active tab renders. |
 | **Terminal** | `Terminal` | `domain/terminal/mod.rs` | A PTY backend instance. Owns the shell process and grid state. |
 | **TerminalContext** | `TerminalContext` | `domain/pane/mod.rs` | Lightweight cached terminal state (cwd, git_info, shell_idle, etc.) separated from the heavy PTY backend. Can outlive the terminal. |
 | **EditorState** | `EditorState` | `domain/editor/mod.rs` | A text buffer with cursor, undo stack, and syntax highlighting. |
-| **LspClient** | `LspClient` | `adapter/outward/lsp_client/client.rs` | Manages communication with one language server process via JSON-RPC over stdio. |
-| **LspManager** | `LspManager` | `adapter/outward/lsp_client/manager.rs` | Owns all LspClient instances (one per language). Orchestrates start/stop and request routing. |
+| **LspClient** | `LspClient` | `adapter/outward/lsp_adapter/client.rs` | Manages communication with one language server process via JSON-RPC over stdio. |
+| **LspManager** | `LspManager` | `adapter/outward/lsp_adapter/manager.rs` | Owns all LspClient instances (one per language). Orchestrates start/stop and request routing. |
 | **CompletionPopup** | `CompletionState` | `domain/pane/editor_completion.rs` | Per-EditorPane inline autocomplete dropdown. NOT part of ModalStack — coexists with typing. |
 
 ## Value Objects (identity-less, compared by value)
@@ -48,7 +48,7 @@ All paths below are relative to `crates/tide-app/src/`.
 
 | Term | Type | Location | Description |
 |------|------|----------|-------------|
-| **PlatformEvent** | `PlatformEvent` | `adapter/outward/platform_native/mod.rs` | Raw OS event: key press, mouse click, resize, IME commit, etc. |
+| **PlatformEvent** | `PlatformEvent` | `adapter/outward/platform_adapter/mod.rs` | Raw OS event: key press, mouse click, resize, IME commit, etc. |
 | **InputEvent** | `InputEvent` | `domain/core_types.rs` | Normalized input: `KeyPress`, `MouseClick`, `MouseScroll`, `Resize`. |
 
 ## Commands (intent to mutate)
@@ -58,7 +58,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **GlobalAction** | `GlobalAction` | `domain/input/mod.rs` | A user-intent command: `SplitVertical`, `ClosePane`, `Navigate(Up)`, `ToggleZoom`, etc. 31 variants. |
 | **Action** | `Action` | `domain/input/mod.rs` | Routing decision: `RouteToPane(id)`, `GlobalAction(...)`, `DragBorder(pos)`, or `None`. |
 | **EditorAction** | `EditorAction` | `domain/editor/input.rs` | Editor-specific command: `InsertChar`, `Backspace`, `Save`, `Undo`, etc. |
-| **WindowCommand** | `WindowCommand` | `adapter/outward/platform_native/mod.rs` | App→window command: `RequestRedraw`, `SetFullscreen`, `CreateImeProxy`, etc. |
+| **WindowCommand** | `WindowCommand` | `adapter/outward/platform_adapter/mod.rs` | App→window command: `RequestRedraw`, `SetFullscreen`, `CreateImeProxy`, etc. |
 
 ## Associations
 
