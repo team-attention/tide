@@ -1,13 +1,13 @@
-# App Orchestrator — tide-app
+# App Orchestrator
 
 **Role**: The Application Service that coordinates all Bounded Contexts.
 All user input enters through App, and all state mutations happen through App methods.
 
 ## Aggregate: App
 
-`crates/tide-app/src/main.rs`
+`crates/tide-app/src/app.rs`
 
-App is the system's root Aggregate. State is partitioned into 6 sub-modules:
+App is the system's root Aggregate. State is partitioned into sub-modules:
 
 ```
 App
@@ -26,17 +26,19 @@ App
 
 ## Sub-Modules
 
-### ImeState (`ui_state.rs`)
+### ImeState (`domain/state/ime.rs`)
 CJK input method composition state. Manages per-Pane IME proxy lifecycle.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `composing` | `bool` | Whether IME composition is active |
 | `preedit` | `String` | Uncommitted text |
+| `last_target` | `Option<u64>` | Last pane that received IME text |
 | `pending_creates` | `Vec<u64>` | IME proxies awaiting creation |
 | `pending_removes` | `Vec<u64>` | IME proxies awaiting removal |
+| `cursor_dirty` | `bool` | IME cursor area needs sync |
 
-### ModalStack (`ui_state.rs`)
+### ModalStack (`domain/modal/mod.rs`)
 **Invariant: At most one open at a time.** When `is_any_open()` is true, input routes to the modal.
 
 | Modal | Trigger | Purpose |
@@ -50,7 +52,7 @@ CJK input method composition state. Manages per-Pane IME proxy lifecycle.
 | `file_tree_rename` | R key (file tree) | Inline rename |
 | `branch_cleanup` | Branch delete | Delete confirmation |
 
-### RenderCache (`ui_state.rs`)
+### RenderCache (`domain/state/render_cache.rs`)
 Generation-based dirty tracking. Minimizes GPU re-rendering.
 
 ```
@@ -59,7 +61,7 @@ invalidate_pane(id) → pane_generations[id] += 1
 needs_redraw = true → GPU work on next frame
 ```
 
-### InteractionState (`ui_state.rs`)
+### InteractionState (`domain/state/drag_types.rs`)
 Mouse interaction state machine.
 
 ```
@@ -67,10 +69,10 @@ PaneDragState: Idle → PendingDrag → Dragging
                          (threshold)    (drop target computation)
 ```
 
-### FileTreeModel (`ui_state.rs`)
+### FileTreeModel (`domain/state/file_tree_model.rs`)
 File tree + git status cache. CWD tracking → sticky git root.
 
-### WorkspaceManager (`workspace.rs`)
+### WorkspaceManager (`application/services/workspace_infra_service/`)
 **Core pattern: Swap**
 ```
 switch_workspace(idx):
@@ -125,32 +127,34 @@ render()  (when needs_redraw == true)
 This order **must never be skipped** (Invariant):
 
 ```
-1. config_page    (highest — blocks all input)
-2. context_menu   (ESC to dismiss)
-3. save_confirm   (Y/N/ESC)
-4. save_as_input  (text input + ESC)
-5. file_finder    (text input + arrows + ESC)
-6. git_switcher   (text input + arrows + ESC)
-7. file_tree_rename (text input + ESC)
-8. FocusArea dispatch (FileTree or PaneArea)
-9. Router.process() → GlobalAction
-10. Text input → send_text_to_target()
+1. config_page       (highest — blocks all input)
+2. context_menu      (ESC to dismiss)
+3. file_tree_rename  (text input + ESC)
+4. git_switcher      (text input + arrows + ESC)
+5. file_finder       (text input + arrows + ESC)
+6. save_as_input     (text input + ESC)
+7. branch_cleanup    (Enter/ESC)
+8. save_confirm      (ESC to cancel)
+9. Completion popup  (arrows + Enter + ESC)
+10. FocusArea dispatch (FileTree / Stage / Dock)
+11. Router.process() → GlobalAction
+12. Text input → send_text_to_target()
 ```
 
 ## Key Methods
 
 | Method | File | Role |
 |--------|------|------|
-| `handle_key_down()` | `event_handler/keyboard.rs` | Key event routing entry point |
-| `handle_action()` | `action/mod.rs` | GlobalAction dispatch |
-| `handle_focus_area()` | `action/mod.rs` | FocusArea 3-state toggle |
-| `focus_terminal()` | `action/mod.rs` | Pane focus + Generation update |
-| `new_editor_pane()` | `action/pane_lifecycle.rs` | Create editor tab |
-| `split_with_launcher()` | `action/pane_lifecycle.rs` | Split Pane |
-| `close_specific_pane()` | `action/pane_lifecycle.rs` | Close Pane (may trigger modal) |
-| `switch_workspace()` | `workspace.rs` | Workspace switch (swap pattern) |
+| `handle_key_down()` | `adapter/inward/keyboard_adapter/` | Key event routing entry point |
+| `handle_global_action()` | `application/services/action_service/` | GlobalAction dispatch |
+| `handle_focus_area()` | `application/services/workspace_service/` | FocusArea 3-state toggle |
+| `focus_terminal()` | `application/services/workspace_service/` | Pane focus + Generation update |
+| `new_editor_pane()` | `application/services/pane_create_service/` | Create editor tab |
+| `split_with_launcher()` | `application/services/pane_create_service/` | Split Pane |
+| `close_specific_pane()` | `application/services/pane_close_service/` | Close Pane (may trigger modal) |
+| `switch_workspace()` | `application/services/workspace_infra_service/` | Workspace switch (swap pattern) |
 | `compute_layout()` | `layout_compute.rs` | Window size → Pane Rect calculation |
-| `update()` | `update.rs` | Per-frame state update |
+| `update()` | `application/services/update_service/` | Per-frame state update |
 
 ## Invariants
 

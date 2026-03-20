@@ -1,9 +1,9 @@
-# Renderer — tide-renderer
+# Renderer
 
 **Role**: GPU rendering pipeline. Converts draw commands into wgpu GPU operations.
 Owns the glyph atlas, pipelines, and per-pane grid caches.
 
-`crates/tide-renderer/src/`
+`crates/tide-app/src/adapter/outward/renderer_adapter/`
 
 ## Aggregate: WgpuRenderer
 

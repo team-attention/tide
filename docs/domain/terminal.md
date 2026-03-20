@@ -1,9 +1,9 @@
-# Terminal — tide-terminal
+# Terminal
 
 **Role**: PTY management and grid synchronization.
 Wraps alacritty_terminal with a 3-thread architecture for responsive terminal rendering.
 
-`crates/tide-terminal/src/lib.rs`
+`crates/tide-app/src/domain/terminal/`
 
 ## Aggregate: Terminal
 

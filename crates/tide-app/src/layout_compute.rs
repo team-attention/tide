@@ -1,16 +1,18 @@
 // Layout computation and geometry utility methods extracted from main.rs
 
-use tide_core::{LayoutEngine, PaneDecorations, Rect, Size, SplitDirection};
+use crate::tide_core::{LayoutEngine, PaneDecorations, Rect, Size, SplitDirection};
 
-use crate::event_handler::drag_drop::HoverTarget;
+use crate::state::drag_types::HoverTarget;
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::state::LayoutSide;
 use crate::App;
+use crate::DockPort;
+use crate::AppCorePort;
 
-impl App {
-    pub(crate) fn update_cursor_icon(&self, window: &tide_platform::WindowProxy) {
-        use tide_platform::CursorIcon;
+impl crate::application::ports::inward::LayoutPort for App {
+    fn update_cursor_icon(&self, window: &crate::tide_platform::WindowProxy) {
+        use crate::tide_platform::CursorIcon;
         let icon = match &self.interaction.hover_target {
             Some(HoverTarget::FileTreeEntry(_))
             | Some(HoverTarget::PaneTabBar(_))
@@ -40,7 +42,7 @@ impl App {
     }
 
     /// Check if a position is on a file finder item. Returns the index into filtered list.
-    pub(crate) fn file_finder_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
+    fn file_finder_item_at(&self, pos: crate::tide_core::Vec2) -> Option<usize> {
         let finder = self.modal.file_finder.as_ref()?;
         let cell_size = self.cell_size();
         let logical = self.logical_size();
@@ -64,7 +66,7 @@ impl App {
     }
 
     /// Hit-test the git switcher popup. Returns the filtered index of the item under pos.
-    pub(crate) fn git_switcher_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
+    fn git_switcher_item_at(&self, pos: crate::tide_core::Vec2) -> Option<usize> {
         let gs = self.modal.git_switcher.as_ref()?;
         let cell_size = self.cell_size();
         let logical = self.logical_size();
@@ -89,7 +91,7 @@ impl App {
     }
 
     /// Check if a position is inside the git switcher popup area.
-    pub(crate) fn git_switcher_contains(&self, pos: tide_core::Vec2) -> bool {
+    fn git_switcher_contains(&self, pos: crate::tide_core::Vec2) -> bool {
         if let Some(ref gs) = self.modal.git_switcher {
             let cs = self.cell_size();
             let logical = self.logical_size();
@@ -101,7 +103,7 @@ impl App {
     }
 
     /// Hit-test the git switcher popup tab bar. Returns the mode for the clicked tab.
-    pub(crate) fn git_switcher_tab_at(&self, pos: tide_core::Vec2) -> Option<crate::GitSwitcherMode> {
+    fn git_switcher_tab_at(&self, pos: crate::tide_core::Vec2) -> Option<crate::GitSwitcherMode> {
         let gs = self.modal.git_switcher.as_ref()?;
         let cell_size = self.cell_size();
         let cell_height = cell_size.height;
@@ -126,7 +128,7 @@ impl App {
     }
 
     /// Hit-test the git switcher popup for button clicks (both Branches and Worktrees tabs).
-    pub(crate) fn git_switcher_button_at(&self, pos: tide_core::Vec2) -> Option<crate::SwitcherButton> {
+    fn git_switcher_button_at(&self, pos: crate::tide_core::Vec2) -> Option<crate::SwitcherButton> {
         let gs = self.modal.git_switcher.as_ref()?;
         let cell_size = self.cell_size();
         let cell_height = cell_size.height;
@@ -274,7 +276,7 @@ impl App {
     }
 
     /// Check if a position is inside the file finder popup area.
-    pub(crate) fn file_finder_contains(&self, pos: tide_core::Vec2) -> bool {
+    fn file_finder_contains(&self, pos: crate::tide_core::Vec2) -> bool {
         if let Some(ref finder) = self.modal.file_finder {
             let cell_size = self.cell_size();
             let logical = self.logical_size();
@@ -287,7 +289,7 @@ impl App {
 
     /// Check if a position is inside the save-as popup area.
     /// Uses the anchor_rect from the save-as input to position the popup.
-    pub(crate) fn save_as_contains(&self, pos: tide_core::Vec2) -> bool {
+    fn save_as_contains(&self, pos: crate::tide_core::Vec2) -> bool {
         if let Some(ref save_as) = self.modal.save_as_input {
             let cell_size = self.cell_size();
             let cell_height = cell_size.height;
@@ -309,7 +311,7 @@ impl App {
     }
 
     /// Hit-test the context menu. Returns the item index.
-    pub(crate) fn context_menu_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
+    fn context_menu_item_at(&self, pos: crate::tide_core::Vec2) -> Option<usize> {
         let menu = self.modal.context_menu.as_ref()?;
         let cell_size = self.cell_size();
         let logical = self.logical_size();
@@ -331,12 +333,12 @@ impl App {
 
 
 
-    pub(crate) fn palette(&self) -> &'static ThemePalette {
+    fn palette(&self) -> &'static ThemePalette {
         if self.window.dark_mode { &DARK } else { &LIGHT }
     }
 
     /// Compute the full layout: sidebar (optional file tree) + pane area (split tree fills remaining space).
-    pub(crate) fn compute_layout(&mut self) {
+    fn compute_layout(&mut self) {
         let logical = self.logical_size();
         let top = self.window.top_inset;
         let pane_ids = self.layout.pane_ids();
@@ -678,14 +680,14 @@ impl App {
 
     /// Create/show/hide/reposition WKWebView instances for browser panes.
     /// Browser panes now live in the split tree and use visual_pane_rects for positioning.
-    pub(crate) fn sync_browser_webview_frames(&mut self) {
-        let content_view = match self.platform.content_view_ptr {
+    fn sync_browser_webview_frames(&mut self) {
+        let content_view = match self.ports.platform.content_view_ptr() {
             Some(ptr) => ptr,
             None => return,
         };
 
         // Collect browser pane IDs
-        let browser_ids: Vec<tide_core::PaneId> = self
+        let browser_ids: Vec<crate::tide_core::PaneId> = self
             .panes
             .iter()
             .filter_map(|(&id, pk)| {
@@ -709,7 +711,7 @@ impl App {
             // Create webview if not yet initialized
             if bp.webview.is_none() {
                 let handle = unsafe {
-                    tide_platform::macos::webview::WebViewHandle::new(content_view)
+                    crate::tide_platform::macos::webview::WebViewHandle::new(content_view)
                 };
                 if let Some(handle) = handle {
                     bp.webview = Some(handle);
@@ -724,7 +726,7 @@ impl App {
                 || self.modal.config_page.is_some()
                 || self.modal.save_confirm.is_some()
                 || self.modal.branch_cleanup.is_some()
-                || matches!(self.interaction.pane_drag, crate::event_handler::drag_drop::PaneDragState::Dragging { .. });
+                || matches!(self.interaction.pane_drag, crate::state::drag_types::PaneDragState::Dragging { .. });
 
             if let Some(vr) = visual_rect {
                 if popup_open {
@@ -763,7 +765,7 @@ impl App {
                 let should_be_first_responder = is_focused_pane && !bp.url_input_focused && !search_bar_active;
                 if should_be_first_responder && !bp.is_first_responder {
                     if let (Some(wv), Some(win_ptr)) =
-                        (&bp.webview, self.platform.window_ptr)
+                        (&bp.webview, self.ports.platform.window_ptr())
                     {
                         unsafe { wv.make_first_responder(win_ptr); }
                     }
@@ -776,7 +778,7 @@ impl App {
                 // Browser pane not in the visible layout -- hide it
                 if bp.is_first_responder {
                     if let (Some(wv), Some(win_ptr), Some(view_ptr)) =
-                        (&bp.webview, self.platform.window_ptr, self.platform.content_view_ptr)
+                        (&bp.webview, self.ports.platform.window_ptr(), self.ports.platform.content_view_ptr())
                     {
                         unsafe { wv.resign_first_responder(win_ptr, view_ptr); }
                     }

@@ -3004,124 +3004,42 @@ dependencies = [
 name = "tide-app"
 version = "0.37.23"
 dependencies = [
+ "alacritty_terminal",
  "arboard",
- "criterion",
- "dirs",
- "env_logger",
- "log",
- "notify",
- "open",
- "pollster",
- "serde",
- "serde_json",
- "tide-core",
- "tide-editor",
- "tide-input",
- "tide-layout",
- "tide-lsp",
- "tide-platform",
- "tide-renderer",
- "tide-terminal",
- "tide-tree",
- "unicode-width 0.2.2",
- "wgpu",
-]
-
-[[package]]
-name = "tide-core"
-version = "0.37.23"
-
-[[package]]
-name = "tide-editor"
-version = "0.37.23"
-dependencies = [
- "log",
- "pulldown-cmark",
- "syntect",
- "tide-core",
- "unicode-width 0.2.2",
-]
-
-[[package]]
-name = "tide-input"
-version = "0.37.23"
-dependencies = [
- "tide-core",
-]
-
-[[package]]
-name = "tide-layout"
-version = "0.37.23"
-dependencies = [
- "tide-core",
-]
-
-[[package]]
-name = "tide-lsp"
-version = "0.37.23"
-dependencies = [
- "dirs",
- "log",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "tide-platform"
-version = "0.37.23"
-dependencies = [
  "block2",
- "log",
- "objc2 0.5.2",
- "objc2-app-kit 0.2.2",
- "objc2-foundation 0.2.2",
- "objc2-quartz-core",
- "raw-window-handle",
- "tide-core",
-]
-
-[[package]]
-name = "tide-renderer"
-version = "0.37.23"
-dependencies = [
  "bytemuck",
  "core-foundation 0.10.1",
  "core-text",
  "cosmic-text",
+ "criterion",
+ "dirs",
+ "env_logger",
  "fdsm",
  "fdsm-ttf-parser",
  "fontdb",
  "image",
- "log",
- "nalgebra",
- "pollster",
- "tide-core",
- "ttf-parser 0.25.1",
- "unicode-width 0.2.2",
- "wgpu",
-]
-
-[[package]]
-name = "tide-terminal"
-version = "0.37.23"
-dependencies = [
- "alacritty_terminal",
- "criterion",
  "libc",
  "log",
- "regex",
- "signal-hook",
- "tide-core",
-]
-
-[[package]]
-name = "tide-tree"
-version = "0.37.23"
-dependencies = [
+ "nalgebra",
  "notify",
+ "objc2 0.5.2",
+ "objc2-app-kit 0.2.2",
+ "objc2-foundation 0.2.2",
+ "objc2-quartz-core",
+ "open",
+ "pollster",
+ "pulldown-cmark",
+ "raw-window-handle",
+ "regex",
+ "serde",
+ "serde_json",
+ "signal-hook",
+ "syntect",
  "tempfile",
- "tide-core",
+ "ttf-parser 0.25.1",
  "unicode-normalization",
+ "unicode-width 0.2.2",
+ "wgpu",
 ]
 
 [[package]]
