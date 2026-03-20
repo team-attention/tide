@@ -26,17 +26,17 @@ pub(crate) use gpu_port::GpuPort;
 pub(crate) use platform_port::PlatformPort;
 
 // Re-export adapter implementations from adapter layer
-pub(crate) use crate::adapter::outward::infra::clock_adapter::{SystemClock, FixedClock};
-pub(crate) use crate::adapter::outward::infra::clipboard_adapter::{SystemClipboard, NoopClipboard};
-pub(crate) use crate::adapter::outward::infra::fs_adapter::{RealFileSystem, NoopFileSystem};
-pub(crate) use crate::adapter::outward::infra::process_adapter::{SystemProcess, NoopProcess};
-pub(crate) use crate::adapter::outward::infra::persistence_adapter::{RealPersistence, NoopPersistence};
-pub(crate) use crate::adapter::outward::infra::git_adapter::{RealGit, NoopGit};
-pub(crate) use crate::adapter::outward::infra::terminal_factory_adapter::{RealTerminalFactory, NoopTerminalFactory};
-pub(crate) use crate::adapter::outward::infra::file_watcher_adapter::{RealFileWatcher, NoopFileWatcher};
-pub(crate) use crate::adapter::outward::infra::lsp_adapter::{RealLsp, NoopLsp};
-pub(crate) use crate::adapter::outward::infra::gpu_adapter::{RealGpu, NoopGpu};
-pub(crate) use crate::adapter::outward::infra::platform_adapter::{RealPlatform, NoopPlatform};
+pub(crate) use crate::adapter::outward::clock_adapter::{SystemClock, FixedClock};
+pub(crate) use crate::adapter::outward::clipboard_adapter::{SystemClipboard, NoopClipboard};
+pub(crate) use crate::adapter::outward::fs_adapter::{RealFileSystem, NoopFileSystem};
+pub(crate) use crate::adapter::outward::process_adapter::{SystemProcess, NoopProcess};
+pub(crate) use crate::adapter::outward::persistence_adapter::{RealPersistence, NoopPersistence};
+pub(crate) use crate::adapter::outward::git_adapter::{RealGit, NoopGit};
+pub(crate) use crate::adapter::outward::terminal_factory_adapter::{RealTerminalFactory, NoopTerminalFactory};
+pub(crate) use crate::adapter::outward::file_watcher_adapter::{RealFileWatcher, NoopFileWatcher};
+pub(crate) use crate::adapter::outward::lsp_adapter::{RealLsp, NoopLsp};
+pub(crate) use crate::adapter::outward::gpu_adapter::{RealGpu, NoopGpu};
+pub(crate) use crate::adapter::outward::platform_adapter::{RealPlatform, NoopPlatform};
 
 /// Aggregates all outward port implementations. Injected into App.
 pub(crate) struct Ports {
