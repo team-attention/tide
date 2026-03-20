@@ -72,7 +72,7 @@ All paths below are relative to `crates/tide-app/src/`.
 
 | Term | Type | Description |
 |------|------|-------------|
-| **FocusArea** | `FocusArea` | Which region has keyboard focus: `FileTree` or `PaneArea`. |
+| **FocusArea** | `FocusArea` | Which region has keyboard focus: `FileTree`, `Stage`, or `Dock`. |
 | **AreaSlot** | `AreaSlot` | Positional slot (`Slot1`/`Slot2`/`Slot3`) for Cmd+1/2/3 focus cycling. |
 | **Direction** | `Direction` | `Up`/`Down`/`Left`/`Right` for pane navigation. |
 | **SplitDirection** | `SplitDirection` | `Horizontal` (top/bottom) or `Vertical` (left/right) split. |
@@ -91,7 +91,7 @@ All paths below are relative to `crates/tide-app/src/`.
 |------|-------------|
 | **PTY** | Pseudo-terminal. The OS mechanism connecting Tide to a shell process. |
 | **Sync Thread** | Background thread that copies terminal grid data, converts colors, and diffs changes. |
-| **Render Thread** | Dedicated background thread (`adapter/outward/view/render_thread.rs`) for GPU drawable acquisition and frame submission. Decouples CAMetalLayer blocking from the main App thread. |
+| **Render Thread** | Dedicated background thread (`adapter/outward/renderer_adapter/render_thread.rs`) for GPU drawable acquisition and frame submission. Decouples CAMetalLayer blocking from the main App thread. |
 | **IME Proxy** | Per-pane `NSTextInputClient` view for Input Method Editor composition. |
 | **Glyph Atlas** | GPU texture cache of rendered font glyphs (MSDF format). |
 | **Dirty Tracking** | Generation-based system to skip re-rendering unchanged panes/chrome. |
