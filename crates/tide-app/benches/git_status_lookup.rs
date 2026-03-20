@@ -7,7 +7,18 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use tide_core::FileGitStatus;
+
+/// Inline copy of tide_core::FileGitStatus for benchmark isolation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum FileGitStatus {
+    Modified,
+    Added,
+    #[allow(dead_code)]
+    Deleted,
+    Untracked,
+    #[allow(dead_code)]
+    Conflict,
+}
 
 // ── Helpers ──
 

@@ -1,0 +1,543 @@
+// GPU renderer implementation
+// Implements crate::tide_core::Renderer using wgpu + MSDF font rendering
+
+pub(crate) mod port_impl;
+pub(crate) mod render_thread;
+mod atlas;
+mod chrome;
+mod font;
+mod grid;
+mod init;
+mod msdf;
+mod overlay;
+mod shaders;
+mod vertex;
+
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+use cosmic_text::FontSystem;
+use crate::tide_core::{Color, Rect, Renderer, Size, TextStyle, Vec2};
+
+use atlas::GlyphAtlas;
+use grid::PaneGridCache;
+use msdf::MsdfFontStore;
+use vertex::{ChromeRectVertex, GlyphVertex, GridBgInstance, GridGlyphInstance, RectVertex};
+
+// ──────────────────────────────────────────────
+// WgpuRenderer
+// ──────────────────────────────────────────────
+
+pub struct WgpuRenderer {
+    // GPU pipelines
+    pub(crate) rect_pipeline: wgpu::RenderPipeline,
+    pub(crate) chrome_rounded_pipeline: wgpu::RenderPipeline,
+    pub(crate) glyph_pipeline: wgpu::RenderPipeline,
+
+    // Uniform buffer (screen size)
+    pub(crate) uniform_buffer: wgpu::Buffer,
+    pub(crate) uniform_bind_group: wgpu::BindGroup,
+
+    // Atlas
+    pub(crate) atlas: GlyphAtlas,
+    pub(crate) atlas_bind_group: wgpu::BindGroup,
+
+    // Text subsystem
+    pub(crate) font_system: FontSystem,
+    pub(crate) msdf_font_store: MsdfFontStore,
+
+    // Per-pane grid caching
+    pub(crate) pane_grid_caches: HashMap<u64, PaneGridCache>,
+    pub(crate) active_pane_cache: PaneGridCache,
+    pub(crate) active_pane_id: Option<u64>,
+
+    // Instanced grid pipelines (GPU generates quad corners from vertex_index)
+    pub(crate) grid_bg_pipeline: wgpu::RenderPipeline,
+    pub(crate) grid_glyph_pipeline: wgpu::RenderPipeline,
+
+    // Cached grid layer — only rebuilt when grid content changes (instanced)
+    pub(crate) grid_bg_instances: Vec<GridBgInstance>,
+    pub(crate) grid_glyph_instances: Vec<GridGlyphInstance>,
+    pub(crate) grid_needs_upload: bool,
+
+    // Grid GPU instance buffers
+    pub(crate) grid_bg_inst_buf: wgpu::Buffer,
+    pub(crate) grid_glyph_inst_buf: wgpu::Buffer,
+    pub(crate) grid_bg_inst_buf_capacity: usize,
+    pub(crate) grid_glyph_inst_buf_capacity: usize,
+
+    // Chrome layer — cached for panel backgrounds and file tree
+    pub(crate) chrome_rect_vertices: Vec<ChromeRectVertex>,
+    pub(crate) chrome_rect_indices: Vec<u32>,
+    pub(crate) chrome_glyph_vertices: Vec<GlyphVertex>,
+    pub(crate) chrome_glyph_indices: Vec<u32>,
+    pub(crate) chrome_needs_upload: bool,
+    pub(crate) chrome_rect_vb: wgpu::Buffer,
+    pub(crate) chrome_rect_ib: wgpu::Buffer,
+    pub(crate) chrome_glyph_vb: wgpu::Buffer,
+    pub(crate) chrome_glyph_ib: wgpu::Buffer,
+    pub(crate) chrome_rect_vb_capacity: usize,
+    pub(crate) chrome_rect_ib_capacity: usize,
+    pub(crate) chrome_glyph_vb_capacity: usize,
+    pub(crate) chrome_glyph_ib_capacity: usize,
+
+    // Overlay layer — rebuilt every frame (cursor, preedit)
+    pub(crate) rect_vertices: Vec<RectVertex>,
+    pub(crate) rect_indices: Vec<u32>,
+    pub(crate) glyph_vertices: Vec<GlyphVertex>,
+    pub(crate) glyph_indices: Vec<u32>,
+
+    // Overlay GPU buffers
+    pub(crate) rect_vb: wgpu::Buffer,
+    pub(crate) rect_ib: wgpu::Buffer,
+    pub(crate) glyph_vb: wgpu::Buffer,
+    pub(crate) glyph_ib: wgpu::Buffer,
+    pub(crate) rect_vb_capacity: usize,
+    pub(crate) rect_ib_capacity: usize,
+    pub(crate) glyph_vb_capacity: usize,
+    pub(crate) glyph_ib_capacity: usize,
+
+    // Top layer — rendered last (above all text), for opaque UI like search bar
+    pub(crate) top_rect_vertices: Vec<RectVertex>,
+    pub(crate) top_rect_indices: Vec<u32>,
+    pub(crate) top_rounded_rect_vertices: Vec<ChromeRectVertex>,
+    pub(crate) top_rounded_rect_indices: Vec<u32>,
+    pub(crate) top_glyph_vertices: Vec<GlyphVertex>,
+    pub(crate) top_glyph_indices: Vec<u32>,
+    pub(crate) top_rect_vb: wgpu::Buffer,
+    pub(crate) top_rect_ib: wgpu::Buffer,
+    pub(crate) top_rounded_rect_vb: wgpu::Buffer,
+    pub(crate) top_rounded_rect_ib: wgpu::Buffer,
+    pub(crate) top_glyph_vb: wgpu::Buffer,
+    pub(crate) top_glyph_ib: wgpu::Buffer,
+    pub(crate) top_rect_vb_capacity: usize,
+    pub(crate) top_rect_ib_capacity: usize,
+    pub(crate) top_rounded_rect_vb_capacity: usize,
+    pub(crate) top_rounded_rect_ib_capacity: usize,
+    pub(crate) top_glyph_vb_capacity: usize,
+    pub(crate) top_glyph_ib_capacity: usize,
+
+    // Current frame state
+    pub(crate) screen_size: Size,
+    pub(crate) scale_factor: f32,
+    pub(crate) base_font_size: f32,
+
+    // Cached cell metrics
+    pub(crate) cached_cell_size: Size,
+    // Precomputed cell sizes for font sizes 8..=32 (avoids shaping on Cmd+/-)
+    pub(crate) cell_size_table: Vec<Size>,
+
+    // Font metrics for correct baseline positioning (em-relative, both positive)
+    pub(crate) mono_em_ascender: f32,
+    pub(crate) mono_em_descender: f32,
+
+    // Surface format (for potential re-creation)
+    #[allow(dead_code)]
+    pub(crate) surface_format: wgpu::TextureFormat,
+
+    // Clear color (gap / background)
+    pub clear_color: Color,
+
+    // Incremental grid assembly: per-pane ranges, dirty tracking, partial upload
+    pub(crate) pane_grid_ranges: HashMap<u64, grid::PaneGridRange>,
+    pub(crate) last_pane_order: Vec<u64>,
+    pub(crate) grid_dirty_panes: HashSet<u64>,
+    pub(crate) grid_partial_uploads: Vec<grid::PaneGridRange>,
+
+    // Atlas overflow tracking
+    pub(crate) atlas_reset_count: u64,
+    pub(crate) last_atlas_reset_count: u64,
+
+    // Cached uniform screen size to avoid redundant writes
+    pub(crate) last_uniform_screen: [f32; 2],
+
+    // Store device and queue for uploading glyphs during draw calls
+    pub(crate) device: Arc<wgpu::Device>,
+    pub(crate) queue: Arc<wgpu::Queue>,
+}
+
+// Helper: convert em-relative AtlasRegion metrics to physical pixel values
+impl WgpuRenderer {
+    /// Scale factor for converting em-relative glyph metrics to physical pixels.
+    fn em_scale(&self) -> f32 {
+        self.base_font_size * self.scale_factor
+    }
+
+    /// Compute the baseline Y offset (in physical pixels) within a cell of
+    /// the given physical-pixel height. Centers the font vertically using
+    /// the actual ascender/descender metrics from the monospace font.
+    fn baseline_y(&self, cell_height_px: f32) -> f32 {
+        let font_size_px = self.base_font_size * self.scale_factor;
+        let ascender_px = self.mono_em_ascender * font_size_px;
+        let descender_px = self.mono_em_descender * font_size_px;
+        let font_height_px = ascender_px + descender_px;
+        let leading = cell_height_px - font_height_px;
+        leading * 0.5 + ascender_px
+    }
+}
+
+// ──────────────────────────────────────────────
+// Renderer trait implementation
+// ──────────────────────────────────────────────
+
+impl Renderer for WgpuRenderer {
+    fn begin_frame(&mut self, size: Size) {
+        self.screen_size = size;
+        self.rect_vertices.clear();
+        self.rect_indices.clear();
+        self.glyph_vertices.clear();
+        self.glyph_indices.clear();
+        self.top_rect_vertices.clear();
+        self.top_rect_indices.clear();
+        self.top_rounded_rect_vertices.clear();
+        self.top_rounded_rect_indices.clear();
+        self.top_glyph_vertices.clear();
+        self.top_glyph_indices.clear();
+    }
+
+    fn draw_rect(&mut self, rect: Rect, color: Color) {
+        let x = rect.x * self.scale_factor;
+        let y = rect.y * self.scale_factor;
+        let w = rect.width * self.scale_factor;
+        let h = rect.height * self.scale_factor;
+        self.push_rect_quad(x, y, w, h, color);
+    }
+
+    fn draw_text(&mut self, text: &str, position: Vec2, style: TextStyle, clip: Rect) {
+        let scale = self.scale_factor;
+        let em_scale = self.em_scale();
+        let cell_w = self.cached_cell_size.width * scale;
+        let baseline_y = self.baseline_y(self.cached_cell_size.height * scale);
+
+        let mut cursor_x = position.x * scale;
+        let start_y = position.y * scale;
+
+        // Clip bounds in physical pixels
+        let clip_left = clip.x * scale;
+        let clip_top = clip.y * scale;
+        let clip_right = (clip.x + clip.width) * scale;
+        let clip_bottom = (clip.y + clip.height) * scale;
+
+        for ch in text.chars() {
+            if ch == ' ' || ch == '\t' {
+                let advance = if ch == '\t' { cell_w * 4.0 } else { cell_w };
+                cursor_x += advance;
+                continue;
+            }
+
+            // Draw background if present
+            if let Some(bg) = style.background {
+                let qx = cursor_x;
+                let qy = start_y;
+                let qw = cell_w;
+                let qh = self.cached_cell_size.height * scale;
+                if qx + qw > clip_left && qx < clip_right && qy + qh > clip_top && qy < clip_bottom
+                {
+                    self.push_rect_quad(qx, qy, qw, qh, bg);
+                }
+            }
+
+            let region = self.ensure_glyph_cached(ch, style.bold, style.italic);
+
+            if !region.is_empty() {
+                let gx = cursor_x + region.em_left * em_scale;
+                let gy = start_y + baseline_y - region.em_top * em_scale;
+                let gw = region.em_width * em_scale;
+                let gh = region.em_height * em_scale;
+
+                // Simple clip check
+                if gx + gw > clip_left && gx < clip_right && gy + gh > clip_top && gy < clip_bottom
+                {
+                    self.push_glyph_quad(
+                        gx,
+                        gy,
+                        gw,
+                        gh,
+                        region.uv_min,
+                        region.uv_max,
+                        style.foreground,
+                    );
+                }
+            }
+
+            cursor_x += cell_w;
+        }
+    }
+
+    fn draw_cell(
+        &mut self,
+        character: char,
+        row: usize,
+        col: usize,
+        style: TextStyle,
+        cell_size: Size,
+        offset: Vec2,
+    ) {
+        let scale = self.scale_factor;
+        let em_scale = self.em_scale();
+        let px = (offset.x + col as f32 * cell_size.width) * scale;
+        let py = (offset.y + row as f32 * cell_size.height) * scale;
+        let cw = cell_size.width * scale;
+        let ch = cell_size.height * scale;
+
+        // Draw background
+        if let Some(bg) = style.background {
+            self.push_rect_quad(px, py, cw, ch, bg);
+        }
+
+        // Draw character (skip spaces)
+        if character != ' ' && character != '\0' {
+            let region = self.ensure_glyph_cached(character, style.bold, style.italic);
+
+            if !region.is_empty() {
+                let baseline_y = self.baseline_y(ch);
+                let gx = px + region.em_left * em_scale;
+                let gy = py + baseline_y - region.em_top * em_scale;
+                let gw = region.em_width * em_scale;
+                let gh = region.em_height * em_scale;
+
+                self.push_glyph_quad(
+                    gx,
+                    gy,
+                    gw,
+                    gh,
+                    region.uv_min,
+                    region.uv_max,
+                    style.foreground,
+                );
+            }
+        }
+    }
+
+    fn end_frame(&mut self) {
+        // Batching is complete. The caller will invoke render_frame()
+        // to submit the draw calls to the GPU.
+    }
+
+    fn cell_size(&self) -> Size {
+        self.cached_cell_size
+    }
+}
+
+// ──────────────────────────────────────────────
+// Top layer — rendered after ALL other layers (opaque UI)
+// ──────────────────────────────────────────────
+
+impl WgpuRenderer {
+    /// Return the precomputed cell size table (font sizes 8..=32).
+    pub fn cell_size_table(&self) -> &[Size] {
+        &self.cell_size_table
+    }
+
+
+    /// Update the scale factor used for logical-to-physical coordinate conversion.
+    pub fn set_scale_factor(&mut self, scale: f32) {
+        if (scale - self.scale_factor).abs() > 0.001 {
+            self.scale_factor = scale;
+            self.cell_size_table = Self::precompute_cell_sizes(&mut self.font_system, scale);
+            self.cached_cell_size = self.lookup_cell_size(self.base_font_size);
+        }
+    }
+
+    /// Draw a rounded rect in the top layer (SDF-based AA, rendered after all text).
+    pub fn draw_top_rounded_rect(&mut self, rect: Rect, color: Color, radius: f32) {
+        let s = self.scale_factor;
+        let x = rect.x * s;
+        let y = rect.y * s;
+        let w = rect.width * s;
+        let h = rect.height * s;
+        let r = radius * s;
+
+        let expand = 1.0_f32;
+        let qx = x - expand;
+        let qy = y - expand;
+        let qw = w + expand * 2.0;
+        let qh = h + expand * 2.0;
+
+        let center = [x + w * 0.5, y + h * 0.5];
+        let half = [w * 0.5, h * 0.5];
+        let c = [color.r, color.g, color.b, color.a];
+
+        let base = self.top_rounded_rect_vertices.len() as u32;
+        let vert = |px: f32, py: f32| ChromeRectVertex {
+            position: [px, py],
+            color: c,
+            rect_center: center,
+            rect_half: half,
+            corner_radius: r,
+            shadow_blur: 0.0,
+        };
+        self.top_rounded_rect_vertices.push(vert(qx, qy));
+        self.top_rounded_rect_vertices.push(vert(qx + qw, qy));
+        self.top_rounded_rect_vertices.push(vert(qx + qw, qy + qh));
+        self.top_rounded_rect_vertices.push(vert(qx, qy + qh));
+        self.top_rounded_rect_indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+
+    /// Draw a shadow in the top layer (SDF-based blur, same as `draw_chrome_shadow` but
+    /// writes to `top_rounded_rect_vertices`).
+    pub fn draw_top_shadow(&mut self, rect: Rect, color: Color, radius: f32, blur: f32, spread: f32) {
+        let s = self.scale_factor;
+        let sx = (rect.x - spread) * s;
+        let sy = (rect.y - spread) * s;
+        let sw = (rect.width + spread * 2.0) * s;
+        let sh = (rect.height + spread * 2.0) * s;
+        let sr = radius * s;
+        let sb = blur * s;
+
+        let expand = sb + 2.0;
+        let qx = sx - expand;
+        let qy = sy - expand;
+        let qw = sw + expand * 2.0;
+        let qh = sh + expand * 2.0;
+
+        let center = [sx + sw * 0.5, sy + sh * 0.5];
+        let half = [sw * 0.5, sh * 0.5];
+        let c = [color.r, color.g, color.b, color.a];
+
+        let base = self.top_rounded_rect_vertices.len() as u32;
+        let vert = |px: f32, py: f32| ChromeRectVertex {
+            position: [px, py],
+            color: c,
+            rect_center: center,
+            rect_half: half,
+            corner_radius: sr,
+            shadow_blur: sb,
+        };
+        self.top_rounded_rect_vertices.push(vert(qx, qy));
+        self.top_rounded_rect_vertices.push(vert(qx + qw, qy));
+        self.top_rounded_rect_vertices.push(vert(qx + qw, qy + qh));
+        self.top_rounded_rect_vertices.push(vert(qx, qy + qh));
+        self.top_rounded_rect_indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+
+    /// Draw a rect in the top layer (rendered after all text).
+    pub fn draw_top_rect(&mut self, rect: Rect, color: Color) {
+        let x = rect.x * self.scale_factor;
+        let y = rect.y * self.scale_factor;
+        let w = rect.width * self.scale_factor;
+        let h = rect.height * self.scale_factor;
+
+        let base = self.top_rect_vertices.len() as u32;
+        let c = [color.r, color.g, color.b, color.a];
+        self.top_rect_vertices.push(RectVertex { position: [x, y], color: c });
+        self.top_rect_vertices.push(RectVertex { position: [x + w, y], color: c });
+        self.top_rect_vertices.push(RectVertex { position: [x + w, y + h], color: c });
+        self.top_rect_vertices.push(RectVertex { position: [x, y + h], color: c });
+        self.top_rect_indices.push(base);
+        self.top_rect_indices.push(base + 1);
+        self.top_rect_indices.push(base + 2);
+        self.top_rect_indices.push(base);
+        self.top_rect_indices.push(base + 2);
+        self.top_rect_indices.push(base + 3);
+    }
+
+    /// Draw a single glyph in the top layer (rendered after all other layers).
+    /// Used for rendering inverse cursor characters on top of the cursor rect.
+    pub fn draw_top_glyph(&mut self, ch: char, position: Vec2, color: Color, bold: bool, italic: bool) {
+        let scale = self.scale_factor;
+        let em_scale = self.em_scale();
+        let baseline_y = self.baseline_y(self.cached_cell_size.height * scale);
+
+        let start_x = position.x * scale;
+        let start_y = position.y * scale;
+
+        if ch == ' ' || ch == '\0' {
+            return;
+        }
+
+        let region = self.ensure_glyph_cached(ch, bold, italic);
+
+        if !region.is_empty() {
+            let gx = start_x + region.em_left * em_scale;
+            let gy = start_y + baseline_y - region.em_top * em_scale;
+            let gw = region.em_width * em_scale;
+            let gh = region.em_height * em_scale;
+
+            let base = self.top_glyph_vertices.len() as u32;
+            let c = [color.r, color.g, color.b, color.a];
+            self.top_glyph_vertices.push(GlyphVertex { position: [gx, gy], uv: [region.uv_min[0], region.uv_min[1]], color: c });
+            self.top_glyph_vertices.push(GlyphVertex { position: [gx + gw, gy], uv: [region.uv_max[0], region.uv_min[1]], color: c });
+            self.top_glyph_vertices.push(GlyphVertex { position: [gx + gw, gy + gh], uv: [region.uv_max[0], region.uv_max[1]], color: c });
+            self.top_glyph_vertices.push(GlyphVertex { position: [gx, gy + gh], uv: [region.uv_min[0], region.uv_max[1]], color: c });
+            self.top_glyph_indices.push(base);
+            self.top_glyph_indices.push(base + 1);
+            self.top_glyph_indices.push(base + 2);
+            self.top_glyph_indices.push(base);
+            self.top_glyph_indices.push(base + 2);
+            self.top_glyph_indices.push(base + 3);
+        }
+    }
+
+    /// Draw text in the top layer (rendered after all text).
+    pub fn draw_top_text(&mut self, text: &str, position: Vec2, style: TextStyle, clip: Rect) {
+        let scale = self.scale_factor;
+        let em_scale = self.em_scale();
+        let cell_w = self.cached_cell_size.width * scale;
+        let baseline_y = self.baseline_y(self.cached_cell_size.height * scale);
+
+        let mut cursor_x = position.x * scale;
+        let start_y = position.y * scale;
+
+        let clip_left = clip.x * scale;
+        let clip_top = clip.y * scale;
+        let clip_right = (clip.x + clip.width) * scale;
+        let clip_bottom = (clip.y + clip.height) * scale;
+
+        for ch in text.chars() {
+            if ch == ' ' || ch == '\t' {
+                let advance = if ch == '\t' { cell_w * 4.0 } else { cell_w };
+                cursor_x += advance;
+                continue;
+            }
+
+            if let Some(bg) = style.background {
+                let qx = cursor_x;
+                let qy = start_y;
+                let qw = cell_w;
+                let qh = self.cached_cell_size.height * scale;
+                if qx + qw > clip_left && qx < clip_right && qy + qh > clip_top && qy < clip_bottom {
+                    // Push into top rect arrays
+                    let base = self.top_rect_vertices.len() as u32;
+                    let c = [bg.r, bg.g, bg.b, bg.a];
+                    self.top_rect_vertices.push(RectVertex { position: [qx, qy], color: c });
+                    self.top_rect_vertices.push(RectVertex { position: [qx + qw, qy], color: c });
+                    self.top_rect_vertices.push(RectVertex { position: [qx + qw, qy + qh], color: c });
+                    self.top_rect_vertices.push(RectVertex { position: [qx, qy + qh], color: c });
+                    self.top_rect_indices.push(base);
+                    self.top_rect_indices.push(base + 1);
+                    self.top_rect_indices.push(base + 2);
+                    self.top_rect_indices.push(base);
+                    self.top_rect_indices.push(base + 2);
+                    self.top_rect_indices.push(base + 3);
+                }
+            }
+
+            let region = self.ensure_glyph_cached(ch, style.bold, style.italic);
+
+            if !region.is_empty() {
+                let gx = cursor_x + region.em_left * em_scale;
+                let gy = start_y + baseline_y - region.em_top * em_scale;
+                let gw = region.em_width * em_scale;
+                let gh = region.em_height * em_scale;
+
+                if gx + gw > clip_left && gx < clip_right && gy + gh > clip_top && gy < clip_bottom {
+                    let base = self.top_glyph_vertices.len() as u32;
+                    let c = [style.foreground.r, style.foreground.g, style.foreground.b, style.foreground.a];
+                    self.top_glyph_vertices.push(GlyphVertex { position: [gx, gy], uv: [region.uv_min[0], region.uv_min[1]], color: c });
+                    self.top_glyph_vertices.push(GlyphVertex { position: [gx + gw, gy], uv: [region.uv_max[0], region.uv_min[1]], color: c });
+                    self.top_glyph_vertices.push(GlyphVertex { position: [gx + gw, gy + gh], uv: [region.uv_max[0], region.uv_max[1]], color: c });
+                    self.top_glyph_vertices.push(GlyphVertex { position: [gx, gy + gh], uv: [region.uv_min[0], region.uv_max[1]], color: c });
+                    self.top_glyph_indices.push(base);
+                    self.top_glyph_indices.push(base + 1);
+                    self.top_glyph_indices.push(base + 2);
+                    self.top_glyph_indices.push(base);
+                    self.top_glyph_indices.push(base + 2);
+                    self.top_glyph_indices.push(base + 3);
+                }
+            }
+
+            cursor_x += cell_w;
+        }
+    }
+}

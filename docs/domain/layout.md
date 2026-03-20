@@ -1,9 +1,9 @@
-# Layout — tide-layout
+# Layout
 
 **Role**: Owns the binary split tree that arranges Panes in the window.
 Knows nothing about Pane content — only PaneIds and rectangles.
 
-`crates/tide-layout/src/`
+`crates/tide-app/src/domain/layout/`
 
 ## Aggregate: SplitLayout
 
