@@ -15,7 +15,7 @@ use crate::WorkspaceNavPort;
 use crate::ActionPort;
 use crate::PaneLifecyclePort;
 
-use super::LauncherChoice;
+use super::action_service::LauncherChoice;
 
 impl crate::application::ports::inward::PaneLifecyclePort for App {
     fn create_terminal_pane(&mut self, id: crate::tide_core::PaneId, cwd: Option<std::path::PathBuf>) {

@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use crate::tide_core::TerminalBackend;
 
 use crate::pane::PaneKind;
-use crate::application::ports::outward::file_watcher::FileWatchEvent;
+use crate::application::ports::outward::file_watcher_port::FileWatchEvent;
 use crate::search;
 use crate::App;
 use crate::PaneLifecyclePort;

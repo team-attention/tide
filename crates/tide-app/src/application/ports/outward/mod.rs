@@ -1,28 +1,28 @@
-// Outward (driven) port traits — infrastructure the application needs.
+// Outward (driven) port traits — what the application needs from infrastructure.
 
-pub(crate) mod clock;
-pub(crate) mod clipboard;
-pub(crate) mod fs;
-pub(crate) mod process;
-pub(crate) mod persistence;
-pub(crate) mod git;
-pub(crate) mod terminal_factory;
-pub(crate) mod file_watcher;
-pub(crate) mod lsp;
-pub(crate) mod gpu;
-pub(crate) mod platform;
+pub(crate) mod clock_port;
+pub(crate) mod clipboard_port;
+pub(crate) mod fs_port;
+pub(crate) mod process_port;
+pub(crate) mod persistence_port;
+pub(crate) mod git_port;
+pub(crate) mod terminal_factory_port;
+pub(crate) mod file_watcher_port;
+pub(crate) mod lsp_port;
+pub(crate) mod gpu_port;
+pub(crate) mod platform_port;
 
-pub(crate) use clock::{ClockPort, SystemClock, FixedClock};
-pub(crate) use clipboard::{ClipboardPort, SystemClipboard, NoopClipboard};
-pub(crate) use fs::{FileSystemPort, RealFileSystem, NoopFileSystem};
-pub(crate) use process::{ProcessPort, SystemProcess, NoopProcess};
-pub(crate) use persistence::{PersistencePort, RealPersistence, NoopPersistence};
-pub(crate) use git::{GitPort, RealGit, NoopGit};
-pub(crate) use terminal_factory::{TerminalFactoryPort, RealTerminalFactory, NoopTerminalFactory};
-pub(crate) use file_watcher::{FileWatcherPort, FileWatchEvent, RealFileWatcher, NoopFileWatcher};
-pub(crate) use lsp::{LspPort, RealLsp, NoopLsp};
-pub(crate) use gpu::{GpuPort, RealGpu, NoopGpu};
-pub(crate) use platform::{PlatformPort, RealPlatform, NoopPlatform};
+pub(crate) use clock_port::{ClockPort, SystemClock, FixedClock};
+pub(crate) use clipboard_port::{ClipboardPort, SystemClipboard, NoopClipboard};
+pub(crate) use fs_port::{FileSystemPort, RealFileSystem, NoopFileSystem};
+pub(crate) use process_port::{ProcessPort, SystemProcess, NoopProcess};
+pub(crate) use persistence_port::{PersistencePort, RealPersistence, NoopPersistence};
+pub(crate) use git_port::{GitPort, RealGit, NoopGit};
+pub(crate) use terminal_factory_port::{TerminalFactoryPort, RealTerminalFactory, NoopTerminalFactory};
+pub(crate) use file_watcher_port::{FileWatcherPort, FileWatchEvent, RealFileWatcher, NoopFileWatcher};
+pub(crate) use lsp_port::{LspPort, RealLsp, NoopLsp};
+pub(crate) use gpu_port::{GpuPort, RealGpu, NoopGpu};
+pub(crate) use platform_port::{PlatformPort, RealPlatform, NoopPlatform};
 
 /// Aggregates all outward port implementations. Injected into App.
 pub(crate) struct Ports {
