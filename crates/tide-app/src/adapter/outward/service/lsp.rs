@@ -12,7 +12,7 @@ impl App {
     /// Initialize the LSP manager with the current working directory.
     pub(crate) fn init_lsp(&mut self) {
         let root = std::env::current_dir().unwrap_or_default();
-        self.bg.lsp = Some(tide_lsp::LspManager::new(root, self.bg.event_loop_waker.clone()));
+        self.ports.lsp.init(&root, self.bg.event_loop_waker.clone());
     }
 
     /// Notify the LSP that a file was opened in an editor pane.
@@ -35,9 +35,7 @@ impl App {
             let text = pane.editor.buffer.lines.join("\n");
             (uri, lang, text)
         };
-        if let Some(ref mut lsp) = self.bg.lsp {
-            lsp.did_open(&uri, lang, &text);
-        }
+        self.ports.lsp.did_open(&uri, lang, &text);
     }
 
     /// Notify the LSP that a document changed.
@@ -55,9 +53,7 @@ impl App {
             let text = pane.editor.buffer.lines.join("\n");
             (uri, text)
         };
-        if let Some(ref mut lsp) = self.bg.lsp {
-            lsp.did_change(&uri, &text);
-        }
+        self.ports.lsp.did_change(&uri, &text);
     }
 
     /// Notify the LSP that a file was saved.
@@ -72,9 +68,7 @@ impl App {
                 None => return,
             }
         };
-        if let Some(ref mut lsp) = self.bg.lsp {
-            lsp.did_save(&uri);
-        }
+        self.ports.lsp.did_save(&uri);
     }
 
     /// Notify the LSP that a file was closed.
@@ -89,13 +83,10 @@ impl App {
                 None => return,
             }
         };
-        if let Some(ref mut lsp) = self.bg.lsp {
-            lsp.did_close(&uri);
-        }
+        self.ports.lsp.did_close(&uri);
     }
 
     /// Check if the typed text should trigger completion.
-    /// Triggers on: (1) trigger characters (e.g. `.`), (2) word characters for continuous completion.
     pub(crate) fn try_trigger_completion(&mut self, pane_id: PaneId, text: &str) {
         let last_char = match text.chars().last() {
             Some(ch) => ch,
@@ -117,10 +108,7 @@ impl App {
                 None => return,
             };
 
-            // Check if it's a trigger character
-            let triggers = self.bg.lsp.as_ref()
-                .map(|lsp| lsp.trigger_characters(lang).to_vec())
-                .unwrap_or_default();
+            let triggers = self.ports.lsp.trigger_characters(lang);
             let s = last_char.to_string();
             let is_trigger = triggers.iter().any(|t| t == &s);
             let is_word_char = last_char.is_alphanumeric() || last_char == '_';
@@ -146,15 +134,9 @@ impl App {
             (uri, pos.line as u32, char_col, kind, tchar)
         };
 
-        if let Some(ref mut lsp) = self.bg.lsp {
-            lsp.request_completion(
-                &uri,
-                line,
-                character,
-                trigger_kind,
-                trigger_char.as_deref(),
-            );
-        }
+        self.ports.lsp.request_completion(
+            &uri, line, character, trigger_kind, trigger_char.as_deref(),
+        );
     }
 
     /// Explicitly trigger completion (Ctrl+Space).
@@ -184,26 +166,18 @@ impl App {
             (uri, pos.line as u32, char_col)
         };
 
-        if let Some(ref mut lsp) = self.bg.lsp {
-            lsp.request_completion(
-                &uri, line, character,
-                tide_lsp::protocol::COMPLETION_TRIGGER_INVOKED,
-                None,
-            );
-        }
+        self.ports.lsp.request_completion(
+            &uri, line, character,
+            tide_lsp::protocol::COMPLETION_TRIGGER_INVOKED,
+            None,
+        );
     }
 
     /// Poll the LSP manager for completion responses. Call from the event loop.
     pub(crate) fn poll_lsp(&mut self) -> bool {
-        let response = {
-            match self.bg.lsp.as_mut() {
-                Some(lsp) => lsp.poll(),
-                None => None,
-            }
-        };
+        let response = self.ports.lsp.poll();
 
         if let Some(response) = response {
-            // Find the editor pane that has this URI open
             let pane_id = self.find_pane_by_uri(&response.uri);
             if let Some(pane_id) = pane_id {
                 let items: Vec<CompletionItem> = response.items.into_iter().map(|item| {
@@ -221,14 +195,9 @@ impl App {
                 if !items.is_empty() {
                     if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&pane_id) {
                         let pos = pane.editor.cursor_position();
-                        // Extract the word prefix at cursor (text from word start to cursor)
                         let prefix = if let Some(line_text) = pane.editor.buffer.line(pos.line) {
                             let byte_col = pos.col.min(line_text.len());
                             let before_cursor = &line_text[..byte_col];
-                            // Walk backwards to find word start.
-                            // Word chars: alphanumeric + underscore. Sufficient for currently
-                            // supported languages (TS, Python, Rust, Go). Languages like CSS
-                            // that use hyphens in identifiers would need per-language rules.
                             let word_start = before_cursor.rfind(|ch: char| !ch.is_alphanumeric() && ch != '_')
                                 .map(|i| i + before_cursor[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1))
                                 .unwrap_or(0);

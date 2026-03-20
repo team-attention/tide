@@ -7,6 +7,8 @@ use tide_layout::{LayoutSnapshot, SplitLayout};
 
 use crate::pane::PaneKind;
 use crate::App;
+use crate::AppCorePort;
+use crate::LayoutPort;
 
 // ──────────────────────────────────────────────
 // Serializable session types
@@ -318,7 +320,7 @@ impl App {
         };
 
         for (pane_id, cwd) in &pane_infos {
-            match crate::pane::TerminalPane::with_cwd(*pane_id, cols, rows, cwd.clone(), self.window.dark_mode) {
+            match self.ports.terminal_factory.create_terminal(*pane_id, cols, rows, cwd.as_deref(), self.window.dark_mode) {
                 Ok(pane) => {
                     self.install_pty_waker(&pane);
                     self.panes.insert(*pane_id, PaneKind::Terminal(pane));
@@ -337,7 +339,7 @@ impl App {
         self.ws.width = session.ws_sidebar_width;
         self.ws.show_sidebar = session.show_workspace_sidebar;
         // Restore dock data from separate file
-        if let Some(ctx) = load_context_area_session() {
+        if let Some(ctx) = self.ports.persistence.load_context_area_session() {
             self.dock.dock_open = ctx.context_area_open;
             self.dock.dock_width = ctx.context_area_width;
             // Restore dock_layout into each terminal's TerminalPane
@@ -359,9 +361,7 @@ impl App {
         };
         // Apply dark mode to renderer
         let border_color = self.palette().border_color;
-        if let Some(renderer) = &mut self.gpu.renderer {
-            renderer.clear_color = border_color;
-        }
+        self.ports.gpu.set_clear_color(border_color);
 
         // Resolve focus: try saved focus, fall back to first tree pane
         let all_pane_ids = self.layout.pane_ids();
@@ -413,9 +413,7 @@ impl App {
 
         // Apply dark mode to renderer
         let border_color = self.palette().border_color;
-        if let Some(renderer) = &mut self.gpu.renderer {
-            renderer.clear_color = border_color;
-        }
+        self.ports.gpu.set_clear_color(border_color);
 
         self.create_initial_pane(early_terminal);
     }
@@ -426,9 +424,9 @@ impl App {
     /// Used by all exit/auto-save paths.
     pub(crate) fn save_full_session(&self) {
         let session = Session::from_app(self);
-        save_session(&session);
+        self.ports.persistence.save_session(&session);
         let context_area = SessionContextArea::from_app(self);
-        save_context_area_session(&context_area);
+        self.ports.persistence.save_context_area_session(&context_area);
     }
 }
 

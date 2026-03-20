@@ -5,6 +5,7 @@ use tide_core::{Rect, Vec2};
 use crate::pane::{PaneKind, Selection};
 use crate::theme::*;
 use crate::App;
+use crate::AppCorePort;
 
 impl App {
     /// Begin text selection on mouse-down. Clears any existing selection in all

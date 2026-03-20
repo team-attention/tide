@@ -3,6 +3,7 @@ use tide_core::{DropZone, PaneId, Rect, SplitDirection, Vec2};
 use crate::theme::*;
 use crate::App;
 use crate::DockPort;
+use crate::AppCorePort;
 
 /// Threshold for outer zone detection (0–12% of pane extent).
 const OUTER_ZONE_THRESHOLD: f32 = 0.12;

@@ -7,6 +7,8 @@ use crate::event_handler::drag_drop::PaneDragState;
 use crate::theme::*;
 use crate::App;
 use crate::DockPort;
+use crate::AppCorePort;
+use crate::LayoutPort;
 
 impl App {
     /// Main entry point for cursor-moved events. Dispatches to drag handlers,

@@ -2,6 +2,7 @@ use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
 use crate::App;
+use crate::PaneLifecyclePort;
 use tide_core::LayoutEngine;
 
 fn test_app() -> App {

@@ -3,6 +3,9 @@ use tide_core::InputEvent;
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
+use crate::AppCorePort;
+use crate::LayoutPort;
+use crate::ActionPort;
 
 impl App {
     /// Handle scroll event with pre-processed delta values.

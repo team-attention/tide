@@ -5,6 +5,10 @@ use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
 use crate::DockPort;
+use crate::AppCorePort;
+use crate::LayoutPort;
+use crate::WorkspaceNavPort;
+use crate::PaneLifecyclePort;
 
 impl App {
     /// Handle a browser nav bar click based on hover target.

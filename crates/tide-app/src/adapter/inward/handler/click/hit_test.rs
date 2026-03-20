@@ -4,6 +4,8 @@ use crate::event_handler::drag_drop::HoverTarget;
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
+use crate::AppCorePort;
+use crate::LayoutPort;
 
 impl App {
     /// Convert a pixel position to a terminal cell (row, col) within a pane's content area.

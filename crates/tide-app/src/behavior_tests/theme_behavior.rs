@@ -2,6 +2,7 @@
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::App;
+use crate::ActionPort;
 
 fn test_app() -> App {
     let mut app = App::new();

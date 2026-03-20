@@ -7,6 +7,8 @@ use tide_core::{FileTreeSource, Key, Modifiers};
 
 use crate::pane::PaneKind;
 use crate::App;
+use crate::AppCorePort;
+use crate::PaneLifecyclePort;
 
 impl App {
     pub(super) fn handle_file_tree_nav_key(&mut self, key: Key, _modifiers: &Modifiers) {

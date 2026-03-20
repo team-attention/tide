@@ -7,6 +7,8 @@ use tide_core::{Key, Modifiers};
 
 use crate::App;
 use crate::FileOpsPort;
+use crate::WorkspaceNavPort;
+use crate::PaneLifecyclePort;
 
 impl App {
     pub(super) fn handle_git_switcher_key(&mut self, key: Key, modifiers: &Modifiers) {

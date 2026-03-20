@@ -13,6 +13,8 @@ use crate::pane::PaneKind;
 use crate::state::FocusArea;
 use crate::App;
 use crate::ClipboardSearchPort;
+use crate::ActionPort;
+use crate::PaneLifecyclePort;
 
 impl App {
     pub(crate) fn handle_key_down(
@@ -66,7 +68,7 @@ impl App {
             && !modifiers.alt
         {
             self.save_full_session();
-            crate::update::session::delete_running_marker();
+            self.ports.persistence.delete_running_marker();
             std::process::exit(0);
         }
 

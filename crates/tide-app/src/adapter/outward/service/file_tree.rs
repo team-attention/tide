@@ -6,6 +6,9 @@ use tide_core::{FileGitStatus, FileTreeSource, TerminalBackend, Vec2};
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
+use crate::AppCorePort;
+use crate::ActionPort;
+use crate::PaneLifecyclePort;
 
 /// Results from the background git poller (one entry per CWD).
 pub(crate) type GitPollResults = HashMap<PathBuf, GitPollCwdResult>;

@@ -6,6 +6,8 @@ use tide_renderer::WgpuRenderer;
 
 use crate::rendering::render_thread::RenderThreadHandle;
 use crate::App;
+use crate::AppCorePort;
+use crate::LayoutPort;
 
 impl App {
     pub(crate) fn init_gpu(&mut self, window: &dyn PlatformWindow) {
@@ -100,23 +102,25 @@ impl App {
             config.clone(),
             self.bg.event_loop_waker.clone().expect("waker must be set before GPU init"),
         );
-        self.gpu.render_thread = Some(rt);
+        self.ports.gpu.set_render_thread(rt);
 
         self.window.cached_cell_size = renderer.cell_size();
         self.window.cell_size_table = renderer.cell_size_table().to_vec();
-        self.gpu.device = Some(device);
-        self.gpu.queue = Some(queue);
-        self.gpu.surface_config = Some(config);
-        self.gpu.renderer = Some(renderer);
+        self.ports.gpu.set_device_and_queue(device, queue);
+        self.ports.gpu.set_surface_config(config);
+        self.ports.gpu.set_renderer(renderer);
     }
 
     /// Queue a surface reconfiguration for the next render.
     /// The render thread will apply it before acquiring the next drawable.
     pub(crate) fn reconfigure_surface(&mut self) {
-        if let Some(config) = self.gpu.surface_config.as_mut() {
+        let updated = self.ports.gpu.surface_config_mut().map(|config| {
             config.width = self.window.window_size.0.max(1);
             config.height = self.window.window_size.1.max(1);
-            self.gpu.pending_surface_config = Some(config.clone());
+            config.clone()
+        });
+        if let Some(config) = updated {
+            self.ports.gpu.set_pending_surface_config(config);
         }
     }
 }

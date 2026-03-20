@@ -4,6 +4,7 @@ use crate::pane::PaneKind;
 use crate::search;
 use crate::theme::*;
 use crate::App;
+use crate::AppCorePort;
 
 impl App {
     // ── Search bar click handling ────────────────
@@ -12,7 +13,7 @@ impl App {
     /// Returns true if the click was consumed.
     pub(crate) fn check_search_bar_click(&mut self) -> bool {
         let pos = self.window.last_cursor_pos;
-        if self.gpu.renderer.is_none() {
+        if !self.ports.gpu.has_renderer() {
             return false;
         }
 

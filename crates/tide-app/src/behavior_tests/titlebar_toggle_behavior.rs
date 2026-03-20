@@ -4,6 +4,7 @@ use crate::pane::editor::EditorPane;
 use crate::state::FocusArea;
 use crate::App;
 use crate::DockPort;
+use crate::WorkspaceNavPort;
 
 fn test_app() -> App {
     let mut app = App::new();

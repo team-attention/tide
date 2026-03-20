@@ -82,7 +82,8 @@ fn main() {
 
     // ── App setup ────────────────────────────────────────────────────
     let mut app = App::new();
-    app.bg.event_loop_waker = Some(combined_waker);
+    app.bg.event_loop_waker = Some(combined_waker.clone());
+    app.ports.file_watcher.init(Some(combined_waker));
 
     // Initialize keybinding map from saved settings
     if !app.settings.keybindings.is_empty() {

@@ -2,6 +2,7 @@ use tide_core::{Rect, Renderer, Vec2};
 
 use crate::theme::*;
 use crate::App;
+use crate::AppCorePort;
 
 use super::{visual_width, draw_popup_rounded_bg, draw_popup_scrim, draw_cursor_beam, text_style, bold_style};
 

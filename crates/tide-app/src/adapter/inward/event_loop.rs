@@ -12,6 +12,10 @@ use crate::state::FocusArea;
 use crate::App;
 use crate::FileOpsPort;
 use crate::DockPort;
+use crate::AppCorePort;
+use crate::LayoutPort;
+use crate::ActionPort;
+use crate::PaneLifecyclePort;
 
 /// Events delivered to the app thread.
 pub(crate) enum AppEvent {
@@ -31,11 +35,11 @@ impl App {
         // Swap noop ports for real implementations now that we have a window.
         self.ports = crate::domain::ports::Ports::real();
 
-        self.platform.content_view_ptr = window.content_view_ptr();
-        self.platform.window_ptr = window.window_ptr();
+        self.ports.platform.set_content_view_ptr(window.content_view_ptr());
+        self.ports.platform.set_window_ptr(window.window_ptr());
 
-        let saved_session = session::load_session();
-        let is_crash = session::is_crash_recovery();
+        let saved_session = self.ports.persistence.load_session();
+        let is_crash = self.ports.persistence.is_crash_recovery();
 
         // Clean up stale shell init lock files (pyenv rehash, rbenv rehash, etc.)
         // before spawning any terminals. These tools use file-based locks that can
@@ -60,7 +64,7 @@ impl App {
             // The shell starts loading ~/.zshrc in parallel with GPU initialization,
             // so the prompt appears sooner after launch.
             let early_terminal =
-                tide_terminal::Terminal::with_cwd(80, 24, None, self.window.dark_mode).ok();
+                self.ports.terminal_factory.pre_spawn_terminal(80, 24, self.window.dark_mode).ok();
 
             self.init_gpu(window); // Shell is loading in parallel
 
@@ -71,7 +75,7 @@ impl App {
             }
         }
 
-        session::create_running_marker();
+        self.ports.persistence.create_running_marker();
 
         // Initialize LSP manager for code completion
         self.init_lsp();
@@ -142,7 +146,7 @@ impl App {
                         self.timing.last_frame = now;
 
                         // Reveal window after first frame
-                        if !self.platform.window_shown {
+                        if !self.ports.platform.window_shown() {
                             window.show_window();
                             // Re-establish first responder: macOS may reset
                             // it during window lifecycle initialization
@@ -151,7 +155,7 @@ impl App {
                             if let Some(target) = self.effective_ime_target() {
                                 window.focus_ime_proxy(target);
                             }
-                            self.platform.window_shown = true;
+                            self.ports.platform.set_window_shown(true);
                         }
                     }
                     // If render() returned false (render thread busy),
@@ -251,7 +255,7 @@ impl App {
                     }
                 }
                 self.save_full_session();
-                session::delete_running_marker();
+                self.ports.persistence.delete_running_marker();
                 std::process::exit(0);
             }
             PlatformEvent::Resized { width, height } => {
@@ -577,10 +581,8 @@ impl App {
         }
 
         // File watcher
-        if self
-            .bg.file_watch_dirty
-            .swap(false, std::sync::atomic::Ordering::Relaxed)
-        {
+        if self.ports.file_watcher.is_dirty() {
+            self.ports.file_watcher.clear_dirty();
             self.cache.needs_redraw = true;
         }
 

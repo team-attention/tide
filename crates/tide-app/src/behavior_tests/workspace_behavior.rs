@@ -4,6 +4,7 @@ use crate::pane::PaneKind;
 use crate::state::FocusArea;
 use crate::update::workspace::Workspace;
 use crate::App;
+use crate::ActionPort;
 use std::collections::HashMap;
 use tide_layout::SplitLayout;
 

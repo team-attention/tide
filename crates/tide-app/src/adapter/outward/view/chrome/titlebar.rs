@@ -3,6 +3,8 @@ use tide_core::{Rect, Renderer, TextStyle, Vec2};
 use crate::event_handler::drag_drop::HoverTarget;
 use crate::theme::*;
 use crate::App;
+use crate::AppCorePort;
+use crate::PaneLifecyclePort;
 
 /// Render the titlebar background, title text, icons, and toggle buttons.
 /// Also renders the workspace sidebar if visible.

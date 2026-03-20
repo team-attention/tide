@@ -5,6 +5,7 @@ use tide_core::{TerminalBackend, Vec2};
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
+use crate::AppCorePort;
 
 impl crate::TextExtractPort for App {
     /// Try to extract a URL from the terminal grid at the given click position.

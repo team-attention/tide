@@ -3,6 +3,7 @@ use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
 use crate::App;
+use crate::ActionPort;
 use tide_input::GlobalAction;
 
 fn test_app() -> App {

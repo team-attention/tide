@@ -4,6 +4,7 @@ use crate::pane::PaneKind;
 use crate::state::FocusArea;
 use crate::App;
 use crate::DockPort;
+use crate::LayoutPort;
 
 impl DockPort for App {
     /// Which Terminal is currently active in Stage.

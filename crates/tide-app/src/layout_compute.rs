@@ -8,9 +8,11 @@ use crate::theme::*;
 use crate::state::LayoutSide;
 use crate::App;
 use crate::DockPort;
+use crate::AppCorePort;
+use crate::LayoutPort;
 
-impl App {
-    pub(crate) fn update_cursor_icon(&self, window: &tide_platform::WindowProxy) {
+impl crate::domain::ports::inward::LayoutPort for App {
+    fn update_cursor_icon(&self, window: &tide_platform::WindowProxy) {
         use tide_platform::CursorIcon;
         let icon = match &self.interaction.hover_target {
             Some(HoverTarget::FileTreeEntry(_))
@@ -41,7 +43,7 @@ impl App {
     }
 
     /// Check if a position is on a file finder item. Returns the index into filtered list.
-    pub(crate) fn file_finder_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
+    fn file_finder_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
         let finder = self.modal.file_finder.as_ref()?;
         let cell_size = self.cell_size();
         let logical = self.logical_size();
@@ -65,7 +67,7 @@ impl App {
     }
 
     /// Hit-test the git switcher popup. Returns the filtered index of the item under pos.
-    pub(crate) fn git_switcher_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
+    fn git_switcher_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
         let gs = self.modal.git_switcher.as_ref()?;
         let cell_size = self.cell_size();
         let logical = self.logical_size();
@@ -90,7 +92,7 @@ impl App {
     }
 
     /// Check if a position is inside the git switcher popup area.
-    pub(crate) fn git_switcher_contains(&self, pos: tide_core::Vec2) -> bool {
+    fn git_switcher_contains(&self, pos: tide_core::Vec2) -> bool {
         if let Some(ref gs) = self.modal.git_switcher {
             let cs = self.cell_size();
             let logical = self.logical_size();
@@ -102,7 +104,7 @@ impl App {
     }
 
     /// Hit-test the git switcher popup tab bar. Returns the mode for the clicked tab.
-    pub(crate) fn git_switcher_tab_at(&self, pos: tide_core::Vec2) -> Option<crate::GitSwitcherMode> {
+    fn git_switcher_tab_at(&self, pos: tide_core::Vec2) -> Option<crate::GitSwitcherMode> {
         let gs = self.modal.git_switcher.as_ref()?;
         let cell_size = self.cell_size();
         let cell_height = cell_size.height;
@@ -127,7 +129,7 @@ impl App {
     }
 
     /// Hit-test the git switcher popup for button clicks (both Branches and Worktrees tabs).
-    pub(crate) fn git_switcher_button_at(&self, pos: tide_core::Vec2) -> Option<crate::SwitcherButton> {
+    fn git_switcher_button_at(&self, pos: tide_core::Vec2) -> Option<crate::SwitcherButton> {
         let gs = self.modal.git_switcher.as_ref()?;
         let cell_size = self.cell_size();
         let cell_height = cell_size.height;
@@ -275,7 +277,7 @@ impl App {
     }
 
     /// Check if a position is inside the file finder popup area.
-    pub(crate) fn file_finder_contains(&self, pos: tide_core::Vec2) -> bool {
+    fn file_finder_contains(&self, pos: tide_core::Vec2) -> bool {
         if let Some(ref finder) = self.modal.file_finder {
             let cell_size = self.cell_size();
             let logical = self.logical_size();
@@ -288,7 +290,7 @@ impl App {
 
     /// Check if a position is inside the save-as popup area.
     /// Uses the anchor_rect from the save-as input to position the popup.
-    pub(crate) fn save_as_contains(&self, pos: tide_core::Vec2) -> bool {
+    fn save_as_contains(&self, pos: tide_core::Vec2) -> bool {
         if let Some(ref save_as) = self.modal.save_as_input {
             let cell_size = self.cell_size();
             let cell_height = cell_size.height;
@@ -310,7 +312,7 @@ impl App {
     }
 
     /// Hit-test the context menu. Returns the item index.
-    pub(crate) fn context_menu_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
+    fn context_menu_item_at(&self, pos: tide_core::Vec2) -> Option<usize> {
         let menu = self.modal.context_menu.as_ref()?;
         let cell_size = self.cell_size();
         let logical = self.logical_size();
@@ -332,12 +334,12 @@ impl App {
 
 
 
-    pub(crate) fn palette(&self) -> &'static ThemePalette {
+    fn palette(&self) -> &'static ThemePalette {
         if self.window.dark_mode { &DARK } else { &LIGHT }
     }
 
     /// Compute the full layout: sidebar (optional file tree) + pane area (split tree fills remaining space).
-    pub(crate) fn compute_layout(&mut self) {
+    fn compute_layout(&mut self) {
         let logical = self.logical_size();
         let top = self.window.top_inset;
         let pane_ids = self.layout.pane_ids();
@@ -679,8 +681,8 @@ impl App {
 
     /// Create/show/hide/reposition WKWebView instances for browser panes.
     /// Browser panes now live in the split tree and use visual_pane_rects for positioning.
-    pub(crate) fn sync_browser_webview_frames(&mut self) {
-        let content_view = match self.platform.content_view_ptr {
+    fn sync_browser_webview_frames(&mut self) {
+        let content_view = match self.ports.platform.content_view_ptr() {
             Some(ptr) => ptr,
             None => return,
         };
@@ -764,7 +766,7 @@ impl App {
                 let should_be_first_responder = is_focused_pane && !bp.url_input_focused && !search_bar_active;
                 if should_be_first_responder && !bp.is_first_responder {
                     if let (Some(wv), Some(win_ptr)) =
-                        (&bp.webview, self.platform.window_ptr)
+                        (&bp.webview, self.ports.platform.window_ptr())
                     {
                         unsafe { wv.make_first_responder(win_ptr); }
                     }
@@ -777,7 +779,7 @@ impl App {
                 // Browser pane not in the visible layout -- hide it
                 if bp.is_first_responder {
                     if let (Some(wv), Some(win_ptr), Some(view_ptr)) =
-                        (&bp.webview, self.platform.window_ptr, self.platform.content_view_ptr)
+                        (&bp.webview, self.ports.platform.window_ptr(), self.ports.platform.content_view_ptr())
                     {
                         unsafe { wv.resign_first_responder(win_ptr, view_ptr); }
                     }

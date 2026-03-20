@@ -6,6 +6,7 @@
 
 use crate::pane::PaneKind;
 use crate::App;
+use crate::PaneLifecyclePort;
 
 impl App {
     /// Handle IME committed text (composition done).

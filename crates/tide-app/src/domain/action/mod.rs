@@ -30,6 +30,11 @@ use crate::FileOpsPort;
 use crate::DockPort;
 use crate::FocusNavPort;
 use crate::TextExtractPort;
+use crate::AppCorePort;
+use crate::LayoutPort;
+use crate::WorkspaceNavPort;
+use crate::ActionPort;
+use crate::PaneLifecyclePort;
 
 impl App {
     fn cleanup_closed_pane_state(&mut self, pane_id: tide_core::PaneId) {
@@ -43,17 +48,21 @@ impl App {
             self.ime.clear_composition();
             self.ime.last_target = None;
         }
-        if let Some(renderer) = self.gpu.renderer.as_mut() {
-            renderer.remove_pane_cache(pane_id);
-        }
+        self.ports.gpu.remove_pane_cache(pane_id);
         // Clean up terminal association
         self.assoc.associated_terminal.remove(&pane_id);
         // If no pane references a retained context, clean it up
         self.cleanup_retained_context(pane_id);
     }
 
-    /// Remove a retained terminal context if no panes reference it anymore.
-    pub(crate) fn cleanup_retained_context(&mut self, _closed_pane_id: tide_core::PaneId) {
+    /// Resolve the effective target pane for actions like Copy/Paste/Find.
+    fn action_target_id(&self) -> Option<tide_core::PaneId> {
+        action_target_id(self.focus.focused)
+    }
+}
+
+impl crate::domain::ports::inward::ActionPort for App {
+    fn cleanup_retained_context(&mut self, _closed_pane_id: tide_core::PaneId) {
         // Check if the closed pane's associated terminal is in retained_contexts
         // and no other pane still references it
         let terminal_ids: Vec<tide_core::PaneId> = self.assoc.retained_contexts.keys().copied().collect();
@@ -65,25 +74,13 @@ impl App {
         }
     }
 
-    /// Switch primary focus to a pane, setting focus to Stage.
-    // focus_terminal, dismiss_completion, accept_completion → workspace.rs, search.rs
-
-    /// Resolve the effective target pane for actions like Copy/Paste/Find.
-    fn action_target_id(&self) -> Option<tide_core::PaneId> {
-        action_target_id(self.focus.focused)
-    }
-
-    /// Save session and exit the app.
-    pub(crate) fn exit_app(&self) {
+    fn exit_app(&self) {
         self.save_full_session();
-        crate::update::session::delete_running_marker();
+        self.ports.persistence.delete_running_marker();
         std::process::exit(0);
     }
 
-    // resolve_slot, handle_focus_area, toggle_*_visibility, handle_navigate,
-    // handle_toggle_stacked, reorder_stacked_tab, cycle_tab → workspace.rs
-
-    pub(crate) fn handle_action(&mut self, action: Action, event: Option<InputEvent>) {
+    fn handle_action(&mut self, action: Action, event: Option<InputEvent>) {
         match action {
             Action::RouteToPane(id) => {
                 // Update focus
@@ -394,7 +391,7 @@ impl App {
         }
     }
 
-    pub(crate) fn split_pane(&mut self, direction: SplitDirection, cwd: Option<std::path::PathBuf>) {
+    fn split_pane(&mut self, direction: SplitDirection, cwd: Option<std::path::PathBuf>) {
         if let Some(focused) = self.focus.focused {
             self.split_pane_from(focused, direction, cwd);
         }
@@ -403,7 +400,7 @@ impl App {
     /// Split from a specific source pane, creating a new terminal pane with
     /// proper focus, chrome updates.
     /// Returns the new pane ID on success.
-    pub(crate) fn split_pane_from(
+    fn split_pane_from(
         &mut self,
         source: tide_core::PaneId,
         direction: SplitDirection,
@@ -423,7 +420,7 @@ impl App {
         Some(new_id)
     }
 
-    pub(crate) fn handle_global_action(&mut self, action: GlobalAction) {
+    fn handle_global_action(&mut self, action: GlobalAction) {
         match action {
             GlobalAction::SplitVertical => {
                 self.split_with_launcher(SplitDirection::Vertical);
@@ -561,9 +558,7 @@ impl App {
             GlobalAction::ToggleTheme => {
                 self.window.dark_mode = !self.window.dark_mode;
                 let border_color = self.palette().border_color;
-                if let Some(renderer) = &mut self.gpu.renderer {
-                    renderer.clear_color = border_color;
-                }
+                self.ports.gpu.set_clear_color(border_color);
                 let dark = self.window.dark_mode;
                 for pane in self.panes.values_mut() {
                     match pane {

@@ -11,6 +11,8 @@ use tide_core::TerminalBackend;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
 use crate::App;
+use crate::ActionPort;
+use crate::PaneLifecyclePort;
 
 /// Where text input should be directed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

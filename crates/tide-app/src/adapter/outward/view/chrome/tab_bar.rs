@@ -5,6 +5,7 @@ use crate::theme::*;
 use crate::state::FocusArea;
 use crate::App;
 use crate::DockPort;
+use crate::AppCorePort;
 
 /// Render dock background, pane borders/backgrounds, pane headers (tab bars),
 /// and browser navigation bars. Returns the computed header hit zones.

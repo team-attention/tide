@@ -8,62 +8,24 @@ pub(crate) mod workspace;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::mpsc;
-
-use notify::{self, Watcher};
 
 use tide_core::TerminalBackend;
 
 use crate::pane::PaneKind;
+use crate::domain::ports::file_watcher::FileWatchEvent;
 use crate::search;
 use crate::App;
+use crate::PaneLifecyclePort;
 
 impl App {
-    /// Ensure the file watcher is initialized. Returns true if watcher is available.
-    pub(crate) fn ensure_file_watcher(&mut self) -> bool {
-        if self.bg.file_watcher.is_some() {
-            return true;
-        }
-        let (tx, rx) = mpsc::channel();
-        let waker = self.bg.event_loop_waker.clone();
-        let dirty_flag = self.bg.file_watch_dirty.clone();
-        match notify::recommended_watcher(move |event| {
-            let _ = tx.send(event);
-            dirty_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-            // Wake the event loop so file changes are processed immediately
-            if let Some(ref w) = waker {
-                w();
-            }
-        }) {
-            Ok(watcher) => {
-                self.bg.file_watcher = Some(watcher);
-                self.bg.file_watch_rx = Some(rx);
-                true
-            }
-            Err(e) => {
-                log::error!("Failed to create file watcher: {}", e);
-                false
-            }
-        }
-    }
-
     /// Start watching a file path for changes.
     pub(crate) fn watch_file(&mut self, path: &std::path::Path) {
-        if !self.ensure_file_watcher() {
-            return;
-        }
-        if let Some(watcher) = self.bg.file_watcher.as_mut() {
-            if let Err(e) = watcher.watch(path, notify::RecursiveMode::NonRecursive) {
-                log::error!("Failed to watch {:?}: {}", path, e);
-            }
-        }
+        self.ports.file_watcher.watch(path);
     }
 
     /// Stop watching a file path.
     pub(crate) fn unwatch_file(&mut self, path: &std::path::Path) {
-        if let Some(watcher) = self.bg.file_watcher.as_mut() {
-            let _ = watcher.unwatch(path);
-        }
+        self.ports.file_watcher.unwatch(path);
     }
 
     pub(crate) fn update(&mut self) {
@@ -167,20 +129,17 @@ impl App {
         // File watcher events are lightweight (one reload per changed file) and
         // losing them causes stale editor content when external tools (e.g. Claude
         // Code) edit files while terminal output is active.
-        if let Some(rx) = self.bg.file_watch_rx.as_ref() {
+        {
+            let events = self.ports.file_watcher.poll_events();
             let mut changed_paths: HashSet<PathBuf> = HashSet::new();
             let mut removed_paths: HashSet<PathBuf> = HashSet::new();
-            while let Ok(event_result) = rx.try_recv() {
-                if let Ok(event) = event_result {
-                    use notify::EventKind;
-                    match event.kind {
-                        EventKind::Modify(_) | EventKind::Create(_) => {
-                            changed_paths.extend(event.paths);
-                        }
-                        EventKind::Remove(_) => {
-                            removed_paths.extend(event.paths);
-                        }
-                        _ => {}
+            for event in events {
+                match event {
+                    FileWatchEvent::Modified(p) | FileWatchEvent::Created(p) => {
+                        changed_paths.insert(p);
+                    }
+                    FileWatchEvent::Removed(p) => {
+                        removed_paths.insert(p);
                     }
                 }
             }

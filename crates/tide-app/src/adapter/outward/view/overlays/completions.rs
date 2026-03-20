@@ -3,6 +3,7 @@ use tide_core::{Color, Rect, Renderer, TextStyle, Vec2};
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
+use crate::AppCorePort;
 
 use super::{visual_width, draw_popup_rounded_bg};
 

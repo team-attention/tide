@@ -1,5 +1,6 @@
 // Spec: docs/specs/soft-wrap.md
 use crate::pane::editor::EditorPane;
+use crate::ActionPort;
 
 fn editor_with_extension(ext: &str) -> EditorPane {
     let path = std::env::temp_dir().join(format!("tide_test_soft_wrap.{}", ext));

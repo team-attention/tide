@@ -3,6 +3,8 @@ use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalContext};
 use crate::state::FocusArea;
 use crate::App;
+use crate::ActionPort;
+use crate::PaneLifecyclePort;
 use tide_core::LayoutEngine;
 
 fn test_app() -> App {

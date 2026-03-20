@@ -4,6 +4,7 @@ use crate::event_handler::drag_drop;
 use crate::event_handler::drag_drop::PaneDragState;
 use crate::theme::*;
 use crate::App;
+use crate::AppCorePort;
 
 
 /// Render hover highlights (overlay layer) for the currently hovered UI element.

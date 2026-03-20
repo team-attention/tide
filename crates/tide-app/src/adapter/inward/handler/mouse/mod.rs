@@ -12,6 +12,11 @@ use crate::theme::*;
 use crate::App;
 use crate::FileOpsPort;
 use crate::DockPort;
+use crate::AppCorePort;
+use crate::LayoutPort;
+use crate::WorkspaceNavPort;
+use crate::ActionPort;
+use crate::PaneLifecyclePort;
 
 impl App {
     pub(crate) fn handle_mouse_down(&mut self, button: MouseButton, window: &WindowProxy) {

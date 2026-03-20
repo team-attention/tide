@@ -13,6 +13,8 @@ use tide_core::{Rect, Renderer};
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
+use crate::AppCorePort;
+use crate::LayoutPort;
 
 
 /// Compute the bar offset for a pane. Returns CONFLICT_BAR_HEIGHT if a notification bar
@@ -37,19 +39,25 @@ pub(super) fn bar_offset_for(
 
 impl App {
     /// Poll the render thread for completed frames.  Returns the renderer
-    /// to `self.gpu.renderer` and updates `drawable_wait_us`.
+    /// to the GPU port and updates `drawable_wait_us`.
     pub(crate) fn poll_render_result(&mut self) {
-        let rt = match self.gpu.render_thread.as_ref() {
-            Some(rt) => rt,
-            None => return,
-        };
+        // Collect results from render thread into a vec to avoid overlapping borrows
+        let results: Vec<_> = self.ports.gpu.render_thread()
+            .map(|rt| {
+                let mut v = Vec::new();
+                while let Ok(result) = rt.result_rx.try_recv() {
+                    v.push(result);
+                }
+                v
+            })
+            .unwrap_or_default();
         let mut surface_lost = false;
-        while let Ok(result) = rt.result_rx.try_recv() {
-            self.gpu.drawable_wait_us = result.drawable_wait_us;
+        for result in results {
+            self.ports.gpu.set_drawable_wait_us(result.drawable_wait_us);
             if result.surface_lost {
                 surface_lost = true;
             }
-            self.gpu.renderer = Some(result.renderer);
+            self.ports.gpu.restore_renderer(result.renderer);
         }
         // Apply any font size change that was queued while the renderer was away.
         self.flush_pending_font_size();
@@ -70,17 +78,17 @@ impl App {
         // request_redraw() would require.  This catches the common case
         // where the render thread is just finishing up.
         self.poll_render_result();
-        let mut renderer = match self.gpu.renderer.take() {
+        let mut renderer = match self.ports.gpu.take_renderer() {
             Some(r) => r,
             None => {
                 for _ in 0..20 {
                     std::thread::yield_now();
                     self.poll_render_result();
-                    if self.gpu.renderer.is_some() {
+                    if self.ports.gpu.has_renderer() {
                         break;
                     }
                 }
-                match self.gpu.renderer.take() {
+                match self.ports.gpu.take_renderer() {
                     Some(r) => r,
                     None => return false,
                 }
@@ -222,14 +230,16 @@ impl App {
         // The render thread handles get_current_texture() (which may block
         // on CAMetalLayer.nextDrawable()), command encoding, queue submission,
         // presentation, and device polling — all without blocking this thread.
-        if let Some(ref rt) = self.gpu.render_thread {
-            let config_update = self.gpu.pending_surface_config.take();
-            let _ = rt.job_tx.send(crate::rendering::render_thread::RenderJob {
-                renderer,
-                config_update,
-            });
-            // renderer is now on the render thread — self.gpu.renderer stays None
-            // until poll_render_result() retrieves it.
+        {
+            let config_update = self.ports.gpu.take_pending_surface_config();
+            if let Some(rt) = self.ports.gpu.render_thread() {
+                let _ = rt.job_tx.send(crate::rendering::render_thread::RenderJob {
+                    renderer,
+                    config_update,
+                });
+                // renderer is now on the render thread — ports.gpu holds None
+                // until poll_render_result() retrieves it.
+            }
         }
 
         log::trace!(

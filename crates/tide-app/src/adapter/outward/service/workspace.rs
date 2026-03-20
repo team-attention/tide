@@ -8,6 +8,8 @@ use tide_layout::SplitLayout;
 use crate::pane::PaneKind;
 use crate::state::{FocusArea, ViewMode};
 use crate::App;
+use crate::LayoutPort;
+use crate::PaneLifecyclePort;
 
 /// A workspace groups its own layout, panes, and focus state.
 /// The active workspace's data is swapped into/from App fields.
@@ -216,7 +218,7 @@ impl App {
             if let Some(pane) = self.panes.remove(&pid) {
                 self.cache.pane_generations.remove(&pid);
                 self.interaction.scroll_accumulator.remove(&pid);
-                if let Some(renderer) = self.gpu.renderer.as_mut() {
+                if let Some(renderer) = self.ports.gpu.renderer_mut() {
                     renderer.remove_pane_cache(pid);
                 }
                 moved_panes.insert(pid, pane);
@@ -268,7 +270,7 @@ impl App {
             self.ime.pending_removes.push(id);
             self.cache.pane_generations.remove(&id);
             self.interaction.scroll_accumulator.remove(&id);
-            if let Some(renderer) = self.gpu.renderer.as_mut() {
+            if let Some(renderer) = self.ports.gpu.renderer_mut() {
                 renderer.remove_pane_cache(id);
             }
         }

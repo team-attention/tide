@@ -9,6 +9,7 @@ use crate::state::search::SearchState;
 use crate::theme::SCROLLBAR_WIDTH;
 
 use crate::theme::ThemePalette;
+use crate::AppCorePort;
 
 use super::{EditorPane, GUTTER_WIDTH_CELLS};
 

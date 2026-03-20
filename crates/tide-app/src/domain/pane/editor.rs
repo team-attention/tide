@@ -16,6 +16,7 @@ use tide_editor::wrap::WrapMap;
 use tide_editor::markdown::{PreviewLine, render_markdown_preview, MarkdownTheme};
 
 use crate::pane::Selection;
+use crate::ActionPort;
 
 
 /// Width of the gutter (line numbers) in cells.

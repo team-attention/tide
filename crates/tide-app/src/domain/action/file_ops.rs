@@ -4,6 +4,8 @@ use tide_core::FileTreeSource;
 
 use crate::pane::PaneKind;
 use crate::App;
+use crate::LayoutPort;
+use crate::PaneLifecyclePort;
 
 impl crate::FileOpsPort for App {
     /// Get a working directory for file operations: try focused terminal, then any terminal,

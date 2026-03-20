@@ -13,6 +13,9 @@ use crate::theme::*;
 use crate::state;
 use crate::update::workspace::{Workspace, WorkspaceExtras};
 use crate::DockPort;
+use crate::AppCorePort;
+use crate::LayoutPort;
+use crate::PaneLifecyclePort;
 
 // ──────────────────────────────────────────────
 // App state
@@ -21,9 +24,6 @@ use crate::DockPort;
 pub(crate) struct App {
     // Port abstractions for external boundaries
     pub(crate) ports: crate::domain::ports::Ports,
-
-    // GPU resources (grouped)
-    pub(crate) gpu: state::GpuState,
 
     // Panes
     pub(crate) panes: HashMap<PaneId, PaneKind>,
@@ -82,8 +82,7 @@ pub(crate) struct App {
     // Background services (grouped)
     pub(crate) bg: state::BackgroundServices,
 
-    // Platform pointers (grouped)
-    pub(crate) platform: state::PlatformPtrs,
+    // (Platform pointers moved to ports.platform)
 
     // Pane associations (grouped)
     pub(crate) assoc: state::PaneAssociations,
@@ -100,7 +99,6 @@ impl App {
         let top_inset = if cfg!(target_os = "macos") { TITLEBAR_HEIGHT } else { 0.0 };
         Self {
             ports: crate::domain::ports::Ports::noop(),
-            gpu: state::GpuState::new(),
             panes: HashMap::new(),
             layout: SplitLayout::new(),
             router: Router::new(),
@@ -123,32 +121,11 @@ impl App {
             ws: state::WorkspaceManager::new(),
             settings: state::settings::load_settings(),
             bg: state::BackgroundServices::new(),
-            platform: state::PlatformPtrs::new(),
             assoc: state::PaneAssociations::new(),
         }
     }
 
     // ── Helpers ──
-
-    /// Returns the active dock pane when dock is in zoomed/stacked mode.
-    /// Falls back to dock_focused or first pinned pane when focused is not a dock pane.
-    pub(crate) fn dock_zoomed_pane(&self) -> Option<PaneId> {
-        if !self.dock.dock_zoomed {
-            return None;
-        }
-        self.focus.focused
-            .filter(|id| self.is_pane_in_dock(*id))
-            .or_else(|| {
-                self.focused_terminal_id().and_then(|tid| {
-                    if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
-                        tp.dock_focused.filter(|id| self.panes.contains_key(id))
-                    } else {
-                        None
-                    }
-                })
-            })
-            .or_else(|| self.dock.pinned_dock_layout.pane_ids().into_iter().next())
-    }
 
     /// Install an event-loop waker on a terminal pane so the PTY thread
     /// can wake us from sleep when new output arrives.
@@ -183,7 +160,7 @@ impl App {
             terminal.resize(cols, rows);
             Ok(TerminalPane::with_terminal(pane_id, terminal))
         } else {
-            TerminalPane::with_cwd(pane_id, cols, rows, None, self.window.dark_mode)
+            self.ports.terminal_factory.create_terminal(pane_id, cols, rows, None, self.window.dark_mode)
         };
 
         match result {
@@ -215,15 +192,36 @@ impl App {
         self.ws.active = 0;
     }
 
-    pub(crate) fn logical_size(&self) -> Size {
+}
+
+impl crate::domain::ports::inward::AppCorePort for App {
+    fn dock_zoomed_pane(&self) -> Option<PaneId> {
+        if !self.dock.dock_zoomed {
+            return None;
+        }
+        self.focus.focused
+            .filter(|id| self.is_pane_in_dock(*id))
+            .or_else(|| {
+                self.focused_terminal_id().and_then(|tid| {
+                    if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                        tp.dock_focused.filter(|id| self.panes.contains_key(id))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .or_else(|| self.dock.pinned_dock_layout.pane_ids().into_iter().next())
+    }
+
+    fn logical_size(&self) -> Size {
         self.window.logical_size()
     }
 
-    pub(crate) fn cell_size(&self) -> Size {
+    fn cell_size(&self) -> Size {
         self.window.cached_cell_size
     }
 
-    pub(crate) fn apply_font_size(&mut self, size: f32) {
+    fn apply_font_size(&mut self, size: f32) {
         let size = size.clamp(8.0, 32.0);
         if (size - self.window.current_font_size).abs() < 0.01 {
             return;
@@ -231,9 +229,7 @@ impl App {
         self.window.current_font_size = size;
         self.window.cached_cell_size = self.window.lookup_cell_size(size);
 
-        if let Some(renderer) = &mut self.gpu.renderer {
-            renderer.set_font_size(size);
-        } else {
+        if !self.ports.gpu.set_font_size(size) {
             self.window.pending_font_size = Some(size);
         }
 
@@ -243,11 +239,9 @@ impl App {
         self.compute_layout();
     }
 
-    pub(crate) fn flush_pending_font_size(&mut self) {
+    fn flush_pending_font_size(&mut self) {
         if let Some(size) = self.window.pending_font_size.take() {
-            if let Some(renderer) = &mut self.gpu.renderer {
-                renderer.set_font_size(size);
-            }
+            self.ports.gpu.set_font_size(size);
         }
     }
 }

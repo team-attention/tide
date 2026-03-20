@@ -4,6 +4,7 @@ use crate::theme::*;
 use crate::ui::file_icon;
 use crate::state::FocusArea;
 use crate::App;
+use crate::AppCorePort;
 
 /// Render the file tree panel (rounded border, header, entries, cursor highlight).
 pub(super) fn render_file_tree(

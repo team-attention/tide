@@ -1,0 +1,76 @@
+// PersistencePort — session save/load, settings, and crash recovery marker.
+//
+// Abstracts all filesystem I/O for persisting app state between restarts.
+
+use crate::update::session::{Session, SessionContextArea};
+use crate::state::settings::TideSettings;
+
+pub(crate) trait PersistencePort {
+    fn save_session(&self, session: &Session);
+    fn load_session(&self) -> Option<Session>;
+    fn save_context_area_session(&self, data: &SessionContextArea);
+    fn load_context_area_session(&self) -> Option<SessionContextArea>;
+    fn create_running_marker(&self);
+    fn delete_running_marker(&self);
+    fn is_crash_recovery(&self) -> bool;
+    fn save_settings(&self, settings: &TideSettings);
+    fn load_settings(&self) -> TideSettings;
+}
+
+// ── Real implementation (production) ──
+
+pub(crate) struct RealPersistence;
+
+impl PersistencePort for RealPersistence {
+    fn save_session(&self, session: &Session) {
+        crate::update::session::save_session(session);
+    }
+
+    fn load_session(&self) -> Option<Session> {
+        crate::update::session::load_session()
+    }
+
+    fn save_context_area_session(&self, data: &SessionContextArea) {
+        crate::update::session::save_context_area_session(data);
+    }
+
+    fn load_context_area_session(&self) -> Option<SessionContextArea> {
+        crate::update::session::load_context_area_session()
+    }
+
+    fn create_running_marker(&self) {
+        crate::update::session::create_running_marker();
+    }
+
+    fn delete_running_marker(&self) {
+        crate::update::session::delete_running_marker();
+    }
+
+    fn is_crash_recovery(&self) -> bool {
+        crate::update::session::is_crash_recovery()
+    }
+
+    fn save_settings(&self, settings: &TideSettings) {
+        crate::state::settings::save_settings(settings);
+    }
+
+    fn load_settings(&self) -> TideSettings {
+        crate::state::settings::load_settings()
+    }
+}
+
+// ── Noop implementation (tests) ──
+
+pub(crate) struct NoopPersistence;
+
+impl PersistencePort for NoopPersistence {
+    fn save_session(&self, _session: &Session) {}
+    fn load_session(&self) -> Option<Session> { None }
+    fn save_context_area_session(&self, _data: &SessionContextArea) {}
+    fn load_context_area_session(&self) -> Option<SessionContextArea> { None }
+    fn create_running_marker(&self) {}
+    fn delete_running_marker(&self) {}
+    fn is_crash_recovery(&self) -> bool { false }
+    fn save_settings(&self, _settings: &TideSettings) {}
+    fn load_settings(&self) -> TideSettings { TideSettings::default() }
+}

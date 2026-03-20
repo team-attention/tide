@@ -8,6 +8,9 @@ use tide_core::LayoutEngine;
 use crate::state::FocusArea;
 use crate::App;
 use crate::FocusNavPort;
+use crate::AppCorePort;
+use crate::WorkspaceNavPort;
+use crate::ActionPort;
 
 impl FocusNavPort for App {
     /// Navigate file tree cursor: J(Down) = next, K(Up) = prev. H/L ignored.

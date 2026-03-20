@@ -3,6 +3,10 @@ use tide_core::{Rect, SplitDirection, TerminalBackend};
 use crate::header::{HeaderHitAction, HeaderHitZone};
 use crate::pane::PaneKind;
 use crate::{App, DockPort, FileOpsPort, GitSwitcherMode, GitSwitcherState, shell_escape};
+use crate::LayoutPort;
+use crate::WorkspaceNavPort;
+use crate::ActionPort;
+use crate::PaneLifecyclePort;
 
 impl App {
     /// Check if the current cursor position clicks on a header badge or close button.
@@ -152,8 +156,8 @@ impl App {
         if let Some(PaneKind::Terminal(pane)) = self.panes.get(&pane_id) {
             let shell_busy = !pane.context.shell_idle;
             if let Some(ref cwd) = pane.context.cwd {
-                let branches = tide_terminal::git::list_branches(cwd);
-                let worktrees = tide_terminal::git::list_worktrees(cwd);
+                let branches = self.ports.git.list_branches(cwd);
+                let worktrees = self.ports.git.list_worktrees(cwd);
                 let mut gs = GitSwitcherState::new(
                     pane_id, mode, branches, worktrees, anchor_rect,
                 );
@@ -199,11 +203,11 @@ impl App {
                                 }
                             }
                             crate::GitSwitcherMode::Worktrees => {
-                                let root = tide_terminal::git::repo_root(&cwd).unwrap_or_else(|| cwd.clone());
-                                let settings = crate::state::settings::load_settings();
+                                let root = self.ports.git.repo_root(&cwd).unwrap_or_else(|| cwd.clone());
+                                let settings = self.ports.persistence.load_settings();
                                 let wt_path = settings.worktree.compute_worktree_path(&root, &query);
-                                let new_branch = !tide_terminal::git::branch_exists(&cwd, &query);
-                                match tide_terminal::git::add_worktree(&cwd, &wt_path, &query, new_branch) {
+                                let new_branch = !self.ports.git.branch_exists(&cwd, &query);
+                                match self.ports.git.add_worktree(&cwd, &wt_path, &query, new_branch) {
                                     Ok(()) => {
                                         settings.worktree.copy_files_to_worktree(&root, &wt_path);
                                         if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&pane_id) {
@@ -307,11 +311,11 @@ impl App {
                         };
                         if let Some(cwd) = cwd {
                             if let Some(ref wt_path) = wt_path {
-                                if let Err(e) = tide_terminal::git::remove_worktree(&cwd, wt_path, true) {
+                                if let Err(e) = self.ports.git.remove_worktree(&cwd, wt_path, true) {
                                     log::error!("Failed to remove worktree: {}", e);
                                 }
                             }
-                            if let Err(e) = tide_terminal::git::delete_branch(&cwd, &branch_name, true) {
+                            if let Err(e) = self.ports.git.delete_branch(&cwd, &branch_name, true) {
                                 log::error!("Failed to delete branch: {}", e);
                             }
                         }
@@ -329,12 +333,12 @@ impl App {
                         };
                         if let Some(cwd) = cwd {
                             if !is_main {
-                                if let Err(e) = tide_terminal::git::remove_worktree(&cwd, &wt_path, true) {
+                                if let Err(e) = self.ports.git.remove_worktree(&cwd, &wt_path, true) {
                                     log::error!("Failed to remove worktree: {}", e);
                                 }
                                 if let Some(ref branch) = branch_name {
                                     if branch != "main" && branch != "master" {
-                                        if let Err(e) = tide_terminal::git::delete_branch(&cwd, branch, true) {
+                                        if let Err(e) = self.ports.git.delete_branch(&cwd, branch, true) {
                                             log::error!("Failed to delete branch: {}", e);
                                         }
                                     }
@@ -371,11 +375,11 @@ impl App {
                                 }
                             }
                             crate::GitSwitcherMode::Worktrees => {
-                                let root = tide_terminal::git::repo_root(&cwd).unwrap_or_else(|| cwd.clone());
-                                let settings = crate::state::settings::load_settings();
+                                let root = self.ports.git.repo_root(&cwd).unwrap_or_else(|| cwd.clone());
+                                let settings = self.ports.persistence.load_settings();
                                 let wt_path = settings.worktree.compute_worktree_path(&root, &query);
-                                let new_branch = !tide_terminal::git::branch_exists(&cwd, &query);
-                                match tide_terminal::git::add_worktree(&cwd, &wt_path, &query, new_branch) {
+                                let new_branch = !self.ports.git.branch_exists(&cwd, &query);
+                                match self.ports.git.add_worktree(&cwd, &wt_path, &query, new_branch) {
                                     Ok(()) => {
                                         settings.worktree.copy_files_to_worktree(&root, &wt_path);
                                         self.split_pane_from(pane_id, SplitDirection::Horizontal, Some(wt_path));
@@ -456,8 +460,8 @@ impl App {
             _ => None,
         };
         if let Some(cwd) = cwd {
-            let branches = tide_terminal::git::list_branches(&cwd);
-            let worktrees = tide_terminal::git::list_worktrees(&cwd);
+            let branches = self.ports.git.list_branches(&cwd);
+            let worktrees = self.ports.git.list_worktrees(&cwd);
             let mut new_gs = GitSwitcherState::new(
                 pane_id, mode, branches, worktrees, anchor_rect,
             );

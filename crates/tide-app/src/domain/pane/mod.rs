@@ -17,6 +17,7 @@ use browser::BrowserPane;
 use diff::DiffPane;
 use editor::EditorPane;
 use crate::state::search::SearchState;
+use crate::AppCorePort;
 
 pub type PaneId = tide_core::PaneId;
 

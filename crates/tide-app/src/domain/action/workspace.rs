@@ -9,9 +9,11 @@ use crate::App;
 use crate::ClipboardSearchPort;
 use crate::DockPort;
 use crate::FocusNavPort;
+use crate::LayoutPort;
+use crate::WorkspaceNavPort;
 
-impl App {
-    pub(crate) fn focus_terminal(&mut self, id: PaneId) {
+impl crate::domain::ports::inward::WorkspaceNavPort for App {
+    fn focus_terminal(&mut self, id: PaneId) {
         // Dock pane (pinned or terminal-owned): focus it, don't change stage_focused
         if self.is_pane_in_dock(id) {
             self.focus.focus_area = FocusArea::Dock;
@@ -61,7 +63,7 @@ impl App {
     }
 
     /// Resolve an AreaSlot to a FocusArea.
-    pub(super) fn resolve_slot(&self, slot: AreaSlot) -> FocusArea {
+    fn resolve_slot(&self, slot: AreaSlot) -> FocusArea {
         match slot {
             AreaSlot::Slot1 => FocusArea::Stage,
             AreaSlot::Slot2 => FocusArea::FileTree,
@@ -70,7 +72,7 @@ impl App {
         }
     }
 
-    pub(crate) fn handle_focus_area(&mut self, target: FocusArea) {
+    fn handle_focus_area(&mut self, target: FocusArea) {
         match target {
             FocusArea::FileTree => {
                 if self.focus.focus_area == FocusArea::FileTree {
@@ -108,7 +110,7 @@ impl App {
         self.cache.invalidate_chrome();
     }
 
-    pub(crate) fn toggle_file_tree_visibility(&mut self) {
+    fn toggle_file_tree_visibility(&mut self) {
         if self.ft.visible {
             self.ft.visible = false;
             if self.focus.focus_area == FocusArea::FileTree {
@@ -126,7 +128,7 @@ impl App {
         self.compute_layout();
     }
 
-    pub(crate) fn toggle_dock_visibility(&mut self) {
+    fn toggle_dock_visibility(&mut self) {
         if self.dock.dock_open {
             self.dock.dock_open = false;
             if self.focus.focus_area == FocusArea::Dock {
@@ -154,7 +156,7 @@ impl App {
         self.compute_layout();
     }
 
-    pub(super) fn handle_navigate(&mut self, direction: tide_input::Direction) {
+    fn handle_navigate(&mut self, direction: tide_input::Direction) {
         match self.focus.focus_area {
             FocusArea::FileTree => {
                 self.navigate_file_tree(direction);
@@ -195,7 +197,7 @@ impl App {
         }
     }
 
-    pub(crate) fn handle_toggle_stacked(&mut self) {
+    fn handle_toggle_stacked(&mut self) {
         match self.focus.focus_area {
             FocusArea::Dock => {
                 self.dock.dock_zoomed = !self.dock.dock_zoomed;
@@ -222,7 +224,7 @@ impl App {
         }
     }
 
-    pub(crate) fn reorder_stacked_tab(&mut self, source: PaneId, target: PaneId) {
+    fn reorder_stacked_tab(&mut self, source: PaneId, target: PaneId) {
         match self.focus.focus_area {
             FocusArea::Stage => {
                 self.layout.swap_panes(source, target);
@@ -239,7 +241,7 @@ impl App {
         self.cache.invalidate_chrome();
     }
 
-    pub(super) fn cycle_tab(&mut self, direction: i32) {
+    fn cycle_tab(&mut self, direction: i32) {
         let tid = match self.focus.stage_focused {
             Some(id) => id,
             None => return,
@@ -276,7 +278,7 @@ impl App {
         self.compute_layout();
     }
 
-    pub(super) fn navigate_panes(&mut self, direction: i32) {
+    fn navigate_panes(&mut self, direction: i32) {
         let current_id = match self.focus.focused {
             Some(id) => id,
             None => return,
@@ -305,7 +307,7 @@ impl App {
         self.compute_layout();
     }
 
-    pub(crate) fn toggle_config_page(&mut self) {
+    fn toggle_config_page(&mut self) {
         if self.modal.config_page.is_some() {
             self.close_config_page();
         } else {
@@ -314,43 +316,7 @@ impl App {
         self.cache.needs_redraw = true;
     }
 
-    fn open_config_page(&mut self) {
-        use tide_input::{GlobalAction as GA, KeybindingMap};
-
-        let map = self.router.keybinding_map.as_ref();
-        let all_actions = GA::all_actions();
-
-        let bindings: Vec<(GA, tide_input::Hotkey)> = all_actions
-            .into_iter()
-            .map(|action| {
-                let hotkey = map
-                    .and_then(|m| m.hotkey_for(&action).cloned())
-                    .or_else(|| {
-                        let defaults = KeybindingMap::new();
-                        defaults.hotkey_for(&action).cloned()
-                    })
-                    .unwrap_or(tide_input::Hotkey::new(
-                        tide_core::Key::Char('?'),
-                        false, false, false, false,
-                    ));
-                (action, hotkey)
-            })
-            .collect();
-
-        let worktree_pattern = self.settings.worktree.base_dir_pattern
-            .clone()
-            .unwrap_or_default();
-
-        let copy_files = self.settings.worktree.copy_files
-            .as_ref()
-            .map(|v| v.join(", "))
-            .unwrap_or_default();
-
-        self.modal.config_page = Some(crate::ConfigPageState::new(bindings, worktree_pattern, copy_files));
-        self.cache.invalidate_chrome();
-    }
-
-    pub(crate) fn close_config_page(&mut self) {
+    fn close_config_page(&mut self) {
         let page = match self.modal.config_page.take() {
             Some(p) => p,
             None => return,
@@ -397,7 +363,7 @@ impl App {
                 if files.is_empty() { None } else { Some(files) }
             };
 
-            crate::state::settings::save_settings(&self.settings);
+            self.ports.persistence.save_settings(&self.settings);
 
             let map = crate::state::settings::build_keybinding_map(&self.settings);
             if map.bindings.len() == tide_input::KeybindingMap::default_bindings().len()
@@ -409,6 +375,44 @@ impl App {
             }
         }
 
+        self.cache.invalidate_chrome();
+    }
+}
+
+impl App {
+    fn open_config_page(&mut self) {
+        use tide_input::{GlobalAction as GA, KeybindingMap};
+
+        let map = self.router.keybinding_map.as_ref();
+        let all_actions = GA::all_actions();
+
+        let bindings: Vec<(GA, tide_input::Hotkey)> = all_actions
+            .into_iter()
+            .map(|action| {
+                let hotkey = map
+                    .and_then(|m| m.hotkey_for(&action).cloned())
+                    .or_else(|| {
+                        let defaults = KeybindingMap::new();
+                        defaults.hotkey_for(&action).cloned()
+                    })
+                    .unwrap_or(tide_input::Hotkey::new(
+                        tide_core::Key::Char('?'),
+                        false, false, false, false,
+                    ));
+                (action, hotkey)
+            })
+            .collect();
+
+        let worktree_pattern = self.settings.worktree.base_dir_pattern
+            .clone()
+            .unwrap_or_default();
+
+        let copy_files = self.settings.worktree.copy_files
+            .as_ref()
+            .map(|v| v.join(", "))
+            .unwrap_or_default();
+
+        self.modal.config_page = Some(crate::ConfigPageState::new(bindings, worktree_pattern, copy_files));
         self.cache.invalidate_chrome();
     }
 }

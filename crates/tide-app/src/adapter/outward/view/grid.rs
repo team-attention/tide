@@ -3,6 +3,7 @@ use tide_core::{Rect, Renderer};
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
+use crate::AppCorePort;
 
 
 use super::bar_offset_for;
