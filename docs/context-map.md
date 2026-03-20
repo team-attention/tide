@@ -1,60 +1,82 @@
 # Context Map
 
-How Tide's 8 bounded contexts (crates) relate to each other.
+How Tide's bounded contexts relate to each other within the monocrate (`crates/tide-app/`).
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    tide-app (Orchestrator)               │
+│                  application/ (Orchestrator)             │
 │                                                         │
-│  Owns: App aggregate, PaneKind, WorkspaceManager,       │
-│        ModalStack, RenderCache, InteractionState,       │
-│        FileTreeModel, ImeState                          │
-│                                                         │
-│  Consumes ALL other contexts                            │
-└────┬──────┬──────┬──────┬──────┬──────┬──────┬─────────┘
-     │      │      │      │      │      │      │
-     ▼      ▼      ▼      ▼      ▼      ▼      ▼
-┌────────┐┌──────┐┌──────┐┌──────┐┌─────┐┌──────┐┌──────────┐
-│ input  ││layout││termi-││editor││tree ││render││ platform │
-│        ││      ││nal   ││      ││     ││er    ││          │
-│Router  ││Split-││Termi-││Edit- ││FsT- ││Wgpu-││Platform- │
-│Hotkey  ││Layout││nal   ││orSta-││ree  ││Rende-││Event     │
-│Global- ││Tab-  ││Grid- ││te    ││     ││rer   ││Platform- │
-│Action  ││Group ││Syncer││      ││     ││      ││Window    │
-└───┬────┘└──┬───┘└──┬───┘└──┬───┘└──┬──┘└──┬───┘└────┬─────┘
-    │        │       │       │       │      │         │
-    ▼        ▼       ▼       ▼       ▼      ▼         ▼
+│  Ports:  inward (10 port traits)                        │
+│          outward (11 port traits)                        │
+│  Services (15): action, dock, file_ops, file_tree,      │
+│    focus_nav, gpu_init, lsp, pane_close, pane_create,   │
+│    search, session, text_extract, update, workspace,    │
+│    workspace_infra                                      │
+└────┬──────┬──────┬──────┬──────┬──────┬─────────────────┘
+     │      │      │      │      │      │
+     ▼      ▼      ▼      ▼      ▼      ▼
+┌────────┐┌──────┐┌──────┐┌──────┐┌─────┐┌──────┐┌──────┐┌──────┐
+│ input  ││layout││termi-││editor││tree ││modal ││pane  ││state │
+│        ││      ││nal   ││      ││     ││      ││      ││      │
+│Router  ││Split-││Termi-││Edit- ││FsT- ││Modal-││Pane- ││Focus │
+│Hotkey  ││Layout││nal   ││orSta-││ree  ││Stack ││Kind  ││Window│
+│Global- ││Tab-  ││      ││te    ││     ││      ││      ││Cache │
+│Action  ││Group ││      ││      ││     ││      ││      ││      │
+└────────┘└──────┘└──────┘└──────┘└─────┘└──────┘└──────┘└──────┘
+     │        │       │       │       │
+     ▼        ▼       ▼       ▼       ▼
 ┌─────────────────────────────────────────────────────────┐
-│                 tide-core (Shared Kernel)                │
+│              domain/core_types.rs (Shared Kernel)        │
 │                                                         │
 │  Types: PaneId, Rect, Size, Key, Modifiers, Color,     │
 │         TerminalGrid, TerminalCell, CursorState         │
-│  Traits: Renderer, Pane, LayoutEngine, TerminalBackend, │
+│  Traits: Renderer, LayoutEngine, TerminalBackend,       │
 │          FileTreeSource, InputRouter                    │
 └─────────────────────────────────────────────────────────┘
+     ▲        ▲       ▲
+     │        │       │
+┌────────┐┌──────┐┌──────────┐
+│renderer││platf-││lsp       │
+│_adapter││orm_  ││_adapter  │
+│        ││adapt-││          │
+│WgpuRe- ││er   ││LspClient │
+│nderer  ││     ││LspManager│
+│        ││Platf-││          │
+│        ││ormEv-││          │
+│        ││ent   ││          │
+└────────┘└──────┘└──────────┘
+  adapter/outward/ (11 adapters)
 ```
+
+## Module Structure
+
+All code lives in `crates/tide-app/src/`:
+
+| Layer | Path | Responsibility |
+|-------|------|---------------|
+| **Domain** | `domain/` | Pure business logic, no I/O |
+| **Application** | `application/ports/` | Port trait definitions (inward + outward) |
+| **Application** | `application/services/` | Use case implementations (15 services) |
+| **Adapter Inward** | `adapter/inward/` | Platform events → application (9 adapters) |
+| **Adapter Outward** | `adapter/outward/` | Application → infrastructure (11 adapters + view) |
 
 ## Relationships
 
-### Shared Kernel: `tide-core`
-All crates depend on `tide-core` for common types and trait definitions. This is the shared vocabulary — changing a type here affects everything.
+### Shared Kernel: `domain/core_types.rs`
+All modules depend on core_types for common types and trait definitions. This is the shared vocabulary — changing a type here affects everything.
 
-### Upstream/Downstream
+### Dependency Direction
 
-| Upstream (provides) | Downstream (consumes) | Relationship |
-|---------------------|----------------------|--------------|
-| `tide-core` | All crates | **Shared Kernel** — common types and traits |
-| `tide-platform` | `tide-app` | **Anti-Corruption Layer** — translates native macOS events into domain events |
-| `tide-input` | `tide-app` | **Conformist** — app conforms to Action/GlobalAction vocabulary |
-| `tide-layout` | `tide-app` | **Conformist** — app uses SplitLayout API directly |
-| `tide-terminal` | `tide-app` | **Open Host Service** — Terminal exposes grid snapshots via trait |
-| `tide-editor` | `tide-app` | **Open Host Service** — EditorState exposes buffer/cursor via methods |
-| `tide-tree` | `tide-app` | **Open Host Service** — FsTree exposes visible entries via trait |
-| `tide-renderer` | `tide-app` | **Open Host Service** — WgpuRenderer implements Renderer trait |
+```
+adapter/inward → application/services → domain
+                                      ↘ application/ports/outward (traits)
+                                          ↓
+                              adapter/outward (implementations)
+```
 
 ### Key Integration Points
 
-1. **Platform → App**: `PlatformEvent` is the only way outside world enters the system
+1. **Platform → App**: `PlatformEvent` is the only way the outside world enters the system
 2. **App → Input**: `Router.process(InputEvent)` returns `Action`
 3. **App → Layout**: `SplitLayout.compute()` returns `Vec<(PaneId, Rect)>`
 4. **App → Terminal**: `Terminal.process()` consumes PTY output; `Terminal.grid()` reads state

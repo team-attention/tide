@@ -1,9 +1,9 @@
-# Core Types — tide-core
+# Core Types
 
-**Role**: Shared Kernel. Every crate depends on tide-core for common types and trait contracts.
+**Role**: Shared Kernel. All modules depend on core_types for common types and trait contracts.
 Changing a type here affects the entire system.
 
-`crates/tide-core/src/lib.rs`
+`crates/tide-app/src/domain/core_types.rs`
 
 ## Value Objects
 
@@ -115,4 +115,4 @@ trait InputRouter {
 }
 ```
 
-**Note**: The `InputRouter` trait defines the low-level mouse routing contract. The `Router` struct in `tide-input` implements this trait and additionally provides `Router::process(event, pane_rects) -> Action` — a higher-level method that handles keyboard hotkey matching, mouse routing, and drag border detection. Flow documents refer to `Router.process()` which is the primary entry point used by `tide-app`.
+**Note**: The `InputRouter` trait defines the low-level mouse routing contract. The `Router` struct in `domain/input` implements this trait and additionally provides `Router::process(event, pane_rects) -> Action` — a higher-level method that handles keyboard hotkey matching, mouse routing, and drag border detection. Flow documents refer to `Router.process()` which is the primary entry point used by the App orchestrator.

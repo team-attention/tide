@@ -1,0 +1,125 @@
+use std::sync::Arc;
+
+use crate::tide_core::Renderer;
+use crate::tide_platform::PlatformWindow;
+use crate::tide_renderer::WgpuRenderer;
+
+use crate::tide_renderer::render_thread::RenderThreadHandle;
+use crate::App;
+use crate::LayoutPort;
+
+impl App {
+    pub(crate) fn init_gpu(&mut self, window: &dyn PlatformWindow) {
+        self.window.scale_factor = window.scale_factor() as f32;
+        self.window.window_size = window.inner_size();
+
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::all(),
+            ..Default::default()
+        });
+
+        // Create surface using raw window handle (unsafe: we know the window outlives the surface)
+        let surface = unsafe {
+            let raw_handle = window.window_handle().expect("window handle");
+            let raw_display = window.display_handle().expect("display handle");
+            let target = wgpu::SurfaceTargetUnsafe::RawHandle {
+                raw_display_handle: raw_display.into(),
+                raw_window_handle: raw_handle.into(),
+            };
+            instance.create_surface_unsafe(target).expect("create surface")
+        };
+
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: Some(&surface),
+            force_fallback_adapter: false,
+        }))
+        .expect("no suitable GPU adapter found");
+
+        let (device, queue) = pollster::block_on(adapter.request_device(
+            &wgpu::DeviceDescriptor {
+                label: Some("tide_device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: Default::default(),
+            },
+            None,
+        ))
+        .expect("failed to create device");
+
+        let device = Arc::new(device);
+        let queue = Arc::new(queue);
+
+        let caps = surface.get_capabilities(&adapter);
+        let format = caps
+            .formats
+            .iter()
+            .find(|f| !f.is_srgb())
+            .copied()
+            .unwrap_or(caps.formats[0]);
+
+        // Prefer Mailbox (low latency, no tearing) > Fifo (vsync fallback)
+        let present_mode = if caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+            wgpu::PresentMode::Mailbox
+        } else {
+            wgpu::PresentMode::Fifo
+        };
+
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format,
+            width: self.window.window_size.0,
+            height: self.window.window_size.1,
+            present_mode,
+            alpha_mode: caps.alpha_modes[0],
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
+        surface.configure(&device, &config);
+
+        let mut renderer = WgpuRenderer::new(
+            Arc::clone(&device),
+            Arc::clone(&queue),
+            format,
+            self.window.scale_factor,
+        );
+
+        // Set initial clear color from theme palette
+        renderer.clear_color = self.palette().border_color;
+
+        // Pre-warm ASCII + Korean Jamo glyphs before first frame to avoid input latency
+        renderer.warmup_ascii();
+        renderer.warmup_common_unicode();
+
+        // Spawn the render thread — it owns the surface and handles
+        // drawable acquisition + GPU submission on a dedicated thread,
+        // so nextDrawable() never blocks the event loop.
+        let rt = RenderThreadHandle::spawn(
+            surface,
+            Arc::clone(&device),
+            Arc::clone(&queue),
+            config.clone(),
+            self.bg.event_loop_waker.clone().expect("waker must be set before GPU init"),
+        );
+        self.ports.gpu.set_render_thread(rt);
+
+        self.window.cached_cell_size = renderer.cell_size();
+        self.window.cell_size_table = renderer.cell_size_table().to_vec();
+        self.ports.gpu.set_device_and_queue(device, queue);
+        self.ports.gpu.set_surface_config(config);
+        self.ports.gpu.set_renderer(renderer);
+    }
+
+    /// Queue a surface reconfiguration for the next render.
+    /// The render thread will apply it before acquiring the next drawable.
+    pub(crate) fn reconfigure_surface(&mut self) {
+        let updated = self.ports.gpu.surface_config_mut().map(|config| {
+            config.width = self.window.window_size.0.max(1);
+            config.height = self.window.window_size.1.max(1);
+            config.clone()
+        });
+        if let Some(config) = updated {
+            self.ports.gpu.set_pending_surface_config(config);
+        }
+    }
+}

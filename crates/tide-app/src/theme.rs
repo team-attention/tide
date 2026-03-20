@@ -1,6 +1,6 @@
 // UI theme constants — dark/light mode with warm neutral palette.
 
-use tide_core::Color;
+use crate::tide_core::Color;
 
 // ──────────────────────────────────────────────
 // ThemePalette — all mode-dependent colors

@@ -1,0 +1,6 @@
+- 워크트리 매니징 더 편하게
+- notification
+- document for every file
+- evaluation? 
+- cmd sft f. content search
+- code signature/reference search? 

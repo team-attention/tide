@@ -1,13 +1,13 @@
 # Behavior Tests — Living Specification
 
-`crates/tide-app/src/behavior_tests.rs` is Tide's **executable specification**.
+`crates/tide-app/src/application/behavior_tests/` is Tide's **executable specification**.
 Reading just the test names should tell you what the system does.
 Each test traces back to a **Business Rule** in a **Spec**.
 
 ## Traceability Chain
 
 ```
-docs/glossary.md → docs/specs/{feature}.md → behavior_tests.rs → code
+docs/glossary.md → docs/specs/{feature}.md → behavior_tests/ → code
      Term              UC + BR                   // UC-N BR-M        impl
 ```
 
@@ -137,7 +137,7 @@ When implementing a new feature:
 
 - [ ] Does `docs/glossary.md` need new terms? Added them?
 - [ ] Does `docs/specs/{feature}.md` exist? Created UC + BRs?
-- [ ] Which Bounded Context (crate) does this belong to?
+- [ ] Which Bounded Context (module) does this belong to?
 - [ ] Did you write behavior tests with BR references first?
 - [ ] Are test names natural language sentences?
 - [ ] Do tests assert relevant invariants?
