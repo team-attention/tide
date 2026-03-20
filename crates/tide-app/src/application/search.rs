@@ -4,7 +4,7 @@ use crate::tide_core::{PaneId, TerminalBackend};
 
 use crate::pane::PaneKind;
 use crate::state::search::SearchState;
-use crate::domain::ports::inward::ClipboardSearchPort;
+use crate::application::ports::inward::ClipboardSearchPort;
 use crate::App;
 
 impl ClipboardSearchPort for App {

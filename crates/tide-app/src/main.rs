@@ -35,7 +35,7 @@ pub(crate) use rendering::ui;
 pub(crate) use update::gpu_init as gpu;
 
 pub(crate) use state::*;
-pub(crate) use domain::ports::inward::*;
+pub(crate) use application::ports::*;
 pub(crate) use update::workspace::{Workspace, WorkspaceExtras};
 
 pub(crate) use app::App;

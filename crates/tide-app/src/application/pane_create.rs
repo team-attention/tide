@@ -17,7 +17,7 @@ use crate::PaneLifecyclePort;
 
 use super::LauncherChoice;
 
-impl crate::domain::ports::inward::PaneLifecyclePort for App {
+impl crate::application::ports::inward::PaneLifecyclePort for App {
     fn create_terminal_pane(&mut self, id: crate::tide_core::PaneId, cwd: Option<std::path::PathBuf>) {
         let cell_size = self.cell_size();
         if cell_size.width <= 0.0 || cell_size.height <= 0.0 {

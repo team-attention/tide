@@ -1,3 +1,5 @@
+pub(crate) mod ports;
+
 mod pane_create;
 mod pane_close;
 mod focus_nav;
@@ -64,7 +66,7 @@ impl App {
     }
 }
 
-impl crate::domain::ports::inward::ActionPort for App {
+impl crate::application::ports::inward::ActionPort for App {
     fn cleanup_retained_context(&mut self, _closed_pane_id: crate::tide_core::PaneId) {
         // Check if the closed pane's associated terminal is in retained_contexts
         // and no other pane still references it

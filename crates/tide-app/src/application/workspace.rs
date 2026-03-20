@@ -12,7 +12,7 @@ use crate::FocusNavPort;
 use crate::LayoutPort;
 use crate::WorkspaceNavPort;
 
-impl crate::domain::ports::inward::WorkspaceNavPort for App {
+impl crate::application::ports::inward::WorkspaceNavPort for App {
     fn focus_terminal(&mut self, id: PaneId) {
         // Dock pane (pinned or terminal-owned): focus it, don't change stage_focused
         if self.is_pane_in_dock(id) {

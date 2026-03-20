@@ -11,7 +11,7 @@ use crate::DockPort;
 use crate::AppCorePort;
 use crate::LayoutPort;
 
-impl crate::domain::ports::inward::LayoutPort for App {
+impl crate::application::ports::inward::LayoutPort for App {
     fn update_cursor_icon(&self, window: &crate::tide_platform::WindowProxy) {
         use crate::tide_platform::CursorIcon;
         let icon = match &self.interaction.hover_target {

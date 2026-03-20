@@ -1,6 +1,5 @@
-// Port traits defining every external boundary.
-//
-// Outward (driven) ports: domain → infrastructure
+// Outward (driven) port traits — infrastructure the application needs.
+
 pub(crate) mod clock;
 pub(crate) mod clipboard;
 pub(crate) mod fs;
@@ -12,9 +11,6 @@ pub(crate) mod file_watcher;
 pub(crate) mod lsp;
 pub(crate) mod gpu;
 pub(crate) mod platform;
-
-// Inward (driving) ports: adapters → domain
-pub(crate) mod inward;
 
 pub(crate) use clock::{ClockPort, SystemClock, FixedClock};
 pub(crate) use clipboard::{ClipboardPort, SystemClipboard, NoopClipboard};
@@ -28,7 +24,7 @@ pub(crate) use lsp::{LspPort, RealLsp, NoopLsp};
 pub(crate) use gpu::{GpuPort, RealGpu, NoopGpu};
 pub(crate) use platform::{PlatformPort, RealPlatform, NoopPlatform};
 
-/// Aggregates all port implementations. Injected into App.
+/// Aggregates all outward port implementations. Injected into App.
 pub(crate) struct Ports {
     pub clock: Box<dyn ClockPort>,
     pub clipboard: Box<dyn ClipboardPort>,

@@ -23,7 +23,7 @@ use crate::PaneLifecyclePort;
 
 pub(crate) struct App {
     // Port abstractions for external boundaries
-    pub(crate) ports: crate::domain::ports::Ports,
+    pub(crate) ports: crate::application::ports::outward::Ports,
 
     // Panes
     pub(crate) panes: HashMap<PaneId, PaneKind>,
@@ -98,7 +98,7 @@ impl App {
     pub(crate) fn new() -> Self {
         let top_inset = if cfg!(target_os = "macos") { TITLEBAR_HEIGHT } else { 0.0 };
         Self {
-            ports: crate::domain::ports::Ports::noop(),
+            ports: crate::application::ports::outward::Ports::noop(),
             panes: HashMap::new(),
             layout: SplitLayout::new(),
             router: Router::new(),
@@ -194,7 +194,7 @@ impl App {
 
 }
 
-impl crate::domain::ports::inward::AppCorePort for App {
+impl crate::application::ports::inward::AppCorePort for App {
     fn dock_zoomed_pane(&self) -> Option<PaneId> {
         if !self.dock.dock_zoomed {
             return None;

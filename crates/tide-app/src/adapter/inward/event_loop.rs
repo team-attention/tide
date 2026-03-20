@@ -33,7 +33,7 @@ impl App {
     /// Called on the main thread before the app thread is spawned.
     pub(crate) fn init_phase1(&mut self, window: &dyn PlatformWindow) {
         // Swap noop ports for real implementations now that we have a window.
-        self.ports = crate::domain::ports::Ports::real();
+        self.ports = crate::application::ports::outward::Ports::real();
 
         self.ports.platform.set_content_view_ptr(window.content_view_ptr());
         self.ports.platform.set_window_ptr(window.window_ptr());
