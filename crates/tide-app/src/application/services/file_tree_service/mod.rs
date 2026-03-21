@@ -420,6 +420,27 @@ impl App {
         self.cache.invalidate_chrome();
     }
 
+    pub(crate) fn auto_scroll_file_tree_cursor(&mut self) {
+        if let Some(tree_rect) = self.ft.rect {
+            let cell_size = self.cell_size();
+            let line_height = cell_size.height * crate::theme::FILE_TREE_LINE_SPACING;
+            let padding = crate::theme::PANE_PADDING;
+
+            let cursor_y = padding + self.ft.cursor as f32 * line_height;
+            let visible_top = self.ft.scroll;
+            let visible_bottom = self.ft.scroll + tree_rect.height - padding * 2.0;
+
+            if cursor_y < visible_top {
+                self.ft.scroll_target = cursor_y;
+                self.ft.scroll = cursor_y;
+            } else if cursor_y + line_height > visible_bottom {
+                self.ft.scroll_target =
+                    cursor_y + line_height - (tree_rect.height - padding * 2.0);
+                self.ft.scroll = self.ft.scroll_target;
+            }
+        }
+    }
+
     pub(crate) fn handle_file_tree_click(&mut self, position: Vec2) {
         // Dismiss context menu and complete/cancel rename on any left click
         self.modal.context_menu = None;

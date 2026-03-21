@@ -114,6 +114,16 @@ impl SplitLayout {
         }
     }
 
+    /// Set the ratio of the split that directly contains the given pane.
+    /// Returns true if the ratio was updated.
+    pub fn set_split_ratio(&mut self, pane: PaneId, ratio: f32) -> bool {
+        if let Some(ref mut root) = self.root {
+            root.set_parent_ratio(pane, ratio)
+        } else {
+            false
+        }
+    }
+
     /// Snap all split ratios so that pane content areas align to cell boundaries.
     /// Call this after `compute()` but before using the resulting rects for rendering.
     /// The caller should call `compute()` again after snapping.

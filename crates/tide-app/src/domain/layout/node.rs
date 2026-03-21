@@ -91,7 +91,6 @@ impl Node {
     }
 
     /// Returns true if this node (or any descendant) contains the given pane.
-    #[cfg(test)]
     pub(crate) fn contains(&self, pane: PaneId) -> bool {
         match self {
             Node::Leaf(id) => *id == pane,
@@ -406,6 +405,39 @@ impl Node {
         self.replace_pane_id(a, sentinel);
         self.replace_pane_id(b, a);
         self.replace_pane_id(sentinel, b);
+    }
+
+    /// Set the ratio of the split node whose immediate child contains the given pane.
+    /// Returns true if the ratio was set.
+    pub(crate) fn set_parent_ratio(&mut self, pane: PaneId, new_ratio: f32) -> bool {
+        if let Node::Split { ratio, left, right, .. } = self {
+            let in_left = left.contains(pane);
+            let in_right = right.contains(pane);
+            if in_left || in_right {
+                // Check if this is the immediate parent (pane is directly in left or right)
+                let is_direct_child = match (in_left, left.as_ref()) {
+                    (true, Node::Leaf(id)) => *id == pane,
+                    (true, Node::LeafGroup(tg)) => tg.contains(pane),
+                    _ => false,
+                } || match (in_right, right.as_ref()) {
+                    (true, Node::Leaf(id)) => *id == pane,
+                    (true, Node::LeafGroup(tg)) => tg.contains(pane),
+                    _ => false,
+                };
+                if is_direct_child {
+                    *ratio = new_ratio.clamp(super::MIN_RATIO, 1.0 - super::MIN_RATIO);
+                    return true;
+                }
+                // Recurse into the child that contains the pane
+                if in_left {
+                    return left.set_parent_ratio(pane, new_ratio);
+                }
+                if in_right {
+                    return right.set_parent_ratio(pane, new_ratio);
+                }
+            }
+        }
+        false
     }
 
     /// Recursively snap split ratios so that the left/top child's content area

@@ -376,6 +376,86 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
 
         self.cache.invalidate_chrome();
     }
+
+    // ── Workspace state queries (click_adapter) ──
+
+    fn ws_sidebar_rect(&self) -> Option<crate::tide_core::Rect> {
+        self.ws.sidebar_rect
+    }
+
+    fn ws_workspaces_len(&self) -> usize {
+        self.ws.workspaces.len()
+    }
+
+    fn ws_sidebar_geometry(&self) -> Option<crate::state::drag_types::WsSidebarGeometry> {
+        crate::adapter::inward::drag_drop_adapter::ws_sidebar_geometry(self)
+    }
+
+    fn move_pane_to_workspace(&mut self, pane_id: PaneId, target_idx: usize) {
+        App::move_pane_to_workspace(self, pane_id, target_idx);
+    }
+
+    // ── Workspace drag & state (mouse_adapter) ──
+
+    fn ws_drag(&self) -> Option<(usize, f32, usize)> {
+        self.ws.drag
+    }
+
+    fn ws_set_drag(&mut self, drag: Option<(usize, f32, usize)>) {
+        self.ws.drag = drag;
+    }
+
+    fn ws_take_drag(&mut self) -> Option<(usize, f32, usize)> {
+        self.ws.drag.take()
+    }
+
+    fn ws_border_dragging(&self) -> bool {
+        self.ws.border_dragging
+    }
+
+    fn set_ws_border_dragging(&mut self, v: bool) {
+        self.ws.border_dragging = v;
+    }
+
+    fn ws_set_width(&mut self, w: f32) {
+        self.ws.width = w;
+    }
+
+    fn ws_active(&self) -> usize {
+        self.ws.active
+    }
+
+    fn ws_show_sidebar(&self) -> bool {
+        self.ws.show_sidebar
+    }
+
+    fn set_ws_show_sidebar(&mut self, v: bool) {
+        self.ws.show_sidebar = v;
+    }
+
+    fn new_workspace(&mut self) {
+        App::new_workspace(self);
+    }
+
+    fn switch_workspace(&mut self, idx: usize) {
+        App::switch_workspace(self, idx);
+    }
+
+    fn ws_reorder(&mut self, src: usize, target: usize) {
+        let ws = self.ws.workspaces.remove(src);
+        self.ws.workspaces.insert(target, ws);
+        if self.ws.active == src {
+            self.ws.active = target;
+        } else if src < self.ws.active && target >= self.ws.active {
+            self.ws.active -= 1;
+        } else if src > self.ws.active && target <= self.ws.active {
+            self.ws.active += 1;
+        }
+    }
+
+    fn workspace_sidebar_item_rect(&self, idx: usize) -> Option<crate::tide_core::Rect> {
+        crate::adapter::inward::drag_drop_adapter::workspace_sidebar_item_rect(self, idx)
+    }
 }
 
 impl App {

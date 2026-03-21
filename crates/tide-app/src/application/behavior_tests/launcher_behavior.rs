@@ -24,7 +24,7 @@ fn app_with_launcher() -> (App, u64) {
 fn pressing_e_in_launcher_pane_resolves_to_editor_pane_kind() {
     // UC-1 BR-1: 'e' resolves to Editor PaneKind
     let (mut app, id) = app_with_launcher();
-    app.handle_ime_commit("e");
+    crate::adapter::inward::ime_adapter::handle_ime_commit(&mut app,"e");
     assert!(matches!(app.panes.get(&id), Some(PaneKind::Editor(_))));
 }
 
@@ -32,7 +32,7 @@ fn pressing_e_in_launcher_pane_resolves_to_editor_pane_kind() {
 fn pressing_capital_e_in_launcher_pane_resolves_to_editor_pane_kind() {
     // UC-1 BR-2: 'E' also resolves to Editor
     let (mut app, id) = app_with_launcher();
-    app.handle_ime_commit("E");
+    crate::adapter::inward::ime_adapter::handle_ime_commit(&mut app,"E");
     assert!(matches!(app.panes.get(&id), Some(PaneKind::Editor(_))));
 }
 
@@ -40,7 +40,7 @@ fn pressing_capital_e_in_launcher_pane_resolves_to_editor_pane_kind() {
 fn korean_ime_commit_resolves_launcher_pane_to_editor_pane_kind() {
     // UC-1 BR-3: Korean jamo 'ㄷ' resolves to Editor
     let (mut app, id) = app_with_launcher();
-    app.handle_ime_commit("ㄷ");
+    crate::adapter::inward::ime_adapter::handle_ime_commit(&mut app,"ㄷ");
     assert!(matches!(app.panes.get(&id), Some(PaneKind::Editor(_))));
 }
 
@@ -48,7 +48,7 @@ fn korean_ime_commit_resolves_launcher_pane_to_editor_pane_kind() {
 fn korean_ime_preedit_resolves_launcher_pane_to_terminal_pane_kind() {
     // UC-1 BR-4: Korean jamo 'ㅅ' resolves to Terminal via preedit
     let (mut app, id) = app_with_launcher();
-    app.handle_ime_preedit("ㅅ");
+    crate::adapter::inward::ime_adapter::handle_ime_preedit(&mut app,"ㅅ");
     let is_launcher = matches!(app.panes.get(&id), Some(PaneKind::Launcher(_)));
     assert!(!is_launcher || app.panes.get(&id).is_none());
 }
@@ -57,7 +57,7 @@ fn korean_ime_preedit_resolves_launcher_pane_to_terminal_pane_kind() {
 fn non_matching_text_in_launcher_pane_is_ignored() {
     // UC-1 BR-5: Non-matching text is ignored
     let (mut app, id) = app_with_launcher();
-    app.handle_ime_commit("x");
+    crate::adapter::inward::ime_adapter::handle_ime_commit(&mut app,"x");
     assert!(matches!(app.panes.get(&id), Some(PaneKind::Launcher(_))));
 }
 
@@ -67,7 +67,7 @@ fn resolve_launcher_queues_ime_proxy_remove_and_create_for_same_id() {
     let (mut app, id) = app_with_launcher();
     app.ime.pending_creates.clear();
 
-    app.handle_ime_commit("e");
+    crate::adapter::inward::ime_adapter::handle_ime_commit(&mut app,"e");
 
     assert!(app.ime.pending_removes.contains(&id), "old launcher proxy not queued for removal");
     assert!(app.ime.pending_creates.contains(&id), "new editor proxy not queued for creation");

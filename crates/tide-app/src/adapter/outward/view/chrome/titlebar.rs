@@ -290,7 +290,7 @@ pub(super) fn render_titlebar_and_sidebar(
         renderer.draw_chrome_rounded_rect(inset, p.file_tree_bg, (PANE_CORNER_RADIUS - 1.0).max(0.0));
 
         // Workspace items
-        let geo = app.ws_sidebar_geometry().unwrap();
+        let geo = crate::adapter::inward::drag_drop_adapter::ws_sidebar_geometry(app).unwrap();
         let content_x = geo.content_x;
         let content_w = geo.content_w;
         let item_gap = geo.item_gap;

@@ -318,4 +318,457 @@ impl crate::application::ports::inward::AppCorePort for App {
             self.ports.gpu.set_font_size(size);
         }
     }
+
+    // ── State queries ──
+
+    fn has_renderer(&self) -> bool {
+        self.ports.gpu.has_renderer()
+    }
+
+    // ── Cache invalidation ──
+
+    fn invalidate_chrome(&mut self) {
+        self.cache.invalidate_chrome();
+    }
+
+    fn invalidate_pane(&mut self, id: PaneId) {
+        self.cache.invalidate_pane(id);
+    }
+
+    fn invalidate_all_panes(&mut self) {
+        self.cache.pane_generations.clear();
+    }
+
+    fn request_redraw(&mut self) {
+        self.cache.needs_redraw = true;
+    }
+
+    // ── State queries ──
+
+    fn top_inset(&self) -> f32 {
+        self.window.top_inset
+    }
+
+    fn sidebar_side(&self) -> crate::LayoutSide {
+        self.window.sidebar_side
+    }
+
+    fn gateway_listening(&self) -> bool {
+        self.gateway.listening
+    }
+
+    // ── Header hit zones ──
+
+    fn header_hit_zones(&self) -> Vec<crate::header::HeaderHitZone> {
+        self.header_hit_zones.clone()
+    }
+
+    // ── Outward port delegates ──
+
+    fn read_file_to_string(&self, path: &std::path::Path) -> Result<String, String> {
+        self.ports.fs.read_to_string(path).map_err(|e| e.to_string())
+    }
+
+    fn git_list_branches(&self, cwd: &std::path::Path) -> Vec<crate::tide_terminal::git::BranchInfo> {
+        self.ports.git.list_branches(cwd)
+    }
+
+    fn git_list_worktrees(&self, cwd: &std::path::Path) -> Vec<crate::tide_terminal::git::WorktreeInfo> {
+        self.ports.git.list_worktrees(cwd)
+    }
+
+    fn git_repo_root(&self, cwd: &std::path::Path) -> Option<std::path::PathBuf> {
+        self.ports.git.repo_root(cwd)
+    }
+
+    fn git_branch_exists(&self, cwd: &std::path::Path, name: &str) -> bool {
+        self.ports.git.branch_exists(cwd, name)
+    }
+
+    fn git_add_worktree(&self, cwd: &std::path::Path, path: &std::path::Path, branch: &str, new_branch: bool) -> Result<(), String> {
+        self.ports.git.add_worktree(cwd, path, branch, new_branch)
+    }
+
+    fn git_remove_worktree(&self, cwd: &std::path::Path, path: &std::path::Path, force: bool) -> Result<(), String> {
+        self.ports.git.remove_worktree(cwd, path, force)
+    }
+
+    fn git_delete_branch(&self, cwd: &std::path::Path, name: &str, force: bool) -> Result<(), String> {
+        self.ports.git.delete_branch(cwd, name, force)
+    }
+
+    fn persistence_load_settings(&self) -> crate::state::settings::TideSettings {
+        self.ports.persistence.load_settings()
+    }
+
+    // ── Geometry queries ──
+
+    fn visual_pane_rects(&self) -> &[(PaneId, Rect)] {
+        &self.visual_pane_rects
+    }
+
+    fn pane_rects(&self) -> &[(PaneId, Rect)] {
+        &self.pane_rects
+    }
+
+    fn pane_area_rect(&self) -> Option<Rect> {
+        self.pane_area_rect
+    }
+
+    fn dock_area_rect(&self) -> Option<Rect> {
+        self.dock_area_rect
+    }
+
+    // ── Sidebar handle drag (mouse_adapter) ──
+
+    fn sidebar_handle_dragging(&self) -> bool {
+        self.window.sidebar_handle_dragging
+    }
+
+    fn set_sidebar_handle_dragging(&mut self, v: bool) {
+        self.window.sidebar_handle_dragging = v;
+    }
+
+    fn set_sidebar_side(&mut self, side: crate::LayoutSide) {
+        self.window.sidebar_side = side;
+    }
+
+    // ── Window state (event_loop_adapter) ──
+
+    fn window_size(&self) -> (u32, u32) {
+        self.window.window_size
+    }
+
+    fn set_window_size(&mut self, width: u32, height: u32) {
+        self.window.window_size = (width, height);
+    }
+
+    fn scale_factor(&self) -> f32 {
+        self.window.scale_factor
+    }
+
+    fn set_scale_factor(&mut self, scale: f32) {
+        self.window.scale_factor = scale;
+    }
+
+    fn is_fullscreen(&self) -> bool {
+        self.window.is_fullscreen
+    }
+
+    fn set_fullscreen_state(&mut self, is_fullscreen: bool) {
+        self.window.is_fullscreen = is_fullscreen;
+    }
+
+    fn is_occluded(&self) -> bool {
+        self.window.is_occluded
+    }
+
+    fn set_occluded(&mut self, occluded: bool) {
+        self.window.is_occluded = occluded;
+    }
+
+    fn pending_fullscreen_toggle(&self) -> bool {
+        self.window.pending_fullscreen_toggle
+    }
+
+    fn clear_pending_fullscreen_toggle(&mut self) {
+        self.window.pending_fullscreen_toggle = false;
+    }
+
+    fn set_top_inset(&mut self, inset: f32) {
+        self.window.top_inset = inset;
+    }
+
+    fn reconfigure_surface(&mut self) {
+        self.reconfigure_surface();
+    }
+
+    fn clock_now(&self) -> std::time::Instant {
+        self.ports.clock.now()
+    }
+
+    fn save_full_session(&mut self) {
+        use crate::application::ports::outward::persistence_port::{Session, SessionContextArea};
+        let session = Session::from_app(self);
+        self.ports.persistence.save_session(&session);
+        let context_area = SessionContextArea::from_app(self);
+        self.ports.persistence.save_context_area_session(&context_area);
+    }
+
+    fn delete_running_marker(&mut self) {
+        self.ports.persistence.delete_running_marker();
+    }
+
+    // ── Deferred resize ──
+
+    fn set_resize_deferred(&mut self, millis: u64) {
+        self.timing.resize_deferred_at =
+            Some(self.ports.clock.now() + std::time::Duration::from_millis(millis));
+    }
+
+    fn clear_resize_deferred(&mut self) {
+        self.timing.resize_deferred_at = None;
+    }
+}
+
+// ── ModalPort ──
+
+impl crate::application::ports::inward::ModalPort for App {
+    fn modal(&self) -> &crate::state::ModalStack {
+        &self.modal
+    }
+    fn modal_mut(&mut self) -> &mut crate::state::ModalStack {
+        &mut self.modal
+    }
+}
+
+// ── InputStatePort ──
+
+impl crate::application::ports::inward::InputStatePort for App {
+    fn last_cursor_pos(&self) -> crate::tide_core::Vec2 {
+        self.window.last_cursor_pos
+    }
+    fn set_last_cursor_pos(&mut self, pos: crate::tide_core::Vec2) {
+        self.window.last_cursor_pos = pos;
+    }
+    fn modifiers(&self) -> crate::tide_core::Modifiers {
+        self.window.modifiers
+    }
+    fn set_modifiers(&mut self, mods: crate::tide_core::Modifiers) {
+        self.window.modifiers = mods;
+    }
+    fn mark_scroll_activity(&mut self) {
+        self.input.scroll_at = Some(self.ports.clock.now());
+    }
+    fn interaction(&self) -> &crate::state::InteractionState {
+        &self.interaction
+    }
+    fn interaction_mut(&mut self) -> &mut crate::state::InteractionState {
+        &mut self.interaction
+    }
+
+    // ── Batch depth ──
+
+    fn batch_depth(&self) -> u32 {
+        self.input.batch_depth
+    }
+
+    fn increment_batch_depth(&mut self) {
+        self.input.batch_depth += 1;
+    }
+
+    fn decrement_batch_depth(&mut self) {
+        self.input.batch_depth = self.input.batch_depth.saturating_sub(1);
+    }
+
+    // ── Shift double-tap detection ──
+
+    fn shift_tap_clean(&self) -> bool {
+        self.input.shift_tap_clean
+    }
+
+    fn set_shift_tap_clean(&mut self, clean: bool) {
+        self.input.shift_tap_clean = clean;
+    }
+
+    fn last_shift_up(&self) -> Option<std::time::Instant> {
+        self.input.last_shift_up
+    }
+
+    fn set_last_shift_up(&mut self, at: Option<std::time::Instant>) {
+        self.input.last_shift_up = at;
+    }
+}
+
+// ── FileTreePort ──
+
+impl crate::application::ports::inward::FileTreePort for App {
+    fn ft(&self) -> &crate::state::FileTreeModel {
+        &self.ft
+    }
+    fn ft_mut(&mut self) -> &mut crate::state::FileTreeModel {
+        &mut self.ft
+    }
+    fn file_tree_max_scroll(&self) -> f32 {
+        self.file_tree_max_scroll()
+    }
+    fn auto_scroll_file_tree_cursor(&mut self) {
+        self.auto_scroll_file_tree_cursor()
+    }
+    fn execute_context_menu_action(&mut self, action_index: usize) {
+        self.execute_context_menu_action(action_index)
+    }
+    fn complete_file_tree_rename(&mut self) {
+        self.complete_file_tree_rename()
+    }
+    fn handle_file_tree_click(&mut self, pos: crate::tide_core::Vec2) {
+        self.handle_file_tree_click(pos)
+    }
+}
+
+// ── RouterPort ──
+
+impl crate::application::ports::inward::RouterPort for App {
+    fn route_input(&mut self, input: crate::tide_core::InputEvent) -> crate::tide_input::Action {
+        self.router.process(input, &self.pane_rects)
+    }
+}
+
+// ── GatewayPort ──
+
+impl crate::application::ports::inward::GatewayPort for App {
+    fn gateway_notify(&mut self, event: &str, data: serde_json::Value) {
+        self.gateway.notify(event, data);
+    }
+    fn gateway_inc_streams(&mut self) {
+        self.gateway.active_streams += 1;
+    }
+    fn gateway_dec_streams(&mut self) {
+        if self.gateway.active_streams > 0 {
+            self.gateway.active_streams -= 1;
+        }
+    }
+    fn gateway_subscribe(&mut self, tx: std::sync::mpsc::Sender<String>, event_filter: Vec<String>) -> bool {
+        self.gateway.subscribers.push(
+            crate::state::gateway_status::Subscriber { tx, event_filter }
+        );
+        true
+    }
+    fn take_subscribe_tx(&mut self) -> Option<std::sync::mpsc::Sender<String>> {
+        self.pending_subscribe_tx.take()
+    }
+
+    fn gateway_toggle_modal(&mut self) {
+        if self.modal.gateway_modal.is_some() {
+            self.modal.gateway_modal = None;
+        } else {
+            // Trigger agent detection on modal open (BR-49)
+            let pane_ids: Vec<u64> = self.panes.keys().copied().collect();
+            for id in pane_ids {
+                if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get(&id) {
+                    if let Some(pid) = tp.backend.child_pid() {
+                        if let Some(mut agent) = crate::state::gateway_status::detect_agent(pid) {
+                            agent.gateway_connected = crate::state::gateway_status::is_agent_connected(
+                                agent.pid, &self.gateway.connected_pids
+                            );
+                            self.gateway.detected_agents.insert(id, agent);
+                        } else {
+                            self.gateway.detected_agents.remove(&id);
+                        }
+                    }
+                }
+            }
+            self.modal.gateway_modal = Some(crate::domain::modal::GatewayModalState::new(Vec::new()));
+        }
+    }
+
+    fn gateway_enable_unconnected_agents(&mut self) {
+        let agents: Vec<_> = self.gateway.detected_agents.values()
+            .filter(|a| !a.gateway_connected)
+            .filter_map(|a| crate::state::gateway_status::agent_tool_name(a.name))
+            .map(|s| s.to_string())
+            .collect();
+        for tool in &agents {
+            let _ = crate::adapter::inward::cli_adapter::commands::enable_integration(tool);
+        }
+    }
+}
+
+// ── PaneAccessPort ──
+
+impl crate::application::ports::inward::PaneAccessPort for App {
+    fn pane(&self, id: PaneId) -> Option<&PaneKind> {
+        self.panes.get(&id)
+    }
+    fn pane_mut(&mut self, id: PaneId) -> Option<&mut PaneKind> {
+        self.panes.get_mut(&id)
+    }
+    fn has_pane(&self, id: PaneId) -> bool {
+        self.panes.contains_key(&id)
+    }
+    fn pane_entries(&self) -> Vec<(PaneId, &PaneKind)> {
+        self.panes.iter().map(|(&id, pane)| (id, pane)).collect()
+    }
+    fn pane_title(&self, id: PaneId) -> String {
+        crate::ui::pane_title(&self.panes, id)
+    }
+    fn clear_all_selections(&mut self) {
+        for (_, pane) in self.panes.iter_mut() {
+            match pane {
+                PaneKind::Terminal(p) => p.selection = None,
+                PaneKind::Editor(p) => p.selection = None,
+                PaneKind::Diff(_) | PaneKind::Browser(_) | PaneKind::Launcher(_) => {}
+            }
+        }
+    }
+
+    fn has_terminals(&self) -> bool {
+        self.panes.values().any(|pk| matches!(pk, PaneKind::Terminal(_)))
+    }
+
+    fn has_dirty_editors(&self) -> bool {
+        self.panes.values().any(|pk| {
+            if let PaneKind::Editor(ep) = pk {
+                ep.editor.is_modified() && ep.editor.file_path().is_some()
+            } else {
+                false
+            }
+        })
+    }
+
+    fn reset_browser_first_responder_flags(&mut self) {
+        for pane in self.panes.values_mut() {
+            if let PaneKind::Browser(bp) = pane {
+                bp.is_first_responder = false;
+            }
+        }
+    }
+}
+
+// ── ImeStatePort ──
+
+impl crate::application::ports::inward::ImeStatePort for App {
+    fn ime_clear_composition(&mut self) {
+        self.ime.clear_composition();
+    }
+    fn ime_set_preedit(&mut self, text: &str) {
+        self.ime.set_preedit(text);
+    }
+    fn effective_ime_target(&self) -> Option<PaneId> {
+        self.effective_ime_target()
+    }
+    fn send_text_to_target(&mut self, text: &str) {
+        self.send_text_to_target(text);
+    }
+    fn set_ime_cursor_dirty(&mut self) {
+        self.ime.cursor_dirty = true;
+    }
+    fn reset_cursor_blink(&mut self) {
+        self.timing.cursor_blink_at = self.ports.clock.now();
+        self.timing.cursor_visible = true;
+    }
+    fn drain_pending_creates(&mut self) -> Vec<PaneId> {
+        self.ime.pending_creates.drain(..).collect()
+    }
+    fn drain_pending_removes(&mut self) -> Vec<PaneId> {
+        self.ime.pending_removes.drain(..).collect()
+    }
+    fn ime_last_target(&self) -> Option<PaneId> {
+        self.ime.last_target
+    }
+    fn set_ime_last_target(&mut self, target: Option<PaneId>) {
+        self.ime.last_target = target;
+    }
+    fn ime_preedit(&self) -> &str {
+        &self.ime.preedit
+    }
+    fn ime_composing(&self) -> bool {
+        self.ime.composing
+    }
+    fn clear_ime_preedit(&mut self) {
+        self.ime.preedit.clear();
+    }
+    fn set_ime_composing(&mut self, composing: bool) {
+        self.ime.composing = composing;
+    }
 }
