@@ -109,73 +109,44 @@ pub(super) fn render_titlebar_and_sidebar(
                 tb,
             );
 
-            // Gateway status badge (left of theme icon)
-            let total_agents = app.gateway.detected_agents.len();
-            let connected_agents = app.gateway.detected_agents.values()
-                .filter(|a| a.gateway_connected).count();
-
-            let gateway_badge_text = if total_agents > 0 {
-                format!("{}/{}", connected_agents, total_agents)
-            } else {
-                String::new()
-            };
-            let gateway_w = if total_agents > 0 {
-                gateway_badge_text.len() as f32 * cs.width + 12.0
-            } else {
-                cs.width + 8.0
-            };
-            let gateway_h = cs.height + 6.0;
-            let gateway_x = theme_x - gateway_w - 4.0;
-            let gateway_y = (app.window.top_inset - gateway_h) / 2.0;
-
-            if app.gateway.listening {
-                if total_agents > 0 {
-                    // Show connected/total ratio badge
-                    let badge_color = if connected_agents == total_agents {
-                        p.git_added
-                    } else if connected_agents > 0 {
-                        p.editor_modified // yellow-ish for partial
-                    } else {
-                        p.badge_text_dimmed
-                    };
-                    let badge_bg = crate::tide_core::Color::new(badge_color.r, badge_color.g, badge_color.b, 0.12);
-                    let badge_hovered = matches!(app.interaction.hover_target, Some(HoverTarget::TitlebarGateway));
-                    if badge_hovered {
-                        renderer.draw_chrome_rounded_rect(
-                            Rect::new(gateway_x, gateway_y, gateway_w, gateway_h),
-                            p.badge_bg, 4.0,
-                        );
-                    } else {
-                        renderer.draw_chrome_rounded_rect(
-                            Rect::new(gateway_x, gateway_y, gateway_w, gateway_h),
-                            badge_bg, 4.0,
-                        );
-                    }
-                    let text_y = gateway_y + (gateway_h - cs.height) / 2.0;
-                    renderer.draw_chrome_text(
-                        &gateway_badge_text,
-                        Vec2::new(gateway_x + 6.0, text_y),
-                        TextStyle { foreground: badge_color, background: None, bold: false, dim: false, italic: false, underline: false },
-                        Rect::new(gateway_x, gateway_y, gateway_w, gateway_h),
-                    );
+            // Integration toggle button (left of theme icon)
+            let integ_pad = 4.0_f32;
+            let integ_w = cs.width + integ_pad * 2.0;
+            let integ_h = cs.height + 6.0;
+            let integ_x = theme_x - integ_w - 8.0;
+            let integ_y = (app.window.top_inset - integ_h) / 2.0;
+            {
+                let is_active = app.settings.auto_integration;
+                let is_hovered = matches!(app.interaction.hover_target, Some(HoverTarget::TitlebarIntegration));
+                let bg_color = if is_hovered {
+                    p.badge_bg
+                } else if is_active {
+                    p.badge_bg_unfocused
                 } else {
-                    // No agents: simple dot
-                    let dot_size = 6.0_f32;
-                    let dot_x = gateway_x + (gateway_w - dot_size) / 2.0;
-                    let dot_y = gateway_y + (gateway_h - dot_size) / 2.0;
-                    let dot_color = if app.gateway.connected_clients > 0 {
-                        p.git_added
-                    } else {
-                        p.badge_text_dimmed
-                    };
+                    crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.0)
+                };
+                if bg_color.a > 0.0 {
                     renderer.draw_chrome_rounded_rect(
-                        Rect::new(dot_x, dot_y, dot_size, dot_size),
-                        dot_color, dot_size / 2.0,
+                        Rect::new(integ_x, integ_y, integ_w, integ_h),
+                        bg_color, 4.0,
                     );
                 }
+                let icon = "\u{f1e6}"; // FontAwesome plug icon
+                let icon_color = if is_active { p.dock_tab_underline } else { p.tab_text };
+                let text_y = integ_y + (integ_h - cs.height) / 2.0;
+                renderer.draw_chrome_text(
+                    icon,
+                    Vec2::new(integ_x + integ_pad, text_y),
+                    TextStyle {
+                        foreground: icon_color,
+                        background: None,
+                        bold: false, dim: false, italic: false, underline: false,
+                    },
+                    tb,
+                );
             }
 
-            let btn_right = gateway_x - TITLEBAR_BUTTON_GAP;
+            let btn_right = integ_x - TITLEBAR_BUTTON_GAP;
             let tb_clip = Rect::new(0.0, 0.0, logical.width, app.window.top_inset);
 
             // Helper: render a titlebar toggle button (icon + ⌘N hint, badge style)

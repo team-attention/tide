@@ -193,6 +193,16 @@ impl FocusNavPort for App {
     fn focus_pane(&mut self, id: PaneId) {
         self.focus.focused = Some(id);
         self.router.set_focused(id);
+        // Clear NeedsInput/Idle status when the user focuses the pane — they've seen it
+        if let Some(agent) = self.gateway.detected_agents.get_mut(&id) {
+            if matches!(
+                agent.status,
+                Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+                    | Some(crate::state::gateway_status::AgentStatus::Idle)
+            ) {
+                agent.status = None;
+            }
+        }
         self.cache.invalidate_chrome();
     }
 

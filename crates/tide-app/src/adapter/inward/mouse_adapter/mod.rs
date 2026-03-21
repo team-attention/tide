@@ -40,23 +40,20 @@ pub(crate) fn handle_mouse_down(ctx: &mut impl MousePorts, button: MouseButton, 
     if button == MouseButton::Left {
         ctx.interaction_mut().mouse_left_pressed = true;
 
-        // Skip pane interactions when a blocking modal is open
-        if ctx.modal().gateway_modal.is_none() {
-            // Check editor scrollbar click
-            if check_scrollbar_click(ctx, ctx.last_cursor_pos()) {
-                ctx.request_redraw();
-                return;
-            }
+        // Check editor scrollbar click
+        if check_scrollbar_click(ctx, ctx.last_cursor_pos()) {
+            ctx.request_redraw();
+            return;
+        }
 
-            // Start text selection if clicking on pane content
-            if selection::start_text_selection(ctx) {
-                // selection started — fall through to continue processing
-            }
+        // Start text selection if clicking on pane content
+        if selection::start_text_selection(ctx) {
+            // selection started — fall through to continue processing
         }
     }
 
-    // Handle search bar clicks (skip when modal is open)
-    if button == MouseButton::Left && ctx.modal().gateway_modal.is_none() {
+    // Handle search bar clicks
+    if button == MouseButton::Left {
         if crate::adapter::inward::search_adapter::check_search_bar_click(ctx) {
             ctx.request_redraw();
             return;
@@ -74,26 +71,6 @@ pub(crate) fn handle_mouse_down(ctx: &mut impl MousePorts, button: MouseButton, 
             return;
         }
 
-        if ctx.modal().gateway_modal.is_some() {
-            let pos = ctx.last_cursor_pos();
-            let logical = ctx.logical_size();
-            let modal_w = (logical.width * 0.6).min(500.0).max(300.0);
-            let modal_h = (logical.height * 0.7).min(450.0).max(200.0);
-            let modal_x = (logical.width - modal_w) / 2.0;
-            let modal_y = (logical.height - modal_h) / 2.0;
-
-            if pos.x < modal_x || pos.x > modal_x + modal_w
-                || pos.y < modal_y || pos.y > modal_y + modal_h
-            {
-                ctx.modal_mut().gateway_modal = None;
-            } else {
-                // Click inside modal — enable all non-connected agents
-                ctx.gateway_enable_unconnected_agents();
-            }
-            ctx.invalidate_chrome();
-            ctx.request_redraw();
-            return;
-        }
 
         if ctx.modal().save_as_input.is_some() {
             if !ctx.save_as_contains(ctx.last_cursor_pos()) {
@@ -325,8 +302,8 @@ fn handle_mouse_input_core(ctx: &mut impl MousePorts, button: MouseButton, _wind
                     ctx.handle_global_action(crate::tide_input::GlobalAction::ToggleTheme);
                     return;
                 }
-                Some(crate::state::drag_types::HoverTarget::TitlebarGateway) => {
-                    ctx.gateway_toggle_modal();
+                Some(crate::state::drag_types::HoverTarget::TitlebarIntegration) => {
+                    ctx.toggle_auto_integration();
                     ctx.invalidate_chrome();
                     return;
                 }

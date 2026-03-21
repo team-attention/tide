@@ -101,6 +101,20 @@ pub fn render_pane_header(
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
 ) -> Vec<HeaderHitZone> {
+    render_pane_header_inner(id, rect, panes, focused, _is_zoomed, has_dock_tab_bar, p, renderer, None)
+}
+
+pub fn render_pane_header_inner(
+    id: PaneId,
+    rect: Rect,
+    panes: &HashMap<PaneId, PaneKind>,
+    focused: Option<PaneId>,
+    _is_zoomed: bool,
+    has_dock_tab_bar: bool,
+    p: &ThemePalette,
+    renderer: &mut WgpuRenderer,
+    agent_status: Option<crate::state::gateway_status::AgentStatus>,
+) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
     let cell_size = renderer.cell_size();
     let cell_height = cell_size.height;
@@ -109,7 +123,34 @@ pub fn render_pane_header(
     let text_y = rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
 
     // Align content to header padding (matches Tide.pen padding: [0, 12])
-    let content_left = rect.x + PANE_PADDING;
+    let mut content_left = rect.x + PANE_PADDING;
+
+    // Agent status dot: draw inline before the title, shift content_left.
+    // Running = green, NeedsInput = orange + glow, Idle = green (task completed).
+    // None = no dot (initial state, no hooks fired yet).
+    if let Some(status) = agent_status {
+        use crate::state::gateway_status::AgentStatus;
+        let dot_color = match status {
+            AgentStatus::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),     // green
+            AgentStatus::Idle => crate::tide_core::Color::new(0.3, 0.8, 0.4, 0.6),         // green, dimmed
+            AgentStatus::NeedsInput => crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0), // orange
+        };
+        let dot_size = 6.0_f32;
+        let dot_x = content_left;
+        let dot_y = rect.y + (TAB_BAR_HEIGHT - dot_size) / 2.0;
+        renderer.draw_chrome_rounded_rect(
+            Rect::new(dot_x, dot_y, dot_size, dot_size),
+            dot_color, dot_size / 2.0,
+        );
+        if matches!(status, AgentStatus::NeedsInput) {
+            let glow = crate::tide_core::Color::new(dot_color.r, dot_color.g, dot_color.b, 0.3);
+            renderer.draw_chrome_rounded_rect(
+                Rect::new(dot_x - 2.0, dot_y - 2.0, dot_size + 4.0, dot_size + 4.0),
+                glow, (dot_size + 4.0) / 2.0,
+            );
+        }
+        content_left += dot_size + 4.0; // shift title right
+    }
     let grid_cols = ((rect.width - 2.0 * PANE_PADDING) / cell_size.width).floor();
     let content_right = rect.x + PANE_PADDING + grid_cols * cell_size.width;
 

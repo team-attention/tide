@@ -49,8 +49,7 @@ pub(crate) fn text_input_target(ctx: &impl TextRoutingPorts) -> TextInputTarget 
             TextInputTarget::Consumed
         };
     }
-    if modal.gateway_modal.is_some()
-        || modal.context_menu.is_some()
+    if modal.context_menu.is_some()
         || modal.save_confirm.is_some() {
         return TextInputTarget::Consumed;
     }
