@@ -114,3 +114,5 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Render Pane** | A Browser pane in render mode (`render_mode: true`). Displays agent-provided HTML via `loadHTMLString` instead of URL navigation. No URL bar, title shown in tab. |
 | **Render Runtime** | Pre-injected HTML head (morphdom, Tailwind CSS, Tide theme CSS vars, JS bridge) loaded into every Render Pane before agent HTML. |
 | **Render Stream** | A long-lived connection where an agent sends HTML chunks to a Render Pane. Each chunk is a full HTML snapshot; morphdom diffs against the current DOM. |
+| **AgentStatus** | Lifecycle status of a coding agent process: `Running`, `Idle`, or `NeedsInput`. Reported by lifecycle hooks injected via Agent Wrappers. Stored in `AgentInfo.status`. |
+| **Agent Wrapper** | A shell script in `$TMPDIR/tide-<pid>-bin/` that shadows a coding agent binary (e.g. `claude`). Injects MCP server config and lifecycle hooks via `--settings`, then `exec`s the real binary. |
