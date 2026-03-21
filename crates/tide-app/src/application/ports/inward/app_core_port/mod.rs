@@ -23,6 +23,8 @@ pub(crate) trait AppCorePort {
     fn top_inset(&self) -> f32;
     fn sidebar_side(&self) -> crate::LayoutSide;
     fn gateway_listening(&self) -> bool;
+    /// Returns (connected_agents, total_agents) for gateway badge sizing.
+    fn gateway_agent_counts(&self) -> (usize, usize);
 
     // ── Header hit zones ──
     fn header_hit_zones(&self) -> Vec<HeaderHitZone>;
