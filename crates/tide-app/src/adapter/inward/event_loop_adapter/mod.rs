@@ -176,6 +176,7 @@ pub(crate) fn handle_platform_event(
             }
         }
         PlatformEvent::Focused(focused) => {
+            ctx.set_window_focused(focused);
             if focused {
                 ctx.set_modifiers(crate::tide_core::Modifiers::default());
                 // windowDidBecomeKey may have changed the actual first
@@ -437,12 +438,23 @@ impl App {
                     if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get(&id) {
                         if let Some(pid) = tp.backend.child_pid() {
                             if let Some(mut agent) = crate::state::gateway_status::detect_agent(pid) {
+                                // Preserve existing status when re-detecting (process scan
+                                // returns a fresh AgentInfo with status: None)
+                                if let Some(existing) = self.gateway.detected_agents.get(&id) {
+                                    agent.status = existing.status;
+                                }
                                 agent.gateway_connected = crate::state::gateway_status::is_agent_connected(
                                     agent.pid, &self.gateway.connected_pids
                                 );
                                 self.gateway.detected_agents.insert(id, agent);
                             } else {
-                                self.gateway.detected_agents.remove(&id);
+                                // Don't remove agents that have active status — the process
+                                // scan can fail intermittently (race with workspace switch, etc.)
+                                let has_status = self.gateway.detected_agents.get(&id)
+                                    .map_or(false, |a| a.status.is_some());
+                                if !has_status {
+                                    self.gateway.detected_agents.remove(&id);
+                                }
                             }
                         }
                     }
@@ -465,6 +477,17 @@ impl App {
             if blink_phase != self.timing.cursor_visible {
                 self.timing.cursor_visible = blink_phase;
                 crate::AppCorePort::request_redraw(&mut self);
+            }
+
+            // Agent NeedsInput blink: continuous redraw while any unfocused agent needs input (UC-5 BR-5)
+            {
+                let has_blinking = self.gateway.detected_agents.iter().any(|(&id, a)| {
+                    matches!(a.status, Some(crate::state::gateway_status::AgentStatus::NeedsInput))
+                        && self.focus.focused != Some(id)
+                });
+                if has_blinking {
+                    crate::AppCorePort::request_redraw(&mut self);
+                }
             }
 
             // Render if needed
@@ -683,6 +706,23 @@ impl App {
                     for msg in notifications {
                         self.handle_terminal_notification(id, &msg);
                     }
+                }
+            }
+        }
+
+        // Drain pending platform commands (system notifications, dock bounce)
+        {
+            use crate::tide_platform::WindowCommand;
+            let cmds: Vec<_> = self.pending_platform_commands.drain(..).collect();
+            for cmd in cmds {
+                match cmd {
+                    WindowCommand::SendSystemNotification { ref title, ref body } => {
+                        window.send_system_notification(title, body);
+                    }
+                    WindowCommand::RequestUserAttention => {
+                        window.request_user_attention();
+                    }
+                    _ => {} // Only notification commands expected here
                 }
             }
         }

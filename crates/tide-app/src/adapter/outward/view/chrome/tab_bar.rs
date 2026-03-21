@@ -181,6 +181,17 @@ pub(super) fn render_pane_chrome(
     let stage_pane_ids = app.layout.pane_ids();
     let show_stage_tabs = app.focus.zoomed_pane.is_some() && stage_pane_ids.len() > 1;
 
+    // Compute blink time for NeedsInput dot animation (UC-5)
+    let has_blinking = app.gateway.detected_agents.iter().any(|(&id, a)| {
+        matches!(a.status, Some(crate::state::gateway_status::AgentStatus::NeedsInput))
+            && focused != Some(id)
+    });
+    let blink_time = if has_blinking {
+        Some(app.timing.last_frame.elapsed().as_secs_f64())
+    } else {
+        None
+    };
+
     for &(id, rect) in visual_pane_rects {
         // Skip stale pane rects (pane was removed but layout not yet recomputed)
         if !app.panes.contains_key(&id) {
@@ -208,7 +219,7 @@ pub(super) fn render_pane_chrome(
                 // Single dock pane zoomed -- render normal header
                 let agent_status = app.gateway.detected_agents.get(&id).and_then(|a| a.status);
                 let zones = header::render_pane_header_inner(
-                    id, rect, &app.panes, focused, false, false, p, renderer, agent_status,
+                    id, rect, &app.panes, focused, false, false, p, renderer, agent_status, blink_time,
                 );
                 all_hit_zones.extend(zones);
             }
@@ -229,7 +240,7 @@ pub(super) fn render_pane_chrome(
             // Normal pane: render per-pane header (with agent status dot)
             let agent_status = app.gateway.detected_agents.get(&id).and_then(|a| a.status);
             let zones = header::render_pane_header_inner(
-                id, rect, &app.panes, focused, is_zoomed, false, p, renderer, agent_status,
+                id, rect, &app.panes, focused, is_zoomed, false, p, renderer, agent_status, blink_time,
             );
             all_hit_zones.extend(zones);
         }
