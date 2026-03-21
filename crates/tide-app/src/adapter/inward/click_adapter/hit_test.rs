@@ -84,12 +84,24 @@ pub(crate) fn compute_hover_target(
             return Some(HoverTarget::TitlebarTheme);
         }
 
-        // Gateway badge (left of theme icon)
+        // Gateway badge (left of theme icon) — compute position unconditionally
+        // so toggle buttons are placed correctly regardless of gateway state.
+        let (connected_agents, total_agents) = ctx.gateway_agent_counts();
+        let gateway_badge_text = if total_agents > 0 {
+            format!("{}/{}", connected_agents, total_agents)
+        } else {
+            String::new()
+        };
+        let gateway_w = if total_agents > 0 {
+            gateway_badge_text.len() as f32 * cs.width + 12.0
+        } else {
+            cs.width + 8.0
+        };
+        let gateway_h = cs.height + 6.0;
+        let gateway_x = theme_x - gateway_w - 4.0;
+        let gateway_y = (ctx.top_inset() - gateway_h) / 2.0;
+
         if ctx.gateway_listening() {
-            let gateway_w = cs.width + 8.0;
-            let gateway_h = cs.height + 6.0;
-            let gateway_x = theme_x - gateway_w - 4.0;
-            let gateway_y = (ctx.top_inset() - gateway_h) / 2.0;
             if pos.x >= gateway_x && pos.x <= gateway_x + gateway_w
                 && pos.y >= gateway_y && pos.y <= gateway_y + gateway_h
             {
@@ -104,7 +116,7 @@ pub(crate) fn compute_hover_target(
         let btn_h = cs.height + 6.0;
         let btn_y = (ctx.top_inset() - btn_h) / 2.0;
 
-        let mut cur_right = theme_x - TITLEBAR_BUTTON_GAP;
+        let mut cur_right = gateway_x - TITLEBAR_BUTTON_GAP;
         let buttons = [
             HoverTarget::TitlebarDock,
             HoverTarget::TitlebarFileTree,
