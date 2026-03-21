@@ -357,6 +357,13 @@ impl crate::application::ports::inward::AppCorePort for App {
         self.gateway.listening
     }
 
+    fn gateway_agent_counts(&self) -> (usize, usize) {
+        let total = self.gateway.detected_agents.len();
+        let connected = self.gateway.detected_agents.values()
+            .filter(|a| a.gateway_connected).count();
+        (connected, total)
+    }
+
     // ── Header hit zones ──
 
     fn header_hit_zones(&self) -> Vec<crate::header::HeaderHitZone> {
