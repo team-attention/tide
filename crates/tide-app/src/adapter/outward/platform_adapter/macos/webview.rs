@@ -14,6 +14,16 @@ use objc2_foundation::{CGFloat, MainThreadMarker, NSObject, NSRect, NSPoint, NSS
 /// Populated by the WKUIDelegate when Cmd+click triggers a new window request.
 static NEW_TAB_URLS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
+/// Global queue for messages received from render pane JS bridge.
+/// Populated by WKScriptMessageHandler when JS calls `window.tide.send(json)`.
+static BRIDGE_MESSAGES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Drain all pending bridge messages. Call from the app event loop.
+pub fn drain_bridge_messages() -> Vec<String> {
+    let mut queue = BRIDGE_MESSAGES.lock().unwrap_or_else(|e| e.into_inner());
+    std::mem::take(&mut *queue)
+}
+
 /// Drain all pending new-tab URLs. Call from the app event loop.
 pub fn drain_new_tab_urls() -> Vec<String> {
     let mut queue = NEW_TAB_URLS.lock().unwrap_or_else(|e| e.into_inner());
@@ -250,6 +260,50 @@ extern "C" {
     );
 }
 
+// ---------------------------------------------------------------------------
+// WKScriptMessageHandler — receives window.tide.send() messages from JS
+// ---------------------------------------------------------------------------
+declare_class!(
+    struct TideScriptMessageHandler;
+
+    unsafe impl ClassType for TideScriptMessageHandler {
+        type Super = NSObject;
+        type Mutability = mutability::MainThreadOnly;
+        const NAME: &'static str = "TideScriptMessageHandler";
+    }
+
+    impl DeclaredClass for TideScriptMessageHandler {
+        type Ivars = ();
+    }
+
+    unsafe impl TideScriptMessageHandler {
+        #[method_id(init)]
+        fn init(this: objc2::rc::Allocated<Self>) -> Option<Retained<Self>> {
+            let this = this.set_ivars(());
+            unsafe { msg_send_id![super(this), init] }
+        }
+
+        /// Called by WebKit when JS calls window.webkit.messageHandlers.tide.postMessage(msg)
+        #[method(userContentController:didReceiveScriptMessage:)]
+        fn did_receive_message(
+            &self,
+            _controller: &AnyObject,
+            message: &AnyObject,
+        ) {
+            unsafe {
+                let body: Retained<AnyObject> = msg_send_id![message, body];
+                // body is an NSString (we JSON.stringify in the bridge)
+                let utf8: *const std::ffi::c_char = msg_send![&body, UTF8String];
+                if !utf8.is_null() {
+                    let msg_str = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
+                    let mut queue = BRIDGE_MESSAGES.lock().unwrap_or_else(|e| e.into_inner());
+                    queue.push(msg_str);
+                }
+            }
+        }
+    }
+);
+
 /// Handle to a WKWebView instance, added as a subview of the parent NSView.
 pub struct WebViewHandle {
     webview: Retained<AnyObject>,
@@ -257,6 +311,8 @@ pub struct WebViewHandle {
     _ui_delegate: Retained<TideUIDelegate>,
     /// Retained so the weak NavigationDelegate reference stays valid.
     _nav_delegate: Retained<TideNavigationDelegate>,
+    /// Retained so the WKScriptMessageHandler stays alive.
+    _script_handler: Retained<TideScriptMessageHandler>,
 }
 
 /// Context passed through `dispatch_sync_f` to create a WKWebView on the main thread.
@@ -362,6 +418,42 @@ unsafe extern "C" fn remove_from_parent_on_main_thread(ctx_ptr: *mut std::ffi::c
     let _: () = msg_send![ctx.webview, removeFromSuperview];
 }
 
+/// Context passed through `dispatch_sync_f` to load HTML string on the main thread.
+struct LoadHtmlCtx {
+    webview: *const AnyObject,
+    html_ptr: *const u8,
+    html_len: usize,
+}
+
+/// Trampoline called on the main thread by `dispatch_sync_f`.
+unsafe extern "C" fn load_html_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
+    let ctx = &*(ctx_ptr as *const LoadHtmlCtx);
+    let html = std::str::from_utf8_unchecked(std::slice::from_raw_parts(ctx.html_ptr, ctx.html_len));
+    let webview = &*ctx.webview;
+    let ns_html = NSString::from_str(html);
+    let _: Option<Retained<AnyObject>> = msg_send_id![
+        webview,
+        loadHTMLString: &*ns_html,
+        baseURL: std::ptr::null::<AnyObject>()
+    ];
+}
+
+/// Context passed through `dispatch_sync_f` to evaluate JavaScript on the main thread.
+struct EvalJsCtx {
+    webview: *const AnyObject,
+    js_ptr: *const u8,
+    js_len: usize,
+}
+
+/// Trampoline called on the main thread by `dispatch_sync_f`.
+unsafe extern "C" fn eval_js_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
+    let ctx = &*(ctx_ptr as *const EvalJsCtx);
+    let js = std::str::from_utf8_unchecked(std::slice::from_raw_parts(ctx.js_ptr, ctx.js_len));
+    let webview = &*ctx.webview;
+    let ns_js = NSString::from_str(js);
+    let _: () = msg_send![webview, evaluateJavaScript: &*ns_js completionHandler: std::ptr::null::<AnyObject>()];
+}
+
 impl WebViewHandle {
     /// Create a new WKWebView and add it as a subview of the given parent NSView.
     ///
@@ -449,10 +541,18 @@ impl WebViewHandle {
         };
         let _: () = msg_send![&webview, setNavigationDelegate: &*nav_delegate];
 
+        // Set up WKScriptMessageHandler for window.tide.send() bridge (BR-29)
+        let script_handler: Retained<TideScriptMessageHandler> = unsafe {
+            msg_send_id![mtm.alloc::<TideScriptMessageHandler>(), init]
+        };
+        let user_content: Retained<AnyObject> = msg_send_id![&config, userContentController];
+        let handler_name = NSString::from_str("tide");
+        let _: () = msg_send![&user_content, addScriptMessageHandler: &*script_handler, name: &*handler_name];
+
         // Add as subview
         let _: () = msg_send![parent, addSubview: &*webview];
 
-        Some(Self { webview, _ui_delegate: delegate, _nav_delegate: nav_delegate })
+        Some(Self { webview, _ui_delegate: delegate, _nav_delegate: nav_delegate, _script_handler: script_handler })
     }
 
     /// Navigate to a URL string.
@@ -614,6 +714,58 @@ impl WebViewHandle {
             } else {
                 Some(std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned())
             }
+        }
+    }
+
+    /// Load HTML content directly via loadHTMLString:baseURL:.
+    /// Used for render-mode panes (generative UI) — BR-25.
+    pub fn load_html_string(&self, html: &str) {
+        let ns_html = NSString::from_str(html);
+        if MainThreadMarker::new().is_some() {
+            unsafe {
+                let _: Option<Retained<AnyObject>> = msg_send_id![
+                    &self.webview,
+                    loadHTMLString: &*ns_html,
+                    baseURL: std::ptr::null::<AnyObject>()
+                ];
+            }
+            return;
+        }
+        let mut ctx = LoadHtmlCtx {
+            webview: &*self.webview as *const AnyObject,
+            html_ptr: html.as_ptr(),
+            html_len: html.len(),
+        };
+        unsafe {
+            dispatch_sync_f(
+                &_dispatch_main_q as *const std::ffi::c_void,
+                &mut ctx as *mut LoadHtmlCtx as *mut std::ffi::c_void,
+                load_html_on_main_thread,
+            );
+        }
+    }
+
+    /// Evaluate arbitrary JavaScript in the webview.
+    /// Used for morphdom updates in render-mode panes.
+    pub fn evaluate_javascript(&self, js: &str) {
+        let ns_js = NSString::from_str(js);
+        if MainThreadMarker::new().is_some() {
+            unsafe {
+                let _: () = msg_send![&self.webview, evaluateJavaScript: &*ns_js completionHandler: std::ptr::null::<AnyObject>()];
+            }
+            return;
+        }
+        let mut ctx = EvalJsCtx {
+            webview: &*self.webview as *const AnyObject,
+            js_ptr: js.as_ptr(),
+            js_len: js.len(),
+        };
+        unsafe {
+            dispatch_sync_f(
+                &_dispatch_main_q as *const std::ffi::c_void,
+                &mut ctx as *mut EvalJsCtx as *mut std::ffi::c_void,
+                eval_js_on_main_thread,
+            );
         }
     }
 

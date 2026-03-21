@@ -21,6 +21,8 @@ pub(crate) enum AppEvent {
     Platform(PlatformEvent),
     /// Wake signal from a background thread (PTY output, file watcher, etc.).
     Wake,
+    /// A command from an external process via the Agent Gateway socket.
+    CliCommand(crate::adapter::inward::cli_adapter::CliCommand),
 }
 
 impl App {
@@ -100,13 +102,57 @@ impl App {
 
             // Process the received event and drain the queue
             for app_event in event.into_iter().chain(event_rx.try_iter()) {
-                if let AppEvent::Platform(event) = app_event {
-                    self.handle_platform_event(event, &window);
+                match app_event {
+                    AppEvent::Platform(event) => {
+                        self.handle_platform_event(event, &window);
+                    }
+                    AppEvent::CliCommand(cmd) => {
+                        // For subscribe commands, store the notification channel
+                        if cmd.method == "subscribe" {
+                            if let Some(notif_tx) = cmd.notification_tx {
+                                self.pending_subscribe_tx = Some(notif_tx);
+                            }
+                        }
+                        let result = self.handle_cli_command(&cmd.method, cmd.params);
+                        let _ = cmd.response_tx.send(result);
+                        self.pending_subscribe_tx = None;
+                    }
+                    AppEvent::Wake => {}
                 }
             }
 
             // Poll background sources (PTY output, file watcher, git)
             self.poll_background_events(&window);
+
+            // Drain bridge messages from render pane JS bridge (BR-30)
+            for msg in crate::tide_platform::macos::webview::drain_bridge_messages() {
+                if !msg.is_empty() {
+                    self.gateway.notify("webview-message", serde_json::json!({"message": msg}));
+                }
+            }
+
+            // Sync connected client PIDs from socket server background thread
+            if self.gateway.sync_connected_pids() {
+                // PIDs changed — re-check gateway_connected for all detected agents
+                self.gateway.refresh_agent_connections();
+                // Re-detect agents in all terminals (an agent may have just connected)
+                let pane_ids: Vec<u64> = self.panes.keys().copied().collect();
+                for id in pane_ids {
+                    if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get(&id) {
+                        if let Some(pid) = tp.backend.child_pid() {
+                            if let Some(mut agent) = crate::state::gateway_status::detect_agent(pid) {
+                                agent.gateway_connected = crate::state::gateway_status::is_agent_connected(
+                                    agent.pid, &self.gateway.connected_pids
+                                );
+                                self.gateway.detected_agents.insert(id, agent);
+                            } else {
+                                self.gateway.detected_agents.remove(&id);
+                            }
+                        }
+                    }
+                }
+                self.cache.invalidate_chrome();
+            }
 
             // Periodic session auto-save for crash recovery (every 30s)
             {

@@ -23,33 +23,64 @@ impl App {
         if button == MouseButton::Left {
             self.interaction.mouse_left_pressed = true;
 
-            // Check editor scrollbar click
-            if self.check_scrollbar_click(self.window.last_cursor_pos) {
-                self.cache.needs_redraw = true;
-                return;
-            }
+            // Skip pane interactions when a blocking modal is open
+            if self.modal.gateway_modal.is_none() {
+                // Check editor scrollbar click
+                if self.check_scrollbar_click(self.window.last_cursor_pos) {
+                    self.cache.needs_redraw = true;
+                    return;
+                }
 
-            // Start text selection if clicking on pane content
-            if self.start_text_selection() {
-                // selection started — fall through to continue processing
+                // Start text selection if clicking on pane content
+                if self.start_text_selection() {
+                    // selection started — fall through to continue processing
+                }
             }
         }
 
-        // Handle search bar clicks
-        if button == MouseButton::Left {
+        // Handle search bar clicks (skip when modal is open)
+        if button == MouseButton::Left && self.modal.gateway_modal.is_none() {
             if self.check_search_bar_click() {
                 self.cache.needs_redraw = true;
                 return;
             }
         }
 
-        // Handle file finder click
+        // Handle modal/popup clicks
         if button == MouseButton::Left {
             if self.modal.context_menu.is_some() {
                 if let Some(idx) = self.context_menu_item_at(self.window.last_cursor_pos) {
                     self.execute_context_menu_action(idx);
                 }
                 self.modal.context_menu = None;
+                self.cache.needs_redraw = true;
+                return;
+            }
+
+            if self.modal.gateway_modal.is_some() {
+                let pos = self.window.last_cursor_pos;
+                let logical = self.logical_size();
+                let modal_w = (logical.width * 0.6).min(500.0).max(300.0);
+                let modal_h = (logical.height * 0.7).min(450.0).max(200.0);
+                let modal_x = (logical.width - modal_w) / 2.0;
+                let modal_y = (logical.height - modal_h) / 2.0;
+
+                if pos.x < modal_x || pos.x > modal_x + modal_w
+                    || pos.y < modal_y || pos.y > modal_y + modal_h
+                {
+                    self.modal.gateway_modal = None;
+                } else {
+                    // Click inside modal — enable all non-connected agents
+                    let agents: Vec<_> = self.gateway.detected_agents.values()
+                        .filter(|a| !a.gateway_connected)
+                        .filter_map(|a| crate::state::gateway_status::agent_tool_name(a.name))
+                        .map(|s| s.to_string())
+                        .collect();
+                    for tool in &agents {
+                        let _ = crate::adapter::inward::cli_adapter::commands::enable_integration(tool);
+                    }
+                }
+                self.cache.invalidate_chrome();
                 self.cache.needs_redraw = true;
                 return;
             }
@@ -241,6 +272,32 @@ impl App {
                     }
                     Some(crate::state::drag_types::HoverTarget::TitlebarTheme) => {
                         self.handle_global_action(crate::tide_input::GlobalAction::ToggleTheme);
+                        return;
+                    }
+                    Some(crate::state::drag_types::HoverTarget::TitlebarGateway) => {
+                        // Toggle gateway modal
+                        if self.modal.gateway_modal.is_some() {
+                            self.modal.gateway_modal = None;
+                        } else {
+                            // Trigger agent detection on modal open (BR-49)
+                            let pane_ids: Vec<u64> = self.panes.keys().copied().collect();
+                            for id in pane_ids {
+                                if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get(&id) {
+                                    if let Some(pid) = tp.backend.child_pid() {
+                                        if let Some(mut agent) = crate::state::gateway_status::detect_agent(pid) {
+                                            agent.gateway_connected = crate::state::gateway_status::is_agent_connected(
+                                                agent.pid, &self.gateway.connected_pids
+                                            );
+                                            self.gateway.detected_agents.insert(id, agent);
+                                        } else {
+                                            self.gateway.detected_agents.remove(&id);
+                                        }
+                                    }
+                                }
+                            }
+                            self.modal.gateway_modal = Some(crate::domain::modal::GatewayModalState::new(Vec::new()));
+                        }
+                        self.cache.invalidate_chrome();
                         return;
                     }
                     Some(crate::state::drag_types::HoverTarget::TitlebarSwap) => {
