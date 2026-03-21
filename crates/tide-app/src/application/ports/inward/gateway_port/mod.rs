@@ -15,4 +15,6 @@ pub(crate) trait GatewayPort {
     fn detected_agents_mut(&mut self) -> &mut std::collections::HashMap<u64, AgentInfo>;
     /// Handle a terminal notification (OSC 9) message for a pane.
     fn handle_terminal_notification(&mut self, pane_id: u64, message: &str);
+    /// Route agent notification to appropriate channels based on user context.
+    fn route_agent_notification(&mut self, pane_id: u64, status: crate::state::gateway_status::AgentStatus);
 }

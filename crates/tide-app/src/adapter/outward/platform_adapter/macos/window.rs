@@ -340,4 +340,61 @@ impl PlatformWindow for MacosWindow {
             let _: () = msg_send![&self.ns_window, setAlphaValue: 1.0_f64];
         }
     }
+
+    fn send_system_notification(&self, title: &str, body: &str) {
+        // UNUserNotificationCenter: requestAuthorization → add pattern.
+        // Silent fail if permission not granted (BR-3).
+        unsafe {
+            let center_cls = match objc2::runtime::AnyClass::get("UNUserNotificationCenter") {
+                Some(cls) => cls,
+                None => return, // UNUserNotificationCenter not available
+            };
+            let center: Retained<AnyObject> = msg_send_id![center_cls, currentNotificationCenter];
+
+            // Request authorization (idempotent after first grant).
+            // completionHandler is a nullable block — pass null.
+            let null_block: *const std::ffi::c_void = std::ptr::null();
+            let _: () = msg_send![&center,
+                requestAuthorizationWithOptions: 0x07_usize
+                completionHandler: null_block
+            ];
+
+            // Create notification content
+            let content_cls = objc2::runtime::AnyClass::get("UNMutableNotificationContent")
+                .expect("UNMutableNotificationContent");
+            let content: Retained<AnyObject> = msg_send_id![content_cls, new];
+            let _: () = msg_send![&content, setTitle: &*NSString::from_str(title)];
+            let _: () = msg_send![&content, setBody: &*NSString::from_str(body)];
+
+            // Create request with unique ID
+            let request_cls = objc2::runtime::AnyClass::get("NSUUID").expect("NSUUID");
+            let uuid: Retained<AnyObject> = msg_send_id![request_cls, UUID];
+            let uuid_str: Retained<NSString> = msg_send_id![&uuid, UUIDString];
+            let notif_req_cls = objc2::runtime::AnyClass::get("UNNotificationRequest")
+                .expect("UNNotificationRequest");
+            let null_trigger: *const AnyObject = std::ptr::null();
+            let request: Retained<AnyObject> = msg_send_id![
+                notif_req_cls,
+                requestWithIdentifier: &*uuid_str
+                content: &*content
+                trigger: null_trigger
+            ];
+
+            // Add request to notification center (fire-and-forget)
+            let _: () = msg_send![&center,
+                addNotificationRequest: &*request
+                withCompletionHandler: null_block
+            ];
+        }
+    }
+
+    fn request_user_attention(&self) {
+        // NSApp.requestUserAttention(.informational) — single dock bounce
+        unsafe {
+            let app_cls = objc2::runtime::AnyClass::get("NSApplication")
+                .expect("NSApplication");
+            let nsapp: Retained<AnyObject> = msg_send_id![app_cls, sharedApplication];
+            let _: () = msg_send![&nsapp, requestUserAttention: 0_isize]; // NSInformationalRequest = 0
+        }
+    }
 }

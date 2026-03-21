@@ -157,6 +157,13 @@ pub(crate) struct App {
 
     // Temporary: holds notification_tx for subscribe command during dispatch
     pub(crate) pending_subscribe_tx: Option<std::sync::mpsc::Sender<String>>,
+
+    // Pending platform commands queued by notification routing, drained by event loop.
+    pub(crate) pending_platform_commands: Vec<crate::tide_platform::WindowCommand>,
+
+    /// Pane IDs that have already sent a system notification and haven't been
+    /// acknowledged (focused) yet. Prevents duplicate notifications (UC-1 BR-4).
+    pub(crate) notified_panes: std::collections::HashSet<PaneId>,
 }
 
 // Safety: App contains raw pointers (content_view_ptr, window_ptr) and browser
@@ -199,6 +206,8 @@ impl App {
             assoc: state::PaneAssociations::new(),
             gateway: state::GatewayStatus::new(),
             pending_subscribe_tx: None,
+            pending_platform_commands: Vec::new(),
+            notified_panes: std::collections::HashSet::new(),
         }
     }
 
@@ -498,6 +507,14 @@ impl crate::application::ports::inward::AppCorePort for App {
         self.ports.clock.now()
     }
 
+    fn is_window_focused(&self) -> bool {
+        self.window.is_focused
+    }
+
+    fn set_window_focused(&mut self, focused: bool) {
+        self.window.is_focused = focused;
+    }
+
     fn save_full_session(&mut self) {
         use crate::application::ports::outward::persistence_port::{Session, SessionContextArea};
         let session = Session::from_app(self);
@@ -683,6 +700,72 @@ impl crate::application::ports::inward::GatewayPort for App {
             });
         }
         self.cache.chrome_generation += 1;
+        // Route notification based on user context (UC-1)
+        if let Some(s) = status {
+            self.route_agent_notification(pane_id, s);
+        }
+    }
+
+    fn route_agent_notification(&mut self, pane_id: u64, status: crate::state::gateway_status::AgentStatus) {
+        use crate::state::gateway_status::AgentStatus;
+
+        // BR-1: Running status does not trigger notification routing
+        if matches!(status, AgentStatus::Running) {
+            return;
+        }
+
+        // BR-2: If the pane is focused, skip all notification channels
+        if self.focus.focused == Some(pane_id) {
+            return;
+        }
+
+        // Check if pane is in the active workspace
+        let in_active_workspace = self.panes.contains_key(&pane_id);
+
+        if !in_active_workspace {
+            // Pane is in an inactive workspace — set workspace notification dot (UC-6 BR-3)
+            for (i, ws) in self.ws.workspaces.iter().enumerate() {
+                if i != self.ws.active && ws.panes.contains_key(&pane_id) {
+                    if i < self.ws.workspace_extras.len() {
+                        self.ws.workspace_extras[i].has_agent_notification = true;
+                    }
+                    break;
+                }
+            }
+        }
+
+        // BR-3: Background notifications sent in addition to foreground notifications
+        if !self.window.is_focused {
+            // BR-4: Don't send again until acknowledged (focused)
+            if !self.notified_panes.contains(&pane_id) {
+                let agent_name = self.gateway.detected_agents.get(&pane_id)
+                    .map(|a| a.name)
+                    .unwrap_or("Agent");
+                let body = match status {
+                    AgentStatus::NeedsInput => format!("{} needs your input", agent_name),
+                    AgentStatus::Idle => format!("{} finished", agent_name),
+                    _ => unreachable!(),
+                };
+                self.pending_platform_commands.push(
+                    crate::tide_platform::WindowCommand::SendSystemNotification {
+                        title: agent_name.to_string(),
+                        body,
+                    }
+                );
+                // UC-4: Dock bounce only for NeedsInput
+                if matches!(status, AgentStatus::NeedsInput) {
+                    self.pending_platform_commands.push(
+                        crate::tide_platform::WindowCommand::RequestUserAttention
+                    );
+                }
+                self.notified_panes.insert(pane_id);
+            }
+        }
+
+        // Request redraw for blink animation (UC-5)
+        if matches!(status, AgentStatus::NeedsInput) {
+            self.cache.needs_redraw = true;
+        }
     }
 }
 

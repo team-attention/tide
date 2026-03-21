@@ -34,4 +34,7 @@ cat > "$DEFAULTS_FILE" << TIDE_EOF
 }
 TIDE_EOF
 
-GEMINI_CLI_SYSTEM_DEFAULTS_PATH="$DEFAULTS_FILE" exec "$REAL_CMD" "$@"
+# Send initial status via OSC 9 so the dot appears immediately on launch
+printf '\033]9;tide:agent-running\007'
+
+GEMINI_CLI_SYSTEM_DEFAULTS_PATH="$DEFAULTS_FILE" "$REAL_CMD" "$@"

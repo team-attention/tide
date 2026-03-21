@@ -18,6 +18,8 @@ pub(crate) struct WindowState {
     pub last_cursor_pos: crate::tide_core::Vec2,
     pub sidebar_side: LayoutSide,
     pub sidebar_handle_dragging: bool,
+    /// Whether the window currently has OS focus. Tracked via `PlatformEvent::Focused`.
+    pub is_focused: bool,
 }
 
 impl WindowState {
@@ -38,6 +40,7 @@ impl WindowState {
             last_cursor_pos: crate::tide_core::Vec2::new(0.0, 0.0),
             sidebar_side: LayoutSide::Left,
             sidebar_handle_dragging: false,
+            is_focused: true,
         }
     }
 
