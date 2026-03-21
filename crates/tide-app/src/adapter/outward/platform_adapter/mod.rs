@@ -107,6 +107,7 @@ pub enum MouseButton {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CursorIcon {
     Default,
+    IBeam,
     Pointer,
     Grab,
     ColResize,

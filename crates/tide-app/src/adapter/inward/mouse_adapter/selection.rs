@@ -35,9 +35,9 @@ pub(super) fn start_text_selection(ctx: &mut (impl AppCorePort + InputStatePort 
         None => return false,
     };
 
-    // Clear all existing selections
-    ctx.clear_all_selections();
+    let shift_held = mods.shift;
 
+    // Compute click position in cell coordinates for each pane type
     let term_cell = crate::adapter::inward::click_adapter::hit_test::pixel_to_cell(ctx, pos, pid);
     let cell_size_cached = ctx.cell_size();
     let editor_cell = {
@@ -57,6 +57,72 @@ pub(super) fn start_text_selection(ctx: &mut (impl AppCorePort + InputStatePort 
             None
         }
     };
+
+    // Shift+click: extend existing selection instead of starting a new one
+    if shift_held {
+        match ctx.pane_mut(pid) {
+            Some(PaneKind::Terminal(pane)) => {
+                if let (Some(ref mut sel), Some(cell)) = (&mut pane.selection, term_cell) {
+                    let visible_start = pane
+                        .backend
+                        .history_size()
+                        .saturating_sub(pane.backend.display_offset());
+                    sel.end = (cell.0 + visible_start, cell.1);
+                    return true;
+                }
+            }
+            Some(PaneKind::Editor(pane)) => {
+                if pane.preview_mode {
+                    let cs = cell_size_cached;
+                    if let Some((_, rect)) = rects.iter().find(|(id, _)| *id == pid) {
+                        let cx = rect.x + PANE_PADDING;
+                        let cy = rect.y + content_top_offset;
+                        let rc = ((pos.x - cx) / cs.width).floor() as isize;
+                        let rr = ((pos.y - cy) / cs.height).floor() as isize;
+                        if rr >= 0 && rc >= 0 {
+                            if let Some(ref mut sel) = pane.selection {
+                                sel.end = (
+                                    pane.preview_scroll + rr as usize,
+                                    pane.preview_h_scroll + rc as usize,
+                                );
+                                return true;
+                            }
+                        }
+                    }
+                } else if pane.effective_soft_wrap() {
+                    if let Some((rr, rc)) = editor_cell {
+                        if let Some(wrap_map) = pane.wrap_map() {
+                            let scroll_vr =
+                                wrap_map.visual_row_of_line(pane.editor.scroll_offset());
+                            let abs_vr = scroll_vr + rr;
+                            if let Some(info) = wrap_map
+                                .visual_row_to_line_info(abs_vr, &pane.editor.buffer.lines)
+                            {
+                                let col = (info.char_offset + rc).min(info.char_end);
+                                if let Some(ref mut sel) = pane.selection {
+                                    sel.end = (info.logical_line, col);
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                } else if let Some((rr, rc)) = editor_cell {
+                    let line = pane.editor.scroll_offset() + rr;
+                    let col = pane.editor.h_scroll_offset() + rc;
+                    if let Some(ref mut sel) = pane.selection {
+                        sel.end = (line, col);
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+        // No existing selection to extend — fall through to create a new one
+    }
+
+    // Clear all existing selections
+    ctx.clear_all_selections();
+
     match ctx.pane_mut(pid) {
         Some(PaneKind::Terminal(pane)) => {
             if let Some(cell) = term_cell {

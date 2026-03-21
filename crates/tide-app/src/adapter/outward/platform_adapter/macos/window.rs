@@ -256,6 +256,7 @@ impl PlatformWindow for MacosWindow {
             use objc2_app_kit::NSCursor;
             let cursor = match icon {
                 CursorIcon::Default => NSCursor::arrowCursor(),
+                CursorIcon::IBeam => NSCursor::IBeamCursor(),
                 CursorIcon::Pointer => NSCursor::pointingHandCursor(),
                 CursorIcon::Grab => NSCursor::openHandCursor(),
                 CursorIcon::ColResize => NSCursor::resizeLeftRightCursor(),

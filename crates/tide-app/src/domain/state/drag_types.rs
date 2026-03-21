@@ -53,6 +53,8 @@ pub(crate) enum HoverTarget {
     WorkspaceSidebarNewBtn,
     WsSidebarBorder,
     DockBorder,
+    /// Cursor is over a pane's text content area (terminal, editor, diff).
+    PaneContent,
 }
 
 impl HoverTarget {
@@ -80,7 +82,7 @@ impl HoverTarget {
     /// Returns true if this hover target has any visual feedback (overlay or chrome).
     /// Targets that only change the cursor icon (no rendered output) return false.
     pub(crate) fn has_visual_feedback(&self) -> bool {
-        !matches!(self, HoverTarget::BrowserUrlBar)
+        !matches!(self, HoverTarget::BrowserUrlBar | HoverTarget::PaneContent)
     }
 }
 
