@@ -1,8 +1,8 @@
 #!/bin/sh
 # Tide auto-injected wrapper for Codex CLI.
 # Uses -c flag for additive MCP server injection (deep table merge — new keys additive).
-# Enables codex_hooks feature flag for lifecycle tracking.
-# Note: Codex has no "Notification" hook yet — only Stop and UserPromptSubmit.
+# Codex CLI has no external hook injection mechanism (unlike Claude's --settings),
+# so this wrapper uses OSC 9 escape sequences to report agent status directly.
 
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|${SELF_DIR}||g")" command -v codex 2>/dev/null)"
@@ -11,7 +11,14 @@ REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|
 # Skip injection if not inside Tide
 [ -z "$TIDE_BIN" ] && exec "$REAL_CMD" "$@"
 
-exec "$REAL_CMD" \
+# OSC 9 notification helper (universal, no hook mechanism needed)
+tide_osc9() { printf '\033]9;%s\007' "$1"; }
+
+# Report running on start, idle on exit
+tide_osc9 "tide:agent-running"
+trap 'tide_osc9 "tide:agent-idle"' EXIT
+
+"$REAL_CMD" \
   -c "mcp_servers.tide.command=\"$TIDE_BIN\"" \
   -c "mcp_servers.tide.args=[\"mcp\"]" \
   -c "mcp_servers.tide.env.TIDE_SOCKET=\"$TIDE_SOCKET\"" \
