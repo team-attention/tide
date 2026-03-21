@@ -4,6 +4,7 @@ use crate::tide_core::FileTreeSource;
 
 use crate::pane::PaneKind;
 use crate::App;
+use crate::DockPort;
 use crate::LayoutPort;
 use crate::PaneLifecyclePort;
 
@@ -70,12 +71,8 @@ impl crate::FileOpsPort for App {
 
     /// Open or focus a DiffPane for the given CWD.
     /// If a DiffPane with the same CWD already exists, focus and refresh it.
+    /// Opens in the dock (right panel), same as browser/editor panes.
     fn open_diff_pane(&mut self, cwd: PathBuf) {
-        let focused = match self.focus.focused {
-            Some(id) => id,
-            None => return,
-        };
-
         // Check if already open anywhere -> refresh and focus
         for (&tab_id, pane) in &mut self.panes {
             if let PaneKind::Diff(dp) = pane {
@@ -83,6 +80,7 @@ impl crate::FileOpsPort for App {
                     dp.refresh();
                     self.focus.focused = Some(tab_id);
                     self.router.set_focused(tab_id);
+                    self.focus.focus_area = crate::state::FocusArea::Dock;
                     self.cache.invalidate_chrome();
                     self.cache.invalidate_pane(tab_id);
                     return;
@@ -90,11 +88,23 @@ impl crate::FileOpsPort for App {
             }
         }
 
-        // Create new DiffPane as a split next to focused
+        // Create new DiffPane in the dock
+        let context_terminal = self.resolve_context_terminal_id();
         let new_id = self.layout.alloc_id();
         let dp = crate::pane::diff::DiffPane::new(new_id, cwd);
         self.panes.insert(new_id, PaneKind::Diff(dp));
-        self.layout.insert_pane(focused, new_id, crate::tide_core::SplitDirection::Vertical, false);
+        if let Some(tid) = self.focused_terminal_id().or(context_terminal) {
+            self.add_pane_to_dock(new_id);
+            self.assoc.associated_terminal.insert(new_id, tid);
+            self.focus.focus_area = crate::state::FocusArea::Dock;
+        } else {
+            // Fallback: split next to focused if no terminal context
+            let focused = match self.focus.focused {
+                Some(id) => id,
+                None => return,
+            };
+            self.layout.insert_pane(focused, new_id, crate::tide_core::SplitDirection::Vertical, false);
+        }
         self.focus.focused = Some(new_id);
         self.router.set_focused(new_id);
         self.cache.invalidate_chrome();

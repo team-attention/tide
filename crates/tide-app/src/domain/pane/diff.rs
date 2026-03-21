@@ -8,7 +8,7 @@ use crate::tide_renderer::WgpuRenderer;
 use crate::tide_terminal::git;
 
 /// A line in a unified diff.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DiffLine {
     Context(String),
     Added(String),
@@ -17,7 +17,7 @@ pub enum DiffLine {
 }
 
 /// A file entry in the diff pane.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DiffFileEntry {
     pub status: String,
     pub path: String,
@@ -32,11 +32,14 @@ pub struct DiffPane {
     pub diff_cache: HashMap<usize, Vec<DiffLine>>,
     pub scroll: f32,
     pub scroll_target: f32,
-    pub h_scroll: usize,
+    /// Per-file horizontal scroll offset (keyed by file index).
+    pub h_scroll: HashMap<usize, usize>,
     pub selected: Option<usize>,
     pub generation: u64,
     /// When true, render diff as side-by-side (old | new) instead of unified.
     pub side_by_side: bool,
+    /// Text selection (virtual row, col) coordinates.
+    pub selection: Option<crate::pane::Selection>,
 }
 
 /// A paired row for side-by-side diff display.
@@ -94,13 +97,78 @@ impl DiffPane {
             diff_cache: HashMap::new(),
             scroll: 0.0,
             scroll_target: 0.0,
-            h_scroll: 0,
+            h_scroll: HashMap::new(),
             selected: None,
             generation: 1,
             side_by_side: false,
+            selection: None,
         };
         dp.refresh();
         dp
+    }
+
+    /// Create a DiffPane without calling git (for tests and deferred population).
+    pub fn new_empty(_id: PaneId, cwd: PathBuf) -> Self {
+        Self {
+            cwd,
+            files: Vec::new(),
+            expanded: HashSet::new(),
+            diff_cache: HashMap::new(),
+            scroll: 0.0,
+            scroll_target: 0.0,
+            h_scroll: HashMap::new(),
+            selected: None,
+            generation: 1,
+            side_by_side: false,
+            selection: None,
+        }
+    }
+
+    /// Apply pre-computed diff data from the background git poller.
+    /// Only updates files whose content actually changed.
+    /// Preserves expanded/collapsed state, scroll, and selection for unchanged files.
+    /// Does not bump generation if nothing changed (avoids unnecessary re-render).
+    pub fn apply_poll_data(
+        &mut self,
+        files: Vec<DiffFileEntry>,
+        diff_cache: HashMap<usize, Vec<DiffLine>>,
+    ) {
+        // Build old state index: path → (old_index, expanded)
+        let old_state: HashMap<&str, (usize, bool)> = self
+            .files
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (f.path.as_str(), (i, self.expanded.contains(&i))))
+            .collect();
+
+        // Check if anything actually changed
+        let same_files = files.len() == self.files.len()
+            && files.iter().enumerate().all(|(i, f)| {
+                self.files.get(i).map_or(false, |old| {
+                    old == f && self.diff_cache.get(&i) == diff_cache.get(&i)
+                })
+            });
+        if same_files {
+            return; // Nothing changed — skip update entirely
+        }
+
+        // Rebuild expanded set, preserving state for files that existed before
+        let mut new_expanded = HashSet::new();
+        for (i, f) in files.iter().enumerate() {
+            if let Some(&(_, was_expanded)) = old_state.get(f.path.as_str()) {
+                if was_expanded {
+                    new_expanded.insert(i);
+                }
+            } else {
+                // New file — expand by default
+                new_expanded.insert(i);
+            }
+        }
+
+        self.files = files;
+        self.diff_cache = diff_cache;
+        self.expanded = new_expanded;
+        self.generation = self.generation.wrapping_add(1);
     }
 
     /// Reload file list from git status.
@@ -184,9 +252,11 @@ impl DiffPane {
     }
 
     /// Total lines for the diff pane (file entries + expanded diff lines).
+    /// Includes 1 blank spacer row before each file header (except the first).
     pub fn total_lines(&self) -> usize {
         let mut count = 0;
         for (i, _) in self.files.iter().enumerate() {
+            if i > 0 { count += 1; } // spacer before file header
             count += 1; // file entry
             if self.expanded.contains(&i) {
                 if let Some(lines) = self.diff_cache.get(&i) {
@@ -220,6 +290,199 @@ impl DiffPane {
         max
     }
 
+    /// Given a visual row (relative to scroll), find which file index it
+    /// corresponds to and whether it's a file header. If it's a header, toggle
+    /// expand/collapse for that file.
+    pub fn click_row(&mut self, visual_row: usize) {
+        let target_row = self.scroll as usize + visual_row;
+        let mut row_idx = 0usize;
+        for (fi, _) in self.files.iter().enumerate() {
+            // Spacer row before each file header (except the first)
+            if fi > 0 {
+                if row_idx == target_row { return; } // clicked spacer — ignore
+                row_idx += 1;
+            }
+            if row_idx == target_row {
+                // Clicked on file header → toggle
+                if self.expanded.contains(&fi) {
+                    self.expanded.remove(&fi);
+                } else {
+                    if !self.diff_cache.contains_key(&fi) {
+                        let lines = self.load_diff_lines(&self.files[fi].path.clone());
+                        self.diff_cache.insert(fi, lines);
+                    }
+                    self.expanded.insert(fi);
+                }
+                self.selected = Some(fi);
+                self.generation = self.generation.wrapping_add(1);
+                return;
+            }
+            row_idx += 1;
+            if self.expanded.contains(&fi) {
+                if let Some(lines) = self.diff_cache.get(&fi) {
+                    let line_count = if self.side_by_side {
+                        pair_diff_lines(lines).len()
+                    } else {
+                        lines.len()
+                    };
+                    row_idx += line_count;
+                }
+            }
+        }
+    }
+
+    /// Check if a visual row (relative to scroll) is a file header row.
+    pub fn is_file_header_row(&self, visual_row: usize) -> bool {
+        let target_row = self.scroll as usize + visual_row;
+        let mut row_idx = 0usize;
+        for (fi, _) in self.files.iter().enumerate() {
+            if fi > 0 { row_idx += 1; } // spacer
+            if row_idx == target_row { return true; } // file header
+            row_idx += 1;
+            if self.expanded.contains(&fi) {
+                if let Some(lines) = self.diff_cache.get(&fi) {
+                    let line_count = if self.side_by_side {
+                        pair_diff_lines(lines).len()
+                    } else {
+                        lines.len()
+                    };
+                    row_idx += line_count;
+                }
+            }
+        }
+        false
+    }
+
+    /// Find which file index a virtual row belongs to.
+    pub fn file_index_at_row(&self, visual_row: usize) -> Option<usize> {
+        let target_row = self.scroll as usize + visual_row;
+        let mut row_idx = 0usize;
+        for (fi, _) in self.files.iter().enumerate() {
+            if fi > 0 { row_idx += 1; } // spacer
+            let header_row = row_idx;
+            row_idx += 1;
+            if self.expanded.contains(&fi) {
+                if let Some(lines) = self.diff_cache.get(&fi) {
+                    let line_count = if self.side_by_side {
+                        pair_diff_lines(lines).len()
+                    } else {
+                        lines.len()
+                    };
+                    if target_row >= header_row && target_row < row_idx + line_count {
+                        return Some(fi);
+                    }
+                    row_idx += line_count;
+                }
+            } else if target_row == header_row {
+                return Some(fi);
+            }
+        }
+        None
+    }
+
+    /// Get horizontal scroll for a specific file.
+    fn h_scroll_for(&self, fi: usize) -> usize {
+        self.h_scroll.get(&fi).copied().unwrap_or(0)
+    }
+
+    /// Build a flat list of text lines corresponding to virtual rows.
+    /// Used for text selection and copy.
+    pub(crate) fn flat_lines(&self) -> Vec<String> {
+        let mut result = Vec::new();
+        for (fi, file) in self.files.iter().enumerate() {
+            if fi > 0 { result.push(String::new()); } // spacer
+            // File header
+            let status_ch = match file.status.trim() {
+                "M" | " M" => 'M', "D" | " D" => 'D', "A" => 'A', "??" => 'U', _ => '?',
+            };
+            result.push(format!("{} {}", status_ch, file.path));
+            if self.expanded.contains(&fi) {
+                if let Some(lines) = self.diff_cache.get(&fi) {
+                    if self.side_by_side {
+                        for pair in pair_diff_lines(lines) {
+                            let left = match pair.left {
+                                Some(DiffLine::Removed(t)) => format!("- {}", t),
+                                Some(DiffLine::Context(t)) => format!("  {}", t),
+                                Some(DiffLine::Header(t)) => t.clone(),
+                                _ => String::new(),
+                            };
+                            let right = match pair.right {
+                                Some(DiffLine::Added(t)) => format!("+ {}", t),
+                                Some(DiffLine::Context(t)) => format!("  {}", t),
+                                Some(DiffLine::Header(t)) => t.clone(),
+                                _ => String::new(),
+                            };
+                            result.push(format!("{} | {}", left, right));
+                        }
+                    } else {
+                        for line in lines {
+                            let text = match line {
+                                DiffLine::Added(t) => format!("+ {}", t),
+                                DiffLine::Removed(t) => format!("- {}", t),
+                                DiffLine::Header(t) => t.clone(),
+                                DiffLine::Context(t) => format!("  {}", t),
+                            };
+                            result.push(text);
+                        }
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    /// Extract selected text from the diff pane.
+    pub fn selected_text(&self, sel: &crate::pane::Selection) -> String {
+        let lines = self.flat_lines();
+        let (start, end) = if sel.anchor < sel.end {
+            (sel.anchor, sel.end)
+        } else {
+            (sel.end, sel.anchor)
+        };
+        let mut result = String::new();
+        for row in start.0..=end.0 {
+            if row >= lines.len() { break; }
+            let line = &lines[row];
+            let char_count = line.chars().count();
+            let col_start = if row == start.0 { start.1.min(char_count) } else { 0 };
+            let col_end = if row == end.0 { end.1.min(char_count) } else { char_count };
+            if col_start <= col_end {
+                let text: String = line.chars().skip(col_start).take(col_end - col_start).collect();
+                result.push_str(&text);
+            }
+            if row != end.0 {
+                result.push('\n');
+            }
+        }
+        result
+    }
+
+    /// Navigate to next/previous file header.
+    pub fn move_selection(&mut self, delta: isize) {
+        let count = self.files.len();
+        if count == 0 { return; }
+        let current = self.selected.unwrap_or(0) as isize;
+        let next = (current + delta).clamp(0, count as isize - 1) as usize;
+        self.selected = Some(next);
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Toggle expand/collapse of the currently selected file.
+    pub fn toggle_selected(&mut self) {
+        if let Some(fi) = self.selected {
+            if self.expanded.contains(&fi) {
+                self.expanded.remove(&fi);
+            } else {
+                if !self.diff_cache.contains_key(&fi) {
+                    let lines = self.load_diff_lines(&self.files[fi].path.clone());
+                    self.diff_cache.insert(fi, lines);
+                }
+                self.expanded.insert(fi);
+            }
+            self.generation = self.generation.wrapping_add(1);
+        }
+    }
+
     /// Summary stats across all files.
     pub fn total_stats(&self) -> (usize, usize) {
         let add: usize = self.files.iter().map(|f| f.additions).sum();
@@ -248,15 +511,26 @@ impl DiffPane {
         let mut vi = 0usize; // visual row being drawn
 
         for (fi, file) in self.files.iter().enumerate() {
+            // Spacer row before each file header (except the first)
+            if fi > 0 {
+                if row_idx >= scroll && vi < visible_rows {
+                    vi += 1; // blank row
+                }
+                row_idx += 1;
+            }
+
             // File header row
             if row_idx >= scroll && vi < visible_rows {
                 let y = rect.y + vi as f32 * cell_size.height;
                 let is_expanded = self.expanded.contains(&fi);
                 let is_selected = self.selected == Some(fi);
 
-                // Subtle background for file header rows
-                let header_bg = Color::new(1.0, 1.0, 1.0, if is_selected { 0.08 } else { 0.03 });
+                // File header background — visually distinct from diff content
+                let header_bg = Color::new(1.0, 1.0, 1.0, if is_selected { 0.12 } else { 0.06 });
                 renderer.draw_grid_rect(Rect::new(rect.x, y, rect.width, cell_size.height), header_bg);
+                // Bottom border to separate header from diff content
+                let border_y = y + cell_size.height - 1.0;
+                renderer.draw_grid_rect(Rect::new(rect.x, border_y, rect.width, 1.0), divider_color);
 
                 let max_cols = (rect.width / cell_size.width).floor() as usize;
                 let mut col = 0usize;
@@ -347,6 +621,7 @@ impl DiffPane {
 
             // Expanded diff lines
             if self.expanded.contains(&fi) {
+                let file_h_scroll = self.h_scroll_for(fi);
                 if let Some(lines) = self.diff_cache.get(&fi) {
                     if self.side_by_side {
                         // --- Side-by-side rendering ---
@@ -380,7 +655,7 @@ impl DiffPane {
                                         bold: false, dim: is_dim, italic: false, underline: false,
                                     };
                                     renderer.draw_grid_cell(gutter_ch, vi, 1, style, cell_size, left_origin);
-                                    for (ci, ch) in text.chars().skip(self.h_scroll).enumerate().take(half_cols.saturating_sub(3)) {
+                                    for (ci, ch) in text.chars().skip(file_h_scroll).enumerate().take(half_cols.saturating_sub(3)) {
                                         if ch != ' ' && ch != '\t' {
                                             renderer.draw_grid_cell(ch, vi, 3 + ci, style, cell_size, left_origin);
                                         }
@@ -406,7 +681,7 @@ impl DiffPane {
                                         bold: false, dim: is_dim, italic: false, underline: false,
                                     };
                                     renderer.draw_grid_cell(gutter_ch, vi, 1, style, cell_size, right_origin);
-                                    for (ci, ch) in text.chars().skip(self.h_scroll).enumerate().take(half_cols.saturating_sub(3)) {
+                                    for (ci, ch) in text.chars().skip(file_h_scroll).enumerate().take(half_cols.saturating_sub(3)) {
                                         if ch != ' ' && ch != '\t' {
                                             renderer.draw_grid_cell(ch, vi, 3 + ci, style, cell_size, right_origin);
                                         }
@@ -454,7 +729,7 @@ impl DiffPane {
                                     italic: false, underline: false,
                                 };
                                 let max_cols = (rect.width / cell_size.width).floor() as usize;
-                                for (ci, ch) in text.chars().skip(self.h_scroll).enumerate().take(max_cols.saturating_sub(4)) {
+                                for (ci, ch) in text.chars().skip(file_h_scroll).enumerate().take(max_cols.saturating_sub(4)) {
                                     if ch != ' ' && ch != '\t' {
                                         renderer.draw_grid_cell(ch, vi, 4 + ci, content_style, cell_size, Vec2::new(rect.x, rect.y));
                                     }

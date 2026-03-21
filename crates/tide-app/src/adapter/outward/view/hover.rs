@@ -179,6 +179,9 @@ pub(crate) fn render_hover(
                 crate::state::drag_types::HoverTarget::PaneContent => {
                     // No visual overlay — only affects cursor icon (IBeam)
                 }
+                crate::state::drag_types::HoverTarget::DiffFileHeader => {
+                    // No visual overlay — only affects cursor icon (Pointer)
+                }
             }
         }
     }

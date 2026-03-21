@@ -84,9 +84,75 @@ pub fn status_files(cwd: &Path) -> Vec<StatusEntry> {
 }
 
 /// Get unified diff for a single file.
+/// For untracked files, generates a synthetic diff showing all lines as added.
 pub fn file_diff(cwd: &Path, path: &str) -> Option<String> {
-    let text = run_git(&["diff", "--", path], cwd)?;
-    if text.is_empty() { None } else { Some(text) }
+    let text = run_git(&["diff", "--", path], cwd);
+    if let Some(ref t) = text {
+        if !t.is_empty() {
+            return Some(t.clone());
+        }
+    }
+    // Untracked or staged-only file: try reading file content as all-added
+    let full_path = cwd.join(path);
+    let content = std::fs::read_to_string(&full_path).ok()?;
+    if content.is_empty() {
+        return None;
+    }
+    let line_count = content.lines().count();
+    let mut result = format!("@@ -0,0 +1,{} @@\n", line_count);
+    for line in content.lines() {
+        result.push('+');
+        result.push_str(line);
+        result.push('\n');
+    }
+    Some(result)
+}
+
+/// Parse `git diff --numstat` output into a map of path → (additions, deletions).
+pub fn diff_numstat(cwd: &Path) -> std::collections::HashMap<String, (usize, usize)> {
+    let mut map = std::collections::HashMap::new();
+    if let Some(text) = run_git(&["diff", "--numstat"], cwd) {
+        for line in text.lines() {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 3 {
+                let add = parts[0].parse().unwrap_or(0);
+                let del = parts[1].parse().unwrap_or(0);
+                map.insert(parts[2].to_string(), (add, del));
+            }
+        }
+    }
+    map
+}
+
+/// Get unified diff for a file and parse into DiffLine entries.
+/// Suitable for calling from background threads.
+pub fn file_diff_lines(cwd: &Path, path: &str) -> Vec<crate::pane::diff::DiffLine> {
+    use crate::pane::diff::DiffLine;
+    match file_diff(cwd, path) {
+        Some(diff_text) => {
+            diff_text
+                .lines()
+                .filter_map(|l| {
+                    if l.starts_with("@@") {
+                        Some(DiffLine::Header(l.to_string()))
+                    } else if l.starts_with('+') && !l.starts_with("+++") {
+                        Some(DiffLine::Added(l[1..].to_string()))
+                    } else if l.starts_with('-') && !l.starts_with("---") {
+                        Some(DiffLine::Removed(l[1..].to_string()))
+                    } else if !l.starts_with("diff ")
+                        && !l.starts_with("index ")
+                        && !l.starts_with("---")
+                        && !l.starts_with("+++")
+                    {
+                        Some(DiffLine::Context(l.to_string()))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        }
+        None => Vec::new(),
+    }
 }
 
 /// List local branches only.

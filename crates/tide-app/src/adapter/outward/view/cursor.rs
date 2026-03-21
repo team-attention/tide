@@ -159,7 +159,11 @@ pub(crate) fn render_cursor_and_highlights(
                 let sb_hovered = matches!(app.interaction.hover_target, Some(crate::state::drag_types::HoverTarget::EditorScrollbar(hid)) if hid == id);
                 pane.render_scrollbar(inner, renderer, pane.search.as_ref(), p, sb_hovered);
             }
-            Some(PaneKind::Diff(_)) => {}
+            Some(PaneKind::Diff(dp)) => {
+                if let Some(ref sel) = dp.selection {
+                    render_diff_selection(dp, inner, renderer, p, sel);
+                }
+            }
             Some(PaneKind::Browser(_)) => {}
             Some(PaneKind::Launcher(_)) => {}
             None => {}
@@ -257,6 +261,52 @@ fn render_editor_search_highlights(
             };
             renderer.draw_rect(Rect::new(rx, ry, rw, cell_size.height), color);
         }
+    }
+}
+
+/// Render selection highlight for a diff pane.
+/// Selection coordinates use virtual rows (scroll offset + visual row) and columns.
+fn render_diff_selection(
+    dp: &crate::pane::diff::DiffPane,
+    inner: Rect,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    p: &ThemePalette,
+    sel: &crate::pane::Selection,
+) {
+    let cell_size = renderer.cell_size();
+    let (start, end) = if sel.anchor <= sel.end {
+        (sel.anchor, sel.end)
+    } else {
+        (sel.end, sel.anchor)
+    };
+    if start == end {
+        return;
+    }
+    let sel_color = p.selection;
+    let scroll = dp.scroll as usize;
+    let visible_rows = (inner.height / cell_size.height).ceil() as usize;
+    let visible_cols = (inner.width / cell_size.width).ceil() as usize;
+    let flat = dp.flat_lines();
+
+    for row in start.0..=end.0 {
+        if row < scroll || row >= scroll + visible_rows {
+            continue;
+        }
+        let visual_row = row - scroll;
+        let col_start = if row == start.0 { start.1 } else { 0 };
+        let col_end = if row == end.0 {
+            end.1
+        } else {
+            flat.get(row).map_or(visible_cols, |l| l.chars().count().max(visible_cols))
+        };
+        if col_start >= col_end {
+            continue;
+        }
+        let vis_end = col_end.min(visible_cols);
+        let rx = inner.x + col_start as f32 * cell_size.width;
+        let ry = inner.y + visual_row as f32 * cell_size.height;
+        let rw = (vis_end - col_start) as f32 * cell_size.width;
+        renderer.draw_rect(Rect::new(rx, ry, rw, cell_size.height), sel_color);
     }
 }
 
