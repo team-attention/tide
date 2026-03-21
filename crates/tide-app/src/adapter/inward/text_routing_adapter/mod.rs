@@ -5,12 +5,12 @@
 //! uses `text_input_target()` to determine the single correct destination.
 
 
-use crate::tide_core::TerminalBackend;
-
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
-use crate::App;
-use crate::PaneLifecyclePort;
+use crate::AppCorePort;
+use crate::FocusNavPort;
+use crate::ModalPort;
+use crate::PaneAccessPort;
 
 /// Where text input should be directed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,87 +28,100 @@ pub(crate) enum TextInputTarget {
     Consumed,
 }
 
-impl App {
-    /// Determine where text input should be routed based on current UI state.
-    /// Checks modals/popups first (highest priority), then focus area.
-    /// This is the single source of truth — keyboard, IME, and Released
-    /// handlers all use this instead of maintaining separate if-else chains.
-    pub(crate) fn text_input_target(&self) -> TextInputTarget {
-        // Modal overlays (highest priority)
-        if let Some(ref page) = self.modal.config_page {
-            return if page.copy_files_editing {
-                TextInputTarget::ConfigPageCopyFiles
-            } else if page.worktree_editing {
-                TextInputTarget::ConfigPageWorktree
-            } else {
-                TextInputTarget::Consumed
-            };
-        }
-        if self.modal.gateway_modal.is_some()
-            || self.modal.context_menu.is_some()
-            || self.modal.save_confirm.is_some() {
-            return TextInputTarget::Consumed;
-        }
-        // Text-input popups
-        if self.modal.file_tree_rename.is_some() {
-            return TextInputTarget::FileTreeRename;
-        }
-        if self.modal.git_switcher.is_some() {
-            return TextInputTarget::GitSwitcher;
-        }
-        if self.modal.file_finder.is_some() {
-            return TextInputTarget::FileFinder;
-        }
-        if self.modal.save_as_input.is_some() {
-            return TextInputTarget::SaveAsInput;
-        }
-        // Inline search bar
-        if let Some(id) = self.focus.search_focus {
-            return TextInputTarget::SearchBar(id);
-        }
-        // Focus area
-        match self.focus.focus_area {
-            FocusArea::FileTree => TextInputTarget::Consumed,
-            FocusArea::Stage | FocusArea::Dock => {
-                // Check if focused pane is a browser with URL bar focused
-                if let Some(id) = self.focus.focused {
-                    if let Some(PaneKind::Browser(bp)) = self.panes.get(&id) {
-                        if bp.url_input_focused {
-                            return TextInputTarget::BrowserUrlBar(id);
-                        }
-                        // When URL bar not focused, consume text (webview handles its own input)
-                        return TextInputTarget::Consumed;
-                    }
-                }
-                self.focus.focused
-                    .map(TextInputTarget::Pane)
-                    .unwrap_or(TextInputTarget::Consumed)
-            }
-        }
-    }
+// ── Trait alias for text routing ports ──
 
-    /// Compute visible editor rows and columns for a given pane.
-    /// Used by text routing and IME commit paths to keep cursor visible.
-    pub(crate) fn visible_editor_size(&self, pane_id: crate::tide_core::PaneId) -> (usize, usize) {
-        let cs = self.window.cached_cell_size;
-        let content_top = crate::theme::TAB_BAR_HEIGHT;
-        let tree_rect = self.visual_pane_rects.iter()
-            .find(|(pid, _)| *pid == pane_id)
-            .map(|(_, r)| *r);
-        if let Some(r) = tree_rect {
-            let rows = ((r.height - content_top - crate::theme::PANE_PADDING) / cs.height).floor() as usize;
-            let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cs.width;
-            let cols = ((r.width - 2.0 * crate::theme::PANE_PADDING - 2.0 * gutter_width) / cs.width).floor() as usize;
-            (rows.max(1), cols.max(1))
+pub(crate) trait TextRoutingPorts: AppCorePort + FocusNavPort + ModalPort + PaneAccessPort {}
+impl<T: AppCorePort + FocusNavPort + ModalPort + PaneAccessPort> TextRoutingPorts for T {}
+
+/// Determine where text input should be routed based on current UI state.
+/// Checks modals/popups first (highest priority), then focus area.
+/// This is the single source of truth — keyboard, IME, and Released
+/// handlers all use this instead of maintaining separate if-else chains.
+pub(crate) fn text_input_target(ctx: &impl TextRoutingPorts) -> TextInputTarget {
+    // Modal overlays (highest priority)
+    let modal = ctx.modal();
+    if let Some(ref page) = modal.config_page {
+        return if page.copy_files_editing {
+            TextInputTarget::ConfigPageCopyFiles
+        } else if page.worktree_editing {
+            TextInputTarget::ConfigPageWorktree
         } else {
-            (30, 80)
+            TextInputTarget::Consumed
+        };
+    }
+    if modal.gateway_modal.is_some()
+        || modal.context_menu.is_some()
+        || modal.save_confirm.is_some() {
+        return TextInputTarget::Consumed;
+    }
+    // Text-input popups
+    if modal.file_tree_rename.is_some() {
+        return TextInputTarget::FileTreeRename;
+    }
+    if modal.git_switcher.is_some() {
+        return TextInputTarget::GitSwitcher;
+    }
+    if modal.file_finder.is_some() {
+        return TextInputTarget::FileFinder;
+    }
+    if modal.save_as_input.is_some() {
+        return TextInputTarget::SaveAsInput;
+    }
+    // Inline search bar
+    if let Some(id) = ctx.search_focus() {
+        return TextInputTarget::SearchBar(id);
+    }
+    // Focus area
+    match ctx.current_focus_area() {
+        FocusArea::FileTree => TextInputTarget::Consumed,
+        FocusArea::Stage | FocusArea::Dock => {
+            // Check if focused pane is a browser with URL bar focused
+            if let Some(id) = ctx.focused_pane() {
+                if let Some(PaneKind::Browser(bp)) = ctx.pane(id) {
+                    if bp.url_input_focused {
+                        return TextInputTarget::BrowserUrlBar(id);
+                    }
+                    // When URL bar not focused, consume text (webview handles its own input)
+                    return TextInputTarget::Consumed;
+                }
+            }
+            ctx.focused_pane()
+                .map(TextInputTarget::Pane)
+                .unwrap_or(TextInputTarget::Consumed)
         }
     }
+}
 
+/// Compute visible editor rows and columns for a given pane.
+/// Used by text routing and IME commit paths to keep cursor visible.
+pub(crate) fn visible_editor_size(ctx: &impl AppCorePort, pane_id: crate::tide_core::PaneId) -> (usize, usize) {
+    let cs = ctx.cell_size();
+    let content_top = crate::theme::TAB_BAR_HEIGHT;
+    let tree_rect = ctx.visual_pane_rects().iter()
+        .find(|(pid, _)| *pid == pane_id)
+        .map(|(_, r)| *r);
+    if let Some(r) = tree_rect {
+        let rows = ((r.height - content_top - crate::theme::PANE_PADDING) / cs.height).floor() as usize;
+        let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cs.width;
+        let cols = ((r.width - 2.0 * crate::theme::PANE_PADDING - 2.0 * gutter_width) / cs.width).floor() as usize;
+        (rows.max(1), cols.max(1))
+    } else {
+        (30, 80)
+    }
+}
+
+// ── Thin bridge on App ──
+// send_text_to_target stays as impl App (ImeStatePort forwards to it).
+
+use crate::tide_core::TerminalBackend;
+use crate::App;
+use crate::PaneLifecyclePort;
+
+impl App {
     /// Route a text string to the current input target.
     /// Handles all side effects (chrome_generation, input_sent_at, scroll-to-bottom, etc.).
     pub(crate) fn send_text_to_target(&mut self, text: &str) {
-        let target = self.text_input_target();
+        let target = text_input_target(self);
         match target {
             TextInputTarget::ConfigPageCopyFiles => {
                 if let Some(ref mut page) = self.modal.config_page {
@@ -116,7 +129,7 @@ impl App {
                         page.copy_files_input.insert_char(ch);
                     }
                     page.dirty = true;
-                    self.cache.invalidate_chrome();
+                    crate::AppCorePort::invalidate_chrome(self);
                 }
             }
             TextInputTarget::ConfigPageWorktree => {
@@ -125,7 +138,7 @@ impl App {
                         page.worktree_input.insert_char(ch);
                     }
                     page.dirty = true;
-                    self.cache.invalidate_chrome();
+                    crate::AppCorePort::invalidate_chrome(self);
                 }
             }
             TextInputTarget::FileTreeRename => {
@@ -133,7 +146,7 @@ impl App {
                     for ch in text.chars() {
                         rename.input.insert_char(ch);
                     }
-                    self.cache.invalidate_chrome();
+                    crate::AppCorePort::invalidate_chrome(self);
                 }
             }
             TextInputTarget::GitSwitcher => {
@@ -141,7 +154,7 @@ impl App {
                     for ch in text.chars() {
                         gs.insert_char(ch);
                     }
-                    self.cache.invalidate_chrome();
+                    crate::AppCorePort::invalidate_chrome(self);
                 }
             }
             TextInputTarget::FileFinder => {
@@ -149,7 +162,7 @@ impl App {
                     for ch in text.chars() {
                         finder.insert_char(ch);
                     }
-                    self.cache.invalidate_chrome();
+                    crate::AppCorePort::invalidate_chrome(self);
                 }
             }
             TextInputTarget::SaveAsInput => {
@@ -161,7 +174,7 @@ impl App {
             }
             TextInputTarget::SearchBar(pane_id) => {
                 for ch in text.chars() {
-                    self.search_bar_insert(pane_id, ch);
+                    crate::adapter::inward::search_adapter::search_bar_insert(self, pane_id, ch);
                 }
             }
             TextInputTarget::BrowserUrlBar(pane_id) => {
@@ -173,18 +186,18 @@ impl App {
                         bp.url_input_cursor += 1;
                     }
                 }
-                self.cache.invalidate_chrome();
+                crate::AppCorePort::invalidate_chrome(self);
             }
             TextInputTarget::Pane(id) => {
                 // Block text input in preview mode
                 if let Some(PaneKind::Editor(pane)) = self.panes.get(&id) {
                     if pane.preview_mode {
-                        self.cache.needs_redraw = true;
+                        crate::AppCorePort::request_redraw(self);
                         return;
                     }
                 }
                 // Compute visible size before mutable borrow of panes
-                let editor_size = self.visible_editor_size(id);
+                let editor_size = visible_editor_size(self, id);
                 match self.panes.get_mut(&id) {
                     Some(PaneKind::Terminal(pane)) => {
                         if pane.context.child_dead {
@@ -248,7 +261,7 @@ impl App {
                         }
                         // Redraw tab label when modified indicator changes
                         if pane.editor.is_modified() != was_modified {
-                            self.cache.invalidate_chrome();
+                            crate::AppCorePort::invalidate_chrome(self);
                         }
                         // Notify LSP of document change BEFORE requesting completion
                         // (server needs updated buffer to provide correct results)
@@ -258,16 +271,15 @@ impl App {
                             self.try_trigger_completion(id, text);
                         }
                         // Editor has no PTY output loop — must invalidate cache explicitly
-                        self.cache.invalidate_pane(id);
+                        crate::AppCorePort::invalidate_pane(self, id);
                     }
                     Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) | Some(PaneKind::Launcher(_)) | None => {}
                 }
             }
             TextInputTarget::Consumed => {}
         }
-        self.cache.needs_redraw = true;
+        crate::AppCorePort::request_redraw(self);
     }
-
 }
 
 #[cfg(test)]
@@ -287,7 +299,7 @@ mod tests {
     #[test]
     fn default_no_focus_consumed() {
         let app = test_app();
-        assert_eq!(app.text_input_target(), TextInputTarget::Consumed);
+        assert_eq!(text_input_target(&app), TextInputTarget::Consumed);
     }
 
     #[test]
@@ -296,7 +308,7 @@ mod tests {
         let id: crate::tide_core::PaneId = 1;
         app.panes.insert(id, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id)));
         app.focus.focused = Some(id);
-        assert_eq!(app.text_input_target(), TextInputTarget::Pane(id));
+        assert_eq!(text_input_target(&app), TextInputTarget::Pane(id));
     }
 
     #[test]
@@ -306,7 +318,7 @@ mod tests {
         app.panes.insert(id, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id)));
         app.focus.focused = Some(id);
         app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
-        assert_eq!(app.text_input_target(), TextInputTarget::FileFinder);
+        assert_eq!(text_input_target(&app), TextInputTarget::FileFinder);
     }
 
     #[test]
@@ -322,14 +334,14 @@ mod tests {
             vec![],
             Rect::new(0.0, 0.0, 100.0, 30.0),
         ));
-        assert_eq!(app.text_input_target(), TextInputTarget::GitSwitcher);
+        assert_eq!(text_input_target(&app), TextInputTarget::GitSwitcher);
     }
 
     #[test]
     fn config_page_consumed_by_default() {
         let mut app = test_app();
         app.modal.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
-        assert_eq!(app.text_input_target(), TextInputTarget::Consumed);
+        assert_eq!(text_input_target(&app), TextInputTarget::Consumed);
     }
 
     #[test]
@@ -338,7 +350,7 @@ mod tests {
         let mut cp = ConfigPageState::new(vec![], String::new(), String::new());
         cp.copy_files_editing = true;
         app.modal.config_page = Some(cp);
-        assert_eq!(app.text_input_target(), TextInputTarget::ConfigPageCopyFiles);
+        assert_eq!(text_input_target(&app), TextInputTarget::ConfigPageCopyFiles);
     }
 
     #[test]
@@ -347,7 +359,7 @@ mod tests {
         let mut cp = ConfigPageState::new(vec![], String::new(), String::new());
         cp.worktree_editing = true;
         app.modal.config_page = Some(cp);
-        assert_eq!(app.text_input_target(), TextInputTarget::ConfigPageWorktree);
+        assert_eq!(text_input_target(&app), TextInputTarget::ConfigPageWorktree);
     }
 
     #[test]
@@ -356,7 +368,7 @@ mod tests {
         app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
         app.modal.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
         // config_page has higher priority
-        assert_eq!(app.text_input_target(), TextInputTarget::Consumed);
+        assert_eq!(text_input_target(&app), TextInputTarget::Consumed);
     }
 
     #[test]
@@ -366,7 +378,7 @@ mod tests {
         app.panes.insert(id, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id)));
         app.focus.focused = Some(id);
         app.focus.search_focus = Some(id);
-        assert_eq!(app.text_input_target(), TextInputTarget::SearchBar(id));
+        assert_eq!(text_input_target(&app), TextInputTarget::SearchBar(id));
     }
 
     #[test]
@@ -376,14 +388,14 @@ mod tests {
         app.panes.insert(id, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id)));
         app.focus.focused = Some(id);
         app.focus.focus_area = FocusArea::FileTree;
-        assert_eq!(app.text_input_target(), TextInputTarget::Consumed);
+        assert_eq!(text_input_target(&app), TextInputTarget::Consumed);
     }
 
     #[test]
     fn save_as_input_routes() {
         let mut app = test_app();
         app.modal.save_as_input = Some(SaveAsInput::new(1, PathBuf::from("/tmp"), Rect::new(0.0, 0.0, 100.0, 30.0)));
-        assert_eq!(app.text_input_target(), TextInputTarget::SaveAsInput);
+        assert_eq!(text_input_target(&app), TextInputTarget::SaveAsInput);
     }
 
     #[test]
@@ -394,7 +406,7 @@ mod tests {
             original_path: PathBuf::from("/tmp/file.txt"),
             input: InputLine::with_text("file.txt".to_string()),
         });
-        assert_eq!(app.text_input_target(), TextInputTarget::FileTreeRename);
+        assert_eq!(text_input_target(&app), TextInputTarget::FileTreeRename);
     }
 
     #[test]
@@ -411,7 +423,7 @@ mod tests {
             position: crate::tide_core::Vec2::new(0.0, 0.0),
             selected: 0,
         });
-        assert_eq!(app.text_input_target(), TextInputTarget::Consumed);
+        assert_eq!(text_input_target(&app), TextInputTarget::Consumed);
     }
 
     #[test]
@@ -429,6 +441,6 @@ mod tests {
             Rect::new(0.0, 0.0, 100.0, 30.0),
         ));
         // git_switcher has higher priority than search_focus
-        assert_eq!(app.text_input_target(), TextInputTarget::GitSwitcher);
+        assert_eq!(text_input_target(&app), TextInputTarget::GitSwitcher);
     }
 }

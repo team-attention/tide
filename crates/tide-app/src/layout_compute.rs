@@ -800,4 +800,70 @@ impl crate::application::ports::inward::LayoutPort for App {
             }
         }
     }
+
+    fn layout_snapshot(&self) -> Option<crate::tide_layout::LayoutSnapshot> {
+        self.layout.snapshot()
+    }
+
+    fn layout_set_split_ratio(&mut self, pane_id: u64, ratio: f32) -> bool {
+        self.layout.set_split_ratio(pane_id, ratio)
+    }
+
+    // ── Layout tree manipulation (click_adapter) ──
+
+    fn layout_remove(&mut self, id: crate::tide_core::PaneId) {
+        self.layout.remove(id);
+    }
+
+    fn layout_insert_at_root(&mut self, id: crate::tide_core::PaneId, zone: crate::tide_core::DropZone) {
+        self.layout.insert_at_root(id, zone);
+    }
+
+    fn layout_insert_pane(&mut self, target: crate::tide_core::PaneId, source: crate::tide_core::PaneId, direction: SplitDirection, insert_first: bool) {
+        self.layout.insert_pane(target, source, direction, insert_first);
+    }
+
+    // ── Hit-test helpers (delegated from drag_drop_adapter) ──
+
+    fn pane_at_tab_bar(&self, pos: crate::tide_core::Vec2) -> Option<crate::tide_core::PaneId> {
+        crate::adapter::inward::drag_drop_adapter::pane_at_tab_bar(self, pos)
+    }
+
+    fn pane_tab_close_at(&self, pos: crate::tide_core::Vec2) -> Option<crate::tide_core::PaneId> {
+        crate::adapter::inward::drag_drop_adapter::pane_tab_close_at(self, pos)
+    }
+
+    fn pane_maximize_at(&self, pos: crate::tide_core::Vec2) -> Option<crate::tide_core::PaneId> {
+        crate::adapter::inward::drag_drop_adapter::pane_maximize_at(self, pos)
+    }
+
+    // ── Drag helpers (mouse_adapter) ──
+
+    fn layout_end_drag(&mut self) {
+        self.layout.end_drag();
+    }
+
+    fn layout_drag_border(&mut self, pos: crate::tide_core::Vec2) {
+        self.layout.drag_border(pos);
+    }
+
+    fn router_is_dragging_border(&self) -> bool {
+        self.router.is_dragging_border()
+    }
+
+    fn router_end_drag(&mut self) {
+        self.router.end_drag();
+    }
+
+    fn compute_drop_destination(&self, mouse: crate::tide_core::Vec2, source: crate::tide_core::PaneId) -> Option<crate::state::drag_types::DropDestination> {
+        crate::adapter::inward::drag_drop_adapter::compute_drop_destination(self, mouse, source)
+    }
+
+    fn compute_drop_preview_rect(&self, source: crate::tide_core::PaneId, target: &Option<crate::state::drag_types::DropDestination>) -> Option<Rect> {
+        crate::adapter::inward::drag_drop_adapter::compute_drop_preview_rect(self, source, target)
+    }
+
+    fn layout_simulate_drop(&self, source: crate::tide_core::PaneId, target: Option<crate::tide_core::PaneId>, zone: crate::tide_core::DropZone, source_in_tree: bool, window_size: crate::tide_core::Size) -> Option<Rect> {
+        self.layout.simulate_drop(source, target, zone, source_in_tree, window_size)
+    }
 }

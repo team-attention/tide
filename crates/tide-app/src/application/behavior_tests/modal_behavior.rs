@@ -53,7 +53,7 @@ fn config_page_blocks_all_text_input() {
     let (mut app, _id) = app_with_editor();
     app.modal.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
     assert_eq!(
-        app.text_input_target(),
+        crate::adapter::inward::text_routing_adapter::text_input_target(&app),
         crate::adapter::inward::text_routing_adapter::TextInputTarget::Consumed,
     );
 }
@@ -71,7 +71,7 @@ fn context_menu_blocks_text_input() {
         selected: 0,
     });
     assert_eq!(
-        app.text_input_target(),
+        crate::adapter::inward::text_routing_adapter::text_input_target(&app),
         crate::adapter::inward::text_routing_adapter::TextInputTarget::Consumed,
     );
 }
@@ -82,7 +82,7 @@ fn save_confirm_blocks_text_input() {
     let (mut app, id) = app_with_editor();
     app.modal.save_confirm = Some(crate::SaveConfirmState { pane_id: id });
     assert_eq!(
-        app.text_input_target(),
+        crate::adapter::inward::text_routing_adapter::text_input_target(&app),
         crate::adapter::inward::text_routing_adapter::TextInputTarget::Consumed,
     );
 }
@@ -93,7 +93,7 @@ fn file_finder_captures_text_instead_of_pane() {
     let (mut app, _id) = app_with_editor();
     app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
     assert_eq!(
-        app.text_input_target(),
+        crate::adapter::inward::text_routing_adapter::text_input_target(&app),
         crate::adapter::inward::text_routing_adapter::TextInputTarget::FileFinder,
     );
 }
@@ -107,7 +107,7 @@ fn git_switcher_captures_text_instead_of_pane() {
         Rect::new(0.0, 0.0, 100.0, 30.0),
     ));
     assert_eq!(
-        app.text_input_target(),
+        crate::adapter::inward::text_routing_adapter::text_input_target(&app),
         crate::adapter::inward::text_routing_adapter::TextInputTarget::GitSwitcher,
     );
 }
@@ -119,7 +119,7 @@ fn modal_stack_has_higher_input_priority_than_search_bar() {
     app.focus.search_focus = Some(id);
     app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
     assert_eq!(
-        app.text_input_target(),
+        crate::adapter::inward::text_routing_adapter::text_input_target(&app),
         crate::adapter::inward::text_routing_adapter::TextInputTarget::FileFinder,
     );
 }
@@ -135,7 +135,7 @@ fn config_page_has_highest_priority_in_modal_stack() {
     ));
     app.modal.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
     assert_eq!(
-        app.text_input_target(),
+        crate::adapter::inward::text_routing_adapter::text_input_target(&app),
         crate::adapter::inward::text_routing_adapter::TextInputTarget::Consumed,
     );
 }
@@ -147,7 +147,7 @@ fn escape_closes_file_finder_modal() {
     // UC-2 BR-8: ESC closes file finder
     let (mut app, _id) = app_with_editor();
     app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
-    app.handle_key_down(crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
+    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
     assert!(app.modal.file_finder.is_none());
 }
 
@@ -159,7 +159,7 @@ fn escape_closes_git_switcher() {
         id, GitSwitcherMode::Branches, vec![], vec![],
         Rect::new(0.0, 0.0, 100.0, 30.0),
     ));
-    app.handle_key_down(crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
+    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
     assert!(app.modal.git_switcher.is_none());
 }
 
@@ -168,7 +168,7 @@ fn escape_closes_save_as_input() {
     // UC-2 BR-10: ESC closes save_as_input
     let (mut app, id) = app_with_editor();
     app.modal.save_as_input = Some(SaveAsInput::new(id, PathBuf::from("/tmp"), Rect::new(0.0, 0.0, 100.0, 30.0)));
-    app.handle_key_down(crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
+    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
     assert!(app.modal.save_as_input.is_none());
 }
 
@@ -184,7 +184,7 @@ fn escape_closes_context_menu() {
         position: crate::tide_core::Vec2::new(0.0, 0.0),
         selected: 0,
     });
-    app.handle_key_down(crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
+    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
     assert!(app.modal.context_menu.is_none());
 }
 
@@ -193,7 +193,7 @@ fn escape_cancels_save_confirm() {
     // UC-2 BR-12: ESC cancels save confirm
     let (mut app, id) = app_with_editor();
     app.modal.save_confirm = Some(crate::SaveConfirmState { pane_id: id });
-    app.handle_key_down(crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
+    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
     assert!(app.modal.save_confirm.is_none());
 }
 
@@ -206,6 +206,6 @@ fn escape_closes_file_tree_rename() {
         original_path: PathBuf::from("/tmp/file.txt"),
         input: InputLine::with_text("file.txt".to_string()),
     });
-    app.handle_key_down(crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
+    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
     assert!(app.modal.file_tree_rename.is_none());
 }

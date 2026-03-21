@@ -150,4 +150,16 @@ impl ClipboardSearchPort for App {
             self.focus.search_focus = Some(target_id);
         }
     }
+
+    fn trigger_completion_explicit(&mut self, pane_id: PaneId) {
+        self.trigger_completion_explicit(pane_id);
+    }
+
+    fn clipboard_set_text(&self, text: &str) -> Result<(), String> {
+        self.ports.clipboard.set_text(text).map_err(|e| e.to_string())
+    }
+
+    fn clipboard_get_text(&self) -> Result<String, String> {
+        self.ports.clipboard.get_text().map_err(|e| e.to_string())
+    }
 }

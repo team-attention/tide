@@ -2,7 +2,7 @@
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::*;
-use crate::adapter::inward::text_routing_adapter::TextInputTarget;
+use crate::adapter::inward::text_routing_adapter::{self, TextInputTarget};
 use crate::App;
 use std::path::PathBuf;
 use crate::tide_core::Rect;
@@ -28,7 +28,7 @@ fn app_with_editor() -> (App, u64) {
 fn text_goes_to_editor_when_nothing_else_is_open() {
     // UC-2 BR-10: Text goes to Editor when nothing else is open
     let (app, id) = app_with_editor();
-    assert_eq!(app.text_input_target(), TextInputTarget::Pane(id));
+    assert_eq!(text_routing_adapter::text_input_target(&app), TextInputTarget::Pane(id));
 }
 
 #[test]
@@ -36,7 +36,7 @@ fn text_goes_to_file_finder_when_open() {
     // UC-2 BR-11: Text goes to FileFinder when open
     let (mut app, _) = app_with_editor();
     app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/"), vec![]));
-    assert_eq!(app.text_input_target(), TextInputTarget::FileFinder);
+    assert_eq!(text_routing_adapter::text_input_target(&app), TextInputTarget::FileFinder);
 }
 
 #[test]
@@ -44,14 +44,14 @@ fn text_goes_to_search_bar_when_focused() {
     // UC-2 BR-12: Text goes to SearchBar when focused
     let (mut app, id) = app_with_editor();
     app.focus.search_focus = Some(id);
-    assert_eq!(app.text_input_target(), TextInputTarget::SearchBar(id));
+    assert_eq!(text_routing_adapter::text_input_target(&app), TextInputTarget::SearchBar(id));
 }
 
 #[test]
 fn text_is_consumed_when_no_pane_is_focused() {
     // UC-2 BR-13: Text is consumed when no Pane is focused
     let app = test_app();
-    assert_eq!(app.text_input_target(), TextInputTarget::Consumed);
+    assert_eq!(text_routing_adapter::text_input_target(&app), TextInputTarget::Consumed);
 }
 
 #[test]
@@ -59,7 +59,7 @@ fn text_is_consumed_when_file_tree_has_focus() {
     // UC-2 BR-14: Text is consumed when FocusArea is FileTree
     let (mut app, _) = app_with_editor();
     app.focus.focus_area = FocusArea::FileTree;
-    assert_eq!(app.text_input_target(), TextInputTarget::Consumed);
+    assert_eq!(text_routing_adapter::text_input_target(&app), TextInputTarget::Consumed);
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn text_goes_to_save_as_input_when_open() {
     app.modal.save_as_input = Some(SaveAsInput::new(
         id, PathBuf::from("/tmp"), Rect::new(0.0, 0.0, 100.0, 30.0),
     ));
-    assert_eq!(app.text_input_target(), TextInputTarget::SaveAsInput);
+    assert_eq!(text_routing_adapter::text_input_target(&app), TextInputTarget::SaveAsInput);
 }
 
 #[test]
@@ -81,7 +81,7 @@ fn text_goes_to_file_tree_rename_when_active() {
         original_path: PathBuf::from("/tmp/file.txt"),
         input: InputLine::with_text("file.txt".to_string()),
     });
-    assert_eq!(app.text_input_target(), TextInputTarget::FileTreeRename);
+    assert_eq!(text_routing_adapter::text_input_target(&app), TextInputTarget::FileTreeRename);
 }
 
 #[test]
@@ -91,7 +91,7 @@ fn config_page_worktree_editing_receives_text() {
     let mut cp = ConfigPageState::new(vec![], String::new(), String::new());
     cp.worktree_editing = true;
     app.modal.config_page = Some(cp);
-    assert_eq!(app.text_input_target(), TextInputTarget::ConfigPageWorktree);
+    assert_eq!(text_routing_adapter::text_input_target(&app), TextInputTarget::ConfigPageWorktree);
 }
 
 #[test]
@@ -101,5 +101,5 @@ fn config_page_copy_files_editing_receives_text() {
     let mut cp = ConfigPageState::new(vec![], String::new(), String::new());
     cp.copy_files_editing = true;
     app.modal.config_page = Some(cp);
-    assert_eq!(app.text_input_target(), TextInputTarget::ConfigPageCopyFiles);
+    assert_eq!(text_routing_adapter::text_input_target(&app), TextInputTarget::ConfigPageCopyFiles);
 }

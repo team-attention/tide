@@ -84,7 +84,7 @@ fn ime_commit_reaches_search_bar_in_preview_mode() {
         pane.search = Some(crate::state::search::SearchState::new());
     }
     app.focus.search_focus = Some(id);
-    app.handle_ime_commit("검색어");
+    crate::adapter::inward::ime_adapter::handle_ime_commit(&mut app,"검색어");
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
         assert_eq!(pane.search.as_ref().unwrap().input.text, "검색어");
     }
@@ -94,7 +94,7 @@ fn ime_commit_reaches_search_bar_in_preview_mode() {
 fn ime_commit_routes_text_to_focused_editor() {
     // UC-1 BR-4: IME commit routes text to focused Editor
     let (mut app, id) = app_with_editor();
-    app.handle_ime_commit("한글 입력");
+    crate::adapter::inward::ime_adapter::handle_ime_commit(&mut app,"한글 입력");
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
         assert!(pane.editor.is_modified());
     }
@@ -107,7 +107,7 @@ fn ime_commit_to_file_finder_does_not_reach_editor() {
     app.modal.file_finder = Some(crate::state::FileFinderState::new(
         std::path::PathBuf::from("/tmp"), vec![],
     ));
-    app.handle_ime_commit("검색어");
+    crate::adapter::inward::ime_adapter::handle_ime_commit(&mut app,"검색어");
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
         assert!(!pane.editor.is_modified());
     }

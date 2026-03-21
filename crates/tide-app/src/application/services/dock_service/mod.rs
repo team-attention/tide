@@ -385,6 +385,165 @@ impl DockPort for App {
         self.compute_layout();
     }
 
+    // ── Dock state queries/mutations (click_adapter) ──
+
+    fn dock_zoomed(&self) -> bool {
+        self.dock.dock_zoomed
+    }
+
+    fn set_dock_zoomed(&mut self, zoomed: bool) {
+        self.dock.dock_zoomed = zoomed;
+    }
+
+    fn dock_open(&self) -> bool {
+        self.dock.dock_open
+    }
+
+    fn associated_terminal(&self, id: PaneId) -> Option<PaneId> {
+        self.assoc.associated_terminal.get(&id).copied()
+    }
+
+    fn set_associated_terminal(&mut self, pane: PaneId, terminal: PaneId) {
+        self.assoc.associated_terminal.insert(pane, terminal);
+    }
+
+    // ── Dock layout manipulation (for handle_drop) ──
+
+    fn pinned_layout_remove(&mut self, id: PaneId) {
+        self.dock.pinned_dock_layout.remove(id);
+    }
+
+    fn dock_layout_insert_at_root(&mut self, terminal_id: PaneId, source: PaneId, zone: crate::tide_core::DropZone) {
+        if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&terminal_id) {
+            tp.dock_layout.insert_at_root(source, zone);
+        }
+    }
+
+    fn dock_layout_set_focused(&mut self, terminal_id: PaneId, pane_id: PaneId) {
+        if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&terminal_id) {
+            tp.dock_focused = Some(pane_id);
+        }
+    }
+
+    fn dock_layout_set_active_tab(&mut self, terminal_id: PaneId, pane_id: PaneId) {
+        if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&terminal_id) {
+            tp.dock_layout.set_active_tab(pane_id);
+        }
+    }
+
+    fn dock_layout_remove(&mut self, terminal_id: PaneId, pane_id: PaneId) {
+        if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&terminal_id) {
+            tp.dock_layout.remove(pane_id);
+        }
+    }
+
+    fn dock_layout_add_tab_to_first_group(&mut self, terminal_id: PaneId, pane_id: PaneId) {
+        if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&terminal_id) {
+            tp.dock_layout.add_tab_to_first_group(pane_id);
+        }
+    }
+
+    fn dock_layout_insert_leaf_group(&mut self, terminal_id: PaneId, pane_id: PaneId) {
+        if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&terminal_id) {
+            tp.dock_layout.insert_leaf_group(pane_id);
+        }
+    }
+
+    fn dock_layout_all_pane_ids_empty(&self, terminal_id: PaneId) -> bool {
+        if let Some(PaneKind::Terminal(tp)) = self.panes.get(&terminal_id) {
+            tp.dock_layout.all_pane_ids().is_empty()
+        } else {
+            true
+        }
+    }
+
+    fn dock_layout_add_tab(&mut self, terminal_id: PaneId, target: PaneId, source: PaneId) -> bool {
+        if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&terminal_id) {
+            tp.dock_layout.add_tab(target, source)
+        } else {
+            false
+        }
+    }
+
+    fn dock_layout_split_with_leaf_group(&mut self, terminal_id: PaneId, target: PaneId, source: PaneId, direction: SplitDirection, insert_first: bool) {
+        if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&terminal_id) {
+            tp.dock_layout.split_with_leaf_group(target, source, direction, insert_first);
+        }
+    }
+
+    fn dock_layout_tab_group_sibling(&self, terminal_id: PaneId, pane_id: PaneId) -> Option<PaneId> {
+        if let Some(PaneKind::Terminal(tp)) = self.panes.get(&terminal_id) {
+            tp.dock_layout.tab_group_containing(pane_id)
+                .and_then(|tg| tg.tabs.iter().find(|&&t| t != pane_id).copied())
+        } else {
+            None
+        }
+    }
+
+    // ── Dock drag state (mouse_adapter) ──
+
+    fn dock_border_dragging(&self) -> bool {
+        self.dock.dock_border_dragging
+    }
+
+    fn set_dock_border_dragging(&mut self, v: bool) {
+        self.dock.dock_border_dragging = v;
+    }
+
+    fn dock_pinned_border_dragging(&self) -> bool {
+        self.dock.pinned_border_dragging
+    }
+
+    fn set_dock_pinned_border_dragging(&mut self, v: bool) {
+        self.dock.pinned_border_dragging = v;
+    }
+
+    fn dock_split_dragging(&self) -> bool {
+        self.dock.dock_split_dragging
+    }
+
+    fn set_dock_split_dragging(&mut self, v: bool) {
+        self.dock.dock_split_dragging = v;
+    }
+
+    fn dock_pinned_ratio(&self) -> f32 {
+        self.dock.pinned_dock_ratio
+    }
+
+    fn set_dock_pinned_ratio(&mut self, ratio: f32) {
+        self.dock.pinned_dock_ratio = ratio;
+    }
+
+    fn set_dock_width(&mut self, w: f32) {
+        self.dock.dock_width = w;
+    }
+
+    fn dock_begin_split_drag(&mut self, local_pos: crate::tide_core::Vec2, dock_size: crate::tide_core::Size) -> bool {
+        if let Some(tid) = self.focused_terminal_id() {
+            if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                tp.dock_layout.begin_drag(local_pos, dock_size);
+                return tp.dock_layout.is_dragging();
+            }
+        }
+        false
+    }
+
+    fn dock_drag_split_border(&mut self, local_pos: crate::tide_core::Vec2) {
+        if let Some(tid) = self.focused_terminal_id() {
+            if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                tp.dock_layout.drag_border(local_pos);
+            }
+        }
+    }
+
+    fn dock_end_split_drag(&mut self) {
+        if let Some(tid) = self.focused_terminal_id() {
+            if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                tp.dock_layout.end_drag();
+            }
+        }
+    }
+
     /// Toggle pin state on the currently focused dock pane.
     fn toggle_dock_pin(&mut self) {
         let pane_id = match self.focus.focused {

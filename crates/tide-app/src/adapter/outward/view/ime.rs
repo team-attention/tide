@@ -137,7 +137,7 @@ pub(crate) fn render_ime_and_drop_preview(
                 }
                 DropDestination::Workspace(idx) => {
                     // Highlight the target workspace sidebar item
-                    if let Some(item_rect) = app.workspace_sidebar_item_rect(*idx) {
+                    if let Some(item_rect) = crate::adapter::inward::drag_drop_adapter::workspace_sidebar_item_rect(app, *idx) {
                         App::draw_insert_preview(renderer, item_rect, p);
                     }
                 }

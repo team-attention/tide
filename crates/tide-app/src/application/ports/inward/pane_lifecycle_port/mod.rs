@@ -18,6 +18,8 @@ pub(crate) trait PaneLifecyclePort {
     fn replace_pane_with_editor(&mut self, pane_id: PaneId, path: PathBuf);
     fn open_editor_pane(&mut self, path: PathBuf);
     fn open_editor_pane_at_line(&mut self, path: PathBuf, line: Option<usize>);
+    fn open_render_pane(&mut self, title: String, html: String) -> PaneId;
+    fn open_render_stream_pane(&mut self, title: String) -> PaneId;
 
     // ── Closing ──
     fn close_editor_panel_tab(&mut self, tab_id: PaneId);

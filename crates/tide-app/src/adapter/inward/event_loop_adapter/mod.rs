@@ -9,11 +9,22 @@ use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::state::FocusArea;
 use crate::App;
-use crate::FileOpsPort;
-use crate::DockPort;
+use crate::ActionPort;
 use crate::AppCorePort;
+use crate::ClipboardSearchPort;
+use crate::DockPort;
+use crate::FileOpsPort;
+use crate::FileTreePort;
+use crate::FocusNavPort;
+use crate::GatewayPort;
+use crate::ImeStatePort;
+use crate::InputStatePort;
 use crate::LayoutPort;
+use crate::ModalPort;
+use crate::PaneAccessPort;
 use crate::PaneLifecyclePort;
+use crate::RouterPort;
+use crate::WorkspaceNavPort;
 
 /// Events delivered to the app thread.
 pub(crate) enum AppEvent {
@@ -24,6 +35,289 @@ pub(crate) enum AppEvent {
     /// A command from an external process via the Agent Gateway socket.
     CliCommand(crate::adapter::inward::cli_adapter::CliCommand),
 }
+
+// ── Trait alias for event_loop_adapter ports ──
+//
+// EventLoopPorts is a superset of all ports required by sub-adapters
+// (keyboard, mouse, scroll, ime, search) because handle_platform_event
+// dispatches to all of them.
+
+pub(crate) trait EventLoopPorts:
+    ActionPort
+    + AppCorePort
+    + ClipboardSearchPort
+    + DockPort
+    + FileOpsPort
+    + FileTreePort
+    + FocusNavPort
+    + GatewayPort
+    + ImeStatePort
+    + InputStatePort
+    + LayoutPort
+    + ModalPort
+    + PaneAccessPort
+    + PaneLifecyclePort
+    + RouterPort
+    + WorkspaceNavPort
+{
+}
+impl<
+        T: ActionPort
+            + AppCorePort
+            + ClipboardSearchPort
+            + DockPort
+            + FileOpsPort
+            + FileTreePort
+            + FocusNavPort
+            + GatewayPort
+            + ImeStatePort
+            + InputStatePort
+            + LayoutPort
+            + ModalPort
+            + PaneAccessPort
+            + PaneLifecyclePort
+            + RouterPort
+            + WorkspaceNavPort,
+    > EventLoopPorts for T
+{
+}
+
+/// Process a single platform event.  Called from the app thread loop.
+///
+/// This handles domain-level event dispatch.  Infrastructure concerns
+/// (IME proxy sync, fullscreen toggle) are handled by the `App` wrapper
+/// in `app_thread_run`.
+pub(crate) fn handle_platform_event(
+    ctx: &mut impl EventLoopPorts,
+    event: PlatformEvent,
+    window: &WindowProxy,
+) {
+    match event {
+        PlatformEvent::BatchStart => {
+            ctx.increment_batch_depth();
+            return;
+        }
+        PlatformEvent::BatchEnd => {
+            ctx.decrement_batch_depth();
+            // Fall through to post-event processing below
+        }
+        PlatformEvent::RedrawRequested => {
+            // Rendering is handled by the app thread loop, not here.
+            // RedrawRequested from the main thread is just a wake signal.
+            ctx.request_redraw();
+            return;
+        }
+        PlatformEvent::CloseRequested => {
+            // Check if there are running terminals or dirty editors
+            if ctx.has_terminals() || ctx.has_dirty_editors() {
+                if !crate::tide_platform::show_close_confirm() {
+                    return;
+                }
+            }
+            ctx.save_full_session();
+            ctx.delete_running_marker();
+            std::process::exit(0);
+        }
+        PlatformEvent::Resized { width, height } => {
+            ctx.set_window_size(width, height);
+            ctx.reconfigure_surface();
+            ctx.set_resize_deferred(50);
+            ctx.compute_layout();
+            ctx.set_ime_cursor_dirty();
+            ctx.request_redraw();
+        }
+        PlatformEvent::ScaleFactorChanged(scale) => {
+            ctx.set_scale_factor(scale as f32);
+            ctx.reconfigure_surface();
+            ctx.compute_layout();
+            ctx.invalidate_chrome();
+        }
+        PlatformEvent::ModifiersChanged(modifiers) => {
+            let old_mods = ctx.modifiers();
+            let old_shift = old_mods.shift;
+            let new_shift = modifiers.shift;
+            let old_meta = old_mods.meta;
+            ctx.set_modifiers(modifiers);
+
+            // Meta key toggles link underlines — redraw immediately
+            if old_meta != modifiers.meta {
+                ctx.request_redraw();
+            }
+
+            // Shift+Shift double-tap detection
+            if old_shift && !new_shift {
+                // Shift released: record timestamp
+                if ctx.shift_tap_clean() {
+                    if let Some(prev) = ctx.last_shift_up() {
+                        if prev.elapsed() < Duration::from_millis(400) {
+                            // Double-tap detected
+                            ctx.set_last_shift_up(None);
+                            ctx.set_shift_tap_clean(false);
+                            if ctx.modal().file_finder.is_some() {
+                                ctx.close_file_finder();
+                            } else {
+                                ctx.open_file_finder();
+                            }
+                            ctx.request_redraw();
+                        } else {
+                            ctx.set_last_shift_up(Some(ctx.clock_now()));
+                        }
+                    } else {
+                        ctx.set_last_shift_up(Some(ctx.clock_now()));
+                    }
+                } else {
+                    // A key was pressed between taps, reset
+                    ctx.set_last_shift_up(Some(ctx.clock_now()));
+                    ctx.set_shift_tap_clean(true);
+                }
+            } else if !old_shift && new_shift {
+                // Shift pressed: mark clean (will be invalidated by KeyDown if needed)
+                ctx.set_shift_tap_clean(true);
+            }
+        }
+        PlatformEvent::Focused(focused) => {
+            if focused {
+                ctx.set_modifiers(crate::tide_core::Modifiers::default());
+                // windowDidBecomeKey may have changed the actual first
+                // responder via LAST_IME_TARGET, making browser panes'
+                // is_first_responder flags stale.  Reset them so
+                // sync_browser_webview_frames can re-establish the
+                // WebView as first responder when needed.
+                ctx.reset_browser_first_responder_flags();
+                // sync_ime_proxies is called by the App wrapper after this function.
+                ctx.sync_browser_webview_frames();
+            } else {
+                // Cancel any in-progress drag when the window loses focus
+                if !matches!(
+                    ctx.interaction().pane_drag,
+                    crate::state::drag_types::PaneDragState::Idle
+                ) {
+                    ctx.interaction_mut().pane_drag =
+                        crate::state::drag_types::PaneDragState::Idle;
+                    ctx.request_redraw();
+                }
+            }
+        }
+        PlatformEvent::Fullscreen {
+            is_fullscreen,
+            width,
+            height,
+        } => {
+            ctx.set_fullscreen_state(is_fullscreen);
+            ctx.set_top_inset(if is_fullscreen { 0.0 } else { TITLEBAR_HEIGHT });
+            ctx.clear_resize_deferred();
+
+            // Use the size included in the event (avoids querying window
+            // from the app thread, which would require a cross-thread call).
+            if (width, height) != ctx.window_size() {
+                ctx.set_window_size(width, height);
+                ctx.reconfigure_surface();
+            }
+
+            ctx.compute_layout();
+            ctx.set_ime_cursor_dirty();
+            ctx.invalidate_chrome();
+        }
+        PlatformEvent::Occluded(occluded) => {
+            ctx.set_occluded(occluded);
+            if !occluded {
+                ctx.request_redraw();
+            }
+        }
+        PlatformEvent::WebViewFocused => {
+            // Find which browser pane was clicked using the last known cursor position
+            let cursor_pos = ctx.last_cursor_pos();
+            if let Some((pane_id, _)) = ctx
+                .visual_pane_rects()
+                .iter()
+                .find(|(_, r)| r.contains(cursor_pos))
+            {
+                let pid = *pane_id;
+                ctx.focus_pane(pid);
+                // Set correct focus area based on whether pane is in dock
+                if ctx.is_pane_in_dock(pid) {
+                    ctx.set_focus_area(FocusArea::Dock);
+                } else {
+                    ctx.set_focus_area(FocusArea::Stage);
+                }
+                // Clicking webview content unfocuses the URL bar.
+                // hitTest: returns the WKWebView so TideView's mouseDown
+                // never fires — this is the only place to clear it.
+                if let Some(PaneKind::Browser(bp)) = ctx.pane_mut(pid) {
+                    bp.url_input_focused = false;
+                }
+            } else {
+                ctx.set_focus_area(FocusArea::Stage);
+            }
+            ctx.invalidate_chrome();
+        }
+        PlatformEvent::ImeCommit(text) => {
+            ctx.set_shift_tap_clean(false);
+            crate::adapter::inward::ime_adapter::handle_ime_commit(ctx, &text);
+            ctx.set_ime_cursor_dirty();
+            ctx.reset_cursor_blink();
+        }
+        PlatformEvent::ImePreedit { text, cursor: _ } => {
+            ctx.set_shift_tap_clean(false);
+            crate::adapter::inward::ime_adapter::handle_ime_preedit(ctx, &text);
+            ctx.set_ime_cursor_dirty();
+            ctx.reset_cursor_blink();
+        }
+        PlatformEvent::KeyDown {
+            key,
+            modifiers,
+            chars,
+        } => {
+            // Invalidate Shift+Shift detection on any real key press
+            ctx.set_shift_tap_clean(false);
+            crate::adapter::inward::keyboard_adapter::handle_key_down(ctx, key, modifiers, chars);
+            ctx.set_ime_cursor_dirty();
+            ctx.reset_cursor_blink();
+        }
+        PlatformEvent::KeyUp { .. } => {}
+        PlatformEvent::MouseDown { button, position } => {
+            let pos = physical_to_logical(position);
+            ctx.set_last_cursor_pos(pos);
+            let btn = platform_button_to_core(button);
+            if let Some(btn) = btn {
+                crate::adapter::inward::mouse_adapter::handle_mouse_down(ctx, btn, window);
+            }
+            ctx.set_ime_cursor_dirty();
+            ctx.reset_cursor_blink();
+        }
+        PlatformEvent::MouseUp { button, position } => {
+            let pos = physical_to_logical(position);
+            ctx.set_last_cursor_pos(pos);
+            let btn = platform_button_to_core(button);
+            if let Some(btn) = btn {
+                crate::adapter::inward::mouse_adapter::handle_mouse_up(ctx, btn);
+            }
+        }
+        PlatformEvent::MouseMoved { position } => {
+            let pos = physical_to_logical(position);
+            crate::adapter::inward::mouse_adapter::drag::handle_cursor_moved_logical(
+                ctx, pos, window,
+            );
+        }
+        PlatformEvent::Scroll {
+            dx,
+            dy,
+            position,
+        } => {
+            let pos = physical_to_logical(position);
+            ctx.set_last_cursor_pos(pos);
+            crate::adapter::inward::scroll_adapter::handle_scroll(ctx, dx, dy);
+        }
+    }
+
+    // Process deferred fullscreen toggle
+    if ctx.pending_fullscreen_toggle() {
+        ctx.clear_pending_fullscreen_toggle();
+        window.set_fullscreen(!ctx.is_fullscreen());
+    }
+}
+
+// ── Infrastructure methods (stay on impl App) ──
 
 impl App {
     // ── Phase 1: one-time initialization on the main thread ──────────
@@ -104,7 +398,9 @@ impl App {
             for app_event in event.into_iter().chain(event_rx.try_iter()) {
                 match app_event {
                     AppEvent::Platform(event) => {
-                        self.handle_platform_event(event, &window);
+                        handle_platform_event(&mut self, event, &window);
+                        // Sync IME proxy views (infrastructure — stays on App)
+                        self.sync_ime_proxies(&window);
                     }
                     AppEvent::CliCommand(cmd) => {
                         // For subscribe commands, store the notification channel
@@ -151,7 +447,7 @@ impl App {
                         }
                     }
                 }
-                self.cache.invalidate_chrome();
+                crate::AppCorePort::invalidate_chrome(&mut self);
             }
 
             // Periodic session auto-save for crash recovery (every 30s)
@@ -168,7 +464,7 @@ impl App {
             let blink_phase = (blink_elapsed.as_millis() / 530) % 2 == 0;
             if blink_phase != self.timing.cursor_visible {
                 self.timing.cursor_visible = blink_phase;
-                self.cache.needs_redraw = true;
+                crate::AppCorePort::request_redraw(&mut self);
             }
 
             // Render if needed
@@ -186,7 +482,7 @@ impl App {
                 {
                     self.update();
                     if self.render() {
-                        self.cache.needs_redraw = false;
+                        self.cache.clear_redraw();
                         self.timing.last_frame = now;
 
                         // Reveal window after first frame
@@ -262,287 +558,41 @@ impl App {
         timeout
     }
 
-    // ── Event handler (runs on app thread) ───────────────────────────
-
-    /// Process a single platform event.  Called from the app thread loop.
-    pub(crate) fn handle_platform_event(
-        &mut self,
-        event: PlatformEvent,
-        window: &WindowProxy,
-    ) {
-        match event {
-            PlatformEvent::BatchStart => {
-                self.input.batch_depth += 1;
-                return;
-            }
-            PlatformEvent::BatchEnd => {
-                self.input.batch_depth = self.input.batch_depth.saturating_sub(1);
-                // Fall through to IME sync below
-            }
-            PlatformEvent::RedrawRequested => {
-                // Rendering is handled by the app thread loop, not here.
-                // RedrawRequested from the main thread is just a wake signal.
-                self.cache.needs_redraw = true;
-                return;
-            }
-            PlatformEvent::CloseRequested => {
-                // Check if there are running terminals or dirty editors
-                let has_terminals = self.panes.values().any(|pk| matches!(pk, crate::pane::PaneKind::Terminal(_)));
-                let has_dirty = self.panes.values().any(|pk| {
-                    if let crate::pane::PaneKind::Editor(ep) = pk {
-                        ep.editor.is_modified() && ep.editor.file_path().is_some()
-                    } else { false }
-                });
-                if has_terminals || has_dirty {
-                    if !crate::tide_platform::show_close_confirm() {
-                        return;
-                    }
-                }
-                self.save_full_session();
-                self.ports.persistence.delete_running_marker();
-                std::process::exit(0);
-            }
-            PlatformEvent::Resized { width, height } => {
-                self.window.window_size = (width, height);
-                self.reconfigure_surface();
-                self.timing.resize_deferred_at =
-                    Some(self.ports.clock.now() + Duration::from_millis(50));
-                self.compute_layout();
-                self.ime.cursor_dirty = true;
-                self.cache.needs_redraw = true;
-            }
-            PlatformEvent::ScaleFactorChanged(scale) => {
-                self.window.scale_factor = scale as f32;
-                self.reconfigure_surface();
-                self.compute_layout();
-                self.cache.invalidate_chrome();
-            }
-            PlatformEvent::ModifiersChanged(modifiers) => {
-                let old_shift = self.window.modifiers.shift;
-                let new_shift = modifiers.shift;
-                let old_meta = self.window.modifiers.meta;
-                self.window.modifiers = modifiers;
-
-                // Meta key toggles link underlines — redraw immediately
-                if old_meta != modifiers.meta {
-                    self.cache.needs_redraw = true;
-                }
-
-                // Shift+Shift double-tap detection
-                if old_shift && !new_shift {
-                    // Shift released: record timestamp
-                    if self.input.shift_tap_clean {
-                        if let Some(prev) = self.input.last_shift_up {
-                            if prev.elapsed() < Duration::from_millis(400) {
-                                // Double-tap detected
-                                self.input.last_shift_up = None;
-                                self.input.shift_tap_clean = false;
-                                if self.modal.file_finder.is_some() {
-                                    self.close_file_finder();
-                                } else {
-                                    self.open_file_finder();
-                                }
-                                self.cache.needs_redraw = true;
-                            } else {
-                                self.input.last_shift_up = Some(self.ports.clock.now());
-                            }
-                        } else {
-                            self.input.last_shift_up = Some(self.ports.clock.now());
-                        }
-                    } else {
-                        // A key was pressed between taps, reset
-                        self.input.last_shift_up = Some(self.ports.clock.now());
-                        self.input.shift_tap_clean = true;
-                    }
-                } else if !old_shift && new_shift {
-                    // Shift pressed: mark clean (will be invalidated by KeyDown if needed)
-                    self.input.shift_tap_clean = true;
-                }
-            }
-            PlatformEvent::Focused(focused) => {
-                if focused {
-                    self.window.modifiers = crate::tide_core::Modifiers::default();
-                    // windowDidBecomeKey may have changed the actual first
-                    // responder via LAST_IME_TARGET, making browser panes'
-                    // is_first_responder flags stale.  Reset them so
-                    // sync_browser_webview_frames can re-establish the
-                    // WebView as first responder when needed.
-                    for pane in self.panes.values_mut() {
-                        if let crate::pane::PaneKind::Browser(bp) = pane {
-                            bp.is_first_responder = false;
-                        }
-                    }
-                    self.sync_ime_proxies(window);
-                    self.sync_browser_webview_frames();
-                } else {
-                    // Cancel any in-progress drag when the window loses focus
-                    if !matches!(self.interaction.pane_drag, crate::state::drag_types::PaneDragState::Idle) {
-                        self.interaction.pane_drag = crate::state::drag_types::PaneDragState::Idle;
-                        self.cache.needs_redraw = true;
-                    }
-                }
-            }
-            PlatformEvent::Fullscreen {
-                is_fullscreen,
-                width,
-                height,
-            } => {
-                self.window.is_fullscreen = is_fullscreen;
-                self.window.top_inset = if is_fullscreen { 0.0 } else { TITLEBAR_HEIGHT };
-                self.timing.resize_deferred_at = None;
-
-                // Use the size included in the event (avoids querying window
-                // from the app thread, which would require a cross-thread call).
-                if (width, height) != self.window.window_size {
-                    self.window.window_size = (width, height);
-                    self.reconfigure_surface();
-                }
-
-                self.compute_layout();
-                self.ime.cursor_dirty = true;
-                self.cache.invalidate_chrome();
-            }
-            PlatformEvent::Occluded(occluded) => {
-                self.window.is_occluded = occluded;
-                if !occluded {
-                    self.cache.needs_redraw = true;
-                }
-            }
-            PlatformEvent::WebViewFocused => {
-                // Find which browser pane was clicked using the last known cursor position
-                if let Some((pane_id, _)) = self.visual_pane_rects.iter().find(|(_, r)| {
-                    r.contains(self.window.last_cursor_pos)
-                }) {
-                    let pid = *pane_id;
-                    self.focus.focused = Some(pid);
-                    self.router.set_focused(pid);
-                    // Set correct focus area based on whether pane is in dock
-                    if self.is_pane_in_dock(pid) {
-                        self.focus.focus_area = FocusArea::Dock;
-                    } else {
-                        self.focus.focus_area = FocusArea::Stage;
-                    }
-                    // Clicking webview content unfocuses the URL bar.
-                    // hitTest: returns the WKWebView so TideView's mouseDown
-                    // never fires — this is the only place to clear it.
-                    if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&pid) {
-                        bp.url_input_focused = false;
-                    }
-                } else {
-                    self.focus.focus_area = FocusArea::Stage;
-                }
-                self.cache.invalidate_chrome();
-            }
-            PlatformEvent::ImeCommit(text) => {
-                self.input.shift_tap_clean = false;
-                self.handle_ime_commit(&text);
-                self.ime.cursor_dirty = true;
-                self.timing.cursor_blink_at = self.ports.clock.now();
-                self.timing.cursor_visible = true;
-            }
-            PlatformEvent::ImePreedit { text, cursor: _ } => {
-                self.input.shift_tap_clean = false;
-                self.handle_ime_preedit(&text);
-                self.ime.cursor_dirty = true;
-                self.timing.cursor_blink_at = self.ports.clock.now();
-                self.timing.cursor_visible = true;
-            }
-            PlatformEvent::KeyDown {
-                key,
-                modifiers,
-                chars,
-            } => {
-                // Invalidate Shift+Shift detection on any real key press
-                self.input.shift_tap_clean = false;
-                self.handle_key_down(key, modifiers, chars);
-                self.ime.cursor_dirty = true;
-                self.timing.cursor_blink_at = self.ports.clock.now();
-                self.timing.cursor_visible = true;
-            }
-            PlatformEvent::KeyUp { .. } => {}
-            PlatformEvent::MouseDown { button, position } => {
-                let pos = self.physical_to_logical(position);
-                self.window.last_cursor_pos = pos;
-                let btn = platform_button_to_core(button);
-                if let Some(btn) = btn {
-                    self.handle_mouse_down(btn, window);
-                }
-                self.ime.cursor_dirty = true;
-                self.timing.cursor_blink_at = self.ports.clock.now();
-                self.timing.cursor_visible = true;
-            }
-            PlatformEvent::MouseUp { button, position } => {
-                let pos = self.physical_to_logical(position);
-                self.window.last_cursor_pos = pos;
-                let btn = platform_button_to_core(button);
-                if let Some(btn) = btn {
-                    self.handle_mouse_up(btn);
-                }
-            }
-            PlatformEvent::MouseMoved { position } => {
-                let pos = self.physical_to_logical(position);
-                self.handle_cursor_moved_logical(pos, window);
-            }
-            PlatformEvent::Scroll {
-                dx,
-                dy,
-                position,
-            } => {
-                let pos = self.physical_to_logical(position);
-                self.window.last_cursor_pos = pos;
-                self.handle_scroll(dx, dy);
-            }
-        }
-
-        // Process deferred fullscreen toggle
-        if self.window.pending_fullscreen_toggle {
-            self.window.pending_fullscreen_toggle = false;
-            window.set_fullscreen(!self.window.is_fullscreen);
-        }
-
-        // Sync IME proxy views
-        self.sync_ime_proxies(window);
-    }
-
     /// Process pending IME proxy view operations and focus the correct proxy.
     ///
     /// Always calls `focus_ime_proxy` at the end, even when the target hasn't
     /// changed. macOS may unpredictably reset the first responder during event
     /// processing, so we must re-establish it unconditionally.
     pub(crate) fn sync_ime_proxies(&mut self, window: &WindowProxy) {
+        use crate::ImeStatePort;
         // Process removes BEFORE creates so that re-created proxies (same
         // PaneId, e.g. Launcher → Terminal via resolve_launcher) work
         // correctly.  The old proxy must be gone before create_ime_proxy's
         // idempotent contains_key check runs, otherwise the create is a
         // no-op and the subsequent remove deletes the only proxy.
-        for id in self.ime.pending_removes.drain(..) {
+        for id in self.drain_pending_removes() {
             window.remove_ime_proxy(id);
         }
-        for id in self.ime.pending_creates.drain(..) {
+        for id in self.drain_pending_creates() {
             window.create_ime_proxy(id);
         }
 
         let target = self.effective_ime_target();
-        if target != self.ime.last_target {
-            if !self.ime.preedit.is_empty() {
-                if let Some(old_target) = self.ime.last_target {
-                    self.commit_text_to_pane(old_target, &self.ime.preedit.clone());
+        if target != self.ime_last_target() {
+            if !self.ime_preedit().is_empty() {
+                if let Some(old_target) = self.ime_last_target() {
+                    self.commit_text_to_pane(old_target, &self.ime_preedit().to_string());
                 }
             }
-            self.ime.composing = false;
-            self.ime.preedit.clear();
-            self.cache.needs_redraw = true;
-            self.ime.cursor_dirty = true;
-            self.ime.last_target = target;
+            self.set_ime_composing(false);
+            self.clear_ime_preedit();
+            crate::AppCorePort::request_redraw(self);
+            self.set_ime_cursor_dirty();
+            self.set_ime_last_target(target);
         }
         if let Some(target) = target {
             window.focus_ime_proxy(target);
         } else {
-            // No IME target (e.g. browser pane focused without URL bar):
-            // clear LAST_IME_TARGET so windowDidBecomeKey won't restore a
-            // stale proxy as first responder after app switch (alt-tab).
-            // Passing 0 stores 0 in the atomic and skips makeFirstResponder
-            // since no proxy has id 0.
             window.focus_ime_proxy(0);
         }
     }
@@ -551,7 +601,7 @@ impl App {
     pub(crate) fn commit_text_to_pane(&mut self, pane_id: crate::tide_core::PaneId, text: &str) {
         use crate::pane::PaneKind;
         // Compute visible size before mutable borrow of panes
-        let editor_size = self.visible_editor_size(pane_id);
+        let editor_size = crate::adapter::inward::text_routing_adapter::visible_editor_size(self, pane_id);
         match self.panes.get_mut(&pane_id) {
             Some(PaneKind::Terminal(pane)) => {
                 pane.backend.write(text.as_bytes());
@@ -571,7 +621,7 @@ impl App {
                     let (visible_rows, visible_cols) = editor_size;
                     pane.editor.ensure_cursor_visible(visible_rows);
                     pane.editor.ensure_cursor_visible_h(visible_cols);
-                    self.cache.invalidate_pane(pane_id);
+                    crate::AppCorePort::invalidate_pane(self, pane_id);
                 }
             }
             _ => {}
@@ -588,10 +638,6 @@ impl App {
         )
     }
 
-    fn physical_to_logical(&self, pos: (f64, f64)) -> crate::tide_core::Vec2 {
-        physical_to_logical(pos)
-    }
-
     /// Poll background events (PTY output, file watcher, git).
     pub(crate) fn poll_background_events(&mut self, window: &WindowProxy) {
         self.poll_render_result();
@@ -601,7 +647,7 @@ impl App {
             if self.ports.clock.now() >= at {
                 self.timing.resize_deferred_at = None;
                 self.compute_layout();
-                self.cache.needs_redraw = true;
+                crate::AppCorePort::request_redraw(self);
             }
         }
 
@@ -610,7 +656,7 @@ impl App {
         for pane in self.panes.values() {
             if let PaneKind::Terminal(terminal) = pane {
                 if terminal.backend.has_new_output() {
-                    self.cache.needs_redraw = true;
+                    crate::AppCorePort::request_redraw(self);
                     self.ime.cursor_dirty = true;
                     self.input.input_just_sent = false;
                     self.input.input_sent_at = None;
@@ -627,12 +673,12 @@ impl App {
         // File watcher
         if self.ports.file_watcher.is_dirty() {
             self.ports.file_watcher.clear_dirty();
-            self.cache.needs_redraw = true;
+            crate::AppCorePort::request_redraw(self);
         }
 
         // Git poller
         if self.consume_git_poll_results() {
-            self.cache.invalidate_chrome();
+            crate::AppCorePort::invalidate_chrome(self);
         }
 
         // LSP completion responses

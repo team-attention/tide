@@ -1,6 +1,6 @@
 //! Mouse event handling — platform-agnostic.
 
-mod drag;
+pub(crate) mod drag;
 mod selection;
 
 use crate::tide_core::{FileTreeSource, InputEvent, MouseButton, Rect, Vec2};
@@ -9,7 +9,6 @@ use crate::tide_platform::WindowProxy;
 use crate::state::drag_types::PaneDragState;
 use crate::pane::PaneKind;
 use crate::theme::*;
-use crate::App;
 use crate::FileOpsPort;
 use crate::DockPort;
 use crate::AppCorePort;
@@ -17,618 +16,606 @@ use crate::LayoutPort;
 use crate::WorkspaceNavPort;
 use crate::ActionPort;
 use crate::PaneLifecyclePort;
+use crate::ModalPort;
+use crate::InputStatePort;
+use crate::FocusNavPort;
+use crate::PaneAccessPort;
+use crate::FileTreePort;
+use crate::GatewayPort;
+use crate::RouterPort;
 
-impl App {
-    pub(crate) fn handle_mouse_down(&mut self, button: MouseButton, window: &WindowProxy) {
-        if button == MouseButton::Left {
-            self.interaction.mouse_left_pressed = true;
+// ── Trait alias for mouse adapter ports ──
 
-            // Skip pane interactions when a blocking modal is open
-            if self.modal.gateway_modal.is_none() {
-                // Check editor scrollbar click
-                if self.check_scrollbar_click(self.window.last_cursor_pos) {
-                    self.cache.needs_redraw = true;
-                    return;
-                }
+pub(crate) trait MousePorts:
+    AppCorePort + FocusNavPort + PaneAccessPort + PaneLifecyclePort
+    + ModalPort + InputStatePort + DockPort + WorkspaceNavPort
+    + LayoutPort + FileOpsPort + ActionPort + FileTreePort
+    + GatewayPort + RouterPort {}
+impl<T: AppCorePort + FocusNavPort + PaneAccessPort + PaneLifecyclePort
+    + ModalPort + InputStatePort + DockPort + WorkspaceNavPort
+    + LayoutPort + FileOpsPort + ActionPort + FileTreePort
+    + GatewayPort + RouterPort> MousePorts for T {}
 
-                // Start text selection if clicking on pane content
-                if self.start_text_selection() {
-                    // selection started — fall through to continue processing
-                }
-            }
-        }
+pub(crate) fn handle_mouse_down(ctx: &mut impl MousePorts, button: MouseButton, window: &WindowProxy) {
+    if button == MouseButton::Left {
+        ctx.interaction_mut().mouse_left_pressed = true;
 
-        // Handle search bar clicks (skip when modal is open)
-        if button == MouseButton::Left && self.modal.gateway_modal.is_none() {
-            if self.check_search_bar_click() {
-                self.cache.needs_redraw = true;
-                return;
-            }
-        }
-
-        // Handle modal/popup clicks
-        if button == MouseButton::Left {
-            if self.modal.context_menu.is_some() {
-                if let Some(idx) = self.context_menu_item_at(self.window.last_cursor_pos) {
-                    self.execute_context_menu_action(idx);
-                }
-                self.modal.context_menu = None;
-                self.cache.needs_redraw = true;
+        // Skip pane interactions when a blocking modal is open
+        if ctx.modal().gateway_modal.is_none() {
+            // Check editor scrollbar click
+            if check_scrollbar_click(ctx, ctx.last_cursor_pos()) {
+                ctx.request_redraw();
                 return;
             }
 
-            if self.modal.gateway_modal.is_some() {
-                let pos = self.window.last_cursor_pos;
-                let logical = self.logical_size();
-                let modal_w = (logical.width * 0.6).min(500.0).max(300.0);
-                let modal_h = (logical.height * 0.7).min(450.0).max(200.0);
-                let modal_x = (logical.width - modal_w) / 2.0;
-                let modal_y = (logical.height - modal_h) / 2.0;
-
-                if pos.x < modal_x || pos.x > modal_x + modal_w
-                    || pos.y < modal_y || pos.y > modal_y + modal_h
-                {
-                    self.modal.gateway_modal = None;
-                } else {
-                    // Click inside modal — enable all non-connected agents
-                    let agents: Vec<_> = self.gateway.detected_agents.values()
-                        .filter(|a| !a.gateway_connected)
-                        .filter_map(|a| crate::state::gateway_status::agent_tool_name(a.name))
-                        .map(|s| s.to_string())
-                        .collect();
-                    for tool in &agents {
-                        let _ = crate::adapter::inward::cli_adapter::commands::enable_integration(tool);
-                    }
-                }
-                self.cache.invalidate_chrome();
-                self.cache.needs_redraw = true;
-                return;
-            }
-
-            if self.modal.save_as_input.is_some() {
-                if !self.save_as_contains(self.window.last_cursor_pos) {
-                    self.modal.save_as_input = None;
-                }
-                self.cache.needs_redraw = true;
-                return;
-            }
-
-            if self.modal.file_finder.is_some() {
-                if let Some(idx) = self.file_finder_item_at(self.window.last_cursor_pos) {
-                    if let Some(ref finder) = self.modal.file_finder {
-                        if let Some(&entry_idx) = finder.filtered.get(idx) {
-                            let path = finder.base_dir.join(&finder.entries[entry_idx]);
-                            self.close_file_finder();
-                            self.open_editor_pane(path);
-                            self.cache.needs_redraw = true;
-                            return;
-                        }
-                    }
-                } else if !self.file_finder_contains(self.window.last_cursor_pos) {
-                    self.close_file_finder();
-                }
-                self.cache.needs_redraw = true;
-                return;
-            }
-
-            if self.modal.git_switcher.is_some() {
-                // Tab click: switch between Branches / Worktrees
-                if let Some(mode) = self.git_switcher_tab_at(self.window.last_cursor_pos) {
-                    if let Some(ref mut gs) = self.modal.git_switcher {
-                        if gs.mode != mode {
-                            gs.set_mode(mode);
-                            self.cache.invalidate_chrome();
-                        }
-                    }
-                    self.cache.needs_redraw = true;
-                    return;
-                }
-                if let Some(btn) = self.git_switcher_button_at(self.window.last_cursor_pos) {
-                    self.handle_git_switcher_button(btn);
-                    self.cache.needs_redraw = true;
-                    return;
-                }
-                if let Some(idx) = self.git_switcher_item_at(self.window.last_cursor_pos) {
-                    if let Some(ref mut gs) = self.modal.git_switcher {
-                        gs.selected = idx;
-                        self.cache.invalidate_chrome();
-                    }
-                    self.cache.needs_redraw = true;
-                    return;
-                } else if !self.git_switcher_contains(self.window.last_cursor_pos) {
-                    self.modal.git_switcher = None;
-                    self.cache.needs_redraw = true;
-                    return;
-                }
+            // Start text selection if clicking on pane content
+            if selection::start_text_selection(ctx) {
+                // selection started — fall through to continue processing
             }
         }
+    }
 
-        // Branch cleanup bar clicks
-        if button == MouseButton::Left && self.modal.branch_cleanup.is_some() {
-            if self.handle_branch_cleanup_click(self.window.last_cursor_pos) {
-                return;
-            }
+    // Handle search bar clicks (skip when modal is open)
+    if button == MouseButton::Left && ctx.modal().gateway_modal.is_none() {
+        if crate::adapter::inward::search_adapter::check_search_bar_click(ctx) {
+            ctx.request_redraw();
+            return;
         }
+    }
 
-        // Notification bar clicks
-        if button == MouseButton::Left {
-            if self.handle_notification_bar_click(self.window.last_cursor_pos) {
-                return;
+    // Handle modal/popup clicks
+    if button == MouseButton::Left {
+        if ctx.modal().context_menu.is_some() {
+            if let Some(idx) = ctx.context_menu_item_at(ctx.last_cursor_pos()) {
+                ctx.execute_context_menu_action(idx);
             }
-        }
-
-        // Header clicks
-        if button == MouseButton::Left {
-            if self.check_header_click() {
-                return;
-            }
-        }
-
-        // Pane tab close
-        if button == MouseButton::Left {
-            if let Some(pane_id) = self.pane_tab_close_at(self.window.last_cursor_pos) {
-                self.close_specific_pane(pane_id);
-                self.cache.needs_redraw = true;
-                return;
-            }
-        }
-
-        // Right-click on file tree
-        if button == MouseButton::Right {
-            if self.ft.visible {
-                if let Some(ft_rect) = self.ft.rect {
-                    let pos = self.window.last_cursor_pos;
-                    if pos.x >= ft_rect.x
-                        && pos.x < ft_rect.x + ft_rect.width
-                        && pos.y >= ft_rect.y + PANE_CORNER_RADIUS + FILE_TREE_HEADER_HEIGHT
-                    {
-                        {
-                            let cell_size = self.cell_size();
-                            let line_height = cell_size.height * FILE_TREE_LINE_SPACING;
-                            let content_y = ft_rect.y + PANE_CORNER_RADIUS;
-                            let adjusted_y = pos.y - content_y - FILE_TREE_HEADER_HEIGHT;
-                            let index =
-                                ((adjusted_y + self.ft.scroll) / line_height) as usize;
-
-                            if let Some(tree) = self.ft.tree.as_ref() {
-                                let entries = tree.visible_entries();
-                                if index < entries.len() {
-                                    let entry = &entries[index];
-                                    self.modal.context_menu = None;
-                                    self.modal.file_tree_rename = None;
-                                    let shell_idle = self.focus.focused
-                                        .and_then(|tid| self.panes.get(&tid))
-                                        .map(|pk| if let crate::PaneKind::Terminal(tp) = pk { tp.context.shell_idle } else { false })
-                                        .unwrap_or(false);
-                                    self.modal.context_menu = Some(crate::ContextMenuState {
-                                        entry_index: index,
-                                        path: entry.entry.path.clone(),
-                                        is_dir: entry.entry.is_dir,
-                                        shell_idle,
-                                        position: pos,
-                                        selected: 0,
-                                    });
-                                    self.cache.needs_redraw = true;
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // File tree clicks
-        if button == MouseButton::Left {
-            if self.ft.visible {
-                if let Some(ft_rect) = self.ft.rect {
-                    let pos = self.window.last_cursor_pos;
-                    if pos.x >= ft_rect.x
-                        && pos.x < ft_rect.x + ft_rect.width
-                        && pos.y >= ft_rect.y + PANE_CORNER_RADIUS + FILE_TREE_HEADER_HEIGHT
-                    {
-                        self.handle_file_tree_click(pos);
-                        return;
-                    }
-                }
-            }
-        }
-
-        // Config page
-        if button == MouseButton::Left && self.modal.config_page.is_some() {
-            self.handle_config_page_click(self.window.last_cursor_pos);
-            self.cache.needs_redraw = true;
+            ctx.modal_mut().context_menu = None;
+            ctx.request_redraw();
             return;
         }
 
-        // General mouse input routing
-        self.handle_mouse_input_core(button, window);
-        self.cache.needs_redraw = true;
-    }
+        if ctx.modal().gateway_modal.is_some() {
+            let pos = ctx.last_cursor_pos();
+            let logical = ctx.logical_size();
+            let modal_w = (logical.width * 0.6).min(500.0).max(300.0);
+            let modal_h = (logical.height * 0.7).min(450.0).max(200.0);
+            let modal_x = (logical.width - modal_w) / 2.0;
+            let modal_y = (logical.height - modal_h) / 2.0;
 
-    fn handle_mouse_input_core(&mut self, button: MouseButton, _window: &WindowProxy) {
-        if button == MouseButton::Left {
-            // Workspace sidebar (always clickable, including fullscreen)
-            match &self.interaction.hover_target {
-                Some(crate::state::drag_types::HoverTarget::WorkspaceSidebarItem(idx)) => {
-                    let idx = *idx;
-                    // Start pending drag
-                    self.ws.drag = Some((idx, self.window.last_cursor_pos.y, idx));
-                    return;
-                }
-                Some(crate::state::drag_types::HoverTarget::WorkspaceSidebarNewBtn) => {
-                    self.new_workspace();
-                    return;
-                }
-                _ => {}
-            }
-
-            // Titlebar buttons (only when titlebar is visible)
-            if self.window.top_inset > 0.0 {
-                match &self.interaction.hover_target {
-                    Some(crate::state::drag_types::HoverTarget::TitlebarSettings) => {
-                        self.toggle_config_page();
-                        return;
-                    }
-                    Some(crate::state::drag_types::HoverTarget::TitlebarTheme) => {
-                        self.handle_global_action(crate::tide_input::GlobalAction::ToggleTheme);
-                        return;
-                    }
-                    Some(crate::state::drag_types::HoverTarget::TitlebarGateway) => {
-                        // Toggle gateway modal
-                        if self.modal.gateway_modal.is_some() {
-                            self.modal.gateway_modal = None;
-                        } else {
-                            // Trigger agent detection on modal open (BR-49)
-                            let pane_ids: Vec<u64> = self.panes.keys().copied().collect();
-                            for id in pane_ids {
-                                if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get(&id) {
-                                    if let Some(pid) = tp.backend.child_pid() {
-                                        if let Some(mut agent) = crate::state::gateway_status::detect_agent(pid) {
-                                            agent.gateway_connected = crate::state::gateway_status::is_agent_connected(
-                                                agent.pid, &self.gateway.connected_pids
-                                            );
-                                            self.gateway.detected_agents.insert(id, agent);
-                                        } else {
-                                            self.gateway.detected_agents.remove(&id);
-                                        }
-                                    }
-                                }
-                            }
-                            self.modal.gateway_modal = Some(crate::domain::modal::GatewayModalState::new(Vec::new()));
-                        }
-                        self.cache.invalidate_chrome();
-                        return;
-                    }
-                    Some(crate::state::drag_types::HoverTarget::TitlebarSwap) => {
-                        self.window.sidebar_side = match self.window.sidebar_side {
-                            crate::LayoutSide::Left => crate::LayoutSide::Right,
-                            crate::LayoutSide::Right => crate::LayoutSide::Left,
-                        };
-                        self.compute_layout();
-                        self.cache.invalidate_chrome();
-                        return;
-                    }
-                    Some(crate::state::drag_types::HoverTarget::TitlebarWorkspace) => {
-                        self.ws.show_sidebar = !self.ws.show_sidebar;
-                        self.cache.invalidate_chrome();
-                        self.compute_layout();
-                        return;
-                    }
-                    Some(crate::state::drag_types::HoverTarget::TitlebarFileTree) => {
-                        self.toggle_file_tree_visibility();
-                        return;
-                    }
-                    Some(crate::state::drag_types::HoverTarget::TitlebarDock) => {
-                        self.toggle_dock_visibility();
-                        return;
-                    }
-                    _ => {}
-                }
-            }
-
-
-            // Browser navigation bar clicks
-            match &self.interaction.hover_target {
-                Some(target @ crate::state::drag_types::HoverTarget::BrowserBack)
-                | Some(target @ crate::state::drag_types::HoverTarget::BrowserForward)
-                | Some(target @ crate::state::drag_types::HoverTarget::BrowserRefresh)
-                | Some(target @ crate::state::drag_types::HoverTarget::BrowserUrlBar) => {
-                    let target = target.clone();
-                    // Focus the browser pane first
-                    for &(id, rect) in &self.visual_pane_rects {
-                        if let Some(crate::pane::PaneKind::Browser(_)) = self.panes.get(&id) {
-                            if rect.contains(self.window.last_cursor_pos) {
-                                self.focus_terminal(id);
-                                break;
-                            }
-                        }
-                    }
-                    self.handle_browser_nav_click(&target);
-                    return;
-                }
-                _ => {}
-            }
-
-            // Handle drags — sidebar handle
-            if let Some(ft_rect) = self.ft.rect {
-                if self.window.last_cursor_pos.y >= ft_rect.y
-                    && self.window.last_cursor_pos.y < ft_rect.y + PANE_PADDING
-                    && self.window.last_cursor_pos.x >= ft_rect.x
-                    && self.window.last_cursor_pos.x < ft_rect.x + ft_rect.width
-                {
-                    self.window.sidebar_handle_dragging = true;
-                    return;
-                }
-            }
-
-            // Workspace sidebar border
-            if let Some(ws_rect) = self.ws.sidebar_rect {
-                let border_x = ws_rect.x + ws_rect.width + PANE_GAP;
-                if (self.window.last_cursor_pos.x - border_x).abs() < 5.0 {
-                    self.ws.border_dragging = true;
-                    return;
-                }
-            }
-
-            // Context area border
-            if self.dock.dock_open {
-                if let Some(pa_rect) = self.pane_area_rect {
-                    let border_x = pa_rect.x + pa_rect.width;
-                    if (self.window.last_cursor_pos.x - border_x).abs() < 5.0 {
-                        self.dock.dock_border_dragging = true;
-                        return;
-                    }
-                }
-
-                // Pinned group / terminal dock border drag
-                if let Some(dock_rect) = self.dock_area_rect {
-                    let has_term_dock = self.focused_terminal_id().map(|tid| {
-                        if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get(&tid) {
-                            !tp.dock_layout.pane_ids().is_empty()
-                        } else { false }
-                    }).unwrap_or(false);
-                    if self.has_pinned_panes() && has_term_dock {
-                        let pinned_w = (dock_rect.width * self.dock.pinned_dock_ratio).max(60.0).min(dock_rect.width - 60.0);
-                        let border_x = dock_rect.x + pinned_w;
-                        if (self.window.last_cursor_pos.x - border_x).abs() < 5.0 {
-                            self.dock.pinned_border_dragging = true;
-                            return;
-                        }
-                    }
-                }
-
-                // Intra-dock split border drag
-                if let Some(dock_rect) = self.dock_area_rect {
-                    if dock_rect.contains(self.window.last_cursor_pos) {
-                        let local_pos = Vec2::new(
-                            self.window.last_cursor_pos.x - dock_rect.x,
-                            self.window.last_cursor_pos.y - dock_rect.y,
-                        );
-                        let dock_size = crate::tide_core::Size::new(dock_rect.width, dock_rect.height);
-                        if let Some(tid) = self.focused_terminal_id() {
-                            if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                                tp.dock_layout.begin_drag(local_pos, dock_size);
-                                if tp.dock_layout.is_dragging() {
-                                    self.dock.dock_split_dragging = true;
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Sidebar border
-            if let Some(ft_rect) = self.ft.rect {
-                let border_x = if self.window.sidebar_side == crate::LayoutSide::Left {
-                    ft_rect.x + ft_rect.width + PANE_GAP
-                } else {
-                    ft_rect.x - PANE_GAP
-                };
-                if (self.window.last_cursor_pos.x - border_x).abs() < 5.0 {
-                    self.ft.border_dragging = true;
-                    return;
-                }
-            }
-
-            // Pane tab drag init — check header_hit_zones first for accurate tab ID
-            // Initiate pane drag from header tab bar click.
+            if pos.x < modal_x || pos.x > modal_x + modal_w
+                || pos.y < modal_y || pos.y > modal_y + modal_h
             {
-                let pos = self.window.last_cursor_pos;
-                let drag_pane = self.pane_at_tab_bar(pos);
-                if let Some(pane_id) = drag_pane {
-                    self.interaction.pane_drag = PaneDragState::PendingDrag {
-                        source_pane: pane_id,
-                        press_pos: pos,
-                    };
-                    self.focus_terminal(pane_id);
+                ctx.modal_mut().gateway_modal = None;
+            } else {
+                // Click inside modal — enable all non-connected agents
+                ctx.gateway_enable_unconnected_agents();
+            }
+            ctx.invalidate_chrome();
+            ctx.request_redraw();
+            return;
+        }
+
+        if ctx.modal().save_as_input.is_some() {
+            if !ctx.save_as_contains(ctx.last_cursor_pos()) {
+                ctx.modal_mut().save_as_input = None;
+            }
+            ctx.request_redraw();
+            return;
+        }
+
+        if ctx.modal().file_finder.is_some() {
+            if let Some(idx) = ctx.file_finder_item_at(ctx.last_cursor_pos()) {
+                let path = {
+                    let finder = ctx.modal().file_finder.as_ref().unwrap();
+                    if let Some(&entry_idx) = finder.filtered.get(idx) {
+                        Some(finder.base_dir.join(&finder.entries[entry_idx]))
+                    } else {
+                        None
+                    }
+                };
+                if let Some(path) = path {
+                    ctx.close_file_finder();
+                    ctx.open_editor_pane(path);
+                    ctx.request_redraw();
+                    return;
+                }
+            } else if !ctx.file_finder_contains(ctx.last_cursor_pos()) {
+                ctx.close_file_finder();
+            }
+            ctx.request_redraw();
+            return;
+        }
+
+        if ctx.modal().git_switcher.is_some() {
+            // Tab click: switch between Branches / Worktrees
+            if let Some(mode) = ctx.git_switcher_tab_at(ctx.last_cursor_pos()) {
+                let current_mode = ctx.modal().git_switcher.as_ref().map(|gs| gs.mode);
+                if current_mode != Some(mode) {
+                    if let Some(ref mut gs) = ctx.modal_mut().git_switcher {
+                        gs.set_mode(mode);
+                    }
+                    ctx.invalidate_chrome();
+                }
+                ctx.request_redraw();
+                return;
+            }
+            if let Some(btn) = ctx.git_switcher_button_at(ctx.last_cursor_pos()) {
+                crate::adapter::inward::click_adapter::header::handle_git_switcher_button(ctx, btn);
+                ctx.request_redraw();
+                return;
+            }
+            if let Some(idx) = ctx.git_switcher_item_at(ctx.last_cursor_pos()) {
+                if let Some(ref mut gs) = ctx.modal_mut().git_switcher {
+                    gs.selected = idx;
+                }
+                ctx.invalidate_chrome();
+                ctx.request_redraw();
+                return;
+            } else if !ctx.git_switcher_contains(ctx.last_cursor_pos()) {
+                ctx.modal_mut().git_switcher = None;
+                ctx.request_redraw();
+                return;
+            }
+        }
+    }
+
+    // Branch cleanup bar clicks
+    if button == MouseButton::Left && ctx.modal().branch_cleanup.is_some() {
+        if crate::adapter::inward::click_adapter::pane::handle_branch_cleanup_click(ctx, ctx.last_cursor_pos()) {
+            return;
+        }
+    }
+
+    // Notification bar clicks
+    if button == MouseButton::Left {
+        if crate::adapter::inward::click_adapter::pane::handle_notification_bar_click(ctx, ctx.last_cursor_pos()) {
+            return;
+        }
+    }
+
+    // Header clicks
+    if button == MouseButton::Left {
+        if crate::adapter::inward::click_adapter::header::check_header_click(ctx) {
+            return;
+        }
+    }
+
+    // Pane tab close
+    if button == MouseButton::Left {
+        if let Some(pane_id) = ctx.pane_tab_close_at(ctx.last_cursor_pos()) {
+            ctx.close_specific_pane(pane_id);
+            ctx.request_redraw();
+            return;
+        }
+    }
+
+    // Right-click on file tree
+    if button == MouseButton::Right {
+        if ctx.ft().visible {
+            if let Some(ft_rect) = ctx.ft().rect {
+                let pos = ctx.last_cursor_pos();
+                if pos.x >= ft_rect.x
+                    && pos.x < ft_rect.x + ft_rect.width
+                    && pos.y >= ft_rect.y + PANE_CORNER_RADIUS + FILE_TREE_HEADER_HEIGHT
+                {
+                    let cell_size = ctx.cell_size();
+                    let line_height = cell_size.height * FILE_TREE_LINE_SPACING;
+                    let content_y = ft_rect.y + PANE_CORNER_RADIUS;
+                    let adjusted_y = pos.y - content_y - FILE_TREE_HEADER_HEIGHT;
+                    let ft_scroll = ctx.ft().scroll;
+                    let index =
+                        ((adjusted_y + ft_scroll) / line_height) as usize;
+
+                    let entry_info = ctx.ft().tree.as_ref().and_then(|tree| {
+                        let entries = tree.visible_entries();
+                        entries.get(index).map(|entry| {
+                            (entry.entry.path.clone(), entry.entry.is_dir)
+                        })
+                    });
+
+                    if let Some((path, is_dir)) = entry_info {
+                        ctx.modal_mut().context_menu = None;
+                        ctx.modal_mut().file_tree_rename = None;
+                        let shell_idle = ctx.focused_pane()
+                            .and_then(|tid| ctx.pane(tid))
+                            .map(|pk| if let crate::PaneKind::Terminal(tp) = pk { tp.context.shell_idle } else { false })
+                            .unwrap_or(false);
+                        ctx.modal_mut().context_menu = Some(crate::ContextMenuState {
+                            entry_index: index,
+                            path,
+                            is_dir,
+                            shell_idle,
+                            position: pos,
+                            selected: 0,
+                        });
+                        ctx.request_redraw();
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    // File tree clicks
+    if button == MouseButton::Left {
+        if ctx.ft().visible {
+            if let Some(ft_rect) = ctx.ft().rect {
+                let pos = ctx.last_cursor_pos();
+                if pos.x >= ft_rect.x
+                    && pos.x < ft_rect.x + ft_rect.width
+                    && pos.y >= ft_rect.y + PANE_CORNER_RADIUS + FILE_TREE_HEADER_HEIGHT
+                {
+                    ctx.handle_file_tree_click(pos);
                     return;
                 }
             }
         }
-
-        let input = InputEvent::MouseClick {
-            position: self.window.last_cursor_pos,
-            button,
-        };
-        let action = self.router.process(input, &self.pane_rects);
-        self.handle_action(action, Some(input));
     }
 
-    pub(crate) fn handle_mouse_up(&mut self, button: MouseButton) {
-        if button == MouseButton::Left {
-            self.interaction.mouse_left_pressed = false;
-        }
-
-        // End workspace sidebar drag
-        if let Some((src, press_y, gap)) = self.ws.drag.take() {
-            let moved = (self.window.last_cursor_pos.y - press_y).abs() > DRAG_THRESHOLD;
-            let target = if gap <= src { gap } else { gap - 1 };
-            if moved && target != src {
-                let ws = self.ws.workspaces.remove(src);
-                self.ws.workspaces.insert(target, ws);
-                if self.ws.active == src {
-                    self.ws.active = target;
-                } else if src < self.ws.active && target >= self.ws.active {
-                    self.ws.active -= 1;
-                } else if src > self.ws.active && target <= self.ws.active {
-                    self.ws.active += 1;
-                }
-            } else if !moved {
-                self.switch_workspace(src);
-            }
-            self.cache.invalidate_chrome();
-            return;
-        }
-
-        // End scrollbar drag
-        if self.interaction.scrollbar_dragging.is_some() {
-            self.interaction.scrollbar_dragging = None;
-            self.interaction.scrollbar_drag_rect = None;
-            return;
-        }
-
-        // End sidebar handle drag on release
-        if self.window.sidebar_handle_dragging {
-            self.window.sidebar_handle_dragging = false;
-            self.compute_layout();
-            self.cache.invalidate_chrome();
-            return;
-        }
-
-        if self.ft.border_dragging {
-            self.ft.border_dragging = false;
-            self.compute_layout();
-            self.cache.invalidate_chrome();
-            return;
-        }
-
-        if self.ws.border_dragging {
-            self.ws.border_dragging = false;
-            self.compute_layout();
-            self.cache.invalidate_chrome();
-            return;
-        }
-
-        if self.dock.dock_border_dragging {
-            self.dock.dock_border_dragging = false;
-            self.compute_layout();
-            self.cache.invalidate_chrome();
-            return;
-        }
-
-        if self.dock.pinned_border_dragging {
-            self.dock.pinned_border_dragging = false;
-            self.compute_layout();
-            self.cache.invalidate_chrome();
-            return;
-        }
-
-        if self.dock.dock_split_dragging {
-            self.dock.dock_split_dragging = false;
-            if let Some(tid) = self.focused_terminal_id() {
-                if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                    tp.dock_layout.end_drag();
-                }
-            }
-            self.compute_layout();
-            self.cache.invalidate_chrome();
-            return;
-        }
-
-        let drag_state = std::mem::replace(&mut self.interaction.pane_drag, PaneDragState::Idle);
-        match drag_state {
-            PaneDragState::Dragging {
-                source_pane,
-                drop_target: Some(dest),
-                ..
-            } => {
-                self.handle_drop(source_pane, dest);
-                return;
-            }
-            PaneDragState::PendingDrag { source_pane, .. } => {
-                self.focus_terminal(source_pane);
-                if self.focus.zoomed_pane.is_some() && !self.is_pane_in_dock(source_pane) {
-                    self.focus.zoomed_pane = Some(source_pane);
-                }
-                self.cache.invalidate_chrome();
-                self.cache.pane_generations.clear();
-                self.compute_layout();
-                self.cache.needs_redraw = true;
-                return;
-            }
-            PaneDragState::Dragging { .. } => {
-                return;
-            }
-            PaneDragState::Idle => {}
-        }
-
-        let was_dragging = self.router.is_dragging_border();
-        self.layout.end_drag();
-        self.router.end_drag();
-        if was_dragging {
-            self.compute_layout();
-        }
+    // Config page
+    if button == MouseButton::Left && ctx.modal().config_page.is_some() {
+        crate::adapter::inward::click_adapter::pane::handle_config_page_click(ctx, ctx.last_cursor_pos());
+        ctx.request_redraw();
+        return;
     }
 
-    /// Check if a click position hits an editor scrollbar. If so, starts
-    /// scrollbar drag and applies the initial jump. Returns true if consumed.
-    fn check_scrollbar_click(&mut self, pos: Vec2) -> bool {
-        let cell_height = self.cell_size().height;
-        let hit_width = 16.0_f32; // wider hit area than visual scrollbar
+    // General mouse input routing
+    handle_mouse_input_core(ctx, button, window);
+    ctx.request_redraw();
+}
 
-        // Check editor panes in the split tree
-        let content_top_offset = TAB_BAR_HEIGHT;
-        let rects: Vec<_> = self.visual_pane_rects.iter().map(|(id, r)| (*id, *r)).collect();
-        for (pid, vrect) in rects {
-            if let Some(PaneKind::Editor(pane)) = self.panes.get(&pid) {
-                let inner = Rect::new(
-                    vrect.x + PANE_PADDING,
-                    vrect.y + content_top_offset,
-                    vrect.width - 2.0 * PANE_PADDING,
-                    vrect.height - content_top_offset - PANE_PADDING,
-                );
-                let scrollbar_right = inner.x + inner.width;
-                let scrollbar_left = scrollbar_right - hit_width;
-                if pos.x >= scrollbar_left && pos.x <= scrollbar_right
-                    && pos.y >= inner.y && pos.y <= inner.y + inner.height
-                    && pane.needs_scrollbar(inner, cell_height)
-                {
-                    self.interaction.scrollbar_dragging = Some(pid);
-                    self.interaction.scrollbar_drag_rect = Some(inner);
-                    self.apply_scrollbar_drag(pid, inner, pos.y);
-                    return true;
+fn handle_mouse_input_core(ctx: &mut impl MousePorts, button: MouseButton, _window: &WindowProxy) {
+    if button == MouseButton::Left {
+        // Workspace sidebar (always clickable, including fullscreen)
+        let hover = ctx.interaction().hover_target.clone();
+        match &hover {
+            Some(crate::state::drag_types::HoverTarget::WorkspaceSidebarItem(idx)) => {
+                let idx = *idx;
+                let press_y = ctx.last_cursor_pos().y;
+                // Start pending drag
+                ctx.ws_set_drag(Some((idx, press_y, idx)));
+                return;
+            }
+            Some(crate::state::drag_types::HoverTarget::WorkspaceSidebarNewBtn) => {
+                ctx.new_workspace();
+                return;
+            }
+            _ => {}
+        }
+
+        // Titlebar buttons (only when titlebar is visible)
+        if ctx.top_inset() > 0.0 {
+            match &hover {
+                Some(crate::state::drag_types::HoverTarget::TitlebarSettings) => {
+                    ctx.toggle_config_page();
+                    return;
+                }
+                Some(crate::state::drag_types::HoverTarget::TitlebarTheme) => {
+                    ctx.handle_global_action(crate::tide_input::GlobalAction::ToggleTheme);
+                    return;
+                }
+                Some(crate::state::drag_types::HoverTarget::TitlebarGateway) => {
+                    ctx.gateway_toggle_modal();
+                    ctx.invalidate_chrome();
+                    return;
+                }
+                Some(crate::state::drag_types::HoverTarget::TitlebarSwap) => {
+                    let new_side = match ctx.sidebar_side() {
+                        crate::LayoutSide::Left => crate::LayoutSide::Right,
+                        crate::LayoutSide::Right => crate::LayoutSide::Left,
+                    };
+                    ctx.set_sidebar_side(new_side);
+                    ctx.compute_layout();
+                    ctx.invalidate_chrome();
+                    return;
+                }
+                Some(crate::state::drag_types::HoverTarget::TitlebarWorkspace) => {
+                    let v = !ctx.ws_show_sidebar();
+                    ctx.set_ws_show_sidebar(v);
+                    ctx.invalidate_chrome();
+                    ctx.compute_layout();
+                    return;
+                }
+                Some(crate::state::drag_types::HoverTarget::TitlebarFileTree) => {
+                    ctx.toggle_file_tree_visibility();
+                    return;
+                }
+                Some(crate::state::drag_types::HoverTarget::TitlebarDock) => {
+                    ctx.toggle_dock_visibility();
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+
+        // Browser navigation bar clicks
+        match &hover {
+            Some(target @ crate::state::drag_types::HoverTarget::BrowserBack)
+            | Some(target @ crate::state::drag_types::HoverTarget::BrowserForward)
+            | Some(target @ crate::state::drag_types::HoverTarget::BrowserRefresh)
+            | Some(target @ crate::state::drag_types::HoverTarget::BrowserUrlBar) => {
+                let target = target.clone();
+                // Focus the browser pane first
+                let rects: Vec<_> = ctx.visual_pane_rects().to_vec();
+                let pos = ctx.last_cursor_pos();
+                for &(id, rect) in &rects {
+                    if let Some(crate::pane::PaneKind::Browser(_)) = ctx.pane(id) {
+                        if rect.contains(pos) {
+                            ctx.focus_terminal(id);
+                            break;
+                        }
+                    }
+                }
+                crate::adapter::inward::click_adapter::pane::handle_browser_nav_click(ctx, &target);
+                return;
+            }
+            _ => {}
+        }
+
+        // Handle drags — sidebar handle
+        if let Some(ft_rect) = ctx.ft().rect {
+            let pos = ctx.last_cursor_pos();
+            if pos.y >= ft_rect.y
+                && pos.y < ft_rect.y + PANE_PADDING
+                && pos.x >= ft_rect.x
+                && pos.x < ft_rect.x + ft_rect.width
+            {
+                ctx.set_sidebar_handle_dragging(true);
+                return;
+            }
+        }
+
+        // Workspace sidebar border
+        if let Some(ws_rect) = ctx.ws_sidebar_rect() {
+            let border_x = ws_rect.x + ws_rect.width + PANE_GAP;
+            if (ctx.last_cursor_pos().x - border_x).abs() < 5.0 {
+                ctx.set_ws_border_dragging(true);
+                return;
+            }
+        }
+
+        // Context area border
+        if ctx.dock_open() {
+            if let Some(pa_rect) = ctx.pane_area_rect() {
+                let border_x = pa_rect.x + pa_rect.width;
+                if (ctx.last_cursor_pos().x - border_x).abs() < 5.0 {
+                    ctx.set_dock_border_dragging(true);
+                    return;
+                }
+            }
+
+            // Pinned group / terminal dock border drag
+            if let Some(dock_rect) = ctx.dock_area_rect() {
+                let has_term_dock = ctx.focused_terminal_id().map(|tid| {
+                    if let Some(crate::pane::PaneKind::Terminal(tp)) = ctx.pane(tid) {
+                        !tp.dock_layout.pane_ids().is_empty()
+                    } else { false }
+                }).unwrap_or(false);
+                if ctx.has_pinned_panes() && has_term_dock {
+                    let pinned_w = (dock_rect.width * ctx.dock_pinned_ratio()).max(60.0).min(dock_rect.width - 60.0);
+                    let border_x = dock_rect.x + pinned_w;
+                    if (ctx.last_cursor_pos().x - border_x).abs() < 5.0 {
+                        ctx.set_dock_pinned_border_dragging(true);
+                        return;
+                    }
+                }
+            }
+
+            // Intra-dock split border drag
+            if let Some(dock_rect) = ctx.dock_area_rect() {
+                if dock_rect.contains(ctx.last_cursor_pos()) {
+                    let local_pos = Vec2::new(
+                        ctx.last_cursor_pos().x - dock_rect.x,
+                        ctx.last_cursor_pos().y - dock_rect.y,
+                    );
+                    let dock_size = crate::tide_core::Size::new(dock_rect.width, dock_rect.height);
+                    if ctx.dock_begin_split_drag(local_pos, dock_size) {
+                        ctx.set_dock_split_dragging(true);
+                        return;
+                    }
                 }
             }
         }
 
-        false
-    }
-
-    /// Apply scrollbar drag: set scroll position based on mouse Y within rect.
-    pub(super) fn apply_scrollbar_drag(&mut self, pane_id: crate::tide_core::PaneId, rect: Rect, mouse_y: f32) {
-        let cell_height = self.cell_size().height;
-        let visible_rows = (rect.height / cell_height).floor() as usize;
-        let ratio = ((mouse_y - rect.y) / rect.height).clamp(0.0, 1.0);
-
-        if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&pane_id) {
-            let (total_lines, _) = if pane.preview_mode {
-                (pane.preview_line_count(), pane.preview_scroll)
+        // Sidebar border
+        if let Some(ft_rect) = ctx.ft().rect {
+            let border_x = if ctx.sidebar_side() == crate::LayoutSide::Left {
+                ft_rect.x + ft_rect.width + PANE_GAP
             } else {
-                (pane.editor.buffer.line_count(), pane.editor.scroll_offset())
+                ft_rect.x - PANE_GAP
             };
-            let max_scroll = total_lines.saturating_sub(visible_rows);
-            // Center viewport around click position
-            let center = (ratio * total_lines as f32).round() as usize;
-            let target = center.saturating_sub(visible_rows / 2).min(max_scroll);
-
-            if pane.preview_mode {
-                pane.preview_scroll = target;
-            } else {
-                pane.editor.set_scroll_offset(target);
+            if (ctx.last_cursor_pos().x - border_x).abs() < 5.0 {
+                ctx.ft_mut().border_dragging = true;
+                return;
             }
-            self.cache.invalidate_pane(pane_id);
         }
+
+        // Pane tab drag init — check header_hit_zones first for accurate tab ID
+        // Initiate pane drag from header tab bar click.
+        {
+            let pos = ctx.last_cursor_pos();
+            let drag_pane = ctx.pane_at_tab_bar(pos);
+            if let Some(pane_id) = drag_pane {
+                ctx.interaction_mut().pane_drag = PaneDragState::PendingDrag {
+                    source_pane: pane_id,
+                    press_pos: pos,
+                };
+                ctx.focus_terminal(pane_id);
+                return;
+            }
+        }
+    }
+
+    let pos = ctx.last_cursor_pos();
+    let input = InputEvent::MouseClick {
+        position: pos,
+        button,
+    };
+    let action = ctx.route_input(input);
+    ctx.handle_action(action, Some(input));
+}
+
+pub(crate) fn handle_mouse_up(ctx: &mut impl MousePorts, button: MouseButton) {
+    if button == MouseButton::Left {
+        ctx.interaction_mut().mouse_left_pressed = false;
+    }
+
+    // End workspace sidebar drag
+    if let Some((src, press_y, gap)) = ctx.ws_take_drag() {
+        let moved = (ctx.last_cursor_pos().y - press_y).abs() > DRAG_THRESHOLD;
+        let target = if gap <= src { gap } else { gap - 1 };
+        if moved && target != src {
+            ctx.ws_reorder(src, target);
+        } else if !moved {
+            ctx.switch_workspace(src);
+        }
+        ctx.invalidate_chrome();
+        return;
+    }
+
+    // End scrollbar drag
+    if ctx.interaction().scrollbar_dragging.is_some() {
+        ctx.interaction_mut().scrollbar_dragging = None;
+        ctx.interaction_mut().scrollbar_drag_rect = None;
+        return;
+    }
+
+    // End sidebar handle drag on release
+    if ctx.sidebar_handle_dragging() {
+        ctx.set_sidebar_handle_dragging(false);
+        ctx.compute_layout();
+        ctx.invalidate_chrome();
+        return;
+    }
+
+    if ctx.ft().border_dragging {
+        ctx.ft_mut().border_dragging = false;
+        ctx.compute_layout();
+        ctx.invalidate_chrome();
+        return;
+    }
+
+    if ctx.ws_border_dragging() {
+        ctx.set_ws_border_dragging(false);
+        ctx.compute_layout();
+        ctx.invalidate_chrome();
+        return;
+    }
+
+    if ctx.dock_border_dragging() {
+        ctx.set_dock_border_dragging(false);
+        ctx.compute_layout();
+        ctx.invalidate_chrome();
+        return;
+    }
+
+    if ctx.dock_pinned_border_dragging() {
+        ctx.set_dock_pinned_border_dragging(false);
+        ctx.compute_layout();
+        ctx.invalidate_chrome();
+        return;
+    }
+
+    if ctx.dock_split_dragging() {
+        ctx.set_dock_split_dragging(false);
+        ctx.dock_end_split_drag();
+        ctx.compute_layout();
+        ctx.invalidate_chrome();
+        return;
+    }
+
+    let drag_state = std::mem::replace(&mut ctx.interaction_mut().pane_drag, PaneDragState::Idle);
+    match drag_state {
+        PaneDragState::Dragging {
+            source_pane,
+            drop_target: Some(dest),
+            ..
+        } => {
+            crate::adapter::inward::click_adapter::pane::handle_drop(ctx, source_pane, dest);
+            return;
+        }
+        PaneDragState::PendingDrag { source_pane, .. } => {
+            ctx.focus_terminal(source_pane);
+            if ctx.zoomed_pane().is_some() && !ctx.is_pane_in_dock(source_pane) {
+                ctx.set_zoom(Some(source_pane));
+            }
+            ctx.invalidate_chrome();
+            ctx.invalidate_all_panes();
+            ctx.compute_layout();
+            ctx.request_redraw();
+            return;
+        }
+        PaneDragState::Dragging { .. } => {
+            return;
+        }
+        PaneDragState::Idle => {}
+    }
+
+    let was_dragging = ctx.router_is_dragging_border();
+    ctx.layout_end_drag();
+    ctx.router_end_drag();
+    if was_dragging {
+        ctx.compute_layout();
+    }
+}
+
+/// Check if a click position hits an editor scrollbar. If so, starts
+/// scrollbar drag and applies the initial jump. Returns true if consumed.
+fn check_scrollbar_click(ctx: &mut impl MousePorts, pos: Vec2) -> bool {
+    let cell_height = ctx.cell_size().height;
+    let hit_width = 16.0_f32; // wider hit area than visual scrollbar
+
+    // Check editor panes in the split tree
+    let content_top_offset = TAB_BAR_HEIGHT;
+    let rects: Vec<_> = ctx.visual_pane_rects().to_vec();
+    for (pid, vrect) in rects {
+        if let Some(PaneKind::Editor(pane)) = ctx.pane(pid) {
+            let inner = Rect::new(
+                vrect.x + PANE_PADDING,
+                vrect.y + content_top_offset,
+                vrect.width - 2.0 * PANE_PADDING,
+                vrect.height - content_top_offset - PANE_PADDING,
+            );
+            let scrollbar_right = inner.x + inner.width;
+            let scrollbar_left = scrollbar_right - hit_width;
+            if pos.x >= scrollbar_left && pos.x <= scrollbar_right
+                && pos.y >= inner.y && pos.y <= inner.y + inner.height
+                && pane.needs_scrollbar(inner, cell_height)
+            {
+                ctx.interaction_mut().scrollbar_dragging = Some(pid);
+                ctx.interaction_mut().scrollbar_drag_rect = Some(inner);
+                apply_scrollbar_drag(ctx, pid, inner, pos.y);
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// Apply scrollbar drag: set scroll position based on mouse Y within rect.
+pub(super) fn apply_scrollbar_drag(ctx: &mut (impl AppCorePort + PaneAccessPort), pane_id: crate::tide_core::PaneId, rect: Rect, mouse_y: f32) {
+    let cell_height = ctx.cell_size().height;
+    let visible_rows = (rect.height / cell_height).floor() as usize;
+    let ratio = ((mouse_y - rect.y) / rect.height).clamp(0.0, 1.0);
+
+    if let Some(PaneKind::Editor(pane)) = ctx.pane_mut(pane_id) {
+        let (total_lines, _) = if pane.preview_mode {
+            (pane.preview_line_count(), pane.preview_scroll)
+        } else {
+            (pane.editor.buffer.line_count(), pane.editor.scroll_offset())
+        };
+        let max_scroll = total_lines.saturating_sub(visible_rows);
+        // Center viewport around click position
+        let center = (ratio * total_lines as f32).round() as usize;
+        let target = center.saturating_sub(visible_rows / 2).min(max_scroll);
+
+        if pane.preview_mode {
+            pane.preview_scroll = target;
+        } else {
+            pane.editor.set_scroll_offset(target);
+        }
+        ctx.invalidate_pane(pane_id);
     }
 }
