@@ -28,6 +28,13 @@ impl App {
             return;
         }
 
+        // Decrement active_streams if closing a streaming render pane
+        if let Some(PaneKind::Browser(bp)) = self.panes.get(&pane_id) {
+            if bp.render_mode && bp.streaming && self.gateway.active_streams > 0 {
+                self.gateway.active_streams -= 1;
+            }
+        }
+
         // Determine next focus target BEFORE removal so we can find a
         // layout neighbor while the tree is still intact.
         let next_focus = self.layout.right_neighbor_pane(pane_id)
@@ -44,6 +51,9 @@ impl App {
         self.panes.remove(&pane_id);
         self.cleanup_closed_pane_state(pane_id);
 
+        // Emit pane-closed event for subscribers
+        self.gateway.notify("pane-closed", serde_json::json!({"pane_id": pane_id}));
+
         if let Some(next) = next_focus {
             self.focus.focused = Some(next);
             self.router.set_focused(next);
@@ -51,6 +61,7 @@ impl App {
             if self.focus.zoomed_pane == Some(pane_id) {
                 self.focus.zoomed_pane = Some(next);
             }
+            self.gateway.notify("focus-changed", serde_json::json!({"pane_id": next}));
         } else {
             self.focus.focused = None;
         }

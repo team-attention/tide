@@ -46,6 +46,18 @@ use pane::PaneKind;
 // ──────────────────────────────────────────────
 
 fn main() {
+    // ── Subcommand routing ───────────────────────────────────────────
+    // Check for CLI subcommand before any GUI initialization.
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() >= 2 && args[1] == "cli" {
+        let exit_code = adapter::inward::cli_adapter::client::run_cli(&args[2..]);
+        std::process::exit(exit_code);
+    }
+    if args.len() >= 2 && args[1] == "mcp" {
+        let exit_code = adapter::inward::cli_adapter::mcp::run_mcp();
+        std::process::exit(exit_code);
+    }
+
     // Enable backtraces for panic diagnostics
     std::env::set_var("RUST_BACKTRACE", "1");
 
@@ -86,8 +98,32 @@ fn main() {
     // App thread uses this to send commands back to the main thread.
     let window_proxy = crate::tide_platform::WindowProxy::new(cmd_tx, main_waker.clone());
 
+    // ── Agent Gateway (always on) ───────────────────────────────────
+    // Start the socket server before app setup so terminals inherit TIDE_SOCKET.
+    let _gateway_server = match adapter::inward::cli_adapter::server::GatewayServer::start(
+        event_tx.clone(),
+        combined_waker.clone(),
+    ) {
+        Ok(server) => {
+            let path = server.socket_path.to_string_lossy().to_string();
+            log::info!("Agent Gateway listening on {}", path);
+            crate::tide_terminal::set_gateway_socket_path(path);
+            Some(server)
+        }
+        Err(e) => {
+            log::warn!("Agent Gateway failed to start: {e}");
+            None
+        }
+    };
+
     // ── App setup ────────────────────────────────────────────────────
     let mut app = App::new();
+    // Store gateway status
+    if let Some(ref server) = _gateway_server {
+        app.gateway.listening = true;
+        app.gateway.socket_path = Some(server.socket_path.to_string_lossy().to_string());
+        app.gateway.connected_clients_shared = Some(server.connected_clients.clone());
+    }
     app.bg.event_loop_waker = Some(combined_waker.clone());
     app.ports.file_watcher.init(Some(combined_waker));
 

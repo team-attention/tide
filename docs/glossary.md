@@ -97,3 +97,10 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Dirty Tracking** | Generation-based system to skip re-rendering unchanged panes/chrome. |
 | **WrapMap** | Cached mapping from logical lines to visual rows for soft-wrap rendering. Built per EditorPane when soft wrap is active. |
 | **Soft Wrap** | Automatic line wrapping at viewport width. Enabled for prose files (`.md`, `.txt`). Line numbers only on first visual row. |
+| **Agent Gateway** | Built-in subsystem for programmatic control via Unix socket. Always on, zero config. Comprises socket server, CLI client, and MCP bridge. |
+| **CliCommand** | A command received from an external process via the Agent Gateway socket. Enqueued as an `AppEvent` variant for single-threaded dispatch. |
+| **GatewayStatus** | Tracks Agent Gateway state: socket listening status, connected client count, active render streams. Displayed as a badge in the chrome. |
+| **Socket Server** | Background thread listening on a Unix domain socket (`$TMPDIR/tide-<pid>.sock`). Parses JSON-RPC 2.0 and enqueues `CliCommand` into the app event loop. |
+| **Render Pane** | A Browser pane in render mode (`render_mode: true`). Displays agent-provided HTML via `loadHTMLString` instead of URL navigation. No URL bar, title shown in tab. |
+| **Render Runtime** | Pre-injected HTML head (morphdom, Tailwind CSS, Tide theme CSS vars, JS bridge) loaded into every Render Pane before agent HTML. |
+| **Render Stream** | A long-lived connection where an agent sends HTML chunks to a Render Pane. Each chunk is a full HTML snapshot; morphdom diffs against the current DOM. |

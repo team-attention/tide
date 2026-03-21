@@ -559,7 +559,12 @@ impl crate::application::ports::inward::ActionPort for App {
                             ep.editor.set_dark_mode(dark);
                         }
                         crate::pane::PaneKind::Diff(_) => {}
-                        crate::pane::PaneKind::Browser(_) => {}
+                        crate::pane::PaneKind::Browser(bp) => {
+                            // BR-32: Update theme CSS vars in render panes
+                            if bp.render_mode {
+                                bp.sync_theme_vars(dark);
+                            }
+                        }
                         crate::pane::PaneKind::Launcher(_) => {}
                     }
                 }

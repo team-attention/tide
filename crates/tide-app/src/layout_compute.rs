@@ -21,6 +21,7 @@ impl crate::application::ports::inward::LayoutPort for App {
             | Some(HoverTarget::TitlebarSwap)
             | Some(HoverTarget::TitlebarSettings)
             | Some(HoverTarget::TitlebarTheme)
+            | Some(HoverTarget::TitlebarGateway)
             | Some(HoverTarget::TitlebarFileTree)
             | Some(HoverTarget::TitlebarWorkspace)
             | Some(HoverTarget::TitlebarDock)
@@ -726,15 +727,21 @@ impl crate::application::ports::inward::LayoutPort for App {
                 || self.modal.config_page.is_some()
                 || self.modal.save_confirm.is_some()
                 || self.modal.branch_cleanup.is_some()
+                || self.modal.gateway_modal.is_some()
                 || matches!(self.interaction.pane_drag, crate::state::drag_types::PaneDragState::Dragging { .. });
 
             if let Some(vr) = visual_rect {
                 if popup_open {
                     bp.set_visible(false);
                 } else {
-                // Position webview inside the pane's visual rect, below the tab bar + nav bar
-                let nav_bar_h = (self.window.cached_cell_size.height * 1.5).round() + 4.0; // 2px gap top + nav_h + 2px gap bottom
-                let content_top = TAB_BAR_HEIGHT + nav_bar_h;
+                // Position webview inside the pane's visual rect.
+                // Render-mode panes skip the nav bar (BR-26: no URL bar).
+                let content_top = if bp.render_mode {
+                    TAB_BAR_HEIGHT
+                } else {
+                    let nav_bar_h = (self.window.cached_cell_size.height * 1.5).round() + 4.0; // 2px gap top + nav_h + 2px gap bottom
+                    TAB_BAR_HEIGHT + nav_bar_h
+                };
 
                 let x = (vr.x + PANE_PADDING) as f64;
                 let y = (vr.y + content_top) as f64;
@@ -749,6 +756,11 @@ impl crate::application::ports::inward::LayoutPort for App {
                     let url = bp.url.clone();
                     bp.navigate(&url);
                     bp.needs_initial_navigate = false;
+                }
+
+                // Load render HTML after the webview has a proper frame (BR-25).
+                if bp.render_mode && bp.needs_render_load {
+                    bp.load_render_content();
                 }
 
                 // Poll webview for state changes (URL, loading, back/forward)
