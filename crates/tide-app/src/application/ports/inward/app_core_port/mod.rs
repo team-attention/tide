@@ -65,6 +65,8 @@ pub(crate) trait AppCorePort {
     fn set_top_inset(&mut self, inset: f32);
     fn reconfigure_surface(&mut self);
     fn clock_now(&self) -> std::time::Instant;
+    fn is_window_focused(&self) -> bool;
+    fn set_window_focused(&mut self, focused: bool);
     fn save_full_session(&mut self);
     fn delete_running_marker(&mut self);
 

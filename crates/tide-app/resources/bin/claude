@@ -40,4 +40,7 @@ cat > "$HOOKS_FILE" << TIDE_EOF
 }
 TIDE_EOF
 
-exec "$REAL_CMD" --mcp-config "$MCP_FILE" --settings "$HOOKS_FILE" "$@"
+# Send initial status via OSC 9 so the dot appears immediately on launch
+printf '\033]9;tide:agent-running\007'
+
+"$REAL_CMD" --mcp-config "$MCP_FILE" --settings "$HOOKS_FILE" "$@"

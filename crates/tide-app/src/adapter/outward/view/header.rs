@@ -101,7 +101,7 @@ pub fn render_pane_header(
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
 ) -> Vec<HeaderHitZone> {
-    render_pane_header_inner(id, rect, panes, focused, _is_zoomed, has_dock_tab_bar, p, renderer, None)
+    render_pane_header_inner(id, rect, panes, focused, _is_zoomed, has_dock_tab_bar, p, renderer, None, None)
 }
 
 pub fn render_pane_header_inner(
@@ -114,6 +114,7 @@ pub fn render_pane_header_inner(
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
     agent_status: Option<crate::state::gateway_status::AgentStatus>,
+    blink_time: Option<f64>,
 ) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
     let cell_size = renderer.cell_size();
@@ -130,11 +131,19 @@ pub fn render_pane_header_inner(
     // None = no dot (initial state, no hooks fired yet).
     if let Some(status) = agent_status {
         use crate::state::gateway_status::AgentStatus;
-        let dot_color = match status {
+        let mut dot_color = match status {
             AgentStatus::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),     // green
             AgentStatus::Idle => crate::tide_core::Color::new(0.3, 0.8, 0.4, 0.6),         // green, dimmed
             AgentStatus::NeedsInput => crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0), // orange
         };
+        // UC-5: Blink animation for NeedsInput when pane is unfocused
+        // Opacity range: 0.3 ~ 1.0, period ~1.5s (frequency ≈ 4.2 rad/s)
+        if matches!(status, AgentStatus::NeedsInput) && !is_focused {
+            if let Some(t) = blink_time {
+                let opacity = 0.65 + 0.35 * (t * 4.2).sin() as f32;
+                dot_color.a = opacity;
+            }
+        }
         let dot_size = 6.0_f32;
         let dot_x = content_left;
         let dot_y = rect.y + (TAB_BAR_HEIGHT - dot_size) / 2.0;
@@ -143,7 +152,7 @@ pub fn render_pane_header_inner(
             dot_color, dot_size / 2.0,
         );
         if matches!(status, AgentStatus::NeedsInput) {
-            let glow = crate::tide_core::Color::new(dot_color.r, dot_color.g, dot_color.b, 0.3);
+            let glow = crate::tide_core::Color::new(dot_color.r, dot_color.g, dot_color.b, 0.3 * dot_color.a);
             renderer.draw_chrome_rounded_rect(
                 Rect::new(dot_x - 2.0, dot_y - 2.0, dot_size + 4.0, dot_size + 4.0),
                 glow, (dot_size + 4.0) / 2.0,

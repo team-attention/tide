@@ -823,6 +823,8 @@ fn cli_notify(ctx: &mut (impl AppCorePort + GatewayPort + PaneAccessPort), param
             "status": event,
             "agent": name,
         }));
+        // Route notification based on user context (UC-1)
+        ctx.route_agent_notification(pane_id, status);
     }
 
     Ok(json!({"ok": true}))
