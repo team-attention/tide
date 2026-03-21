@@ -239,6 +239,25 @@ impl App {
             }
         }
 
+        // Refresh open DiffPanes with pre-computed diff data
+        for (cwd, result) in &git_results {
+            if let (Some(ref files), Some(ref cache)) = (&result.diff_files, &result.diff_cache) {
+                for pane in self.panes.values_mut() {
+                    if let PaneKind::Diff(dp) = pane {
+                        // Match: DiffPane.cwd equals poller CWD, or both share the same repo root
+                        let matches = dp.cwd == *cwd
+                            || (result.repo_root.is_some()
+                                && self.bg.cached_repo_roots.get(&dp.cwd).and_then(|r| r.as_ref())
+                                    == result.repo_root.as_ref());
+                        if matches {
+                            dp.apply_poll_data(files.clone(), cache.clone());
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
         // Trigger file tree CWD update with newly cached repo roots
         if self.ft.visible {
             let cwd = self.focus.focused.and_then(|id| {
@@ -305,11 +324,39 @@ impl App {
                     let worktree_count = crate::tide_terminal::git::count_worktrees(&cwd);
                     let repo_root = crate::tide_terminal::git::repo_root(&cwd);
                     let status_entries = crate::tide_terminal::git::status_files(&cwd);
+
+                    // Compute diff data for open DiffPanes
+                    let (diff_files, diff_cache) = if !status_entries.is_empty() {
+                        let numstat = crate::tide_terminal::git::diff_numstat(&cwd);
+                        let files: Vec<crate::pane::diff::DiffFileEntry> = status_entries
+                            .iter()
+                            .map(|e| {
+                                let (add, del) = numstat.get(&e.path).copied().unwrap_or((0, 0));
+                                crate::pane::diff::DiffFileEntry {
+                                    status: e.status.clone(),
+                                    path: e.path.clone(),
+                                    additions: add,
+                                    deletions: del,
+                                }
+                            })
+                            .collect();
+                        let mut cache = std::collections::HashMap::new();
+                        for (i, entry) in files.iter().enumerate() {
+                            let lines = crate::tide_terminal::git::file_diff_lines(&cwd, &entry.path);
+                            cache.insert(i, lines);
+                        }
+                        (Some(files), Some(cache))
+                    } else {
+                        (None, None)
+                    };
+
                     results.insert(cwd, GitPollCwdResult {
                         git_info,
                         worktree_count,
                         repo_root,
                         status_entries,
+                        diff_files,
+                        diff_cache,
                     });
                 }
 

@@ -249,7 +249,23 @@ impl crate::application::ports::inward::ActionPort for App {
                                 self.cache.invalidate_pane(id);
                             }
                         }
-                        Some(PaneKind::Diff(_)) => {} // Diff pane has no keyboard input
+                        Some(PaneKind::Diff(dp)) => {
+                            match key {
+                                crate::tide_core::Key::Char('j') | crate::tide_core::Key::Down => {
+                                    dp.move_selection(1);
+                                    self.cache.invalidate_pane(id);
+                                }
+                                crate::tide_core::Key::Char('k') | crate::tide_core::Key::Up => {
+                                    dp.move_selection(-1);
+                                    self.cache.invalidate_pane(id);
+                                }
+                                crate::tide_core::Key::Enter | crate::tide_core::Key::Char(' ') => {
+                                    dp.toggle_selected();
+                                    self.cache.invalidate_pane(id);
+                                }
+                                _ => {}
+                            }
+                        }
                         Some(PaneKind::Browser(_)) => {} // Browser keyboard handled by webview / URL bar
                         Some(PaneKind::Launcher(_)) => {
                             // Launcher key handling: T/E/O/B to select pane type, Escape to close
@@ -343,8 +359,9 @@ impl crate::application::ports::inward::ActionPort for App {
                             }
                         }
                         Some(PaneKind::Diff(dp)) => {
-                            let total = dp.total_lines() as f32;
-                            dp.scroll_target = (dp.scroll_target - delta).clamp(0.0, total.max(0.0));
+                            let total = dp.total_lines();
+                            let max_scroll = total.saturating_sub(visible_rows) as f32;
+                            dp.scroll_target = (dp.scroll_target - delta).clamp(0.0, max_scroll);
                             dp.scroll = dp.scroll_target;
                             dp.generation = dp.generation.wrapping_add(1);
                             self.cache.invalidate_pane(id);

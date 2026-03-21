@@ -116,6 +116,14 @@ impl ClipboardSearchPort for App {
                     }
                 }
             }
+            Some(PaneKind::Diff(dp)) => {
+                if let Some(ref sel) = dp.selection {
+                    let text = dp.selected_text(sel);
+                    if !text.is_empty() {
+                        let _ = self.ports.clipboard.set_text(&text);
+                    }
+                }
+            }
             _ => {}
         }
     }

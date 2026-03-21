@@ -697,7 +697,8 @@ impl crate::application::ports::inward::PaneAccessPort for App {
             match pane {
                 PaneKind::Terminal(p) => p.selection = None,
                 PaneKind::Editor(p) => p.selection = None,
-                PaneKind::Diff(_) | PaneKind::Browser(_) | PaneKind::Launcher(_) => {}
+                PaneKind::Diff(p) => p.selection = None,
+                PaneKind::Browser(_) | PaneKind::Launcher(_) => {}
             }
         }
     }
