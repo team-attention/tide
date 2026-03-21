@@ -679,6 +679,10 @@ impl crate::application::ports::inward::GatewayPort for App {
             let _ = crate::adapter::inward::cli_adapter::commands::enable_integration(tool);
         }
     }
+
+    fn detected_agents_mut(&mut self) -> &mut std::collections::HashMap<u64, crate::state::gateway_status::AgentInfo> {
+        &mut self.gateway.detected_agents
+    }
 }
 
 // ── PaneAccessPort ──

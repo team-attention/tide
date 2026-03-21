@@ -11,6 +11,17 @@ pub(crate) struct Subscriber {
     pub event_filter: Vec<String>,
 }
 
+/// Lifecycle status of an agent process, reported via hooks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AgentStatus {
+    /// Agent is actively processing (UserPromptSubmit / PreToolUse hook fired).
+    Running,
+    /// Agent finished a turn and is idle (Stop hook fired).
+    Idle,
+    /// Agent is waiting for user input — permission, question, etc. (Notification hook fired).
+    NeedsInput,
+}
+
 /// Detected agent process info for a terminal pane.
 #[derive(Debug, Clone)]
 pub(crate) struct AgentInfo {
@@ -20,6 +31,8 @@ pub(crate) struct AgentInfo {
     pub pid: u32,
     /// Whether this agent is connected to the gateway socket.
     pub gateway_connected: bool,
+    /// Lifecycle status reported by agent hooks. `None` if no hooks are active.
+    pub status: Option<AgentStatus>,
 }
 
 /// Known agent identifiers: (path_pattern, proc_name_pattern, display_name).
@@ -210,6 +223,7 @@ fn detect_agent_recursive(parent_pid: u32, depth: u32) -> Option<AgentInfo> {
                         name: display_name,
                         pid: child_pid as u32,
                         gateway_connected: false,
+                        status: None,
                     });
                 }
             }
@@ -222,6 +236,7 @@ fn detect_agent_recursive(parent_pid: u32, depth: u32) -> Option<AgentInfo> {
                         name: display_name,
                         pid: child_pid as u32,
                         gateway_connected: false,
+                        status: None,
                     });
                 }
             }
