@@ -345,6 +345,59 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.compute_layout();
     }
 
+    /// Open a render-mode browser pane in the dock (generative UI).
+    fn open_render_pane(&mut self, title: String, html: String) -> crate::tide_core::PaneId {
+        let context_terminal = self.resolve_context_terminal_id();
+        let new_id = self.layout.alloc_id();
+        let pane = BrowserPane::new_render(new_id, title, html);
+        self.panes.insert(new_id, PaneKind::Browser(pane));
+        self.ime.pending_creates.push(new_id);
+        if let Some(tid) = self.focused_terminal_id().or(context_terminal) {
+            self.add_pane_to_dock(new_id);
+            self.assoc.associated_terminal.insert(new_id, tid);
+            self.focus.focus_area = crate::state::FocusArea::Dock;
+        } else {
+            let focused = self.focus.focused.unwrap_or(0);
+            if !self.layout.add_tab(focused, new_id) {
+                self.add_to_non_terminal_group(focused, new_id);
+            }
+            self.focus.focus_area = crate::state::FocusArea::Stage;
+        }
+        self.focus.focused = Some(new_id);
+        self.router.set_focused(new_id);
+        self.cache.invalidate_chrome();
+        self.compute_layout();
+        self.gateway.notify("pane-created", serde_json::json!({"pane_id": new_id, "kind": "render"}));
+        new_id
+    }
+
+    /// Open a streaming render-mode browser pane in the dock.
+    fn open_render_stream_pane(&mut self, title: String) -> crate::tide_core::PaneId {
+        let context_terminal = self.resolve_context_terminal_id();
+        let new_id = self.layout.alloc_id();
+        let pane = BrowserPane::new_render_stream(new_id, title);
+        self.panes.insert(new_id, PaneKind::Browser(pane));
+        self.ime.pending_creates.push(new_id);
+        if let Some(tid) = self.focused_terminal_id().or(context_terminal) {
+            self.add_pane_to_dock(new_id);
+            self.assoc.associated_terminal.insert(new_id, tid);
+            self.focus.focus_area = crate::state::FocusArea::Dock;
+        } else {
+            let focused = self.focus.focused.unwrap_or(0);
+            if !self.layout.add_tab(focused, new_id) {
+                self.add_to_non_terminal_group(focused, new_id);
+            }
+            self.focus.focus_area = crate::state::FocusArea::Stage;
+        }
+        self.focus.focused = Some(new_id);
+        self.router.set_focused(new_id);
+        self.gateway.active_streams += 1;
+        self.cache.invalidate_chrome();
+        self.compute_layout();
+        self.gateway.notify("pane-created", serde_json::json!({"pane_id": new_id, "kind": "render-stream"}));
+        new_id
+    }
+
     /// Replace an existing pane (e.g. a Launcher) with an editor for the given file.
     /// The editor reuses the same layout slot.
     fn replace_pane_with_editor(&mut self, pane_id: crate::tide_core::PaneId, path: PathBuf) {
@@ -502,7 +555,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.open_editor_pane(path);
         if let Some(line) = line {
             if let Some(active_id) = self.focus.focused {
-                let visible_rows = self.visible_editor_size(active_id).0;
+                let visible_rows = crate::adapter::inward::text_routing_adapter::visible_editor_size(self, active_id).0;
                 if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&active_id) {
                     let target_line = line.saturating_sub(1); // 1-based to 0-based
                     pane.handle_action(

@@ -1,4 +1,4 @@
-use crate::tide_core::FileTreeSource;
+use crate::tide_core::{FileTreeSource, PaneId};
 use crate::tide_editor::input::EditorAction;
 use crate::tide_input::Direction;
 
@@ -168,5 +168,46 @@ impl FocusNavPort for App {
             _ => return,
         }
         self.cache.invalidate_pane(pane_id);
+    }
+
+    // ── Focus state queries ──
+
+    fn focused_pane(&self) -> Option<PaneId> {
+        self.focus.focused
+    }
+
+    fn current_focus_area(&self) -> FocusArea {
+        self.focus.focus_area
+    }
+
+    fn zoomed_pane(&self) -> Option<PaneId> {
+        self.focus.zoomed_pane
+    }
+
+    fn search_focus(&self) -> Option<PaneId> {
+        self.focus.search_focus
+    }
+
+    // ── Focus state mutations ──
+
+    fn focus_pane(&mut self, id: PaneId) {
+        self.focus.focused = Some(id);
+        self.router.set_focused(id);
+        self.cache.invalidate_chrome();
+    }
+
+    fn set_focus_area(&mut self, area: FocusArea) {
+        self.focus.focus_area = area;
+        self.cache.invalidate_chrome();
+    }
+
+    fn set_zoom(&mut self, pane_id: Option<PaneId>) {
+        self.focus.zoomed_pane = pane_id;
+        self.cache.invalidate_chrome();
+    }
+
+    fn set_search_focus(&mut self, pane_id: Option<PaneId>) {
+        self.focus.search_focus = pane_id;
+        self.cache.invalidate_chrome();
     }
 }

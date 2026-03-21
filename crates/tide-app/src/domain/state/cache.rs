@@ -34,6 +34,11 @@ impl RenderCache {
         self.needs_redraw = true;
     }
 
+    /// Clear the redraw flag after a successful render.
+    pub fn clear_redraw(&mut self) {
+        self.needs_redraw = false;
+    }
+
     /// Whether chrome needs re-rendering.
     #[allow(dead_code)]
     pub fn is_chrome_dirty(&self) -> bool {

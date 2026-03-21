@@ -136,6 +136,54 @@ These must NEVER be violated:
 4. **Input routing priority**: Modal → FocusArea → Router → TextInput (never skip a level)
 5. **Generation monotonicity**: chrome_generation and pane_generations only increase, never decrease or reset **within a workspace session**. Exception: pane_generations is cleared on workspace switch (entirely new pane set)
 6. **IME proxy lifecycle**: Every pane with keyboard focus must have an active IME proxy; proxy must be synced on every event
+7. **Hexagonal dependency direction**: Inward adapters (`adapter/inward/`) MUST NOT directly mutate domain state. They call Inward Port trait methods only. Enforced by `scripts/lint-arch.sh`.
+
+## Hexagonal Layer Rules (MUST)
+
+The codebase follows hexagonal (ports & adapters) architecture. **Dependency direction is strictly enforced.**
+
+```
+adapter/inward/  →  application/ports/inward/  →  application/services/  →  domain/
+                                                         ↓
+                                                   application/ports/outward/  →  adapter/outward/
+```
+
+### What each layer CAN access:
+
+| Layer | CAN use | CANNOT use |
+|-------|---------|------------|
+| `adapter/inward/*` | Inward Port traits (`ActionPort`, `PaneLifecyclePort`, `DockPort`, etc.), domain types for **reading** (`PaneKind`, `FocusArea` for pattern matching) | Direct mutation of `self.layout`, `self.panes`, `self.focus`, `self.router`, `self.ime`, `self.cache`, `self.assoc` |
+| `application/services/*` | Domain types, Outward Port traits, all App fields | External I/O directly (must go through outward ports) |
+| `domain/*` | Only other domain types | Anything in `adapter/` or `application/` |
+| `adapter/outward/*` | Outward Port traits (implements them), external libraries | Inward ports, other outward adapters |
+
+### How inward adapters should work:
+
+```rust
+// ✅ CORRECT: Call a port method
+fn cli_open_browser(&mut self, params: Value) -> Result<Value, CliError> {
+    let url = params.get("url").and_then(|v| v.as_str()).map(String::from);
+    self.open_browser_pane(url);  // PaneLifecyclePort method
+    Ok(json!({"pane_id": self.focus.focused}))
+}
+
+// ❌ WRONG: Directly manipulate domain state
+fn cli_render_html(&mut self, params: Value) -> Result<Value, CliError> {
+    let new_id = self.layout.split(source, SplitDirection::Horizontal);  // VIOLATION
+    self.panes.insert(new_id, PaneKind::Browser(pane));                   // VIOLATION
+    self.focus.focused = Some(new_id);                                     // VIOLATION
+}
+```
+
+### When a port method doesn't exist:
+
+If the inward adapter needs behavior that no existing port provides, **add a new method to the appropriate port trait first**, then implement it in the corresponding service. Never bypass the port layer.
+
+### Exceptions:
+
+- **Reading** domain state for response building (e.g., `self.focus.focused == Some(id)`, iterating `self.panes`) is allowed — only **mutation** is prohibited.
+- `adapter/outward/view/` reads domain state to produce render output — this is the View in State/Update/View and is allowed.
+- `compute_layout()` may be called after port methods if layout recomputation is needed.
 
 ## File Structure
 

@@ -1,3 +1,3 @@
-mod header;
-mod hit_test;
-mod pane;
+pub(crate) mod header;
+pub(crate) mod hit_test;
+pub(crate) mod pane;
