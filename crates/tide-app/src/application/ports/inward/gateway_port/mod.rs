@@ -2,6 +2,8 @@
 
 use serde_json::Value;
 
+use crate::state::gateway_status::AgentInfo;
+
 pub(crate) trait GatewayPort {
     fn gateway_notify(&mut self, event: &str, data: Value);
     fn gateway_inc_streams(&mut self);
@@ -10,4 +12,6 @@ pub(crate) trait GatewayPort {
     fn take_subscribe_tx(&mut self) -> Option<std::sync::mpsc::Sender<String>>;
     fn gateway_toggle_modal(&mut self);
     fn gateway_enable_unconnected_agents(&mut self);
+    /// Mutable access to detected agents map for status updates.
+    fn detected_agents_mut(&mut self) -> &mut std::collections::HashMap<u64, AgentInfo>;
 }

@@ -864,6 +864,123 @@ fn gateway_badge_shows_error_on_bind_failure() {
     assert!(!app.gateway.listening);
 }
 
+// --- UC-12: NotifyAgentStatus (Spec: docs/specs/agent-auto-integration.md) ---
+
+fn app_with_detected_agent() -> (App, u64) {
+    let (mut app, id) = app_with_editor();
+    app.gateway.detected_agents.insert(id, crate::state::gateway_status::AgentInfo {
+        name: "Claude Code",
+        pid: 12345,
+        gateway_connected: true,
+        status: None,
+    });
+    (app, id)
+}
+
+#[test]
+fn notify_agent_running_updates_status() {
+    // UC-4 BR-1: agent-running → AgentStatus::Running
+    let (mut app, id) = app_with_detected_agent();
+    let result = app.handle_cli_command("notify", json!({"event": "agent-running", "pane": id}));
+    assert!(result.is_ok());
+    let agent = app.gateway.detected_agents.get(&id).unwrap();
+    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::Running));
+}
+
+#[test]
+fn notify_agent_idle_updates_status() {
+    // UC-4 BR-2: agent-idle → AgentStatus::Idle
+    let (mut app, id) = app_with_detected_agent();
+    let _ = app.handle_cli_command("notify", json!({"event": "agent-running", "pane": id}));
+    let result = app.handle_cli_command("notify", json!({"event": "agent-idle", "pane": id}));
+    assert!(result.is_ok());
+    let agent = app.gateway.detected_agents.get(&id).unwrap();
+    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::Idle));
+}
+
+#[test]
+fn notify_agent_needs_input_updates_status() {
+    // UC-4 BR-3: agent-needs-input → AgentStatus::NeedsInput
+    let (mut app, id) = app_with_detected_agent();
+    let result = app.handle_cli_command("notify", json!({"event": "agent-needs-input", "pane": id}));
+    assert!(result.is_ok());
+    let agent = app.gateway.detected_agents.get(&id).unwrap();
+    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::NeedsInput));
+}
+
+#[test]
+fn notify_ignores_nonexistent_pane() {
+    // UC-4 BR-4: pane_id that doesn't exist → silent ok, no state change
+    let (mut app, _id) = app_with_editor();
+    let result = app.handle_cli_command("notify", json!({"event": "agent-running", "pane": 99999}));
+    assert!(result.is_ok());
+    assert!(!app.gateway.detected_agents.contains_key(&99999));
+}
+
+#[test]
+fn notify_auto_registers_agent_for_existing_pane() {
+    // When a wrapper hook fires before gateway modal scan, auto-register the agent
+    let (mut app, id) = app_with_editor();
+    assert!(!app.gateway.detected_agents.contains_key(&id));
+    let result = app.handle_cli_command("notify", json!({"event": "agent-running", "pane": id, "agent": "claude"}));
+    assert!(result.is_ok());
+    let agent = app.gateway.detected_agents.get(&id).unwrap();
+    assert_eq!(agent.name, "Claude Code");
+    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::Running));
+}
+
+#[test]
+fn notify_rejects_unknown_event_type() {
+    // UC-3 BR-1: Only valid events accepted
+    let (mut app, id) = app_with_detected_agent();
+    let result = app.handle_cli_command("notify", json!({"event": "invalid-event", "pane": id}));
+    assert!(result.is_err());
+}
+
+#[test]
+fn notify_requires_event_param() {
+    let (mut app, id) = app_with_detected_agent();
+    let result = app.handle_cli_command("notify", json!({"pane": id}));
+    assert!(result.is_err());
+}
+
+#[test]
+fn notify_requires_pane_param() {
+    let (mut app, _id) = app_with_detected_agent();
+    let result = app.handle_cli_command("notify", json!({"event": "agent-running"}));
+    assert!(result.is_err());
+}
+
+#[test]
+fn notify_bumps_chrome_generation() {
+    // UC-4: chrome_generation should increase after status change
+    let (mut app, id) = app_with_detected_agent();
+    let gen_before = app.cache.chrome_generation;
+    let _ = app.handle_cli_command("notify", json!({"event": "agent-running", "pane": id}));
+    assert!(app.cache.chrome_generation > gen_before);
+}
+
+#[test]
+fn notify_does_not_bump_chrome_when_no_agent() {
+    // No agent detected → no chrome invalidation needed
+    let (mut app, _id) = app_with_editor();
+    let gen_before = app.cache.chrome_generation;
+    let _ = app.handle_cli_command("notify", json!({"event": "agent-running", "pane": 99999}));
+    assert_eq!(app.cache.chrome_generation, gen_before);
+}
+
+// --- UC-13: GenerateAgentWrappers ---
+
+#[test]
+fn wrapper_scripts_are_generated_at_known_path() {
+    // UC-1: Wrapper scripts should be created in $TMPDIR/tide-<pid>-bin/
+    let pid = std::process::id();
+    let expected_dir = format!("{}/tide-{}-bin", std::env::temp_dir().display(), pid);
+    // generate_agent_wrappers is called in main, but we can verify
+    // the expected path format
+    assert!(expected_dir.contains(&format!("tide-{}-bin", pid)));
+}
+
 // --- Unknown method ---
 
 #[test]

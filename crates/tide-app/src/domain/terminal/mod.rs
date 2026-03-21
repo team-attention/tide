@@ -45,6 +45,46 @@ pub fn set_gateway_socket_path(path: String) {
     let _ = GATEWAY_SOCKET_PATH.set(path);
 }
 
+/// Directory containing agent wrapper scripts (claude, codex, gemini).
+/// Resolved from the .app bundle's Contents/Resources/bin/ at startup.
+/// Prepended to PATH in every PTY so wrappers shadow the real binaries.
+static AGENT_WRAPPER_DIR: OnceLock<String> = OnceLock::new();
+
+/// Directory containing shell integration files (.zshenv for ZDOTDIR hijack).
+/// Resolved from the .app bundle's Contents/Resources/shell-integration/ at startup.
+static SHELL_INTEGRATION_DIR: OnceLock<String> = OnceLock::new();
+
+/// Discover agent wrapper and shell integration directories from the .app bundle.
+/// Called once from main after the gateway socket is ready.
+/// Looks for `Contents/Resources/bin/` and `Contents/Resources/shell-integration/`
+/// relative to the running binary's location.
+pub fn discover_agent_resources() {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+
+    // exe is at Contents/MacOS/Tide → go up to Contents/, then into Resources/
+    let contents_dir = match exe.parent().and_then(|p| p.parent()) {
+        Some(d) => d,
+        None => return,
+    };
+
+    // cargo-bundle preserves relative paths: resources end up at
+    // Contents/Resources/crates/tide-app/resources/{bin,shell-integration}/
+    let res_base = contents_dir.join("Resources/crates/tide-app/resources");
+
+    let bin_dir = res_base.join("bin");
+    if bin_dir.is_dir() {
+        let _ = AGENT_WRAPPER_DIR.set(bin_dir.to_string_lossy().to_string());
+    }
+
+    let shell_dir = res_base.join("shell-integration");
+    if shell_dir.is_dir() {
+        let _ = SHELL_INTEGRATION_DIR.set(shell_dir.to_string_lossy().to_string());
+    }
+}
+
 /// Global workspace name for TIDE_WORKSPACE env var.
 /// Updated when the active workspace changes.
 static ACTIVE_WORKSPACE_NAME: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
@@ -685,6 +725,25 @@ impl Terminal {
             if let Some(ref name) = *guard {
                 env.insert(String::from("TIDE_WORKSPACE"), name.clone());
             }
+        }
+        // Agent wrappers: ZDOTDIR hijack + __TIDE_WRAPPER_DIR env var.
+        // Direct PATH injection doesn't work on macOS because /etc/zprofile
+        // runs path_helper which reconstructs PATH from scratch.
+        // Instead, ZDOTDIR points to shell-integration/ which has a .zshenv
+        // that registers a precmd hook to prepend the wrapper bin/ to PATH
+        // after all init files have run (including path_helper).
+        if let Some(wrapper_dir) = AGENT_WRAPPER_DIR.get() {
+            if let Ok(exe) = std::env::current_exe() {
+                env.insert(String::from("TIDE_BIN"), exe.to_string_lossy().to_string());
+            }
+            env.insert(String::from("__TIDE_WRAPPER_DIR"), wrapper_dir.clone());
+        }
+        if let Some(shell_dir) = SHELL_INTEGRATION_DIR.get() {
+            // Save user's original ZDOTDIR before overwriting
+            if let Ok(orig) = std::env::var("ZDOTDIR") {
+                env.insert(String::from("__TIDE_ORIG_ZDOTDIR"), orig);
+            }
+            env.insert(String::from("ZDOTDIR"), shell_dir.clone());
         }
         let pty_config = tty::Options {
             shell: Some(tty::Shell::new(shell, vec![String::from("--login")])),

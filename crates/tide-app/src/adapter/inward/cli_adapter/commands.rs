@@ -58,6 +58,8 @@ impl crate::App {
             "enable-integration" => cli_enable_integration(params),
             "remove-integration" => cli_remove_integration(params),
             "list-integrations" => Ok(json!(list_integration_status())),
+            // Phase 5 — Agent lifecycle
+            "notify" => cli_notify(self, params),
             _ => Err(CliError::MethodNotFound(method.to_string())),
         }
     }
@@ -754,6 +756,76 @@ fn serialize_snapshot(snap: &LayoutSnapshot) -> Value {
             })
         }
     }
+}
+
+// ── Phase 5: Agent Lifecycle ──────────────────────────────────────
+
+/// Handle agent lifecycle notifications sent by wrapper hooks.
+/// Updates AgentInfo.status for the given pane and bumps chrome generation.
+fn cli_notify(ctx: &mut (impl AppCorePort + GatewayPort + PaneAccessPort), params: Value) -> Result<Value, CliError> {
+    use crate::state::gateway_status::AgentStatus;
+
+    let event = params.get("event")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| CliError::InvalidParams("event (string) required".into()))?;
+
+    let pane_id = params.get("pane")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| CliError::InvalidParams("pane (u64) required".into()))?;
+
+    let status = match event {
+        "agent-running" => AgentStatus::Running,
+        "agent-idle" => AgentStatus::Idle,
+        "agent-needs-input" => AgentStatus::NeedsInput,
+        _ => return Err(CliError::InvalidParams(format!("unknown event: {event}"))),
+    };
+
+    // Only process notify for panes that actually exist
+    if !ctx.has_pane(pane_id) {
+        return Ok(json!({"ok": true}));
+    }
+
+    // Update status if this pane has a detected agent.
+    // If no agent is registered yet (wrapper hook fired before process scan),
+    // auto-register from the agent name hint or with a generic name.
+    let agent_display_name = params.get("agent")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Agent");
+
+    let agent_name = {
+        let agents = ctx.detected_agents_mut();
+        if let Some(agent) = agents.get_mut(&pane_id) {
+            agent.status = Some(status);
+            Some(agent.name)
+        } else {
+            // Auto-register: wrapper hook arrived before gateway modal scan.
+            // Use a static str for the display name based on the hint.
+            let name: &'static str = match agent_display_name {
+                "claude" | "Claude Code" => "Claude Code",
+                "codex" | "Codex" => "Codex",
+                "gemini" | "Gemini" => "Gemini",
+                _ => "Agent",
+            };
+            agents.insert(pane_id, crate::state::gateway_status::AgentInfo {
+                name,
+                pid: 0, // PID unknown from hook — will be updated on next process scan
+                gateway_connected: true, // wrapper implies MCP is connected
+                status: Some(status),
+            });
+            Some(name)
+        }
+    };
+
+    if let Some(name) = agent_name {
+        ctx.invalidate_chrome();
+        ctx.gateway_notify("agent-status-changed", json!({
+            "pane_id": pane_id,
+            "status": event,
+            "agent": name,
+        }));
+    }
+
+    Ok(json!({"ok": true}))
 }
 
 fn translate_key(key: &str) -> Vec<u8> {
