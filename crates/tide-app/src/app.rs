@@ -190,7 +190,11 @@ impl App {
             dock: state::DockState::new(),
             header_hit_zones: Vec::new(),
             ws: state::WorkspaceManager::new(),
-            settings: state::settings::load_settings(),
+            settings: {
+                let s = state::settings::load_settings();
+                crate::tide_terminal::set_auto_integration(s.auto_integration);
+                s
+            },
             bg: state::BackgroundServices::new(),
             assoc: state::PaneAssociations::new(),
             gateway: state::GatewayStatus::new(),
@@ -645,43 +649,40 @@ impl crate::application::ports::inward::GatewayPort for App {
         self.pending_subscribe_tx.take()
     }
 
-    fn gateway_toggle_modal(&mut self) {
-        if self.modal.gateway_modal.is_some() {
-            self.modal.gateway_modal = None;
-        } else {
-            // Trigger agent detection on modal open (BR-49)
-            let pane_ids: Vec<u64> = self.panes.keys().copied().collect();
-            for id in pane_ids {
-                if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get(&id) {
-                    if let Some(pid) = tp.backend.child_pid() {
-                        if let Some(mut agent) = crate::state::gateway_status::detect_agent(pid) {
-                            agent.gateway_connected = crate::state::gateway_status::is_agent_connected(
-                                agent.pid, &self.gateway.connected_pids
-                            );
-                            self.gateway.detected_agents.insert(id, agent);
-                        } else {
-                            self.gateway.detected_agents.remove(&id);
-                        }
-                    }
-                }
-            }
-            self.modal.gateway_modal = Some(crate::domain::modal::GatewayModalState::new(Vec::new()));
-        }
-    }
-
-    fn gateway_enable_unconnected_agents(&mut self) {
-        let agents: Vec<_> = self.gateway.detected_agents.values()
-            .filter(|a| !a.gateway_connected)
-            .filter_map(|a| crate::state::gateway_status::agent_tool_name(a.name))
-            .map(|s| s.to_string())
-            .collect();
-        for tool in &agents {
-            let _ = crate::adapter::inward::cli_adapter::commands::enable_integration(tool);
-        }
+    fn toggle_auto_integration(&mut self) {
+        self.settings.auto_integration = !self.settings.auto_integration;
+        crate::tide_terminal::set_auto_integration(self.settings.auto_integration);
+        self.ports.persistence.save_settings(&self.settings);
+        self.cache.chrome_generation += 1;
     }
 
     fn detected_agents_mut(&mut self) -> &mut std::collections::HashMap<u64, crate::state::gateway_status::AgentInfo> {
         &mut self.gateway.detected_agents
+    }
+
+    fn handle_terminal_notification(&mut self, pane_id: u64, message: &str) {
+        let status = match message {
+            "tide:agent-running" => Some(crate::state::gateway_status::AgentStatus::Running),
+            "tide:agent-idle" => Some(crate::state::gateway_status::AgentStatus::Idle),
+            "tide:agent-needs-input" => Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+            s if s.starts_with("tide:") => {
+                log::debug!("Unknown tide notification: {}", s);
+                return;
+            }
+            _ => return, // Non-tide messages: silently ignore
+        };
+        if let Some(agent) = self.gateway.detected_agents.get_mut(&pane_id) {
+            agent.status = status;
+        } else if self.panes.contains_key(&pane_id) {
+            // Create synthetic AgentInfo for unknown agent
+            self.gateway.detected_agents.insert(pane_id, crate::state::gateway_status::AgentInfo {
+                name: "Unknown",
+                pid: 0,
+                gateway_connected: false,
+                status,
+            });
+        }
+        self.cache.chrome_generation += 1;
     }
 }
 

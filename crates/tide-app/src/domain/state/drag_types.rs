@@ -40,7 +40,7 @@ pub(crate) enum HoverTarget {
     TitlebarSwap,
     TitlebarSettings,
     TitlebarTheme,
-    TitlebarGateway,
+    TitlebarIntegration,
     TitlebarWorkspace,
     TitlebarFileTree,
     TitlebarDock,
@@ -68,7 +68,7 @@ impl HoverTarget {
             HoverTarget::TitlebarSwap
                 | HoverTarget::TitlebarSettings
                 | HoverTarget::TitlebarTheme
-                | HoverTarget::TitlebarGateway
+                | HoverTarget::TitlebarIntegration
                 | HoverTarget::TitlebarWorkspace
                 | HoverTarget::TitlebarFileTree
                 | HoverTarget::TitlebarDock

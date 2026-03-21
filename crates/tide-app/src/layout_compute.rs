@@ -21,7 +21,7 @@ impl crate::application::ports::inward::LayoutPort for App {
             | Some(HoverTarget::TitlebarSwap)
             | Some(HoverTarget::TitlebarSettings)
             | Some(HoverTarget::TitlebarTheme)
-            | Some(HoverTarget::TitlebarGateway)
+            | Some(HoverTarget::TitlebarIntegration)
             | Some(HoverTarget::TitlebarFileTree)
             | Some(HoverTarget::TitlebarWorkspace)
             | Some(HoverTarget::TitlebarDock)
@@ -729,7 +729,6 @@ impl crate::application::ports::inward::LayoutPort for App {
                 || self.modal.config_page.is_some()
                 || self.modal.save_confirm.is_some()
                 || self.modal.branch_cleanup.is_some()
-                || self.modal.gateway_modal.is_some()
                 || matches!(self.interaction.pane_drag, crate::state::drag_types::PaneDragState::Dragging { .. });
 
             if let Some(vr) = visual_rect {
