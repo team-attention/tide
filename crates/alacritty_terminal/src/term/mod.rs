@@ -2218,6 +2218,10 @@ impl<T: EventListener> Handler for Term<T> {
     }
 
     #[inline]
+    fn osc_notification(&mut self, message: &str) {
+        self.event_proxy.send_event(Event::Notification(message.to_string()));
+    }
+
     fn set_title(&mut self, title: Option<String>) {
         trace!("Setting title to '{title:?}'");
 
