@@ -139,14 +139,18 @@ pub(crate) fn handle_scroll(
                 }
                 Some(PaneKind::Diff(dp)) => {
                     let delta = (editor_dx.abs() * 3.0).ceil() as usize;
-                    let vis_cols = {
-                        (rect.width / cs.width).floor() as usize
-                    };
-                    let max_h = dp.max_line_len().saturating_sub(vis_cols.saturating_sub(4));
-                    if editor_dx > 0.0 {
-                        dp.h_scroll = dp.h_scroll.saturating_sub(delta);
-                    } else {
-                        dp.h_scroll = (dp.h_scroll + delta).min(max_h);
+                    let vis_cols = (rect.width / cs.width).floor() as usize;
+                    let content_y = rect.y + scroll_top_off;
+                    let visual_row = ((cursor_pos.y - content_y) / cs.height).floor().max(0.0) as usize;
+                    if let Some(fi) = dp.file_index_at_row(visual_row) {
+                        let max_h = dp.max_line_len().saturating_sub(vis_cols.saturating_sub(4));
+                        let cur = dp.h_scroll.get(&fi).copied().unwrap_or(0);
+                        let new_val = if editor_dx > 0.0 {
+                            cur.saturating_sub(delta)
+                        } else {
+                            (cur + delta).min(max_h)
+                        };
+                        dp.h_scroll.insert(fi, new_val);
                     }
                     dp.generation = dp.generation.wrapping_add(1);
                 }

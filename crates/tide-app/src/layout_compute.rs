@@ -34,6 +34,7 @@ impl crate::application::ports::inward::LayoutPort for App {
             | Some(HoverTarget::WorkspaceSidebarNewBtn) => CursorIcon::Pointer,
             Some(HoverTarget::EditorScrollbar(_)) => CursorIcon::Default,
             Some(HoverTarget::PaneContent) => CursorIcon::IBeam,
+            Some(HoverTarget::DiffFileHeader) => CursorIcon::Pointer,
             Some(HoverTarget::SidebarHandle) => CursorIcon::Grab,
             Some(HoverTarget::FileTreeBorder) | Some(HoverTarget::WsSidebarBorder) | Some(HoverTarget::DockBorder) => CursorIcon::ColResize,
             Some(HoverTarget::SplitBorder(SplitDirection::Horizontal)) => CursorIcon::ColResize,

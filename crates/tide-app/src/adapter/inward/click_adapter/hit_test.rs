@@ -308,7 +308,15 @@ pub(crate) fn compute_hover_target(
         );
         if content.contains(pos) {
             match ctx.pane(id) {
-                Some(PaneKind::Terminal(_)) | Some(PaneKind::Editor(_)) | Some(PaneKind::Diff(_)) => {
+                Some(PaneKind::Terminal(_)) | Some(PaneKind::Editor(_)) => {
+                    return Some(HoverTarget::PaneContent);
+                }
+                Some(PaneKind::Diff(dp)) => {
+                    let cell_size = ctx.cell_size();
+                    let visual_row = ((pos.y - content.y) / cell_size.height).floor() as usize;
+                    if dp.is_file_header_row(visual_row) {
+                        return Some(HoverTarget::DiffFileHeader);
+                    }
                     return Some(HoverTarget::PaneContent);
                 }
                 _ => {}

@@ -11,6 +11,10 @@ pub(crate) struct GitPollCwdResult {
     pub worktree_count: usize,
     pub repo_root: Option<PathBuf>,
     pub status_entries: Vec<crate::tide_terminal::git::StatusEntry>,
+    /// Pre-computed diff file entries for open DiffPanes.
+    pub diff_files: Option<Vec<crate::pane::diff::DiffFileEntry>>,
+    /// Pre-computed diff line cache (keyed by file index) for open DiffPanes.
+    pub diff_cache: Option<HashMap<usize, Vec<crate::pane::diff::DiffLine>>>,
 }
 
 pub(crate) struct BackgroundServices {

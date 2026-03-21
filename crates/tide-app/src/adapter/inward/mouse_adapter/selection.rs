@@ -43,13 +43,37 @@ pub(super) fn start_text_selection(ctx: &mut (impl AppCorePort + InputStatePort 
     let editor_cell = {
         let cs = cell_size_cached;
         if let Some((_, rect)) = rects.iter().find(|(id, _)| *id == pid) {
-            let gutter = 5.0 * cs.width;
+            let gutter = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cs.width;
             let cx = rect.x + PANE_PADDING + gutter;
             let cy = rect.y + content_top_offset;
             let rc = ((pos.x - cx) / cs.width).floor() as isize;
             let rr = ((pos.y - cy) / cs.height).floor() as isize;
             if rr >= 0 && rc >= 0 {
                 Some((rr as usize, rc as usize))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+
+    // Diff pane cell: virtual row (scroll + visual), col
+    let diff_cell = {
+        let cs = cell_size_cached;
+        if let Some((_, rect)) = rects.iter().find(|(id, _)| *id == pid) {
+            let cx = rect.x + PANE_PADDING;
+            let cy = rect.y + content_top_offset;
+            let rc = ((pos.x - cx) / cs.width).floor() as isize;
+            let rr = ((pos.y - cy) / cs.height).floor() as isize;
+            if rr >= 0 && rc >= 0 {
+                // Convert visual row to virtual row using scroll offset
+                if let Some(PaneKind::Diff(dp)) = ctx.pane(pid) {
+                    let virtual_row = dp.scroll as usize + rr as usize;
+                    Some((virtual_row, rc as usize))
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -113,6 +137,12 @@ pub(super) fn start_text_selection(ctx: &mut (impl AppCorePort + InputStatePort 
                         sel.end = (line, col);
                         return true;
                     }
+                }
+            }
+            Some(PaneKind::Diff(dp)) => {
+                if let (Some(ref mut sel), Some((vr, vc))) = (&mut dp.selection, diff_cell) {
+                    sel.end = (vr, vc);
+                    return true;
                 }
             }
             _ => {}
@@ -183,7 +213,14 @@ pub(super) fn start_text_selection(ctx: &mut (impl AppCorePort + InputStatePort 
                 });
             }
         }
-        Some(PaneKind::Diff(_)) => {}
+        Some(PaneKind::Diff(dp)) => {
+            if let Some((vr, vc)) = diff_cell {
+                dp.selection = Some(Selection {
+                    anchor: (vr, vc),
+                    end: (vr, vc),
+                });
+            }
+        }
         Some(PaneKind::Launcher(_)) => {}
         None => {}
     }
@@ -272,7 +309,18 @@ pub(super) fn handle_selection_drag(ctx: &mut (impl AppCorePort + PaneAccessPort
                     );
                 }
             }
-            Some(PaneKind::Diff(_)) => {}
+            Some(PaneKind::Diff(dp)) => {
+                let cx = rect.x + PANE_PADDING;
+                let cy = rect.y + drag_top_offset;
+                let rc = ((pos.x - cx) / cell_size.width).floor() as isize;
+                let rr = ((pos.y - cy) / cell_size.height).floor() as isize;
+                if rr >= 0 && rc >= 0 {
+                    let virtual_row = dp.scroll as usize + rr as usize;
+                    if let Some(ref mut sel) = dp.selection {
+                        sel.end = (virtual_row, rc as usize);
+                    }
+                }
+            }
             Some(PaneKind::Launcher(_)) => {}
             None => {}
         }

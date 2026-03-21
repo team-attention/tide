@@ -252,6 +252,37 @@ pub(crate) fn handle_mouse_down(ctx: &mut impl MousePorts, button: MouseButton, 
         }
     }
 
+    // Diff pane file header click (toggle expand/collapse) — only on header rows
+    if button == MouseButton::Left {
+        let pos = ctx.last_cursor_pos();
+        let cell_size = ctx.cell_size();
+        let content_top = TAB_BAR_HEIGHT;
+        let rects: Vec<_> = ctx.visual_pane_rects().to_vec();
+        for &(id, rect) in &rects {
+            let content = crate::tide_core::Rect::new(
+                rect.x + PANE_PADDING,
+                rect.y + content_top,
+                rect.width - 2.0 * PANE_PADDING,
+                rect.height - content_top - PANE_PADDING,
+            );
+            if content.contains(pos) {
+                if let Some(crate::pane::PaneKind::Diff(dp)) = ctx.pane_mut(id) {
+                    let visual_row = ((pos.y - content.y) / cell_size.height).floor() as usize;
+                    if dp.is_file_header_row(visual_row) {
+                        dp.click_row(visual_row);
+                        ctx.focus_pane(id);
+                        ctx.set_focus_area(crate::state::FocusArea::Dock);
+                        ctx.request_redraw();
+                        return;
+                    }
+                    // Non-header: focus the pane but let text selection handle the rest
+                    ctx.focus_pane(id);
+                    ctx.set_focus_area(crate::state::FocusArea::Dock);
+                }
+            }
+        }
+    }
+
     // Config page
     if button == MouseButton::Left && ctx.modal().config_page.is_some() {
         crate::adapter::inward::click_adapter::pane::handle_config_page_click(ctx, ctx.last_cursor_pos());
