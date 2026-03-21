@@ -169,8 +169,8 @@ pub(crate) fn render_hover(
                 crate::state::drag_types::HoverTarget::TitlebarTheme => {
                     // Hover is rendered via chrome.rs (bg on theme toggle icon)
                 }
-                crate::state::drag_types::HoverTarget::TitlebarGateway => {
-                    // Hover is rendered via chrome.rs (bg on gateway badge)
+                crate::state::drag_types::HoverTarget::TitlebarIntegration => {
+                    // Hover is rendered via chrome.rs (bg on integration toggle)
                 }
                 crate::state::drag_types::HoverTarget::WorkspaceSidebarItem(_)
                 | crate::state::drag_types::HoverTarget::WorkspaceSidebarNewBtn => {

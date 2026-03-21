@@ -630,36 +630,6 @@ pub(crate) struct FileTreeRenameState {
 // ModalStack
 // ──────────────────────────────────────────────
 
-/// A clickable button in the gateway modal.
-#[derive(Clone)]
-pub(crate) struct GatewayButton {
-    pub rect: crate::tide_core::Rect,
-    pub action: GatewayButtonAction,
-}
-
-#[derive(Clone)]
-pub(crate) enum GatewayButtonAction {
-    EnableIntegration(String),
-    RemoveIntegration(String),
-}
-
-/// Gateway status modal state (UC-11).
-/// Shows agent status, integrations, render panes, and socket info.
-pub(crate) struct GatewayModalState {
-    /// Active section (0=Agents, 1=Integrations, 2=RenderPanes, 3=SocketInfo).
-    pub active_section: usize,
-    /// Cached integration status list.
-    pub integrations: Vec<serde_json::Value>,
-    /// Clickable buttons rendered in the modal (populated during rendering).
-    pub buttons: Vec<GatewayButton>,
-}
-
-impl GatewayModalState {
-    pub fn new(integrations: Vec<serde_json::Value>) -> Self {
-        Self { active_section: 0, integrations, buttons: Vec::new() }
-    }
-}
-
 pub(crate) struct ModalStack {
     pub file_finder: Option<FileFinderState>,
     pub git_switcher: Option<GitSwitcherState>,
@@ -669,7 +639,6 @@ pub(crate) struct ModalStack {
     pub context_menu: Option<ContextMenuState>,
     pub file_tree_rename: Option<FileTreeRenameState>,
     pub branch_cleanup: Option<BranchCleanupState>,
-    pub gateway_modal: Option<GatewayModalState>,
 }
 
 impl ModalStack {
@@ -683,7 +652,6 @@ impl ModalStack {
             context_menu: None,
             file_tree_rename: None,
             branch_cleanup: None,
-            gateway_modal: None,
         }
     }
 
@@ -698,7 +666,6 @@ impl ModalStack {
             || self.context_menu.is_some()
             || self.file_tree_rename.is_some()
             || self.branch_cleanup.is_some()
-            || self.gateway_modal.is_some()
     }
 
     /// Clear save_confirm and return whether it was set.

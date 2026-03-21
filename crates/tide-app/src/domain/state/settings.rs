@@ -11,13 +11,18 @@ pub struct TideSettings {
     pub worktree: WorktreeSettings,
     #[serde(default)]
     pub keybindings: Vec<KeybindingOverride>,
+    #[serde(default = "default_true")]
+    pub auto_integration: bool,
 }
+
+fn default_true() -> bool { true }
 
 impl Default for TideSettings {
     fn default() -> Self {
         Self {
             worktree: WorktreeSettings::default(),
             keybindings: Vec::new(),
+            auto_integration: true,
         }
     }
 }

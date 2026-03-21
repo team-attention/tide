@@ -358,7 +358,7 @@ impl App {
             // The shell starts loading ~/.zshrc in parallel with GPU initialization,
             // so the prompt appears sooner after launch.
             let early_terminal =
-                self.ports.terminal_factory.pre_spawn_terminal(80, 24, self.window.dark_mode).ok();
+                self.ports.terminal_factory.pre_spawn_terminal(80, 24, self.window.dark_mode, Some(1)).ok();
 
             self.init_gpu(window); // Shell is loading in parallel
 
@@ -668,6 +668,23 @@ impl App {
 
         if had_pty_output {
             self.timing.badge_check_at = Some(self.ports.clock.now() + Duration::from_millis(150));
+        }
+
+        // Drain OSC 9 notifications from terminals
+        {
+            let terminal_ids: Vec<u64> = self.panes.iter()
+                .filter_map(|(&id, pk)| {
+                    if matches!(pk, PaneKind::Terminal(_)) { Some(id) } else { None }
+                })
+                .collect();
+            for id in terminal_ids {
+                if let Some(PaneKind::Terminal(tp)) = self.panes.get(&id) {
+                    let notifications = tp.backend.drain_notifications();
+                    for msg in notifications {
+                        self.handle_terminal_notification(id, &msg);
+                    }
+                }
+            }
         }
 
         // File watcher

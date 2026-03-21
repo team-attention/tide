@@ -61,6 +61,9 @@ pub enum Event {
     /// This allows embedders to implement custom private modes like Mode 2031
     /// (dark/light color-scheme notifications).
     PrivateModeUpdate(u16, bool),
+
+    /// Terminal notification (OSC 9).
+    Notification(String),
 }
 
 impl Debug for Event {
@@ -82,6 +85,7 @@ impl Debug for Event {
             Event::PrivateModeUpdate(mode, enabled) => {
                 write!(f, "PrivateModeUpdate({mode}, {enabled})")
             },
+            Event::Notification(msg) => write!(f, "Notification({msg})"),
         }
     }
 }
