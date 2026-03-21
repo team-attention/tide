@@ -85,6 +85,16 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Cell Size** | `Size` | Pixel dimensions of one terminal character cell (font-dependent). |
 | **Pinned Pane** | concept | A dock pane marked as pinned. Visible from all terminals within the workspace, displayed in a dedicated pinned TabGroup on the left side of the dock when viewed from a non-owning terminal. |
 
+## Architecture Concepts
+
+| Term | Description |
+|------|-------------|
+| **Inward Adapter** | A driving adapter that translates external input (keyboard, mouse, CLI, etc.) into Port method calls. Lives in `adapter/inward/`. Must NOT directly mutate domain state — only call Inward Port methods. |
+| **Inward Port** | A trait defining what the application can do. Lives in `application/ports/inward/`. Implemented by App via services. |
+| **Outward Port** | A trait defining what the application needs from the outside world. Lives in `application/ports/outward/`. Implemented by outward adapters. |
+| **Outward Adapter** | A driven adapter that implements Outward Port traits. Lives in `adapter/outward/`. Examples: GPU renderer, platform layer, file system. |
+| **Port Boundary** | The compile-time enforcement point where an inward adapter receives port trait references instead of `&mut App`, preventing direct domain state access. |
+
 ## Infrastructure Concepts
 
 | Term | Description |

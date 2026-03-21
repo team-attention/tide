@@ -85,7 +85,7 @@ pub struct TerminalPane {
 
 impl TerminalPane {
     pub fn with_cwd(id: PaneId, cols: u16, rows: u16, cwd: Option<std::path::PathBuf>, dark_mode: bool) -> Result<Self, Box<dyn std::error::Error>> {
-        let backend = Terminal::with_cwd(cols, rows, cwd, dark_mode)?;
+        let backend = Terminal::with_cwd(cols, rows, cwd, dark_mode, Some(id))?;
         Ok(Self {
             id, backend, selection: None, search: None, cursor_suppress: 3,
             context: TerminalContext::default(),

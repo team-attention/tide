@@ -296,7 +296,7 @@ fn drag_into_pinned_group_pins_pane() {
 
     assert!(!app.is_pane_pinned(e1));
 
-    app.handle_drop(e1, DropDestination::PinnedGroup);
+    crate::adapter::inward::click_adapter::pane::handle_drop(&mut app, e1, DropDestination::PinnedGroup);
 
     assert!(app.is_pane_pinned(e1), "pane should be pinned after drop");
 }
@@ -319,7 +319,7 @@ fn drag_out_of_pinned_group_unpins_pane() {
     assert!(app.is_pane_pinned(e1));
 
     // Drop onto dock root = unpin
-    app.handle_drop(e1, DropDestination::DockRoot(crate::tide_core::DropZone::Right));
+    crate::adapter::inward::click_adapter::pane::handle_drop(&mut app, e1, DropDestination::DockRoot(crate::tide_core::DropZone::Right));
 
     assert!(!app.is_pane_pinned(e1), "pane should be unpinned after drop out");
 }

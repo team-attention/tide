@@ -32,7 +32,7 @@ fn cmd() -> Modifiers {
 fn plain_text_keys_route_to_focused_pane() {
     // UC-1 BR-1: Plain text keys route to focused Pane
     let (mut app, id) = app_with_editor();
-    app.handle_key_down(Key::Char('a'), Modifiers::default(), Some("a".to_string()));
+    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,Key::Char('a'), Modifiers::default(), Some("a".to_string()));
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
         assert!(pane.editor.is_modified());
     }
@@ -43,7 +43,7 @@ fn config_page_intercepts_all_keyboard_input() {
     // UC-1 BR-3: Config page intercepts ALL keyboard input
     let (mut app, id) = app_with_editor();
     app.modal.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
-    app.handle_key_down(Key::Char('x'), Modifiers::default(), Some("x".to_string()));
+    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,Key::Char('x'), Modifiers::default(), Some("x".to_string()));
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
         assert!(!pane.editor.is_modified());
     }
@@ -54,7 +54,7 @@ fn escape_during_config_page_closes_config_page() {
     // UC-1 BR-3: Config page intercepts ALL keyboard input (ESC closes it)
     let (mut app, _) = app_with_editor();
     app.modal.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
-    app.handle_key_down(Key::Escape, Modifiers::default(), None);
+    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,Key::Escape, Modifiers::default(), None);
     assert!(app.modal.config_page.is_none());
 }
 
@@ -63,7 +63,7 @@ fn file_finder_intercepts_keys_before_pane() {
     // UC-1 BR-4: File finder intercepts keys before Pane
     let (mut app, id) = app_with_editor();
     app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
-    app.handle_key_down(Key::Char('a'), Modifiers::default(), Some("a".to_string()));
+    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,Key::Char('a'), Modifiers::default(), Some("a".to_string()));
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
         assert!(!pane.editor.is_modified());
     }
@@ -77,7 +77,7 @@ fn escape_during_pane_drag_cancels_the_drag() {
         source_pane: 1,
         press_pos: crate::tide_core::Vec2::new(0.0, 0.0),
     };
-    app.handle_key_down(Key::Escape, Modifiers::default(), None);
+    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,Key::Escape, Modifiers::default(), None);
     assert!(matches!(app.interaction.pane_drag, crate::state::drag_types::PaneDragState::Idle));
 }
 
@@ -88,7 +88,7 @@ fn focus_area_file_tree_consumes_arrow_keys() {
     app.ft.visible = true;
     app.focus.focus_area = FocusArea::FileTree;
     let _gen_before = app.cache.chrome_generation;
-    app.handle_key_down(Key::Down, Modifiers::default(), None);
+    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,Key::Down, Modifiers::default(), None);
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn global_action_keys_work_when_focus_area_is_file_tree() {
     let (mut app, _) = app_with_editor();
     app.ft.visible = true;
     app.focus.focus_area = FocusArea::FileTree;
-    app.handle_key_down(Key::Char('e'), cmd(), Some("e".to_string()));
+    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,Key::Char('e'), cmd(), Some("e".to_string()));
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn save_confirm_blocks_all_keys_except_escape() {
     // UC-1 BR-5: Save confirm blocks all keys except ESC/Y/N
     let (mut app, id) = app_with_editor();
     app.modal.save_confirm = Some(crate::SaveConfirmState { pane_id: id });
-    app.handle_key_down(Key::Char('x'), Modifiers::default(), Some("x".to_string()));
+    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,Key::Char('x'), Modifiers::default(), Some("x".to_string()));
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
         assert!(!pane.editor.is_modified());
     }
@@ -121,6 +121,6 @@ fn branch_cleanup_enter_means_keep_branch() {
         worktree_path: None,
         cwd: PathBuf::from("/tmp"),
     });
-    app.handle_key_down(Key::Escape, Modifiers::default(), None);
+    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,Key::Escape, Modifiers::default(), None);
     assert!(app.modal.branch_cleanup.is_none());
 }

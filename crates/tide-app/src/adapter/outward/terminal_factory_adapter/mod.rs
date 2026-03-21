@@ -17,7 +17,7 @@ impl TerminalFactoryPort for RealTerminalFactory {
     }
 
     fn pre_spawn_terminal(&self, cols: u16, rows: u16, dark_mode: bool) -> Result<crate::tide_terminal::Terminal, BoxErr> {
-        crate::tide_terminal::Terminal::with_cwd(cols, rows, None, dark_mode)
+        crate::tide_terminal::Terminal::with_cwd(cols, rows, None, dark_mode, None)
     }
 }
 
