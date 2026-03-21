@@ -36,6 +36,15 @@ use crate::tide_core::{
 /// Number of scrollback history lines to keep.
 const SCROLLBACK_LINES: usize = 10_000;
 
+/// Whether agent auto-integration is enabled (wrapper PATH injection + shell integration).
+/// Updated at runtime when the user toggles the setting.
+static AUTO_INTEGRATION_ENABLED: AtomicBool = AtomicBool::new(true);
+
+/// Set the auto-integration enabled flag. Called when the user toggles the setting.
+pub fn set_auto_integration(enabled: bool) {
+    AUTO_INTEGRATION_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
 /// Global socket path for the Agent Gateway. Set once on app startup.
 /// Every PTY spawned after this is set will export TIDE_SOCKET.
 static GATEWAY_SOCKET_PATH: OnceLock<String> = OnceLock::new();
@@ -151,6 +160,8 @@ struct TermEventListener {
     dark_mode: Arc<AtomicBool>,
     /// Mode 2031: app opted in to dark/light color-scheme notifications.
     mode_2031: Arc<AtomicBool>,
+    /// OSC 9 notification messages queued for main thread processing.
+    notifications: Arc<Mutex<Vec<String>>>,
 }
 
 impl TermEventListener {
@@ -231,6 +242,12 @@ impl EventListener for TermEventListener {
                     }
                 }
                 return; // No need to mark dirty or wake sync thread
+            }
+            Event::Notification(msg) => {
+                if let Ok(mut queue) = self.notifications.lock() {
+                    queue.push(msg.clone());
+                }
+                // Mark dirty + wake so main thread processes the notification
             }
             Event::PrivateModeUpdate(2031, enabled) => {
                 // Mode 2031: app opts in/out of color-scheme change notifications.
@@ -659,6 +676,8 @@ pub struct Terminal {
     sync_shutdown: Arc<AtomicBool>,
     /// Sync thread join handle (joined on Drop)
     _sync_join: Option<std::thread::JoinHandle<()>>,
+    /// OSC 9 notification queue (shared with TermEventListener on PTY thread)
+    notifications: Arc<Mutex<Vec<String>>>,
 }
 
 impl Terminal {
@@ -687,12 +706,14 @@ impl Terminal {
         let sync_thread_handle: Arc<Mutex<Option<std::thread::Thread>>> = Arc::new(Mutex::new(None));
         let dark_mode_flag = Arc::new(AtomicBool::new(dark_mode));
         let mode_2031_flag = Arc::new(AtomicBool::new(false));
+        let notifications: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let listener = TermEventListener {
             dirty: dirty.clone(),
             pty_writer: pty_writer.clone(),
             sync_thread: sync_thread_handle.clone(),
             dark_mode: dark_mode_flag.clone(),
             mode_2031: mode_2031_flag.clone(),
+            notifications: notifications.clone(),
         };
 
         let config = TermConfig::default();
@@ -726,24 +747,28 @@ impl Terminal {
                 env.insert(String::from("TIDE_WORKSPACE"), name.clone());
             }
         }
+        // TIDE_BIN is always set (supports manual `tide` CLI usage)
+        if let Ok(exe) = std::env::current_exe() {
+            env.insert(String::from("TIDE_BIN"), exe.to_string_lossy().to_string());
+        }
         // Agent wrappers: ZDOTDIR hijack + __TIDE_WRAPPER_DIR env var.
+        // Only injected when auto-integration is enabled.
         // Direct PATH injection doesn't work on macOS because /etc/zprofile
         // runs path_helper which reconstructs PATH from scratch.
         // Instead, ZDOTDIR points to shell-integration/ which has a .zshenv
         // that registers a precmd hook to prepend the wrapper bin/ to PATH
         // after all init files have run (including path_helper).
-        if let Some(wrapper_dir) = AGENT_WRAPPER_DIR.get() {
-            if let Ok(exe) = std::env::current_exe() {
-                env.insert(String::from("TIDE_BIN"), exe.to_string_lossy().to_string());
+        if AUTO_INTEGRATION_ENABLED.load(Ordering::Relaxed) {
+            if let Some(wrapper_dir) = AGENT_WRAPPER_DIR.get() {
+                env.insert(String::from("__TIDE_WRAPPER_DIR"), wrapper_dir.clone());
             }
-            env.insert(String::from("__TIDE_WRAPPER_DIR"), wrapper_dir.clone());
-        }
-        if let Some(shell_dir) = SHELL_INTEGRATION_DIR.get() {
-            // Save user's original ZDOTDIR before overwriting
-            if let Ok(orig) = std::env::var("ZDOTDIR") {
-                env.insert(String::from("__TIDE_ORIG_ZDOTDIR"), orig);
+            if let Some(shell_dir) = SHELL_INTEGRATION_DIR.get() {
+                // Save user's original ZDOTDIR before overwriting
+                if let Ok(orig) = std::env::var("ZDOTDIR") {
+                    env.insert(String::from("__TIDE_ORIG_ZDOTDIR"), orig);
+                }
+                env.insert(String::from("ZDOTDIR"), shell_dir.clone());
             }
-            env.insert(String::from("ZDOTDIR"), shell_dir.clone());
         }
         let pty_config = tty::Options {
             shell: Some(tty::Shell::new(shell, vec![String::from("--login")])),
@@ -839,7 +864,18 @@ impl Terminal {
             sync_thread_handle,
             sync_shutdown,
             _sync_join: Some(sync_join),
+            notifications,
         })
+    }
+
+    /// Drain pending OSC 9 notifications from the PTY thread.
+    /// Returns an empty Vec if none are pending.
+    pub fn drain_notifications(&self) -> Vec<String> {
+        if let Ok(mut queue) = self.notifications.lock() {
+            std::mem::take(&mut *queue)
+        } else {
+            Vec::new()
+        }
     }
 
     /// Detect the user's preferred shell
