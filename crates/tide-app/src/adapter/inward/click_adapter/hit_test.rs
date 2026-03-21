@@ -22,7 +22,11 @@ pub(crate) fn pixel_to_cell(
     let content_top = TAB_BAR_HEIGHT;
     let inner_x = visual_rect.x + PANE_PADDING;
     let inner_y = visual_rect.y + content_top;
-    let col = ((pos.x - inner_x) / cell_size.width).floor() as isize;
+    // Center offset matching render_grid: grid is centered within the content area
+    let inner_w = visual_rect.width - 2.0 * PANE_PADDING;
+    let max_cols = (inner_w / cell_size.width).floor();
+    let extra_x = (inner_w - max_cols * cell_size.width) / 2.0;
+    let col = ((pos.x - inner_x - extra_x) / cell_size.width).floor() as isize;
     let row = ((pos.y - inner_y) / cell_size.height).floor() as isize;
     if row >= 0 && col >= 0 {
         Some((row as usize, col as usize))
@@ -289,6 +293,25 @@ pub(crate) fn compute_hover_target(
                         return Some(HoverTarget::EditorScrollbar(id));
                     }
                 }
+            }
+        }
+    }
+
+    // Pane content area — show text cursor for terminal, editor, diff panes
+    let content_top = TAB_BAR_HEIGHT;
+    for &(id, rect) in ctx.visual_pane_rects() {
+        let content = crate::tide_core::Rect::new(
+            rect.x + PANE_PADDING,
+            rect.y + content_top,
+            rect.width - 2.0 * PANE_PADDING,
+            rect.height - content_top - PANE_PADDING,
+        );
+        if content.contains(pos) {
+            match ctx.pane(id) {
+                Some(PaneKind::Terminal(_)) | Some(PaneKind::Editor(_)) | Some(PaneKind::Diff(_)) => {
+                    return Some(HoverTarget::PaneContent);
+                }
+                _ => {}
             }
         }
     }

@@ -176,6 +176,9 @@ pub(crate) fn render_hover(
                 | crate::state::drag_types::HoverTarget::WorkspaceSidebarNewBtn => {
                     // Hover is rendered via chrome.rs (workspace sidebar)
                 }
+                crate::state::drag_types::HoverTarget::PaneContent => {
+                    // No visual overlay — only affects cursor icon (IBeam)
+                }
             }
         }
     }

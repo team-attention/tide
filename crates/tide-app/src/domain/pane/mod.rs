@@ -145,10 +145,10 @@ impl TerminalPane {
                     }
                 }
             }
+            // Trim trailing spaces from every line (including the last)
+            let trimmed = result.trim_end_matches(' ');
+            result.truncate(trimmed.len());
             if row != end.0 {
-                // Trim trailing spaces from line before adding newline
-                let trimmed = result.trim_end_matches(' ');
-                result.truncate(trimmed.len());
                 result.push('\n');
             }
         }
