@@ -371,6 +371,22 @@ pub(super) fn render_titlebar_and_sidebar(
                 }
             }
 
+            // UC-6: Agent notification dot for inactive workspaces
+            if !is_active {
+                let has_notification = app.ws.workspace_extras.get(i)
+                    .map_or(false, |e| e.has_agent_notification);
+                if has_notification {
+                    let dot_size = 6.0_f32;
+                    let dot_x = item_rect.x + item_rect.width - WS_SIDEBAR_ITEM_PAD_H - dot_size;
+                    let dot_y = item_rect.y + (item_rect.height - dot_size) / 2.0;
+                    let orange = crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0);
+                    renderer.draw_chrome_rounded_rect(
+                        Rect::new(dot_x, dot_y, dot_size, dot_size),
+                        orange, dot_size / 2.0,
+                    );
+                }
+            }
+
             // Draw drag drop indicator line before this item (gap == i)
             if let Some((src, press_y, gap)) = app.ws.drag {
                 let dragging = (app.window.last_cursor_pos.y - press_y).abs() > crate::theme::DRAG_THRESHOLD;

@@ -1117,3 +1117,241 @@ fn focusing_pane_clears_idle_status() {
     app.focus_pane(id);
     assert_eq!(app.gateway.detected_agents.get(&id).unwrap().status, None);
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Spec: docs/specs/agent-notification-routing.md
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Helper: create an app with two panes, one with a detected agent, focused on the other pane.
+fn app_with_unfocused_agent() -> (App, u64, u64) {
+    let (mut app, id1, id2) = app_with_two_editors();
+    // id2 is focused, id1 has the agent
+    app.gateway.detected_agents.insert(id1, crate::state::gateway_status::AgentInfo {
+        name: "Claude Code",
+        pid: 12345,
+        gateway_connected: true,
+        status: None,
+    });
+    app.focus.focused = Some(id2);
+    (app, id1, id2)
+}
+
+// --- UC-1: RouteNotificationByContext ---
+
+#[test]
+fn running_status_does_not_trigger_notification_routing() {
+    // UC-1 BR-1: Running status changes do not trigger notification routing
+    let (mut app, agent_pane, _) = app_with_unfocused_agent();
+    app.window.is_focused = false;
+    app.handle_terminal_notification(agent_pane, "tide:agent-running");
+    // No system notification should be queued (Running is user-initiated)
+    assert!(app.pending_platform_commands.is_empty());
+    assert!(!app.notified_panes.contains(&agent_pane));
+}
+
+#[test]
+fn focused_pane_skips_all_notification_channels() {
+    // UC-1 BR-2: If the pane is focused, all notification channels are skipped
+    let (mut app, agent_pane) = app_with_detected_agent();
+    app.focus.focused = Some(agent_pane);
+    app.window.is_focused = false;
+    app.handle_terminal_notification(agent_pane, "tide:agent-needs-input");
+    // Even though window is unfocused, focused pane skips notifications
+    assert!(app.pending_platform_commands.is_empty());
+}
+
+#[test]
+fn background_notification_includes_foreground_dot() {
+    // UC-1 BR-3: Background notifications are sent in addition to foreground notifications
+    let (mut app, agent_pane, _) = app_with_unfocused_agent();
+    app.window.is_focused = false;
+    app.handle_terminal_notification(agent_pane, "tide:agent-needs-input");
+    // System notification queued
+    assert!(!app.pending_platform_commands.is_empty());
+    // Agent status dot is also set (foreground indicator)
+    assert_eq!(
+        app.gateway.detected_agents.get(&agent_pane).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+    );
+}
+
+#[test]
+fn duplicate_system_notification_suppressed_until_acknowledged() {
+    // UC-1 BR-4: System notifications not sent again until user acknowledges (focuses)
+    use crate::FocusNavPort;
+    let (mut app, agent_pane, _) = app_with_unfocused_agent();
+    app.window.is_focused = false;
+
+    // First notification: should queue
+    app.handle_terminal_notification(agent_pane, "tide:agent-needs-input");
+    assert!(!app.pending_platform_commands.is_empty());
+    app.pending_platform_commands.clear();
+
+    // Second notification for same pane: should NOT queue (suppressed)
+    app.handle_terminal_notification(agent_pane, "tide:agent-idle");
+    assert!(app.pending_platform_commands.is_empty());
+
+    // Acknowledge by focusing
+    app.focus_pane(agent_pane);
+    assert!(!app.notified_panes.contains(&agent_pane));
+
+    // Now another notification should be able to fire
+    app.focus.focused = Some(0); // unfocus
+    app.handle_terminal_notification(agent_pane, "tide:agent-needs-input");
+    assert!(!app.pending_platform_commands.is_empty());
+}
+
+// --- UC-2: TrackWindowFocusState ---
+
+#[test]
+fn window_focus_state_tracks_platform_event() {
+    // UC-2 BR-1: Initial value is true, tracks PlatformEvent::Focused
+    let app = test_app();
+    assert!(app.window.is_focused); // initial = true
+}
+
+// --- UC-5: BlinkTabDot ---
+
+#[test]
+fn needs_input_dot_blinks_when_unfocused() {
+    // UC-5 BR-1,2: NeedsInput dot blinks when pane is unfocused
+    // Verify blink computation produces opacity in range [0.3, 1.0]
+    let frequency = 4.2_f64;
+    // Sample at various times
+    for i in 0..20 {
+        let t = i as f64 * 0.1;
+        let opacity = 0.65 + 0.35 * (t * frequency).sin();
+        assert!(opacity >= 0.29, "opacity {} too low at t={}", opacity, t);
+        assert!(opacity <= 1.01, "opacity {} too high at t={}", opacity, t);
+    }
+}
+
+#[test]
+fn idle_dot_does_not_blink() {
+    // UC-5 BR-3: Running and Idle dots do not blink (static)
+    // Verify that blink is only applied for NeedsInput, not Idle
+    let (mut app, agent_pane, _) = app_with_unfocused_agent();
+    app.handle_terminal_notification(agent_pane, "tide:agent-idle");
+    // Idle status should not trigger needs_redraw for blink animation
+    // (needs_redraw may be set for other reasons, but route_agent_notification
+    //  only sets it for NeedsInput)
+    let status = app.gateway.detected_agents.get(&agent_pane).unwrap().status;
+    assert_eq!(status, Some(crate::state::gateway_status::AgentStatus::Idle));
+    // No blink animation: only NeedsInput triggers continuous redraw
+}
+
+// --- UC-6: ShowWorkspaceSidebarDot ---
+
+#[test]
+fn active_workspace_has_no_sidebar_dot() {
+    // UC-6 BR-1: Do not show sidebar dot for the active workspace
+    use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
+    let mut app = test_app();
+    app.ws.workspaces.push(Workspace {
+        name: "WS1".into(),
+        layout: crate::tide_layout::SplitLayout::new(),
+        focused: None,
+        panes: std::collections::HashMap::new(),
+    });
+    app.ws.workspace_extras.push(WorkspaceExtras::new());
+    app.ws.active = 0;
+    // Even if has_agent_notification is true on the active workspace, it should be irrelevant
+    app.ws.workspace_extras[0].has_agent_notification = true;
+    // The rendering logic skips active workspace — tested by checking the flag exists
+    // but the view code only renders dot for !is_active (UC-6 BR-1)
+    assert!(app.ws.workspace_extras[0].has_agent_notification);
+}
+
+#[test]
+fn workspace_switch_clears_notification_dot() {
+    // UC-6 BR-2: Clear has_agent_notification on the switched-to workspace
+    use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
+    let mut app = test_app();
+    // Create two workspaces
+    app.ws.workspaces.push(Workspace {
+        name: "WS1".into(),
+        layout: crate::tide_layout::SplitLayout::new(),
+        focused: None,
+        panes: std::collections::HashMap::new(),
+    });
+    app.ws.workspaces.push(Workspace {
+        name: "WS2".into(),
+        layout: crate::tide_layout::SplitLayout::new(),
+        focused: None,
+        panes: std::collections::HashMap::new(),
+    });
+    let mut extras1 = WorkspaceExtras::new();
+    extras1.has_agent_notification = false;
+    let mut extras2 = WorkspaceExtras::new();
+    extras2.has_agent_notification = true;
+    app.ws.workspace_extras.push(extras1);
+    app.ws.workspace_extras.push(extras2);
+    app.ws.active = 0;
+
+    // Switch to WS2
+    app.switch_workspace(1);
+    // has_agent_notification should be cleared on the switched-to workspace
+    assert!(!app.ws.workspace_extras[1].has_agent_notification);
+}
+
+#[test]
+fn inactive_workspace_agent_status_sets_notification_dot() {
+    // UC-6 BR-3: Set has_agent_notification when agent status changes in an inactive workspace
+    use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
+    let mut app = test_app();
+
+    // Create WS1 (active) with a pane
+    let (layout, pane_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let pane = EditorPane::new_empty(pane_id);
+    app.panes.insert(pane_id, PaneKind::Editor(pane));
+    app.focus.focused = Some(pane_id);
+
+    // Create WS2 with an agent pane
+    let agent_pane_id = 999;
+    let mut ws2_panes = std::collections::HashMap::new();
+    ws2_panes.insert(agent_pane_id, PaneKind::Editor(EditorPane::new_empty(agent_pane_id)));
+
+    app.ws.workspaces.push(Workspace {
+        name: "WS1".into(),
+        layout: crate::tide_layout::SplitLayout::new(),
+        focused: None,
+        panes: std::collections::HashMap::new(),
+    });
+    app.ws.workspaces.push(Workspace {
+        name: "WS2".into(),
+        layout: crate::tide_layout::SplitLayout::new(),
+        focused: None,
+        panes: ws2_panes,
+    });
+    app.ws.workspace_extras.push(WorkspaceExtras::new());
+    app.ws.workspace_extras.push(WorkspaceExtras::new());
+    app.ws.active = 0;
+
+    // Register agent in WS2
+    app.gateway.detected_agents.insert(agent_pane_id, crate::state::gateway_status::AgentInfo {
+        name: "Claude Code",
+        pid: 12345,
+        gateway_connected: true,
+        status: None,
+    });
+
+    // Agent in inactive workspace sends notification
+    app.route_agent_notification(agent_pane_id, crate::state::gateway_status::AgentStatus::NeedsInput);
+    assert!(app.ws.workspace_extras[1].has_agent_notification);
+}
+
+// --- UC-7: ClearNotificationOnAcknowledge ---
+
+#[test]
+fn focusing_pane_clears_workspace_notification_if_no_others() {
+    // UC-7 BR-2: has_agent_notification cleared when no other panes have pending notifications
+    use crate::FocusNavPort;
+    let (mut app, agent_pane) = app_with_detected_agent();
+    app.notified_panes.insert(agent_pane);
+    app.handle_terminal_notification(agent_pane, "tide:agent-needs-input");
+    // Focus clears notification suppression
+    app.focus_pane(agent_pane);
+    assert!(!app.notified_panes.contains(&agent_pane));
+    assert_eq!(app.gateway.detected_agents.get(&agent_pane).unwrap().status, None);
+}

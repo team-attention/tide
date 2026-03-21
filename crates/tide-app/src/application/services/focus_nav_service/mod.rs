@@ -203,6 +203,8 @@ impl FocusNavPort for App {
                 agent.status = None;
             }
         }
+        // Clear notification suppression so future notifications can fire (UC-7 BR-1)
+        self.notified_panes.remove(&id);
         self.cache.invalidate_chrome();
     }
 

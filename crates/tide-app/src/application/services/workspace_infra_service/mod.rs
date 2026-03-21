@@ -31,6 +31,8 @@ pub(crate) struct WorkspaceExtras {
     pub focus_area: FocusArea,
     pub stage_focused: Option<PaneId>,
     pub pinned_dock_layout: crate::tide_layout::SplitLayout,
+    /// True when an agent in this (inactive) workspace has a pending notification.
+    pub has_agent_notification: bool,
 }
 
 impl WorkspaceExtras {
@@ -43,6 +45,7 @@ impl WorkspaceExtras {
             focus_area: FocusArea::Stage,
             stage_focused: None,
             pinned_dock_layout: crate::tide_layout::SplitLayout::new(),
+            has_agent_notification: false,
         }
     }
 }
@@ -131,6 +134,10 @@ impl App {
         self.save_active_workspace();
         self.ws.active = idx;
         self.load_active_workspace();
+        // Clear agent notification for the workspace we're switching to (UC-6 BR-2)
+        if self.ws.active < self.ws.workspace_extras.len() {
+            self.ws.workspace_extras[self.ws.active].has_agent_notification = false;
+        }
         // Update TIDE_WORKSPACE for new terminals spawned in this workspace
         let ws_name = self.ws.workspaces[idx].name.clone();
         crate::tide_terminal::set_active_workspace_name(ws_name);

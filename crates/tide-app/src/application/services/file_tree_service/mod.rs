@@ -155,12 +155,21 @@ impl App {
                     // BR-49: Trigger agent detection on shell_idle change
                     if let Some(pid) = pane.backend.child_pid() {
                         if let Some(mut agent) = crate::state::gateway_status::detect_agent(pid) {
+                            // Preserve existing status when re-detecting
+                            if let Some(existing) = self.gateway.detected_agents.get(id) {
+                                agent.status = existing.status;
+                            }
                             agent.gateway_connected = crate::state::gateway_status::is_agent_connected(
                                 agent.pid, &self.gateway.connected_pids
                             );
                             self.gateway.detected_agents.insert(*id, agent);
                         } else {
-                            self.gateway.detected_agents.remove(id);
+                            // Don't remove agents with active status
+                            let has_status = self.gateway.detected_agents.get(id)
+                                .map_or(false, |a| a.status.is_some());
+                            if !has_status {
+                                self.gateway.detected_agents.remove(id);
+                            }
                         }
                     }
                 }

@@ -155,6 +155,13 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     /// Reveal the window (set alpha to 1). Called after the first frame renders
     /// so the user never sees a blank window during GPU initialization.
     fn show_window(&self) {}
+
+    /// Send a macOS system notification via UNUserNotificationCenter.
+    /// Silent fail if permission is not granted.
+    fn send_system_notification(&self, _title: &str, _body: &str) {}
+
+    /// Request user attention (dock bounce). Uses informational (single bounce).
+    fn request_user_attention(&self) {}
 }
 
 // ──────────────────────────────────────────────
@@ -218,6 +225,8 @@ pub enum WindowCommand {
         w: f64,
         h: f64,
     },
+    SendSystemNotification { title: String, body: String },
+    RequestUserAttention,
 }
 
 /// Show a native macOS confirm dialog for window close.
@@ -280,6 +289,12 @@ pub fn execute_window_command(window: &dyn PlatformWindow, cmd: WindowCommand) {
         WindowCommand::FocusImeProxy(id) => window.focus_ime_proxy(id),
         WindowCommand::SetImeCursorArea { pane_id, x, y, w, h } => {
             window.set_ime_proxy_cursor_area(pane_id, x, y, w, h);
+        }
+        WindowCommand::SendSystemNotification { ref title, ref body } => {
+            window.send_system_notification(title, body);
+        }
+        WindowCommand::RequestUserAttention => {
+            window.request_user_attention();
         }
     }
 }
@@ -344,6 +359,17 @@ impl WindowProxy {
 
     pub fn set_ime_proxy_cursor_area(&self, pane_id: u64, x: f64, y: f64, w: f64, h: f64) {
         self.send(WindowCommand::SetImeCursorArea { pane_id, x, y, w, h });
+    }
+
+    pub fn send_system_notification(&self, title: &str, body: &str) {
+        self.send(WindowCommand::SendSystemNotification {
+            title: title.to_string(),
+            body: body.to_string(),
+        });
+    }
+
+    pub fn request_user_attention(&self) {
+        self.send(WindowCommand::RequestUserAttention);
     }
 }
 
