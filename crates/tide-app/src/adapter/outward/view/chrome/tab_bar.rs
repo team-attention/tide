@@ -232,10 +232,12 @@ pub(super) fn render_pane_chrome(
             all_hit_zones.extend(zones);
         }
     }
-    // Render browser navigation bar for browser panes
+    // Render browser navigation bar for browser panes (skip render-mode panes — BR-26)
     for &(id, rect) in visual_pane_rects {
         if let Some(crate::pane::PaneKind::Browser(bp)) = app.panes.get(&id) {
-            render_browser_nav_bar(bp, rect, app, renderer, p);
+            if !bp.render_mode {
+                render_browser_nav_bar(bp, rect, app, renderer, p);
+            }
         }
     }
 

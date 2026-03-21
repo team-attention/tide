@@ -152,6 +152,17 @@ impl App {
                 if new_idle != pane.context.shell_idle {
                     pane.context.shell_idle = new_idle;
                     changed = true;
+                    // BR-49: Trigger agent detection on shell_idle change
+                    if let Some(pid) = pane.backend.child_pid() {
+                        if let Some(mut agent) = crate::state::gateway_status::detect_agent(pid) {
+                            agent.gateway_connected = crate::state::gateway_status::is_agent_connected(
+                                agent.pid, &self.gateway.connected_pids
+                            );
+                            self.gateway.detected_agents.insert(*id, agent);
+                        } else {
+                            self.gateway.detected_agents.remove(id);
+                        }
+                    }
                 }
             }
         }

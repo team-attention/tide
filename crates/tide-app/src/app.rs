@@ -151,6 +151,12 @@ pub(crate) struct App {
 
     // Pane associations (grouped)
     pub(crate) assoc: state::PaneAssociations,
+
+    // Agent Gateway status
+    pub(crate) gateway: state::GatewayStatus,
+
+    // Temporary: holds notification_tx for subscribe command during dispatch
+    pub(crate) pending_subscribe_tx: Option<std::sync::mpsc::Sender<String>>,
 }
 
 // Safety: App contains raw pointers (content_view_ptr, window_ptr) and browser
@@ -187,6 +193,8 @@ impl App {
             settings: state::settings::load_settings(),
             bg: state::BackgroundServices::new(),
             assoc: state::PaneAssociations::new(),
+            gateway: state::GatewayStatus::new(),
+            pending_subscribe_tx: None,
         }
     }
 
@@ -247,6 +255,7 @@ impl App {
         self.ft.tree = Some(tree);
         self.timing.last_cwd = Some(cwd);
 
+        crate::tide_terminal::set_active_workspace_name("Workspace 1".to_string());
         self.ws.workspaces.push(Workspace {
             name: "Workspace 1".to_string(),
             layout: SplitLayout::new(),
