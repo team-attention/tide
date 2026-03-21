@@ -15,6 +15,7 @@ path = "src/main.rs"
 name = "Tide"
 identifier = "com.eatnug.tide"
 icon = ["crates/tide-app/icon.icns"]
+resources = ["crates/tide-app/resources/bin", "crates/tide-app/resources/shell-integration"]
 category = "public.app-category.developer-tools"
 osx_minimum_system_version = "13.0"
 

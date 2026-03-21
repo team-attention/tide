@@ -57,6 +57,10 @@ fn main() {
         let exit_code = adapter::inward::cli_adapter::mcp::run_mcp();
         std::process::exit(exit_code);
     }
+    if args.len() >= 2 && args[1] == "notify" {
+        let exit_code = adapter::inward::cli_adapter::notify::run_notify(&args[2..]);
+        std::process::exit(exit_code);
+    }
 
     // Enable backtraces for panic diagnostics
     std::env::set_var("RUST_BACKTRACE", "1");
@@ -108,6 +112,8 @@ fn main() {
             let path = server.socket_path.to_string_lossy().to_string();
             log::info!("Agent Gateway listening on {}", path);
             crate::tide_terminal::set_gateway_socket_path(path);
+            // Discover agent wrapper scripts in .app bundle Resources
+            crate::tide_terminal::discover_agent_resources();
             Some(server)
         }
         Err(e) => {

@@ -9,6 +9,7 @@ pub(crate) mod commands;
 pub(crate) mod client;
 pub(crate) mod server;
 pub(crate) mod mcp;
+pub(crate) mod notify;
 
 use std::sync::mpsc;
 

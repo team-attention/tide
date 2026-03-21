@@ -241,6 +241,10 @@ pub(super) fn render_pane_chrome(
         }
     }
 
+    // Render agent status dot on terminal panes with detected agents.
+    // Placed in the top-left corner of the pane header, before the title.
+    render_agent_status_dots(app, renderer, p, visual_pane_rects);
+
     all_hit_zones
 }
 
@@ -396,6 +400,43 @@ fn render_browser_nav_bar(
                 TextStyle { foreground: p.tab_text_focused, background: None, bold: false, dim: false, italic: false, underline: false },
                 url_rect,
             );
+        }
+    }
+}
+
+/// Render a small colored dot in the pane header for terminal panes with an active agent.
+/// Green = Running, Orange = NeedsInput, hidden = Idle/None.
+fn render_agent_status_dots(
+    app: &App,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    _p: &ThemePalette,
+    visual_pane_rects: &[(u64, Rect)],
+) {
+    use crate::state::gateway_status::AgentStatus;
+
+    for &(id, rect) in visual_pane_rects {
+        let Some(agent) = app.gateway.detected_agents.get(&id) else { continue };
+        let Some(status) = agent.status else { continue };
+        if matches!(status, AgentStatus::Idle) { continue; }
+
+        let dot_color = match status {
+            AgentStatus::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),     // green
+            AgentStatus::NeedsInput => crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0), // orange
+            AgentStatus::Idle => unreachable!(),
+        };
+
+        // Draw dot at top-left of pane header, inset by padding
+        let dot_size = 6.0_f32;
+        let dot_x = rect.x + PANE_PADDING;
+        let dot_y = rect.y + (TAB_BAR_HEIGHT - dot_size) / 2.0;
+        let dot_rect = Rect::new(dot_x, dot_y, dot_size, dot_size);
+        renderer.draw_chrome_rounded_rect(dot_rect, dot_color, dot_size / 2.0);
+
+        // For NeedsInput, draw a subtle glow ring around the dot
+        if matches!(status, AgentStatus::NeedsInput) {
+            let glow = crate::tide_core::Color::new(dot_color.r, dot_color.g, dot_color.b, 0.3);
+            let glow_rect = Rect::new(dot_x - 2.0, dot_y - 2.0, dot_size + 4.0, dot_size + 4.0);
+            renderer.draw_chrome_rounded_rect(glow_rect, glow, (dot_size + 4.0) / 2.0);
         }
     }
 }
