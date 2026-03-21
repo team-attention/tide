@@ -126,16 +126,6 @@ pub(crate) fn handle_key_down(
         ctx.exit_app();
     }
 
-    // Gateway modal interception
-    if ctx.modal().gateway_modal.is_some() {
-        if matches!(key, Key::Escape) {
-            ctx.modal_mut().gateway_modal = None;
-            ctx.invalidate_chrome();
-            ctx.request_redraw();
-        }
-        return;
-    }
-
     // Config page interception
     if ctx.modal().config_page.is_some() {
         modal::handle_config_page_key(ctx, key, &modifiers);

@@ -16,8 +16,8 @@ impl TerminalFactoryPort for RealTerminalFactory {
         TerminalPane::with_cwd(id, cols, rows, cwd.map(|p| p.to_path_buf()), dark_mode)
     }
 
-    fn pre_spawn_terminal(&self, cols: u16, rows: u16, dark_mode: bool) -> Result<crate::tide_terminal::Terminal, BoxErr> {
-        crate::tide_terminal::Terminal::with_cwd(cols, rows, None, dark_mode, None)
+    fn pre_spawn_terminal(&self, cols: u16, rows: u16, dark_mode: bool, pane_id: Option<PaneId>) -> Result<crate::tide_terminal::Terminal, BoxErr> {
+        crate::tide_terminal::Terminal::with_cwd(cols, rows, None, dark_mode, pane_id.map(|id| id as u64))
     }
 }
 
@@ -30,7 +30,7 @@ impl TerminalFactoryPort for NoopTerminalFactory {
         Err("NoopTerminalFactory: no terminal in tests".into())
     }
 
-    fn pre_spawn_terminal(&self, _cols: u16, _rows: u16, _dark_mode: bool) -> Result<crate::tide_terminal::Terminal, BoxErr> {
+    fn pre_spawn_terminal(&self, _cols: u16, _rows: u16, _dark_mode: bool, _pane_id: Option<PaneId>) -> Result<crate::tide_terminal::Terminal, BoxErr> {
         Err("NoopTerminalFactory: no terminal in tests".into())
     }
 }

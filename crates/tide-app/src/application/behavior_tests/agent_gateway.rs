@@ -7,6 +7,7 @@ use crate::pane::PaneKind;
 use crate::state::FocusArea;
 use crate::tide_core::{LayoutEngine, SplitDirection};
 use crate::App;
+use crate::GatewayPort;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -988,4 +989,131 @@ fn unknown_method_returns_error() {
     let (mut app, _) = app_with_editor();
     let result = app.handle_cli_command("unknown-method", json!({}));
     assert!(result.is_err());
+}
+
+// --- Spec: docs/specs/agent-integration-toggle.md ---
+
+// --- UC-1: ToggleAutoIntegration ---
+
+#[test]
+fn auto_integration_defaults_to_true() {
+    // UC-1 BR-2: Default value is true
+    let app = test_app();
+    assert!(app.settings.auto_integration);
+}
+
+#[test]
+fn toggle_auto_integration_flips_setting() {
+    // UC-1 BR-1: Toggle only affects newly spawned terminals
+    let (mut app, _id) = app_with_editor();
+    assert!(app.settings.auto_integration);
+    app.toggle_auto_integration();
+    assert!(!app.settings.auto_integration);
+    app.toggle_auto_integration();
+    assert!(app.settings.auto_integration);
+}
+
+// --- UC-4: RemoveGatewayModal ---
+
+#[test]
+fn gateway_status_tracks_agents_after_modal_removal() {
+    // UC-4 BR-1: GatewayStatus still tracks detected agents
+    let (mut app, id) = app_with_editor();
+    app.gateway.detected_agents.insert(id, crate::state::gateway_status::AgentInfo {
+        name: "Claude Code",
+        pid: 12345,
+        gateway_connected: true,
+        status: Some(crate::state::gateway_status::AgentStatus::Running),
+    });
+    let agent = app.gateway.detected_agents.get(&id).unwrap();
+    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::Running));
+}
+
+// --- Spec: docs/specs/osc-9-notification.md ---
+
+// --- UC-2: RouteNotification ---
+
+#[test]
+fn osc9_agent_running_updates_status() {
+    // UC-2 BR-1: tide:agent-running → AgentStatus::Running
+    let (mut app, id) = app_with_detected_agent();
+    app.handle_terminal_notification(id, "tide:agent-running");
+    let agent = app.gateway.detected_agents.get(&id).unwrap();
+    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::Running));
+}
+
+#[test]
+fn osc9_agent_needs_input_updates_status() {
+    // UC-2 BR-2: tide:agent-needs-input → AgentStatus::NeedsInput
+    let (mut app, id) = app_with_detected_agent();
+    app.handle_terminal_notification(id, "tide:agent-needs-input");
+    let agent = app.gateway.detected_agents.get(&id).unwrap();
+    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::NeedsInput));
+}
+
+#[test]
+fn osc9_agent_idle_updates_status() {
+    // UC-2 BR-3: tide:agent-idle → AgentStatus::Idle
+    let (mut app, id) = app_with_detected_agent();
+    app.handle_terminal_notification(id, "tide:agent-idle");
+    let agent = app.gateway.detected_agents.get(&id).unwrap();
+    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::Idle));
+}
+
+#[test]
+fn osc9_unknown_tide_message_ignored() {
+    // UC-2 BR-4: Unknown tide: messages are ignored (no crash, no status change)
+    let (mut app, id) = app_with_detected_agent();
+    app.handle_terminal_notification(id, "tide:unknown-event");
+    let agent = app.gateway.detected_agents.get(&id).unwrap();
+    assert_eq!(agent.status, None); // Unchanged from initial
+}
+
+#[test]
+fn osc9_non_tide_message_ignored() {
+    // UC-2 BR-5: Non-tide: messages are silently ignored
+    let (mut app, id) = app_with_detected_agent();
+    app.handle_terminal_notification(id, "Hello World");
+    let agent = app.gateway.detected_agents.get(&id).unwrap();
+    assert_eq!(agent.status, None);
+}
+
+#[test]
+fn osc9_creates_synthetic_agent_if_none_detected() {
+    // UC-2 BR-6: If no agent exists for the pane, create synthetic AgentInfo
+    let (mut app, id) = app_with_editor();
+    assert!(!app.gateway.detected_agents.contains_key(&id));
+    app.handle_terminal_notification(id, "tide:agent-running");
+    let agent = app.gateway.detected_agents.get(&id).unwrap();
+    assert_eq!(agent.name, "Unknown");
+    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::Running));
+}
+
+#[test]
+fn focusing_pane_clears_needs_input_status() {
+    // Focusing a pane with NeedsInput should clear the status (user has seen it)
+    use crate::FocusNavPort;
+    let (mut app, id) = app_with_detected_agent();
+    app.handle_terminal_notification(id, "tide:agent-needs-input");
+    assert_eq!(
+        app.gateway.detected_agents.get(&id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
+    app.focus_pane(id);
+    assert_eq!(app.gateway.detected_agents.get(&id).unwrap().status, None);
+}
+
+#[test]
+fn focusing_pane_clears_idle_status() {
+    // Focusing a pane with Idle (task completed) should clear the status
+    use crate::FocusNavPort;
+    let (mut app, id) = app_with_detected_agent();
+    app.handle_terminal_notification(id, "tide:agent-running");
+    app.handle_terminal_notification(id, "tide:agent-idle");
+    assert_eq!(
+        app.gateway.detected_agents.get(&id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::Idle)
+    );
+    app.focus_pane(id);
+    assert_eq!(app.gateway.detected_agents.get(&id).unwrap().status, None);
 }

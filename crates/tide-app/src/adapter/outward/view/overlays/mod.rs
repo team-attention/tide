@@ -5,7 +5,6 @@ mod file_finder;
 mod git_switcher;
 mod context_menu;
 mod config_page;
-mod gateway_modal;
 
 use unicode_width::UnicodeWidthChar;
 
@@ -99,7 +98,6 @@ pub(crate) fn render_overlays(
     git_switcher::render_git_switcher(app, renderer, p);
     context_menu::render_context_menu(app, renderer, p);
     config_page::render_config_page(app, renderer, p);
-    let _ = gateway_modal::render_gateway_modal(app, renderer, p);
 }
 
 /// Render notification bars (conflict / save confirm) for all editor panes.
