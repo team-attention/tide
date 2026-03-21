@@ -131,6 +131,9 @@ impl App {
         self.save_active_workspace();
         self.ws.active = idx;
         self.load_active_workspace();
+        // Update TIDE_WORKSPACE for new terminals spawned in this workspace
+        let ws_name = self.ws.workspaces[idx].name.clone();
+        crate::tide_terminal::set_active_workspace_name(ws_name);
 
         if let Some(id) = self.focus.focused {
             self.router.set_focused(id);
@@ -168,6 +171,7 @@ impl App {
         self.panes = HashMap::new();
 
         let ws_name = format!("Workspace {}", self.ws.workspaces.len() + 1);
+        crate::tide_terminal::set_active_workspace_name(ws_name.clone());
         self.ws.workspaces.push(Workspace {
             name: ws_name,
             layout: SplitLayout::new(),

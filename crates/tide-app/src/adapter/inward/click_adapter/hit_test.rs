@@ -71,6 +71,19 @@ impl App {
                 return Some(HoverTarget::TitlebarTheme);
             }
 
+            // Gateway badge (left of theme icon)
+            if self.gateway.listening {
+                let gateway_w = cs.width + 8.0;
+                let gateway_h = cs.height + 6.0;
+                let gateway_x = theme_x - gateway_w - 4.0;
+                let gateway_y = (self.window.top_inset - gateway_h) / 2.0;
+                if pos.x >= gateway_x && pos.x <= gateway_x + gateway_w
+                    && pos.y >= gateway_y && pos.y <= gateway_y + gateway_h
+                {
+                    return Some(HoverTarget::TitlebarGateway);
+                }
+            }
+
             // Titlebar toggle buttons (right-to-left: Dock, FileTree, Workspace)
             let btn_pad_h = 6.0_f32;
             let btn_chars = 4.0_f32;

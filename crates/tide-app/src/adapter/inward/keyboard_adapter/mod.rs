@@ -72,6 +72,16 @@ impl App {
             std::process::exit(0);
         }
 
+        // Gateway modal interception
+        if self.modal.gateway_modal.is_some() {
+            if matches!(key, Key::Escape) {
+                self.modal.gateway_modal = None;
+                self.cache.invalidate_chrome();
+                self.cache.needs_redraw = true;
+            }
+            return;
+        }
+
         // Config page interception
         if self.modal.config_page.is_some() {
             self.handle_config_page_key(key, &modifiers);

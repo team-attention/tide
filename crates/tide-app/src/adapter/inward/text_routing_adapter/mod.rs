@@ -44,7 +44,9 @@ impl App {
                 TextInputTarget::Consumed
             };
         }
-        if self.modal.context_menu.is_some() || self.modal.save_confirm.is_some() {
+        if self.modal.gateway_modal.is_some()
+            || self.modal.context_menu.is_some()
+            || self.modal.save_confirm.is_some() {
             return TextInputTarget::Consumed;
         }
         // Text-input popups

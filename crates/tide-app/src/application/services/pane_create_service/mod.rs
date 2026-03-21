@@ -32,6 +32,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                 self.install_pty_waker(&pane);
                 self.panes.insert(id, PaneKind::Terminal(pane));
                 self.ime.pending_creates.push(id);
+                self.gateway.notify("pane-created", serde_json::json!({"pane_id": id, "kind": "terminal"}));
             }
             Err(e) => {
                 log::error!("Failed to create terminal pane: {}", e);

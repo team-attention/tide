@@ -36,6 +36,26 @@ use crate::tide_core::{
 /// Number of scrollback history lines to keep.
 const SCROLLBACK_LINES: usize = 10_000;
 
+/// Global socket path for the Agent Gateway. Set once on app startup.
+/// Every PTY spawned after this is set will export TIDE_SOCKET.
+static GATEWAY_SOCKET_PATH: OnceLock<String> = OnceLock::new();
+
+/// Set the Agent Gateway socket path. Called once from main after server starts.
+pub fn set_gateway_socket_path(path: String) {
+    let _ = GATEWAY_SOCKET_PATH.set(path);
+}
+
+/// Global workspace name for TIDE_WORKSPACE env var.
+/// Updated when the active workspace changes.
+static ACTIVE_WORKSPACE_NAME: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Set the active workspace name. Called on workspace switch and creation.
+pub fn set_active_workspace_name(name: String) {
+    if let Ok(mut guard) = ACTIVE_WORKSPACE_NAME.lock() {
+        *guard = Some(name);
+    }
+}
+
 /// Simple dimensions struct that implements alacritty_terminal's Dimensions trait.
 struct TermDimensions {
     cols: usize,
@@ -604,11 +624,12 @@ pub struct Terminal {
 impl Terminal {
     /// Create a new terminal backend with the given dimensions.
     pub fn new(cols: u16, rows: u16) -> Result<Self, Box<dyn std::error::Error>> {
-        Self::with_cwd(cols, rows, None, true)
+        Self::with_cwd(cols, rows, None, true, None)
     }
 
     /// Create a new terminal backend, optionally starting in the given directory.
-    pub fn with_cwd(cols: u16, rows: u16, cwd: Option<PathBuf>, dark_mode: bool) -> Result<Self, Box<dyn std::error::Error>> {
+    /// If `pane_id` is provided, sets the `TIDE_PANE` env var for the child process.
+    pub fn with_cwd(cols: u16, rows: u16, cwd: Option<PathBuf>, dark_mode: bool, pane_id: Option<u64>) -> Result<Self, Box<dyn std::error::Error>> {
         let cell_width = 8;
         let cell_height = 16;
 
@@ -651,6 +672,19 @@ impl Terminal {
             env.insert(String::from("COLORFGBG"), String::from("15;0"));
         } else {
             env.insert(String::from("COLORFGBG"), String::from("0;15"));
+        }
+        // Agent Gateway: export socket path, pane id, and workspace name
+        // so child processes can discover Tide
+        if let Some(socket_path) = GATEWAY_SOCKET_PATH.get() {
+            env.insert(String::from("TIDE_SOCKET"), socket_path.clone());
+        }
+        if let Some(id) = pane_id {
+            env.insert(String::from("TIDE_PANE"), id.to_string());
+        }
+        if let Ok(guard) = ACTIVE_WORKSPACE_NAME.lock() {
+            if let Some(ref name) = *guard {
+                env.insert(String::from("TIDE_WORKSPACE"), name.clone());
+            }
         }
         let pty_config = tty::Options {
             shell: Some(tty::Shell::new(shell, vec![String::from("--login")])),
