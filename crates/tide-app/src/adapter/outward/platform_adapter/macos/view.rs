@@ -200,8 +200,8 @@ declare_class!(
 
                 // When a WKWebView is the first responder, let navigation
                 // and browser-standard shortcuts pass through so the webview
-                // can handle them (e.g. Cmd+Arrow for text cursor movement
-                // in input fields, Cmd+Shift+Arrow for text selection).
+                // can handle them (e.g. Cmd+Arrow for cursor movement
+                // in input fields, Cmd+Shift+Arrow for selection).
                 // Returning NO causes macOS to deliver keyDown to the
                 // first responder (the WKWebView) instead of Tide.
                 if first_responder_is_webview {
