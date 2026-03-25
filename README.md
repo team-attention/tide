@@ -93,7 +93,6 @@ All keybindings are customizable via `~/.config/tide/settings.json`. Open it wit
 | Key | Action |
 |-----|--------|
 | `Cmd+H/J/K/L` | Move focus across splits (left/down/up/right) |
-| `Cmd+Arrow keys` | Move focus across splits (alternative) |
 | `Cmd+I` | Previous tab in group |
 | `Cmd+O` | Next tab in group |
 | `Cmd+1` | Toggle workspace sidebar |
