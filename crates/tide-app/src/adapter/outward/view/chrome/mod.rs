@@ -1,6 +1,6 @@
 mod file_tree;
 mod tab_bar;
-mod titlebar;
+pub(crate) mod titlebar;
 
 use crate::tide_core::Rect;
 

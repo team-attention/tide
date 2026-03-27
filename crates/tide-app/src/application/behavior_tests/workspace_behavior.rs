@@ -201,3 +201,170 @@ fn toggling_workspace_sidebar_toggles_visibility() {
     app.handle_global_action(crate::tide_input::GlobalAction::ToggleWorkspaceSidebar);
     assert!(!app.ws.show_sidebar);
 }
+
+// --- UC-5: DisplayWorkspaceTerminalSummaries ---
+
+use crate::pane::TerminalContext;
+use crate::tide_terminal::git::GitInfo;
+use crate::tide_terminal::git::GitStatus;
+use crate::adapter::outward::view::chrome::titlebar::collect_workspace_terminal_summaries;
+use crate::tide_core::LayoutEngine;
+use std::path::PathBuf;
+
+/// Helper: create an app with a real terminal and set its TerminalContext.
+fn app_with_terminal_context(cwd: Option<PathBuf>, git_info: Option<GitInfo>) -> (App, u64) {
+    let mut app = test_app();
+    let (layout, tid) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let mut tp = crate::pane::TerminalPane::with_cwd(tid, 80, 24, None, true).unwrap();
+    tp.context = TerminalContext {
+        cwd,
+        git_info,
+        ..TerminalContext::default()
+    };
+    app.panes.insert(tid, PaneKind::Terminal(tp));
+    app.focus.focused = Some(tid);
+    app.focus.stage_focused = Some(tid);
+    app.ws.workspaces.push(Workspace {
+        name: "WS1".into(),
+        layout: SplitLayout::new(),
+        focused: None,
+        panes: HashMap::new(),
+    });
+    app.ws.active = 0;
+    (app, tid)
+}
+
+#[test]
+fn workspace_sidebar_shows_terminal_cwd_basename() {
+    // UC-5 BR-13: Each workspace item shows CWD basename of its Stage terminals
+    let (app, _tid) = app_with_terminal_context(
+        Some(PathBuf::from("/Users/test/Workspace/tide")),
+        None,
+    );
+    let summaries = collect_workspace_terminal_summaries(&app.panes, &app.layout);
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].basename, "tide");
+}
+
+#[test]
+fn workspace_sidebar_shows_git_branch_when_available() {
+    // UC-5 BR-14: If TerminalContext.git_info is Some, git branch is shown
+    let (app, _tid) = app_with_terminal_context(
+        Some(PathBuf::from("/Users/test/project")),
+        Some(GitInfo {
+            branch: "main".into(),
+            status: GitStatus::default(),
+        }),
+    );
+    let summaries = collect_workspace_terminal_summaries(&app.panes, &app.layout);
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].basename, "project");
+    assert_eq!(summaries[0].branch.as_deref(), Some("main"));
+}
+
+#[test]
+fn workspace_sidebar_hides_branch_when_not_git_repo() {
+    // UC-5 BR-15: If TerminalContext.git_info is None, only basename is shown
+    let (app, _tid) = app_with_terminal_context(
+        Some(PathBuf::from("/Users/test/scripts")),
+        None,
+    );
+    let summaries = collect_workspace_terminal_summaries(&app.panes, &app.layout);
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].basename, "scripts");
+    assert!(summaries[0].branch.is_none());
+}
+
+#[test]
+fn workspace_sidebar_shows_overflow_when_three_or_more_terminals() {
+    // UC-5 BR-16: First 2 terminals shown; 3+ terminals results in overflow
+    let mut app = test_app();
+    let (layout, t1) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let mut tp1 = crate::pane::TerminalPane::with_cwd(t1, 80, 24, None, true).unwrap();
+    tp1.context.cwd = Some(PathBuf::from("/a/proj1"));
+    app.panes.insert(t1, PaneKind::Terminal(tp1));
+
+    let t2 = app.layout.split(t1, crate::tide_core::SplitDirection::Vertical);
+    let mut tp2 = crate::pane::TerminalPane::with_cwd(t2, 80, 24, None, true).unwrap();
+    tp2.context.cwd = Some(PathBuf::from("/a/proj2"));
+    app.panes.insert(t2, PaneKind::Terminal(tp2));
+
+    let t3 = app.layout.split(t2, crate::tide_core::SplitDirection::Vertical);
+    let mut tp3 = crate::pane::TerminalPane::with_cwd(t3, 80, 24, None, true).unwrap();
+    tp3.context.cwd = Some(PathBuf::from("/a/proj3"));
+    app.panes.insert(t3, PaneKind::Terminal(tp3));
+
+    app.ws.workspaces.push(Workspace {
+        name: "WS1".into(),
+        layout: SplitLayout::new(),
+        focused: None,
+        panes: HashMap::new(),
+    });
+    app.ws.active = 0;
+
+    let summaries = collect_workspace_terminal_summaries(&app.panes, &app.layout);
+    // 3 terminals exist — all returned, caller decides how to render overflow
+    assert_eq!(summaries.len(), 3);
+}
+
+#[test]
+fn workspace_sidebar_skips_terminals_without_cwd() {
+    // UC-5 BR-17: Terminals with cwd=None are skipped
+    let (app, _tid) = app_with_terminal_context(None, None);
+    let summaries = collect_workspace_terminal_summaries(&app.panes, &app.layout);
+    assert_eq!(summaries.len(), 0);
+}
+
+#[test]
+fn inactive_workspace_sidebar_reads_from_cold_storage() {
+    // UC-5 BR-18: Inactive workspace reads from cold-stored Workspace.panes
+    let mut app = test_app();
+
+    // Create WS1 with a terminal that has cwd+git
+    let (layout1, t1) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout1;
+    let mut tp1 = crate::pane::TerminalPane::with_cwd(t1, 80, 24, None, true).unwrap();
+    tp1.context = TerminalContext {
+        cwd: Some(PathBuf::from("/Users/test/tide")),
+        git_info: Some(GitInfo {
+            branch: "main".into(),
+            status: GitStatus::default(),
+        }),
+        ..TerminalContext::default()
+    };
+    app.panes.insert(t1, PaneKind::Terminal(tp1));
+    app.focus.focused = Some(t1);
+
+    // Push two workspace slots
+    app.ws.workspaces.push(Workspace {
+        name: "WS1".into(),
+        layout: SplitLayout::new(),
+        focused: None,
+        panes: HashMap::new(),
+    });
+    app.ws.workspaces.push(Workspace {
+        name: "WS2".into(),
+        layout: SplitLayout::new(),
+        focused: None,
+        panes: HashMap::new(),
+    });
+    app.ws.active = 0;
+
+    // Save WS1 into cold storage, switch to WS2
+    app.save_active_workspace();
+    app.ws.active = 1;
+    let (layout2, t2) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout2;
+    let tp2 = crate::pane::TerminalPane::with_cwd(t2, 80, 24, None, true).unwrap();
+    app.panes.insert(t2, PaneKind::Terminal(tp2));
+    app.focus.focused = Some(t2);
+
+    // Read summaries from inactive WS1 (cold storage)
+    let ws1 = &app.ws.workspaces[0];
+    let summaries = collect_workspace_terminal_summaries(&ws1.panes, &ws1.layout);
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].basename, "tide");
+    assert_eq!(summaries[0].branch.as_deref(), Some("main"));
+}

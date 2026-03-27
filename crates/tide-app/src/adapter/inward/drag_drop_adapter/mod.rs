@@ -184,8 +184,16 @@ pub(crate) fn ws_sidebar_geometry(ctx: &(impl AppCorePort + WorkspaceNavPort)) -
     let cs = ctx.cell_size();
     let name_h = cs.height;
     let content_w = ws_rect.width - WS_SIDEBAR_PADDING * 2.0;
-    let sub_h = cs.height * WS_SIDEBAR_SUB_SCALE;
-    let item_h = WS_SIDEBAR_ITEM_PAD_V * 2.0 + name_h + WS_SIDEBAR_LINE_GAP + sub_h;
+    let text_avail_w = content_w - WS_SIDEBAR_ITEM_PAD_H * 2.0;
+    let compact = text_avail_w < cs.width * 12.0;
+    let item_h = if compact {
+        // Compact mode: name only, vertically centered, with extra breathing room
+        WS_SIDEBAR_ITEM_PAD_V * 2.0 + name_h + WS_SIDEBAR_LINE_GAP + name_h
+    } else {
+        // Full mode: name + 2 summary lines (terminal CWD + branch)
+        let sub_h = cs.height;
+        WS_SIDEBAR_ITEM_PAD_V * 2.0 + name_h + (WS_SIDEBAR_LINE_GAP + sub_h) * 2.0
+    };
     Some(WsSidebarGeometry {
         content_x: ws_rect.x + WS_SIDEBAR_PADDING,
         content_w,

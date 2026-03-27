@@ -1,9 +1,43 @@
 use crate::tide_core::{Rect, Renderer, TextStyle, Vec2};
+use crate::pane::PaneKind;
 
 use crate::state::drag_types::HoverTarget;
 use crate::theme::*;
 use crate::App;
 use crate::PaneLifecyclePort;
+
+use std::collections::HashMap;
+
+/// Summary of a terminal's context for workspace sidebar display.
+pub(crate) struct TerminalSummary {
+    pub basename: String,
+    pub branch: Option<String>,
+}
+
+/// Collect terminal summaries from a workspace's panes and layout.
+/// Only Stage terminals (in the layout) with a known CWD are included.
+/// Works for both active workspace (App.panes + App.layout) and
+/// inactive workspaces (Workspace.panes + Workspace.layout).
+pub(crate) fn collect_workspace_terminal_summaries(
+    panes: &HashMap<u64, PaneKind>,
+    layout: &crate::tide_layout::SplitLayout,
+) -> Vec<TerminalSummary> {
+    let stage_ids = layout.pane_ids();
+    let mut summaries = Vec::new();
+    for id in &stage_ids {
+        if let Some(PaneKind::Terminal(tp)) = panes.get(id) {
+            if let Some(cwd) = &tp.context.cwd {
+                let basename = cwd
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| cwd.to_string_lossy().into_owned());
+                let branch = tp.context.git_info.as_ref().map(|g| g.branch.clone());
+                summaries.push(TerminalSummary { basename, branch });
+            }
+        }
+    }
+    summaries
+}
 
 /// Render the titlebar background, title text, icons, and toggle buttons.
 /// Also renders the workspace sidebar if visible.
@@ -339,32 +373,59 @@ pub(super) fn render_titlebar_and_sidebar(
                 inset,
             );
 
-            // CWD text (second line) -- hide in compact mode
+            // UC-5: Terminal summaries (below workspace name) -- hide in compact mode
             if !compact {
-                let cwd_text = if is_active {
-                    // Use live cwd from the focused terminal
-                    app.focused_terminal_cwd()
-                        .map(|p| crate::state::abbreviate_path(&p))
-                        .unwrap_or_default()
+                let summaries = if is_active {
+                    collect_workspace_terminal_summaries(&app.panes, &app.layout)
                 } else {
-                    String::new()
+                    collect_workspace_terminal_summaries(
+                        &app.ws.workspaces[i].panes,
+                        &app.ws.workspaces[i].layout,
+                    )
                 };
-                if !cwd_text.is_empty() {
-                    // Truncate cwd to fit
-                    let max_chars = (text_avail_w / cs.width).floor() as usize;
-                    let display_cwd = if cwd_text.chars().count() > max_chars && max_chars > 1 {
-                        let truncated: String = cwd_text.chars().take(max_chars.saturating_sub(1)).collect();
+                let max_chars = (text_avail_w / cs.width).floor() as usize;
+                let max_visible = 2;
+                let total = summaries.len();
+                let show_count = if total > max_visible { 1 } else { total.min(max_visible) };
+
+                for (si, summary) in summaries.iter().take(show_count).enumerate() {
+                    let text = if let Some(ref branch) = summary.branch {
+                        format!("{}  {}", summary.basename, branch)
+                    } else {
+                        summary.basename.clone()
+                    };
+                    let display_text = if text.chars().count() > max_chars && max_chars > 1 {
+                        let truncated: String = text.chars().take(max_chars.saturating_sub(1)).collect();
                         format!("{}…", truncated)
                     } else {
-                        cwd_text
+                        text
                     };
+                    let line_y = item_rect.y + WS_SIDEBAR_ITEM_PAD_V + name_h + WS_SIDEBAR_LINE_GAP
+                        + si as f32 * (cs.height + WS_SIDEBAR_LINE_GAP);
                     renderer.draw_chrome_text(
-                        &display_cwd,
-                        Vec2::new(content_x + WS_SIDEBAR_ITEM_PAD_H, item_rect.y + WS_SIDEBAR_ITEM_PAD_V + name_h + WS_SIDEBAR_LINE_GAP),
+                        &display_text,
+                        Vec2::new(content_x + WS_SIDEBAR_ITEM_PAD_H, line_y),
                         TextStyle {
                             foreground: p.tab_text,
                             background: None,
                             bold: false, dim: false, italic: false, underline: false,
+                        },
+                        inset,
+                    );
+                }
+
+                // Overflow indicator: "+N more"
+                if total > max_visible {
+                    let overflow_text = format!("+{} more", total - 1);
+                    let line_y = item_rect.y + WS_SIDEBAR_ITEM_PAD_V + name_h + WS_SIDEBAR_LINE_GAP
+                        + show_count as f32 * (cs.height + WS_SIDEBAR_LINE_GAP);
+                    renderer.draw_chrome_text(
+                        &overflow_text,
+                        Vec2::new(content_x + WS_SIDEBAR_ITEM_PAD_H, line_y),
+                        TextStyle {
+                            foreground: p.tab_text,
+                            background: None,
+                            bold: false, dim: true, italic: false, underline: false,
                         },
                         inset,
                     );

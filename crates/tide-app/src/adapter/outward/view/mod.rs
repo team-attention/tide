@@ -1,4 +1,4 @@
-mod chrome;
+pub(crate) mod chrome;
 mod cursor;
 mod grid;
 pub(crate) mod header;
