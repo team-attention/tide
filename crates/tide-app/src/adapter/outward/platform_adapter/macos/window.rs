@@ -299,7 +299,7 @@ impl PlatformWindow for MacosWindow {
         if proxies.contains_key(&pane_id) {
             return;
         }
-        let proxy = ImeProxyView::new(Rc::clone(&self.callback), self.mtm);
+        let proxy = ImeProxyView::new(Rc::clone(&self.callback), self.mtm, pane_id);
         unsafe { self.view.addSubview(&proxy) };
         proxies.insert(pane_id, proxy);
     }
@@ -316,7 +316,17 @@ impl PlatformWindow for MacosWindow {
         let proxies = self.ime_proxies.borrow();
         if let Some(proxy) = proxies.get(&pane_id) {
             let responder: &objc2_app_kit::NSResponder = proxy;
-            self.ns_window.makeFirstResponder(Some(responder));
+            if !self.ns_window.makeFirstResponder(Some(responder)) {
+                log::warn!(
+                    "makeFirstResponder failed for pane {pane_id} — \
+                     first responder may be desynced from focus state"
+                );
+            }
+        } else if pane_id != 0 {
+            log::trace!(
+                "focus_ime_proxy: no proxy for pane {pane_id} — \
+                 proxy may not have been created yet"
+            );
         }
     }
 
