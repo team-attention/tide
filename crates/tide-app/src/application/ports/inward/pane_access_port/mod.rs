@@ -7,6 +7,7 @@ pub(crate) trait PaneAccessPort {
     fn pane(&self, id: PaneId) -> Option<&PaneKind>;
     fn pane_mut(&mut self, id: PaneId) -> Option<&mut PaneKind>;
     fn has_pane(&self, id: PaneId) -> bool;
+    fn has_pane_in_any_workspace(&self, id: PaneId) -> bool;
     fn pane_entries(&self) -> Vec<(PaneId, &PaneKind)>;
     fn pane_title(&self, id: PaneId) -> String;
     fn clear_all_selections(&mut self);

@@ -140,7 +140,7 @@ pub fn render_pane_header_inner(
         // Opacity range: 0.3 ~ 1.0, period ~1.5s (frequency ≈ 4.2 rad/s)
         if matches!(status, AgentStatus::NeedsInput) && !is_focused {
             if let Some(t) = blink_time {
-                let opacity = 0.65 + 0.35 * (t * 4.2).sin() as f32;
+                let opacity = 0.65 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
                 dot_color.a = opacity;
             }
         }
@@ -456,8 +456,10 @@ pub fn render_dock_tab_bar(
     pinned_ids: &[PaneId],
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
+    detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
+    blink_time: Option<f64>,
 ) -> Vec<HeaderHitZone> {
-    render_tab_bar_impl(pane_id, rect, &tab_group.tabs, tab_group.active_pane(), panes, focused, pinned_ids, p, renderer, true, false)
+    render_tab_bar_impl(pane_id, rect, &tab_group.tabs, tab_group.active_pane(), panes, focused, pinned_ids, p, renderer, true, false, detected_agents, blink_time)
 }
 
 /// Shared tab bar rendering for both Dock and Stage stacked mode.
@@ -476,6 +478,8 @@ fn render_tab_bar_impl(
     renderer: &mut WgpuRenderer,
     is_dock: bool,
     is_stacked: bool,
+    detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
+    blink_time: Option<f64>,
 ) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
     let cell_size = renderer.cell_size();
@@ -678,17 +682,43 @@ fn render_tab_bar_impl(
             }
         }
 
+        // UC-8: Agent status dot in tab group tabs
+        let mut dot_offset = 0.0_f32;
+        if let Some(agent) = detected_agents.get(tid) {
+            if let Some(status) = agent.status {
+                use crate::state::gateway_status::AgentStatus;
+                let mut dot_color = match status {
+                    AgentStatus::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
+                    AgentStatus::Idle => crate::tide_core::Color::new(0.3, 0.8, 0.4, 0.6),
+                    AgentStatus::NeedsInput => crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0),
+                };
+                if matches!(status, AgentStatus::NeedsInput) && !is_focused_tab {
+                    if let Some(t) = blink_time {
+                        dot_color.a = 0.65 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
+                    }
+                }
+                let dot_size = 6.0_f32;
+                let dot_x = cx + tab_pad;
+                let dot_y = tab_y + (tab_h - dot_size) / 2.0;
+                renderer.draw_chrome_rounded_rect(
+                    Rect::new(dot_x, dot_y, dot_size, dot_size),
+                    dot_color, dot_size / 2.0,
+                );
+                dot_offset = dot_size + 4.0;
+            }
+        }
+
         let text_color = if is_focused_tab || is_active {
             p.tab_text_focused
         } else {
             p.tab_text
         };
         let label_y = tab_y + (tab_h - cell_height) / 2.0;
-        let max_chars = ((tw - tab_pad * 2.0) / cell_w).floor() as usize;
+        let max_chars = ((tw - tab_pad * 2.0 - dot_offset) / cell_w).floor() as usize;
         let display: String = label.chars().take(max_chars).collect();
         renderer.draw_chrome_text(
             &display,
-            Vec2::new(cx + tab_pad, label_y),
+            Vec2::new(cx + tab_pad + dot_offset, label_y),
             TextStyle {
                 foreground: text_color,
                 background: None,
@@ -724,11 +754,13 @@ pub fn render_stage_tab_bar(
     focused: Option<PaneId>,
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
+    detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
+    blink_time: Option<f64>,
 ) -> Vec<HeaderHitZone> {
     if stage_pane_ids.len() < 2 {
         return Vec::new();
     }
-    render_tab_bar_impl(zoomed_pane, rect, stage_pane_ids, zoomed_pane, panes, focused, &[], p, renderer, false, true)
+    render_tab_bar_impl(zoomed_pane, rect, stage_pane_ids, zoomed_pane, panes, focused, &[], p, renderer, false, true, detected_agents, blink_time)
 }
 
 /// Get a short label for a pane in a dock tab bar.
