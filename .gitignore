@@ -4,6 +4,7 @@
 .codex/
 .gemini/
 .spets/
+.krow/
 .env
 *.p12
 node_modules/
