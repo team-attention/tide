@@ -39,6 +39,16 @@ pub fn run_notify(args: &[String]) -> i32 {
         params["agent"] = serde_json::json!(agent);
     }
 
+    // Inject _caller_pane from TIDE_PANE env var so the gateway can route
+    // the command to the correct Workspace (see cli-workspace-routing spec UC-5).
+    if let Ok(pane_str) = std::env::var("TIDE_PANE") {
+        if let Ok(pane_id) = pane_str.parse::<u64>() {
+            if let Some(obj) = params.as_object_mut() {
+                obj.insert("_caller_pane".to_string(), serde_json::Value::Number(pane_id.into()));
+            }
+        }
+    }
+
     let request = serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,

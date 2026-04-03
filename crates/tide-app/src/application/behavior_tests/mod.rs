@@ -27,4 +27,5 @@ mod dock_global_behavior;
 mod soft_wrap_behavior;
 mod lsp_completion;
 mod agent_gateway;
+mod cli_workspace_routing;
 mod diff_auto_refresh;
