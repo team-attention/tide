@@ -413,6 +413,11 @@ impl App {
                         let result = self.handle_cli_command(&cmd.method, cmd.params);
                         let _ = cmd.response_tx.send(result);
                         self.pending_subscribe_tx = None;
+                        // CLI commands (e.g. focus-pane, open-terminal) may
+                        // change focus state.  Sync IME proxies so the macOS
+                        // first responder matches the new focus — otherwise
+                        // keyboard input goes to the old pane's ImeProxyView.
+                        self.sync_ime_proxies(&window);
                     }
                     AppEvent::Wake => {}
                 }
