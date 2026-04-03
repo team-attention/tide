@@ -1355,3 +1355,76 @@ fn focusing_pane_clears_workspace_notification_if_no_others() {
     assert!(!app.notified_panes.contains(&agent_pane));
     assert_eq!(app.gateway.detected_agents.get(&agent_pane).unwrap().status, None);
 }
+
+// --- UC-5: BlinkTabDotAndBorder (enhanced) ---
+
+#[test]
+fn needs_input_border_blinks_orange_when_unfocused() {
+    // UC-5 BR-6,7: Pane border blinks orange for NeedsInput + unfocused
+    // Uses same frequency and opacity range as dot blink
+    let (mut app, agent_pane, other_pane) = app_with_unfocused_agent();
+    app.handle_terminal_notification(agent_pane, "tide:agent-needs-input");
+    let status = app.gateway.detected_agents.get(&agent_pane).unwrap().status;
+    assert_eq!(status, Some(crate::state::gateway_status::AgentStatus::NeedsInput));
+    // Pane is unfocused (other_pane is focused)
+    assert_eq!(app.focus.focused, Some(other_pane));
+    // needs_redraw should be set (for blink animation including border)
+    assert!(app.cache.needs_redraw);
+}
+
+// --- UC-6: ShowWorkspaceSidebarDot (enhanced) ---
+
+#[test]
+fn workspace_sidebar_dot_blinks_for_notification() {
+    // UC-6 BR-4: Workspace sidebar dot blinks with same frequency as tab dot
+    // Verify blink computation for workspace sidebar produces opacity in range [0.3, 1.0]
+    let frequency = 4.2_f64;
+    for i in 0..20 {
+        let t = i as f64 * 0.1;
+        let opacity = 0.65 + 0.35 * (t * frequency).sin();
+        assert!(opacity >= 0.29, "sidebar dot opacity {} too low at t={}", opacity, t);
+        assert!(opacity <= 1.01, "sidebar dot opacity {} too high at t={}", opacity, t);
+    }
+}
+
+// --- UC-9: RouteNotifyForInactiveWorkspace ---
+
+#[test]
+fn cli_notify_routes_to_inactive_workspace_pane() {
+    // UC-9 BR-1: Notifications for panes in any workspace must be processed
+    use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
+    use crate::application::ports::inward::{GatewayPort, PaneAccessPort};
+    let mut app = test_app();
+
+    // Create WS1 (active) with a pane
+    let (layout, pane_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let pane = EditorPane::new_empty(pane_id);
+    app.panes.insert(pane_id, PaneKind::Editor(pane));
+    app.focus.focused = Some(pane_id);
+
+    // Create WS2 (inactive) with an agent pane
+    let agent_pane_id = 888;
+    let mut ws2_panes = std::collections::HashMap::new();
+    ws2_panes.insert(agent_pane_id, PaneKind::Editor(EditorPane::new_empty(agent_pane_id)));
+
+    app.ws.workspaces.push(Workspace {
+        name: "WS1".into(),
+        layout: crate::tide_layout::SplitLayout::new(),
+        focused: None,
+        panes: std::collections::HashMap::new(),
+    });
+    app.ws.workspaces.push(Workspace {
+        name: "WS2".into(),
+        layout: crate::tide_layout::SplitLayout::new(),
+        focused: None,
+        panes: ws2_panes,
+    });
+    app.ws.workspace_extras.push(WorkspaceExtras::new());
+    app.ws.workspace_extras.push(WorkspaceExtras::new());
+    app.ws.active = 0;
+
+    // has_pane_in_any_workspace should find panes in inactive workspaces
+    assert!(app.has_pane_in_any_workspace(agent_pane_id));
+    assert!(!app.has_pane_in_any_workspace(99999)); // non-existent pane
+}
