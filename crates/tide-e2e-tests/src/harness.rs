@@ -38,11 +38,14 @@ impl TestApp {
 
         let bin_path = Self::find_binary()?;
 
+        let config_dir = temp_dir.path().join(".config");
+        std::fs::create_dir_all(&config_dir)?;
+
         let child = Command::new(&bin_path)
             .env("HOME", temp_dir.path())
             .env("TMPDIR", &tmpdir_path)
             // Prevent Tide from reading any user configuration
-            .env("XDG_CONFIG_HOME", temp_dir.path().join(".config"))
+            .env("XDG_CONFIG_HOME", &config_dir)
             .spawn()
             .map_err(|e| format!("failed to launch Tide at {}: {e}", bin_path.display()))?;
 
@@ -148,7 +151,9 @@ impl TestApp {
 
         let mut reader = BufReader::new(stream);
         let mut response_line = String::new();
-        reader.read_line(&mut response_line)?;
+        if reader.read_line(&mut response_line)? == 0 {
+            return Err("Socket closed by Tide before sending response".into());
+        }
 
         let response: Value = serde_json::from_str(&response_line)?;
 
@@ -163,7 +168,10 @@ impl TestApp {
         }
 
         // Return the result field
-        Ok(response.get("result").cloned().unwrap_or(Value::Null))
+        response
+            .get("result")
+            .cloned()
+            .ok_or_else(|| format!("Invalid JSON-RPC response: missing 'result' field. Response: {response}").into())
     }
 
     // ── Convenience methods ─────────────────────────────────────────
