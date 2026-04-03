@@ -781,6 +781,12 @@ impl crate::application::ports::inward::PaneAccessPort for App {
     fn has_pane(&self, id: PaneId) -> bool {
         self.panes.contains_key(&id)
     }
+    fn has_pane_in_any_workspace(&self, id: PaneId) -> bool {
+        if self.panes.contains_key(&id) {
+            return true;
+        }
+        self.ws.workspaces.iter().any(|ws| ws.panes.contains_key(&id))
+    }
     fn pane_entries(&self) -> Vec<(PaneId, &PaneKind)> {
         self.panes.iter().map(|(&id, pane)| (id, pane)).collect()
     }
