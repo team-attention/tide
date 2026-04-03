@@ -69,14 +69,21 @@ pub(super) fn render_search_bars(
         // Query text (top layer) or placeholder — with IME preedit inline
         let text_clip = Rect::new(text_x, bar_y, text_clip_w, bar_h);
         let has_preedit = *is_focused && !app.ime.preedit.is_empty();
+        let (before_w, preedit_w) = if *is_focused {
+            (
+                visual_width(&query[..*cursor_pos]) as f32 * cell_size.width,
+                if has_preedit { visual_width(&app.ime.preedit) as f32 * cell_size.width } else { 0.0 },
+            )
+        } else {
+            (0.0, 0.0)
+        };
+
         if query.is_empty() && !has_preedit {
             renderer.draw_top_text("Search...", Vec2::new(text_x, text_y), muted_style, text_clip);
         } else if has_preedit {
             // Split query around cursor and insert preedit
             let before = &query[..*cursor_pos];
             let after = &query[*cursor_pos..];
-            let before_w = visual_width(before) as f32 * cell_size.width;
-            let preedit_w = visual_width(&app.ime.preedit) as f32 * cell_size.width;
 
             if !before.is_empty() {
                 renderer.draw_top_text(before, Vec2::new(text_x, text_y), ts, text_clip);
@@ -103,13 +110,7 @@ pub(super) fn render_search_bars(
 
         // Text cursor (beam) — only when focused
         if *is_focused {
-            let before_w = visual_width(&query[..*cursor_pos]) as f32 * cell_size.width;
-            let preedit_shift = if has_preedit {
-                visual_width(&app.ime.preedit) as f32 * cell_size.width
-            } else {
-                0.0
-            };
-            let cx = text_x + before_w + preedit_shift;
+            let cx = text_x + before_w + preedit_w;
             draw_cursor_beam(renderer, cx, text_y, cell_size.height, p.cursor_accent);
         }
 
