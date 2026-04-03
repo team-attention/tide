@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/tide-app",
+    "crates/tide-e2e-tests",
 ]
 resolver = "2"
 

@@ -1,0 +1,13 @@
+[package]
+name = "tide-e2e-tests"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = "3"
+uuid = { version = "1", features = ["v4"] }
