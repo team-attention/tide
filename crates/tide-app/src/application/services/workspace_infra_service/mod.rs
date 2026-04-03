@@ -107,6 +107,12 @@ impl App {
                 self.focus.stage_focused = first_terminal;
             }
         }
+        // Re-create IME proxies for the loaded workspace's panes so that
+        // sync_ime_proxies() can focus the correct proxy and keyboard input
+        // is not lost after workspace transitions.
+        for &id in self.panes.keys() {
+            self.ime.pending_creates.push(id);
+        }
     }
 
     /// Switch to workspace at the given 0-based index.
