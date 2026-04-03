@@ -3002,7 +3002,7 @@ dependencies = [
 
 [[package]]
 name = "tide-app"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "alacritty_terminal",
  "arboard",
@@ -3040,6 +3040,16 @@ dependencies = [
  "unicode-normalization",
  "unicode-width 0.2.2",
  "wgpu",
+]
+
+[[package]]
+name = "tide-e2e-tests"
+version = "0.47.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "uuid",
 ]
 
 [[package]]
@@ -3222,6 +3232,17 @@ name = "utf8parse"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
+
+[[package]]
+name = "uuid"
+version = "1.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ac8b6f42ead25368cf5b098aeb3dc8a1a2c05a3eee8a9a1a68c640edbfc79d9"
+dependencies = [
+ "getrandom 0.4.1",
+ "js-sys",
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "v_frame"
