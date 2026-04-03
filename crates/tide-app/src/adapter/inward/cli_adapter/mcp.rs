@@ -245,7 +245,17 @@ fn mcp_tools_list(id: serde_json::Value) -> serde_json::Value {
 
 fn mcp_tools_call(id: serde_json::Value, params: serde_json::Value, gateway: &mut Option<GatewayConnection>) -> serde_json::Value {
     let tool_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
-    let arguments = params.get("arguments").cloned().unwrap_or(serde_json::json!({}));
+    let mut arguments = params.get("arguments").cloned().unwrap_or(serde_json::json!({}));
+
+    // Inject _caller_pane from TIDE_PANE env var so the gateway can route
+    // the command to the correct Workspace (see cli-workspace-routing spec).
+    if let Ok(pane_str) = std::env::var("TIDE_PANE") {
+        if let Ok(pane_id) = pane_str.parse::<u64>() {
+            if let Some(obj) = arguments.as_object_mut() {
+                obj.insert("_caller_pane".to_string(), serde_json::Value::Number(pane_id.into()));
+            }
+        }
+    }
 
     let method = match tool_name {
         "tide_list_panes" => "list-panes",

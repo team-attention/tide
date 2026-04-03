@@ -161,6 +161,23 @@ impl App {
         self.sync_browser_webview_frames();
     }
 
+    /// Returns the workspace index containing the given pane.
+    /// Checks active workspace first (self.panes), then cold-stored workspaces.
+    pub(crate) fn find_workspace_for_pane(&self, pane_id: PaneId) -> Option<usize> {
+        // Check active workspace (live App fields)
+        if self.panes.contains_key(&pane_id) {
+            return Some(self.ws.active);
+        }
+        // Check cold-stored workspaces
+        for (idx, workspace) in self.ws.workspaces.iter().enumerate() {
+            if idx == self.ws.active { continue; } // already checked via self.panes
+            if workspace.panes.contains_key(&pane_id) {
+                return Some(idx);
+            }
+        }
+        None
+    }
+
     /// Create a new workspace with a single terminal pane and switch to it.
     pub(crate) fn new_workspace(&mut self) {
         // Hide browser WebViews from current workspace

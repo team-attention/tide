@@ -398,6 +398,7 @@ fn run_subscribe(params: serde_json::Value) -> i32 {
     };
     let reader = BufReader::new(stream);
 
+    let params = inject_caller_pane(params);
     let request = serde_json::json!({
         "jsonrpc": "2.0", "id": 1,
         "method": "subscribe", "params": params,
@@ -449,6 +450,7 @@ fn run_render_stream(params: serde_json::Value) -> i32 {
     let mut reader = BufReader::new(stream);
 
     // Step 1: Create the streaming render pane
+    let params = inject_caller_pane(params);
     let create_req = serde_json::json!({
         "jsonrpc": "2.0", "id": 1,
         "method": "render-stream", "params": params,
@@ -523,7 +525,21 @@ fn run_render_stream(params: serde_json::Value) -> i32 {
     0
 }
 
+fn inject_caller_pane(mut params: serde_json::Value) -> serde_json::Value {
+    // Inject _caller_pane from TIDE_PANE env var so the gateway can route
+    // the command to the correct Workspace (see cli-workspace-routing spec).
+    if let Ok(pane_str) = std::env::var("TIDE_PANE") {
+        if let Ok(pane_id) = pane_str.parse::<u64>() {
+            if let Some(obj) = params.as_object_mut() {
+                obj.insert("_caller_pane".to_string(), serde_json::Value::Number(pane_id.into()));
+            }
+        }
+    }
+    params
+}
+
 fn send_command(method: &str, params: serde_json::Value) -> i32 {
+    let params = inject_caller_pane(params);
     let socket_path = match find_socket_path() {
         Some(p) => p,
         None => {
