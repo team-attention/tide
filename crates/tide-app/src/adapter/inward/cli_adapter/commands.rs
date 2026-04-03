@@ -28,7 +28,47 @@ impl<T: ActionPort + AppCorePort + FocusNavPort + GatewayPort + LayoutPort + Pan
 
 impl crate::App {
     /// Dispatch a CLI command by method name.
+    /// Handles cross-workspace routing: if `_caller_pane` is present in params,
+    /// the command executes in the workspace that owns that pane, then swaps back.
     pub(crate) fn handle_cli_command(
+        &mut self,
+        method: &str,
+        mut params: Value,
+    ) -> Result<Value, CliError> {
+        // Extract and strip _caller_pane so handlers never see it (BR-5)
+        let caller_pane = params.as_object_mut()
+            .and_then(|m| m.remove("_caller_pane"))
+            .and_then(|v| v.as_u64());
+
+        // Find target workspace for the caller pane (UC-2, UC-4)
+        let need_swap = caller_pane
+            .and_then(|pid| self.find_workspace_for_pane(pid))
+            .filter(|&ws_idx| ws_idx != self.ws.active);
+
+        let original_ws = self.ws.active;
+
+        // Swap to target workspace if needed (BR-1, BR-4: raw save/load, not switch_workspace)
+        if let Some(target) = need_swap {
+            self.save_active_workspace();
+            self.ws.active = target;
+            self.load_active_workspace();
+        }
+
+        // Execute command
+        let result = self.dispatch_cli_command(method, params);
+
+        // Swap back if we swapped (BR-2: restore even on error)
+        if need_swap.is_some() {
+            self.save_active_workspace();
+            self.ws.active = original_ws;
+            self.load_active_workspace();
+        }
+
+        result
+    }
+
+    /// Inner dispatch — routes to the appropriate command handler.
+    fn dispatch_cli_command(
         &mut self,
         method: &str,
         params: Value,
