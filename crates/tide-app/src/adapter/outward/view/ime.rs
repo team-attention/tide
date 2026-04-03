@@ -25,7 +25,8 @@ pub(crate) fn render_ime_and_drop_preview(
         || app.modal.git_switcher.is_some()
         || app.modal.save_as_input.is_some()
         || app.modal.file_tree_rename.is_some();
-    if !app.ime.preedit.is_empty() && !popup_active {
+    let search_bar_focused = app.focus.search_focus.is_some();
+    if !app.ime.preedit.is_empty() && !popup_active && !search_bar_focused {
         let effective_id = focused;
         if let Some(target_id) = effective_id {
             // Try editor pane first (both tree editors and panel editors)

@@ -318,6 +318,12 @@ impl App {
             self.router.set_focused(id);
         }
         self.focus.focus_area = FocusArea::Stage;
+        // Re-create IME proxies for the loaded workspace's panes so that
+        // sync_ime_proxies() can focus the correct proxy and keyboard input
+        // is not lost after closing a workspace.
+        for &id in self.panes.keys() {
+            self.ime.pending_creates.push(id);
+        }
         self.pane_rects.clear();
         self.visual_pane_rects.clear();
         self.cache.pane_generations.clear();
