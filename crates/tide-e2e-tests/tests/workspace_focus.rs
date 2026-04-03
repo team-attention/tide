@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use tide_e2e_tests::assertions::{
-    assert_pane_contains, assert_pane_count, assert_pane_focused, focused_pane_id, pane_ids,
+    assert_pane_count, assert_pane_focused, focused_pane_id, pane_ids, wait_until,
 };
 use tide_e2e_tests::harness::TestApp;
 
@@ -41,11 +41,19 @@ fn test_send_keys_and_capture() {
     app.send_keys(pane_id, &["echo hello\n"])
         .expect("send_keys failed");
 
-    // Wait for PTY I/O latency
-    std::thread::sleep(Duration::from_millis(500));
-
-    // Capture and verify output contains "hello"
-    assert_pane_contains(&app, pane_id, "hello");
+    // Wait for output to appear (polling instead of fixed sleep)
+    wait_until(
+        Duration::from_secs(2),
+        Duration::from_millis(100),
+        "pane content should contain 'hello'",
+        || {
+            app.capture_pane(pane_id)
+                .ok()
+                .and_then(|c| c.get("content").and_then(|v| v.as_str()).map(|s| s.contains("hello")))
+                .unwrap_or(false)
+        },
+    )
+    .expect("output verification timed out");
 }
 
 #[test]
