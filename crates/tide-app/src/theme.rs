@@ -371,6 +371,10 @@ pub const FILE_TREE_WIDTH: f32 = 240.0;
 
 pub const TAB_BAR_HEIGHT: f32 = 32.0;
 
+/// Blink animation frequency for agent NeedsInput indicators (rad/s).
+/// Period ≈ 1.5 seconds. Used for tab dots, pane borders, and workspace sidebar dots.
+pub const AGENT_BLINK_FREQUENCY: f64 = 4.2;
+
 
 pub const PANE_CLOSE_SIZE: f32 = 14.0;
 
