@@ -162,3 +162,62 @@ fn closing_pane_that_is_not_ime_target_preserves_composition() {
     assert_eq!(app.ime.preedit, "한");
     assert_eq!(app.ime.last_target, Some(id1));
 }
+
+// --- UC-3: CLI focus-pane updates effective IME target ---
+
+#[test]
+fn cli_focus_pane_updates_effective_ime_target() {
+    // UC-3 BR-9: After cli focus-pane, effective_ime_target returns the new pane
+    use crate::ImeStatePort;
+    use serde_json::json;
+    let mut app = test_app();
+    let (layout, id1) = SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes.insert(id1, PaneKind::Editor(EditorPane::new_empty(id1)));
+    let id2 = app.layout.split(id1, crate::tide_core::SplitDirection::Vertical);
+    app.panes.insert(id2, PaneKind::Editor(EditorPane::new_empty(id2)));
+    app.focus.focused = Some(id1);
+    app.focus.focus_area = FocusArea::Stage;
+    app.router.set_focused(id1);
+
+    // Simulate CLI focus-pane changing to id2
+    let _ = app.handle_cli_command("focus-pane", json!({"pane_id": id2}));
+
+    // effective_ime_target should return the newly focused pane
+    assert_eq!(app.focus.focused, Some(id2));
+    assert_eq!(app.effective_ime_target(), Some(id2));
+}
+
+#[test]
+fn cli_focus_pane_with_active_composition_commits_to_old_target() {
+    // UC-3 BR-10: CLI focus-pane during IME composition — the sync_ime_proxies
+    // call (in the event loop) will detect the target change and commit preedit
+    // to the old target. Here we verify that ime state is set up correctly for
+    // the sync to detect the change.
+    use crate::ImeStatePort;
+    use serde_json::json;
+    let mut app = test_app();
+    let (layout, id1) = SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes.insert(id1, PaneKind::Editor(EditorPane::new_empty(id1)));
+    let id2 = app.layout.split(id1, crate::tide_core::SplitDirection::Vertical);
+    app.panes.insert(id2, PaneKind::Editor(EditorPane::new_empty(id2)));
+    app.focus.focused = Some(id1);
+    app.focus.focus_area = FocusArea::Stage;
+    app.router.set_focused(id1);
+
+    // Simulate active Korean IME composition
+    app.ime.composing = true;
+    app.ime.preedit = "한".to_string();
+    app.ime.last_target = Some(id1);
+
+    // CLI focus-pane changes focus
+    let _ = app.handle_cli_command("focus-pane", json!({"pane_id": id2}));
+
+    // Focus should have changed but IME last_target still points to old pane
+    // (sync_ime_proxies in the event loop will detect the mismatch and commit)
+    assert_eq!(app.focus.focused, Some(id2));
+    assert_eq!(app.effective_ime_target(), Some(id2));
+    // last_target still holds old pane — sync_ime_proxies will handle the commit
+    assert_eq!(app.ime.last_target, Some(id1));
+}
