@@ -115,21 +115,37 @@ pub(super) fn render_pane_chrome(
         // Only show pane focus highlight when focus is in the pane area
         let is_focused = focused == Some(id) && matches!(app.focus.focus_area, FocusArea::Stage | FocusArea::Dock);
         let is_companion = companion_id == Some(id);
+        // UC-5 BR-6,7: Pane border blinks orange for NeedsInput + unfocused
+        let agent_needs_input = !is_focused
+            && app.gateway.detected_agents.get(&id)
+                .and_then(|a| a.status)
+                .map_or(false, |s| matches!(s, crate::state::gateway_status::AgentStatus::NeedsInput));
+
         let border_color = if is_focused {
             p.border_focused
+        } else if agent_needs_input {
+            // Orange border with blink animation (same frequency as dot: ~4.2 rad/s)
+            let t = app.timing.last_frame.elapsed().as_secs_f64();
+            let opacity = 0.65_f32 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
+            crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity)
         } else if is_companion {
             // Dimmed version of border_focused -- same hue, lower alpha, no glow
             crate::tide_core::Color::new(p.border_focused.r, p.border_focused.g, p.border_focused.b, p.border_focused.a * 0.6)
         } else {
             p.border_subtle
         };
-        let top_border = if is_focused { 2.0 } else { 1.0 };
-        let side_border = if is_focused { 2.0_f32 } else { 1.0_f32 };
+        let top_border = if agent_needs_input { 2.0 } else if is_focused { 2.0 } else { 1.0 };
+        let side_border = if agent_needs_input { 2.0_f32 } else if is_focused { 2.0_f32 } else { 1.0_f32 };
 
-        // Focused pane: draw outer glow shadow
+        // Focused pane or NeedsInput: draw outer glow shadow
         if is_focused {
             let shadow_color = crate::tide_core::Color::new(0.769, 0.722, 0.651, 0.25);
             renderer.draw_chrome_shadow(rect, shadow_color, PANE_CORNER_RADIUS, 16.0, -4.0);
+        } else if agent_needs_input {
+            let t = app.timing.last_frame.elapsed().as_secs_f64();
+            let opacity = (0.15_f32 + 0.15 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32).max(0.0);
+            let shadow_color = crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity);
+            renderer.draw_chrome_shadow(rect, shadow_color, PANE_CORNER_RADIUS, 12.0, -3.0);
         }
 
         // Outer rounded rect (border color)
@@ -207,6 +223,7 @@ pub(super) fn render_pane_chrome(
             if let Some(ref tabs) = dock_zoomed_tabs {
                 let tab_zones = header::render_stage_tab_bar(
                     id, rect, tabs, &app.panes, focused, p, renderer,
+                    &app.gateway.detected_agents, blink_time,
                 );
                 // Remap StageTab actions to DockTab for dock panes
                 for mut z in tab_zones {
@@ -228,12 +245,14 @@ pub(super) fn render_pane_chrome(
             let tg = dock_tab_groups.get(&id).unwrap();
             let tab_zones = header::render_dock_tab_bar(
                 id, rect, tg, &app.panes, focused, &app.dock.pinned_dock_layout.all_pane_ids(), p, renderer,
+                &app.gateway.detected_agents, blink_time,
             );
             all_hit_zones.extend(tab_zones);
         } else if has_stage_tab_bar {
             // Stage stacked: render ONLY the tab bar (includes close/maximize)
             let tab_zones = header::render_stage_tab_bar(
                 id, rect, &stage_pane_ids, &app.panes, focused, p, renderer,
+                &app.gateway.detected_agents, blink_time,
             );
             all_hit_zones.extend(tab_zones);
         } else {

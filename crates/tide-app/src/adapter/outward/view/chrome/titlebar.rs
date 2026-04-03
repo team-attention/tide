@@ -379,10 +379,21 @@ pub(super) fn render_titlebar_and_sidebar(
                     let dot_size = 6.0_f32;
                     let dot_x = item_rect.x + item_rect.width - WS_SIDEBAR_ITEM_PAD_H - dot_size;
                     let dot_y = item_rect.y + (item_rect.height - dot_size) / 2.0;
-                    let orange = crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0);
+                    // UC-6 BR-4: Blink with same frequency as tab dot (~4.2 rad/s)
+                    let opacity = {
+                        let t = app.timing.last_frame.elapsed().as_secs_f64();
+                        0.65 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32
+                    };
+                    let orange = crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity);
                     renderer.draw_chrome_rounded_rect(
                         Rect::new(dot_x, dot_y, dot_size, dot_size),
                         orange, dot_size / 2.0,
+                    );
+                    // Glow effect for sidebar dot
+                    let glow = crate::tide_core::Color::new(0.95, 0.65, 0.2, 0.3 * opacity);
+                    renderer.draw_chrome_rounded_rect(
+                        Rect::new(dot_x - 2.0, dot_y - 2.0, dot_size + 4.0, dot_size + 4.0),
+                        glow, (dot_size + 4.0) / 2.0,
                     );
                 }
             }

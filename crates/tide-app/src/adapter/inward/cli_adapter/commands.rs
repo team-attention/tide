@@ -820,8 +820,8 @@ fn cli_notify(ctx: &mut (impl AppCorePort + GatewayPort + PaneAccessPort), param
         _ => return Err(CliError::InvalidParams(format!("unknown event: {event}"))),
     };
 
-    // Only process notify for panes that actually exist
-    if !ctx.has_pane(pane_id) {
+    // Only process notify for panes that actually exist (in any workspace)
+    if !ctx.has_pane_in_any_workspace(pane_id) {
         return Ok(json!({"ok": true}));
     }
 
