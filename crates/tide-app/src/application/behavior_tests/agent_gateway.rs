@@ -1216,7 +1216,7 @@ fn window_focus_state_tracks_platform_event() {
 fn needs_input_dot_blinks_when_unfocused() {
     // UC-5 BR-1,2: NeedsInput dot blinks when pane is unfocused
     // Verify blink computation produces opacity in range [0.3, 1.0]
-    let frequency = 4.2_f64;
+    let frequency = crate::theme::AGENT_BLINK_FREQUENCY;
     // Sample at various times
     for i in 0..20 {
         let t = i as f64 * 0.1;
@@ -1378,7 +1378,7 @@ fn needs_input_border_blinks_orange_when_unfocused() {
 fn workspace_sidebar_dot_blinks_for_notification() {
     // UC-6 BR-4: Workspace sidebar dot blinks with same frequency as tab dot
     // Verify blink computation for workspace sidebar produces opacity in range [0.3, 1.0]
-    let frequency = 4.2_f64;
+    let frequency = crate::theme::AGENT_BLINK_FREQUENCY;
     for i in 0..20 {
         let t = i as f64 * 0.1;
         let opacity = 0.65 + 0.35 * (t * frequency).sin();

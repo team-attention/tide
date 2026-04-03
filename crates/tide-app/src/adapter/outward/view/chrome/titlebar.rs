@@ -382,7 +382,7 @@ pub(super) fn render_titlebar_and_sidebar(
                     // UC-6 BR-4: Blink with same frequency as tab dot (~4.2 rad/s)
                     let opacity = {
                         let t = app.timing.last_frame.elapsed().as_secs_f64();
-                        0.65 + 0.35 * (t * 4.2).sin() as f32
+                        0.65 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32
                     };
                     let orange = crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity);
                     renderer.draw_chrome_rounded_rect(

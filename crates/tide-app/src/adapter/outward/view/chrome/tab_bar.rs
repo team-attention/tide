@@ -126,7 +126,7 @@ pub(super) fn render_pane_chrome(
         } else if agent_needs_input {
             // Orange border with blink animation (same frequency as dot: ~4.2 rad/s)
             let t = app.timing.last_frame.elapsed().as_secs_f64();
-            let opacity = 0.65_f32 + 0.35 * (t * 4.2).sin() as f32;
+            let opacity = 0.65_f32 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
             crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity)
         } else if is_companion {
             // Dimmed version of border_focused -- same hue, lower alpha, no glow
@@ -143,7 +143,7 @@ pub(super) fn render_pane_chrome(
             renderer.draw_chrome_shadow(rect, shadow_color, PANE_CORNER_RADIUS, 16.0, -4.0);
         } else if agent_needs_input {
             let t = app.timing.last_frame.elapsed().as_secs_f64();
-            let opacity = (0.15_f32 + 0.15 * (t * 4.2).sin() as f32).max(0.0);
+            let opacity = (0.15_f32 + 0.15 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32).max(0.0);
             let shadow_color = crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity);
             renderer.draw_chrome_shadow(rect, shadow_color, PANE_CORNER_RADIUS, 12.0, -3.0);
         }

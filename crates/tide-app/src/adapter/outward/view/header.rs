@@ -140,7 +140,7 @@ pub fn render_pane_header_inner(
         // Opacity range: 0.3 ~ 1.0, period ~1.5s (frequency ≈ 4.2 rad/s)
         if matches!(status, AgentStatus::NeedsInput) && !is_focused {
             if let Some(t) = blink_time {
-                let opacity = 0.65 + 0.35 * (t * 4.2).sin() as f32;
+                let opacity = 0.65 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
                 dot_color.a = opacity;
             }
         }
@@ -694,7 +694,7 @@ fn render_tab_bar_impl(
                 };
                 if matches!(status, AgentStatus::NeedsInput) && !is_focused_tab {
                     if let Some(t) = blink_time {
-                        dot_color.a = 0.65 + 0.35 * (t * 4.2).sin() as f32;
+                        dot_color.a = 0.65 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
                     }
                 }
                 let dot_size = 6.0_f32;
