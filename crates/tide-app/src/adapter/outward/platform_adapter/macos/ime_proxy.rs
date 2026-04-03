@@ -33,7 +33,7 @@ use objc2_foundation::{
 
 use crate::tide_core::{Key, Modifiers};
 
-use super::super::{EventCallback, PlatformEvent};
+use super::super::{EventCallback, PlatformEvent, PlatformWindow};
 
 use super::view::{
     key_and_modifiers_from_event, modifiers_from_flags, nsstring_from_anyobject,
@@ -41,6 +41,7 @@ use super::view::{
 
 pub struct ImeProxyViewIvars {
     callback: Rc<RefCell<EventCallback>>,
+    pane_id: Cell<u64>,
     marked_text: RefCell<String>,
     ime_cursor_rect: Cell<NSRect>,
     ime_handled: Cell<bool>,
@@ -192,6 +193,22 @@ declare_class!(
 
         #[method(keyDown:)]
         fn key_down(&self, event: &NSEvent) {
+            // Defensive check: if this proxy is not the intended target,
+            // re-establish the correct first responder so subsequent events
+            // go to the right proxy.  This catches edge cases where the
+            // async waker hasn't drained pending focus_ime_proxy commands.
+            let my_id = self.ivars().pane_id.get();
+            let target_id = super::LAST_IME_TARGET.load(std::sync::atomic::Ordering::Relaxed);
+            if my_id != target_id && target_id != 0 {
+                log::warn!(
+                    "ImeProxyView keyDown on pane {my_id} but target is {target_id} — \
+                     re-establishing correct first responder"
+                );
+                super::app::with_main_window(|window| {
+                    window.focus_ime_proxy(target_id);
+                });
+            }
+
             *self.ivars().current_event.borrow_mut() = Some(event.retain());
             self.ivars().ime_handled.set(false);
             self.ivars().composing_at_key_down.set(
@@ -572,9 +589,11 @@ impl ImeProxyView {
     pub fn new(
         callback: Rc<RefCell<EventCallback>>,
         mtm: MainThreadMarker,
+        pane_id: u64,
     ) -> Retained<Self> {
         let this = mtm.alloc::<Self>().set_ivars(ImeProxyViewIvars {
             callback,
+            pane_id: Cell::new(pane_id),
             marked_text: RefCell::new(String::new()),
             ime_cursor_rect: Cell::new(NSRect::new(
                 NSPoint::new(0.0, 0.0),
