@@ -784,6 +784,14 @@ impl crate::application::ports::inward::LayoutPort for App {
                     }
                     bp.is_first_responder = true;
                 } else if !should_be_first_responder && bp.is_first_responder {
+                    // Resign the WebView's first responder so it doesn't
+                    // compete with the IME proxy when focus moves to a
+                    // terminal or editor pane.
+                    if let (Some(wv), Some(win_ptr), Some(view_ptr)) =
+                        (&bp.webview, self.ports.platform.window_ptr(), self.ports.platform.content_view_ptr())
+                    {
+                        unsafe { wv.resign_first_responder(win_ptr, view_ptr); }
+                    }
                     bp.is_first_responder = false;
                 }
                 } // else (not popup_open)
