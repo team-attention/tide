@@ -70,7 +70,9 @@ pub(crate) fn handle_key_down(
     // Cancel pane drag on Escape
     if !matches!(ctx.interaction().pane_drag, PaneDragState::Idle) {
         if matches!(key, Key::Escape) {
-            ctx.interaction_mut().pane_drag = PaneDragState::Idle;
+            let interaction = ctx.interaction_mut();
+            interaction.pane_drag = PaneDragState::Idle;
+            interaction.drop_preview_start = None;
             ctx.request_redraw();
             return;
         }
