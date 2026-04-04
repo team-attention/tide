@@ -62,13 +62,13 @@ fn new_editor_pane_does_nothing_without_focus() {
 
 #[test]
 fn new_terminal_tab_creates_terminal_pane_in_stage() {
-    // UC-1 BR-1: New tab in Stage creates a Terminal directly
+    // UC-1 BR-1: New tab in Stage creates a Terminal directly (added to TabGroup)
     let (mut app, _) = app_with_editor();
     app.new_terminal_tab();
     let new_id = app.focus.focused.unwrap();
     assert!(matches!(app.panes.get(&new_id), Some(PaneKind::Terminal(_))));
-    // Invariant: PaneId sync
-    assert_eq!(app.layout.pane_ids().len(), app.panes.len());
+    // Invariant: PaneId sync (all_pane_ids includes inactive TabGroup tabs)
+    assert_eq!(app.layout.all_pane_ids().len(), app.panes.len());
 }
 
 // --- UC-2: SplitPane ---

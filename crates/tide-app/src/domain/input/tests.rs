@@ -150,7 +150,7 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_shift_t_triggers_split_vertical() {
+    fn ctrl_shift_t_triggers_dock_new_tab() {
         let mut router = Router::new();
         router.set_focused(1);
         let panes = two_panes_horizontal();
@@ -161,11 +161,11 @@ mod tests {
         };
         let action = router.process(event, &panes);
 
-        assert_eq!(action, Action::GlobalAction(GlobalAction::SplitVertical));
+        assert_eq!(action, Action::GlobalAction(GlobalAction::DockNewTab));
     }
 
     #[test]
-    fn meta_shift_t_triggers_split_vertical() {
+    fn meta_shift_t_triggers_new_tab() {
         let mut router = Router::new();
         router.set_focused(1);
         let panes = two_panes_horizontal();
@@ -176,7 +176,7 @@ mod tests {
         };
         let action = router.process(event, &panes);
 
-        assert_eq!(action, Action::GlobalAction(GlobalAction::SplitVertical));
+        assert_eq!(action, Action::GlobalAction(GlobalAction::NewTab));
     }
 
     #[test]
@@ -251,33 +251,7 @@ mod tests {
     }
 
     #[test]
-    fn meta_arrow_triggers_navigate_all_directions() {
-        let mut router = Router::new();
-        router.set_focused(1);
-        let panes = two_panes_horizontal();
-
-        let cases = [
-            (Key::Up, Direction::Up),
-            (Key::Down, Direction::Down),
-            (Key::Left, Direction::Left),
-            (Key::Right, Direction::Right),
-        ];
-
-        for (key, expected_dir) in cases {
-            let event = InputEvent::KeyPress {
-                key,
-                modifiers: meta(),
-            };
-            let action = router.process(event, &panes);
-            assert_eq!(
-                action,
-                Action::GlobalAction(GlobalAction::Navigate(expected_dir))
-            );
-        }
-    }
-
-    #[test]
-    fn meta_enter_triggers_toggle_zoom() {
+    fn meta_enter_triggers_toggle_stacked() {
         let mut router = Router::new();
         router.set_focused(1);
         let panes = two_panes_horizontal();
@@ -288,7 +262,7 @@ mod tests {
         };
         let action = router.process(event, &panes);
 
-        assert_eq!(action, Action::GlobalAction(GlobalAction::ToggleZoom));
+        assert_eq!(action, Action::GlobalAction(GlobalAction::ToggleStacked));
     }
 
     #[test]

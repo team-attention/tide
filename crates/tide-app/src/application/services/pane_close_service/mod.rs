@@ -14,7 +14,7 @@ impl App {
         if self.interaction.pane_drag.source_pane() == Some(pane_id) {
             self.interaction.pane_drag = PaneDragState::Idle;
         }
-        let remaining = self.layout.pane_ids();
+        let remaining = self.layout.all_pane_ids();
         if remaining.len() <= 1 {
             // If other workspaces exist, close this one instead of exiting
             if self.ws.workspaces.len() > 1 {
@@ -39,7 +39,7 @@ impl App {
         // layout neighbor while the tree is still intact.
         let next_focus = self.layout.right_neighbor_pane(pane_id)
             .or_else(|| {
-                self.layout.pane_ids().iter()
+                self.layout.all_pane_ids().iter()
                     .find(|&&id| id != pane_id)
                     .copied()
             });

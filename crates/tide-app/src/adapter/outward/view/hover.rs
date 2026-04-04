@@ -36,10 +36,10 @@ pub(crate) fn render_hover(
                     }
                 }
                 crate::state::drag_types::HoverTarget::PaneTabBar(_pane_id) => {
-                    // No full tab bar hover highlight (minimal tab style)
+                    // No full tab bar hover highlight
                 }
                 crate::state::drag_types::HoverTarget::PaneTabClose(_pane_id) => {
-                    // No hover background for close button (minimal tab style)
+                    // No hover background for close button
                 }
                 crate::state::drag_types::HoverTarget::FileFinderItem(_) => {
                     // File finder hover — rendered inline in overlays

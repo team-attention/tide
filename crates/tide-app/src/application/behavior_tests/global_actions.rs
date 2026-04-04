@@ -77,12 +77,12 @@ fn new_file_global_action_creates_editor_pane_in_tab_group() {
 
 #[test]
 fn new_tab_global_action_creates_terminal_pane_in_stage() {
-    // UC-4 BR-29: NewTab in Stage creates Terminal directly
+    // UC-4 BR-29: NewTab in Stage creates Terminal (added to TabGroup)
     let (mut app, _) = app_with_editor();
     app.handle_global_action(GlobalAction::NewTab);
     let new_id = app.focus.focused.unwrap();
     assert!(matches!(app.panes.get(&new_id), Some(PaneKind::Terminal(_))));
-    assert_eq!(app.layout.pane_ids().len(), app.panes.len());
+    assert_eq!(app.layout.all_pane_ids().len(), app.panes.len());
 }
 
 #[test]

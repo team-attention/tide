@@ -361,6 +361,7 @@ impl DockPort for App {
         }
 
         self.dock.dock_open = true;
+        // Focus moves to Dock so user can interact with the new Launcher.
         self.focus.focus_area = FocusArea::Dock;
         self.focus.focused = Some(new_id);
         self.router.set_focused(new_id);

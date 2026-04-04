@@ -14,10 +14,10 @@ Key current behaviors:
 
 ### To-Be
 
-Stage supports `LeafGroup(TabGroup)` nodes identically to Dock. Any Pane type (not just Terminal) can be grouped into a Stage TabGroup. Tab bar UI follows a unified design referencing reference-ui.example and VS Code patterns.
+Stage supports `LeafGroup(TabGroup)` nodes identically to Dock. Any Pane type (not just Terminal) can be grouped into a Stage TabGroup. Tab bar UI follows a unified design referencing VS Code patterns.
 
 1. **Stage leaf type**: Both `Node::Leaf(PaneId)` and `Node::LeafGroup(TabGroup)` in Stage's SplitLayout.
-2. **Tab bar rendering**: Per-TabGroup tab bar shown for LeafGroup nodes with 2+ tabs. Single-tab LeafGroups render as normal pane headers (no tab bar). Uses a unified tab bar component shared with Dock, styled after VS Code-inspired (compact, horizontally scrollable, close button per tab, active tab highlight).
+2. **Tab bar rendering**: Per-TabGroup tab bar shown for LeafGroup nodes with 2+ tabs. Single-tab LeafGroups render as normal pane headers (no tab bar). Uses a unified tab bar component shared with Dock, styled after VS Code (compact, horizontally scrollable, close button per tab, active tab highlight).
 3. **Center drop**: `DropZone::Center` on a Stage pane merges the source into the target's TabGroup (creating a LeafGroup if the target is a Leaf).
 4. **Tab operations**: `cycle_tab` (Cmd+I/O in Stage), click-to-switch, close tab (Cmd+W) all work within Stage TabGroups.
 5. **Zoom with TabGroups**: Zoomed Stage shows a flat tab bar of all Stage panes (current behavior preserved), with TabGroup membership indicated by visual grouping.
@@ -129,7 +129,7 @@ Stage supports `LeafGroup(TabGroup)` nodes identically to Dock. Any Pane type (n
 2. If yes and the TabGroup has 2+ tabs: render a tab bar at the top of the pane rect, showing one tab per PaneId in the TabGroup.
 3. Each tab shows: pane title (truncated), close button (x). Active tab is visually highlighted.
 4. If TabGroup has only 1 tab: render as normal pane header (no tab bar).
-5. Tab bar style follows VS Code-inspired design: compact height, horizontal layout, active tab distinguished by background color, inactive tabs subtly dimmed.
+5. Tab bar style follows VS Code design: compact height, horizontal layout, active tab distinguished by background color, inactive tabs subtly dimmed.
 
 **Postcondition**: Tab bar correctly renders for all Stage LeafGroups with 2+ tabs.
 
