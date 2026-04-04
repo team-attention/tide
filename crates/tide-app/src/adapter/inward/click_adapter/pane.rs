@@ -367,6 +367,10 @@ pub(crate) fn handle_drop(
 
     match dest {
         DropDestination::TreeRoot(zone) => {
+            // Block dock-to-stage drops
+            if ctx.is_pane_in_dock(source) {
+                return;
+            }
             // Remove source from its current location
             ctx.layout_remove(source);
             // Insert at root level
@@ -470,6 +474,9 @@ pub(crate) fn handle_drop(
                     }
                     ctx.dock_layout_set_active_tab(tid, source);
                 }
+            } else if source_in_dock && !target_in_dock {
+                // Block dock-to-stage drops
+                return;
             } else {
                 if zone == DropZone::Center {
                     // Center drop on Stage pane: merge into TabGroup (UC-5 BR-1)
