@@ -161,6 +161,16 @@ pub(crate) fn compute_hover_target(
         return Some(HoverTarget::FileFinderItem(idx));
     }
 
+    // Context area border (resize handle) — right edge of pane area
+    // Must be checked before SplitBorder so dock border isn't mistaken for a split border
+    if ctx.dock_open() {
+        if let Some(pa_rect) = ctx.pane_area_rect() {
+            let border_x = pa_rect.x + pa_rect.width;
+            if (pos.x - border_x).abs() < 5.0 {
+                return Some(HoverTarget::DockBorder);
+            }
+        }
+    }
 
     // Split pane border (resize handle between tiled panes)
     if let Some(dir) = split_border_at(ctx, pos) {
@@ -187,16 +197,6 @@ pub(crate) fn compute_hover_target(
         let border_x = ws_rect.x + ws_rect.width + PANE_GAP;
         if (pos.x - border_x).abs() < 5.0 {
             return Some(HoverTarget::WsSidebarBorder);
-        }
-    }
-
-    // Context area border (resize handle) — right edge of pane area
-    if ctx.dock_open() {
-        if let Some(pa_rect) = ctx.pane_area_rect() {
-            let border_x = pa_rect.x + pa_rect.width;
-            if (pos.x - border_x).abs() < 5.0 {
-                return Some(HoverTarget::DockBorder);
-            }
         }
     }
 

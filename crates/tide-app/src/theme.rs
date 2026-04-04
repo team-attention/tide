@@ -146,12 +146,12 @@ pub static DARK: ThemePalette = ThemePalette {
     tree_icon:      Color::new(0.290, 0.290, 0.306, 1.0),   // file icons #4A4A4E
     tree_row_active: Color::new(0.102, 0.102, 0.114, 1.0),  // expanded folder row bg #1A1A1D
 
-    // Tab bar
-    tab_bar_bg:         Color::new(0.133, 0.133, 0.149, 1.0),   // #222226
-    tab_bar_bg_focused: Color::new(0.157, 0.149, 0.122, 1.0),   // #28261F
+    // Tab bar — compact editor-tab styling: clean minimal, bottom indicator
+    tab_bar_bg:         Color::new(0.098, 0.098, 0.110, 1.0),   // #19191C darker, cleaner
+    tab_bar_bg_focused: Color::new(0.110, 0.106, 0.090, 1.0),   // #1C1B17 subtle warm focused
     active_tab_bg:      Color::new(0.055, 0.055, 0.063, 1.0),   // same as pane_bg #0E0E10
-    tab_text:           Color::new(0.420, 0.420, 0.439, 1.0),
-    tab_text_focused:   Color::new(1.0, 1.0, 1.0, 1.0),
+    tab_text:           Color::new(0.400, 0.400, 0.420, 1.0),   // slightly dimmer inactive
+    tab_text_focused:   Color::new(0.92, 0.92, 0.92, 1.0),      // slightly softer white
     close_icon:         Color::new(0.290, 0.290, 0.306, 1.0),
     dock_tab_underline: Color::new(0.769, 0.722, 0.651, 1.0),
 
@@ -266,11 +266,11 @@ pub static LIGHT: ThemePalette = ThemePalette {
     tree_icon:      Color::new(0.48, 0.42, 0.34, 1.0),  // muted warm
     tree_row_active: Color::new(0.88, 0.85, 0.80, 1.0), // warm active row
 
-    // Tab bar — warm tones (high contrast)
-    tab_bar_bg:         Color::new(0.90, 0.87, 0.83, 1.0),  // warm light tab bar bg
-    tab_bar_bg_focused: Color::new(0.93, 0.90, 0.85, 1.0),  // warm light tab bar bg focused
-    active_tab_bg:      Color::new(0.835, 0.805, 0.765, 1.0), // 6.5% darker for light mode
-    tab_text:           Color::new(0.38, 0.33, 0.26, 1.0),  // warm readable
+    // Tab bar — compact editor-tab styling: clean minimal, bottom indicator
+    tab_bar_bg:         Color::new(0.92, 0.89, 0.86, 1.0),  // slightly darker for contrast
+    tab_bar_bg_focused: Color::new(0.94, 0.91, 0.87, 1.0),  // warm light tab bar bg focused
+    active_tab_bg:      Color::new(0.96, 0.94, 0.92, 1.0),  // lighter to match surface_bg
+    tab_text:           Color::new(0.42, 0.37, 0.30, 1.0),  // warm readable
     tab_text_focused:   Color::new(0.10, 0.08, 0.05, 1.0),  // near-black brown
     close_icon:         Color::new(0.45, 0.38, 0.30, 1.0),  // warm close icon
     dock_tab_underline: Color::new(0.55, 0.38, 0.18, 1.0),  // chestnut
@@ -378,9 +378,9 @@ pub const FILE_TREE_LINE_SPACING: f32 = 1.5;
 pub const FILE_TREE_ROW_RADIUS: f32 = 6.0;
 pub const FILE_TREE_WIDTH: f32 = 240.0;
 
-pub const TAB_BAR_HEIGHT: f32 = 30.0;
+pub const TAB_BAR_HEIGHT: f32 = 34.0;
 pub const TAB_CLOSE_ICON_SIZE: f32 = 9.0;
-pub const TAB_H_PAD: f32 = 6.0;
+pub const TAB_H_PAD: f32 = 10.0;
 pub const TAB_CONTENT_SPACING: f32 = 6.0;
 pub const TAB_ACTIVE_INDICATOR_HEIGHT: f32 = 2.0;
 pub const TAB_MAX_WIDTH: f32 = 220.0;

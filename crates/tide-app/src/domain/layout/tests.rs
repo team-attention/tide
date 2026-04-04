@@ -1188,6 +1188,49 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_snapshot_roundtrip_with_leaf_group() {
+        // Create a layout: LeafGroup([p1, p3]) | p2 (horizontal split)
+        let (mut layout, p1) = SplitLayout::with_initial_pane();
+        let p2 = layout.split(p1, SplitDirection::Horizontal);
+        let p3 = layout.alloc_id();
+        layout.add_tab(p1, p3);
+
+        // Verify LeafGroup was created
+        let all_ids = layout.all_pane_ids();
+        assert_eq!(all_ids.len(), 3);
+        assert!(all_ids.contains(&p1));
+        assert!(all_ids.contains(&p2));
+        assert!(all_ids.contains(&p3));
+
+        // Snapshot and restore
+        let snap = layout.snapshot().unwrap();
+        let restored = SplitLayout::from_snapshot(snap);
+
+        // Verify all pane IDs are preserved
+        let restored_all = restored.all_pane_ids();
+        assert_eq!(restored_all.len(), 3);
+        assert!(restored_all.contains(&p1));
+        assert!(restored_all.contains(&p2));
+        assert!(restored_all.contains(&p3));
+
+        // Verify the active pane IDs (visible panes) include only the
+        // active tab from the LeafGroup plus p2
+        let restored_active = restored.pane_ids();
+        assert_eq!(restored_active.len(), 2);
+        assert!(restored_active.contains(&p2));
+        // p3 should be the active tab (add_tab sets new tab as active)
+        assert!(restored_active.contains(&p3));
+
+        // Verify the TabGroup structure is preserved
+        let tg = restored.tab_group_containing(p3);
+        assert!(tg.is_some());
+        let tg = tg.unwrap();
+        assert_eq!(tg.tabs.len(), 2);
+        assert!(tg.tabs.contains(&p1));
+        assert!(tg.tabs.contains(&p3));
+    }
+
     // ──────────────────────────────────────────
     // right_neighbor_pane
     // ──────────────────────────────────────────

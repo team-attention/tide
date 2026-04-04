@@ -471,12 +471,18 @@ pub(crate) fn handle_drop(
                     ctx.dock_layout_set_active_tab(tid, source);
                 }
             } else {
-                let insert_first = match zone {
-                    DropZone::Top | DropZone::Left => true,
-                    _ => false,
-                };
-                ctx.layout_remove(source);
-                ctx.layout_insert_pane(target_id, source, direction, insert_first);
+                if zone == DropZone::Center {
+                    // Center drop on Stage pane: merge into TabGroup (UC-5 BR-1)
+                    ctx.layout_remove(source);
+                    ctx.layout_add_tab(target_id, source);
+                } else {
+                    let insert_first = match zone {
+                        DropZone::Top | DropZone::Left => true,
+                        _ => false,
+                    };
+                    ctx.layout_remove(source);
+                    ctx.layout_insert_pane(target_id, source, direction, insert_first);
+                }
             }
             ctx.focus_pane(source);
             ctx.invalidate_chrome();

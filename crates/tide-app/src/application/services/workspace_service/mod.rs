@@ -48,6 +48,8 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         }
         self.focus.focused = Some(id);
         self.router.set_focused(id);
+        // Update TabGroup active tab when focusing a Stage pane in a LeafGroup
+        self.layout.set_active_tab(id);
         // Stacked mode: keep zoom on the newly focused Stage terminal
         if self.focus.zoomed_pane.is_some() && !self.is_pane_in_dock(id) {
             self.focus.zoomed_pane = Some(id);
