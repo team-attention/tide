@@ -163,6 +163,7 @@ fn open_git_switcher(
 ) {
     // Cancel any in-progress drag when opening a modal
     ctx.interaction_mut().pane_drag = crate::state::drag_types::PaneDragState::Idle;
+    ctx.interaction_mut().drop_preview_start = None;
     // Toggle: close if already open for the same pane and mode
     if let Some(ref gs) = ctx.modal().git_switcher {
         if gs.pane_id == pane_id && gs.mode == mode {

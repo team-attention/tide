@@ -262,73 +262,26 @@ impl App {
     }
 
     /// Insert preview: semi-transparent fill + thin border.
-    fn draw_insert_preview(
-        renderer: &mut crate::tide_renderer::WgpuRenderer,
-        preview: Rect,
-        p: &ThemePalette,
-    ) {
-        renderer.draw_rect(preview, p.drop_fill);
+    /// `alpha_factor` (0..=1) controls fade-in opacity.
+    fn draw_insert_preview(renderer: &mut crate::tide_renderer::WgpuRenderer, preview: Rect, p: &ThemePalette, alpha_factor: f32) {
+        let fill = p.drop_fill.with_alpha_factor(alpha_factor);
+        let border = p.drop_border.with_alpha_factor(alpha_factor);
+        renderer.draw_rect(preview, fill);
         let bw = DROP_PREVIEW_BORDER_WIDTH;
-        renderer.draw_rect(
-            Rect::new(preview.x, preview.y, preview.width, bw),
-            p.drop_border,
-        );
-        renderer.draw_rect(
-            Rect::new(
-                preview.x,
-                preview.y + preview.height - bw,
-                preview.width,
-                bw,
-            ),
-            p.drop_border,
-        );
-        renderer.draw_rect(
-            Rect::new(preview.x, preview.y, bw, preview.height),
-            p.drop_border,
-        );
-        renderer.draw_rect(
-            Rect::new(
-                preview.x + preview.width - bw,
-                preview.y,
-                bw,
-                preview.height,
-            ),
-            p.drop_border,
-        );
+        renderer.draw_rect(Rect::new(preview.x, preview.y, preview.width, bw), border);
+        renderer.draw_rect(Rect::new(preview.x, preview.y + preview.height - bw, preview.width, bw), border);
+        renderer.draw_rect(Rect::new(preview.x, preview.y, bw, preview.height), border);
+        renderer.draw_rect(Rect::new(preview.x + preview.width - bw, preview.y, bw, preview.height), border);
     }
 
     /// Swap preview: thick border only, no fill — visually distinct from insert.
-    fn draw_swap_preview(
-        renderer: &mut crate::tide_renderer::WgpuRenderer,
-        preview: Rect,
-        p: &ThemePalette,
-    ) {
+    /// `alpha_factor` (0..=1) controls fade-in opacity.
+    fn draw_swap_preview(renderer: &mut crate::tide_renderer::WgpuRenderer, preview: Rect, p: &ThemePalette, alpha_factor: f32) {
+        let border = p.swap_border.with_alpha_factor(alpha_factor);
         let bw = SWAP_PREVIEW_BORDER_WIDTH;
-        renderer.draw_rect(
-            Rect::new(preview.x, preview.y, preview.width, bw),
-            p.swap_border,
-        );
-        renderer.draw_rect(
-            Rect::new(
-                preview.x,
-                preview.y + preview.height - bw,
-                preview.width,
-                bw,
-            ),
-            p.swap_border,
-        );
-        renderer.draw_rect(
-            Rect::new(preview.x, preview.y, bw, preview.height),
-            p.swap_border,
-        );
-        renderer.draw_rect(
-            Rect::new(
-                preview.x + preview.width - bw,
-                preview.y,
-                bw,
-                preview.height,
-            ),
-            p.swap_border,
-        );
+        renderer.draw_rect(Rect::new(preview.x, preview.y, preview.width, bw), border);
+        renderer.draw_rect(Rect::new(preview.x, preview.y + preview.height - bw, preview.width, bw), border);
+        renderer.draw_rect(Rect::new(preview.x, preview.y, bw, preview.height), border);
+        renderer.draw_rect(Rect::new(preview.x + preview.width - bw, preview.y, bw, preview.height), border);
     }
 }
