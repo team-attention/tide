@@ -3,10 +3,12 @@ use crate::pane::editor::completion::{CompletionItem, CompletionKind, Completion
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
+use crate::tide_lsp::manager::parse_completion_response;
 use crate::App;
 use crate::ClipboardSearchPort;
 use crate::WorkspaceNavPort;
 use crate::tide_core::LayoutEngine;
+use serde_json::json;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -454,15 +456,44 @@ fn sort_text_breaks_tie_when_fuzzy_scores_equal() {
     assert_eq!(labels, vec!["alpha", "middle", "zebra"]);
 }
 
-// --- UC-3 BR-13a: preselect boost ---
-
 #[test]
-fn preselect_items_boosted_to_top() {
-    // UC-3 BR-13a: Items with preselect=true appear before non-preselected items
+fn higher_scoring_prefix_match_ranks_first() {
     let items = vec![
         CompletionItem {
-            label: "string".into(),
-            kind: CompletionKind::Keyword,
+            label: "my_console".into(),
+            kind: CompletionKind::Variable,
+            insert_text: None,
+            sort_text: Some("0".into()),
+            filter_text: None,
+            preselect: false,
+            detail: None,
+        },
+        CompletionItem {
+            label: "console".into(),
+            kind: CompletionKind::Variable,
+            insert_text: None,
+            sort_text: Some("1".into()),
+            filter_text: None,
+            preselect: false,
+            detail: None,
+        },
+    ];
+    let mut state = CompletionState::new(items, 0, 0);
+    state.prefix = "con".into();
+    state.apply_filter();
+
+    let first_label = state.items[state.filtered_indices[0]].label.as_str();
+    assert_eq!(first_label, "console");
+}
+
+// --- UC-1 BR-2: preselect preference ---
+
+#[test]
+fn preselect_breaks_tie_without_beating_better_match() {
+    let items = vec![
+        CompletionItem {
+            label: "console".into(),
+            kind: CompletionKind::Variable,
             insert_text: None,
             sort_text: Some("1".into()),
             filter_text: None,
@@ -470,7 +501,7 @@ fn preselect_items_boosted_to_top() {
             detail: None,
         },
         CompletionItem {
-            label: "String".into(),
+            label: "my_console".into(),
             kind: CompletionKind::Variable,
             insert_text: None,
             sort_text: Some("0".into()),
@@ -478,23 +509,15 @@ fn preselect_items_boosted_to_top() {
             preselect: true,
             detail: None,
         },
-        CompletionItem {
-            label: "stringify".into(),
-            kind: CompletionKind::Function,
-            insert_text: None,
-            sort_text: Some("2".into()),
-            filter_text: None,
-            preselect: false,
-            detail: None,
-        },
     ];
     let mut state = CompletionState::new(items, 0, 0);
-    state.prefix = "stri".into();
+    state.prefix = "con".into();
     state.apply_filter();
 
-    // String (preselect=true) should be first regardless of fuzzy score
     let first_label = state.items[state.filtered_indices[0]].label.as_str();
-    assert_eq!(first_label, "String", "preselected item should be first");
+    let second_label = state.items[state.filtered_indices[1]].label.as_str();
+    assert_eq!(first_label, "console");
+    assert_eq!(second_label, "my_console");
 }
 
 // --- UC-3 BR-14: detail text ---
@@ -512,4 +535,88 @@ fn completion_item_includes_detail_text() {
         detail: Some("function useState<S>(): [S, Dispatch<S>]".into()),
     };
     assert_eq!(item.detail.as_deref(), Some("function useState<S>(): [S, Dispatch<S>]"));
+}
+
+#[test]
+fn filter_text_drives_prefix_matching() {
+    let items = vec![
+        CompletionItem {
+            label: "print!".into(),
+            kind: CompletionKind::Function,
+            insert_text: None,
+            sort_text: None,
+            filter_text: Some("println".into()),
+            preselect: false,
+            detail: None,
+        },
+        CompletionItem {
+            label: "panic!".into(),
+            kind: CompletionKind::Function,
+            insert_text: None,
+            sort_text: None,
+            filter_text: None,
+            preselect: false,
+            detail: None,
+        },
+    ];
+    let mut state = CompletionState::new(items, 0, 0);
+    state.prefix = "println".into();
+    state.apply_filter();
+
+    assert_eq!(state.filtered_indices.len(), 1);
+    let label = state.items[state.filtered_indices[0]].label.as_str();
+    assert_eq!(label, "print!");
+}
+
+#[test]
+fn accepted_completion_strips_snippet_placeholders() {
+    let items = vec![CompletionItem {
+        label: "format".into(),
+        kind: CompletionKind::Function,
+        insert_text: Some("format(${1:value})$0".into()),
+        sort_text: None,
+        filter_text: None,
+        preselect: false,
+        detail: None,
+    }];
+    let state = CompletionState::new(items, 0, 0);
+    assert_eq!(state.insert_text().as_deref(), Some("format(value)"));
+}
+
+#[test]
+fn accepted_completion_preserves_escaped_dollar_signs() {
+    let items = vec![CompletionItem {
+        label: "price".into(),
+        kind: CompletionKind::Variable,
+        insert_text: Some("const price = $$100".into()),
+        sort_text: None,
+        filter_text: None,
+        preselect: false,
+        detail: None,
+    }];
+    let state = CompletionState::new(items, 0, 0);
+    assert_eq!(state.insert_text().as_deref(), Some("const price = $100"));
+}
+
+#[test]
+fn manager_prefers_text_edit_new_text_for_inserted_text() {
+    let response = parse_completion_response(
+        json!([
+            {
+                "label": "contains",
+                "insertText": "contains()",
+                "textEdit": {
+                    "range": {
+                        "start": { "line": 0, "character": 1 },
+                        "end": { "line": 0, "character": 4 }
+                    },
+                    "newText": "contains(value)"
+                }
+            }
+        ]),
+        "file:///tmp/example.ts",
+    ).expect("completion response should parse");
+
+    assert_eq!(response.items.len(), 1);
+    assert_eq!(response.items[0].insert_text.as_deref(), Some("contains(value)"));
 }

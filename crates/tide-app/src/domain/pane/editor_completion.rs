@@ -120,7 +120,8 @@ impl CompletionState {
     /// Uses insertText if available, otherwise falls back to label.
     pub fn insert_text(&self) -> Option<String> {
         self.selected_item().map(|item| {
-            item.insert_text.clone().unwrap_or_else(|| item.label.clone())
+            let raw = item.insert_text.clone().unwrap_or_else(|| item.label.clone());
+            sanitize_insert_text(&raw)
         })
     }
 
@@ -169,10 +170,10 @@ impl CompletionState {
             })
             .collect();
 
-        // Sort: preselect first → score descending → sortText ascending → original index
+        // Sort: score descending → preselect preference → sortText ascending → original index
         scored.sort_by(|a, b| {
-            b.2.cmp(&a.2) // preselect first
-                .then(b.1.cmp(&a.1)) // score descending
+            b.1.cmp(&a.1) // score descending
+                .then(b.2.cmp(&a.2)) // preselect tie-break
                 .then_with(|| {
                     match (a.3, b.3) {
                         (Some(sa), Some(sb)) => sa.cmp(sb),
@@ -213,6 +214,66 @@ impl CompletionState {
                 self.items.get(item_idx).map(|item| (display_idx, item))
             })
     }
+}
+
+fn sanitize_insert_text(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+
+    while i < chars.len() {
+        if chars[i] != '$' {
+            out.push(chars[i]);
+            i += 1;
+            continue;
+        }
+
+        if i + 1 >= chars.len() {
+            i += 1;
+            continue;
+        }
+
+        match chars[i + 1] {
+            '$' => {
+                out.push('$');
+                i += 2;
+            }
+            '0'..='9' => {
+                i += 2;
+                while i < chars.len() && chars[i].is_ascii_digit() {
+                    i += 1;
+                }
+            }
+            '{' => {
+                i += 2;
+                while i < chars.len() && chars[i].is_ascii_digit() {
+                    i += 1;
+                }
+
+                if i < chars.len() && chars[i] == ':' {
+                    i += 1;
+                    while i < chars.len() && chars[i] != '}' {
+                        out.push(chars[i]);
+                        i += 1;
+                    }
+                } else {
+                    while i < chars.len() && chars[i] != '}' {
+                        i += 1;
+                    }
+                }
+
+                if i < chars.len() && chars[i] == '}' {
+                    i += 1;
+                }
+            }
+            _ => {
+                out.push('$');
+                i += 1;
+            }
+        }
+    }
+
+    out
 }
 
 /// Fuzzy match scoring (VS Code-style).
