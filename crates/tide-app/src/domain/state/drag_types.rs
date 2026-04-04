@@ -117,6 +117,10 @@ pub(crate) enum PaneDragState {
         drop_target: Option<DropDestination>,
         /// Cached simulate_drop result to avoid cloning the layout tree every frame.
         cached_preview_rect: Option<Rect>,
+        /// Current cursor position, updated on every mouse move during drag.
+        cursor_pos: Vec2,
+        /// Label text of the tab being dragged, captured at drag start.
+        source_label: String,
     },
 }
 

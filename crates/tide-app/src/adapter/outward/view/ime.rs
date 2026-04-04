@@ -1,6 +1,6 @@
 use unicode_width::UnicodeWidthChar;
 
-use crate::tide_core::{Rect, Renderer, TerminalBackend, TextStyle, Vec2};
+use crate::tide_core::{Color, Rect, Renderer, TerminalBackend, TextStyle, Vec2};
 
 use crate::state::drag_types::{DropDestination, PaneDragState};
 use crate::pane::PaneKind;
@@ -91,10 +91,21 @@ pub(crate) fn render_ime_and_drop_preview(
         source_pane,
         drop_target: ref maybe_dest,
         cached_preview_rect,
+        cursor_pos,
+        source_label,
+        ..
     } = &app.interaction.pane_drag {
+        // Compute fade-in alpha from drop_preview_start (150ms ease-in quadratic)
+        let alpha_factor = app.interaction.drop_preview_start
+            .map(|start| {
+                let t = (start.elapsed().as_secs_f32() * 1000.0 / 150.0).min(1.0);
+                t * t // quadratic ease-in
+            })
+            .unwrap_or(1.0);
+
         // Dim overlay on the source pane being dragged
         if let Some(&(_, source_rect)) = visual_pane_rects.iter().find(|(id, _)| *id == *source_pane) {
-            renderer.draw_rect(source_rect, p.drag_source_dim);
+            renderer.draw_rect(source_rect, p.drag_source_dim.with_alpha_factor(alpha_factor));
         }
 
         if let Some(ref dest) = maybe_dest {
@@ -107,7 +118,7 @@ pub(crate) fn render_ime_and_drop_preview(
                         // Swap preview: border-only outline around target's visual rect
                         if let DropDestination::TreePane(target_id, _) = dest {
                             if let Some(&(_, target_rect)) = visual_pane_rects.iter().find(|(id, _)| *id == *target_id) {
-                                App::draw_swap_preview(renderer, target_rect, p);
+                                App::draw_swap_preview(renderer, target_rect, p, alpha_factor);
                             }
                         }
                     } else {
@@ -131,7 +142,7 @@ pub(crate) fn render_ime_and_drop_preview(
                                     preview_rect.width,
                                     preview_rect.height,
                                 );
-                                App::draw_insert_preview(renderer, screen_rect, p);
+                                App::draw_insert_preview(renderer, screen_rect, p, alpha_factor);
                             }
                         }
                     }
@@ -139,7 +150,7 @@ pub(crate) fn render_ime_and_drop_preview(
                 DropDestination::Workspace(idx) => {
                     // Highlight the target workspace sidebar item
                     if let Some(item_rect) = crate::adapter::inward::drag_drop_adapter::workspace_sidebar_item_rect(app, *idx) {
-                        App::draw_insert_preview(renderer, item_rect, p);
+                        App::draw_insert_preview(renderer, item_rect, p, alpha_factor);
                     }
                 }
                 DropDestination::PinnedGroup => {
@@ -147,10 +158,46 @@ pub(crate) fn render_ime_and_drop_preview(
                     if let Some(dock_rect) = app.dock_area_rect {
                         let pinned_w = (dock_rect.width * app.dock.pinned_dock_ratio).max(60.0).min(dock_rect.width - 60.0);
                         let pinned_rect = Rect::new(dock_rect.x, dock_rect.y, pinned_w, dock_rect.height);
-                        App::draw_insert_preview(renderer, pinned_rect, p);
+                        App::draw_insert_preview(renderer, pinned_rect, p, alpha_factor);
                     }
                 }
             }
+        }
+
+        // Floating tab label that follows the cursor during drag
+        if !source_label.is_empty() {
+            let cell_size = renderer.cell_size();
+            let label_offset_x = 10.0;
+            let label_offset_y = 10.0;
+            let h_padding = 8.0;
+            let v_padding = 4.0;
+
+            let char_count = source_label.chars().count() as f32;
+            let text_w = char_count * cell_size.width;
+            let text_h = cell_size.height;
+            let bg_w = text_w + h_padding * 2.0;
+            let bg_h = text_h + v_padding * 2.0;
+
+            let bg_x = cursor_pos.x + label_offset_x;
+            let bg_y = cursor_pos.y + label_offset_y;
+
+            // Semi-transparent dark background with fade-in
+            let bg_color = Color::new(30.0 / 255.0, 30.0 / 255.0, 30.0 / 255.0, 0.85)
+                .with_alpha_factor(alpha_factor);
+            renderer.draw_top_rect(Rect::new(bg_x, bg_y, bg_w, bg_h), bg_color);
+
+            // White label text with fade-in
+            let text_pos = Vec2::new(bg_x + h_padding, bg_y + v_padding);
+            let label_style = TextStyle {
+                foreground: Color::new(1.0, 1.0, 1.0, alpha_factor),
+                background: None,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            };
+            let clip = Rect::new(bg_x, bg_y, bg_w, bg_h);
+            renderer.draw_top_text(&source_label, text_pos, label_style, clip);
         }
     }
 

@@ -85,6 +85,11 @@ impl Color {
         Self { r, g, b, a: 1.0 }
     }
 
+    /// Return a copy with alpha scaled by `factor` (clamped to 0..=1).
+    pub fn with_alpha_factor(self, factor: f32) -> Self {
+        Self { a: self.a * factor.clamp(0.0, 1.0), ..self }
+    }
+
     pub const BLACK: Self = Self::new(0.0, 0.0, 0.0, 1.0);
     pub const WHITE: Self = Self::new(1.0, 1.0, 1.0, 1.0);
 }
