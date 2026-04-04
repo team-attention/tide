@@ -1,9 +1,9 @@
-// Spec: docs/specs/editor.md — UC-3: PreviewScroll
+// Spec: docs/specs/editor.md — UC-4: PreviewScroll
 use crate::pane::editor;
 
 #[test]
 fn j_scrolls_down_one_line() {
-    // UC-3 BR-8: j scrolls down one line
+    // UC-4 BR-18: j scrolls down one line
     let mut v = 0;
     let mut h = 0;
     editor::apply_preview_scroll('j', &mut v, &mut h, 100, 100, 30);
@@ -12,7 +12,7 @@ fn j_scrolls_down_one_line() {
 
 #[test]
 fn k_scrolls_up_one_line() {
-    // UC-3 BR-9: k scrolls up one line
+    // UC-4 BR-19: k scrolls up one line
     let mut v = 5;
     let mut h = 0;
     editor::apply_preview_scroll('k', &mut v, &mut h, 100, 100, 30);
@@ -21,7 +21,7 @@ fn k_scrolls_up_one_line() {
 
 #[test]
 fn k_does_not_scroll_below_zero() {
-    // UC-3 BR-10: k does not scroll below zero
+    // UC-4 BR-20: k does not scroll below zero
     let mut v = 0;
     let mut h = 0;
     editor::apply_preview_scroll('k', &mut v, &mut h, 100, 100, 30);
@@ -30,7 +30,7 @@ fn k_does_not_scroll_below_zero() {
 
 #[test]
 fn d_scrolls_down_half_page() {
-    // UC-3 BR-11: d scrolls down half page
+    // UC-4 BR-21: d scrolls down half page
     let mut v = 0;
     let mut h = 0;
     editor::apply_preview_scroll('d', &mut v, &mut h, 100, 100, 30);
@@ -39,7 +39,7 @@ fn d_scrolls_down_half_page() {
 
 #[test]
 fn u_scrolls_up_half_page() {
-    // UC-3 BR-12: u scrolls up half page
+    // UC-4 BR-22: u scrolls up half page
     let mut v = 20;
     let mut h = 0;
     editor::apply_preview_scroll('u', &mut v, &mut h, 100, 100, 30);
@@ -48,7 +48,7 @@ fn u_scrolls_up_half_page() {
 
 #[test]
 fn g_scrolls_to_top() {
-    // UC-3 BR-13: g scrolls to top
+    // UC-4 BR-23: g scrolls to top
     let mut v = 50;
     let mut h = 0;
     editor::apply_preview_scroll('g', &mut v, &mut h, 100, 100, 30);
@@ -57,7 +57,7 @@ fn g_scrolls_to_top() {
 
 #[test]
 fn capital_g_scrolls_to_bottom() {
-    // UC-3 BR-14: G scrolls to bottom
+    // UC-4 BR-24: G scrolls to bottom
     let mut v = 0;
     let mut h = 0;
     editor::apply_preview_scroll('G', &mut v, &mut h, 100, 100, 30);
@@ -66,7 +66,7 @@ fn capital_g_scrolls_to_bottom() {
 
 #[test]
 fn scroll_clamps_to_max() {
-    // UC-3 BR-15: Scroll clamps to max
+    // UC-4 BR-24: preview scroll clamps to the available range
     let mut v = 95;
     let mut h = 0;
     editor::apply_preview_scroll('j', &mut v, &mut h, 100, 100, 30);
