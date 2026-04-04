@@ -121,9 +121,7 @@ pub(super) fn render_pane_chrome(
                 .and_then(|a| a.status)
                 .map_or(false, |s| matches!(s, crate::state::gateway_status::AgentStatus::NeedsInput));
 
-        let border_color = if is_focused {
-            p.border_focused
-        } else if agent_needs_input {
+        let border_color = if agent_needs_input {
             // Orange border with blink animation (same frequency as dot: ~4.2 rad/s)
             let t = app.timing.last_frame.elapsed().as_secs_f64();
             let opacity = 0.65_f32 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
@@ -134,30 +132,46 @@ pub(super) fn render_pane_chrome(
         } else {
             p.border_subtle
         };
-        let top_border = if agent_needs_input { 2.0 } else if is_focused { 2.0 } else { 1.0 };
-        let side_border = if agent_needs_input { 2.0_f32 } else if is_focused { 2.0_f32 } else { 1.0_f32 };
+        let top_border = if agent_needs_input { 2.0 } else { 1.0 };
+        let side_border = if agent_needs_input { 2.0_f32 } else { 1.0_f32 };
 
-        // Focused pane or NeedsInput: draw outer glow shadow
-        if is_focused {
-            let shadow_color = crate::tide_core::Color::new(0.769, 0.722, 0.651, 0.25);
-            renderer.draw_chrome_shadow(rect, shadow_color, PANE_CORNER_RADIUS, 16.0, -4.0);
-        } else if agent_needs_input {
+        // NeedsInput: draw outer glow shadow
+        if agent_needs_input {
             let t = app.timing.last_frame.elapsed().as_secs_f64();
             let opacity = (0.15_f32 + 0.15 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32).max(0.0);
             let shadow_color = crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity);
             renderer.draw_chrome_shadow(rect, shadow_color, PANE_CORNER_RADIUS, 12.0, -3.0);
         }
 
-        // Outer rounded rect (border color)
-        renderer.draw_chrome_rounded_rect(rect, border_color, PANE_CORNER_RADIUS);
-        // Inner rounded rect (pane fill, inset by border widths)
-        let inset = Rect::new(
-            rect.x + side_border,
-            rect.y + top_border,
-            rect.width - 2.0 * side_border,
-            rect.height - top_border - side_border,
-        );
-        renderer.draw_chrome_rounded_rect(inset, p.pane_bg, (PANE_CORNER_RADIUS - side_border).max(0.0));
+        if agent_needs_input {
+            // Agent needs input: draw border + inset like before
+            renderer.draw_chrome_rounded_rect(rect, border_color, PANE_CORNER_RADIUS);
+            let inset = Rect::new(
+                rect.x + side_border,
+                rect.y + top_border,
+                rect.width - 2.0 * side_border,
+                rect.height - top_border - side_border,
+            );
+            renderer.draw_chrome_rounded_rect(inset, p.pane_bg, (PANE_CORNER_RADIUS - side_border).max(0.0));
+            let tab_bar_bg_color = if is_focused { p.tab_bar_bg_focused } else { p.tab_bar_bg };
+            renderer.draw_chrome_rect(
+                Rect::new(inset.x, inset.y, inset.width, TAB_BAR_HEIGHT),
+                tab_bar_bg_color,
+            );
+        } else {
+            // Normal: no border, pane_bg fills whole area, tab_bar_bg on top
+            renderer.draw_chrome_rect(rect, p.pane_bg);
+            let tab_bar_bg_color = if is_focused { p.tab_bar_bg_focused } else { p.tab_bar_bg };
+            renderer.draw_chrome_rect(
+                Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT),
+                tab_bar_bg_color,
+            );
+            // Small gap between tab bar and content (tab_bar_bg extends slightly below)
+            renderer.draw_chrome_rect(
+                Rect::new(rect.x, rect.y + TAB_BAR_HEIGHT, rect.width, 2.0),
+                tab_bar_bg_color,
+            );
+        }
     }
 
     // Render per-pane headers (title + badges + close, or tab bar for multi-tab groups)
