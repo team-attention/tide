@@ -423,7 +423,7 @@ fn render_tab_bar_impl(
         return zones;
     }
 
-    // No badges in tab bar tabs (Cmux style: tabs show only icon + title + close)
+    // No badges in tab bar tabs (tabs show only icon + title + close)
 
     let tabs_right = content_right;
     let max_tabs_w = tabs_right - content_left;

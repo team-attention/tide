@@ -63,27 +63,8 @@ impl FocusNavPort for App {
             return;
         }
 
-        // If current pane is in a TabGroup, try cycling within the group first
-        if let Some(tg) = self.layout.tab_group_containing(current_id) {
-            let tabs = tg.tabs.clone();
-            let idx = tabs.iter().position(|&id| id == current_id).unwrap_or(0);
-            match direction {
-                Direction::Right | Direction::Down => {
-                    if idx + 1 < tabs.len() {
-                        self.focus_terminal(tabs[idx + 1]);
-                        return;
-                    }
-                    // At last tab in group — fall through to cross-pane navigation
-                }
-                Direction::Left | Direction::Up => {
-                    if idx > 0 {
-                        self.focus_terminal(tabs[idx - 1]);
-                        return;
-                    }
-                    // At first tab in group — fall through to cross-pane navigation
-                }
-            }
-        }
+        // HJKL navigates between TabGroups/splits spatially, not within TabGroups.
+        // Use Cmd+I/O (TabPrev/TabNext) to cycle within a TabGroup.
 
         // Only consider Stage pane rects (exclude dock panes)
         let stage_ids: std::collections::HashSet<crate::tide_core::PaneId> =

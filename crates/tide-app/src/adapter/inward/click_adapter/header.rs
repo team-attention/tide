@@ -136,9 +136,12 @@ pub(crate) fn check_header_click(
                     return true;
                 }
                 HeaderHitAction::StageTab(target_pane_id) => {
-                    // Switch zoomed pane in Stage stacked mode
-                    ctx.set_zoom(Some(target_pane_id));
+                    // Switch active tab in Stage TabGroup (or zoomed pane if stacked)
+                    if ctx.zoomed_pane().is_some() {
+                        ctx.set_zoom(Some(target_pane_id));
+                    }
                     ctx.focus_terminal(target_pane_id);
+                    ctx.invalidate_chrome();
                     ctx.invalidate_all_panes();
                     ctx.compute_layout();
                     ctx.request_redraw();
