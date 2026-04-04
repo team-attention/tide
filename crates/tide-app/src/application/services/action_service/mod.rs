@@ -435,12 +435,10 @@ impl crate::application::ports::inward::ActionPort for App {
             GlobalAction::SplitHorizontal => {
                 self.split_with_launcher(SplitDirection::Horizontal);
             }
-            GlobalAction::SplitHorizontalHere => {
-                // Cmd+\: always split Dock right (new TabGroup)
+            GlobalAction::DockSplitHorizontal => {
                 self.dock_split_new_tab_group(SplitDirection::Horizontal);
             }
-            GlobalAction::SplitVerticalHere => {
-                // Cmd+Shift+\: always split Dock below (new TabGroup)
+            GlobalAction::DockSplitVertical => {
                 self.dock_split_new_tab_group(SplitDirection::Vertical);
             }
             GlobalAction::ClosePane => {
@@ -490,8 +488,13 @@ impl crate::application::ports::inward::ActionPort for App {
             GlobalAction::Navigate(direction) => {
                 self.handle_navigate(direction);
             }
-            GlobalAction::ToggleZoom => {
-                self.handle_toggle_stacked();
+            GlobalAction::DockNavigate(direction) => {
+                // Navigate within Dock without changing FocusArea (auto-opens dock)
+                self.dock.dock_open = true;
+                let saved_area = self.focus.focus_area;
+                self.focus.focus_area = FocusArea::Dock;
+                self.handle_navigate(direction);
+                self.focus.focus_area = saved_area;
             }
             GlobalAction::TabPrev => {
                 self.cycle_tab(-1);
@@ -499,8 +502,30 @@ impl crate::application::ports::inward::ActionPort for App {
             GlobalAction::TabNext => {
                 self.cycle_tab(1);
             }
+            GlobalAction::DockTabPrev => {
+                // Cycle dock tab without changing FocusArea (UC-4 BR-2: opens dock if closed)
+                self.dock.dock_open = true;
+                let saved_area = self.focus.focus_area;
+                self.focus.focus_area = FocusArea::Dock;
+                self.cycle_tab(-1);
+                self.focus.focus_area = saved_area;
+            }
+            GlobalAction::DockTabNext => {
+                // Cycle dock tab without changing FocusArea (UC-4 BR-2: opens dock if closed)
+                self.dock.dock_open = true;
+                let saved_area = self.focus.focus_area;
+                self.focus.focus_area = FocusArea::Dock;
+                self.cycle_tab(1);
+                self.focus.focus_area = saved_area;
+            }
             GlobalAction::NewTab => {
                 // Open a new terminal pane next to the focused pane
+                self.new_terminal_tab();
+            }
+            GlobalAction::DockNewTab => {
+                // Create a new tab in Dock and move focus there (Launcher needs interaction)
+                self.dock.dock_open = true;
+                self.focus.focus_area = FocusArea::Dock;
                 self.new_terminal_tab();
             }
             GlobalAction::FileFinder => {
@@ -537,20 +562,6 @@ impl crate::application::ports::inward::ActionPort for App {
             }
             GlobalAction::OpenBrowser => {
                 self.open_browser_pane(None);
-            }
-            GlobalAction::BrowserBack => {
-                if let Some(focused) = self.focus.focused {
-                    if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&focused) {
-                        bp.go_back();
-                    }
-                }
-            }
-            GlobalAction::BrowserForward => {
-                if let Some(focused) = self.focus.focused {
-                    if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&focused) {
-                        bp.go_forward();
-                    }
-                }
             }
             GlobalAction::BrowserReload => {
                 if let Some(focused) = self.focus.focused {
@@ -597,6 +608,14 @@ impl crate::application::ports::inward::ActionPort for App {
             }
             GlobalAction::ToggleStacked => {
                 self.handle_toggle_stacked();
+            }
+            GlobalAction::DockToggleStacked => {
+                // Toggle dock stacked mode (auto-opens dock)
+                self.dock.dock_open = true;
+                let saved_area = self.focus.focus_area;
+                self.focus.focus_area = FocusArea::Dock;
+                self.handle_toggle_stacked();
+                self.focus.focus_area = saved_area;
             }
             GlobalAction::ToggleDockPin => {
                 self.toggle_dock_pin();

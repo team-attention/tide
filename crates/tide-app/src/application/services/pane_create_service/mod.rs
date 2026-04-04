@@ -157,16 +157,10 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                 self.router.set_focused(new_id);
             }
             _ => {
-                // Stage: always create a new Terminal.
-                // If focused pane is in a TabGroup, add as a new tab;
-                // otherwise create a horizontal split.
+                // Stage: always add a new Terminal as a tab in the focused TabGroup.
+                // If focused pane is a bare Leaf, add_tab converts it to a LeafGroup.
                 let new_id = self.layout.alloc_id();
-                let in_tab_group = self.layout.tab_group_containing(focused).is_some();
-                if in_tab_group {
-                    self.layout.add_tab(focused, new_id);
-                } else {
-                    self.layout.insert_pane(focused, new_id, crate::tide_core::SplitDirection::Horizontal, false);
-                }
+                self.layout.add_tab(focused, new_id);
                 if self.focus.zoomed_pane.is_some() {
                     self.focus.zoomed_pane = Some(new_id);
                 }

@@ -102,7 +102,7 @@ fn switching_to_pane_area_from_file_tree_preserves_focused_pane() {
 
 #[test]
 fn toggling_zoom_on_focused_pane_fills_entire_area() {
-    // UC-3 BR-26: ToggleZoom sets zoomed_pane
+    // UC-3 BR-26: ToggleStacked sets zoomed_pane
     let mut app = test_app();
     let (layout, id1) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
@@ -112,22 +112,22 @@ fn toggling_zoom_on_focused_pane_fills_entire_area() {
     app.focus.focused = Some(id1);
 
     assert!(app.focus.zoomed_pane.is_none());
-    app.handle_global_action(crate::tide_input::GlobalAction::ToggleZoom);
+    app.handle_global_action(crate::tide_input::GlobalAction::ToggleStacked);
     assert_eq!(app.focus.zoomed_pane, Some(id1));
 }
 
 #[test]
 fn toggling_zoom_again_restores_split_layout() {
-    // UC-3 BR-26: ToggleZoom clears zoomed_pane
+    // UC-3 BR-26: ToggleStacked clears zoomed_pane
     let mut app = test_app();
     let (layout, id1) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     app.panes.insert(id1, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id1)));
     app.focus.focused = Some(id1);
 
-    app.handle_global_action(crate::tide_input::GlobalAction::ToggleZoom);
+    app.handle_global_action(crate::tide_input::GlobalAction::ToggleStacked);
     assert_eq!(app.focus.zoomed_pane, Some(id1));
-    app.handle_global_action(crate::tide_input::GlobalAction::ToggleZoom);
+    app.handle_global_action(crate::tide_input::GlobalAction::ToggleStacked);
     assert!(app.focus.zoomed_pane.is_none());
 }
 
@@ -138,6 +138,6 @@ fn zoom_has_no_effect_when_focus_area_is_file_tree() {
     app.ft.visible = true;
     app.focus.focus_area = FocusArea::FileTree;
 
-    app.handle_global_action(crate::tide_input::GlobalAction::ToggleZoom);
+    app.handle_global_action(crate::tide_input::GlobalAction::ToggleStacked);
     assert!(app.focus.zoomed_pane.is_none());
 }
