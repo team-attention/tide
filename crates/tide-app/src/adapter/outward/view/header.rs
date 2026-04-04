@@ -488,7 +488,7 @@ fn render_tab_bar_impl(
                 w += badge.text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0 + badge_gap;
             }
         }
-        // Active tab: no max clamp so title + badges fit; scaling handles overflow
+        // Active tab: no max clamp so title + badges fit; right-edge clipping handles overflow
         if tid == active_pane {
             w = w.max(TAB_MIN_WIDTH);
         } else {
@@ -497,12 +497,9 @@ fn render_tab_bar_impl(
         tabs_info.push((tid, label, w));
     }
 
-    let total_w: f32 = tabs_info.iter().map(|(_, _, w)| *w).sum::<f32>();
-    let scale = if total_w > max_tabs_w { max_tabs_w / total_w } else { 1.0 };
-
     let mut cx = content_left;
     for (tid, label, w) in &tabs_info {
-        let tw = (*w * scale).max(TAB_MIN_WIDTH * scale);
+        let tw = *w;
         if cx + tw > tabs_right + 1.0 {
             break;
         }

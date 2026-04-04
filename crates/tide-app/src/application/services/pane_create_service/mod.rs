@@ -568,6 +568,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         // Cancel drag if the closing pane is the drag source
         if self.interaction.pane_drag.source_pane() == Some(tab_id) {
             self.interaction.pane_drag = PaneDragState::Idle;
+            self.interaction.drop_preview_start = None;
         }
         // Destroy webview before removing the pane
         if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&tab_id) {
