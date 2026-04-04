@@ -87,6 +87,36 @@ pub(crate) fn editor_header_badges(ep: &crate::pane::editor::EditorPane) -> Vec<
     badges
 }
 
+/// Compute badges for the active tab in a tab bar (works for all pane kinds).
+fn active_tab_badges(panes: &HashMap<PaneId, PaneKind>, id: &PaneId) -> Vec<EditorBadge> {
+    match panes.get(id) {
+        Some(PaneKind::Editor(ep)) => editor_header_badges(ep),
+        Some(PaneKind::Terminal(tp)) => {
+            let mut badges = Vec::new();
+            if let Some(ref git) = tp.context.git_info {
+                badges.push(EditorBadge {
+                    text: format!("\u{e0a0} {}", git.branch),
+                    action: Some(HeaderHitAction::GitBranch),
+                });
+                if git.status.changed_files > 0 {
+                    badges.push(EditorBadge {
+                        text: format!("{} +{} -{}", git.status.changed_files, git.status.additions, git.status.deletions),
+                        action: Some(HeaderHitAction::GitStatus),
+                    });
+                }
+            }
+            if tp.context.child_dead {
+                badges.push(EditorBadge {
+                    text: "exited".to_string(),
+                    action: None,
+                });
+            }
+            badges
+        }
+        _ => Vec::new(),
+    }
+}
+
 /// Render the header for a single pane.
 /// Returns hit zones for click handling.
 /// When `has_dock_tab_bar` is true, skips the title badge and pane-specific badges
@@ -193,7 +223,7 @@ pub fn render_pane_header_inner(
                 let branch_color = if is_focused { p.badge_git_branch } else { p.tab_text };
                 inline_badges.push((branch_display, branch_color, badge_bg, Some(HeaderHitAction::GitBranch)));
 
-                if is_focused && git.status.changed_files > 0 {
+                if git.status.changed_files > 0 {
                     let stat_text = format!("{} +{} -{}", git.status.changed_files, git.status.additions, git.status.deletions);
                     let stat_bg = crate::tide_core::Color::new(p.git_added.r, p.git_added.g, p.git_added.b, 0.094);
                     inline_badges.push((stat_text, p.git_added, stat_bg, Some(HeaderHitAction::GitStatus)));
@@ -279,6 +309,14 @@ pub fn render_pane_header_inner(
         Rect::new(rect.x, rect.y, compact_tab_w, TAB_BAR_HEIGHT),
         p.active_tab_bg,
     );
+    // Reset area beyond compact tab to unfocused tab bar bg
+    // (render_pane_chrome draws tab_bar_bg_focused across the full width)
+    if compact_tab_w < available_w {
+        renderer.draw_chrome_rect(
+            Rect::new(rect.x + compact_tab_w, rect.y, available_w - compact_tab_w, TAB_BAR_HEIGHT),
+            p.tab_bar_bg,
+        );
+    }
     renderer.draw_chrome_rect(
         Rect::new(rect.x, rect.y + TAB_BAR_HEIGHT - TAB_ACTIVE_INDICATOR_HEIGHT, compact_tab_w, TAB_ACTIVE_INDICATOR_HEIGHT),
         p.border_focused,
@@ -423,7 +461,7 @@ fn render_tab_bar_impl(
         return zones;
     }
 
-    // No badges in tab bar tabs (tabs show only icon + title + close)
+    // Badges are shown on the active tab only (editor badges like edit/preview)
 
     let tabs_right = content_right;
     let max_tabs_w = tabs_right - content_left;
@@ -435,6 +473,7 @@ fn render_tab_bar_impl(
     // Layout per tab: [pad 6] [dot?] [icon?] [gap 6] [title...] [spacer] [badges?] [close 16x16 (9px)] [pad 6]
     let close_hit_size = 16.0_f32;
     let close_icon_width = TAB_CLOSE_ICON_SIZE;
+    let badge_gap = 4.0_f32;
     let mut tabs_info: Vec<(PaneId, String, f32)> = Vec::new();
     for &tid in tab_ids {
         let mut label = dock_tab_label(panes, tid);
@@ -442,8 +481,19 @@ fn render_tab_bar_impl(
             label = format!("\u{f08d} {}", label);
         }
         let mut w = label.chars().count() as f32 * cell_w + TAB_H_PAD * 2.0 + close_hit_size + TAB_CONTENT_SPACING;
-        // No badges in tab bar tabs
-        w = w.clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH);
+        // Add badge width for the active tab only
+        if tid == active_pane {
+            let badges = active_tab_badges(panes, &tid);
+            for badge in &badges {
+                w += badge.text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0 + badge_gap;
+            }
+        }
+        // Active tab: no max clamp so title + badges fit; scaling handles overflow
+        if tid == active_pane {
+            w = w.max(TAB_MIN_WIDTH);
+        } else {
+            w = w.clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH);
+        }
         tabs_info.push((tid, label, w));
     }
 
@@ -510,8 +560,18 @@ fn render_tab_bar_impl(
         let tab_close_icon_x = tab_close_hit_x + (close_hit_size - close_icon_width) / 2.0;
         let tab_close_icon_y = tab_y + (tab_h - close_icon_width) / 2.0;
 
-        // Reserve space for close icon and badges (active tab only) on the right side
-        let label_max_w = (tab_close_hit_x - TAB_CONTENT_SPACING - cx - TAB_H_PAD - dot_offset).max(0.0);
+        // Compute badges for active tab
+        let mut active_badges: Vec<EditorBadge> = Vec::new();
+        let mut active_badge_total_w = 0.0_f32;
+        if is_active {
+            active_badges = active_tab_badges(panes, tid);
+            for badge in &active_badges {
+                active_badge_total_w += badge.text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0 + badge_gap;
+            }
+        }
+
+        // Title takes all space not used by badges
+        let label_max_w = (tab_close_hit_x - TAB_CONTENT_SPACING - active_badge_total_w - cx - TAB_H_PAD - dot_offset).max(0.0);
         let max_chars = (label_max_w / cell_w).floor().max(0.0) as usize;
         let display: String = label.chars().take(max_chars).collect();
         let label_drawn_w = display.chars().count() as f32 * cell_w;
@@ -526,6 +586,42 @@ fn render_tab_bar_impl(
             },
             Rect::new(cx, tab_y, tw, tab_h),
         );
+
+        // Draw all badges for active tab (between label and close button)
+        if is_active && !active_badges.is_empty() {
+            let badge_bg = if is_focused { p.badge_bg } else { p.badge_bg_unfocused };
+            let mut bx = cx + TAB_H_PAD + dot_offset + label_drawn_w + badge_gap;
+            for badge in &active_badges {
+                let bw = badge.text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0;
+                let (b_text_color, b_bg) = match badge.action {
+                    Some(HeaderHitAction::EditorBack) | Some(HeaderHitAction::EditorCompare) =>
+                        (p.badge_text, p.conflict_bar_btn),
+                    Some(HeaderHitAction::GitBranch) => {
+                        let cc = if is_focused_tab { p.badge_git_branch } else { p.tab_text };
+                        (cc, badge_bg)
+                    }
+                    Some(HeaderHitAction::GitStatus) => {
+                        let stat_bg = crate::tide_core::Color::new(p.git_added.r, p.git_added.g, p.git_added.b, 0.094);
+                        (p.git_added, stat_bg)
+                    }
+                    None if badge.text == "deleted" || badge.text == "exited" => (p.badge_deleted, badge_bg),
+                    None if badge.text == "conflict" => (p.badge_conflict, badge_bg),
+                    _ => {
+                        let cc = if is_focused { p.badge_text } else { p.tab_text };
+                        (cc, badge_bg)
+                    }
+                };
+                render_badge_colored(renderer, bx, label_y, bw, cell_height, &badge.text, b_text_color, b_bg, 3.0);
+                if let Some(ref act) = badge.action {
+                    zones.push(HeaderHitZone {
+                        pane_id: *tid,
+                        rect: Rect::new(bx, rect.y, bw, TAB_BAR_HEIGHT),
+                        action: act.clone(),
+                    });
+                }
+                bx += bw + badge_gap;
+            }
+        }
 
         // Per-tab close button (9px icon inside 16x16 hit area)
         let is_tab_modified = match panes.get(tid) {

@@ -205,9 +205,16 @@ fn compute_tree_drop_target(
         .find(|(id, _)| *id == source)
         .map(|(_, r)| *r);
 
+    let source_in_dock = ctx.is_pane_in_dock(source);
+
     // Iterate tiling rects for hit-testing (covers gap areas between panes)
     for &(id, tiling_rect) in ctx.pane_rects() {
         if !tiling_rect.contains(mouse) {
+            continue;
+        }
+
+        // Block dock-to-stage drops: dock panes cannot be dropped onto stage panes
+        if source_in_dock && !ctx.is_pane_in_dock(id) {
             continue;
         }
 
