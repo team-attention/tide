@@ -29,3 +29,4 @@ mod lsp_completion;
 mod agent_gateway;
 mod cli_workspace_routing;
 mod diff_auto_refresh;
+mod stage_tab_group;

@@ -166,10 +166,10 @@ pub(super) fn render_pane_chrome(
                 Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT),
                 tab_bar_bg_color,
             );
-            // Small gap between tab bar and content (tab_bar_bg extends slightly below)
+            // 1px border at bottom of tab bar for clean separation
             renderer.draw_chrome_rect(
-                Rect::new(rect.x, rect.y + TAB_BAR_HEIGHT, rect.width, 2.0),
-                tab_bar_bg_color,
+                Rect::new(rect.x, rect.y + TAB_BAR_HEIGHT, rect.width, 1.0),
+                p.border_subtle,
             );
         }
     }
@@ -207,8 +207,19 @@ pub(super) fn render_pane_chrome(
         if tabs.len() > 1 { Some(tabs) } else { None }
     } else { None };
 
-    // Collect Stage pane IDs for stacked tab bar
-    let stage_pane_ids = app.layout.pane_ids();
+    // Collect Stage LeafGroup info for per-TabGroup tab bars (UC-4)
+    let mut stage_tab_groups: std::collections::HashMap<u64, crate::tide_layout::TabGroup> = std::collections::HashMap::new();
+    for &(pid, _) in visual_pane_rects {
+        if let Some(tg) = app.layout.tab_group_containing(pid) {
+            if tg.tabs.len() >= 2 {
+                stage_tab_groups.insert(pid, tg.clone());
+            }
+        }
+    }
+
+    // Collect Stage pane IDs for stacked tab bar (zoomed mode)
+    // Use all_tabs_flat() to include ALL tabs in TabGroups, not just active ones
+    let stage_pane_ids = app.layout.all_tabs_flat();
     let show_stage_tabs = app.focus.zoomed_pane.is_some() && stage_pane_ids.len() > 1;
 
     // Compute blink time for NeedsInput dot animation (UC-5)
@@ -230,6 +241,7 @@ pub(super) fn render_pane_chrome(
         let is_zoomed = app.focus.zoomed_pane == Some(id);
         let is_dock_zoomed = dock_zoomed_pane == Some(id);
         let has_dock_tab_bar = dock_tab_groups.contains_key(&id);
+        let has_stage_tab_group = stage_tab_groups.contains_key(&id);
         let has_stage_tab_bar = is_zoomed && show_stage_tabs;
 
         if is_dock_zoomed {
@@ -263,9 +275,17 @@ pub(super) fn render_pane_chrome(
             );
             all_hit_zones.extend(tab_zones);
         } else if has_stage_tab_bar {
-            // Stage stacked: render ONLY the tab bar (includes close/maximize)
+            // Stage stacked/zoomed: render flat tab bar of ALL Stage panes (takes priority over per-group)
             let tab_zones = header::render_stage_tab_bar(
                 id, rect, &stage_pane_ids, &app.panes, focused, p, renderer,
+                &app.gateway.detected_agents, blink_time,
+            );
+            all_hit_zones.extend(tab_zones);
+        } else if has_stage_tab_group {
+            // Stage LeafGroup with 2+ tabs: render per-TabGroup tab bar (UC-4)
+            let tg = stage_tab_groups.get(&id).unwrap();
+            let tab_zones = header::render_stage_tab_group_bar(
+                id, rect, tg, &app.panes, focused, p, renderer,
                 &app.gateway.detected_agents, blink_time,
             );
             all_hit_zones.extend(tab_zones);

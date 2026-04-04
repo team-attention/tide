@@ -157,43 +157,22 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                 self.router.set_focused(new_id);
             }
             _ => {
-                // Stage: if focused pane is in a TabGroup, add a new tab there;
-                // otherwise create a horizontal split with a new Terminal.
+                // Stage: always create a new Terminal.
+                // If focused pane is in a TabGroup, add as a new tab;
+                // otherwise create a horizontal split.
+                let new_id = self.layout.alloc_id();
                 let in_tab_group = self.layout.tab_group_containing(focused).is_some();
                 if in_tab_group {
-                    // Add Launcher tab to the same TabGroup for pane type selection
-                    let new_id = self.layout.alloc_id();
-                    if self.layout.add_tab(focused, new_id) {
-                        self.panes.insert(new_id, PaneKind::Launcher(new_id));
-                        self.ime.pending_creates.push(new_id);
-                        if let Some(tid) = self.resolve_context_terminal_id() {
-                            self.assoc.associated_terminal.insert(new_id, tid);
-                        }
-                        if self.focus.zoomed_pane.is_some() {
-                            self.focus.zoomed_pane = Some(new_id);
-                        }
-                        self.focus.focused = Some(new_id);
-                        self.router.set_focused(new_id);
-                    } else {
-                        // No TabGroup — fall through to split
-                        let cwd = self.focused_terminal_cwd();
-                        self.layout.insert_pane(focused, new_id, crate::tide_core::SplitDirection::Horizontal, false);
-                        if self.focus.zoomed_pane.is_some() {
-                            self.focus.zoomed_pane = Some(new_id);
-                        }
-                        self.create_terminal_pane(new_id, cwd);
-                        self.focus_terminal(new_id);
-                    }
+                    self.layout.add_tab(focused, new_id);
                 } else {
-                    let new_id = self.layout.alloc_id();
                     self.layout.insert_pane(focused, new_id, crate::tide_core::SplitDirection::Horizontal, false);
-                    if self.focus.zoomed_pane.is_some() {
-                        self.focus.zoomed_pane = Some(new_id);
-                    }
-                    let cwd = self.focused_terminal_cwd();
-                    self.create_terminal_pane(new_id, cwd);
-                    self.focus_terminal(new_id);
                 }
+                if self.focus.zoomed_pane.is_some() {
+                    self.focus.zoomed_pane = Some(new_id);
+                }
+                let cwd = self.focused_terminal_cwd();
+                self.create_terminal_pane(new_id, cwd);
+                self.focus_terminal(new_id);
             }
         }
 

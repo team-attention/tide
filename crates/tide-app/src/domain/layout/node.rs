@@ -234,8 +234,12 @@ impl Node {
                 if tg.is_empty() {
                     // TabGroup is now empty, remove this node
                     Some(None)
+                } else if tg.tabs.len() == 1 {
+                    // Single tab remaining: collapse LeafGroup to Leaf
+                    let remaining = tg.tabs[0];
+                    Some(Some(Node::Leaf(remaining)))
                 } else {
-                    // TabGroup still has tabs, keep the node
+                    // TabGroup still has multiple tabs, keep the node
                     Some(Some(self.clone()))
                 }
             }

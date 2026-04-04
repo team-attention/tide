@@ -23,6 +23,7 @@ pub(crate) trait LayoutPort {
     fn layout_remove(&mut self, id: PaneId);
     fn layout_insert_at_root(&mut self, id: PaneId, zone: crate::tide_core::DropZone);
     fn layout_insert_pane(&mut self, target: PaneId, source: PaneId, direction: crate::tide_core::SplitDirection, insert_first: bool);
+    fn layout_add_tab(&mut self, target: PaneId, source: PaneId) -> bool;
 
     // ── Hit-test helpers (from drag_drop_adapter, used by click_adapter) ──
     fn pane_at_tab_bar(&self, pos: Vec2) -> Option<PaneId>;
