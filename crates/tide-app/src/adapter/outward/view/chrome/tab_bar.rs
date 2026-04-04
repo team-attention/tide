@@ -23,10 +23,20 @@ pub(super) fn render_pane_chrome(
             // Dock area starts right after the Stage pane area
             let dock_x = pa_rect.x + pa_rect.width + PANE_GAP;
 
-            // Draw separator line at the Stage<->Dock boundary
+            // Draw separator line at the Stage<->Dock boundary with gradient shadow
             let sep_x = pa_rect.x + pa_rect.width + PANE_GAP / 2.0;
-            let sep_rect = Rect::new(sep_x, app.window.top_inset, 1.0, logical.height - app.window.top_inset);
-            renderer.draw_chrome_rect(sep_rect, p.border_subtle);
+            let sep_h = logical.height - app.window.top_inset;
+            let sep_y = app.window.top_inset;
+            // Left-side gradient shadow (3 strips)
+            renderer.draw_chrome_rect(Rect::new(sep_x - 3.0, sep_y, 1.0, sep_h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.02));
+            renderer.draw_chrome_rect(Rect::new(sep_x - 2.0, sep_y, 1.0, sep_h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.04));
+            renderer.draw_chrome_rect(Rect::new(sep_x - 1.0, sep_y, 1.0, sep_h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.08));
+            // Separator line
+            renderer.draw_chrome_rect(Rect::new(sep_x, sep_y, 1.0, sep_h), p.border_subtle);
+            // Right-side gradient shadow (3 strips)
+            renderer.draw_chrome_rect(Rect::new(sep_x + 1.0, sep_y, 1.0, sep_h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.08));
+            renderer.draw_chrome_rect(Rect::new(sep_x + 2.0, sep_y, 1.0, sep_h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.04));
+            renderer.draw_chrome_rect(Rect::new(sep_x + 3.0, sep_y, 1.0, sep_h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.02));
 
             // Draw separator between pinned group and terminal dock
             let has_pinned = app.has_pinned_panes();

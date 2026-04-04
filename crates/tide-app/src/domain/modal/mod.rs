@@ -546,7 +546,14 @@ impl ContextMenuState {
     pub fn geometry(&self, cell_height: f32, logical_width: f32, logical_height: f32) -> Rect {
         let line_height = cell_height + POPUP_LINE_EXTRA;
         let item_count = self.items().len() as f32;
-        let popup_w = CONTEXT_MENU_W;
+        // Width from longest label: left inset + icon (2.5 cells) + label chars + right padding
+        let cell_w = cell_height * 0.6; // approximate cell width from height
+        let max_label_len = self.items().iter()
+            .map(|a| a.label().chars().count())
+            .max()
+            .unwrap_or(0) as f32;
+        let content_w = crate::theme::POPUP_TEXT_INSET + 2.5 * cell_w + max_label_len * cell_w + crate::theme::POPUP_TEXT_INSET;
+        let popup_w = content_w.max(CONTEXT_MENU_W);
         let popup_h = item_count * line_height + 8.0;  // items + padding
         let x = self.position.x.min(logical_width - popup_w - 4.0).max(0.0);
         let y = self.position.y.min(logical_height - popup_h - 4.0).max(0.0);
