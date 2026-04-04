@@ -35,23 +35,11 @@ pub(crate) fn render_hover(
                         }
                     }
                 }
-                crate::state::drag_types::HoverTarget::PaneTabBar(pane_id) => {
-                    if let Some(&(_, rect)) = visual_pane_rects.iter().find(|(id, _)| id == pane_id) {
-                        let tab_rect = Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT);
-                        renderer.draw_rect(tab_rect, p.hover_tab);
-                    }
+                crate::state::drag_types::HoverTarget::PaneTabBar(_pane_id) => {
+                    // No full tab bar hover highlight (Cmux style)
                 }
-                crate::state::drag_types::HoverTarget::PaneTabClose(pane_id) => {
-                    if let Some(&(_, rect)) = visual_pane_rects.iter().find(|(id, _)| id == pane_id) {
-                        let cell_w = renderer.cell_size().width;
-                        let grid_cols = ((rect.width - 2.0 * PANE_PADDING) / cell_w).floor();
-                        let grid_right = rect.x + PANE_PADDING + grid_cols * cell_w;
-                        let close_w = cell_w + BADGE_PADDING_H * 2.0;
-                        let close_x = grid_right - close_w;
-                        let close_y = rect.y + (TAB_BAR_HEIGHT - renderer.cell_size().height - 2.0) / 2.0;
-                        let close_rect = Rect::new(close_x, close_y, close_w, renderer.cell_size().height + 2.0);
-                        renderer.draw_rect(close_rect, p.hover_close);
-                    }
+                crate::state::drag_types::HoverTarget::PaneTabClose(_pane_id) => {
+                    // No hover background for close button (Cmux style)
                 }
                 crate::state::drag_types::HoverTarget::FileFinderItem(_) => {
                     // File finder hover — rendered inline in overlays
@@ -137,21 +125,11 @@ pub(crate) fn render_hover(
                     // Hover is rendered via chrome.rs (badge_bg on dock button)
                 }
                 crate::state::drag_types::HoverTarget::PaneMaximize(pane_id) => {
-                    // Highlight maximize icon on split pane header
-                    if let Some(&(_, rect)) = visual_pane_rects.iter().find(|(id, _)| id == pane_id) {
-                        let cell_w = renderer.cell_size().width;
-                        let cell_h = renderer.cell_size().height;
-                        let grid_cols = ((rect.width - 2.0 * PANE_PADDING) / cell_w).floor();
-                        let grid_right = rect.x + PANE_PADDING + grid_cols * cell_w;
-                        let close_w = cell_w + BADGE_PADDING_H * 2.0;
-                        let close_x = grid_right - close_w;
-                        let max_w = cell_w + BADGE_PADDING_H * 2.0;
-                        let max_x = close_x - BADGE_GAP - max_w;
-                        let max_y = rect.y + (TAB_BAR_HEIGHT - cell_h - 2.0) / 2.0;
-                        renderer.draw_rect(
-                            Rect::new(max_x, max_y, max_w, cell_h + 2.0),
-                            p.hover_tab,
-                        );
+                    // Find the maximize button rect from header hit zones for the specific pane
+                    if let Some(zone) = app.header_hit_zones.iter().find(|z| {
+                        z.pane_id == *pane_id && z.action == crate::header::HeaderHitAction::Maximize
+                    }) {
+                        renderer.draw_rect(zone.rect, p.hover_tab);
                     }
                 }
                 crate::state::drag_types::HoverTarget::BrowserBack

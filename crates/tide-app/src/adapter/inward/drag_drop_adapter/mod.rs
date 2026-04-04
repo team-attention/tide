@@ -1,4 +1,5 @@
 use crate::tide_core::{DropZone, PaneId, Rect, Vec2};
+use crate::header::HeaderHitAction;
 use crate::theme::*;
 use crate::AppCorePort;
 use crate::DockPort;
@@ -22,49 +23,22 @@ pub(crate) fn pane_at_tab_bar(ctx: &(impl AppCorePort), pos: Vec2) -> Option<Pan
 }
 
 /// Hit-test whether the position is on a pane tab bar close button.
+/// Uses header hit zones (which include per-tab close buttons) for accurate detection.
 pub(crate) fn pane_tab_close_at(ctx: &(impl AppCorePort), pos: Vec2) -> Option<PaneId> {
-    for &(id, rect) in ctx.visual_pane_rects() {
-        let tab_rect = Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT);
-        if !tab_rect.contains(pos) {
-            continue;
-        }
-        // Close badge is the rightmost badge, grid-aligned
-        let cell_w = ctx.cell_size().width;
-        let grid_cols = ((rect.width - 2.0 * PANE_PADDING) / cell_w).floor();
-        let grid_right = rect.x + PANE_PADDING + grid_cols * cell_w;
-        let close_w = cell_w + BADGE_PADDING_H * 2.0;
-        let close_x = grid_right - close_w;
-        let close_y = rect.y + (TAB_BAR_HEIGHT - PANE_CLOSE_SIZE) / 2.0;
-        if pos.x >= close_x
-            && pos.x <= close_x + close_w
-            && pos.y >= close_y
-            && pos.y <= close_y + PANE_CLOSE_SIZE
-        {
-            return Some(id);
+    for zone in &ctx.header_hit_zones() {
+        if zone.action == HeaderHitAction::Close && zone.rect.contains(pos) {
+            return Some(zone.pane_id);
         }
     }
     None
 }
 
 /// Hit-test whether the position is on a pane header maximize button.
+/// Uses header hit zones for accurate detection.
 pub(crate) fn pane_maximize_at(ctx: &(impl AppCorePort), pos: Vec2) -> Option<PaneId> {
-    for &(id, rect) in ctx.visual_pane_rects() {
-        let tab_rect = Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT);
-        if !tab_rect.contains(pos) {
-            continue;
-        }
-        let cell_w = ctx.cell_size().width;
-        let grid_cols = ((rect.width - 2.0 * PANE_PADDING) / cell_w).floor();
-        let grid_right = rect.x + PANE_PADDING + grid_cols * cell_w;
-        let close_w = cell_w + BADGE_PADDING_H * 2.0;
-        let close_x = grid_right - close_w;
-        let max_w = cell_w + BADGE_PADDING_H * 2.0;
-        let max_x = close_x - BADGE_GAP - max_w;
-        let max_y = rect.y;
-        if pos.x >= max_x && pos.x <= max_x + max_w
-            && pos.y >= max_y && pos.y <= max_y + TAB_BAR_HEIGHT
-        {
-            return Some(id);
+    for zone in &ctx.header_hit_zones() {
+        if zone.action == HeaderHitAction::Maximize && zone.rect.contains(pos) {
+            return Some(zone.pane_id);
         }
     }
     None
