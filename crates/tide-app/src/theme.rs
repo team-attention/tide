@@ -25,6 +25,9 @@ pub struct ThemePalette {
     pub tree_row_active: Color, // expanded folder row background
 
     // Tab bar
+    pub tab_bar_bg: Color,
+    pub tab_bar_bg_focused: Color,
+    pub active_tab_bg: Color,
     pub tab_text: Color,
     pub tab_text_focused: Color,
     pub close_icon: Color,        // close button icon color
@@ -144,6 +147,9 @@ pub static DARK: ThemePalette = ThemePalette {
     tree_row_active: Color::new(0.102, 0.102, 0.114, 1.0),  // expanded folder row bg #1A1A1D
 
     // Tab bar
+    tab_bar_bg:         Color::new(0.133, 0.133, 0.149, 1.0),   // #222226
+    tab_bar_bg_focused: Color::new(0.157, 0.149, 0.122, 1.0),   // #28261F
+    active_tab_bg:      Color::new(0.055, 0.055, 0.063, 1.0),   // same as pane_bg #0E0E10
     tab_text:           Color::new(0.420, 0.420, 0.439, 1.0),
     tab_text_focused:   Color::new(1.0, 1.0, 1.0, 1.0),
     close_icon:         Color::new(0.290, 0.290, 0.306, 1.0),
@@ -261,6 +267,9 @@ pub static LIGHT: ThemePalette = ThemePalette {
     tree_row_active: Color::new(0.88, 0.85, 0.80, 1.0), // warm active row
 
     // Tab bar — warm tones (high contrast)
+    tab_bar_bg:         Color::new(0.90, 0.87, 0.83, 1.0),  // warm light tab bar bg
+    tab_bar_bg_focused: Color::new(0.93, 0.90, 0.85, 1.0),  // warm light tab bar bg focused
+    active_tab_bg:      Color::new(0.835, 0.805, 0.765, 1.0), // 6.5% darker for light mode
     tab_text:           Color::new(0.38, 0.33, 0.26, 1.0),  // warm readable
     tab_text_focused:   Color::new(0.10, 0.08, 0.05, 1.0),  // near-black brown
     close_icon:         Color::new(0.45, 0.38, 0.30, 1.0),  // warm close icon
@@ -364,12 +373,18 @@ pub static LIGHT: ThemePalette = ThemePalette {
 pub const BORDER_WIDTH: f32 = 1.0;
 pub const PANE_GAP: f32 = 4.0;
 pub const PANE_PADDING: f32 = 12.0;
-pub const PANE_CORNER_RADIUS: f32 = 6.0;
+pub const PANE_CORNER_RADIUS: f32 = 0.0;
 pub const FILE_TREE_LINE_SPACING: f32 = 1.5;
 pub const FILE_TREE_ROW_RADIUS: f32 = 6.0;
 pub const FILE_TREE_WIDTH: f32 = 240.0;
 
-pub const TAB_BAR_HEIGHT: f32 = 32.0;
+pub const TAB_BAR_HEIGHT: f32 = 30.0;
+pub const TAB_CLOSE_ICON_SIZE: f32 = 9.0;
+pub const TAB_H_PAD: f32 = 6.0;
+pub const TAB_CONTENT_SPACING: f32 = 6.0;
+pub const TAB_ACTIVE_INDICATOR_HEIGHT: f32 = 2.0;
+pub const TAB_MAX_WIDTH: f32 = 220.0;
+pub const TAB_MIN_WIDTH: f32 = 48.0;
 
 /// Blink animation frequency for agent NeedsInput indicators (rad/s).
 /// Period ≈ 1.5 seconds. Used for tab dots, pane borders, and workspace sidebar dots.
