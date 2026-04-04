@@ -241,6 +241,11 @@ pub(super) fn render_titlebar_and_sidebar(
         let cs = renderer.cell_size();
         let edge_inset = PANE_CORNER_RADIUS;
 
+        // Focus-dependent styling (matches file_tree.rs pattern)
+        let sidebar_focused = app.focus.focus_area == crate::state::FocusArea::FileTree && false; // sidebar has no FocusArea yet
+        let border_color = if sidebar_focused { p.border_focused } else { p.border_subtle };
+        let border_w = if sidebar_focused { 2.0_f32 } else { 1.0_f32 };
+
         // Sidebar visual rect: inset from top/bottom for corner radius visibility
         let sb_border = Rect::new(
             ws_rect.x,
@@ -249,16 +254,32 @@ pub(super) fn render_titlebar_and_sidebar(
             ws_rect.height - edge_inset * 2.0,
         );
 
+        // Shadow when focused (matches file_tree.rs pattern)
+        if sidebar_focused {
+            let shadow_color = crate::tide_core::Color::new(0.769, 0.722, 0.651, 0.25);
+            renderer.draw_chrome_shadow(sb_border, shadow_color, PANE_CORNER_RADIUS, 16.0, -4.0);
+        }
+
+        // Right-edge gradient shadow for depth separation
+        {
+            let edge_x = sb_border.x + sb_border.width;
+            let h = sb_border.height;
+            let y = sb_border.y;
+            renderer.draw_chrome_rect(Rect::new(edge_x, y, 1.5, h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.12));
+            renderer.draw_chrome_rect(Rect::new(edge_x + 1.5, y, 1.5, h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.06));
+            renderer.draw_chrome_rect(Rect::new(edge_x + 3.0, y, 1.5, h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.02));
+        }
+
         // Outer rounded rect (border)
-        renderer.draw_chrome_rounded_rect(sb_border, p.border_subtle, PANE_CORNER_RADIUS);
-        // Inner fill
+        renderer.draw_chrome_rounded_rect(sb_border, border_color, PANE_CORNER_RADIUS);
+        // Inner fill (dynamic border width)
         let inset = Rect::new(
-            sb_border.x + 1.0,
-            sb_border.y + 1.0,
-            sb_border.width - 2.0,
-            sb_border.height - 2.0,
+            sb_border.x + border_w,
+            sb_border.y + border_w,
+            sb_border.width - 2.0 * border_w,
+            sb_border.height - 2.0 * border_w,
         );
-        renderer.draw_chrome_rounded_rect(inset, p.file_tree_bg, (PANE_CORNER_RADIUS - 1.0).max(0.0));
+        renderer.draw_chrome_rounded_rect(inset, p.file_tree_bg, (PANE_CORNER_RADIUS - border_w).max(0.0));
 
         // Workspace items
         let geo = crate::adapter::inward::drag_drop_adapter::ws_sidebar_geometry(app).unwrap();
@@ -279,22 +300,21 @@ pub(super) fn render_titlebar_and_sidebar(
 
             let item_rect = geo.item_rect(i);
 
-            // Active item: pane-bg background with 1px rounded border
+            // Active item: pane-bg background with accent bar (matches file_tree.rs cursor row pattern)
             if is_active {
-                // Outer rounded rect = border color
-                renderer.draw_chrome_rounded_rect(item_rect, p.border_focused, PANE_CORNER_RADIUS);
-                // Inner rounded rect = fill color (inset by 1px)
-                let inner = Rect::new(
-                    item_rect.x + 1.0,
-                    item_rect.y + 1.0,
-                    item_rect.width - 2.0,
-                    item_rect.height - 2.0,
+                // Warm accent row highlight background
+                let accent = p.dock_tab_underline;
+                let row_bg = crate::tide_core::Color::new(accent.r, accent.g, accent.b, 0.12);
+                renderer.draw_chrome_rounded_rect(item_rect, row_bg, FILE_TREE_ROW_RADIUS);
+                // Left accent bar (matches file_tree.rs cursor row accent bar)
+                renderer.draw_chrome_rect(
+                    Rect::new(item_rect.x + 2.0, item_rect.y + 2.0, 2.0, item_rect.height - 4.0),
+                    accent,
                 );
-                renderer.draw_chrome_rounded_rect(inner, p.pane_bg, (PANE_CORNER_RADIUS - 1.0).max(0.0));
             } else {
-                // Hover highlight
+                // Hover highlight (matches file_tree.rs row radius)
                 if matches!(app.interaction.hover_target, Some(HoverTarget::WorkspaceSidebarItem(idx)) if idx == i) {
-                    renderer.draw_chrome_rounded_rect(item_rect, p.badge_bg, PANE_CORNER_RADIUS);
+                    renderer.draw_chrome_rounded_rect(item_rect, p.badge_bg, FILE_TREE_ROW_RADIUS);
                 }
             }
 
@@ -312,7 +332,7 @@ pub(super) fn render_titlebar_and_sidebar(
                 }
             };
             let name_color = if is_active { p.tab_text_focused } else {
-                crate::tide_core::Color::new(0.627, 0.627, 0.647, 1.0) // #A0A0A5
+                p.ws_sidebar_text_inactive
             };
             // Center text horizontally and vertically in compact mode
             let (name_text_x, name_text_y) = if compact {
@@ -427,7 +447,7 @@ pub(super) fn render_titlebar_and_sidebar(
         let btn_rect = Rect::new(content_x, btn_y, content_w, btn_h);
 
         if matches!(app.interaction.hover_target, Some(HoverTarget::WorkspaceSidebarNewBtn)) {
-            renderer.draw_chrome_rounded_rect(btn_rect, p.badge_bg, PANE_CORNER_RADIUS);
+            renderer.draw_chrome_rounded_rect(btn_rect, p.badge_bg, FILE_TREE_ROW_RADIUS);
         }
 
         let btn_text = if compact { "+" } else { "+ New Workspace" };
