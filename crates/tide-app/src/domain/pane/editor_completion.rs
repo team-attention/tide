@@ -120,7 +120,10 @@ impl CompletionState {
     /// Uses insertText if available, otherwise falls back to label.
     pub fn insert_text(&self) -> Option<String> {
         self.selected_item().map(|item| {
-            let raw = item.insert_text.clone().unwrap_or_else(|| item.label.clone());
+            let raw = item
+                .insert_text
+                .clone()
+                .unwrap_or_else(|| item.label.clone());
             sanitize_insert_text(&raw)
         })
     }
@@ -137,18 +140,19 @@ impl CompletionState {
     pub fn apply_filter(&mut self) {
         if self.prefix.is_empty() {
             // No prefix: sort by preselect → sortText → original order
-            let mut indices: Vec<(usize, bool, Option<&str>)> = self.items.iter().enumerate()
+            let mut indices: Vec<(usize, bool, Option<&str>)> = self
+                .items
+                .iter()
+                .enumerate()
                 .map(|(i, item)| (i, item.preselect, item.sort_text.as_deref()))
                 .collect();
             indices.sort_by(|a, b| {
                 b.1.cmp(&a.1) // preselect first
-                    .then_with(|| {
-                        match (a.2, b.2) {
-                            (Some(sa), Some(sb)) => sa.cmp(sb),
-                            (Some(_), None) => std::cmp::Ordering::Less,
-                            (None, Some(_)) => std::cmp::Ordering::Greater,
-                            (None, None) => std::cmp::Ordering::Equal,
-                        }
+                    .then_with(|| match (a.2, b.2) {
+                        (Some(sa), Some(sb)) => sa.cmp(sb),
+                        (Some(_), None) => std::cmp::Ordering::Less,
+                        (None, Some(_)) => std::cmp::Ordering::Greater,
+                        (None, None) => std::cmp::Ordering::Equal,
                     })
                     .then(a.0.cmp(&b.0))
             });
@@ -161,12 +165,14 @@ impl CompletionState {
         let pattern: Vec<char> = self.prefix.to_lowercase().chars().collect();
 
         // Score each item with fuzzy matching
-        let mut scored: Vec<(usize, i32, bool, Option<&str>)> = self.items.iter().enumerate()
+        let mut scored: Vec<(usize, i32, bool, Option<&str>)> = self
+            .items
+            .iter()
+            .enumerate()
             .filter_map(|(i, item)| {
                 let text = item.filter_text.as_deref().unwrap_or(&item.label);
-                fuzzy_score(&pattern, text).map(|score| {
-                    (i, score, item.preselect, item.sort_text.as_deref())
-                })
+                fuzzy_score(&pattern, text)
+                    .map(|score| (i, score, item.preselect, item.sort_text.as_deref()))
             })
             .collect();
 
@@ -174,13 +180,11 @@ impl CompletionState {
         scored.sort_by(|a, b| {
             b.1.cmp(&a.1) // score descending
                 .then(b.2.cmp(&a.2)) // preselect tie-break
-                .then_with(|| {
-                    match (a.3, b.3) {
-                        (Some(sa), Some(sb)) => sa.cmp(sb),
-                        (Some(_), None) => std::cmp::Ordering::Less,
-                        (None, Some(_)) => std::cmp::Ordering::Greater,
-                        (None, None) => std::cmp::Ordering::Equal,
-                    }
+                .then_with(|| match (a.3, b.3) {
+                    (Some(sa), Some(sb)) => sa.cmp(sb),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
                 })
                 .then(a.0.cmp(&b.0))
         });
@@ -206,7 +210,8 @@ impl CompletionState {
 
     /// Get visible items (accounting for scroll offset and max visible count).
     pub fn visible_items(&self) -> impl Iterator<Item = (usize, &CompletionItem)> {
-        self.filtered_indices.iter()
+        self.filtered_indices
+            .iter()
             .enumerate()
             .skip(self.scroll_offset)
             .take(COMPLETION_VISIBLE_COUNT)
@@ -218,57 +223,62 @@ impl CompletionState {
 
 fn sanitize_insert_text(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
-    let mut out = String::new();
     let mut i = 0;
+    sanitize_snippet_segment(&chars, &mut i, false)
+}
 
-    while i < chars.len() {
-        if chars[i] != '$' {
-            out.push(chars[i]);
-            i += 1;
+fn sanitize_snippet_segment(chars: &[char], index: &mut usize, stop_on_brace: bool) -> String {
+    let mut out = String::new();
+
+    while *index < chars.len() {
+        if stop_on_brace && chars[*index] == '}' {
+            *index += 1;
+            break;
+        }
+
+        if chars[*index] != '$' {
+            out.push(chars[*index]);
+            *index += 1;
             continue;
         }
 
-        if i + 1 >= chars.len() {
-            i += 1;
+        if *index + 1 >= chars.len() {
+            *index += 1;
             continue;
         }
 
-        match chars[i + 1] {
+        match chars[*index + 1] {
             '$' => {
                 out.push('$');
-                i += 2;
+                *index += 2;
             }
             '0'..='9' => {
-                i += 2;
-                while i < chars.len() && chars[i].is_ascii_digit() {
-                    i += 1;
+                *index += 2;
+                while *index < chars.len() && chars[*index].is_ascii_digit() {
+                    *index += 1;
                 }
             }
             '{' => {
-                i += 2;
-                while i < chars.len() && chars[i].is_ascii_digit() {
-                    i += 1;
+                *index += 2;
+                while *index < chars.len() && chars[*index].is_ascii_digit() {
+                    *index += 1;
                 }
 
-                if i < chars.len() && chars[i] == ':' {
-                    i += 1;
-                    while i < chars.len() && chars[i] != '}' {
-                        out.push(chars[i]);
-                        i += 1;
-                    }
+                if *index < chars.len() && chars[*index] == ':' {
+                    *index += 1;
+                    out.push_str(&sanitize_snippet_segment(chars, index, true));
                 } else {
-                    while i < chars.len() && chars[i] != '}' {
-                        i += 1;
+                    while *index < chars.len() && chars[*index] != '}' {
+                        *index += 1;
                     }
-                }
-
-                if i < chars.len() && chars[i] == '}' {
-                    i += 1;
+                    if *index < chars.len() && chars[*index] == '}' {
+                        *index += 1;
+                    }
                 }
             }
             _ => {
                 out.push('$');
-                i += 1;
+                *index += 1;
             }
         }
     }
@@ -335,8 +345,9 @@ fn fuzzy_score(pattern: &[char], text: &str) -> Option<i32> {
             }
 
             // Case-exact bonus
-            if text_chars[ti].to_lowercase().eq(pattern[pi].to_lowercase()) &&
-               text_chars[ti] == pattern[pi] {
+            if text_chars[ti].to_lowercase().eq(pattern[pi].to_lowercase())
+                && text_chars[ti] == pattern[pi]
+            {
                 // Exact case match (pattern char was already lowered, skip this)
             }
 

@@ -6,25 +6,24 @@ pub(crate) enum LauncherChoice {
     Browser,
 }
 
-
 use crate::tide_core::{InputEvent, LayoutEngine, Size, SplitDirection, TerminalBackend, Vec2};
 use crate::tide_editor::input::EditorAction;
 use crate::tide_input::{Action, AreaSlot, GlobalAction};
 
 use crate::pane::PaneKind;
-use crate::theme::*;
 use crate::state::FocusArea;
-use crate::App;
-use crate::ClipboardSearchPort;
-use crate::FileOpsPort;
-use crate::DockPort;
-use crate::FocusNavPort;
-use crate::TextExtractPort;
-use crate::AppCorePort;
-use crate::LayoutPort;
-use crate::WorkspaceNavPort;
+use crate::theme::*;
 use crate::ActionPort;
+use crate::App;
+use crate::AppCorePort;
+use crate::ClipboardSearchPort;
+use crate::DockPort;
+use crate::FileOpsPort;
+use crate::FocusNavPort;
+use crate::LayoutPort;
 use crate::PaneLifecyclePort;
+use crate::TextExtractPort;
+use crate::WorkspaceNavPort;
 
 impl App {
     pub(crate) fn cleanup_closed_pane_state(&mut self, pane_id: crate::tide_core::PaneId) {
@@ -55,7 +54,8 @@ impl crate::application::ports::inward::ActionPort for App {
     fn cleanup_retained_context(&mut self, _closed_pane_id: crate::tide_core::PaneId) {
         // Check if the closed pane's associated terminal is in retained_contexts
         // and no other pane still references it
-        let terminal_ids: Vec<crate::tide_core::PaneId> = self.assoc.retained_contexts.keys().copied().collect();
+        let terminal_ids: Vec<crate::tide_core::PaneId> =
+            self.assoc.retained_contexts.keys().copied().collect();
         for tid in terminal_ids {
             let still_referenced = self.assoc.associated_terminal.values().any(|&v| v == tid);
             if !still_referenced {
@@ -101,12 +101,16 @@ impl crate::application::ports::inward::ActionPort for App {
 
                     // Click on editor pane -> move cursor (skip in preview mode)
                     if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&id) {
-                        if pane.preview_mode { return; }
+                        if pane.preview_mode {
+                            return;
+                        }
                     }
                     let cell_size = self.cell_size();
                     if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&id) {
                         {
-                            if let Some(&(_, rect)) = self.visual_pane_rects.iter().find(|(pid, _)| *pid == id) {
+                            if let Some(&(_, rect)) =
+                                self.visual_pane_rects.iter().find(|(pid, _)| *pid == id)
+                            {
                                 let content_top = TAB_BAR_HEIGHT;
                                 let mut click_rect = crate::tide_core::Rect::new(
                                     rect.x + PANE_PADDING,
@@ -114,51 +118,59 @@ impl crate::application::ports::inward::ActionPort for App {
                                     rect.width - 2.0 * PANE_PADDING,
                                     (rect.height - content_top - PANE_PADDING).max(1.0),
                                 );
-                                if let Some((editor_rect, preview_rect)) = pane.split_preview_rects(click_rect, cell_size) {
+                                if let Some((editor_rect, preview_rect)) =
+                                    pane.split_preview_rects(click_rect, cell_size)
+                                {
                                     if position.x >= preview_rect.x {
                                         return;
                                     }
                                     click_rect = editor_rect;
                                 }
 
-                                let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+                                let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32
+                                    * cell_size.width;
                                 let content_x = click_rect.x + gutter_width;
-                                let rel_col = ((position.x - content_x) / cell_size.width).floor() as isize;
-                                let rel_row = ((position.y - click_rect.y) / cell_size.height).floor() as isize;
+                                let rel_col =
+                                    ((position.x - content_x) / cell_size.width).floor() as isize;
+                                let rel_row = ((position.y - click_rect.y) / cell_size.height)
+                                    .floor() as isize;
 
                                 if rel_row >= 0 && rel_col >= 0 {
-                                    let visible_rows = (click_rect.height / cell_size.height).floor() as usize;
-                                    let visible_cols = ((click_rect.width - gutter_width) / cell_size.width).floor() as usize;
-
-                                    if pane.split_preview_active() && pane.soft_wrap && !pane.diff_mode && visible_cols > 0 {
-                                        let wrap_map = crate::tide_editor::wrap::WrapMap::build(
-                                            &pane.editor.buffer.lines,
-                                            visible_cols,
-                                            pane.editor.generation(),
-                                        );
-                                        let scroll_vr = wrap_map.visual_row_of_line(pane.editor.scroll_offset());
-                                        let abs_visual_row = scroll_vr + rel_row as usize;
-                                        if let Some(info) = wrap_map.visual_row_to_line_info(abs_visual_row, &pane.editor.buffer.lines) {
-                                            let col = (info.char_offset + rel_col as usize).min(info.char_end);
-                                            pane.handle_action(EditorAction::SetCursor { line: info.logical_line, col }, visible_rows);
-                                        }
-                                    } else if pane.effective_soft_wrap() {
+                                    let visible_rows =
+                                        (click_rect.height / cell_size.height).floor() as usize;
+                                    if pane.effective_soft_wrap() {
                                         // Click-to-cursor must build the current WrapMap even before the first render.
-                                        pane.ensure_wrap_map(visible_cols.max(1));
+                                        let wrap_cols =
+                                            pane.wrap_cols_for_rect(click_rect, cell_size).max(1);
+                                        pane.ensure_wrap_map(wrap_cols);
                                         if let Some(wrap_map) = pane.wrap_map() {
-                                            let scroll_vr = wrap_map.visual_row_of_line(pane.editor.scroll_offset());
+                                            let scroll_vr = wrap_map
+                                                .visual_row_of_line(pane.editor.scroll_offset());
                                             let abs_visual_row = scroll_vr + rel_row as usize;
-                                            if let Some(info) = wrap_map.visual_row_to_line_info(abs_visual_row, &pane.editor.buffer.lines) {
+                                            if let Some(info) = wrap_map.visual_row_to_line_info(
+                                                abs_visual_row,
+                                                &pane.editor.buffer.lines,
+                                            ) {
                                                 // col is relative to the sub-row, add the char offset
                                                 // Clamp to char_end to avoid jumping to next visual row
-                                                let col = (info.char_offset + rel_col as usize).min(info.char_end);
-                                                pane.handle_action(EditorAction::SetCursor { line: info.logical_line, col }, visible_rows);
+                                                let col = (info.char_offset + rel_col as usize)
+                                                    .min(info.char_end);
+                                                pane.handle_action(
+                                                    EditorAction::SetCursor {
+                                                        line: info.logical_line,
+                                                        col,
+                                                    },
+                                                    visible_rows,
+                                                );
                                             }
                                         }
                                     } else {
                                         let line = pane.editor.scroll_offset() + rel_row as usize;
                                         let col = pane.editor.h_scroll_offset() + rel_col as usize;
-                                        pane.handle_action(EditorAction::SetCursor { line, col }, visible_rows);
+                                        pane.handle_action(
+                                            EditorAction::SetCursor { line, col },
+                                            visible_rows,
+                                        );
                                     }
                                 }
                             }
@@ -182,8 +194,13 @@ impl crate::application::ports::inward::ActionPort for App {
                             }
                         }
                         Some(PaneKind::Editor(pane)) => {
-                            if (modifiers.meta || modifiers.ctrl) && modifiers.shift && modifiers.alt {
-                                if let crate::tide_core::Key::Char('m') | crate::tide_core::Key::Char('M') = &key {
+                            if (modifiers.meta || modifiers.ctrl)
+                                && modifiers.shift
+                                && modifiers.alt
+                            {
+                                if let crate::tide_core::Key::Char('m')
+                                | crate::tide_core::Key::Char('M') = &key
+                                {
                                     pane.toggle_split_preview();
                                     self.cache.invalidate_chrome();
                                     self.cache.invalidate_pane(id);
@@ -193,7 +210,9 @@ impl crate::application::ports::inward::ActionPort for App {
 
                             // Cmd+Shift+M / Ctrl+Shift+M: toggle markdown preview
                             if (modifiers.meta || modifiers.ctrl) && modifiers.shift {
-                                if let crate::tide_core::Key::Char('m') | crate::tide_core::Key::Char('M') = &key {
+                                if let crate::tide_core::Key::Char('m')
+                                | crate::tide_core::Key::Char('M') = &key
+                                {
                                     if pane.is_markdown() {
                                         pane.toggle_preview();
                                         self.cache.invalidate_chrome();
@@ -214,9 +233,12 @@ impl crate::application::ports::inward::ActionPort for App {
                                 return;
                             }
 
-                            if let Some(action) = crate::tide_editor::key_to_editor_action(&key, &modifiers) {
+                            if let Some(action) =
+                                crate::tide_editor::key_to_editor_action(&key, &modifiers)
+                            {
                                 // Handle SelectAll: set selection, don't clear it
-                                if matches!(action, crate::tide_editor::EditorActionKind::SelectAll) {
+                                if matches!(action, crate::tide_editor::EditorActionKind::SelectAll)
+                                {
                                     pane.select_all();
                                     return;
                                 }
@@ -232,28 +254,52 @@ impl crate::application::ports::inward::ActionPort for App {
                                 }
                                 // Clear selection on movement and editing keys
                                 pane.selection = None;
-                                let is_save = matches!(action, crate::tide_editor::EditorActionKind::Save);
+                                let is_save =
+                                    matches!(action, crate::tide_editor::EditorActionKind::Save);
                                 // Intercept Save on untitled files -> open save-as input
                                 if is_save && pane.editor.file_path().is_none() {
                                     let base_dir = self.resolve_base_dir();
-                                    let anchor = self.visual_pane_rects.iter()
+                                    let anchor = self
+                                        .visual_pane_rects
+                                        .iter()
                                         .find(|(pid, _)| *pid == id)
-                                        .map(|(_, r)| crate::tide_core::Rect::new(r.x, r.y, r.width, crate::theme::TAB_BAR_HEIGHT))
-                                        .unwrap_or_else(|| crate::tide_core::Rect::new(0.0, 0.0, 0.0, 0.0));
-                                    self.modal.save_as_input = Some(crate::SaveAsInput::new(id, base_dir, anchor));
+                                        .map(|(_, r)| {
+                                            crate::tide_core::Rect::new(
+                                                r.x,
+                                                r.y,
+                                                r.width,
+                                                crate::theme::TAB_BAR_HEIGHT,
+                                            )
+                                        })
+                                        .unwrap_or_else(|| {
+                                            crate::tide_core::Rect::new(0.0, 0.0, 0.0, 0.0)
+                                        });
+                                    self.modal.save_as_input =
+                                        Some(crate::SaveAsInput::new(id, base_dir, anchor));
                                     return;
                                 }
                                 let was_modified = pane.editor.is_modified();
                                 let cell_size = Some(cs_for_keys);
                                 let content_top = TAB_BAR_HEIGHT;
                                 let (visible_rows, visible_cols) = if let Some(cs) = cell_size {
-                                    let tree_rect = self.visual_pane_rects.iter()
+                                    let tree_rect = self
+                                        .visual_pane_rects
+                                        .iter()
                                         .find(|(pid, _)| *pid == id)
                                         .map(|(_, r)| *r);
                                     if let Some(r) = tree_rect {
-                                        let rows = ((r.height - content_top - PANE_PADDING) / cs.height).floor() as usize;
-                                        let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cs.width;
-                                        let cols = ((r.width - 2.0 * PANE_PADDING - 2.0 * gutter_width) / cs.width).floor() as usize;
+                                        let rows = ((r.height - content_top - PANE_PADDING)
+                                            / cs.height)
+                                            .floor()
+                                            as usize;
+                                        let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS
+                                            as f32
+                                            * cs.width;
+                                        let cols =
+                                            ((r.width - 2.0 * PANE_PADDING - 2.0 * gutter_width)
+                                                / cs.width)
+                                                .floor()
+                                                as usize;
                                         (rows, cols)
                                     } else {
                                         (30, 80)
@@ -282,37 +328,39 @@ impl crate::application::ports::inward::ActionPort for App {
                                 self.cache.invalidate_pane(id);
                             }
                         }
-                        Some(PaneKind::Diff(dp)) => {
-                            match key {
-                                crate::tide_core::Key::Char('j') | crate::tide_core::Key::Down => {
-                                    dp.move_selection(1);
-                                    self.cache.invalidate_pane(id);
-                                }
-                                crate::tide_core::Key::Char('k') | crate::tide_core::Key::Up => {
-                                    dp.move_selection(-1);
-                                    self.cache.invalidate_pane(id);
-                                }
-                                crate::tide_core::Key::Enter | crate::tide_core::Key::Char(' ') => {
-                                    dp.toggle_selected();
-                                    self.cache.invalidate_pane(id);
-                                }
-                                _ => {}
+                        Some(PaneKind::Diff(dp)) => match key {
+                            crate::tide_core::Key::Char('j') | crate::tide_core::Key::Down => {
+                                dp.move_selection(1);
+                                self.cache.invalidate_pane(id);
                             }
-                        }
+                            crate::tide_core::Key::Char('k') | crate::tide_core::Key::Up => {
+                                dp.move_selection(-1);
+                                self.cache.invalidate_pane(id);
+                            }
+                            crate::tide_core::Key::Enter | crate::tide_core::Key::Char(' ') => {
+                                dp.toggle_selected();
+                                self.cache.invalidate_pane(id);
+                            }
+                            _ => {}
+                        },
                         Some(PaneKind::Browser(_)) => {} // Browser keyboard handled by webview / URL bar
                         Some(PaneKind::Launcher(_)) => {
                             // Launcher key handling: T/E/O/B to select pane type, Escape to close
                             let choice = match key {
-                                crate::tide_core::Key::Char('t') | crate::tide_core::Key::Char('T') => {
+                                crate::tide_core::Key::Char('t')
+                                | crate::tide_core::Key::Char('T') => {
                                     Some(crate::action::LauncherChoice::Terminal)
                                 }
-                                crate::tide_core::Key::Char('e') | crate::tide_core::Key::Char('E') => {
+                                crate::tide_core::Key::Char('e')
+                                | crate::tide_core::Key::Char('E') => {
                                     Some(crate::action::LauncherChoice::NewFile)
                                 }
-                                crate::tide_core::Key::Char('o') | crate::tide_core::Key::Char('O') => {
+                                crate::tide_core::Key::Char('o')
+                                | crate::tide_core::Key::Char('O') => {
                                     Some(crate::action::LauncherChoice::OpenFile)
                                 }
-                                crate::tide_core::Key::Char('b') | crate::tide_core::Key::Char('B') => {
+                                crate::tide_core::Key::Char('b')
+                                | crate::tide_core::Key::Char('B') => {
                                     Some(crate::action::LauncherChoice::Browser)
                                 }
                                 crate::tide_core::Key::Escape => {
@@ -335,13 +383,19 @@ impl crate::application::ports::inward::ActionPort for App {
                     let content_top = TAB_BAR_HEIGHT;
                     let (visible_rows, visible_cols) = {
                         let cs = self.cell_size();
-                        let rect = self.visual_pane_rects.iter()
+                        let rect = self
+                            .visual_pane_rects
+                            .iter()
                             .find(|(pid, _)| *pid == id)
                             .map(|(_, r)| *r);
                         if let Some(r) = rect {
-                            let rows = ((r.height - content_top - PANE_PADDING) / cs.height).floor() as usize;
-                            let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cs.width;
-                            let cols = ((r.width - 2.0 * PANE_PADDING - 2.0 * gutter_width) / cs.width).floor() as usize;
+                            let rows = ((r.height - content_top - PANE_PADDING) / cs.height).floor()
+                                as usize;
+                            let gutter_width =
+                                crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cs.width;
+                            let cols = ((r.width - 2.0 * PANE_PADDING - 2.0 * gutter_width)
+                                / cs.width)
+                                .floor() as usize;
                             (rows.max(1), cols.max(1))
                         } else {
                             (30, 80)
@@ -357,9 +411,13 @@ impl crate::application::ports::inward::ActionPort for App {
                                 let total = pane.preview_line_count();
                                 let max_scroll = total.saturating_sub(visible_rows);
                                 if lines > 0 {
-                                    pane.preview_scroll = pane.preview_scroll.saturating_sub(lines.unsigned_abs() as usize);
+                                    pane.preview_scroll = pane
+                                        .preview_scroll
+                                        .saturating_sub(lines.unsigned_abs() as usize);
                                 } else {
-                                    pane.preview_scroll = (pane.preview_scroll + lines.unsigned_abs() as usize).min(max_scroll);
+                                    pane.preview_scroll = (pane.preview_scroll
+                                        + lines.unsigned_abs() as usize)
+                                        .min(max_scroll);
                                 }
                                 self.cache.invalidate_pane(id);
                             }
@@ -372,9 +430,17 @@ impl crate::application::ports::inward::ActionPort for App {
                             if lines.abs() >= 1.0 {
                                 *acc -= lines;
                                 if lines > 0.0 {
-                                    pane.handle_action_with_size(EditorAction::ScrollUp(lines.abs()), visible_rows, visible_cols);
+                                    pane.handle_action_with_size(
+                                        EditorAction::ScrollUp(lines.abs()),
+                                        visible_rows,
+                                        visible_cols,
+                                    );
                                 } else {
-                                    pane.handle_action_with_size(EditorAction::ScrollDown(lines.abs()), visible_rows, visible_cols);
+                                    pane.handle_action_with_size(
+                                        EditorAction::ScrollDown(lines.abs()),
+                                        visible_rows,
+                                        visible_cols,
+                                    );
                                 }
                                 self.cache.invalidate_pane(id);
                             }
@@ -419,10 +485,8 @@ impl crate::application::ports::inward::ActionPort for App {
                     }
                 }
                 let drag_pos = Vec2::new(pos.x - left, pos.y);
-                let terminal_area = Size::new(
-                    (logical.width - left - right).max(100.0),
-                    logical.height,
-                );
+                let terminal_area =
+                    Size::new((logical.width - left - right).max(100.0), logical.height);
                 self.layout.begin_drag(drag_pos, terminal_area);
                 self.layout.drag_border(drag_pos);
                 self.compute_layout();
@@ -493,14 +557,22 @@ impl crate::application::ports::inward::ActionPort for App {
             GlobalAction::WorkspacePrev => {
                 let len = self.ws.workspaces.len();
                 if len > 0 {
-                    let prev = if self.ws.active == 0 { len - 1 } else { self.ws.active - 1 };
+                    let prev = if self.ws.active == 0 {
+                        len - 1
+                    } else {
+                        self.ws.active - 1
+                    };
                     self.switch_workspace(prev);
                 }
             }
             GlobalAction::WorkspaceNext => {
                 let len = self.ws.workspaces.len();
                 if len > 0 {
-                    let next = if self.ws.active + 1 >= len { 0 } else { self.ws.active + 1 };
+                    let next = if self.ws.active + 1 >= len {
+                        0
+                    } else {
+                        self.ws.active + 1
+                    };
                     self.switch_workspace(next);
                 }
             }
@@ -669,18 +741,39 @@ fn action_target_id(focused: Option<crate::tide_core::PaneId>) -> Option<crate::
 impl App {
     /// Add a pane to the right of the focused pane.
     /// Splits the focused pane horizontally.
-    pub(crate) fn add_pane_to_right(&mut self, focused: crate::tide_core::PaneId, new_id: crate::tide_core::PaneId) {
-        self.layout.insert_pane(focused, new_id, crate::tide_core::SplitDirection::Horizontal, false);
+    pub(crate) fn add_pane_to_right(
+        &mut self,
+        focused: crate::tide_core::PaneId,
+        new_id: crate::tide_core::PaneId,
+    ) {
+        self.layout.insert_pane(
+            focused,
+            new_id,
+            crate::tide_core::SplitDirection::Horizontal,
+            false,
+        );
     }
 
     /// Route a non-terminal pane next to the correct pane.
     /// If focused is a terminal → add to right (split horizontally).
     /// If focused is non-terminal → add as vertical split next to the same pane.
-    pub(crate) fn add_to_non_terminal_group(&mut self, focused: crate::tide_core::PaneId, new_id: crate::tide_core::PaneId) {
-        if matches!(self.panes.get(&focused), Some(crate::pane::PaneKind::Terminal(_))) {
+    pub(crate) fn add_to_non_terminal_group(
+        &mut self,
+        focused: crate::tide_core::PaneId,
+        new_id: crate::tide_core::PaneId,
+    ) {
+        if matches!(
+            self.panes.get(&focused),
+            Some(crate::pane::PaneKind::Terminal(_))
+        ) {
             self.add_pane_to_right(focused, new_id);
         } else {
-            self.layout.insert_pane(focused, new_id, crate::tide_core::SplitDirection::Vertical, false);
+            self.layout.insert_pane(
+                focused,
+                new_id,
+                crate::tide_core::SplitDirection::Vertical,
+                false,
+            );
         }
     }
 }
