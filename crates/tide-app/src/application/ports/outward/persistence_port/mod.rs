@@ -69,12 +69,23 @@ pub enum SessionLayout {
         pane_id: u64,
         cwd: Option<PathBuf>,
     },
+    LeafGroup {
+        tabs: Vec<LeafGroupTab>,
+        active: usize,
+    },
     Split {
         direction: String,
         ratio: f32,
         left: Box<SessionLayout>,
         right: Box<SessionLayout>,
     },
+}
+
+/// A single tab entry inside a persisted LeafGroup.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct LeafGroupTab {
+    pub pane_id: u64,
+    pub cwd: Option<PathBuf>,
 }
 
 // ──────────────────────────────────────────────
