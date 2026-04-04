@@ -3,6 +3,8 @@
 use unicode_width::UnicodeWidthChar;
 
 use crate::tide_core::{Color, Rect, Renderer, TextStyle, Vec2};
+use crate::tide_editor::markdown::{render_markdown_preview, MarkdownTheme, PreviewLine};
+use crate::tide_editor::wrap::WrapMap;
 use crate::tide_renderer::WgpuRenderer;
 
 use crate::state::search::SearchState;
@@ -10,7 +12,7 @@ use crate::theme::SCROLLBAR_WIDTH;
 
 use crate::theme::ThemePalette;
 
-use super::{EditorPane, GUTTER_WIDTH_CELLS};
+use super::{EditorPane, GUTTER_WIDTH_CELLS, SPLIT_PREVIEW_GAP_CELLS};
 
 impl EditorPane {
     /// Render the editor grid cells into the cached grid layer, with optional diff colors.
@@ -30,6 +32,67 @@ impl EditorPane {
     ) {
         if self.preview_mode {
             self.render_preview_grid(rect, renderer);
+            return;
+        }
+        if let Some((editor_rect, preview_rect)) = self.split_preview_rects(rect, renderer.cell_size()) {
+            let wrap_cols = self.authoring_wrap_cols(editor_rect, renderer.cell_size(), true);
+            let wrap_map = if self.soft_wrap && !self.diff_mode && wrap_cols > 0 {
+                Some(WrapMap::build(&self.editor.buffer.lines, wrap_cols, self.editor.generation()))
+            } else {
+                None
+            };
+            self.render_authoring_grid(
+                editor_rect,
+                renderer,
+                gutter_text,
+                gutter_active_text,
+                diff_added_bg,
+                diff_removed_bg,
+                diff_added_gutter,
+                diff_removed_gutter,
+                ime_preedit,
+                current_line_bg,
+                indent_guide,
+                wrap_map.as_ref(),
+            );
+            self.render_split_preview_grid(preview_rect, renderer, current_line_bg);
+            let separator_x = preview_rect.x - (SPLIT_PREVIEW_GAP_CELLS as f32 * renderer.cell_size().width) / 2.0;
+            renderer.draw_grid_rect(Rect::new(separator_x, rect.y, 1.0, rect.height), current_line_bg);
+            return;
+        }
+        self.render_authoring_grid(
+            rect,
+            renderer,
+            gutter_text,
+            gutter_active_text,
+            diff_added_bg,
+            diff_removed_bg,
+            diff_added_gutter,
+            diff_removed_gutter,
+            ime_preedit,
+            current_line_bg,
+            indent_guide,
+            None,
+        );
+    }
+
+    fn render_authoring_grid(
+        &self,
+        rect: Rect,
+        renderer: &mut WgpuRenderer,
+        gutter_text: Color,
+        gutter_active_text: Color,
+        diff_added_bg: Option<Color>,
+        diff_removed_bg: Option<Color>,
+        diff_added_gutter: Option<Color>,
+        diff_removed_gutter: Option<Color>,
+        ime_preedit: &str,
+        current_line_bg: Color,
+        indent_guide: Color,
+        wrap_map_override: Option<&WrapMap>,
+    ) {
+        if let Some(wrap_map) = wrap_map_override {
+            self.render_soft_wrap_grid_with_map(rect, renderer, gutter_text, gutter_active_text, ime_preedit, current_line_bg, wrap_map);
             return;
         }
         if self.effective_soft_wrap() {
@@ -232,6 +295,19 @@ impl EditorPane {
             Some(m) => m,
             None => return,
         };
+        self.render_soft_wrap_grid_with_map(rect, renderer, gutter_text, gutter_active_text, ime_preedit, current_line_bg, wrap_map);
+    }
+
+    fn render_soft_wrap_grid_with_map(
+        &self,
+        rect: Rect,
+        renderer: &mut WgpuRenderer,
+        gutter_text: Color,
+        gutter_active_text: Color,
+        ime_preedit: &str,
+        current_line_bg: Color,
+        wrap_map: &WrapMap,
+    ) {
 
         let cell_size = renderer.cell_size();
         let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
@@ -547,6 +623,17 @@ impl EditorPane {
 
     /// Render the markdown preview grid.
     fn render_preview_grid(&self, rect: Rect, renderer: &mut WgpuRenderer) {
+        self.render_preview_lines_grid(rect, renderer, self.preview_lines(), self.preview_scroll, self.preview_h_scroll);
+    }
+
+    fn render_preview_lines_grid(
+        &self,
+        rect: Rect,
+        renderer: &mut WgpuRenderer,
+        preview_lines: &[PreviewLine],
+        preview_scroll: usize,
+        preview_h_scroll: usize,
+    ) {
         let cell_size = renderer.cell_size();
         let scrollbar_reserved = if self.preview_needs_scrollbar(rect, cell_size.height) {
             SCROLLBAR_WIDTH
@@ -558,9 +645,8 @@ impl EditorPane {
         let right_pad = 2.0 * cell_size.width;
         let bg_width = (content_width - right_pad).max(0.0);
         let visible_rows = (rect.height / cell_size.height).floor() as usize;
-        let preview_lines = self.preview_lines();
 
-        for (vi, line) in preview_lines.iter().skip(self.preview_scroll).take(visible_rows).enumerate() {
+        for (vi, line) in preview_lines.iter().skip(preview_scroll).take(visible_rows).enumerate() {
             let y = rect.y + vi as f32 * cell_size.height;
 
             if y + cell_size.height > rect.y + rect.height {
@@ -576,7 +662,7 @@ impl EditorPane {
             // Draw styled spans with horizontal scroll.
             // h-scroll only applies to code block lines; normal text is already wrapped.
             let is_code_block = line.bg_color.is_some();
-            let h_scroll = if is_code_block { self.preview_h_scroll } else { 0 };
+            let h_scroll = if is_code_block { preview_h_scroll } else { 0 };
             let effective_width = if is_code_block { bg_width } else { content_width };
             let visible_cols = (effective_width / cell_size.width).floor() as usize;
             let mut abs_col = 0usize; // absolute column before h_scroll
@@ -610,6 +696,27 @@ impl EditorPane {
         }
     }
 
+    fn render_split_preview_grid(&self, rect: Rect, renderer: &mut WgpuRenderer, current_line_bg: Color) {
+        let cell_size = renderer.cell_size();
+        let wrap_width = (rect.width / cell_size.width).floor() as usize;
+        if wrap_width == 0 {
+            return;
+        }
+
+        let dark = current_line_bg.r + current_line_bg.g + current_line_bg.b < 1.5;
+        let theme = if dark { MarkdownTheme::dark() } else { MarkdownTheme::light() };
+        let preview_lines = render_markdown_preview(&self.editor.buffer.lines, &theme, wrap_width);
+        if preview_lines.is_empty() {
+            return;
+        }
+
+        let raw_line_count = self.editor.buffer.line_count().max(1);
+        let ratio = self.editor.scroll_offset() as f64 / raw_line_count as f64;
+        let preview_scroll = ((ratio * preview_lines.len() as f64).round() as usize)
+            .min(preview_lines.len().saturating_sub(1));
+        self.render_preview_lines_grid(rect, renderer, &preview_lines, preview_scroll, 0);
+    }
+
     /// Whether the preview content is long enough to need a scrollbar.
     fn preview_needs_scrollbar(&self, rect: Rect, cell_height: f32) -> bool {
         let visible_rows = (rect.height / cell_height).floor() as usize;
@@ -619,10 +726,29 @@ impl EditorPane {
     /// Render the editor cursor into the overlay layer (always redrawn).
     /// `preedit_width_cells` shifts the cursor rightward during IME composition.
     pub fn render_cursor(&self, rect: Rect, renderer: &mut WgpuRenderer, cursor_color: Color, preedit_width_cells: usize) {
+        if let Some((editor_rect, _)) = self.split_preview_rects(rect, renderer.cell_size()) {
+            let wrap_cols = self.authoring_wrap_cols(editor_rect, renderer.cell_size(), true);
+            if self.soft_wrap && !self.diff_mode && wrap_cols > 0 {
+                let wrap_map = WrapMap::build(&self.editor.buffer.lines, wrap_cols, self.editor.generation());
+                self.render_cursor_soft_wrap_with_map(editor_rect, renderer, cursor_color, preedit_width_cells, &wrap_map);
+                return;
+            }
+            return self.render_cursor_in_rect(editor_rect, renderer, cursor_color, preedit_width_cells);
+        }
         if self.effective_soft_wrap() {
             self.render_cursor_soft_wrap(rect, renderer, cursor_color, preedit_width_cells);
             return;
         }
+        self.render_cursor_in_rect(rect, renderer, cursor_color, preedit_width_cells);
+    }
+
+    fn render_cursor_in_rect(
+        &self,
+        rect: Rect,
+        renderer: &mut WgpuRenderer,
+        cursor_color: Color,
+        preedit_width_cells: usize,
+    ) {
 
         let cell_size = renderer.cell_size();
         let pos = self.editor.cursor_position();
@@ -710,6 +836,17 @@ impl EditorPane {
             Some(m) => m,
             None => return,
         };
+        self.render_cursor_soft_wrap_with_map(rect, renderer, cursor_color, preedit_width_cells, wrap_map);
+    }
+
+    fn render_cursor_soft_wrap_with_map(
+        &self,
+        rect: Rect,
+        renderer: &mut WgpuRenderer,
+        cursor_color: Color,
+        preedit_width_cells: usize,
+        wrap_map: &WrapMap,
+    ) {
         let cell_size = renderer.cell_size();
         let pos = self.editor.cursor_position();
         let scroll = self.editor.scroll_offset();
@@ -755,11 +892,25 @@ impl EditorPane {
     /// Includes match markers from search results when search is active.
     pub fn render_scrollbar(&self, rect: Rect, renderer: &mut WgpuRenderer, search: Option<&SearchState>, palette: &ThemePalette, hovered: bool) {
         let cell_size = renderer.cell_size();
+        let rect = if let Some((editor_rect, _)) = self.split_preview_rects(rect, cell_size) {
+            editor_rect
+        } else {
+            rect
+        };
         let visible_rows = (rect.height / cell_size.height).floor() as usize;
 
         // In preview mode, use preview line count and scroll
         let (total_lines, scroll) = if self.preview_mode {
             (self.preview_line_count(), self.preview_scroll)
+        } else if self.split_preview_active() && self.soft_wrap && !self.diff_mode {
+            let wrap_cols = self.authoring_wrap_cols(rect, cell_size, true);
+            if wrap_cols > 0 {
+                let map = WrapMap::build(&self.editor.buffer.lines, wrap_cols, self.editor.generation());
+                let scroll_vr = map.visual_row_of_line(self.editor.scroll_offset());
+                (map.total_visual_rows(), scroll_vr)
+            } else {
+                (self.editor.buffer.line_count(), self.editor.scroll_offset())
+            }
         } else if self.effective_soft_wrap() {
             if let Some(ref map) = self.wrap_map {
                 let scroll_vr = map.visual_row_of_line(self.editor.scroll_offset());
@@ -809,5 +960,12 @@ impl EditorPane {
                 }
             }
         }
+    }
+
+    fn authoring_wrap_cols(&self, rect: Rect, cell_size: crate::tide_core::Size, reserve_scrollbar: bool) -> usize {
+        let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+        let scrollbar_reserved = if reserve_scrollbar { SCROLLBAR_WIDTH } else { 0.0 };
+        let content_width = (rect.width - gutter_width - scrollbar_reserved).max(0.0);
+        (content_width / cell_size.width).floor() as usize
     }
 }

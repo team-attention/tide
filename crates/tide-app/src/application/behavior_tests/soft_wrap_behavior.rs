@@ -1,6 +1,5 @@
 // Spec: docs/specs/soft-wrap.md
 use crate::pane::editor::EditorPane;
-use crate::ActionPort;
 
 fn editor_with_extension(ext: &str) -> EditorPane {
     let path = std::env::temp_dir().join(format!("tide_test_soft_wrap.{}", ext));
@@ -35,7 +34,7 @@ fn soft_wrap_disabled_for_source_code() {
 
 #[test]
 fn soft_wrap_disabled_in_diff_mode() {
-    // UC-1 BR-3: diff mode → no wrap regardless of file type
+    // UC-1 BR-4: diff mode → no wrap regardless of file type
     let mut pane = editor_with_extension("md");
     pane.diff_mode = true;
     // soft_wrap flag is still true but rendering should skip wrap in diff mode.
@@ -43,11 +42,21 @@ fn soft_wrap_disabled_in_diff_mode() {
     assert!(!pane.effective_soft_wrap());
 }
 
+#[test]
+fn markdown_authoring_opens_with_soft_wrap_active() {
+    // UC-1 BR-3: Markdown files open in authoring mode so Soft Wrap is active immediately
+    let pane = editor_with_extension("md");
+    assert!(
+        pane.effective_soft_wrap(),
+        "markdown authoring should start with effective soft wrap enabled"
+    );
+}
+
 // --- UC-2: Render Wrapped Lines ---
 
 #[test]
 fn horizontal_scroll_disabled_with_soft_wrap() {
-    // UC-2 BR-7: h_scroll should stay 0 when soft wrap is active
+    // UC-2 BR-8: h_scroll should stay 0 when soft wrap is active
     use crate::tide_editor::input::EditorAction;
     let mut pane = editor_with_extension("txt");
     // Insert a very long line
@@ -62,7 +71,7 @@ fn horizontal_scroll_disabled_with_soft_wrap() {
 
 #[test]
 fn wrap_map_counts_visual_rows_correctly() {
-    // UC-2 BR-5/BR-6: WrapMap correctly maps logical lines to visual rows
+    // UC-2 BR-6/BR-7: WrapMap correctly maps logical lines to visual rows
     use crate::tide_editor::wrap::WrapMap;
     let lines: Vec<String> = vec![
         "short".to_string(),
@@ -78,7 +87,7 @@ fn wrap_map_counts_visual_rows_correctly() {
 
 #[test]
 fn wide_characters_wrap_correctly() {
-    // UC-2 BR-8: CJK characters (width 2) respected in wrapping
+    // UC-2 BR-9: CJK characters (width 2) respected in wrapping
     use crate::tide_editor::wrap::WrapMap;
     // 25 CJK chars = 50 display cols → 2 rows at width 40
     let cjk: String = std::iter::repeat('가').take(25).collect();
@@ -91,7 +100,7 @@ fn wide_characters_wrap_correctly() {
 
 #[test]
 fn wrap_map_rebuilt_on_width_change() {
-    // UC-5 BR-14: WrapMap must change when width changes
+    // UC-5 BR-15: WrapMap must change when width changes
     use crate::tide_editor::wrap::WrapMap;
     let lines = vec!["a".repeat(100)];
     let map40 = WrapMap::build(&lines, 40, 0);
