@@ -1,6 +1,6 @@
 use unicode_width::UnicodeWidthChar;
 
-use crate::tide_core::{Color, Rect, Renderer, TerminalBackend, TextStyle, Vec2};
+use crate::tide_core::{Rect, Renderer, TerminalBackend, TextStyle, Vec2};
 
 use crate::state::drag_types::{DropDestination, PaneDragState};
 use crate::pane::PaneKind;
@@ -172,8 +172,9 @@ pub(crate) fn render_ime_and_drop_preview(
             let h_padding = 8.0;
             let v_padding = 4.0;
 
-            let char_count = source_label.chars().count() as f32;
-            let text_w = char_count * cell_size.width;
+            let text_w = source_label.chars()
+                .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
+                .sum::<usize>() as f32 * cell_size.width;
             let text_h = cell_size.height;
             let bg_w = text_w + h_padding * 2.0;
             let bg_h = text_h + v_padding * 2.0;
@@ -181,15 +182,14 @@ pub(crate) fn render_ime_and_drop_preview(
             let bg_x = cursor_pos.x + label_offset_x;
             let bg_y = cursor_pos.y + label_offset_y;
 
-            // Semi-transparent dark background with fade-in
-            let bg_color = Color::new(30.0 / 255.0, 30.0 / 255.0, 30.0 / 255.0, 0.85)
-                .with_alpha_factor(alpha_factor);
+            // Use theme colors for the floating label
+            let bg_color = p.tab_bar_bg.with_alpha_factor(alpha_factor);
             renderer.draw_top_rect(Rect::new(bg_x, bg_y, bg_w, bg_h), bg_color);
 
             // White label text with fade-in
             let text_pos = Vec2::new(bg_x + h_padding, bg_y + v_padding);
             let label_style = TextStyle {
-                foreground: Color::new(1.0, 1.0, 1.0, alpha_factor),
+                foreground: p.tab_text.with_alpha_factor(alpha_factor),
                 background: None,
                 bold: false,
                 dim: false,
