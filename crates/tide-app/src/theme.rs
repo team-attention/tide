@@ -146,7 +146,7 @@ pub static DARK: ThemePalette = ThemePalette {
     tree_icon:      Color::new(0.290, 0.290, 0.306, 1.0),   // file icons #4A4A4E
     tree_row_active: Color::new(0.102, 0.102, 0.114, 1.0),  // expanded folder row bg #1A1A1D
 
-    // Tab bar — compact editor-tab styling: clean minimal, bottom indicator
+    // Tab bar — VS Code inspired: clean minimal, bottom indicator
     tab_bar_bg:         Color::new(0.098, 0.098, 0.110, 1.0),   // #19191C darker, cleaner
     tab_bar_bg_focused: Color::new(0.110, 0.106, 0.090, 1.0),   // #1C1B17 subtle warm focused
     active_tab_bg:      Color::new(0.055, 0.055, 0.063, 1.0),   // same as pane_bg #0E0E10
@@ -266,7 +266,7 @@ pub static LIGHT: ThemePalette = ThemePalette {
     tree_icon:      Color::new(0.48, 0.42, 0.34, 1.0),  // muted warm
     tree_row_active: Color::new(0.88, 0.85, 0.80, 1.0), // warm active row
 
-    // Tab bar — compact editor-tab styling: clean minimal, bottom indicator
+    // Tab bar — VS Code inspired: clean minimal, bottom indicator
     tab_bar_bg:         Color::new(0.92, 0.89, 0.86, 1.0),  // slightly darker for contrast
     tab_bar_bg_focused: Color::new(0.94, 0.91, 0.87, 1.0),  // warm light tab bar bg focused
     active_tab_bg:      Color::new(0.96, 0.94, 0.92, 1.0),  // lighter to match surface_bg

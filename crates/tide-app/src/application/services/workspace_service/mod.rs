@@ -162,18 +162,15 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
             FocusArea::FileTree => {
                 self.navigate_file_tree(direction);
             }
-            FocusArea::Stage | FocusArea::Dock => {
-                let stage_current = self.focused_terminal_id();
-
+            FocusArea::Stage => {
                 if self.focus.zoomed_pane.is_some() {
                     let dir = match direction {
-                        crate::tide_input::Direction::Left => -1,
-                        crate::tide_input::Direction::Right => 1,
-                        _ => return,
+                        crate::tide_input::Direction::Left | crate::tide_input::Direction::Up => -1,
+                        crate::tide_input::Direction::Right | crate::tide_input::Direction::Down => 1,
                     };
-                    let ids = self.layout.pane_ids();
+                    let ids = self.layout.all_tabs_flat();
                     if ids.len() < 2 { return; }
-                    let current = stage_current.unwrap_or_else(|| self.focus.focused.unwrap_or(0));
+                    let current = self.focus.focused.unwrap_or(0);
                     if let Some(pos) = ids.iter().position(|&id| id == current) {
                         let next_pos = if dir > 0 {
                             (pos + 1) % ids.len()
@@ -186,13 +183,111 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                         self.compute_layout();
                     }
                 } else {
-                    if self.focus.focus_area == FocusArea::Dock {
-                        if let Some(tid) = stage_current {
-                            self.focus.focused = Some(tid);
-                            self.router.set_focused(tid);
-                        }
-                    }
                     self.handle_move_focus(direction);
+                }
+            }
+            FocusArea::Dock => {
+                // Dock stacked mode: cycle through all dock tabs
+                if self.dock.dock_zoomed {
+                    let dir = match direction {
+                        crate::tide_input::Direction::Left | crate::tide_input::Direction::Up => -1,
+                        crate::tide_input::Direction::Right | crate::tide_input::Direction::Down => 1,
+                    };
+                    let tid = match self.focus.stage_focused {
+                        Some(id) => id,
+                        None => return,
+                    };
+                    let mut pane_ids: Vec<PaneId> = self.dock.pinned_dock_layout.all_tabs_flat();
+                    if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                        pane_ids.extend(tp.dock_layout.all_tabs_flat());
+                    }
+                    if pane_ids.len() < 2 { return; }
+                    // Use dock_focused (not self.focus.focused which may be a Stage pane)
+                    let current = self.panes.get(&tid)
+                        .and_then(|pk| if let PaneKind::Terminal(tp) = pk { tp.dock_focused } else { None })
+                        .or_else(|| self.dock.pinned_dock_layout.all_tabs_flat().into_iter().next())
+                        .unwrap_or(0);
+                    if let Some(pos) = pane_ids.iter().position(|&id| id == current) {
+                        let next_pos = if dir > 0 {
+                            (pos + 1) % pane_ids.len()
+                        } else {
+                            (pos + pane_ids.len() - 1) % pane_ids.len()
+                        };
+                        let next_id = pane_ids[next_pos];
+                        self.focus.focused = Some(next_id);
+                        self.router.set_focused(next_id);
+                        if self.is_pane_pinned(next_id) {
+                            self.dock.pinned_dock_layout.set_active_tab(next_id);
+                        } else if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                            tp.dock_focused = Some(next_id);
+                            tp.dock_layout.set_active_tab(next_id);
+                        }
+                        self.cache.invalidate_chrome();
+                        self.compute_layout();
+                    }
+                    return;
+                }
+                // Spatial navigation within Dock panes only
+                let current_id = match self.focus.focused {
+                    Some(id) => id,
+                    None => return,
+                };
+                // Collect dock pane rects from pane_rects (exclude stage panes)
+                let stage_ids: std::collections::HashSet<PaneId> =
+                    self.layout.pane_ids().into_iter().collect();
+                let dock_rects: Vec<(PaneId, crate::tide_core::Rect)> = self.pane_rects.iter()
+                    .filter(|(id, _)| !stage_ids.contains(id))
+                    .copied()
+                    .collect();
+                if dock_rects.len() < 2 { return; }
+
+                let current_rect = match dock_rects.iter().find(|(id, _)| *id == current_id) {
+                    Some((_, r)) => *r,
+                    None => return,
+                };
+                let cx = current_rect.x + current_rect.width / 2.0;
+                let cy = current_rect.y + current_rect.height / 2.0;
+
+                let mut best: Option<(PaneId, f32)> = None;
+                for &(id, rect) in &dock_rects {
+                    if id == current_id { continue; }
+                    let ox = rect.x + rect.width / 2.0;
+                    let oy = rect.y + rect.height / 2.0;
+                    let dx = ox - cx;
+                    let dy = oy - cy;
+
+                    let (valid, overlaps, dist) = match direction {
+                        crate::tide_input::Direction::Left => (
+                            dx < -1.0,
+                            rect.y < current_rect.y + current_rect.height && rect.y + rect.height > current_rect.y,
+                            dx.abs(),
+                        ),
+                        crate::tide_input::Direction::Right => (
+                            dx > 1.0,
+                            rect.y < current_rect.y + current_rect.height && rect.y + rect.height > current_rect.y,
+                            dx.abs(),
+                        ),
+                        crate::tide_input::Direction::Up => (
+                            dy < -1.0,
+                            rect.x < current_rect.x + current_rect.width && rect.x + rect.width > current_rect.x,
+                            dy.abs(),
+                        ),
+                        crate::tide_input::Direction::Down => (
+                            dy > 1.0,
+                            rect.x < current_rect.x + current_rect.width && rect.x + rect.width > current_rect.x,
+                            dy.abs(),
+                        ),
+                    };
+
+                    if !valid { continue; }
+                    let score = if overlaps { dist } else { dist + 100000.0 };
+                    if best.is_none_or(|(_, d)| score < d) {
+                        best = Some((id, score));
+                    }
+                }
+
+                if let Some((next_id, _)) = best {
+                    self.focus_terminal(next_id);
                 }
             }
         }
@@ -243,40 +338,68 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
     }
 
     fn cycle_tab(&mut self, direction: i32) {
-        let tid = match self.focus.stage_focused {
-            Some(id) => id,
-            None => return,
-        };
+        match self.focus.focus_area {
+            FocusArea::Stage => {
+                // Cycle within the current TabGroup only (not across TabGroups).
+                let current = match self.focus.focused {
+                    Some(id) => id,
+                    None => return,
+                };
+                let tg = match self.layout.tab_group_containing(current) {
+                    Some(tg) => tg.clone(),
+                    None => return, // bare Leaf, no tabs to cycle
+                };
+                if tg.tabs.len() <= 1 { return; }
+                let pos = tg.tabs.iter().position(|&id| id == current).unwrap_or(0);
+                let next_pos = if direction > 0 {
+                    (pos + 1) % tg.tabs.len()
+                } else {
+                    (pos + tg.tabs.len() - 1) % tg.tabs.len()
+                };
+                let next_id = tg.tabs[next_pos];
+                self.focus_terminal(next_id);
+            }
+            FocusArea::Dock => {
+                // Cycle through Dock tabs (pinned + terminal dock)
+                let tid = match self.focus.stage_focused {
+                    Some(id) => id,
+                    None => return,
+                };
 
-        let mut pane_ids: Vec<PaneId> = self.dock.pinned_dock_layout.all_tabs_flat();
-        let terminal_tabs = match self.panes.get(&tid) {
-            Some(PaneKind::Terminal(tp)) => tp.dock_layout.all_tabs_flat(),
-            _ => Vec::new(),
-        };
-        pane_ids.extend(terminal_tabs);
-        if pane_ids.len() <= 1 { return; }
+                let mut pane_ids: Vec<PaneId> = self.dock.pinned_dock_layout.all_tabs_flat();
+                let terminal_tabs = match self.panes.get(&tid) {
+                    Some(PaneKind::Terminal(tp)) => tp.dock_layout.all_tabs_flat(),
+                    _ => Vec::new(),
+                };
+                pane_ids.extend(terminal_tabs);
+                if pane_ids.len() <= 1 { return; }
 
-        let current = self.focus.focused.filter(|id| pane_ids.contains(id));
-        let pos = current.and_then(|c| pane_ids.iter().position(|&id| id == c)).unwrap_or(0);
-        let next_pos = if direction > 0 {
-            (pos + 1) % pane_ids.len()
-        } else {
-            (pos + pane_ids.len() - 1) % pane_ids.len()
-        };
-        let next_id = pane_ids[next_pos];
+                let current = self.focus.focused.filter(|id| pane_ids.contains(id));
+                let pos = current.and_then(|c| pane_ids.iter().position(|&id| id == c)).unwrap_or(0);
+                let next_pos = if direction > 0 {
+                    (pos + 1) % pane_ids.len()
+                } else {
+                    (pos + pane_ids.len() - 1) % pane_ids.len()
+                };
+                let next_id = pane_ids[next_pos];
 
-        self.focus.focus_area = FocusArea::Dock;
-        self.focus.focused = Some(next_id);
-        self.router.set_focused(next_id);
-        if self.is_pane_pinned(next_id) {
-            self.dock.pinned_dock_layout.set_active_tab(next_id);
-        } else if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-            tp.dock_focused = Some(next_id);
-            tp.dock_layout.set_active_tab(next_id);
+                self.focus.focus_area = FocusArea::Dock;
+                self.focus.focused = Some(next_id);
+                self.router.set_focused(next_id);
+                if self.is_pane_pinned(next_id) {
+                    self.dock.pinned_dock_layout.set_active_tab(next_id);
+                } else if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                    tp.dock_focused = Some(next_id);
+                    tp.dock_layout.set_active_tab(next_id);
+                }
+                self.dock.dock_open = true;
+                self.cache.invalidate_chrome();
+                self.compute_layout();
+            }
+            FocusArea::FileTree => {
+                // No tab cycling in file tree
+            }
         }
-        self.dock.dock_open = true;
-        self.cache.invalidate_chrome();
-        self.compute_layout();
     }
 
     fn navigate_panes(&mut self, direction: i32) {

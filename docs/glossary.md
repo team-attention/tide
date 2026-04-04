@@ -55,7 +55,7 @@ All paths below are relative to `crates/tide-app/src/`.
 
 | Term | Type | Location | Description |
 |------|------|----------|-------------|
-| **GlobalAction** | `GlobalAction` | `domain/input/mod.rs` | A user-intent command: `SplitVertical`, `ClosePane`, `Navigate(Up)`, `ToggleZoom`, etc. 37 variants. |
+| **GlobalAction** | `GlobalAction` | `domain/input/mod.rs` | A user-intent command: `SplitVertical`, `ClosePane`, `Navigate(Up)`, `DockNavigate(Right)`, etc. 38 variants. |
 | **Action** | `Action` | `domain/input/mod.rs` | Routing decision: `RouteToPane(id)`, `GlobalAction(...)`, `DragBorder(pos)`, or `None`. |
 | **EditorAction** | `EditorAction` | `domain/editor/input.rs` | Editor-specific command: `InsertChar`, `Backspace`, `Save`, `Undo`, etc. |
 | **WindowCommand** | `WindowCommand` | `adapter/outward/platform_adapter/mod.rs` | App→window command: `RequestRedraw`, `SetFullscreen`, `CreateImeProxy`, etc. |
