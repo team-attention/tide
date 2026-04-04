@@ -71,8 +71,33 @@ pub(crate) fn handle_scroll(
         (0.0, dy)
     };
 
-    // Check if scrolling over the file tree
+    // Tab bar scroll: if cursor is within the tab bar header area of any pane
     let cursor_pos = ctx.last_cursor_pos();
+    {
+        let pane_rects = ctx.visual_pane_rects();
+        let mut tab_bar_pane: Option<crate::tide_core::PaneId> = None;
+        for &(pid, pane_rect) in pane_rects {
+            let tab_bar_rect = crate::tide_core::Rect::new(pane_rect.x, pane_rect.y, pane_rect.width, TAB_BAR_HEIGHT);
+            if tab_bar_rect.contains(cursor_pos) {
+                tab_bar_pane = Some(pid);
+                break;
+            }
+        }
+        if let Some(pid) = tab_bar_pane {
+            // Use both dx and dy as horizontal scroll (natural for trackpad)
+            let scroll_delta = if dx.abs() > dy.abs() { dx } else { dy };
+            if scroll_delta != 0.0 {
+                let offsets = &mut ctx.interaction_mut().tab_scroll_offset;
+                let offset = offsets.entry(pid).or_insert(0.0);
+                *offset = (*offset - scroll_delta * 20.0).max(0.0);
+                ctx.invalidate_chrome();
+                ctx.request_redraw();
+            }
+            return;
+        }
+    }
+
+    // Check if scrolling over the file tree
     let ft_visible = ctx.ft().visible;
     let ft_rect = ctx.ft().rect;
     if ft_visible && ft_rect.is_some_and(|r| cursor_pos.x >= r.x && cursor_pos.x < r.x + r.width) {
