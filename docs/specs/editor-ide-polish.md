@@ -12,7 +12,7 @@ CompletionPopup ordering and insertion feel deterministic and closer to VS Code 
 2. `preselect` acts as a preference when items are otherwise tied,
 3. `filterText` controls matching when provided,
 4. accepted text is chosen predictably from `textEdit.newText`, `insertText`, or label,
-5. snippet-style placeholder markers are normalized to plain inserted text because Tide does not yet support snippet cursor choreography.
+5. snippet-style placeholder markers, including nested placeholders, are normalized to plain inserted text because Tide does not yet support snippet cursor choreography.
 
 ### Approach
 1. Capture the completion-polish behavior in a focused spec instead of expanding the larger LSP feature spec.
@@ -70,7 +70,7 @@ CompletionPopup ordering and insertion feel deterministic and closer to VS Code 
 - **Business Rules**:
   - BR-7: `textEdit.newText` is preferred over `insertText` when both are available from the server payload.
   - BR-8: `insertText` is preferred over the label when `textEdit.newText` is absent.
-  - BR-9: Snippet-style tab stop markers are stripped or flattened to plain text before insertion.
+  - BR-9: Snippet-style tab stop markers, including nested placeholders, are stripped or flattened to plain text before insertion.
   - BR-10: Escaped dollar signs in accepted text remain literal dollar signs.
 
 ## Invariants
@@ -89,6 +89,7 @@ CompletionPopup ordering and insertion feel deterministic and closer to VS Code 
 | UC-2 | BR-5 | `lsp_completion` | `filter_text_drives_prefix_matching` |
 | UC-3 | BR-7 | `lsp_completion` | `manager_prefers_text_edit_new_text_for_inserted_text` |
 | UC-3 | BR-9 | `lsp_completion` | `accepted_completion_strips_snippet_placeholders` |
+| UC-3 | BR-9 | `lsp_completion` | `accepted_completion_flattens_nested_snippet_placeholders` |
 | UC-3 | BR-10 | `lsp_completion` | `accepted_completion_preserves_escaped_dollar_signs` |
 
 ## Location
