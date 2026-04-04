@@ -13,6 +13,7 @@ impl App {
         // Cancel drag if the closing pane is the drag source
         if self.interaction.pane_drag.source_pane() == Some(pane_id) {
             self.interaction.pane_drag = PaneDragState::Idle;
+            self.interaction.drop_preview_start = None;
         }
         let remaining = self.layout.all_pane_ids();
         if remaining.len() <= 1 {
