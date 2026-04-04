@@ -27,9 +27,18 @@ pub(crate) fn render_hover(
                             // File tree rows are rendered in an inset content rect.
                             let content_y = ft_rect.y + PANE_CORNER_RADIUS;
                             let content_h = ft_rect.height - PANE_CORNER_RADIUS * 2.0;
+                            // Skip hover on entries hidden behind the header
+                            let header_bottom = content_y + FILE_TREE_HEADER_HEIGHT;
                             let y = content_y + FILE_TREE_HEADER_HEIGHT + *index as f32 * line_height - file_tree_scroll;
-                            if y + line_height > content_y && y < content_y + content_h {
-                                let row_rect = Rect::new(ft_rect.x, y, ft_rect.width, line_height);
+                            if y + line_height > header_bottom && y < content_y + content_h {
+                                let row_rect = Rect::new(
+                                    ft_rect.x + PANE_PADDING / 2.0,
+                                    y,
+                                    ft_rect.width - PANE_PADDING,
+                                    line_height,
+                                );
+                                // Use draw_rect (overlay pipeline, updates every frame)
+                                // not draw_chrome_rounded_rect (chrome texture, only on chrome_dirty)
                                 renderer.draw_rect(row_rect, p.hover_file_tree);
                             }
                         }
