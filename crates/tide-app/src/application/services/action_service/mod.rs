@@ -108,19 +108,43 @@ impl crate::application::ports::inward::ActionPort for App {
                         {
                             if let Some(&(_, rect)) = self.visual_pane_rects.iter().find(|(pid, _)| *pid == id) {
                                 let content_top = TAB_BAR_HEIGHT;
-                                let inner_x = rect.x + PANE_PADDING;
-                                let inner_y = rect.y + content_top;
-                                let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+                                let mut click_rect = crate::tide_core::Rect::new(
+                                    rect.x + PANE_PADDING,
+                                    rect.y + content_top,
+                                    rect.width - 2.0 * PANE_PADDING,
+                                    (rect.height - content_top - PANE_PADDING).max(1.0),
+                                );
+                                if let Some((editor_rect, preview_rect)) = pane.split_preview_rects(click_rect, cell_size) {
+                                    if position.x >= preview_rect.x {
+                                        return;
+                                    }
+                                    click_rect = editor_rect;
+                                }
 
-                                let content_x = inner_x + gutter_width;
+                                let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+                                let content_x = click_rect.x + gutter_width;
                                 let rel_col = ((position.x - content_x) / cell_size.width).floor() as isize;
-                                let rel_row = ((position.y - inner_y) / cell_size.height).floor() as isize;
+                                let rel_row = ((position.y - click_rect.y) / cell_size.height).floor() as isize;
 
                                 if rel_row >= 0 && rel_col >= 0 {
-                                    let visible_rows = ((rect.height - content_top - PANE_PADDING) / cell_size.height).floor() as usize;
+                                    let visible_rows = (click_rect.height / cell_size.height).floor() as usize;
+                                    let visible_cols = ((click_rect.width - gutter_width) / cell_size.width).floor() as usize;
 
-                                    if pane.effective_soft_wrap() {
-                                        // In soft wrap mode, map visual row → logical line via WrapMap
+                                    if pane.split_preview_active() && pane.soft_wrap && !pane.diff_mode && visible_cols > 0 {
+                                        let wrap_map = crate::tide_editor::wrap::WrapMap::build(
+                                            &pane.editor.buffer.lines,
+                                            visible_cols,
+                                            pane.editor.generation(),
+                                        );
+                                        let scroll_vr = wrap_map.visual_row_of_line(pane.editor.scroll_offset());
+                                        let abs_visual_row = scroll_vr + rel_row as usize;
+                                        if let Some(info) = wrap_map.visual_row_to_line_info(abs_visual_row, &pane.editor.buffer.lines) {
+                                            let col = (info.char_offset + rel_col as usize).min(info.char_end);
+                                            pane.handle_action(EditorAction::SetCursor { line: info.logical_line, col }, visible_rows);
+                                        }
+                                    } else if pane.effective_soft_wrap() {
+                                        // Click-to-cursor must build the current WrapMap even before the first render.
+                                        pane.ensure_wrap_map(visible_cols.max(1));
                                         if let Some(wrap_map) = pane.wrap_map() {
                                             let scroll_vr = wrap_map.visual_row_of_line(pane.editor.scroll_offset());
                                             let abs_visual_row = scroll_vr + rel_row as usize;
@@ -158,6 +182,15 @@ impl crate::application::ports::inward::ActionPort for App {
                             }
                         }
                         Some(PaneKind::Editor(pane)) => {
+                            if (modifiers.meta || modifiers.ctrl) && modifiers.shift && modifiers.alt {
+                                if let crate::tide_core::Key::Char('m') | crate::tide_core::Key::Char('M') = &key {
+                                    pane.toggle_split_preview();
+                                    self.cache.invalidate_chrome();
+                                    self.cache.invalidate_pane(id);
+                                    return;
+                                }
+                            }
+
                             // Cmd+Shift+M / Ctrl+Shift+M: toggle markdown preview
                             if (modifiers.meta || modifiers.ctrl) && modifiers.shift {
                                 if let crate::tide_core::Key::Char('m') | crate::tide_core::Key::Char('M') = &key {

@@ -8,7 +8,7 @@ mod rendering;
 use std::io;
 use std::path::Path;
 
-use crate::tide_core::PaneId;
+use crate::tide_core::{PaneId, Rect, Size};
 use crate::tide_editor::input::EditorAction;
 use crate::tide_editor::EditorState;
 use crate::tide_editor::wrap::WrapMap;
@@ -20,6 +20,8 @@ use crate::pane::Selection;
 
 /// Width of the gutter (line numbers) in cells.
 pub(crate) const GUTTER_WIDTH_CELLS: usize = 6;
+pub(crate) const SPLIT_PREVIEW_GAP_CELLS: usize = 2;
+pub(crate) const SPLIT_PREVIEW_MIN_CONTENT_CELLS: usize = 20;
 
 /// Pure preview scroll computation. Only used by tests now.
 #[cfg(test)]
@@ -100,6 +102,7 @@ pub struct EditorPane {
     pub diff_mode: bool,
     pub disk_content: Option<Vec<String>>,
     pub preview_mode: bool,
+    pub split_preview: bool,
     preview_cache: Option<(u64, usize, bool, Vec<PreviewLine>)>,
     pub preview_scroll: usize,
     pub preview_h_scroll: usize,
@@ -125,17 +128,13 @@ pub struct EditorPane {
 impl EditorPane {
     pub fn new_empty(id: PaneId) -> Self {
         let editor = EditorState::new_empty();
-        Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: false, preview_cache: None, preview_scroll: 0, preview_h_scroll: 0, preview_last_width: None, preview_scroll_pending_ratio: None, last_is_modified: false, last_checked_gen: 0, soft_wrap: false, wrap_map: None, completion: None }
+        Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: false, split_preview: false, preview_cache: None, preview_scroll: 0, preview_h_scroll: 0, preview_last_width: None, preview_scroll_pending_ratio: None, last_is_modified: false, last_checked_gen: 0, soft_wrap: false, wrap_map: None, completion: None }
     }
 
     pub fn open(id: PaneId, path: &Path) -> io::Result<Self> {
         let editor = EditorState::open(path)?;
-        let is_markdown = path.extension()
-            .and_then(|ext| ext.to_str())
-            .map(|ext| matches!(ext, "md" | "markdown" | "mdown" | "mkd"))
-            .unwrap_or(false);
         let soft_wrap = Self::is_prose_extension(path);
-        Ok(Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: is_markdown, preview_cache: None, preview_scroll: 0, preview_h_scroll: 0, preview_last_width: None, preview_scroll_pending_ratio: None, last_is_modified: false, last_checked_gen: 0, soft_wrap, wrap_map: None, completion: None })
+        Ok(Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: false, split_preview: false, preview_cache: None, preview_scroll: 0, preview_h_scroll: 0, preview_last_width: None, preview_scroll_pending_ratio: None, last_is_modified: false, last_checked_gen: 0, soft_wrap, wrap_map: None, completion: None })
     }
 
     /// Whether this pane needs a notification bar (disk changed, diff mode, or file deleted).
@@ -400,7 +399,7 @@ impl EditorPane {
                 .wrapping_add(self.preview_h_scroll as u64)
                 .wrapping_add(cache_width)
         } else {
-            self.editor.generation()
+            self.editor.generation().wrapping_add(u64::from(self.split_preview_active()))
         }
     }
 
@@ -424,6 +423,34 @@ impl EditorPane {
     /// Effective soft wrap: true only when soft_wrap is set AND not in diff/preview mode.
     pub fn effective_soft_wrap(&self) -> bool {
         self.soft_wrap && !self.diff_mode && !self.preview_mode
+    }
+
+    /// Whether split preview is visible inside the current Markdown pane.
+    pub fn split_preview_active(&self) -> bool {
+        self.split_preview && self.is_markdown() && !self.preview_mode
+    }
+
+    /// Layout rectangles for the authoring and preview regions inside one Pane.
+    pub fn split_preview_rects(&self, rect: Rect, cell_size: Size) -> Option<(Rect, Rect)> {
+        if !self.split_preview_active() {
+            return None;
+        }
+
+        let gap = SPLIT_PREVIEW_GAP_CELLS as f32 * cell_size.width;
+        let min_content = SPLIT_PREVIEW_MIN_CONTENT_CELLS as f32 * cell_size.width;
+        if rect.width < min_content * 2.0 + gap {
+            return None;
+        }
+
+        let editor_width = ((rect.width - gap) / 2.0).floor();
+        let preview_width = (rect.width - editor_width - gap).max(0.0);
+        if editor_width < min_content || preview_width < min_content {
+            return None;
+        }
+
+        let editor_rect = Rect::new(rect.x, rect.y, editor_width, rect.height);
+        let preview_rect = Rect::new(rect.x + editor_width + gap, rect.y, preview_width, rect.height);
+        Some((editor_rect, preview_rect))
     }
 
     /// Ensure the wrap map is up to date for the current content and width.
@@ -463,6 +490,7 @@ impl EditorPane {
             let ratio = self.editor.scroll_offset() as f64 / raw_line_count as f64;
             // Store ratio temporarily; will be applied in ensure_preview_cache
             self.preview_scroll_pending_ratio = Some(ratio);
+            self.split_preview = false;
         }
 
         self.preview_mode = !self.preview_mode;
@@ -482,6 +510,18 @@ impl EditorPane {
                 crate::state::search::execute_search_editor(s, &self.editor.buffer.lines);
             }
         }
+    }
+
+    /// Toggle split preview inside the current Markdown pane.
+    pub fn toggle_split_preview(&mut self) {
+        if !self.is_markdown() {
+            return;
+        }
+        if self.preview_mode {
+            self.toggle_preview();
+        }
+        self.split_preview = !self.split_preview;
+        self.preview_h_scroll = 0;
     }
 
     /// Ensure the preview cache is up to date.
