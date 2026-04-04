@@ -124,6 +124,9 @@ pub struct ThemePalette {
     pub git_added: Color,
     pub git_added_bg: Color,      // git added badge background
     pub git_conflict: Color,
+
+    // Workspace sidebar
+    pub ws_sidebar_text_inactive: Color, // inactive workspace item text
 }
 
 // ──────────────────────────────────────────────
@@ -134,10 +137,10 @@ pub static DARK: ThemePalette = ThemePalette {
     // Surface — #0A0A0B base, #0E0E10 pane, #111113 panels
     surface_bg:     Color::new(0.039, 0.039, 0.043, 1.0),
     pane_bg:        Color::new(0.055, 0.055, 0.063, 1.0),
-    file_tree_bg:   Color::new(0.067, 0.067, 0.075, 1.0),
+    file_tree_bg:   Color::new(0.071, 0.069, 0.075, 1.0),   // slightly warmer for area distinction
     border_color:   Color::new(0.039, 0.039, 0.043, 1.0),
     border_focused: Color::new(0.769, 0.722, 0.651, 0.50),
-    border_subtle:  Color::new(0.122, 0.122, 0.137, 1.0),
+    border_subtle:  Color::new(0.145, 0.140, 0.157, 1.0),   // stronger for clearer panel edges
 
     // Text — warm neutral
     tree_text:      Color::new(0.545, 0.545, 0.565, 1.0),   // file names #8B8B90
@@ -244,6 +247,9 @@ pub static DARK: ThemePalette = ThemePalette {
     git_added:    Color::new(0.133, 0.773, 0.369, 1.0),    // green #22C55E
     git_added_bg: Color::new(0.133, 0.773, 0.369, 0.18),   // green badge bg
     git_conflict: Color::new(0.90, 0.55, 0.20, 1.0),       // orange
+
+    // Workspace sidebar
+    ws_sidebar_text_inactive: Color::new(0.627, 0.627, 0.647, 1.0), // #A0A0A5
 };
 
 // ──────────────────────────────────────────────
@@ -254,10 +260,10 @@ pub static LIGHT: ThemePalette = ThemePalette {
     // Surface — warm beige tones
     surface_bg:     Color::new(0.96, 0.94, 0.92, 1.0),  // #F5F0EB warm off-white
     pane_bg:        Color::new(0.94, 0.92, 0.89, 1.0),  // #F0EBE3 slightly warmer
-    file_tree_bg:   Color::new(0.92, 0.89, 0.86, 1.0),  // #EBE3DB light tan
+    file_tree_bg:   Color::new(0.91, 0.88, 0.84, 1.0),  // warmer tan for area distinction
     border_color:   Color::new(0.89, 0.86, 0.82, 1.0),  // #E3DCD1 warm beige gap
     border_focused: Color::new(0.55, 0.38, 0.18, 0.55), // chestnut brown accent
-    border_subtle:  Color::new(0.40, 0.30, 0.15, 0.08), // warm subtle
+    border_subtle:  Color::new(0.40, 0.30, 0.15, 0.12), // stronger for clearer panel edges
 
     // Text — warm dark brown (high contrast)
     tree_text:      Color::new(0.22, 0.18, 0.13, 1.0),  // dark warm brown
@@ -364,6 +370,9 @@ pub static LIGHT: ThemePalette = ThemePalette {
     git_added:    Color::new(0.15, 0.55, 0.15, 1.0),    // green
     git_added_bg: Color::new(0.15, 0.55, 0.15, 0.094),  // green badge bg
     git_conflict: Color::new(0.80, 0.45, 0.10, 1.0),    // orange
+
+    // Workspace sidebar
+    ws_sidebar_text_inactive: Color::new(0.48, 0.42, 0.34, 1.0), // warm muted brown
 };
 
 // ──────────────────────────────────────────────
@@ -374,7 +383,7 @@ pub const BORDER_WIDTH: f32 = 1.0;
 pub const PANE_GAP: f32 = 4.0;
 pub const PANE_PADDING: f32 = 12.0;
 pub const PANE_CORNER_RADIUS: f32 = 0.0;
-pub const FILE_TREE_LINE_SPACING: f32 = 1.5;
+pub const FILE_TREE_LINE_SPACING: f32 = 1.7;
 pub const FILE_TREE_ROW_RADIUS: f32 = 6.0;
 pub const FILE_TREE_WIDTH: f32 = 240.0;
 
@@ -416,7 +425,7 @@ pub const BADGE_PADDING_H: f32 = 8.0;
 pub const BADGE_GAP: f32 = 6.0;
 pub const BADGE_RADIUS: f32 = 100.0;
 
-pub const FILE_TREE_HEADER_HEIGHT: f32 = 32.0;
+pub const FILE_TREE_HEADER_HEIGHT: f32 = 38.0;
 pub const TITLEBAR_BUTTON_GAP: f32 = 8.0;
 pub const WORKSPACE_SIDEBAR_WIDTH: f32 = 180.0;
 pub const WS_SIDEBAR_PADDING: f32 = 10.0;
@@ -437,7 +446,7 @@ pub const POPUP_SEPARATOR_INSET: f32 = 4.0;   // 구분선 좌우 인셋
 pub const POPUP_SELECTED_INSET: f32 = 2.0;    // 선택 하이라이트 좌우 인셋
 pub const CURSOR_BEAM_WIDTH: f32 = 1.5;       // 텍스트 커서 beam 너비
 pub const SAVE_AS_POPUP_W: f32 = 310.0;       // Save-as 팝업 최대 너비
-pub const CONTEXT_MENU_W: f32 = 140.0;        // 컨텍스트 메뉴 너비
+pub const CONTEXT_MENU_W: f32 = 180.0;        // 컨텍스트 메뉴 너비
 
 // ── Config page layout constants ──
 pub const CONFIG_PAGE_W: f32 = 560.0;

@@ -39,6 +39,17 @@ pub(super) fn render_file_tree(
         renderer.draw_chrome_shadow(r_border, shadow_color, PANE_CORNER_RADIUS, 16.0, -4.0);
     }
 
+    // Right-edge gradient shadow for depth separation from Stage area
+    {
+        let edge_x = r_border.x + r_border.width;
+        let h = r_border.height;
+        let y = r_border.y;
+        // 3-strip gradient: 4px total, fading from 0.12 → 0.04 → 0.0
+        renderer.draw_chrome_rect(Rect::new(edge_x, y, 1.5, h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.12));
+        renderer.draw_chrome_rect(Rect::new(edge_x + 1.5, y, 1.5, h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.06));
+        renderer.draw_chrome_rect(Rect::new(edge_x + 3.0, y, 1.5, h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.02));
+    }
+
     // Outer rounded rect (border)
     renderer.draw_chrome_rounded_rect(r_border, border_color, PANE_CORNER_RADIUS);
     // Inner rounded rect (fill)
@@ -64,60 +75,20 @@ pub(super) fn render_file_tree(
         let indent_width = cell_size.width * 1.5;
         let left_padding = PANE_PADDING;
 
-        // Text clip rect: inset with padding on both sides (matches left_padding)
+        // Header clip rect (full panel width)
         let tree_text_clip = Rect::new(
             tree_visual_rect.x,
             tree_visual_rect.y,
             tree_visual_rect.width - PANE_PADDING,
             tree_visual_rect.height,
         );
-
-        // File tree header: root directory name
-        {
-            let header_y = tree_visual_rect.y;
-            let header_h = FILE_TREE_HEADER_HEIGHT;
-            let header_text_y = header_y + (header_h - cell_size.height) / 2.0;
-
-            // Folder icon
-            renderer.draw_chrome_text(
-                "\u{f07b}",
-                Vec2::new(tree_visual_rect.x + left_padding, header_text_y),
-                TextStyle {
-                    foreground: p.tree_dir_icon,
-                    background: None,
-                    bold: false, dim: false, italic: false, underline: false,
-                },
-                tree_text_clip,
-            );
-
-            // Directory name (last path component)
-            let root_name = tree.root()
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| tree.root().to_string_lossy().to_string());
-            renderer.draw_chrome_text(
-                &root_name,
-                Vec2::new(tree_visual_rect.x + left_padding + cell_size.width * 2.0, header_text_y),
-                TextStyle {
-                    foreground: p.tab_text_focused,
-                    background: None,
-                    bold: true, dim: false, italic: false, underline: false,
-                },
-                tree_text_clip,
-            );
-
-            // Bottom separator line (accent when focused)
-            let sep_color = if tree_focused {
-                let accent = p.dock_tab_underline;
-                crate::tide_core::Color::new(accent.r, accent.g, accent.b, 0.35)
-            } else {
-                p.border_subtle
-            };
-            renderer.draw_chrome_rect(
-                Rect::new(tree_visual_rect.x + PANE_PADDING, header_y + header_h - 1.0, tree_visual_rect.width - PANE_PADDING * 2.0, 1.0),
-                sep_color,
-            );
-        }
+        // Entries clip rect: excludes header zone so scrolled entries don't bleed into it
+        let entries_clip = Rect::new(
+            tree_visual_rect.x,
+            tree_visual_rect.y + FILE_TREE_HEADER_HEIGHT,
+            tree_visual_rect.width - PANE_PADDING,
+            tree_visual_rect.height - FILE_TREE_HEADER_HEIGHT,
+        );
 
         let entries = tree.visible_entries();
         let text_offset_y = (line_height - cell_size.height) / 2.0;
@@ -139,7 +110,7 @@ pub(super) fn render_file_tree(
                     bold: false, dim: false, italic: false, underline: false,
                 };
                 let icon_str: String = std::iter::once(icon).collect();
-                renderer.draw_chrome_text(&icon_str, Vec2::new(x, text_y), icon_style, tree_text_clip);
+                renderer.draw_chrome_text(&icon_str, Vec2::new(x, text_y), icon_style, entries_clip);
 
                 // Draw inline rename input
                 let name_x = x + cell_size.width * 2.0;
@@ -158,7 +129,7 @@ pub(super) fn render_file_tree(
                     background: None,
                     bold: false, dim: false, italic: false, underline: false,
                 };
-                renderer.draw_chrome_text(&rename.input.text, Vec2::new(name_x, text_y), ts, tree_text_clip);
+                renderer.draw_chrome_text(&rename.input.text, Vec2::new(name_x, text_y), ts, entries_clip);
                 // Cursor beam
                 let cursor_x = name_x + unicode_width::UnicodeWidthStr::width(&rename.input.text[..rename.input.cursor]) as f32 * cell_size.width;
                 renderer.draw_chrome_rect(Rect::new(cursor_x, text_y, 1.5, cell_size.height), p.cursor_accent);
@@ -173,7 +144,7 @@ pub(super) fn render_file_tree(
             let text_y = y + text_offset_y;
             let x = tree_visual_rect.x + left_padding + entry.depth as f32 * indent_width;
 
-            // Expanded directory: draw row background (per Tide.pen)
+            // Expanded directory: subtle row background
             if entry.entry.is_dir && entry.is_expanded {
                 let row_rect = Rect::new(
                     tree_visual_rect.x + left_padding / 2.0,
@@ -230,7 +201,7 @@ pub(super) fn render_file_tree(
                 &icon_str,
                 Vec2::new(x, text_y),
                 icon_style,
-                tree_text_clip,
+                entries_clip,
             );
 
             // Draw name after icon + space
@@ -257,7 +228,7 @@ pub(super) fn render_file_tree(
                 &entry.entry.name,
                 Vec2::new(name_x, text_y),
                 name_style,
-                tree_text_clip,
+                entries_clip,
             );
 
             // Draw git status badge ("M", "A", "?", "!") right-aligned
@@ -268,7 +239,7 @@ pub(super) fn render_file_tree(
                     background: None,
                     bold: true, dim: false, italic: false, underline: false,
                 };
-                renderer.draw_chrome_text(badge, Vec2::new(badge_x, text_y), badge_style, tree_text_clip);
+                renderer.draw_chrome_text(badge, Vec2::new(badge_x, text_y), badge_style, entries_clip);
             }
         }
 
@@ -292,6 +263,59 @@ pub(super) fn render_file_tree(
                     accent,
                 );
             }
+        }
+
+        // File tree header: drawn AFTER entries so it covers scrolled content
+        {
+            let header_y = tree_visual_rect.y;
+            let header_h = FILE_TREE_HEADER_HEIGHT;
+            let header_text_y = header_y + (header_h - cell_size.height) / 2.0;
+
+            // Opaque header background covers any scrolled entries
+            renderer.draw_chrome_rect(
+                Rect::new(tree_visual_rect.x, header_y, tree_visual_rect.width, header_h),
+                p.file_tree_bg,
+            );
+
+            // Folder icon
+            renderer.draw_chrome_text(
+                "\u{f07b}",
+                Vec2::new(tree_visual_rect.x + left_padding, header_text_y),
+                TextStyle {
+                    foreground: p.tree_dir_icon,
+                    background: None,
+                    bold: false, dim: false, italic: false, underline: false,
+                },
+                tree_text_clip,
+            );
+
+            // Directory name (last path component)
+            let root_name = tree.root()
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| tree.root().to_string_lossy().to_string());
+            renderer.draw_chrome_text(
+                &root_name,
+                Vec2::new(tree_visual_rect.x + left_padding + cell_size.width * 2.0, header_text_y),
+                TextStyle {
+                    foreground: p.tab_text_focused,
+                    background: None,
+                    bold: true, dim: false, italic: false, underline: false,
+                },
+                tree_text_clip,
+            );
+
+            // Bottom separator line (accent when focused)
+            let sep_color = if tree_focused {
+                let accent = p.dock_tab_underline;
+                crate::tide_core::Color::new(accent.r, accent.g, accent.b, 0.35)
+            } else {
+                p.border_subtle
+            };
+            renderer.draw_chrome_rect(
+                Rect::new(tree_visual_rect.x + PANE_PADDING, header_y + header_h - 1.0, tree_visual_rect.width - PANE_PADDING * 2.0, 1.0),
+                sep_color,
+            );
         }
     }
 }
