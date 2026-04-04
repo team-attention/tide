@@ -11,7 +11,7 @@ use crate::LayoutPort;
 
 // Session types are defined in application/ports/outward/persistence_port.rs
 pub(crate) use crate::application::ports::outward::persistence_port::{
-    Session, SessionContextArea, SessionLayout, DrawerStateSnapshot,
+    Session, SessionContextArea, SessionLayout, DrawerStateSnapshot, LeafGroupTab,
 };
 
 // ──────────────────────────────────────────────
@@ -190,15 +190,19 @@ fn snapshot_to_session(snap: &LayoutSnapshot, app: &App) -> SessionLayout {
             }
         }
         LayoutSnapshot::LeafGroup { tabs, active } => {
-            // LeafGroup: use the active tab for session save
-            let id = tabs.get(*active).or_else(|| tabs.first()).copied().unwrap_or(0);
-            let cwd = match app.panes.get(&id) {
-                Some(PaneKind::Terminal(pane)) => pane.backend.detect_cwd_fallback(),
-                _ => None,
-            };
-            SessionLayout::Leaf {
-                pane_id: id,
-                cwd,
+            let session_tabs: Vec<_> = tabs.iter().map(|id| {
+                let cwd = match app.panes.get(id) {
+                    Some(PaneKind::Terminal(pane)) => pane.backend.detect_cwd_fallback(),
+                    _ => None,
+                };
+                LeafGroupTab {
+                    pane_id: *id,
+                    cwd,
+                }
+            }).collect();
+            SessionLayout::LeafGroup {
+                tabs: session_tabs,
+                active: *active,
             }
         }
         LayoutSnapshot::Split {
@@ -372,6 +376,16 @@ fn session_to_snapshot(
             pane_infos.push((*pane_id, cwd.clone()));
             Some(LayoutSnapshot::Leaf { tabs: vec![*pane_id], active: 0 })
         }
+        SessionLayout::LeafGroup { tabs, active } => {
+            let pane_ids: Vec<PaneId> = tabs.iter().map(|t| {
+                pane_infos.push((t.pane_id, t.cwd.clone()));
+                t.pane_id
+            }).collect();
+            Some(LayoutSnapshot::LeafGroup {
+                tabs: pane_ids,
+                active: *active,
+            })
+        }
         SessionLayout::Split {
             direction,
             ratio,
@@ -534,6 +548,140 @@ mod tests {
         };
         let mut pane_infos = Vec::new();
         assert!(session_to_snapshot(&layout, &mut pane_infos).is_none());
+    }
+
+    #[test]
+    fn session_layout_leaf_group_roundtrip() {
+        let layout = SessionLayout::LeafGroup {
+            tabs: vec![
+                LeafGroupTab { pane_id: 10, cwd: Some(PathBuf::from("/home")) },
+                LeafGroupTab { pane_id: 20, cwd: None },
+                LeafGroupTab { pane_id: 30, cwd: Some(PathBuf::from("/tmp")) },
+            ],
+            active: 1,
+        };
+        let json = serde_json::to_string(&layout).unwrap();
+        let restored: SessionLayout = serde_json::from_str(&json).unwrap();
+
+        match restored {
+            SessionLayout::LeafGroup { tabs, active } => {
+                assert_eq!(tabs.len(), 3);
+                assert_eq!(tabs[0].pane_id, 10);
+                assert_eq!(tabs[0].cwd, Some(PathBuf::from("/home")));
+                assert_eq!(tabs[1].pane_id, 20);
+                assert_eq!(tabs[1].cwd, None);
+                assert_eq!(tabs[2].pane_id, 30);
+                assert_eq!(active, 1);
+            }
+            _ => panic!("expected LeafGroup"),
+        }
+    }
+
+    #[test]
+    fn session_to_snapshot_leaf_group() {
+        let layout = SessionLayout::LeafGroup {
+            tabs: vec![
+                LeafGroupTab { pane_id: 5, cwd: Some(PathBuf::from("/a")) },
+                LeafGroupTab { pane_id: 6, cwd: None },
+            ],
+            active: 1,
+        };
+        let mut pane_infos = Vec::new();
+        let snap = session_to_snapshot(&layout, &mut pane_infos).unwrap();
+
+        assert_eq!(pane_infos.len(), 2);
+        assert_eq!(pane_infos[0].0, 5);
+        assert_eq!(pane_infos[0].1, Some(PathBuf::from("/a")));
+        assert_eq!(pane_infos[1].0, 6);
+        assert_eq!(pane_infos[1].1, None);
+
+        match snap {
+            LayoutSnapshot::LeafGroup { tabs, active } => {
+                assert_eq!(tabs, vec![5, 6]);
+                assert_eq!(active, 1);
+            }
+            _ => panic!("expected LeafGroup snapshot"),
+        }
+    }
+
+    #[test]
+    fn session_to_snapshot_split_with_leaf_group() {
+        // A split where the left child is a LeafGroup and right is a Leaf
+        let layout = SessionLayout::Split {
+            direction: "horizontal".to_string(),
+            ratio: 0.5,
+            left: Box::new(SessionLayout::LeafGroup {
+                tabs: vec![
+                    LeafGroupTab { pane_id: 1, cwd: None },
+                    LeafGroupTab { pane_id: 2, cwd: None },
+                ],
+                active: 0,
+            }),
+            right: Box::new(SessionLayout::Leaf { pane_id: 3, cwd: None }),
+        };
+        let mut pane_infos = Vec::new();
+        let snap = session_to_snapshot(&layout, &mut pane_infos).unwrap();
+
+        assert_eq!(pane_infos.len(), 3);
+
+        match snap {
+            LayoutSnapshot::Split { left, right, .. } => {
+                match *left {
+                    LayoutSnapshot::LeafGroup { tabs, active } => {
+                        assert_eq!(tabs, vec![1, 2]);
+                        assert_eq!(active, 0);
+                    }
+                    _ => panic!("expected LeafGroup in left"),
+                }
+                match *right {
+                    LayoutSnapshot::Leaf { tabs, active } => {
+                        assert_eq!(tabs, vec![3]);
+                        assert_eq!(active, 0);
+                    }
+                    _ => panic!("expected Leaf in right"),
+                }
+            }
+            _ => panic!("expected Split"),
+        }
+    }
+
+    #[test]
+    fn old_session_without_leaf_group_loads_correctly() {
+        // Simulate an old session file that only has Leaf and Split (no LeafGroup)
+        let json = r#"{
+            "layout": {
+                "Split": {
+                    "direction": "horizontal",
+                    "ratio": 0.5,
+                    "left": {"Leaf": {"pane_id": 1, "cwd": null}},
+                    "right": {"Leaf": {"pane_id": 2, "cwd": "/tmp"}}
+                }
+            },
+            "focused_pane_id": 1,
+            "show_file_tree": false,
+            "file_tree_width": 200.0,
+            "dark_mode": true,
+            "window_width": 800.0,
+            "window_height": 600.0
+        }"#;
+        let session: Session = serde_json::from_str(json).unwrap();
+        let mut pane_infos = Vec::new();
+        let snap = session_to_snapshot(&session.layout, &mut pane_infos).unwrap();
+
+        assert_eq!(pane_infos.len(), 2);
+        match snap {
+            LayoutSnapshot::Split { left, right, .. } => {
+                match *left {
+                    LayoutSnapshot::Leaf { tabs, .. } => assert_eq!(tabs, vec![1]),
+                    _ => panic!("expected Leaf"),
+                }
+                match *right {
+                    LayoutSnapshot::Leaf { tabs, .. } => assert_eq!(tabs, vec![2]),
+                    _ => panic!("expected Leaf"),
+                }
+            }
+            _ => panic!("expected Split"),
+        }
     }
 
     #[test]

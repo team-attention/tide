@@ -832,6 +832,10 @@ impl crate::application::ports::inward::LayoutPort for App {
         self.layout.insert_pane(target, source, direction, insert_first);
     }
 
+    fn layout_add_tab(&mut self, target: crate::tide_core::PaneId, source: crate::tide_core::PaneId) -> bool {
+        self.layout.add_tab(target, source)
+    }
+
     // ── Hit-test helpers (delegated from drag_drop_adapter) ──
 
     fn pane_at_tab_bar(&self, pos: crate::tide_core::Vec2) -> Option<crate::tide_core::PaneId> {

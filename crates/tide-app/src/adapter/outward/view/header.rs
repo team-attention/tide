@@ -274,19 +274,14 @@ pub fn render_pane_header_inner(
     let compact_tab_w = (TAB_H_PAD + dot_w + title_w_raw + badge_gap + total_badge_w + close_hit_size + TAB_H_PAD)
         .clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH);
 
-    // Draw compact active tab bg + accent line
+    // Draw compact active tab bg + bottom accent line (VS Code style)
     renderer.draw_chrome_rect(
         Rect::new(rect.x, rect.y, compact_tab_w, TAB_BAR_HEIGHT),
         p.active_tab_bg,
     );
     renderer.draw_chrome_rect(
-        Rect::new(rect.x, rect.y, compact_tab_w, TAB_ACTIVE_INDICATOR_HEIGHT),
+        Rect::new(rect.x, rect.y + TAB_BAR_HEIGHT - TAB_ACTIVE_INDICATOR_HEIGHT, compact_tab_w, TAB_ACTIVE_INDICATOR_HEIGHT),
         p.border_focused,
-    );
-    // 1px separator on right edge of tab
-    renderer.draw_chrome_rect(
-        Rect::new(rect.x + compact_tab_w - 1.0, rect.y, 1.0, TAB_BAR_HEIGHT),
-        p.border_subtle,
     );
 
     // Position close icon relative to compact tab width
@@ -465,23 +460,17 @@ fn render_tab_bar_impl(
         let is_active = *tid == active_pane;
         let is_focused_tab = focused == Some(*tid);
 
-        // Active tab: subtle lighter background + 2px accent line at top (Bonsplit style)
+        // Active tab: subtle lighter background + 2px accent line at bottom (VS Code style)
         if is_active {
             renderer.draw_chrome_rect(
                 Rect::new(cx, tab_y, tw, TAB_BAR_HEIGHT),
                 p.active_tab_bg,
             );
             renderer.draw_chrome_rect(
-                Rect::new(cx, tab_y, tw, TAB_ACTIVE_INDICATOR_HEIGHT),
+                Rect::new(cx, tab_y + TAB_BAR_HEIGHT - TAB_ACTIVE_INDICATOR_HEIGHT, tw, TAB_ACTIVE_INDICATOR_HEIGHT),
                 p.border_focused,
             );
         }
-
-        // 1px vertical separator on right edge
-        renderer.draw_chrome_rect(
-            Rect::new(cx + tw - 1.0, tab_y, 1.0, tab_h),
-            p.border_subtle,
-        );
 
         // Agent status dot
         let mut dot_offset = 0.0_f32;
@@ -578,6 +567,23 @@ fn render_tab_bar_impl(
     }
 
     zones
+}
+
+/// Render a tab bar for a Stage LeafGroup (per-TabGroup tab bar).
+/// Shows tabs for all panes in the group; the active tab is highlighted.
+/// Uses `is_dock=false` so hit actions are `StageTab`.
+pub fn render_stage_tab_group_bar(
+    pane_id: PaneId,
+    rect: Rect,
+    tab_group: &crate::tide_layout::TabGroup,
+    panes: &HashMap<PaneId, PaneKind>,
+    focused: Option<PaneId>,
+    p: &ThemePalette,
+    renderer: &mut WgpuRenderer,
+    detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
+    blink_time: Option<f64>,
+) -> Vec<HeaderHitZone> {
+    render_tab_bar_impl(pane_id, rect, &tab_group.tabs, tab_group.active_pane(), panes, focused, &[], p, renderer, false, false, detected_agents, blink_time)
 }
 
 /// Render a Stage stacked-mode tab bar showing all Stage terminals.
