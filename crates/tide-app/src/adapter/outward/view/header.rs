@@ -406,8 +406,9 @@ pub fn render_dock_tab_bar(
     renderer: &mut WgpuRenderer,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
     blink_time: Option<f64>,
+    tab_scroll_offset: f32,
 ) -> Vec<HeaderHitZone> {
-    render_tab_bar_impl(pane_id, rect, &tab_group.tabs, tab_group.active_pane(), panes, focused, pinned_ids, p, renderer, true, false, detected_agents, blink_time)
+    render_tab_bar_impl(pane_id, rect, &tab_group.tabs, tab_group.active_pane(), panes, focused, pinned_ids, p, renderer, true, false, detected_agents, blink_time, tab_scroll_offset)
 }
 
 /// Shared tab bar rendering for both Dock and Stage stacked mode.
@@ -428,6 +429,7 @@ fn render_tab_bar_impl(
     is_stacked: bool,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
     blink_time: Option<f64>,
+    tab_scroll_offset: f32,
 ) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
     let cell_size = renderer.cell_size();
@@ -497,10 +499,47 @@ fn render_tab_bar_impl(
         tabs_info.push((tid, label, w));
     }
 
-    let mut cx = content_left;
+    // Clipping rect for the tab content area
+    let tab_clip = Rect::new(content_left, tab_y, tabs_right - content_left, tab_h);
+
+    // Compute total tabs width for scroll clamping
+    let total_tabs_w: f32 = tabs_info.iter().map(|(_, _, w)| *w).sum();
+    let visible_w = tabs_right - content_left;
+    let max_scroll = (total_tabs_w - visible_w).max(0.0);
+
+    // Auto-scroll to keep active tab visible
+    let mut effective_scroll = tab_scroll_offset.clamp(0.0, max_scroll);
+    {
+        let mut active_start = 0.0_f32;
+        for (tid, _, w) in &tabs_info {
+            if *tid == active_pane {
+                let active_end = active_start + *w;
+                // If active tab is scrolled off to the left
+                if active_start < effective_scroll {
+                    effective_scroll = active_start;
+                }
+                // If active tab is scrolled off to the right
+                if active_end > effective_scroll + visible_w {
+                    effective_scroll = (active_end - visible_w).max(0.0);
+                }
+                break;
+            }
+            active_start += *w;
+        }
+        effective_scroll = effective_scroll.clamp(0.0, max_scroll);
+    }
+
+    let mut cx = content_left - effective_scroll;
     for (tid, label, w) in &tabs_info {
         let tw = *w;
-        if cx + tw > tabs_right + 1.0 {
+
+        // Skip tabs entirely off-screen to the left
+        if cx + tw <= content_left {
+            cx += tw;
+            continue;
+        }
+        // Stop if tab starts entirely past the right edge
+        if cx >= tabs_right {
             break;
         }
 
@@ -509,14 +548,15 @@ fn render_tab_bar_impl(
 
         // Active tab: subtle lighter background + 2px accent line at bottom (VS Code style)
         if is_active {
-            renderer.draw_chrome_rect(
-                Rect::new(cx, tab_y, tw, TAB_BAR_HEIGHT),
-                p.active_tab_bg,
-            );
-            renderer.draw_chrome_rect(
-                Rect::new(cx, tab_y + TAB_BAR_HEIGHT - TAB_ACTIVE_INDICATOR_HEIGHT, tw, TAB_ACTIVE_INDICATOR_HEIGHT),
-                p.border_focused,
-            );
+            let bg_rect = Rect::new(cx, tab_y, tw, TAB_BAR_HEIGHT).clip_to(&tab_clip);
+            if bg_rect.width > 0.0 {
+                renderer.draw_chrome_rect(bg_rect, p.active_tab_bg);
+            }
+            let accent_rect = Rect::new(cx, tab_y + TAB_BAR_HEIGHT - TAB_ACTIVE_INDICATOR_HEIGHT, tw, TAB_ACTIVE_INDICATOR_HEIGHT)
+                .clip_to(&tab_clip);
+            if accent_rect.width > 0.0 {
+                renderer.draw_chrome_rect(accent_rect, p.border_focused);
+            }
         }
 
         // Agent status dot
@@ -537,10 +577,10 @@ fn render_tab_bar_impl(
                 let dot_size = 6.0_f32;
                 let dot_x = cx + TAB_H_PAD;
                 let dot_y = tab_y + (tab_h - dot_size) / 2.0;
-                renderer.draw_chrome_rounded_rect(
-                    Rect::new(dot_x, dot_y, dot_size, dot_size),
-                    dot_color, dot_size / 2.0,
-                );
+                let dot_rect = Rect::new(dot_x, dot_y, dot_size, dot_size).clip_to(&tab_clip);
+                if dot_rect.width > 0.0 && dot_rect.height > 0.0 {
+                    renderer.draw_chrome_rounded_rect(dot_rect, dot_color, dot_size / 2.0);
+                }
                 dot_offset = dot_size + TAB_CONTENT_SPACING;
             }
         }
@@ -554,8 +594,8 @@ fn render_tab_bar_impl(
 
         // Close icon at right: [close 16x16] [pad 6]
         let tab_close_hit_x = cx + tw - TAB_H_PAD - close_hit_size;
-        let tab_close_icon_x = tab_close_hit_x + (close_hit_size - close_icon_width) / 2.0;
-        let tab_close_icon_y = tab_y + (tab_h - close_icon_width) / 2.0;
+        let _tab_close_icon_x = tab_close_hit_x + (close_hit_size - close_icon_width) / 2.0;
+        let _tab_close_icon_y = tab_y + (tab_h - close_icon_width) / 2.0;
 
         // Compute badges for active tab
         let mut active_badges: Vec<EditorBadge> = Vec::new();
@@ -572,6 +612,8 @@ fn render_tab_bar_impl(
         let max_chars = (label_max_w / cell_w).floor().max(0.0) as usize;
         let display: String = label.chars().take(max_chars).collect();
         let label_drawn_w = display.chars().count() as f32 * cell_w;
+        // Use tab_clip for text clipping so partially visible tabs are clipped at edges
+        let text_clip = Rect::new(cx, tab_y, tw, tab_h).clip_to(&tab_clip);
         renderer.draw_chrome_text(
             &display,
             Vec2::new(cx + TAB_H_PAD + dot_offset, label_y),
@@ -581,7 +623,7 @@ fn render_tab_bar_impl(
                 bold: is_active,
                 dim: false, italic: false, underline: false,
             },
-            Rect::new(cx, tab_y, tw, tab_h),
+            text_clip,
         );
 
         // Draw all badges for active tab (between label and close button)
@@ -608,13 +650,20 @@ fn render_tab_bar_impl(
                         (cc, badge_bg)
                     }
                 };
-                render_badge_colored(renderer, bx, label_y, bw, cell_height, &badge.text, b_text_color, b_bg, 3.0);
+                // Clip badge to tab_clip for edge clipping
+                let badge_rect = Rect::new(bx, label_y - 1.0, bw, cell_height + 2.0).clip_to(&tab_clip);
+                if badge_rect.width > 0.0 {
+                    render_badge_colored(renderer, badge_rect.x, badge_rect.y + 1.0, badge_rect.width, cell_height, &badge.text, b_text_color, b_bg, 3.0);
+                }
                 if let Some(ref act) = badge.action {
-                    zones.push(HeaderHitZone {
-                        pane_id: *tid,
-                        rect: Rect::new(bx, rect.y, bw, TAB_BAR_HEIGHT),
-                        action: act.clone(),
-                    });
+                    let hit_rect = Rect::new(bx, rect.y, bw, TAB_BAR_HEIGHT).clip_to(&tab_clip);
+                    if hit_rect.width > 0.0 {
+                        zones.push(HeaderHitZone {
+                            pane_id: *tid,
+                            rect: hit_rect,
+                            action: act.clone(),
+                        });
+                    }
                 }
                 bx += bw + badge_gap;
             }
@@ -632,29 +681,35 @@ fn render_tab_bar_impl(
         };
         let tab_close_text_x = tab_close_hit_x + (close_hit_size - cell_w) / 2.0;
         let tab_close_text_y = tab_y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
-        renderer.draw_chrome_text(
-            tab_close_icon,
-            Vec2::new(tab_close_text_x, tab_close_text_y),
-            TextStyle { foreground: tab_close_color, background: None, bold: false, dim: false, italic: false, underline: false },
-            Rect::new(tab_close_hit_x, rect.y, close_hit_size, TAB_BAR_HEIGHT),
-        );
-        zones.push(HeaderHitZone {
-            pane_id: *tid,
-            rect: Rect::new(tab_close_hit_x, rect.y, close_hit_size, TAB_BAR_HEIGHT),
-            action: HeaderHitAction::Close,
-        });
+        let close_clip = Rect::new(tab_close_hit_x, rect.y, close_hit_size, TAB_BAR_HEIGHT).clip_to(&tab_clip);
+        if close_clip.width > 0.0 {
+            renderer.draw_chrome_text(
+                tab_close_icon,
+                Vec2::new(tab_close_text_x, tab_close_text_y),
+                TextStyle { foreground: tab_close_color, background: None, bold: false, dim: false, italic: false, underline: false },
+                close_clip,
+            );
+            zones.push(HeaderHitZone {
+                pane_id: *tid,
+                rect: close_clip,
+                action: HeaderHitAction::Close,
+            });
+        }
 
-        // Tab click zone (excluding close button area)
+        // Tab click zone (excluding close button area) — clipped to visible area
         let action = if is_dock {
             HeaderHitAction::DockTab(*tid)
         } else {
             HeaderHitAction::StageTab(*tid)
         };
-        zones.push(HeaderHitZone {
-            pane_id: pane_id,
-            rect: Rect::new(cx, rect.y, tw - close_hit_size - TAB_H_PAD, TAB_BAR_HEIGHT),
-            action,
-        });
+        let tab_hit_rect = Rect::new(cx, rect.y, tw - close_hit_size - TAB_H_PAD, TAB_BAR_HEIGHT).clip_to(&tab_clip);
+        if tab_hit_rect.width > 0.0 {
+            zones.push(HeaderHitZone {
+                pane_id: pane_id,
+                rect: tab_hit_rect,
+                action,
+            });
+        }
 
         cx += tw; // no gap between tabs (spacing = 0)
     }
@@ -675,8 +730,9 @@ pub fn render_stage_tab_group_bar(
     renderer: &mut WgpuRenderer,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
     blink_time: Option<f64>,
+    tab_scroll_offset: f32,
 ) -> Vec<HeaderHitZone> {
-    render_tab_bar_impl(pane_id, rect, &tab_group.tabs, tab_group.active_pane(), panes, focused, &[], p, renderer, false, false, detected_agents, blink_time)
+    render_tab_bar_impl(pane_id, rect, &tab_group.tabs, tab_group.active_pane(), panes, focused, &[], p, renderer, false, false, detected_agents, blink_time, tab_scroll_offset)
 }
 
 /// Render a Stage stacked-mode tab bar showing all Stage terminals.
@@ -690,11 +746,12 @@ pub fn render_stage_tab_bar(
     renderer: &mut WgpuRenderer,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
     blink_time: Option<f64>,
+    tab_scroll_offset: f32,
 ) -> Vec<HeaderHitZone> {
     if stage_pane_ids.len() < 2 {
         return Vec::new();
     }
-    render_tab_bar_impl(zoomed_pane, rect, stage_pane_ids, zoomed_pane, panes, focused, &[], p, renderer, false, true, detected_agents, blink_time)
+    render_tab_bar_impl(zoomed_pane, rect, stage_pane_ids, zoomed_pane, panes, focused, &[], p, renderer, false, true, detected_agents, blink_time, tab_scroll_offset)
 }
 
 /// Get a short label for a pane in a dock tab bar.
