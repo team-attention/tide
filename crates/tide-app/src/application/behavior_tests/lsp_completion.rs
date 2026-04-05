@@ -1,12 +1,16 @@
 // Spec: docs/specs/lsp-completion.md
-use crate::pane::editor::completion::{CompletionItem, CompletionKind, CompletionState, COMPLETION_VISIBLE_COUNT};
+use crate::pane::editor::completion::{
+    CompletionItem, CompletionKind, CompletionState, COMPLETION_VISIBLE_COUNT,
+};
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
+use crate::tide_core::LayoutEngine;
+use crate::tide_lsp::manager::parse_completion_response;
 use crate::App;
 use crate::ClipboardSearchPort;
 use crate::WorkspaceNavPort;
-use crate::tide_core::LayoutEngine;
+use serde_json::json;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -87,15 +91,17 @@ fn editor_with_completion(app: &mut App, id: u64) {
 #[test]
 fn completion_popup_shows_max_ten_items() {
     // UC-3 BR-12: CompletionPopup shows max 10 visible items
-    let items: Vec<CompletionItem> = (0..20).map(|i| CompletionItem {
-        label: format!("item_{}", i),
-        kind: CompletionKind::Variable,
-        insert_text: None,
-        sort_text: None,
-        filter_text: None,
-        preselect: false,
-        detail: None,
-    }).collect();
+    let items: Vec<CompletionItem> = (0..20)
+        .map(|i| CompletionItem {
+            label: format!("item_{}", i),
+            kind: CompletionKind::Variable,
+            insert_text: None,
+            sort_text: None,
+            filter_text: None,
+            preselect: false,
+            detail: None,
+        })
+        .collect();
     let state = CompletionState::new(items, 0, 0);
     let visible: Vec<_> = state.visible_items().collect();
     assert_eq!(visible.len(), COMPLETION_VISIBLE_COUNT);
@@ -111,7 +117,9 @@ fn typing_filters_existing_completions_client_side() {
     state.apply_filter();
     // "const" and "constructor" contain "const"
     assert_eq!(state.filtered_indices.len(), 2);
-    let labels: Vec<&str> = state.filtered_indices.iter()
+    let labels: Vec<&str> = state
+        .filtered_indices
+        .iter()
         .map(|&i| state.items[i].label.as_str())
         .collect();
     assert!(labels.contains(&"const"));
@@ -198,15 +206,17 @@ fn completion_selection_wraps_around() {
 #[test]
 fn completion_auto_scrolls_to_keep_selection_visible() {
     // UC-4 BR-19: Popup auto-scrolls to keep selected item visible
-    let items: Vec<CompletionItem> = (0..20).map(|i| CompletionItem {
-        label: format!("item_{}", i),
-        kind: CompletionKind::Variable,
-        insert_text: None,
-        sort_text: None,
-        filter_text: None,
-        preselect: false,
-        detail: None,
-    }).collect();
+    let items: Vec<CompletionItem> = (0..20)
+        .map(|i| CompletionItem {
+            label: format!("item_{}", i),
+            kind: CompletionKind::Variable,
+            insert_text: None,
+            sort_text: None,
+            filter_text: None,
+            preselect: false,
+            detail: None,
+        })
+        .collect();
     let mut state = CompletionState::new(items, 0, 0);
     assert_eq!(state.scroll_offset, 0);
 
@@ -256,7 +266,10 @@ fn tab_accepts_selected_completion() {
     // Accept with Tab
     app.accept_completion(id);
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
-        assert!(pane.completion.is_none(), "completion should be dismissed after accept");
+        assert!(
+            pane.completion.is_none(),
+            "completion should be dismissed after accept"
+        );
     }
 }
 
@@ -326,15 +339,21 @@ fn completion_dismissed_when_no_matches() {
 fn switching_pane_dismisses_completion() {
     // UC-6 BR-28: Switching pane dismisses completion
     let (mut app, id1) = app_with_editor();
-    let id2 = app.layout.split(id1, crate::tide_core::SplitDirection::Vertical);
-    app.panes.insert(id2, PaneKind::Editor(EditorPane::new_empty(id2)));
+    let id2 = app
+        .layout
+        .split(id1, crate::tide_core::SplitDirection::Vertical);
+    app.panes
+        .insert(id2, PaneKind::Editor(EditorPane::new_empty(id2)));
     editor_with_completion(&mut app, id1);
 
     // Switch focus to id2
     app.focus_terminal(id2);
 
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id1) {
-        assert!(pane.completion.is_none(), "completion should be dismissed when switching pane");
+        assert!(
+            pane.completion.is_none(),
+            "completion should be dismissed when switching pane"
+        );
     }
 }
 
@@ -360,8 +379,10 @@ fn trigger_char_after_filter_dismiss_sends_new_request() {
     // Completion popup should be dismissed (filter "con." matches nothing)
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
         // Without LSP, no new completion will arrive. But the old one must be gone.
-        assert!(pane.completion.is_none(),
-            "completion should be dismissed when filter matches nothing after trigger char");
+        assert!(
+            pane.completion.is_none(),
+            "completion should be dismissed when filter matches nothing after trigger char"
+        );
         // Buffer should contain the typed text
         let line = pane.editor.buffer.line(0).unwrap();
         assert!(line.contains("."), "dot should be in the buffer");
@@ -448,21 +469,52 @@ fn sort_text_breaks_tie_when_fuzzy_scores_equal() {
     state.prefix = "".into();
     state.apply_filter();
 
-    let labels: Vec<&str> = state.filtered_indices.iter()
+    let labels: Vec<&str> = state
+        .filtered_indices
+        .iter()
         .map(|&i| state.items[i].label.as_str())
         .collect();
     assert_eq!(labels, vec!["alpha", "middle", "zebra"]);
 }
 
-// --- UC-3 BR-13a: preselect boost ---
-
 #[test]
-fn preselect_items_boosted_to_top() {
-    // UC-3 BR-13a: Items with preselect=true appear before non-preselected items
+fn higher_scoring_prefix_match_ranks_first() {
     let items = vec![
         CompletionItem {
-            label: "string".into(),
-            kind: CompletionKind::Keyword,
+            label: "my_console".into(),
+            kind: CompletionKind::Variable,
+            insert_text: None,
+            sort_text: Some("0".into()),
+            filter_text: None,
+            preselect: false,
+            detail: None,
+        },
+        CompletionItem {
+            label: "console".into(),
+            kind: CompletionKind::Variable,
+            insert_text: None,
+            sort_text: Some("1".into()),
+            filter_text: None,
+            preselect: false,
+            detail: None,
+        },
+    ];
+    let mut state = CompletionState::new(items, 0, 0);
+    state.prefix = "con".into();
+    state.apply_filter();
+
+    let first_label = state.items[state.filtered_indices[0]].label.as_str();
+    assert_eq!(first_label, "console");
+}
+
+// --- UC-1 BR-2: preselect preference ---
+
+#[test]
+fn preselect_breaks_tie_without_beating_better_match() {
+    let items = vec![
+        CompletionItem {
+            label: "console".into(),
+            kind: CompletionKind::Variable,
             insert_text: None,
             sort_text: Some("1".into()),
             filter_text: None,
@@ -470,7 +522,7 @@ fn preselect_items_boosted_to_top() {
             detail: None,
         },
         CompletionItem {
-            label: "String".into(),
+            label: "my_console".into(),
             kind: CompletionKind::Variable,
             insert_text: None,
             sort_text: Some("0".into()),
@@ -478,23 +530,15 @@ fn preselect_items_boosted_to_top() {
             preselect: true,
             detail: None,
         },
-        CompletionItem {
-            label: "stringify".into(),
-            kind: CompletionKind::Function,
-            insert_text: None,
-            sort_text: Some("2".into()),
-            filter_text: None,
-            preselect: false,
-            detail: None,
-        },
     ];
     let mut state = CompletionState::new(items, 0, 0);
-    state.prefix = "stri".into();
+    state.prefix = "con".into();
     state.apply_filter();
 
-    // String (preselect=true) should be first regardless of fuzzy score
     let first_label = state.items[state.filtered_indices[0]].label.as_str();
-    assert_eq!(first_label, "String", "preselected item should be first");
+    let second_label = state.items[state.filtered_indices[1]].label.as_str();
+    assert_eq!(first_label, "console");
+    assert_eq!(second_label, "my_console");
 }
 
 // --- UC-3 BR-14: detail text ---
@@ -511,5 +555,111 @@ fn completion_item_includes_detail_text() {
         preselect: false,
         detail: Some("function useState<S>(): [S, Dispatch<S>]".into()),
     };
-    assert_eq!(item.detail.as_deref(), Some("function useState<S>(): [S, Dispatch<S>]"));
+    assert_eq!(
+        item.detail.as_deref(),
+        Some("function useState<S>(): [S, Dispatch<S>]")
+    );
+}
+
+#[test]
+fn filter_text_drives_prefix_matching() {
+    let items = vec![
+        CompletionItem {
+            label: "print!".into(),
+            kind: CompletionKind::Function,
+            insert_text: None,
+            sort_text: None,
+            filter_text: Some("println".into()),
+            preselect: false,
+            detail: None,
+        },
+        CompletionItem {
+            label: "panic!".into(),
+            kind: CompletionKind::Function,
+            insert_text: None,
+            sort_text: None,
+            filter_text: None,
+            preselect: false,
+            detail: None,
+        },
+    ];
+    let mut state = CompletionState::new(items, 0, 0);
+    state.prefix = "println".into();
+    state.apply_filter();
+
+    assert_eq!(state.filtered_indices.len(), 1);
+    let label = state.items[state.filtered_indices[0]].label.as_str();
+    assert_eq!(label, "print!");
+}
+
+#[test]
+fn accepted_completion_strips_snippet_placeholders() {
+    let items = vec![CompletionItem {
+        label: "format".into(),
+        kind: CompletionKind::Function,
+        insert_text: Some("format(${1:value})$0".into()),
+        sort_text: None,
+        filter_text: None,
+        preselect: false,
+        detail: None,
+    }];
+    let state = CompletionState::new(items, 0, 0);
+    assert_eq!(state.insert_text().as_deref(), Some("format(value)"));
+}
+
+#[test]
+fn accepted_completion_flattens_nested_snippet_placeholders() {
+    let items = vec![CompletionItem {
+        label: "format".into(),
+        kind: CompletionKind::Function,
+        insert_text: Some("format(${1:outer ${2:inner}})".into()),
+        sort_text: None,
+        filter_text: None,
+        preselect: false,
+        detail: None,
+    }];
+    let state = CompletionState::new(items, 0, 0);
+    assert_eq!(state.insert_text().as_deref(), Some("format(outer inner)"));
+}
+
+#[test]
+fn accepted_completion_preserves_escaped_dollar_signs() {
+    let items = vec![CompletionItem {
+        label: "price".into(),
+        kind: CompletionKind::Variable,
+        insert_text: Some("const price = $$100".into()),
+        sort_text: None,
+        filter_text: None,
+        preselect: false,
+        detail: None,
+    }];
+    let state = CompletionState::new(items, 0, 0);
+    assert_eq!(state.insert_text().as_deref(), Some("const price = $100"));
+}
+
+#[test]
+fn manager_prefers_text_edit_new_text_for_inserted_text() {
+    let response = parse_completion_response(
+        json!([
+            {
+                "label": "contains",
+                "insertText": "contains()",
+                "textEdit": {
+                    "range": {
+                        "start": { "line": 0, "character": 1 },
+                        "end": { "line": 0, "character": 4 }
+                    },
+                    "newText": "contains(value)"
+                }
+            }
+        ]),
+        "file:///tmp/example.ts",
+    )
+    .expect("completion response should parse");
+
+    assert_eq!(response.items.len(), 1);
+    assert_eq!(
+        response.items[0].insert_text.as_deref(),
+        Some("contains(value)")
+    );
 }

@@ -7,6 +7,7 @@ mod focus_management;
 mod modal_behavior;
 mod pane_lifecycle;
 mod editor_behavior;
+mod markdown_workspace_behavior;
 mod keyboard_routing;
 mod launcher_behavior;
 mod theme_behavior;

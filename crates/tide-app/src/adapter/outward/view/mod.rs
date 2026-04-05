@@ -15,7 +15,6 @@ use crate::App;
 use crate::AppCorePort;
 use crate::LayoutPort;
 
-
 /// Compute the bar offset for a pane. Returns CONFLICT_BAR_HEIGHT if a notification bar
 /// (conflict or save confirm) is visible, else 0.
 pub(super) fn bar_offset_for(
@@ -41,7 +40,10 @@ impl App {
     /// to the GPU port and updates `drawable_wait_us`.
     pub(crate) fn poll_render_result(&mut self) {
         // Collect results from render thread into a vec to avoid overlapping borrows
-        let results: Vec<_> = self.ports.gpu.render_thread()
+        let results: Vec<_> = self
+            .ports
+            .gpu
+            .render_thread()
             .map(|rt| {
                 let mut v = Vec::new();
                 while let Ok(result) = rt.result_rx.try_recv() {
@@ -109,7 +111,9 @@ impl App {
         let p = self.palette();
 
         // Keep runtime caches bounded to currently alive panes.
-        self.cache.pane_generations.retain(|id, _| self.panes.contains_key(id));
+        self.cache
+            .pane_generations
+            .retain(|id, _| self.panes.contains_key(id));
         renderer.retain_pane_caches(&alive_pane_ids);
 
         // Atlas reset -> all cached UV coords are stale, force full rebuild
@@ -145,21 +149,19 @@ impl App {
             if let Some(PaneKind::Diff(dp)) = self.panes.get_mut(&id) {
                 dp.side_by_side = true;
             }
+            let pane_bar = bar_offset_for(id, &self.panes, &self.modal.save_confirm);
             if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&id) {
-                if pane.preview_mode {
-                    let cell_w = renderer.cell_size().width;
-                    let wrap_width = ((rect.width - 2.0 * PANE_PADDING - SCROLLBAR_WIDTH) / cell_w).floor() as usize;
-                    pane.ensure_preview_cache(wrap_width, self.window.dark_mode);
-                } else if pane.effective_soft_wrap() {
-                    let cell_w = renderer.cell_size().width;
-                    let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_w;
-                    let right_pad = PANE_PADDING;
-                    let content_width = (rect.width - 2.0 * PANE_PADDING - gutter_width - SCROLLBAR_WIDTH - right_pad).max(0.0);
-                    let wrap_cols = (content_width / cell_w).floor() as usize;
-                    if wrap_cols > 0 {
-                        pane.ensure_wrap_map(wrap_cols);
-                    }
-                }
+                let content_rect = Rect::new(
+                    rect.x + PANE_PADDING,
+                    rect.y + TAB_BAR_HEIGHT + pane_bar,
+                    rect.width - 2.0 * PANE_PADDING,
+                    (rect.height - TAB_BAR_HEIGHT - PANE_PADDING - pane_bar).max(1.0),
+                );
+                pane.prepare_inline_caches(
+                    content_rect,
+                    renderer.cell_size(),
+                    self.window.dark_mode,
+                );
             }
         }
 
@@ -170,9 +172,15 @@ impl App {
         let chrome_dirty = self.cache.chrome_generation != self.cache.last_chrome_generation;
         let chrome_hit_zones = if chrome_dirty {
             Some(chrome::render_chrome(
-                self, &mut renderer, &p, logical,
-                focused, show_file_tree, file_tree_scroll,
-                &visual_pane_rects, &all_pane_ids,
+                self,
+                &mut renderer,
+                &p,
+                logical,
+                focused,
+                show_file_tree,
+                file_tree_scroll,
+                &visual_pane_rects,
+                &all_pane_ids,
             ))
         } else {
             None
@@ -180,10 +188,7 @@ impl App {
 
         let t_chrome = t0.elapsed();
 
-        let gen_updates = grid::render_grid(
-            self, &mut renderer, &p,
-            &visual_pane_rects,
-        );
+        let gen_updates = grid::render_grid(self, &mut renderer, &p, &visual_pane_rects);
 
         {
             let order: Vec<u64> = visual_pane_rects.iter().map(|(id, _)| *id).collect();
@@ -193,24 +198,27 @@ impl App {
         let t_grid = t0.elapsed();
 
         cursor::render_cursor_and_highlights(
-            self, &mut renderer, &p,
-            &visual_pane_rects, focused, search_focus,
+            self,
+            &mut renderer,
+            &p,
+            &visual_pane_rects,
+            focused,
+            search_focus,
         );
 
         hover::render_hover(
-            self, &mut renderer, &p, logical,
-            &visual_pane_rects, show_file_tree, file_tree_scroll,
-        );
-
-        overlays::render_overlays(
-            self, &mut renderer, &p,
+            self,
+            &mut renderer,
+            &p,
+            logical,
             &visual_pane_rects,
+            show_file_tree,
+            file_tree_scroll,
         );
 
-        ime::render_ime_and_drop_preview(
-            self, &mut renderer, &p,
-            &visual_pane_rects, focused,
-        );
+        overlays::render_overlays(self, &mut renderer, &p, &visual_pane_rects);
+
+        ime::render_ime_and_drop_preview(self, &mut renderer, &p, &visual_pane_rects, focused);
 
         // ── Post-render: apply mutations returned by render functions ──
         if let Some(zones) = chrome_hit_zones {
@@ -232,10 +240,12 @@ impl App {
         {
             let config_update = self.ports.gpu.take_pending_surface_config();
             if let Some(rt) = self.ports.gpu.render_thread() {
-                let _ = rt.job_tx.send(crate::tide_renderer::render_thread::RenderJob {
-                    renderer,
-                    config_update,
-                });
+                let _ = rt
+                    .job_tx
+                    .send(crate::tide_renderer::render_thread::RenderJob {
+                        renderer,
+                        config_update,
+                    });
                 // renderer is now on the render thread — ports.gpu holds None
                 // until poll_render_result() retrieves it.
             }
@@ -252,21 +262,73 @@ impl App {
     }
 
     /// Insert preview: semi-transparent fill + thin border.
-    fn draw_insert_preview(renderer: &mut crate::tide_renderer::WgpuRenderer, preview: Rect, p: &ThemePalette) {
+    fn draw_insert_preview(
+        renderer: &mut crate::tide_renderer::WgpuRenderer,
+        preview: Rect,
+        p: &ThemePalette,
+    ) {
         renderer.draw_rect(preview, p.drop_fill);
         let bw = DROP_PREVIEW_BORDER_WIDTH;
-        renderer.draw_rect(Rect::new(preview.x, preview.y, preview.width, bw), p.drop_border);
-        renderer.draw_rect(Rect::new(preview.x, preview.y + preview.height - bw, preview.width, bw), p.drop_border);
-        renderer.draw_rect(Rect::new(preview.x, preview.y, bw, preview.height), p.drop_border);
-        renderer.draw_rect(Rect::new(preview.x + preview.width - bw, preview.y, bw, preview.height), p.drop_border);
+        renderer.draw_rect(
+            Rect::new(preview.x, preview.y, preview.width, bw),
+            p.drop_border,
+        );
+        renderer.draw_rect(
+            Rect::new(
+                preview.x,
+                preview.y + preview.height - bw,
+                preview.width,
+                bw,
+            ),
+            p.drop_border,
+        );
+        renderer.draw_rect(
+            Rect::new(preview.x, preview.y, bw, preview.height),
+            p.drop_border,
+        );
+        renderer.draw_rect(
+            Rect::new(
+                preview.x + preview.width - bw,
+                preview.y,
+                bw,
+                preview.height,
+            ),
+            p.drop_border,
+        );
     }
 
     /// Swap preview: thick border only, no fill — visually distinct from insert.
-    fn draw_swap_preview(renderer: &mut crate::tide_renderer::WgpuRenderer, preview: Rect, p: &ThemePalette) {
+    fn draw_swap_preview(
+        renderer: &mut crate::tide_renderer::WgpuRenderer,
+        preview: Rect,
+        p: &ThemePalette,
+    ) {
         let bw = SWAP_PREVIEW_BORDER_WIDTH;
-        renderer.draw_rect(Rect::new(preview.x, preview.y, preview.width, bw), p.swap_border);
-        renderer.draw_rect(Rect::new(preview.x, preview.y + preview.height - bw, preview.width, bw), p.swap_border);
-        renderer.draw_rect(Rect::new(preview.x, preview.y, bw, preview.height), p.swap_border);
-        renderer.draw_rect(Rect::new(preview.x + preview.width - bw, preview.y, bw, preview.height), p.swap_border);
+        renderer.draw_rect(
+            Rect::new(preview.x, preview.y, preview.width, bw),
+            p.swap_border,
+        );
+        renderer.draw_rect(
+            Rect::new(
+                preview.x,
+                preview.y + preview.height - bw,
+                preview.width,
+                bw,
+            ),
+            p.swap_border,
+        );
+        renderer.draw_rect(
+            Rect::new(preview.x, preview.y, bw, preview.height),
+            p.swap_border,
+        );
+        renderer.draw_rect(
+            Rect::new(
+                preview.x + preview.width - bw,
+                preview.y,
+                bw,
+                preview.height,
+            ),
+            p.swap_border,
+        );
     }
 }
