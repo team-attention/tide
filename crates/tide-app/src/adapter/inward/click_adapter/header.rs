@@ -137,7 +137,12 @@ pub(crate) fn check_header_click(
                 }
                 HeaderHitAction::StageTab(target_pane_id) => {
                     // Switch active tab in Stage TabGroup (or zoomed pane if stacked)
-                    if ctx.zoomed_pane().is_some() {
+                    if let Some(old_zoomed) = ctx.zoomed_pane() {
+                        // Transfer tab scroll offset from old zoomed pane to new one
+                        let old_scroll = ctx.interaction_mut().tab_scroll_offset.remove(&old_zoomed).unwrap_or(0.0);
+                        if old_scroll > 0.0 {
+                            ctx.interaction_mut().tab_scroll_offset.insert(target_pane_id, old_scroll);
+                        }
                         ctx.set_zoom(Some(target_pane_id));
                     }
                     ctx.focus_terminal(target_pane_id);
@@ -163,6 +168,7 @@ fn open_git_switcher(
 ) {
     // Cancel any in-progress drag when opening a modal
     ctx.interaction_mut().pane_drag = crate::state::drag_types::PaneDragState::Idle;
+    ctx.interaction_mut().drop_preview_start = None;
     // Toggle: close if already open for the same pane and mode
     if let Some(ref gs) = ctx.modal().git_switcher {
         if gs.pane_id == pane_id && gs.mode == mode {
