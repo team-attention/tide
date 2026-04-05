@@ -2,7 +2,7 @@ mod search_bar;
 mod save_dialog;
 mod completions;
 mod file_finder;
-mod git_switcher;
+pub(crate) mod git_switcher;
 mod context_menu;
 mod config_page;
 

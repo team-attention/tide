@@ -3,7 +3,7 @@
 ## Overview
 
 ### As-Is
-`EditorPane::open()` already marks prose extensions as `soft_wrap = true`, and file-backed Markdown Panes now open with `preview_mode = false` in `crates/tide-app/src/domain/pane/editor.rs`. That means `EditorPane::effective_soft_wrap()` is active immediately for Markdown authoring, while preview mode and diff mode still disable wrapping. The remaining Soft Wrap risk is no longer the open default; it is keeping wrapped authoring behavior, click mapping, scroll state, and preview transitions synchronized across the two Pane modes.
+`EditorPane::open()` already marks prose extensions as `soft_wrap = true`, and file-backed Markdown Panes now open with `preview_mode = false` in `crates/tide-app/src/domain/pane/editor.rs`. That means `EditorPane::effective_soft_wrap()` is active immediately for Markdown authoring, while preview mode and diff mode still disable wrapping. The remaining Soft Wrap risk is no longer the open default; it is keeping wrapped authoring behavior, click mapping, scroll state, and preview transitions synchronized across the two Pane modes. In particular, wrapped authoring still mixes logical-line scroll state with visual-row rendering, so a long single-line Markdown paragraph can occupy many visual rows while the Editor Pane still clamps scroll as if only one row existed.
 
 ### To-Be
 Prose files (`.md`, `.markdown`, `.mdown`, `.mkd`, `.txt`, `.text`) automatically soft-wrap at the viewport width while the Pane is in authoring mode. Visual behavior matches VS Code word wrap:
@@ -107,6 +107,16 @@ All other file types: no wrap (current behavior preserved).
 - **Business Rules**:
   - BR-17: Scrollbar thumb ratio uses total visual rows
 
+### UC-7: Scroll Wrapped Authoring
+- **Actor**: User
+- **Trigger**: Mouse wheel or trackpad scroll in a soft-wrapped Editor Pane
+- **Precondition**: The wrapped content occupies more visual rows than the viewport
+- **Flow**: Convert the authoring viewport position into visual-row space, advance or retreat by the requested delta, clamp against total visual rows, then render from the resulting visual row
+- **Postcondition**: The user can reach the last visible wrapped row of the document
+- **Business Rules**:
+  - BR-18: Soft-wrap authoring scroll advances in visual rows, not only whole logical lines
+  - BR-19: Soft-wrap scroll clamping uses total visual rows so the wrapped tail remains reachable
+
 ## Invariants
 
 1. **WrapMap consistency**: WrapMap total visual rows == sum of visual rows per logical line
@@ -135,6 +145,8 @@ All other file types: no wrap (current behavior preserved).
 | UC-5 | BR-15 | `wrap_map_rebuilt_on_width_change()` |
 | UC-5 | BR-16 | `cursor_visible_after_rewrap()` |
 | UC-6 | BR-17 | `scrollbar_uses_visual_row_count()` |
+| UC-7 | BR-18 | `scrolling_wrapped_markdown_advances_by_visual_row()` |
+| UC-7 | BR-19 | `scrolling_wrapped_markdown_reaches_the_last_visual_row()` |
 
 ## Location
 
