@@ -1,20 +1,96 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::path::PathBuf;
 
 use crate::tide_core::{FileGitStatus, FileTreeSource, TerminalBackend, Vec2};
 
+use super::path_identity::normalize_path_for_identity;
 use crate::pane::PaneKind;
 use crate::theme::*;
+use crate::ActionPort;
 use crate::App;
 use crate::AppCorePort;
-use crate::ActionPort;
 use crate::PaneLifecyclePort;
 
 /// Results from the background git poller (one entry per CWD).
-use crate::state::background::{GitPollResults, GitPollCwdResult};
-
+use crate::state::background::{GitPollCwdResult, GitPollResults};
 
 impl App {
+    pub(crate) fn sync_file_tree_path_identity_cache(&mut self) {
+        let mut normalized_entry_paths = HashMap::new();
+        if let Some(tree) = self.ft.tree.as_ref() {
+            for entry in tree.visible_entries() {
+                normalized_entry_paths.insert(
+                    entry.entry.path.clone(),
+                    normalize_path_for_identity(&entry.entry.path),
+                );
+            }
+        }
+        self.ft.normalized_entry_paths = normalized_entry_paths;
+    }
+
+    pub(crate) fn sync_file_tree_modified_editor_cache(&mut self) {
+        let mut modified_editor_paths = HashSet::new();
+        let mut modified_editor_dirs = HashSet::new();
+
+        for pane in self.panes.values() {
+            let PaneKind::Editor(editor_pane) = pane else {
+                continue;
+            };
+            if !editor_pane.editor.is_modified() {
+                continue;
+            }
+            let Some(file_path) = editor_pane.editor.file_path() else {
+                continue;
+            };
+
+            let normalized_file_path = normalize_path_for_identity(file_path);
+            modified_editor_paths.insert(normalized_file_path.clone());
+
+            let mut ancestor = normalized_file_path.parent();
+            while let Some(dir) = ancestor {
+                modified_editor_dirs.insert(dir.to_path_buf());
+                ancestor = dir.parent();
+            }
+        }
+
+        self.ft.modified_editor_paths = modified_editor_paths;
+        self.ft.modified_editor_dirs = modified_editor_dirs;
+    }
+
+    pub(crate) fn effective_file_tree_git_status(
+        &self,
+        entry_path: &Path,
+        is_dir: bool,
+    ) -> Option<FileGitStatus> {
+        let cached = if is_dir {
+            self.ft.dir_git_status.get(entry_path).copied()
+        } else {
+            self.ft.git_status.get(entry_path).copied()
+        };
+
+        cached.or_else(|| self.modified_editor_fallback_file_tree_git_status(entry_path, is_dir))
+    }
+
+    fn modified_editor_fallback_file_tree_git_status(
+        &self,
+        entry_path: &Path,
+        is_dir: bool,
+    ) -> Option<FileGitStatus> {
+        let normalized_entry_path = self.ft.normalized_entry_paths.get(entry_path)?;
+        if is_dir {
+            self.ft
+                .modified_editor_dirs
+                .contains(normalized_entry_path)
+                .then_some(FileGitStatus::Modified)
+        } else {
+            self.ft
+                .modified_editor_paths
+                .contains(normalized_entry_path)
+                .then_some(FileGitStatus::Modified)
+        }
+    }
+
     pub(crate) fn update_file_tree_cwd(&mut self) {
         if !self.ft.visible {
             return;
@@ -38,6 +114,7 @@ impl App {
                     if let Some(tree) = self.ft.tree.as_mut() {
                         tree.set_root(tree_root);
                     }
+                    self.sync_file_tree_path_identity_cache();
                     self.ft.scroll = 0.0;
                     self.ft.scroll_target = 0.0;
                     self.cache.invalidate_chrome();
@@ -103,24 +180,52 @@ impl App {
     /// Used when file tree filesystem events require a git status refresh.
     pub(crate) fn trigger_git_poll(&self) {
         if let Some(ref tx) = self.bg.git_poll_cwd_tx {
-            let cwds: std::collections::HashSet<PathBuf> = self
-                .panes
-                .values()
-                .filter_map(|pane| {
-                    if let PaneKind::Terminal(p) = pane {
-                        p.context.cwd.clone()
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            let _ = tx.send(cwds.into_iter().collect());
+            let cwds = self.git_poll_cwds();
+            if !cwds.is_empty() {
+                let _ = tx.send(cwds.into_iter().collect());
+            }
         }
+    }
+
+    fn git_poll_cwds(&self) -> HashSet<PathBuf> {
+        let mut cwds: HashSet<PathBuf> = self
+            .panes
+            .values()
+            .filter_map(|pane| {
+                if let PaneKind::Terminal(p) = pane {
+                    p.context
+                        .cwd
+                        .clone()
+                        .or_else(|| p.backend.detect_cwd_fallback())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for ctx in self.assoc.retained_contexts.values() {
+            if let Some(cwd) = ctx.cwd.clone() {
+                cwds.insert(cwd);
+            }
+        }
+
+        if let Some(cwd) = self.focused_terminal_cwd() {
+            cwds.insert(cwd);
+        }
+
+        if cwds.is_empty() {
+            if let Some(cwd) = self.timing.last_cwd.clone() {
+                cwds.insert(cwd);
+            }
+        }
+
+        cwds
     }
 
     pub(crate) fn file_tree_max_scroll(&self) -> f32 {
         let entry_count = self
-            .ft.tree
+            .ft
+            .tree
             .as_ref()
             .map(|t| t.visible_entries().len())
             .unwrap_or(0);
@@ -159,13 +264,18 @@ impl App {
                             if let Some(existing) = self.gateway.detected_agents.get(id) {
                                 agent.status = existing.status;
                             }
-                            agent.gateway_connected = crate::state::gateway_status::is_agent_connected(
-                                agent.pid, &self.gateway.connected_pids
-                            );
+                            agent.gateway_connected =
+                                crate::state::gateway_status::is_agent_connected(
+                                    agent.pid,
+                                    &self.gateway.connected_pids,
+                                );
                             self.gateway.detected_agents.insert(*id, agent);
                         } else {
                             // Don't remove agents with active status
-                            let has_status = self.gateway.detected_agents.get(id)
+                            let has_status = self
+                                .gateway
+                                .detected_agents
+                                .get(id)
                                 .map_or(false, |a| a.status.is_some());
                             if !has_status {
                                 self.gateway.detected_agents.remove(id);
@@ -232,7 +342,9 @@ impl App {
 
         // Update cached repo roots (for update_file_tree_cwd)
         for (cwd, result) in &git_results {
-            self.bg.cached_repo_roots.insert(cwd.clone(), result.repo_root.clone());
+            self.bg
+                .cached_repo_roots
+                .insert(cwd.clone(), result.repo_root.clone());
         }
 
         // Update file tree git status from poller results
@@ -256,7 +368,11 @@ impl App {
                         // Match: DiffPane.cwd equals poller CWD, or both share the same repo root
                         let matches = dp.cwd == *cwd
                             || (result.repo_root.is_some()
-                                && self.bg.cached_repo_roots.get(&dp.cwd).and_then(|r| r.as_ref())
+                                && self
+                                    .bg
+                                    .cached_repo_roots
+                                    .get(&dp.cwd)
+                                    .and_then(|r| r.as_ref())
                                     == result.repo_root.as_ref());
                         if matches {
                             dp.apply_poll_data(files.clone(), cache.clone());
@@ -269,11 +385,9 @@ impl App {
 
         // Trigger file tree CWD update with newly cached repo roots
         if self.ft.visible {
-            let cwd = self.focus.focused.and_then(|id| {
-                match self.panes.get(&id) {
-                    Some(PaneKind::Terminal(p)) => p.context.cwd.clone(),
-                    _ => None,
-                }
+            let cwd = self.focus.focused.and_then(|id| match self.panes.get(&id) {
+                Some(PaneKind::Terminal(p)) => p.context.cwd.clone(),
+                _ => None,
             });
             if let Some(cwd) = cwd {
                 if let Some(Some(root)) = self.bg.cached_repo_roots.get(&cwd) {
@@ -283,6 +397,7 @@ impl App {
                         if let Some(tree) = self.ft.tree.as_mut() {
                             tree.set_root(root);
                         }
+                        self.sync_file_tree_path_identity_cache();
                         self.ft.scroll = 0.0;
                         self.ft.scroll_target = 0.0;
                         changed = true;
@@ -351,7 +466,8 @@ impl App {
                             .collect();
                         let mut cache = std::collections::HashMap::new();
                         for (i, entry) in files.iter().enumerate() {
-                            let lines = crate::tide_terminal::git::file_diff_lines(&cwd, &entry.path);
+                            let lines =
+                                crate::tide_terminal::git::file_diff_lines(&cwd, &entry.path);
                             cache.insert(i, lines);
                         }
                         (Some(files), Some(cache))
@@ -359,14 +475,17 @@ impl App {
                         (None, None)
                     };
 
-                    results.insert(cwd, GitPollCwdResult {
-                        git_info,
-                        worktree_count,
-                        repo_root,
-                        status_entries,
-                        diff_files,
-                        diff_cache,
-                    });
+                    results.insert(
+                        cwd,
+                        GitPollCwdResult {
+                            git_info,
+                            worktree_count,
+                            repo_root,
+                            status_entries,
+                            diff_files,
+                            diff_cache,
+                        },
+                    );
                 }
 
                 let _ = tx.send(results);
@@ -423,6 +542,7 @@ impl App {
                 if let Some(tree) = self.ft.tree.as_mut() {
                     tree.refresh();
                 }
+                self.sync_file_tree_path_identity_cache();
                 self.trigger_git_poll();
                 self.cache.invalidate_chrome();
             }
@@ -434,7 +554,9 @@ impl App {
                 }
             }
             crate::ContextMenuAction::Rename => {
-                let file_name = menu.path.file_name()
+                let file_name = menu
+                    .path
+                    .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
                 self.modal.file_tree_rename = Some(crate::FileTreeRenameState {
@@ -456,22 +578,37 @@ impl App {
         };
 
         let new_name = rename.input.text.trim().to_string();
-        if new_name.is_empty() || new_name == rename.original_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default() {
+        if new_name.is_empty()
+            || new_name
+                == rename
+                    .original_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default()
+        {
             // No change or empty — cancel
             self.cache.invalidate_chrome();
             return;
         }
 
-        let new_path = rename.original_path.parent()
+        let new_path = rename
+            .original_path
+            .parent()
             .map(|p| p.join(&new_name))
             .unwrap_or_else(|| PathBuf::from(&new_name));
 
         if let Err(e) = self.ports.fs.rename(&rename.original_path, &new_path) {
-            log::error!("Failed to rename {:?} → {:?}: {}", rename.original_path, new_path, e);
+            log::error!(
+                "Failed to rename {:?} → {:?}: {}",
+                rename.original_path,
+                new_path,
+                e
+            );
         }
         if let Some(tree) = self.ft.tree.as_mut() {
             tree.refresh();
         }
+        self.sync_file_tree_path_identity_cache();
         self.trigger_git_poll();
         self.cache.invalidate_chrome();
     }
@@ -490,8 +627,7 @@ impl App {
                 self.ft.scroll_target = cursor_y;
                 self.ft.scroll = cursor_y;
             } else if cursor_y + line_height > visible_bottom {
-                self.ft.scroll_target =
-                    cursor_y + line_height - (tree_rect.height - padding * 2.0);
+                self.ft.scroll_target = cursor_y + line_height - (tree_rect.height - padding * 2.0);
                 self.ft.scroll = self.ft.scroll_target;
             }
         }
@@ -520,7 +656,8 @@ impl App {
         let line_height = cell_size.height * FILE_TREE_LINE_SPACING;
         // Account for inset content rect and header offset.
         let content_y = self
-            .ft.rect
+            .ft
+            .rect
             .map(|r| r.y + PANE_CORNER_RADIUS)
             .unwrap_or(self.window.top_inset + PANE_CORNER_RADIUS);
         let adjusted_y = position.y - content_y - FILE_TREE_HEADER_HEIGHT;
@@ -533,6 +670,7 @@ impl App {
                 let entry = entries[index].clone();
                 if entry.entry.is_dir {
                     tree.toggle(&entry.entry.path);
+                    self.sync_file_tree_path_identity_cache();
                     self.cache.invalidate_chrome();
                     None
                 } else {
@@ -571,10 +709,7 @@ fn parse_git_status_code(code: &str) -> Option<FileGitStatus> {
     let y = bytes[1]; // working tree
 
     // Conflict states: both modified, or various add/delete combos
-    if (x == b'U' || y == b'U')
-        || (x == b'A' && y == b'A')
-        || (x == b'D' && y == b'D')
-    {
+    if (x == b'U' || y == b'U') || (x == b'A' && y == b'A') || (x == b'D' && y == b'D') {
         return Some(FileGitStatus::Conflict);
     }
 

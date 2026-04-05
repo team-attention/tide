@@ -158,9 +158,8 @@ impl crate::application::ports::inward::ActionPort for App {
                                             pane.wrap_cols_for_rect(click_rect, cell_size).max(1);
                                         pane.ensure_wrap_map(wrap_cols);
                                         if let Some(wrap_map) = pane.wrap_map() {
-                                            let scroll_vr = wrap_map
-                                                .visual_row_of_line(pane.editor.scroll_offset());
-                                            let abs_visual_row = scroll_vr + rel_row as usize;
+                                            let abs_visual_row =
+                                                pane.soft_wrap_visual_scroll() + rel_row as usize;
                                             if let Some(info) = wrap_map.visual_row_to_line_info(
                                                 abs_visual_row,
                                                 &pane.editor.buffer.lines,
@@ -172,8 +171,12 @@ impl crate::application::ports::inward::ActionPort for App {
                                                 // In live preview mode, reverse-map visual → buffer column
                                                 if pane.live_preview {
                                                     if let Some(ref lpm) = pane.live_preview_map {
-                                                        let cursor_line = pane.editor.cursor_position().line;
-                                                        let line_content = pane.editor.buffer.line(info.logical_line)
+                                                        let cursor_line =
+                                                            pane.editor.cursor_position().line;
+                                                        let line_content = pane
+                                                            .editor
+                                                            .buffer
+                                                            .line(info.logical_line)
                                                             .unwrap_or("")
                                                             .to_string();
                                                         col = lpm.visual_to_buffer_col(
@@ -196,14 +199,19 @@ impl crate::application::ports::inward::ActionPort for App {
                                         }
                                     } else {
                                         let line = pane.editor.scroll_offset() + rel_row as usize;
-                                        let visual_col = pane.editor.h_scroll_offset() + rel_col as usize;
+                                        let visual_col =
+                                            pane.editor.h_scroll_offset() + rel_col as usize;
                                         // In live preview mode, visual columns don't match buffer
                                         // columns on non-cursor lines because inline syntax is
                                         // hidden.  Reverse-map visual → buffer column.
                                         let col = if pane.live_preview {
                                             if let Some(ref lpm) = pane.live_preview_map {
-                                                let cursor_line = pane.editor.cursor_position().line;
-                                                let line_content = pane.editor.buffer.line(line)
+                                                let cursor_line =
+                                                    pane.editor.cursor_position().line;
+                                                let line_content = pane
+                                                    .editor
+                                                    .buffer
+                                                    .line(line)
                                                     .unwrap_or("")
                                                     .to_string();
                                                 lpm.visual_to_buffer_col(
@@ -369,6 +377,7 @@ impl crate::application::ports::inward::ActionPort for App {
                                 }
                                 // Redraw tab label when modified indicator changes
                                 if pane.editor.is_modified() != was_modified || is_save {
+                                    self.sync_file_tree_modified_editor_cache();
                                     self.cache.invalidate_chrome();
                                 }
                                 // Refresh git status on save (async via git poller)

@@ -9,29 +9,29 @@ use crate::tide_layout::SplitLayout;
 use crate::tide_tree::FsTree;
 
 use crate::pane::{PaneKind, TerminalPane};
-use crate::theme::*;
 use crate::state;
+use crate::theme::*;
 use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
-use crate::DockPort;
 use crate::AppCorePort;
+use crate::DockPort;
 use crate::LayoutPort;
 
 // Adapter implementations
-use crate::adapter::outward::clock_adapter::{SystemClock, FixedClock};
-use crate::adapter::outward::clipboard_adapter::{SystemClipboard, NoopClipboard};
-use crate::adapter::outward::fs_adapter::{RealFileSystem, NoopFileSystem};
-use crate::adapter::outward::process_adapter::{SystemProcess, NoopProcess};
-use crate::adapter::outward::persistence_adapter::{RealPersistence, NoopPersistence};
-use crate::adapter::outward::git_adapter::{RealGit, NoopGit};
+use crate::adapter::outward::clipboard_adapter::{NoopClipboard, SystemClipboard};
+use crate::adapter::outward::clock_adapter::{FixedClock, SystemClock};
+use crate::adapter::outward::file_watcher_adapter::{NoopFileWatcher, RealFileWatcher};
+use crate::adapter::outward::fs_adapter::{NoopFileSystem, RealFileSystem};
+use crate::adapter::outward::git_adapter::{NoopGit, RealGit};
+use crate::adapter::outward::lsp_adapter::{NoopLsp, RealLsp};
+use crate::adapter::outward::persistence_adapter::{NoopPersistence, RealPersistence};
+use crate::adapter::outward::platform_adapter::{NoopPlatform, RealPlatform};
+use crate::adapter::outward::process_adapter::{NoopProcess, SystemProcess};
+use crate::adapter::outward::renderer_adapter::port_impl::{NoopGpu, RealGpu};
 use crate::adapter::outward::terminal_factory_adapter::RealTerminalFactory;
-use crate::adapter::outward::file_watcher_adapter::{RealFileWatcher, NoopFileWatcher};
-use crate::adapter::outward::lsp_adapter::{RealLsp, NoopLsp};
-use crate::adapter::outward::renderer_adapter::port_impl::{RealGpu, NoopGpu};
-use crate::adapter::outward::platform_adapter::{RealPlatform, NoopPlatform};
 
 use crate::application::ports::outward::{
-    ClockPort, ClipboardPort, FileSystemPort, ProcessPort, PersistencePort,
-    GitPort, TerminalFactoryPort, FileWatcherPort, LspPort, GpuPort, PlatformPort,
+    ClipboardPort, ClockPort, FileSystemPort, FileWatcherPort, GitPort, GpuPort, LspPort,
+    PersistencePort, PlatformPort, ProcessPort, TerminalFactoryPort,
 };
 
 /// Aggregates all outward port implementations. Injected into App.
@@ -52,7 +52,9 @@ pub(crate) struct Ports {
 impl Ports {
     pub fn noop() -> Self {
         Self {
-            clock: Box::new(FixedClock { instant: std::time::Instant::now() }),
+            clock: Box::new(FixedClock {
+                instant: std::time::Instant::now(),
+            }),
             clipboard: Box::new(NoopClipboard),
             fs: Box::new(NoopFileSystem),
             process: Box::new(NoopProcess),
@@ -174,7 +176,11 @@ unsafe impl Send for App {}
 
 impl App {
     pub(crate) fn new() -> Self {
-        let top_inset = if cfg!(target_os = "macos") { TITLEBAR_HEIGHT } else { 0.0 };
+        let top_inset = if cfg!(target_os = "macos") {
+            TITLEBAR_HEIGHT
+        } else {
+            0.0
+        };
         Self {
             ports: Ports::noop(),
             panes: HashMap::new(),
@@ -223,7 +229,10 @@ impl App {
     }
 
     /// Create the initial terminal pane.
-    pub(crate) fn create_initial_pane(&mut self, early_terminal: Option<crate::tide_terminal::Terminal>) {
+    pub(crate) fn create_initial_pane(
+        &mut self,
+        early_terminal: Option<crate::tide_terminal::Terminal>,
+    ) {
         let (layout, pane_id) = SplitLayout::with_initial_pane();
         self.layout = layout;
 
@@ -246,7 +255,13 @@ impl App {
             terminal.resize(cols, rows);
             Ok(TerminalPane::with_terminal(pane_id, terminal))
         } else {
-            self.ports.terminal_factory.create_terminal(pane_id, cols, rows, None, self.window.dark_mode)
+            self.ports.terminal_factory.create_terminal(
+                pane_id,
+                cols,
+                rows,
+                None,
+                self.window.dark_mode,
+            )
         };
 
         match result {
@@ -263,9 +278,15 @@ impl App {
             }
         }
 
-        let cwd = self.ports.fs.current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+        let cwd = self
+            .ports
+            .fs
+            .current_dir()
+            .unwrap_or_else(|_| PathBuf::from("/"));
         let tree = FsTree::new(cwd.clone());
         self.ft.tree = Some(tree);
+        self.sync_file_tree_path_identity_cache();
+        self.sync_file_tree_modified_editor_cache();
         self.timing.last_cwd = Some(cwd);
 
         crate::tide_terminal::set_active_workspace_name("Workspace 1".to_string());
@@ -278,7 +299,6 @@ impl App {
         self.ws.workspace_extras.push(WorkspaceExtras::new());
         self.ws.active = 0;
     }
-
 }
 
 impl crate::application::ports::inward::AppCorePort for App {
@@ -286,7 +306,8 @@ impl crate::application::ports::inward::AppCorePort for App {
         if !self.dock.dock_zoomed {
             return None;
         }
-        self.focus.focused
+        self.focus
+            .focused
             .filter(|id| self.is_pane_in_dock(*id))
             .or_else(|| {
                 self.focused_terminal_id().and_then(|tid| {
@@ -356,6 +377,10 @@ impl crate::application::ports::inward::AppCorePort for App {
         self.cache.needs_redraw = true;
     }
 
+    fn sync_file_tree_modified_editor_cache(&mut self) {
+        App::sync_file_tree_modified_editor_cache(self);
+    }
+
     // ── State queries ──
 
     fn top_inset(&self) -> f32 {
@@ -372,8 +397,12 @@ impl crate::application::ports::inward::AppCorePort for App {
 
     fn gateway_agent_counts(&self) -> (usize, usize) {
         let total = self.gateway.detected_agents.len();
-        let connected = self.gateway.detected_agents.values()
-            .filter(|a| a.gateway_connected).count();
+        let connected = self
+            .gateway
+            .detected_agents
+            .values()
+            .filter(|a| a.gateway_connected)
+            .count();
         (connected, total)
     }
 
@@ -386,14 +415,23 @@ impl crate::application::ports::inward::AppCorePort for App {
     // ── Outward port delegates ──
 
     fn read_file_to_string(&self, path: &std::path::Path) -> Result<String, String> {
-        self.ports.fs.read_to_string(path).map_err(|e| e.to_string())
+        self.ports
+            .fs
+            .read_to_string(path)
+            .map_err(|e| e.to_string())
     }
 
-    fn git_list_branches(&self, cwd: &std::path::Path) -> Vec<crate::tide_terminal::git::BranchInfo> {
+    fn git_list_branches(
+        &self,
+        cwd: &std::path::Path,
+    ) -> Vec<crate::tide_terminal::git::BranchInfo> {
         self.ports.git.list_branches(cwd)
     }
 
-    fn git_list_worktrees(&self, cwd: &std::path::Path) -> Vec<crate::tide_terminal::git::WorktreeInfo> {
+    fn git_list_worktrees(
+        &self,
+        cwd: &std::path::Path,
+    ) -> Vec<crate::tide_terminal::git::WorktreeInfo> {
         self.ports.git.list_worktrees(cwd)
     }
 
@@ -405,15 +443,31 @@ impl crate::application::ports::inward::AppCorePort for App {
         self.ports.git.branch_exists(cwd, name)
     }
 
-    fn git_add_worktree(&self, cwd: &std::path::Path, path: &std::path::Path, branch: &str, new_branch: bool) -> Result<(), String> {
+    fn git_add_worktree(
+        &self,
+        cwd: &std::path::Path,
+        path: &std::path::Path,
+        branch: &str,
+        new_branch: bool,
+    ) -> Result<(), String> {
         self.ports.git.add_worktree(cwd, path, branch, new_branch)
     }
 
-    fn git_remove_worktree(&self, cwd: &std::path::Path, path: &std::path::Path, force: bool) -> Result<(), String> {
+    fn git_remove_worktree(
+        &self,
+        cwd: &std::path::Path,
+        path: &std::path::Path,
+        force: bool,
+    ) -> Result<(), String> {
         self.ports.git.remove_worktree(cwd, path, force)
     }
 
-    fn git_delete_branch(&self, cwd: &std::path::Path, name: &str, force: bool) -> Result<(), String> {
+    fn git_delete_branch(
+        &self,
+        cwd: &std::path::Path,
+        name: &str,
+        force: bool,
+    ) -> Result<(), String> {
         self.ports.git.delete_branch(cwd, name, force)
     }
 
@@ -520,7 +574,9 @@ impl crate::application::ports::inward::AppCorePort for App {
         let session = Session::from_app(self);
         self.ports.persistence.save_session(&session);
         let context_area = SessionContextArea::from_app(self);
-        self.ports.persistence.save_context_area_session(&context_area);
+        self.ports
+            .persistence
+            .save_context_area_session(&context_area);
     }
 
     fn delete_running_marker(&mut self) {
@@ -656,10 +712,14 @@ impl crate::application::ports::inward::GatewayPort for App {
             self.gateway.active_streams -= 1;
         }
     }
-    fn gateway_subscribe(&mut self, tx: std::sync::mpsc::Sender<String>, event_filter: Vec<String>) -> bool {
-        self.gateway.subscribers.push(
-            crate::state::gateway_status::Subscriber { tx, event_filter }
-        );
+    fn gateway_subscribe(
+        &mut self,
+        tx: std::sync::mpsc::Sender<String>,
+        event_filter: Vec<String>,
+    ) -> bool {
+        self.gateway
+            .subscribers
+            .push(crate::state::gateway_status::Subscriber { tx, event_filter });
         true
     }
     fn take_subscribe_tx(&mut self) -> Option<std::sync::mpsc::Sender<String>> {
@@ -673,7 +733,9 @@ impl crate::application::ports::inward::GatewayPort for App {
         self.cache.chrome_generation += 1;
     }
 
-    fn detected_agents_mut(&mut self) -> &mut std::collections::HashMap<u64, crate::state::gateway_status::AgentInfo> {
+    fn detected_agents_mut(
+        &mut self,
+    ) -> &mut std::collections::HashMap<u64, crate::state::gateway_status::AgentInfo> {
         &mut self.gateway.detected_agents
     }
 
@@ -692,12 +754,15 @@ impl crate::application::ports::inward::GatewayPort for App {
             agent.status = status;
         } else if self.panes.contains_key(&pane_id) {
             // Create synthetic AgentInfo for unknown agent
-            self.gateway.detected_agents.insert(pane_id, crate::state::gateway_status::AgentInfo {
-                name: "Unknown",
-                pid: 0,
-                gateway_connected: false,
-                status,
-            });
+            self.gateway.detected_agents.insert(
+                pane_id,
+                crate::state::gateway_status::AgentInfo {
+                    name: "Unknown",
+                    pid: 0,
+                    gateway_connected: false,
+                    status,
+                },
+            );
         }
         self.cache.chrome_generation += 1;
         // Route notification based on user context (UC-1)
@@ -706,7 +771,11 @@ impl crate::application::ports::inward::GatewayPort for App {
         }
     }
 
-    fn route_agent_notification(&mut self, pane_id: u64, status: crate::state::gateway_status::AgentStatus) {
+    fn route_agent_notification(
+        &mut self,
+        pane_id: u64,
+        status: crate::state::gateway_status::AgentStatus,
+    ) {
         use crate::state::gateway_status::AgentStatus;
 
         // BR-1: Running status does not trigger notification routing
@@ -738,7 +807,10 @@ impl crate::application::ports::inward::GatewayPort for App {
         if !self.window.is_focused {
             // BR-4: Don't send again until acknowledged (focused)
             if !self.notified_panes.contains(&pane_id) {
-                let agent_name = self.gateway.detected_agents.get(&pane_id)
+                let agent_name = self
+                    .gateway
+                    .detected_agents
+                    .get(&pane_id)
                     .map(|a| a.name)
                     .unwrap_or("Agent");
                 let body = match status {
@@ -750,13 +822,12 @@ impl crate::application::ports::inward::GatewayPort for App {
                     crate::tide_platform::WindowCommand::SendSystemNotification {
                         title: agent_name.to_string(),
                         body,
-                    }
+                    },
                 );
                 // UC-4: Dock bounce only for NeedsInput
                 if matches!(status, AgentStatus::NeedsInput) {
-                    self.pending_platform_commands.push(
-                        crate::tide_platform::WindowCommand::RequestUserAttention
-                    );
+                    self.pending_platform_commands
+                        .push(crate::tide_platform::WindowCommand::RequestUserAttention);
                 }
                 self.notified_panes.insert(pane_id);
             }
@@ -785,7 +856,10 @@ impl crate::application::ports::inward::PaneAccessPort for App {
         if self.panes.contains_key(&id) {
             return true;
         }
-        self.ws.workspaces.iter().any(|ws| ws.panes.contains_key(&id))
+        self.ws
+            .workspaces
+            .iter()
+            .any(|ws| ws.panes.contains_key(&id))
     }
     fn pane_entries(&self) -> Vec<(PaneId, &PaneKind)> {
         self.panes.iter().map(|(&id, pane)| (id, pane)).collect()
@@ -805,7 +879,9 @@ impl crate::application::ports::inward::PaneAccessPort for App {
     }
 
     fn has_terminals(&self) -> bool {
-        self.panes.values().any(|pk| matches!(pk, PaneKind::Terminal(_)))
+        self.panes
+            .values()
+            .any(|pk| matches!(pk, PaneKind::Terminal(_)))
     }
 
     fn has_dirty_editors(&self) -> bool {
