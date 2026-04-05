@@ -158,9 +158,8 @@ impl crate::application::ports::inward::ActionPort for App {
                                             pane.wrap_cols_for_rect(click_rect, cell_size).max(1);
                                         pane.ensure_wrap_map(wrap_cols);
                                         if let Some(wrap_map) = pane.wrap_map() {
-                                            let scroll_vr = wrap_map
-                                                .visual_row_of_line(pane.editor.scroll_offset());
-                                            let abs_visual_row = scroll_vr + rel_row as usize;
+                                            let abs_visual_row =
+                                                pane.soft_wrap_visual_scroll() + rel_row as usize;
                                             if let Some(info) = wrap_map.visual_row_to_line_info(
                                                 abs_visual_row,
                                                 &pane.editor.buffer.lines,

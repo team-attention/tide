@@ -4,7 +4,7 @@ mod grid;
 pub(crate) mod header;
 mod hover;
 mod ime;
-mod overlays;
+pub(crate) mod overlays;
 pub(crate) mod ui;
 
 use crate::tide_core::{Rect, Renderer};

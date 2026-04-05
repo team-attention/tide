@@ -1,8 +1,74 @@
 // Spec: docs/specs/live-preview.md
 use crate::domain::editor::markdown::{LivePreviewMap, MdElementKind};
+use crate::pane::editor::EditorPane;
+use crate::pane::PaneKind;
+use crate::state::FocusArea;
+use crate::App;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn lines(s: &str) -> Vec<String> {
     s.lines().map(String::from).collect()
+}
+
+static NEXT_TEST_FILE_ID: AtomicUsize = AtomicUsize::new(0);
+
+fn test_app() -> App {
+    let mut app = App::new();
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
+    app.window.window_size = (960, 640);
+    app
+}
+
+fn temp_markdown_path(label: &str) -> PathBuf {
+    let id = NEXT_TEST_FILE_ID.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "tide_live_preview_behavior_{}_{}_{}.md",
+        std::process::id(),
+        id,
+        label
+    ))
+}
+
+fn app_with_markdown_editor(contents: &str) -> (App, u64, PathBuf) {
+    let mut app = test_app();
+    let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let path = temp_markdown_path("selection");
+    std::fs::write(&path, contents).unwrap();
+    let pane = EditorPane::open(id, &path).unwrap();
+    app.panes.insert(id, PaneKind::Editor(pane));
+    app.focus.focused = Some(id);
+    app.focus.focus_area = FocusArea::Stage;
+    (app, id, path)
+}
+
+fn pane_content_rect(pane_rect: crate::tide_core::Rect) -> crate::tide_core::Rect {
+    crate::tide_core::Rect::new(
+        pane_rect.x + crate::theme::PANE_PADDING,
+        pane_rect.y + crate::theme::TAB_BAR_HEIGHT,
+        pane_rect.width - 2.0 * crate::theme::PANE_PADDING,
+        (pane_rect.height - crate::theme::TAB_BAR_HEIGHT - crate::theme::PANE_PADDING).max(1.0),
+    )
+}
+
+fn test_window_proxy() -> crate::tide_platform::WindowProxy {
+    let (tx, _rx) = std::sync::mpsc::channel();
+    crate::tide_platform::WindowProxy::new(tx, std::sync::Arc::new(|| {}))
+}
+
+// --- UC-0: OpenMarkdownInLivePreview ---
+
+#[test]
+fn markdown_file_opens_in_authoring_mode_with_live_preview_enabled() {
+    // UC-0 BR-1/BR-2: Markdown Panes open with LivePreviewMode enabled while staying out of preview-only mode
+    let (app, id, _path) = app_with_markdown_editor("# Title\n\nBody");
+    let pane = match app.panes.get(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    assert!(pane.live_preview);
+    assert!(!pane.preview_mode);
 }
 
 // --- UC-4: LivePreviewMapConstruction ---
@@ -164,4 +230,46 @@ fn heading_markers_visible_and_styled() {
         matches!(heading.kind, MdElementKind::Heading(1)),
         "should be H1"
     );
+}
+
+// --- UC-5: CursorColumnMapping ---
+
+#[test]
+fn mouse_selection_on_hidden_syntax_line_maps_visual_column_to_buffer_column() {
+    // UC-5 BR-4: Mouse selection start reverse-maps visual columns into buffer columns on non-cursor lines
+    let (mut app, id, _path) = app_with_markdown_editor("cursor line\n**bold** tail\n");
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
+    let content_rect = pane_content_rect(pane_rect);
+    let cell = app.window.cached_cell_size;
+    app.visual_pane_rects = vec![(id, pane_rect)];
+
+    {
+        let pane = match app.panes.get_mut(&id) {
+            Some(PaneKind::Editor(pane)) => pane,
+            _ => panic!("expected editor pane"),
+        };
+        pane.handle_action(crate::tide_editor::input::EditorAction::SetCursor { line: 0, col: 0 }, 20);
+        pane.prepare_inline_caches(content_rect, cell, false);
+    }
+
+    let click_x = content_rect.x
+        + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width
+        + 1.0;
+    let click_y = content_rect.y + 1.0 * cell.height + 1.0;
+    app.window.last_cursor_pos = crate::tide_core::Vec2::new(click_x, click_y);
+
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(
+        &mut app,
+        crate::tide_core::MouseButton::Left,
+        &test_window_proxy(),
+    );
+
+    let selection = match app.panes.get(&id) {
+        Some(PaneKind::Editor(pane)) => pane.selection.as_ref().cloned(),
+        _ => None,
+    }
+    .expect("selection should start on the clicked line");
+
+    assert_eq!(selection.anchor, (1, 2));
+    assert_eq!(selection.end, (1, 2));
 }
