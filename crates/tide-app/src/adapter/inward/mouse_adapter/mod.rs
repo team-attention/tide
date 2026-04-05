@@ -521,7 +521,9 @@ pub(crate) fn handle_mouse_up(ctx: &mut impl MousePorts, button: MouseButton) {
         return;
     }
 
-    let drag_state = std::mem::replace(&mut ctx.interaction_mut().pane_drag, PaneDragState::Idle);
+    let interaction = ctx.interaction_mut();
+    let drag_state = std::mem::replace(&mut interaction.pane_drag, PaneDragState::Idle);
+    interaction.drop_preview_start = None;
     match drag_state {
         PaneDragState::Dragging {
             source_pane,

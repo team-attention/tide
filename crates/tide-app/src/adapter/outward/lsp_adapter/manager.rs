@@ -371,7 +371,7 @@ impl Drop for LspManager {
     }
 }
 
-fn parse_completion_response(value: serde_json::Value, uri: &str) -> Option<CompletionResponse> {
+pub(crate) fn parse_completion_response(value: serde_json::Value, uri: &str) -> Option<CompletionResponse> {
     // Response can be CompletionList or Vec<CompletionItem>
     let items = if let Ok(list) = serde_json::from_value::<protocol::CompletionList>(value.clone()) {
         list.items
@@ -382,10 +382,11 @@ fn parse_completion_response(value: serde_json::Value, uri: &str) -> Option<Comp
     };
 
     let items: Vec<CompletionItemData> = items.into_iter().map(|item| {
+        let text_edit_new_text = item.text_edit.as_ref().and_then(extract_text_edit_new_text);
         CompletionItemData {
             label: item.label,
             kind: item.kind,
-            insert_text: item.insert_text,
+            insert_text: text_edit_new_text.or(item.insert_text),
             sort_text: item.sort_text,
             filter_text: item.filter_text,
             preselect: item.preselect.unwrap_or(false),
@@ -402,6 +403,12 @@ fn parse_completion_response(value: serde_json::Value, uri: &str) -> Option<Comp
         uri: uri.to_string(),
         items,
     })
+}
+
+fn extract_text_edit_new_text(text_edit: &serde_json::Value) -> Option<String> {
+    text_edit.get("newText")
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
 }
 
 /// Convert a file path to an LSP URI.
