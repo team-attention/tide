@@ -127,15 +127,15 @@ pub(crate) fn handle_cursor_moved_logical(ctx: &mut impl MousePorts, pos: Vec2, 
     enum DragSnapshot {
         Idle,
         Pending { source: crate::tide_core::PaneId, press_pos: Vec2 },
-        Active { source: crate::tide_core::PaneId, prev_target: Option<crate::state::drag_types::DropDestination>, prev_preview: Option<crate::tide_core::Rect> },
+        Active { source: crate::tide_core::PaneId, prev_target: Option<crate::state::drag_types::DropDestination>, prev_preview: Option<crate::tide_core::Rect>, label: String },
     }
     let snap = match &ctx.interaction().pane_drag {
         PaneDragState::Idle => DragSnapshot::Idle,
         PaneDragState::PendingDrag { source_pane, press_pos } => {
             DragSnapshot::Pending { source: *source_pane, press_pos: *press_pos }
         }
-        PaneDragState::Dragging { source_pane, drop_target, cached_preview_rect } => {
-            DragSnapshot::Active { source: *source_pane, prev_target: drop_target.clone(), prev_preview: *cached_preview_rect }
+        PaneDragState::Dragging { source_pane, drop_target, cached_preview_rect, source_label, .. } => {
+            DragSnapshot::Active { source: *source_pane, prev_target: drop_target.clone(), prev_preview: *cached_preview_rect, label: source_label.clone() }
         }
     };
     match snap {
@@ -145,29 +145,41 @@ pub(crate) fn handle_cursor_moved_logical(ctx: &mut impl MousePorts, pos: Vec2, 
             if (dx * dx + dy * dy).sqrt() >= DRAG_THRESHOLD {
                 let target = ctx.compute_drop_destination(pos, source);
                 let preview = ctx.compute_drop_preview_rect(source, &target);
-                ctx.interaction_mut().pane_drag = PaneDragState::Dragging {
+                let label = ctx.pane_title(source);
+                let interaction = ctx.interaction_mut();
+                interaction.pane_drag = PaneDragState::Dragging {
                     source_pane: source,
                     drop_target: target,
                     cached_preview_rect: preview,
+                    cursor_pos: pos,
+                    source_label: label,
                 };
+                interaction.drop_preview_start = Some(std::time::Instant::now());
                 // Hide browser webviews so drag preview renders on top
                 ctx.sync_browser_webview_frames();
             }
             ctx.request_redraw();
             return;
         }
-        DragSnapshot::Active { source, prev_target, prev_preview } => {
+        DragSnapshot::Active { source, prev_target, prev_preview, label } => {
             let new_target = ctx.compute_drop_destination(pos, source);
-            let preview = if new_target == prev_target {
-                prev_preview
-            } else {
+            let target_changed = new_target != prev_target;
+            let preview = if target_changed {
                 ctx.compute_drop_preview_rect(source, &new_target)
+            } else {
+                prev_preview
             };
-            ctx.interaction_mut().pane_drag = PaneDragState::Dragging {
+            let interaction = ctx.interaction_mut();
+            interaction.pane_drag = PaneDragState::Dragging {
                 source_pane: source,
                 drop_target: new_target,
                 cached_preview_rect: preview,
+                cursor_pos: pos,
+                source_label: label,
             };
+            if target_changed {
+                interaction.drop_preview_start = Some(std::time::Instant::now());
+            }
             ctx.request_redraw();
             return;
         }

@@ -254,12 +254,14 @@ pub(super) fn render_pane_chrome(
         let has_stage_tab_group = stage_tab_groups.contains_key(&id);
         let has_stage_tab_bar = is_zoomed && show_stage_tabs;
 
+        let scroll_off = app.interaction.tab_scroll_offset.get(&id).copied().unwrap_or(0.0);
+
         if is_dock_zoomed {
             // Dock zoomed: show flat tab bar of all dock tabs (like stage stacked)
             if let Some(ref tabs) = dock_zoomed_tabs {
                 let tab_zones = header::render_stage_tab_bar(
                     id, rect, tabs, &app.panes, focused, p, renderer,
-                    &app.gateway.detected_agents, blink_time,
+                    &app.gateway.detected_agents, blink_time, scroll_off,
                 );
                 // Remap StageTab actions to DockTab for dock panes
                 for mut z in tab_zones {
@@ -281,14 +283,14 @@ pub(super) fn render_pane_chrome(
             let tg = dock_tab_groups.get(&id).unwrap();
             let tab_zones = header::render_dock_tab_bar(
                 id, rect, tg, &app.panes, focused, &app.dock.pinned_dock_layout.all_pane_ids(), p, renderer,
-                &app.gateway.detected_agents, blink_time,
+                &app.gateway.detected_agents, blink_time, scroll_off,
             );
             all_hit_zones.extend(tab_zones);
         } else if has_stage_tab_bar {
             // Stage stacked/zoomed: render flat tab bar of ALL Stage panes (takes priority over per-group)
             let tab_zones = header::render_stage_tab_bar(
                 id, rect, &stage_pane_ids, &app.panes, focused, p, renderer,
-                &app.gateway.detected_agents, blink_time,
+                &app.gateway.detected_agents, blink_time, scroll_off,
             );
             all_hit_zones.extend(tab_zones);
         } else if has_stage_tab_group {
@@ -296,7 +298,7 @@ pub(super) fn render_pane_chrome(
             let tg = stage_tab_groups.get(&id).unwrap();
             let tab_zones = header::render_stage_tab_group_bar(
                 id, rect, tg, &app.panes, focused, p, renderer,
-                &app.gateway.detected_agents, blink_time,
+                &app.gateway.detected_agents, blink_time, scroll_off,
             );
             all_hit_zones.extend(tab_zones);
         } else {
