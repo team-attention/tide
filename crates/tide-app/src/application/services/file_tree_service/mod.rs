@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::tide_core::{FileGitStatus, FileTreeSource, TerminalBackend, Vec2};
 
-use super::path_identity::{path_is_same_or_descendant, paths_refer_to_same_file};
+use super::path_identity::normalize_path_for_identity;
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::ActionPort;
@@ -16,6 +16,48 @@ use crate::PaneLifecyclePort;
 use crate::state::background::{GitPollCwdResult, GitPollResults};
 
 impl App {
+    pub(crate) fn sync_file_tree_path_identity_cache(&mut self) {
+        let mut normalized_entry_paths = HashMap::new();
+        if let Some(tree) = self.ft.tree.as_ref() {
+            for entry in tree.visible_entries() {
+                normalized_entry_paths.insert(
+                    entry.entry.path.clone(),
+                    normalize_path_for_identity(&entry.entry.path),
+                );
+            }
+        }
+        self.ft.normalized_entry_paths = normalized_entry_paths;
+    }
+
+    pub(crate) fn sync_file_tree_modified_editor_cache(&mut self) {
+        let mut modified_editor_paths = HashSet::new();
+        let mut modified_editor_dirs = HashSet::new();
+
+        for pane in self.panes.values() {
+            let PaneKind::Editor(editor_pane) = pane else {
+                continue;
+            };
+            if !editor_pane.editor.is_modified() {
+                continue;
+            }
+            let Some(file_path) = editor_pane.editor.file_path() else {
+                continue;
+            };
+
+            let normalized_file_path = normalize_path_for_identity(file_path);
+            modified_editor_paths.insert(normalized_file_path.clone());
+
+            let mut ancestor = normalized_file_path.parent();
+            while let Some(dir) = ancestor {
+                modified_editor_dirs.insert(dir.to_path_buf());
+                ancestor = dir.parent();
+            }
+        }
+
+        self.ft.modified_editor_paths = modified_editor_paths;
+        self.ft.modified_editor_dirs = modified_editor_dirs;
+    }
+
     pub(crate) fn effective_file_tree_git_status(
         &self,
         entry_path: &Path,
@@ -35,26 +77,18 @@ impl App {
         entry_path: &Path,
         is_dir: bool,
     ) -> Option<FileGitStatus> {
-        self.panes
-            .values()
-            .filter_map(|pane| match pane {
-                PaneKind::Editor(editor_pane) => Some(editor_pane),
-                _ => None,
-            })
-            .find_map(|editor_pane| {
-                let file_path = editor_pane.editor.file_path()?;
-                if !editor_pane.editor.is_modified() {
-                    return None;
-                }
-
-                let matches = if is_dir {
-                    path_is_same_or_descendant(file_path, entry_path)
-                } else {
-                    paths_refer_to_same_file(file_path, entry_path)
-                };
-
-                matches.then_some(FileGitStatus::Modified)
-            })
+        let normalized_entry_path = self.ft.normalized_entry_paths.get(entry_path)?;
+        if is_dir {
+            self.ft
+                .modified_editor_dirs
+                .contains(normalized_entry_path)
+                .then_some(FileGitStatus::Modified)
+        } else {
+            self.ft
+                .modified_editor_paths
+                .contains(normalized_entry_path)
+                .then_some(FileGitStatus::Modified)
+        }
     }
 
     pub(crate) fn update_file_tree_cwd(&mut self) {
@@ -80,6 +114,7 @@ impl App {
                     if let Some(tree) = self.ft.tree.as_mut() {
                         tree.set_root(tree_root);
                     }
+                    self.sync_file_tree_path_identity_cache();
                     self.ft.scroll = 0.0;
                     self.ft.scroll_target = 0.0;
                     self.cache.invalidate_chrome();
@@ -362,6 +397,7 @@ impl App {
                         if let Some(tree) = self.ft.tree.as_mut() {
                             tree.set_root(root);
                         }
+                        self.sync_file_tree_path_identity_cache();
                         self.ft.scroll = 0.0;
                         self.ft.scroll_target = 0.0;
                         changed = true;
@@ -506,6 +542,7 @@ impl App {
                 if let Some(tree) = self.ft.tree.as_mut() {
                     tree.refresh();
                 }
+                self.sync_file_tree_path_identity_cache();
                 self.trigger_git_poll();
                 self.cache.invalidate_chrome();
             }
@@ -571,6 +608,7 @@ impl App {
         if let Some(tree) = self.ft.tree.as_mut() {
             tree.refresh();
         }
+        self.sync_file_tree_path_identity_cache();
         self.trigger_git_poll();
         self.cache.invalidate_chrome();
     }
@@ -632,6 +670,7 @@ impl App {
                 let entry = entries[index].clone();
                 if entry.entry.is_dir {
                     tree.toggle(&entry.entry.path);
+                    self.sync_file_tree_path_identity_cache();
                     self.cache.invalidate_chrome();
                     None
                 } else {

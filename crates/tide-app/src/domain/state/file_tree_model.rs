@@ -1,8 +1,8 @@
 // FileTreeModel — file tree state: navigation, scroll, git status.
 
-use std::collections::HashMap;
-use std::path::PathBuf;
 use crate::tide_core::Rect;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
 pub(crate) struct FileTreeModel {
     pub tree: Option<crate::tide_tree::FsTree>,
@@ -15,6 +15,9 @@ pub(crate) struct FileTreeModel {
     pub cursor: usize,
     pub git_status: HashMap<PathBuf, crate::tide_core::FileGitStatus>,
     pub dir_git_status: HashMap<PathBuf, crate::tide_core::FileGitStatus>,
+    pub normalized_entry_paths: HashMap<PathBuf, PathBuf>,
+    pub modified_editor_paths: HashSet<PathBuf>,
+    pub modified_editor_dirs: HashSet<PathBuf>,
     pub git_root: Option<PathBuf>,
 }
 
@@ -31,6 +34,9 @@ impl FileTreeModel {
             cursor: 0,
             git_status: HashMap::new(),
             dir_git_status: HashMap::new(),
+            normalized_entry_paths: HashMap::new(),
+            modified_editor_paths: HashSet::new(),
+            modified_editor_dirs: HashSet::new(),
             git_root: None,
         }
     }

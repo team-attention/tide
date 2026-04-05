@@ -17,6 +17,7 @@ pub(crate) trait AppCorePort {
     fn invalidate_pane(&mut self, id: PaneId);
     fn invalidate_all_panes(&mut self);
     fn request_redraw(&mut self);
+    fn sync_file_tree_modified_editor_cache(&mut self);
 
     // ── State queries ──
     fn has_renderer(&self) -> bool;
@@ -31,13 +32,35 @@ pub(crate) trait AppCorePort {
 
     // ── Outward port delegates ──
     fn read_file_to_string(&self, path: &std::path::Path) -> Result<String, String>;
-    fn git_list_branches(&self, cwd: &std::path::Path) -> Vec<crate::tide_terminal::git::BranchInfo>;
-    fn git_list_worktrees(&self, cwd: &std::path::Path) -> Vec<crate::tide_terminal::git::WorktreeInfo>;
+    fn git_list_branches(
+        &self,
+        cwd: &std::path::Path,
+    ) -> Vec<crate::tide_terminal::git::BranchInfo>;
+    fn git_list_worktrees(
+        &self,
+        cwd: &std::path::Path,
+    ) -> Vec<crate::tide_terminal::git::WorktreeInfo>;
     fn git_repo_root(&self, cwd: &std::path::Path) -> Option<std::path::PathBuf>;
     fn git_branch_exists(&self, cwd: &std::path::Path, name: &str) -> bool;
-    fn git_add_worktree(&self, cwd: &std::path::Path, path: &std::path::Path, branch: &str, new_branch: bool) -> Result<(), String>;
-    fn git_remove_worktree(&self, cwd: &std::path::Path, path: &std::path::Path, force: bool) -> Result<(), String>;
-    fn git_delete_branch(&self, cwd: &std::path::Path, name: &str, force: bool) -> Result<(), String>;
+    fn git_add_worktree(
+        &self,
+        cwd: &std::path::Path,
+        path: &std::path::Path,
+        branch: &str,
+        new_branch: bool,
+    ) -> Result<(), String>;
+    fn git_remove_worktree(
+        &self,
+        cwd: &std::path::Path,
+        path: &std::path::Path,
+        force: bool,
+    ) -> Result<(), String>;
+    fn git_delete_branch(
+        &self,
+        cwd: &std::path::Path,
+        name: &str,
+        force: bool,
+    ) -> Result<(), String>;
     fn persistence_load_settings(&self) -> crate::state::settings::TideSettings;
 
     // ── Geometry queries ──
