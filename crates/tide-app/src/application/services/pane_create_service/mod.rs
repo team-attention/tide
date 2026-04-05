@@ -733,39 +733,43 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
             return;
         }
 
-        // Branch cleanup check: if this is a terminal on a non-main branch,
-        // prompt before closing (unless cleanup is already active for another pane).
+        // Worktree cleanup check: if this is a terminal in a git worktree on a
+        // non-main branch, prompt before closing so the user can delete the
+        // worktree + branch. Non-worktree branches close without prompting.
         if self.modal.branch_cleanup.is_none() {
             if let Some(PaneKind::Terminal(pane)) = self.panes.get(&pane_id) {
                 if let (Some(ref gi), Some(ref cwd)) = (&pane.context.git_info, &pane.context.cwd) {
                     let branch = &gi.branch;
                     if branch != "main" && branch != "master" {
-                        // Check no other terminal pane is on the same branch
-                        let other_on_same = self.panes.iter().any(|(&id, pk)| {
-                            if id == pane_id { return false; }
-                            if let PaneKind::Terminal(tp) = pk {
-                                tp.context.git_info.as_ref()
-                                    .map(|g| g.branch == *branch)
-                                    .unwrap_or(false)
-                            } else {
-                                false
-                            }
-                        });
-                        if !other_on_same {
-                            // Detect if cwd is in a worktree
-                            let worktrees = self.ports.git.list_worktrees(cwd);
-                            let wt_path = worktrees.iter()
-                                .find(|wt| wt.is_current && !wt.is_main)
-                                .map(|wt| wt.path.clone());
+                        // Detect if cwd is in a worktree
+                        let worktrees = self.ports.git.list_worktrees(cwd);
+                        let wt_path = worktrees.iter()
+                            .find(|wt| wt.is_current && !wt.is_main)
+                            .map(|wt| wt.path.clone());
 
-                            self.modal.branch_cleanup = Some(crate::BranchCleanupState {
-                                pane_id,
-                                branch: branch.clone(),
-                                worktree_path: wt_path,
-                                cwd: cwd.clone(),
+                        // Only prompt when in a worktree
+                        if let Some(wt_path) = wt_path {
+                            // Check no other terminal pane is on the same branch
+                            let other_on_same = self.panes.iter().any(|(&id, pk)| {
+                                if id == pane_id { return false; }
+                                if let PaneKind::Terminal(tp) = pk {
+                                    tp.context.git_info.as_ref()
+                                        .map(|g| g.branch == *branch)
+                                        .unwrap_or(false)
+                                } else {
+                                    false
+                                }
                             });
-                            self.cache.invalidate_chrome();
-                            return;
+                            if !other_on_same {
+                                self.modal.branch_cleanup = Some(crate::BranchCleanupState {
+                                    pane_id,
+                                    branch: branch.clone(),
+                                    worktree_path: wt_path,
+                                    cwd: cwd.clone(),
+                                });
+                                self.cache.invalidate_chrome();
+                                return;
+                            }
                         }
                     }
                 }
@@ -837,22 +841,16 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         };
         // Resolve the main worktree path BEFORE closing anything.
         // bc.cwd may be inside a worktree that will be removed.
-        let main_cwd = if bc.worktree_path.is_some() {
-            let worktrees = self.ports.git.list_worktrees(&bc.cwd);
-            worktrees.iter()
-                .find(|wt| wt.is_main)
-                .map(|wt| wt.path.clone())
-                .unwrap_or_else(|| bc.cwd.clone())
-        } else {
-            bc.cwd.clone()
-        };
+        let worktrees = self.ports.git.list_worktrees(&bc.cwd);
+        let main_cwd = worktrees.iter()
+            .find(|wt| wt.is_main)
+            .map(|wt| wt.path.clone())
+            .unwrap_or_else(|| bc.cwd.clone());
         // Close the pane first so the terminal process releases the directory
         self.close_pane_final(bc.pane_id);
-        // Remove worktree if applicable (directory is now free)
-        if let Some(ref wt_path) = bc.worktree_path {
-            if let Err(e) = self.ports.git.remove_worktree(&main_cwd, wt_path, true) {
-                log::error!("Failed to remove worktree: {}", e);
-            }
+        // Remove worktree (directory is now free)
+        if let Err(e) = self.ports.git.remove_worktree(&main_cwd, &bc.worktree_path, true) {
+            log::error!("Failed to remove worktree: {}", e);
         }
         // Delete the branch from the main repo
         if let Err(e) = self.ports.git.delete_branch(&main_cwd, &bc.branch, true) {

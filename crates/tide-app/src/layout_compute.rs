@@ -105,31 +105,6 @@ impl crate::application::ports::inward::LayoutPort for App {
         false
     }
 
-    /// Hit-test the git switcher popup tab bar. Returns the mode for the clicked tab.
-    fn git_switcher_tab_at(&self, pos: crate::tide_core::Vec2) -> Option<crate::GitSwitcherMode> {
-        let gs = self.modal.git_switcher.as_ref()?;
-        let cell_size = self.cell_size();
-        let cell_height = cell_size.height;
-        let logical = self.logical_size();
-        let geo = gs.geometry(cell_height, logical.width, logical.height);
-
-        // Tab bar is between input and list area
-        let tab_y = geo.popup_y + 2.0 + geo.input_h;
-        let tab_h = geo.tab_h;
-        if pos.y < tab_y || pos.y > tab_y + tab_h {
-            return None;
-        }
-        if pos.x < geo.popup_x || pos.x > geo.popup_x + geo.popup_w {
-            return None;
-        }
-        let half_w = geo.popup_w / 2.0;
-        if pos.x < geo.popup_x + half_w {
-            Some(crate::GitSwitcherMode::Branches)
-        } else {
-            Some(crate::GitSwitcherMode::Worktrees)
-        }
-    }
-
     /// Hit-test the git switcher popup for button clicks (both Branches and Worktrees tabs).
     fn git_switcher_button_at(&self, pos: crate::tide_core::Vec2) -> Option<crate::SwitcherButton> {
         let gs = self.modal.git_switcher.as_ref()?;
@@ -167,37 +142,16 @@ impl crate::application::ports::inward::LayoutPort for App {
         let item_pad = 12.0_f32;
         let btn_gap = 8.0_f32;
 
-        // Create row: buttons vary by mode (no create when busy)
+        // Create row: single "New Pane" button (no create when busy)
         if gs.is_create_row(fi) {
             if busy { return None; }
             let btn_right = geo.popup_x + geo.popup_w - item_pad;
 
-            if gs.mode == crate::GitSwitcherMode::Worktrees {
-                // Worktrees: single "New Pane" button
-                let new_pane_label = "New Pane";
-                let new_pane_w = new_pane_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
-                let new_pane_x = btn_right - new_pane_w;
-                if pos.x >= new_pane_x && pos.x <= new_pane_x + new_pane_w {
-                    return Some(crate::SwitcherButton::NewPane(fi));
-                }
-            } else {
-                // Branches: "New Pane" + "Switch"
-                let mut cur_right = btn_right;
-
-                let new_pane_label = "New Pane";
-                let new_pane_w = new_pane_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
-                let new_pane_x = cur_right - new_pane_w;
-                if pos.x >= new_pane_x && pos.x <= new_pane_x + new_pane_w {
-                    return Some(crate::SwitcherButton::NewPane(fi));
-                }
-                cur_right = new_pane_x - btn_gap;
-
-                let switch_label = "Switch";
-                let switch_w = switch_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
-                let switch_x = cur_right - switch_w;
-                if pos.x >= switch_x && pos.x <= switch_x + switch_w {
-                    return Some(crate::SwitcherButton::Switch(fi));
-                }
+            let new_pane_label = "New Pane";
+            let new_pane_w = new_pane_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
+            let new_pane_x = btn_right - new_pane_w;
+            if pos.x >= new_pane_x && pos.x <= new_pane_x + new_pane_w {
+                return Some(crate::SwitcherButton::NewPane(fi));
             }
             return None;
         }
@@ -210,68 +164,28 @@ impl crate::application::ports::inward::LayoutPort for App {
             delete_btn_w_normal
         };
 
-        match gs.mode {
-            crate::GitSwitcherMode::Branches => {
-                let entry_idx = gs.filtered_branches[fi];
-                let branch = &gs.branches[entry_idx];
-                if branch.is_current {
-                    return None;
-                }
+        let entry_idx = gs.filtered_worktrees[fi];
+        let wt = &gs.worktrees[entry_idx];
+        if wt.is_current {
+            return None;
+        }
 
-                let mut btn_right = geo.popup_x + geo.popup_w - item_pad;
+        let mut btn_right = geo.popup_x + geo.popup_w - item_pad;
 
-                // [New Pane] button
-                let new_pane_label = "New Pane";
-                let new_pane_w = new_pane_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
-                let new_pane_x = btn_right - new_pane_w;
-                if pos.x >= new_pane_x && pos.x <= new_pane_x + new_pane_w {
-                    return Some(crate::SwitcherButton::NewPane(fi));
-                }
+        // "New Pane" button (primary action)
+        let new_pane_label = "New Pane";
+        let new_pane_w = new_pane_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
+        let new_pane_x = btn_right - new_pane_w;
+        if pos.x >= new_pane_x && pos.x <= new_pane_x + new_pane_w {
+            return Some(crate::SwitcherButton::NewPane(fi));
+        }
 
-                if !busy {
-                    btn_right = new_pane_x - btn_gap;
-
-                    // [Switch] button -- hidden when busy
-                    let switch_label = "Switch";
-                    let switch_w = switch_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
-                    let switch_x = btn_right - switch_w;
-                    if pos.x >= switch_x && pos.x <= switch_x + switch_w {
-                        return Some(crate::SwitcherButton::Switch(fi));
-                    }
-                    btn_right = switch_x - btn_gap;
-
-                    // [Delete] button -- outlined red (or "Delete?" when confirming)
-                    let del_x = btn_right - delete_btn_w;
-                    if pos.x >= del_x && pos.x <= del_x + delete_btn_w {
-                        return Some(crate::SwitcherButton::Delete(fi));
-                    }
-                }
-            }
-            crate::GitSwitcherMode::Worktrees => {
-                let entry_idx = gs.filtered_worktrees[fi];
-                let wt = &gs.worktrees[entry_idx];
-                if wt.is_current {
-                    return None;
-                }
-
-                let mut btn_right = geo.popup_x + geo.popup_w - item_pad;
-
-                // Worktrees: single "New Pane" button (no Switch)
-                let new_pane_label = "New Pane";
-                let new_pane_w = new_pane_label.len() as f32 * cell_size.width + btn_pad_h * 2.0;
-                let new_pane_x = btn_right - new_pane_w;
-                if pos.x >= new_pane_x && pos.x <= new_pane_x + new_pane_w {
-                    return Some(crate::SwitcherButton::NewPane(fi));
-                }
-
-                // [Delete] button -- hidden when busy or main worktree
-                if !busy && !wt.is_main {
-                    btn_right = new_pane_x - btn_gap;
-                    let del_x = btn_right - delete_btn_w;
-                    if pos.x >= del_x && pos.x <= del_x + delete_btn_w {
-                        return Some(crate::SwitcherButton::Delete(fi));
-                    }
-                }
+        // [Delete] button -- hidden when busy or main worktree
+        if !busy && !wt.is_main {
+            btn_right = new_pane_x - btn_gap;
+            let del_x = btn_right - delete_btn_w;
+            if pos.x >= del_x && pos.x <= del_x + delete_btn_w {
+                return Some(crate::SwitcherButton::Delete(fi));
             }
         }
 

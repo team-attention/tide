@@ -232,13 +232,7 @@ impl FileFinderState {
 // Git switcher popup state (integrated branch + worktree)
 // ──────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum GitSwitcherMode {
-    Branches,
-    Worktrees,
-}
-
-/// Button types available in the git switcher popup (both Branches and Worktrees tabs).
+/// Button types available in the git switcher popup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SwitcherButton {
     Switch(usize),     // filtered index
@@ -253,7 +247,6 @@ pub(crate) struct GitSwitcherGeometry {
     pub popup_w: f32,
     pub popup_h: f32,
     pub input_h: f32,
-    pub tab_h: f32,
     pub line_height: f32,
     pub list_top: f32,
     pub max_visible: usize,
@@ -266,16 +259,11 @@ pub(crate) const GIT_SWITCHER_MAX_VISIBLE: usize = 8;
 pub(crate) struct GitSwitcherState {
     pub pane_id: PaneId,
     pub input: InputLine,
-    pub mode: GitSwitcherMode,
-    pub branches: Vec<crate::tide_terminal::git::BranchInfo>,
     pub worktrees: Vec<crate::tide_terminal::git::WorktreeInfo>,
-    pub filtered_branches: Vec<usize>,
     pub filtered_worktrees: Vec<usize>,
     pub selected: usize,
     pub scroll_offset: usize,
     pub anchor_rect: Rect,
-    /// Branch names that have a corresponding worktree
-    pub worktree_branch_names: std::collections::HashSet<String>,
     /// True when the owning terminal has a running process (hides Switch/Delete buttons)
     pub shell_busy: bool,
     /// When Some(fi), the row at filtered index `fi` shows a "Confirm delete?" prompt
@@ -285,28 +273,18 @@ pub(crate) struct GitSwitcherState {
 impl GitSwitcherState {
     pub fn new(
         pane_id: PaneId,
-        mode: GitSwitcherMode,
-        branches: Vec<crate::tide_terminal::git::BranchInfo>,
         worktrees: Vec<crate::tide_terminal::git::WorktreeInfo>,
         anchor_rect: Rect,
     ) -> Self {
-        let filtered_branches: Vec<usize> = (0..branches.len()).collect();
         let filtered_worktrees: Vec<usize> = (0..worktrees.len()).collect();
-        let worktree_branch_names: std::collections::HashSet<String> = worktrees.iter()
-            .filter_map(|wt| wt.branch.clone())
-            .collect();
         Self {
             pane_id,
             input: InputLine::new(),
-            mode,
-            branches,
             worktrees,
-            filtered_branches,
             filtered_worktrees,
             selected: 0,
             scroll_offset: 0,
             anchor_rect,
-            worktree_branch_names,
             shell_busy: false,
             delete_confirm: None,
         }
@@ -316,17 +294,14 @@ impl GitSwitcherState {
     pub fn geometry(&self, cell_height: f32, logical_width: f32, logical_height: f32) -> GitSwitcherGeometry {
         // Git switcher uses 36px rows to match Pen design (spacious branch items)
         let line_height = 36.0_f32.max(cell_height + POPUP_LINE_EXTRA);
-        let tab_h = 32.0_f32; // per Pen design
         let input_h = 36.0_f32; // per Pen design
         let popup_w = GIT_SWITCHER_POPUP_W;
         let popup_x = self.anchor_rect.x.min(logical_width - popup_w - 4.0).max(0.0);
         let current_len = self.current_filtered_len();
         let max_visible = GIT_SWITCHER_MAX_VISIBLE.min(current_len);
         let new_wt_btn_h = 0.0;
-        // input_y = popup_y + 2.0, tab_y = input_y + input_h, tab_sep_y = tab_y + tab_h
-        // list_top = tab_sep_y + 4.0 (4px top padding on list per Pen)
         let hint_bar_h = 28.0_f32;
-        let content_h = 2.0 + input_h + tab_h + 4.0 + max_visible as f32 * line_height + new_wt_btn_h + 4.0 + hint_bar_h;
+        let content_h = 2.0 + input_h + 4.0 + max_visible as f32 * line_height + new_wt_btn_h + 4.0 + hint_bar_h;
         // Vertical clamping: prefer below anchor, flip above if not enough space
         let below_y = self.anchor_rect.y + self.anchor_rect.height + 4.0;
         let popup_y = if below_y + content_h > logical_height {
@@ -337,7 +312,7 @@ impl GitSwitcherState {
             below_y
         };
         let popup_h = content_h;
-        let list_top = popup_y + 2.0 + input_h + tab_h + 4.0;
+        let list_top = popup_y + 2.0 + input_h + 4.0;
 
         GitSwitcherGeometry {
             popup_x,
@@ -345,7 +320,6 @@ impl GitSwitcherState {
             popup_w,
             popup_h,
             input_h,
-            tab_h,
             line_height,
             list_top,
             max_visible,
@@ -399,27 +373,9 @@ impl GitSwitcherState {
         }
     }
 
-    pub fn toggle_mode(&mut self) {
-        let new_mode = match self.mode {
-            GitSwitcherMode::Branches => GitSwitcherMode::Worktrees,
-            GitSwitcherMode::Worktrees => GitSwitcherMode::Branches,
-        };
-        self.set_mode(new_mode);
-    }
-
-    pub fn set_mode(&mut self, mode: GitSwitcherMode) {
-        self.mode = mode;
-        self.selected = 0;
-        self.scroll_offset = 0;
-        self.filter();
-    }
-
     /// Number of filtered items excluding the create row.
     pub fn base_filtered_len(&self) -> usize {
-        match self.mode {
-            GitSwitcherMode::Branches => self.filtered_branches.len(),
-            GitSwitcherMode::Worktrees => self.filtered_worktrees.len(),
-        }
+        self.filtered_worktrees.len()
     }
 
     /// Whether a "Create" row should appear (query non-empty and no exact match).
@@ -429,20 +385,11 @@ impl GitSwitcherState {
             return false;
         }
         let q_lower = q.to_lowercase();
-        match self.mode {
-            GitSwitcherMode::Branches => {
-                !self.filtered_branches.iter().any(|&i| {
-                    self.branches[i].name.to_lowercase() == q_lower
-                })
-            }
-            GitSwitcherMode::Worktrees => {
-                !self.filtered_worktrees.iter().any(|&i| {
-                    self.worktrees[i].branch.as_ref()
-                        .map(|b| b.to_lowercase() == q_lower)
-                        .unwrap_or(false)
-                })
-            }
-        }
+        !self.filtered_worktrees.iter().any(|&i| {
+            self.worktrees[i].branch.as_ref()
+                .map(|b| b.to_lowercase() == q_lower)
+                .unwrap_or(false)
+        })
     }
 
     /// Whether `fi` is the create row index.
@@ -456,15 +403,10 @@ impl GitSwitcherState {
 
 
     fn filter(&mut self) {
-        let query_lower = self.input.text.to_lowercase();
         if self.input.is_empty() {
-            self.filtered_branches = (0..self.branches.len()).collect();
             self.filtered_worktrees = (0..self.worktrees.len()).collect();
         } else {
-            self.filtered_branches = self.branches.iter().enumerate()
-                .filter(|(_, b)| b.name.to_lowercase().contains(&query_lower))
-                .map(|(i, _)| i)
-                .collect();
+            let query_lower = self.input.text.to_lowercase();
             self.filtered_worktrees = self.worktrees.iter().enumerate()
                 .filter(|(_, wt)| {
                     let branch_match = wt.branch.as_ref()
@@ -613,13 +555,13 @@ impl ConfigPageState {
 }
 
 // ──────────────────────────────────────────────
-// Branch cleanup state (confirmation when closing terminal on feature branch)
+// Branch cleanup state (confirmation when closing terminal in a worktree)
 // ──────────────────────────────────────────────
 
 pub(crate) struct BranchCleanupState {
     pub pane_id: PaneId,
     pub branch: String,
-    pub worktree_path: Option<PathBuf>,  // Some if in a worktree
+    pub worktree_path: PathBuf,
     pub cwd: PathBuf,
 }
 
