@@ -104,18 +104,6 @@ pub(crate) fn handle_mouse_down(ctx: &mut impl MousePorts, button: MouseButton, 
         }
 
         if ctx.modal().git_switcher.is_some() {
-            // Tab click: switch between Branches / Worktrees
-            if let Some(mode) = ctx.git_switcher_tab_at(ctx.last_cursor_pos()) {
-                let current_mode = ctx.modal().git_switcher.as_ref().map(|gs| gs.mode);
-                if current_mode != Some(mode) {
-                    if let Some(ref mut gs) = ctx.modal_mut().git_switcher {
-                        gs.set_mode(mode);
-                    }
-                    ctx.invalidate_chrome();
-                }
-                ctx.request_redraw();
-                return;
-            }
             if let Some(btn) = ctx.git_switcher_button_at(ctx.last_cursor_pos()) {
                 crate::adapter::inward::click_adapter::header::handle_git_switcher_button(ctx, btn);
                 ctx.request_redraw();

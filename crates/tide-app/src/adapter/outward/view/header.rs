@@ -324,8 +324,8 @@ pub fn render_pane_header_inner(
 
     // Position close icon relative to compact tab width
     let close_hit_x = rect.x + compact_tab_w - TAB_H_PAD - close_hit_size;
-    let close_icon_x = close_hit_x + (close_hit_size - close_icon_w) / 2.0;
-    let close_icon_y = rect.y + (TAB_BAR_HEIGHT - close_icon_w) / 2.0;
+    let _close_icon_x = close_hit_x + (close_hit_size - close_icon_w) / 2.0;
+    let _close_icon_y = rect.y + (TAB_BAR_HEIGHT - close_icon_w) / 2.0;
 
     // Title: fill space between cx and close
     let title_max_w = (close_hit_x - badge_gap - total_badge_w - cx).max(20.0);
@@ -557,8 +557,8 @@ fn render_tab_bar_impl(
 
         // Close icon at right: [close 16x16] [pad 6]
         let tab_close_hit_x = cx + tw - TAB_H_PAD - close_hit_size;
-        let tab_close_icon_x = tab_close_hit_x + (close_hit_size - close_icon_width) / 2.0;
-        let tab_close_icon_y = tab_y + (tab_h - close_icon_width) / 2.0;
+        let _tab_close_icon_x = tab_close_hit_x + (close_hit_size - close_icon_width) / 2.0;
+        let _tab_close_icon_y = tab_y + (tab_h - close_icon_width) / 2.0;
 
         // Compute badges for active tab
         let mut active_badges: Vec<EditorBadge> = Vec::new();
