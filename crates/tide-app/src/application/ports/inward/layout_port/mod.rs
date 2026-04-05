@@ -12,7 +12,6 @@ pub(crate) trait LayoutPort {
     fn file_finder_item_at(&self, pos: Vec2) -> Option<usize>;
     fn git_switcher_item_at(&self, pos: Vec2) -> Option<usize>;
     fn git_switcher_contains(&self, pos: Vec2) -> bool;
-    fn git_switcher_tab_at(&self, pos: Vec2) -> Option<crate::GitSwitcherMode>;
     fn git_switcher_button_at(&self, pos: Vec2) -> Option<crate::SwitcherButton>;
     fn file_finder_contains(&self, pos: Vec2) -> bool;
     fn save_as_contains(&self, pos: Vec2) -> bool;

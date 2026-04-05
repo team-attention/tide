@@ -42,33 +42,19 @@ pub(super) fn handle_git_switcher_key(
                 ctx.modal_mut().git_switcher = None;
             }
         }
-        Key::Tab => {
-            if let Some(ref mut gs) = ctx.modal_mut().git_switcher {
-                gs.delete_confirm = None;
-                gs.toggle_mode();
-            }
-            ctx.invalidate_chrome();
-        }
         Key::Enter => {
-            let info = ctx
+            let selected = ctx
                 .modal()
                 .git_switcher
                 .as_ref()
-                .map(|gs| (gs.selected, gs.mode));
-            if let Some((selected, mode)) = info {
+                .map(|gs| gs.selected);
+            if let Some(selected) = selected {
                 let btn = if modifiers.meta {
-                    // Cmd+Enter → always New Pane
+                    // Cmd+Enter → split into new pane
                     crate::SwitcherButton::NewPane(selected)
                 } else {
-                    match mode {
-                        crate::GitSwitcherMode::Branches => {
-                            crate::SwitcherButton::Switch(selected)
-                        }
-                        // Worktrees: Enter triggers NewPane (no Switch action)
-                        crate::GitSwitcherMode::Worktrees => {
-                            crate::SwitcherButton::NewPane(selected)
-                        }
-                    }
+                    // Enter → cd into worktree in current terminal
+                    crate::SwitcherButton::Switch(selected)
                 };
                 crate::adapter::inward::click_adapter::header::handle_git_switcher_button(
                     ctx, btn,

@@ -127,11 +127,7 @@ fn render_notification_bars(
                 renderer.draw_top_rect(bar_rect, p.conflict_bar_bg);
                 let text_y = bar_rect.y + (CONFLICT_BAR_HEIGHT - cell_size.height) / 2.0;
                 let ts = text_style(p.conflict_bar_text);
-                let msg = if bc.worktree_path.is_some() {
-                    format!("Delete worktree + branch '{}'?", bc.branch)
-                } else {
-                    format!("Delete branch '{}'?", bc.branch)
-                };
+                let msg = format!("Delete worktree + branch '{}'?", bc.branch);
                 renderer.draw_top_text(&msg, Vec2::new(bar_rect.x + 8.0, text_y), ts, bar_rect);
 
                 let btn_style = bold_style(p.conflict_bar_btn_text);
