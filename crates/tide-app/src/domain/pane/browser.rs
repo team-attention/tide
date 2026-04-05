@@ -262,6 +262,29 @@ impl BrowserPane {
         }
     }
 
+    /// Browser URL state to copy for Browser Pane chrome or Cmd+C behavior.
+    pub fn url_state_for_copy(&self) -> Option<String> {
+        if self.url_input_focused {
+            self.url_selected_text()
+                .or_else(|| Some(self.url_input.clone()).filter(|s| !s.is_empty()))
+                .or_else(|| Some(self.url.clone()).filter(|s| !s.is_empty()))
+        } else {
+            Some(self.url.clone()).filter(|s| !s.is_empty())
+                .or_else(|| Some(self.url_input.clone()).filter(|s| !s.is_empty()))
+        }
+    }
+
+    /// Browser URL state to hand off to the system browser.
+    pub fn url_state_for_external_open(&self) -> Option<String> {
+        let input = Some(self.url_input.clone()).filter(|s| !s.is_empty());
+        let committed = Some(self.url.clone()).filter(|s| !s.is_empty());
+        if self.url_input_focused {
+            input.or(committed)
+        } else {
+            committed.or(input)
+        }
+    }
+
     /// Poll the webview for state changes (URL, loading, back/forward).
     /// Returns true if any state changed (caller should invalidate chrome).
     pub fn sync_webview_state(&mut self) -> bool {

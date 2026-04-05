@@ -86,7 +86,7 @@ Browser Pane input behavior must become state-driven and explicit:
   - BR-7: A navigated Browser Pane defaults clicks in Browser Pane content to the native `WKWebView`
   - BR-8: A navigated Browser Pane defaults typing to Browser Pane content when the URL bar and search bar are both inactive
   - BR-9: `Cmd+L` explicitly focuses the Browser URL bar in a navigated Browser Pane
-  - BR-10: Clicking the Browser URL bar explicitly switches the Browser Pane back to URL-bar editing from a navigated state
+  - BR-10: Clicking the Browser URL bar explicitly switches the Browser Pane back to URL-bar editing from a navigated state and positions the cursor relative to the rendered Browser URL text
 
 ### UC-3: PreserveBrowserUrlBarEditing
 
@@ -118,8 +118,8 @@ Browser Pane input behavior must become state-driven and explicit:
 - **Business Rules**:
   - BR-15: Browser Pane chrome renders a `Copy URL` action next to the Browser URL bar
   - BR-16: Browser Pane chrome renders an `Open externally` action next to the Browser URL bar
-  - BR-17: `Copy URL` copies the current Browser Pane URL
-  - BR-18: `Open externally` calls `ProcessPort::open_url()` with the current Browser Pane URL
+  - BR-17: `Copy URL` copies the current Browser Pane URL state, preferring selected Browser URL-bar text or the current Browser URL-bar input while editing
+  - BR-18: `Open externally` calls `ProcessPort::open_url()` with the current Browser Pane URL state, preferring the current Browser URL-bar input while editing
   - BR-19: External-browser handoff is manual-only; Tide does not auto-open likely auth flows in this pass
 
 ### UC-5: PreserveBrowserPaneLoadingFeedback
@@ -159,6 +159,7 @@ Browser Pane input behavior must become state-driven and explicit:
 | UC-2: RouteFirstActionInNavigatedOrSearchActiveBrowserPane | BR-8 | `browser_pane_ux` | `typing_in_navigated_browser_pane_without_url_focus_is_consumed_by_content` |
 | UC-2: RouteFirstActionInNavigatedOrSearchActiveBrowserPane | BR-9 | `browser_pane_ux` | `cmd_l_focuses_the_browser_url_bar_after_navigation` |
 | UC-2: RouteFirstActionInNavigatedOrSearchActiveBrowserPane | BR-10 | `browser_pane_ux` | `clicking_browser_url_bar_restarts_url_editing_after_navigation` |
+| UC-2: RouteFirstActionInNavigatedOrSearchActiveBrowserPane | BR-10 | `browser_pane_ux` | `clicking_browser_url_bar_positions_cursor_after_browser_actions` |
 | UC-3: PreserveBrowserUrlBarEditing | BR-11 | `browser_pane_ux` | `incidental_browser_content_click_does_not_cancel_url_bar_editing` |
 | UC-3: PreserveBrowserUrlBarEditing | BR-12 | `browser_pane_ux` | `confirming_browser_navigation_exits_url_bar_editing` |
 | UC-3: PreserveBrowserUrlBarEditing | BR-13 | `browser_pane_ux` | `cancelling_browser_url_bar_editing_restores_current_url` |
@@ -166,7 +167,9 @@ Browser Pane input behavior must become state-driven and explicit:
 | UC-4: InvokeBrowserPaneChromeActions | BR-15 | `browser_pane_ux` | `browser_chrome_renders_copy_url_action` |
 | UC-4: InvokeBrowserPaneChromeActions | BR-16 | `browser_pane_ux` | `browser_chrome_renders_open_externally_action` |
 | UC-4: InvokeBrowserPaneChromeActions | BR-17 | `browser_pane_ux` | `copy_url_action_copies_the_current_browser_url` |
+| UC-4: InvokeBrowserPaneChromeActions | BR-17 | `browser_pane_ux` | `copy_url_action_prefers_selected_url_input_while_editing` |
 | UC-4: InvokeBrowserPaneChromeActions | BR-18 | `browser_pane_ux` | `open_externally_action_uses_process_port_open_url` |
+| UC-4: InvokeBrowserPaneChromeActions | BR-18 | `browser_pane_ux` | `open_externally_action_prefers_url_input_while_editing` |
 | UC-4: InvokeBrowserPaneChromeActions | BR-19 | `browser_pane_ux` | `browser_pane_does_not_auto_handoff_auth_flows` |
 | UC-5: PreserveBrowserPaneLoadingFeedback | BR-20 | `browser_pane_ux` | `loading_indicator_stays_visible_while_popup_hides_webview` |
 | UC-5: PreserveBrowserPaneLoadingFeedback | BR-21 | `browser_pane_ux` | `loading_indicator_stays_visible_while_waiting_for_first_frame` |
