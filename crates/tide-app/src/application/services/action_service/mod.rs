@@ -70,6 +70,20 @@ impl crate::application::ports::inward::ActionPort for App {
         std::process::exit(0);
     }
 
+    fn open_focused_browser_externally(&mut self) {
+        let focused = match self.focus.focused {
+            Some(id) => id,
+            None => return,
+        };
+        let url = match self.panes.get(&focused) {
+            Some(PaneKind::Browser(bp)) => bp.url_state_for_external_open(),
+            _ => None,
+        };
+        if let Some(url) = url {
+            let _ = self.ports.process.open_url(&url);
+        }
+    }
+
     fn handle_action(&mut self, action: Action, event: Option<InputEvent>) {
         match action {
             Action::RouteToPane(id) => {
@@ -77,10 +91,10 @@ impl crate::application::ports::inward::ActionPort for App {
                 if let Some(InputEvent::MouseClick { position, .. }) = event {
                     self.focus_terminal(id);
 
-                    // Clicking webview content unfocuses the URL bar
+                    // Browser Pane content clicks are stateful: empty/loading
+                    // panes and active URL-bar editing keep the URL bar focused.
                     if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&id) {
-                        if bp.url_input_focused {
-                            bp.url_input_focused = false;
+                        if bp.handle_content_click() {
                             self.cache.invalidate_chrome();
                         }
                     }
