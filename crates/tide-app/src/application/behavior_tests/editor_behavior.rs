@@ -169,11 +169,12 @@ fn new_editor_is_not_in_preview_mode() {
 }
 
 #[test]
-fn markdown_file_opens_in_authoring_mode() {
-    // UC-2 BR-9: Opening a Markdown file starts in authoring mode, not preview mode
+fn markdown_file_opens_in_authoring_mode_with_live_preview_enabled() {
+    // UC-2 BR-9: Opening a Markdown file starts in authoring mode with preview disabled and LivePreviewMode enabled
     let (app, id, _path) = app_with_markdown_editor("# Title\n\nBody");
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
         assert!(!pane.preview_mode, "markdown panes should open in authoring mode");
+        assert!(pane.live_preview, "markdown panes should default to LivePreviewMode");
     } else {
         panic!("expected editor pane");
     }

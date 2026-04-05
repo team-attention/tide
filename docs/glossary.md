@@ -10,6 +10,7 @@ All paths below are relative to `crates/tide-app/src/`.
 |------|------|----------|-------------|
 | **Pane** | `PaneKind` | `domain/pane/mod.rs` | A content container identified by `PaneId`. Can be Terminal, Editor, Diff, Browser, or Launcher. |
 | **PaneId** | `u64` | `domain/core_types.rs` | Unique identity of a pane. Allocated incrementally by `SplitLayout::alloc_id()`. |
+| **Markdown Pane** | `PaneKind::Editor` | `domain/pane/editor.rs` | An Editor Pane backed by a Markdown file. Supports authoring mode, preview-only mode, LivePreviewMode, and split preview behavior. |
 | **Workspace** | `Workspace` | `application/services/workspace_infra_service/mod.rs` | An isolated set of panes + layout + focus. Only one is active at a time. |
 | **TabGroup** | `TabGroup` | `domain/layout/tab_group.rs` | Multiple panes stacked in one layout slot. Only the active tab renders. |
 | **Terminal** | `Terminal` | `domain/terminal/mod.rs` | A PTY backend instance. Owns the shell process and grid state. |
@@ -83,10 +84,12 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Generation** | `u64` | Monotonic counter for cache invalidation. Incremented on state change. |
 | **LivePreviewMap** | struct | A data structure that maps raw-buffer byte ranges to markdown element types (inline bold, heading, code block, etc.) and classifies which bytes are syntax markers vs content. Built from pulldown_cmark source-span offsets. Used by LivePreviewMode to determine which characters to hide or style. |
 | **LivePreviewMode** | concept | A third editor rendering mode alongside Plain (raw markdown with syntax highlighting) and Preview (read-only formatted rendering). In LivePreviewMode, inline markdown syntax (e.g. `**`, `_`, backticks) is hidden on lines where the cursor is absent and revealed on the cursor's line. Block-level elements (code blocks, tables, blockquotes) always show syntax but apply visual styling. Operates in the same coordinate space as the raw buffer — no line folding. |
+| **FileTreeModel** | `FileTreeModel` | State for the FileTree chrome: root tree, scroll, cursor, and cached git status used to render FileTree rows. |
 | **Ratio** | `f32` | Split position (0.0–1.0). Clamped to [0.1, 0.9] minimum. |
 | **Cell Size** | `Size` | Pixel dimensions of one terminal character cell (font-dependent). |
 | **Pinned Pane** | concept | A dock pane marked as pinned. Visible from all terminals within the workspace, displayed in a dedicated pinned TabGroup on the left side of the dock when viewed from a non-owning terminal. |
 | **Browser Pane** | `PaneKind::Browser` | A Pane backed by a native `WKWebView`. Can run in navigation mode with a URL bar or in render mode for agent-provided HTML. |
+| **GitSwitcher** | `GitSwitcherState` | Popup state that lists git worktrees for a Terminal Pane, tracks filtering and selection, and marks the current worktree row. |
 
 ## Architecture Concepts
 
