@@ -16,6 +16,7 @@ mod ime_behavior;
 mod render_cache_behavior;
 mod global_actions;
 mod text_input_routing;
+mod browser_pane_ux;
 mod session_behavior;
 mod file_tree_scroll;
 mod preview_scroll;

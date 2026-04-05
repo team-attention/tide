@@ -104,7 +104,7 @@ impl BrowserPane {
             url_input: String::new(),
             url_input_cursor: 0,
             url_input_focused: false,
-            loading: false,
+            loading: true,
             can_go_back: false,
             can_go_forward: false,
             webview: None,
@@ -187,6 +187,7 @@ impl BrowserPane {
         self.url = normalized.clone();
         self.url_input = normalized.clone();
         self.url_input_cursor = normalized.chars().count();
+        self.loading = true;
         if let Some(ref wv) = self.webview {
             wv.navigate(&normalized);
         }
@@ -237,6 +238,28 @@ impl BrowserPane {
     /// Number of characters in the URL input.
     pub fn url_input_char_len(&self) -> usize {
         self.url_input.chars().count()
+    }
+
+    /// Empty navigation state: no committed URL yet and not in render mode.
+    pub fn is_empty_navigation_state(&self) -> bool {
+        !self.render_mode && self.url.is_empty()
+    }
+
+    /// Browser Pane content clicks should keep or restore URL-bar focus while the
+    /// Browser Pane is empty, loading, or already editing the URL bar.
+    pub fn content_click_routes_to_url_bar(&self) -> bool {
+        !self.render_mode && (self.url_input_focused || self.loading || self.is_empty_navigation_state())
+    }
+
+    /// Apply Browser Pane first-action routing for a click in Browser Pane content.
+    /// Returns true when the Browser URL bar should own focus after the click.
+    pub fn handle_content_click(&mut self) -> bool {
+        if self.content_click_routes_to_url_bar() {
+            self.url_input_focused = true;
+            true
+        } else {
+            false
+        }
     }
 
     /// Poll the webview for state changes (URL, loading, back/forward).
