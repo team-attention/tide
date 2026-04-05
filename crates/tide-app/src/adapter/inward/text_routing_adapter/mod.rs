@@ -328,8 +328,6 @@ mod tests {
         app.focus.focused = Some(id);
         app.modal.git_switcher = Some(GitSwitcherState::new(
             id,
-            GitSwitcherMode::Branches,
-            vec![],
             vec![],
             Rect::new(0.0, 0.0, 100.0, 30.0),
         ));
@@ -434,8 +432,6 @@ mod tests {
         app.focus.search_focus = Some(id);
         app.modal.git_switcher = Some(GitSwitcherState::new(
             id,
-            GitSwitcherMode::Branches,
-            vec![],
             vec![],
             Rect::new(0.0, 0.0, 100.0, 30.0),
         ));
