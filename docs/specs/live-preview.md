@@ -2,16 +2,17 @@
 
 ## Overview
 ### As-Is
-Current state: Two rendering modes — Plain (raw markdown with syntax highlighting) and Preview (read-only pulldown_cmark formatted). No hybrid mode. Switching between them is a full toggle.
+Current state: Two rendering modes — Plain (raw markdown with syntax highlighting) and Preview (read-only pulldown_cmark formatted). `LivePreviewMode` exists, but Markdown Panes still open with `live_preview = false`, so the hybrid mode is available only after a manual toggle. The click-to-cursor path in `crates/tide-app/src/application/services/action_service/mod.rs` already reverse-maps live-preview columns, but the mouse selection path in `crates/tide-app/src/adapter/inward/mouse_adapter/selection.rs` still uses raw visual columns in the soft-wrap branch.
 
 ### To-Be
-Third rendering mode: LivePreviewMode. Renders from raw buffer but conditionally hides/shows markdown syntax based on cursor line position. Same coordinate space as raw buffer — no line folding.
+Markdown Panes open in `LivePreviewMode` by default while staying in authoring mode. `LivePreviewMode` renders from the raw buffer but conditionally hides/shows markdown syntax based on cursor line position. Same coordinate space as raw buffer — no line folding. Mouse click and mouse selection both reverse-map live-preview columns back into buffer columns, including when Soft Wrap is active.
 
 ### Approach
 Three layers:
-1. LivePreviewMap — maps buffer byte ranges to markdown elements, classifies syntax vs content bytes
-2. Live preview rendering — new render path using LivePreviewMap
-3. Block-level handling — code blocks, tables always show syntax with styling
+1. Open Markdown Panes in authoring mode with `LivePreviewMode` enabled.
+2. LivePreviewMap — maps buffer byte ranges to markdown elements, classifies syntax vs content bytes.
+3. Live preview rendering — new render path using LivePreviewMap.
+4. Block-level handling — code blocks, tables always show syntax with styling.
 
 ## Bounded Contexts
 - editor (domain/editor/) — LivePreviewMap, markdown parsing
@@ -19,6 +20,20 @@ Three layers:
 - input (domain/input/) — GlobalAction::ToggleLivePreview
 
 ## Use Cases
+
+### UC-0: OpenMarkdownInLivePreview
+Actor: System
+Trigger: A Markdown file-backed Editor Pane is opened
+Precondition: The opened file has a Markdown extension
+Flow:
+1. The system opens the file-backed Editor Pane.
+2. The Pane remains in authoring mode (`preview_mode = false`).
+3. The Pane enables `LivePreviewMode`.
+4. The Pane prepares a `LivePreviewMap` before the first live-preview interaction path needs it.
+Postcondition: Markdown authoring starts in `LivePreviewMode` without entering preview-only mode.
+Business Rules:
+- BR-1: Markdown Panes open with `live_preview = true`.
+- BR-2: Markdown Panes still open with `preview_mode = false`.
 
 ### UC-1: ToggleLivePreview
 Actor: User
@@ -98,6 +113,8 @@ Business Rules:
 - BR-1: Cursor line never needs column remapping (all syntax visible)
 - BR-2: Click on non-cursor line requires reverse mapping: visual_col → buffer_col
 - BR-3: After cursor moves to clicked line, syntax is revealed and column mapping becomes identity
+- BR-4: Mouse selection start and drag on non-cursor lines use the same visual_col → buffer_col mapping as click-to-cursor
+- BR-5: Split preview authoring hit-testing ignores the preview region and uses only the authoring rect
 
 ### UC-6: SoftWrapInteraction
 Actor: System (automatic)
@@ -121,6 +138,8 @@ Business Rules:
 ## Tests
 | UC | BR | Test Function |
 |----|-----|--------------|
+| UC-0 | BR-1 | markdown_file_opens_in_authoring_mode_with_live_preview_enabled() |
+| UC-0 | BR-2 | markdown_file_opens_in_authoring_mode_with_live_preview_enabled() |
 | UC-1 | BR-1 | toggle_live_preview_exits_full_preview() |
 | UC-1 | BR-2 | toggle_live_preview_preserves_cursor_and_scroll() |
 | UC-1 | BR-3 | toggle_live_preview_only_for_markdown_files() |
@@ -138,6 +157,8 @@ Business Rules:
 | UC-4 | BR-4 | escaped_chars_not_treated_as_syntax() |
 | UC-5 | BR-1 | cursor_line_no_column_remap() |
 | UC-5 | BR-2 | click_non_cursor_line_maps_visual_to_buffer() |
+| UC-5 | BR-4 | mouse_selection_on_hidden_syntax_line_maps_visual_column_to_buffer_column() |
+| UC-5 | BR-5 | split_preview_selection_stays_in_authoring_region() |
 | UC-6 | BR-1 | soft_wrap_uses_raw_widths() |
 
 ## Location

@@ -281,6 +281,9 @@ fn search_scroll_to_current(ctx: &mut impl SearchPorts, pane_id: PaneId) {
                     let line_count = pane.preview_line_count();
                     let max_scroll = line_count.saturating_sub(visible_rows);
                     pane.preview_scroll = m_line.saturating_sub(visible_rows / 2).min(max_scroll);
+                } else if pane.effective_soft_wrap() {
+                    let visual_row = pane.soft_wrap_visual_row_of_line(m_line).unwrap_or(m_line);
+                    pane.center_soft_wrap_visual_row(visual_row, visible_rows);
                 } else {
                     let line_count = pane.editor.buffer.line_count();
                     let max_scroll = line_count.saturating_sub(visible_rows);
@@ -335,6 +338,9 @@ pub(crate) fn search_next_match(ctx: &mut impl SearchPorts, pane_id: PaneId) {
                     let line_count = pane.preview_line_count();
                     let max_scroll = line_count.saturating_sub(visible_rows);
                     pane.preview_scroll = m_line.saturating_sub(visible_rows / 2).min(max_scroll);
+                } else if pane.effective_soft_wrap() {
+                    let visual_row = pane.soft_wrap_visual_row_of_line(m_line).unwrap_or(m_line);
+                    pane.center_soft_wrap_visual_row(visual_row, visible_rows);
                 } else {
                     let line_count = pane.editor.buffer.line_count();
                     let max_scroll = line_count.saturating_sub(visible_rows);
@@ -399,6 +405,9 @@ pub(crate) fn search_prev_match(ctx: &mut impl SearchPorts, pane_id: PaneId) {
                     let line_count = pane.preview_line_count();
                     let max_scroll = line_count.saturating_sub(visible_rows);
                     pane.preview_scroll = m_line.saturating_sub(visible_rows / 2).min(max_scroll);
+                } else if pane.effective_soft_wrap() {
+                    let visual_row = pane.soft_wrap_visual_row_of_line(m_line).unwrap_or(m_line);
+                    pane.center_soft_wrap_visual_row(visual_row, visible_rows);
                 } else {
                     let line_count = pane.editor.buffer.line_count();
                     let max_scroll = line_count.saturating_sub(visible_rows);

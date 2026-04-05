@@ -9,6 +9,53 @@ use crate::App;
 
 use super::bar_offset_for;
 
+fn display_width_between_chars(line_text: &str, start_char: usize, end_char: usize) -> usize {
+    line_text
+        .chars()
+        .skip(start_char)
+        .take(end_char.saturating_sub(start_char))
+        .map(|c| c.width().unwrap_or(1))
+        .sum()
+}
+
+fn soft_wrap_visible_segments_for_char_range(
+    pane: &crate::pane::editor::EditorPane,
+    line: usize,
+    start_char: usize,
+    end_char: usize,
+    visible_rows: usize,
+) -> Vec<(usize, usize, usize)> {
+    let wrap_map = match pane.wrap_map() {
+        Some(map) => map,
+        None => return Vec::new(),
+    };
+    let line_text = match pane.editor.buffer.line(line) {
+        Some(text) => text,
+        None => return Vec::new(),
+    };
+    let scroll = pane.soft_wrap_visual_scroll();
+    let mut segments = Vec::new();
+    let first_visual_row = wrap_map.visual_row_of_line(line);
+    let row_count = wrap_map.visual_rows_for(line);
+    for visual_row in first_visual_row..first_visual_row + row_count {
+        if visual_row < scroll || visual_row >= scroll + visible_rows {
+            continue;
+        }
+        let Some(info) = wrap_map.visual_row_to_line_info(visual_row, &pane.editor.buffer.lines) else {
+            continue;
+        };
+        let segment_start = start_char.max(info.char_offset);
+        let segment_end = end_char.min(info.char_end);
+        if segment_start >= segment_end {
+            continue;
+        }
+        let start_col = display_width_between_chars(line_text, info.char_offset, segment_start);
+        let end_col = display_width_between_chars(line_text, info.char_offset, segment_end);
+        segments.push((visual_row - scroll, start_col, end_col));
+    }
+    segments
+}
+
 /// Render cursor, selection highlights, search highlights, URL underlines, and scrollbars
 /// for all panes (both tree panes and the active panel editor).
 pub(crate) fn render_cursor_and_highlights(
@@ -180,6 +227,10 @@ fn render_editor_selection(
     p: &ThemePalette,
     sel: &crate::pane::Selection,
 ) {
+    if pane.effective_soft_wrap() {
+        render_editor_selection_soft_wrap(pane, inner, renderer, p, sel);
+        return;
+    }
     let cell_size = renderer.cell_size();
     let (start, end) = if sel.anchor <= sel.end {
         (sel.anchor, sel.end)
@@ -223,6 +274,40 @@ fn render_editor_selection(
     }
 }
 
+fn render_editor_selection_soft_wrap(
+    pane: &crate::pane::editor::EditorPane,
+    inner: Rect,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    p: &ThemePalette,
+    sel: &crate::pane::Selection,
+) {
+    let cell_size = renderer.cell_size();
+    let (start, end) = if sel.anchor <= sel.end {
+        (sel.anchor, sel.end)
+    } else {
+        (sel.end, sel.anchor)
+    };
+    if start == end {
+        return;
+    }
+    let sel_color = p.selection;
+    let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+    let visible_rows = (inner.height / cell_size.height).ceil() as usize;
+    for row in start.0..=end.0 {
+        let line_char_count = pane.editor.buffer.line(row).map_or(0, |line| line.chars().count());
+        let start_char = if row == start.0 { start.1.min(line_char_count) } else { 0 };
+        let end_char = if row == end.0 { end.1.min(line_char_count) } else { line_char_count };
+        for (visual_row, start_col, end_col) in
+            soft_wrap_visible_segments_for_char_range(pane, row, start_char, end_char, visible_rows)
+        {
+            let rx = inner.x + gutter_width + start_col as f32 * cell_size.width;
+            let ry = inner.y + visual_row as f32 * cell_size.height;
+            let rw = (end_col - start_col) as f32 * cell_size.width;
+            renderer.draw_rect(Rect::new(rx, ry, rw, cell_size.height), sel_color);
+        }
+    }
+}
+
 /// Render search match highlights for an editor pane.
 fn render_editor_search_highlights(
     pane: &crate::pane::editor::EditorPane,
@@ -231,6 +316,10 @@ fn render_editor_search_highlights(
     p: &ThemePalette,
     search: &crate::state::search::SearchState,
 ) {
+    if pane.effective_soft_wrap() {
+        render_editor_search_highlights_soft_wrap(pane, inner, renderer, p, search);
+        return;
+    }
     if search.visible && !search.input.is_empty() {
         let cell_size = renderer.cell_size();
         let scroll = pane.editor.scroll_offset();
@@ -254,6 +343,40 @@ fn render_editor_search_highlights(
             let rx = inner.x + gutter_width + visual_col as f32 * cell_size.width;
             let ry = inner.y + visual_row as f32 * cell_size.height;
             let rw = draw_len as f32 * cell_size.width;
+            let color = if search.current == Some(mi) {
+                p.search_current_bg
+            } else {
+                p.search_match_bg
+            };
+            renderer.draw_rect(Rect::new(rx, ry, rw, cell_size.height), color);
+        }
+    }
+}
+
+fn render_editor_search_highlights_soft_wrap(
+    pane: &crate::pane::editor::EditorPane,
+    inner: Rect,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    p: &ThemePalette,
+    search: &crate::state::search::SearchState,
+) {
+    if !search.visible || search.input.is_empty() {
+        return;
+    }
+    let cell_size = renderer.cell_size();
+    let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+    let visible_rows = (inner.height / cell_size.height).ceil() as usize;
+    for (mi, m) in search.matches.iter().enumerate() {
+        for (visual_row, start_col, end_col) in soft_wrap_visible_segments_for_char_range(
+            pane,
+            m.line,
+            m.col,
+            m.col + m.len,
+            visible_rows,
+        ) {
+            let rx = inner.x + gutter_width + start_col as f32 * cell_size.width;
+            let ry = inner.y + visual_row as f32 * cell_size.height;
+            let rw = (end_col - start_col) as f32 * cell_size.width;
             let color = if search.current == Some(mi) {
                 p.search_current_bg
             } else {
@@ -373,6 +496,10 @@ fn render_bracket_highlight(
     renderer: &mut crate::tide_renderer::WgpuRenderer,
     p: &ThemePalette,
 ) {
+    if pane.effective_soft_wrap() {
+        render_bracket_highlight_soft_wrap(pane, inner, renderer, p);
+        return;
+    }
     let Some((open_pos, close_pos)) = pane.editor.matching_bracket() else {
         return;
     };
@@ -411,6 +538,48 @@ fn render_bracket_highlight(
         renderer.draw_rect(Rect::new(rx, ry + rh - border_w, rw, border_w), p.bracket_match_border);
         renderer.draw_rect(Rect::new(rx, ry, border_w, rh), p.bracket_match_border);
         renderer.draw_rect(Rect::new(rx + rw - border_w, ry, border_w, rh), p.bracket_match_border);
+    }
+}
+
+fn render_bracket_highlight_soft_wrap(
+    pane: &crate::pane::editor::EditorPane,
+    inner: Rect,
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    p: &ThemePalette,
+) {
+    let Some((open_pos, close_pos)) = pane.editor.matching_bracket() else {
+        return;
+    };
+    let cell_size = renderer.cell_size();
+    let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+    let visible_rows = (inner.height / cell_size.height).ceil() as usize;
+    let border_w = 1.0_f32;
+
+    for bracket_pos in [open_pos, close_pos] {
+        let char_col = if let Some(line_text) = pane.editor.buffer.line(bracket_pos.line) {
+            let byte_col = bracket_pos.col.min(line_text.len());
+            line_text[..byte_col].chars().count()
+        } else {
+            continue;
+        };
+        for (visual_row, start_col, end_col) in soft_wrap_visible_segments_for_char_range(
+            pane,
+            bracket_pos.line,
+            char_col,
+            char_col + 1,
+            visible_rows,
+        ) {
+            let rx = inner.x + gutter_width + start_col as f32 * cell_size.width;
+            let ry = inner.y + visual_row as f32 * cell_size.height;
+            let rw = (end_col - start_col) as f32 * cell_size.width;
+            let rh = cell_size.height;
+
+            renderer.draw_rect(Rect::new(rx, ry, rw, rh), p.bracket_match_bg);
+            renderer.draw_rect(Rect::new(rx, ry, rw, border_w), p.bracket_match_border);
+            renderer.draw_rect(Rect::new(rx, ry + rh - border_w, rw, border_w), p.bracket_match_border);
+            renderer.draw_rect(Rect::new(rx, ry, border_w, rh), p.bracket_match_border);
+            renderer.draw_rect(Rect::new(rx + rw - border_w, ry, border_w, rh), p.bracket_match_border);
+        }
     }
 }
 

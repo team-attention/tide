@@ -77,6 +77,11 @@ fn pane_content_rect(pane_rect: crate::tide_core::Rect) -> crate::tide_core::Rec
     )
 }
 
+fn test_window_proxy() -> crate::tide_platform::WindowProxy {
+    let (tx, _rx) = std::sync::mpsc::channel();
+    crate::tide_platform::WindowProxy::new(tx, std::sync::Arc::new(|| {}))
+}
+
 // --- UC-1: ToggleSplitPreview ---
 
 #[test]
@@ -259,6 +264,47 @@ fn split_preview_click_refreshes_wrap_map_for_authoring_region_width() {
         "wrapped click should stay on the first logical line"
     );
     assert_eq!(pos.col, split_width_cols + 2);
+}
+
+#[test]
+fn split_preview_selection_stays_in_authoring_region() {
+    // UC-2 BR-10: Split preview mouse selection starts only inside the authoring region
+    let (mut app, id, _path) = app_with_markdown_editor("# Title\n\nBody");
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 520.0, 320.0);
+    let content_rect = pane_content_rect(pane_rect);
+    let cell_size = app.window.cached_cell_size;
+    app.visual_pane_rects = vec![(id, pane_rect)];
+
+    let preview_rect = {
+        let pane = match app.panes.get_mut(&id) {
+            Some(PaneKind::Editor(pane)) => pane,
+            _ => panic!("expected editor pane"),
+        };
+        pane.split_preview = true;
+        pane.prepare_inline_caches(content_rect, cell_size, false);
+        pane.preview_rect(content_rect, cell_size)
+            .expect("split preview should expose a preview region")
+    };
+
+    app.window.last_cursor_pos = crate::tide_core::Vec2::new(
+        preview_rect.x + cell_size.width + 1.0,
+        preview_rect.y + cell_size.height + 1.0,
+    );
+
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(
+        &mut app,
+        crate::tide_core::MouseButton::Left,
+        &test_window_proxy(),
+    );
+
+    let pane = match app.panes.get(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    assert!(
+        pane.selection.is_none(),
+        "preview-region clicks should not start authoring selection"
+    );
 }
 
 // --- UC-3: PreservePreviewOnlyMode ---
