@@ -603,6 +603,12 @@ pub(super) fn apply_scrollbar_drag(ctx: &mut (impl AppCorePort + PaneAccessPort)
     if let Some(PaneKind::Editor(pane)) = ctx.pane_mut(pane_id) {
         let (total_lines, _) = if pane.preview_mode {
             (pane.preview_line_count(), pane.preview_scroll)
+        } else if pane.effective_soft_wrap() {
+            (
+                pane.soft_wrap_total_visual_rows()
+                    .unwrap_or_else(|| pane.editor.buffer.line_count()),
+                pane.soft_wrap_visual_scroll(),
+            )
         } else {
             (pane.editor.buffer.line_count(), pane.editor.scroll_offset())
         };
@@ -613,6 +619,8 @@ pub(super) fn apply_scrollbar_drag(ctx: &mut (impl AppCorePort + PaneAccessPort)
 
         if pane.preview_mode {
             pane.preview_scroll = target;
+        } else if pane.effective_soft_wrap() {
+            pane.set_soft_wrap_visual_scroll(target, visible_rows);
         } else {
             pane.editor.set_scroll_offset(target);
         }

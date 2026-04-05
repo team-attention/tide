@@ -1,8 +1,8 @@
 use crate::tide_core::{FileTreeSource, Rect, Renderer, TextStyle, Vec2};
 
+use crate::state::FocusArea;
 use crate::theme::*;
 use crate::ui::file_icon;
-use crate::state::FocusArea;
 use crate::App;
 
 /// Render the file tree panel (rounded border, header, entries, cursor highlight).
@@ -21,7 +21,11 @@ pub(super) fn render_file_tree(
     ));
 
     let tree_focused = app.focus.focus_area == FocusArea::FileTree;
-    let border_color = if tree_focused { p.border_focused } else { p.border_subtle };
+    let border_color = if tree_focused {
+        p.border_focused
+    } else {
+        p.border_subtle
+    };
     let top_border = if tree_focused { 2.0 } else { 1.0 };
     let side_border = if tree_focused { 2.0_f32 } else { 1.0_f32 };
     let edge_inset = PANE_CORNER_RADIUS;
@@ -45,9 +49,18 @@ pub(super) fn render_file_tree(
         let h = r_border.height;
         let y = r_border.y;
         // 3-strip gradient: 4px total, fading from 0.12 → 0.04 → 0.0
-        renderer.draw_chrome_rect(Rect::new(edge_x, y, 1.5, h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.12));
-        renderer.draw_chrome_rect(Rect::new(edge_x + 1.5, y, 1.5, h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.06));
-        renderer.draw_chrome_rect(Rect::new(edge_x + 3.0, y, 1.5, h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.02));
+        renderer.draw_chrome_rect(
+            Rect::new(edge_x, y, 1.5, h),
+            crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.12),
+        );
+        renderer.draw_chrome_rect(
+            Rect::new(edge_x + 1.5, y, 1.5, h),
+            crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.06),
+        );
+        renderer.draw_chrome_rect(
+            Rect::new(edge_x + 3.0, y, 1.5, h),
+            crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.02),
+        );
     }
 
     // Outer rounded rect (border)
@@ -59,7 +72,11 @@ pub(super) fn render_file_tree(
         r_border.width - 2.0 * side_border,
         r_border.height - top_border - side_border,
     );
-    renderer.draw_chrome_rounded_rect(inset, p.file_tree_bg, (PANE_CORNER_RADIUS - side_border).max(0.0));
+    renderer.draw_chrome_rounded_rect(
+        inset,
+        p.file_tree_bg,
+        (PANE_CORNER_RADIUS - side_border).max(0.0),
+    );
 
     // Shadow tree_visual_rect with inset version so content renders within the border
     let tree_visual_rect = Rect::new(
@@ -94,9 +111,17 @@ pub(super) fn render_file_tree(
         let text_offset_y = (line_height - cell_size.height) / 2.0;
         for (i, entry) in entries.iter().enumerate() {
             // Skip entries that are being inline-renamed
-            if app.modal.file_tree_rename.as_ref().is_some_and(|r| r.entry_index == i) {
-                let y = tree_visual_rect.y + FILE_TREE_HEADER_HEIGHT + i as f32 * line_height - file_tree_scroll;
-                if y + line_height < tree_visual_rect.y || y > tree_visual_rect.y + tree_visual_rect.height {
+            if app
+                .modal
+                .file_tree_rename
+                .as_ref()
+                .is_some_and(|r| r.entry_index == i)
+            {
+                let y = tree_visual_rect.y + FILE_TREE_HEADER_HEIGHT + i as f32 * line_height
+                    - file_tree_scroll;
+                if y + line_height < tree_visual_rect.y
+                    || y > tree_visual_rect.y + tree_visual_rect.height
+                {
                     continue;
                 }
                 let text_y = y + text_offset_y;
@@ -107,10 +132,18 @@ pub(super) fn render_file_tree(
                 let icon_style = TextStyle {
                     foreground: p.tree_icon,
                     background: None,
-                    bold: false, dim: false, italic: false, underline: false,
+                    bold: false,
+                    dim: false,
+                    italic: false,
+                    underline: false,
                 };
                 let icon_str: String = std::iter::once(icon).collect();
-                renderer.draw_chrome_text(&icon_str, Vec2::new(x, text_y), icon_style, entries_clip);
+                renderer.draw_chrome_text(
+                    &icon_str,
+                    Vec2::new(x, text_y),
+                    icon_style,
+                    entries_clip,
+                );
 
                 // Draw inline rename input
                 let name_x = x + cell_size.width * 2.0;
@@ -119,25 +152,65 @@ pub(super) fn render_file_tree(
                 let input_rect = Rect::new(name_x - 2.0, y, input_w + 2.0, line_height);
                 renderer.draw_chrome_rect(input_rect, p.popup_bg);
                 // Border
-                renderer.draw_chrome_rect(Rect::new(input_rect.x, input_rect.y, input_rect.width, 1.0), p.popup_border);
-                renderer.draw_chrome_rect(Rect::new(input_rect.x, input_rect.y + input_rect.height - 1.0, input_rect.width, 1.0), p.popup_border);
-                renderer.draw_chrome_rect(Rect::new(input_rect.x, input_rect.y, 1.0, input_rect.height), p.popup_border);
-                renderer.draw_chrome_rect(Rect::new(input_rect.x + input_rect.width - 1.0, input_rect.y, 1.0, input_rect.height), p.popup_border);
+                renderer.draw_chrome_rect(
+                    Rect::new(input_rect.x, input_rect.y, input_rect.width, 1.0),
+                    p.popup_border,
+                );
+                renderer.draw_chrome_rect(
+                    Rect::new(
+                        input_rect.x,
+                        input_rect.y + input_rect.height - 1.0,
+                        input_rect.width,
+                        1.0,
+                    ),
+                    p.popup_border,
+                );
+                renderer.draw_chrome_rect(
+                    Rect::new(input_rect.x, input_rect.y, 1.0, input_rect.height),
+                    p.popup_border,
+                );
+                renderer.draw_chrome_rect(
+                    Rect::new(
+                        input_rect.x + input_rect.width - 1.0,
+                        input_rect.y,
+                        1.0,
+                        input_rect.height,
+                    ),
+                    p.popup_border,
+                );
                 // Text
                 let ts = TextStyle {
                     foreground: p.tab_text_focused,
                     background: None,
-                    bold: false, dim: false, italic: false, underline: false,
+                    bold: false,
+                    dim: false,
+                    italic: false,
+                    underline: false,
                 };
-                renderer.draw_chrome_text(&rename.input.text, Vec2::new(name_x, text_y), ts, entries_clip);
+                renderer.draw_chrome_text(
+                    &rename.input.text,
+                    Vec2::new(name_x, text_y),
+                    ts,
+                    entries_clip,
+                );
                 // Cursor beam
-                let cursor_x = name_x + unicode_width::UnicodeWidthStr::width(&rename.input.text[..rename.input.cursor]) as f32 * cell_size.width;
-                renderer.draw_chrome_rect(Rect::new(cursor_x, text_y, 1.5, cell_size.height), p.cursor_accent);
+                let cursor_x = name_x
+                    + unicode_width::UnicodeWidthStr::width(
+                        &rename.input.text[..rename.input.cursor],
+                    ) as f32
+                        * cell_size.width;
+                renderer.draw_chrome_rect(
+                    Rect::new(cursor_x, text_y, 1.5, cell_size.height),
+                    p.cursor_accent,
+                );
                 continue;
             }
 
-            let y = tree_visual_rect.y + FILE_TREE_HEADER_HEIGHT + i as f32 * line_height - file_tree_scroll;
-            if y + line_height < tree_visual_rect.y || y > tree_visual_rect.y + tree_visual_rect.height {
+            let y = tree_visual_rect.y + FILE_TREE_HEADER_HEIGHT + i as f32 * line_height
+                - file_tree_scroll;
+            if y + line_height < tree_visual_rect.y
+                || y > tree_visual_rect.y + tree_visual_rect.height
+            {
                 continue;
             }
 
@@ -152,19 +225,21 @@ pub(super) fn render_file_tree(
                     tree_visual_rect.width - left_padding,
                     line_height,
                 );
-                renderer.draw_chrome_rounded_rect(row_rect, p.tree_row_active, FILE_TREE_ROW_RADIUS);
+                renderer.draw_chrome_rounded_rect(
+                    row_rect,
+                    p.tree_row_active,
+                    FILE_TREE_ROW_RADIUS,
+                );
             }
 
             // Look up git status for this entry (O(1) via pre-computed cache)
-            let git_color = if entry.entry.is_dir {
-                app.ft.dir_git_status.get(&entry.entry.path).copied()
-            } else {
-                app.ft.git_status.get(&entry.entry.path).copied()
-            };
+            let git_color =
+                app.effective_file_tree_git_status(&entry.entry.path, entry.entry.is_dir);
 
             let status_color = git_color.and_then(|gs| match gs {
                 crate::tide_core::FileGitStatus::Modified => Some(p.git_modified),
-                crate::tide_core::FileGitStatus::Added | crate::tide_core::FileGitStatus::Untracked => Some(p.git_added),
+                crate::tide_core::FileGitStatus::Added
+                | crate::tide_core::FileGitStatus::Untracked => Some(p.git_added),
                 crate::tide_core::FileGitStatus::Conflict => Some(p.git_conflict),
                 crate::tide_core::FileGitStatus::Deleted => None, // deleted files won't appear in tree
             });
@@ -172,7 +247,8 @@ pub(super) fn render_file_tree(
             // Git status badge letter (right-aligned)
             let status_badge = git_color.and_then(|gs| match gs {
                 crate::tide_core::FileGitStatus::Modified => Some("M"),
-                crate::tide_core::FileGitStatus::Added | crate::tide_core::FileGitStatus::Untracked => Some("U"),
+                crate::tide_core::FileGitStatus::Added
+                | crate::tide_core::FileGitStatus::Untracked => Some("U"),
                 crate::tide_core::FileGitStatus::Conflict => Some("!"),
                 crate::tide_core::FileGitStatus::Deleted => None,
             });
@@ -197,12 +273,7 @@ pub(super) fn render_file_tree(
                 underline: false,
             };
             let icon_str: String = std::iter::once(icon).collect();
-            renderer.draw_chrome_text(
-                &icon_str,
-                Vec2::new(x, text_y),
-                icon_style,
-                entries_clip,
-            );
+            renderer.draw_chrome_text(&icon_str, Vec2::new(x, text_y), icon_style, entries_clip);
 
             // Draw name after icon + space
             let name_x = x + cell_size.width * 2.0;
@@ -233,20 +304,33 @@ pub(super) fn render_file_tree(
 
             // Draw git status badge ("M", "A", "?", "!") right-aligned
             if let Some(badge) = status_badge {
-                let badge_x = tree_visual_rect.x + tree_visual_rect.width - PANE_PADDING - cell_size.width;
+                let badge_x =
+                    tree_visual_rect.x + tree_visual_rect.width - PANE_PADDING - cell_size.width;
                 let badge_style = TextStyle {
                     foreground: status_color.unwrap_or(p.tree_text),
                     background: None,
-                    bold: true, dim: false, italic: false, underline: false,
+                    bold: true,
+                    dim: false,
+                    italic: false,
+                    underline: false,
                 };
-                renderer.draw_chrome_text(badge, Vec2::new(badge_x, text_y), badge_style, entries_clip);
+                renderer.draw_chrome_text(
+                    badge,
+                    Vec2::new(badge_x, text_y),
+                    badge_style,
+                    entries_clip,
+                );
             }
         }
 
         // File tree keyboard cursor highlight (when focus_area == FileTree)
         if app.focus.focus_area == FocusArea::FileTree && app.ft.cursor < entries.len() {
-            let cursor_y = tree_visual_rect.y + FILE_TREE_HEADER_HEIGHT + app.ft.cursor as f32 * line_height - file_tree_scroll;
-            if cursor_y + line_height > tree_visual_rect.y && cursor_y < tree_visual_rect.y + tree_visual_rect.height {
+            let cursor_y =
+                tree_visual_rect.y + FILE_TREE_HEADER_HEIGHT + app.ft.cursor as f32 * line_height
+                    - file_tree_scroll;
+            if cursor_y + line_height > tree_visual_rect.y
+                && cursor_y < tree_visual_rect.y + tree_visual_rect.height
+            {
                 let row_rect = Rect::new(
                     tree_visual_rect.x + left_padding / 2.0,
                     cursor_y,
@@ -259,7 +343,12 @@ pub(super) fn render_file_tree(
                 renderer.draw_chrome_rounded_rect(row_rect, row_bg, FILE_TREE_ROW_RADIUS);
                 // Left accent bar on cursor row
                 renderer.draw_chrome_rect(
-                    Rect::new(tree_visual_rect.x + 2.0, cursor_y + 2.0, 2.0, line_height - 4.0),
+                    Rect::new(
+                        tree_visual_rect.x + 2.0,
+                        cursor_y + 2.0,
+                        2.0,
+                        line_height - 4.0,
+                    ),
                     accent,
                 );
             }
@@ -273,7 +362,12 @@ pub(super) fn render_file_tree(
 
             // Opaque header background covers any scrolled entries
             renderer.draw_chrome_rect(
-                Rect::new(tree_visual_rect.x, header_y, tree_visual_rect.width, header_h),
+                Rect::new(
+                    tree_visual_rect.x,
+                    header_y,
+                    tree_visual_rect.width,
+                    header_h,
+                ),
                 p.file_tree_bg,
             );
 
@@ -284,23 +378,33 @@ pub(super) fn render_file_tree(
                 TextStyle {
                     foreground: p.tree_dir_icon,
                     background: None,
-                    bold: false, dim: false, italic: false, underline: false,
+                    bold: false,
+                    dim: false,
+                    italic: false,
+                    underline: false,
                 },
                 tree_text_clip,
             );
 
             // Directory name (last path component)
-            let root_name = tree.root()
+            let root_name = tree
+                .root()
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| tree.root().to_string_lossy().to_string());
             renderer.draw_chrome_text(
                 &root_name,
-                Vec2::new(tree_visual_rect.x + left_padding + cell_size.width * 2.0, header_text_y),
+                Vec2::new(
+                    tree_visual_rect.x + left_padding + cell_size.width * 2.0,
+                    header_text_y,
+                ),
                 TextStyle {
                     foreground: p.tab_text_focused,
                     background: None,
-                    bold: true, dim: false, italic: false, underline: false,
+                    bold: true,
+                    dim: false,
+                    italic: false,
+                    underline: false,
                 },
                 tree_text_clip,
             );
@@ -313,7 +417,12 @@ pub(super) fn render_file_tree(
                 p.border_subtle
             };
             renderer.draw_chrome_rect(
-                Rect::new(tree_visual_rect.x + PANE_PADDING, header_y + header_h - 1.0, tree_visual_rect.width - PANE_PADDING * 2.0, 1.0),
+                Rect::new(
+                    tree_visual_rect.x + PANE_PADDING,
+                    header_y + header_h - 1.0,
+                    tree_visual_rect.width - PANE_PADDING * 2.0,
+                    1.0,
+                ),
                 sep_color,
             );
         }

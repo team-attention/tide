@@ -658,7 +658,8 @@ impl EditorPane {
         let wrap_cols = wrap_map.wrap_width();
 
         let visible_rows = (rect.height / cell_size.height).floor() as usize;
-        let scroll = self.editor.scroll_offset();
+        let scroll = self.soft_wrap_visual_scroll();
+        let logical_scroll = self.editor.scroll_offset();
         let cursor_pos = self.editor.cursor_position();
         let cursor_line = cursor_pos.line;
 
@@ -686,19 +687,30 @@ impl EditorPane {
 
         // Fetch enough logical lines to fill visible_rows visual rows.
         let line_count = self.editor.buffer.line_count();
-        let fetch_lines = visible_rows.min(line_count.saturating_sub(scroll));
+        let start_sub_row = scroll.saturating_sub(wrap_map.visual_row_of_line(logical_scroll));
+        let mut fetch_lines = 0usize;
+        let mut remaining_rows = visible_rows + start_sub_row;
+        for line in logical_scroll..line_count {
+            fetch_lines += 1;
+            let line_rows = wrap_map.visual_rows_for(line);
+            if line_rows >= remaining_rows {
+                break;
+            }
+            remaining_rows -= line_rows;
+        }
         let highlighted = self.editor.visible_highlighted_lines(fetch_lines);
 
         let mut vi = 0; // current visual row index on screen
         for (li_offset, spans) in highlighted.iter().enumerate() {
-            let abs_line = scroll + li_offset;
+            let abs_line = logical_scroll + li_offset;
             if vi >= visible_rows {
                 break;
             }
 
             let sub_rows = wrap_map.visual_rows_for(abs_line);
+            let first_sub_row = if li_offset == 0 { start_sub_row } else { 0 };
 
-            for sub_row in 0..sub_rows {
+            for sub_row in first_sub_row..sub_rows {
                 if vi >= visible_rows {
                     break;
                 }
@@ -1073,7 +1085,8 @@ impl EditorPane {
         let wrap_cols = wrap_map.wrap_width();
 
         let visible_rows = (rect.height / cell_size.height).floor() as usize;
-        let scroll = self.editor.scroll_offset();
+        let scroll = self.soft_wrap_visual_scroll();
+        let logical_scroll = self.editor.scroll_offset();
         let cursor_pos = self.editor.cursor_position();
         let cursor_line = cursor_pos.line;
 
@@ -1103,20 +1116,31 @@ impl EditorPane {
         // Best case: one line fills everything. Fetch up to visible_rows as a start,
         // but may need more if lines don't wrap much.
         let line_count = self.editor.buffer.line_count();
-        let fetch_lines = visible_rows.min(line_count.saturating_sub(scroll));
+        let start_sub_row = scroll.saturating_sub(wrap_map.visual_row_of_line(logical_scroll));
+        let mut fetch_lines = 0usize;
+        let mut remaining_rows = visible_rows + start_sub_row;
+        for line in logical_scroll..line_count {
+            fetch_lines += 1;
+            let line_rows = wrap_map.visual_rows_for(line);
+            if line_rows >= remaining_rows {
+                break;
+            }
+            remaining_rows -= line_rows;
+        }
         let highlighted = self.editor.visible_highlighted_lines(fetch_lines);
 
         // Render: iterate logical lines, expanding each into visual sub-rows.
         let mut vi = 0; // current visual row index on screen
         for (li_offset, spans) in highlighted.iter().enumerate() {
-            let abs_line = scroll + li_offset;
+            let abs_line = logical_scroll + li_offset;
             if vi >= visible_rows {
                 break;
             }
 
             let sub_rows = wrap_map.visual_rows_for(abs_line);
+            let first_sub_row = if li_offset == 0 { start_sub_row } else { 0 };
 
-            for sub_row in 0..sub_rows {
+            for sub_row in first_sub_row..sub_rows {
                 if vi >= visible_rows {
                     break;
                 }
@@ -1663,18 +1687,14 @@ impl EditorPane {
     ) {
         let cell_size = renderer.cell_size();
         let pos = self.editor.cursor_position();
-        let scroll = self.editor.scroll_offset();
+        let scroll = self.soft_wrap_visual_scroll();
 
-        // Compute the visual row offset from the top of the viewport.
-        // scroll_offset is in logical lines, so we need to compute visual rows
-        // consumed by lines before the cursor line that are above scroll.
-        let scroll_visual_row = wrap_map.visual_row_of_line(scroll);
         let cursor_visual_row =
             wrap_map.buffer_pos_to_visual_row(pos.line, pos.col, &self.editor.buffer.lines);
-        if cursor_visual_row < scroll_visual_row {
+        if cursor_visual_row < scroll {
             return;
         }
-        let visual_row = cursor_visual_row - scroll_visual_row;
+        let visual_row = cursor_visual_row - scroll;
 
         let visual_col_offset =
             wrap_map.buffer_pos_to_visual_col(pos.line, pos.col, &self.editor.buffer.lines);
@@ -1696,6 +1716,12 @@ impl EditorPane {
 
     /// Whether the file is long enough to need a scrollbar.
     pub fn needs_scrollbar(&self, rect: Rect, cell_height: f32) -> bool {
+        if self.preview_mode {
+            return self.preview_needs_scrollbar(rect, cell_height);
+        }
+        if self.effective_soft_wrap() {
+            return self.needs_scrollbar_soft_wrap(rect, cell_height);
+        }
         let visible_rows = (rect.height / cell_height).floor() as usize;
         self.editor.buffer.line_count() > visible_rows
     }
@@ -1723,8 +1749,7 @@ impl EditorPane {
             (self.preview_line_count(), self.preview_scroll)
         } else if self.effective_soft_wrap() {
             if let Some(ref map) = self.wrap_map {
-                let scroll_vr = map.visual_row_of_line(self.editor.scroll_offset());
-                (map.total_visual_rows(), scroll_vr)
+                (map.total_visual_rows(), self.soft_wrap_visual_scroll())
             } else {
                 (self.editor.buffer.line_count(), self.editor.scroll_offset())
             }
@@ -1766,7 +1791,12 @@ impl EditorPane {
                 if search.visible && !search.input.is_empty() {
                     let marker_h = 2.0_f32;
                     for (mi, m) in search.matches.iter().enumerate() {
-                        let ratio = m.line as f32 / total_lines as f32;
+                        let line = if self.effective_soft_wrap() {
+                            self.soft_wrap_visual_row_of_line(m.line).unwrap_or(m.line)
+                        } else {
+                            m.line
+                        };
+                        let ratio = line as f32 / total_lines as f32;
                         let my = rect.y + (ratio * rect.height).min(rect.height - marker_h);
                         let color = if search.current == Some(mi) {
                             palette.scrollbar_current
