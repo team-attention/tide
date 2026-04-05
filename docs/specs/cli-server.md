@@ -225,7 +225,7 @@ Socket Thread → write response → client
   - BR-25: Loaded via `loadHTMLString` (no server)
   - BR-26: Render-mode: no URL bar, title in tab
   - BR-27: Re-render same pane_id replaces content (morphdom diff, preserves DOM state)
-  - BR-28: Full web: script, style, SVG, Canvas, WebGL
+  - BR-28: `html` is a `#root` fragment, not a full document. Callers MUST NOT include `<!doctype>`, `<html>`, `<head>`, or `<body>`. Fragment content may still use script, style, SVG, Canvas, and WebGL. CLI help and MCP tool descriptions MUST communicate this fragment-only contract.
   - BR-29: `window.tide.send(json)` bridge — HTML→agent communication
   - BR-30: Bridge messages arrive as `webview-message` events to subscribed clients
   - BR-31: Render runtime (morphdom, Tailwind, theme vars, bridge) pre-injected — agent HTML does not need to include them
@@ -293,7 +293,7 @@ Agent                          Tide                         User
   5. Disconnect → pane stays open with final content
 - **Postcondition**: Browser pane shows live-updating HTML
 - **Business Rules**:
-  - BR-33: Chunks are full HTML snapshots (morphdom diffs against current DOM)
+  - BR-33: Chunks are full `#root` fragment snapshots (morphdom diffs against current DOM), not full documents. Callers MUST NOT include `<!doctype>`, `<html>`, `<head>`, or `<body>`. CLI help MUST communicate that stdin lines are fragment snapshots.
   - BR-34: Render runtime pre-loaded (agent doesn't need to include morphdom/Tailwind)
   - BR-35: Disconnect keeps pane open
   - BR-36: Multiple simultaneous streams
@@ -354,12 +354,12 @@ Agent                          Tide                         User
 }
 {
   "name": "tide_render_html",
-  "description": "Render HTML content in a browser pane (generative UI)",
+  "description": "Render an HTML fragment in a Browser Pane (generative UI). Pass `#root` content only; Tide injects the document shell, theme vars, and bridge runtime.",
   "inputSchema": {
     "type": "object",
     "properties": {
       "title": { "type": "string" },
-      "html": { "type": "string" },
+      "html": { "type": "string", "description": "HTML fragment for `#root`. Do not include `<!doctype>`, `<html>`, `<head>`, or `<body>`." },
       "pane_id": { "type": "integer", "description": "Existing pane to update (omit for new)" }
     },
     "required": ["title", "html"]
@@ -515,10 +515,14 @@ Agent                          Tide                         User
 | UC-7 | BR-25 | `render_html_uses_load_html_string` |
 | UC-7 | BR-26 | `render_html_hides_url_bar` |
 | UC-7 | BR-27 | `render_html_replaces_existing_pane` |
+| UC-7 | BR-28 | `render_html_rejects_full_document_html` |
+| UC-7 | BR-28 | `cli_usage_mentions_render_html_fragment_contract` |
 | UC-7 | BR-29 | `render_html_bridge_delivers_messages` |
 | UC-7 | BR-31 | `render_html_runtime_preinjected` |
 | UC-7 | BR-32 | `render_html_theme_vars_sync_on_theme_change` |
 | UC-8 | BR-33 | `render_stream_morphdom_diffs` |
+| UC-8 | BR-33 | `stream_chunk_rejects_full_document_html` |
+| UC-8 | BR-33 | `cli_usage_mentions_render_stream_fragment_contract` |
 | UC-8 | BR-35 | `render_stream_disconnect_keeps_pane` |
 | UC-8 | BR-37 | `render_stream_preserves_scroll_and_focus` |
 | UC-9 | BR-38 | `subscribe_filters_by_type` |
