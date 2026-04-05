@@ -570,6 +570,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
             self.interaction.pane_drag = PaneDragState::Idle;
             self.interaction.drop_preview_start = None;
         }
+        self.interaction.tab_scroll_offset.remove(&tab_id);
         // Destroy webview before removing the pane
         if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&tab_id) {
             bp.destroy();
