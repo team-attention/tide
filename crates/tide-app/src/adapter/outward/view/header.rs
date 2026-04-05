@@ -507,27 +507,8 @@ fn render_tab_bar_impl(
     let visible_w = tabs_right - content_left;
     let max_scroll = (total_tabs_w - visible_w).max(0.0);
 
-    // Auto-scroll to keep active tab visible
-    let mut effective_scroll = tab_scroll_offset.clamp(0.0, max_scroll);
-    {
-        let mut active_start = 0.0_f32;
-        for (tid, _, w) in &tabs_info {
-            if *tid == active_pane {
-                let active_end = active_start + *w;
-                // If active tab is scrolled off to the left
-                if active_start < effective_scroll {
-                    effective_scroll = active_start;
-                }
-                // If active tab is scrolled off to the right
-                if active_end > effective_scroll + visible_w {
-                    effective_scroll = (active_end - visible_w).max(0.0);
-                }
-                break;
-            }
-            active_start += *w;
-        }
-        effective_scroll = effective_scroll.clamp(0.0, max_scroll);
-    }
+    // Clamp scroll offset to valid range (no auto-scroll — user controls scroll position)
+    let effective_scroll = tab_scroll_offset.clamp(0.0, max_scroll);
 
     let mut cx = content_left - effective_scroll;
     for (tid, label, w) in &tabs_info {

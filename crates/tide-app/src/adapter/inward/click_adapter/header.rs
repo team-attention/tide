@@ -137,7 +137,12 @@ pub(crate) fn check_header_click(
                 }
                 HeaderHitAction::StageTab(target_pane_id) => {
                     // Switch active tab in Stage TabGroup (or zoomed pane if stacked)
-                    if ctx.zoomed_pane().is_some() {
+                    if let Some(old_zoomed) = ctx.zoomed_pane() {
+                        // Transfer tab scroll offset from old zoomed pane to new one
+                        let old_scroll = ctx.interaction_mut().tab_scroll_offset.remove(&old_zoomed).unwrap_or(0.0);
+                        if old_scroll > 0.0 {
+                            ctx.interaction_mut().tab_scroll_offset.insert(target_pane_id, old_scroll);
+                        }
                         ctx.set_zoom(Some(target_pane_id));
                     }
                     ctx.focus_terminal(target_pane_id);
