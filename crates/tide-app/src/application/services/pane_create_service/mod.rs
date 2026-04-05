@@ -2,37 +2,53 @@ use std::path::PathBuf;
 
 use crate::tide_core::LayoutEngine;
 
-use crate::state::drag_types::PaneDragState;
 use crate::pane::browser::BrowserPane;
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
+use crate::state::drag_types::PaneDragState;
+use crate::ActionPort;
 use crate::App;
-use crate::FileOpsPort;
-use crate::DockPort;
 use crate::AppCorePort;
+use crate::DockPort;
+use crate::FileOpsPort;
 use crate::LayoutPort;
 use crate::WorkspaceNavPort;
-use crate::ActionPort;
 
 use super::action_service::LauncherChoice;
 
 impl crate::application::ports::inward::PaneLifecyclePort for App {
-    fn create_terminal_pane(&mut self, id: crate::tide_core::PaneId, cwd: Option<std::path::PathBuf>) {
+    fn create_terminal_pane(
+        &mut self,
+        id: crate::tide_core::PaneId,
+        cwd: Option<std::path::PathBuf>,
+    ) {
         let cell_size = self.cell_size();
         if cell_size.width <= 0.0 || cell_size.height <= 0.0 {
-            log::error!("Cannot create terminal pane: cell_size is zero ({:?})", cell_size);
+            log::error!(
+                "Cannot create terminal pane: cell_size is zero ({:?})",
+                cell_size
+            );
             return;
         }
         let logical = self.logical_size();
         let cols = ((logical.width / 2.0 / cell_size.width).max(1.0).min(1000.0)) as u16;
         let rows = ((logical.height / cell_size.height).max(1.0).min(500.0)) as u16;
 
-        match self.ports.terminal_factory.create_terminal(id, cols, rows, cwd.as_deref(), self.window.dark_mode) {
+        match self.ports.terminal_factory.create_terminal(
+            id,
+            cols,
+            rows,
+            cwd.as_deref(),
+            self.window.dark_mode,
+        ) {
             Ok(pane) => {
                 self.install_pty_waker(&pane);
                 self.panes.insert(id, PaneKind::Terminal(pane));
                 self.ime.pending_creates.push(id);
-                self.gateway.notify("pane-created", serde_json::json!({"pane_id": id, "kind": "terminal"}));
+                self.gateway.notify(
+                    "pane-created",
+                    serde_json::json!({"pane_id": id, "kind": "terminal"}),
+                );
             }
             Err(e) => {
                 log::error!("Failed to create terminal pane: {}", e);
@@ -44,7 +60,10 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
     fn respawn_terminal(&mut self, id: crate::tide_core::PaneId) {
         // Get the CWD of the dead terminal before removing it
         let cwd = if let Some(PaneKind::Terminal(pane)) = self.panes.get(&id) {
-            pane.context.cwd.clone().or_else(|| pane.backend.detect_cwd_fallback())
+            pane.context
+                .cwd
+                .clone()
+                .or_else(|| pane.backend.detect_cwd_fallback())
         } else {
             None
         };
@@ -190,7 +209,9 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                     .and_then(|tid| {
                         if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get(&tid) {
                             tp.context.cwd.clone()
-                        } else { None }
+                        } else {
+                            None
+                        }
                     })
                     .or_else(|| self.ports.fs.home_dir());
                 // Terminal resolves don't get association (they ARE terminals)
@@ -231,7 +252,6 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.compute_layout();
     }
 
-
     /// Split the focused pane.
     /// Routes to the correct layout based on focus_area:
     /// - Stage → create Terminal directly in main layout
@@ -251,7 +271,12 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                     self.assoc.associated_terminal.insert(new_id, tid);
                     if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                         if let Some(dock_focused) = tp.dock_focused {
-                            tp.dock_layout.split_with_leaf_group(dock_focused, new_id, direction, false);
+                            tp.dock_layout.split_with_leaf_group(
+                                dock_focused,
+                                new_id,
+                                direction,
+                                false,
+                            );
                         } else {
                             tp.dock_layout.insert_leaf_group(new_id);
                         }
@@ -340,7 +365,10 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.router.set_focused(new_id);
         self.cache.invalidate_chrome();
         self.compute_layout();
-        self.gateway.notify("pane-created", serde_json::json!({"pane_id": new_id, "kind": "render"}));
+        self.gateway.notify(
+            "pane-created",
+            serde_json::json!({"pane_id": new_id, "kind": "render"}),
+        );
         new_id
     }
 
@@ -367,7 +395,10 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.gateway.active_streams += 1;
         self.cache.invalidate_chrome();
         self.compute_layout();
-        self.gateway.notify("pane-created", serde_json::json!({"pane_id": new_id, "kind": "render-stream"}));
+        self.gateway.notify(
+            "pane-created",
+            serde_json::json!({"pane_id": new_id, "kind": "render-stream"}),
+        );
         new_id
     }
 
@@ -440,6 +471,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                 } else {
                     self.focus.focus_area = crate::state::FocusArea::Stage;
                 }
+                self.sync_file_tree_modified_editor_cache();
                 self.cache.invalidate_chrome();
                 self.cache.pane_generations.clear();
                 self.watch_file(&path);
@@ -509,6 +541,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                     }
                     self.focus.focus_area = crate::state::FocusArea::Stage;
                 }
+                self.sync_file_tree_modified_editor_cache();
                 self.focus.focused = Some(new_id);
                 self.router.set_focused(new_id);
                 self.cache.invalidate_chrome();
@@ -528,11 +561,18 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.open_editor_pane(path);
         if let Some(line) = line {
             if let Some(active_id) = self.focus.focused {
-                let visible_rows = crate::adapter::inward::text_routing_adapter::visible_editor_size(self, active_id).0;
+                let visible_rows =
+                    crate::adapter::inward::text_routing_adapter::visible_editor_size(
+                        self, active_id,
+                    )
+                    .0;
                 if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&active_id) {
                     let target_line = line.saturating_sub(1); // 1-based to 0-based
                     pane.handle_action(
-                        crate::tide_editor::input::EditorAction::SetCursor { line: target_line, col: 0 },
+                        crate::tide_editor::input::EditorAction::SetCursor {
+                            line: target_line,
+                            col: 0,
+                        },
                         visible_rows,
                     );
                     pane.editor.ensure_cursor_visible(visible_rows.max(30));
@@ -576,11 +616,21 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
             bp.destroy();
         }
         // Cancel save-as if the target pane is being closed
-        if self.modal.save_as_input.as_ref().is_some_and(|s| s.pane_id == tab_id) {
+        if self
+            .modal
+            .save_as_input
+            .as_ref()
+            .is_some_and(|s| s.pane_id == tab_id)
+        {
             self.modal.save_as_input = None;
         }
         // Cancel save confirm if the target pane is being closed
-        if self.modal.save_confirm.as_ref().is_some_and(|s| s.pane_id == tab_id) {
+        if self
+            .modal
+            .save_confirm
+            .as_ref()
+            .is_some_and(|s| s.pane_id == tab_id)
+        {
             self.modal.save_confirm = None;
         }
         // Unwatch the file before removing the pane
@@ -601,6 +651,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
             self.remove_pane_from_dock(tab_id);
             self.panes.remove(&tab_id);
             self.cleanup_closed_pane_state(tab_id);
+            self.sync_file_tree_modified_editor_cache();
             self.cache.invalidate_chrome();
             self.compute_layout();
             return;
@@ -609,13 +660,14 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         // Determine next focus target BEFORE removal so we can find a
         // layout neighbor while the tree is still intact.
         let next_focus = if self.focus.focused == Some(tab_id) {
-            self.layout.right_neighbor_pane(tab_id)
-                .or_else(|| {
-                    // No right neighbor — pick any remaining pane
-                    self.layout.pane_ids().iter()
-                        .find(|&&id| id != tab_id)
-                        .copied()
-                })
+            self.layout.right_neighbor_pane(tab_id).or_else(|| {
+                // No right neighbor — pick any remaining pane
+                self.layout
+                    .pane_ids()
+                    .iter()
+                    .find(|&&id| id != tab_id)
+                    .copied()
+            })
         } else {
             None // Focused pane is not being closed
         };
@@ -627,6 +679,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.layout.remove(tab_id);
         self.panes.remove(&tab_id);
         self.cleanup_closed_pane_state(tab_id);
+        self.sync_file_tree_modified_editor_cache();
 
         // Apply the pre-computed focus target
         if self.focus.focused == Some(tab_id) {
@@ -678,6 +731,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         }
 
         self.watch_file(&path);
+        self.sync_file_tree_modified_editor_cache();
         self.cache.invalidate_chrome();
     }
 
@@ -695,7 +749,15 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         }
 
         // Non-terminal panes (editors, browsers, diff, launchers) close immediately
-        if matches!(self.panes.get(&pane_id), Some(PaneKind::Editor(_) | PaneKind::Browser(_) | PaneKind::Diff(_) | PaneKind::Launcher(_))) {
+        if matches!(
+            self.panes.get(&pane_id),
+            Some(
+                PaneKind::Editor(_)
+                    | PaneKind::Browser(_)
+                    | PaneKind::Diff(_)
+                    | PaneKind::Launcher(_)
+            )
+        ) {
             self.force_close_editor_panel_tab(pane_id);
             self.update_file_tree_cwd();
             return;
@@ -714,11 +776,21 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
 
     fn force_close_specific_pane(&mut self, pane_id: crate::tide_core::PaneId) {
         // Cancel save-as if the target pane is being closed
-        if self.modal.save_as_input.as_ref().is_some_and(|s| s.pane_id == pane_id) {
+        if self
+            .modal
+            .save_as_input
+            .as_ref()
+            .is_some_and(|s| s.pane_id == pane_id)
+        {
             self.modal.save_as_input = None;
         }
         // Cancel save confirm
-        if self.modal.save_confirm.as_ref().is_some_and(|s| s.pane_id == pane_id) {
+        if self
+            .modal
+            .save_confirm
+            .as_ref()
+            .is_some_and(|s| s.pane_id == pane_id)
+        {
             self.modal.save_confirm = None;
         }
 
@@ -731,7 +803,12 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
 
         // If branch cleanup bar is already showing for this pane, block the close —
         // the user must resolve it via Delete/Keep/Cancel first.
-        if self.modal.branch_cleanup.as_ref().is_some_and(|bc| bc.pane_id == pane_id) {
+        if self
+            .modal
+            .branch_cleanup
+            .as_ref()
+            .is_some_and(|bc| bc.pane_id == pane_id)
+        {
             return;
         }
 
@@ -745,7 +822,8 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                     if branch != "main" && branch != "master" {
                         // Detect if cwd is in a worktree
                         let worktrees = self.ports.git.list_worktrees(cwd);
-                        let wt_path = worktrees.iter()
+                        let wt_path = worktrees
+                            .iter()
                             .find(|wt| wt.is_current && !wt.is_main)
                             .map(|wt| wt.path.clone());
 
@@ -753,9 +831,13 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                         if let Some(wt_path) = wt_path {
                             // Check no other terminal pane is on the same branch
                             let other_on_same = self.panes.iter().any(|(&id, pk)| {
-                                if id == pane_id { return false; }
+                                if id == pane_id {
+                                    return false;
+                                }
                                 if let PaneKind::Terminal(tp) = pk {
-                                    tp.context.git_info.as_ref()
+                                    tp.context
+                                        .git_info
+                                        .as_ref()
                                         .map(|g| g.branch == *branch)
                                         .unwrap_or(false)
                                 } else {
@@ -791,9 +873,13 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
             if pane.editor.file_path().is_none() {
                 // Untitled file -> open save-as input
                 let base_dir = self.resolve_base_dir();
-                let anchor = self.visual_pane_rects.iter()
+                let anchor = self
+                    .visual_pane_rects
+                    .iter()
                     .find(|(id, _)| *id == pane_id)
-                    .map(|(_, r)| crate::tide_core::Rect::new(r.x, r.y, r.width, crate::theme::TAB_BAR_HEIGHT))
+                    .map(|(_, r)| {
+                        crate::tide_core::Rect::new(r.x, r.y, r.width, crate::theme::TAB_BAR_HEIGHT)
+                    })
                     .unwrap_or_else(|| crate::tide_core::Rect::new(0.0, 0.0, 0.0, 0.0));
                 self.modal.save_as_input = Some(crate::SaveAsInput::new(pane_id, base_dir, anchor));
                 return;
@@ -844,14 +930,19 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         // Resolve the main worktree path BEFORE closing anything.
         // bc.cwd may be inside a worktree that will be removed.
         let worktrees = self.ports.git.list_worktrees(&bc.cwd);
-        let main_cwd = worktrees.iter()
+        let main_cwd = worktrees
+            .iter()
             .find(|wt| wt.is_main)
             .map(|wt| wt.path.clone())
             .unwrap_or_else(|| bc.cwd.clone());
         // Close the pane first so the terminal process releases the directory
         self.close_pane_final(bc.pane_id);
         // Remove worktree (directory is now free)
-        if let Err(e) = self.ports.git.remove_worktree(&main_cwd, &bc.worktree_path, true) {
+        if let Err(e) = self
+            .ports
+            .git
+            .remove_worktree(&main_cwd, &bc.worktree_path, true)
+        {
             log::error!("Failed to remove worktree: {}", e);
         }
         // Delete the branch from the main repo

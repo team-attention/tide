@@ -108,3 +108,44 @@ fn wrap_map_rebuilt_on_width_change() {
     assert_eq!(map40.total_visual_rows(), 3); // ceil(100/40)
     assert_eq!(map50.total_visual_rows(), 2); // ceil(100/50)
 }
+
+// --- UC-7: Scroll Wrapped Authoring ---
+
+#[test]
+fn scrolling_wrapped_markdown_advances_by_visual_row() {
+    // UC-7 BR-18: Soft-wrap authoring scroll advances in visual rows, not only whole logical lines
+    use crate::tide_editor::input::EditorAction;
+
+    let mut pane = editor_with_extension("md");
+    pane.editor.insert_text(&"a".repeat(120));
+    pane.ensure_wrap_map(20);
+
+    pane.handle_action_with_size(EditorAction::ScrollDown(1.0), 3, 20);
+
+    assert_eq!(pane.soft_wrap_visual_scroll(), 1);
+    assert_eq!(
+        pane.editor.scroll_offset(),
+        0,
+        "a wrapped single logical line should still scroll within the same logical line"
+    );
+}
+
+#[test]
+fn scrolling_wrapped_markdown_reaches_the_last_visual_row() {
+    // UC-7 BR-19: Soft-wrap scroll clamping uses total visual rows so the wrapped tail remains reachable
+    use crate::tide_editor::input::EditorAction;
+
+    let mut pane = editor_with_extension("md");
+    pane.editor.insert_text(&"a".repeat(120));
+    pane.ensure_wrap_map(20);
+
+    for _ in 0..10 {
+        pane.handle_action_with_size(EditorAction::ScrollDown(1.0), 3, 20);
+    }
+
+    let expected = pane
+        .soft_wrap_total_visual_rows()
+        .unwrap()
+        .saturating_sub(3);
+    assert_eq!(pane.soft_wrap_visual_scroll(), expected);
+}

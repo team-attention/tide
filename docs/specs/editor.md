@@ -3,14 +3,14 @@
 ## Overview
 
 ### As-Is
-`EditorPane::open()` in `crates/tide-app/src/domain/pane/editor.rs` now opens file-backed Markdown Panes with `preview_mode = false`, and the same constructor enables `soft_wrap` for prose extensions. That means Markdown authoring now starts directly in the editable Pane instead of a read-only preview path. The remaining mode split is still significant: `effective_soft_wrap()` disables wrapping while preview is active, the routing layer in `crates/tide-app/src/adapter/inward/text_routing_adapter/mod.rs` blocks text input when `preview_mode` is true, and the key handling path in `crates/tide-app/src/application/services/action_service/mod.rs` exits early for almost every key while preview is active. This keeps Markdown authoring and preview on separate interaction paths that still need Phase 1 polish.
+`EditorPane::open()` in `crates/tide-app/src/domain/pane/editor.rs` opens file-backed Markdown Panes with `preview_mode = false`, and the same constructor enables `soft_wrap` for prose extensions. That means Markdown authoring now starts directly in the editable Pane instead of a read-only preview path. Markdown Panes still start with `live_preview = false`, though, so the hybrid Markdown rendering path stays opt-in even after the Pane has already chosen the prose-authoring interaction model. The remaining mode split is still significant: `effective_soft_wrap()` disables wrapping while preview is active, the routing layer in `crates/tide-app/src/adapter/inward/text_routing_adapter/mod.rs` blocks text input when `preview_mode` is true, and the key handling path in `crates/tide-app/src/application/services/action_service/mod.rs` exits early for almost every key while preview is active.
 
 ### To-Be
-Editor behavior remains centered on `EditorPane` and `EditorState`, and Markdown Panes continue to open in authoring mode first. Preview becomes an explicit mode entered by toggle, not the default mode entered on open. Soft Wrap stays active for prose authoring, preview keeps its own rendering and scroll model, and toggle transitions preserve reading context without trapping the user in a blocked-input state. Search, IME, and click handling stay predictable across authoring and preview flows.
+Editor behavior remains centered on `EditorPane` and `EditorState`, and Markdown Panes continue to open in authoring mode first. Markdown authoring defaults to `LivePreviewMode` while keeping `preview_mode = false`, so text input remains enabled and preview-only mode stays an explicit toggle. Soft Wrap stays active for prose authoring, preview keeps its own rendering and scroll model, and toggle transitions preserve reading context without trapping the user in a blocked-input state. Search, IME, and click handling stay predictable across authoring and preview flows.
 
 ### Approach
 1. Keep the current `EditorPane` and `EditorState` architecture instead of replacing the editor core.
-2. Preserve Markdown Pane authoring-first defaults while keeping preview mode explicit for Markdown files.
+2. Preserve Markdown Pane authoring-first defaults while enabling `LivePreviewMode` by default for Markdown files.
 3. Preserve the current preview rendering and preview scroll model, but make transitions between authoring and preview predictable.
 4. Keep text routing, IME routing, search routing, and click handling aligned with the active mode.
 5. Preserve Soft Wrap behavior for prose authoring and keep preview mode unaffected by Soft Wrap.
@@ -56,7 +56,7 @@ Editor behavior remains centered on `EditorPane` and `EditorState`, and Markdown
 - **Business Rules**:
   - BR-7: A new untitled Editor Pane has no `file_path`.
   - BR-8: A new untitled Editor Pane starts with `preview_mode = false`.
-  - BR-9: Opening a Markdown file starts in authoring mode, not preview mode.
+  - BR-9: Opening a Markdown file starts in authoring mode with `preview_mode = false` and `live_preview = true`.
   - BR-10: Opening a prose file enables Soft Wrap for authoring mode.
   - BR-11: Opening a non-prose file preserves the no-wrap default unless another spec enables wrapping.
 
@@ -127,7 +127,7 @@ Editor behavior remains centered on `EditorPane` and `EditorState`, and Markdown
 | UC-1 | BR-6 | `editor_behavior` | `ime_commit_to_file_finder_does_not_reach_editor` |
 | UC-2 | BR-7 | `editor_behavior` | `new_editor_has_no_file_path` |
 | UC-2 | BR-8 | `editor_behavior` | `new_editor_is_not_in_preview_mode` |
-| UC-2 | BR-9 | `editor_behavior` | `markdown_file_opens_in_authoring_mode` |
+| UC-2 | BR-9 | `editor_behavior` | `markdown_file_opens_in_authoring_mode_with_live_preview_enabled` |
 | UC-2 | BR-10 | `soft_wrap_behavior` | `markdown_authoring_opens_with_soft_wrap_active` |
 | UC-3 | BR-12 | `editor_behavior` | `preview_toggle_is_ignored_for_non_markdown_files` |
 | UC-3 | BR-13 | `editor_behavior` | `markdown_preview_is_entered_only_by_explicit_toggle` |

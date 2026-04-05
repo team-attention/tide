@@ -9,6 +9,7 @@ pub(crate) mod gpu_init_service;
 mod lsp_service;
 mod pane_close_service;
 mod pane_create_service;
+mod path_identity;
 mod search_service;
 pub(crate) mod session_service;
 mod text_extract_service;

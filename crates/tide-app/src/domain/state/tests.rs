@@ -1,6 +1,6 @@
 use super::*;
-use std::path::PathBuf;
 use crate::tide_core::Rect;
+use std::path::PathBuf;
 
 // ── InputLine ──
 
@@ -144,11 +144,7 @@ fn file_finder_filter() {
 
 #[test]
 fn file_finder_select_up_down() {
-    let entries = vec![
-        PathBuf::from("a"),
-        PathBuf::from("b"),
-        PathBuf::from("c"),
-    ];
+    let entries = vec![PathBuf::from("a"), PathBuf::from("b"), PathBuf::from("c")];
     let mut ff = FileFinderState::new(PathBuf::from("/"), entries);
     assert_eq!(ff.selected, 0);
 
@@ -169,10 +165,7 @@ fn file_finder_select_up_down() {
 
 #[test]
 fn file_finder_selected_path() {
-    let entries = vec![
-        PathBuf::from("foo.txt"),
-        PathBuf::from("bar.txt"),
-    ];
+    let entries = vec![PathBuf::from("foo.txt"), PathBuf::from("bar.txt")];
     let ff = FileFinderState::new(PathBuf::from("/base"), entries);
     assert_eq!(ff.selected_path(), Some(PathBuf::from("/base/foo.txt")));
 }
@@ -408,6 +401,10 @@ fn file_tree_model_new_defaults() {
     assert_eq!(ft.scroll, 0.0);
     assert_eq!(ft.cursor, 0);
     assert!(ft.git_status.is_empty());
+    assert!(ft.dir_git_status.is_empty());
+    assert!(ft.normalized_entry_paths.is_empty());
+    assert!(ft.modified_editor_paths.is_empty());
+    assert!(ft.modified_editor_dirs.is_empty());
 }
 
 // ── WorkspaceManager ──

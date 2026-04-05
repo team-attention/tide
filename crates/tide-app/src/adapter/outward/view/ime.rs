@@ -234,14 +234,13 @@ fn render_editor_ime_preedit(
     // Compute visual row and column — soft wrap aware
     let (visual_row, visual_col_offset) = if pane.effective_soft_wrap() {
         if let Some(wrap_map) = pane.wrap_map() {
-            let scroll_vr = wrap_map.visual_row_of_line(scroll);
             let cursor_vr = wrap_map.buffer_pos_to_visual_row(
                 pos.line, pos.col, &pane.editor.buffer.lines,
             );
-            if cursor_vr < scroll_vr {
+            if cursor_vr < pane.soft_wrap_visual_scroll() {
                 return;
             }
-            let vr = cursor_vr - scroll_vr;
+            let vr = cursor_vr - pane.soft_wrap_visual_scroll();
             let vc = wrap_map.buffer_pos_to_visual_col(
                 pos.line, pos.col, &pane.editor.buffer.lines,
             );

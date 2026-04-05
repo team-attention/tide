@@ -54,6 +54,7 @@ Markdown panes support a split preview mode inside a single EditorPane. The left
   - BR-5: Split preview rendering uses standard Markdown only.
   - BR-8: Split preview authoring reuses a cached `WrapMap` built for the authoring region width across grid, cursor, scrollbar, and click-to-cursor paths.
   - BR-9: Split preview preview lines come from `preview_cache`, keyed by content generation, preview region width, and theme.
+  - BR-10: Split preview mouse selection starts only inside the authoring region, never inside the preview region.
 
 ### UC-3: PreservePreviewOnlyMode
 - **Actor**: User
@@ -86,6 +87,7 @@ Markdown panes support a split preview mode inside a single EditorPane. The left
 | UC-2 | BR-4 | `markdown_workspace_behavior` | `text_input_keeps_authoring_active_while_split_preview_is_visible` |
 | UC-2 | BR-8 | `markdown_workspace_behavior` | `split_preview_click_refreshes_wrap_map_for_authoring_region_width` |
 | UC-2 | BR-9 | `markdown_workspace_behavior` | `split_preview_prepare_caches_uses_preview_region_width` |
+| UC-2 | BR-10 | `markdown_workspace_behavior` | `split_preview_selection_stays_in_authoring_region` |
 | UC-3 | BR-6 | `markdown_workspace_behavior` | `preview_only_toggle_disables_split_preview` |
 
 ## Location
