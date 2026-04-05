@@ -350,34 +350,51 @@ fn render_browser_nav_bar(
     let text_y = nav_y + (nav_h - cell_height) / 2.0;
     let mut cx = nav_x + 8.0;
 
+    let hovered = |target: crate::state::drag_types::HoverTarget| {
+        app.interaction.hover_target.as_ref() == Some(&target)
+    };
+    let draw_icon_button = |renderer: &mut crate::tide_renderer::WgpuRenderer,
+                            x: f32,
+                            icon: &str,
+                            is_hovered: bool,
+                            color: crate::tide_core::Color| {
+        let rect = Rect::new(x, nav_y, cell_w * 2.0, nav_h);
+        if is_hovered {
+            renderer.draw_chrome_rounded_rect(
+                Rect::new(rect.x, rect.y + 1.0, rect.width, rect.height - 2.0),
+                p.hover_tab,
+                3.0,
+            );
+        }
+        renderer.draw_chrome_text(
+            icon,
+            Vec2::new(x, text_y),
+            TextStyle { foreground: color, background: None, bold: false, dim: false, italic: false, underline: false },
+            rect,
+        );
+    };
+
     // Back button
     let back_color = if bp.can_go_back { p.tab_text_focused } else { p.tab_text };
-    renderer.draw_chrome_text(
-        "\u{2190}",
-        Vec2::new(cx, text_y),
-        TextStyle { foreground: back_color, background: None, bold: false, dim: false, italic: false, underline: false },
-        Rect::new(cx, nav_y, cell_w * 2.0, nav_h),
-    );
+    draw_icon_button(renderer, cx, "\u{2190}", hovered(crate::state::drag_types::HoverTarget::BrowserBack), back_color);
     cx += cell_w * 2.0;
 
     // Forward button
     let fwd_color = if bp.can_go_forward { p.tab_text_focused } else { p.tab_text };
-    renderer.draw_chrome_text(
-        "\u{2192}",
-        Vec2::new(cx, text_y),
-        TextStyle { foreground: fwd_color, background: None, bold: false, dim: false, italic: false, underline: false },
-        Rect::new(cx, nav_y, cell_w * 2.0, nav_h),
-    );
+    draw_icon_button(renderer, cx, "\u{2192}", hovered(crate::state::drag_types::HoverTarget::BrowserForward), fwd_color);
     cx += cell_w * 2.0;
 
     // Refresh button
     let refresh_icon = if bp.loading { "\u{00d7}" } else { "\u{21bb}" };
-    renderer.draw_chrome_text(
-        refresh_icon,
-        Vec2::new(cx, text_y),
-        TextStyle { foreground: p.tab_text_focused, background: None, bold: false, dim: false, italic: false, underline: false },
-        Rect::new(cx, nav_y, cell_w * 2.0, nav_h),
-    );
+    draw_icon_button(renderer, cx, refresh_icon, hovered(crate::state::drag_types::HoverTarget::BrowserRefresh), p.tab_text_focused);
+    cx += cell_w * 2.0 + 4.0;
+
+    // Copy URL button
+    draw_icon_button(renderer, cx, "\u{2398}", hovered(crate::state::drag_types::HoverTarget::BrowserCopyUrl), p.tab_text_focused);
+    cx += cell_w * 2.0;
+
+    // Open externally button
+    draw_icon_button(renderer, cx, "\u{2197}", hovered(crate::state::drag_types::HoverTarget::BrowserOpenExternal), p.tab_text_focused);
     cx += cell_w * 2.0 + 4.0;
 
     // Loading progress bar (thin line below nav bar)
@@ -477,4 +494,3 @@ fn render_browser_nav_bar(
         }
     }
 }
-

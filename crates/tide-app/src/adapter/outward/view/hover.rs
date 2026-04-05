@@ -143,7 +143,9 @@ pub(crate) fn render_hover(
                 }
                 crate::state::drag_types::HoverTarget::BrowserBack
                 | crate::state::drag_types::HoverTarget::BrowserForward
-                | crate::state::drag_types::HoverTarget::BrowserRefresh => {
+                | crate::state::drag_types::HoverTarget::BrowserRefresh
+                | crate::state::drag_types::HoverTarget::BrowserCopyUrl
+                | crate::state::drag_types::HoverTarget::BrowserOpenExternal => {
                     // Hover highlight on browser nav buttons
                     // Rendered inline via chrome nav bar
                 }
