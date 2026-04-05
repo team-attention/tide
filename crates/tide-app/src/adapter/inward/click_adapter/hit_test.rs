@@ -267,6 +267,18 @@ pub(crate) fn compute_hover_target(
                 }
                 cx += cell_w * 2.0 + 4.0;
 
+                // Copy URL button
+                if pos.x >= cx && pos.x < cx + cell_w * 2.0 {
+                    return Some(HoverTarget::BrowserCopyUrl);
+                }
+                cx += cell_w * 2.0;
+
+                // Open externally button
+                if pos.x >= cx && pos.x < cx + cell_w * 2.0 {
+                    return Some(HoverTarget::BrowserOpenExternal);
+                }
+                cx += cell_w * 2.0 + 4.0;
+
                 // URL bar (rest of nav area)
                 if pos.x >= cx {
                     return Some(HoverTarget::BrowserUrlBar);

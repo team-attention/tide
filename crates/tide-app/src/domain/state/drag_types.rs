@@ -47,6 +47,8 @@ pub(crate) enum HoverTarget {
     BrowserBack,
     BrowserForward,
     BrowserRefresh,
+    BrowserCopyUrl,
+    BrowserOpenExternal,
     BrowserUrlBar,
     EditorScrollbar(PaneId),
     WorkspaceSidebarItem(usize),
@@ -75,6 +77,8 @@ impl HoverTarget {
                 | HoverTarget::BrowserBack
                 | HoverTarget::BrowserForward
                 | HoverTarget::BrowserRefresh
+                | HoverTarget::BrowserCopyUrl
+                | HoverTarget::BrowserOpenExternal
                 | HoverTarget::PaneTabClose(_)
                 | HoverTarget::WorkspaceSidebarItem(_)
                 | HoverTarget::WorkspaceSidebarNewBtn
