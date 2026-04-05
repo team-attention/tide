@@ -29,6 +29,8 @@ impl crate::application::ports::inward::LayoutPort for App {
             | Some(HoverTarget::BrowserBack)
             | Some(HoverTarget::BrowserForward)
             | Some(HoverTarget::BrowserRefresh)
+            | Some(HoverTarget::BrowserCopyUrl)
+            | Some(HoverTarget::BrowserOpenExternal)
             | Some(HoverTarget::BrowserUrlBar)
             | Some(HoverTarget::WorkspaceSidebarItem(_))
             | Some(HoverTarget::WorkspaceSidebarNewBtn) => CursorIcon::Pointer,
@@ -646,6 +648,11 @@ impl crate::application::ports::inward::LayoutPort for App {
                 || matches!(self.interaction.pane_drag, crate::state::drag_types::PaneDragState::Dragging { .. });
 
             if let Some(vr) = visual_rect {
+                // Keep Browser Pane loading/back-forward state honest even when
+                // overlays temporarily hide the native view.
+                if bp.sync_webview_state() {
+                    self.cache.invalidate_chrome();
+                }
                 if popup_open {
                     bp.set_visible(false);
                 } else {
@@ -676,11 +683,6 @@ impl crate::application::ports::inward::LayoutPort for App {
                 // Load render HTML after the webview has a proper frame (BR-25).
                 if bp.render_mode && bp.needs_render_load {
                     bp.load_render_content();
-                }
-
-                // Poll webview for state changes (URL, loading, back/forward)
-                if bp.sync_webview_state() {
-                    self.cache.invalidate_chrome();
                 }
 
                 // First responder management: only the focused browser pane

@@ -241,11 +241,10 @@ pub(crate) fn handle_platform_event(
                 } else {
                     ctx.set_focus_area(FocusArea::Stage);
                 }
-                // Clicking webview content unfocuses the URL bar.
-                // hitTest: returns the WKWebView so TideView's mouseDown
-                // never fires — this is the only place to clear it.
+                // WebView hit testing bypasses TideView's mouseDown, so Browser
+                // Pane content clicks must apply the same first-action rules here.
                 if let Some(PaneKind::Browser(bp)) = ctx.pane_mut(pid) {
-                    bp.url_input_focused = false;
+                    bp.handle_content_click();
                 }
             } else {
                 ctx.set_focus_area(FocusArea::Stage);
