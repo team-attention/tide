@@ -21,8 +21,27 @@ use super::protocol::CliError;
 
 // ── Trait alias for CLI ports ──
 
-pub(crate) trait CliPorts: ActionPort + AppCorePort + FocusNavPort + GatewayPort + LayoutPort + PaneAccessPort + PaneLifecyclePort {}
-impl<T: ActionPort + AppCorePort + FocusNavPort + GatewayPort + LayoutPort + PaneAccessPort + PaneLifecyclePort> CliPorts for T {}
+pub(crate) trait CliPorts:
+    ActionPort
+    + AppCorePort
+    + FocusNavPort
+    + GatewayPort
+    + LayoutPort
+    + PaneAccessPort
+    + PaneLifecyclePort
+{
+}
+impl<
+        T: ActionPort
+            + AppCorePort
+            + FocusNavPort
+            + GatewayPort
+            + LayoutPort
+            + PaneAccessPort
+            + PaneLifecyclePort,
+    > CliPorts for T
+{
+}
 
 // ── Dispatch (remains on App) ──
 
@@ -36,7 +55,8 @@ impl crate::App {
         mut params: Value,
     ) -> Result<Value, CliError> {
         // Extract and strip _caller_pane so handlers never see it (BR-5)
-        let caller_pane = params.as_object_mut()
+        let caller_pane = params
+            .as_object_mut()
             .and_then(|m| m.remove("_caller_pane"))
             .and_then(|v| v.as_u64());
 
@@ -68,11 +88,7 @@ impl crate::App {
     }
 
     /// Inner dispatch — routes to the appropriate command handler.
-    fn dispatch_cli_command(
-        &mut self,
-        method: &str,
-        params: Value,
-    ) -> Result<Value, CliError> {
+    fn dispatch_cli_command(&mut self, method: &str, params: Value) -> Result<Value, CliError> {
         match method {
             // Phase 1 — Observe
             "list-panes" => cli_list_panes(self),
@@ -108,7 +124,9 @@ impl crate::App {
 // ── Phase 1: Observe ─────────────────────────────────────────────
 
 /// UC-1: ListPanes — return all panes in the active workspace.
-fn cli_list_panes(ctx: &(impl AppCorePort + FocusNavPort + PaneAccessPort)) -> Result<Value, CliError> {
+fn cli_list_panes(
+    ctx: &(impl AppCorePort + FocusNavPort + PaneAccessPort),
+) -> Result<Value, CliError> {
     let focused_id = ctx.focused_pane();
     let mut result = Vec::new();
 
@@ -123,7 +141,9 @@ fn cli_list_panes(ctx: &(impl AppCorePort + FocusNavPort + PaneAccessPort)) -> R
 
         let focused = focused_id == Some(id);
 
-        let rect = ctx.pane_rects().iter()
+        let rect = ctx
+            .pane_rects()
+            .iter()
             .find(|(pid, _)| *pid == id)
             .map(|(_, r)| json!({"x": r.x, "y": r.y, "width": r.width, "height": r.height}))
             .unwrap_or(Value::Null);
@@ -177,27 +197,33 @@ fn cli_list_panes(ctx: &(impl AppCorePort + FocusNavPort + PaneAccessPort)) -> R
 }
 
 /// UC-2: CapturePaneContent — read text from a terminal or editor pane.
-fn cli_capture_pane(ctx: &(impl FocusNavPort + PaneAccessPort), params: Value) -> Result<Value, CliError> {
-    let pane_id = params.get("pane_id")
+fn cli_capture_pane(
+    ctx: &(impl FocusNavPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = params
+        .get("pane_id")
         .and_then(|v| v.as_u64())
         .or_else(|| ctx.focused_pane())
         .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
 
-    let pane = ctx.pane(pane_id)
-        .ok_or(CliError::PaneNotFound(pane_id))?;
+    let pane = ctx.pane(pane_id).ok_or(CliError::PaneNotFound(pane_id))?;
 
     match pane {
         PaneKind::Terminal(tp) => {
             let grid = tp.backend.grid();
             let start = params.get("start").and_then(|v| v.as_i64()).unwrap_or(0);
-            let end = params.get("end").and_then(|v| v.as_i64())
+            let end = params
+                .get("end")
+                .and_then(|v| v.as_i64())
                 .unwrap_or(grid.rows as i64);
 
             let mut lines = Vec::new();
             for row_idx in 0..grid.rows as usize {
                 let row_i = row_idx as i64;
                 if row_i >= start && row_i < end {
-                    let line: String = grid.cells[row_idx].iter()
+                    let line: String = grid.cells[row_idx]
+                        .iter()
                         .map(|c| c.character)
                         .collect::<String>()
                         .trim_end()
@@ -214,7 +240,9 @@ fn cli_capture_pane(ctx: &(impl FocusNavPort + PaneAccessPort), params: Value) -
         }
         PaneKind::Editor(ep) => {
             let start = params.get("start").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            let end = params.get("end").and_then(|v| v.as_u64())
+            let end = params
+                .get("end")
+                .and_then(|v| v.as_u64())
                 .unwrap_or(ep.editor.buffer.line_count() as u64) as usize;
 
             let mut lines = Vec::new();
@@ -242,13 +270,11 @@ fn cli_capture_pane(ctx: &(impl FocusNavPort + PaneAccessPort), params: Value) -
                 actual: kind_str,
             })
         }
-        PaneKind::Diff(_) => {
-            Err(CliError::InvalidPaneKind {
-                pane_id,
-                expected: "terminal or editor",
-                actual: "diff",
-            })
-        }
+        PaneKind::Diff(_) => Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "terminal or editor",
+            actual: "diff",
+        }),
     }
 }
 
@@ -263,18 +289,24 @@ fn cli_get_layout(ctx: &impl LayoutPort) -> Result<Value, CliError> {
 // ── Phase 2: Act ─────────────────────────────────────────────────
 
 /// UC-3: SendKeys — write key sequences to a terminal pane's PTY.
-fn cli_send_keys(ctx: &mut (impl FocusNavPort + PaneAccessPort), params: Value) -> Result<Value, CliError> {
-    let pane_id = params.get("pane_id")
+fn cli_send_keys(
+    ctx: &mut (impl FocusNavPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = params
+        .get("pane_id")
         .and_then(|v| v.as_u64())
         .or_else(|| ctx.focused_pane())
         .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
 
-    let pane = ctx.pane_mut(pane_id)
+    let pane = ctx
+        .pane_mut(pane_id)
         .ok_or(CliError::PaneNotFound(pane_id))?;
 
     match pane {
         PaneKind::Terminal(tp) => {
-            let keys = params.get("keys")
+            let keys = params
+                .get("keys")
                 .and_then(|v| v.as_array())
                 .ok_or_else(|| CliError::InvalidParams("keys array required".into()))?;
 
@@ -309,7 +341,8 @@ fn cli_split(
     direction: SplitDirection,
     params: Value,
 ) -> Result<Value, CliError> {
-    let source = params.get("pane_id")
+    let source = params
+        .get("pane_id")
         .and_then(|v| v.as_u64())
         .or_else(|| ctx.focused_pane())
         .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
@@ -318,7 +351,8 @@ fn cli_split(
         return Err(CliError::PaneNotFound(source));
     }
 
-    let cwd = params.get("cwd")
+    let cwd = params
+        .get("cwd")
         .and_then(|v| v.as_str())
         .map(PathBuf::from);
 
@@ -329,8 +363,12 @@ fn cli_split(
 }
 
 /// UC-5: ClosePaneCli — close a specific pane.
-fn cli_close_pane(ctx: &mut (impl FocusNavPort + PaneAccessPort + PaneLifecyclePort), params: Value) -> Result<Value, CliError> {
-    let pane_id = params.get("pane_id")
+fn cli_close_pane(
+    ctx: &mut (impl FocusNavPort + PaneAccessPort + PaneLifecyclePort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = params
+        .get("pane_id")
         .and_then(|v| v.as_u64())
         .or_else(|| ctx.focused_pane())
         .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
@@ -344,8 +382,12 @@ fn cli_close_pane(ctx: &mut (impl FocusNavPort + PaneAccessPort + PaneLifecycleP
 }
 
 /// UC-5: FocusPane — change focus to a specific pane.
-fn cli_focus_pane(ctx: &mut (impl FocusNavPort + GatewayPort + PaneAccessPort), params: Value) -> Result<Value, CliError> {
-    let pane_id = params.get("pane_id")
+fn cli_focus_pane(
+    ctx: &mut (impl FocusNavPort + GatewayPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = params
+        .get("pane_id")
         .and_then(|v| v.as_u64())
         .ok_or_else(|| CliError::InvalidParams("pane_id required".into()))?;
 
@@ -359,8 +401,12 @@ fn cli_focus_pane(ctx: &mut (impl FocusNavPort + GatewayPort + PaneAccessPort), 
 }
 
 /// UC-5: ResizePane — adjust the split ratio of the parent split.
-fn cli_resize_pane(ctx: &mut (impl FocusNavPort + LayoutPort + PaneAccessPort), params: Value) -> Result<Value, CliError> {
-    let pane_id = params.get("pane_id")
+fn cli_resize_pane(
+    ctx: &mut (impl FocusNavPort + LayoutPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = params
+        .get("pane_id")
         .and_then(|v| v.as_u64())
         .or_else(|| ctx.focused_pane())
         .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
@@ -369,7 +415,8 @@ fn cli_resize_pane(ctx: &mut (impl FocusNavPort + LayoutPort + PaneAccessPort), 
         return Err(CliError::PaneNotFound(pane_id));
     }
 
-    let ratio = params.get("ratio")
+    let ratio = params
+        .get("ratio")
         .and_then(|v| v.as_f64())
         .map(|r| r as f32)
         .ok_or_else(|| CliError::InvalidParams("ratio (float) required".into()))?;
@@ -383,12 +430,17 @@ fn cli_resize_pane(ctx: &mut (impl FocusNavPort + LayoutPort + PaneAccessPort), 
 }
 
 /// UC-6: OpenTerminal — create a new terminal pane.
-fn cli_open_terminal(ctx: &mut (impl ActionPort + FocusNavPort + PaneAccessPort + PaneLifecyclePort), params: Value) -> Result<Value, CliError> {
-    let cwd = params.get("cwd")
+fn cli_open_terminal(
+    ctx: &mut (impl ActionPort + FocusNavPort + PaneAccessPort + PaneLifecyclePort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let cwd = params
+        .get("cwd")
         .and_then(|v| v.as_str())
         .map(PathBuf::from);
 
-    let source = ctx.focused_pane()
+    let source = ctx
+        .focused_pane()
         .ok_or_else(|| CliError::InvalidParams("no focused pane for split target".into()))?;
 
     let direction = match params.get("position").and_then(|v| v.as_str()) {
@@ -403,8 +455,12 @@ fn cli_open_terminal(ctx: &mut (impl ActionPort + FocusNavPort + PaneAccessPort 
 }
 
 /// UC-6: OpenEditor — open a file in an editor pane.
-fn cli_open_editor(ctx: &mut (impl FocusNavPort + PaneAccessPort + PaneLifecyclePort), params: Value) -> Result<Value, CliError> {
-    let file = params.get("file")
+fn cli_open_editor(
+    ctx: &mut (impl FocusNavPort + PaneAccessPort + PaneLifecyclePort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let file = params
+        .get("file")
         .and_then(|v| v.as_str())
         .ok_or_else(|| CliError::InvalidParams("file path required".into()))?;
 
@@ -430,10 +486,11 @@ fn cli_open_editor(ctx: &mut (impl FocusNavPort + PaneAccessPort + PaneLifecycle
 }
 
 /// UC-6: OpenBrowser — open a URL in a browser pane.
-fn cli_open_browser(ctx: &mut (impl FocusNavPort + PaneLifecyclePort), params: Value) -> Result<Value, CliError> {
-    let url = params.get("url")
-        .and_then(|v| v.as_str())
-        .map(String::from);
+fn cli_open_browser(
+    ctx: &mut (impl FocusNavPort + PaneLifecyclePort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let url = params.get("url").and_then(|v| v.as_str()).map(String::from);
 
     ctx.open_browser_pane(url);
 
@@ -446,21 +503,43 @@ fn cli_open_browser(ctx: &mut (impl FocusNavPort + PaneLifecyclePort), params: V
 
 // ── Phase 3: Show (Generative UI) ────────────────────────────────
 
+fn validate_render_root_fragment(html: &str) -> Result<(), CliError> {
+    let lower = html.to_ascii_lowercase();
+    if lower.contains("<!doctype")
+        || lower.contains("<html")
+        || lower.contains("<head")
+        || lower.contains("<body")
+    {
+        return Err(CliError::InvalidParams(
+            "html must be a #root fragment; do not include <!doctype>, <html>, <head>, or <body>"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
 /// UC-7: RenderHTML — render agent-provided HTML in a Browser pane.
 /// Now uses PaneLifecyclePort::open_render_pane which places the pane in the Dock.
-fn cli_render_html(ctx: &mut (impl AppCorePort + FocusNavPort + PaneAccessPort + PaneLifecyclePort), params: Value) -> Result<Value, CliError> {
-    let title = params.get("title")
+fn cli_render_html(
+    ctx: &mut (impl AppCorePort + FocusNavPort + PaneAccessPort + PaneLifecyclePort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let title = params
+        .get("title")
         .and_then(|v| v.as_str())
         .ok_or_else(|| CliError::InvalidParams("title required".into()))?
         .to_string();
-    let html = params.get("html")
+    let html = params
+        .get("html")
         .and_then(|v| v.as_str())
         .ok_or_else(|| CliError::InvalidParams("html required".into()))?
         .to_string();
+    validate_render_root_fragment(&html)?;
 
     // If pane_id is specified, update existing render pane
     if let Some(pane_id) = params.get("pane_id").and_then(|v| v.as_u64()) {
-        let pane = ctx.pane_mut(pane_id)
+        let pane = ctx
+            .pane_mut(pane_id)
             .ok_or(CliError::PaneNotFound(pane_id))?;
         match pane {
             PaneKind::Browser(bp) if bp.render_mode => {
@@ -492,8 +571,12 @@ fn cli_render_html(ctx: &mut (impl AppCorePort + FocusNavPort + PaneAccessPort +
 }
 
 /// UC-8: RenderStream — create a streaming render pane.
-fn cli_render_stream(ctx: &mut (impl FocusNavPort + PaneLifecyclePort), params: Value) -> Result<Value, CliError> {
-    let title = params.get("title")
+fn cli_render_stream(
+    ctx: &mut (impl FocusNavPort + PaneLifecyclePort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let title = params
+        .get("title")
         .and_then(|v| v.as_str())
         .ok_or_else(|| CliError::InvalidParams("title required".into()))?
         .to_string();
@@ -505,14 +588,18 @@ fn cli_render_stream(ctx: &mut (impl FocusNavPort + PaneLifecyclePort), params: 
 
 /// UC-8: StreamChunk — send an HTML chunk to a streaming render pane.
 fn cli_stream_chunk(ctx: &mut impl PaneAccessPort, params: Value) -> Result<Value, CliError> {
-    let pane_id = params.get("pane_id")
+    let pane_id = params
+        .get("pane_id")
         .and_then(|v| v.as_u64())
         .ok_or_else(|| CliError::InvalidParams("pane_id required".into()))?;
-    let html = params.get("html")
+    let html = params
+        .get("html")
         .and_then(|v| v.as_str())
         .ok_or_else(|| CliError::InvalidParams("html required".into()))?;
+    validate_render_root_fragment(html)?;
 
-    let pane = ctx.pane_mut(pane_id)
+    let pane = ctx
+        .pane_mut(pane_id)
         .ok_or(CliError::PaneNotFound(pane_id))?;
 
     match pane {
@@ -520,30 +607,31 @@ fn cli_stream_chunk(ctx: &mut impl PaneAccessPort, params: Value) -> Result<Valu
             bp.update_render_content(html);
             Ok(json!({"ok": true}))
         }
-        PaneKind::Browser(_) => {
-            Err(CliError::InvalidPaneKind {
-                pane_id,
-                expected: "render-mode browser",
-                actual: "browser",
-            })
-        }
-        _ => {
-            Err(CliError::InvalidPaneKind {
-                pane_id,
-                expected: "render-mode browser",
-                actual: "non-browser",
-            })
-        }
+        PaneKind::Browser(_) => Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "render-mode browser",
+            actual: "browser",
+        }),
+        _ => Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "render-mode browser",
+            actual: "non-browser",
+        }),
     }
 }
 
 /// UC-8: StreamEnd — end a streaming connection.
-fn cli_stream_end(ctx: &mut (impl AppCorePort + GatewayPort + PaneAccessPort), params: Value) -> Result<Value, CliError> {
-    let pane_id = params.get("pane_id")
+fn cli_stream_end(
+    ctx: &mut (impl AppCorePort + GatewayPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = params
+        .get("pane_id")
         .and_then(|v| v.as_u64())
         .ok_or_else(|| CliError::InvalidParams("pane_id required".into()))?;
 
-    let pane = ctx.pane_mut(pane_id)
+    let pane = ctx
+        .pane_mut(pane_id)
         .ok_or(CliError::PaneNotFound(pane_id))?;
 
     match pane {
@@ -556,13 +644,11 @@ fn cli_stream_end(ctx: &mut (impl AppCorePort + GatewayPort + PaneAccessPort), p
         PaneKind::Browser(bp) if bp.render_mode => {
             Err(CliError::InvalidParams("pane is not streaming".into()))
         }
-        _ => {
-            Err(CliError::InvalidPaneKind {
-                pane_id,
-                expected: "streaming render-mode browser",
-                actual: "non-render",
-            })
-        }
+        _ => Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "streaming render-mode browser",
+            actual: "non-render",
+        }),
     }
 }
 
@@ -570,12 +656,18 @@ fn cli_stream_end(ctx: &mut (impl AppCorePort + GatewayPort + PaneAccessPort), p
 
 /// UC-9: Subscribe — register for event notifications.
 fn cli_subscribe(ctx: &mut impl GatewayPort, params: Value) -> Result<Value, CliError> {
-    let event_filter: Vec<String> = params.get("events")
+    let event_filter: Vec<String> = params
+        .get("events")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
-    let tx = ctx.take_subscribe_tx()
+    let tx = ctx
+        .take_subscribe_tx()
         .ok_or_else(|| CliError::InvalidParams("subscribe requires notification channel".into()))?;
 
     ctx.gateway_subscribe(tx, event_filter);
@@ -583,7 +675,8 @@ fn cli_subscribe(ctx: &mut impl GatewayPort, params: Value) -> Result<Value, Cli
 }
 
 fn cli_enable_integration(params: Value) -> Result<Value, CliError> {
-    let tool = params.get("tool")
+    let tool = params
+        .get("tool")
         .and_then(|v| v.as_str())
         .ok_or_else(|| CliError::InvalidParams("tool name required".into()))?;
 
@@ -594,7 +687,8 @@ fn cli_enable_integration(params: Value) -> Result<Value, CliError> {
 }
 
 fn cli_remove_integration(params: Value) -> Result<Value, CliError> {
-    let tool = params.get("tool")
+    let tool = params
+        .get("tool")
         .and_then(|v| v.as_str())
         .ok_or_else(|| CliError::InvalidParams("tool name required".into()))?;
 
@@ -628,11 +722,36 @@ enum EnableMethod {
 }
 
 const INTEGRATION_TOOLS: &[IntegrationTool] = &[
-    IntegrationTool { name: "claude-code", detection: IntegrationDetection::DirExists("~/.claude"), config_path: "~/.claude.json", enable_method: EnableMethod::JsonMcpServers },
-    IntegrationTool { name: "codex", detection: IntegrationDetection::DirExists("~/.codex"), config_path: "~/.codex/config.toml", enable_method: EnableMethod::CliCommand("codex") },
-    IntegrationTool { name: "gemini", detection: IntegrationDetection::DirExists("~/.gemini"), config_path: "~/.gemini/settings.json", enable_method: EnableMethod::JsonMcpServers },
-    IntegrationTool { name: "cursor", detection: IntegrationDetection::DirExists("~/.cursor"), config_path: "~/.cursor/mcp.json", enable_method: EnableMethod::JsonMcpServers },
-    IntegrationTool { name: "windsurf", detection: IntegrationDetection::DirExists("~/.windsurf"), config_path: "~/.windsurf/mcp.json", enable_method: EnableMethod::JsonMcpServers },
+    IntegrationTool {
+        name: "claude-code",
+        detection: IntegrationDetection::DirExists("~/.claude"),
+        config_path: "~/.claude.json",
+        enable_method: EnableMethod::JsonMcpServers,
+    },
+    IntegrationTool {
+        name: "codex",
+        detection: IntegrationDetection::DirExists("~/.codex"),
+        config_path: "~/.codex/config.toml",
+        enable_method: EnableMethod::CliCommand("codex"),
+    },
+    IntegrationTool {
+        name: "gemini",
+        detection: IntegrationDetection::DirExists("~/.gemini"),
+        config_path: "~/.gemini/settings.json",
+        enable_method: EnableMethod::JsonMcpServers,
+    },
+    IntegrationTool {
+        name: "cursor",
+        detection: IntegrationDetection::DirExists("~/.cursor"),
+        config_path: "~/.cursor/mcp.json",
+        enable_method: EnableMethod::JsonMcpServers,
+    },
+    IntegrationTool {
+        name: "windsurf",
+        detection: IntegrationDetection::DirExists("~/.windsurf"),
+        config_path: "~/.windsurf/mcp.json",
+        enable_method: EnableMethod::JsonMcpServers,
+    },
 ];
 
 fn expand_home(path: &str) -> std::path::PathBuf {
@@ -645,43 +764,46 @@ fn expand_home(path: &str) -> std::path::PathBuf {
 }
 
 pub(crate) fn list_integration_status() -> Vec<Value> {
-    INTEGRATION_TOOLS.iter().map(|tool| {
-        let installed = match &tool.detection {
-            IntegrationDetection::Which(cmd) => {
-                std::process::Command::new("which").arg(cmd).output()
-                    .map(|o| o.status.success()).unwrap_or(false)
-            }
-            IntegrationDetection::DirExists(dir) => expand_home(dir).exists(),
-        };
+    INTEGRATION_TOOLS
+        .iter()
+        .map(|tool| {
+            let installed = match &tool.detection {
+                IntegrationDetection::Which(cmd) => std::process::Command::new("which")
+                    .arg(cmd)
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false),
+                IntegrationDetection::DirExists(dir) => expand_home(dir).exists(),
+            };
 
-        let config_path = expand_home(tool.config_path);
-        let enabled = if config_path.exists() {
-            let content = std::fs::read_to_string(&config_path).unwrap_or_default();
-            match &tool.enable_method {
-                EnableMethod::CliCommand(_) => {
-                    content.contains("[mcp_servers.tide]")
-                }
-                _ => {
-                    serde_json::from_str::<Value>(&content).ok()
+            let config_path = expand_home(tool.config_path);
+            let enabled = if config_path.exists() {
+                let content = std::fs::read_to_string(&config_path).unwrap_or_default();
+                match &tool.enable_method {
+                    EnableMethod::CliCommand(_) => content.contains("[mcp_servers.tide]"),
+                    _ => serde_json::from_str::<Value>(&content)
+                        .ok()
                         .map(|v| v.get("mcpServers").and_then(|m| m.get("tide")).is_some())
-                        .unwrap_or(false)
+                        .unwrap_or(false),
                 }
-            }
-        } else {
-            false
-        };
+            } else {
+                false
+            };
 
-        json!({
-            "tool": tool.name,
-            "installed": installed,
-            "enabled": enabled,
-            "config_path": tool.config_path,
+            json!({
+                "tool": tool.name,
+                "installed": installed,
+                "enabled": enabled,
+                "config_path": tool.config_path,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 pub(crate) fn enable_integration(tool_name: &str) -> Result<String, String> {
-    let tool = INTEGRATION_TOOLS.iter().find(|t| t.name == tool_name)
+    let tool = INTEGRATION_TOOLS
+        .iter()
+        .find(|t| t.name == tool_name)
         .ok_or_else(|| format!("unknown tool: {tool_name}"))?;
 
     let tide_bin = std::env::current_exe()
@@ -697,7 +819,10 @@ pub(crate) fn enable_integration(tool_name: &str) -> Result<String, String> {
             if output.status.success() {
                 Ok(format!("{binary} mcp add tide"))
             } else {
-                Err(format!("{binary} mcp add failed: {}", String::from_utf8_lossy(&output.stderr)))
+                Err(format!(
+                    "{binary} mcp add failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ))
             }
         }
         _ => {
@@ -718,7 +843,9 @@ pub(crate) fn enable_integration(tool_name: &str) -> Result<String, String> {
 
             let obj = config.as_object_mut().ok_or("config is not an object")?;
             let servers = obj.entry("mcpServers").or_insert(json!({}));
-            let servers_obj = servers.as_object_mut().ok_or("mcpServers is not an object")?;
+            let servers_obj = servers
+                .as_object_mut()
+                .ok_or("mcpServers is not an object")?;
             servers_obj.insert("tide".to_string(), tide_entry);
 
             let output = serde_json::to_string_pretty(&config).unwrap();
@@ -731,7 +858,9 @@ pub(crate) fn enable_integration(tool_name: &str) -> Result<String, String> {
 }
 
 pub(crate) fn remove_integration(tool_name: &str) -> Result<(), String> {
-    let tool = INTEGRATION_TOOLS.iter().find(|t| t.name == tool_name)
+    let tool = INTEGRATION_TOOLS
+        .iter()
+        .find(|t| t.name == tool_name)
         .ok_or_else(|| format!("unknown tool: {tool_name}"))?;
 
     match &tool.enable_method {
@@ -749,8 +878,8 @@ pub(crate) fn remove_integration(tool_name: &str) -> Result<(), String> {
 
             let content = std::fs::read_to_string(&config_path)
                 .map_err(|e| format!("cannot read config: {e}"))?;
-            let mut config: Value = serde_json::from_str(&content)
-                .map_err(|e| format!("invalid JSON: {e}"))?;
+            let mut config: Value =
+                serde_json::from_str(&content).map_err(|e| format!("invalid JSON: {e}"))?;
 
             if let Some(servers) = config.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
                 servers.remove("tide");
@@ -768,7 +897,11 @@ pub(crate) fn remove_integration(tool_name: &str) -> Result<(), String> {
 fn serialize_snapshot(snap: &LayoutSnapshot) -> Value {
     match snap {
         LayoutSnapshot::Leaf { tabs, active } => {
-            let id = tabs.get(*active).or_else(|| tabs.first()).copied().unwrap_or(0);
+            let id = tabs
+                .get(*active)
+                .or_else(|| tabs.first())
+                .copied()
+                .unwrap_or(0);
             json!({
                 "type": "leaf",
                 "pane_id": id,
@@ -782,7 +915,12 @@ fn serialize_snapshot(snap: &LayoutSnapshot) -> Value {
                 "active_pane_id": tabs.get(*active).copied().unwrap_or(0),
             })
         }
-        LayoutSnapshot::Split { direction, ratio, left, right } => {
+        LayoutSnapshot::Split {
+            direction,
+            ratio,
+            left,
+            right,
+        } => {
             let dir = match direction {
                 crate::tide_core::SplitDirection::Horizontal => "horizontal",
                 crate::tide_core::SplitDirection::Vertical => "vertical",
@@ -802,14 +940,19 @@ fn serialize_snapshot(snap: &LayoutSnapshot) -> Value {
 
 /// Handle agent lifecycle notifications sent by wrapper hooks.
 /// Updates AgentInfo.status for the given pane and bumps chrome generation.
-fn cli_notify(ctx: &mut (impl AppCorePort + GatewayPort + PaneAccessPort), params: Value) -> Result<Value, CliError> {
+fn cli_notify(
+    ctx: &mut (impl AppCorePort + GatewayPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
     use crate::state::gateway_status::AgentStatus;
 
-    let event = params.get("event")
+    let event = params
+        .get("event")
         .and_then(|v| v.as_str())
         .ok_or_else(|| CliError::InvalidParams("event (string) required".into()))?;
 
-    let pane_id = params.get("pane")
+    let pane_id = params
+        .get("pane")
         .and_then(|v| v.as_u64())
         .ok_or_else(|| CliError::InvalidParams("pane (u64) required".into()))?;
 
@@ -828,7 +971,8 @@ fn cli_notify(ctx: &mut (impl AppCorePort + GatewayPort + PaneAccessPort), param
     // Update status if this pane has a detected agent.
     // If no agent is registered yet (wrapper hook fired before process scan),
     // auto-register from the agent name hint or with a generic name.
-    let agent_display_name = params.get("agent")
+    let agent_display_name = params
+        .get("agent")
         .and_then(|v| v.as_str())
         .unwrap_or("Agent");
 
@@ -846,23 +990,29 @@ fn cli_notify(ctx: &mut (impl AppCorePort + GatewayPort + PaneAccessPort), param
                 "gemini" | "Gemini" => "Gemini",
                 _ => "Agent",
             };
-            agents.insert(pane_id, crate::state::gateway_status::AgentInfo {
-                name,
-                pid: 0, // PID unknown from hook — will be updated on next process scan
-                gateway_connected: true, // wrapper implies MCP is connected
-                status: Some(status),
-            });
+            agents.insert(
+                pane_id,
+                crate::state::gateway_status::AgentInfo {
+                    name,
+                    pid: 0, // PID unknown from hook — will be updated on next process scan
+                    gateway_connected: true, // wrapper implies MCP is connected
+                    status: Some(status),
+                },
+            );
             Some(name)
         }
     };
 
     if let Some(name) = agent_name {
         ctx.invalidate_chrome();
-        ctx.gateway_notify("agent-status-changed", json!({
-            "pane_id": pane_id,
-            "status": event,
-            "agent": name,
-        }));
+        ctx.gateway_notify(
+            "agent-status-changed",
+            json!({
+                "pane_id": pane_id,
+                "status": event,
+                "agent": name,
+            }),
+        );
         // Route notification based on user context (UC-1)
         ctx.route_agent_notification(pane_id, status);
     }

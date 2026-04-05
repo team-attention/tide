@@ -23,13 +23,22 @@ impl GatewayConnection {
             .ok_or_else(|| "cannot find Tide socket. Is Tide running?".to_string())?;
         let stream = UnixStream::connect(&socket_path)
             .map_err(|e| format!("cannot connect to {socket_path}: {e}"))?;
-        let writer = stream.try_clone()
+        let writer = stream
+            .try_clone()
             .map_err(|e| format!("stream clone failed: {e}"))?;
         let reader = BufReader::new(stream);
-        Ok(Self { writer, reader, next_id: 1 })
+        Ok(Self {
+            writer,
+            reader,
+            next_id: 1,
+        })
     }
 
-    fn send(&mut self, method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
+    fn send(
+        &mut self,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
         let request = serde_json::json!({
             "jsonrpc": "2.0",
             "id": self.next_id,
@@ -43,18 +52,22 @@ impl GatewayConnection {
 
         // Read response line
         let mut line = String::new();
-        self.reader.read_line(&mut line)
+        self.reader
+            .read_line(&mut line)
             .map_err(|e| format!("read failed: {e}"))?;
 
         if line.trim().is_empty() {
             return Err("empty response".to_string());
         }
 
-        let value: serde_json::Value = serde_json::from_str(&line)
-            .map_err(|e| format!("invalid response: {e}"))?;
+        let value: serde_json::Value =
+            serde_json::from_str(&line).map_err(|e| format!("invalid response: {e}"))?;
 
         if let Some(error) = value.get("error") {
-            return Err(error["message"].as_str().unwrap_or("unknown error").to_string());
+            return Err(error["message"]
+                .as_str()
+                .unwrap_or("unknown error")
+                .to_string());
         }
         if let Some(result) = value.get("result") {
             return Ok(result.clone());
@@ -85,13 +98,20 @@ pub fn run_mcp() -> i32 {
         let request: serde_json::Value = match serde_json::from_str(&line) {
             Ok(v) => v,
             Err(e) => {
-                let err = mcp_error(serde_json::Value::Null, -32700, &format!("parse error: {e}"));
+                let err = mcp_error(
+                    serde_json::Value::Null,
+                    -32700,
+                    &format!("parse error: {e}"),
+                );
                 let _ = writeln!(stdout, "{}", serde_json::to_string(&err).unwrap());
                 continue;
             }
         };
 
-        let id = request.get("id").cloned().unwrap_or(serde_json::Value::Null);
+        let id = request
+            .get("id")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         let method = request.get("method").and_then(|v| v.as_str()).unwrap_or("");
 
         let response = match method {
@@ -108,7 +128,11 @@ pub fn run_mcp() -> i32 {
                 if gateway.is_none() {
                     gateway = GatewayConnection::connect().ok();
                 }
-                mcp_tools_call(id.clone(), request.get("params").cloned().unwrap_or_default(), &mut gateway)
+                mcp_tools_call(
+                    id.clone(),
+                    request.get("params").cloned().unwrap_or_default(),
+                    &mut gateway,
+                )
             }
             "notifications/initialized" => continue,
             _ => mcp_error(id.clone(), -32601, &format!("method not found: {method}")),
@@ -132,8 +156,8 @@ fn mcp_initialize(id: serde_json::Value) -> serde_json::Value {
     })
 }
 
-fn mcp_tools_list(id: serde_json::Value) -> serde_json::Value {
-    let tools = serde_json::json!([
+pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
+    serde_json::json!([
         {
             "name": "tide_list_panes",
             "description": "List all panes in the active workspace with id, kind, rect, and focus status",
@@ -223,18 +247,25 @@ fn mcp_tools_list(id: serde_json::Value) -> serde_json::Value {
         },
         {
             "name": "tide_render_html",
-            "description": "Render HTML content in a browser pane (generative UI)",
+            "description": "Render an HTML fragment in a Browser Pane (generative UI). Pass #root content only; Tide injects the document shell, theme vars, and bridge runtime.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "title": { "type": "string" },
-                    "html": { "type": "string" },
+                    "html": { "type": "string", "description": "HTML fragment for #root. Do not include <!doctype>, <html>, <head>, or <body>." },
                     "pane_id": { "type": "integer", "description": "Existing pane to update (omit for new)" }
                 },
                 "required": ["title", "html"]
             }
         }
-    ]);
+    ])
+    .as_array()
+    .expect("mcp tool definitions should be an array")
+    .clone()
+}
+
+fn mcp_tools_list(id: serde_json::Value) -> serde_json::Value {
+    let tools = serde_json::Value::Array(mcp_tool_definitions());
 
     serde_json::json!({
         "jsonrpc": "2.0",
@@ -243,16 +274,26 @@ fn mcp_tools_list(id: serde_json::Value) -> serde_json::Value {
     })
 }
 
-fn mcp_tools_call(id: serde_json::Value, params: serde_json::Value, gateway: &mut Option<GatewayConnection>) -> serde_json::Value {
+fn mcp_tools_call(
+    id: serde_json::Value,
+    params: serde_json::Value,
+    gateway: &mut Option<GatewayConnection>,
+) -> serde_json::Value {
     let tool_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
-    let mut arguments = params.get("arguments").cloned().unwrap_or(serde_json::json!({}));
+    let mut arguments = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or(serde_json::json!({}));
 
     // Inject _caller_pane from TIDE_PANE env var so the gateway can route
     // the command to the correct Workspace (see cli-workspace-routing spec).
     if let Ok(pane_str) = std::env::var("TIDE_PANE") {
         if let Ok(pane_id) = pane_str.parse::<u64>() {
             if let Some(obj) = arguments.as_object_mut() {
-                obj.insert("_caller_pane".to_string(), serde_json::Value::Number(pane_id.into()));
+                obj.insert(
+                    "_caller_pane".to_string(),
+                    serde_json::Value::Number(pane_id.into()),
+                );
             }
         }
     }
@@ -281,7 +322,10 @@ fn mcp_tools_call(id: serde_json::Value, params: serde_json::Value, gateway: &mu
         None => {
             // Try to reconnect
             match GatewayConnection::connect() {
-                Ok(conn) => { *gateway = Some(conn); gateway.as_mut().unwrap() }
+                Ok(conn) => {
+                    *gateway = Some(conn);
+                    gateway.as_mut().unwrap()
+                }
                 Err(e) => {
                     return mcp_error_result(id, &format!("gateway not connected: {e}"));
                 }
