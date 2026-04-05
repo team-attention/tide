@@ -1,8 +1,8 @@
 // Session persistence: save/restore workspace state across app restarts.
 
-use std::path::PathBuf;
 use crate::tide_core::{PaneId, SplitDirection};
 use crate::tide_layout::{LayoutSnapshot, SplitLayout};
+use std::path::PathBuf;
 
 use crate::pane::PaneKind;
 use crate::App;
@@ -11,7 +11,7 @@ use crate::LayoutPort;
 
 // Session types are defined in application/ports/outward/persistence_port.rs
 pub(crate) use crate::application::ports::outward::persistence_port::{
-    Session, SessionContextArea, SessionLayout, DrawerStateSnapshot, LeafGroupTab,
+    DrawerStateSnapshot, LeafGroupTab, Session, SessionContextArea, SessionLayout,
 };
 
 // ──────────────────────────────────────────────
@@ -153,13 +153,19 @@ impl SessionContextArea {
             if let crate::pane::PaneKind::Terminal(tp) = pane {
                 let dock_pane_ids = tp.dock_layout.all_pane_ids();
                 if !dock_pane_ids.is_empty() {
-                    let snap_layout = tp.dock_layout.snapshot().map(|s| snapshot_to_session_layout(&s, app));
-                    drawer_states.insert(tid, DrawerStateSnapshot {
-                        pane_ids: dock_pane_ids,
-                        focused: tp.dock_focused,
-                        layout: snap_layout,
-                        view_mode: "split".to_string(),
-                    });
+                    let snap_layout = tp
+                        .dock_layout
+                        .snapshot()
+                        .map(|s| snapshot_to_session_layout(&s, app));
+                    drawer_states.insert(
+                        tid,
+                        DrawerStateSnapshot {
+                            pane_ids: dock_pane_ids,
+                            focused: tp.dock_focused,
+                            layout: snap_layout,
+                            view_mode: "split".to_string(),
+                        },
+                    );
                 }
             }
         }
@@ -179,27 +185,28 @@ fn snapshot_to_session(snap: &LayoutSnapshot, app: &App) -> SessionLayout {
     match snap {
         LayoutSnapshot::Leaf { tabs, active } => {
             // Each leaf now has a single pane; use active index for backward compat
-            let id = tabs.get(*active).or_else(|| tabs.first()).copied().unwrap_or(0);
+            let id = tabs
+                .get(*active)
+                .or_else(|| tabs.first())
+                .copied()
+                .unwrap_or(0);
             let cwd = match app.panes.get(&id) {
                 Some(PaneKind::Terminal(pane)) => pane.backend.detect_cwd_fallback(),
                 _ => None,
             };
-            SessionLayout::Leaf {
-                pane_id: id,
-                cwd,
-            }
+            SessionLayout::Leaf { pane_id: id, cwd }
         }
         LayoutSnapshot::LeafGroup { tabs, active } => {
-            let session_tabs: Vec<_> = tabs.iter().map(|id| {
-                let cwd = match app.panes.get(id) {
-                    Some(PaneKind::Terminal(pane)) => pane.backend.detect_cwd_fallback(),
-                    _ => None,
-                };
-                LeafGroupTab {
-                    pane_id: *id,
-                    cwd,
-                }
-            }).collect();
+            let session_tabs: Vec<_> = tabs
+                .iter()
+                .map(|id| {
+                    let cwd = match app.panes.get(id) {
+                        Some(PaneKind::Terminal(pane)) => pane.backend.detect_cwd_fallback(),
+                        _ => None,
+                    };
+                    LeafGroupTab { pane_id: *id, cwd }
+                })
+                .collect();
             SessionLayout::LeafGroup {
                 tabs: session_tabs,
                 active: *active,
@@ -255,7 +262,13 @@ impl App {
         };
 
         for (pane_id, cwd) in &pane_infos {
-            match self.ports.terminal_factory.create_terminal(*pane_id, cols, rows, cwd.as_deref(), self.window.dark_mode) {
+            match self.ports.terminal_factory.create_terminal(
+                *pane_id,
+                cols,
+                rows,
+                cwd.as_deref(),
+                self.window.dark_mode,
+            ) {
                 Ok(pane) => {
                     self.install_pty_waker(&pane);
                     self.panes.insert(*pane_id, PaneKind::Terminal(pane));
@@ -327,6 +340,8 @@ impl App {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")));
         let tree = crate::tide_tree::FsTree::new(cwd.clone());
         self.ft.tree = Some(tree);
+        self.sync_file_tree_path_identity_cache();
+        self.sync_file_tree_modified_editor_cache();
         self.timing.last_cwd = Some(cwd);
 
         true
@@ -334,7 +349,11 @@ impl App {
 
     /// Restore only preferences (window size, theme, panel widths) from a session,
     /// then create a fresh initial pane. Used after intentional quit.
-    pub(crate) fn restore_preferences(&mut self, session: &Session, early_terminal: Option<crate::tide_terminal::Terminal>) {
+    pub(crate) fn restore_preferences(
+        &mut self,
+        session: &Session,
+        early_terminal: Option<crate::tide_terminal::Terminal>,
+    ) {
         self.ft.visible = session.show_file_tree;
         self.ft.width = session.file_tree_width;
         self.ws.width = session.ws_sidebar_width;
@@ -361,7 +380,9 @@ impl App {
         let session = Session::from_app(self);
         self.ports.persistence.save_session(&session);
         let context_area = SessionContextArea::from_app(self);
-        self.ports.persistence.save_context_area_session(&context_area);
+        self.ports
+            .persistence
+            .save_context_area_session(&context_area);
     }
 }
 
@@ -374,13 +395,19 @@ fn session_to_snapshot(
     match layout {
         SessionLayout::Leaf { pane_id, cwd } => {
             pane_infos.push((*pane_id, cwd.clone()));
-            Some(LayoutSnapshot::Leaf { tabs: vec![*pane_id], active: 0 })
+            Some(LayoutSnapshot::Leaf {
+                tabs: vec![*pane_id],
+                active: 0,
+            })
         }
         SessionLayout::LeafGroup { tabs, active } => {
-            let pane_ids: Vec<PaneId> = tabs.iter().map(|t| {
-                pane_infos.push((t.pane_id, t.cwd.clone()));
-                t.pane_id
-            }).collect();
+            let pane_ids: Vec<PaneId> = tabs
+                .iter()
+                .map(|t| {
+                    pane_infos.push((t.pane_id, t.cwd.clone()));
+                    t.pane_id
+                })
+                .collect();
             Some(LayoutSnapshot::LeafGroup {
                 tabs: pane_ids,
                 active: *active,
@@ -449,7 +476,12 @@ mod tests {
         let restored: SessionLayout = serde_json::from_str(&json).unwrap();
 
         match restored {
-            SessionLayout::Split { direction, ratio, left, right } => {
+            SessionLayout::Split {
+                direction,
+                ratio,
+                left,
+                right,
+            } => {
                 assert_eq!(direction, "horizontal");
                 assert!((ratio - 0.5).abs() < f32::EPSILON);
                 match *left {
@@ -471,7 +503,10 @@ mod tests {
     #[test]
     fn session_full_roundtrip() {
         let session = Session {
-            layout: SessionLayout::Leaf { pane_id: 1, cwd: None },
+            layout: SessionLayout::Leaf {
+                pane_id: 1,
+                cwd: None,
+            },
             focused_pane_id: Some(1),
             show_file_tree: true,
             file_tree_width: 250.0,
@@ -521,8 +556,14 @@ mod tests {
         let layout = SessionLayout::Split {
             direction: "vertical".to_string(),
             ratio: 0.6,
-            left: Box::new(SessionLayout::Leaf { pane_id: 1, cwd: None }),
-            right: Box::new(SessionLayout::Leaf { pane_id: 2, cwd: None }),
+            left: Box::new(SessionLayout::Leaf {
+                pane_id: 1,
+                cwd: None,
+            }),
+            right: Box::new(SessionLayout::Leaf {
+                pane_id: 2,
+                cwd: None,
+            }),
         };
         let mut pane_infos = Vec::new();
         let snap = session_to_snapshot(&layout, &mut pane_infos).unwrap();
@@ -530,7 +571,9 @@ mod tests {
         assert_eq!(pane_infos.len(), 2);
 
         match snap {
-            LayoutSnapshot::Split { direction, ratio, .. } => {
+            LayoutSnapshot::Split {
+                direction, ratio, ..
+            } => {
                 assert_eq!(direction, SplitDirection::Vertical);
                 assert!((ratio - 0.6).abs() < f32::EPSILON);
             }
@@ -543,8 +586,14 @@ mod tests {
         let layout = SessionLayout::Split {
             direction: "diagonal".to_string(),
             ratio: 0.5,
-            left: Box::new(SessionLayout::Leaf { pane_id: 1, cwd: None }),
-            right: Box::new(SessionLayout::Leaf { pane_id: 2, cwd: None }),
+            left: Box::new(SessionLayout::Leaf {
+                pane_id: 1,
+                cwd: None,
+            }),
+            right: Box::new(SessionLayout::Leaf {
+                pane_id: 2,
+                cwd: None,
+            }),
         };
         let mut pane_infos = Vec::new();
         assert!(session_to_snapshot(&layout, &mut pane_infos).is_none());
@@ -554,9 +603,18 @@ mod tests {
     fn session_layout_leaf_group_roundtrip() {
         let layout = SessionLayout::LeafGroup {
             tabs: vec![
-                LeafGroupTab { pane_id: 10, cwd: Some(PathBuf::from("/home")) },
-                LeafGroupTab { pane_id: 20, cwd: None },
-                LeafGroupTab { pane_id: 30, cwd: Some(PathBuf::from("/tmp")) },
+                LeafGroupTab {
+                    pane_id: 10,
+                    cwd: Some(PathBuf::from("/home")),
+                },
+                LeafGroupTab {
+                    pane_id: 20,
+                    cwd: None,
+                },
+                LeafGroupTab {
+                    pane_id: 30,
+                    cwd: Some(PathBuf::from("/tmp")),
+                },
             ],
             active: 1,
         };
@@ -581,8 +639,14 @@ mod tests {
     fn session_to_snapshot_leaf_group() {
         let layout = SessionLayout::LeafGroup {
             tabs: vec![
-                LeafGroupTab { pane_id: 5, cwd: Some(PathBuf::from("/a")) },
-                LeafGroupTab { pane_id: 6, cwd: None },
+                LeafGroupTab {
+                    pane_id: 5,
+                    cwd: Some(PathBuf::from("/a")),
+                },
+                LeafGroupTab {
+                    pane_id: 6,
+                    cwd: None,
+                },
             ],
             active: 1,
         };
@@ -612,12 +676,21 @@ mod tests {
             ratio: 0.5,
             left: Box::new(SessionLayout::LeafGroup {
                 tabs: vec![
-                    LeafGroupTab { pane_id: 1, cwd: None },
-                    LeafGroupTab { pane_id: 2, cwd: None },
+                    LeafGroupTab {
+                        pane_id: 1,
+                        cwd: None,
+                    },
+                    LeafGroupTab {
+                        pane_id: 2,
+                        cwd: None,
+                    },
                 ],
                 active: 0,
             }),
-            right: Box::new(SessionLayout::Leaf { pane_id: 3, cwd: None }),
+            right: Box::new(SessionLayout::Leaf {
+                pane_id: 3,
+                cwd: None,
+            }),
         };
         let mut pane_infos = Vec::new();
         let snap = session_to_snapshot(&layout, &mut pane_infos).unwrap();
