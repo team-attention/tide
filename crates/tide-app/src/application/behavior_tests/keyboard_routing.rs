@@ -118,7 +118,7 @@ fn branch_cleanup_enter_means_keep_branch() {
     app.modal.branch_cleanup = Some(crate::BranchCleanupState {
         pane_id: id,
         branch: "feature-x".to_string(),
-        worktree_path: None,
+        worktree_path: PathBuf::from("/tmp/worktree"),
         cwd: PathBuf::from("/tmp"),
     });
     crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,Key::Escape, Modifiers::default(), None);

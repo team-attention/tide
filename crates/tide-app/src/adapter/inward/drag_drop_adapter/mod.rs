@@ -12,7 +12,7 @@ use crate::state::drag_types::{DropDestination, WsSidebarGeometry};
 const OUTER_ZONE_THRESHOLD: f32 = 0.12;
 
 /// Hit-test whether the position is within a pane's tab bar area.
-pub(crate) fn pane_at_tab_bar(ctx: &(impl AppCorePort), pos: Vec2) -> Option<PaneId> {
+pub(crate) fn pane_at_tab_bar(ctx: &impl AppCorePort, pos: Vec2) -> Option<PaneId> {
     for &(id, rect) in ctx.visual_pane_rects() {
         let tab_rect = Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT);
         if tab_rect.contains(pos) {
@@ -24,7 +24,7 @@ pub(crate) fn pane_at_tab_bar(ctx: &(impl AppCorePort), pos: Vec2) -> Option<Pan
 
 /// Hit-test whether the position is on a pane tab bar close button.
 /// Uses header hit zones (which include per-tab close buttons) for accurate detection.
-pub(crate) fn pane_tab_close_at(ctx: &(impl AppCorePort), pos: Vec2) -> Option<PaneId> {
+pub(crate) fn pane_tab_close_at(ctx: &impl AppCorePort, pos: Vec2) -> Option<PaneId> {
     for zone in &ctx.header_hit_zones() {
         if zone.action == HeaderHitAction::Close && zone.rect.contains(pos) {
             return Some(zone.pane_id);
@@ -35,7 +35,7 @@ pub(crate) fn pane_tab_close_at(ctx: &(impl AppCorePort), pos: Vec2) -> Option<P
 
 /// Hit-test whether the position is on a pane header maximize button.
 /// Uses header hit zones for accurate detection.
-pub(crate) fn pane_maximize_at(ctx: &(impl AppCorePort), pos: Vec2) -> Option<PaneId> {
+pub(crate) fn pane_maximize_at(ctx: &impl AppCorePort, pos: Vec2) -> Option<PaneId> {
     for zone in &ctx.header_hit_zones() {
         if zone.action == HeaderHitAction::Maximize && zone.rect.contains(pos) {
             return Some(zone.pane_id);

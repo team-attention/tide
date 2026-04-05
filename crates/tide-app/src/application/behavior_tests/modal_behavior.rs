@@ -37,7 +37,7 @@ fn modal_stack_close_all_dismisses_all_modals() {
     let mut app = test_app();
     app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/"), vec![]));
     app.modal.git_switcher = Some(GitSwitcherState::new(
-        1, GitSwitcherMode::Branches, vec![], vec![],
+        1, vec![],
         Rect::new(0.0, 0.0, 100.0, 30.0),
     ));
     assert!(app.modal.is_any_open());
@@ -103,7 +103,7 @@ fn git_switcher_captures_text_instead_of_pane() {
     // UC-1 BR-5: Git switcher captures text instead of Pane
     let (mut app, id) = app_with_editor();
     app.modal.git_switcher = Some(GitSwitcherState::new(
-        id, GitSwitcherMode::Branches, vec![], vec![],
+        id, vec![],
         Rect::new(0.0, 0.0, 100.0, 30.0),
     ));
     assert_eq!(
@@ -130,7 +130,7 @@ fn config_page_has_highest_priority_in_modal_stack() {
     let (mut app, id) = app_with_editor();
     app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
     app.modal.git_switcher = Some(GitSwitcherState::new(
-        id, GitSwitcherMode::Branches, vec![], vec![],
+        id, vec![],
         Rect::new(0.0, 0.0, 100.0, 30.0),
     ));
     app.modal.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
@@ -156,7 +156,7 @@ fn escape_closes_git_switcher() {
     // UC-2 BR-9: ESC closes git switcher
     let (mut app, id) = app_with_editor();
     app.modal.git_switcher = Some(GitSwitcherState::new(
-        id, GitSwitcherMode::Branches, vec![], vec![],
+        id, vec![],
         Rect::new(0.0, 0.0, 100.0, 30.0),
     ));
     crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
