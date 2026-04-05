@@ -41,6 +41,7 @@ impl crate::FileOpsPort for App {
     fn open_file_finder_with_replace(&mut self, replace_pane_id: Option<crate::tide_core::PaneId>) {
         // Cancel any in-progress drag when opening a modal
         self.interaction.pane_drag = crate::state::drag_types::PaneDragState::Idle;
+        self.interaction.drop_preview_start = None;
 
         let base_dir = self.resolve_base_dir();
         let mut entries: Vec<PathBuf> = Vec::new();

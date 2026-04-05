@@ -1,6 +1,7 @@
 // InteractionState — mouse/drag/scroll interaction state.
 
 use std::collections::HashMap;
+use std::time::Instant;
 use crate::tide_core::{PaneId, Rect};
 use super::drag_types::{PaneDragState, HoverTarget};
 
@@ -11,6 +12,9 @@ pub(crate) struct InteractionState {
     pub scrollbar_dragging: Option<PaneId>,
     pub scrollbar_drag_rect: Option<Rect>,
     pub hover_target: Option<HoverTarget>,
+    pub drop_preview_start: Option<Instant>,
+    /// Horizontal scroll offset for tab bars, keyed by the pane_id that owns the tab bar.
+    pub tab_scroll_offset: HashMap<PaneId, f32>,
 }
 
 impl InteractionState {
@@ -22,6 +26,8 @@ impl InteractionState {
             scrollbar_dragging: None,
             scrollbar_drag_rect: None,
             hover_target: None,
+            drop_preview_start: None,
+            tab_scroll_offset: HashMap::new(),
         }
     }
 }
