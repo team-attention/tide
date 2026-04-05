@@ -760,20 +760,7 @@ impl App {
                 self.update_file_tree_cwd();
                 self.update_terminal_badges();
 
-                if let Some(ref tx) = self.bg.git_poll_cwd_tx {
-                    let cwds: std::collections::HashSet<std::path::PathBuf> = self
-                        .panes
-                        .values()
-                        .filter_map(|pane| {
-                            if let PaneKind::Terminal(p) = pane {
-                                p.context.cwd.clone()
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    let _ = tx.send(cwds.into_iter().collect());
-                }
+                self.trigger_git_poll();
             }
         }
 

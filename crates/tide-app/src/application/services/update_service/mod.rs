@@ -1,11 +1,11 @@
-
 use std::collections::HashSet;
 use std::path::PathBuf;
 
 use crate::tide_core::TerminalBackend;
 
-use crate::pane::PaneKind;
+use super::path_identity::paths_refer_to_same_file;
 use crate::application::ports::outward::file_watcher_port::FileWatchEvent;
+use crate::pane::PaneKind;
 use crate::search;
 use crate::App;
 use crate::PaneLifecyclePort;
@@ -28,7 +28,8 @@ impl App {
         // skip non-critical work (browser sync, file tree, badge updates)
         // to keep drag and resize interactions smooth.
         let now = self.ports.clock.now();
-        let is_rapid = now.duration_since(self.timing.last_frame) < std::time::Duration::from_millis(8);
+        let is_rapid =
+            now.duration_since(self.timing.last_frame) < std::time::Duration::from_millis(8);
 
         // Process PTY output for terminal panes only
         for pane in self.panes.values_mut() {
@@ -62,20 +63,7 @@ impl App {
             self.update_file_tree_cwd();
             self.update_terminal_badges();
 
-            if let Some(ref tx) = self.bg.git_poll_cwd_tx {
-                let cwds: HashSet<PathBuf> = self
-                    .panes
-                    .values()
-                    .filter_map(|pane| {
-                        if let PaneKind::Terminal(p) = pane {
-                            p.context.cwd.clone()
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                let _ = tx.send(cwds.into_iter().collect());
-            }
+            self.trigger_git_poll();
         }
 
         // Poll file tree events — skip during rapid updates
@@ -138,16 +126,20 @@ impl App {
             }
             for changed_path in &changed_paths {
                 // Find editor panes with this file path
-                let matching_ids: Vec<crate::tide_core::PaneId> = self.panes.iter()
-                    .filter_map(|(&id, pane)| {
-                        if let PaneKind::Editor(editor) = pane {
-                            if editor.editor.file_path() == Some(changed_path.as_path()) {
-                                return Some(id);
+                let matching_ids: Vec<crate::tide_core::PaneId> =
+                    self.panes
+                        .iter()
+                        .filter_map(|(&id, pane)| {
+                            if let PaneKind::Editor(editor) = pane {
+                                if editor.editor.file_path().is_some_and(|path| {
+                                    paths_refer_to_same_file(path, changed_path)
+                                }) {
+                                    return Some(id);
+                                }
                             }
-                        }
-                        None
-                    })
-                    .collect();
+                            None
+                        })
+                        .collect();
 
                 // Check if the file actually exists (macOS FSEvents may report
                 // Modify events for deleted files)
@@ -193,16 +185,20 @@ impl App {
             // Handle removed files: close clean tabs, mark dirty tabs
             let mut tabs_to_close: Vec<crate::tide_core::PaneId> = Vec::new();
             for removed_path in &removed_paths {
-                let matching_ids: Vec<crate::tide_core::PaneId> = self.panes.iter()
-                    .filter_map(|(&id, pane)| {
-                        if let PaneKind::Editor(editor) = pane {
-                            if editor.editor.file_path() == Some(removed_path.as_path()) {
-                                return Some(id);
+                let matching_ids: Vec<crate::tide_core::PaneId> =
+                    self.panes
+                        .iter()
+                        .filter_map(|(&id, pane)| {
+                            if let PaneKind::Editor(editor) = pane {
+                                if editor.editor.file_path().is_some_and(|path| {
+                                    paths_refer_to_same_file(path, removed_path)
+                                }) {
+                                    return Some(id);
+                                }
                             }
-                        }
-                        None
-                    })
-                    .collect();
+                            None
+                        })
+                        .collect();
 
                 for id in matching_ids {
                     if let Some(PaneKind::Editor(editor_pane)) = self.panes.get_mut(&id) {
@@ -224,6 +220,9 @@ impl App {
             }
             for tab_id in tabs_to_close {
                 self.close_editor_panel_tab(tab_id);
+            }
+            if !changed_paths.is_empty() || !removed_paths.is_empty() {
+                self.trigger_git_poll();
             }
         }
 

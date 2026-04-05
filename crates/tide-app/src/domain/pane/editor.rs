@@ -108,6 +108,7 @@ pub struct EditorPane {
     preview_cache: Option<(u64, usize, bool, Vec<PreviewLine>)>,
     pub preview_scroll: usize,
     pub preview_h_scroll: usize,
+    soft_wrap_visual_scroll: usize,
     /// Last wrap_width passed to `ensure_preview_cache`, used to detect
     /// when the width has stabilised after a resize so we can defer the
     /// expensive markdown re-parse during continuous resize.
@@ -151,6 +152,7 @@ impl EditorPane {
             preview_cache: None,
             preview_scroll: 0,
             preview_h_scroll: 0,
+            soft_wrap_visual_scroll: 0,
             preview_last_width: None,
             preview_scroll_pending_ratio: None,
             last_is_modified: false,
@@ -167,6 +169,9 @@ impl EditorPane {
     pub fn open(id: PaneId, path: &Path) -> io::Result<Self> {
         let editor = EditorState::open(path)?;
         let soft_wrap = Self::is_prose_extension(path);
+        let live_preview = Self::is_markdown_extension(path);
+        let live_preview_map = live_preview.then(|| LivePreviewMap::build(&editor.buffer.lines));
+        let live_preview_generation = if live_preview { editor.generation() } else { 0 };
         Ok(Self {
             id,
             editor,
@@ -181,6 +186,7 @@ impl EditorPane {
             preview_cache: None,
             preview_scroll: 0,
             preview_h_scroll: 0,
+            soft_wrap_visual_scroll: 0,
             preview_last_width: None,
             preview_scroll_pending_ratio: None,
             last_is_modified: false,
@@ -188,9 +194,9 @@ impl EditorPane {
             soft_wrap,
             wrap_map: None,
             completion: None,
-            live_preview: false,
-            live_preview_map: None,
-            live_preview_generation: 0,
+            live_preview,
+            live_preview_map,
+            live_preview_generation,
         })
     }
 
@@ -209,6 +215,16 @@ impl EditorPane {
             ) {
                 return;
             }
+            if self.wrap_map.is_none() {
+                self.ensure_wrap_map(80);
+            }
+            if self.handle_soft_wrap_scroll_action(&action, visible_rows) {
+                return;
+            }
+            self.editor.handle_action(action);
+            self.ensure_soft_wrap_cursor_visible(visible_rows);
+            self.clamp_scroll(visible_rows);
+            return;
         }
         let is_scroll = matches!(
             action,
@@ -242,6 +258,14 @@ impl EditorPane {
             ) {
                 return;
             }
+            self.ensure_wrap_map(visible_cols.max(1));
+            if self.handle_soft_wrap_scroll_action(&action, visible_rows) {
+                return;
+            }
+            self.editor.handle_action(action);
+            self.ensure_soft_wrap_cursor_visible(visible_rows);
+            self.clamp_scroll(visible_rows);
+            return;
         }
         let is_scroll = matches!(
             action,
@@ -265,10 +289,76 @@ impl EditorPane {
 
     /// Prevent vertical over-scrolling: last line should stick to bottom.
     fn clamp_scroll(&mut self, visible_rows: usize) {
+        if self.effective_soft_wrap() {
+            self.clamp_soft_wrap_scroll(visible_rows);
+            return;
+        }
         let max_scroll = self.editor.buffer.line_count().saturating_sub(visible_rows);
         if self.editor.scroll_offset() > max_scroll {
             self.editor.set_scroll_offset(max_scroll);
         }
+    }
+
+    fn handle_soft_wrap_scroll_action(&mut self, action: &EditorAction, visible_rows: usize) -> bool {
+        let previous = self.soft_wrap_visual_scroll;
+        match action {
+            EditorAction::ScrollUp(delta) => {
+                self.soft_wrap_visual_scroll = self.soft_wrap_visual_scroll.saturating_sub(*delta as usize);
+            }
+            EditorAction::ScrollDown(delta) => {
+                let max_scroll = self.soft_wrap_max_scroll(visible_rows);
+                self.soft_wrap_visual_scroll = (self.soft_wrap_visual_scroll + *delta as usize).min(max_scroll);
+            }
+            _ => return false,
+        }
+        self.sync_soft_wrap_scroll_line();
+        self.soft_wrap_visual_scroll != previous
+    }
+
+    fn soft_wrap_max_scroll(&self, visible_rows: usize) -> usize {
+        match self.wrap_map.as_ref() {
+            Some(map) => map.total_visual_rows().saturating_sub(visible_rows),
+            None => self.editor.buffer.line_count().saturating_sub(visible_rows),
+        }
+    }
+
+    fn clamp_soft_wrap_scroll(&mut self, visible_rows: usize) {
+        let max_scroll = self.soft_wrap_max_scroll(visible_rows);
+        self.soft_wrap_visual_scroll = self.soft_wrap_visual_scroll.min(max_scroll);
+        self.sync_soft_wrap_scroll_line();
+    }
+
+    fn ensure_soft_wrap_cursor_visible(&mut self, visible_rows: usize) {
+        if visible_rows == 0 {
+            return;
+        }
+        let cursor_visual_row = match self.wrap_map.as_ref() {
+            Some(map) => map.buffer_pos_to_visual_row(
+                self.editor.cursor_position().line,
+                self.editor.cursor_position().col,
+                &self.editor.buffer.lines,
+            ),
+            None => self.editor.cursor_position().line,
+        };
+        if cursor_visual_row < self.soft_wrap_visual_scroll {
+            self.soft_wrap_visual_scroll = cursor_visual_row;
+        } else if cursor_visual_row >= self.soft_wrap_visual_scroll + visible_rows {
+            self.soft_wrap_visual_scroll = cursor_visual_row - visible_rows + 1;
+        }
+        self.sync_soft_wrap_scroll_line();
+    }
+
+    fn sync_soft_wrap_scroll_line(&mut self) {
+        let target_line = match self.wrap_map.as_ref() {
+            Some(map) => map
+                .visual_row_to_line_info(self.soft_wrap_visual_scroll, &self.editor.buffer.lines)
+                .map(|info| info.logical_line)
+                .unwrap_or_else(|| self.editor.buffer.line_count().saturating_sub(1)),
+            None => self
+                .soft_wrap_visual_scroll
+                .min(self.editor.buffer.line_count().saturating_sub(1)),
+        };
+        self.editor.set_scroll_offset(target_line);
     }
 
     /// Prevent horizontal over-scrolling: end of longest line stays at right edge.
@@ -522,7 +612,8 @@ impl EditorPane {
         } else {
             let mut gen = self.editor
                 .generation()
-                .wrapping_add(u64::from(self.split_preview_active()));
+                .wrapping_add(u64::from(self.split_preview_active()))
+                .wrapping_add(self.soft_wrap_visual_scroll as u64);
             // In live preview, cursor line affects rendering (syntax hiding),
             // so include it in the generation to trigger re-render on cursor movement.
             if self.live_preview {
@@ -536,7 +627,12 @@ impl EditorPane {
     pub fn is_markdown(&self) -> bool {
         self.editor
             .file_path()
-            .and_then(|p| p.extension())
+            .map(Self::is_markdown_extension)
+            .unwrap_or(false)
+    }
+
+    fn is_markdown_extension(path: &Path) -> bool {
+        path.extension()
             .and_then(|ext| ext.to_str())
             .map(|ext| matches!(ext, "md" | "markdown" | "mdown" | "mkd"))
             .unwrap_or(false)
@@ -631,6 +727,8 @@ impl EditorPane {
             if wrap_cols > 0 {
                 self.ensure_wrap_map(wrap_cols);
             }
+            let visible_rows = (authoring_rect.height / cell_size.height).floor() as usize;
+            self.clamp_soft_wrap_scroll(visible_rows);
         } else {
             self.wrap_map = None;
         }
@@ -668,6 +766,27 @@ impl EditorPane {
     /// Get a reference to the current wrap map, if any.
     pub fn wrap_map(&self) -> Option<&WrapMap> {
         self.wrap_map.as_ref()
+    }
+
+    pub fn soft_wrap_visual_scroll(&self) -> usize {
+        self.soft_wrap_visual_scroll
+    }
+
+    pub fn soft_wrap_total_visual_rows(&self) -> Option<usize> {
+        self.wrap_map.as_ref().map(|map| map.total_visual_rows())
+    }
+
+    pub fn soft_wrap_visual_row_of_line(&self, line: usize) -> Option<usize> {
+        self.wrap_map.as_ref().map(|map| map.visual_row_of_line(line))
+    }
+
+    pub fn set_soft_wrap_visual_scroll(&mut self, scroll: usize, visible_rows: usize) {
+        self.soft_wrap_visual_scroll = scroll;
+        self.clamp_soft_wrap_scroll(visible_rows);
+    }
+
+    pub fn center_soft_wrap_visual_row(&mut self, visual_row: usize, visible_rows: usize) {
+        self.set_soft_wrap_visual_scroll(visual_row.saturating_sub(visible_rows / 2), visible_rows);
     }
 
     /// Toggle live preview mode. Mutually exclusive with full preview mode.
@@ -708,12 +827,34 @@ impl EditorPane {
             // Preview → Edit: map preview_scroll to editor scroll
             let preview_total = self.preview_line_count().max(1);
             let ratio = self.preview_scroll as f64 / preview_total as f64;
-            let target = (ratio * raw_line_count as f64).round() as usize;
-            self.editor
-                .set_scroll_offset(target.min(raw_line_count.saturating_sub(1)));
+            if self.soft_wrap && !self.diff_mode {
+                if let Some(total_visual_rows) = self.soft_wrap_total_visual_rows() {
+                    let target = (ratio * total_visual_rows.max(1) as f64).round() as usize;
+                    self.soft_wrap_visual_scroll =
+                        target.min(total_visual_rows.saturating_sub(1));
+                    self.sync_soft_wrap_scroll_line();
+                } else {
+                    let target = (ratio * raw_line_count as f64).round() as usize;
+                    self.editor
+                        .set_scroll_offset(target.min(raw_line_count.saturating_sub(1)));
+                    self.soft_wrap_visual_scroll = self.editor.scroll_offset();
+                }
+            } else {
+                let target = (ratio * raw_line_count as f64).round() as usize;
+                self.editor
+                    .set_scroll_offset(target.min(raw_line_count.saturating_sub(1)));
+            }
         } else {
             // Edit → Preview: save current scroll ratio to apply after cache is built
-            let ratio = self.editor.scroll_offset() as f64 / raw_line_count as f64;
+            let ratio = if self.effective_soft_wrap() {
+                if let Some(total_visual_rows) = self.soft_wrap_total_visual_rows() {
+                    self.soft_wrap_visual_scroll as f64 / total_visual_rows.max(1) as f64
+                } else {
+                    self.editor.scroll_offset() as f64 / raw_line_count as f64
+                }
+            } else {
+                self.editor.scroll_offset() as f64 / raw_line_count as f64
+            };
             // Store ratio temporarily; will be applied in ensure_preview_cache
             self.preview_scroll_pending_ratio = Some(ratio);
             self.split_preview = false;

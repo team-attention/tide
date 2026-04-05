@@ -7,6 +7,36 @@ use crate::AppCorePort;
 
 use super::{visual_width, draw_popup_rounded_bg, draw_popup_scrim, draw_cursor_beam, text_style, bold_style};
 
+pub(crate) struct CurrentWorktreeRowLayout {
+    pub display_name: String,
+    pub text_clip_w: f32,
+    pub badge_x: f32,
+    pub badge_w: f32,
+}
+
+pub(crate) fn current_worktree_row_layout(
+    name: &str,
+    popup_x: f32,
+    popup_w: f32,
+    item_pad: f32,
+    name_x: f32,
+    cell_w: f32,
+) -> CurrentWorktreeRowLayout {
+    let badge_label = "current";
+    let badge_w = badge_label.len() as f32 * cell_w + 8.0;
+    let badge_x = popup_x + popup_w - item_pad - badge_w;
+    let text_clip_w = (badge_x - cell_w - name_x).max(0.0);
+    let max_name_chars = (text_clip_w / cell_w).floor().max(0.0) as usize;
+    let display_name: String = name.chars().take(max_name_chars).collect();
+
+    CurrentWorktreeRowLayout {
+        display_name,
+        text_clip_w,
+        badge_x,
+        badge_w,
+    }
+}
+
 /// Render git switcher popup overlay (worktree popup).
 pub(super) fn render_git_switcher(
     app: &App,
@@ -216,13 +246,27 @@ pub(super) fn render_git_switcher(
                 italic: false,
                 underline: false,
             };
-            renderer.draw_top_text(name, Vec2::new(name_x, item_y), name_style, list_clip);
+            let layout = current_worktree_row_layout(
+                name,
+                popup_x,
+                popup_w,
+                item_pad,
+                name_x,
+                cell_size.width,
+            );
+            let text_clip = Rect::new(name_x, y, layout.text_clip_w, line_height);
+            renderer.draw_top_text(
+                &layout.display_name,
+                Vec2::new(name_x, item_y),
+                name_style,
+                text_clip,
+            );
 
             // "current" badge
             let badge_label = "current";
-            let badge_w = badge_label.len() as f32 * cell_size.width + 8.0;
+            let badge_w = layout.badge_w;
             let badge_h = cell_height;
-            let badge_x = name_x + (name.len() as f32 + 1.0) * cell_size.width;
+            let badge_x = layout.badge_x;
             let badge_y = y + (line_height - badge_h) / 2.0;
             renderer.draw_top_rounded_rect(
                 Rect::new(badge_x, badge_y, badge_w, badge_h),
