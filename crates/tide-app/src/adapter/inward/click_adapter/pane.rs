@@ -8,6 +8,7 @@ use crate::AppCorePort;
 use crate::LayoutPort;
 use crate::WorkspaceNavPort;
 use crate::PaneLifecyclePort;
+use crate::ActionPort;
 use crate::FocusNavPort;
 use crate::PaneAccessPort;
 use crate::ModalPort;
@@ -15,7 +16,7 @@ use crate::InputStatePort;
 
 /// Handle a browser nav bar click based on hover target.
 pub(crate) fn handle_browser_nav_click(
-    ctx: &mut (impl AppCorePort + FocusNavPort + PaneAccessPort + InputStatePort),
+    ctx: &mut (impl AppCorePort + FocusNavPort + PaneAccessPort + InputStatePort + ActionPort),
     target: &HoverTarget,
 ) {
     let focused_id = match ctx.focused_pane() {
@@ -37,6 +38,12 @@ pub(crate) fn handle_browser_nav_click(
             if let Some(PaneKind::Browser(bp)) = ctx.pane_mut(focused_id) {
                 bp.reload();
             }
+        }
+        HoverTarget::BrowserCopyUrl => {
+            ctx.handle_global_action(crate::tide_input::GlobalAction::Copy);
+        }
+        HoverTarget::BrowserOpenExternal => {
+            ctx.open_focused_browser_externally();
         }
         HoverTarget::BrowserUrlBar => {
             // Compute geometry before mutably borrowing panes.

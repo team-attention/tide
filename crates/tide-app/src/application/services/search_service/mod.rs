@@ -93,7 +93,7 @@ impl ClipboardSearchPort for App {
         }
     }
 
-    /// Handle GlobalAction::Copy for terminal and editor panes.
+    /// Handle GlobalAction::Copy for terminal, editor, diff, and Browser URL state.
     fn handle_copy(&mut self) {
         let target_id = match self.focus.focused {
             Some(id) => id,
@@ -122,6 +122,18 @@ impl ClipboardSearchPort for App {
                     if !text.is_empty() {
                         let _ = self.ports.clipboard.set_text(&text);
                     }
+                }
+            }
+            Some(PaneKind::Browser(bp)) => {
+                let text = if !bp.url.is_empty() {
+                    Some(bp.url.clone())
+                } else if !bp.url_input.is_empty() {
+                    Some(bp.url_input.clone())
+                } else {
+                    None
+                };
+                if let Some(text) = text {
+                    let _ = self.ports.clipboard.set_text(&text);
                 }
             }
             _ => {}
