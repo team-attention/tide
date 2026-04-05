@@ -330,6 +330,8 @@ fn handle_mouse_input_core(ctx: &mut impl MousePorts, button: MouseButton, _wind
             Some(target @ crate::state::drag_types::HoverTarget::BrowserBack)
             | Some(target @ crate::state::drag_types::HoverTarget::BrowserForward)
             | Some(target @ crate::state::drag_types::HoverTarget::BrowserRefresh)
+            | Some(target @ crate::state::drag_types::HoverTarget::BrowserCopyUrl)
+            | Some(target @ crate::state::drag_types::HoverTarget::BrowserOpenExternal)
             | Some(target @ crate::state::drag_types::HoverTarget::BrowserUrlBar) => {
                 let target = target.clone();
                 // Focus the browser pane first

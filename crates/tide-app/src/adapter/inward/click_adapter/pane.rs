@@ -8,6 +8,7 @@ use crate::AppCorePort;
 use crate::LayoutPort;
 use crate::WorkspaceNavPort;
 use crate::PaneLifecyclePort;
+use crate::ActionPort;
 use crate::FocusNavPort;
 use crate::PaneAccessPort;
 use crate::ModalPort;
@@ -15,7 +16,7 @@ use crate::InputStatePort;
 
 /// Handle a browser nav bar click based on hover target.
 pub(crate) fn handle_browser_nav_click(
-    ctx: &mut (impl AppCorePort + FocusNavPort + PaneAccessPort + InputStatePort),
+    ctx: &mut (impl AppCorePort + FocusNavPort + PaneAccessPort + InputStatePort + ActionPort),
     target: &HoverTarget,
 ) {
     let focused_id = match ctx.focused_pane() {
@@ -38,6 +39,12 @@ pub(crate) fn handle_browser_nav_click(
                 bp.reload();
             }
         }
+        HoverTarget::BrowserCopyUrl => {
+            ctx.handle_global_action(crate::tide_input::GlobalAction::Copy);
+        }
+        HoverTarget::BrowserOpenExternal => {
+            ctx.open_focused_browser_externally();
+        }
         HoverTarget::BrowserUrlBar => {
             // Compute geometry before mutably borrowing panes.
             let cell_w = ctx.cell_size().width;
@@ -59,7 +66,7 @@ pub(crate) fn handle_browser_nav_click(
                     bp.url_selection = None;
                     if let Some(rect) = pane_rect {
                         let nav_x = rect.x + crate::theme::PANE_PADDING;
-                        let url_text_x = nav_x + 8.0 + cell_w * 6.0 + 4.0 + 4.0;
+                        let url_text_x = browser_url_text_x(nav_x, cell_w);
                         let relative_x = (click_x - url_text_x).max(0.0);
                         let mut col_px = 0.0_f32;
                         let mut char_idx = 0;
@@ -81,6 +88,14 @@ pub(crate) fn handle_browser_nav_click(
         _ => {}
     }
     ctx.invalidate_chrome();
+}
+
+fn browser_url_text_x(nav_x: f32, cell_w: f32) -> f32 {
+    let icon_button_w = cell_w * 2.0;
+    let buttons_before_url = 5.0;
+    let gaps_before_url = 8.0;
+    let url_text_inset = 4.0;
+    nav_x + 8.0 + icon_button_w * buttons_before_url + gaps_before_url + url_text_inset
 }
 
 /// Handle notification bar button clicks (conflict bar + save confirm bar).

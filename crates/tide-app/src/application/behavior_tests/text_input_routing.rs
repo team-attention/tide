@@ -1,5 +1,6 @@
 // Spec: docs/specs/input-routing.md — UC-2: RouteTextInput
 use crate::pane::editor::EditorPane;
+use crate::pane::browser::BrowserPane;
 use crate::pane::PaneKind;
 use crate::state::*;
 use crate::adapter::inward::text_routing_adapter::{self, TextInputTarget};
@@ -19,6 +20,16 @@ fn app_with_editor() -> (App, u64) {
     let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     app.panes.insert(id, PaneKind::Editor(EditorPane::new_empty(id)));
+    app.focus.focused = Some(id);
+    app.focus.focus_area = FocusArea::Stage;
+    (app, id)
+}
+
+fn app_with_browser() -> (App, u64) {
+    let mut app = test_app();
+    let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes.insert(id, PaneKind::Browser(BrowserPane::new(id)));
     app.focus.focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;
     (app, id)
@@ -102,4 +113,59 @@ fn config_page_copy_files_editing_receives_text() {
     cp.copy_files_editing = true;
     app.modal.config_page = Some(cp);
     assert_eq!(text_routing_adapter::text_input_target(&app), TextInputTarget::ConfigPageCopyFiles);
+}
+
+#[test]
+fn typing_in_empty_browser_pane_routes_text_to_url_bar() {
+    // Spec: docs/specs/browser-pane-ux.md
+    // UC-1 BR-2: Typing or pasting in an empty Browser Pane routes text to the Browser URL bar
+    let (app, id) = app_with_browser();
+    assert_eq!(
+        text_routing_adapter::text_input_target(&app),
+        TextInputTarget::BrowserUrlBar(id)
+    );
+}
+
+#[test]
+fn typing_in_loading_browser_pane_routes_text_to_url_bar() {
+    // Spec: docs/specs/browser-pane-ux.md
+    // UC-1 BR-3: Typing or pasting in a loading Browser Pane routes text to the Browser URL bar
+    let (mut app, id) = app_with_browser();
+    if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&id) {
+        bp.loading = true;
+        bp.url_input_focused = true;
+    }
+    assert_eq!(
+        text_routing_adapter::text_input_target(&app),
+        TextInputTarget::BrowserUrlBar(id)
+    );
+}
+
+#[test]
+fn search_active_browser_pane_routes_text_to_search_bar() {
+    // Spec: docs/specs/browser-pane-ux.md
+    // UC-2 BR-6: Search-active Browser Pane always routes text input to the search bar before the URL bar or Browser Pane content
+    let (mut app, id) = app_with_browser();
+    app.focus.search_focus = Some(id);
+    assert_eq!(
+        text_routing_adapter::text_input_target(&app),
+        TextInputTarget::SearchBar(id)
+    );
+}
+
+#[test]
+fn typing_in_navigated_browser_pane_without_url_focus_is_consumed_by_content() {
+    // Spec: docs/specs/browser-pane-ux.md
+    // UC-2 BR-8: A navigated Browser Pane defaults typing to Browser Pane content when the URL bar and search bar are both inactive
+    let (mut app, id) = app_with_browser();
+    if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&id) {
+        bp.url = "https://example.com".to_string();
+        bp.url_input = bp.url.clone();
+        bp.url_input_cursor = bp.url_input.chars().count();
+        bp.url_input_focused = false;
+    }
+    assert_eq!(
+        text_routing_adapter::text_input_target(&app),
+        TextInputTarget::Consumed
+    );
 }
