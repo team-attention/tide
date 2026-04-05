@@ -39,7 +39,8 @@ fn app_with_two_editors() -> (App, u64, u64) {
 fn app_with_editor_and_launcher() -> (App, u64, u64) {
     let (mut app, editor_id) = app_with_editor();
     let launcher_id = app.layout.split(editor_id, SplitDirection::Horizontal);
-    app.panes.insert(launcher_id, PaneKind::Launcher(launcher_id));
+    app.panes
+        .insert(launcher_id, PaneKind::Launcher(launcher_id));
     (app, editor_id, launcher_id)
 }
 
@@ -126,7 +127,9 @@ fn capture_pane_returns_editor_content() {
         ep.editor.buffer.lines = vec!["hello".into(), "world".into()];
     }
 
-    let result = app.handle_cli_command("capture-pane", json!({"pane_id": id})).unwrap();
+    let result = app
+        .handle_cli_command("capture-pane", json!({"pane_id": id}))
+        .unwrap();
     assert_eq!(result["pane_id"], id);
     let lines = result["lines"].as_array().unwrap();
     assert_eq!(lines.len(), 2);
@@ -139,10 +142,17 @@ fn capture_pane_editor_with_line_range() {
     // UC-2 BR-8: Editor returns line range
     let (mut app, id) = app_with_editor();
     if let Some(PaneKind::Editor(ep)) = app.panes.get_mut(&id) {
-        ep.editor.buffer.lines = vec!["line0".into(), "line1".into(), "line2".into(), "line3".into()];
+        ep.editor.buffer.lines = vec![
+            "line0".into(),
+            "line1".into(),
+            "line2".into(),
+            "line3".into(),
+        ];
     }
 
-    let result = app.handle_cli_command("capture-pane", json!({"pane_id": id, "start": 1, "end": 3})).unwrap();
+    let result = app
+        .handle_cli_command("capture-pane", json!({"pane_id": id, "start": 1, "end": 3}))
+        .unwrap();
     let lines = result["lines"].as_array().unwrap();
     assert_eq!(lines.len(), 2);
     assert_eq!(lines[0], "line1");
@@ -159,7 +169,10 @@ fn capture_pane_no_target_uses_focused_pane() {
 
     let result = app.handle_cli_command("capture-pane", json!({})).unwrap();
     assert_eq!(result["pane_id"], id);
-    assert!(result["content"].as_str().unwrap().contains("focused content"));
+    assert!(result["content"]
+        .as_str()
+        .unwrap()
+        .contains("focused content"));
 }
 
 #[test]
@@ -281,8 +294,10 @@ fn get_layout_tab_group_includes_active_tab() {
     layout.add_tab(id1, id2);
     app.layout = layout;
 
-    app.panes.insert(id1, PaneKind::Editor(EditorPane::new_empty(id1)));
-    app.panes.insert(id2, PaneKind::Editor(EditorPane::new_empty(id2)));
+    app.panes
+        .insert(id1, PaneKind::Editor(EditorPane::new_empty(id1)));
+    app.panes
+        .insert(id2, PaneKind::Editor(EditorPane::new_empty(id2)));
     app.focus.focused = Some(id2);
 
     let result = app.handle_cli_command("get-layout", json!({})).unwrap();
@@ -309,7 +324,9 @@ fn cli_focus_pane_changes_focus() {
     let (mut app, id1, id2) = app_with_two_editors();
     assert_eq!(app.focus.focused, Some(id2));
 
-    let result = app.handle_cli_command("focus-pane", json!({"pane_id": id1})).unwrap();
+    let result = app
+        .handle_cli_command("focus-pane", json!({"pane_id": id1}))
+        .unwrap();
     assert_eq!(result["ok"], true);
     assert_eq!(app.focus.focused, Some(id1));
 }
@@ -336,7 +353,9 @@ fn cli_close_pane_removes_pane() {
     let (mut app, id1, _id2) = app_with_two_editors();
     assert_eq!(app.panes.len(), 2);
 
-    let result = app.handle_cli_command("close-pane", json!({"pane_id": id1})).unwrap();
+    let result = app
+        .handle_cli_command("close-pane", json!({"pane_id": id1}))
+        .unwrap();
     assert_eq!(result["ok"], true);
     assert!(!app.panes.contains_key(&id1));
     assert_eq!(app.panes.len(), 1);
@@ -367,13 +386,18 @@ fn cli_resize_pane_adjusts_split_ratio() {
     // UC-5 BR-20: resize-pane adjusts split ratio
     let (mut app, id1, _id2) = app_with_two_editors();
 
-    let result = app.handle_cli_command("resize-pane", json!({"pane_id": id1, "ratio": 0.3})).unwrap();
+    let result = app
+        .handle_cli_command("resize-pane", json!({"pane_id": id1, "ratio": 0.3}))
+        .unwrap();
     assert_eq!(result["ok"], true);
 
     // Verify the layout snapshot reflects the changed ratio
     let layout = app.handle_cli_command("get-layout", json!({})).unwrap();
     let ratio = layout["ratio"].as_f64().unwrap();
-    assert!((ratio - 0.3).abs() < 0.01, "expected ratio ~0.3, got {ratio}");
+    assert!(
+        (ratio - 0.3).abs() < 0.01,
+        "expected ratio ~0.3, got {ratio}"
+    );
 }
 
 #[test]
@@ -382,12 +406,17 @@ fn cli_resize_pane_clamps_ratio() {
     let (mut app, id1, _id2) = app_with_two_editors();
 
     // Try to set an extreme ratio
-    let result = app.handle_cli_command("resize-pane", json!({"pane_id": id1, "ratio": 0.01})).unwrap();
+    let result = app
+        .handle_cli_command("resize-pane", json!({"pane_id": id1, "ratio": 0.01}))
+        .unwrap();
     assert_eq!(result["ok"], true);
 
     let layout = app.handle_cli_command("get-layout", json!({})).unwrap();
     let ratio = layout["ratio"].as_f64().unwrap();
-    assert!(ratio >= 0.1, "ratio should be clamped to >= 0.1, got {ratio}");
+    assert!(
+        ratio >= 0.1,
+        "ratio should be clamped to >= 0.1, got {ratio}"
+    );
 }
 
 #[test]
@@ -418,7 +447,9 @@ fn cli_open_editor_dedup() {
         ep.editor.buffer.file_path = Some(path.clone());
     }
 
-    let result = app.handle_cli_command("open-editor", json!({"file": "/tmp/test-dedup.rs"})).unwrap();
+    let result = app
+        .handle_cli_command("open-editor", json!({"file": "/tmp/test-dedup.rs"}))
+        .unwrap();
     assert_eq!(result["pane_id"], id);
     assert_eq!(result["already_open"], true);
     // Should still be the same number of panes
@@ -441,10 +472,15 @@ fn render_html_creates_render_pane() {
     // UC-7 BR-26: Render-mode: no URL bar, title in tab
     let (mut app, _id) = app_with_editor();
 
-    let result = app.handle_cli_command("render-html", json!({
-        "title": "Test Output",
-        "html": "<h1>Hello</h1>"
-    })).unwrap();
+    let result = app
+        .handle_cli_command(
+            "render-html",
+            json!({
+                "title": "Test Output",
+                "html": "<h1>Hello</h1>"
+            }),
+        )
+        .unwrap();
 
     let pane_id = result["pane_id"].as_u64().unwrap();
     // Verify a render-mode Browser pane was created
@@ -453,13 +489,16 @@ fn render_html_creates_render_pane() {
             assert!(bp.render_mode, "pane should be in render mode");
             assert_eq!(bp.render_title, Some("Test Output".to_string()));
         }
-        other => panic!("expected Browser pane, got {:?}", other.map(|p| match p {
-            PaneKind::Terminal(_) => "terminal",
-            PaneKind::Editor(_) => "editor",
-            PaneKind::Diff(_) => "diff",
-            PaneKind::Browser(_) => "browser",
-            PaneKind::Launcher(_) => "launcher",
-        })),
+        other => panic!(
+            "expected Browser pane, got {:?}",
+            other.map(|p| match p {
+                PaneKind::Terminal(_) => "terminal",
+                PaneKind::Editor(_) => "editor",
+                PaneKind::Diff(_) => "diff",
+                PaneKind::Browser(_) => "browser",
+                PaneKind::Launcher(_) => "launcher",
+            })
+        ),
     }
 }
 
@@ -468,10 +507,15 @@ fn render_html_returns_pane_id() {
     // UC-7: render-html returns the pane_id of the created render pane
     let (mut app, _id) = app_with_editor();
 
-    let result = app.handle_cli_command("render-html", json!({
-        "title": "Output",
-        "html": "<p>content</p>"
-    })).unwrap();
+    let result = app
+        .handle_cli_command(
+            "render-html",
+            json!({
+                "title": "Output",
+                "html": "<p>content</p>"
+            }),
+        )
+        .unwrap();
 
     assert!(result.get("pane_id").is_some());
     let pane_id = result["pane_id"].as_u64().unwrap();
@@ -484,18 +528,28 @@ fn render_html_replaces_existing_pane() {
     let (mut app, _id) = app_with_editor();
 
     // Create initial render pane
-    let result1 = app.handle_cli_command("render-html", json!({
-        "title": "First",
-        "html": "<h1>First</h1>"
-    })).unwrap();
+    let result1 = app
+        .handle_cli_command(
+            "render-html",
+            json!({
+                "title": "First",
+                "html": "<h1>First</h1>"
+            }),
+        )
+        .unwrap();
     let pane_id = result1["pane_id"].as_u64().unwrap();
 
     // Update the same pane
-    let result2 = app.handle_cli_command("render-html", json!({
-        "pane_id": pane_id,
-        "title": "Updated",
-        "html": "<h1>Updated</h1>"
-    })).unwrap();
+    let result2 = app
+        .handle_cli_command(
+            "render-html",
+            json!({
+                "pane_id": pane_id,
+                "title": "Updated",
+                "html": "<h1>Updated</h1>"
+            }),
+        )
+        .unwrap();
 
     assert_eq!(result2["pane_id"].as_u64().unwrap(), pane_id);
     // Should still be the same pane, not a new one
@@ -517,11 +571,14 @@ fn render_html_replaces_existing_nonrender_pane_error() {
     let browser = crate::pane::browser::BrowserPane::new(browser_id);
     app.panes.insert(browser_id, PaneKind::Browser(browser));
 
-    let result = app.handle_cli_command("render-html", json!({
-        "pane_id": browser_id,
-        "title": "Test",
-        "html": "<h1>Test</h1>"
-    }));
+    let result = app.handle_cli_command(
+        "render-html",
+        json!({
+            "pane_id": browser_id,
+            "title": "Test",
+            "html": "<h1>Test</h1>"
+        }),
+    );
     assert!(result.is_err());
 }
 
@@ -540,14 +597,47 @@ fn render_html_requires_title_and_html() {
 }
 
 #[test]
+fn render_html_rejects_full_document_html() {
+    // UC-7 BR-28: RenderHTML accepts #root fragments, not full documents
+    let (mut app, _id) = app_with_editor();
+
+    let result = app.handle_cli_command(
+        "render-html",
+        json!({
+            "title": "Bad Payload",
+            "html": "<!doctype html><html><body><h1>Hello</h1></body></html>"
+        }),
+    );
+
+    match result {
+        Err(crate::adapter::inward::cli_adapter::protocol::CliError::InvalidParams(message)) => {
+            assert!(
+                message.contains("fragment"),
+                "error should explain fragment-only contract"
+            );
+            assert!(
+                message.contains("<html>"),
+                "error should mention rejected document tags"
+            );
+        }
+        other => panic!("expected InvalidParams error, got {:?}", other),
+    }
+}
+
+#[test]
 fn render_html_runtime_preinjected() {
     // UC-7 BR-31: Render runtime pre-injected — agent HTML does not need to include them
     let (mut app, _id) = app_with_editor();
 
-    let result = app.handle_cli_command("render-html", json!({
-        "title": "Test",
-        "html": "<div>Simple content</div>"
-    })).unwrap();
+    let result = app
+        .handle_cli_command(
+            "render-html",
+            json!({
+                "title": "Test",
+                "html": "<div>Simple content</div>"
+            }),
+        )
+        .unwrap();
     let pane_id = result["pane_id"].as_u64().unwrap();
 
     match app.panes.get(&pane_id) {
@@ -558,8 +648,14 @@ fn render_html_runtime_preinjected() {
             assert!(full.contains("tailwindcss"), "should include tailwind");
             assert!(full.contains("window.tide"), "should include tide bridge");
             assert!(full.contains("--tide-bg"), "should include theme vars");
-            assert!(full.contains("<div id=\"root\">"), "should wrap in root div");
-            assert!(full.contains("<div>Simple content</div>"), "should include agent HTML");
+            assert!(
+                full.contains("<div id=\"root\">"),
+                "should wrap in root div"
+            );
+            assert!(
+                full.contains("<div>Simple content</div>"),
+                "should include agent HTML"
+            );
         }
         _ => panic!("expected Browser pane"),
     }
@@ -569,11 +665,14 @@ fn render_html_runtime_preinjected() {
 fn render_html_nonexistent_pane_error() {
     // UC-7: render-html with nonexistent pane_id → error
     let (mut app, _id) = app_with_editor();
-    let result = app.handle_cli_command("render-html", json!({
-        "pane_id": 9999,
-        "title": "T",
-        "html": "<p>x</p>"
-    }));
+    let result = app.handle_cli_command(
+        "render-html",
+        json!({
+            "pane_id": 9999,
+            "title": "T",
+            "html": "<p>x</p>"
+        }),
+    );
     assert!(result.is_err());
 }
 
@@ -582,16 +681,24 @@ fn render_html_hides_url_bar() {
     // UC-7 BR-26: Render-mode panes have no URL bar
     let (mut app, _id) = app_with_editor();
 
-    let result = app.handle_cli_command("render-html", json!({
-        "title": "Test",
-        "html": "<h1>Hello</h1>"
-    })).unwrap();
+    let result = app
+        .handle_cli_command(
+            "render-html",
+            json!({
+                "title": "Test",
+                "html": "<h1>Hello</h1>"
+            }),
+        )
+        .unwrap();
     let pane_id = result["pane_id"].as_u64().unwrap();
 
     match app.panes.get(&pane_id) {
         Some(PaneKind::Browser(bp)) => {
             assert!(bp.render_mode);
-            assert!(!bp.url_input_focused, "render pane should not have URL bar focused");
+            assert!(
+                !bp.url_input_focused,
+                "render pane should not have URL bar focused"
+            );
         }
         _ => panic!("expected Browser pane"),
     }
@@ -602,19 +709,31 @@ fn list_panes_render_pane_includes_streaming_status() {
     // UC-1 BR-5: Render pane includes streaming status
     let (mut app, _id) = app_with_editor();
 
-    app.handle_cli_command("render-html", json!({
-        "title": "Test",
-        "html": "<h1>Hello</h1>"
-    })).unwrap();
+    app.handle_cli_command(
+        "render-html",
+        json!({
+            "title": "Test",
+            "html": "<h1>Hello</h1>"
+        }),
+    )
+    .unwrap();
 
     let result = app.handle_cli_command("list-panes", json!({})).unwrap();
     let panes = result.as_array().unwrap();
     let render_pane = panes.iter().find(|p| {
-        p.get("render_mode").and_then(|v| v.as_bool()).unwrap_or(false)
+        p.get("render_mode")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
     });
-    assert!(render_pane.is_some(), "should have a render-mode pane in list");
+    assert!(
+        render_pane.is_some(),
+        "should have a render-mode pane in list"
+    );
     let rp = render_pane.unwrap();
-    assert!(rp.get("streaming").is_some(), "render pane should include streaming status");
+    assert!(
+        rp.get("streaming").is_some(),
+        "render pane should include streaming status"
+    );
     assert_eq!(rp["streaming"], false);
 }
 
@@ -625,9 +744,14 @@ fn render_stream_creates_render_pane() {
     // UC-8 BR-34: Render runtime pre-loaded
     let (mut app, _id) = app_with_editor();
 
-    let result = app.handle_cli_command("render-stream", json!({
-        "title": "Agent Monitor"
-    })).unwrap();
+    let result = app
+        .handle_cli_command(
+            "render-stream",
+            json!({
+                "title": "Agent Monitor"
+            }),
+        )
+        .unwrap();
 
     let pane_id = result["pane_id"].as_u64().unwrap();
     match app.panes.get(&pane_id) {
@@ -645,16 +769,26 @@ fn stream_chunk_updates_render_pane() {
     // UC-8 BR-33: Chunks are full HTML snapshots
     let (mut app, _id) = app_with_editor();
 
-    let result = app.handle_cli_command("render-stream", json!({
-        "title": "Monitor"
-    })).unwrap();
+    let result = app
+        .handle_cli_command(
+            "render-stream",
+            json!({
+                "title": "Monitor"
+            }),
+        )
+        .unwrap();
     let pane_id = result["pane_id"].as_u64().unwrap();
 
     // Send a chunk
-    let result = app.handle_cli_command("stream-chunk", json!({
-        "pane_id": pane_id,
-        "html": "<div>Step 1 done</div>"
-    })).unwrap();
+    let result = app
+        .handle_cli_command(
+            "stream-chunk",
+            json!({
+                "pane_id": pane_id,
+                "html": "<div>Step 1 done</div>"
+            }),
+        )
+        .unwrap();
     assert_eq!(result["ok"], true);
 
     match app.panes.get(&pane_id) {
@@ -666,13 +800,54 @@ fn stream_chunk_updates_render_pane() {
 }
 
 #[test]
+fn stream_chunk_rejects_full_document_html() {
+    // UC-8 BR-33: StreamChunk accepts #root fragment snapshots, not full documents
+    let (mut app, _id) = app_with_editor();
+
+    let result = app
+        .handle_cli_command(
+            "render-stream",
+            json!({
+                "title": "Monitor"
+            }),
+        )
+        .unwrap();
+    let pane_id = result["pane_id"].as_u64().unwrap();
+
+    let result = app.handle_cli_command(
+        "stream-chunk",
+        json!({
+            "pane_id": pane_id,
+            "html": "<html><body><div>bad</div></body></html>"
+        }),
+    );
+
+    match result {
+        Err(crate::adapter::inward::cli_adapter::protocol::CliError::InvalidParams(message)) => {
+            assert!(
+                message.contains("fragment"),
+                "error should explain fragment-only contract"
+            );
+            assert!(
+                message.contains("<body>"),
+                "error should mention rejected document tags"
+            );
+        }
+        other => panic!("expected InvalidParams error, got {:?}", other),
+    }
+}
+
+#[test]
 fn stream_chunk_nonexistent_pane_error() {
     // UC-8: stream-chunk to nonexistent pane → error
     let (mut app, _id) = app_with_editor();
-    let result = app.handle_cli_command("stream-chunk", json!({
-        "pane_id": 9999,
-        "html": "<div>chunk</div>"
-    }));
+    let result = app.handle_cli_command(
+        "stream-chunk",
+        json!({
+            "pane_id": 9999,
+            "html": "<div>chunk</div>"
+        }),
+    );
     assert!(result.is_err());
 }
 
@@ -684,10 +859,13 @@ fn stream_chunk_non_render_pane_error() {
     let browser = crate::pane::browser::BrowserPane::new(browser_id);
     app.panes.insert(browser_id, PaneKind::Browser(browser));
 
-    let result = app.handle_cli_command("stream-chunk", json!({
-        "pane_id": browser_id,
-        "html": "<div>chunk</div>"
-    }));
+    let result = app.handle_cli_command(
+        "stream-chunk",
+        json!({
+            "pane_id": browser_id,
+            "html": "<div>chunk</div>"
+        }),
+    );
     assert!(result.is_err());
 }
 
@@ -696,15 +874,25 @@ fn stream_end_stops_streaming() {
     // UC-8 BR-35: Disconnect keeps pane open
     let (mut app, _id) = app_with_editor();
 
-    let result = app.handle_cli_command("render-stream", json!({
-        "title": "Monitor"
-    })).unwrap();
+    let result = app
+        .handle_cli_command(
+            "render-stream",
+            json!({
+                "title": "Monitor"
+            }),
+        )
+        .unwrap();
     let pane_id = result["pane_id"].as_u64().unwrap();
 
     // End the stream
-    let result = app.handle_cli_command("stream-end", json!({
-        "pane_id": pane_id
-    })).unwrap();
+    let result = app
+        .handle_cli_command(
+            "stream-end",
+            json!({
+                "pane_id": pane_id
+            }),
+        )
+        .unwrap();
     assert_eq!(result["ok"], true);
 
     // Pane should still exist but no longer streaming
@@ -732,18 +920,28 @@ fn gateway_status_tracks_active_streams() {
 
     assert_eq!(app.gateway.active_streams, 0);
 
-    app.handle_cli_command("render-stream", json!({
-        "title": "Stream 1"
-    })).unwrap();
+    app.handle_cli_command(
+        "render-stream",
+        json!({
+            "title": "Stream 1"
+        }),
+    )
+    .unwrap();
     assert_eq!(app.gateway.active_streams, 1);
 
-    let result = app.handle_cli_command("render-stream", json!({
-        "title": "Stream 2"
-    })).unwrap();
+    let result = app
+        .handle_cli_command(
+            "render-stream",
+            json!({
+                "title": "Stream 2"
+            }),
+        )
+        .unwrap();
     assert_eq!(app.gateway.active_streams, 2);
 
     let pane_id = result["pane_id"].as_u64().unwrap();
-    app.handle_cli_command("stream-end", json!({"pane_id": pane_id})).unwrap();
+    app.handle_cli_command("stream-end", json!({"pane_id": pane_id}))
+        .unwrap();
     assert_eq!(app.gateway.active_streams, 1);
 }
 
@@ -757,9 +955,18 @@ fn render_html_theme_vars_sync_on_theme_change() {
     // In unit test without webview, sync_theme_vars is a no-op.
     // Verify the full_render_html includes theme vars.
     let full = bp.full_render_html().unwrap();
-    assert!(full.contains("--tide-bg"), "should contain theme var --tide-bg");
-    assert!(full.contains("--tide-fg"), "should contain theme var --tide-fg");
-    assert!(full.contains("--tide-accent"), "should contain theme var --tide-accent");
+    assert!(
+        full.contains("--tide-bg"),
+        "should contain theme var --tide-bg"
+    );
+    assert!(
+        full.contains("--tide-fg"),
+        "should contain theme var --tide-fg"
+    );
+    assert!(
+        full.contains("--tide-accent"),
+        "should contain theme var --tide-accent"
+    );
 }
 
 // --- UC-9: EventSubscription ---
@@ -770,10 +977,12 @@ fn subscribe_registers_subscriber() {
     let (mut app, _id) = app_with_editor();
     let (tx, _rx) = std::sync::mpsc::channel::<String>();
 
-    app.gateway.subscribers.push(crate::state::gateway_status::Subscriber {
-        tx,
-        event_filter: vec!["focus-changed".into()],
-    });
+    app.gateway
+        .subscribers
+        .push(crate::state::gateway_status::Subscriber {
+            tx,
+            event_filter: vec!["focus-changed".into()],
+        });
 
     assert_eq!(app.gateway.subscribers.len(), 1);
 }
@@ -784,10 +993,12 @@ fn subscribe_filters_by_type() {
     let (mut app, _id) = app_with_editor();
     let (tx, rx) = std::sync::mpsc::channel::<String>();
 
-    app.gateway.subscribers.push(crate::state::gateway_status::Subscriber {
-        tx,
-        event_filter: vec!["pane-closed".into()],
-    });
+    app.gateway
+        .subscribers
+        .push(crate::state::gateway_status::Subscriber {
+            tx,
+            event_filter: vec!["pane-closed".into()],
+        });
 
     // Send a non-matching event
     app.gateway.notify("focus-changed", json!({"pane_id": 1}));
@@ -811,10 +1022,12 @@ fn disconnect_unsubscribes() {
     let (mut app, _id) = app_with_editor();
     let (tx, rx) = std::sync::mpsc::channel::<String>();
 
-    app.gateway.subscribers.push(crate::state::gateway_status::Subscriber {
-        tx,
-        event_filter: vec![],
-    });
+    app.gateway
+        .subscribers
+        .push(crate::state::gateway_status::Subscriber {
+            tx,
+            event_filter: vec![],
+        });
 
     assert_eq!(app.gateway.subscribers.len(), 1);
 
@@ -833,17 +1046,46 @@ fn mcp_is_tide_subcommand() {
     // UC-10 BR-42: `tide mcp` is a subcommand of the `tide` binary
     // Verified by the existence of the mcp module and its run_mcp function
     // This is a structural test — the subcommand is wired in main.rs
-    assert!(true, "mcp module exists as adapter::inward::cli_adapter::mcp");
+    assert!(
+        true,
+        "mcp module exists as adapter::inward::cli_adapter::mcp"
+    );
 }
 
 #[test]
 fn mcp_tools_list_returns_all_commands() {
     // UC-10 BR-43: Exposes all CLI commands as MCP tools with JSON Schema parameters
-    // We can't call run_mcp() in test (needs stdin/stdout), but we can verify
-    // the tool list structure
     use crate::adapter::inward::cli_adapter::mcp;
-    // The mcp module is pub(crate), test it indirectly — just verify it compiles
-    assert!(true, "MCP tools list defined in mcp.rs");
+
+    let tools = mcp::mcp_tool_definitions();
+    let render_html = tools
+        .iter()
+        .find(|tool| tool.get("name").and_then(|v| v.as_str()) == Some("tide_render_html"))
+        .expect("tide_render_html tool should be present");
+
+    let description = render_html["description"]
+        .as_str()
+        .expect("render_html description should be a string");
+    assert!(
+        description.contains("fragment"),
+        "description should explain fragment-only contract"
+    );
+    assert!(
+        description.contains("document shell"),
+        "description should explain Tide-managed shell"
+    );
+
+    let html_description = render_html["inputSchema"]["properties"]["html"]["description"]
+        .as_str()
+        .expect("html property description should exist");
+    assert!(
+        html_description.contains("#root"),
+        "html property should mention #root"
+    );
+    assert!(
+        html_description.contains("<body>"),
+        "html property should mention rejected document tags"
+    );
 }
 
 // --- UC-11: GatewayStatus ---
@@ -869,12 +1111,15 @@ fn gateway_badge_shows_error_on_bind_failure() {
 
 fn app_with_detected_agent() -> (App, u64) {
     let (mut app, id) = app_with_editor();
-    app.gateway.detected_agents.insert(id, crate::state::gateway_status::AgentInfo {
-        name: "Claude Code",
-        pid: 12345,
-        gateway_connected: true,
-        status: None,
-    });
+    app.gateway.detected_agents.insert(
+        id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Claude Code",
+            pid: 12345,
+            gateway_connected: true,
+            status: None,
+        },
+    );
     (app, id)
 }
 
@@ -885,7 +1130,10 @@ fn notify_agent_running_updates_status() {
     let result = app.handle_cli_command("notify", json!({"event": "agent-running", "pane": id}));
     assert!(result.is_ok());
     let agent = app.gateway.detected_agents.get(&id).unwrap();
-    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::Running));
+    assert_eq!(
+        agent.status,
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
 }
 
 #[test]
@@ -896,17 +1144,24 @@ fn notify_agent_idle_updates_status() {
     let result = app.handle_cli_command("notify", json!({"event": "agent-idle", "pane": id}));
     assert!(result.is_ok());
     let agent = app.gateway.detected_agents.get(&id).unwrap();
-    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::Idle));
+    assert_eq!(
+        agent.status,
+        Some(crate::state::gateway_status::AgentStatus::Idle)
+    );
 }
 
 #[test]
 fn notify_agent_needs_input_updates_status() {
     // UC-4 BR-3: agent-needs-input → AgentStatus::NeedsInput
     let (mut app, id) = app_with_detected_agent();
-    let result = app.handle_cli_command("notify", json!({"event": "agent-needs-input", "pane": id}));
+    let result =
+        app.handle_cli_command("notify", json!({"event": "agent-needs-input", "pane": id}));
     assert!(result.is_ok());
     let agent = app.gateway.detected_agents.get(&id).unwrap();
-    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::NeedsInput));
+    assert_eq!(
+        agent.status,
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
 }
 
 #[test]
@@ -923,11 +1178,17 @@ fn notify_auto_registers_agent_for_existing_pane() {
     // When a wrapper hook fires before gateway modal scan, auto-register the agent
     let (mut app, id) = app_with_editor();
     assert!(!app.gateway.detected_agents.contains_key(&id));
-    let result = app.handle_cli_command("notify", json!({"event": "agent-running", "pane": id, "agent": "claude"}));
+    let result = app.handle_cli_command(
+        "notify",
+        json!({"event": "agent-running", "pane": id, "agent": "claude"}),
+    );
     assert!(result.is_ok());
     let agent = app.gateway.detected_agents.get(&id).unwrap();
     assert_eq!(agent.name, "Claude Code");
-    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::Running));
+    assert_eq!(
+        agent.status,
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
 }
 
 #[test]
@@ -1019,14 +1280,20 @@ fn toggle_auto_integration_flips_setting() {
 fn gateway_status_tracks_agents_after_modal_removal() {
     // UC-4 BR-1: GatewayStatus still tracks detected agents
     let (mut app, id) = app_with_editor();
-    app.gateway.detected_agents.insert(id, crate::state::gateway_status::AgentInfo {
-        name: "Claude Code",
-        pid: 12345,
-        gateway_connected: true,
-        status: Some(crate::state::gateway_status::AgentStatus::Running),
-    });
+    app.gateway.detected_agents.insert(
+        id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Claude Code",
+            pid: 12345,
+            gateway_connected: true,
+            status: Some(crate::state::gateway_status::AgentStatus::Running),
+        },
+    );
     let agent = app.gateway.detected_agents.get(&id).unwrap();
-    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::Running));
+    assert_eq!(
+        agent.status,
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
 }
 
 // --- Spec: docs/specs/osc-9-notification.md ---
@@ -1039,7 +1306,10 @@ fn osc9_agent_running_updates_status() {
     let (mut app, id) = app_with_detected_agent();
     app.handle_terminal_notification(id, "tide:agent-running");
     let agent = app.gateway.detected_agents.get(&id).unwrap();
-    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::Running));
+    assert_eq!(
+        agent.status,
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
 }
 
 #[test]
@@ -1048,7 +1318,10 @@ fn osc9_agent_needs_input_updates_status() {
     let (mut app, id) = app_with_detected_agent();
     app.handle_terminal_notification(id, "tide:agent-needs-input");
     let agent = app.gateway.detected_agents.get(&id).unwrap();
-    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::NeedsInput));
+    assert_eq!(
+        agent.status,
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
 }
 
 #[test]
@@ -1057,7 +1330,10 @@ fn osc9_agent_idle_updates_status() {
     let (mut app, id) = app_with_detected_agent();
     app.handle_terminal_notification(id, "tide:agent-idle");
     let agent = app.gateway.detected_agents.get(&id).unwrap();
-    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::Idle));
+    assert_eq!(
+        agent.status,
+        Some(crate::state::gateway_status::AgentStatus::Idle)
+    );
 }
 
 #[test]
@@ -1086,7 +1362,10 @@ fn osc9_creates_synthetic_agent_if_none_detected() {
     app.handle_terminal_notification(id, "tide:agent-running");
     let agent = app.gateway.detected_agents.get(&id).unwrap();
     assert_eq!(agent.name, "Unknown");
-    assert_eq!(agent.status, Some(crate::state::gateway_status::AgentStatus::Running));
+    assert_eq!(
+        agent.status,
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
 }
 
 #[test]
@@ -1126,12 +1405,15 @@ fn focusing_pane_clears_idle_status() {
 fn app_with_unfocused_agent() -> (App, u64, u64) {
     let (mut app, id1, id2) = app_with_two_editors();
     // id2 is focused, id1 has the agent
-    app.gateway.detected_agents.insert(id1, crate::state::gateway_status::AgentInfo {
-        name: "Claude Code",
-        pid: 12345,
-        gateway_connected: true,
-        status: None,
-    });
+    app.gateway.detected_agents.insert(
+        id1,
+        crate::state::gateway_status::AgentInfo {
+            name: "Claude Code",
+            pid: 12345,
+            gateway_connected: true,
+            status: None,
+        },
+    );
     app.focus.focused = Some(id2);
     (app, id1, id2)
 }
@@ -1236,7 +1518,10 @@ fn idle_dot_does_not_blink() {
     // (needs_redraw may be set for other reasons, but route_agent_notification
     //  only sets it for NeedsInput)
     let status = app.gateway.detected_agents.get(&agent_pane).unwrap().status;
-    assert_eq!(status, Some(crate::state::gateway_status::AgentStatus::Idle));
+    assert_eq!(
+        status,
+        Some(crate::state::gateway_status::AgentStatus::Idle)
+    );
     // No blink animation: only NeedsInput triggers continuous redraw
 }
 
@@ -1310,7 +1595,10 @@ fn inactive_workspace_agent_status_sets_notification_dot() {
     // Create WS2 with an agent pane
     let agent_pane_id = 999;
     let mut ws2_panes = std::collections::HashMap::new();
-    ws2_panes.insert(agent_pane_id, PaneKind::Editor(EditorPane::new_empty(agent_pane_id)));
+    ws2_panes.insert(
+        agent_pane_id,
+        PaneKind::Editor(EditorPane::new_empty(agent_pane_id)),
+    );
 
     app.ws.workspaces.push(Workspace {
         name: "WS1".into(),
@@ -1329,15 +1617,21 @@ fn inactive_workspace_agent_status_sets_notification_dot() {
     app.ws.active = 0;
 
     // Register agent in WS2
-    app.gateway.detected_agents.insert(agent_pane_id, crate::state::gateway_status::AgentInfo {
-        name: "Claude Code",
-        pid: 12345,
-        gateway_connected: true,
-        status: None,
-    });
+    app.gateway.detected_agents.insert(
+        agent_pane_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Claude Code",
+            pid: 12345,
+            gateway_connected: true,
+            status: None,
+        },
+    );
 
     // Agent in inactive workspace sends notification
-    app.route_agent_notification(agent_pane_id, crate::state::gateway_status::AgentStatus::NeedsInput);
+    app.route_agent_notification(
+        agent_pane_id,
+        crate::state::gateway_status::AgentStatus::NeedsInput,
+    );
     assert!(app.ws.workspace_extras[1].has_agent_notification);
 }
 
@@ -1353,7 +1647,10 @@ fn focusing_pane_clears_workspace_notification_if_no_others() {
     // Focus clears notification suppression
     app.focus_pane(agent_pane);
     assert!(!app.notified_panes.contains(&agent_pane));
-    assert_eq!(app.gateway.detected_agents.get(&agent_pane).unwrap().status, None);
+    assert_eq!(
+        app.gateway.detected_agents.get(&agent_pane).unwrap().status,
+        None
+    );
 }
 
 // --- UC-5: BlinkTabDotAndBorder (enhanced) ---
@@ -1365,7 +1662,10 @@ fn needs_input_border_blinks_orange_when_unfocused() {
     let (mut app, agent_pane, other_pane) = app_with_unfocused_agent();
     app.handle_terminal_notification(agent_pane, "tide:agent-needs-input");
     let status = app.gateway.detected_agents.get(&agent_pane).unwrap().status;
-    assert_eq!(status, Some(crate::state::gateway_status::AgentStatus::NeedsInput));
+    assert_eq!(
+        status,
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
     // Pane is unfocused (other_pane is focused)
     assert_eq!(app.focus.focused, Some(other_pane));
     // needs_redraw should be set (for blink animation including border)
@@ -1382,8 +1682,18 @@ fn workspace_sidebar_dot_blinks_for_notification() {
     for i in 0..20 {
         let t = i as f64 * 0.1;
         let opacity = 0.65 + 0.35 * (t * frequency).sin();
-        assert!(opacity >= 0.29, "sidebar dot opacity {} too low at t={}", opacity, t);
-        assert!(opacity <= 1.01, "sidebar dot opacity {} too high at t={}", opacity, t);
+        assert!(
+            opacity >= 0.29,
+            "sidebar dot opacity {} too low at t={}",
+            opacity,
+            t
+        );
+        assert!(
+            opacity <= 1.01,
+            "sidebar dot opacity {} too high at t={}",
+            opacity,
+            t
+        );
     }
 }
 
@@ -1392,8 +1702,8 @@ fn workspace_sidebar_dot_blinks_for_notification() {
 #[test]
 fn cli_notify_routes_to_inactive_workspace_pane() {
     // UC-9 BR-1: Notifications for panes in any workspace must be processed
-    use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
     use crate::application::ports::inward::{GatewayPort, PaneAccessPort};
+    use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
     let mut app = test_app();
 
     // Create WS1 (active) with a pane
@@ -1406,7 +1716,10 @@ fn cli_notify_routes_to_inactive_workspace_pane() {
     // Create WS2 (inactive) with an agent pane
     let agent_pane_id = 888;
     let mut ws2_panes = std::collections::HashMap::new();
-    ws2_panes.insert(agent_pane_id, PaneKind::Editor(EditorPane::new_empty(agent_pane_id)));
+    ws2_panes.insert(
+        agent_pane_id,
+        PaneKind::Editor(EditorPane::new_empty(agent_pane_id)),
+    );
 
     app.ws.workspaces.push(Workspace {
         name: "WS1".into(),

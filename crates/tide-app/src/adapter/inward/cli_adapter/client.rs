@@ -5,7 +5,6 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 
-
 /// Run the CLI client with the given arguments.
 /// Returns the process exit code.
 pub fn run_cli(args: &[String]) -> i32 {
@@ -86,29 +85,37 @@ pub fn run_cli(args: &[String]) -> i32 {
     }
 }
 
+fn usage_text() -> String {
+    [
+        "Usage: tide cli <command> [options]",
+        "",
+        "Commands:",
+        "  list-panes                       List all panes in the active workspace",
+        "  capture-pane [-t <id>] [--start <line>] [--end <line>]",
+        "                                   Read text content from a pane",
+        "  get-layout                       Get the layout tree as JSON",
+        "  send-keys [-t <id>] <keys...>    Send key sequences to a terminal pane",
+        "  split-vertical [-t <id>]         Split pane vertically",
+        "  split-horizontal [-t <id>]       Split pane horizontally",
+        "  close-pane [-t <id>]             Close a pane",
+        "  focus-pane -t <id>               Focus a specific pane",
+        "  resize-pane [-t <id>] --ratio <float>",
+        "                                   Resize a pane's split ratio",
+        "  open-terminal [--cwd <path>] [--position <pos>]",
+        "                                   Open a new terminal pane",
+        "  open-editor <file>               Open a file in an editor pane",
+        "  open-browser [<url>]             Open a Browser Pane",
+        "  render-html --title <t> [--pane <id>]",
+        "                                   Render an HTML #root fragment from stdin in a Browser Pane",
+        "  render-stream --title <t>",
+        "                                   Open a streaming Browser Pane; each stdin line is a #root fragment snapshot",
+        "  subscribe [--events <types>]      Subscribe to event notifications",
+    ]
+    .join("\n")
+}
+
 fn print_usage() {
-    eprintln!("Usage: tide cli <command> [options]");
-    eprintln!();
-    eprintln!("Commands:");
-    eprintln!("  list-panes                       List all panes in the active workspace");
-    eprintln!("  capture-pane [-t <id>] [--start <line>] [--end <line>]");
-    eprintln!("                                   Read text content from a pane");
-    eprintln!("  get-layout                       Get the layout tree as JSON");
-    eprintln!("  send-keys [-t <id>] <keys...>    Send key sequences to a terminal pane");
-    eprintln!("  split-vertical [-t <id>]         Split pane vertically");
-    eprintln!("  split-horizontal [-t <id>]       Split pane horizontally");
-    eprintln!("  close-pane [-t <id>]             Close a pane");
-    eprintln!("  focus-pane -t <id>               Focus a specific pane");
-    eprintln!("  resize-pane [-t <id>] --ratio <float>");
-    eprintln!("                                   Resize a pane's split ratio");
-    eprintln!("  open-terminal [--cwd <path>] [--position <pos>]");
-    eprintln!("                                   Open a new terminal pane");
-    eprintln!("  open-editor <file>               Open a file in an editor pane");
-    eprintln!("  open-browser [<url>]             Open a browser pane");
-    eprintln!("  render-html --title <t> [--pane <id>]");
-    eprintln!("                                   Render HTML (stdin) in a browser pane");
-    eprintln!("  render-stream --title <t>        Open streaming render pane (chunks on stdin)");
-    eprintln!("  subscribe [--events <types>]      Subscribe to event notifications");
+    eprintln!("{}", usage_text());
 }
 
 fn parse_capture_pane_args(args: &[String]) -> serde_json::Value {
@@ -290,7 +297,7 @@ fn parse_open_browser_args(args: &[String]) -> serde_json::Value {
 }
 
 /// Parse render-html args: --title <t> [--pane <id>]
-/// HTML content is read from stdin.
+/// HTML #root fragment content is read from stdin.
 fn parse_render_html_args(args: &[String]) -> serde_json::Value {
     let mut params = serde_json::Map::new();
     let mut i = 0;
@@ -356,7 +363,8 @@ fn parse_subscribe_args(args: &[String]) -> serde_json::Value {
     while i < args.len() {
         if args[i] == "--events" {
             if let Some(val) = args.get(i + 1) {
-                let events: Vec<serde_json::Value> = val.split(',')
+                let events: Vec<serde_json::Value> = val
+                    .split(',')
                     .map(|s| serde_json::json!(s.trim()))
                     .collect();
                 params.insert("events".into(), serde_json::Value::Array(events));
@@ -422,7 +430,7 @@ fn run_subscribe(params: serde_json::Value) -> i32 {
     0
 }
 
-/// Run a streaming render session: create pane, send stdin lines as chunks, end on EOF.
+/// Run a streaming render session: create a Browser Pane, send stdin lines as #root fragments, end on EOF.
 fn run_render_stream(params: serde_json::Value) -> i32 {
     let socket_path = match find_socket_path() {
         Some(p) => p,
@@ -472,9 +480,16 @@ fn run_render_stream(params: serde_json::Value) -> i32 {
                 eprintln!("error: {}", err["message"].as_str().unwrap_or("unknown"));
                 return 1;
             }
-            match v.get("result").and_then(|r| r.get("pane_id")).and_then(|id| id.as_u64()) {
+            match v
+                .get("result")
+                .and_then(|r| r.get("pane_id"))
+                .and_then(|id| id.as_u64())
+            {
                 Some(id) => {
-                    println!("{}", serde_json::to_string_pretty(v.get("result").unwrap()).unwrap());
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(v.get("result").unwrap()).unwrap()
+                    );
                     id
                 }
                 None => {
@@ -525,13 +540,37 @@ fn run_render_stream(params: serde_json::Value) -> i32 {
     0
 }
 
+#[cfg(test)]
+mod tests {
+    use super::usage_text;
+
+    #[test]
+    fn cli_usage_mentions_render_html_fragment_contract() {
+        let usage = usage_text();
+        assert!(usage.contains("render-html --title <t> [--pane <id>]"));
+        assert!(usage.contains("HTML #root fragment"));
+        assert!(usage.contains("Browser Pane"));
+    }
+
+    #[test]
+    fn cli_usage_mentions_render_stream_fragment_contract() {
+        let usage = usage_text();
+        assert!(usage.contains("render-stream --title <t>"));
+        assert!(usage.contains("each stdin line is a #root fragment snapshot"));
+        assert!(usage.contains("Browser Pane"));
+    }
+}
+
 fn inject_caller_pane(mut params: serde_json::Value) -> serde_json::Value {
     // Inject _caller_pane from TIDE_PANE env var so the gateway can route
     // the command to the correct Workspace (see cli-workspace-routing spec).
     if let Ok(pane_str) = std::env::var("TIDE_PANE") {
         if let Ok(pane_id) = pane_str.parse::<u64>() {
             if let Some(obj) = params.as_object_mut() {
-                obj.insert("_caller_pane".to_string(), serde_json::Value::Number(pane_id.into()));
+                obj.insert(
+                    "_caller_pane".to_string(),
+                    serde_json::Value::Number(pane_id.into()),
+                );
             }
         }
     }
