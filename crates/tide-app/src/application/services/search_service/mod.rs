@@ -125,13 +125,7 @@ impl ClipboardSearchPort for App {
                 }
             }
             Some(PaneKind::Browser(bp)) => {
-                let text = if !bp.url.is_empty() {
-                    Some(bp.url.clone())
-                } else if !bp.url_input.is_empty() {
-                    Some(bp.url_input.clone())
-                } else {
-                    None
-                };
+                let text = bp.url_state_for_copy();
                 if let Some(text) = text {
                     let _ = self.ports.clipboard.set_text(&text);
                 }

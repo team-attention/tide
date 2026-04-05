@@ -1,13 +1,15 @@
 // Spec: docs/specs/browser-pane-ux.md
 use crate::adapter::inward::event_loop_adapter;
+use crate::adapter::inward::click_adapter::pane::handle_browser_nav_click;
 use crate::adapter::inward::keyboard_adapter;
 use crate::application::ports::inward::ActionPort;
 use crate::application::ports::outward::clipboard_port::ClipboardPort;
 use crate::application::ports::outward::process_port::ProcessPort;
 use crate::pane::browser::BrowserPane;
 use crate::pane::PaneKind;
+use crate::state::drag_types::HoverTarget;
 use crate::state::FocusArea;
-use crate::tide_core::{InputEvent, Key, Modifiers, MouseButton, Vec2};
+use crate::tide_core::{InputEvent, Key, Modifiers, MouseButton, Rect, Vec2};
 use crate::tide_input::{Action, GlobalAction};
 use crate::App;
 use std::cell::RefCell;
@@ -35,6 +37,14 @@ fn app_with_browser() -> (App, u64) {
 
 fn cmd() -> Modifiers {
     Modifiers { meta: true, ctrl: false, shift: false, alt: false }
+}
+
+fn browser_nav_url_bar_click_x(rect: Rect, cell_w: f32, columns: f32) -> f32 {
+    let nav_x = rect.x + crate::theme::PANE_PADDING;
+    let buttons_w = cell_w * 2.0 * 5.0;
+    let gaps_w = 8.0;
+    let url_text_inset = 4.0;
+    nav_x + 8.0 + buttons_w + gaps_w + url_text_inset + columns * cell_w
 }
 
 #[derive(Clone)]
@@ -177,6 +187,33 @@ fn cmd_l_focuses_the_browser_url_bar_after_navigation() {
     assert_eq!(bp.url_selection, Some((0, len)));
 }
 
+#[test]
+fn clicking_browser_url_bar_positions_cursor_after_browser_actions() {
+    // UC-2 BR-10: Clicking the Browser URL bar explicitly switches the Browser Pane back to URL-bar editing from a navigated state and positions the cursor relative to the rendered Browser URL text
+    let (mut app, id) = app_with_browser();
+    let pane_rect = Rect::new(20.0, 20.0, 640.0, 320.0);
+    app.visual_pane_rects = vec![(id, pane_rect)];
+    if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&id) {
+        bp.url = "https://example.com".to_string();
+        bp.url_input = bp.url.clone();
+        bp.url_input_cursor = bp.url_input.chars().count();
+        bp.url_input_focused = true;
+    }
+
+    app.window.last_cursor_pos = Vec2::new(
+        browser_nav_url_bar_click_x(pane_rect, app.window.cached_cell_size.width, 8.0),
+        pane_rect.y + 40.0,
+    );
+    handle_browser_nav_click(&mut app, &HoverTarget::BrowserUrlBar);
+
+    let bp = match app.panes.get(&id) {
+        Some(PaneKind::Browser(bp)) => bp,
+        other => panic!("expected Browser pane, got {:?}", other.map(|_| "non-browser")),
+    };
+    assert_eq!(bp.url_input_cursor, 8);
+    assert!(bp.url_selection.is_none());
+}
+
 // --- UC-3: PreserveBrowserUrlBarEditing ---
 
 #[test]
@@ -227,6 +264,25 @@ fn copy_url_action_copies_the_current_browser_url() {
 }
 
 #[test]
+fn copy_url_action_prefers_selected_url_input_while_editing() {
+    // UC-4 BR-17: `Copy URL` copies the current Browser Pane URL state, preferring selected Browser URL-bar text or the current Browser URL-bar input while editing
+    let (mut app, id) = app_with_browser();
+    let writes = Rc::new(RefCell::new(Vec::new()));
+    app.ports.clipboard = Box::new(RecordingClipboard { writes: writes.clone() });
+    if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&id) {
+        bp.url = "https://example.com".to_string();
+        bp.url_input = "https://example.com/login".to_string();
+        bp.url_input_cursor = bp.url_input.chars().count();
+        bp.url_input_focused = true;
+        bp.url_selection = Some((8, 19));
+    }
+
+    app.handle_global_action(GlobalAction::Copy);
+
+    assert_eq!(writes.borrow().as_slice(), ["example.com"]);
+}
+
+#[test]
 fn open_externally_action_uses_process_port_open_url() {
     // UC-4 BR-18: `Open externally` calls `ProcessPort::open_url()` with the current Browser Pane URL
     let (mut app, id) = app_with_browser();
@@ -235,6 +291,24 @@ fn open_externally_action_uses_process_port_open_url() {
     if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&id) {
         bp.url = "https://example.com/login".to_string();
         bp.url_input = bp.url.clone();
+        bp.url_input_cursor = bp.url_input.chars().count();
+        bp.url_input_focused = true;
+    }
+
+    app.open_focused_browser_externally();
+
+    assert_eq!(opened_urls.borrow().as_slice(), ["https://example.com/login"]);
+}
+
+#[test]
+fn open_externally_action_prefers_url_input_while_editing() {
+    // UC-4 BR-18: `Open externally` calls `ProcessPort::open_url()` with the current Browser Pane URL state, preferring the current Browser URL-bar input while editing
+    let (mut app, id) = app_with_browser();
+    let opened_urls = Rc::new(RefCell::new(Vec::new()));
+    app.ports.process = Box::new(RecordingProcess { opened_urls: opened_urls.clone() });
+    if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&id) {
+        bp.url = "https://example.com".to_string();
+        bp.url_input = "https://example.com/login".to_string();
         bp.url_input_cursor = bp.url_input.chars().count();
         bp.url_input_focused = true;
     }
