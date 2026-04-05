@@ -8,18 +8,20 @@ mod rendering;
 use std::io;
 use std::path::Path;
 
-use crate::tide_core::PaneId;
+use crate::tide_core::{PaneId, Rect, Size};
 use crate::tide_editor::input::EditorAction;
-use crate::tide_editor::EditorState;
 use crate::tide_editor::wrap::WrapMap;
+use crate::tide_editor::EditorState;
 
-use crate::tide_editor::markdown::{PreviewLine, render_markdown_preview, MarkdownTheme};
+use crate::tide_editor::markdown::{render_markdown_preview, MarkdownTheme, PreviewLine};
 
 use crate::pane::Selection;
-
+use crate::theme::SCROLLBAR_WIDTH;
 
 /// Width of the gutter (line numbers) in cells.
 pub(crate) const GUTTER_WIDTH_CELLS: usize = 6;
+pub(crate) const SPLIT_PREVIEW_GAP_CELLS: usize = 2;
+pub(crate) const SPLIT_PREVIEW_MIN_CONTENT_CELLS: usize = 20;
 
 /// Pure preview scroll computation. Only used by tests now.
 #[cfg(test)]
@@ -100,6 +102,7 @@ pub struct EditorPane {
     pub diff_mode: bool,
     pub disk_content: Option<Vec<String>>,
     pub preview_mode: bool,
+    pub split_preview: bool,
     preview_cache: Option<(u64, usize, bool, Vec<PreviewLine>)>,
     pub preview_scroll: usize,
     pub preview_h_scroll: usize,
@@ -125,17 +128,55 @@ pub struct EditorPane {
 impl EditorPane {
     pub fn new_empty(id: PaneId) -> Self {
         let editor = EditorState::new_empty();
-        Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: false, preview_cache: None, preview_scroll: 0, preview_h_scroll: 0, preview_last_width: None, preview_scroll_pending_ratio: None, last_is_modified: false, last_checked_gen: 0, soft_wrap: false, wrap_map: None, completion: None }
+        Self {
+            id,
+            editor,
+            search: None,
+            selection: None,
+            disk_changed: false,
+            file_deleted: false,
+            diff_mode: false,
+            disk_content: None,
+            preview_mode: false,
+            split_preview: false,
+            preview_cache: None,
+            preview_scroll: 0,
+            preview_h_scroll: 0,
+            preview_last_width: None,
+            preview_scroll_pending_ratio: None,
+            last_is_modified: false,
+            last_checked_gen: 0,
+            soft_wrap: false,
+            wrap_map: None,
+            completion: None,
+        }
     }
 
     pub fn open(id: PaneId, path: &Path) -> io::Result<Self> {
         let editor = EditorState::open(path)?;
-        let is_markdown = path.extension()
-            .and_then(|ext| ext.to_str())
-            .map(|ext| matches!(ext, "md" | "markdown" | "mdown" | "mkd"))
-            .unwrap_or(false);
         let soft_wrap = Self::is_prose_extension(path);
-        Ok(Self { id, editor, search: None, selection: None, disk_changed: false, file_deleted: false, diff_mode: false, disk_content: None, preview_mode: is_markdown, preview_cache: None, preview_scroll: 0, preview_h_scroll: 0, preview_last_width: None, preview_scroll_pending_ratio: None, last_is_modified: false, last_checked_gen: 0, soft_wrap, wrap_map: None, completion: None })
+        Ok(Self {
+            id,
+            editor,
+            search: None,
+            selection: None,
+            disk_changed: false,
+            file_deleted: false,
+            diff_mode: false,
+            disk_content: None,
+            preview_mode: false,
+            split_preview: false,
+            preview_cache: None,
+            preview_scroll: 0,
+            preview_h_scroll: 0,
+            preview_last_width: None,
+            preview_scroll_pending_ratio: None,
+            last_is_modified: false,
+            last_checked_gen: 0,
+            soft_wrap,
+            wrap_map: None,
+            completion: None,
+        })
     }
 
     /// Whether this pane needs a notification bar (disk changed, diff mode, or file deleted).
@@ -147,11 +188,20 @@ impl EditorPane {
     pub fn handle_action(&mut self, action: EditorAction, visible_rows: usize) {
         // Block horizontal scroll when soft wrap is active
         if self.effective_soft_wrap() {
-            if matches!(action, EditorAction::ScrollLeft(_) | EditorAction::ScrollRight(_)) {
+            if matches!(
+                action,
+                EditorAction::ScrollLeft(_) | EditorAction::ScrollRight(_)
+            ) {
                 return;
             }
         }
-        let is_scroll = matches!(action, EditorAction::ScrollUp(_) | EditorAction::ScrollDown(_) | EditorAction::ScrollLeft(_) | EditorAction::ScrollRight(_));
+        let is_scroll = matches!(
+            action,
+            EditorAction::ScrollUp(_)
+                | EditorAction::ScrollDown(_)
+                | EditorAction::ScrollLeft(_)
+                | EditorAction::ScrollRight(_)
+        );
         self.editor.handle_action(action);
         if !is_scroll {
             self.editor.ensure_cursor_visible(visible_rows);
@@ -163,14 +213,28 @@ impl EditorPane {
     }
 
     /// Handle an editor action with both vertical and horizontal visibility.
-    pub fn handle_action_with_size(&mut self, action: EditorAction, visible_rows: usize, visible_cols: usize) {
+    pub fn handle_action_with_size(
+        &mut self,
+        action: EditorAction,
+        visible_rows: usize,
+        visible_cols: usize,
+    ) {
         // Block horizontal scroll when soft wrap is active
         if self.effective_soft_wrap() {
-            if matches!(action, EditorAction::ScrollLeft(_) | EditorAction::ScrollRight(_)) {
+            if matches!(
+                action,
+                EditorAction::ScrollLeft(_) | EditorAction::ScrollRight(_)
+            ) {
                 return;
             }
         }
-        let is_scroll = matches!(action, EditorAction::ScrollUp(_) | EditorAction::ScrollDown(_) | EditorAction::ScrollLeft(_) | EditorAction::ScrollRight(_));
+        let is_scroll = matches!(
+            action,
+            EditorAction::ScrollUp(_)
+                | EditorAction::ScrollDown(_)
+                | EditorAction::ScrollLeft(_)
+                | EditorAction::ScrollRight(_)
+        );
         self.editor.handle_action(action);
         if !is_scroll {
             self.editor.ensure_cursor_visible(visible_rows);
@@ -197,25 +261,32 @@ impl EditorPane {
     fn clamp_h_scroll(&mut self, visible_cols: usize) {
         use unicode_width::UnicodeWidthChar;
         // For each line, find the max character offset such that remaining chars fit in visible_cols.
-        let max_scroll = self.editor.buffer.lines.iter().map(|l| {
-            let display_width: usize = l.chars().map(|c| c.width().unwrap_or(1)).sum();
-            if display_width <= visible_cols {
-                return 0;
-            }
-            // Walk from the end to find how many chars fit in visible_cols
-            let total_chars = l.chars().count();
-            let mut width_from_end = 0;
-            let mut chars_from_end = 0;
-            for ch in l.chars().rev() {
-                let w = ch.width().unwrap_or(1);
-                if width_from_end + w > visible_cols {
-                    break;
+        let max_scroll = self
+            .editor
+            .buffer
+            .lines
+            .iter()
+            .map(|l| {
+                let display_width: usize = l.chars().map(|c| c.width().unwrap_or(1)).sum();
+                if display_width <= visible_cols {
+                    return 0;
                 }
-                width_from_end += w;
-                chars_from_end += 1;
-            }
-            total_chars - chars_from_end
-        }).max().unwrap_or(0);
+                // Walk from the end to find how many chars fit in visible_cols
+                let total_chars = l.chars().count();
+                let mut width_from_end = 0;
+                let mut chars_from_end = 0;
+                for ch in l.chars().rev() {
+                    let w = ch.width().unwrap_or(1);
+                    if width_from_end + w > visible_cols {
+                        break;
+                    }
+                    width_from_end += w;
+                    chars_from_end += 1;
+                }
+                total_chars - chars_from_end
+            })
+            .max()
+            .unwrap_or(0);
         if self.editor.h_scroll_offset() > max_scroll {
             self.editor.set_h_scroll_offset(max_scroll);
         }
@@ -251,11 +322,23 @@ impl EditorPane {
                 None => break,
             };
             let char_count = line.chars().count();
-            let col_start = if row == start.0 { start.1.min(char_count) } else { 0 };
-            let col_end = if row == end.0 { end.1.min(char_count) } else { char_count };
+            let col_start = if row == start.0 {
+                start.1.min(char_count)
+            } else {
+                0
+            };
+            let col_end = if row == end.0 {
+                end.1.min(char_count)
+            } else {
+                char_count
+            };
             if col_start <= col_end {
                 // Get chars from col_start to col_end (both are character indices)
-                let text: String = line.chars().skip(col_start).take(col_end - col_start).collect();
+                let text: String = line
+                    .chars()
+                    .skip(col_start)
+                    .take(col_end - col_start)
+                    .collect();
                 result.push_str(&text);
             }
             if row != end.0 {
@@ -288,7 +371,9 @@ impl EditorPane {
             }
             let line = &preview_lines[row];
             // Flatten all spans into characters (excluding newlines)
-            let chars: Vec<char> = line.spans.iter()
+            let chars: Vec<char> = line
+                .spans
+                .iter()
                 .flat_map(|s| s.text.chars())
                 .filter(|c| *c != '\n')
                 .collect();
@@ -327,7 +412,8 @@ impl EditorPane {
                 use unicode_width::UnicodeWidthChar;
                 let last_line = lines.len().saturating_sub(1);
                 let last_col = lines.get(last_line).map_or(0, |line| {
-                    line.spans.iter()
+                    line.spans
+                        .iter()
                         .flat_map(|s| s.text.chars())
                         .filter(|c| *c != '\n')
                         .map(|c| c.width().unwrap_or(1))
@@ -340,7 +426,11 @@ impl EditorPane {
             }
         } else {
             let last_line = self.editor.buffer.line_count().saturating_sub(1);
-            let last_col = self.editor.buffer.line(last_line).map_or(0, |l| l.chars().count());
+            let last_col = self
+                .editor
+                .buffer
+                .line(last_line)
+                .map_or(0, |l| l.chars().count());
             self.selection = Some(Selection {
                 anchor: (0, 0),
                 end: (last_line, last_col),
@@ -350,7 +440,13 @@ impl EditorPane {
 
     /// Convert a selection (char-indexed) to byte-offset positions for buffer operations.
     /// Returns (start, end) where start <= end in document order.
-    pub fn selection_byte_range(&self, sel: &Selection) -> (crate::tide_editor::EditorPosition, crate::tide_editor::EditorPosition) {
+    pub fn selection_byte_range(
+        &self,
+        sel: &Selection,
+    ) -> (
+        crate::tide_editor::EditorPosition,
+        crate::tide_editor::EditorPosition,
+    ) {
         let (start, end) = if sel.anchor <= sel.end {
             (sel.anchor, sel.end)
         } else {
@@ -359,8 +455,14 @@ impl EditorPane {
         let start_byte = self.char_col_to_byte(start.0, start.1);
         let end_byte = self.char_col_to_byte(end.0, end.1);
         (
-            crate::tide_editor::EditorPosition { line: start.0, col: start_byte },
-            crate::tide_editor::EditorPosition { line: end.0, col: end_byte },
+            crate::tide_editor::EditorPosition {
+                line: start.0,
+                col: start_byte,
+            },
+            crate::tide_editor::EditorPosition {
+                line: end.0,
+                col: end_byte,
+            },
         )
     }
 
@@ -392,21 +494,27 @@ impl EditorPane {
     /// Get the generation counter for dirty checking.
     pub fn generation(&self) -> u64 {
         if self.preview_mode {
-            let cache_width = self.preview_cache.as_ref()
+            let cache_width = self
+                .preview_cache
+                .as_ref()
                 .map(|(_, w, _, _)| *w as u64)
                 .unwrap_or(0);
-            self.editor.generation()
+            self.editor
+                .generation()
                 .wrapping_add(self.preview_scroll as u64)
                 .wrapping_add(self.preview_h_scroll as u64)
                 .wrapping_add(cache_width)
         } else {
-            self.editor.generation()
+            self.editor
+                .generation()
+                .wrapping_add(u64::from(self.split_preview_active()))
         }
     }
 
     /// Check if this file is a markdown file.
     pub fn is_markdown(&self) -> bool {
-        self.editor.file_path()
+        self.editor
+            .file_path()
             .and_then(|p| p.extension())
             .and_then(|ext| ext.to_str())
             .map(|ext| matches!(ext, "md" | "markdown" | "mdown" | "mkd"))
@@ -424,6 +532,94 @@ impl EditorPane {
     /// Effective soft wrap: true only when soft_wrap is set AND not in diff/preview mode.
     pub fn effective_soft_wrap(&self) -> bool {
         self.soft_wrap && !self.diff_mode && !self.preview_mode
+    }
+
+    /// Whether split preview is visible inside the current Markdown pane.
+    pub fn split_preview_active(&self) -> bool {
+        self.split_preview && self.is_markdown() && !self.preview_mode
+    }
+
+    /// Layout rectangles for the authoring and preview regions inside one Pane.
+    pub fn split_preview_rects(&self, rect: Rect, cell_size: Size) -> Option<(Rect, Rect)> {
+        if !self.split_preview_active() {
+            return None;
+        }
+
+        let gap = SPLIT_PREVIEW_GAP_CELLS as f32 * cell_size.width;
+        let min_content = SPLIT_PREVIEW_MIN_CONTENT_CELLS as f32 * cell_size.width;
+        if rect.width < min_content * 2.0 + gap {
+            return None;
+        }
+
+        let editor_width = ((rect.width - gap) / 2.0).floor();
+        let preview_width = (rect.width - editor_width - gap).max(0.0);
+        if editor_width < min_content || preview_width < min_content {
+            return None;
+        }
+
+        let editor_rect = Rect::new(rect.x, rect.y, editor_width, rect.height);
+        let preview_rect = Rect::new(
+            rect.x + editor_width + gap,
+            rect.y,
+            preview_width,
+            rect.height,
+        );
+        Some((editor_rect, preview_rect))
+    }
+
+    /// Authoring rect for the current Pane mode.
+    pub(crate) fn authoring_rect(&self, rect: Rect, cell_size: Size) -> Rect {
+        self.split_preview_rects(rect, cell_size)
+            .map(|(editor_rect, _)| editor_rect)
+            .unwrap_or(rect)
+    }
+
+    /// Preview rect for split preview, if visible.
+    pub(crate) fn preview_rect(&self, rect: Rect, cell_size: Size) -> Option<Rect> {
+        self.split_preview_rects(rect, cell_size)
+            .map(|(_, preview_rect)| preview_rect)
+    }
+
+    /// Wrap columns for an authoring rect, excluding gutter and scrollbar.
+    pub(crate) fn wrap_cols_for_rect(&self, rect: Rect, cell_size: Size) -> usize {
+        let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+        let content_width = (rect.width - gutter_width - SCROLLBAR_WIDTH).max(0.0);
+        (content_width / cell_size.width).floor() as usize
+    }
+
+    /// Preview wrapping width for a preview rect.
+    pub(crate) fn preview_wrap_width_for_rect(&self, rect: Rect, cell_size: Size) -> usize {
+        (rect.width / cell_size.width).floor() as usize
+    }
+
+    /// Prepare Pane-local wrap and preview caches for the current mode and rect.
+    pub(crate) fn prepare_inline_caches(&mut self, rect: Rect, cell_size: Size, dark: bool) {
+        if self.preview_mode {
+            self.wrap_map = None;
+            let wrap_width =
+                ((rect.width - SCROLLBAR_WIDTH).max(0.0) / cell_size.width).floor() as usize;
+            if wrap_width > 0 {
+                self.ensure_preview_cache(wrap_width, dark);
+            }
+            return;
+        }
+
+        let authoring_rect = self.authoring_rect(rect, cell_size);
+        if self.effective_soft_wrap() {
+            let wrap_cols = self.wrap_cols_for_rect(authoring_rect, cell_size);
+            if wrap_cols > 0 {
+                self.ensure_wrap_map(wrap_cols);
+            }
+        } else {
+            self.wrap_map = None;
+        }
+
+        if let Some(preview_rect) = self.preview_rect(rect, cell_size) {
+            let wrap_width = self.preview_wrap_width_for_rect(preview_rect, cell_size);
+            if wrap_width > 0 {
+                self.ensure_preview_cache(wrap_width, dark);
+            }
+        }
     }
 
     /// Ensure the wrap map is up to date for the current content and width.
@@ -457,12 +653,14 @@ impl EditorPane {
             let preview_total = self.preview_line_count().max(1);
             let ratio = self.preview_scroll as f64 / preview_total as f64;
             let target = (ratio * raw_line_count as f64).round() as usize;
-            self.editor.set_scroll_offset(target.min(raw_line_count.saturating_sub(1)));
+            self.editor
+                .set_scroll_offset(target.min(raw_line_count.saturating_sub(1)));
         } else {
             // Edit → Preview: save current scroll ratio to apply after cache is built
             let ratio = self.editor.scroll_offset() as f64 / raw_line_count as f64;
             // Store ratio temporarily; will be applied in ensure_preview_cache
             self.preview_scroll_pending_ratio = Some(ratio);
+            self.split_preview = false;
         }
 
         self.preview_mode = !self.preview_mode;
@@ -482,6 +680,18 @@ impl EditorPane {
                 crate::state::search::execute_search_editor(s, &self.editor.buffer.lines);
             }
         }
+    }
+
+    /// Toggle split preview inside the current Markdown pane.
+    pub fn toggle_split_preview(&mut self) {
+        if !self.is_markdown() {
+            return;
+        }
+        if self.preview_mode {
+            self.toggle_preview();
+        }
+        self.split_preview = !self.split_preview;
+        self.preview_h_scroll = 0;
     }
 
     /// Ensure the preview cache is up to date.
@@ -518,7 +728,11 @@ impl EditorPane {
             }
         }
 
-        let theme = if dark { MarkdownTheme::dark() } else { MarkdownTheme::light() };
+        let theme = if dark {
+            MarkdownTheme::dark()
+        } else {
+            MarkdownTheme::light()
+        };
         let lines = render_markdown_preview(&self.editor.buffer.lines, &theme, wrap_width);
         let line_count = lines.len();
         self.preview_cache = Some((gen, wrap_width, dark, lines));
@@ -541,6 +755,10 @@ impl EditorPane {
             Some((_, _, _, lines)) => lines,
             None => &[],
         }
+    }
+
+    pub(crate) fn preview_cache_width(&self) -> Option<usize> {
+        self.preview_cache.as_ref().map(|(_, width, _, _)| *width)
     }
 
     /// Total number of preview lines (for scroll clamping).
@@ -566,13 +784,23 @@ impl EditorPane {
     /// Normal text is already wrapped, so only code blocks need horizontal scroll.
     pub fn preview_max_line_width(&self) -> usize {
         use unicode_width::UnicodeWidthChar;
-        self.preview_lines().iter()
+        self.preview_lines()
+            .iter()
             .filter(|line| line.bg_color.is_some())
             .map(|line| {
-                line.spans.iter().map(|s| {
-                    s.text.chars().filter(|c| *c != '\n').map(|c| c.width().unwrap_or(1)).sum::<usize>()
-                }).sum::<usize>()
-            }).max().unwrap_or(0)
+                line.spans
+                    .iter()
+                    .map(|s| {
+                        s.text
+                            .chars()
+                            .filter(|c| *c != '\n')
+                            .map(|c| c.width().unwrap_or(1))
+                            .sum::<usize>()
+                    })
+                    .sum::<usize>()
+            })
+            .max()
+            .unwrap_or(0)
     }
 }
 
