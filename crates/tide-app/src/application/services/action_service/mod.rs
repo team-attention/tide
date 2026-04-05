@@ -167,8 +167,24 @@ impl crate::application::ports::inward::ActionPort for App {
                                             ) {
                                                 // col is relative to the sub-row, add the char offset
                                                 // Clamp to char_end to avoid jumping to next visual row
-                                                let col = (info.char_offset + rel_col as usize)
+                                                let mut col = (info.char_offset + rel_col as usize)
                                                     .min(info.char_end);
+                                                // In live preview mode, reverse-map visual → buffer column
+                                                if pane.live_preview {
+                                                    if let Some(ref lpm) = pane.live_preview_map {
+                                                        let cursor_line = pane.editor.cursor_position().line;
+                                                        let line_content = pane.editor.buffer.line(info.logical_line)
+                                                            .unwrap_or("")
+                                                            .to_string();
+                                                        col = lpm.visual_to_buffer_col(
+                                                            info.logical_line,
+                                                            col,
+                                                            cursor_line,
+                                                            &line_content,
+                                                            &pane.editor.buffer.lines,
+                                                        );
+                                                    }
+                                                }
                                                 pane.handle_action(
                                                     EditorAction::SetCursor {
                                                         line: info.logical_line,
@@ -180,7 +196,29 @@ impl crate::application::ports::inward::ActionPort for App {
                                         }
                                     } else {
                                         let line = pane.editor.scroll_offset() + rel_row as usize;
-                                        let col = pane.editor.h_scroll_offset() + rel_col as usize;
+                                        let visual_col = pane.editor.h_scroll_offset() + rel_col as usize;
+                                        // In live preview mode, visual columns don't match buffer
+                                        // columns on non-cursor lines because inline syntax is
+                                        // hidden.  Reverse-map visual → buffer column.
+                                        let col = if pane.live_preview {
+                                            if let Some(ref lpm) = pane.live_preview_map {
+                                                let cursor_line = pane.editor.cursor_position().line;
+                                                let line_content = pane.editor.buffer.line(line)
+                                                    .unwrap_or("")
+                                                    .to_string();
+                                                lpm.visual_to_buffer_col(
+                                                    line,
+                                                    visual_col,
+                                                    cursor_line,
+                                                    &line_content,
+                                                    &pane.editor.buffer.lines,
+                                                )
+                                            } else {
+                                                visual_col
+                                            }
+                                        } else {
+                                            visual_col
+                                        };
                                         pane.handle_action(
                                             EditorAction::SetCursor { line, col },
                                             visible_rows,
@@ -738,6 +776,17 @@ impl crate::application::ports::inward::ActionPort for App {
             }
             GlobalAction::ToggleDockPin => {
                 self.toggle_dock_pin();
+            }
+            GlobalAction::ToggleLivePreview => {
+                if let Some(focused) = self.focus.focused {
+                    if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&focused) {
+                        if pane.is_markdown() {
+                            pane.toggle_live_preview();
+                            self.cache.invalidate_chrome();
+                            self.cache.invalidate_pane(focused);
+                        }
+                    }
+                }
             }
         }
     }

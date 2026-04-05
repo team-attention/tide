@@ -3,7 +3,7 @@
 use unicode_width::UnicodeWidthChar;
 
 use crate::tide_core::{Color, Rect, Renderer, TextStyle, Vec2};
-use crate::tide_editor::markdown::PreviewLine;
+use crate::tide_editor::markdown::{MdElementKind, MarkdownTheme, PreviewLine};
 use crate::tide_editor::wrap::WrapMap;
 use crate::tide_renderer::WgpuRenderer;
 
@@ -32,6 +32,32 @@ impl EditorPane {
     ) {
         if self.preview_mode {
             self.render_preview_grid(rect, renderer);
+            return;
+        }
+        if self.live_preview && self.live_preview_map.is_some() {
+            // v1: soft wrap in live preview uses raw buffer widths for wrap
+            // positions (the WrapMap is already built from raw line content).
+            if self.effective_soft_wrap() {
+                self.render_live_preview_soft_wrap_grid(
+                    rect,
+                    renderer,
+                    gutter_text,
+                    gutter_active_text,
+                    ime_preedit,
+                    current_line_bg,
+                    indent_guide,
+                );
+            } else {
+                self.render_live_preview_grid(
+                    rect,
+                    renderer,
+                    gutter_text,
+                    gutter_active_text,
+                    ime_preedit,
+                    current_line_bg,
+                    indent_guide,
+                );
+            }
             return;
         }
         if let Some((editor_rect, preview_rect)) =
@@ -301,6 +327,702 @@ impl EditorPane {
                     col += tab_size;
                 }
             }
+        }
+    }
+
+    /// Render the editor grid in live preview mode.
+    ///
+    /// The cursor line is rendered exactly like authoring mode (raw text, all syntax visible).
+    /// Non-cursor lines hide inline syntax markers and apply markdown styling.
+    fn render_live_preview_grid(
+        &self,
+        rect: Rect,
+        renderer: &mut WgpuRenderer,
+        gutter_text: Color,
+        gutter_active_text: Color,
+        ime_preedit: &str,
+        current_line_bg: Color,
+        indent_guide: Color,
+    ) {
+        let live_map = match &self.live_preview_map {
+            Some(m) => m,
+            None => return,
+        };
+
+        let cell_size = renderer.cell_size();
+        let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+        let content_x = rect.x + gutter_width;
+        let scrollbar_reserved = if self.needs_scrollbar(rect, cell_size.height) {
+            SCROLLBAR_WIDTH
+        } else {
+            0.0
+        };
+        let content_width = (rect.width - gutter_width - scrollbar_reserved).max(0.0);
+
+        let visible_rows = (rect.height / cell_size.height).floor() as usize;
+        let scroll = self.editor.scroll_offset();
+        let h_scroll = self.editor.h_scroll_offset();
+
+        let highlighted = self.editor.visible_highlighted_lines(visible_rows);
+        let cursor_pos = self.editor.cursor_position();
+        let cursor_line = cursor_pos.line;
+
+        // Preedit width for cursor line IME shift
+        let preedit_width = if !ime_preedit.is_empty() {
+            ime_preedit
+                .chars()
+                .map(|c| c.width().unwrap_or(1))
+                .sum::<usize>()
+        } else {
+            0
+        };
+        let cursor_char_col = if preedit_width > 0 {
+            if let Some(line_text) = self.editor.buffer.line(cursor_line) {
+                let byte_col = cursor_pos.col.min(line_text.len());
+                line_text[..byte_col].chars().count()
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
+        // Precompute cumulative byte offsets for each line so we can convert
+        // a (line, char_index) into a global byte offset for element_style lookups.
+        // We only need lines in the visible range.
+        // Build a theme for styling (use dark — matches typical editor bg)
+        let theme = MarkdownTheme::dark();
+
+        for (vi, spans) in highlighted.iter().enumerate() {
+            let abs_line = scroll + vi;
+            let y = rect.y + vi as f32 * cell_size.height;
+
+            if y + cell_size.height > rect.y + rect.height {
+                break;
+            }
+
+            // Current line highlight
+            if abs_line == cursor_line {
+                let row_rect = Rect::new(rect.x, y, rect.width, cell_size.height);
+                renderer.draw_grid_rect(row_rect, current_line_bg);
+            }
+
+            // Gutter: line number
+            let line_num = format!("{:>4}  ", abs_line + 1);
+            let gutter_color = if abs_line == cursor_line {
+                gutter_active_text
+            } else {
+                gutter_text
+            };
+            let gutter_style = TextStyle {
+                foreground: gutter_color,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            };
+            for (ci, ch) in line_num.chars().enumerate() {
+                if ch != ' ' {
+                    renderer.draw_grid_cell(
+                        ch,
+                        vi,
+                        ci,
+                        gutter_style,
+                        cell_size,
+                        Vec2::new(rect.x, rect.y),
+                    );
+                }
+            }
+
+            if abs_line == cursor_line {
+                // Cursor line: render exactly like authoring mode (raw text, all syntax)
+                let mut char_idx = 0usize;
+                let mut display_col = 0usize;
+                let mut preedit_shifted = false;
+                for span in spans {
+                    for ch in span.text.chars() {
+                        if ch == '\n' {
+                            continue;
+                        }
+                        let char_w = ch.width().unwrap_or(1);
+                        if char_idx < h_scroll {
+                            char_idx += 1;
+                            continue;
+                        }
+                        if !preedit_shifted
+                            && preedit_width > 0
+                            && char_idx >= cursor_char_col
+                        {
+                            display_col += preedit_width;
+                            preedit_shifted = true;
+                        }
+                        let px = content_x + display_col as f32 * cell_size.width;
+                        if px >= content_x + content_width {
+                            break;
+                        }
+                        if ch != ' ' || span.style.background.is_some() {
+                            renderer.draw_grid_cell(
+                                ch,
+                                vi,
+                                GUTTER_WIDTH_CELLS + display_col,
+                                span.style,
+                                cell_size,
+                                Vec2::new(rect.x, rect.y),
+                            );
+                        }
+                        display_col += char_w;
+                        char_idx += 1;
+                    }
+                }
+
+                // Indent guides on cursor line
+                if h_scroll == 0 {
+                    if let Some(line_text) = self.editor.buffer.line(abs_line) {
+                        let indent_level: usize = line_text
+                            .chars()
+                            .take_while(|c| *c == ' ' || *c == '\t')
+                            .map(|c| if c == '\t' { 4 } else { 1 })
+                            .sum();
+                        let tab_size = 4usize;
+                        let mut col = tab_size;
+                        while col < indent_level {
+                            let guide_x = content_x + col as f32 * cell_size.width;
+                            if guide_x < content_x + content_width {
+                                renderer.draw_grid_rect(
+                                    Rect::new(guide_x, y, 1.0, cell_size.height),
+                                    indent_guide,
+                                );
+                            }
+                            col += tab_size;
+                        }
+                    }
+                }
+            } else {
+                // Non-cursor line: hide inline syntax, apply markdown styling
+                let line_text = match self.editor.buffer.line(abs_line) {
+                    Some(t) => t,
+                    None => continue,
+                };
+
+                // Get hidden byte ranges for this line
+                let hidden_ranges = live_map.hidden_syntax_ranges(abs_line, cursor_line);
+
+                // Compute the byte offset of this line in the overall buffer
+                let line_byte_start: usize = (0..abs_line)
+                    .filter_map(|i| self.editor.buffer.line(i))
+                    .map(|l| l.len() + 1) // +1 for '\n'
+                    .sum();
+
+                let mut display_col = 0usize;
+                let mut byte_offset = line_byte_start;
+                let mut char_idx = 0usize;
+
+                for ch in line_text.chars() {
+                    if ch == '\n' {
+                        byte_offset += ch.len_utf8();
+                        continue;
+                    }
+                    let char_byte_len = ch.len_utf8();
+                    let char_w = ch.width().unwrap_or(1);
+
+                    // Check if this byte offset is in a hidden syntax range
+                    let is_hidden = hidden_ranges.iter().any(|r| r.contains(&byte_offset));
+                    if is_hidden {
+                        byte_offset += char_byte_len;
+                        char_idx += 1;
+                        continue; // skip rendering
+                    }
+
+                    // Apply h_scroll based on display_col (not char_idx, since some chars are hidden)
+                    // For non-cursor lines we still respect h_scroll
+                    if char_idx < h_scroll && !is_hidden {
+                        // We need to count non-hidden chars for h_scroll
+                        // Actually, h_scroll is char-indexed, but with hidden chars
+                        // the mapping is tricky. For simplicity, apply h_scroll
+                        // to displayed chars only.
+                    }
+
+                    // Determine style based on markdown element
+                    let md_style = live_map.element_style(byte_offset);
+                    let style = self.resolve_md_style(md_style, &theme, spans, char_idx);
+
+                    let px = content_x + display_col as f32 * cell_size.width;
+                    if px >= content_x + content_width {
+                        break;
+                    }
+                    if ch != ' ' || style.background.is_some() {
+                        renderer.draw_grid_cell(
+                            ch,
+                            vi,
+                            GUTTER_WIDTH_CELLS + display_col,
+                            style,
+                            cell_size,
+                            Vec2::new(rect.x, rect.y),
+                        );
+                    }
+                    display_col += char_w;
+                    byte_offset += char_byte_len;
+                    char_idx += 1;
+                }
+
+                // Indent guides on non-cursor lines
+                if h_scroll == 0 {
+                    let indent_level: usize = line_text
+                        .chars()
+                        .take_while(|c| *c == ' ' || *c == '\t')
+                        .map(|c| if c == '\t' { 4 } else { 1 })
+                        .sum();
+                    if line_text.trim().is_empty() {
+                        // For blank lines, check nearest non-blank above
+                        let scan_start = abs_line.saturating_sub(100);
+                        let mut level = 0usize;
+                        for prev_line in (scan_start..abs_line).rev() {
+                            if let Some(prev) = self.editor.buffer.line(prev_line) {
+                                if !prev.trim().is_empty() {
+                                    level = prev
+                                        .chars()
+                                        .take_while(|c| *c == ' ' || *c == '\t')
+                                        .map(|c| if c == '\t' { 4 } else { 1 })
+                                        .sum();
+                                    break;
+                                }
+                            }
+                        }
+                        let tab_size = 4usize;
+                        let mut col = tab_size;
+                        while col < level {
+                            let guide_x = content_x + col as f32 * cell_size.width;
+                            if guide_x < content_x + content_width {
+                                renderer.draw_grid_rect(
+                                    Rect::new(guide_x, y, 1.0, cell_size.height),
+                                    indent_guide,
+                                );
+                            }
+                            col += tab_size;
+                        }
+                    } else {
+                        let tab_size = 4usize;
+                        let mut col = tab_size;
+                        while col < indent_level {
+                            let guide_x = content_x + col as f32 * cell_size.width;
+                            if guide_x < content_x + content_width {
+                                renderer.draw_grid_rect(
+                                    Rect::new(guide_x, y, 1.0, cell_size.height),
+                                    indent_guide,
+                                );
+                            }
+                            col += tab_size;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Render live preview grid with soft wrapping.
+    ///
+    /// v1: wrapping is based on raw buffer widths (WrapMap uses raw line content,
+    /// not display widths with hidden syntax). This means wrapped positions may
+    /// not perfectly match displayed character positions on non-cursor lines
+    /// where syntax markers are hidden. A future version could compute a
+    /// display-width-aware wrap map for live preview.
+    fn render_live_preview_soft_wrap_grid(
+        &self,
+        rect: Rect,
+        renderer: &mut WgpuRenderer,
+        gutter_text: Color,
+        gutter_active_text: Color,
+        ime_preedit: &str,
+        current_line_bg: Color,
+        _indent_guide: Color,
+    ) {
+        let live_map = match &self.live_preview_map {
+            Some(m) => m,
+            None => return,
+        };
+        let wrap_map = match self.wrap_map() {
+            Some(m) => m,
+            None => return,
+        };
+
+        let cell_size = renderer.cell_size();
+        let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+        let content_x = rect.x + gutter_width;
+        let scrollbar_reserved = if self.needs_scrollbar_soft_wrap(rect, cell_size.height) {
+            SCROLLBAR_WIDTH
+        } else {
+            0.0
+        };
+        let content_width = (rect.width - gutter_width - scrollbar_reserved).max(0.0);
+        let wrap_cols = wrap_map.wrap_width();
+
+        let visible_rows = (rect.height / cell_size.height).floor() as usize;
+        let scroll = self.editor.scroll_offset();
+        let cursor_pos = self.editor.cursor_position();
+        let cursor_line = cursor_pos.line;
+
+        // Preedit width for cursor line IME shift
+        let preedit_width = if !ime_preedit.is_empty() {
+            ime_preedit
+                .chars()
+                .map(|c| c.width().unwrap_or(1))
+                .sum::<usize>()
+        } else {
+            0
+        };
+        let cursor_char_col = if preedit_width > 0 {
+            if let Some(line_text) = self.editor.buffer.line(cursor_line) {
+                let byte_col = cursor_pos.col.min(line_text.len());
+                line_text[..byte_col].chars().count()
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
+        let theme = MarkdownTheme::dark();
+
+        // Fetch enough logical lines to fill visible_rows visual rows.
+        let line_count = self.editor.buffer.line_count();
+        let fetch_lines = visible_rows.min(line_count.saturating_sub(scroll));
+        let highlighted = self.editor.visible_highlighted_lines(fetch_lines);
+
+        let mut vi = 0; // current visual row index on screen
+        for (li_offset, spans) in highlighted.iter().enumerate() {
+            let abs_line = scroll + li_offset;
+            if vi >= visible_rows {
+                break;
+            }
+
+            let sub_rows = wrap_map.visual_rows_for(abs_line);
+
+            for sub_row in 0..sub_rows {
+                if vi >= visible_rows {
+                    break;
+                }
+
+                let y = rect.y + vi as f32 * cell_size.height;
+                if y + cell_size.height > rect.y + rect.height {
+                    break;
+                }
+
+                // Current line highlight
+                if abs_line == cursor_line {
+                    let row_rect = Rect::new(rect.x, y, rect.width, cell_size.height);
+                    renderer.draw_grid_rect(row_rect, current_line_bg);
+                }
+
+                // Gutter: line number only on first sub-row
+                if sub_row == 0 {
+                    let line_num = format!("{:>4}  ", abs_line + 1);
+                    let gutter_color = if abs_line == cursor_line {
+                        gutter_active_text
+                    } else {
+                        gutter_text
+                    };
+                    let gutter_style = TextStyle {
+                        foreground: gutter_color,
+                        background: None,
+                        bold: false,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    };
+                    for (ci, ch) in line_num.chars().enumerate() {
+                        if ch != ' ' {
+                            renderer.draw_grid_cell(
+                                ch,
+                                vi,
+                                ci,
+                                gutter_style,
+                                cell_size,
+                                Vec2::new(rect.x, rect.y),
+                            );
+                        }
+                    }
+                }
+
+                let sub_row_start_col = sub_row * wrap_cols;
+                let sub_row_end_col = sub_row_start_col + wrap_cols;
+
+                if abs_line == cursor_line {
+                    // Cursor line: render raw text with syntax highlighting (no hidden syntax)
+                    let mut display_col_abs = 0usize;
+                    let mut display_col = 0usize;
+                    let mut char_idx = 0usize;
+                    let mut preedit_shifted = false;
+
+                    for span in spans {
+                        for ch in span.text.chars() {
+                            if ch == '\n' {
+                                continue;
+                            }
+                            let char_w = ch.width().unwrap_or(1);
+
+                            if display_col_abs >= sub_row_end_col {
+                                break;
+                            }
+
+                            if display_col_abs + char_w > sub_row_start_col {
+                                if display_col_abs < sub_row_start_col {
+                                    display_col_abs += char_w;
+                                    char_idx += 1;
+                                    continue;
+                                }
+
+                                if !preedit_shifted
+                                    && preedit_width > 0
+                                    && char_idx >= cursor_char_col
+                                {
+                                    display_col += preedit_width;
+                                    preedit_shifted = true;
+                                }
+
+                                let px = content_x + display_col as f32 * cell_size.width;
+                                if px < content_x + content_width {
+                                    if ch != ' ' || span.style.background.is_some() {
+                                        renderer.draw_grid_cell(
+                                            ch,
+                                            vi,
+                                            GUTTER_WIDTH_CELLS + display_col,
+                                            span.style,
+                                            cell_size,
+                                            Vec2::new(rect.x, rect.y),
+                                        );
+                                    }
+                                }
+                                display_col += char_w;
+                            }
+
+                            display_col_abs += char_w;
+                            char_idx += 1;
+                        }
+                        if display_col_abs >= sub_row_end_col {
+                            break;
+                        }
+                    }
+                } else {
+                    // Non-cursor line: hide syntax markers, apply markdown styling.
+                    // v1: wrapping uses raw buffer column positions.
+                    let line_text = match self.editor.buffer.line(abs_line) {
+                        Some(t) => t,
+                        None => {
+                            vi += 1;
+                            continue;
+                        }
+                    };
+
+                    let hidden_ranges = live_map.hidden_syntax_ranges(abs_line, cursor_line);
+                    let line_byte_start: usize = (0..abs_line)
+                        .filter_map(|i| self.editor.buffer.line(i))
+                        .map(|l| l.len() + 1)
+                        .sum();
+
+                    let mut display_col_abs = 0usize; // raw column in the logical line
+                    let mut display_col = 0usize; // column within this sub-row
+                    let mut byte_offset = line_byte_start;
+                    let mut char_idx = 0usize;
+
+                    for ch in line_text.chars() {
+                        if ch == '\n' {
+                            byte_offset += ch.len_utf8();
+                            continue;
+                        }
+                        let char_byte_len = ch.len_utf8();
+                        let char_w = ch.width().unwrap_or(1);
+
+                        // Past the end of this sub-row (in raw columns)
+                        if display_col_abs >= sub_row_end_col {
+                            break;
+                        }
+
+                        // Before this sub-row starts (in raw columns)
+                        if display_col_abs + char_w <= sub_row_start_col {
+                            display_col_abs += char_w;
+                            byte_offset += char_byte_len;
+                            char_idx += 1;
+                            continue;
+                        }
+
+                        // Wide char straddling sub-row boundary — skip
+                        if display_col_abs < sub_row_start_col {
+                            display_col_abs += char_w;
+                            byte_offset += char_byte_len;
+                            char_idx += 1;
+                            continue;
+                        }
+
+                        // Hidden syntax characters are still counted for raw
+                        // column position but not rendered.
+                        let is_hidden = hidden_ranges.iter().any(|r| r.contains(&byte_offset));
+                        if is_hidden {
+                            display_col_abs += char_w;
+                            byte_offset += char_byte_len;
+                            char_idx += 1;
+                            continue;
+                        }
+
+                        let md_style = live_map.element_style(byte_offset);
+                        let style = self.resolve_md_style(md_style, &theme, spans, char_idx);
+
+                        let px = content_x + display_col as f32 * cell_size.width;
+                        if px >= content_x + content_width {
+                            break;
+                        }
+                        if ch != ' ' || style.background.is_some() {
+                            renderer.draw_grid_cell(
+                                ch,
+                                vi,
+                                GUTTER_WIDTH_CELLS + display_col,
+                                style,
+                                cell_size,
+                                Vec2::new(rect.x, rect.y),
+                            );
+                        }
+                        display_col += char_w;
+                        display_col_abs += char_w;
+                        byte_offset += char_byte_len;
+                        char_idx += 1;
+                    }
+                }
+
+                vi += 1;
+            }
+        }
+    }
+
+    /// Resolve a markdown element kind (or None) into a TextStyle.
+    /// Falls back to syntax highlighting style when no markdown element applies.
+    fn resolve_md_style(
+        &self,
+        md_style: Option<MdElementKind>,
+        theme: &MarkdownTheme,
+        spans: &[crate::tide_editor::highlight::StyledSpan],
+        char_idx: usize,
+    ) -> TextStyle {
+        match md_style {
+            Some(MdElementKind::Bold) => TextStyle {
+                foreground: theme.bold,
+                background: None,
+                bold: true,
+                dim: false,
+                italic: false,
+                underline: false,
+            },
+            Some(MdElementKind::Italic) => TextStyle {
+                foreground: theme.italic,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: true,
+                underline: false,
+            },
+            Some(MdElementKind::InlineCode) => TextStyle {
+                foreground: theme.code_fg,
+                background: Some(theme.code_bg),
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            },
+            Some(MdElementKind::Link) | Some(MdElementKind::Image) => TextStyle {
+                foreground: theme.link,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: true,
+            },
+            Some(MdElementKind::Strikethrough) => TextStyle {
+                foreground: theme.body,
+                background: None,
+                bold: false,
+                dim: true,
+                italic: false,
+                underline: false,
+            },
+            Some(MdElementKind::Heading(lvl)) => {
+                let color = match lvl {
+                    1 => theme.h1,
+                    2 => theme.h2,
+                    3 => theme.h3,
+                    _ => theme.h4,
+                };
+                TextStyle {
+                    foreground: color,
+                    background: None,
+                    bold: true,
+                    dim: false,
+                    italic: false,
+                    underline: false,
+                }
+            }
+            Some(MdElementKind::CodeBlock) => TextStyle {
+                foreground: theme.code_fg,
+                background: Some(theme.code_block_bg),
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            },
+            Some(MdElementKind::BlockQuote) => TextStyle {
+                foreground: theme.blockquote,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: true,
+                underline: false,
+            },
+            Some(MdElementKind::ListItem) => TextStyle {
+                foreground: theme.body,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            },
+            Some(MdElementKind::Table) => TextStyle {
+                foreground: theme.body,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            },
+            Some(MdElementKind::HorizontalRule) => TextStyle {
+                foreground: theme.rule,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            },
+            None => self.find_span_style_at(spans, char_idx),
+        }
+    }
+
+    /// Helper: find the TextStyle from syntax-highlighted spans at a given character index.
+    /// Used by live preview for non-styled characters to fall back to syntax highlighting.
+    fn find_span_style_at(&self, spans: &[crate::tide_editor::highlight::StyledSpan], target_char: usize) -> TextStyle {
+        let mut char_idx = 0usize;
+        for span in spans {
+            for _ch in span.text.chars() {
+                if char_idx == target_char {
+                    return span.style;
+                }
+                char_idx += 1;
+            }
+        }
+        // Fallback: default text style
+        TextStyle {
+            foreground: Color::new(0.85, 0.85, 0.85, 1.0),
+            background: None,
+            bold: false,
+            dim: false,
+            italic: false,
+            underline: false,
         }
     }
 

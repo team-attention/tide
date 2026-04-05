@@ -26,6 +26,7 @@ pub enum HeaderHitAction {
     EditorBack,
     EditorFileName,
     MarkdownPreview,
+    ToggleLivePreview,
     DiffRefresh,
     Maximize,
     /// Click on a Dock TabGroup tab — switch to this pane.
@@ -49,12 +50,12 @@ pub(crate) struct EditorBadge {
 pub(crate) fn editor_header_badges(ep: &crate::pane::editor::EditorPane) -> Vec<EditorBadge> {
     let mut badges = Vec::new();
 
-    // Markdown preview toggle
+    // Markdown mode toggle: plain ↔ live preview
     if ep.is_markdown() && !ep.diff_mode {
-        let text = if ep.preview_mode { "edit" } else { "preview" };
+        let text = if ep.live_preview { "plain" } else { "live" };
         badges.push(EditorBadge {
             text: text.to_string(),
-            action: Some(HeaderHitAction::MarkdownPreview),
+            action: Some(HeaderHitAction::ToggleLivePreview),
         });
     }
 
@@ -816,22 +817,22 @@ mod tests {
     }
 
     #[test]
-    fn markdown_shows_preview_badge() {
+    fn markdown_shows_live_badge() {
         let ep = make_markdown_editor(1);
         let badges = editor_header_badges(&ep);
         assert_eq!(badges.len(), 1);
-        assert_eq!(badges[0].text, "preview");
-        assert_eq!(badges[0].action, Some(HeaderHitAction::MarkdownPreview));
+        assert_eq!(badges[0].text, "live");
+        assert_eq!(badges[0].action, Some(HeaderHitAction::ToggleLivePreview));
     }
 
     #[test]
-    fn markdown_preview_mode_shows_edit_badge() {
+    fn markdown_live_preview_shows_plain_badge() {
         let mut ep = make_markdown_editor(1);
-        ep.preview_mode = true;
+        ep.live_preview = true;
         let badges = editor_header_badges(&ep);
         assert_eq!(badges.len(), 1);
-        assert_eq!(badges[0].text, "edit");
-        assert_eq!(badges[0].action, Some(HeaderHitAction::MarkdownPreview));
+        assert_eq!(badges[0].text, "plain");
+        assert_eq!(badges[0].action, Some(HeaderHitAction::ToggleLivePreview));
     }
 
     #[test]
@@ -911,7 +912,7 @@ mod tests {
             ep.editor.buffer.file_path = Some(PathBuf::from(format!("file.{}", ext)));
             let badges = editor_header_badges(&ep);
             assert!(!badges.is_empty(), "expected badge for .{} file", ext);
-            assert_eq!(badges[0].text, "preview");
+            assert_eq!(badges[0].text, "live");
         }
     }
 }
