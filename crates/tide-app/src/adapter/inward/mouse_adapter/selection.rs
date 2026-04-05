@@ -5,8 +5,8 @@ use crate::tide_core::{Rect, Vec2};
 use crate::pane::{PaneKind, Selection};
 use crate::theme::*;
 use crate::AppCorePort;
-use crate::InputStatePort;
 use crate::FocusNavPort;
+use crate::InputStatePort;
 use crate::PaneAccessPort;
 
 fn editor_content_rect(rect: Rect, content_top_offset: f32) -> Rect {
@@ -60,12 +60,12 @@ fn live_preview_buffer_col(
     }
     if let Some(ref lpm) = pane.live_preview_map {
         let cursor_line = pane.editor.cursor_position().line;
-        let line_content = pane.editor.buffer.line(line).unwrap_or("").to_string();
+        let line_content = pane.editor.buffer.line(line).unwrap_or("");
         lpm.visual_to_buffer_col(
             line,
             visual_col,
             cursor_line,
-            &line_content,
+            line_content,
             &pane.editor.buffer.lines,
         )
     } else {
@@ -76,7 +76,9 @@ fn live_preview_buffer_col(
 /// Begin text selection on mouse-down. Clears any existing selection in all
 /// panes, then anchors a new one in the clicked pane. Returns `true` if a
 /// selection was started.
-pub(super) fn start_text_selection(ctx: &mut (impl AppCorePort + InputStatePort + PaneAccessPort)) -> bool {
+pub(super) fn start_text_selection(
+    ctx: &mut (impl AppCorePort + InputStatePort + PaneAccessPort),
+) -> bool {
     let mods = ctx.modifiers();
     let content_top_offset = TAB_BAR_HEIGHT;
     if mods.ctrl || mods.meta {
@@ -154,10 +156,7 @@ pub(super) fn start_text_selection(ctx: &mut (impl AppCorePort + InputStatePort 
                 if pane.preview_mode {
                     if let Some((rr, rc)) = editor_cell {
                         if let Some(ref mut sel) = pane.selection {
-                            sel.end = (
-                                pane.preview_scroll + rr,
-                                pane.preview_h_scroll + rc,
-                            );
+                            sel.end = (pane.preview_scroll + rr, pane.preview_h_scroll + rc);
                             return true;
                         }
                     }
@@ -165,8 +164,8 @@ pub(super) fn start_text_selection(ctx: &mut (impl AppCorePort + InputStatePort 
                     if let Some((rr, rc)) = editor_cell {
                         if let Some(wrap_map) = pane.wrap_map() {
                             let abs_vr = pane.soft_wrap_visual_scroll() + rr;
-                            if let Some(info) = wrap_map
-                                .visual_row_to_line_info(abs_vr, &pane.editor.buffer.lines)
+                            if let Some(info) =
+                                wrap_map.visual_row_to_line_info(abs_vr, &pane.editor.buffer.lines)
                             {
                                 let visual_col = (info.char_offset + rc).min(info.char_end);
                                 let col =
@@ -231,12 +230,11 @@ pub(super) fn start_text_selection(ctx: &mut (impl AppCorePort + InputStatePort 
                 if let Some((rr, rc)) = editor_cell {
                     if let Some(wrap_map) = pane.wrap_map() {
                         let abs_vr = pane.soft_wrap_visual_scroll() + rr;
-                        if let Some(info) = wrap_map
-                            .visual_row_to_line_info(abs_vr, &pane.editor.buffer.lines)
+                        if let Some(info) =
+                            wrap_map.visual_row_to_line_info(abs_vr, &pane.editor.buffer.lines)
                         {
                             let visual_col = (info.char_offset + rc).min(info.char_end);
-                            let col =
-                                live_preview_buffer_col(pane, info.logical_line, visual_col);
+                            let col = live_preview_buffer_col(pane, info.logical_line, visual_col);
                             pane.selection = Some(Selection {
                                 anchor: (info.logical_line, col),
                                 end: (info.logical_line, col),
@@ -304,24 +302,18 @@ pub(super) fn handle_selection_drag(ctx: &mut (impl AppCorePort + PaneAccessPort
                 if pane.preview_mode {
                     if let Some(ref mut sel) = &mut pane.selection {
                         if let Some((rr, rc)) = editor_cell {
-                            sel.end = (
-                                pane.preview_scroll + rr,
-                                pane.preview_h_scroll + rc,
-                            );
+                            sel.end = (pane.preview_scroll + rr, pane.preview_h_scroll + rc);
                         }
                     }
                 } else if pane.effective_soft_wrap() {
                     if let Some((rel_row, rel_col)) = editor_cell {
                         let mapped = pane.wrap_map().and_then(|wrap_map| {
                             let abs_vr = pane.soft_wrap_visual_scroll() + rel_row;
-                            wrap_map
-                                .visual_row_to_line_info(abs_vr, &pane.editor.buffer.lines)
+                            wrap_map.visual_row_to_line_info(abs_vr, &pane.editor.buffer.lines)
                         });
                         if let Some(info) = mapped {
-                            let visual_col =
-                                (info.char_offset + rel_col).min(info.char_end);
-                            let col =
-                                live_preview_buffer_col(pane, info.logical_line, visual_col);
+                            let visual_col = (info.char_offset + rel_col).min(info.char_end);
+                            let col = live_preview_buffer_col(pane, info.logical_line, visual_col);
                             if let Some(ref mut sel) = pane.selection {
                                 sel.end = (info.logical_line, col);
                             }
@@ -356,7 +348,10 @@ pub(super) fn handle_selection_drag(ctx: &mut (impl AppCorePort + PaneAccessPort
 }
 
 /// Extend URL-bar selection while dragging.
-pub(super) fn handle_url_bar_drag(ctx: &mut (impl FocusNavPort + AppCorePort + PaneAccessPort), pos: Vec2) {
+pub(super) fn handle_url_bar_drag(
+    ctx: &mut (impl FocusNavPort + AppCorePort + PaneAccessPort),
+    pos: Vec2,
+) {
     if let Some(focused_id) = ctx.focused_pane() {
         let is_url_focused = matches!(
             ctx.pane(focused_id),
@@ -373,8 +368,8 @@ pub(super) fn handle_url_bar_drag(ctx: &mut (impl FocusNavPort + AppCorePort + P
                 let mut char_idx = 0;
                 if let Some(PaneKind::Browser(bp)) = ctx.pane(focused_id) {
                     for ch in bp.url_input.chars() {
-                        let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1) as f32
-                            * cell_w;
+                        let w =
+                            unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1) as f32 * cell_w;
                         if relative_x < col_px + w * 0.5 {
                             break;
                         }

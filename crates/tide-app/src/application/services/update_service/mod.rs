@@ -73,6 +73,7 @@ impl App {
                 if had_changes {
                     // Trigger git poller to refresh status asynchronously
                     // instead of blocking the app-thread with synchronous git calls.
+                    self.sync_file_tree_path_identity_cache();
                     self.trigger_git_poll();
                     self.cache.invalidate_chrome();
                 } else if tree.has_pending_events() {
@@ -102,6 +103,7 @@ impl App {
                 }
             }
             if modified_changed {
+                self.sync_file_tree_modified_editor_cache();
                 self.cache.invalidate_chrome();
             }
         }

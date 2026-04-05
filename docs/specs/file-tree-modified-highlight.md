@@ -5,13 +5,19 @@
 ### As-Is
 `adapter/outward/view/chrome/file_tree.rs` colors FileTree rows from `FileTreeModel.git_status` and `FileTreeModel.dir_git_status` only. Those caches are filled asynchronously by `application/services/file_tree_service/mod.rs` when the background git poller finishes. Editing a file-backed Editor Pane updates the tab indicator immediately, but the matching FileTree row stays unhighlighted until the next git poll result arrives.
 
+The first follow-up implementation fixed the behavior by normalizing paths and scanning open Editor Panes during FileTree rendering. That removed the user-facing lag but still did path normalization and per-row pane scans on the main UI thread while rendering FileTree rows.
+
 ### To-Be
 When a file-backed Editor Pane is modified in memory, the matching FileTree row shows `Modified` immediately even before the background git poller refreshes the git-status caches. Ancestor directory rows get the same fallback when no cached directory status exists. Existing cached git statuses still win so the FileTree keeps showing `Conflict`, `Added`, or `Untracked` when the poller already knows about them.
 
+The FileTree lookup uses precomputed normalized FileTree entry paths and precomputed normalized modified-editor caches. Rendering does not normalize paths or scan all open Panes per row. When a file-backed Editor Pane becomes clean again, the fallback highlight is removed.
+
 ### Approach
 1. Reuse normalized path-identity matching for both file-watch and FileTree status lookup.
-2. Add an effective FileTree git-status lookup that first reads the cached git status and only falls back to `Modified` when a matching file-backed Editor Pane is modified.
-3. Use that effective lookup in FileTree rendering for both file rows and directory rows.
+2. Precompute normalized visible-entry paths when the FileTree root or visible entries change.
+3. Precompute normalized modified file-backed Editor Pane paths and ancestor directories when modified state changes.
+4. Add an effective FileTree git-status lookup that first reads the cached git status and only falls back to the precomputed `Modified` caches.
+5. Use that effective lookup in FileTree rendering for both file rows and directory rows.
 
 ## Bounded Contexts
 
@@ -38,6 +44,7 @@ When a file-backed Editor Pane is modified in memory, the matching FileTree row 
   - BR-1: File rows match file-backed Editor Panes by normalized path identity, not raw string equality.
   - BR-2: A modified file-backed Editor Pane falls back to `Modified` only when the FileTree has no cached git status for that file row.
   - BR-3: If the FileTree already has a cached git status for a file row, that cached status is preserved.
+  - BR-4: File-row fallback uses precomputed normalized caches instead of scanning open Panes during row rendering.
 
 ### UC-2: HighlightModifiedAncestorDirectoryBeforeGitPoll
 
@@ -50,7 +57,8 @@ When a file-backed Editor Pane is modified in memory, the matching FileTree row 
   3. The matching directory row renders as `Modified`.
 - **Postcondition**: The user sees the ancestor directory highlight immediately.
 - **Business Rules**:
-  - BR-4: Directory rows fall back to `Modified` when a modified file-backed Editor Pane path is equal to or inside that directory.
+  - BR-5: Directory rows fall back to `Modified` when a modified file-backed Editor Pane path is equal to or inside that directory.
+  - BR-6: When a file-backed Editor Pane becomes clean, the FileTree `Modified` fallback is removed for that file row.
 
 ## Invariants
 
@@ -61,10 +69,11 @@ When a file-backed Editor Pane is modified in memory, the matching FileTree row 
 
 | UC | BR | Test function |
 |----|----|---------------|
-| UC-1 | BR-1/BR-2 | `dirty_editor_marks_matching_file_tree_file_modified_before_git_poll` |
+| UC-1 | BR-1/BR-2/BR-4 | `dirty_editor_marks_matching_file_tree_file_modified_before_git_poll` |
 | UC-1 | BR-1 | `dirty_editor_matches_file_tree_entries_by_normalized_path_identity` |
 | UC-1 | BR-3 | `cached_file_tree_git_status_is_preserved_over_dirty_editor_fallback` |
-| UC-2 | BR-4 | `dirty_editor_marks_matching_file_tree_directory_modified_before_git_poll` |
+| UC-2 | BR-5 | `dirty_editor_marks_matching_file_tree_directory_modified_before_git_poll` |
+| UC-2 | BR-6 | `saving_file_backed_editor_clears_file_tree_modified_fallback` |
 
 ## Location
 

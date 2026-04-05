@@ -7,6 +7,7 @@ use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
 use crate::tide_core::FileGitStatus;
+use crate::ActionPort;
 use crate::App;
 
 static NEXT_TEST_FILE_ID: AtomicUsize = AtomicUsize::new(0);
@@ -39,6 +40,11 @@ fn app_with_file_backed_editor(path: &Path) -> (App, u64) {
     (app, id)
 }
 
+fn install_file_tree(app: &mut App, root: &Path) {
+    app.ft.tree = Some(crate::tide_tree::FsTree::new(root.to_path_buf()));
+    app.sync_file_tree_path_identity_cache();
+}
+
 // --- UC-1: HighlightModifiedFileRowBeforeGitPoll ---
 
 #[test]
@@ -50,6 +56,7 @@ fn dirty_editor_marks_matching_file_tree_file_modified_before_git_poll() {
     std::fs::write(&path, "before\n").unwrap();
 
     let (mut app, _id) = app_with_file_backed_editor(&path);
+    install_file_tree(&mut app, &fixture_root);
     app.send_text_to_target("after");
 
     assert_eq!(
@@ -73,10 +80,11 @@ fn dirty_editor_matches_file_tree_entries_by_normalized_path_identity() {
     std::fs::write(&real_path, "before\n").unwrap();
 
     let (mut app, _id) = app_with_file_backed_editor(&link_path);
+    install_file_tree(&mut app, &real_dir);
     app.send_text_to_target("after");
 
     assert_eq!(
-        app.effective_file_tree_git_status(&std::fs::canonicalize(&real_path).unwrap(), false),
+        app.effective_file_tree_git_status(&real_path, false),
         Some(FileGitStatus::Modified)
     );
 
@@ -92,6 +100,7 @@ fn cached_file_tree_git_status_is_preserved_over_dirty_editor_fallback() {
     std::fs::write(&path, "before\n").unwrap();
 
     let (mut app, _id) = app_with_file_backed_editor(&path);
+    install_file_tree(&mut app, &fixture_root);
     app.ft
         .git_status
         .insert(path.clone(), FileGitStatus::Untracked);
@@ -117,12 +126,47 @@ fn dirty_editor_marks_matching_file_tree_directory_modified_before_git_poll() {
     std::fs::write(&path, "before\n").unwrap();
 
     let (mut app, _id) = app_with_file_backed_editor(&path);
+    install_file_tree(&mut app, &fixture_root);
     app.send_text_to_target("after");
 
     assert_eq!(
         app.effective_file_tree_git_status(&docs_dir, true),
         Some(FileGitStatus::Modified)
     );
+
+    let _ = std::fs::remove_dir_all(fixture_root);
+}
+
+#[test]
+fn saving_file_backed_editor_clears_file_tree_modified_fallback() {
+    // UC-2 BR-6: Saving a file-backed Editor Pane removes the FileTree Modified fallback
+    let fixture_root = temp_fixture_dir("save");
+    std::fs::create_dir_all(&fixture_root).unwrap();
+    let path = fixture_root.join("note.txt");
+    std::fs::write(&path, "before\n").unwrap();
+
+    let (mut app, id) = app_with_file_backed_editor(&path);
+    install_file_tree(&mut app, &fixture_root);
+    app.send_text_to_target("after");
+
+    assert_eq!(
+        app.effective_file_tree_git_status(&path, false),
+        Some(FileGitStatus::Modified)
+    );
+
+    ActionPort::handle_action(
+        &mut app,
+        crate::tide_input::Action::RouteToPane(id),
+        Some(crate::tide_core::InputEvent::KeyPress {
+            key: crate::tide_core::Key::Char('s'),
+            modifiers: crate::tide_core::Modifiers {
+                meta: true,
+                ..Default::default()
+            },
+        }),
+    );
+
+    assert_eq!(app.effective_file_tree_git_status(&path, false), None);
 
     let _ = std::fs::remove_dir_all(fixture_root);
 }
