@@ -13,7 +13,9 @@ use crate::tide_editor::input::EditorAction;
 use crate::tide_editor::wrap::WrapMap;
 use crate::tide_editor::EditorState;
 
-use crate::tide_editor::markdown::{render_markdown_preview, MarkdownTheme, PreviewLine};
+use crate::tide_editor::markdown::{
+    render_markdown_preview, LivePreviewMap, MarkdownTheme, PreviewLine,
+};
 
 use crate::pane::Selection;
 use crate::theme::SCROLLBAR_WIDTH;
@@ -123,6 +125,13 @@ pub struct EditorPane {
     wrap_map: Option<WrapMap>,
     /// Inline completion popup state. NOT part of ModalStack.
     pub completion: Option<completion::CompletionState>,
+    /// Whether live preview mode is active (inline markdown rendering in editor).
+    /// Mutually exclusive with full `preview_mode`.
+    pub live_preview: bool,
+    /// Cached live preview map (source-range → markdown-element mapping).
+    pub live_preview_map: Option<LivePreviewMap>,
+    /// Generation counter for `live_preview_map` cache invalidation.
+    live_preview_generation: u64,
 }
 
 impl EditorPane {
@@ -149,6 +158,9 @@ impl EditorPane {
             soft_wrap: false,
             wrap_map: None,
             completion: None,
+            live_preview: false,
+            live_preview_map: None,
+            live_preview_generation: 0,
         }
     }
 
@@ -176,6 +188,9 @@ impl EditorPane {
             soft_wrap,
             wrap_map: None,
             completion: None,
+            live_preview: false,
+            live_preview_map: None,
+            live_preview_generation: 0,
         })
     }
 
@@ -505,9 +520,15 @@ impl EditorPane {
                 .wrapping_add(self.preview_h_scroll as u64)
                 .wrapping_add(cache_width)
         } else {
-            self.editor
+            let mut gen = self.editor
                 .generation()
-                .wrapping_add(u64::from(self.split_preview_active()))
+                .wrapping_add(u64::from(self.split_preview_active()));
+            // In live preview, cursor line affects rendering (syntax hiding),
+            // so include it in the generation to trigger re-render on cursor movement.
+            if self.live_preview {
+                gen = gen.wrapping_add(self.editor.cursor_position().line as u64 * 100_003);
+            }
+            gen
         }
     }
 
@@ -620,6 +641,11 @@ impl EditorPane {
                 self.ensure_preview_cache(wrap_width, dark);
             }
         }
+
+        // Keep live preview map in sync with buffer edits.
+        if self.live_preview {
+            self.ensure_live_preview_map();
+        }
     }
 
     /// Ensure the wrap map is up to date for the current content and width.
@@ -644,8 +670,38 @@ impl EditorPane {
         self.wrap_map.as_ref()
     }
 
+    /// Toggle live preview mode. Mutually exclusive with full preview mode.
+    pub fn toggle_live_preview(&mut self) {
+        if self.live_preview {
+            self.live_preview = false;
+            self.live_preview_map = None;
+        } else {
+            // Exit full preview if active
+            if self.preview_mode {
+                self.preview_mode = false;
+            }
+            self.live_preview = true;
+            self.ensure_live_preview_map();
+        }
+    }
+
+    /// Ensure LivePreviewMap is up-to-date with current buffer.
+    pub fn ensure_live_preview_map(&mut self) {
+        let gen = self.editor.generation();
+        if self.live_preview_map.is_none() || self.live_preview_generation != gen {
+            self.live_preview_map = Some(LivePreviewMap::build(&self.editor.buffer.lines));
+            self.live_preview_generation = gen;
+        }
+    }
+
     /// Toggle preview mode on/off, syncing scroll position proportionally.
     pub fn toggle_preview(&mut self) {
+        // Exit live preview if active (mutually exclusive)
+        if self.live_preview {
+            self.live_preview = false;
+            self.live_preview_map = None;
+        }
+
         let raw_line_count = self.editor.buffer.line_count().max(1);
 
         if self.preview_mode {

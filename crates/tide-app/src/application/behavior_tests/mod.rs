@@ -33,3 +33,4 @@ mod cli_workspace_routing;
 mod diff_auto_refresh;
 mod stage_tab_group;
 mod modifier_keybinding;
+mod live_preview_tests;
