@@ -83,14 +83,9 @@ pub(crate) fn handle_scroll(
                 break;
             }
         }
-        if tab_bar_pane.is_none() && (dx.abs() > 0.5 || dy.abs() > 0.5) {
-            eprintln!("[scroll-miss] cursor=({:.1},{:.1}) panes={:?}",
-                cursor_pos.x, cursor_pos.y,
-                pane_rects.iter().map(|(pid, r)| (*pid, r.x as i32, r.y as i32, r.width as i32, r.height as i32)).collect::<Vec<_>>());
-        }
         if let Some(pid) = tab_bar_pane {
-            // Use raw dx/dy — both treated as horizontal tab scroll
-            let scroll_delta = if dx.abs() > dy.abs() { dx } else { dy };
+            // dx maps directly; negate dy so scroll-down = scroll tabs right
+            let scroll_delta = if dx.abs() > dy.abs() { dx } else { -dy };
             if scroll_delta != 0.0 {
                 let offsets = &mut ctx.interaction_mut().tab_scroll_offset;
                 let offset = offsets.entry(pid).or_insert(0.0);

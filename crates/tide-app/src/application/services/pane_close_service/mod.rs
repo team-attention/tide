@@ -15,6 +15,7 @@ impl App {
             self.interaction.pane_drag = PaneDragState::Idle;
             self.interaction.drop_preview_start = None;
         }
+        self.interaction.tab_scroll_offset.remove(&pane_id);
         let remaining = self.layout.all_pane_ids();
         if remaining.len() <= 1 {
             // If other workspaces exist, close this one instead of exiting
