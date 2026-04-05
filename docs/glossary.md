@@ -81,6 +81,8 @@ All paths below are relative to `crates/tide-app/src/`.
 | **CursorShape** | enum | Terminal cursor appearance: `Block`, `Beam`, `Underline`. |
 | **CompletionItem** | struct | A single completion suggestion: label, kind, insertText, sortText. |
 | **Generation** | `u64` | Monotonic counter for cache invalidation. Incremented on state change. |
+| **LivePreviewMap** | struct | A data structure that maps raw-buffer byte ranges to markdown element types (inline bold, heading, code block, etc.) and classifies which bytes are syntax markers vs content. Built from pulldown_cmark source-span offsets. Used by LivePreviewMode to determine which characters to hide or style. |
+| **LivePreviewMode** | concept | A third editor rendering mode alongside Plain (raw markdown with syntax highlighting) and Preview (read-only formatted rendering). In LivePreviewMode, inline markdown syntax (e.g. `**`, `_`, backticks) is hidden on lines where the cursor is absent and revealed on the cursor's line. Block-level elements (code blocks, tables, blockquotes) always show syntax but apply visual styling. Operates in the same coordinate space as the raw buffer — no line folding. |
 | **Ratio** | `f32` | Split position (0.0–1.0). Clamped to [0.1, 0.9] minimum. |
 | **Cell Size** | `Size` | Pixel dimensions of one terminal character cell (font-dependent). |
 | **Pinned Pane** | concept | A dock pane marked as pinned. Visible from all terminals within the workspace, displayed in a dedicated pinned TabGroup on the left side of the dock when viewed from a non-owning terminal. |

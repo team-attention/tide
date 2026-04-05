@@ -132,7 +132,18 @@ pub(super) fn start_text_selection(ctx: &mut (impl AppCorePort + InputStatePort 
                     }
                 } else if let Some((rr, rc)) = editor_cell {
                     let line = pane.editor.scroll_offset() + rr;
-                    let col = pane.editor.h_scroll_offset() + rc;
+                    let visual_col = pane.editor.h_scroll_offset() + rc;
+                    let col = if pane.live_preview {
+                        if let Some(ref lpm) = pane.live_preview_map {
+                            let cursor_line = pane.editor.cursor_position().line;
+                            let line_content = pane.editor.buffer.line(line)
+                                .unwrap_or("").to_string();
+                            lpm.visual_to_buffer_col(
+                                line, visual_col, cursor_line, &line_content,
+                                &pane.editor.buffer.lines,
+                            )
+                        } else { visual_col }
+                    } else { visual_col };
                     if let Some(ref mut sel) = pane.selection {
                         sel.end = (line, col);
                         return true;
@@ -206,7 +217,18 @@ pub(super) fn start_text_selection(ctx: &mut (impl AppCorePort + InputStatePort 
                 }
             } else if let Some((rr, rc)) = editor_cell {
                 let line = pane.editor.scroll_offset() + rr;
-                let col = pane.editor.h_scroll_offset() + rc;
+                let visual_col = pane.editor.h_scroll_offset() + rc;
+                let col = if pane.live_preview {
+                    if let Some(ref lpm) = pane.live_preview_map {
+                        let cursor_line = pane.editor.cursor_position().line;
+                        let line_content = pane.editor.buffer.line(line)
+                            .unwrap_or("").to_string();
+                        lpm.visual_to_buffer_col(
+                            line, visual_col, cursor_line, &line_content,
+                            &pane.editor.buffer.lines,
+                        )
+                    } else { visual_col }
+                } else { visual_col };
                 pane.selection = Some(Selection {
                     anchor: (line, col),
                     end: (line, col),
@@ -303,10 +325,20 @@ pub(super) fn handle_selection_drag(ctx: &mut (impl AppCorePort + PaneAccessPort
                 } else if let (Some(ref mut sel), Some((rel_row, rel_col))) =
                     (&mut pane.selection, editor_cell)
                 {
-                    sel.end = (
-                        pane.editor.scroll_offset() + rel_row,
-                        pane.editor.h_scroll_offset() + rel_col,
-                    );
+                    let line = pane.editor.scroll_offset() + rel_row;
+                    let visual_col = pane.editor.h_scroll_offset() + rel_col;
+                    let col = if pane.live_preview {
+                        if let Some(ref lpm) = pane.live_preview_map {
+                            let cursor_line = pane.editor.cursor_position().line;
+                            let line_content = pane.editor.buffer.line(line)
+                                .unwrap_or("").to_string();
+                            lpm.visual_to_buffer_col(
+                                line, visual_col, cursor_line, &line_content,
+                                &pane.editor.buffer.lines,
+                            )
+                        } else { visual_col }
+                    } else { visual_col };
+                    sel.end = (line, col);
                 }
             }
             Some(PaneKind::Diff(dp)) => {
