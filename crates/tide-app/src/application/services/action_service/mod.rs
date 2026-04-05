@@ -76,8 +76,7 @@ impl crate::application::ports::inward::ActionPort for App {
             None => return,
         };
         let url = match self.panes.get(&focused) {
-            Some(PaneKind::Browser(bp)) if !bp.url.is_empty() => Some(bp.url.clone()),
-            Some(PaneKind::Browser(bp)) if !bp.url_input.is_empty() => Some(bp.url_input.clone()),
+            Some(PaneKind::Browser(bp)) => bp.url_state_for_external_open(),
             _ => None,
         };
         if let Some(url) = url {
