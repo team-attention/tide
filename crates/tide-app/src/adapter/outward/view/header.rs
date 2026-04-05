@@ -324,8 +324,8 @@ pub fn render_pane_header_inner(
 
     // Position close icon relative to compact tab width
     let close_hit_x = rect.x + compact_tab_w - TAB_H_PAD - close_hit_size;
-    let close_icon_x = close_hit_x + (close_hit_size - close_icon_w) / 2.0;
-    let close_icon_y = rect.y + (TAB_BAR_HEIGHT - close_icon_w) / 2.0;
+    let _close_icon_x = close_hit_x + (close_hit_size - close_icon_w) / 2.0;
+    let _close_icon_y = rect.y + (TAB_BAR_HEIGHT - close_icon_w) / 2.0;
 
     // Title: fill space between cx and close
     let title_max_w = (close_hit_x - badge_gap - total_badge_w - cx).max(20.0);
