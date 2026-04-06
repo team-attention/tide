@@ -24,16 +24,14 @@ static WEBVIEW_WAKER: Mutex<Option<std::sync::Arc<dyn Fn() + Send + Sync>>> = Mu
 
 /// Install the wake callback so navigation delegate can trigger redraws.
 pub fn set_webview_waker(waker: std::sync::Arc<dyn Fn() + Send + Sync>) {
-    if let Ok(mut w) = WEBVIEW_WAKER.lock() {
-        *w = Some(waker);
-    }
+    let mut w = WEBVIEW_WAKER.lock().unwrap_or_else(|e| e.into_inner());
+    *w = Some(waker);
 }
 
 pub fn wake_event_loop() {
-    if let Ok(w) = WEBVIEW_WAKER.lock() {
-        if let Some(ref waker) = *w {
-            waker();
-        }
+    let w = WEBVIEW_WAKER.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(ref waker) = *w {
+        waker();
     }
 }
 
