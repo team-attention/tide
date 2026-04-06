@@ -133,7 +133,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.ime.pending_creates.push(new_id);
         // Route to Dock if an owner terminal exists
         if let Some(tid) = context_terminal.or_else(|| self.focused_terminal_id()) {
-            self.add_pane_to_dock(new_id);
+            self.add_pane_to_dock(new_id, Some(tid));
             self.assoc.associated_terminal.insert(new_id, tid);
             self.focus.focus_area = crate::state::FocusArea::Dock;
         } else {
@@ -326,7 +326,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.panes.insert(new_id, PaneKind::Browser(pane));
         self.ime.pending_creates.push(new_id);
         if let Some(tid) = context_terminal.or_else(|| self.focused_terminal_id()) {
-            self.add_pane_to_dock(new_id);
+            self.add_pane_to_dock(new_id, Some(tid));
             self.assoc.associated_terminal.insert(new_id, tid);
             self.focus.focus_area = crate::state::FocusArea::Dock;
         } else {
@@ -357,7 +357,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.panes.insert(new_id, PaneKind::Browser(pane));
         self.ime.pending_creates.push(new_id);
         if let Some(tid) = context_terminal.or_else(|| self.focused_terminal_id()) {
-            self.add_pane_to_dock(new_id);
+            self.add_pane_to_dock(new_id, Some(tid));
             self.assoc.associated_terminal.insert(new_id, tid);
             self.focus.focus_area = crate::state::FocusArea::Dock;
         } else {
@@ -386,7 +386,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.panes.insert(new_id, PaneKind::Browser(pane));
         self.ime.pending_creates.push(new_id);
         if let Some(tid) = context_terminal.or_else(|| self.focused_terminal_id()) {
-            self.add_pane_to_dock(new_id);
+            self.add_pane_to_dock(new_id, Some(tid));
             self.assoc.associated_terminal.insert(new_id, tid);
             self.focus.focus_area = crate::state::FocusArea::Dock;
         } else {
@@ -537,7 +537,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                 self.panes.insert(new_id, PaneKind::Editor(pane));
                 self.ime.pending_creates.push(new_id);
                 if let Some(tid) = context_terminal.or_else(|| self.focused_terminal_id()) {
-                    self.add_pane_to_dock(new_id);
+                    self.add_pane_to_dock(new_id, Some(tid));
                     self.assoc.associated_terminal.insert(new_id, tid);
                     self.focus.focus_area = crate::state::FocusArea::Dock;
                 } else {

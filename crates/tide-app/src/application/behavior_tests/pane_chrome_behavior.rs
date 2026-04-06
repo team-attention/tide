@@ -3,13 +3,15 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::adapter::outward::view::header::reserve_title_before_badges;
+use crate::adapter::outward::view::header::{
+    reserve_title_before_badges, terminal_header_title_color,
+};
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
 use crate::state::FocusArea;
 use crate::theme::{
-    BADGE_GAP, BADGE_PADDING_H, DARK, LIGHT, TAB_CONTENT_SPACING, TAB_H_PAD, TAB_MAX_WIDTH,
-    TAB_MIN_TITLE_WIDTH,
+    BADGE_GAP, BADGE_PADDING_H, DARK, LIGHT, TAB_BAR_HEIGHT, TAB_CONTENT_SPACING, TAB_H_PAD,
+    TAB_MAX_WIDTH, TAB_MIN_TITLE_WIDTH,
 };
 use crate::tide_terminal::git::{GitInfo, GitStatus};
 use crate::ui::pane_title;
@@ -39,6 +41,10 @@ fn color_tuple(color: crate::tide_core::Color) -> (u32, u32, u32, u32) {
         color.b.to_bits(),
         color.a.to_bits(),
     )
+}
+
+fn color_brightness(color: crate::tide_core::Color) -> f32 {
+    color.r + color.g + color.b
 }
 
 fn test_app() -> App {
@@ -102,7 +108,7 @@ fn dock_editor_inherits_needs_input_attention_from_paired_terminal() {
     let editor_id = app.layout.alloc_id();
     app.panes
         .insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
-    app.add_pane_to_dock(editor_id);
+    app.add_pane_to_dock(editor_id, Some(terminal_id));
     app.assoc.associated_terminal.insert(editor_id, terminal_id);
     app.focus.focused = Some(terminal_id);
     app.focus.focus_area = FocusArea::Stage;
@@ -189,5 +195,54 @@ fn git_badges_yield_space_before_title_disappears() {
     assert!(
         reserved_title_w >= TAB_MIN_TITLE_WIDTH.min(6.0 * cell_w),
         "header layout should reserve at least six cells for the title before badges consume the row"
+    );
+}
+
+// --- UC-4: RenderSharedTabSizingAndReadableTerminalLabels ---
+
+#[test]
+fn focused_tabs_use_a_brighter_tint_than_unfocused_tabs() {
+    // UC-4 BR-10: Focused tabs use a brighter tint than unfocused tabs in the shared header and tab-bar rendering paths.
+    assert!(
+        color_brightness(DARK.tab_bar_bg_focused) >= color_brightness(DARK.tab_bar_bg) + 0.03,
+        "focused dark tab chrome should be visibly brighter than unfocused tab chrome"
+    );
+    assert!(
+        color_brightness(LIGHT.tab_bar_bg_focused) >= color_brightness(LIGHT.tab_bar_bg) + 0.03,
+        "focused light tab chrome should be visibly brighter than unfocused tab chrome"
+    );
+}
+
+#[test]
+fn shared_tab_chrome_is_slightly_larger_across_all_surfaces() {
+    // UC-4 BR-9: Shared tab chrome uses a slightly larger height and padding budget across Stage tabs, Dock tabs, and single-Pane headers.
+    assert!(
+        TAB_BAR_HEIGHT >= 35.0,
+        "shared tab chrome should gain at least one pixel of height"
+    );
+    assert!(
+        TAB_H_PAD >= 11.0,
+        "shared tab chrome should gain a little more horizontal breathing room"
+    );
+}
+
+#[test]
+fn busy_terminal_labels_use_a_readable_color_path() {
+    // UC-4 BR-11: Busy Terminal Pane headers use a readable label color instead of the dimmed badge color path.
+    assert!(
+        terminal_header_title_color(&DARK, false, false) == DARK.tab_text,
+        "busy terminal labels should use the shared tab text color when unfocused"
+    );
+    assert!(
+        terminal_header_title_color(&DARK, true, false) == DARK.tab_text_focused,
+        "busy terminal labels should use the focused shared tab text color when focused"
+    );
+    assert!(
+        terminal_header_title_color(&LIGHT, false, false) == LIGHT.tab_text,
+        "busy terminal labels should use the shared tab text color when unfocused"
+    );
+    assert!(
+        terminal_header_title_color(&LIGHT, true, false) == LIGHT.tab_text_focused,
+        "busy terminal labels should use the focused shared tab text color when focused"
     );
 }
