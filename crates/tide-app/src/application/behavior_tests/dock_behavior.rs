@@ -1,8 +1,9 @@
 // Spec: docs/specs/layout-v2.md
 use crate::pane::editor::EditorPane;
-use crate::pane::PaneKind;
+use crate::pane::{PaneKind, TerminalPane};
 use crate::state::{FocusArea, ViewMode};
-use crate::tide_core::LayoutEngine;
+use crate::state::drag_types::DropDestination;
+use crate::tide_core::{DropZone, LayoutEngine};
 use crate::App;
 use crate::DockPort;
 use crate::WorkspaceNavPort;
@@ -33,6 +34,27 @@ fn app_with_two_terminals() -> (App, u64, u64) {
         .split(t1, crate::tide_core::SplitDirection::Vertical);
     app.panes.insert(t2, PaneKind::Launcher(t2));
     (app, t1, t2)
+}
+
+fn app_with_terminal_and_stage_editor() -> (App, u64, u64) {
+    let mut app = test_app();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    app.panes.insert(terminal_id, PaneKind::Terminal(terminal));
+
+    let editor_id = app
+        .layout
+        .split(terminal_id, crate::tide_core::SplitDirection::Vertical);
+    app.panes.insert(
+        editor_id,
+        PaneKind::Editor(EditorPane::new_empty(editor_id)),
+    );
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focused = Some(editor_id);
+    app.focus.focus_area = FocusArea::Stage;
+
+    (app, terminal_id, editor_id)
 }
 
 /// Helper: add a pane to a specific terminal's dock directly.
@@ -242,6 +264,40 @@ fn drag_reorder_tabs_in_stacked_stage() {
 
     let order_after = app.layout.pane_ids();
     assert_eq!(order_after, vec![t2, t1]);
+}
+
+#[test]
+fn stage_pane_drop_target_never_enters_dock() {
+    // UC-5 BR-2: Stage-to-Dock drops are rejected without mutating Stage layout.
+    let (mut app, terminal_id, editor_id) = app_with_terminal_and_stage_editor();
+
+    crate::adapter::inward::click_adapter::pane::handle_drop(
+        &mut app,
+        editor_id,
+        DropDestination::DockRoot(DropZone::Right),
+    );
+
+    assert!(
+        app.layout.all_pane_ids().contains(&editor_id),
+        "stage pane should remain in the Stage layout after a Dock-target drop"
+    );
+    assert!(
+        app.terminal_owning(editor_id).is_none(),
+        "stage pane should not become owned by any Terminal dock"
+    );
+    assert!(
+        !app.assoc.associated_terminal.contains_key(&editor_id),
+        "stage pane should not gain an Associated Terminal from a rejected Dock drop"
+    );
+
+    let dock_ids = match app.panes.get(&terminal_id) {
+        Some(PaneKind::Terminal(tp)) => tp.dock_layout.all_pane_ids(),
+        _ => panic!("expected a Terminal owner pane"),
+    };
+    assert!(
+        !dock_ids.contains(&editor_id),
+        "rejected Dock drop must not add the Stage pane to the dock layout"
+    );
 }
 
 // --- Bug fix: focus_terminal on dock pane ---

@@ -1,12 +1,12 @@
-use crate::tide_core::{DropZone, PaneId, Rect, Vec2};
 use crate::header::HeaderHitAction;
+use crate::state::drag_types::{DropDestination, WsSidebarGeometry};
 use crate::theme::*;
+use crate::tide_core::{DropZone, PaneId, Rect, Vec2};
 use crate::AppCorePort;
 use crate::DockPort;
+use crate::LayoutPort;
 use crate::PaneAccessPort;
 use crate::WorkspaceNavPort;
-use crate::LayoutPort;
-use crate::state::drag_types::{DropDestination, WsSidebarGeometry};
 
 /// Threshold for outer zone detection (0–12% of pane extent).
 const OUTER_ZONE_THRESHOLD: f32 = 0.12;
@@ -46,7 +46,7 @@ pub(crate) fn pane_maximize_at(ctx: &impl AppCorePort, pos: Vec2) -> Option<Pane
 
 /// Compute the drop destination for a given mouse position during drag.
 pub(crate) fn compute_drop_destination(
-    ctx: &(impl AppCorePort + DockPort + PaneAccessPort + WorkspaceNavPort),
+    ctx: &(impl AppCorePort + DockPort + PaneAccessPort + WorkspaceNavPort + LayoutPort),
     mouse: Vec2,
     source: PaneId,
 ) -> Option<DropDestination> {
@@ -60,14 +60,21 @@ pub(crate) fn compute_drop_destination(
     // Check pinned group area — detect drops onto the pinned group region
     if ctx.dock_open() && ctx.has_pinned_panes() {
         if let Some(dock_rect) = ctx.dock_area_rect() {
-            let has_term_dock = ctx.focused_terminal_id().map(|tid| {
-                if let Some(crate::pane::PaneKind::Terminal(tp)) = ctx.pane(tid) {
-                    !tp.dock_layout.pane_ids().is_empty()
-                } else { false }
-            }).unwrap_or(false);
+            let has_term_dock = ctx
+                .focused_terminal_id()
+                .map(|tid| {
+                    if let Some(crate::pane::PaneKind::Terminal(tp)) = ctx.pane(tid) {
+                        !tp.dock_layout.pane_ids().is_empty()
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
 
             if has_term_dock {
-                let pinned_w = (dock_rect.width * ctx.dock_pinned_ratio()).max(60.0).min(dock_rect.width - 60.0);
+                let pinned_w = (dock_rect.width * ctx.dock_pinned_ratio())
+                    .max(60.0)
+                    .min(dock_rect.width - 60.0);
                 let pinned_rect = Rect::new(dock_rect.x, dock_rect.y, pinned_w, dock_rect.height);
                 if pinned_rect.contains(mouse) && !ctx.is_pane_pinned(source) {
                     return Some(DropDestination::PinnedGroup);
@@ -79,6 +86,47 @@ pub(crate) fn compute_drop_destination(
     compute_tree_drop_target(ctx, mouse, source)
 }
 
+fn snapshot_contains_multi_tab_group(
+    snapshot: &crate::tide_layout::LayoutSnapshot,
+    pane_id: PaneId,
+) -> bool {
+    match snapshot {
+        crate::tide_layout::LayoutSnapshot::Leaf { .. } => false,
+        crate::tide_layout::LayoutSnapshot::LeafGroup { tabs, .. } => {
+            tabs.len() > 1 && tabs.contains(&pane_id)
+        }
+        crate::tide_layout::LayoutSnapshot::Split { left, right, .. } => {
+            snapshot_contains_multi_tab_group(left, pane_id)
+                || snapshot_contains_multi_tab_group(right, pane_id)
+        }
+    }
+}
+
+fn source_in_multi_tab_group(
+    ctx: &(impl DockPort + PaneAccessPort + LayoutPort),
+    source: PaneId,
+) -> bool {
+    if ctx.is_pane_in_dock(source) {
+        return ctx
+            .focused_terminal_id()
+            .and_then(|tid| {
+                if let Some(crate::pane::PaneKind::Terminal(tp)) = ctx.pane(tid) {
+                    tp.dock_layout
+                        .tab_group_containing(source)
+                        .map(|tg| tg.tabs.len() > 1)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(false);
+    }
+
+    ctx.layout_snapshot()
+        .as_ref()
+        .map(|snapshot| snapshot_contains_multi_tab_group(snapshot, source))
+        .unwrap_or(false)
+}
+
 /// Pre-compute the simulate_drop preview rect for a given drop destination.
 /// Called only when drop_target changes, not every frame.
 pub(crate) fn compute_drop_preview_rect(
@@ -88,7 +136,8 @@ pub(crate) fn compute_drop_preview_rect(
 ) -> Option<Rect> {
     let dest = target.as_ref()?;
     match dest {
-        DropDestination::TreeRoot(zone) | DropDestination::TreePane(_, zone)
+        DropDestination::TreeRoot(zone)
+        | DropDestination::TreePane(_, zone)
         | DropDestination::DockRoot(zone) => {
             if *zone == crate::tide_core::DropZone::Center {
                 return None;
@@ -129,13 +178,61 @@ pub(crate) fn compute_drop_preview_rect(
 
                 if let Some(tid) = ctx.focused_terminal_id() {
                     if let Some(crate::pane::PaneKind::Terminal(tp)) = ctx.pane(tid) {
-                        return tp.dock_layout.simulate_drop(source, target_id, *zone, true, dock_size);
+                        return tp
+                            .dock_layout
+                            .simulate_drop(source, target_id, *zone, true, dock_size);
                     }
                 }
                 return None;
             }
 
             let pane_area = ctx.pane_area_rect()?;
+            if target_id == Some(source) {
+                let source_rect = ctx
+                    .visual_pane_rects()
+                    .iter()
+                    .find(|(id, _)| *id == source)
+                    .map(|(_, rect)| *rect)
+                    .or_else(|| {
+                        ctx.pane_rects()
+                            .iter()
+                            .find(|(id, _)| *id == source)
+                            .map(|(_, rect)| *rect)
+                    })?;
+                let local_rect = Rect::new(
+                    source_rect.x - pane_area.x,
+                    source_rect.y - pane_area.y,
+                    source_rect.width,
+                    source_rect.height,
+                );
+                return Some(match *zone {
+                    crate::tide_core::DropZone::Top => Rect::new(
+                        local_rect.x,
+                        local_rect.y,
+                        local_rect.width,
+                        local_rect.height * 0.5,
+                    ),
+                    crate::tide_core::DropZone::Bottom => Rect::new(
+                        local_rect.x,
+                        local_rect.y + local_rect.height * 0.5,
+                        local_rect.width,
+                        local_rect.height * 0.5,
+                    ),
+                    crate::tide_core::DropZone::Left => Rect::new(
+                        local_rect.x,
+                        local_rect.y,
+                        local_rect.width * 0.5,
+                        local_rect.height,
+                    ),
+                    crate::tide_core::DropZone::Right => Rect::new(
+                        local_rect.x + local_rect.width * 0.5,
+                        local_rect.y,
+                        local_rect.width * 0.5,
+                        local_rect.height,
+                    ),
+                    _ => return None,
+                });
+            }
             let pane_area_size = crate::tide_core::Size::new(pane_area.width, pane_area.height);
             ctx.layout_simulate_drop(source, target_id, *zone, true, pane_area_size)
         }
@@ -143,7 +240,9 @@ pub(crate) fn compute_drop_preview_rect(
         DropDestination::PinnedGroup => {
             // Show preview covering the pinned group area
             if let Some(dock_rect) = ctx.dock_area_rect() {
-                let pinned_w = (dock_rect.width * ctx.dock_pinned_ratio()).max(60.0).min(dock_rect.width - 60.0);
+                let pinned_w = (dock_rect.width * ctx.dock_pinned_ratio())
+                    .max(60.0)
+                    .min(dock_rect.width - 60.0);
                 Some(Rect::new(0.0, 0.0, pinned_w, dock_rect.height))
             } else {
                 None
@@ -153,7 +252,9 @@ pub(crate) fn compute_drop_preview_rect(
 }
 
 /// Compute workspace sidebar item layout geometry.
-pub(crate) fn ws_sidebar_geometry(ctx: &(impl AppCorePort + WorkspaceNavPort)) -> Option<WsSidebarGeometry> {
+pub(crate) fn ws_sidebar_geometry(
+    ctx: &(impl AppCorePort + WorkspaceNavPort),
+) -> Option<WsSidebarGeometry> {
     let ws_rect = ctx.ws_sidebar_rect()?;
     let cs = ctx.cell_size();
     let name_h = cs.height;
@@ -170,7 +271,10 @@ pub(crate) fn ws_sidebar_geometry(ctx: &(impl AppCorePort + WorkspaceNavPort)) -
 }
 
 /// Hit-test workspace sidebar items. Returns the 0-based workspace index if hit.
-fn workspace_sidebar_item_at_pos(ctx: &(impl AppCorePort + WorkspaceNavPort), pos: Vec2) -> Option<usize> {
+fn workspace_sidebar_item_at_pos(
+    ctx: &(impl AppCorePort + WorkspaceNavPort),
+    pos: Vec2,
+) -> Option<usize> {
     if !ctx.ws_show_sidebar() {
         return None;
     }
@@ -184,7 +288,10 @@ fn workspace_sidebar_item_at_pos(ctx: &(impl AppCorePort + WorkspaceNavPort), po
 }
 
 /// Get the visual rect of a workspace sidebar item (for rendering drag highlights).
-pub(crate) fn workspace_sidebar_item_rect(ctx: &(impl AppCorePort + WorkspaceNavPort), idx: usize) -> Option<Rect> {
+pub(crate) fn workspace_sidebar_item_rect(
+    ctx: &(impl AppCorePort + WorkspaceNavPort),
+    idx: usize,
+) -> Option<Rect> {
     let geo = ws_sidebar_geometry(ctx)?;
     if idx < ctx.ws_workspaces_len() {
         Some(geo.item_rect(idx))
@@ -196,11 +303,12 @@ pub(crate) fn workspace_sidebar_item_rect(ctx: &(impl AppCorePort + WorkspaceNav
 /// Compute tree pane drop target (pane + zone) for drag.
 /// Uses tiling rects for hit-testing so the gap between panes is a valid drop area.
 fn compute_tree_drop_target(
-    ctx: &(impl AppCorePort + DockPort + PaneAccessPort),
+    ctx: &(impl AppCorePort + DockPort + PaneAccessPort + LayoutPort),
     mouse: Vec2,
     source: PaneId,
 ) -> Option<DropDestination> {
-    let source_tiling = ctx.pane_rects()
+    let source_tiling = ctx
+        .pane_rects()
         .iter()
         .find(|(id, _)| *id == source)
         .map(|(_, r)| *r);
@@ -213,32 +321,27 @@ fn compute_tree_drop_target(
             continue;
         }
 
-        // Block dock-to-stage drops: dock panes cannot be dropped onto stage panes
-        if source_in_dock && !ctx.is_pane_in_dock(id) {
+        let target_in_dock = ctx.is_pane_in_dock(id);
+
+        // Stage and Dock keep separate drag regions.
+        if source_in_dock && !target_in_dock {
+            continue;
+        }
+        if !source_in_dock && target_in_dock {
             continue;
         }
 
-        // Skip if dragging onto self — UNLESS source is in a dock tab group
+        // Skip if dragging onto self — UNLESS source is in a multi-tab TabGroup
         // (allows splitting a tab out of its group by dropping on directional zones)
         if id == source {
-            // Check if source is in a dock tab group with multiple tabs
-            let in_multi_tab_group = ctx.is_pane_in_dock(source) && {
-                ctx.focused_terminal_id()
-                    .and_then(|tid| {
-                        if let Some(crate::pane::PaneKind::Terminal(tp)) = ctx.pane(tid) {
-                            tp.dock_layout.tab_group_containing(source)
-                                .map(|tg| tg.tabs.len() > 1)
-                        } else { None }
-                    })
-                    .unwrap_or(false)
-            };
-            if !in_multi_tab_group {
+            if !source_in_multi_tab_group(ctx, source) {
                 continue;
             }
         }
 
         // Use visual rect for zone computation: rel coords outside [0,1] = in gap → edge zone
-        let visual_rect = ctx.visual_pane_rects()
+        let visual_rect = ctx
+            .visual_pane_rects()
             .iter()
             .find(|(vid, _)| *vid == id)
             .map(|(_, r)| *r)
@@ -276,9 +379,13 @@ fn compute_tree_drop_target(
             if let Some(area) = area_opt {
                 let touches_boundary = match zone {
                     DropZone::Top => tiling_rect.y <= area.y + 0.5,
-                    DropZone::Bottom => tiling_rect.y + tiling_rect.height >= area.y + area.height - 0.5,
+                    DropZone::Bottom => {
+                        tiling_rect.y + tiling_rect.height >= area.y + area.height - 0.5
+                    }
                     DropZone::Left => tiling_rect.x <= area.x + 0.5,
-                    DropZone::Right => tiling_rect.x + tiling_rect.width >= area.x + area.width - 0.5,
+                    DropZone::Right => {
+                        tiling_rect.x + tiling_rect.width >= area.x + area.width - 0.5
+                    }
                     DropZone::Center => false,
                 };
 

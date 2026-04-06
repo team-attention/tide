@@ -1,9 +1,13 @@
 // Spec: docs/specs/stage-tab-groups.md
+use crate::adapter::inward::mouse_adapter::handle_mouse_down;
+use crate::header::{HeaderHitAction, HeaderHitZone};
 use crate::pane::browser::BrowserPane;
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
+use crate::state::drag_types::{DropDestination, PaneDragState};
 use crate::state::{FocusArea, ViewMode};
-use crate::tide_core::LayoutEngine;
+use crate::tide_core::{DropZone, LayoutEngine, MouseButton, Rect, Vec2};
+use crate::tide_platform::WindowProxy;
 use crate::App;
 use crate::WorkspaceNavPort;
 
@@ -41,6 +45,21 @@ fn app_with_three_panes() -> (App, u64, u64, u64) {
         .split(p2, crate::tide_core::SplitDirection::Horizontal);
     app.panes.insert(p3, PaneKind::Launcher(p3));
     (app, p1, p2, p3)
+}
+
+fn app_with_stage_tab_group() -> (App, u64, u64) {
+    let (mut app, p1, p2) = app_with_two_panes();
+    app.layout.remove(p2);
+    app.layout.add_tab(p1, p2);
+    app.focus.focused = Some(p2);
+    app.focus.stage_focused = Some(p2);
+    app.focus.focus_area = FocusArea::Stage;
+    (app, p1, p2)
+}
+
+fn test_window_proxy() -> WindowProxy {
+    let (tx, _rx) = std::sync::mpsc::channel();
+    WindowProxy::new(tx, std::sync::Arc::new(|| {}))
 }
 
 // --- UC-1: Add Tab to Stage TabGroup ---
@@ -364,6 +383,136 @@ fn focus_equals_active_pane_after_tab_switch() {
     );
 }
 
+#[test]
+fn pressing_stage_tab_enters_pending_drag_after_focus_switch() {
+    // UC-3 BR-4: Pressing a Stage tab enters PaneDragState::PendingDrag after focus moves.
+    let (mut app, p1, _p2) = app_with_stage_tab_group();
+
+    app.window.last_cursor_pos = Vec2::new(12.0, 10.0);
+    app.header_hit_zones = vec![HeaderHitZone {
+        pane_id: p1,
+        rect: Rect::new(0.0, 0.0, 40.0, 20.0),
+        action: HeaderHitAction::StageTab(p1),
+    }];
+
+    handle_mouse_down(&mut app, MouseButton::Left, &test_window_proxy());
+    assert_eq!(app.focus.focused, Some(p1));
+
+    match &app.interaction.pane_drag {
+        PaneDragState::PendingDrag {
+            source_pane,
+            press_pos,
+        } => {
+            assert_eq!(*source_pane, p1);
+            assert_eq!(press_pos.x, app.window.last_cursor_pos.x);
+            assert_eq!(press_pos.y, app.window.last_cursor_pos.y);
+        }
+        PaneDragState::Dragging { .. } => panic!("stage tab press should start pending drag first"),
+        PaneDragState::Idle => panic!("stage tab press should not leave pane drag idle"),
+    }
+}
+
+#[test]
+fn directional_self_drop_splits_stage_tab_out_of_its_group() {
+    // UC-3 BR-5: A Stage tab in a multi-tab TabGroup may use directional self-drop.
+    let (mut app, p1, p2) = app_with_stage_tab_group();
+
+    crate::adapter::inward::click_adapter::pane::handle_drop(
+        &mut app,
+        p2,
+        DropDestination::TreePane(p2, DropZone::Left),
+    );
+
+    let visible_ids = app.layout.pane_ids();
+    assert_eq!(visible_ids.len(), 2, "self-extraction should leave two visible Stage panes");
+    assert!(
+        visible_ids.contains(&p1),
+        "remaining sibling pane should still be visible"
+    );
+    assert!(
+        visible_ids.contains(&p2),
+        "extracted pane should still be visible after the split"
+    );
+
+    let all_ids = app.layout.all_pane_ids();
+    assert_eq!(all_ids.len(), 2, "self-extraction should preserve both Stage PaneIds");
+    assert!(all_ids.contains(&p1));
+    assert!(all_ids.contains(&p2));
+    assert!(
+        app.layout.tab_group_containing(p1).is_none(),
+        "remaining sibling should collapse out of the TabGroup after extraction"
+    );
+    assert!(
+        app.layout.tab_group_containing(p2).is_none(),
+        "extracted Stage tab should become its own leaf after extraction"
+    );
+    assert_eq!(app.focus.focused, Some(p2));
+}
+
+#[test]
+fn directional_self_drop_preview_uses_source_rect_not_stage_area() {
+    // UC-3 BR-7: Directional self-drop preview stays within the dragged pane's current rect.
+    let (mut app, _p1, p2) = app_with_stage_tab_group();
+    crate::LayoutPort::compute_layout(&mut app);
+
+    let pane_area = app.pane_area_rect.expect("stage pane area should exist after layout");
+    let source_rect = app
+        .visual_pane_rects
+        .iter()
+        .find(|(id, _)| *id == p2)
+        .map(|(_, rect)| *rect)
+        .expect("source pane should have a visual rect");
+    let local_source_rect = Rect::new(
+        source_rect.x - pane_area.x,
+        source_rect.y - pane_area.y,
+        source_rect.width,
+        source_rect.height,
+    );
+
+    let preview = crate::LayoutPort::compute_drop_preview_rect(
+        &app,
+        p2,
+        &Some(DropDestination::TreePane(p2, DropZone::Left)),
+    )
+    .expect("self-drop preview should exist");
+
+    assert_eq!(
+        preview,
+        Rect::new(
+            local_source_rect.x,
+            local_source_rect.y,
+            local_source_rect.width * 0.5,
+            local_source_rect.height,
+        ),
+        "self-drop preview should split the current source pane rect rather than the whole Stage area"
+    );
+}
+
+#[test]
+fn dropping_stage_tab_on_other_stage_group_center_merges_it() {
+    // UC-3 BR-6: Dropping a Stage tab onto another Stage Pane center zone merges it into that TabGroup.
+    let (mut app, p1, p2, p3) = app_with_three_panes();
+    app.layout.remove(p2);
+    app.layout.add_tab(p1, p2);
+
+    crate::adapter::inward::click_adapter::pane::handle_drop(
+        &mut app,
+        p2,
+        DropDestination::TreePane(p3, DropZone::Center),
+    );
+
+    assert!(app.layout.tab_group_containing(p1).is_none());
+
+    let merged = app
+        .layout
+        .tab_group_containing(p3)
+        .expect("target Stage pane should now own a TabGroup");
+    assert!(merged.contains(p2));
+    assert!(merged.contains(p3));
+    assert_eq!(merged.active_pane(), p2);
+    assert_eq!(app.focus.focused, Some(p2));
+}
+
 // --- UC-4: Stage Tab Bar Rendering ---
 
 #[test]
@@ -463,32 +612,6 @@ fn center_drop_on_stage_pane_merges_as_tab() {
     assert!(
         app.layout.pane_ids().contains(&p3) || app.layout.all_pane_ids().contains(&p3),
         "other panes should remain in layout"
-    );
-}
-
-#[test]
-fn dock_pane_dropped_on_stage_center_merges_into_tab_group() {
-    // UC-5 BR-2: A Dock pane dropped onto Stage center zone is removed from Dock
-    // and merged into the Stage TabGroup. The pane's PaneKind is preserved.
-    let (mut app, p1) = app_with_single_pane();
-
-    // Simulate a dock pane (editor) being dropped onto stage pane p1
-    let editor_id = app.layout.alloc_id();
-    let editor = EditorPane::new_empty(editor_id);
-    app.panes.insert(editor_id, PaneKind::Editor(editor));
-
-    // The dock pane is not in the stage layout. Add it as a tab to p1.
-    let added = app.layout.add_tab(p1, editor_id);
-    assert!(added);
-
-    let tg = app.layout.tab_group_containing(p1).unwrap();
-    assert!(
-        tg.contains(editor_id),
-        "dock pane should be in Stage TabGroup"
-    );
-    assert!(
-        matches!(app.panes.get(&editor_id), Some(PaneKind::Editor(_))),
-        "PaneKind should be preserved"
     );
 }
 

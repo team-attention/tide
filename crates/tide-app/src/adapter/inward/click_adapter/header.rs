@@ -148,7 +148,8 @@ pub(crate) fn check_header_click(
                     return true;
                 }
                 HeaderHitAction::StageTab(target_pane_id) => {
-                    // Switch active tab in Stage TabGroup (or zoomed pane if stacked)
+                    // Switch tab immediately for visual feedback, but also
+                    // set PendingDrag to allow drag-and-drop extraction/reordering.
                     if let Some(old_zoomed) = ctx.zoomed_pane() {
                         // Transfer tab scroll offset from old zoomed pane to new one
                         let old_scroll = ctx.interaction_mut().tab_scroll_offset.remove(&old_zoomed).unwrap_or(0.0);
@@ -158,6 +159,10 @@ pub(crate) fn check_header_click(
                         ctx.set_zoom(Some(target_pane_id));
                     }
                     ctx.focus_terminal(target_pane_id);
+                    ctx.interaction_mut().pane_drag = crate::state::drag_types::PaneDragState::PendingDrag {
+                        source_pane: target_pane_id,
+                        press_pos: ctx.last_cursor_pos(),
+                    };
                     ctx.invalidate_chrome();
                     ctx.invalidate_all_panes();
                     ctx.compute_layout();

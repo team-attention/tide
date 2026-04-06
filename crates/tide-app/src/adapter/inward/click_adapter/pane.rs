@@ -1,18 +1,43 @@
 use crate::tide_core::{Rect, Vec2};
 
-use crate::state::drag_types::{DropDestination, HoverTarget};
 use crate::pane::PaneKind;
+use crate::state::drag_types::{DropDestination, HoverTarget};
 use crate::theme::*;
-use crate::DockPort;
-use crate::AppCorePort;
-use crate::LayoutPort;
-use crate::WorkspaceNavPort;
-use crate::PaneLifecyclePort;
 use crate::ActionPort;
+use crate::AppCorePort;
+use crate::DockPort;
 use crate::FocusNavPort;
-use crate::PaneAccessPort;
-use crate::ModalPort;
 use crate::InputStatePort;
+use crate::LayoutPort;
+use crate::ModalPort;
+use crate::PaneAccessPort;
+use crate::PaneLifecyclePort;
+use crate::WorkspaceNavPort;
+
+fn snapshot_tab_group_sibling(
+    snapshot: &crate::tide_layout::LayoutSnapshot,
+    pane_id: crate::tide_core::PaneId,
+) -> Option<crate::tide_core::PaneId> {
+    match snapshot {
+        crate::tide_layout::LayoutSnapshot::Leaf { .. } => None,
+        crate::tide_layout::LayoutSnapshot::LeafGroup { tabs, .. } => (tabs.len() > 1)
+            .then(|| tabs.iter().copied().find(|id| *id != pane_id))
+            .flatten(),
+        crate::tide_layout::LayoutSnapshot::Split { left, right, .. } => {
+            snapshot_tab_group_sibling(left, pane_id)
+                .or_else(|| snapshot_tab_group_sibling(right, pane_id))
+        }
+    }
+}
+
+fn stage_tab_group_sibling(
+    ctx: &impl LayoutPort,
+    pane_id: crate::tide_core::PaneId,
+) -> Option<crate::tide_core::PaneId> {
+    ctx.layout_snapshot()
+        .as_ref()
+        .and_then(|snapshot| snapshot_tab_group_sibling(snapshot, pane_id))
+}
 
 /// Handle a browser nav bar click based on hover target.
 pub(crate) fn handle_browser_nav_click(
@@ -49,7 +74,9 @@ pub(crate) fn handle_browser_nav_click(
             // Compute geometry before mutably borrowing panes.
             let cell_w = ctx.cell_size().width;
             let click_x = ctx.last_cursor_pos().x;
-            let pane_rect = ctx.visual_pane_rects().iter()
+            let pane_rect = ctx
+                .visual_pane_rects()
+                .iter()
                 .find(|(id, _)| *id == focused_id)
                 .map(|&(_, r)| r);
 
@@ -71,7 +98,8 @@ pub(crate) fn handle_browser_nav_click(
                         let mut col_px = 0.0_f32;
                         let mut char_idx = 0;
                         for ch in bp.url_input.chars() {
-                            let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1) as f32 * cell_w;
+                            let w = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1) as f32
+                                * cell_w;
                             if relative_x < col_px + w * 0.5 {
                                 break;
                             }
@@ -108,8 +136,10 @@ pub(crate) fn handle_notification_bar_click(
     if let Some(ref sc) = ctx.modal().save_confirm {
         let pane_id = sc.pane_id;
         if let Some(bar_rect) = notification_bar_rect(ctx, pane_id) {
-            if pos.y >= bar_rect.y && pos.y <= bar_rect.y + bar_rect.height
-                && pos.x >= bar_rect.x && pos.x <= bar_rect.x + bar_rect.width
+            if pos.y >= bar_rect.y
+                && pos.y <= bar_rect.y + bar_rect.height
+                && pos.x >= bar_rect.x
+                && pos.x <= bar_rect.x + bar_rect.width
             {
                 let cell_size = ctx.cell_size();
                 let btn_pad = 8.0;
@@ -153,7 +183,11 @@ fn notification_bar_rect(
     pane_id: crate::tide_core::PaneId,
 ) -> Option<Rect> {
     let content_top_off = TAB_BAR_HEIGHT;
-    if let Some(&(_, rect)) = ctx.visual_pane_rects().iter().find(|(id, _)| *id == pane_id) {
+    if let Some(&(_, rect)) = ctx
+        .visual_pane_rects()
+        .iter()
+        .find(|(id, _)| *id == pane_id)
+    {
         let content_top = rect.y + content_top_off;
         let bar_x = rect.x + PANE_PADDING;
         let bar_w = rect.width - 2.0 * PANE_PADDING;
@@ -178,8 +212,10 @@ fn handle_conflict_bar_click_inner(
                 let bar_x = rect.x + PANE_PADDING;
                 let bar_w = rect.width - 2.0 * PANE_PADDING;
                 let bar_rect = Rect::new(bar_x, content_top, bar_w, CONFLICT_BAR_HEIGHT);
-                if pos.y >= bar_rect.y && pos.y <= bar_rect.y + CONFLICT_BAR_HEIGHT
-                    && pos.x >= bar_rect.x && pos.x <= bar_rect.x + bar_rect.width
+                if pos.y >= bar_rect.y
+                    && pos.y <= bar_rect.y + CONFLICT_BAR_HEIGHT
+                    && pos.x >= bar_rect.x
+                    && pos.x <= bar_rect.x + bar_rect.width
                 {
                     target_pane = Some((id, bar_rect));
                     break;
@@ -195,8 +231,15 @@ fn handle_conflict_bar_click_inner(
 
     let cell_size = ctx.cell_size();
 
-    let is_deleted = ctx.pane(pane_id)
-        .and_then(|pk| if let PaneKind::Editor(ep) = pk { Some(ep.file_deleted) } else { None })
+    let is_deleted = ctx
+        .pane(pane_id)
+        .and_then(|pk| {
+            if let PaneKind::Editor(ep) = pk {
+                Some(ep.file_deleted)
+            } else {
+                None
+            }
+        })
         .unwrap_or(false);
 
     let btn_pad = 8.0;
@@ -244,8 +287,12 @@ pub(crate) fn handle_config_page_click(
     use crate::state::ConfigSection;
 
     let logical = ctx.logical_size();
-    let popup_w = crate::theme::CONFIG_PAGE_W.min(logical.width - 80.0).max(300.0);
-    let popup_h = crate::theme::CONFIG_PAGE_MAX_H.min(logical.height - 80.0).max(200.0);
+    let popup_w = crate::theme::CONFIG_PAGE_W
+        .min(logical.width - 80.0)
+        .max(300.0);
+    let popup_h = crate::theme::CONFIG_PAGE_MAX_H
+        .min(logical.height - 80.0)
+        .max(200.0);
     let popup_x = (logical.width - popup_w) / 2.0;
     let popup_y = (logical.height - popup_h) / 2.0;
     let popup_rect = Rect::new(popup_x, popup_y, popup_w, popup_h);
@@ -340,8 +387,10 @@ pub(crate) fn handle_branch_cleanup_click(
         Some(r) => r,
         None => return false,
     };
-    if pos.y < bar_rect.y || pos.y > bar_rect.y + bar_rect.height
-        || pos.x < bar_rect.x || pos.x > bar_rect.x + bar_rect.width
+    if pos.y < bar_rect.y
+        || pos.y > bar_rect.y + bar_rect.height
+        || pos.x < bar_rect.x
+        || pos.x > bar_rect.x + bar_rect.width
     {
         return false;
     }
@@ -374,7 +423,12 @@ pub(crate) fn handle_branch_cleanup_click(
 /// Handle a completed drop operation.
 /// Center zone swaps source and target. Directional zones create a new split.
 pub(crate) fn handle_drop(
-    ctx: &mut (impl AppCorePort + FocusNavPort + PaneAccessPort + DockPort + LayoutPort + WorkspaceNavPort),
+    ctx: &mut (impl AppCorePort
+              + FocusNavPort
+              + PaneAccessPort
+              + DockPort
+              + LayoutPort
+              + WorkspaceNavPort),
     source: crate::tide_core::PaneId,
     dest: DropDestination,
 ) {
@@ -395,6 +449,9 @@ pub(crate) fn handle_drop(
             ctx.compute_layout();
         }
         DropDestination::DockRoot(zone) => {
+            if !ctx.is_pane_in_dock(source) {
+                return;
+            }
             let was_pinned = ctx.is_pane_pinned(source);
             if was_pinned {
                 ctx.pinned_layout_remove(source);
@@ -475,7 +532,13 @@ pub(crate) fn handle_drop(
                         // Self-drop from tab group: find a sibling tab to use as split target
                         if let Some(sib) = ctx.dock_layout_tab_group_sibling(tid, source) {
                             ctx.dock_layout_remove(tid, source);
-                            ctx.dock_layout_split_with_leaf_group(tid, sib, source, direction, insert_first);
+                            ctx.dock_layout_split_with_leaf_group(
+                                tid,
+                                sib,
+                                source,
+                                direction,
+                                insert_first,
+                            );
                         }
                     } else {
                         ctx.dock_layout_remove(tid, source);
@@ -484,7 +547,13 @@ pub(crate) fn handle_drop(
                                 ctx.dock_layout_add_tab_to_first_group(tid, source);
                             }
                         } else {
-                            ctx.dock_layout_split_with_leaf_group(tid, target_id, source, direction, insert_first);
+                            ctx.dock_layout_split_with_leaf_group(
+                                tid,
+                                target_id,
+                                source,
+                                direction,
+                                insert_first,
+                            );
                         }
                     }
                     ctx.dock_layout_set_active_tab(tid, source);
@@ -492,16 +561,22 @@ pub(crate) fn handle_drop(
             } else if source_in_dock && !target_in_dock {
                 // Block dock-to-stage drops
                 return;
+            } else if !source_in_dock && target_in_dock {
+                // Block stage-to-dock drops
+                return;
             } else {
                 if zone == DropZone::Center {
                     // Center drop on Stage pane: merge into TabGroup (UC-5 BR-1)
                     ctx.layout_remove(source);
                     ctx.layout_add_tab(target_id, source);
+                } else if source == target_id {
+                    if let Some(sibling) = stage_tab_group_sibling(ctx, source) {
+                        ctx.layout_remove(source);
+                        ctx.layout_insert_pane(sibling, source, direction, insert_first);
+                    } else {
+                        return;
+                    }
                 } else {
-                    let insert_first = match zone {
-                        DropZone::Top | DropZone::Left => true,
-                        _ => false,
-                    };
                     ctx.layout_remove(source);
                     ctx.layout_insert_pane(target_id, source, direction, insert_first);
                 }
