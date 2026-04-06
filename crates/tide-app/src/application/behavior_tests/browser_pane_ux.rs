@@ -11,6 +11,7 @@ use crate::state::drag_types::HoverTarget;
 use crate::state::FocusArea;
 use crate::tide_core::{InputEvent, Key, Modifiers, MouseButton, Rect, Vec2};
 use crate::tide_input::{Action, GlobalAction};
+use crate::tide_platform::{PlatformEvent, WindowProxy};
 use crate::App;
 use std::cell::RefCell;
 use std::io;
@@ -51,6 +52,11 @@ fn browser_nav_url_bar_click_x(rect: Rect, cell_w: f32, columns: f32) -> f32 {
     let gaps_w = 8.0;
     let url_text_inset = 4.0;
     nav_x + 8.0 + buttons_w + gaps_w + url_text_inset + columns * cell_w
+}
+
+fn test_window_proxy() -> WindowProxy {
+    let (tx, _rx) = std::sync::mpsc::channel();
+    WindowProxy::new(tx, std::sync::Arc::new(|| {}))
 }
 
 #[derive(Clone)]
@@ -168,6 +174,78 @@ fn clicking_navigated_browser_pane_content_focuses_webview() {
             position: Vec2::new(32.0, 96.0),
             button: MouseButton::Left,
         }),
+    );
+
+    let bp = match app.panes.get(&id) {
+        Some(PaneKind::Browser(bp)) => bp,
+        other => panic!(
+            "expected Browser pane, got {:?}",
+            other.map(|_| "non-browser")
+        ),
+    };
+    assert!(!bp.url_input_focused);
+}
+
+#[test]
+fn webview_focused_keeps_navigated_browser_pane_content_owned() {
+    // UC-2 BR-7: WebViewFocused keeps a navigated Browser Pane content-owned instead of bouncing to the Browser URL bar
+    let (mut app, id) = app_with_browser();
+    let pane_rect = Rect::new(20.0, 20.0, 640.0, 320.0);
+    app.visual_pane_rects = vec![(id, pane_rect)];
+    app.window.last_cursor_pos = Vec2::new(pane_rect.x + 48.0, pane_rect.y + 104.0);
+    if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&id) {
+        bp.url = "https://example.com".to_string();
+        bp.url_input = bp.url.clone();
+        bp.url_input_cursor = bp.url_input.chars().count();
+        bp.url_input_focused = true;
+        bp.url_selection = Some((0, 8));
+    }
+
+    event_loop_adapter::handle_platform_event(
+        &mut app,
+        PlatformEvent::WebViewFocused,
+        &test_window_proxy(),
+    );
+
+    let bp = match app.panes.get(&id) {
+        Some(PaneKind::Browser(bp)) => bp,
+        other => panic!(
+            "expected Browser pane, got {:?}",
+            other.map(|_| "non-browser")
+        ),
+    };
+    assert!(!bp.url_input_focused);
+    assert!(bp.url_selection.is_none());
+    assert_eq!(app.focus.focused, Some(id));
+    assert_eq!(
+        event_loop_adapter::effective_ime_target(
+            app.focus.focused,
+            app.focus.search_focus,
+            &app.modal,
+            &app.panes,
+        ),
+        None
+    );
+}
+
+#[test]
+fn webview_focused_releases_stale_browser_url_bar_focus_for_page_input() {
+    // UC-2 BR-7: An explicit WebViewFocused event lets a navigated Browser Pane page input take ownership even if the Browser URL bar was still focused with committed text
+    let (mut app, id) = app_with_browser();
+    let pane_rect = Rect::new(20.0, 20.0, 640.0, 320.0);
+    app.visual_pane_rects = vec![(id, pane_rect)];
+    app.window.last_cursor_pos = Vec2::new(pane_rect.x + 48.0, pane_rect.y + 104.0);
+    if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&id) {
+        bp.url = "https://example.com/form".to_string();
+        bp.url_input = bp.url.clone();
+        bp.url_input_cursor = bp.url_input.chars().count();
+        bp.url_input_focused = true;
+    }
+
+    event_loop_adapter::handle_platform_event(
+        &mut app,
+        PlatformEvent::WebViewFocused,
+        &test_window_proxy(),
     );
 
     let bp = match app.panes.get(&id) {
@@ -354,6 +432,92 @@ fn open_externally_action_prefers_url_input_while_editing() {
         opened_urls.borrow().as_slice(),
         ["https://example.com/login"]
     );
+}
+
+#[test]
+fn content_navigation_updates_browser_url_and_actions_use_committed_state() {
+    // UC-6 BR-23 / BR-24 / BR-25: content-driven navigation updates the committed Browser URL and the visible Browser URL bar when the Browser URL bar is not actively editing a distinct draft
+    let (mut app, id) = app_with_browser();
+    if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&id) {
+        bp.url = "https://example.com".to_string();
+        bp.url_input = "https://example.com".to_string();
+        bp.url_input_cursor = bp.url_input.chars().count();
+        bp.url_input_focused = true;
+        bp.url_selection = None;
+
+        assert!(bp.sync_committed_url_from_navigation("https://example.com/docs"));
+        assert_eq!(bp.url, "https://example.com/docs");
+        assert_eq!(bp.url_input, "https://example.com/docs");
+        assert_eq!(
+            bp.url_state_for_copy(),
+            Some("https://example.com/docs".to_string())
+        );
+        assert_eq!(
+            bp.url_state_for_external_open(),
+            Some("https://example.com/docs".to_string())
+        );
+        assert!(!bp.has_distinct_url_draft());
+    } else {
+        panic!("expected Browser pane");
+    }
+}
+
+#[test]
+fn content_navigation_updates_visible_browser_url_when_browser_url_bar_has_no_distinct_draft() {
+    // UC-6 BR-24: Content navigation updates the visible Browser URL bar when the Browser URL bar is focused but still showing the last committed Browser URL
+    let id = 7;
+    let mut bp = BrowserPane::with_url(id, "https://example.com".to_string());
+    bp.url_input_focused = true;
+    bp.url_input = "https://example.com".to_string();
+    bp.url_input_cursor = bp.url_input.chars().count();
+
+    assert!(bp.sync_committed_url_from_navigation("https://example.com/docs"));
+    assert_eq!(bp.url, "https://example.com/docs");
+    assert_eq!(bp.url_input, "https://example.com/docs");
+}
+
+#[test]
+fn content_navigation_preserves_distinct_browser_url_draft_while_updating_committed_url() {
+    // UC-6 BR-24: Content navigation preserves a distinct Browser URL draft while still updating the committed Browser URL
+    let id = 8;
+    let mut bp = BrowserPane::with_url(id, "https://example.com".to_string());
+    bp.url_input_focused = true;
+    bp.url_input = "https://example.com/search?q=browser".to_string();
+    bp.url_input_cursor = bp.url_input.chars().count();
+
+    assert!(bp.sync_committed_url_from_navigation("https://example.com/docs"));
+    assert_eq!(bp.url, "https://example.com/docs");
+    assert_eq!(bp.url_input, "https://example.com/search?q=browser");
+}
+
+#[test]
+fn polled_browser_state_changes_bump_generation_once() {
+    // UC-6 BR-26: A Browser Pane state change reported through sync_webview_state bumps generation exactly once, including loading and navigation availability changes
+    let id = 9;
+    let mut bp = BrowserPane::with_url(id, "https://example.com".to_string());
+    let start_generation = bp.generation;
+
+    assert!(bp.sync_webview_state_from_poll(
+        Some("https://example.com/docs".to_string()),
+        true,
+        true,
+        false,
+    ));
+    assert_eq!(bp.generation, start_generation + 1);
+    assert_eq!(bp.url, "https://example.com/docs");
+    assert_eq!(bp.url_input, "https://example.com/docs");
+    assert!(bp.loading);
+    assert!(bp.can_go_back);
+    assert!(!bp.can_go_forward);
+
+    let after_change = bp.generation;
+    assert!(!bp.sync_webview_state_from_poll(
+        Some("https://example.com/docs".to_string()),
+        true,
+        true,
+        false,
+    ));
+    assert_eq!(bp.generation, after_change);
 }
 
 // --- UC-5: PreserveBrowserPaneLoadingFeedback ---
