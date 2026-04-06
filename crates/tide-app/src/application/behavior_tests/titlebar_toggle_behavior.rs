@@ -108,7 +108,7 @@ fn toggle_dock_visibility_closes_with_fallback_when_focused() {
     let e1 = app.layout.alloc_id();
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
     app.dock.dock_open = true;
     app.focus.focus_area = FocusArea::Dock;
     app.focus.focused = Some(e1);
@@ -136,7 +136,7 @@ fn toggle_dock_visibility_closes_without_fallback_when_unfocused() {
     let e1 = app.layout.alloc_id();
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
     app.dock.dock_open = true;
     app.focus.focus_area = FocusArea::Stage;
     app.focus.focused = Some(tid);

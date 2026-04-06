@@ -4,11 +4,14 @@ use serde_json::json;
 use std::collections::HashMap;
 
 use crate::pane::editor::EditorPane;
-use crate::pane::PaneKind;
+use crate::pane::{PaneKind, TerminalPane};
 use crate::state::FocusArea;
+use crate::tide_core::LayoutEngine;
 use crate::tide_layout::SplitLayout;
 use crate::update::workspace_infra_service::Workspace;
 use crate::App;
+use crate::DockPort;
+use crate::PaneLifecyclePort;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -328,4 +331,105 @@ fn notify_for_inactive_workspace_pane_restores_active_workspace() {
     assert_eq!(app.focus.focused, Some(100), "focus must be restored");
     assert!(app.panes.contains_key(&100), "WS0 panes must be loaded");
     assert!(!app.panes.contains_key(&200), "WS1 panes must not leak");
+}
+
+// --- UC-6: Dock routing uses caller terminal, not stage_focused ---
+
+/// Build an App with two real terminals (t1 and t2) in a single workspace.
+/// t1 is `stage_focused`, t2 is the "other" terminal.
+fn app_with_two_real_terminals() -> (App, u64, u64) {
+    let mut app = test_app();
+    let (layout, t1) = SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let terminal1 = TerminalPane::with_cwd(t1, 80, 24, None, true).unwrap();
+    app.panes.insert(t1, PaneKind::Terminal(terminal1));
+
+    let t2 = app
+        .layout
+        .split(t1, crate::tide_core::SplitDirection::Vertical);
+    let terminal2 = TerminalPane::with_cwd(t2, 80, 24, None, true).unwrap();
+    app.panes.insert(t2, PaneKind::Terminal(terminal2));
+
+    app.focus.stage_focused = Some(t1);
+    app.focus.focused = Some(t1);
+    app.focus.focus_area = FocusArea::Stage;
+    (app, t1, t2)
+}
+
+#[test]
+fn add_pane_to_dock_uses_target_terminal_not_stage_focused() {
+    // UC-6 BR-6: add_pane_to_dock uses the explicit target_terminal when provided,
+    // falling back to focused_terminal_id() only when target_terminal is None.
+    let (mut app, _t1, t2) = app_with_two_real_terminals();
+
+    // stage_focused = t1, but we want to add a pane to t2's dock
+    let editor_id = app.layout.alloc_id();
+    app.panes
+        .insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
+
+    app.add_pane_to_dock(editor_id, Some(t2));
+
+    // Pane should be in t2's dock_layout, not t1's
+    assert_eq!(
+        app.terminal_owning(editor_id),
+        Some(t2),
+        "pane must be in target terminal t2's dock, not stage_focused t1"
+    );
+    assert_eq!(
+        app.associated_terminal(editor_id),
+        Some(t2),
+        "associated_terminal must be t2"
+    );
+}
+
+#[test]
+fn add_pane_to_dock_falls_back_to_focused_when_target_is_none() {
+    // UC-6 BR-6: When target_terminal is None, falls back to focused_terminal_id()
+    let (mut app, t1, _t2) = app_with_two_real_terminals();
+
+    let editor_id = app.layout.alloc_id();
+    app.panes
+        .insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
+
+    app.add_pane_to_dock(editor_id, None);
+
+    // stage_focused = t1, so pane should go to t1's dock
+    assert_eq!(
+        app.terminal_owning(editor_id),
+        Some(t1),
+        "pane must be in stage_focused t1's dock when target is None"
+    );
+}
+
+#[test]
+fn open_browser_pane_routes_to_caller_terminal_dock() {
+    // UC-6 BR-7: open_browser_pane passes resolve_context_terminal_id() as target terminal.
+    // When pending_cli_caller_pane is set, the pane should go to the caller's dock.
+    let (mut app, t1, t2) = app_with_two_real_terminals();
+
+    // Simulate: agent in t2 calls open-browser, but stage_focused = t1
+    app.focus.stage_focused = Some(t1);
+    app.focus.focused = Some(t1);
+    app.pending_cli_caller_pane = Some(t2);
+
+    app.open_browser_pane(None);
+
+    // Find the newly created browser pane
+    let browser_id = app
+        .panes
+        .iter()
+        .find(|(_, pk)| matches!(pk, PaneKind::Browser(_)))
+        .map(|(&id, _)| id)
+        .expect("browser pane should exist");
+
+    assert_eq!(
+        app.terminal_owning(browser_id),
+        Some(t2),
+        "browser pane must be in caller terminal t2's dock, not stage_focused t1"
+    );
+    assert_eq!(
+        app.associated_terminal(browser_id),
+        Some(t2),
+        "associated_terminal must be t2 (the caller)"
+    );
 }

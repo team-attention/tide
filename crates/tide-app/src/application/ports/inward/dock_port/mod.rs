@@ -9,7 +9,7 @@ pub(crate) trait DockPort {
     fn is_pane_in_dock(&self, pane_id: PaneId) -> bool;
     fn is_pane_pinned(&self, pane_id: PaneId) -> bool;
     fn has_pinned_panes(&self) -> bool;
-    fn add_pane_to_dock(&mut self, new_pane_id: PaneId);
+    fn add_pane_to_dock(&mut self, new_pane_id: PaneId, target_terminal: Option<PaneId>);
     fn toggle_dock(&mut self);
     fn remove_pane_from_dock(&mut self, pane_id: PaneId);
     fn cascade_close_terminal(&mut self, terminal_id: PaneId);

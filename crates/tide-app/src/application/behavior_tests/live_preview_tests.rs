@@ -60,7 +60,7 @@ fn app_with_dock_markdown_editor(contents: &str) -> (App, u64, u64, PathBuf) {
     std::fs::write(&path, contents).unwrap();
     let pane = EditorPane::open(editor_id, &path).unwrap();
     app.panes.insert(editor_id, PaneKind::Editor(pane));
-    app.add_pane_to_dock(editor_id);
+    app.add_pane_to_dock(editor_id, None);
     app.assoc.associated_terminal.insert(editor_id, terminal_id);
 
     app.gateway.detected_agents.insert(
