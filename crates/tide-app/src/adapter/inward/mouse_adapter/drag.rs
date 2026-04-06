@@ -187,14 +187,15 @@ pub(crate) fn handle_cursor_moved_logical(ctx: &mut impl MousePorts, pos: Vec2, 
     }
 
     if ctx.router_is_dragging_border() {
-        let mut left = 0.0_f32;
-        if ctx.ft().visible && ctx.sidebar_side() == crate::LayoutSide::Left {
-            left += ctx.ft().width;
+        // Use pane_area_rect for correct coordinate mapping, matching
+        // the begin_drag call in action_service. This accounts for
+        // top_inset, workspace sidebar, file tree, dock, and PANE_GAP.
+        if let Some(pa) = ctx.pane_area_rect() {
+            let drag_pos = Vec2::new(pos.x - pa.x, pos.y - pa.y);
+            ctx.layout_drag_border(drag_pos);
+            ctx.compute_layout();
+            ctx.request_redraw();
         }
-        let drag_pos = Vec2::new(pos.x - left, pos.y);
-        ctx.layout_drag_border(drag_pos);
-        ctx.compute_layout();
-        ctx.request_redraw();
     } else {
         // URL bar drag selection
         if ctx.interaction().mouse_left_pressed {

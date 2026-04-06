@@ -157,15 +157,7 @@ pub(super) fn render_pane_chrome(
         let is_focused = focused == Some(id)
             && matches!(app.focus.focus_area, FocusArea::Stage | FocusArea::Dock);
         // UC-5 BR-6,7: Pane tab header blinks orange for NeedsInput + unfocused
-        let agent_needs_input = !is_focused
-            && app
-                .gateway
-                .detected_agents
-                .get(&id)
-                .and_then(|a| a.status)
-                .map_or(false, |s| {
-                    matches!(s, crate::state::gateway_status::AgentStatus::NeedsInput)
-                });
+        let agent_needs_input = !is_focused && app.pane_agent_needs_input_attention(id);
 
         {
             // Normal: no border, pane_bg fills whole area, tab_bar_bg on top
@@ -311,7 +303,16 @@ pub(super) fn render_pane_chrome(
                 }
             } else {
                 // Single dock pane zoomed -- render normal header
-                let agent_status = app.gateway.detected_agents.get(&id).and_then(|a| a.status);
+                let agent_status = app
+                    .gateway
+                    .detected_agents
+                    .get(&id)
+                    .and_then(|a| a.status)
+                    .or_else(|| {
+                        app.pane_agent_needs_input_attention(id).then_some(
+                            crate::state::gateway_status::AgentStatus::NeedsInput,
+                        )
+                    });
                 let zones = header::render_pane_header_inner(
                     id,
                     rect,
@@ -380,7 +381,16 @@ pub(super) fn render_pane_chrome(
             all_hit_zones.extend(tab_zones);
         } else {
             // Normal pane: render per-pane header (with agent status dot)
-            let agent_status = app.gateway.detected_agents.get(&id).and_then(|a| a.status);
+            let agent_status = app
+                .gateway
+                .detected_agents
+                .get(&id)
+                .and_then(|a| a.status)
+                .or_else(|| {
+                    app.pane_agent_needs_input_attention(id).then_some(
+                        crate::state::gateway_status::AgentStatus::NeedsInput,
+                    )
+                });
             let zones = header::render_pane_header_inner(
                 id,
                 rect,

@@ -1285,37 +1285,15 @@ pub(crate) fn overlay_ime_cursor_area(
     }
 
     if let Some(composer) = modal.context_comment_composer.as_ref() {
-        let popup_w = if logical_size.width > 560.0 {
-            (logical_size.width - 48.0).min(760.0).max(520.0)
-        } else {
-            (logical_size.width - 24.0).max(320.0)
-        };
-        let popup_h = if logical_size.height > 420.0 {
-            (logical_size.height - 48.0).min(520.0).max(320.0)
-        } else {
-            (logical_size.height - 24.0).max(260.0)
-        };
-        let popup_x = (logical_size.width - popup_w) / 2.0;
-        let popup_y = (logical_size.height - popup_h) / 2.0;
-        let line_h = cell_size.height + 6.0;
-        let mut y = popup_y + 16.0;
-        y += line_h + 4.0;
-        y += line_h;
-        y += line_h + 8.0;
-        y += line_h;
-        y += 5.0 * line_h + 12.0;
-        y += line_h;
-
-        let input_h = line_h + 4.0;
-        let input_text_y = y + (input_h - cell_size.height) / 2.0;
-        let cursor_x = popup_x
-            + 18.0
-            + 10.0
-            + input_cursor_advance_cells(&composer.comment.text, composer.comment.cursor, preedit)
-                * cell_size.width;
         return Some((
             composer.associated_terminal_id,
-            crate::tide_core::Rect::new(cursor_x, input_text_y, cell_size.width, cell_size.height),
+            crate::adapter::outward::view::overlays::context_comment_composer_cursor_area(
+                logical_size,
+                cell_size,
+                &composer.comment.text,
+                composer.comment.cursor,
+                preedit,
+            ),
         ));
     }
 
