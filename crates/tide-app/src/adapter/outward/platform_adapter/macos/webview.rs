@@ -906,12 +906,46 @@ declare_class!(
 /// Handle to a WKWebView instance, added as a subview of the parent NSView.
 pub struct WebViewHandle {
     webview: Retained<AnyObject>,
+    pane_id: u64,
     /// Retained so the weak UIDelegate reference stays valid.
     _ui_delegate: Retained<TideUIDelegate>,
     /// Retained so the weak NavigationDelegate reference stays valid.
     _nav_delegate: Retained<TideNavigationDelegate>,
     /// Retained so the WKScriptMessageHandler stays alive.
     _script_handler: Retained<TideScriptMessageHandler>,
+}
+
+impl Drop for WebViewHandle {
+    fn drop(&mut self) {
+        cleanup_pending_handlers(self.pane_id);
+    }
+}
+
+/// Release any pending completion handler blocks and download delegates for a pane.
+/// Called on WebViewHandle drop to prevent leaks when a Browser Pane closes
+/// while permission/certificate prompts or downloads are in-flight.
+fn cleanup_pending_handlers(pane_id: u64) {
+    // Release pending permission handler block
+    if let Some(BlockPtr(ptr)) = PENDING_PERMISSION_HANDLERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&pane_id)
+    {
+        unsafe { _Block_release(ptr as *const std::ffi::c_void) };
+    }
+    // Release pending certificate handler block
+    if let Some(BlockPtr(ptr)) = PENDING_CERT_HANDLERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&pane_id)
+    {
+        unsafe { _Block_release(ptr as *const std::ffi::c_void) };
+    }
+    // Release active download delegate
+    ACTIVE_DOWNLOAD_DELEGATES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&pane_id);
 }
 
 /// Context passed through `dispatch_sync_f` to create a WKWebView on the main thread.
@@ -1168,6 +1202,7 @@ impl WebViewHandle {
 
         Some(Self {
             webview,
+            pane_id,
             _ui_delegate: delegate,
             _nav_delegate: nav_delegate,
             _script_handler: script_handler,
