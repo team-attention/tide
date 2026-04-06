@@ -152,6 +152,24 @@ fn selection_comment_badge(
     }
 }
 
+pub(crate) fn terminal_header_title_color(
+    p: &ThemePalette,
+    is_focused: bool,
+    shell_idle: bool,
+) -> crate::tide_core::Color {
+    if !shell_idle {
+        if is_focused {
+            p.tab_text_focused
+        } else {
+            p.tab_text
+        }
+    } else if is_focused {
+        p.tab_text_focused
+    } else {
+        p.tab_text
+    }
+}
+
 /// Compute badges for the active tab in a tab bar (works for all pane kinds).
 fn active_tab_badges(
     panes: &HashMap<PaneId, PaneKind>,
@@ -323,13 +341,7 @@ pub fn render_pane_header_inner(
             } else {
                 format!("Terminal {}", id)
             };
-            let c = if !pane.context.shell_idle {
-                p.badge_text_dimmed
-            } else if is_focused {
-                p.tab_text_focused
-            } else {
-                p.tab_text
-            };
+            let c = terminal_header_title_color(p, is_focused, pane.context.shell_idle);
 
             if let Some(ref git) = pane.context.git_info {
                 let branch_display = format!("\u{e0a0} {}", git.branch);
