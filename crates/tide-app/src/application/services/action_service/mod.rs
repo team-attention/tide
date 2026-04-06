@@ -167,6 +167,35 @@ impl App {
             .is_some_and(|agent| agent.gateway_connected)
     }
 
+    pub(crate) fn pane_agent_needs_input_attention(
+        &self,
+        pane_id: crate::tide_core::PaneId,
+    ) -> bool {
+        use crate::state::gateway_status::AgentStatus;
+
+        let direct_status = self
+            .gateway
+            .detected_agents
+            .get(&pane_id)
+            .and_then(|agent| agent.status);
+        if matches!(direct_status, Some(AgentStatus::NeedsInput)) {
+            return true;
+        }
+
+        let associated_terminal_id = match self.panes.get(&pane_id) {
+            Some(PaneKind::Terminal(_)) => return false,
+            Some(PaneKind::Editor(_)) | Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) => {
+                self.assoc.associated_terminal.get(&pane_id).copied()
+            }
+            Some(PaneKind::Launcher(_)) | None => None,
+        };
+
+        associated_terminal_id
+            .and_then(|terminal_id| self.gateway.detected_agents.get(&terminal_id))
+            .and_then(|agent| agent.status)
+            .is_some_and(|status| matches!(status, AgentStatus::NeedsInput))
+    }
+
     fn insert_context_artifact(
         &mut self,
         source_pane_id: crate::tide_core::PaneId,

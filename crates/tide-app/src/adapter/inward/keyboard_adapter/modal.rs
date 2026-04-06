@@ -315,6 +315,14 @@ pub(super) fn handle_context_comment_composer_key(
             }
         }
         Key::Enter => {
+            if modifiers.shift {
+                if let Some(ref mut composer) = ctx.modal_mut().context_comment_composer {
+                    composer.insert_newline();
+                    ctx.invalidate_chrome();
+                }
+                ctx.request_redraw();
+                return;
+            }
             if ctx.submit_context_comment_composer() {
                 return;
             }

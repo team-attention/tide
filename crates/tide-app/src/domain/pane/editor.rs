@@ -415,7 +415,78 @@ impl EditorPane {
         if self.preview_mode {
             return self.preview_selected_text(sel);
         }
+        if self.live_preview {
+            return self.live_preview_selected_text(sel);
+        }
+        self.selected_buffer_text(sel)
+    }
 
+    fn live_preview_selected_text(&self, sel: &Selection) -> String {
+        let Some(live_preview_map) = self.live_preview_map.as_ref() else {
+            return self.selected_buffer_text(sel);
+        };
+
+        let (start, end) = if sel.anchor < sel.end {
+            (sel.anchor, sel.end)
+        } else {
+            (sel.end, sel.anchor)
+        };
+        let cursor_line = self.editor.cursor_position().line;
+        let mut result = String::new();
+        let line_count = self.editor.buffer.line_count();
+        let mut line_byte_start = 0usize;
+
+        for row in 0..line_count {
+            let Some(line) = self.editor.buffer.line(row) else {
+                break;
+            };
+
+            if row < start.0 {
+                line_byte_start += line.len() + 1;
+                continue;
+            }
+            if row > end.0 {
+                break;
+            }
+
+            let char_count = line.chars().count();
+            let col_start = if row == start.0 {
+                start.1.min(char_count)
+            } else {
+                0
+            };
+            let col_end = if row == end.0 {
+                end.1.min(char_count)
+            } else {
+                char_count
+            };
+
+            if col_start <= col_end {
+                let hidden = live_preview_map.hidden_syntax_ranges(row, cursor_line);
+                let mut char_col = 0usize;
+                let mut byte_offset = line_byte_start;
+                for ch in line.chars() {
+                    let next_byte_offset = byte_offset + ch.len_utf8();
+                    let selected = char_col >= col_start && char_col < col_end;
+                    let is_hidden = hidden.iter().any(|range| range.contains(&byte_offset));
+                    if selected && !is_hidden {
+                        result.push(ch);
+                    }
+                    char_col += 1;
+                    byte_offset = next_byte_offset;
+                }
+            }
+
+            if row != end.0 {
+                result.push('\n');
+            }
+            line_byte_start += line.len() + 1;
+        }
+
+        result
+    }
+
+    fn selected_buffer_text(&self, sel: &Selection) -> String {
         let (start, end) = if sel.anchor < sel.end {
             (sel.anchor, sel.end)
         } else {
@@ -444,7 +515,6 @@ impl EditorPane {
                 char_count
             };
             if col_start <= col_end {
-                // Get chars from col_start to col_end (both are character indices)
                 let text: String = line
                     .chars()
                     .skip(col_start)

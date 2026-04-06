@@ -2,6 +2,7 @@
 
 use crate::tide_core::{PaneId, TerminalBackend};
 
+use crate::adapter::inward::text_routing_adapter::{text_input_target, TextInputTarget};
 use crate::pane::PaneKind;
 use crate::state::search::SearchState;
 use crate::application::ports::inward::ClipboardSearchPort;
@@ -39,57 +40,52 @@ impl ClipboardSearchPort for App {
 
     /// Handle GlobalAction::Paste for terminal, editor, and browser panes.
     fn handle_paste(&mut self) {
-        let target_id = match self.focus.focused {
-            Some(id) => id,
-            None => return,
+        let Ok(text) = self.ports.clipboard.get_text() else {
+            return;
         };
-        match self.panes.get_mut(&target_id) {
-            Some(PaneKind::Terminal(pane)) => {
-                if let Ok(text) = self.ports.clipboard.get_text() {
-                    if !text.is_empty() {
-                        if pane.backend.display_offset() > 0 {
-                            pane.backend.request_scroll_to_bottom();
-                        }
-                        let bracketed = pane.backend.is_bracketed_paste_mode();
-                        let mut data = Vec::new();
-                        if bracketed {
-                            data.extend_from_slice(b"\x1b[200~");
-                            let safe = text.replace("\x1b[201~", "");
-                            data.extend_from_slice(safe.as_bytes());
-                        } else {
-                            data.extend_from_slice(text.as_bytes());
-                        }
-                        if bracketed {
-                            data.extend_from_slice(b"\x1b[201~");
-                            data.extend_from_slice(b"\x1b[D\x1b[C");
-                        }
-                        pane.backend.write(&data);
-                        self.input.input_just_sent = true;
-                        self.input.input_sent_at = Some(self.ports.clock.now());
+        if text.is_empty() {
+            return;
+        }
+
+        match text_input_target(self) {
+            TextInputTarget::Pane(target_id) => match self.panes.get_mut(&target_id) {
+                Some(PaneKind::Terminal(pane)) => {
+                    if pane.backend.display_offset() > 0 {
+                        pane.backend.request_scroll_to_bottom();
                     }
-                }
-            }
-            Some(PaneKind::Editor(pane)) => {
-                if let Ok(text) = self.ports.clipboard.get_text() {
-                    if !text.is_empty() {
-                        pane.delete_selection();
-                        pane.editor.insert_text(&text);
+                    let bracketed = pane.backend.is_bracketed_paste_mode();
+                    let mut data = Vec::new();
+                    if bracketed {
+                        data.extend_from_slice(b"\x1b[200~");
+                        let safe = text.replace("\x1b[201~", "");
+                        data.extend_from_slice(safe.as_bytes());
+                    } else {
+                        data.extend_from_slice(text.as_bytes());
                     }
-                }
-            }
-            Some(PaneKind::Browser(bp)) if bp.url_input_focused => {
-                if let Ok(text) = self.ports.clipboard.get_text() {
-                    if !text.is_empty() {
-                        for ch in text.chars() {
-                            let byte_off = bp.cursor_byte_offset();
-                            bp.url_input.insert(byte_off, ch);
-                            bp.url_input_cursor += 1;
-                        }
-                        self.cache.invalidate_chrome();
+                    if bracketed {
+                        data.extend_from_slice(b"\x1b[201~");
+                        data.extend_from_slice(b"\x1b[D\x1b[C");
                     }
+                    pane.backend.write(&data);
+                    self.input.input_just_sent = true;
+                    self.input.input_sent_at = Some(self.ports.clock.now());
                 }
-            }
-            _ => {}
+                Some(PaneKind::Editor(pane)) => {
+                    pane.delete_selection();
+                    pane.editor.insert_text(&text);
+                }
+                Some(PaneKind::Browser(bp)) if bp.url_input_focused => {
+                    for ch in text.chars() {
+                        let byte_off = bp.cursor_byte_offset();
+                        bp.url_input.insert(byte_off, ch);
+                        bp.url_input_cursor += 1;
+                    }
+                    self.cache.invalidate_chrome();
+                }
+                _ => {}
+            },
+            TextInputTarget::Consumed => {}
+            _ => self.send_text_to_target(&text),
         }
     }
 
