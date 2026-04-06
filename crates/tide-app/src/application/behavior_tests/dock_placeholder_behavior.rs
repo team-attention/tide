@@ -1,11 +1,11 @@
 // Spec: docs/specs/dock-placeholder.md
+use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
 use crate::state::FocusArea;
-use crate::pane::editor::EditorPane;
+use crate::tide_core::LayoutEngine;
 use crate::App;
 use crate::DockPort;
 use crate::WorkspaceNavPort;
-use crate::tide_core::LayoutEngine;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -30,7 +30,9 @@ fn app_with_real_terminal() -> (App, u64) {
 /// Create an App with two real TerminalPanes in Stage.
 fn app_with_two_real_terminals() -> (App, u64, u64) {
     let (mut app, t1) = app_with_real_terminal();
-    let t2 = app.layout.split(t1, crate::tide_core::SplitDirection::Vertical);
+    let t2 = app
+        .layout
+        .split(t1, crate::tide_core::SplitDirection::Vertical);
     let tp2 = TerminalPane::with_cwd(t2, 80, 24, None, true).unwrap();
     app.panes.insert(t2, PaneKind::Terminal(tp2));
     (app, t1, t2)
@@ -45,7 +47,8 @@ fn dock_placeholder_created_on_terminal_switch_when_dock_empty() {
 
     // t1 has an editor in dock
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.focus.focused = Some(t1);
     app.add_pane_to_dock(e1);
     assert!(app.dock.dock_open);
@@ -58,8 +61,10 @@ fn dock_placeholder_created_on_terminal_switch_when_dock_empty() {
         let dock_ids = tp.dock_layout.all_pane_ids();
         assert_eq!(dock_ids.len(), 1, "placeholder Launcher should be created");
         let placeholder_id = dock_ids[0];
-        assert!(matches!(app.panes.get(&placeholder_id), Some(PaneKind::Launcher(_))),
-            "placeholder should be a Launcher");
+        assert!(
+            matches!(app.panes.get(&placeholder_id), Some(PaneKind::Launcher(_))),
+            "placeholder should be a Launcher"
+        );
     } else {
         panic!("t2 should be a Terminal");
     }
@@ -72,12 +77,14 @@ fn dock_placeholder_not_created_when_dock_has_panes() {
 
     // Both terminals have editors in dock
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.focus.focused = Some(t1);
     app.add_pane_to_dock(e1);
 
     let e2 = app.layout.alloc_id();
-    app.panes.insert(e2, PaneKind::Editor(EditorPane::new_empty(e2)));
+    app.panes
+        .insert(e2, PaneKind::Editor(EditorPane::new_empty(e2)));
     app.focus.focused = Some(t2);
     app.focus.stage_focused = Some(t2);
     app.add_pane_to_dock(e2);
@@ -87,7 +94,11 @@ fn dock_placeholder_not_created_when_dock_has_panes() {
 
     if let Some(PaneKind::Terminal(tp)) = app.panes.get(&t1) {
         let dock_ids = tp.dock_layout.all_pane_ids();
-        assert_eq!(dock_ids.len(), 1, "should only have the original editor, no extra Launcher");
+        assert_eq!(
+            dock_ids.len(),
+            1,
+            "should only have the original editor, no extra Launcher"
+        );
         assert_eq!(dock_ids[0], e1);
     } else {
         panic!("t1 should be a Terminal");
@@ -103,7 +114,8 @@ fn open_file_replaces_dock_placeholder_launcher() {
 
     // t1 has editor, dock is open
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.focus.focused = Some(t1);
     app.add_pane_to_dock(e1);
 
@@ -111,8 +123,13 @@ fn open_file_replaces_dock_placeholder_launcher() {
     app.focus_terminal(t2);
     let placeholder_id = if let Some(PaneKind::Terminal(tp)) = app.panes.get(&t2) {
         tp.dock_focused.unwrap()
-    } else { panic!("t2 should be a Terminal") };
-    assert!(matches!(app.panes.get(&placeholder_id), Some(PaneKind::Launcher(_))));
+    } else {
+        panic!("t2 should be a Terminal")
+    };
+    assert!(matches!(
+        app.panes.get(&placeholder_id),
+        Some(PaneKind::Launcher(_))
+    ));
 
     // Now open an editor — should replace the placeholder
     let e2 = app.layout.alloc_id();
@@ -122,7 +139,10 @@ fn open_file_replaces_dock_placeholder_launcher() {
     app.add_pane_to_dock(e2);
 
     // Placeholder should be gone, editor should be in its place
-    assert!(!app.panes.contains_key(&placeholder_id), "placeholder Launcher should be removed");
+    assert!(
+        !app.panes.contains_key(&placeholder_id),
+        "placeholder Launcher should be removed"
+    );
     if let Some(PaneKind::Terminal(tp)) = app.panes.get(&t2) {
         let dock_ids = tp.dock_layout.all_pane_ids();
         assert_eq!(dock_ids.len(), 1, "should only have the new editor");
@@ -140,7 +160,8 @@ fn open_file_adds_tab_when_dock_focused_is_not_launcher() {
 
     // t1 has an editor in dock
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.focus.focused = Some(t1);
     app.add_pane_to_dock(e1);
 
@@ -169,7 +190,8 @@ fn switching_back_does_not_duplicate_placeholder() {
 
     // t1 has editor, dock open
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.focus.focused = Some(t1);
     app.add_pane_to_dock(e1);
 
@@ -177,7 +199,9 @@ fn switching_back_does_not_duplicate_placeholder() {
     app.focus_terminal(t2);
     let placeholder_count_1 = if let Some(PaneKind::Terminal(tp)) = app.panes.get(&t2) {
         tp.dock_layout.all_pane_ids().len()
-    } else { 0 };
+    } else {
+        0
+    };
     assert_eq!(placeholder_count_1, 1);
 
     // Switch to t1
@@ -187,7 +211,11 @@ fn switching_back_does_not_duplicate_placeholder() {
     app.focus_terminal(t2);
     if let Some(PaneKind::Terminal(tp)) = app.panes.get(&t2) {
         let dock_ids = tp.dock_layout.all_pane_ids();
-        assert_eq!(dock_ids.len(), 1, "should still have exactly one placeholder, not two");
+        assert_eq!(
+            dock_ids.len(),
+            1,
+            "should still have exactly one placeholder, not two"
+        );
     } else {
         panic!("t2 should be a Terminal");
     }
@@ -200,7 +228,8 @@ fn toggle_dock_close_reopen_no_duplicate_placeholder() {
 
     // t1 has editor, dock open
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.focus.focused = Some(t1);
     app.add_pane_to_dock(e1);
 
@@ -225,7 +254,10 @@ fn toggle_dock_close_reopen_no_duplicate_placeholder() {
     if let Some(PaneKind::Terminal(tp)) = app.panes.get(&t2) {
         let dock_ids = tp.dock_layout.all_pane_ids();
         assert_eq!(dock_ids.len(), 1, "still one placeholder, not two");
-        assert!(matches!(app.panes.get(&dock_ids[0]), Some(PaneKind::Launcher(_))));
+        assert!(matches!(
+            app.panes.get(&dock_ids[0]),
+            Some(PaneKind::Launcher(_))
+        ));
     } else {
         panic!("t2 should be a Terminal");
     }

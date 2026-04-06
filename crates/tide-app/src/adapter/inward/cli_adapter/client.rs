@@ -21,6 +21,10 @@ pub fn run_cli(args: &[String]) -> i32 {
             let params = parse_capture_pane_args(&args[1..]);
             send_command("capture-pane", params)
         }
+        "capture-selection" => {
+            let params = parse_pane_target_args(&args[1..]);
+            send_command("capture-selection", params)
+        }
         "get-layout" => send_command("get-layout", serde_json::json!({})),
         // Phase 2 — Act
         "send-keys" => {
@@ -58,6 +62,27 @@ pub fn run_cli(args: &[String]) -> i32 {
         "open-browser" => {
             let params = parse_open_browser_args(&args[1..]);
             send_command("open-browser", params)
+        }
+        "create-context-artifact" => {
+            let params = parse_create_context_artifact_args(&args[1..]);
+            send_command("create-context-artifact", params)
+        }
+        "list-context-artifacts" => send_command("list-context-artifacts", serde_json::json!({})),
+        "read-context-artifact" => {
+            let params = parse_context_artifact_id_args(&args[1..]);
+            send_command("read-context-artifact", params)
+        }
+        "pin-context-artifact" => {
+            let params = parse_pin_context_artifact_args(&args[1..]);
+            send_command("pin-context-artifact", params)
+        }
+        "remove-context-artifact" => {
+            let params = parse_context_artifact_id_args(&args[1..]);
+            send_command("remove-context-artifact", params)
+        }
+        "send-context-artifact" => {
+            let params = parse_context_artifact_id_args(&args[1..]);
+            send_command("send-context-artifact", params)
         }
         // Phase 3 — Show (Generative UI)
         "render-html" => {
@@ -105,6 +130,15 @@ fn usage_text() -> String {
         "                                   Open a new terminal pane",
         "  open-editor <file>               Open a file in an editor pane",
         "  open-browser [<url>]             Open a Browser Pane",
+        "  capture-selection [-t <id>]      Read the current selection from a pane",
+        "  create-context-artifact [-t <id>] [--comment <text>] [--pin]",
+        "                                   Create a Context Artifact from the current selection",
+        "  list-context-artifacts           List Context Artifacts in the active Workspace",
+        "  read-context-artifact <id>       Read a Context Artifact",
+        "  pin-context-artifact <id> [--pin|--unpin]",
+        "                                   Pin or unpin a Context Artifact",
+        "  remove-context-artifact <id>     Remove a Context Artifact",
+        "  send-context-artifact <id>       Deliver a Context Artifact to the paired agent",
         "  render-html --title <t> [--pane <id>]",
         "                                   Render an HTML #root fragment from stdin in a Browser Pane",
         "  render-stream --title <t>",
@@ -294,6 +328,88 @@ fn parse_open_browser_args(args: &[String]) -> serde_json::Value {
         }
     }
     serde_json::Value::Object(params)
+}
+
+fn parse_create_context_artifact_args(args: &[String]) -> serde_json::Value {
+    let mut params = serde_json::Map::new();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-t" => {
+                if let Some(id_str) = args.get(i + 1) {
+                    if let Ok(id) = id_str.parse::<u64>() {
+                        params.insert("pane_id".into(), serde_json::json!(id));
+                    }
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "--comment" => {
+                if let Some(val) = args.get(i + 1) {
+                    params.insert("comment".into(), serde_json::json!(val));
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "--pin" => {
+                params.insert("pin".into(), serde_json::json!(true));
+                i += 1;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    serde_json::Value::Object(params)
+}
+
+fn parse_context_artifact_id_args(args: &[String]) -> serde_json::Value {
+    let mut params = serde_json::Map::new();
+    if let Some(id_str) = args.first() {
+        if let Ok(id) = id_str.parse::<u64>() {
+            params.insert("artifact_id".into(), serde_json::json!(id));
+        }
+    }
+    serde_json::Value::Object(params)
+}
+
+fn parse_pin_context_artifact_args(args: &[String]) -> serde_json::Value {
+    let mut params = parse_context_artifact_id_args(args);
+    let mut pinned = None;
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--pin" => {
+                pinned = Some(true);
+                i += 1;
+            }
+            "--unpin" => {
+                pinned = Some(false);
+                i += 1;
+            }
+            "--pinned" => {
+                if let Some(val) = args.get(i + 1) {
+                    if let Ok(flag) = val.parse::<bool>() {
+                        pinned = Some(flag);
+                    }
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    if let Some(flag) = pinned {
+        if let Some(obj) = params.as_object_mut() {
+            obj.insert("pinned".into(), serde_json::json!(flag));
+        }
+    }
+    params
 }
 
 /// Parse render-html args: --title <t> [--pane <id>]
@@ -558,6 +674,18 @@ mod tests {
         assert!(usage.contains("render-stream --title <t>"));
         assert!(usage.contains("each stdin line is a #root fragment snapshot"));
         assert!(usage.contains("Browser Pane"));
+    }
+
+    #[test]
+    fn cli_usage_mentions_context_artifact_commands() {
+        let usage = usage_text();
+        assert!(usage.contains("capture-selection [-t <id>]"));
+        assert!(usage.contains("create-context-artifact [-t <id>] [--comment <text>] [--pin]"));
+        assert!(usage.contains("list-context-artifacts"));
+        assert!(usage.contains("read-context-artifact <id>"));
+        assert!(usage.contains("pin-context-artifact <id> [--pin|--unpin]"));
+        assert!(usage.contains("remove-context-artifact <id>"));
+        assert!(usage.contains("send-context-artifact <id>"));
     }
 }
 

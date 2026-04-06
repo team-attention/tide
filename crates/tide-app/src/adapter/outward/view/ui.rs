@@ -42,40 +42,39 @@ pub(crate) fn file_icon(name: &str, is_dir: bool, expanded: bool) -> char {
     // Per-extension Nerd Font icons
     let ext = name.rsplit('.').next().unwrap_or("");
     match ext {
-        "rs"   => '\u{e7a8}', // Rust
-        "js"   => '\u{e74e}', // JavaScript
-        "mjs"  => '\u{e74e}',
-        "jsx"  => '\u{e7ba}', // React
-        "ts"   => '\u{e628}', // TypeScript
-        "mts"  => '\u{e628}',
-        "tsx"  => '\u{e7ba}', // React (TSX)
-        "py"   => '\u{e73c}', // Python
+        "rs" => '\u{e7a8}', // Rust
+        "js" => '\u{e74e}', // JavaScript
+        "mjs" => '\u{e74e}',
+        "jsx" => '\u{e7ba}', // React
+        "ts" => '\u{e628}',  // TypeScript
+        "mts" => '\u{e628}',
+        "tsx" => '\u{e7ba}',             // React (TSX)
+        "py" => '\u{e73c}',              // Python
         "md" | "markdown" => '\u{e73e}', // Markdown
-        "json" => '\u{e60b}', // JSON
-        "toml" => '\u{e615}', // TOML (config)
+        "json" => '\u{e60b}',            // JSON
+        "toml" => '\u{e615}',            // TOML (config)
         "yaml" | "yml" => '\u{e615}',
         "html" | "htm" => '\u{e736}', // HTML
-        "css"  => '\u{e749}', // CSS
+        "css" => '\u{e749}',          // CSS
         "scss" | "sass" | "less" => '\u{e749}',
         "sh" | "bash" | "zsh" | "fish" => '\u{e795}', // Shell
-        "go"   => '\u{e626}', // Go
-        "rb"   => '\u{e739}', // Ruby
-        "java" => '\u{e738}', // Java
-        "c" | "h" => '\u{e61e}', // C
-        "cpp" | "cc" | "cxx" | "hpp" => '\u{e61d}', // C++
-        "swift" => '\u{e755}', // Swift
-        "lua"  => '\u{e620}', // Lua
-        "vim"  => '\u{e62b}', // Vim
-        "lock" => '\u{f023}', // Lock file
-        "svg"  => '\u{f1c5}', // Image/SVG
+        "go" => '\u{e626}',                           // Go
+        "rb" => '\u{e739}',                           // Ruby
+        "java" => '\u{e738}',                         // Java
+        "c" | "h" => '\u{e61e}',                      // C
+        "cpp" | "cc" | "cxx" | "hpp" => '\u{e61d}',   // C++
+        "swift" => '\u{e755}',                        // Swift
+        "lua" => '\u{e620}',                          // Lua
+        "vim" => '\u{e62b}',                          // Vim
+        "lock" => '\u{f023}',                         // Lock file
+        "svg" => '\u{f1c5}',                          // Image/SVG
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "ico" => '\u{f1c5}',
-        "pdf"  => '\u{f1c1}', // PDF
+        "pdf" => '\u{f1c1}',                               // PDF
         "zip" | "tar" | "gz" | "bz2" | "xz" => '\u{f1c6}', // Archive
-        "xml"  => '\u{e619}', // XML
-        "sql"  => '\u{e706}', // Database
-        "docker" | "dockerfile" => '\u{e7b0}', // Docker
-        "git" | "gitignore" | "gitmodules" => '\u{e702}', // Git
-        _      => '\u{f15b}', // generic file icon
+        "xml" => '\u{e619}',                               // XML
+        "sql" => '\u{e706}',                               // Database
+        "docker" | "dockerfile" => '\u{e7b0}',             // Docker
+        "git" | "gitignore" | "gitmodules" => '\u{e702}',  // Git
+        _ => '\u{f15b}',                                   // generic file icon
     }
 }
-

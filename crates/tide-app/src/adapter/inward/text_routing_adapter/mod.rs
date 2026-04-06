@@ -20,6 +20,7 @@ pub(crate) enum TextInputTarget {
     GitSwitcher,
     FileFinder,
     SaveAsInput,
+    ContextCommentComposer,
     SearchBar(crate::tide_core::PaneId),
     BrowserUrlBar(crate::tide_core::PaneId),
     Pane(crate::tide_core::PaneId),
@@ -66,6 +67,9 @@ pub(crate) fn text_input_target(ctx: &impl TextRoutingPorts) -> TextInputTarget 
     }
     if modal.save_as_input.is_some() {
         return TextInputTarget::SaveAsInput;
+    }
+    if modal.context_comment_composer.is_some() {
+        return TextInputTarget::ContextCommentComposer;
     }
     // Inline search bar
     if let Some(id) = ctx.search_focus() {
@@ -177,6 +181,14 @@ impl App {
                     for ch in text.chars() {
                         input.insert_char(ch);
                     }
+                }
+            }
+            TextInputTarget::ContextCommentComposer => {
+                if let Some(ref mut composer) = self.modal.context_comment_composer {
+                    for ch in text.chars() {
+                        composer.insert_char(ch);
+                    }
+                    crate::AppCorePort::invalidate_chrome(self);
                 }
             }
             TextInputTarget::SearchBar(pane_id) => {

@@ -11,6 +11,7 @@ use crate::tide_editor::input::EditorAction;
 use crate::tide_input::{Action, AreaSlot, GlobalAction};
 
 use crate::pane::PaneKind;
+use crate::pane::Selection;
 use crate::state::FocusArea;
 use crate::theme::*;
 use crate::ActionPort;
@@ -42,6 +43,266 @@ impl App {
         self.assoc.associated_terminal.remove(&pane_id);
         // If no pane references a retained context, clean it up
         self.cleanup_retained_context(pane_id);
+        // Remove any live ContextArtifacts owned by the closed pane or its terminal.
+        self.context_artifacts.artifacts.retain(|_, artifact| {
+            artifact.source_pane_id != pane_id && artifact.associated_terminal_id != pane_id
+        });
+    }
+
+    fn capture_context_comment_snapshot(
+        &self,
+        source_pane_id: crate::tide_core::PaneId,
+    ) -> Option<crate::ContextCommentComposerState> {
+        let pane = self.panes.get(&source_pane_id)?;
+        let (associated_terminal_id, pane_kind, selection, content) = match pane {
+            PaneKind::Terminal(tp) => {
+                let selection = tp.selection.clone();
+                let content = selection
+                    .as_ref()
+                    .map(|selection| tp.selected_text(selection))
+                    .unwrap_or_default();
+                (source_pane_id, "terminal".to_string(), selection, content)
+            }
+            PaneKind::Editor(ep) => {
+                let selection = ep.selection.clone();
+                let content = selection
+                    .as_ref()
+                    .map(|selection| ep.selected_text(selection))
+                    .unwrap_or_default();
+                (
+                    self.assoc
+                        .associated_terminal
+                        .get(&source_pane_id)
+                        .copied()?,
+                    "editor".to_string(),
+                    selection,
+                    content,
+                )
+            }
+            PaneKind::Diff(dp) => {
+                let selection = dp.selection.clone();
+                let content = selection
+                    .as_ref()
+                    .map(|selection| dp.selected_text(selection))
+                    .unwrap_or_default();
+                (
+                    self.assoc
+                        .associated_terminal
+                        .get(&source_pane_id)
+                        .copied()?,
+                    "diff".to_string(),
+                    selection,
+                    content,
+                )
+            }
+            PaneKind::Browser(bp) => {
+                let content = if bp.url_input_focused && bp.url_selection.is_some() {
+                    bp.url_selected_text().unwrap_or_default()
+                } else if bp.page_selection.is_some() {
+                    bp.page_selection_content().unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                let pane_kind = if bp.render_mode {
+                    "browser-render".to_string()
+                } else {
+                    "browser".to_string()
+                };
+                (
+                    self.assoc
+                        .associated_terminal
+                        .get(&source_pane_id)
+                        .copied()?,
+                    pane_kind,
+                    None,
+                    content,
+                )
+            }
+            PaneKind::Launcher(_) => return None,
+        };
+
+        Some(crate::ContextCommentComposerState::new(
+            source_pane_id,
+            associated_terminal_id,
+            pane_kind,
+            selection,
+            content,
+        ))
+    }
+
+    pub(crate) fn can_open_context_comment_composer(
+        &self,
+        source_pane_id: crate::tide_core::PaneId,
+    ) -> bool {
+        if !self.can_show_context_comment_badge(source_pane_id) {
+            return false;
+        }
+
+        self.capture_context_comment_snapshot(source_pane_id)
+            .is_some()
+    }
+
+    pub(crate) fn can_show_context_comment_badge(
+        &self,
+        source_pane_id: crate::tide_core::PaneId,
+    ) -> bool {
+        if !self.is_pane_in_dock(source_pane_id) {
+            return false;
+        }
+
+        let associated_terminal_id = match self.panes.get(&source_pane_id) {
+            Some(PaneKind::Terminal(_)) => Some(source_pane_id),
+            Some(PaneKind::Editor(_)) | Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) => {
+                self.assoc.associated_terminal.get(&source_pane_id).copied()
+            }
+            Some(PaneKind::Launcher(_)) | None => None,
+        };
+        let Some(associated_terminal_id) = associated_terminal_id else {
+            return false;
+        };
+
+        self.gateway
+            .detected_agents
+            .get(&associated_terminal_id)
+            .is_some_and(|agent| agent.gateway_connected)
+    }
+
+    fn insert_context_artifact(
+        &mut self,
+        source_pane_id: crate::tide_core::PaneId,
+        associated_terminal_id: crate::tide_core::PaneId,
+        pane_kind: String,
+        selection: Option<Selection>,
+        content: String,
+        comment: String,
+        pinned: bool,
+    ) -> crate::ContextArtifact {
+        let artifact = crate::ContextArtifact {
+            artifact_id: self.context_artifacts.allocate_id(),
+            source_pane_id,
+            associated_terminal_id,
+            pane_kind,
+            selection,
+            content,
+            comment,
+            pinned,
+        };
+        self.context_artifacts
+            .artifacts
+            .insert(artifact.artifact_id, artifact.clone());
+        artifact
+    }
+
+    fn inject_context_artifact_into_paired_terminal(
+        &mut self,
+        artifact: &crate::ContextArtifact,
+    ) -> bool {
+        let Some(agent) = self
+            .gateway
+            .detected_agents
+            .get(&artifact.associated_terminal_id)
+        else {
+            return false;
+        };
+        if !agent.gateway_connected {
+            return false;
+        }
+
+        let terminal_input =
+            crate::state::context_artifact::format_context_artifact_terminal_input(artifact);
+        let input_sent_at = self.ports.clock.now();
+        let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&artifact.associated_terminal_id)
+        else {
+            return false;
+        };
+        if pane.context.child_dead {
+            return false;
+        }
+
+        if pane.backend.display_offset() > 0 {
+            pane.backend.request_scroll_to_bottom();
+        }
+
+        if !cfg!(test) {
+            let data = crate::state::context_artifact::wrap_terminal_input_for_paste_and_submit(
+                &terminal_input,
+                pane.backend.is_bracketed_paste_mode(),
+            );
+            pane.backend.write(&data);
+        }
+
+        self.input.input_just_sent = true;
+        self.input.input_sent_at = Some(input_sent_at);
+        true
+    }
+
+    pub(crate) fn deliver_context_artifact(&mut self, artifact: &crate::ContextArtifact) -> bool {
+        let terminal_input_injected = self.inject_context_artifact_into_paired_terminal(artifact);
+        let mut payload = crate::state::context_artifact::context_artifact_json(artifact);
+        if let Some(obj) = payload.as_object_mut() {
+            obj.insert(
+                "terminal_input_injected".to_string(),
+                serde_json::json!(terminal_input_injected),
+            );
+        }
+        self.gateway.notify_for_owner(
+            artifact.associated_terminal_id,
+            "context-artifact-delivered",
+            payload,
+        );
+        terminal_input_injected
+    }
+
+    pub(crate) fn open_context_comment_composer(
+        &mut self,
+        source_pane_id: crate::tide_core::PaneId,
+    ) {
+        if self
+            .modal
+            .context_comment_composer
+            .as_ref()
+            .is_some_and(|composer| composer.source_pane_id == source_pane_id)
+        {
+            self.modal.context_comment_composer = None;
+            self.invalidate_chrome();
+            self.request_redraw();
+            return;
+        }
+
+        if !self.can_open_context_comment_composer(source_pane_id) {
+            return;
+        }
+
+        let Some(composer) = self.capture_context_comment_snapshot(source_pane_id) else {
+            return;
+        };
+
+        self.modal.close_all();
+        self.modal.context_comment_composer = Some(composer);
+        self.invalidate_chrome();
+        self.request_redraw();
+    }
+
+    pub(crate) fn submit_context_comment_composer(&mut self) -> bool {
+        let Some(composer) = self.modal.context_comment_composer.take() else {
+            return false;
+        };
+
+        let artifact = self.insert_context_artifact(
+            composer.source_pane_id,
+            composer.associated_terminal_id,
+            composer.pane_kind.clone(),
+            composer.selection.clone(),
+            composer.content.clone(),
+            composer.comment.text.clone(),
+            composer.pinned,
+        );
+
+        self.deliver_context_artifact(&artifact);
+
+        self.invalidate_chrome();
+        self.request_redraw();
+        true
     }
 
     /// Resolve the effective target pane for actions like Copy/Paste/Find.
@@ -82,6 +343,14 @@ impl crate::application::ports::inward::ActionPort for App {
         if let Some(url) = url {
             let _ = self.ports.process.open_url(&url);
         }
+    }
+
+    fn open_context_comment_composer(&mut self, source_pane_id: crate::tide_core::PaneId) {
+        App::open_context_comment_composer(self, source_pane_id);
+    }
+
+    fn submit_context_comment_composer(&mut self) -> bool {
+        App::submit_context_comment_composer(self)
     }
 
     fn handle_action(&mut self, action: Action, event: Option<InputEvent>) {

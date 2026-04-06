@@ -10,6 +10,16 @@ use crate::App;
 use crate::DockPort;
 use crate::AppCorePort;
 
+impl App {
+    pub(crate) fn browser_native_views_obscured_by_overlays(&self) -> bool {
+        self.modal.is_any_open()
+            || matches!(
+                self.interaction.pane_drag,
+                crate::state::drag_types::PaneDragState::Dragging { .. }
+            )
+    }
+}
+
 impl crate::application::ports::inward::LayoutPort for App {
     fn update_cursor_icon(&self, window: &crate::tide_platform::WindowProxy) {
         use crate::tide_platform::CursorIcon;
@@ -617,6 +627,7 @@ impl crate::application::ports::inward::LayoutPort for App {
                 }
             })
             .collect();
+        let popup_open = self.browser_native_views_obscured_by_overlays();
 
         for id in browser_ids {
             // Find the visual rect for this browser pane in the split tree
@@ -637,16 +648,8 @@ impl crate::application::ports::inward::LayoutPort for App {
                 }
             }
 
-            // Hide browser webview when a modal popup is open (file finder, etc.)
-            // because native NSView sits on top of wgpu-rendered overlays.
-            let popup_open = self.modal.file_finder.is_some()
-                || self.modal.save_as_input.is_some()
-                || self.modal.git_switcher.is_some()
-                || self.modal.config_page.is_some()
-                || self.modal.save_confirm.is_some()
-                || self.modal.branch_cleanup.is_some()
-                || matches!(self.interaction.pane_drag, crate::state::drag_types::PaneDragState::Dragging { .. });
-
+            // Hide the native Browser Pane view whenever Tide is drawing a modal
+            // overlay or drag overlay, otherwise the NSView will sit above wgpu.
             if let Some(vr) = visual_rect {
                 // Keep Browser Pane loading/back-forward state honest even when
                 // overlays temporarily hide the native view.

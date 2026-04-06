@@ -24,7 +24,13 @@ pub(super) fn render_context_menu(
     let line_height = cell_height + POPUP_LINE_EXTRA;
 
     // Background + border (rounded)
-    draw_popup_rounded_bg(renderer, rect, p.popup_bg, p.popup_border, POPUP_CORNER_RADIUS);
+    draw_popup_rounded_bg(
+        renderer,
+        rect,
+        p.popup_bg,
+        p.popup_border,
+        POPUP_CORNER_RADIUS,
+    );
 
     // Items
     let actions = menu.items();
@@ -48,11 +54,20 @@ pub(super) fn render_context_menu(
 
         // Icon
         let icon_style = text_style(p.tree_icon);
-        renderer.draw_top_text(action.icon(), Vec2::new(item_x, item_y), icon_style, item_clip);
+        renderer.draw_top_text(
+            action.icon(),
+            Vec2::new(item_x, item_y),
+            icon_style,
+            item_clip,
+        );
 
         // Label
         let label_x = item_x + 2.5 * cell_size.width;
-        let label_color = if i == menu.selected { p.tab_text_focused } else { p.tree_text };
+        let label_color = if i == menu.selected {
+            p.tab_text_focused
+        } else {
+            p.tree_text
+        };
         let label_style = TextStyle {
             foreground: label_color,
             background: None,
@@ -61,6 +76,11 @@ pub(super) fn render_context_menu(
             italic: false,
             underline: false,
         };
-        renderer.draw_top_text(action.label(), Vec2::new(label_x, item_y), label_style, item_clip);
+        renderer.draw_top_text(
+            action.label(),
+            Vec2::new(label_x, item_y),
+            label_style,
+            item_clip,
+        );
     }
 }

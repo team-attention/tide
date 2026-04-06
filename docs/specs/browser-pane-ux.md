@@ -10,7 +10,7 @@ Codify Browser Pane first-action routing, URL-bar editing persistence, Browser P
 
 `crates/tide-app/src/adapter/inward/text_routing_adapter/mod.rs` routes text to the Browser URL bar only when `url_input_focused` is true, otherwise it consumes text so the native `WKWebView` owns content typing. `crates/tide-app/src/adapter/inward/ime_adapter/mod.rs` mirrors that split for IME commits and preedit.
 
-`crates/tide-app/src/layout_compute.rs` only grants `WKWebView` first responder when the Browser Pane is focused and neither the URL bar nor the search bar is active. The same file also hides the native `WKWebView` behind popups and pane-drag overlays, and only polls `sync_webview_state()` while the native view is visible.
+`crates/tide-app/src/layout_compute.rs` only grants `WKWebView` first responder when the Browser Pane is focused and neither the URL bar nor the search bar is active. The same file also hides the native `WKWebView` behind popups and pane-drag overlays, and only polls `sync_webview_state()` while the native view is visible. That popup-hiding rule is still hand-maintained, so newer `ModalStack` overlays can be missed and render underneath the native Browser Pane view.
 
 Browser Pane click behavior is still split. `crates/tide-app/src/adapter/inward/click_adapter/pane.rs` focuses the URL bar when the user clicks the Browser URL bar chrome. But `crates/tide-app/src/adapter/inward/event_loop_adapter/mod.rs` clears `url_input_focused` on `PlatformEvent::WebViewFocused`, and `crates/tide-app/src/application/services/action_service/mod.rs` also clears `url_input_focused` on pane-routed mouse clicks. That means the Browser Pane does not yet have one explicit first-action rule table across empty, loading, navigated, and search-active states.
 
@@ -25,7 +25,8 @@ Browser Pane input behavior must become state-driven and explicit:
 3. Search-active Browser Pane always routes text input to the search bar before the URL bar or the native `WKWebView`.
 4. URL-bar editing persists across incidental Browser Pane clicks until the user confirms or cancels editing, instead of silently bouncing focus back to Browser Pane content.
 5. Browser Pane chrome exposes explicit `Copy URL` and `Open externally` actions. External handoff is manual-only in this pass.
-6. Browser Pane loading feedback remains visible even when the native `WKWebView` is hidden behind overlays or is waiting for its first usable frame.
+6. Any `ModalStack` popup must hide the native Browser Pane view so Tide-rendered overlays stay visually above Browser Pane content.
+7. Browser Pane loading feedback remains visible even when the native `WKWebView` is hidden behind overlays or is waiting for its first usable frame.
 
 ### Approach
 
@@ -33,7 +34,8 @@ Browser Pane input behavior must become state-driven and explicit:
 2. Add Browser Pane behavior tests for each Browser Pane state and Browser Pane chrome action before implementation.
 3. Consolidate Browser Pane first-action routing across Browser Pane state, text routing, keyboard handling, IME routing, pane-click handling, and `WKWebView` first-responder sync.
 4. Extend Browser Pane chrome hit testing and rendering to add `Copy URL` and `Open externally`, routed through valid inward ports and `ProcessPort::open_url()`.
-5. Preserve Browser Pane loading feedback when the native `WKWebView` is hidden or still waiting for its first frame.
+5. Route Browser Pane native-view hiding through one shared overlay check so every `ModalStack` popup obscures the native `WKWebView` consistently.
+6. Preserve Browser Pane loading feedback when the native `WKWebView` is hidden or still waiting for its first frame.
 
 ## Bounded Contexts
 
@@ -171,7 +173,7 @@ Browser Pane input behavior must become state-driven and explicit:
 | UC-4: InvokeBrowserPaneChromeActions | BR-18 | `browser_pane_ux` | `open_externally_action_uses_process_port_open_url` |
 | UC-4: InvokeBrowserPaneChromeActions | BR-18 | `browser_pane_ux` | `open_externally_action_prefers_url_input_while_editing` |
 | UC-4: InvokeBrowserPaneChromeActions | BR-19 | `browser_pane_ux` | `browser_pane_does_not_auto_handoff_auth_flows` |
-| UC-5: PreserveBrowserPaneLoadingFeedback | BR-20 | `browser_pane_ux` | `loading_indicator_stays_visible_while_popup_hides_webview` |
+| UC-5: PreserveBrowserPaneLoadingFeedback | BR-20 | `browser_pane_ux` | `context_comment_composer_hides_browser_native_view_for_overlays` |
 | UC-5: PreserveBrowserPaneLoadingFeedback | BR-21 | `browser_pane_ux` | `loading_indicator_stays_visible_while_waiting_for_first_frame` |
 | UC-5: PreserveBrowserPaneLoadingFeedback | BR-22 | `browser_pane_ux` | `loading_indicator_clears_when_browser_navigation_finishes` |
 

@@ -1,8 +1,8 @@
 // Spec: docs/specs/theme.md
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
-use crate::App;
 use crate::ActionPort;
+use crate::App;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -37,7 +37,8 @@ fn toggle_theme_clears_all_pane_generations_in_render_cache() {
     let mut app = test_app();
     let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
-    app.panes.insert(id, PaneKind::Editor(EditorPane::new_empty(id)));
+    app.panes
+        .insert(id, PaneKind::Editor(EditorPane::new_empty(id)));
     app.focus.focused = Some(id);
     app.cache.pane_generations.insert(id, 42);
 

@@ -60,6 +60,8 @@ impl crate::App {
             .and_then(|m| m.remove("_caller_pane"))
             .and_then(|v| v.as_u64());
 
+        self.pending_cli_caller_pane = caller_pane;
+
         // Find target workspace for the caller pane (UC-2, UC-4)
         let need_swap = caller_pane
             .and_then(|pid| self.find_workspace_for_pane(pid))
@@ -84,6 +86,8 @@ impl crate::App {
             self.load_active_workspace();
         }
 
+        self.pending_cli_caller_pane = None;
+
         result
     }
 
@@ -93,6 +97,7 @@ impl crate::App {
             // Phase 1 — Observe
             "list-panes" => cli_list_panes(self),
             "capture-pane" => cli_capture_pane(self, params),
+            "capture-selection" => cli_capture_selection(self, params),
             "get-layout" => cli_get_layout(self),
             // Phase 2 — Act
             "send-keys" => cli_send_keys(self, params),
@@ -115,6 +120,12 @@ impl crate::App {
             "remove-integration" => cli_remove_integration(params),
             "list-integrations" => Ok(json!(list_integration_status())),
             // Phase 5 — Agent lifecycle
+            "create-context-artifact" => cli_create_context_artifact(self, params),
+            "list-context-artifacts" => cli_list_context_artifacts(self),
+            "read-context-artifact" => cli_read_context_artifact(self, params),
+            "pin-context-artifact" => cli_pin_context_artifact(self, params),
+            "remove-context-artifact" => cli_remove_context_artifact(self, params),
+            "send-context-artifact" => cli_send_context_artifact(self, params),
             "notify" => cli_notify(self, params),
             _ => Err(CliError::MethodNotFound(method.to_string())),
         }
@@ -333,6 +344,85 @@ fn cli_send_keys(
             })
         }
     }
+}
+
+fn capture_selection_details(
+    ctx: &crate::App,
+    pane_id: crate::tide_core::PaneId,
+) -> Result<(String, Option<crate::pane::Selection>, String), CliError> {
+    let pane = ctx.pane(pane_id).ok_or(CliError::PaneNotFound(pane_id))?;
+
+    match pane {
+        PaneKind::Terminal(tp) => Ok((
+            tp.selection
+                .as_ref()
+                .map(|sel| tp.selected_text(sel))
+                .unwrap_or_default(),
+            tp.selection.clone(),
+            "terminal".to_string(),
+        )),
+        PaneKind::Editor(ep) => Ok((
+            ep.selection
+                .as_ref()
+                .map(|sel| ep.selected_text(sel))
+                .unwrap_or_default(),
+            ep.selection.clone(),
+            "editor".to_string(),
+        )),
+        PaneKind::Diff(dp) => Ok((
+            dp.selection
+                .as_ref()
+                .map(|sel| dp.selected_text(sel))
+                .unwrap_or_default(),
+            dp.selection.clone(),
+            "diff".to_string(),
+        )),
+        PaneKind::Browser(bp) => {
+            let content = if bp.url_input_focused && bp.url_selection.is_some() {
+                bp.url_selected_text().unwrap_or_default()
+            } else if bp.page_selection.is_some() {
+                bp.page_selection_content().unwrap_or_default()
+            } else if bp.render_mode {
+                bp.render_html.clone().unwrap_or_default()
+            } else {
+                bp.url_selected_text().unwrap_or_default()
+            };
+            Ok((
+                content,
+                None,
+                if bp.render_mode {
+                    "browser-render".to_string()
+                } else {
+                    "browser".to_string()
+                },
+            ))
+        }
+        PaneKind::Launcher(_) => Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "terminal, editor, diff, or browser",
+            actual: "launcher",
+        }),
+    }
+}
+
+fn serialize_selection(selection: &crate::pane::Selection) -> Value {
+    crate::state::context_artifact::serialize_selection(selection)
+}
+
+fn cli_capture_selection(ctx: &crate::App, params: Value) -> Result<Value, CliError> {
+    let pane_id = params
+        .get("pane_id")
+        .and_then(|v| v.as_u64())
+        .or_else(|| ctx.focused_pane())
+        .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+
+    let (content, selection, kind) = capture_selection_details(ctx, pane_id)?;
+    Ok(json!({
+        "pane_id": pane_id,
+        "kind": kind,
+        "content": content,
+        "selection": selection.as_ref().map(serialize_selection).unwrap_or(Value::Null),
+    }))
 }
 
 /// UC-5: Split — split from a source pane, creating a new terminal.
@@ -655,7 +745,7 @@ fn cli_stream_end(
 // ── Phase 4: Discover + React ─────────────────────────────────────
 
 /// UC-9: Subscribe — register for event notifications.
-fn cli_subscribe(ctx: &mut impl GatewayPort, params: Value) -> Result<Value, CliError> {
+fn cli_subscribe(ctx: &mut crate::App, params: Value) -> Result<Value, CliError> {
     let event_filter: Vec<String> = params
         .get("events")
         .and_then(|v| v.as_array())
@@ -670,8 +760,186 @@ fn cli_subscribe(ctx: &mut impl GatewayPort, params: Value) -> Result<Value, Cli
         .take_subscribe_tx()
         .ok_or_else(|| CliError::InvalidParams("subscribe requires notification channel".into()))?;
 
-    ctx.gateway_subscribe(tx, event_filter);
+    ctx.gateway_subscribe(ctx.pending_cli_caller_pane, tx, event_filter);
     Ok(json!({"ok": true}))
+}
+
+fn active_artifact_json(artifact: &crate::ContextArtifact) -> Value {
+    crate::state::context_artifact::context_artifact_json(artifact)
+}
+
+fn caller_terminal_id(ctx: &crate::App) -> Result<crate::tide_core::PaneId, CliError> {
+    ctx.pending_cli_caller_pane
+        .ok_or_else(|| CliError::InvalidParams("caller pane required".into()))
+}
+
+fn source_terminal_for_pane(
+    ctx: &crate::App,
+    pane_id: crate::tide_core::PaneId,
+) -> Result<crate::tide_core::PaneId, CliError> {
+    match ctx.pane(pane_id) {
+        Some(PaneKind::Terminal(_)) => Ok(pane_id),
+        Some(_) => ctx
+            .assoc
+            .associated_terminal
+            .get(&pane_id)
+            .copied()
+            .ok_or_else(|| {
+                CliError::InvalidParams(format!("pane {pane_id} has no associated terminal"))
+            }),
+        None => Err(CliError::PaneNotFound(pane_id)),
+    }
+}
+
+fn ensure_artifact_owner(
+    caller_terminal_id: crate::tide_core::PaneId,
+    associated_terminal_id: crate::tide_core::PaneId,
+) -> Result<(), CliError> {
+    if caller_terminal_id != associated_terminal_id {
+        return Err(CliError::InvalidParams(format!(
+            "pane is owned by terminal {associated_terminal_id}, not {caller_terminal_id}"
+        )));
+    }
+    Ok(())
+}
+
+fn cli_create_context_artifact(ctx: &mut crate::App, params: Value) -> Result<Value, CliError> {
+    let pane_id = params
+        .get("pane_id")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| CliError::InvalidParams("pane_id required".into()))?;
+    let comment = params
+        .get("comment")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let pinned = params
+        .get("pin")
+        .and_then(|v| v.as_bool())
+        .or_else(|| params.get("pinned").and_then(|v| v.as_bool()))
+        .unwrap_or(false);
+
+    let caller_terminal_id = caller_terminal_id(ctx)?;
+    let associated_terminal_id = source_terminal_for_pane(ctx, pane_id)?;
+    ensure_artifact_owner(caller_terminal_id, associated_terminal_id)?;
+    let (content, selection, kind) = capture_selection_details(ctx, pane_id)?;
+
+    let artifact = crate::ContextArtifact {
+        artifact_id: ctx.context_artifacts.allocate_id(),
+        source_pane_id: pane_id,
+        associated_terminal_id,
+        pane_kind: kind,
+        selection,
+        content,
+        comment,
+        pinned,
+    };
+    let artifact_id = artifact.artifact_id;
+    ctx.context_artifacts
+        .artifacts
+        .insert(artifact_id, artifact.clone());
+
+    Ok(active_artifact_json(&artifact))
+}
+
+fn cli_list_context_artifacts(ctx: &crate::App) -> Result<Value, CliError> {
+    let caller_terminal_id = caller_terminal_id(ctx)?;
+    let mut artifacts: Vec<_> = ctx
+        .context_artifacts
+        .artifacts
+        .values()
+        .filter(|artifact| artifact.associated_terminal_id == caller_terminal_id)
+        .cloned()
+        .collect();
+    artifacts.sort_by_key(|artifact| artifact.artifact_id);
+    Ok(Value::Array(
+        artifacts.iter().map(active_artifact_json).collect(),
+    ))
+}
+
+fn cli_read_context_artifact(ctx: &crate::App, params: Value) -> Result<Value, CliError> {
+    let artifact_id = params
+        .get("artifact_id")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| CliError::InvalidParams("artifact_id required".into()))?;
+    let caller_terminal_id = caller_terminal_id(ctx)?;
+    let artifact = ctx
+        .context_artifacts
+        .artifacts
+        .get(&artifact_id)
+        .cloned()
+        .ok_or(CliError::PaneNotFound(artifact_id))?;
+    ensure_artifact_owner(caller_terminal_id, artifact.associated_terminal_id)?;
+    Ok(active_artifact_json(&artifact))
+}
+
+fn cli_pin_context_artifact(ctx: &mut crate::App, params: Value) -> Result<Value, CliError> {
+    let artifact_id = params
+        .get("artifact_id")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| CliError::InvalidParams("artifact_id required".into()))?;
+    let pinned = params
+        .get("pinned")
+        .and_then(|v| v.as_bool())
+        .or_else(|| params.get("pin").and_then(|v| v.as_bool()))
+        .unwrap_or(true);
+
+    let caller_terminal_id = caller_terminal_id(ctx)?;
+    let associated_terminal_id = ctx
+        .context_artifacts
+        .artifacts
+        .get(&artifact_id)
+        .ok_or(CliError::PaneNotFound(artifact_id))?
+        .associated_terminal_id;
+    ensure_artifact_owner(caller_terminal_id, associated_terminal_id)?;
+
+    let artifact = ctx
+        .context_artifacts
+        .artifacts
+        .get_mut(&artifact_id)
+        .ok_or(CliError::PaneNotFound(artifact_id))?;
+    artifact.pinned = pinned;
+    Ok(active_artifact_json(artifact))
+}
+
+fn cli_remove_context_artifact(ctx: &mut crate::App, params: Value) -> Result<Value, CliError> {
+    let artifact_id = params
+        .get("artifact_id")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| CliError::InvalidParams("artifact_id required".into()))?;
+    let caller_terminal_id = caller_terminal_id(ctx)?;
+    let artifact = ctx
+        .context_artifacts
+        .artifacts
+        .get(&artifact_id)
+        .cloned()
+        .ok_or(CliError::PaneNotFound(artifact_id))?;
+    ensure_artifact_owner(caller_terminal_id, artifact.associated_terminal_id)?;
+    ctx.context_artifacts.artifacts.remove(&artifact_id);
+    Ok(json!({"ok": true, "artifact_id": artifact_id}))
+}
+
+fn cli_send_context_artifact(ctx: &mut crate::App, params: Value) -> Result<Value, CliError> {
+    let artifact_id = params
+        .get("artifact_id")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| CliError::InvalidParams("artifact_id required".into()))?;
+    let caller_terminal_id = caller_terminal_id(ctx)?;
+    let artifact = ctx
+        .context_artifacts
+        .artifacts
+        .get(&artifact_id)
+        .cloned()
+        .ok_or(CliError::PaneNotFound(artifact_id))?;
+    ensure_artifact_owner(caller_terminal_id, artifact.associated_terminal_id)?;
+
+    let terminal_input_injected = ctx.deliver_context_artifact(&artifact);
+
+    Ok(json!({
+        "ok": true,
+        "artifact_id": artifact_id,
+        "terminal_input_injected": terminal_input_injected
+    }))
 }
 
 fn cli_enable_integration(params: Value) -> Result<Value, CliError> {

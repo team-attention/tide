@@ -9,6 +9,7 @@ use crate::adapter::inward::cli_adapter::server::ConnectedClients;
 pub(crate) struct Subscriber {
     pub tx: mpsc::Sender<String>,
     pub event_filter: Vec<String>,
+    pub owner_pane_id: Option<u64>,
 }
 
 /// Lifecycle status of an agent process, reported via hooks.
@@ -105,6 +106,34 @@ impl GatewayStatus {
                 sub.tx.send(msg.clone()).is_ok()
             } else {
                 !sub.tx.send(String::new()).is_err()
+            }
+        });
+    }
+
+    /// Push an event notification only to subscribers paired with a specific PaneId.
+    pub fn notify_for_owner(
+        &mut self,
+        owner_pane_id: u64,
+        event_type: &str,
+        data: serde_json::Value,
+    ) {
+        let notification = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "event",
+            "params": { "type": event_type, "data": data }
+        });
+        let msg = serde_json::to_string(&notification).unwrap_or_default();
+
+        self.subscribers.retain(|sub| {
+            if sub.owner_pane_id != Some(owner_pane_id) {
+                return true;
+            }
+            let matches = sub.event_filter.is_empty()
+                || sub.event_filter.iter().any(|f| f == event_type);
+            if matches {
+                sub.tx.send(msg.clone()).is_ok()
+            } else {
+                true
             }
         });
     }

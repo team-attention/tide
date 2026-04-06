@@ -29,7 +29,12 @@ fn app_with_editor() -> (App, u64) {
 
 fn temp_markdown_path(label: &str) -> PathBuf {
     let id = NEXT_TEST_FILE_ID.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("tide_editor_behavior_{}_{}_{}.md", std::process::id(), id, label))
+    std::env::temp_dir().join(format!(
+        "tide_editor_behavior_{}_{}_{}.md",
+        std::process::id(),
+        id,
+        label
+    ))
 }
 
 fn app_with_markdown_editor(contents: &str) -> (App, u64, PathBuf) {
@@ -107,7 +112,7 @@ fn ime_commit_reaches_search_bar_in_preview_mode() {
         pane.search = Some(crate::state::search::SearchState::new());
     }
     app.focus.search_focus = Some(id);
-    crate::adapter::inward::ime_adapter::handle_ime_commit(&mut app,"검색어");
+    crate::adapter::inward::ime_adapter::handle_ime_commit(&mut app, "검색어");
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
         assert_eq!(pane.search.as_ref().unwrap().input.text, "검색어");
     }
@@ -117,7 +122,7 @@ fn ime_commit_reaches_search_bar_in_preview_mode() {
 fn ime_commit_routes_text_to_focused_editor() {
     // UC-1 BR-3: IME commit routes text to focused Editor while authoring
     let (mut app, id) = app_with_editor();
-    crate::adapter::inward::ime_adapter::handle_ime_commit(&mut app,"한글 입력");
+    crate::adapter::inward::ime_adapter::handle_ime_commit(&mut app, "한글 입력");
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
         assert!(pane.editor.is_modified());
     }
@@ -128,9 +133,10 @@ fn ime_commit_to_file_finder_does_not_reach_editor() {
     // UC-1 BR-6: IME commit to FileFinder does not reach Editor
     let (mut app, id) = app_with_editor();
     app.modal.file_finder = Some(crate::state::FileFinderState::new(
-        std::path::PathBuf::from("/tmp"), vec![],
+        std::path::PathBuf::from("/tmp"),
+        vec![],
     ));
-    crate::adapter::inward::ime_adapter::handle_ime_commit(&mut app,"검색어");
+    crate::adapter::inward::ime_adapter::handle_ime_commit(&mut app, "검색어");
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
         assert!(!pane.editor.is_modified());
     }
@@ -141,9 +147,8 @@ fn preview_scroll_j_moves_viewport_down() {
     // UC-4 BR-18: j scrolls preview down one line
     let mut v_scroll = 0;
     let mut h_scroll = 0;
-    let scrolled = crate::pane::editor::apply_preview_scroll(
-        'j', &mut v_scroll, &mut h_scroll, 100, 0, 30,
-    );
+    let scrolled =
+        crate::pane::editor::apply_preview_scroll('j', &mut v_scroll, &mut h_scroll, 100, 0, 30);
     assert!(scrolled);
     assert_eq!(v_scroll, 1);
 }
@@ -173,8 +178,14 @@ fn markdown_file_opens_in_authoring_mode_with_live_preview_enabled() {
     // UC-2 BR-9: Opening a Markdown file starts in authoring mode with preview disabled and LivePreviewMode enabled
     let (app, id, _path) = app_with_markdown_editor("# Title\n\nBody");
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
-        assert!(!pane.preview_mode, "markdown panes should open in authoring mode");
-        assert!(pane.live_preview, "markdown panes should default to LivePreviewMode");
+        assert!(
+            !pane.preview_mode,
+            "markdown panes should open in authoring mode"
+        );
+        assert!(
+            pane.live_preview,
+            "markdown panes should default to LivePreviewMode"
+        );
     } else {
         panic!("expected editor pane");
     }
@@ -243,8 +254,14 @@ fn click_in_authoring_mode_moves_cursor_using_current_layout() {
 
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
         let pos = pane.editor.cursor_position();
-        assert_eq!(pos.line, 1, "click should move the cursor to the second line");
-        assert_eq!(pos.col, 2, "click should move the cursor to the clicked column");
+        assert_eq!(
+            pos.line, 1,
+            "click should move the cursor to the second line"
+        );
+        assert_eq!(
+            pos.col, 2,
+            "click should move the cursor to the clicked column"
+        );
     } else {
         panic!("expected editor pane");
     }
