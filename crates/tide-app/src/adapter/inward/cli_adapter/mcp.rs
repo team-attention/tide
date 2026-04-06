@@ -151,7 +151,8 @@ fn mcp_initialize(id: serde_json::Value) -> serde_json::Value {
         "result": {
             "protocolVersion": "2024-11-05",
             "capabilities": { "tools": {} },
-            "serverInfo": { "name": "tide", "version": "0.1.0" }
+            "serverInfo": { "name": "tide", "version": "0.1.0" },
+            "instructions": "Tide layout: The Stage holds Terminals. Each Terminal owns a Dock — a workspace for related panes. You are running inside a Terminal. To run a command, send keys to your terminal (omit pane_id). To open a browser or editor, use tide_open_browser / tide_open_editor — they open in your Dock automatically. Do NOT split or open new terminals in the Stage for side tasks."
         }
     })
 }

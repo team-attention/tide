@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>English</string>
+  <key>CFBundleDisplayName</key>
+  <string>Tide</string>
+  <key>CFBundleExecutable</key>
+  <string>Tide</string>
+  <key>CFBundleIconFile</key>
+  <string>icon.icns</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.eatnug.tide</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>Tide</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>{{version}}</string>
+  <key>CFBundleVersion</key>
+  <string>{{build}}</string>
+  <key>CSResourcesFileMapped</key>
+  <true/>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.developer-tools</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>13.0</string>
+  <key>LSRequiresCarbon</key>
+  <true/>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+
+  <!-- Browser Pane V2: Permission requests (UC-4) -->
+  <key>NSCameraUsageDescription</key>
+  <string>Tide needs camera access for web pages that request it in Browser Pane.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Tide needs microphone access for web pages that request it in Browser Pane.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>Tide needs location access for web pages that request it in Browser Pane.</string>
+</dict>
+</plist>
