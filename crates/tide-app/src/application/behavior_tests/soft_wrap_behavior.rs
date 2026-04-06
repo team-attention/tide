@@ -13,7 +13,10 @@ fn editor_with_extension(ext: &str) -> EditorPane {
 fn soft_wrap_enabled_for_markdown_files() {
     // UC-1 BR-1: .md files get soft_wrap = true
     let pane = editor_with_extension("md");
-    assert!(pane.soft_wrap, "markdown files should have soft wrap enabled");
+    assert!(
+        pane.soft_wrap,
+        "markdown files should have soft wrap enabled"
+    );
 }
 
 #[test]
@@ -64,7 +67,11 @@ fn horizontal_scroll_disabled_with_soft_wrap() {
     pane.editor.insert_text(&long_text);
     // Try to scroll right
     pane.handle_action(EditorAction::ScrollRight(10.0), 20);
-    assert_eq!(pane.editor.h_scroll_offset(), 0, "h_scroll should be 0 with soft wrap");
+    assert_eq!(
+        pane.editor.h_scroll_offset(),
+        0,
+        "h_scroll should be 0 with soft wrap"
+    );
 }
 
 // --- UC-2: WrapMap visual row counting ---
@@ -96,11 +103,59 @@ fn wide_characters_wrap_correctly() {
     assert_eq!(map.total_visual_rows(), 2);
 }
 
-// --- UC-5: Resize Viewport ---
+// --- UC-5: Selection Highlight in Wrapped Text ---
+
+#[test]
+fn wrapped_selection_highlight_tracks_visual_rows() {
+    // UC-5 BR-15, BR-16: Wrapped selection highlight uses WrapMap visual rows and current wrapped scroll origin.
+    use crate::adapter::outward::view::editor_selection_rects;
+    use crate::pane::editor::GUTTER_WIDTH_CELLS;
+    use crate::pane::Selection;
+    use crate::theme::SCROLLBAR_WIDTH;
+    use crate::tide_core::{Rect, Size};
+
+    let path = std::env::temp_dir().join(format!(
+        "tide_soft_wrap_selection_{}_{}.md",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::write(&path, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap();
+
+    let mut pane = EditorPane::open(1, &path).unwrap();
+    let cell_size = Size::new(8.0, 16.0);
+    let inner = Rect::new(
+        0.0,
+        0.0,
+        GUTTER_WIDTH_CELLS as f32 * cell_size.width + SCROLLBAR_WIDTH + 40.0 * cell_size.width,
+        4.0 * cell_size.height,
+    );
+    pane.prepare_inline_caches(inner, cell_size, true);
+    pane.selection = Some(Selection {
+        anchor: (0, 45),
+        end: (0, 48),
+    });
+
+    let rects = editor_selection_rects(&pane, inner, cell_size, pane.selection.as_ref().unwrap());
+    assert_eq!(rects.len(), 1);
+    assert_eq!(
+        rects[0].x,
+        GUTTER_WIDTH_CELLS as f32 * cell_size.width + 5.0 * cell_size.width
+    );
+    assert_eq!(rects[0].y, cell_size.height);
+    assert_eq!(rects[0].width, 3.0 * cell_size.width);
+    assert_eq!(rects[0].height, cell_size.height);
+
+    let _ = std::fs::remove_file(path);
+}
+
+// --- UC-6: Resize Viewport ---
 
 #[test]
 fn wrap_map_rebuilt_on_width_change() {
-    // UC-5 BR-15: WrapMap must change when width changes
+    // UC-6 BR-17: WrapMap must change when width changes
     use crate::tide_editor::wrap::WrapMap;
     let lines = vec!["a".repeat(100)];
     let map40 = WrapMap::build(&lines, 40, 0);
@@ -109,11 +164,11 @@ fn wrap_map_rebuilt_on_width_change() {
     assert_eq!(map50.total_visual_rows(), 2); // ceil(100/50)
 }
 
-// --- UC-7: Scroll Wrapped Authoring ---
+// --- UC-8: Scroll Wrapped Authoring ---
 
 #[test]
 fn scrolling_wrapped_markdown_advances_by_visual_row() {
-    // UC-7 BR-18: Soft-wrap authoring scroll advances in visual rows, not only whole logical lines
+    // UC-8 BR-20: Soft-wrap authoring scroll advances in visual rows, not only whole logical lines
     use crate::tide_editor::input::EditorAction;
 
     let mut pane = editor_with_extension("md");
@@ -132,7 +187,7 @@ fn scrolling_wrapped_markdown_advances_by_visual_row() {
 
 #[test]
 fn scrolling_wrapped_markdown_reaches_the_last_visual_row() {
-    // UC-7 BR-19: Soft-wrap scroll clamping uses total visual rows so the wrapped tail remains reachable
+    // UC-8 BR-21: Soft-wrap scroll clamping uses total visual rows so the wrapped tail remains reachable
     use crate::tide_editor::input::EditorAction;
 
     let mut pane = editor_with_extension("md");

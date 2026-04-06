@@ -14,7 +14,12 @@ use crate::PaneLifecyclePort;
 
 /// Handle IME committed text (composition done).
 pub(crate) fn handle_ime_commit(
-    ctx: &mut (impl AppCorePort + FocusNavPort + ImeStatePort + ModalPort + PaneAccessPort + PaneLifecyclePort),
+    ctx: &mut (impl AppCorePort
+              + FocusNavPort
+              + ImeStatePort
+              + ModalPort
+              + PaneAccessPort
+              + PaneLifecyclePort),
     text: &str,
 ) {
     // Modal popups intercept text BEFORE any pane-level handling.
@@ -33,6 +38,17 @@ pub(crate) fn handle_ime_commit(
         for ch in text.chars() {
             if let Some(ref mut input) = ctx.modal_mut().save_as_input {
                 input.insert_char(ch);
+            }
+        }
+        ctx.ime_clear_composition();
+        ctx.request_redraw();
+        return;
+    }
+    if ctx.modal().context_comment_composer.is_some() {
+        for ch in text.chars() {
+            if let Some(ref mut composer) = ctx.modal_mut().context_comment_composer {
+                composer.insert_char(ch);
+                ctx.invalidate_chrome();
             }
         }
         ctx.ime_clear_composition();
@@ -115,7 +131,12 @@ pub(crate) fn handle_ime_commit(
 
 /// Handle IME preedit update (composition in progress).
 pub(crate) fn handle_ime_preedit(
-    ctx: &mut (impl AppCorePort + FocusNavPort + ImeStatePort + PaneAccessPort + PaneLifecyclePort),
+    ctx: &mut (impl AppCorePort
+              + FocusNavPort
+              + ImeStatePort
+              + ModalPort
+              + PaneAccessPort
+              + PaneLifecyclePort),
     text: &str,
 ) {
     // Launcher pane: immediately resolve on preedit so Korean IME
@@ -147,10 +168,14 @@ pub(crate) fn handle_ime_preedit(
     if let Some(target) = ctx.effective_ime_target() {
         ctx.invalidate_pane(target);
     }
-    // Invalidate chrome only when browser URL bar has preedit
-    if ctx.focused_pane().and_then(|id| ctx.pane(id)).map_or(false, |p| {
-        matches!(p, PaneKind::Browser(bp) if bp.url_input_focused)
-    }) {
+    // Invalidate chrome when a Tide-rendered text overlay owns the visible preedit.
+    if ctx.modal().context_comment_composer.is_some()
+        || ctx.search_focus().is_some()
+        || ctx.focused_pane().and_then(|id| ctx.pane(id)).map_or(
+            false,
+            |p| matches!(p, PaneKind::Browser(bp) if bp.url_input_focused),
+        )
+    {
         ctx.invalidate_chrome();
     }
     ctx.request_redraw();

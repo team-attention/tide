@@ -1,7 +1,7 @@
 //! Modal-specific keyboard handling.
 //!
 //! Handles keyboard events for: file finder, git switcher, config page,
-//! context menu, file tree rename, save-as, branch cleanup, and save confirm.
+//! context menu, comment composer, file tree rename, save-as, branch cleanup, and save confirm.
 
 use crate::tide_core::{Key, Modifiers};
 
@@ -261,6 +261,62 @@ pub(super) fn handle_save_as_key(
                 if let Some(ref mut input) = ctx.modal_mut().save_as_input {
                     input.insert_char(ch);
                 }
+            }
+        }
+        _ => {}
+    }
+    ctx.request_redraw();
+}
+
+pub(super) fn handle_context_comment_composer_key(
+    ctx: &mut impl KeyboardPorts,
+    key: Key,
+    modifiers: &Modifiers,
+) {
+    match key {
+        Key::Escape => {
+            ctx.modal_mut().context_comment_composer = None;
+            ctx.invalidate_chrome();
+        }
+        Key::Tab => {
+            if let Some(ref mut composer) = ctx.modal_mut().context_comment_composer {
+                composer.toggle_pinned();
+                ctx.invalidate_chrome();
+            }
+        }
+        Key::Backspace => {
+            if let Some(ref mut composer) = ctx.modal_mut().context_comment_composer {
+                composer.backspace();
+                ctx.invalidate_chrome();
+            }
+        }
+        Key::Delete => {
+            if let Some(ref mut composer) = ctx.modal_mut().context_comment_composer {
+                composer.delete_char();
+                ctx.invalidate_chrome();
+            }
+        }
+        Key::Left => {
+            if let Some(ref mut composer) = ctx.modal_mut().context_comment_composer {
+                composer.move_cursor_left();
+            }
+        }
+        Key::Right => {
+            if let Some(ref mut composer) = ctx.modal_mut().context_comment_composer {
+                composer.move_cursor_right();
+            }
+        }
+        Key::Char(ch) => {
+            if !modifiers.ctrl && !modifiers.meta {
+                if let Some(ref mut composer) = ctx.modal_mut().context_comment_composer {
+                    composer.insert_char(ch);
+                    ctx.invalidate_chrome();
+                }
+            }
+        }
+        Key::Enter => {
+            if ctx.submit_context_comment_composer() {
+                return;
             }
         }
         _ => {}

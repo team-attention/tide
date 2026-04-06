@@ -12,12 +12,12 @@
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
-use crate::App;
-use crate::ActionPort;
-use crate::WorkspaceNavPort;
+use crate::tide_core::{Key, LayoutEngine, Modifiers, SplitDirection};
 use crate::tide_input::{Direction, GlobalAction, KeybindingMap};
-use crate::tide_core::{Key, Modifiers, LayoutEngine, SplitDirection};
+use crate::ActionPort;
+use crate::App;
 use crate::DockPort;
+use crate::WorkspaceNavPort;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -30,7 +30,8 @@ fn app_with_editor() -> (App, u64) {
     let mut app = test_app();
     let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
-    app.panes.insert(id, PaneKind::Editor(EditorPane::new_empty(id)));
+    app.panes
+        .insert(id, PaneKind::Editor(EditorPane::new_empty(id)));
     app.focus.focused = Some(id);
     app.focus.stage_focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;
@@ -40,7 +41,8 @@ fn app_with_editor() -> (App, u64) {
 fn app_with_two_stage_panes() -> (App, u64, u64) {
     let (mut app, p1) = app_with_editor();
     let p2 = app.layout.split(p1, SplitDirection::Vertical);
-    app.panes.insert(p2, PaneKind::Editor(EditorPane::new_empty(p2)));
+    app.panes
+        .insert(p2, PaneKind::Editor(EditorPane::new_empty(p2)));
     (app, p1, p2)
 }
 
@@ -83,11 +85,13 @@ fn navigate_in_dock_does_not_change_focus_area() {
 
     // Set up dock with two panes so spatial navigation is possible
     let dock_p1 = app.layout.alloc_id();
-    app.panes.insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
+    app.panes
+        .insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
     add_to_dock(&mut app, p1, dock_p1);
 
     let dock_p2 = app.layout.alloc_id();
-    app.panes.insert(dock_p2, PaneKind::Editor(EditorPane::new_empty(dock_p2)));
+    app.panes
+        .insert(dock_p2, PaneKind::Editor(EditorPane::new_empty(dock_p2)));
     add_to_dock(&mut app, p1, dock_p2);
 
     app.focus.focus_area = FocusArea::Dock;
@@ -110,11 +114,13 @@ fn navigate_in_dock_uses_dock_layout_for_spatial_lookup() {
 
     // Add two dock panes split vertically
     let dock_p1 = app.layout.alloc_id();
-    app.panes.insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
+    app.panes
+        .insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
     add_to_dock(&mut app, p1, dock_p1);
 
     let dock_p2 = app.layout.alloc_id();
-    app.panes.insert(dock_p2, PaneKind::Editor(EditorPane::new_empty(dock_p2)));
+    app.panes
+        .insert(dock_p2, PaneKind::Editor(EditorPane::new_empty(dock_p2)));
     add_to_dock(&mut app, p1, dock_p2);
 
     app.focus.focus_area = FocusArea::Dock;
@@ -170,11 +176,13 @@ fn dock_navigate_does_not_change_focus_area() {
     let (mut app, p1, _p2) = app_with_two_stage_panes();
 
     let dock_p1 = app.layout.alloc_id();
-    app.panes.insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
+    app.panes
+        .insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
     add_to_dock(&mut app, p1, dock_p1);
 
     let dock_p2 = app.layout.alloc_id();
-    app.panes.insert(dock_p2, PaneKind::Editor(EditorPane::new_empty(dock_p2)));
+    app.panes
+        .insert(dock_p2, PaneKind::Editor(EditorPane::new_empty(dock_p2)));
     add_to_dock(&mut app, p1, dock_p2);
 
     app.focus.focus_area = FocusArea::Stage;
@@ -196,11 +204,13 @@ fn dock_navigate_when_dock_focused_behaves_like_navigate() {
     let (mut app, p1, _p2) = app_with_two_stage_panes();
 
     let dock_p1 = app.layout.alloc_id();
-    app.panes.insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
+    app.panes
+        .insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
     add_to_dock(&mut app, p1, dock_p1);
 
     let dock_p2 = app.layout.alloc_id();
-    app.panes.insert(dock_p2, PaneKind::Editor(EditorPane::new_empty(dock_p2)));
+    app.panes
+        .insert(dock_p2, PaneKind::Editor(EditorPane::new_empty(dock_p2)));
     add_to_dock(&mut app, p1, dock_p2);
 
     // Focus is already in Dock
@@ -227,7 +237,10 @@ fn dock_navigate_when_dock_closed_is_noop() {
     let focused_before = app.focus.focused;
     app.handle_global_action(GlobalAction::DockNavigate(Direction::Right));
 
-    assert_eq!(app.focus.focused, focused_before, "DockNavigate when dock closed should be no-op");
+    assert_eq!(
+        app.focus.focused, focused_before,
+        "DockNavigate when dock closed should be no-op"
+    );
     assert_eq!(app.focus.focus_area, FocusArea::Stage);
 }
 
@@ -242,7 +255,8 @@ fn tab_prev_next_in_stage_cycles_within_tab_group() {
     // Add a second tab to the same TabGroup
     let p2 = app.layout.alloc_id();
     app.layout.add_tab(p1, p2);
-    app.panes.insert(p2, PaneKind::Editor(EditorPane::new_empty(p2)));
+    app.panes
+        .insert(p2, PaneKind::Editor(EditorPane::new_empty(p2)));
 
     app.focus.focus_area = FocusArea::Stage;
     app.focus.focused = Some(p1);
@@ -264,11 +278,13 @@ fn tab_prev_next_in_dock_cycles_dock_tabs() {
     let (mut app, p1, _p2) = app_with_two_stage_panes();
 
     let dock_p1 = app.layout.alloc_id();
-    app.panes.insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
+    app.panes
+        .insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
     add_to_dock(&mut app, p1, dock_p1);
 
     let dock_p2 = app.layout.alloc_id();
-    app.panes.insert(dock_p2, PaneKind::Editor(EditorPane::new_empty(dock_p2)));
+    app.panes
+        .insert(dock_p2, PaneKind::Editor(EditorPane::new_empty(dock_p2)));
     add_to_dock(&mut app, p1, dock_p2);
 
     app.focus.focus_area = FocusArea::Dock;
@@ -295,18 +311,27 @@ fn tab_cycling_wraps_around_within_tab_group() {
     let (mut app, p1) = app_with_editor();
     let p2 = app.layout.alloc_id();
     app.layout.add_tab(p1, p2);
-    app.panes.insert(p2, PaneKind::Editor(EditorPane::new_empty(p2)));
+    app.panes
+        .insert(p2, PaneKind::Editor(EditorPane::new_empty(p2)));
 
     app.focus.focus_area = FocusArea::Stage;
     app.focus.focused = Some(p2);
 
     // TabNext from last tab wraps to first
     app.handle_global_action(GlobalAction::TabNext);
-    assert_eq!(app.focus.focused, Some(p1), "TabNext from last tab should wrap to first");
+    assert_eq!(
+        app.focus.focused,
+        Some(p1),
+        "TabNext from last tab should wrap to first"
+    );
 
     // TabPrev from first tab wraps to last
     app.handle_global_action(GlobalAction::TabPrev);
-    assert_eq!(app.focus.focused, Some(p2), "TabPrev from first tab should wrap to last");
+    assert_eq!(
+        app.focus.focused,
+        Some(p2),
+        "TabPrev from first tab should wrap to last"
+    );
 }
 
 #[test]
@@ -317,7 +342,8 @@ fn tab_cycling_into_tab_group_sets_active_tab() {
 
     // Create a TabGroup [p1, p3] where p3 is active
     let p3 = app.layout.alloc_id();
-    app.panes.insert(p3, PaneKind::Editor(EditorPane::new_empty(p3)));
+    app.panes
+        .insert(p3, PaneKind::Editor(EditorPane::new_empty(p3)));
     app.layout.add_tab(p1, p3);
 
     // Focus is on p2 (separate leaf). Cycle into the TabGroup.
@@ -350,11 +376,13 @@ fn dock_tab_next_does_not_change_focus_area() {
     let (mut app, p1, _p2) = app_with_two_stage_panes();
 
     let dock_p1 = app.layout.alloc_id();
-    app.panes.insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
+    app.panes
+        .insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
     add_to_dock(&mut app, p1, dock_p1);
 
     let dock_p2 = app.layout.alloc_id();
-    app.panes.insert(dock_p2, PaneKind::Editor(EditorPane::new_empty(dock_p2)));
+    app.panes
+        .insert(dock_p2, PaneKind::Editor(EditorPane::new_empty(dock_p2)));
     add_to_dock(&mut app, p1, dock_p2);
 
     app.focus.focus_area = FocusArea::Stage;
@@ -376,11 +404,13 @@ fn dock_tab_next_opens_dock_if_closed() {
     let (mut app, p1, _p2) = app_with_two_stage_panes();
 
     let dock_p1 = app.layout.alloc_id();
-    app.panes.insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
+    app.panes
+        .insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
     add_to_dock(&mut app, p1, dock_p1);
 
     let dock_p2 = app.layout.alloc_id();
-    app.panes.insert(dock_p2, PaneKind::Editor(EditorPane::new_empty(dock_p2)));
+    app.panes
+        .insert(dock_p2, PaneKind::Editor(EditorPane::new_empty(dock_p2)));
     add_to_dock(&mut app, p1, dock_p2);
 
     app.dock.dock_open = false;
@@ -423,7 +453,8 @@ fn split_vertical_in_dock_splits_dock_layout() {
     let (mut app, p1, _p2) = app_with_two_stage_panes();
 
     let dock_p1 = app.layout.alloc_id();
-    app.panes.insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
+    app.panes
+        .insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
     add_to_dock(&mut app, p1, dock_p1);
 
     app.focus.focus_area = FocusArea::Dock;
@@ -443,7 +474,12 @@ fn split_vertical_in_dock_splits_dock_layout() {
 fn cmd_backslash_maps_to_split_horizontal() {
     // Cmd+\ = SplitHorizontal in current area (below).
     let map = KeybindingMap::new();
-    let mods = Modifiers { shift: false, ctrl: false, meta: true, alt: false };
+    let mods = Modifiers {
+        shift: false,
+        ctrl: false,
+        meta: true,
+        alt: false,
+    };
     let action = map.lookup(&Key::Char('\\'), &mods);
     assert_eq!(
         action,
@@ -456,7 +492,12 @@ fn cmd_backslash_maps_to_split_horizontal() {
 fn cmd_shift_backslash_maps_to_split_vertical() {
     // Cmd+Shift+\ = SplitVertical in current area (right). Shift flips orientation.
     let map = KeybindingMap::new();
-    let mods = Modifiers { shift: true, ctrl: false, meta: true, alt: false };
+    let mods = Modifiers {
+        shift: true,
+        ctrl: false,
+        meta: true,
+        alt: false,
+    };
     let action = map.lookup(&Key::Char('\\'), &mods);
     assert_eq!(
         action,
@@ -475,7 +516,8 @@ fn dock_split_vertical_always_targets_dock() {
     let (mut app, p1, _p2) = app_with_two_stage_panes();
 
     let dock_p1 = app.layout.alloc_id();
-    app.panes.insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
+    app.panes
+        .insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
     add_to_dock(&mut app, p1, dock_p1);
 
     app.focus.focus_area = FocusArea::Stage;
@@ -498,7 +540,8 @@ fn dock_split_moves_focus_to_dock() {
     let (mut app, p1, _p2) = app_with_two_stage_panes();
 
     let dock_p1 = app.layout.alloc_id();
-    app.panes.insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
+    app.panes
+        .insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
     add_to_dock(&mut app, p1, dock_p1);
 
     app.focus.focus_area = FocusArea::Stage;
@@ -522,7 +565,8 @@ fn dock_new_tab_always_targets_dock() {
     let (mut app, p1, _p2) = app_with_two_stage_panes();
 
     let dock_p1 = app.layout.alloc_id();
-    app.panes.insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
+    app.panes
+        .insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
     add_to_dock(&mut app, p1, dock_p1);
 
     app.focus.focus_area = FocusArea::Stage;
@@ -545,7 +589,8 @@ fn dock_new_tab_moves_focus_to_dock() {
     let (mut app, p1, _p2) = app_with_two_stage_panes();
 
     let dock_p1 = app.layout.alloc_id();
-    app.panes.insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
+    app.panes
+        .insert(dock_p1, PaneKind::Editor(EditorPane::new_empty(dock_p1)));
     add_to_dock(&mut app, p1, dock_p1);
 
     app.focus.focus_area = FocusArea::Stage;

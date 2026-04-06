@@ -6,7 +6,6 @@ use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
 
-
 use super::bar_offset_for;
 
 fn display_width_between_chars(line_text: &str, start_char: usize, end_char: usize) -> usize {
@@ -41,7 +40,8 @@ fn soft_wrap_visible_segments_for_char_range(
         if visual_row < scroll || visual_row >= scroll + visible_rows {
             continue;
         }
-        let Some(info) = wrap_map.visual_row_to_line_info(visual_row, &pane.editor.buffer.lines) else {
+        let Some(info) = wrap_map.visual_row_to_line_info(visual_row, &pane.editor.buffer.lines)
+        else {
             continue;
         };
         let segment_start = start_char.max(info.char_offset);
@@ -71,7 +71,11 @@ pub(crate) fn render_cursor_and_highlights(
     // Compute the effective IME target and preedit width for editor cursor offset
     let ime_target = app.effective_ime_target();
     let preedit_width_cells: usize = if !app.ime.preedit.is_empty() {
-        app.ime.preedit.chars().map(|c| c.width().unwrap_or(1)).sum()
+        app.ime
+            .preedit
+            .chars()
+            .map(|c| c.width().unwrap_or(1))
+            .sum()
     } else {
         0
     };
@@ -134,10 +138,7 @@ pub(crate) fn render_cursor_and_highlights(
                             let rx = inner.x + center_x + col_start as f32 * cell_size.width;
                             let ry = inner.y + visual_row as f32 * cell_size.height;
                             let rw = (col_end - col_start) as f32 * cell_size.width;
-                            renderer.draw_rect(
-                                Rect::new(rx, ry, rw, cell_size.height),
-                                sel_color,
-                            );
+                            renderer.draw_rect(Rect::new(rx, ry, rw, cell_size.height), sel_color);
                         }
                     }
                 }
@@ -185,8 +186,13 @@ pub(crate) fn render_cursor_and_highlights(
                         render_preview_search_highlights(pane, inner, renderer, p, search);
                     }
                 } else {
-                    if focused == Some(id) && search_focus != Some(id) && app.timing.cursor_visible {
-                        let pw = if ime_target == Some(id) { preedit_width_cells } else { 0 };
+                    if focused == Some(id) && search_focus != Some(id) && app.timing.cursor_visible
+                    {
+                        let pw = if ime_target == Some(id) {
+                            preedit_width_cells
+                        } else {
+                            0
+                        };
                         pane.render_cursor(inner, renderer, p.cursor_accent, pw);
                     }
                     // Render editor selection highlight
@@ -216,7 +222,6 @@ pub(crate) fn render_cursor_and_highlights(
             None => {}
         }
     }
-
 }
 
 /// Render selection highlight for an editor pane.
@@ -227,85 +232,129 @@ fn render_editor_selection(
     p: &ThemePalette,
     sel: &crate::pane::Selection,
 ) {
-    if pane.effective_soft_wrap() {
-        render_editor_selection_soft_wrap(pane, inner, renderer, p, sel);
-        return;
-    }
-    let cell_size = renderer.cell_size();
-    let (start, end) = if sel.anchor <= sel.end {
-        (sel.anchor, sel.end)
-    } else {
-        (sel.end, sel.anchor)
-    };
-    if start != end {
-        let sel_color = p.selection;
-        let scroll = pane.editor.scroll_offset();
-        let h_scroll = pane.editor.h_scroll_offset();
-        let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
-        let visible_rows = (inner.height / cell_size.height).ceil() as usize;
-        let visible_cols = ((inner.width - gutter_width) / cell_size.width).ceil() as usize;
-        for row in start.0..=end.0 {
-            if row < scroll || row >= scroll + visible_rows {
-                continue;
-            }
-            let visual_row = row - scroll;
-            let col_start = if row == start.0 { start.1 } else { 0 };
-            let col_end = if row == end.0 {
-                end.1
-            } else {
-                // Full line width: use char count or visible cols
-                let char_count = pane.editor.buffer.line(row).map_or(0, |l| l.chars().count());
-                char_count.max(h_scroll + visible_cols)
-            };
-            if col_start >= col_end {
-                continue;
-            }
-            // Clip to visible horizontal range
-            let vis_start = col_start.max(h_scroll).saturating_sub(h_scroll);
-            let vis_end = col_end.saturating_sub(h_scroll).min(visible_cols);
-            if vis_start >= vis_end {
-                continue;
-            }
-            let rx = inner.x + gutter_width + vis_start as f32 * cell_size.width;
-            let ry = inner.y + visual_row as f32 * cell_size.height;
-            let rw = (vis_end - vis_start) as f32 * cell_size.width;
-            renderer.draw_rect(Rect::new(rx, ry, rw, cell_size.height), sel_color);
-        }
+    for rect in editor_selection_rects(pane, inner, renderer.cell_size(), sel) {
+        renderer.draw_rect(rect, p.selection);
     }
 }
 
-fn render_editor_selection_soft_wrap(
+pub(crate) fn editor_selection_rects(
     pane: &crate::pane::editor::EditorPane,
     inner: Rect,
-    renderer: &mut crate::tide_renderer::WgpuRenderer,
-    p: &ThemePalette,
+    cell_size: crate::tide_core::Size,
     sel: &crate::pane::Selection,
-) {
-    let cell_size = renderer.cell_size();
+) -> Vec<Rect> {
     let (start, end) = if sel.anchor <= sel.end {
         (sel.anchor, sel.end)
     } else {
         (sel.end, sel.anchor)
     };
     if start == end {
-        return;
+        return Vec::new();
     }
-    let sel_color = p.selection;
+
+    if pane.effective_soft_wrap() {
+        if pane.wrap_map().is_some() {
+            return soft_wrap_editor_selection_rects(pane, inner, cell_size, start, end);
+        }
+    }
+
+    plain_editor_selection_rects(pane, inner, cell_size, start, end)
+}
+
+fn plain_editor_selection_rects(
+    pane: &crate::pane::editor::EditorPane,
+    inner: Rect,
+    cell_size: crate::tide_core::Size,
+    start: (usize, usize),
+    end: (usize, usize),
+) -> Vec<Rect> {
+    let mut rects = Vec::new();
+    let scroll = pane.editor.scroll_offset();
+    let h_scroll = pane.editor.h_scroll_offset();
     let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
     let visible_rows = (inner.height / cell_size.height).ceil() as usize;
+    let visible_cols = ((inner.width - gutter_width) / cell_size.width).ceil() as usize;
     for row in start.0..=end.0 {
-        let line_char_count = pane.editor.buffer.line(row).map_or(0, |line| line.chars().count());
-        let start_char = if row == start.0 { start.1.min(line_char_count) } else { 0 };
-        let end_char = if row == end.0 { end.1.min(line_char_count) } else { line_char_count };
-        for (visual_row, start_col, end_col) in
-            soft_wrap_visible_segments_for_char_range(pane, row, start_char, end_char, visible_rows)
-        {
+        if row < scroll || row >= scroll + visible_rows {
+            continue;
+        }
+        let visual_row = row - scroll;
+        let col_start = if row == start.0 { start.1 } else { 0 };
+        let col_end = if row == end.0 {
+            end.1
+        } else {
+            let char_count = pane
+                .editor
+                .buffer
+                .line(row)
+                .map_or(0, |l| l.chars().count());
+            char_count.max(h_scroll + visible_cols)
+        };
+        if col_start >= col_end {
+            continue;
+        }
+        let vis_start = col_start.max(h_scroll).saturating_sub(h_scroll);
+        let vis_end = col_end.saturating_sub(h_scroll).min(visible_cols);
+        if vis_start >= vis_end {
+            continue;
+        }
+        let rx = inner.x + gutter_width + vis_start as f32 * cell_size.width;
+        let ry = inner.y + visual_row as f32 * cell_size.height;
+        let rw = (vis_end - vis_start) as f32 * cell_size.width;
+        rects.push(Rect::new(rx, ry, rw, cell_size.height));
+    }
+    rects
+}
+
+fn soft_wrap_editor_selection_rects(
+    pane: &crate::pane::editor::EditorPane,
+    inner: Rect,
+    cell_size: crate::tide_core::Size,
+    start: (usize, usize),
+    end: (usize, usize),
+) -> Vec<Rect> {
+    let mut rects = Vec::new();
+    let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+    let visible_rows = (inner.height / cell_size.height).ceil() as usize;
+    let line_count = pane.editor.buffer.line_count();
+
+    for row in start.0..=end.0 {
+        if row >= line_count {
+            break;
+        }
+        let Some(line) = pane.editor.buffer.line(row) else {
+            break;
+        };
+        let char_count = line.chars().count();
+        let row_char_start = if row == start.0 {
+            start.1.min(char_count)
+        } else {
+            0
+        };
+        let row_char_end = if row == end.0 {
+            end.1.min(char_count)
+        } else {
+            char_count
+        };
+        if row_char_start >= row_char_end {
+            continue;
+        }
+
+        for (visual_row, start_col, end_col) in soft_wrap_visible_segments_for_char_range(
+            pane,
+            row,
+            row_char_start,
+            row_char_end,
+            visible_rows,
+        ) {
             let rx = inner.x + gutter_width + start_col as f32 * cell_size.width;
             let ry = inner.y + visual_row as f32 * cell_size.height;
             let rw = (end_col - start_col) as f32 * cell_size.width;
-            renderer.draw_rect(Rect::new(rx, ry, rw, cell_size.height), sel_color);
+            rects.push(Rect::new(rx, ry, rw, cell_size.height));
         }
     }
+
+    rects
 }
 
 /// Render search match highlights for an editor pane.
@@ -334,7 +383,11 @@ fn render_editor_search_highlights(
                 continue;
             }
             let visual_row = m.line - scroll;
-            let visual_col = if m.col >= h_scroll { m.col - h_scroll } else { 0 };
+            let visual_col = if m.col >= h_scroll {
+                m.col - h_scroll
+            } else {
+                0
+            };
             let draw_len = if m.col >= h_scroll {
                 m.len
             } else {
@@ -420,7 +473,8 @@ fn render_diff_selection(
         let col_end = if row == end.0 {
             end.1
         } else {
-            flat.get(row).map_or(visible_cols, |l| l.chars().count().max(visible_cols))
+            flat.get(row)
+                .map_or(visible_cols, |l| l.chars().count().max(visible_cols))
         };
         if col_start >= col_end {
             continue;
@@ -468,9 +522,16 @@ fn render_preview_selection(
             // Full line width from preview spans
             preview_lines.get(row).map_or(0, |line| {
                 use unicode_width::UnicodeWidthChar;
-                line.spans.iter().map(|s| {
-                    s.text.chars().filter(|c| *c != '\n').map(|c| c.width().unwrap_or(1)).sum::<usize>()
-                }).sum()
+                line.spans
+                    .iter()
+                    .map(|s| {
+                        s.text
+                            .chars()
+                            .filter(|c| *c != '\n')
+                            .map(|c| c.width().unwrap_or(1))
+                            .sum::<usize>()
+                    })
+                    .sum()
             })
         };
         if col_start >= col_end {
@@ -535,9 +596,15 @@ fn render_bracket_highlight(
         renderer.draw_rect(Rect::new(rx, ry, rw, rh), p.bracket_match_bg);
         // Border (top, bottom, left, right)
         renderer.draw_rect(Rect::new(rx, ry, rw, border_w), p.bracket_match_border);
-        renderer.draw_rect(Rect::new(rx, ry + rh - border_w, rw, border_w), p.bracket_match_border);
+        renderer.draw_rect(
+            Rect::new(rx, ry + rh - border_w, rw, border_w),
+            p.bracket_match_border,
+        );
         renderer.draw_rect(Rect::new(rx, ry, border_w, rh), p.bracket_match_border);
-        renderer.draw_rect(Rect::new(rx + rw - border_w, ry, border_w, rh), p.bracket_match_border);
+        renderer.draw_rect(
+            Rect::new(rx + rw - border_w, ry, border_w, rh),
+            p.bracket_match_border,
+        );
     }
 }
 
@@ -576,9 +643,15 @@ fn render_bracket_highlight_soft_wrap(
 
             renderer.draw_rect(Rect::new(rx, ry, rw, rh), p.bracket_match_bg);
             renderer.draw_rect(Rect::new(rx, ry, rw, border_w), p.bracket_match_border);
-            renderer.draw_rect(Rect::new(rx, ry + rh - border_w, rw, border_w), p.bracket_match_border);
+            renderer.draw_rect(
+                Rect::new(rx, ry + rh - border_w, rw, border_w),
+                p.bracket_match_border,
+            );
             renderer.draw_rect(Rect::new(rx, ry, border_w, rh), p.bracket_match_border);
-            renderer.draw_rect(Rect::new(rx + rw - border_w, ry, border_w, rh), p.bracket_match_border);
+            renderer.draw_rect(
+                Rect::new(rx + rw - border_w, ry, border_w, rh),
+                p.bracket_match_border,
+            );
         }
     }
 }
@@ -610,7 +683,11 @@ fn render_preview_search_highlights(
             continue;
         }
         let visual_row = m.line - scroll;
-        let visual_col = if m.col >= h_scroll { m.col - h_scroll } else { 0 };
+        let visual_col = if m.col >= h_scroll {
+            m.col - h_scroll
+        } else {
+            0
+        };
         let draw_len = if m.col >= h_scroll {
             m.len
         } else {

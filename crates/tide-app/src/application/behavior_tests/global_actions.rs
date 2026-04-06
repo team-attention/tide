@@ -2,9 +2,9 @@
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
-use crate::App;
-use crate::ActionPort;
 use crate::tide_input::GlobalAction;
+use crate::ActionPort;
+use crate::App;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -17,7 +17,8 @@ fn app_with_editor() -> (App, u64) {
     let mut app = test_app();
     let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
-    app.panes.insert(id, PaneKind::Editor(EditorPane::new_empty(id)));
+    app.panes
+        .insert(id, PaneKind::Editor(EditorPane::new_empty(id)));
     app.focus.focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;
     (app, id)
@@ -81,7 +82,10 @@ fn new_tab_global_action_creates_terminal_pane_in_stage() {
     let (mut app, _) = app_with_editor();
     app.handle_global_action(GlobalAction::NewTab);
     let new_id = app.focus.focused.unwrap();
-    assert!(matches!(app.panes.get(&new_id), Some(PaneKind::Terminal(_))));
+    assert!(matches!(
+        app.panes.get(&new_id),
+        Some(PaneKind::Terminal(_))
+    ));
     assert_eq!(app.layout.all_pane_ids().len(), app.panes.len());
 }
 

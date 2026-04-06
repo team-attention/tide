@@ -5,6 +5,7 @@ use crate::tide_core::Rect;
 pub(crate) struct WorkspaceManager {
     pub workspaces: Vec<crate::Workspace>,
     pub workspace_extras: Vec<crate::WorkspaceExtras>,
+    pub workspace_context_artifacts: Vec<crate::ContextArtifactStore>,
     pub active: usize,
     pub show_sidebar: bool,
     pub sidebar_rect: Option<Rect>,
@@ -18,6 +19,7 @@ impl WorkspaceManager {
         Self {
             workspaces: Vec::new(),
             workspace_extras: Vec::new(),
+            workspace_context_artifacts: Vec::new(),
             active: 0,
             show_sidebar: false,
             sidebar_rect: None,

@@ -143,6 +143,9 @@ pub(crate) struct App {
     // Workspace management (grouped)
     pub(crate) ws: state::WorkspaceManager,
 
+    // Live workspace-local artifact state for the active Workspace.
+    pub(crate) context_artifacts: state::ContextArtifactStore,
+
     // Loaded settings
     pub(crate) settings: state::settings::TideSettings,
 
@@ -159,6 +162,9 @@ pub(crate) struct App {
 
     // Temporary: holds notification_tx for subscribe command during dispatch
     pub(crate) pending_subscribe_tx: Option<std::sync::mpsc::Sender<String>>,
+
+    // Temporary: holds the caller PaneId while a CLI command is dispatching.
+    pub(crate) pending_cli_caller_pane: Option<PaneId>,
 
     // Pending platform commands queued by notification routing, drained by event loop.
     pub(crate) pending_platform_commands: Vec<crate::tide_platform::WindowCommand>,
@@ -203,6 +209,7 @@ impl App {
             dock: state::DockState::new(),
             header_hit_zones: Vec::new(),
             ws: state::WorkspaceManager::new(),
+            context_artifacts: state::ContextArtifactStore::new(),
             settings: {
                 let s = state::settings::load_settings();
                 crate::tide_terminal::set_auto_integration(s.auto_integration);
@@ -212,6 +219,7 @@ impl App {
             assoc: state::PaneAssociations::new(),
             gateway: state::GatewayStatus::new(),
             pending_subscribe_tx: None,
+            pending_cli_caller_pane: None,
             pending_platform_commands: Vec::new(),
             notified_panes: std::collections::HashSet::new(),
         }
@@ -297,6 +305,9 @@ impl App {
             panes: HashMap::new(),
         });
         self.ws.workspace_extras.push(WorkspaceExtras::new());
+        self.ws
+            .workspace_context_artifacts
+            .push(state::ContextArtifactStore::new());
         self.ws.active = 0;
     }
 }
@@ -714,12 +725,17 @@ impl crate::application::ports::inward::GatewayPort for App {
     }
     fn gateway_subscribe(
         &mut self,
+        owner_pane_id: Option<PaneId>,
         tx: std::sync::mpsc::Sender<String>,
         event_filter: Vec<String>,
     ) -> bool {
         self.gateway
             .subscribers
-            .push(crate::state::gateway_status::Subscriber { tx, event_filter });
+            .push(crate::state::gateway_status::Subscriber {
+                tx,
+                event_filter,
+                owner_pane_id,
+            });
         true
     }
     fn take_subscribe_tx(&mut self) -> Option<std::sync::mpsc::Sender<String>> {

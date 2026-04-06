@@ -1,10 +1,11 @@
-mod search_bar;
-mod save_dialog;
 mod completions;
+mod config_page;
+mod context_comment;
+mod context_menu;
 mod file_finder;
 pub(crate) mod git_switcher;
-mod context_menu;
-mod config_page;
+mod save_dialog;
+mod search_bar;
 
 use unicode_width::UnicodeWidthChar;
 
@@ -16,7 +17,9 @@ use crate::App;
 
 /// Sum of display widths for characters in `s`, treating wide (CJK) chars as 2 columns.
 pub(super) fn visual_width(s: &str) -> usize {
-    s.chars().map(|c| UnicodeWidthChar::width(c).unwrap_or(1)).sum()
+    s.chars()
+        .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
+        .sum()
 }
 
 // ── Shared helper functions ──
@@ -34,21 +37,42 @@ pub(super) fn draw_popup_rounded_bg(
     // Outer rounded rect (border)
     renderer.draw_top_rounded_rect(rect, border, radius);
     // Inner rounded rect (fill, inset by border width)
-    let inner = Rect::new(rect.x + bw, rect.y + bw, rect.width - 2.0 * bw, rect.height - 2.0 * bw);
+    let inner = Rect::new(
+        rect.x + bw,
+        rect.y + bw,
+        rect.width - 2.0 * bw,
+        rect.height - 2.0 * bw,
+    );
     renderer.draw_top_rounded_rect(inner, fill, (radius - bw).max(0.0));
 }
 
 /// Draw a 1px (or `POPUP_BORDER_WIDTH`) border around `rect`.
-pub(super) fn draw_popup_border(renderer: &mut crate::tide_renderer::WgpuRenderer, rect: Rect, color: crate::tide_core::Color) {
+pub(super) fn draw_popup_border(
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    rect: Rect,
+    color: crate::tide_core::Color,
+) {
     let bw = POPUP_BORDER_WIDTH;
     renderer.draw_top_rect(Rect::new(rect.x, rect.y, rect.width, bw), color);
-    renderer.draw_top_rect(Rect::new(rect.x, rect.y + rect.height - bw, rect.width, bw), color);
+    renderer.draw_top_rect(
+        Rect::new(rect.x, rect.y + rect.height - bw, rect.width, bw),
+        color,
+    );
     renderer.draw_top_rect(Rect::new(rect.x, rect.y, bw, rect.height), color);
-    renderer.draw_top_rect(Rect::new(rect.x + rect.width - bw, rect.y, bw, rect.height), color);
+    renderer.draw_top_rect(
+        Rect::new(rect.x + rect.width - bw, rect.y, bw, rect.height),
+        color,
+    );
 }
 
 /// Draw a cursor beam (vertical line) at the given position.
-pub(super) fn draw_cursor_beam(renderer: &mut crate::tide_renderer::WgpuRenderer, x: f32, y: f32, height: f32, color: crate::tide_core::Color) {
+pub(super) fn draw_cursor_beam(
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    x: f32,
+    y: f32,
+    height: f32,
+    color: crate::tide_core::Color,
+) {
     renderer.draw_top_rect(Rect::new(x, y, CURSOR_BEAM_WIDTH, height), color);
 }
 
@@ -76,10 +100,16 @@ pub(super) fn bold_style(color: crate::tide_core::Color) -> TextStyle {
     }
 }
 
-
 /// Draw a full-screen dim overlay (scrim) behind floating popups.
-pub(super) fn draw_popup_scrim(renderer: &mut crate::tide_renderer::WgpuRenderer, logical_size: crate::tide_core::Size, color: crate::tide_core::Color) {
-    renderer.draw_top_rect(Rect::new(0.0, 0.0, logical_size.width, logical_size.height), color);
+pub(super) fn draw_popup_scrim(
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    logical_size: crate::tide_core::Size,
+    color: crate::tide_core::Color,
+) {
+    renderer.draw_top_rect(
+        Rect::new(0.0, 0.0, logical_size.width, logical_size.height),
+        color,
+    );
 }
 
 /// Render all overlay UI elements on the top layer: search bars, notification bars,
@@ -97,6 +127,7 @@ pub(crate) fn render_overlays(
     file_finder::render_file_finder(app, renderer, p);
     git_switcher::render_git_switcher(app, renderer, p);
     context_menu::render_context_menu(app, renderer, p);
+    context_comment::render_context_comment_composer(app, renderer, p);
     config_page::render_config_page(app, renderer, p);
 }
 
@@ -117,7 +148,10 @@ fn render_notification_bars(
         let content_top = rect.y + content_top_off;
         let bar_x = rect.x + PANE_PADDING;
         let bar_w = rect.width - 2.0 * PANE_PADDING;
-        bar_panes.push((id, Rect::new(bar_x, content_top, bar_w, CONFLICT_BAR_HEIGHT)));
+        bar_panes.push((
+            id,
+            Rect::new(bar_x, content_top, bar_w, CONFLICT_BAR_HEIGHT),
+        ));
     }
 
     for (pane_id, bar_rect) in bar_panes {
@@ -141,7 +175,12 @@ fn render_notification_bars(
                 let cancel_x = bar_rect.x + bar_rect.width - cancel_w - 4.0;
                 let cancel_rect = Rect::new(cancel_x, btn_y, cancel_w, btn_h);
                 renderer.draw_top_rect(cancel_rect, p.conflict_bar_btn);
-                renderer.draw_top_text(cancel_text, Vec2::new(cancel_x + btn_pad, text_y), btn_style, cancel_rect);
+                renderer.draw_top_text(
+                    cancel_text,
+                    Vec2::new(cancel_x + btn_pad, text_y),
+                    btn_style,
+                    cancel_rect,
+                );
 
                 // Keep button
                 let keep_text = "Keep";
@@ -149,7 +188,12 @@ fn render_notification_bars(
                 let keep_x = cancel_x - keep_w - 4.0;
                 let keep_rect = Rect::new(keep_x, btn_y, keep_w, btn_h);
                 renderer.draw_top_rect(keep_rect, p.conflict_bar_btn);
-                renderer.draw_top_text(keep_text, Vec2::new(keep_x + btn_pad, text_y), btn_style, keep_rect);
+                renderer.draw_top_text(
+                    keep_text,
+                    Vec2::new(keep_x + btn_pad, text_y),
+                    btn_style,
+                    keep_rect,
+                );
 
                 // Delete button (destructive, leftmost of buttons)
                 let delete_text = "Delete";
@@ -158,7 +202,12 @@ fn render_notification_bars(
                 let delete_rect = Rect::new(delete_x, btn_y, delete_w, btn_h);
                 let delete_bg = crate::tide_core::Color::new(0.6, 0.2, 0.2, 1.0);
                 renderer.draw_top_rect(delete_rect, delete_bg);
-                renderer.draw_top_text(delete_text, Vec2::new(delete_x + btn_pad, text_y), btn_style, delete_rect);
+                renderer.draw_top_text(
+                    delete_text,
+                    Vec2::new(delete_x + btn_pad, text_y),
+                    btn_style,
+                    delete_rect,
+                );
 
                 continue;
             }
@@ -171,7 +220,12 @@ fn render_notification_bars(
                 renderer.draw_top_rect(bar_rect, p.conflict_bar_bg);
                 let text_y = bar_rect.y + (CONFLICT_BAR_HEIGHT - cell_size.height) / 2.0;
                 let ts = text_style(p.conflict_bar_text);
-                renderer.draw_top_text("Unsaved changes", Vec2::new(bar_rect.x + 8.0, text_y), ts, bar_rect);
+                renderer.draw_top_text(
+                    "Unsaved changes",
+                    Vec2::new(bar_rect.x + 8.0, text_y),
+                    ts,
+                    bar_rect,
+                );
 
                 let btn_style = bold_style(p.conflict_bar_btn_text);
                 let btn_pad = 8.0;
@@ -184,7 +238,12 @@ fn render_notification_bars(
                 let cancel_x = bar_rect.x + bar_rect.width - cancel_w - 4.0;
                 let cancel_rect = Rect::new(cancel_x, btn_y, cancel_w, btn_h);
                 renderer.draw_top_rect(cancel_rect, p.conflict_bar_btn);
-                renderer.draw_top_text(cancel_text, Vec2::new(cancel_x + btn_pad, text_y), btn_style, cancel_rect);
+                renderer.draw_top_text(
+                    cancel_text,
+                    Vec2::new(cancel_x + btn_pad, text_y),
+                    btn_style,
+                    cancel_rect,
+                );
 
                 // Don't Save button
                 let dont_save_text = "Don't Save";
@@ -192,7 +251,12 @@ fn render_notification_bars(
                 let dont_save_x = cancel_x - dont_save_w - 4.0;
                 let dont_save_rect = Rect::new(dont_save_x, btn_y, dont_save_w, btn_h);
                 renderer.draw_top_rect(dont_save_rect, p.conflict_bar_btn);
-                renderer.draw_top_text(dont_save_text, Vec2::new(dont_save_x + btn_pad, text_y), btn_style, dont_save_rect);
+                renderer.draw_top_text(
+                    dont_save_text,
+                    Vec2::new(dont_save_x + btn_pad, text_y),
+                    btn_style,
+                    dont_save_rect,
+                );
 
                 // Save button
                 let save_text = "Save";
@@ -200,7 +264,12 @@ fn render_notification_bars(
                 let save_x = dont_save_x - save_w - 4.0;
                 let save_rect = Rect::new(save_x, btn_y, save_w, btn_h);
                 renderer.draw_top_rect(save_rect, p.conflict_bar_btn);
-                renderer.draw_top_text(save_text, Vec2::new(save_x + btn_pad, text_y), btn_style, save_rect);
+                renderer.draw_top_text(
+                    save_text,
+                    Vec2::new(save_x + btn_pad, text_y),
+                    btn_style,
+                    save_rect,
+                );
 
                 continue; // Don't also show conflict bar
             }
@@ -232,7 +301,12 @@ fn render_notification_bars(
                 let overwrite_x = bar_rect.x + bar_rect.width - overwrite_w - 4.0;
                 let overwrite_rect = Rect::new(overwrite_x, btn_y, overwrite_w, btn_h);
                 renderer.draw_top_rect(overwrite_rect, p.conflict_bar_btn);
-                renderer.draw_top_text(overwrite_text, Vec2::new(overwrite_x + btn_pad, text_y), btn_style, overwrite_rect);
+                renderer.draw_top_text(
+                    overwrite_text,
+                    Vec2::new(overwrite_x + btn_pad, text_y),
+                    btn_style,
+                    overwrite_rect,
+                );
 
                 // Reload button (not for deleted files)
                 if !pane.file_deleted {
@@ -241,7 +315,12 @@ fn render_notification_bars(
                     let reload_x = overwrite_x - reload_w - 4.0;
                     let reload_rect = Rect::new(reload_x, btn_y, reload_w, btn_h);
                     renderer.draw_top_rect(reload_rect, p.conflict_bar_btn);
-                    renderer.draw_top_text(reload_text, Vec2::new(reload_x + btn_pad, text_y), btn_style, reload_rect);
+                    renderer.draw_top_text(
+                        reload_text,
+                        Vec2::new(reload_x + btn_pad, text_y),
+                        btn_style,
+                        reload_rect,
+                    );
                 }
             }
         }

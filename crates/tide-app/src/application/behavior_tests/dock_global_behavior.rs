@@ -1,10 +1,10 @@
 // Spec: docs/specs/dock-global.md
-use crate::pane::{PaneKind, TerminalPane};
 use crate::pane::editor::EditorPane;
+use crate::pane::{PaneKind, TerminalPane};
 use crate::state::FocusArea;
+use crate::tide_core::LayoutEngine;
 use crate::App;
 use crate::DockPort;
-use crate::tide_core::LayoutEngine;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -27,7 +27,9 @@ fn app_with_real_terminal() -> (App, u64) {
 
 fn app_with_two_real_terminals() -> (App, u64, u64) {
     let (mut app, t1) = app_with_real_terminal();
-    let t2 = app.layout.split(t1, crate::tide_core::SplitDirection::Vertical);
+    let t2 = app
+        .layout
+        .split(t1, crate::tide_core::SplitDirection::Vertical);
     let tp2 = TerminalPane::with_cwd(t2, 80, 24, None, true).unwrap();
     app.panes.insert(t2, PaneKind::Terminal(tp2));
     (app, t1, t2)
@@ -60,7 +62,8 @@ fn switching_terminals_preserves_dock_width() {
 
     // Add editor to t1's dock so dock stays open
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.focus.focused = Some(t1);
     app.add_pane_to_dock(e1);
 
@@ -70,7 +73,10 @@ fn switching_terminals_preserves_dock_width() {
     app.focus.focused = Some(t2);
     app.swap_dock_state(t2);
 
-    assert_eq!(app.dock.dock_width, 600.0, "dock width must persist across terminal switch");
+    assert_eq!(
+        app.dock.dock_width, 600.0,
+        "dock width must persist across terminal switch"
+    );
 }
 
 // --- UC-2: PinPane ---
@@ -82,7 +88,8 @@ fn pinning_moves_pane_to_pinned_dock_layout() {
     app.focus.focused = Some(t1);
 
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.add_pane_to_dock(e1);
 
     app.focus.focused = Some(e1);
@@ -103,7 +110,8 @@ fn pinning_preserves_associated_terminal() {
     app.focus.focused = Some(t1);
 
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.add_pane_to_dock(e1);
 
     assert_eq!(app.assoc.associated_terminal.get(&e1), Some(&t1));
@@ -111,8 +119,11 @@ fn pinning_preserves_associated_terminal() {
     app.focus.focused = Some(e1);
     app.toggle_dock_pin();
 
-    assert_eq!(app.assoc.associated_terminal.get(&e1), Some(&t1),
-        "pinning must preserve associated_terminal for unpin");
+    assert_eq!(
+        app.assoc.associated_terminal.get(&e1),
+        Some(&t1),
+        "pinning must preserve associated_terminal for unpin"
+    );
 }
 
 #[test]
@@ -122,11 +133,13 @@ fn pinned_panes_in_pinned_dock_layout() {
     app.focus.focused = Some(t1);
 
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.add_pane_to_dock(e1);
 
     let e2 = app.layout.alloc_id();
-    app.panes.insert(e2, PaneKind::Editor(EditorPane::new_empty(e2)));
+    app.panes
+        .insert(e2, PaneKind::Editor(EditorPane::new_empty(e2)));
     app.add_pane_to_dock(e2);
 
     app.focus.focused = Some(e1);
@@ -148,7 +161,8 @@ fn pinned_pane_visible_from_any_terminal() {
     app.focus.focused = Some(t1);
 
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.add_pane_to_dock(e1);
 
     app.focus.focused = Some(e1);
@@ -158,7 +172,10 @@ fn pinned_pane_visible_from_any_terminal() {
     app.focus.focused = Some(t2);
     app.swap_dock_state(t2);
 
-    assert!(app.is_pane_pinned(e1), "pinned pane should be visible from any terminal");
+    assert!(
+        app.is_pane_pinned(e1),
+        "pinned pane should be visible from any terminal"
+    );
     assert!(app.has_pinned_panes());
 }
 
@@ -169,7 +186,8 @@ fn focused_terminal_not_changed_by_pinned_pane_focus() {
     app.focus.focused = Some(t1);
 
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.add_pane_to_dock(e1);
 
     app.focus.focused = Some(e1);
@@ -182,8 +200,11 @@ fn focused_terminal_not_changed_by_pinned_pane_focus() {
 
     // Now focus the pinned pane — stage_focused should still be t2
     app.focus.focused = Some(e1);
-    assert_eq!(app.focused_terminal_id(), Some(t2),
-        "focusing pinned pane must not change stage_focused");
+    assert_eq!(
+        app.focused_terminal_id(),
+        Some(t2),
+        "focusing pinned pane must not change stage_focused"
+    );
 }
 
 // --- UC-4: UnpinPane ---
@@ -195,7 +216,8 @@ fn unpinned_pane_returns_to_owning_terminal_dock() {
     app.focus.focused = Some(t1);
 
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.add_pane_to_dock(e1);
 
     // Pin
@@ -221,7 +243,8 @@ fn unpinned_pane_not_in_pinned_dock_layout() {
     app.focus.focused = Some(t1);
 
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.add_pane_to_dock(e1);
 
     app.focus.focused = Some(e1);
@@ -243,7 +266,8 @@ fn no_placeholder_when_pinned_panes_exist() {
     app.focus.focused = Some(t1);
 
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.add_pane_to_dock(e1);
 
     // Pin e1
@@ -256,7 +280,10 @@ fn no_placeholder_when_pinned_panes_exist() {
     app.swap_dock_state(t2);
 
     // Dock should remain open (pinned content exists)
-    assert!(app.dock.dock_open, "dock should stay open when pinned panes exist");
+    assert!(
+        app.dock.dock_open,
+        "dock should stay open when pinned panes exist"
+    );
 }
 
 #[test]
@@ -272,10 +299,13 @@ fn placeholder_when_no_dock_panes_and_no_pinned() {
     // Should have created a placeholder
     if let Some(PaneKind::Terminal(tp)) = app.panes.get(&t1) {
         let dock_panes = tp.dock_layout.all_pane_ids();
-        assert!(!dock_panes.is_empty(), "placeholder should exist when no pinned panes");
-        let has_launcher = dock_panes.iter().any(|&id|
-            matches!(app.panes.get(&id), Some(PaneKind::Launcher(_)))
+        assert!(
+            !dock_panes.is_empty(),
+            "placeholder should exist when no pinned panes"
         );
+        let has_launcher = dock_panes
+            .iter()
+            .any(|&id| matches!(app.panes.get(&id), Some(PaneKind::Launcher(_))));
         assert!(has_launcher, "placeholder should be a Launcher");
     }
 }
@@ -291,12 +321,17 @@ fn drag_into_pinned_group_pins_pane() {
     app.focus.focused = Some(t1);
 
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.add_pane_to_dock(e1);
 
     assert!(!app.is_pane_pinned(e1));
 
-    crate::adapter::inward::click_adapter::pane::handle_drop(&mut app, e1, DropDestination::PinnedGroup);
+    crate::adapter::inward::click_adapter::pane::handle_drop(
+        &mut app,
+        e1,
+        DropDestination::PinnedGroup,
+    );
 
     assert!(app.is_pane_pinned(e1), "pane should be pinned after drop");
 }
@@ -310,7 +345,8 @@ fn drag_out_of_pinned_group_unpins_pane() {
     app.focus.focused = Some(t1);
 
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.add_pane_to_dock(e1);
 
     // Pin
@@ -319,9 +355,16 @@ fn drag_out_of_pinned_group_unpins_pane() {
     assert!(app.is_pane_pinned(e1));
 
     // Drop onto dock root = unpin
-    crate::adapter::inward::click_adapter::pane::handle_drop(&mut app, e1, DropDestination::DockRoot(crate::tide_core::DropZone::Right));
+    crate::adapter::inward::click_adapter::pane::handle_drop(
+        &mut app,
+        e1,
+        DropDestination::DockRoot(crate::tide_core::DropZone::Right),
+    );
 
-    assert!(!app.is_pane_pinned(e1), "pane should be unpinned after drop out");
+    assert!(
+        !app.is_pane_pinned(e1),
+        "pane should be unpinned after drop out"
+    );
 }
 
 // --- Pin keeps focused on the pane ---
@@ -334,7 +377,8 @@ fn pin_keeps_focused_on_pane() {
     app.focus.focused = Some(t1);
 
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.add_pane_to_dock(e1);
 
     app.focus.focused = Some(e1);

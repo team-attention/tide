@@ -1,6 +1,6 @@
 // Spec: docs/specs/browser-pane-ux.md
-use crate::adapter::inward::event_loop_adapter;
 use crate::adapter::inward::click_adapter::pane::handle_browser_nav_click;
+use crate::adapter::inward::event_loop_adapter;
 use crate::adapter::inward::keyboard_adapter;
 use crate::application::ports::inward::ActionPort;
 use crate::application::ports::outward::clipboard_port::ClipboardPort;
@@ -13,9 +13,9 @@ use crate::tide_core::{InputEvent, Key, Modifiers, MouseButton, Rect, Vec2};
 use crate::tide_input::{Action, GlobalAction};
 use crate::App;
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::io;
 use std::path::Path;
+use std::rc::Rc;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -28,7 +28,8 @@ fn app_with_browser() -> (App, u64) {
     let mut app = test_app();
     let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
-    app.panes.insert(id, PaneKind::Browser(BrowserPane::new(id)));
+    app.panes
+        .insert(id, PaneKind::Browser(BrowserPane::new(id)));
     app.focus.focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;
     app.router.set_focused(id);
@@ -36,7 +37,12 @@ fn app_with_browser() -> (App, u64) {
 }
 
 fn cmd() -> Modifiers {
-    Modifiers { meta: true, ctrl: false, shift: false, alt: false }
+    Modifiers {
+        meta: true,
+        ctrl: false,
+        shift: false,
+        alt: false,
+    }
 }
 
 fn browser_nav_url_bar_click_x(rect: Rect, cell_w: f32, columns: f32) -> f32 {
@@ -108,7 +114,10 @@ fn clicking_empty_browser_pane_content_preserves_url_bar_focus() {
 
     let bp = match app.panes.get(&id) {
         Some(PaneKind::Browser(bp)) => bp,
-        other => panic!("expected Browser pane, got {:?}", other.map(|_| "non-browser")),
+        other => panic!(
+            "expected Browser pane, got {:?}",
+            other.map(|_| "non-browser")
+        ),
     };
     assert!(bp.url_input_focused);
 }
@@ -132,7 +141,10 @@ fn clicking_loading_browser_pane_content_preserves_url_bar_focus() {
 
     let bp = match app.panes.get(&id) {
         Some(PaneKind::Browser(bp)) => bp,
-        other => panic!("expected Browser pane, got {:?}", other.map(|_| "non-browser")),
+        other => panic!(
+            "expected Browser pane, got {:?}",
+            other.map(|_| "non-browser")
+        ),
     };
     assert!(bp.url_input_focused);
 }
@@ -160,7 +172,10 @@ fn clicking_navigated_browser_pane_content_focuses_webview() {
 
     let bp = match app.panes.get(&id) {
         Some(PaneKind::Browser(bp)) => bp,
-        other => panic!("expected Browser pane, got {:?}", other.map(|_| "non-browser")),
+        other => panic!(
+            "expected Browser pane, got {:?}",
+            other.map(|_| "non-browser")
+        ),
     };
     assert!(!bp.url_input_focused);
 }
@@ -180,7 +195,10 @@ fn cmd_l_focuses_the_browser_url_bar_after_navigation() {
 
     let bp = match app.panes.get(&id) {
         Some(PaneKind::Browser(bp)) => bp,
-        other => panic!("expected Browser pane, got {:?}", other.map(|_| "non-browser")),
+        other => panic!(
+            "expected Browser pane, got {:?}",
+            other.map(|_| "non-browser")
+        ),
     };
     let len = bp.url.chars().count();
     assert!(bp.url_input_focused);
@@ -208,7 +226,10 @@ fn clicking_browser_url_bar_positions_cursor_after_browser_actions() {
 
     let bp = match app.panes.get(&id) {
         Some(PaneKind::Browser(bp)) => bp,
-        other => panic!("expected Browser pane, got {:?}", other.map(|_| "non-browser")),
+        other => panic!(
+            "expected Browser pane, got {:?}",
+            other.map(|_| "non-browser")
+        ),
     };
     assert_eq!(bp.url_input_cursor, 8);
     assert!(bp.url_selection.is_none());
@@ -237,7 +258,10 @@ fn incidental_browser_content_click_does_not_cancel_url_bar_editing() {
 
     let bp = match app.panes.get(&id) {
         Some(PaneKind::Browser(bp)) => bp,
-        other => panic!("expected Browser pane, got {:?}", other.map(|_| "non-browser")),
+        other => panic!(
+            "expected Browser pane, got {:?}",
+            other.map(|_| "non-browser")
+        ),
     };
     assert!(bp.url_input_focused);
     assert_eq!(bp.url_input, "https://example.com/docs");
@@ -250,7 +274,9 @@ fn copy_url_action_copies_the_current_browser_url() {
     // UC-4 BR-17: `Copy URL` copies the current Browser Pane URL
     let (mut app, id) = app_with_browser();
     let writes = Rc::new(RefCell::new(Vec::new()));
-    app.ports.clipboard = Box::new(RecordingClipboard { writes: writes.clone() });
+    app.ports.clipboard = Box::new(RecordingClipboard {
+        writes: writes.clone(),
+    });
     if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&id) {
         bp.url = "https://example.com".to_string();
         bp.url_input = bp.url.clone();
@@ -268,7 +294,9 @@ fn copy_url_action_prefers_selected_url_input_while_editing() {
     // UC-4 BR-17: `Copy URL` copies the current Browser Pane URL state, preferring selected Browser URL-bar text or the current Browser URL-bar input while editing
     let (mut app, id) = app_with_browser();
     let writes = Rc::new(RefCell::new(Vec::new()));
-    app.ports.clipboard = Box::new(RecordingClipboard { writes: writes.clone() });
+    app.ports.clipboard = Box::new(RecordingClipboard {
+        writes: writes.clone(),
+    });
     if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&id) {
         bp.url = "https://example.com".to_string();
         bp.url_input = "https://example.com/login".to_string();
@@ -287,7 +315,9 @@ fn open_externally_action_uses_process_port_open_url() {
     // UC-4 BR-18: `Open externally` calls `ProcessPort::open_url()` with the current Browser Pane URL
     let (mut app, id) = app_with_browser();
     let opened_urls = Rc::new(RefCell::new(Vec::new()));
-    app.ports.process = Box::new(RecordingProcess { opened_urls: opened_urls.clone() });
+    app.ports.process = Box::new(RecordingProcess {
+        opened_urls: opened_urls.clone(),
+    });
     if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&id) {
         bp.url = "https://example.com/login".to_string();
         bp.url_input = bp.url.clone();
@@ -297,7 +327,10 @@ fn open_externally_action_uses_process_port_open_url() {
 
     app.open_focused_browser_externally();
 
-    assert_eq!(opened_urls.borrow().as_slice(), ["https://example.com/login"]);
+    assert_eq!(
+        opened_urls.borrow().as_slice(),
+        ["https://example.com/login"]
+    );
 }
 
 #[test]
@@ -305,7 +338,9 @@ fn open_externally_action_prefers_url_input_while_editing() {
     // UC-4 BR-18: `Open externally` calls `ProcessPort::open_url()` with the current Browser Pane URL state, preferring the current Browser URL-bar input while editing
     let (mut app, id) = app_with_browser();
     let opened_urls = Rc::new(RefCell::new(Vec::new()));
-    app.ports.process = Box::new(RecordingProcess { opened_urls: opened_urls.clone() });
+    app.ports.process = Box::new(RecordingProcess {
+        opened_urls: opened_urls.clone(),
+    });
     if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&id) {
         bp.url = "https://example.com".to_string();
         bp.url_input = "https://example.com/login".to_string();
@@ -315,10 +350,28 @@ fn open_externally_action_prefers_url_input_while_editing() {
 
     app.open_focused_browser_externally();
 
-    assert_eq!(opened_urls.borrow().as_slice(), ["https://example.com/login"]);
+    assert_eq!(
+        opened_urls.borrow().as_slice(),
+        ["https://example.com/login"]
+    );
 }
 
 // --- UC-5: PreserveBrowserPaneLoadingFeedback ---
+
+#[test]
+fn context_comment_composer_hides_browser_native_view_for_overlays() {
+    // UC-5 BR-20: Any ModalStack popup, including the context comment composer, hides the native Browser Pane view
+    let (mut app, id) = app_with_browser();
+    app.modal.context_comment_composer = Some(crate::ContextCommentComposerState::new(
+        id,
+        id,
+        "browser".to_string(),
+        None,
+        "selected browser text".to_string(),
+    ));
+
+    assert!(app.browser_native_views_obscured_by_overlays());
+}
 
 #[test]
 fn browser_ime_target_is_none_when_navigated_browser_prefers_content() {
@@ -331,12 +384,15 @@ fn browser_ime_target_is_none_when_navigated_browser_prefers_content() {
         bp.url_input_focused = false;
     }
 
-    assert_eq!(event_loop_adapter::effective_ime_target(
-        app.focus.focused,
-        app.focus.search_focus,
-        &app.modal,
-        &app.panes,
-    ), None);
+    assert_eq!(
+        event_loop_adapter::effective_ime_target(
+            app.focus.focused,
+            app.focus.search_focus,
+            &app.modal,
+            &app.panes,
+        ),
+        None
+    );
 }
 
 #[test]
@@ -351,10 +407,13 @@ fn search_focus_keeps_browser_as_effective_ime_target() {
     }
     app.focus.search_focus = Some(id);
 
-    assert_eq!(event_loop_adapter::effective_ime_target(
-        app.focus.focused,
-        app.focus.search_focus,
-        &app.modal,
-        &app.panes,
-    ), Some(id));
+    assert_eq!(
+        event_loop_adapter::effective_ime_target(
+            app.focus.focused,
+            app.focus.search_focus,
+            &app.modal,
+            &app.panes,
+        ),
+        Some(id)
+    );
 }

@@ -19,7 +19,12 @@ pub(super) fn render_titlebar_and_sidebar(
         renderer.draw_chrome_rect(tb, p.file_tree_bg);
         // Bottom border
         renderer.draw_chrome_rect(
-            Rect::new(0.0, app.window.top_inset - BORDER_WIDTH, logical.width, BORDER_WIDTH),
+            Rect::new(
+                0.0,
+                app.window.top_inset - BORDER_WIDTH,
+                logical.width,
+                BORDER_WIDTH,
+            ),
             p.border_subtle,
         );
         // Centered title: show "Tide" or "Tide · N" when multiple workspaces
@@ -39,7 +44,10 @@ pub(super) fn render_titlebar_and_sidebar(
                 TextStyle {
                     foreground: p.tab_text,
                     background: None,
-                    bold: false, dim: false, italic: false, underline: false,
+                    bold: false,
+                    dim: false,
+                    italic: false,
+                    underline: false,
                 },
                 tb,
             );
@@ -60,20 +68,30 @@ pub(super) fn render_titlebar_and_sidebar(
                 let gear_h = cs.height + 6.0;
                 let gear_x = icon_x - gear_w - 8.0;
                 let gear_y = (app.window.top_inset - gear_h) / 2.0;
-                let gear_hovered = matches!(app.interaction.hover_target, Some(HoverTarget::TitlebarSettings));
+                let gear_hovered = matches!(
+                    app.interaction.hover_target,
+                    Some(HoverTarget::TitlebarSettings)
+                );
                 if gear_hovered {
                     let bg_rect = Rect::new(gear_x, gear_y, gear_w, gear_h);
                     renderer.draw_chrome_rounded_rect(bg_rect, p.badge_bg, 4.0);
                 }
                 let gear_text_y = gear_y + (gear_h - cs.height) / 2.0;
-                let gear_color = if app.modal.config_page.is_some() { p.dock_tab_underline } else { p.tab_text };
+                let gear_color = if app.modal.config_page.is_some() {
+                    p.dock_tab_underline
+                } else {
+                    p.tab_text
+                };
                 renderer.draw_chrome_text(
                     gear_icon,
                     Vec2::new(gear_x + gear_pad, gear_text_y),
                     TextStyle {
                         foreground: gear_color,
                         background: None,
-                        bold: false, dim: false, italic: false, underline: false,
+                        bold: false,
+                        dim: false,
+                        italic: false,
+                        underline: false,
                     },
                     tb,
                 );
@@ -91,12 +109,19 @@ pub(super) fn render_titlebar_and_sidebar(
             let theme_h = cs.height + 6.0;
             let theme_x = settings_x - theme_w - 8.0;
             let theme_y = (app.window.top_inset - theme_h) / 2.0;
-            let theme_hovered = matches!(app.interaction.hover_target, Some(HoverTarget::TitlebarTheme));
+            let theme_hovered = matches!(
+                app.interaction.hover_target,
+                Some(HoverTarget::TitlebarTheme)
+            );
             if theme_hovered {
                 let bg_rect = Rect::new(theme_x, theme_y, theme_w, theme_h);
                 renderer.draw_chrome_rounded_rect(bg_rect, p.badge_bg, 4.0);
             }
-            let theme_icon = if app.window.dark_mode { "\u{f186}" } else { "\u{f185}" }; // moon / sun
+            let theme_icon = if app.window.dark_mode {
+                "\u{f186}"
+            } else {
+                "\u{f185}"
+            }; // moon / sun
             let theme_text_y = theme_y + (theme_h - cs.height) / 2.0;
             renderer.draw_chrome_text(
                 theme_icon,
@@ -104,7 +129,10 @@ pub(super) fn render_titlebar_and_sidebar(
                 TextStyle {
                     foreground: p.tab_text,
                     background: None,
-                    bold: false, dim: false, italic: false, underline: false,
+                    bold: false,
+                    dim: false,
+                    italic: false,
+                    underline: false,
                 },
                 tb,
             );
@@ -117,7 +145,10 @@ pub(super) fn render_titlebar_and_sidebar(
             let integ_y = (app.window.top_inset - integ_h) / 2.0;
             {
                 let is_active = app.settings.auto_integration;
-                let is_hovered = matches!(app.interaction.hover_target, Some(HoverTarget::TitlebarIntegration));
+                let is_hovered = matches!(
+                    app.interaction.hover_target,
+                    Some(HoverTarget::TitlebarIntegration)
+                );
                 let bg_color = if is_hovered {
                     p.badge_bg
                 } else if is_active {
@@ -128,11 +159,16 @@ pub(super) fn render_titlebar_and_sidebar(
                 if bg_color.a > 0.0 {
                     renderer.draw_chrome_rounded_rect(
                         Rect::new(integ_x, integ_y, integ_w, integ_h),
-                        bg_color, 4.0,
+                        bg_color,
+                        4.0,
                     );
                 }
                 let icon = "\u{f1e6}"; // FontAwesome plug icon
-                let icon_color = if is_active { p.dock_tab_underline } else { p.tab_text };
+                let icon_color = if is_active {
+                    p.dock_tab_underline
+                } else {
+                    p.tab_text
+                };
                 let text_y = integ_y + (integ_h - cs.height) / 2.0;
                 renderer.draw_chrome_text(
                     icon,
@@ -140,7 +176,10 @@ pub(super) fn render_titlebar_and_sidebar(
                     TextStyle {
                         foreground: icon_color,
                         background: None,
-                        bold: false, dim: false, italic: false, underline: false,
+                        bold: false,
+                        dim: false,
+                        italic: false,
+                        underline: false,
                     },
                     tb,
                 );
@@ -152,12 +191,13 @@ pub(super) fn render_titlebar_and_sidebar(
             // Helper: render a titlebar toggle button (icon + ⌘N hint, badge style)
             // Returns the total width consumed
             let render_titlebar_btn = |renderer: &mut crate::tide_renderer::WgpuRenderer,
-                                        icon_char: &str,
-                                        hint: &str,
-                                        hint_char_count: usize,
-                                        right_edge: f32,
-                                        is_active: bool,
-                                        is_hovered: bool| -> f32 {
+                                       icon_char: &str,
+                                       hint: &str,
+                                       hint_char_count: usize,
+                                       right_edge: f32,
+                                       is_active: bool,
+                                       is_hovered: bool|
+             -> f32 {
                 let btn_pad_h = 6.0_f32;
                 let icon_w_chars = 1;
                 let gap_chars = 1; // space between icon and hint
@@ -182,28 +222,42 @@ pub(super) fn render_titlebar_and_sidebar(
 
                 // Icon
                 let text_y = btn_y + (btn_h - cs.height) / 2.0;
-                let icon_color = if is_active { p.dock_tab_underline } else { p.tab_text };
+                let icon_color = if is_active {
+                    p.dock_tab_underline
+                } else {
+                    p.tab_text
+                };
                 renderer.draw_chrome_text(
                     icon_char,
                     Vec2::new(btn_x + btn_pad_h, text_y),
                     TextStyle {
                         foreground: icon_color,
                         background: None,
-                        bold: false, dim: false, italic: false, underline: false,
+                        bold: false,
+                        dim: false,
+                        italic: false,
+                        underline: false,
                     },
                     tb_clip,
                 );
 
                 // Hint text
                 let hint_x = btn_x + btn_pad_h + (icon_w_chars + gap_chars) as f32 * cs.width;
-                let hint_color = if is_active { p.badge_text } else { p.badge_text_dimmed };
+                let hint_color = if is_active {
+                    p.badge_text
+                } else {
+                    p.badge_text_dimmed
+                };
                 renderer.draw_chrome_text(
                     hint,
                     Vec2::new(hint_x, text_y),
                     TextStyle {
                         foreground: hint_color,
                         background: None,
-                        bold: false, dim: false, italic: false, underline: false,
+                        bold: false,
+                        dim: false,
+                        italic: false,
+                        underline: false,
                     },
                     tb_clip,
                 );
@@ -216,21 +270,36 @@ pub(super) fn render_titlebar_and_sidebar(
 
             // Dock button
             let w = render_titlebar_btn(
-                renderer, "\u{f009}", "\u{2318}4", 2, cur_right, app.dock.dock_open,
+                renderer,
+                "\u{f009}",
+                "\u{2318}4",
+                2,
+                cur_right,
+                app.dock.dock_open,
                 app.interaction.hover_target.as_ref() == Some(&HoverTarget::TitlebarDock),
             );
             cur_right -= w + TITLEBAR_BUTTON_GAP;
 
             // FileTree button
             let w = render_titlebar_btn(
-                renderer, "\u{f07b}", "\u{2318}2", 2, cur_right, app.ft.visible,
+                renderer,
+                "\u{f07b}",
+                "\u{2318}2",
+                2,
+                cur_right,
+                app.ft.visible,
                 app.interaction.hover_target.as_ref() == Some(&HoverTarget::TitlebarFileTree),
             );
             cur_right -= w + TITLEBAR_BUTTON_GAP;
 
             // Workspace sidebar button
             let _w = render_titlebar_btn(
-                renderer, "\u{f24d}", "\u{2318}1", 2, cur_right, app.ws.show_sidebar,
+                renderer,
+                "\u{f24d}",
+                "\u{2318}1",
+                2,
+                cur_right,
+                app.ws.show_sidebar,
                 app.interaction.hover_target.as_ref() == Some(&HoverTarget::TitlebarWorkspace),
             );
         }
@@ -243,7 +312,11 @@ pub(super) fn render_titlebar_and_sidebar(
 
         // Focus-dependent styling (matches file_tree.rs pattern)
         let sidebar_focused = app.focus.focus_area == crate::state::FocusArea::FileTree && false; // sidebar has no FocusArea yet
-        let border_color = if sidebar_focused { p.border_focused } else { p.border_subtle };
+        let border_color = if sidebar_focused {
+            p.border_focused
+        } else {
+            p.border_subtle
+        };
         let border_w = if sidebar_focused { 2.0_f32 } else { 1.0_f32 };
 
         // Sidebar visual rect: inset from top/bottom for corner radius visibility
@@ -265,9 +338,18 @@ pub(super) fn render_titlebar_and_sidebar(
             let edge_x = sb_border.x + sb_border.width;
             let h = sb_border.height;
             let y = sb_border.y;
-            renderer.draw_chrome_rect(Rect::new(edge_x, y, 1.5, h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.12));
-            renderer.draw_chrome_rect(Rect::new(edge_x + 1.5, y, 1.5, h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.06));
-            renderer.draw_chrome_rect(Rect::new(edge_x + 3.0, y, 1.5, h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.02));
+            renderer.draw_chrome_rect(
+                Rect::new(edge_x, y, 1.5, h),
+                crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.12),
+            );
+            renderer.draw_chrome_rect(
+                Rect::new(edge_x + 1.5, y, 1.5, h),
+                crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.06),
+            );
+            renderer.draw_chrome_rect(
+                Rect::new(edge_x + 3.0, y, 1.5, h),
+                crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.02),
+            );
         }
 
         // Outer rounded rect (border)
@@ -279,7 +361,11 @@ pub(super) fn render_titlebar_and_sidebar(
             sb_border.width - 2.0 * border_w,
             sb_border.height - 2.0 * border_w,
         );
-        renderer.draw_chrome_rounded_rect(inset, p.file_tree_bg, (PANE_CORNER_RADIUS - border_w).max(0.0));
+        renderer.draw_chrome_rounded_rect(
+            inset,
+            p.file_tree_bg,
+            (PANE_CORNER_RADIUS - border_w).max(0.0),
+        );
 
         // Workspace items
         let geo = crate::adapter::inward::drag_drop_adapter::ws_sidebar_geometry(app).unwrap();
@@ -308,12 +394,18 @@ pub(super) fn render_titlebar_and_sidebar(
                 renderer.draw_chrome_rounded_rect(item_rect, row_bg, FILE_TREE_ROW_RADIUS);
                 // Left accent bar (matches file_tree.rs cursor row accent bar)
                 renderer.draw_chrome_rect(
-                    Rect::new(item_rect.x + 2.0, item_rect.y + 2.0, 2.0, item_rect.height - 4.0),
+                    Rect::new(
+                        item_rect.x + 2.0,
+                        item_rect.y + 2.0,
+                        2.0,
+                        item_rect.height - 4.0,
+                    ),
                     accent,
                 );
             } else {
                 // Hover highlight (matches file_tree.rs row radius)
-                if matches!(app.interaction.hover_target, Some(HoverTarget::WorkspaceSidebarItem(idx)) if idx == i) {
+                if matches!(app.interaction.hover_target, Some(HoverTarget::WorkspaceSidebarItem(idx)) if idx == i)
+                {
                     renderer.draw_chrome_rounded_rect(item_rect, p.badge_bg, FILE_TREE_ROW_RADIUS);
                 }
             }
@@ -325,13 +417,16 @@ pub(super) fn render_titlebar_and_sidebar(
                 // Truncate name to fit available width
                 let max_chars = (text_avail_w / cs.width).floor() as usize;
                 if ws_name.chars().count() > max_chars && max_chars > 1 {
-                    let truncated: String = ws_name.chars().take(max_chars.saturating_sub(1)).collect();
+                    let truncated: String =
+                        ws_name.chars().take(max_chars.saturating_sub(1)).collect();
                     format!("{}…", truncated)
                 } else {
                     ws_name
                 }
             };
-            let name_color = if is_active { p.tab_text_focused } else {
+            let name_color = if is_active {
+                p.tab_text_focused
+            } else {
                 p.ws_sidebar_text_inactive
             };
             // Center text horizontally and vertically in compact mode
@@ -354,7 +449,9 @@ pub(super) fn render_titlebar_and_sidebar(
                     foreground: name_color,
                     background: None,
                     bold: is_active,
-                    dim: false, italic: false, underline: false,
+                    dim: false,
+                    italic: false,
+                    underline: false,
                 },
                 inset,
             );
@@ -373,18 +470,25 @@ pub(super) fn render_titlebar_and_sidebar(
                     // Truncate cwd to fit
                     let max_chars = (text_avail_w / cs.width).floor() as usize;
                     let display_cwd = if cwd_text.chars().count() > max_chars && max_chars > 1 {
-                        let truncated: String = cwd_text.chars().take(max_chars.saturating_sub(1)).collect();
+                        let truncated: String =
+                            cwd_text.chars().take(max_chars.saturating_sub(1)).collect();
                         format!("{}…", truncated)
                     } else {
                         cwd_text
                     };
                     renderer.draw_chrome_text(
                         &display_cwd,
-                        Vec2::new(content_x + WS_SIDEBAR_ITEM_PAD_H, item_rect.y + WS_SIDEBAR_ITEM_PAD_V + name_h + WS_SIDEBAR_LINE_GAP),
+                        Vec2::new(
+                            content_x + WS_SIDEBAR_ITEM_PAD_H,
+                            item_rect.y + WS_SIDEBAR_ITEM_PAD_V + name_h + WS_SIDEBAR_LINE_GAP,
+                        ),
                         TextStyle {
                             foreground: p.tab_text,
                             background: None,
-                            bold: false, dim: false, italic: false, underline: false,
+                            bold: false,
+                            dim: false,
+                            italic: false,
+                            underline: false,
                         },
                         inset,
                     );
@@ -393,7 +497,10 @@ pub(super) fn render_titlebar_and_sidebar(
 
             // UC-6: Agent notification dot for inactive workspaces
             if !is_active {
-                let has_notification = app.ws.workspace_extras.get(i)
+                let has_notification = app
+                    .ws
+                    .workspace_extras
+                    .get(i)
                     .map_or(false, |e| e.has_agent_notification);
                 if has_notification {
                     let dot_size = 6.0_f32;
@@ -407,20 +514,23 @@ pub(super) fn render_titlebar_and_sidebar(
                     let orange = crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity);
                     renderer.draw_chrome_rounded_rect(
                         Rect::new(dot_x, dot_y, dot_size, dot_size),
-                        orange, dot_size / 2.0,
+                        orange,
+                        dot_size / 2.0,
                     );
                     // Glow effect for sidebar dot
                     let glow = crate::tide_core::Color::new(0.95, 0.65, 0.2, 0.3 * opacity);
                     renderer.draw_chrome_rounded_rect(
                         Rect::new(dot_x - 2.0, dot_y - 2.0, dot_size + 4.0, dot_size + 4.0),
-                        glow, (dot_size + 4.0) / 2.0,
+                        glow,
+                        (dot_size + 4.0) / 2.0,
                     );
                 }
             }
 
             // Draw drag drop indicator line before this item (gap == i)
             if let Some((src, press_y, gap)) = app.ws.drag {
-                let dragging = (app.window.last_cursor_pos.y - press_y).abs() > crate::theme::DRAG_THRESHOLD;
+                let dragging =
+                    (app.window.last_cursor_pos.y - press_y).abs() > crate::theme::DRAG_THRESHOLD;
                 if dragging && gap == i && gap != src && gap != src + 1 {
                     let line_y = item_rect.y - item_gap / 2.0;
                     let line_rect = Rect::new(content_x + 4.0, line_y - 1.0, content_w - 8.0, 2.0);
@@ -431,7 +541,8 @@ pub(super) fn render_titlebar_and_sidebar(
 
         // Draw drop indicator after the last item (gap == len)
         if let Some((src, press_y, gap)) = app.ws.drag {
-            let dragging = (app.window.last_cursor_pos.y - press_y).abs() > crate::theme::DRAG_THRESHOLD;
+            let dragging =
+                (app.window.last_cursor_pos.y - press_y).abs() > crate::theme::DRAG_THRESHOLD;
             let len = app.ws.workspaces.len();
             if dragging && gap == len && gap != src + 1 {
                 let last_bottom = geo.item_rect(len - 1);
@@ -446,7 +557,10 @@ pub(super) fn render_titlebar_and_sidebar(
         let btn_y = ws_rect.y + ws_rect.height - edge_inset - btn_h - WS_SIDEBAR_PADDING;
         let btn_rect = Rect::new(content_x, btn_y, content_w, btn_h);
 
-        if matches!(app.interaction.hover_target, Some(HoverTarget::WorkspaceSidebarNewBtn)) {
+        if matches!(
+            app.interaction.hover_target,
+            Some(HoverTarget::WorkspaceSidebarNewBtn)
+        ) {
             renderer.draw_chrome_rounded_rect(btn_rect, p.badge_bg, FILE_TREE_ROW_RADIUS);
         }
 
@@ -460,7 +574,10 @@ pub(super) fn render_titlebar_and_sidebar(
             TextStyle {
                 foreground: p.tab_text,
                 background: None,
-                bold: false, dim: false, italic: false, underline: false,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
             },
             inset,
         );

@@ -3,7 +3,7 @@
 use serde_json::json;
 
 use crate::pane::editor::EditorPane;
-use crate::pane::PaneKind;
+use crate::pane::{PaneKind, TerminalPane};
 use crate::state::FocusArea;
 use crate::tide_core::{LayoutEngine, SplitDirection};
 use crate::App;
@@ -42,6 +42,18 @@ fn app_with_editor_and_launcher() -> (App, u64, u64) {
     app.panes
         .insert(launcher_id, PaneKind::Launcher(launcher_id));
     (app, editor_id, launcher_id)
+}
+
+fn app_with_terminal() -> (App, u64) {
+    let mut app = test_app();
+    let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let terminal = TerminalPane::with_cwd(id, 80, 24, None, true).unwrap();
+    app.panes.insert(id, PaneKind::Terminal(terminal));
+    app.focus.focused = Some(id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.focus.stage_focused = Some(id);
+    (app, id)
 }
 
 // --- UC-1: ListPanes ---
@@ -982,9 +994,26 @@ fn subscribe_registers_subscriber() {
         .push(crate::state::gateway_status::Subscriber {
             tx,
             event_filter: vec!["focus-changed".into()],
+            owner_pane_id: None,
         });
 
     assert_eq!(app.gateway.subscribers.len(), 1);
+}
+
+#[test]
+fn subscribe_registers_owner_pane_for_delivery() {
+    // UC-9 BR-38: Subscribe stores the caller Pane for owner-scoped delivery.
+    let (mut app, terminal_id) = app_with_terminal();
+    let (tx, _rx) = std::sync::mpsc::channel::<String>();
+    app.pending_subscribe_tx = Some(tx);
+
+    let result = app.handle_cli_command(
+        "subscribe",
+        json!({"events": ["focus-changed"], "_caller_pane": terminal_id}),
+    );
+    assert!(result.is_ok());
+    assert_eq!(app.gateway.subscribers.len(), 1);
+    assert_eq!(app.gateway.subscribers[0].owner_pane_id, Some(terminal_id));
 }
 
 #[test]
@@ -998,6 +1027,7 @@ fn subscribe_filters_by_type() {
         .push(crate::state::gateway_status::Subscriber {
             tx,
             event_filter: vec!["pane-closed".into()],
+            owner_pane_id: None,
         });
 
     // Send a non-matching event
@@ -1027,6 +1057,7 @@ fn disconnect_unsubscribes() {
         .push(crate::state::gateway_status::Subscriber {
             tx,
             event_filter: vec![],
+            owner_pane_id: None,
         });
 
     assert_eq!(app.gateway.subscribers.len(), 1);

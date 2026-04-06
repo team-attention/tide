@@ -83,7 +83,10 @@ fn live_preview_map_builds_from_buffer_lines() {
         "map should contain elements from markdown"
     );
     // Should find at least a Heading and a Bold element
-    assert!(map.elements.iter().any(|e| matches!(e.kind, MdElementKind::Heading(1))));
+    assert!(map
+        .elements
+        .iter()
+        .any(|e| matches!(e.kind, MdElementKind::Heading(1))));
     assert!(map.elements.iter().any(|e| e.kind == MdElementKind::Bold));
 }
 
@@ -168,18 +171,22 @@ fn inline_syntax_hidden_on_non_cursor_lines() {
 #[test]
 fn all_inline_syntax_types_detected() {
     // UC-2 BR-2: All inline syntax types detected: bold, italic, code, link, image, strikethrough
-    let input = lines(
-        "**bold** *italic* `code` [link](url) ![img](src) ~~strike~~"
-    );
+    let input = lines("**bold** *italic* `code` [link](url) ![img](src) ~~strike~~");
     let map = LivePreviewMap::build(&input);
 
     let kinds: Vec<MdElementKind> = map.elements.iter().map(|e| e.kind).collect();
     assert!(kinds.contains(&MdElementKind::Bold), "missing Bold");
     assert!(kinds.contains(&MdElementKind::Italic), "missing Italic");
-    assert!(kinds.contains(&MdElementKind::InlineCode), "missing InlineCode");
+    assert!(
+        kinds.contains(&MdElementKind::InlineCode),
+        "missing InlineCode"
+    );
     assert!(kinds.contains(&MdElementKind::Link), "missing Link");
     assert!(kinds.contains(&MdElementKind::Image), "missing Image");
-    assert!(kinds.contains(&MdElementKind::Strikethrough), "missing Strikethrough");
+    assert!(
+        kinds.contains(&MdElementKind::Strikethrough),
+        "missing Strikethrough"
+    );
 }
 
 // --- UC-3: BlockElementStyling ---
@@ -248,13 +255,15 @@ fn mouse_selection_on_hidden_syntax_line_maps_visual_column_to_buffer_column() {
             Some(PaneKind::Editor(pane)) => pane,
             _ => panic!("expected editor pane"),
         };
-        pane.handle_action(crate::tide_editor::input::EditorAction::SetCursor { line: 0, col: 0 }, 20);
+        pane.handle_action(
+            crate::tide_editor::input::EditorAction::SetCursor { line: 0, col: 0 },
+            20,
+        );
         pane.prepare_inline_caches(content_rect, cell, false);
     }
 
-    let click_x = content_rect.x
-        + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width
-        + 1.0;
+    let click_x =
+        content_rect.x + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width + 1.0;
     let click_y = content_rect.y + 1.0 * cell.height + 1.0;
     app.window.last_cursor_pos = crate::tide_core::Vec2::new(click_x, click_y);
 

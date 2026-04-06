@@ -4,7 +4,6 @@ use crate::state::drag_types::PaneDragState;
 use crate::theme::*;
 use crate::App;
 
-
 /// Render hover highlights (overlay layer) for the currently hovered UI element.
 pub(crate) fn render_hover(
     app: &App,
@@ -17,7 +16,11 @@ pub(crate) fn render_hover(
 ) {
     if let Some(ref hover) = app.interaction.hover_target {
         // Skip hover rendering during drag
-        if matches!(app.interaction.pane_drag, PaneDragState::Idle) && !app.ft.border_dragging && !app.ws.border_dragging && !app.dock.dock_border_dragging {
+        if matches!(app.interaction.pane_drag, PaneDragState::Idle)
+            && !app.ft.border_dragging
+            && !app.ws.border_dragging
+            && !app.dock.dock_border_dragging
+        {
             match hover {
                 crate::state::drag_types::HoverTarget::FileTreeEntry(index) => {
                     if show_file_tree {
@@ -29,7 +32,9 @@ pub(crate) fn render_hover(
                             let content_h = ft_rect.height - PANE_CORNER_RADIUS * 2.0;
                             // Skip hover on entries hidden behind the header
                             let header_bottom = content_y + FILE_TREE_HEADER_HEIGHT;
-                            let y = content_y + FILE_TREE_HEADER_HEIGHT + *index as f32 * line_height - file_tree_scroll;
+                            let y =
+                                content_y + FILE_TREE_HEADER_HEIGHT + *index as f32 * line_height
+                                    - file_tree_scroll;
                             if y + line_height > header_bottom && y < content_y + content_h {
                                 let row_rect = Rect::new(
                                     ft_rect.x + PANE_PADDING / 2.0,
@@ -63,11 +68,20 @@ pub(crate) fn render_hover(
                             crate::tide_core::SplitDirection::Horizontal => {
                                 let right_edge = rect_a.x + rect_a.width;
                                 for &(id_b, rect_b) in visual_pane_rects {
-                                    if id_b != id_a && (rect_b.x - right_edge).abs() <= PANE_GAP + 1.0 {
+                                    if id_b != id_a
+                                        && (rect_b.x - right_edge).abs() <= PANE_GAP + 1.0
+                                    {
                                         let y = rect_a.y.max(rect_b.y);
-                                        let h = (rect_a.y + rect_a.height).min(rect_b.y + rect_b.height) - y;
+                                        let h = (rect_a.y + rect_a.height)
+                                            .min(rect_b.y + rect_b.height)
+                                            - y;
                                         if h > 0.0 {
-                                            let border_rect = Rect::new(right_edge - 1.0, y, rect_b.x - right_edge + 2.0, h);
+                                            let border_rect = Rect::new(
+                                                right_edge - 1.0,
+                                                y,
+                                                rect_b.x - right_edge + 2.0,
+                                                h,
+                                            );
                                             renderer.draw_rect(border_rect, p.hover_panel_border);
                                         }
                                     }
@@ -76,11 +90,20 @@ pub(crate) fn render_hover(
                             crate::tide_core::SplitDirection::Vertical => {
                                 let bottom_edge = rect_a.y + rect_a.height;
                                 for &(id_b, rect_b) in visual_pane_rects {
-                                    if id_b != id_a && (rect_b.y - bottom_edge).abs() <= PANE_GAP + 1.0 {
+                                    if id_b != id_a
+                                        && (rect_b.y - bottom_edge).abs() <= PANE_GAP + 1.0
+                                    {
                                         let x = rect_a.x.max(rect_b.x);
-                                        let w = (rect_a.x + rect_a.width).min(rect_b.x + rect_b.width) - x;
+                                        let w = (rect_a.x + rect_a.width)
+                                            .min(rect_b.x + rect_b.width)
+                                            - x;
                                         if w > 0.0 {
-                                            let border_rect = Rect::new(x, bottom_edge - 1.0, w, rect_b.y - bottom_edge + 2.0);
+                                            let border_rect = Rect::new(
+                                                x,
+                                                bottom_edge - 1.0,
+                                                w,
+                                                rect_b.y - bottom_edge + 2.0,
+                                            );
                                             renderer.draw_rect(border_rect, p.hover_panel_border);
                                         }
                                     }
@@ -117,7 +140,8 @@ pub(crate) fn render_hover(
                 crate::state::drag_types::HoverTarget::SidebarHandle => {
                     if let Some(ft_rect) = app.ft.rect {
                         // Highlight top edge of file tree panel
-                        let handle_rect = Rect::new(ft_rect.x, ft_rect.y, ft_rect.width, PANE_PADDING);
+                        let handle_rect =
+                            Rect::new(ft_rect.x, ft_rect.y, ft_rect.width, PANE_PADDING);
                         renderer.draw_rect(handle_rect, p.hover_panel_border);
                     }
                 }
@@ -136,7 +160,8 @@ pub(crate) fn render_hover(
                 crate::state::drag_types::HoverTarget::PaneMaximize(pane_id) => {
                     // Find the maximize button rect from header hit zones for the specific pane
                     if let Some(zone) = app.header_hit_zones.iter().find(|z| {
-                        z.pane_id == *pane_id && z.action == crate::header::HeaderHitAction::Maximize
+                        z.pane_id == *pane_id
+                            && z.action == crate::header::HeaderHitAction::Maximize
                     }) {
                         renderer.draw_rect(zone.rect, p.hover_tab);
                     }

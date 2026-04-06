@@ -5,7 +5,7 @@ use crate::ui::file_icon;
 use crate::App;
 use crate::AppCorePort;
 
-use super::{visual_width, draw_popup_rounded_bg, draw_popup_scrim, draw_cursor_beam, text_style};
+use super::{draw_cursor_beam, draw_popup_rounded_bg, draw_popup_scrim, text_style, visual_width};
 
 /// Render file finder UI on top layer (visible regardless of tab state).
 pub(super) fn render_file_finder(
@@ -42,7 +42,13 @@ pub(super) fn render_file_finder(
     renderer.draw_top_shadow(popup_rect, shadow_color, 8.0, 40.0, 0.0);
 
     // Background + border (rounded)
-    draw_popup_rounded_bg(renderer, popup_rect, p.popup_bg, p.popup_border, POPUP_CORNER_RADIUS);
+    draw_popup_rounded_bg(
+        renderer,
+        popup_rect,
+        p.popup_bg,
+        p.popup_border,
+        POPUP_CORNER_RADIUS,
+    );
 
     let ts = text_style(p.tab_text_focused);
     let muted_style = text_style(p.tab_text);
@@ -50,7 +56,12 @@ pub(super) fn render_file_finder(
 
     // Search input — with search icon
     let input_y = popup_y + 2.0;
-    let input_clip = Rect::new(popup_x + item_pad, input_y, popup_w - 2.0 * item_pad, input_h);
+    let input_clip = Rect::new(
+        popup_x + item_pad,
+        input_y,
+        popup_w - 2.0 * item_pad,
+        input_h,
+    );
     let text_y = input_y + (input_h - cell_height) / 2.0;
     let icon_x = popup_x + item_pad;
     let icon_style = text_style(p.tab_text);
@@ -64,7 +75,12 @@ pub(super) fn render_file_finder(
     );
 
     let text_x = icon_x + 2.0 * cell_size.width;
-    let text_clip = Rect::new(text_x, input_y, popup_w - item_pad - 2.0 * cell_size.width, input_h);
+    let text_clip = Rect::new(
+        text_x,
+        input_y,
+        popup_w - item_pad - 2.0 * cell_size.width,
+        input_h,
+    );
 
     if finder.input.is_empty() {
         renderer.draw_top_text(
@@ -74,12 +90,7 @@ pub(super) fn render_file_finder(
             text_clip,
         );
     } else {
-        renderer.draw_top_text(
-            &finder.input.text,
-            Vec2::new(text_x, text_y),
-            ts,
-            text_clip,
-        );
+        renderer.draw_top_text(&finder.input.text, Vec2::new(text_x, text_y), ts, text_clip);
     }
 
     // Match count
@@ -94,12 +105,18 @@ pub(super) fn render_file_finder(
     );
 
     // Cursor beam
-    let cx = text_x + visual_width(&finder.input.text[..finder.input.cursor]) as f32 * cell_size.width;
+    let cx =
+        text_x + visual_width(&finder.input.text[..finder.input.cursor]) as f32 * cell_size.width;
     draw_cursor_beam(renderer, cx, text_y, cell_height, p.cursor_accent);
 
     // Separator line below input
     let sep_y = input_y + input_h;
-    let sep_rect = Rect::new(popup_x + POPUP_SEPARATOR_INSET, sep_y, popup_w - 2.0 * POPUP_SEPARATOR_INSET, POPUP_SEPARATOR);
+    let sep_rect = Rect::new(
+        popup_x + POPUP_SEPARATOR_INSET,
+        sep_y,
+        popup_w - 2.0 * POPUP_SEPARATOR_INSET,
+        POPUP_SEPARATOR,
+    );
     renderer.draw_top_rect(sep_rect, p.popup_border);
 
     // File list
@@ -122,18 +139,14 @@ pub(super) fn render_file_finder(
 
         // Selected item highlight
         if fi == finder.selected {
-            let sel_rect = Rect::new(
-                popup_x + 2.0,
-                y,
-                popup_w - 4.0,
-                line_height,
-            );
+            let sel_rect = Rect::new(popup_x + 2.0, y, popup_w - 4.0, line_height);
             renderer.draw_top_rect(sel_rect, p.popup_selected);
         }
 
         // File icon
         let text_offset_y = (line_height - cell_height) / 2.0;
-        let file_name = rel_path.file_name()
+        let file_name = rel_path
+            .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
         let icon = file_icon(&file_name, false, false);

@@ -32,9 +32,11 @@ fn search_in_editor_finds_all_occurrences() {
 fn empty_search_query_clears_matches() {
     // UC-1 BR-3: Empty search query clears all matches
     let mut state = SearchState::new();
-    state.matches = vec![
-        crate::state::search::SearchMatch { line: 0, col: 0, len: 3 },
-    ];
+    state.matches = vec![crate::state::search::SearchMatch {
+        line: 0,
+        col: 0,
+        len: 3,
+    }];
     state.current = Some(0);
     let lines = vec!["content".to_string()];
     crate::state::search::execute_search_editor(&mut state, &lines);
@@ -56,8 +58,16 @@ fn next_match_wraps_around_from_last_to_first() {
     // UC-2 BR-5: next_match wraps from last to first
     let mut state = SearchState::new();
     state.matches = vec![
-        crate::state::search::SearchMatch { line: 0, col: 0, len: 3 },
-        crate::state::search::SearchMatch { line: 1, col: 0, len: 3 },
+        crate::state::search::SearchMatch {
+            line: 0,
+            col: 0,
+            len: 3,
+        },
+        crate::state::search::SearchMatch {
+            line: 1,
+            col: 0,
+            len: 3,
+        },
     ];
     state.current = Some(1);
     state.next_match();
@@ -69,8 +79,16 @@ fn prev_match_wraps_around_from_first_to_last() {
     // UC-2 BR-6: prev_match wraps from first to last
     let mut state = SearchState::new();
     state.matches = vec![
-        crate::state::search::SearchMatch { line: 0, col: 0, len: 3 },
-        crate::state::search::SearchMatch { line: 1, col: 0, len: 3 },
+        crate::state::search::SearchMatch {
+            line: 0,
+            col: 0,
+            len: 3,
+        },
+        crate::state::search::SearchMatch {
+            line: 1,
+            col: 0,
+            len: 3,
+        },
     ];
     state.current = Some(0);
     state.prev_match();
