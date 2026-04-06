@@ -42,7 +42,8 @@ fn app_with_two_workspaces() -> App {
     // Set up WS0 as active with pane 100
     app.ws.active = 0;
     app.panes = HashMap::new();
-    app.panes.insert(id1, PaneKind::Editor(EditorPane::new_empty(id1)));
+    app.panes
+        .insert(id1, PaneKind::Editor(EditorPane::new_empty(id1)));
     app.focus.focused = Some(id1);
     app.focus.focus_area = FocusArea::Stage;
 
@@ -50,7 +51,8 @@ fn app_with_two_workspaces() -> App {
     app.save_active_workspace();
     app.ws.active = 1;
     app.panes = HashMap::new();
-    app.panes.insert(id2, PaneKind::Editor(EditorPane::new_empty(id2)));
+    app.panes
+        .insert(id2, PaneKind::Editor(EditorPane::new_empty(id2)));
     app.focus.focused = Some(id2);
     app.save_active_workspace();
 
@@ -71,10 +73,9 @@ fn cli_command_in_active_workspace_strips_caller_pane() {
     // Send a list-panes command with _caller_pane pointing to the active workspace's pane.
     // The _caller_pane param must not leak into the handler — list-panes should succeed
     // and the command should execute in the active workspace (no swap).
-    let result = app.handle_cli_command(
-        "list-panes",
-        json!({"_caller_pane": active_pane_id}),
-    ).unwrap();
+    let result = app
+        .handle_cli_command("list-panes", json!({"_caller_pane": active_pane_id}))
+        .unwrap();
 
     // Command executed in active workspace (WS0 has pane 100)
     let panes = result.as_array().unwrap();
@@ -96,14 +97,16 @@ fn cli_command_in_inactive_workspace_executes_in_correct_context() {
 
     // Active is WS0 (pane 100). Send command with _caller_pane=200 (in WS1).
     // list-panes should return WS1's panes, not WS0's.
-    let result = app.handle_cli_command(
-        "list-panes",
-        json!({"_caller_pane": inactive_pane_id}),
-    ).unwrap();
+    let result = app
+        .handle_cli_command("list-panes", json!({"_caller_pane": inactive_pane_id}))
+        .unwrap();
 
     let panes = result.as_array().unwrap();
     assert_eq!(panes.len(), 1, "should see WS1's panes");
-    assert_eq!(panes[0]["id"], inactive_pane_id, "should see pane 200 from WS1");
+    assert_eq!(
+        panes[0]["id"], inactive_pane_id,
+        "should see pane 200 from WS1"
+    );
 }
 
 #[test]
@@ -113,19 +116,32 @@ fn cli_command_in_inactive_workspace_restores_active_workspace() {
     let inactive_pane_id = 200u64;
 
     assert_eq!(app.ws.active, 0, "precondition: WS0 is active");
-    assert_eq!(app.focus.focused, Some(100), "precondition: pane 100 focused");
+    assert_eq!(
+        app.focus.focused,
+        Some(100),
+        "precondition: pane 100 focused"
+    );
 
     // Execute command targeting inactive workspace
-    let _result = app.handle_cli_command(
-        "list-panes",
-        json!({"_caller_pane": inactive_pane_id}),
-    ).unwrap();
+    let _result = app
+        .handle_cli_command("list-panes", json!({"_caller_pane": inactive_pane_id}))
+        .unwrap();
 
     // After the command, the user's active workspace must be restored
     assert_eq!(app.ws.active, 0, "active workspace must be restored to WS0");
-    assert_eq!(app.focus.focused, Some(100), "focus must be restored to pane 100");
-    assert!(app.panes.contains_key(&100), "WS0's panes must be loaded back");
-    assert!(!app.panes.contains_key(&200), "WS1's panes must not leak into active state");
+    assert_eq!(
+        app.focus.focused,
+        Some(100),
+        "focus must be restored to pane 100"
+    );
+    assert!(
+        app.panes.contains_key(&100),
+        "WS0's panes must be loaded back"
+    );
+    assert!(
+        !app.panes.contains_key(&200),
+        "WS1's panes must not leak into active state"
+    );
 }
 
 #[test]
@@ -144,7 +160,10 @@ fn cli_command_in_inactive_workspace_restores_on_error() {
     assert!(result.is_err(), "command should fail");
 
     // Even on error, active workspace must be restored
-    assert_eq!(app.ws.active, 0, "active workspace must be restored after error");
+    assert_eq!(
+        app.ws.active, 0,
+        "active workspace must be restored after error"
+    );
     assert!(app.panes.contains_key(&100), "WS0 panes must be restored");
 }
 
@@ -161,10 +180,9 @@ fn cross_workspace_swap_uses_raw_save_load_not_switch() {
 
     // list-panes is a read-only command — it should not bump chrome_generation.
     // If switch_workspace were used, it would bump chrome_generation.
-    let _result = app.handle_cli_command(
-        "list-panes",
-        json!({"_caller_pane": inactive_pane_id}),
-    ).unwrap();
+    let _result = app
+        .handle_cli_command("list-panes", json!({"_caller_pane": inactive_pane_id}))
+        .unwrap();
 
     assert_eq!(
         app.cache.chrome_generation, gen_before,
@@ -188,7 +206,10 @@ fn caller_pane_stripped_before_handler_receives_params() {
     );
 
     // The command should succeed (file param is present after stripping _caller_pane)
-    assert!(result.is_ok(), "open-editor should succeed when _caller_pane is stripped");
+    assert!(
+        result.is_ok(),
+        "open-editor should succeed when _caller_pane is stripped"
+    );
 }
 
 // --- UC-3: CLI command without _caller_pane (fallback to active Workspace) ---
@@ -216,14 +237,16 @@ fn cli_command_with_nonexistent_caller_pane_falls_back_to_active() {
     let mut app = app_with_two_workspaces();
 
     // _caller_pane=9999 doesn't exist in any workspace
-    let result = app.handle_cli_command(
-        "list-panes",
-        json!({"_caller_pane": 9999}),
-    ).unwrap();
+    let result = app
+        .handle_cli_command("list-panes", json!({"_caller_pane": 9999}))
+        .unwrap();
 
     let panes = result.as_array().unwrap();
     assert_eq!(panes.len(), 1);
-    assert_eq!(panes[0]["id"], 100, "should fall back to active workspace's pane");
+    assert_eq!(
+        panes[0]["id"], 100,
+        "should fall back to active workspace's pane"
+    );
     assert_eq!(app.ws.active, 0, "active workspace unchanged");
 }
 
@@ -237,31 +260,39 @@ fn notify_for_inactive_workspace_pane_updates_agent_status() {
     let inactive_pane_id = 200u64;
 
     // Pre-register an agent for pane 200 so cli_notify can update its status
-    app.gateway.detected_agents.insert(inactive_pane_id, crate::state::gateway_status::AgentInfo {
-        name: "Claude Code",
-        pid: 1234,
-        gateway_connected: true,
-        status: None,
-    });
+    app.gateway.detected_agents.insert(
+        inactive_pane_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Claude Code",
+            pid: 1234,
+            gateway_connected: true,
+            status: None,
+        },
+    );
 
     // Save the agent info into WS1's stored state so it persists across swaps
     // (detected_agents is on App, not per-workspace, so it should survive)
 
     // Send notify with _caller_pane targeting inactive workspace
-    let result = app.handle_cli_command(
-        "notify",
-        json!({
-            "_caller_pane": inactive_pane_id,
-            "event": "agent-running",
-            "pane": inactive_pane_id,
-            "agent": "claude"
-        }),
-    ).unwrap();
+    let result = app
+        .handle_cli_command(
+            "notify",
+            json!({
+                "_caller_pane": inactive_pane_id,
+                "event": "agent-running",
+                "pane": inactive_pane_id,
+                "agent": "claude"
+            }),
+        )
+        .unwrap();
 
     assert_eq!(result["ok"], true);
 
     // Agent status should be updated
-    let agent = app.gateway.detected_agents.get(&inactive_pane_id)
+    let agent = app
+        .gateway
+        .detected_agents
+        .get(&inactive_pane_id)
         .expect("agent should still be registered");
     assert_eq!(
         agent.status,
@@ -279,15 +310,17 @@ fn notify_for_inactive_workspace_pane_restores_active_workspace() {
     assert_eq!(app.ws.active, 0);
     assert_eq!(app.focus.focused, Some(100));
 
-    let _result = app.handle_cli_command(
-        "notify",
-        json!({
-            "_caller_pane": inactive_pane_id,
-            "event": "agent-running",
-            "pane": inactive_pane_id,
-            "agent": "claude"
-        }),
-    ).unwrap();
+    let _result = app
+        .handle_cli_command(
+            "notify",
+            json!({
+                "_caller_pane": inactive_pane_id,
+                "event": "agent-running",
+                "pane": inactive_pane_id,
+                "agent": "claude"
+            }),
+        )
+        .unwrap();
 
     // Active workspace must be restored
     assert_eq!(app.ws.active, 0, "active workspace must be WS0");

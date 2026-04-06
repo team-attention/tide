@@ -4,7 +4,9 @@ use crate::theme::*;
 use crate::App;
 use crate::AppCorePort;
 
-use super::{visual_width, draw_popup_rounded_bg, draw_popup_scrim, draw_cursor_beam, text_style, bold_style};
+use super::{
+    bold_style, draw_cursor_beam, draw_popup_rounded_bg, draw_popup_scrim, text_style, visual_width,
+};
 
 /// Render the save-as popup (filename entry for untitled files).
 pub(super) fn render_save_as(
@@ -18,7 +20,10 @@ pub(super) fn render_save_as(
         None => return,
     };
     // Find the pane rect for the save-as target
-    let pane_rect = match visual_pane_rects.iter().find(|(id, _)| *id == save_as.pane_id) {
+    let pane_rect = match visual_pane_rects
+        .iter()
+        .find(|(id, _)| *id == save_as.pane_id)
+    {
         Some(&(_, r)) => r,
         None => return,
     };
@@ -43,7 +48,13 @@ pub(super) fn render_save_as(
     let popup_rect = Rect::new(popup_x, popup_y, popup_w, popup_h);
 
     // Background + border (rounded)
-    draw_popup_rounded_bg(renderer, popup_rect, p.popup_bg, p.popup_border, POPUP_CORNER_RADIUS);
+    draw_popup_rounded_bg(
+        renderer,
+        popup_rect,
+        p.popup_bg,
+        p.popup_border,
+        POPUP_CORNER_RADIUS,
+    );
 
     let ts = text_style(p.tab_text_focused);
     let label_style = bold_style(p.tab_text);
@@ -62,17 +73,37 @@ pub(super) fn render_save_as(
         renderer.draw_top_rect(dir_rect, p.popup_selected);
     }
     let dir_text_y = dir_y + (field_h - cell_height) / 2.0;
-    renderer.draw_top_text("Dir", Vec2::new(popup_x + padding + 4.0, dir_text_y), label_style, dir_rect);
+    renderer.draw_top_text(
+        "Dir",
+        Vec2::new(popup_x + padding + 4.0, dir_text_y),
+        label_style,
+        dir_rect,
+    );
     let dir_clip = Rect::new(content_x, dir_y, content_w, field_h);
-    renderer.draw_top_text(&save_as.directory.text, Vec2::new(content_x, dir_text_y), ts, dir_clip);
+    renderer.draw_top_text(
+        &save_as.directory.text,
+        Vec2::new(content_x, dir_text_y),
+        ts,
+        dir_clip,
+    );
     if is_dir_active {
-        let cx = content_x + visual_width(&save_as.directory.text[..save_as.directory.cursor]) as f32 * cell_size.width;
+        let cx = content_x
+            + visual_width(&save_as.directory.text[..save_as.directory.cursor]) as f32
+                * cell_size.width;
         draw_cursor_beam(renderer, cx, dir_text_y, cell_height, p.cursor_accent);
     }
 
     // Separator
     let sep_y = dir_y + field_h;
-    renderer.draw_top_rect(Rect::new(popup_x + POPUP_SEPARATOR_INSET, sep_y, popup_w - 2.0 * POPUP_SEPARATOR_INSET, POPUP_SEPARATOR), p.popup_border);
+    renderer.draw_top_rect(
+        Rect::new(
+            popup_x + POPUP_SEPARATOR_INSET,
+            sep_y,
+            popup_w - 2.0 * POPUP_SEPARATOR_INSET,
+            POPUP_SEPARATOR,
+        ),
+        p.popup_border,
+    );
 
     // Filename field
     let name_y = sep_y + POPUP_SEPARATOR;
@@ -81,11 +112,23 @@ pub(super) fn render_save_as(
         renderer.draw_top_rect(name_rect, p.popup_selected);
     }
     let name_text_y = name_y + (field_h - cell_height) / 2.0;
-    renderer.draw_top_text("Name", Vec2::new(popup_x + padding + 4.0, name_text_y), label_style, name_rect);
+    renderer.draw_top_text(
+        "Name",
+        Vec2::new(popup_x + padding + 4.0, name_text_y),
+        label_style,
+        name_rect,
+    );
     let name_clip = Rect::new(content_x, name_y, content_w, field_h);
-    renderer.draw_top_text(&save_as.filename.text, Vec2::new(content_x, name_text_y), ts, name_clip);
+    renderer.draw_top_text(
+        &save_as.filename.text,
+        Vec2::new(content_x, name_text_y),
+        ts,
+        name_clip,
+    );
     if !is_dir_active {
-        let cx = content_x + visual_width(&save_as.filename.text[..save_as.filename.cursor]) as f32 * cell_size.width;
+        let cx = content_x
+            + visual_width(&save_as.filename.text[..save_as.filename.cursor]) as f32
+                * cell_size.width;
         draw_cursor_beam(renderer, cx, name_text_y, cell_height, p.cursor_accent);
     }
 

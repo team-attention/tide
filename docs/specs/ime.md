@@ -1,13 +1,38 @@
 # Spec: IME
 
-Input Method Editor composition lifecycle: preedit, commit, and cleanup.
+## Overview
+
+### As-Is
+
+- Tide already tracks IME composition state in `ImeState`, clears composition on `Workspace` switch and Pane close, and routes committed text through the shared text-input path.
+- `Terminal` and `Editor` rendering already show preedit through pane-specific render paths.
+- The `Search Bar` renders IME preedit inline, but preedit updates are not treated as chrome changes outside the Browser URL bar path.
+- The `Context Comment Composer` accepts IME commit text, but it does not render preedit inline and does not expose an overlay-specific IME cursor area.
+- IME cursor-area updates currently derive only from the focused `Terminal` or `Editor` caret, so overlay text inputs such as the `Search Bar` and `Context Comment Composer` can anchor the candidate window to the wrong place.
+
+### To-Be
+
+- IME composition lifecycle stays correct across commit, cleanup, and focus changes.
+- Overlay text inputs in Tide-rendered chrome update immediately during preedit.
+- The `Search Bar` and `Context Comment Composer` both render IME preedit inline at their own caret positions.
+- The IME candidate window follows the active overlay caret for `Search Bar` and `Context Comment Composer` instead of the underlying Pane cursor.
+
+### Approach
+
+1. Preserve the current composition-state and cleanup rules.
+2. Detect when IME preedit targets a Tide-rendered overlay and invalidate chrome immediately.
+3. Render preedit inline inside `Search Bar` and `Context Comment Composer` using the same visual-width rules as committed text.
+4. Compute overlay-specific IME cursor rectangles for `Search Bar` and `Context Comment Composer` and use them before falling back to `Terminal`/`Editor` caret geometry.
 
 ## Bounded Contexts
 
 | Context | Role |
 |---------|------|
-| `tide-app` | ImeState tracks composition state |
-| `tide-platform` | NSTextInputClient protocol drives IME events |
+| `ime_adapter` | Receives IME commit and preedit events and updates `ImeState` plus redraw invalidation |
+| `text_routing_adapter` | Delivers committed text to the correct target, including overlay text inputs |
+| `event_loop_adapter` | Computes the effective IME target and updates the platform IME cursor area |
+| `view/overlays` | Renders inline preedit for Tide-owned text inputs |
+| `tide-platform` | Hosts the per-Pane IME proxy and candidate-window cursor area |
 
 ## Use Cases
 
@@ -44,6 +69,43 @@ Input Method Editor composition lifecycle: preedit, commit, and cleanup.
   - BR-7: Closing Pane that is IME target clears composition
   - BR-8: Closing Pane that is NOT IME target preserves composition
 
+### UC-3: FocusChangeKeepsEffectiveTargetCoherent
+
+- **Actor**: System
+- **Trigger**: Focus changes while IME composition state exists
+- **Precondition**: A focused Pane exists
+- **Flow**:
+  1. Tide recomputes the effective IME target after the focus change
+  2. Tide keeps the last committed target stable until the platform sync resolves the transition
+- **Postcondition**: IME routing remains coherent across focus changes
+- **Business Rules**:
+  - BR-9: CLI focus changes update the effective IME target
+  - BR-10: Focus changes during composition preserve the old last-target until proxy sync finishes
+
+### UC-4: OverlayComposition
+
+- **Actor**: System
+- **Trigger**: IME preedit targets the `Search Bar` or `Context Comment Composer`
+- **Precondition**: A Tide-rendered overlay text input is active
+- **Flow**:
+  1. Tide updates `ImeState.preedit`
+  2. Tide invalidates chrome immediately so the overlay can redraw
+  3. Tide renders preedit inline at the overlay caret
+  4. Tide updates the platform IME cursor area from the overlay caret rect
+- **Postcondition**: Overlay input shows responsive IME composition and a correctly positioned candidate window
+- **Business Rules**:
+  - BR-11: IME preedit with an active `Search Bar` invalidates chrome and redraws inline in the `Search Bar`
+  - BR-12: IME preedit with an open `Context Comment Composer` invalidates chrome and redraws inline in the composer input
+  - BR-13: The `Search Bar` provides the IME cursor area while it is the active text input
+  - BR-14: The `Context Comment Composer` provides the IME cursor area while it is the active text input
+
+## Invariants
+
+1. IME composition state remains separate from committed text.
+2. Cleanup on `Workspace` switch or target-Pane close still clears composition exactly once.
+3. Overlay IME cursor areas take precedence only while the overlay text input is active.
+4. If no overlay text input is active, IME cursor area falls back to the focused `Terminal` or `Editor` caret rules.
+
 ## Tests
 
 | UC | BR | Test |
@@ -56,11 +118,19 @@ Input Method Editor composition lifecycle: preedit, commit, and cleanup.
 | UC-2 | BR-6 | `workspace_switch_without_composition_does_not_affect_ime` |
 | UC-2 | BR-7 | `closing_pane_that_is_ime_target_clears_composition` |
 | UC-2 | BR-8 | `closing_pane_that_is_not_ime_target_preserves_composition` |
+| UC-3 | BR-9 | `cli_focus_pane_updates_effective_ime_target` |
+| UC-3 | BR-10 | `cli_focus_pane_with_active_composition_commits_to_old_target` |
+| UC-4 | BR-11 | `ime_preedit_with_search_focus_invalidates_chrome` |
+| UC-4 | BR-12 | `ime_preedit_with_context_comment_composer_invalidates_chrome` |
+| UC-4 | BR-13 | `search_bar_ime_cursor_area_tracks_search_caret` |
+| UC-4 | BR-14 | `context_comment_composer_ime_cursor_area_tracks_composer_caret` |
 
 ## Location
 
-| Layer | Crate | Key Files |
-|-------|-------|-----------|
-| ImeState | tide-app | `ui_state.rs` |
-| Platform | tide-platform | `macos/view.rs` (NSTextInputClient) |
-| Tests | tide-app | `behavior_tests.rs :: mod ime_behavior` |
+| Layer | Key Files |
+|-------|-----------|
+| **Spec** | `docs/specs/ime.md` |
+| **IME input** | `crates/tide-app/src/adapter/inward/ime_adapter/mod.rs` |
+| **IME target + cursor area** | `crates/tide-app/src/adapter/inward/event_loop_adapter/mod.rs` |
+| **Overlay rendering** | `crates/tide-app/src/adapter/outward/view/overlays/search_bar.rs`, `crates/tide-app/src/adapter/outward/view/overlays/context_comment.rs` |
+| **Behavior tests** | `crates/tide-app/src/application/behavior_tests/ime_behavior.rs` |

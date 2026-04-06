@@ -1,6 +1,6 @@
 // Spec: docs/specs/titlebar-buttons.md
-use crate::pane::{PaneKind, TerminalPane};
 use crate::pane::editor::EditorPane;
+use crate::pane::{PaneKind, TerminalPane};
 use crate::state::FocusArea;
 use crate::App;
 use crate::DockPort;
@@ -37,7 +37,11 @@ fn toggle_file_tree_visibility_opens_without_moving_focus() {
     app.toggle_file_tree_visibility();
 
     assert!(app.ft.visible);
-    assert_eq!(app.focus.focus_area, FocusArea::Stage, "focus should stay on Stage");
+    assert_eq!(
+        app.focus.focus_area,
+        FocusArea::Stage,
+        "focus should stay on Stage"
+    );
     assert_eq!(app.focus.focused, Some(tid));
 }
 
@@ -51,7 +55,11 @@ fn toggle_file_tree_visibility_closes_with_fallback_when_focused() {
     app.toggle_file_tree_visibility();
 
     assert!(!app.ft.visible);
-    assert_eq!(app.focus.focus_area, FocusArea::Stage, "focus should fall back to Stage");
+    assert_eq!(
+        app.focus.focus_area,
+        FocusArea::Stage,
+        "focus should fall back to Stage"
+    );
 }
 
 #[test]
@@ -64,7 +72,11 @@ fn toggle_file_tree_visibility_closes_without_fallback_when_unfocused() {
     app.toggle_file_tree_visibility();
 
     assert!(!app.ft.visible);
-    assert_eq!(app.focus.focus_area, FocusArea::Stage, "focus should remain on Stage");
+    assert_eq!(
+        app.focus.focus_area,
+        FocusArea::Stage,
+        "focus should remain on Stage"
+    );
     assert_eq!(app.focus.focused, Some(tid));
 }
 
@@ -80,7 +92,11 @@ fn toggle_dock_visibility_opens_without_moving_focus() {
     app.toggle_dock_visibility();
 
     assert!(app.dock.dock_open);
-    assert_eq!(app.focus.focus_area, FocusArea::Stage, "focus should stay on Stage");
+    assert_eq!(
+        app.focus.focus_area,
+        FocusArea::Stage,
+        "focus should stay on Stage"
+    );
     assert_eq!(app.focus.focused, Some(tid));
 }
 
@@ -90,7 +106,8 @@ fn toggle_dock_visibility_closes_with_fallback_when_focused() {
     let (mut app, tid) = app_with_real_terminal();
     // Set up dock with a pane
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.add_pane_to_dock(e1);
     app.dock.dock_open = true;
     app.focus.focus_area = FocusArea::Dock;
@@ -99,8 +116,16 @@ fn toggle_dock_visibility_closes_with_fallback_when_focused() {
     app.toggle_dock_visibility();
 
     assert!(!app.dock.dock_open);
-    assert_eq!(app.focus.focus_area, FocusArea::Stage, "focus should fall back to Stage");
-    assert_eq!(app.focus.focused, Some(tid), "focus should return to owner terminal");
+    assert_eq!(
+        app.focus.focus_area,
+        FocusArea::Stage,
+        "focus should fall back to Stage"
+    );
+    assert_eq!(
+        app.focus.focused,
+        Some(tid),
+        "focus should return to owner terminal"
+    );
 }
 
 #[test]
@@ -109,7 +134,8 @@ fn toggle_dock_visibility_closes_without_fallback_when_unfocused() {
     let (mut app, tid) = app_with_real_terminal();
     // Set up dock with a pane
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.add_pane_to_dock(e1);
     app.dock.dock_open = true;
     app.focus.focus_area = FocusArea::Stage;
@@ -118,6 +144,10 @@ fn toggle_dock_visibility_closes_without_fallback_when_unfocused() {
     app.toggle_dock_visibility();
 
     assert!(!app.dock.dock_open);
-    assert_eq!(app.focus.focus_area, FocusArea::Stage, "focus should remain on Stage");
+    assert_eq!(
+        app.focus.focus_area,
+        FocusArea::Stage,
+        "focus should remain on Stage"
+    );
     assert_eq!(app.focus.focused, Some(tid));
 }

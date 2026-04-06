@@ -3,9 +3,9 @@ use crate::pane::browser::BrowserPane;
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::{FocusArea, ViewMode};
+use crate::tide_core::LayoutEngine;
 use crate::App;
 use crate::WorkspaceNavPort;
-use crate::tide_core::LayoutEngine;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -27,14 +27,18 @@ fn app_with_single_pane() -> (App, u64) {
 
 fn app_with_two_panes() -> (App, u64, u64) {
     let (mut app, p1) = app_with_single_pane();
-    let p2 = app.layout.split(p1, crate::tide_core::SplitDirection::Vertical);
+    let p2 = app
+        .layout
+        .split(p1, crate::tide_core::SplitDirection::Vertical);
     app.panes.insert(p2, PaneKind::Launcher(p2));
     (app, p1, p2)
 }
 
 fn app_with_three_panes() -> (App, u64, u64, u64) {
     let (mut app, p1, p2) = app_with_two_panes();
-    let p3 = app.layout.split(p2, crate::tide_core::SplitDirection::Horizontal);
+    let p3 = app
+        .layout
+        .split(p2, crate::tide_core::SplitDirection::Horizontal);
     app.panes.insert(p3, PaneKind::Launcher(p3));
     (app, p1, p2, p3)
 }
@@ -103,7 +107,10 @@ fn any_pane_kind_can_be_added_to_stage_tab_group() {
     app.layout.add_tab(p1, editor_id);
 
     let tg = app.layout.tab_group_containing(p1).unwrap();
-    assert!(tg.contains(editor_id), "Editor pane should be in the TabGroup");
+    assert!(
+        tg.contains(editor_id),
+        "Editor pane should be in the TabGroup"
+    );
 
     // Add a Browser pane as a tab
     let browser_id = app.layout.alloc_id();
@@ -112,8 +119,15 @@ fn any_pane_kind_can_be_added_to_stage_tab_group() {
     app.layout.add_tab(p1, browser_id);
 
     let tg = app.layout.tab_group_containing(p1).unwrap();
-    assert!(tg.contains(browser_id), "Browser pane should be in the TabGroup");
-    assert_eq!(tg.len(), 3, "TabGroup should have 3 tabs of different kinds");
+    assert!(
+        tg.contains(browser_id),
+        "Browser pane should be in the TabGroup"
+    );
+    assert_eq!(
+        tg.len(),
+        3,
+        "TabGroup should have 3 tabs of different kinds"
+    );
 }
 
 #[test]
@@ -123,10 +137,15 @@ fn self_drop_center_in_stage_is_noop() {
 
     let ids_before = app.layout.pane_ids();
     // move_pane with source == target should return false (no-op)
-    let moved = app.layout.move_pane(p1, p1, crate::tide_core::DropZone::Center);
+    let moved = app
+        .layout
+        .move_pane(p1, p1, crate::tide_core::DropZone::Center);
     assert!(!moved, "self-drop should be a no-op");
     let ids_after = app.layout.pane_ids();
-    assert_eq!(ids_before, ids_after, "layout should be unchanged after self-drop");
+    assert_eq!(
+        ids_before, ids_after,
+        "layout should be unchanged after self-drop"
+    );
 }
 
 // --- UC-2: Close Tab in Stage TabGroup ---
@@ -211,7 +230,8 @@ fn focus_moves_to_adjacent_tab_after_close() {
     if let Some(tg) = tg {
         assert_eq!(tg.len(), 2);
         assert_eq!(
-            tg.active_pane(), p2,
+            tg.active_pane(),
+            p2,
             "focus should move to adjacent tab after closing the last tab"
         );
     }
@@ -409,7 +429,10 @@ fn stage_tab_click_registers_switch_hit_zone() {
 
     // p2 is active. Click p1 → set_active_tab(p1)
     let switched = app.layout.set_active_tab(p1);
-    assert!(switched, "set_active_tab should succeed for a tab in the group");
+    assert!(
+        switched,
+        "set_active_tab should succeed for a tab in the group"
+    );
 
     let tg = app.layout.tab_group_containing(p1).unwrap();
     assert_eq!(tg.active_pane(), p1, "active tab should be the clicked tab");
@@ -430,7 +453,10 @@ fn center_drop_on_stage_pane_merges_as_tab() {
     assert!(added, "center drop should merge source as tab");
 
     let tg = app.layout.tab_group_containing(p1).unwrap();
-    assert!(tg.contains(p2), "source pane should be in target's TabGroup");
+    assert!(
+        tg.contains(p2),
+        "source pane should be in target's TabGroup"
+    );
     assert_eq!(tg.active_pane(), p2, "dropped pane should become active");
 
     // p3 should still be a separate pane in the layout
@@ -456,7 +482,10 @@ fn dock_pane_dropped_on_stage_center_merges_into_tab_group() {
     assert!(added);
 
     let tg = app.layout.tab_group_containing(p1).unwrap();
-    assert!(tg.contains(editor_id), "dock pane should be in Stage TabGroup");
+    assert!(
+        tg.contains(editor_id),
+        "dock pane should be in Stage TabGroup"
+    );
     assert!(
         matches!(app.panes.get(&editor_id), Some(PaneKind::Editor(_))),
         "PaneKind should be preserved"
@@ -478,11 +507,17 @@ fn self_drop_center_in_same_tab_group_is_noop() {
 
     // "Dropping" p2 onto p2 center should be a no-op
     // move_pane(p2, p2, Center) returns false
-    let moved = app.layout.move_pane(p2, p2, crate::tide_core::DropZone::Center);
+    let moved = app
+        .layout
+        .move_pane(p2, p2, crate::tide_core::DropZone::Center);
     assert!(!moved, "self-drop in same group should be a no-op");
 
     let tg_after = app.layout.tab_group_containing(p1).unwrap();
-    assert_eq!(tg_after.len(), tg_before_len, "group size should not change");
+    assert_eq!(
+        tg_after.len(),
+        tg_before_len,
+        "group size should not change"
+    );
     assert_eq!(
         tg_after.active_pane(),
         tg_before_active,
@@ -587,7 +622,10 @@ fn tab_group_structure_preserved_after_zoom_toggle() {
 
     // Snapshot before zoom
     let all_ids_before = app.layout.all_pane_ids();
-    let tg_before = app.layout.tab_group_containing(p1).map(|tg| tg.tabs.clone());
+    let tg_before = app
+        .layout
+        .tab_group_containing(p1)
+        .map(|tg| tg.tabs.clone());
 
     // Enter zoom
     app.focus.focused = Some(p1);
@@ -606,7 +644,10 @@ fn tab_group_structure_preserved_after_zoom_toggle() {
         "all pane IDs should be preserved after zoom toggle"
     );
 
-    let tg_after = app.layout.tab_group_containing(p1).map(|tg| tg.tabs.clone());
+    let tg_after = app
+        .layout
+        .tab_group_containing(p1)
+        .map(|tg| tg.tabs.clone());
     assert_eq!(
         tg_before, tg_after,
         "TabGroup structure should be preserved after zoom toggle"

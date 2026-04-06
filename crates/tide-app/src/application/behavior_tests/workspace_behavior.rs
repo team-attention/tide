@@ -2,11 +2,11 @@
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
-use crate::update::workspace_infra_service::Workspace;
-use crate::App;
-use crate::ActionPort;
-use std::collections::HashMap;
 use crate::tide_layout::SplitLayout;
+use crate::update::workspace_infra_service::Workspace;
+use crate::ActionPort;
+use crate::App;
+use std::collections::HashMap;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -39,7 +39,8 @@ fn app_with_two_workspaces() -> App {
     // Set up WS1 as active
     app.ws.active = 0;
     app.panes = HashMap::new();
-    app.panes.insert(id1, PaneKind::Editor(EditorPane::new_empty(id1)));
+    app.panes
+        .insert(id1, PaneKind::Editor(EditorPane::new_empty(id1)));
     app.focus.focused = Some(id1);
     app.focus.focus_area = FocusArea::Stage;
 
@@ -47,7 +48,8 @@ fn app_with_two_workspaces() -> App {
     app.save_active_workspace();
     app.ws.active = 1;
     app.panes = HashMap::new();
-    app.panes.insert(id2, PaneKind::Editor(EditorPane::new_empty(id2)));
+    app.panes
+        .insert(id2, PaneKind::Editor(EditorPane::new_empty(id2)));
     app.focus.focused = Some(id2);
     app.save_active_workspace();
 

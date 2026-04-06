@@ -1,9 +1,9 @@
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
+use crate::tide_core::LayoutEngine;
 use crate::App;
 use crate::PaneLifecyclePort;
-use crate::tide_core::LayoutEngine;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -66,7 +66,10 @@ fn new_terminal_tab_creates_terminal_pane_in_stage() {
     let (mut app, _) = app_with_editor();
     app.new_terminal_tab();
     let new_id = app.focus.focused.unwrap();
-    assert!(matches!(app.panes.get(&new_id), Some(PaneKind::Terminal(_))));
+    assert!(matches!(
+        app.panes.get(&new_id),
+        Some(PaneKind::Terminal(_))
+    ));
     // Invariant: PaneId sync (all_pane_ids includes inactive TabGroup tabs)
     assert_eq!(app.layout.all_pane_ids().len(), app.panes.len());
 }
@@ -91,7 +94,10 @@ fn split_focuses_new_terminal_pane_in_stage() {
     app.split_with_launcher(crate::tide_core::SplitDirection::Vertical);
     assert_ne!(app.focus.focused, Some(first_id));
     let new_id = app.focus.focused.unwrap();
-    assert!(matches!(app.panes.get(&new_id), Some(PaneKind::Terminal(_))));
+    assert!(matches!(
+        app.panes.get(&new_id),
+        Some(PaneKind::Terminal(_))
+    ));
     // Invariant: PaneId sync
     assert_eq!(app.layout.pane_ids().len(), app.panes.len());
 }
@@ -113,11 +119,18 @@ fn resolving_launcher_as_new_file_replaces_pane_kind_with_editor() {
     // Launchers now only exist in Dock, so test with a Dock Launcher
     let (mut app, _first_id) = app_with_editor();
     let launcher_id = app.layout.alloc_id();
-    app.panes.insert(launcher_id, PaneKind::Launcher(launcher_id));
-    assert!(matches!(app.panes.get(&launcher_id), Some(PaneKind::Launcher(_))));
+    app.panes
+        .insert(launcher_id, PaneKind::Launcher(launcher_id));
+    assert!(matches!(
+        app.panes.get(&launcher_id),
+        Some(PaneKind::Launcher(_))
+    ));
 
     app.resolve_launcher(launcher_id, crate::action::LauncherChoice::NewFile);
-    assert!(matches!(app.panes.get(&launcher_id), Some(PaneKind::Editor(_))));
+    assert!(matches!(
+        app.panes.get(&launcher_id),
+        Some(PaneKind::Editor(_))
+    ));
 }
 
 // --- UC-4: OpenFile ---
@@ -196,10 +209,13 @@ fn closing_pane_in_horizontal_split_focuses_right_neighbor() {
     // UC-5 BR-12: After closing a pane, focus moves to right neighbor
     // Layout: H(A, B(focused)) — closing B focuses A
     let (mut app, left_id) = app_with_editor();
-    let right_id = app.layout.split(left_id, crate::tide_core::SplitDirection::Horizontal);
-    app.panes.insert(right_id, PaneKind::Editor(
-        crate::pane::editor::EditorPane::new_empty(right_id),
-    ));
+    let right_id = app
+        .layout
+        .split(left_id, crate::tide_core::SplitDirection::Horizontal);
+    app.panes.insert(
+        right_id,
+        PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(right_id)),
+    );
     app.focus.focused = Some(left_id);
 
     // Close left pane — right neighbor (right_id) should get focus
@@ -213,10 +229,13 @@ fn closing_only_pane_in_split_focuses_neighbor() {
     // UC-5 BR-12: When a pane is closed, focus moves to remaining pane
     // Layout: Split { left: A, right: B(focused) }
     let (mut app, left_id) = app_with_editor();
-    let right_id = app.layout.split(left_id, crate::tide_core::SplitDirection::Vertical);
-    app.panes.insert(right_id, PaneKind::Editor(
-        crate::pane::editor::EditorPane::new_empty(right_id),
-    ));
+    let right_id = app
+        .layout
+        .split(left_id, crate::tide_core::SplitDirection::Vertical);
+    app.panes.insert(
+        right_id,
+        PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(right_id)),
+    );
     app.focus.focused = Some(right_id);
 
     app.force_close_editor_panel_tab(right_id);

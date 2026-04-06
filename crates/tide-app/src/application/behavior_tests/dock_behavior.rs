@@ -1,11 +1,11 @@
 // Spec: docs/specs/layout-v2.md
+use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::{FocusArea, ViewMode};
-use crate::pane::editor::EditorPane;
+use crate::tide_core::LayoutEngine;
 use crate::App;
 use crate::DockPort;
 use crate::WorkspaceNavPort;
-use crate::tide_core::LayoutEngine;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -18,7 +18,8 @@ fn app_with_terminal() -> (App, u64) {
     let mut app = test_app();
     let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
-    app.panes.insert(terminal_id, PaneKind::Launcher(terminal_id));
+    app.panes
+        .insert(terminal_id, PaneKind::Launcher(terminal_id));
     app.focus.focused = Some(terminal_id);
     app.focus.stage_focused = Some(terminal_id);
     app.focus.focus_area = FocusArea::Stage;
@@ -27,7 +28,9 @@ fn app_with_terminal() -> (App, u64) {
 
 fn app_with_two_terminals() -> (App, u64, u64) {
     let (mut app, t1) = app_with_terminal();
-    let t2 = app.layout.split(t1, crate::tide_core::SplitDirection::Vertical);
+    let t2 = app
+        .layout
+        .split(t1, crate::tide_core::SplitDirection::Vertical);
     app.panes.insert(t2, PaneKind::Launcher(t2));
     (app, t1, t2)
 }
@@ -60,7 +63,10 @@ fn opening_file_places_editor_in_dock() {
     add_to_dock(&mut app, terminal_id, editor_id);
 
     // Editor is associated with the terminal and not in Stage layout
-    assert_eq!(app.assoc.associated_terminal.get(&editor_id), Some(&terminal_id));
+    assert_eq!(
+        app.assoc.associated_terminal.get(&editor_id),
+        Some(&terminal_id)
+    );
     assert!(!app.layout.pane_ids().contains(&editor_id));
 }
 
@@ -71,7 +77,10 @@ fn opened_pane_is_bound_to_focused_terminal() {
     app.focus.focused = Some(t1);
 
     let editor_id = app.layout.alloc_id();
-    app.panes.insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
+    app.panes.insert(
+        editor_id,
+        PaneKind::Editor(EditorPane::new_empty(editor_id)),
+    );
     add_to_dock(&mut app, t1, editor_id);
 
     assert_eq!(app.assoc.associated_terminal.get(&editor_id), Some(&t1));
@@ -84,7 +93,10 @@ fn opening_pane_in_empty_dock_auto_opens_it() {
     assert!(!app.dock.dock_open);
 
     let editor_id = app.layout.alloc_id();
-    app.panes.insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
+    app.panes.insert(
+        editor_id,
+        PaneKind::Editor(EditorPane::new_empty(editor_id)),
+    );
     add_to_dock(&mut app, terminal_id, editor_id);
 
     assert!(app.dock.dock_open);
@@ -101,7 +113,10 @@ fn swap_dock_state_closes_dock_when_no_terminal_has_dock_panes() {
     app.focus.focused = Some(t2);
     app.swap_dock_state(t2);
 
-    assert!(!app.dock.dock_open, "dock closes when no terminal has dock panes");
+    assert!(
+        !app.dock.dock_open,
+        "dock closes when no terminal has dock panes"
+    );
 }
 
 #[test]
@@ -110,7 +125,8 @@ fn dock_open_persists_when_set_manually() {
     let (mut app, t1, _t2) = app_with_two_terminals();
 
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     add_to_dock(&mut app, t1, e1);
 
     // Dock was opened by add_to_dock
@@ -173,11 +189,13 @@ fn closing_terminal_cascades_to_all_dock_panes() {
     let (mut app, t1, _t2) = app_with_two_terminals();
 
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     add_to_dock(&mut app, t1, e1);
 
     let e2 = app.layout.alloc_id();
-    app.panes.insert(e2, PaneKind::Editor(EditorPane::new_empty(e2)));
+    app.panes
+        .insert(e2, PaneKind::Editor(EditorPane::new_empty(e2)));
     add_to_dock(&mut app, t1, e2);
 
     app.cascade_close_terminal(t1);
@@ -235,7 +253,8 @@ fn focus_terminal_on_dock_pane_sets_dock_focus() {
     // returns false. Test verifies Stage focus behavior instead.
     let (mut app, t1) = app_with_terminal();
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     add_to_dock(&mut app, t1, e1);
     app.focus.focus_area = FocusArea::Dock;
     app.focus.focused = Some(e1);
@@ -253,7 +272,8 @@ fn focus_terminal_on_stage_pane_still_works() {
     // Ensure focus_terminal still works for Stage panes
     let (mut app, t1, t2) = app_with_two_terminals();
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     add_to_dock(&mut app, t1, e1);
     app.focus.focus_area = FocusArea::Dock;
     app.focus.focused = Some(e1);
@@ -274,11 +294,13 @@ fn drag_reorder_tabs_in_stacked_dock() {
     let (mut app, t1, _t2) = app_with_two_terminals();
 
     let e1 = app.layout.alloc_id();
-    app.panes.insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     add_to_dock(&mut app, t1, e1);
 
     let e2 = app.layout.alloc_id();
-    app.panes.insert(e2, PaneKind::Editor(EditorPane::new_empty(e2)));
+    app.panes
+        .insert(e2, PaneKind::Editor(EditorPane::new_empty(e2)));
     add_to_dock(&mut app, t1, e2);
 
     app.focus.focus_area = FocusArea::Dock;

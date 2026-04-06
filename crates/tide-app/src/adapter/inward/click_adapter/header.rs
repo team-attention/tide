@@ -45,6 +45,10 @@ pub(crate) fn check_header_click(
                     ctx.request_redraw();
                     return true;
                 }
+                HeaderHitAction::AddComment => {
+                    ctx.open_context_comment_composer(zone.pane_id);
+                    return true;
+                }
                 HeaderHitAction::EditorCompare => {
                     if let Some(PaneKind::Editor(pane)) = ctx.pane_mut(zone.pane_id) {
                         if let Some(path) = pane.editor.file_path().map(|p| p.to_path_buf()) {

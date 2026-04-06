@@ -4,7 +4,6 @@ use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
 
-
 use super::bar_offset_for;
 
 /// Perform per-pane dirty checking and rebuild grid caches for panes whose content changed.
@@ -26,10 +25,15 @@ pub(crate) fn render_grid(
             Some(PaneKind::Editor(pane)) => pane.generation(),
             Some(PaneKind::Diff(dp)) => dp.generation(),
             Some(PaneKind::Browser(_)) => continue, // webview renders natively
-            Some(PaneKind::Launcher(_)) => 0, // static content, always render on first check
+            Some(PaneKind::Launcher(_)) => 0,       // static content, always render on first check
             None => continue,
         };
-        let prev = app.cache.pane_generations.get(&id).copied().unwrap_or(u64::MAX);
+        let prev = app
+            .cache
+            .pane_generations
+            .get(&id)
+            .copied()
+            .unwrap_or(u64::MAX);
         if gen != prev {
             let pane_bar = bar_offset_for(id, &app.panes, &app.modal.save_confirm);
             let inner = Rect::new(
@@ -50,7 +54,12 @@ pub(crate) fn render_grid(
                         let x = inner.x + (inner.width - msg_w) / 2.0;
                         let y = inner.y + inner.height - cs.height * 2.0;
                         // Semi-transparent background strip
-                        let strip = crate::tide_core::Rect::new(inner.x, y - 4.0, inner.width, cs.height + 8.0);
+                        let strip = crate::tide_core::Rect::new(
+                            inner.x,
+                            y - 4.0,
+                            inner.width,
+                            cs.height + 8.0,
+                        );
                         renderer.draw_rect(strip, crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.6));
                         renderer.draw_text(
                             msg,
@@ -58,7 +67,10 @@ pub(crate) fn render_grid(
                             crate::tide_core::TextStyle {
                                 foreground: p.tab_text_focused,
                                 background: None,
-                                bold: false, dim: false, italic: false, underline: false,
+                                bold: false,
+                                dim: false,
+                                italic: false,
+                                underline: false,
                             },
                             strip,
                         );
@@ -66,18 +78,38 @@ pub(crate) fn render_grid(
                     gen_updates.push((id, pane.backend.grid_generation()));
                 }
                 Some(PaneKind::Editor(pane)) => {
-                    let preedit = if ime_target_id == Some(id) { &app.ime.preedit } else { "" };
-                    pane.render_grid_full(inner, renderer, p.gutter_text, p.gutter_active_text,
-                        Some(p.diff_added_bg), Some(p.diff_removed_bg),
-                        Some(p.diff_added_gutter), Some(p.diff_removed_gutter),
-                        preedit, p.current_line_bg, p.indent_guide);
+                    let preedit = if ime_target_id == Some(id) {
+                        &app.ime.preedit
+                    } else {
+                        ""
+                    };
+                    pane.render_grid_full(
+                        inner,
+                        renderer,
+                        p.gutter_text,
+                        p.gutter_active_text,
+                        Some(p.diff_added_bg),
+                        Some(p.diff_removed_bg),
+                        Some(p.diff_added_gutter),
+                        Some(p.diff_removed_gutter),
+                        preedit,
+                        p.current_line_bg,
+                        p.indent_guide,
+                    );
                     gen_updates.push((id, pane.generation()));
                 }
                 Some(PaneKind::Diff(dp)) => {
-                    dp.render_grid(inner, renderer, p.tab_text_focused, p.tab_text,
-                        p.diff_added_bg, p.diff_removed_bg,
-                        p.diff_added_gutter, p.diff_removed_gutter,
-                        p.border_subtle);
+                    dp.render_grid(
+                        inner,
+                        renderer,
+                        p.tab_text_focused,
+                        p.tab_text,
+                        p.diff_added_bg,
+                        p.diff_removed_bg,
+                        p.diff_added_gutter,
+                        p.diff_removed_gutter,
+                        p.border_subtle,
+                    );
                     gen_updates.push((id, dp.generation()));
                 }
                 Some(PaneKind::Browser(_)) => {} // webview renders natively

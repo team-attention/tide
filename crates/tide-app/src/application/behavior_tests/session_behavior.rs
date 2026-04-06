@@ -5,7 +5,10 @@ use crate::application::ports::outward::persistence_port::{Session, SessionLayou
 fn session_preserves_dark_mode_preference() {
     // UC-1 BR-1: Session preserves dark_mode preference
     let session = Session {
-        layout: SessionLayout::Leaf { pane_id: 1, cwd: None },
+        layout: SessionLayout::Leaf {
+            pane_id: 1,
+            cwd: None,
+        },
         focused_pane_id: Some(1),
         show_file_tree: false,
         file_tree_width: 200.0,
@@ -27,7 +30,10 @@ fn session_preserves_dark_mode_preference() {
 fn session_preserves_file_tree_visibility() {
     // UC-1 BR-2: Session preserves file tree visibility and width
     let session = Session {
-        layout: SessionLayout::Leaf { pane_id: 1, cwd: None },
+        layout: SessionLayout::Leaf {
+            pane_id: 1,
+            cwd: None,
+        },
         focused_pane_id: Some(1),
         show_file_tree: true,
         file_tree_width: 300.0,

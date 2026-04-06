@@ -2,10 +2,10 @@
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalContext};
 use crate::state::FocusArea;
-use crate::App;
-use crate::ActionPort;
-use crate::PaneLifecyclePort;
 use crate::tide_core::LayoutEngine;
+use crate::ActionPort;
+use crate::App;
+use crate::PaneLifecyclePort;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -22,12 +22,15 @@ fn app_with_terminal_and_editor() -> (App, u64, u64) {
     let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     // Use a Launcher as stand-in for terminal (PaneKind matters for routing)
-    app.panes.insert(terminal_id, PaneKind::Launcher(terminal_id));
+    app.panes
+        .insert(terminal_id, PaneKind::Launcher(terminal_id));
     app.focus.focused = Some(terminal_id);
     app.focus.focus_area = FocusArea::Stage;
 
     // Split and add an editor
-    let editor_id = app.layout.split(terminal_id, crate::tide_core::SplitDirection::Vertical);
+    let editor_id = app
+        .layout
+        .split(terminal_id, crate::tide_core::SplitDirection::Vertical);
     let editor = EditorPane::new_empty(editor_id);
     app.panes.insert(editor_id, PaneKind::Editor(editor));
     app.assoc.associated_terminal.insert(editor_id, terminal_id);
@@ -45,7 +48,8 @@ fn new_editor_inherits_associated_terminal_from_focused_terminal() {
     let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
     // Insert an actual Launcher to stand in (Terminal routing check uses PaneKind)
-    app.panes.insert(terminal_id, PaneKind::Launcher(terminal_id));
+    app.panes
+        .insert(terminal_id, PaneKind::Launcher(terminal_id));
     app.focus.focused = Some(terminal_id);
     app.focus.focus_area = FocusArea::Stage;
 
@@ -65,7 +69,10 @@ fn new_editor_inherits_associated_terminal_from_focused_editor() {
     assert_eq!(app.focus.focused, Some(editor_id));
 
     // The editor's associated terminal should be terminal_id
-    assert_eq!(app.assoc.associated_terminal.get(&editor_id), Some(&terminal_id));
+    assert_eq!(
+        app.assoc.associated_terminal.get(&editor_id),
+        Some(&terminal_id)
+    );
 
     // resolve_context_terminal_id from focused editor should return terminal_id
     assert_eq!(app.resolve_context_terminal_id(), Some(terminal_id));
@@ -112,7 +119,10 @@ fn focusing_pane_without_association_returns_last_cwd() {
     let mut app = test_app();
     let (layout, editor_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
-    app.panes.insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
+    app.panes.insert(
+        editor_id,
+        PaneKind::Editor(EditorPane::new_empty(editor_id)),
+    );
     app.focus.focused = Some(editor_id);
     app.timing.last_cwd = Some(std::path::PathBuf::from("/tmp/fallback"));
 
@@ -128,7 +138,10 @@ fn open_file_adds_split_when_focused_is_non_terminal() {
     let mut app = test_app();
     let (layout, editor_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
-    app.panes.insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
+    app.panes.insert(
+        editor_id,
+        PaneKind::Editor(EditorPane::new_empty(editor_id)),
+    );
     app.focus.focused = Some(editor_id);
     app.focus.focus_area = FocusArea::Stage;
 
@@ -151,7 +164,10 @@ fn new_editor_from_editor_adds_split() {
     let mut app = test_app();
     let (layout, editor_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
-    app.panes.insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
+    app.panes.insert(
+        editor_id,
+        PaneKind::Editor(EditorPane::new_empty(editor_id)),
+    );
     app.focus.focused = Some(editor_id);
 
     app.new_editor_pane();
@@ -178,7 +194,11 @@ fn closing_terminal_retains_context_when_panes_reference_it() {
     // Simulate: terminal pane gets closed but has dependents
     // retain_terminal_context only works on PaneKind::Terminal, but we use Launcher
     // So test the logic directly: if there are dependents, context should be stored
-    assert!(app.assoc.associated_terminal.values().any(|&v| v == terminal_id));
+    assert!(app
+        .assoc
+        .associated_terminal
+        .values()
+        .any(|&v| v == terminal_id));
 
     // Store retained context manually (since we can't create real terminals in tests)
     app.assoc.retained_contexts.insert(terminal_id, ctx);

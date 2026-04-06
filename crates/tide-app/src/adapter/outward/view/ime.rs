@@ -2,12 +2,11 @@ use unicode_width::UnicodeWidthChar;
 
 use crate::tide_core::{Rect, Renderer, TerminalBackend, TextStyle, Vec2};
 
-use crate::state::drag_types::{DropDestination, PaneDragState};
 use crate::pane::PaneKind;
+use crate::state::drag_types::{DropDestination, PaneDragState};
 use crate::theme::*;
 use crate::App;
 use crate::DockPort;
-
 
 /// Render IME preedit overlay (Korean composition in progress) for terminal panes,
 /// drag-drop preview overlays, and handle drag preview.
@@ -33,7 +32,9 @@ pub(crate) fn render_ime_and_drop_preview(
             let is_editor = matches!(app.panes.get(&target_id), Some(PaneKind::Editor(_)));
             if is_editor {
                 render_editor_ime_preedit(app, renderer, p, visual_pane_rects, target_id);
-            } else if let Some((_, rect)) = visual_pane_rects.iter().find(|(id, _)| *id == target_id) {
+            } else if let Some((_, rect)) =
+                visual_pane_rects.iter().find(|(id, _)| *id == target_id)
+            {
                 if let Some(PaneKind::Terminal(pane)) = app.panes.get(&target_id) {
                     let cursor = pane.backend.cursor();
                     let cell_size = renderer.cell_size();
@@ -42,23 +43,20 @@ pub(crate) fn render_ime_and_drop_preview(
                     let actual_w = max_cols as f32 * cell_size.width;
                     let center_x = (inner_w - actual_w) / 2.0;
                     let ime_top = TAB_BAR_HEIGHT;
-                    let inner_offset = Vec2::new(
-                        rect.x + PANE_PADDING + center_x,
-                        rect.y + ime_top,
-                    );
+                    let inner_offset =
+                        Vec2::new(rect.x + PANE_PADDING + center_x, rect.y + ime_top);
                     let cx = inner_offset.x + cursor.col as f32 * cell_size.width;
                     let cy = inner_offset.y + cursor.row as f32 * cell_size.height;
 
                     // Draw preedit background
                     let preedit_chars: Vec<char> = app.ime.preedit.chars().collect();
-                    let pw = preedit_chars.iter()
+                    let pw = preedit_chars
+                        .iter()
                         .map(|c| UnicodeWidthChar::width(*c).unwrap_or(1))
                         .sum::<usize>()
-                        .max(1) as f32 * cell_size.width;
-                    renderer.draw_rect(
-                        Rect::new(cx, cy, pw, cell_size.height),
-                        p.ime_preedit_bg,
-                    );
+                        .max(1) as f32
+                        * cell_size.width;
+                    renderer.draw_rect(Rect::new(cx, cy, pw, cell_size.height), p.ime_preedit_bg);
 
                     // Draw each preedit character
                     let preedit_style = TextStyle {
@@ -94,9 +92,12 @@ pub(crate) fn render_ime_and_drop_preview(
         cursor_pos,
         source_label,
         ..
-    } = &app.interaction.pane_drag {
+    } = &app.interaction.pane_drag
+    {
         // Compute fade-in alpha from drop_preview_start (150ms ease-in quadratic)
-        let alpha_factor = app.interaction.drop_preview_start
+        let alpha_factor = app
+            .interaction
+            .drop_preview_start
             .map(|start| {
                 let t = (start.elapsed().as_secs_f32() * 1000.0 / 150.0).min(1.0);
                 t * t // quadratic ease-in
@@ -104,20 +105,28 @@ pub(crate) fn render_ime_and_drop_preview(
             .unwrap_or(1.0);
 
         // Dim overlay on the source pane being dragged
-        if let Some(&(_, source_rect)) = visual_pane_rects.iter().find(|(id, _)| *id == *source_pane) {
-            renderer.draw_rect(source_rect, p.drag_source_dim.with_alpha_factor(alpha_factor));
+        if let Some(&(_, source_rect)) =
+            visual_pane_rects.iter().find(|(id, _)| *id == *source_pane)
+        {
+            renderer.draw_rect(
+                source_rect,
+                p.drag_source_dim.with_alpha_factor(alpha_factor),
+            );
         }
 
         if let Some(ref dest) = maybe_dest {
             match dest {
-                DropDestination::TreeRoot(zone) | DropDestination::TreePane(_, zone)
+                DropDestination::TreeRoot(zone)
+                | DropDestination::TreePane(_, zone)
                 | DropDestination::DockRoot(zone) => {
                     let is_swap = *zone == crate::tide_core::DropZone::Center;
 
                     if is_swap {
                         // Swap preview: border-only outline around target's visual rect
                         if let DropDestination::TreePane(target_id, _) = dest {
-                            if let Some(&(_, target_rect)) = visual_pane_rects.iter().find(|(id, _)| *id == *target_id) {
+                            if let Some(&(_, target_rect)) =
+                                visual_pane_rects.iter().find(|(id, _)| *id == *target_id)
+                            {
                                 App::draw_swap_preview(renderer, target_rect, p, alpha_factor);
                             }
                         }
@@ -149,15 +158,22 @@ pub(crate) fn render_ime_and_drop_preview(
                 }
                 DropDestination::Workspace(idx) => {
                     // Highlight the target workspace sidebar item
-                    if let Some(item_rect) = crate::adapter::inward::drag_drop_adapter::workspace_sidebar_item_rect(app, *idx) {
+                    if let Some(item_rect) =
+                        crate::adapter::inward::drag_drop_adapter::workspace_sidebar_item_rect(
+                            app, *idx,
+                        )
+                    {
                         App::draw_insert_preview(renderer, item_rect, p, alpha_factor);
                     }
                 }
                 DropDestination::PinnedGroup => {
                     // Highlight the pinned group area
                     if let Some(dock_rect) = app.dock_area_rect {
-                        let pinned_w = (dock_rect.width * app.dock.pinned_dock_ratio).max(60.0).min(dock_rect.width - 60.0);
-                        let pinned_rect = Rect::new(dock_rect.x, dock_rect.y, pinned_w, dock_rect.height);
+                        let pinned_w = (dock_rect.width * app.dock.pinned_dock_ratio)
+                            .max(60.0)
+                            .min(dock_rect.width - 60.0);
+                        let pinned_rect =
+                            Rect::new(dock_rect.x, dock_rect.y, pinned_w, dock_rect.height);
                         App::draw_insert_preview(renderer, pinned_rect, p, alpha_factor);
                     }
                 }
@@ -172,9 +188,11 @@ pub(crate) fn render_ime_and_drop_preview(
             let h_padding = 8.0;
             let v_padding = 4.0;
 
-            let text_w = source_label.chars()
+            let text_w = source_label
+                .chars()
                 .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
-                .sum::<usize>() as f32 * cell_size.width;
+                .sum::<usize>() as f32
+                * cell_size.width;
             let text_h = cell_size.height;
             let bg_w = text_w + h_padding * 2.0;
             let bg_h = text_h + v_padding * 2.0;
@@ -200,7 +218,6 @@ pub(crate) fn render_ime_and_drop_preview(
             renderer.draw_top_text(&source_label, text_pos, label_style, clip);
         }
     }
-
 }
 
 /// Render IME preedit overlay for an editor pane (tree editor or panel editor).
@@ -222,28 +239,27 @@ fn render_editor_ime_preedit(
     let gutter_cells = crate::pane::editor::GUTTER_WIDTH_CELLS;
 
     // Determine the rect for this editor pane
-    let (inner_x, inner_y) = if let Some((_, rect)) = visual_pane_rects.iter().find(|(id, _)| *id == target_id) {
-        let top_offset = TAB_BAR_HEIGHT;
-        (rect.x + PANE_PADDING, rect.y + top_offset)
-    } else {
-        return;
-    };
+    let (inner_x, inner_y) =
+        if let Some((_, rect)) = visual_pane_rects.iter().find(|(id, _)| *id == target_id) {
+            let top_offset = TAB_BAR_HEIGHT;
+            (rect.x + PANE_PADDING, rect.y + top_offset)
+        } else {
+            return;
+        };
 
     let gutter_width = gutter_cells as f32 * cell_size.width;
 
     // Compute visual row and column — soft wrap aware
     let (visual_row, visual_col_offset) = if pane.effective_soft_wrap() {
         if let Some(wrap_map) = pane.wrap_map() {
-            let cursor_vr = wrap_map.buffer_pos_to_visual_row(
-                pos.line, pos.col, &pane.editor.buffer.lines,
-            );
+            let cursor_vr =
+                wrap_map.buffer_pos_to_visual_row(pos.line, pos.col, &pane.editor.buffer.lines);
             if cursor_vr < pane.soft_wrap_visual_scroll() {
                 return;
             }
             let vr = cursor_vr - pane.soft_wrap_visual_scroll();
-            let vc = wrap_map.buffer_pos_to_visual_col(
-                pos.line, pos.col, &pane.editor.buffer.lines,
-            );
+            let vc =
+                wrap_map.buffer_pos_to_visual_col(pos.line, pos.col, &pane.editor.buffer.lines);
             (vr, vc)
         } else {
             return;
@@ -265,7 +281,8 @@ fn render_editor_ime_preedit(
             return;
         }
         let visual_col_offset = if let Some(line_text) = pane.editor.buffer.line(pos.line) {
-            line_text.chars()
+            line_text
+                .chars()
                 .skip(h_scroll)
                 .take(cursor_char_col - h_scroll)
                 .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
@@ -281,14 +298,13 @@ fn render_editor_ime_preedit(
 
     // Draw preedit background
     let preedit_chars: Vec<char> = app.ime.preedit.chars().collect();
-    let pw = preedit_chars.iter()
+    let pw = preedit_chars
+        .iter()
         .map(|c| UnicodeWidthChar::width(*c).unwrap_or(1))
         .sum::<usize>()
-        .max(1) as f32 * cell_size.width;
-    renderer.draw_top_rect(
-        Rect::new(cx, cy, pw, cell_size.height),
-        p.ime_preedit_bg,
-    );
+        .max(1) as f32
+        * cell_size.width;
+    renderer.draw_top_rect(Rect::new(cx, cy, pw, cell_size.height), p.ime_preedit_bg);
 
     // Draw each preedit character in the top layer (above preedit bg)
     let mut col_offset = 0usize;

@@ -2,8 +2,8 @@
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::application::ports::outward::file_watcher_port::{FileWatchEvent, FileWatcherPort};
 use crate::pane::editor::EditorPane;
@@ -97,10 +97,8 @@ fn clean_editor_reloads_when_file_watch_event_uses_equivalent_real_path() {
     assert_ne!(event_path, link_path, "fixture must produce path aliasing");
 
     let watched = Arc::new(Mutex::new(Vec::new()));
-    let watcher = RecordingFileWatcher::new(
-        vec![FileWatchEvent::Modified(event_path)],
-        watched.clone(),
-    );
+    let watcher =
+        RecordingFileWatcher::new(vec![FileWatchEvent::Modified(event_path)], watched.clone());
     let (mut app, id) = app_with_file_backed_editor(&link_path);
     app.ports.file_watcher = Box::new(watcher);
     app.watch_file(&link_path);
@@ -129,7 +127,9 @@ fn file_watch_event_triggers_git_poll_for_retained_editor_context() {
 
     let watched = Arc::new(Mutex::new(Vec::new()));
     let watcher = RecordingFileWatcher::new(
-        vec![FileWatchEvent::Modified(std::fs::canonicalize(&real_path).unwrap())],
+        vec![FileWatchEvent::Modified(
+            std::fs::canonicalize(&real_path).unwrap(),
+        )],
         watched,
     );
     let (mut app, id) = app_with_file_backed_editor(&link_path);

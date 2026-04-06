@@ -6,10 +6,10 @@ use crate::tide_core::TerminalBackend;
 use crate::tide_platform::{PlatformEvent, PlatformWindow, WindowProxy};
 
 use crate::pane::PaneKind;
-use crate::theme::*;
 use crate::state::FocusArea;
-use crate::App;
+use crate::theme::*;
 use crate::ActionPort;
+use crate::App;
 use crate::AppCorePort;
 use crate::ClipboardSearchPort;
 use crate::DockPort;
@@ -193,8 +193,7 @@ pub(crate) fn handle_platform_event(
                     ctx.interaction().pane_drag,
                     crate::state::drag_types::PaneDragState::Idle
                 ) {
-                    ctx.interaction_mut().pane_drag =
-                        crate::state::drag_types::PaneDragState::Idle;
+                    ctx.interaction_mut().pane_drag = crate::state::drag_types::PaneDragState::Idle;
                     ctx.request_redraw();
                 }
             }
@@ -299,11 +298,7 @@ pub(crate) fn handle_platform_event(
                 ctx, pos, window,
             );
         }
-        PlatformEvent::Scroll {
-            dx,
-            dy,
-            position,
-        } => {
+        PlatformEvent::Scroll { dx, dy, position } => {
             let pos = physical_to_logical(position);
             ctx.set_last_cursor_pos(pos);
             crate::adapter::inward::scroll_adapter::handle_scroll(ctx, dx, dy);
@@ -320,6 +315,81 @@ pub(crate) fn handle_platform_event(
 // ── Infrastructure methods (stay on impl App) ──
 
 impl App {
+    pub(crate) fn apply_webview_bridge_message(&mut self, msg: &str) -> bool {
+        let parsed: serde_json::Value = match serde_json::from_str(msg) {
+            Ok(value) => value,
+            Err(_) => return false,
+        };
+        let kind = match parsed.get("kind").and_then(|v| v.as_str()) {
+            Some(kind) => kind,
+            None => return false,
+        };
+
+        match kind {
+            "browser-selection" => {
+                let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
+                    Some(id) => id,
+                    None => return false,
+                };
+                let text = parsed
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let html = parsed
+                    .get("html")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let context = parsed
+                    .get("context")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .filter(|s| !s.trim().is_empty());
+                let page_title = parsed
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .filter(|s| !s.trim().is_empty());
+                let page_url = parsed
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .filter(|s| !s.trim().is_empty());
+                let collapsed = parsed
+                    .get("collapsed")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                let snapshot = if text.trim().is_empty() {
+                    None
+                } else {
+                    Some(crate::pane::browser::BrowserSelectionSnapshot {
+                        text,
+                        html,
+                        context,
+                        page_title,
+                        page_url,
+                        collapsed,
+                    })
+                };
+
+                match self.pane_mut(pane_id) {
+                    Some(PaneKind::Browser(browser)) => {
+                        if snapshot.is_none() {
+                            browser.clear_page_selection();
+                            true
+                        } else {
+                            browser.update_page_selection(snapshot)
+                        }
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
+
     // ── Phase 1: one-time initialization on the main thread ──────────
 
     /// Perform one-time initialization that requires the real window handle
@@ -329,7 +399,9 @@ impl App {
         // Swap noop ports for real implementations now that we have a window.
         self.ports = crate::app::Ports::real();
 
-        self.ports.platform.set_content_view_ptr(window.content_view_ptr());
+        self.ports
+            .platform
+            .set_content_view_ptr(window.content_view_ptr());
         self.ports.platform.set_window_ptr(window.window_ptr());
 
         let saved_session = self.ports.persistence.load_session();
@@ -357,8 +429,11 @@ impl App {
             // Pre-spawn PTY with estimated dimensions (80x24) BEFORE GPU init.
             // The shell starts loading ~/.zshrc in parallel with GPU initialization,
             // so the prompt appears sooner after launch.
-            let early_terminal =
-                self.ports.terminal_factory.pre_spawn_terminal(80, 24, self.window.dark_mode, Some(1)).ok();
+            let early_terminal = self
+                .ports
+                .terminal_factory
+                .pre_spawn_terminal(80, 24, self.window.dark_mode, Some(1))
+                .ok();
 
             self.init_gpu(window); // Shell is loading in parallel
 
@@ -428,7 +503,11 @@ impl App {
             // Drain bridge messages from render pane JS bridge (BR-30)
             for msg in crate::tide_platform::macos::webview::drain_bridge_messages() {
                 if !msg.is_empty() {
-                    self.gateway.notify("webview-message", serde_json::json!({"message": msg}));
+                    if self.apply_webview_bridge_message(&msg) {
+                        self.invalidate_chrome();
+                    }
+                    self.gateway
+                        .notify("webview-message", serde_json::json!({"message": msg}));
                 }
             }
 
@@ -441,20 +520,26 @@ impl App {
                 for id in pane_ids {
                     if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get(&id) {
                         if let Some(pid) = tp.backend.child_pid() {
-                            if let Some(mut agent) = crate::state::gateway_status::detect_agent(pid) {
+                            if let Some(mut agent) = crate::state::gateway_status::detect_agent(pid)
+                            {
                                 // Preserve existing status when re-detecting (process scan
                                 // returns a fresh AgentInfo with status: None)
                                 if let Some(existing) = self.gateway.detected_agents.get(&id) {
                                     agent.status = existing.status;
                                 }
-                                agent.gateway_connected = crate::state::gateway_status::is_agent_connected(
-                                    agent.pid, &self.gateway.connected_pids
-                                );
+                                agent.gateway_connected =
+                                    crate::state::gateway_status::is_agent_connected(
+                                        agent.pid,
+                                        &self.gateway.connected_pids,
+                                    );
                                 self.gateway.detected_agents.insert(id, agent);
                             } else {
                                 // Don't remove agents that have active status — the process
                                 // scan can fail intermittently (race with workspace switch, etc.)
-                                let has_status = self.gateway.detected_agents.get(&id)
+                                let has_status = self
+                                    .gateway
+                                    .detected_agents
+                                    .get(&id)
                                     .map_or(false, |a| a.status.is_some());
                                 if !has_status {
                                     self.gateway.detected_agents.remove(&id);
@@ -476,7 +561,11 @@ impl App {
             }
 
             // Cursor blink
-            let blink_elapsed = self.ports.clock.now().duration_since(self.timing.cursor_blink_at);
+            let blink_elapsed = self
+                .ports
+                .clock
+                .now()
+                .duration_since(self.timing.cursor_blink_at);
             let blink_phase = (blink_elapsed.as_millis() / 530) % 2 == 0;
             if blink_phase != self.timing.cursor_visible {
                 self.timing.cursor_visible = blink_phase;
@@ -486,8 +575,10 @@ impl App {
             // Agent NeedsInput blink: continuous redraw while any unfocused agent needs input (UC-5 BR-5)
             {
                 let has_blinking = self.gateway.detected_agents.iter().any(|(&id, a)| {
-                    matches!(a.status, Some(crate::state::gateway_status::AgentStatus::NeedsInput))
-                        && self.focus.focused != Some(id)
+                    matches!(
+                        a.status,
+                        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+                    ) && self.focus.focused != Some(id)
                 });
                 if has_blinking {
                     crate::AppCorePort::request_redraw(&mut self);
@@ -628,7 +719,8 @@ impl App {
     pub(crate) fn commit_text_to_pane(&mut self, pane_id: crate::tide_core::PaneId, text: &str) {
         use crate::pane::PaneKind;
         // Compute visible size before mutable borrow of panes
-        let editor_size = crate::adapter::inward::text_routing_adapter::visible_editor_size(self, pane_id);
+        let editor_size =
+            crate::adapter::inward::text_routing_adapter::visible_editor_size(self, pane_id);
         match self.panes.get_mut(&pane_id) {
             Some(PaneKind::Terminal(pane)) => {
                 pane.backend.write(text.as_bytes());
@@ -699,9 +791,15 @@ impl App {
 
         // Drain OSC 9 notifications from terminals
         {
-            let terminal_ids: Vec<u64> = self.panes.iter()
+            let terminal_ids: Vec<u64> = self
+                .panes
+                .iter()
                 .filter_map(|(&id, pk)| {
-                    if matches!(pk, PaneKind::Terminal(_)) { Some(id) } else { None }
+                    if matches!(pk, PaneKind::Terminal(_)) {
+                        Some(id)
+                    } else {
+                        None
+                    }
                 })
                 .collect();
             for id in terminal_ids {
@@ -720,7 +818,10 @@ impl App {
             let cmds: Vec<_> = self.pending_platform_commands.drain(..).collect();
             for cmd in cmds {
                 match cmd {
-                    WindowCommand::SendSystemNotification { ref title, ref body } => {
+                    WindowCommand::SendSystemNotification {
+                        ref title,
+                        ref body,
+                    } => {
                         window.send_system_notification(title, body);
                     }
                     WindowCommand::RequestUserAttention => {
@@ -778,6 +879,26 @@ impl App {
 
         let cell_size = self.cell_size();
 
+        if let Some((pane_id, rect)) = overlay_ime_cursor_area(
+            self.focus.focused,
+            self.focus.search_focus,
+            &self.modal,
+            &self.panes,
+            &self.visual_pane_rects,
+            self.logical_size(),
+            cell_size,
+            &self.ime.preedit,
+        ) {
+            window.set_ime_proxy_cursor_area(
+                pane_id,
+                rect.x as f64,
+                rect.y as f64,
+                rect.width as f64,
+                rect.height as f64,
+            );
+            return;
+        }
+
         let target_id = match self.focus.focused {
             Some(id) => id,
             None => return,
@@ -818,13 +939,12 @@ impl App {
                     return;
                 }
                 let visual_row = pos.line - scroll;
-                let cursor_char_col =
-                    if let Some(line_text) = pane.editor.buffer.line(pos.line) {
-                        let byte_col = pos.col.min(line_text.len());
-                        line_text[..byte_col].chars().count()
-                    } else {
-                        0
-                    };
+                let cursor_char_col = if let Some(line_text) = pane.editor.buffer.line(pos.line) {
+                    let byte_col = pos.col.min(line_text.len());
+                    line_text[..byte_col].chars().count()
+                } else {
+                    0
+                };
                 if cursor_char_col < h_scroll {
                     return;
                 }
@@ -889,6 +1009,103 @@ pub(crate) fn effective_ime_target(
     target
 }
 
+pub(crate) fn overlay_ime_cursor_area(
+    focused: Option<crate::tide_core::PaneId>,
+    search_focus: Option<crate::tide_core::PaneId>,
+    modal: &crate::state::ModalStack,
+    panes: &std::collections::HashMap<crate::tide_core::PaneId, PaneKind>,
+    visual_pane_rects: &[(crate::tide_core::PaneId, crate::tide_core::Rect)],
+    logical_size: crate::tide_core::Size,
+    cell_size: crate::tide_core::Size,
+    preedit: &str,
+) -> Option<(crate::tide_core::PaneId, crate::tide_core::Rect)> {
+    if let Some(id) = search_focus {
+        let rect = visual_pane_rects
+            .iter()
+            .find(|(pane_id, _)| *pane_id == id)
+            .map(|(_, rect)| *rect)?;
+        let cursor = match panes.get(&id) {
+            Some(PaneKind::Terminal(pane)) => pane.search.as_ref()?.input.cursor,
+            Some(PaneKind::Editor(pane)) => pane.search.as_ref()?.input.cursor,
+            Some(PaneKind::Browser(pane)) => pane.search.as_ref()?.input.cursor,
+            _ => return None,
+        };
+        let query = match panes.get(&id) {
+            Some(PaneKind::Terminal(pane)) => pane.search.as_ref()?.input.text.clone(),
+            Some(PaneKind::Editor(pane)) => pane.search.as_ref()?.input.text.clone(),
+            Some(PaneKind::Browser(pane)) => pane.search.as_ref()?.input.text.clone(),
+            _ => return None,
+        };
+
+        let bar_w = crate::theme::SEARCH_BAR_WIDTH.min(rect.width - 16.0);
+        if bar_w < 80.0 {
+            return None;
+        }
+        let bar_x = rect.x + rect.width - bar_w - 8.0;
+        let bar_y = rect.y + crate::theme::TAB_BAR_HEIGHT + 4.0;
+        let text_x = bar_x + 6.0;
+        let preedit_w = visual_width_for_ime_cursor(&query, cursor, preedit);
+        let cursor_x = text_x + preedit_w * cell_size.width;
+        let cursor_y = bar_y + (crate::theme::SEARCH_BAR_HEIGHT - cell_size.height) / 2.0;
+        return Some((
+            id,
+            crate::tide_core::Rect::new(cursor_x, cursor_y, cell_size.width, cell_size.height),
+        ));
+    }
+
+    if let Some(composer) = modal.context_comment_composer.as_ref() {
+        let popup_w = if logical_size.width > 560.0 {
+            (logical_size.width - 48.0).min(760.0).max(520.0)
+        } else {
+            (logical_size.width - 24.0).max(320.0)
+        };
+        let popup_h = if logical_size.height > 420.0 {
+            (logical_size.height - 48.0).min(520.0).max(320.0)
+        } else {
+            (logical_size.height - 24.0).max(260.0)
+        };
+        let popup_x = (logical_size.width - popup_w) / 2.0;
+        let popup_y = (logical_size.height - popup_h) / 2.0;
+        let line_h = cell_size.height + 6.0;
+        let mut y = popup_y + 16.0;
+        y += line_h + 4.0;
+        y += line_h;
+        y += line_h + 8.0;
+        y += line_h;
+        y += 5.0 * line_h + 12.0;
+        y += line_h;
+
+        let input_h = line_h + 4.0;
+        let input_text_y = y + (input_h - cell_size.height) / 2.0;
+        let cursor_x = popup_x
+            + 18.0
+            + 10.0
+            + visual_width_for_ime_cursor(&composer.comment.text, composer.comment.cursor, preedit)
+                * cell_size.width;
+        return Some((
+            composer.associated_terminal_id,
+            crate::tide_core::Rect::new(cursor_x, input_text_y, cell_size.width, cell_size.height),
+        ));
+    }
+
+    let _ = focused;
+    None
+}
+
+fn visual_width_for_ime_cursor(text: &str, cursor: usize, preedit: &str) -> f32 {
+    let cursor = cursor.min(text.len());
+    let before = &text[..cursor];
+    let before_width: usize = before
+        .chars()
+        .map(|ch| unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1))
+        .sum();
+    let preedit_width: usize = preedit
+        .chars()
+        .map(|ch| unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1))
+        .sum();
+    (before_width + preedit_width) as f32
+}
+
 fn platform_button_to_core(
     button: crate::tide_platform::MouseButton,
 ) -> Option<crate::tide_core::MouseButton> {
@@ -922,3 +1139,6 @@ fn cleanup_stale_shell_locks() {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

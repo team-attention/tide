@@ -566,6 +566,64 @@ pub(crate) struct BranchCleanupState {
 }
 
 // ──────────────────────────────────────────────
+// Context comment composer state (selection + comment)
+// ──────────────────────────────────────────────
+
+pub(crate) struct ContextCommentComposerState {
+    pub source_pane_id: PaneId,
+    pub associated_terminal_id: PaneId,
+    pub pane_kind: String,
+    pub selection: Option<crate::pane::Selection>,
+    pub content: String,
+    pub comment: InputLine,
+    pub pinned: bool,
+}
+
+impl ContextCommentComposerState {
+    pub fn new(
+        source_pane_id: PaneId,
+        associated_terminal_id: PaneId,
+        pane_kind: String,
+        selection: Option<crate::pane::Selection>,
+        content: String,
+    ) -> Self {
+        Self {
+            source_pane_id,
+            associated_terminal_id,
+            pane_kind,
+            selection,
+            content,
+            comment: InputLine::new(),
+            pinned: false,
+        }
+    }
+
+    pub fn insert_char(&mut self, ch: char) {
+        self.comment.insert_char(ch);
+    }
+
+    pub fn backspace(&mut self) {
+        self.comment.backspace();
+    }
+
+    pub fn delete_char(&mut self) {
+        self.comment.delete_char();
+    }
+
+    pub fn move_cursor_left(&mut self) {
+        self.comment.move_cursor_left();
+    }
+
+    pub fn move_cursor_right(&mut self) {
+        self.comment.move_cursor_right();
+    }
+
+    pub fn toggle_pinned(&mut self) {
+        self.pinned = !self.pinned;
+    }
+}
+
+// ──────────────────────────────────────────────
 // File tree inline rename state
 // ──────────────────────────────────────────────
 
@@ -586,6 +644,7 @@ pub(crate) struct ModalStack {
     pub save_as_input: Option<SaveAsInput>,
     pub save_confirm: Option<SaveConfirmState>,
     pub context_menu: Option<ContextMenuState>,
+    pub context_comment_composer: Option<ContextCommentComposerState>,
     pub file_tree_rename: Option<FileTreeRenameState>,
     pub branch_cleanup: Option<BranchCleanupState>,
 }
@@ -599,6 +658,7 @@ impl ModalStack {
             save_as_input: None,
             save_confirm: None,
             context_menu: None,
+            context_comment_composer: None,
             file_tree_rename: None,
             branch_cleanup: None,
         }
@@ -613,6 +673,7 @@ impl ModalStack {
             || self.save_as_input.is_some()
             || self.save_confirm.is_some()
             || self.context_menu.is_some()
+            || self.context_comment_composer.is_some()
             || self.file_tree_rename.is_some()
             || self.branch_cleanup.is_some()
     }
@@ -641,6 +702,7 @@ impl ModalStack {
         self.save_as_input = None;
         self.save_confirm = None;
         self.context_menu = None;
+        self.context_comment_composer = None;
         self.file_tree_rename = None;
         self.branch_cleanup = None;
     }

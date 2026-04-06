@@ -68,6 +68,9 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Terminal Context** | concept | A Terminal acts as the context provider (cwd source of truth) for its associated non-terminal Panes. |
 | **Associated Terminal** | `Option<PaneId>` | The Terminal that provides cwd context for a non-terminal Pane. Set at Pane creation time. |
 | **Retained Context** | `HashMap<PaneId, TerminalContext>` | A closed Terminal's TerminalContext. Removed from UI but its context data is retained for associated Panes. Cleaned up when all associated Panes are closed. |
+| **Paired Agent** | concept | The agent process running in the Terminal associated with a source Pane. Context Artifacts are delivered only to this agent. |
+| **Pinned Context** | concept | A Context Artifact marked for later explicit retrieval by the paired agent. |
+| **Artifact Delivery** | concept | The one-way handoff from a source Pane's Context Artifact to its paired agent. In V1 this includes owner-scoped gateway events and, when the paired Terminal is live, formatted Terminal input injection. |
 
 ## Domain Concepts
 
@@ -87,9 +90,12 @@ All paths below are relative to `crates/tide-app/src/`.
 | **FileTreeModel** | `FileTreeModel` | State for the FileTree chrome: root tree, scroll, cursor, and cached git status used to render FileTree rows. |
 | **Ratio** | `f32` | Split position (0.0–1.0). Clamped to [0.1, 0.9] minimum. |
 | **Cell Size** | `Size` | Pixel dimensions of one terminal character cell (font-dependent). |
+| **Context Artifact** | concept | A Workspace-local record of an optional captured Pane selection plus an optional user comment. Bound to a source PaneId and its Associated Terminal. |
 | **Pinned Pane** | concept | A dock pane marked as pinned. Visible from all terminals within the workspace, displayed in a dedicated pinned TabGroup on the left side of the dock when viewed from a non-owning terminal. |
 | **Browser Pane** | `PaneKind::Browser` | A Pane backed by a native `WKWebView`. Can run in navigation mode with a URL bar or in render mode for agent-provided HTML. |
 | **GitSwitcher** | `GitSwitcherState` | Popup state that lists git worktrees for a Terminal Pane, tracks filtering and selection, and marks the current worktree row. |
+| **Search Bar** | concept | A Pane-scoped inline text input identified by `FocusState.search_focus`. When active it takes text-input priority over the underlying Pane. |
+| **Context Comment Composer** | `ContextCommentComposerState` | A `ModalStack` popup that previews the current captured Pane selection when available, accepts a user comment, and creates a `Context Artifact` for Artifact Delivery. |
 
 ## Architecture Concepts
 

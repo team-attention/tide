@@ -176,6 +176,16 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
             }
         },
         {
+            "name": "tide_capture_selection",
+            "description": "Read the current selection content from a pane",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pane_id": { "type": "integer", "description": "Target pane ID (omit for self)" }
+                }
+            }
+        },
+        {
             "name": "tide_get_layout",
             "description": "Get the layout tree as recursive JSON",
             "inputSchema": { "type": "object", "properties": {} }
@@ -246,6 +256,71 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
             "inputSchema": { "type": "object", "properties": { "url": { "type": "string" } } }
         },
         {
+            "name": "tide_create_context_artifact",
+            "description": "Create a workspace-local ContextArtifact from a selected pane",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pane_id": { "type": "integer" },
+                    "comment": { "type": "string" },
+                    "pin": { "type": "boolean" },
+                    "pinned": { "type": "boolean" }
+                },
+                "required": ["pane_id"]
+            }
+        },
+        {
+            "name": "tide_list_context_artifacts",
+            "description": "List ContextArtifacts in the active Workspace",
+            "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "tide_read_context_artifact",
+            "description": "Read a ContextArtifact in the active Workspace",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "artifact_id": { "type": "integer" }
+                },
+                "required": ["artifact_id"]
+            }
+        },
+        {
+            "name": "tide_pin_context_artifact",
+            "description": "Pin or unpin a ContextArtifact in the active Workspace",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "artifact_id": { "type": "integer" },
+                    "pin": { "type": "boolean" },
+                    "pinned": { "type": "boolean" }
+                },
+                "required": ["artifact_id"]
+            }
+        },
+        {
+            "name": "tide_remove_context_artifact",
+            "description": "Remove a ContextArtifact from the active Workspace",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "artifact_id": { "type": "integer" }
+                },
+                "required": ["artifact_id"]
+            }
+        },
+        {
+            "name": "tide_send_context_artifact",
+            "description": "Deliver a ContextArtifact to the paired agent",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "artifact_id": { "type": "integer" }
+                },
+                "required": ["artifact_id"]
+            }
+        },
+        {
             "name": "tide_render_html",
             "description": "Render an HTML fragment in a Browser Pane (generative UI). Pass #root content only; Tide injects the document shell, theme vars, and bridge runtime.",
             "inputSchema": {
@@ -301,6 +376,7 @@ fn mcp_tools_call(
     let method = match tool_name {
         "tide_list_panes" => "list-panes",
         "tide_capture_pane" => "capture-pane",
+        "tide_capture_selection" => "capture-selection",
         "tide_get_layout" => "get-layout",
         "tide_send_keys" => "send-keys",
         "tide_split_vertical" => "split-vertical",
@@ -311,6 +387,12 @@ fn mcp_tools_call(
         "tide_open_terminal" => "open-terminal",
         "tide_open_editor" => "open-editor",
         "tide_open_browser" => "open-browser",
+        "tide_create_context_artifact" => "create-context-artifact",
+        "tide_list_context_artifacts" => "list-context-artifacts",
+        "tide_read_context_artifact" => "read-context-artifact",
+        "tide_pin_context_artifact" => "pin-context-artifact",
+        "tide_remove_context_artifact" => "remove-context-artifact",
+        "tide_send_context_artifact" => "send-context-artifact",
         "tide_render_html" => "render-html",
         _ => {
             return mcp_error(id, -32602, &format!("unknown tool: {tool_name}"));

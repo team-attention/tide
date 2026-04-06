@@ -1,9 +1,9 @@
 // Spec: docs/specs/modal.md
 use crate::pane::PaneKind;
 use crate::state::*;
+use crate::tide_core::Rect;
 use crate::App;
 use std::path::PathBuf;
-use crate::tide_core::Rect;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -16,7 +16,10 @@ fn app_with_editor() -> (App, u64) {
     let mut app = test_app();
     let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
-    app.panes.insert(id, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id)));
+    app.panes.insert(
+        id,
+        PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id)),
+    );
     app.focus.focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;
     (app, id)
@@ -37,8 +40,16 @@ fn modal_stack_close_all_dismisses_all_modals() {
     let mut app = test_app();
     app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/"), vec![]));
     app.modal.git_switcher = Some(GitSwitcherState::new(
-        1, vec![],
+        1,
+        vec![],
         Rect::new(0.0, 0.0, 100.0, 30.0),
+    ));
+    app.modal.context_comment_composer = Some(ContextCommentComposerState::new(
+        1,
+        1,
+        "editor".to_string(),
+        None,
+        "selection".to_string(),
     ));
     assert!(app.modal.is_any_open());
     app.modal.close_all();
@@ -103,7 +114,8 @@ fn git_switcher_captures_text_instead_of_pane() {
     // UC-1 BR-5: Git switcher captures text instead of Pane
     let (mut app, id) = app_with_editor();
     app.modal.git_switcher = Some(GitSwitcherState::new(
-        id, vec![],
+        id,
+        vec![],
         Rect::new(0.0, 0.0, 100.0, 30.0),
     ));
     assert_eq!(
@@ -130,7 +142,8 @@ fn config_page_has_highest_priority_in_modal_stack() {
     let (mut app, id) = app_with_editor();
     app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
     app.modal.git_switcher = Some(GitSwitcherState::new(
-        id, vec![],
+        id,
+        vec![],
         Rect::new(0.0, 0.0, 100.0, 30.0),
     ));
     app.modal.config_page = Some(ConfigPageState::new(vec![], String::new(), String::new()));
@@ -147,7 +160,12 @@ fn escape_closes_file_finder_modal() {
     // UC-2 BR-8: ESC closes file finder
     let (mut app, _id) = app_with_editor();
     app.modal.file_finder = Some(FileFinderState::new(PathBuf::from("/tmp"), vec![]));
-    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
+    crate::adapter::inward::keyboard_adapter::handle_key_down(
+        &mut app,
+        crate::tide_core::Key::Escape,
+        crate::tide_core::Modifiers::default(),
+        None,
+    );
     assert!(app.modal.file_finder.is_none());
 }
 
@@ -156,10 +174,16 @@ fn escape_closes_git_switcher() {
     // UC-2 BR-9: ESC closes git switcher
     let (mut app, id) = app_with_editor();
     app.modal.git_switcher = Some(GitSwitcherState::new(
-        id, vec![],
+        id,
+        vec![],
         Rect::new(0.0, 0.0, 100.0, 30.0),
     ));
-    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
+    crate::adapter::inward::keyboard_adapter::handle_key_down(
+        &mut app,
+        crate::tide_core::Key::Escape,
+        crate::tide_core::Modifiers::default(),
+        None,
+    );
     assert!(app.modal.git_switcher.is_none());
 }
 
@@ -167,8 +191,17 @@ fn escape_closes_git_switcher() {
 fn escape_closes_save_as_input() {
     // UC-2 BR-10: ESC closes save_as_input
     let (mut app, id) = app_with_editor();
-    app.modal.save_as_input = Some(SaveAsInput::new(id, PathBuf::from("/tmp"), Rect::new(0.0, 0.0, 100.0, 30.0)));
-    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
+    app.modal.save_as_input = Some(SaveAsInput::new(
+        id,
+        PathBuf::from("/tmp"),
+        Rect::new(0.0, 0.0, 100.0, 30.0),
+    ));
+    crate::adapter::inward::keyboard_adapter::handle_key_down(
+        &mut app,
+        crate::tide_core::Key::Escape,
+        crate::tide_core::Modifiers::default(),
+        None,
+    );
     assert!(app.modal.save_as_input.is_none());
 }
 
@@ -184,8 +217,53 @@ fn escape_closes_context_menu() {
         position: crate::tide_core::Vec2::new(0.0, 0.0),
         selected: 0,
     });
-    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
+    crate::adapter::inward::keyboard_adapter::handle_key_down(
+        &mut app,
+        crate::tide_core::Key::Escape,
+        crate::tide_core::Modifiers::default(),
+        None,
+    );
     assert!(app.modal.context_menu.is_none());
+}
+
+#[test]
+fn escape_closes_context_comment_composer() {
+    // UC-2 BR-12: ESC closes the context comment composer
+    let (mut app, _id) = app_with_editor();
+    app.modal.context_comment_composer = Some(ContextCommentComposerState::new(
+        1,
+        1,
+        "editor".to_string(),
+        None,
+        "selection".to_string(),
+    ));
+    crate::adapter::inward::keyboard_adapter::handle_key_down(
+        &mut app,
+        crate::tide_core::Key::Escape,
+        crate::tide_core::Modifiers::default(),
+        None,
+    );
+    assert!(app.modal.context_comment_composer.is_none());
+}
+
+#[test]
+fn tab_toggles_context_comment_pinned() {
+    // UC-2 BR-13: Tab toggles the composer pin state
+    let (mut app, _id) = app_with_editor();
+    app.modal.context_comment_composer = Some(ContextCommentComposerState::new(
+        1,
+        1,
+        "editor".to_string(),
+        None,
+        "selection".to_string(),
+    ));
+    crate::adapter::inward::keyboard_adapter::handle_key_down(
+        &mut app,
+        crate::tide_core::Key::Tab,
+        crate::tide_core::Modifiers::default(),
+        None,
+    );
+    assert!(app.modal.context_comment_composer.as_ref().unwrap().pinned);
 }
 
 #[test]
@@ -193,7 +271,12 @@ fn escape_cancels_save_confirm() {
     // UC-2 BR-12: ESC cancels save confirm
     let (mut app, id) = app_with_editor();
     app.modal.save_confirm = Some(crate::SaveConfirmState { pane_id: id });
-    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
+    crate::adapter::inward::keyboard_adapter::handle_key_down(
+        &mut app,
+        crate::tide_core::Key::Escape,
+        crate::tide_core::Modifiers::default(),
+        None,
+    );
     assert!(app.modal.save_confirm.is_none());
 }
 
@@ -206,6 +289,11 @@ fn escape_closes_file_tree_rename() {
         original_path: PathBuf::from("/tmp/file.txt"),
         input: InputLine::with_text("file.txt".to_string()),
     });
-    crate::adapter::inward::keyboard_adapter::handle_key_down(&mut app,crate::tide_core::Key::Escape, crate::tide_core::Modifiers::default(), None);
+    crate::adapter::inward::keyboard_adapter::handle_key_down(
+        &mut app,
+        crate::tide_core::Key::Escape,
+        crate::tide_core::Modifiers::default(),
+        None,
+    );
     assert!(app.modal.file_tree_rename.is_none());
 }
