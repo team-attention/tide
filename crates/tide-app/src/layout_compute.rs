@@ -729,6 +729,29 @@ impl crate::application::ports::inward::LayoutPort for App {
                 if bp.sync_webview_state() {
                     self.cache.invalidate_chrome();
                 }
+
+                // Consume permission decisions and resolve the native handler.
+                // BR-10: Adapter bridges domain permission_decision to the WKUIDelegate block.
+                if let Some(ref decision) = bp.permission_decision {
+                    let granted = matches!(
+                        decision,
+                        crate::pane::browser::BrowserPermissionDecision::Granted
+                    );
+                    crate::tide_platform::macos::webview::resolve_permission_handler(id, granted);
+                    bp.clear_permission_decision();
+                }
+
+                // Consume certificate decisions and resolve the native handler.
+                // BR-13/BR-14: Adapter bridges domain certificate_decision to the WKNavigationDelegate block.
+                if let Some(ref decision) = bp.certificate_decision {
+                    let proceed = matches!(
+                        decision,
+                        crate::pane::browser::BrowserCertificateDecision::Proceed
+                    );
+                    crate::tide_platform::macos::webview::resolve_cert_handler(id, proceed);
+                    bp.clear_certificate_decision();
+                }
+
                 if popup_open {
                     bp.set_visible(false);
                 } else {
@@ -759,6 +782,14 @@ impl crate::application::ports::inward::LayoutPort for App {
                     // Load render HTML after the webview has a proper frame (BR-25).
                     if bp.render_mode && bp.needs_render_load {
                         bp.load_render_content();
+                    }
+
+                    // Clear website data when requested (BR-22, BR-23).
+                    if bp.needs_clear_data {
+                        if let Some(ref wv) = bp.webview {
+                            wv.clear_website_data();
+                        }
+                        bp.clear_data_completed();
                     }
 
                     // First responder management: only the focused browser pane

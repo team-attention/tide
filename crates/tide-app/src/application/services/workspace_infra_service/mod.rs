@@ -65,6 +65,14 @@ impl App {
         if self.ws.workspaces.is_empty() {
             return;
         }
+        // UC-3 BR-9: Strip transient capability state from Browser Panes
+        // before cold-storing so downloads, permissions, certificates, etc.
+        // do not survive workspace transitions.
+        for pane in self.panes.values_mut() {
+            if let PaneKind::Browser(bp) = pane {
+                bp.clear_transient_state();
+            }
+        }
         {
             let ws = &mut self.ws.workspaces[self.ws.active];
             std::mem::swap(&mut self.layout, &mut ws.layout);

@@ -3,6 +3,49 @@ use crate::tide_platform::macos::webview::WebViewHandle;
 
 use crate::state::search::SearchState;
 
+/// The kind of permission a website is requesting.
+/// BR-10: Permission requests surface through WKUIDelegate instead of silently failing.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BrowserPermissionKind {
+    Camera,
+    Microphone,
+    Geolocation,
+    CameraAndMicrophone,
+}
+
+/// A pending permission request from a website.
+/// BR-10: Permission requests surface through WKUIDelegate instead of silently failing.
+#[derive(Debug, Clone)]
+pub struct BrowserPermissionRequest {
+    pub kind: BrowserPermissionKind,
+    pub origin: String,
+}
+
+/// The user's decision on a permission request.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BrowserPermissionDecision {
+    Pending,
+    Granted,
+    Denied,
+}
+
+/// A certificate error encountered during page navigation.
+/// BR-13: Certificate errors surface explicit user prompt.
+#[derive(Debug, Clone)]
+pub struct BrowserCertificateError {
+    pub host: String,
+    pub reason: String,
+}
+
+/// The user's decision on a certificate error prompt.
+/// BR-14: User can proceed or cancel; both leave state coherent.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BrowserCertificateDecision {
+    Pending,
+    Proceed,
+    Cancel,
+}
+
 /// Snapshot of a Browser Pane selection captured from the webview bridge.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BrowserSelectionSnapshot {
@@ -12,6 +55,43 @@ pub struct BrowserSelectionSnapshot {
     pub page_title: Option<String>,
     pub page_url: Option<String>,
     pub collapsed: bool,
+}
+
+/// Right-click target captured from the webview contextmenu bridge event.
+/// BR-16: Right-click shows context menu with link, image, selection actions.
+#[derive(Debug, Clone, Default)]
+pub struct ContextMenuTarget {
+    pub link_url: Option<String>,
+    pub image_url: Option<String>,
+    pub selected_text: Option<String>,
+}
+
+/// Actions available in a Browser Pane context menu.
+/// BR-17: Render-mode context menu omits navigation actions.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContextMenuAction {
+    CopyLink,
+    CopySelection,
+    OpenLinkInNewTab,
+    OpenLinkExternally,
+    CopyImageUrl,
+}
+
+/// Current state of an in-app download.
+/// UC-1 BR-1: Browser Pane does not immediately hand every non-renderable response to NSWorkspace.
+#[derive(Debug, Clone)]
+pub struct BrowserDownloadState {
+    pub url: String,
+    pub destination: String,
+    pub completed: bool,
+}
+
+/// Snapshot of Browser Pane state for workspace cold-storage.
+/// UC-3 BR-9: Capability state survives transitions only when explicitly specified.
+#[derive(Debug, Clone)]
+pub struct BrowserWorkspaceSnapshot {
+    pub url: String,
+    pub url_input: String,
 }
 
 /// Cached Browser Pane page text and metadata captured from the webview bridge.
@@ -36,6 +116,9 @@ pub struct BrowserPane {
     pub url_input_focused: bool,
     /// Whether the webview is currently loading.
     pub loading: bool,
+    /// Estimated page load progress (0.0–1.0).
+    /// BR-24: Exposed as a domain-level f64 field from WKWebView estimatedProgress.
+    pub load_progress: f64,
     /// Whether back navigation is available.
     pub can_go_back: bool,
     /// Whether forward navigation is available.
@@ -58,6 +141,22 @@ pub struct BrowserPane {
     pub page_selection: Option<BrowserSelectionSnapshot>,
     /// Whether the selection bridge has been injected into the current page context.
     selection_bridge_installed: bool,
+    /// Current context menu target captured from the webview bridge.
+    /// BR-16: Right-click shows context menu with link, image, selection actions.
+    pub context_menu: Option<ContextMenuTarget>,
+    /// Pending permission request from the page (e.g. camera, geolocation).
+    /// BR-10: Surfaced through WKUIDelegate; BR-12: Cleared on navigation.
+    pub pending_permission: Option<BrowserPermissionRequest>,
+    /// User decision on the pending permission request.
+    /// BR-10: Adapter consumes this to call the WKUIDelegate completion handler, then clears it.
+    pub permission_decision: Option<BrowserPermissionDecision>,
+    /// Pending certificate error from the page (e.g. expired cert, self-signed).
+    /// BR-13: Certificate errors surface explicit user prompt.
+    pub pending_certificate_error: Option<BrowserCertificateError>,
+    /// User decision on the pending certificate error.
+    /// BR-14: Adapter consumes this to call the completion handler, then clears it.
+    /// BR-15: Scoped to requesting Pane only.
+    pub certificate_decision: Option<BrowserCertificateDecision>,
 
     // --- Render Pane fields (Phase 3: Generative UI) ---
     /// Whether this pane is in render mode (agent-provided HTML via loadHTMLString).
@@ -71,6 +170,13 @@ pub struct BrowserPane {
     pub streaming: bool,
     /// Whether the webview needs to load render HTML once visible with a proper frame.
     pub needs_render_load: bool,
+    /// Whether the adapter should clear all website data (cookies, localStorage, sessionStorage, IndexedDB).
+    /// BR-22: Domain sets this flag; adapter consumes it via WKWebsiteDataStore.
+    /// BR-23: Clearing does not break active navigation state.
+    pub needs_clear_data: bool,
+    /// Current in-app download state, if a download is in progress.
+    /// UC-1 BR-1: Browser Pane enters download state instead of immediately handing off.
+    pub download_state: Option<BrowserDownloadState>,
 }
 
 impl BrowserPane {
@@ -82,6 +188,7 @@ impl BrowserPane {
             url_input_cursor: 0,
             url_input_focused: true,
             loading: false,
+            load_progress: 0.0,
             can_go_back: false,
             can_go_forward: false,
             webview: None,
@@ -93,11 +200,18 @@ impl BrowserPane {
             page_snapshot: None,
             page_selection: None,
             selection_bridge_installed: false,
+            context_menu: None,
+            pending_permission: None,
+            permission_decision: None,
+            pending_certificate_error: None,
+            certificate_decision: None,
             render_mode: false,
             render_title: None,
             render_html: None,
             streaming: false,
             needs_render_load: false,
+            needs_clear_data: false,
+            download_state: None,
         }
     }
 
@@ -111,6 +225,7 @@ impl BrowserPane {
             url_input_cursor: cursor,
             url_input_focused: false,
             loading: false,
+            load_progress: 0.0,
             can_go_back: false,
             can_go_forward: false,
             webview: None,
@@ -122,11 +237,18 @@ impl BrowserPane {
             page_snapshot: None,
             page_selection: None,
             selection_bridge_installed: false,
+            context_menu: None,
+            pending_permission: None,
+            permission_decision: None,
+            pending_certificate_error: None,
+            certificate_decision: None,
             render_mode: false,
             render_title: None,
             render_html: None,
             streaming: false,
             needs_render_load: false,
+            needs_clear_data: false,
+            download_state: None,
         }
     }
 
@@ -140,6 +262,7 @@ impl BrowserPane {
             url_input_cursor: 0,
             url_input_focused: false,
             loading: true,
+            load_progress: 0.0,
             can_go_back: false,
             can_go_forward: false,
             webview: None,
@@ -151,11 +274,18 @@ impl BrowserPane {
             page_snapshot: None,
             page_selection: None,
             selection_bridge_installed: false,
+            context_menu: None,
+            pending_permission: None,
+            permission_decision: None,
+            pending_certificate_error: None,
+            certificate_decision: None,
             render_mode: true,
             render_title: Some(title),
             render_html: Some(html),
             streaming: false,
             needs_render_load: true,
+            needs_clear_data: false,
+            download_state: None,
         }
     }
 
@@ -168,6 +298,7 @@ impl BrowserPane {
             url_input_cursor: 0,
             url_input_focused: false,
             loading: false,
+            load_progress: 0.0,
             can_go_back: false,
             can_go_forward: false,
             webview: None,
@@ -179,11 +310,18 @@ impl BrowserPane {
             page_snapshot: None,
             page_selection: None,
             selection_bridge_installed: false,
+            context_menu: None,
+            pending_permission: None,
+            permission_decision: None,
+            pending_certificate_error: None,
+            certificate_decision: None,
             render_mode: true,
             render_title: Some(title),
             render_html: None,
             streaming: true,
             needs_render_load: true,
+            needs_clear_data: false,
+            download_state: None,
         }
     }
 
@@ -233,6 +371,11 @@ impl BrowserPane {
         self.url_input = normalized.clone();
         self.url_input_cursor = normalized.chars().count();
         self.loading = true;
+        self.load_progress = 0.0;
+        self.pending_permission = None; // BR-12: clear on navigation
+        self.permission_decision = None; // BR-12: clear on navigation
+        self.pending_certificate_error = None; // BR-13: clear on navigation
+        self.certificate_decision = None; // BR-14: clear on navigation
         self.selection_bridge_installed = false;
         self.clear_page_snapshot();
         self.clear_page_selection();
@@ -240,6 +383,179 @@ impl BrowserPane {
             wv.navigate(&normalized);
         }
         self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Set a pending permission request from the page.
+    /// BR-10: Permission requests surface through WKUIDelegate instead of silently failing.
+    pub fn request_permission(&mut self, request: BrowserPermissionRequest) {
+        self.pending_permission = Some(request);
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Grant the pending permission request.
+    /// BR-11: Denied/dismissed permission does not break loading or URL state.
+    pub fn grant_permission(&mut self) {
+        self.pending_permission = None;
+        self.permission_decision = Some(BrowserPermissionDecision::Granted);
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Deny the pending permission request.
+    /// BR-11: Denied/dismissed permission does not break loading or URL state.
+    pub fn deny_permission(&mut self) {
+        self.pending_permission = None;
+        self.permission_decision = Some(BrowserPermissionDecision::Denied);
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Set a pending certificate error from the page.
+    /// BR-13: Certificate errors surface explicit user prompt.
+    pub fn set_certificate_error(&mut self, error: BrowserCertificateError) {
+        self.pending_certificate_error = Some(error);
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// User chose to proceed past the certificate error.
+    /// BR-14: Clears pending error and signals adapter via certificate_decision.
+    pub fn proceed_past_certificate_error(&mut self) {
+        self.certificate_decision = Some(BrowserCertificateDecision::Proceed);
+        self.pending_certificate_error = None;
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// User chose to cancel the certificate error navigation.
+    /// BR-14: Clears pending error and signals adapter via certificate_decision.
+    pub fn cancel_certificate_error(&mut self) {
+        self.certificate_decision = Some(BrowserCertificateDecision::Cancel);
+        self.pending_certificate_error = None;
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Adapter calls this after consuming the certificate decision.
+    pub fn clear_certificate_decision(&mut self) {
+        self.certificate_decision = None;
+    }
+
+    /// Adapter calls this after consuming the permission decision.
+    pub fn clear_permission_decision(&mut self) {
+        self.permission_decision = None;
+    }
+
+    /// Set the context menu target from a right-click bridge event.
+    /// BR-16: Right-click shows context menu with link, image, selection actions.
+    pub fn set_context_menu(&mut self, target: ContextMenuTarget) {
+        self.context_menu = Some(target);
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Clear the context menu target.
+    pub fn clear_context_menu(&mut self) {
+        self.context_menu = None;
+    }
+
+    /// Build the list of available context menu actions based on the current target.
+    /// BR-17: Render-mode context menu omits OpenLinkInNewTab and OpenLinkExternally.
+    /// BR-18: Context menu copy uses selection bridge text.
+    pub fn build_context_menu_actions(&self) -> Vec<ContextMenuAction> {
+        let Some(ref target) = self.context_menu else {
+            return Vec::new();
+        };
+        let mut actions = Vec::new();
+        if target.link_url.is_some() {
+            actions.push(ContextMenuAction::CopyLink);
+            if !self.render_mode {
+                actions.push(ContextMenuAction::OpenLinkInNewTab);
+                actions.push(ContextMenuAction::OpenLinkExternally);
+            }
+        }
+        if target.image_url.is_some() {
+            actions.push(ContextMenuAction::CopyImageUrl);
+        }
+        if target.selected_text.is_some() {
+            actions.push(ContextMenuAction::CopySelection);
+        }
+        actions
+    }
+
+    /// Request clearing all website data (cookies, localStorage, sessionStorage, IndexedDB).
+    /// BR-22: Domain sets the flag; adapter consumes it via WKWebsiteDataStore.
+    /// BR-23: Does not affect active navigation state.
+    pub fn request_clear_website_data(&mut self) {
+        self.needs_clear_data = true;
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Adapter calls this after website data has been cleared.
+    pub fn clear_data_completed(&mut self) {
+        self.needs_clear_data = false;
+    }
+
+    /// Begin an in-app download.
+    /// UC-1 BR-1: Browser Pane enters download state instead of immediately handing off.
+    /// UC-1 BR-2: Loading clears when download takes over.
+    pub fn begin_download(&mut self, url: &str, destination: &str) {
+        self.download_state = Some(BrowserDownloadState {
+            url: url.to_string(),
+            destination: destination.to_string(),
+            completed: false,
+        });
+        self.loading = false;
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Mark a download as successfully completed.
+    /// UC-1 BR-1: Download state transitions to completed.
+    pub fn complete_download(&mut self) {
+        if let Some(ref mut state) = self.download_state {
+            state.completed = true;
+        }
+        self.loading = false;
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Mark a download capability failure (URL could not be downloaded in-app).
+    /// UC-1 BR-3: Falls back to explicit external handoff when in-app download fails.
+    pub fn fail_download(&mut self, _url: &str) {
+        self.download_state = None;
+        self.loading = false;
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Serialize Browser Pane state for workspace cold-storage.
+    /// UC-3 BR-9: Only explicitly specified state survives transitions.
+    /// Strip transient capability state in-place for workspace cold-storage.
+    /// UC-3 BR-9: Only url and url_input survive; downloads, permissions,
+    /// certificates, context menus, and selection state are cleared.
+    pub fn clear_transient_state(&mut self) {
+        self.download_state = None;
+        self.pending_permission = None;
+        self.permission_decision = None;
+        self.pending_certificate_error = None;
+        self.certificate_decision = None;
+        self.context_menu = None;
+        self.page_selection = None;
+        self.page_snapshot = None;
+        self.search = None;
+    }
+
+    pub fn to_workspace_snapshot(&self) -> BrowserWorkspaceSnapshot {
+        BrowserWorkspaceSnapshot {
+            url: self.url.clone(),
+            url_input: self.url_input.clone(),
+        }
+    }
+
+    /// Restore a Browser Pane from a workspace snapshot.
+    /// UC-3 BR-9: Transient capability state (downloads, etc.) is NOT restored.
+    pub fn from_workspace_snapshot(id: PaneId, snapshot: &BrowserWorkspaceSnapshot) -> Self {
+        let mut bp = if snapshot.url.is_empty() {
+            Self::new(id)
+        } else {
+            Self::with_url(id, snapshot.url.clone())
+        };
+        bp.url_input = snapshot.url_input.clone();
+        bp.url_input_cursor = bp.url_input.chars().count();
+        bp
     }
 
     pub fn go_back(&mut self) {
@@ -294,9 +610,10 @@ impl BrowserPane {
     }
 
     /// Browser Pane content clicks should keep URL-bar focus only while the
-    /// Browser Pane is empty or loading (nothing to interact with in content).
+    /// Browser Pane has no committed URL yet (nothing to interact with).
+    /// Once a URL is committed, content is interactable even if still loading.
     pub fn content_click_routes_to_url_bar(&self) -> bool {
-        !self.render_mode && (self.loading || self.is_empty_navigation_state())
+        !self.render_mode && self.is_empty_navigation_state()
     }
 
     /// Apply Browser Pane first-action routing for a click in Browser Pane content.
@@ -319,9 +636,11 @@ impl BrowserPane {
     }
 
     /// Native WebView focus is an explicit request to move interaction into page
-    /// content. Empty and loading Browser Panes still stay chrome-first.
+    /// content. Empty Browser Panes (no committed URL) stay chrome-first.
+    /// Once a URL is committed, clicking the webview always gives content focus,
+    /// even if the page is still loading sub-resources.
     pub fn handle_webview_focused(&mut self) -> bool {
-        if self.loading || self.is_empty_navigation_state() {
+        if self.is_empty_navigation_state() {
             self.url_input_focused = true;
             return true;
         }
@@ -389,6 +708,12 @@ impl BrowserPane {
         self.clear_page_snapshot();
         self.clear_page_selection();
 
+        // BR-12: Clear pending permission on origin change.
+        if extract_origin(&previous_committed) != extract_origin(current) {
+            self.pending_permission = None;
+            self.permission_decision = None;
+        }
+
         let visible_url_is_stale_committed =
             self.url_input_focused && self.url_input == previous_committed;
         if !self.has_distinct_url_draft() || visible_url_is_stale_committed {
@@ -418,6 +743,10 @@ impl BrowserPane {
 
         // Sync loading state
         if loading != self.loading {
+            // BR-25: When loading completes, set load_progress to 1.0
+            if !loading {
+                self.load_progress = 1.0;
+            }
             self.loading = loading;
             changed = true;
         }
@@ -440,7 +769,7 @@ impl BrowserPane {
         changed
     }
 
-    /// Poll the webview for state changes (URL, loading, back/forward).
+    /// Poll the webview for state changes (URL, loading, back/forward, progress).
     /// Returns true if any state changed (caller should invalidate chrome).
     pub fn sync_webview_state(&mut self) -> bool {
         let Some(ref wv) = self.webview else {
@@ -451,8 +780,27 @@ impl BrowserPane {
         let loading = wv.is_loading();
         let can_go_back = wv.can_go_back();
         let can_go_forward = wv.can_go_forward();
+        let progress = wv.estimated_progress();
 
-        self.sync_webview_state_from_poll(current_url, loading, can_go_back, can_go_forward)
+        let mut changed =
+            self.sync_webview_state_from_poll(current_url, loading, can_go_back, can_go_forward);
+        if self.sync_load_progress(progress) {
+            changed = true;
+        }
+        changed
+    }
+
+    /// Sync estimated load progress from the webview.
+    /// BR-24: Browser Pane exposes estimatedProgress as a domain-level f64 field (0.0–1.0).
+    /// Returns true if the value changed.
+    pub fn sync_load_progress(&mut self, progress: f64) -> bool {
+        let clamped = progress.clamp(0.0, 1.0);
+        if (self.load_progress - clamped).abs() < f64::EPSILON {
+            return false;
+        }
+        self.load_progress = clamped;
+        self.generation = self.generation.wrapping_add(1);
+        true
     }
 
     /// Get the selected text in the URL bar, if any.
@@ -659,6 +1007,20 @@ impl BrowserPane {
     }
 }
 
+/// Extract the origin (scheme + host + port) from a URL for same-origin comparison.
+/// Returns the original string if parsing fails.
+fn extract_origin(url: &str) -> String {
+    // Find scheme://
+    if let Some(scheme_end) = url.find("://") {
+        let after_scheme = &url[scheme_end + 3..];
+        // Find end of authority (host + port)
+        let authority_end = after_scheme.find('/').unwrap_or(after_scheme.len());
+        url[..scheme_end + 3 + authority_end].to_string()
+    } else {
+        url.to_string()
+    }
+}
+
 /// Build the full render HTML document with render runtime injected.
 /// BR-31: morphdom, Tailwind CSS, Tide theme CSS vars, JS bridge.
 fn build_render_document(agent_html: &str) -> String {
@@ -772,6 +1134,25 @@ fn browser_selection_bridge_script(pane_id: PaneId) -> String {
       attributes: true
     }});
   }}
+  document.addEventListener("contextmenu", (e) => {{
+    let link_url = null;
+    let image_url = null;
+    let el = e.target;
+    while (el && el !== document) {{
+      if (!link_url && el.tagName === "A" && el.href) link_url = el.href;
+      if (!image_url && el.tagName === "IMG" && el.src) image_url = el.src;
+      el = el.parentElement;
+    }}
+    const sel = window.getSelection ? window.getSelection() : null;
+    const selected_text = (sel && sel.toString().trim()) ? sel.toString() : null;
+    post({{
+      kind: "browser-context-menu",
+      pane_id: paneId,
+      link_url,
+      image_url,
+      selected_text
+    }});
+  }}, true);
   document.addEventListener("selectionchange", schedule, true);
   document.addEventListener("mouseup", schedule, true);
   document.addEventListener("keyup", schedule, true);
