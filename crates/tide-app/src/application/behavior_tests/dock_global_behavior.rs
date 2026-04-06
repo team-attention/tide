@@ -367,6 +367,95 @@ fn drag_out_of_pinned_group_unpins_pane() {
     );
 }
 
+#[test]
+fn directional_self_drop_extracts_pinned_pane_from_pinned_tab_group() {
+    // UC-5 BR-4: Directional self-drop inside a pinned TabGroup extracts the dragged Pinned Pane into its own split while preserving pin state.
+    use crate::state::drag_types::DropDestination;
+    use crate::tide_core::{DropZone, Vec2};
+
+    let (mut app, t1, _t2) = app_with_two_real_terminals();
+    app.focus.focused = Some(t1);
+    app.focus.stage_focused = Some(t1);
+
+    let e1 = app.layout.alloc_id();
+    app.panes
+        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
+    app.add_pane_to_dock(e1);
+    app.focus.focused = Some(e1);
+    app.toggle_dock_pin();
+
+    let e2 = app.layout.alloc_id();
+    app.panes
+        .insert(e2, PaneKind::Editor(EditorPane::new_empty(e2)));
+    app.add_pane_to_dock(e2);
+    app.focus.focused = Some(e2);
+    app.toggle_dock_pin();
+
+    assert!(app.is_pane_pinned(e1));
+    assert!(app.is_pane_pinned(e2));
+    assert_eq!(
+        app.dock
+            .pinned_dock_layout
+            .tab_group_containing(e1)
+            .expect("pinned panes should start in one TabGroup")
+            .len(),
+        2
+    );
+
+    crate::LayoutPort::compute_layout(&mut app);
+    let source_rect = app
+        .visual_pane_rects
+        .iter()
+        .find(|(id, _)| *id == e2)
+        .map(|(_, rect)| *rect)
+        .expect("pinned pane should have a visual rect");
+    let mouse = Vec2::new(
+        source_rect.x + source_rect.width * 0.1,
+        source_rect.y + source_rect.height * 0.5,
+    );
+
+    let dest = crate::adapter::inward::drag_drop_adapter::compute_drop_destination(&app, mouse, e2);
+    assert_eq!(
+        dest,
+        Some(DropDestination::TreePane(e2, DropZone::Left)),
+        "directional self-drop should target the pinned pane itself when it is in a multi-tab pinned TabGroup"
+    );
+
+    crate::adapter::inward::click_adapter::pane::handle_drop(
+        &mut app,
+        e2,
+        dest.expect("expected a directional self-drop destination"),
+    );
+
+    assert!(app.is_pane_pinned(e1));
+    assert!(app.is_pane_pinned(e2));
+    let remaining_group_len = app
+        .dock
+        .pinned_dock_layout
+        .tab_group_containing(e1)
+        .map(|tg| tg.len())
+        .unwrap_or(1);
+    let extracted_group_len = app
+        .dock
+        .pinned_dock_layout
+        .tab_group_containing(e2)
+        .map(|tg| tg.len())
+        .unwrap_or(1);
+    assert!(
+        remaining_group_len == 1,
+        "remaining pinned sibling should no longer be in a multi-tab pinned TabGroup after extraction"
+    );
+    assert!(
+        extracted_group_len == 1,
+        "extracted pinned pane should occupy its own split inside the pinned dock layout"
+    );
+    let visible_pinned = app.dock.pinned_dock_layout.pane_ids();
+    assert_eq!(visible_pinned.len(), 2);
+    assert!(visible_pinned.contains(&e1));
+    assert!(visible_pinned.contains(&e2));
+    assert_eq!(app.focus.focused, Some(e2));
+}
+
 // --- Pin keeps focused on the pane ---
 
 #[test]

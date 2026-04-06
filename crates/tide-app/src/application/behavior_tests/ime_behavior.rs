@@ -417,10 +417,7 @@ fn search_bar_long_hangul_input_keeps_text_and_caret_aligned() {
 
     let pane_rect = app.visual_pane_rects[0].1;
     let bar_w = crate::theme::SEARCH_BAR_WIDTH.min(pane_rect.width - 16.0);
-    let expected_x = pane_rect.x
-        + pane_rect.width
-        - bar_w
-        - 8.0
+    let expected_x = pane_rect.x + pane_rect.width - bar_w - 8.0
         + 6.0
         + crate::adapter::outward::view::overlays::search_bar_cursor_advance_cells(
             "한글ab",

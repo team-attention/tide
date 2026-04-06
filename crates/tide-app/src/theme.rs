@@ -394,6 +394,7 @@ pub const TAB_CONTENT_SPACING: f32 = 6.0;
 pub const TAB_ACTIVE_INDICATOR_HEIGHT: f32 = 2.0;
 pub const TAB_MAX_WIDTH: f32 = 220.0;
 pub const TAB_MIN_WIDTH: f32 = 48.0;
+pub const TAB_MIN_TITLE_WIDTH: f32 = 48.0;
 
 /// Blink animation frequency for agent NeedsInput indicators (rad/s).
 /// Period ≈ 1.5 seconds. Used for tab dots, pane borders, and workspace sidebar dots.

@@ -89,6 +89,39 @@ pub(crate) fn editor_header_badges(ep: &crate::pane::editor::EditorPane) -> Vec<
     badges
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TitleBadgeLayout {
+    pub title_w: f32,
+    pub visible_badges: usize,
+}
+
+pub(crate) fn reserve_title_before_badges(
+    title_w_raw: f32,
+    badge_widths: &[f32],
+    content_budget: f32,
+    min_title_w: f32,
+    badge_gap: f32,
+) -> TitleBadgeLayout {
+    let budget = content_budget.max(0.0);
+    let required_title_w = title_w_raw.min(min_title_w).min(budget);
+    let mut badge_w = 0.0_f32;
+    let mut visible_badges = 0_usize;
+
+    for width in badge_widths {
+        let addition = badge_gap + *width;
+        if budget - (badge_w + addition) < required_title_w {
+            break;
+        }
+        badge_w += addition;
+        visible_badges += 1;
+    }
+
+    TitleBadgeLayout {
+        title_w: title_w_raw.min((budget - badge_w).max(0.0)),
+        visible_badges,
+    }
+}
+
 fn selection_comment_badge(
     panes: &HashMap<PaneId, PaneKind>,
     id: PaneId,
@@ -470,9 +503,18 @@ pub fn render_pane_header_inner(
     let _close_icon_x = close_hit_x + (close_hit_size - close_icon_w) / 2.0;
     let _close_icon_y = rect.y + (TAB_BAR_HEIGHT - close_icon_w) / 2.0;
 
-    // Title: fill space between cx and close
-    let title_max_w = (close_hit_x - badge_gap - total_badge_w - cx).max(20.0);
-    let title_w = title_w_raw.min(title_max_w);
+    let badge_widths: Vec<f32> = inline_badges
+        .iter()
+        .map(|(text, _, _, _)| text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0)
+        .collect();
+    let title_layout = reserve_title_before_badges(
+        title_w_raw,
+        &badge_widths,
+        (close_hit_x - cx).max(0.0),
+        TAB_MIN_TITLE_WIDTH,
+        badge_gap,
+    );
+    let title_w = title_layout.title_w;
 
     // Draw title text
     let title_style = TextStyle {
@@ -500,11 +542,8 @@ pub fn render_pane_header_inner(
     cx += title_w + badge_gap;
 
     // Draw inline badges
-    for (text, text_color, bg, action) in &inline_badges {
+    for (text, text_color, bg, action) in inline_badges.iter().take(title_layout.visible_badges) {
         let bw = text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0;
-        if cx + bw > close_hit_x - badge_gap {
-            break;
-        }
         render_badge_colored(
             renderer,
             cx,
@@ -679,12 +718,7 @@ fn render_tab_bar_impl(
                 w += badge.text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0 + badge_gap;
             }
         }
-        // Active tab: no max clamp so title + badges fit; right-edge clipping handles overflow
-        if tid == active_pane {
-            w = w.max(TAB_MIN_WIDTH);
-        } else {
-            w = w.clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH);
-        }
+        w = w.clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH);
         tabs_info.push((tid, label, w));
     }
 
@@ -775,23 +809,22 @@ fn render_tab_bar_impl(
 
         // Compute badges for active tab
         let mut active_badges: Vec<EditorBadge> = Vec::new();
-        let mut active_badge_total_w = 0.0_f32;
         if is_active {
             active_badges = active_tab_badges(panes, tid, is_focused_tab, show_comment_badge);
-            for badge in &active_badges {
-                active_badge_total_w +=
-                    badge.text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0 + badge_gap;
-            }
         }
+        let badge_widths: Vec<f32> = active_badges
+            .iter()
+            .map(|badge| badge.text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0)
+            .collect();
+        let title_layout = reserve_title_before_badges(
+            label.chars().count() as f32 * cell_w,
+            &badge_widths,
+            (tab_close_hit_x - cx - TAB_H_PAD - dot_offset).max(0.0),
+            TAB_MIN_TITLE_WIDTH,
+            badge_gap,
+        );
 
-        // Title takes all space not used by badges
-        let label_max_w = (tab_close_hit_x
-            - TAB_CONTENT_SPACING
-            - active_badge_total_w
-            - cx
-            - TAB_H_PAD
-            - dot_offset)
-            .max(0.0);
+        let label_max_w = title_layout.title_w.max(0.0);
         let max_chars = (label_max_w / cell_w).floor().max(0.0) as usize;
         let display: String = label.chars().take(max_chars).collect();
         let label_drawn_w = display.chars().count() as f32 * cell_w;
@@ -819,7 +852,7 @@ fn render_tab_bar_impl(
                 p.badge_bg_unfocused
             };
             let mut bx = cx + TAB_H_PAD + dot_offset + label_drawn_w + badge_gap;
-            for badge in &active_badges {
+            for badge in active_badges.iter().take(title_layout.visible_badges) {
                 let bw = badge.text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0;
                 let (b_text_color, b_bg) = match badge.action {
                     Some(HeaderHitAction::EditorBack) | Some(HeaderHitAction::EditorCompare) => {

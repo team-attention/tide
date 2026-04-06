@@ -3,7 +3,7 @@
 use unicode_width::UnicodeWidthChar;
 
 use crate::tide_core::{Color, Rect, Renderer, TextStyle, Vec2};
-use crate::tide_editor::markdown::{MdElementKind, MarkdownTheme, PreviewLine};
+use crate::tide_editor::markdown::{MarkdownTheme, MdElementKind, PreviewLine};
 use crate::tide_editor::wrap::WrapMap;
 use crate::tide_renderer::WgpuRenderer;
 
@@ -450,10 +450,7 @@ impl EditorPane {
                             char_idx += 1;
                             continue;
                         }
-                        if !preedit_shifted
-                            && preedit_width > 0
-                            && char_idx >= cursor_char_col
-                        {
+                        if !preedit_shifted && preedit_width > 0 && char_idx >= cursor_char_col {
                             display_col += preedit_width;
                             preedit_shifted = true;
                         }
@@ -1017,7 +1014,11 @@ impl EditorPane {
 
     /// Helper: find the TextStyle from syntax-highlighted spans at a given character index.
     /// Used by live preview for non-styled characters to fall back to syntax highlighting.
-    fn find_span_style_at(&self, spans: &[crate::tide_editor::highlight::StyledSpan], target_char: usize) -> TextStyle {
+    fn find_span_style_at(
+        &self,
+        spans: &[crate::tide_editor::highlight::StyledSpan],
+        target_char: usize,
+    ) -> TextStyle {
         let mut char_idx = 0usize;
         for span in spans {
             for _ch in span.text.chars() {

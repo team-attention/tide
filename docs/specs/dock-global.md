@@ -144,6 +144,7 @@
 - **BR-1**: Drag into pinned group = pin
 - **BR-2**: Drag out of pinned group = unpin
 - **BR-3**: Drag out from non-owning terminal re-associates pane to current terminal
+- **BR-4**: Directional self-drop inside a pinned `TabGroup` extracts the dragged `Pinned Pane` into its own split while preserving pin state
 
 ### UC-6: PlaceholderLogic
 
@@ -186,6 +187,7 @@
 | UC-5 | BR-1 | `drag_into_pinned_group_pins_pane()` |
 | UC-5 | BR-2 | `drag_out_of_pinned_group_unpins_pane()` |
 | UC-5 | BR-3 | `drag_unpin_from_non_owner_reassociates_terminal()` |
+| UC-5 | BR-4 | `directional_self_drop_extracts_pinned_pane_from_pinned_tab_group()` |
 | UC-6 | BR-1 | `no_placeholder_when_pinned_panes_exist()` |
 | UC-6 | BR-2 | `placeholder_when_no_dock_panes_and_no_pinned()` |
 
