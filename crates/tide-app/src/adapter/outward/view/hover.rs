@@ -52,8 +52,18 @@ pub(crate) fn render_hover(
                 crate::state::drag_types::HoverTarget::PaneTabBar(_pane_id) => {
                     // No full tab bar hover highlight
                 }
-                crate::state::drag_types::HoverTarget::PaneTabClose(_pane_id) => {
-                    // No hover background for close button
+                crate::state::drag_types::HoverTarget::PaneTabClose(pane_id) => {
+                    if let Some(zone) = app.header_hit_zones.iter().find(|z| {
+                        z.pane_id == *pane_id
+                            && z.action == crate::header::HeaderHitAction::Close
+                    }) {
+                        // Draw a small circular-ish background centered on the close icon
+                        let size = 16.0_f32;
+                        let cx = zone.rect.x + (zone.rect.width - size) / 2.0;
+                        let cy = zone.rect.y + (zone.rect.height - size) / 2.0;
+                        let bg_rect = crate::tide_core::Rect::new(cx, cy, size, size);
+                        renderer.draw_rect(bg_rect, p.hover_close);
+                    }
                 }
                 crate::state::drag_types::HoverTarget::FileFinderItem(_) => {
                     // File finder hover — rendered inline in overlays
