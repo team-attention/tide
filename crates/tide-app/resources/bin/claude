@@ -14,6 +14,11 @@ MCP_FILE="$(mktemp /tmp/tide-claude-mcp.XXXXXX)"
 HOOKS_FILE="$(mktemp /tmp/tide-claude-hooks.XXXXXX)"
 trap 'rm -f "$MCP_FILE" "$HOOKS_FILE"' EXIT
 
+tide_notify() {
+  "$TIDE_BIN" notify "$1" --pane "$TIDE_PANE" --agent claude >/dev/null 2>&1 || \
+    printf '\033]9;tide:wrapped-agent:claude:%s\007' "$1"
+}
+
 # --mcp-config: additive MCP servers (merged with user's ~/.claude.json and .mcp.json)
 cat > "$MCP_FILE" << TIDE_EOF
 {
@@ -40,7 +45,7 @@ cat > "$HOOKS_FILE" << TIDE_EOF
 }
 TIDE_EOF
 
-# Send initial status via OSC 9 so the dot appears immediately on launch
-printf '\033]9;tide:agent-running\007'
+tide_notify agent-running
+trap 'tide_notify agent-idle; rm -f "$MCP_FILE" "$HOOKS_FILE"' EXIT
 
 "$REAL_CMD" --mcp-config "$MCP_FILE" --settings "$HOOKS_FILE" "$@"
