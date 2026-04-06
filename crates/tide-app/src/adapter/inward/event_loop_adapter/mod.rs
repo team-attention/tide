@@ -441,6 +441,175 @@ impl App {
                     _ => false,
                 }
             }
+            "browser-context-menu" => {
+                let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
+                    Some(id) => id,
+                    None => return false,
+                };
+                let link_url = parsed
+                    .get("link_url")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .filter(|s| !s.trim().is_empty());
+                let image_url = parsed
+                    .get("image_url")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .filter(|s| !s.trim().is_empty());
+                let selected_text = parsed
+                    .get("selected_text")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .filter(|s| !s.trim().is_empty());
+
+                let target = crate::pane::browser::ContextMenuTarget {
+                    link_url,
+                    image_url,
+                    selected_text,
+                };
+
+                match self.pane_mut(pane_id) {
+                    Some(PaneKind::Browser(browser)) => {
+                        browser.set_context_menu(target);
+                        true
+                    }
+                    _ => false,
+                }
+            }
+            "browser-permission-request" => {
+                let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
+                    Some(id) => id,
+                    None => return false,
+                };
+                let permission_type = parsed
+                    .get("permission_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("camera");
+                let origin = parsed
+                    .get("origin")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                let kind = match permission_type {
+                    "camera" => crate::pane::browser::BrowserPermissionKind::Camera,
+                    "microphone" => crate::pane::browser::BrowserPermissionKind::Microphone,
+                    "geolocation" => crate::pane::browser::BrowserPermissionKind::Geolocation,
+                    "camera_and_microphone" => {
+                        crate::pane::browser::BrowserPermissionKind::CameraAndMicrophone
+                    }
+                    _ => crate::pane::browser::BrowserPermissionKind::Camera,
+                };
+
+                let request = crate::pane::browser::BrowserPermissionRequest { kind, origin };
+
+                match self.pane_mut(pane_id) {
+                    Some(PaneKind::Browser(browser)) => {
+                        browser.request_permission(request);
+                        true
+                    }
+                    _ => false,
+                }
+            }
+            "browser-certificate-error" => {
+                let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
+                    Some(id) => id,
+                    None => return false,
+                };
+                let host = parsed
+                    .get("host")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let reason = parsed
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Certificate error")
+                    .to_string();
+
+                let error = crate::pane::browser::BrowserCertificateError { host, reason };
+
+                match self.pane_mut(pane_id) {
+                    Some(PaneKind::Browser(browser)) => {
+                        browser.set_certificate_error(error);
+                        true
+                    }
+                    _ => false,
+                }
+            }
+            "browser-download-started" => {
+                let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
+                    Some(id) => id,
+                    None => return false,
+                };
+                let url = parsed
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let destination = parsed
+                    .get("destination")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                match self.pane_mut(pane_id) {
+                    Some(PaneKind::Browser(browser)) => {
+                        browser.begin_download(&url, &destination);
+                        true
+                    }
+                    _ => false,
+                }
+            }
+            "browser-download-failed" => {
+                let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
+                    Some(id) => id,
+                    None => return false,
+                };
+                let reason = parsed
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown error")
+                    .to_string();
+
+                match self.pane_mut(pane_id) {
+                    Some(PaneKind::Browser(browser)) => {
+                        browser.fail_download(&reason);
+                        true
+                    }
+                    _ => false,
+                }
+            }
+            "browser-download-completed" => {
+                let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
+                    Some(id) => id,
+                    None => return false,
+                };
+
+                match self.pane_mut(pane_id) {
+                    Some(PaneKind::Browser(browser)) => {
+                        browser.complete_download();
+                        true
+                    }
+                    _ => false,
+                }
+            }
+            "browser-url-committed" => {
+                let pane_id = match parsed.get("pane_id").and_then(|v| v.as_str()).and_then(|s| s.parse::<u64>().ok()) {
+                    Some(id) => id,
+                    None => return false,
+                };
+                let url = match parsed.get("url").and_then(|v| v.as_str()) {
+                    Some(u) => u,
+                    None => return false,
+                };
+                match self.pane_mut(pane_id) {
+                    Some(PaneKind::Browser(browser)) => {
+                        browser.sync_committed_url_from_navigation(url)
+                    }
+                    _ => false,
+                }
+            }
             _ => false,
         }
     }
