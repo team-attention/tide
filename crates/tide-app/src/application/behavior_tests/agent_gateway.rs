@@ -1147,6 +1147,7 @@ fn app_with_detected_agent() -> (App, u64) {
         crate::state::gateway_status::AgentInfo {
             name: "Claude Code",
             pid: 12345,
+            wrapper_managed: true,
             gateway_connected: true,
             status: None,
         },
@@ -1316,6 +1317,7 @@ fn gateway_status_tracks_agents_after_modal_removal() {
         crate::state::gateway_status::AgentInfo {
             name: "Claude Code",
             pid: 12345,
+            wrapper_managed: true,
             gateway_connected: true,
             status: Some(crate::state::gateway_status::AgentStatus::Running),
         },
@@ -1386,17 +1388,14 @@ fn osc9_non_tide_message_ignored() {
 }
 
 #[test]
-fn osc9_creates_synthetic_agent_if_none_detected() {
-    // UC-2 BR-6: If no agent exists for the pane, create synthetic AgentInfo
+fn osc9_unmanaged_notification_does_not_create_attention_source() {
+    // UC-3 BR-9: OSC 9 does not create a synthetic Unknown attention source
     let (mut app, id) = app_with_editor();
     assert!(!app.gateway.detected_agents.contains_key(&id));
-    app.handle_terminal_notification(id, "tide:agent-running");
-    let agent = app.gateway.detected_agents.get(&id).unwrap();
-    assert_eq!(agent.name, "Unknown");
-    assert_eq!(
-        agent.status,
-        Some(crate::state::gateway_status::AgentStatus::Running)
-    );
+
+    app.handle_terminal_notification(id, "tide:agent-needs-input");
+
+    assert!(!app.gateway.detected_agents.contains_key(&id));
 }
 
 #[test]
@@ -1441,6 +1440,7 @@ fn app_with_unfocused_agent() -> (App, u64, u64) {
         crate::state::gateway_status::AgentInfo {
             name: "Claude Code",
             pid: 12345,
+            wrapper_managed: true,
             gateway_connected: true,
             status: None,
         },
@@ -1653,6 +1653,7 @@ fn inactive_workspace_agent_status_sets_notification_dot() {
         crate::state::gateway_status::AgentInfo {
             name: "Claude Code",
             pid: 12345,
+            wrapper_managed: true,
             gateway_connected: true,
             status: None,
         },
@@ -1664,6 +1665,46 @@ fn inactive_workspace_agent_status_sets_notification_dot() {
         crate::state::gateway_status::AgentStatus::NeedsInput,
     );
     assert!(app.ws.workspace_extras[1].has_agent_notification);
+}
+
+#[test]
+fn unmanaged_notification_does_not_mark_inactive_workspace() {
+    // UC-2 BR-7: Unmanaged notifications do not set inactive-Workspace attention
+    use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
+    let mut app = test_app();
+
+    let (layout, pane_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes
+        .insert(pane_id, PaneKind::Editor(EditorPane::new_empty(pane_id)));
+    app.focus.focused = Some(pane_id);
+
+    let unmanaged_pane_id = 999;
+    let mut ws2_panes = std::collections::HashMap::new();
+    ws2_panes.insert(
+        unmanaged_pane_id,
+        PaneKind::Editor(EditorPane::new_empty(unmanaged_pane_id)),
+    );
+
+    app.ws.workspaces.push(Workspace {
+        name: "WS1".into(),
+        layout: crate::tide_layout::SplitLayout::new(),
+        focused: None,
+        panes: std::collections::HashMap::new(),
+    });
+    app.ws.workspaces.push(Workspace {
+        name: "WS2".into(),
+        layout: crate::tide_layout::SplitLayout::new(),
+        focused: None,
+        panes: ws2_panes,
+    });
+    app.ws.workspace_extras.push(WorkspaceExtras::new());
+    app.ws.workspace_extras.push(WorkspaceExtras::new());
+    app.ws.active = 0;
+
+    app.handle_terminal_notification(unmanaged_pane_id, "tide:agent-needs-input");
+
+    assert!(!app.ws.workspace_extras[1].has_agent_notification);
 }
 
 // --- UC-7: ClearNotificationOnAcknowledge ---
@@ -1733,7 +1774,7 @@ fn workspace_sidebar_dot_blinks_for_notification() {
 #[test]
 fn cli_notify_routes_to_inactive_workspace_pane() {
     // UC-9 BR-1: Notifications for panes in any workspace must be processed
-    use crate::application::ports::inward::{GatewayPort, PaneAccessPort};
+    use crate::application::ports::inward::PaneAccessPort;
     use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
     let mut app = test_app();
 

@@ -30,6 +30,8 @@ pub(crate) struct AgentInfo {
     pub name: &'static str,
     /// Process ID of the agent.
     pub pid: u32,
+    /// Whether this record was established by a Tide Agent Wrapper lifecycle path.
+    pub wrapper_managed: bool,
     /// Whether this agent is connected to the gateway socket.
     pub gateway_connected: bool,
     /// Lifecycle status reported by agent hooks. `None` if no hooks are active.
@@ -57,6 +59,18 @@ pub(crate) fn agent_tool_name(agent_name: &str) -> Option<&'static str> {
         "Gemini" => Some("gemini"),
         "Aider" => Some("aider"),
         "Copilot" => Some("copilot"),
+        _ => None,
+    }
+}
+
+pub(crate) fn wrapped_agent_display_name(agent_name: &str) -> Option<&'static str> {
+    match agent_name {
+        "claude" | "Claude Code" => Some("Claude Code"),
+        "codex" | "Codex" => Some("Codex"),
+        "gemini" | "Gemini" => Some("Gemini"),
+        "aider" | "Aider" => Some("Aider"),
+        "cursor-agent" | "Cursor" => Some("Cursor"),
+        "copilot" | "Copilot" => Some("Copilot"),
         _ => None,
     }
 }
@@ -251,6 +265,7 @@ fn detect_agent_recursive(parent_pid: u32, depth: u32) -> Option<AgentInfo> {
                     return Some(AgentInfo {
                         name: display_name,
                         pid: child_pid as u32,
+                        wrapper_managed: false,
                         gateway_connected: false,
                         status: None,
                     });
@@ -264,6 +279,7 @@ fn detect_agent_recursive(parent_pid: u32, depth: u32) -> Option<AgentInfo> {
                     return Some(AgentInfo {
                         name: display_name,
                         pid: child_pid as u32,
+                        wrapper_managed: false,
                         gateway_connected: false,
                         status: None,
                     });

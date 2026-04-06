@@ -96,6 +96,8 @@ All paths below are relative to `crates/tide-app/src/`.
 | **GitSwitcher** | `GitSwitcherState` | Popup state that lists git worktrees for a Terminal Pane, tracks filtering and selection, and marks the current worktree row. |
 | **Search Bar** | concept | A Pane-scoped inline text input identified by `FocusState.search_focus`. When active it takes text-input priority over the underlying Pane. |
 | **Context Comment Composer** | `ContextCommentComposerState` | A `ModalStack` popup that previews the current captured Pane selection when available, accepts a user comment, and creates a `Context Artifact` for Artifact Delivery. |
+| **Wrapped Agent** | concept | A coding agent process launched through a Tide `Agent Wrapper`. Only a `Wrapped Agent` may drive wrapper-managed attention such as split-`Pane` highlight or inactive-`Workspace` highlight. |
+| **Wrapper-Managed Lifecycle Signal** | concept | A lifecycle update (`Running`, `Idle`, or `NeedsInput`) emitted through a Tide `Agent Wrapper` path, either by wrapper hooks or by wrapper-owned OSC 9 reporting. |
 
 ## Architecture Concepts
 
@@ -126,7 +128,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Render Pane** | A Browser pane in render mode (`render_mode: true`). Displays agent-provided HTML via `loadHTMLString` instead of URL navigation. No URL bar, title shown in tab. |
 | **Render Runtime** | Pre-injected HTML head (morphdom, Tailwind CSS, Tide theme CSS vars, JS bridge) loaded into every Render Pane before agent HTML. |
 | **Render Stream** | A long-lived connection where an agent sends HTML chunks to a Render Pane. Each chunk is a full HTML snapshot; morphdom diffs against the current DOM. |
-| **AgentStatus** | Lifecycle status of a coding agent process: `Running`, `Idle`, or `NeedsInput`. Reported by lifecycle hooks injected via Agent Wrappers. Stored in `AgentInfo.status`. |
+| **AgentStatus** | Lifecycle status of a coding agent process: `Running`, `Idle`, or `NeedsInput`. Wrapper-managed attention uses only `Wrapper-Managed Lifecycle Signal` updates reported by `Wrapped Agent` paths. Stored in `AgentInfo.status`. |
 | **Agent Wrapper** | A shell script in `$TMPDIR/tide-<pid>-bin/` that shadows a coding agent binary (e.g. `claude`). Injects MCP server config and lifecycle hooks via `--settings`, then `exec`s the real binary. |
 | **Caller Pane** | The `_caller_pane` field injected into CLI command params by the MCP bridge (from `TIDE_PANE` env var). Identifies which terminal pane originated the command, enabling cross-workspace command routing. Stripped before reaching command handlers. |
 | **Cross-Workspace Routing** | The mechanism by which a CLI command targeting a pane in a non-active Workspace is executed in the correct Workspace context. Uses raw `save_active_workspace` / `load_active_workspace` swap (not `switch_workspace`) to avoid UI side effects. See `docs/specs/cli-workspace-routing.md`. |

@@ -265,6 +265,7 @@ fn notify_for_inactive_workspace_pane_updates_agent_status() {
         crate::state::gateway_status::AgentInfo {
             name: "Claude Code",
             pid: 1234,
+            wrapper_managed: true,
             gateway_connected: true,
             status: None,
         },

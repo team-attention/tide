@@ -1247,22 +1247,21 @@ fn cli_notify(
     let agent_name = {
         let agents = ctx.detected_agents_mut();
         if let Some(agent) = agents.get_mut(&pane_id) {
+            agent.wrapper_managed = true;
+            agent.gateway_connected = true;
             agent.status = Some(status);
             Some(agent.name)
         } else {
             // Auto-register: wrapper hook arrived before gateway modal scan.
             // Use a static str for the display name based on the hint.
-            let name: &'static str = match agent_display_name {
-                "claude" | "Claude Code" => "Claude Code",
-                "codex" | "Codex" => "Codex",
-                "gemini" | "Gemini" => "Gemini",
-                _ => "Agent",
-            };
+            let name = crate::state::gateway_status::wrapped_agent_display_name(agent_display_name)
+                .unwrap_or("Agent");
             agents.insert(
                 pane_id,
                 crate::state::gateway_status::AgentInfo {
                     name,
                     pid: 0, // PID unknown from hook — will be updated on next process scan
+                    wrapper_managed: true,
                     gateway_connected: true, // wrapper implies MCP is connected
                     status: Some(status),
                 },
