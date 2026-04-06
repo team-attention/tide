@@ -826,8 +826,7 @@ pub fn resolve_permission_handler(pane_id: u64, granted: bool) {
     if let Some(BlockPtr(ptr)) = block_ptr {
         let decision: isize = if granted { 1 } else { 0 };
         unsafe {
-            let block =
-                &*(ptr as *const block2::Block<dyn Fn(isize)>);
+            let block = &*(ptr as *const block2::Block<dyn Fn(isize)>);
             block.call((decision,));
             _Block_release(ptr as *const std::ffi::c_void);
         }
@@ -849,8 +848,7 @@ pub fn resolve_cert_handler(pane_id: u64, proceed: bool) {
 
     if let Some(BlockPtr(ptr)) = block_ptr {
         unsafe {
-            let block =
-                &*(ptr as *const block2::Block<dyn Fn(isize, *mut AnyObject)>);
+            let block = &*(ptr as *const block2::Block<dyn Fn(isize, *mut AnyObject)>);
             if proceed {
                 // useCredential = 0, with credential from serverTrust
                 // We pass nil credential — WebKit will use the serverTrust from the
@@ -924,6 +922,17 @@ impl Drop for WebViewHandle {
     fn drop(&mut self) {
         cleanup_pending_handlers(self.pane_id);
     }
+}
+
+struct DestroyWebViewCtx {
+    handle: *mut WebViewHandle,
+}
+
+unsafe extern "C" fn destroy_webview_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
+    let ctx = Box::from_raw(ctx_ptr as *mut DestroyWebViewCtx);
+    let handle = Box::from_raw(ctx.handle);
+    handle.remove_from_parent();
+    // `handle` drops here on the main thread, releasing MainThreadOnly ivars safely.
 }
 
 /// Release any pending completion handler blocks and download delegates for a pane.
@@ -1095,6 +1104,30 @@ unsafe extern "C" fn eval_js_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
 }
 
 impl WebViewHandle {
+    /// Remove the webview from the view hierarchy and drop the handle on the main thread.
+    ///
+    /// Browser Pane teardown can run on `app-thread`, but the retained WebKit/AppKit
+    /// ivars on `WebViewHandle` are `MainThreadOnly`. This method synchronizes the
+    /// removal and the final drop back onto the main thread so those ivars are not
+    /// released from the wrong thread.
+    pub fn destroy(self) {
+        if MainThreadMarker::new().is_some() {
+            self.remove_from_parent();
+            return;
+        }
+
+        let ctx = Box::new(DestroyWebViewCtx {
+            handle: Box::into_raw(Box::new(self)),
+        });
+        unsafe {
+            dispatch_sync_f(
+                &_dispatch_main_q as *const std::ffi::c_void,
+                Box::into_raw(ctx) as *mut std::ffi::c_void,
+                destroy_webview_on_main_thread,
+            );
+        }
+    }
+
     /// Create a new WKWebView and add it as a subview of the given parent NSView.
     ///
     /// WebKit **must** be initialised on the main thread.  This method dispatches
@@ -1177,8 +1210,9 @@ impl WebViewHandle {
 
         // Set up UI delegate for popup handling, JavaScript dialogs, and permissions
         let mtm = MainThreadMarker::new().expect("must be on main thread for WKWebView");
-        let delegate: Retained<TideUIDelegate> =
-            unsafe { msg_send_id![mtm.alloc::<TideUIDelegate>(), initWithPaneId: pane_id as usize] };
+        let delegate: Retained<TideUIDelegate> = unsafe {
+            msg_send_id![mtm.alloc::<TideUIDelegate>(), initWithPaneId: pane_id as usize]
+        };
         let _: () = msg_send![&webview, setUIDelegate: &*delegate];
 
         // Set up navigation delegate for download handling
@@ -1551,7 +1585,8 @@ impl WebViewHandle {
                 arrayWithObjects: ptrs.as_ptr(),
                 count: 4_usize
             ];
-            let data_types: Retained<AnyObject> = msg_send_id![ns_set_cls, setWithArray: &*ns_array];
+            let data_types: Retained<AnyObject> =
+                msg_send_id![ns_set_cls, setWithArray: &*ns_array];
 
             // Get [NSDate distantPast]
             let ns_date_cls = AnyClass::get("NSDate").expect("NSDate class");

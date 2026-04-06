@@ -15,7 +15,6 @@ pub(crate) fn render_grid(
     p: &ThemePalette,
     visual_pane_rects: &[(u64, Rect)],
 ) -> Vec<(u64, u64)> {
-    let top_offset = TAB_BAR_HEIGHT;
     let ime_target_id = app.focus.focused;
 
     let mut gen_updates = Vec::new();
@@ -36,6 +35,10 @@ pub(crate) fn render_grid(
             .unwrap_or(u64::MAX);
         if gen != prev {
             let pane_bar = bar_offset_for(id, &app.panes, &app.modal.save_confirm);
+            let top_offset = match app.panes.get(&id) {
+                Some(PaneKind::Terminal(_)) => terminal_content_top(renderer.cell_size().height),
+                _ => TAB_BAR_HEIGHT,
+            };
             let inner = Rect::new(
                 rect.x + PANE_PADDING,
                 rect.y + top_offset + pane_bar,
