@@ -7,6 +7,7 @@ mod agent_coworking_context;
 mod agent_gateway;
 mod browser_pane_ux;
 mod browser_pane_fallbacks;
+mod browser_pane_v2;
 mod cli_workspace_routing;
 mod diff_auto_refresh;
 mod dock_behavior;

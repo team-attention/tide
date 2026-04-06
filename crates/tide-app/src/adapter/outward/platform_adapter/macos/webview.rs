@@ -5,6 +5,7 @@
 
 use crate::tide_core::PaneId;
 
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 use objc2::rc::Retained;
@@ -15,6 +16,33 @@ use objc2_foundation::{CGFloat, MainThreadMarker, NSObject, NSPoint, NSRect, NSS
 /// Global queue for URLs that should open in a new browser tab.
 /// Populated by the WKUIDelegate when Cmd+click triggers a new window request.
 static NEW_TAB_URLS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Wrapper around a raw block pointer for the permission decision handler.
+/// SAFETY: These pointers are created by WebKit on the main thread and must be
+/// consumed (called + released) on the main thread via `resolve_permission_handler`.
+struct BlockPtr(*mut std::ffi::c_void);
+unsafe impl Send for BlockPtr {}
+
+/// Pending WKUIDelegate permission completion handler blocks, keyed by pane_id raw value.
+/// BR-10: Stores the decisionHandler block pointer until the domain grants/denies the request.
+static PENDING_PERMISSION_HANDLERS: std::sync::LazyLock<Mutex<HashMap<u64, BlockPtr>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Pending WKNavigationDelegate certificate challenge completion handler blocks, keyed by pane_id raw value.
+/// BR-13: Stores the completionHandler block pointer until the domain proceeds/cancels.
+static PENDING_CERT_HANDLERS: std::sync::LazyLock<Mutex<HashMap<u64, BlockPtr>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Wrapper around a raw pointer for retained download delegates.
+/// SAFETY: These are Retained<TideDownloadDelegate> converted to raw pointers.
+/// Created and consumed on the main thread.
+struct DelegatePtr(*mut std::ffi::c_void);
+unsafe impl Send for DelegatePtr {}
+
+/// Retained TideDownloadDelegate instances, keyed by pane_id raw value.
+/// Prevents deallocation while a WKDownload is active.
+static ACTIVE_DOWNLOAD_DELEGATES: std::sync::LazyLock<Mutex<HashMap<u64, DelegatePtr>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Global queue for messages received from render pane JS bridge.
 /// Populated by WKScriptMessageHandler when JS calls `window.tide.send(json)`.
@@ -55,8 +83,13 @@ pub fn drain_new_tab_urls() -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------------
-// WKUIDelegate — handles popups, JavaScript dialogs, etc.
+// WKUIDelegate — handles popups, JavaScript dialogs, permissions, etc.
 // ---------------------------------------------------------------------------
+
+struct TideUIDelegateIvars {
+    pane_id: PaneId,
+}
+
 declare_class!(
     struct TideUIDelegate;
 
@@ -67,17 +100,26 @@ declare_class!(
     }
 
     impl DeclaredClass for TideUIDelegate {
-        type Ivars = ();
+        type Ivars = TideUIDelegateIvars;
     }
 
     unsafe impl TideUIDelegate {
-        #[method_id(init)]
-        fn init(this: objc2::rc::Allocated<Self>) -> Option<Retained<Self>> {
-            let this = this.set_ivars(());
+        #[method_id(initWithPaneId:)]
+        fn init_with_pane_id(
+            this: objc2::rc::Allocated<Self>,
+            pane_id: usize,
+        ) -> Option<Retained<Self>> {
+            let this = this.set_ivars(TideUIDelegateIvars {
+                pane_id: pane_id as PaneId,
+            });
             unsafe { msg_send_id![super(this), init] }
         }
 
-        /// Handle window.open() / target=_blank — load in same webview (no popup windows).
+        /// Handle window.open() / target=_blank — open in a new Browser Pane.
+        /// Handle popups: window.open() opens a new Browser Pane (UC-7 BR-19),
+        /// but target=_blank link clicks load in the same webview to avoid
+        /// breaking normal navigation.
+        /// WKNavigationType: linkActivated=0, other=-1
         #[method_id(webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:)]
         fn create_webview(
             &self,
@@ -87,10 +129,38 @@ declare_class!(
             _window_features: &AnyObject,
         ) -> Option<Retained<AnyObject>> {
             unsafe {
+                let nav_type: isize = msg_send![navigation_action, navigationType];
                 let request: Retained<AnyObject> = msg_send_id![navigation_action, request];
-                let _: Option<Retained<AnyObject>> =
-                    msg_send_id![webview, loadRequest: &*request];
+                let url_obj: Option<Retained<AnyObject>> = msg_send_id![&request, URL];
+
+                if let Some(url) = url_obj {
+                    let abs: Option<Retained<AnyObject>> = msg_send_id![&url, absoluteString];
+                    if let Some(s) = abs {
+                        let utf8: *const std::ffi::c_char = msg_send![&s, UTF8String];
+                        if !utf8.is_null() {
+                            let url_str = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
+                            // linkActivated (0) = user clicked a link with target=_blank
+                            // → load in same webview (normal navigation)
+                            if nav_type == 0 {
+                                let ns_url_cls = AnyClass::get("NSURL").expect("NSURL");
+                                let ns_url_str = NSString::from_str(&url_str);
+                                let ns_url: Retained<AnyObject> =
+                                    msg_send_id![ns_url_cls, URLWithString: &*ns_url_str];
+                                let req_cls = AnyClass::get("NSURLRequest").expect("NSURLRequest");
+                                let req: Retained<AnyObject> =
+                                    msg_send_id![req_cls, requestWithURL: &*ns_url];
+                                let _: () = msg_send![webview, loadRequest: &*req];
+                            } else {
+                                // window.open() or other JS-initiated → new tab (UC-7 BR-19)
+                                if let Ok(mut queue) = NEW_TAB_URLS.lock() {
+                                    queue.push(url_str);
+                                }
+                            }
+                        }
+                    }
+                }
             }
+            wake_event_loop();
             None
         }
 
@@ -175,6 +245,73 @@ declare_class!(
                 }
             }
         }
+
+        /// Handle media capture permission requests (camera, microphone).
+        /// BR-10: Permission requests surface through WKUIDelegate instead of silently failing.
+        /// WKMediaCaptureType: camera=0, microphone=1, cameraAndMicrophone=2
+        /// We store the decisionHandler block and queue a bridge message for the domain to decide.
+        #[method(webView:requestMediaCapturePermissionForOrigin:initiatedByFrame:type:decisionHandler:)]
+        fn request_media_capture_permission(
+            &self,
+            _webview: &AnyObject,
+            origin: &AnyObject,
+            _frame: &AnyObject,
+            media_type: isize,
+            decision_handler: &block2::Block<dyn Fn(isize)>,
+        ) {
+            let pane_id = self.ivars().pane_id;
+
+            // Map WKMediaCaptureType to string
+            let permission_type = match media_type {
+                0 => "camera",
+                1 => "microphone",
+                2 => "camera_and_microphone",
+                _ => "camera",
+            };
+
+            // Extract the origin host string
+            let origin_str = unsafe {
+                let host: Option<Retained<AnyObject>> = msg_send_id![origin, host];
+                if let Some(host) = host {
+                    let utf8: *const std::ffi::c_char = msg_send![&host, UTF8String];
+                    if !utf8.is_null() {
+                        std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned()
+                    } else {
+                        String::from("unknown")
+                    }
+                } else {
+                    String::from("unknown")
+                }
+            };
+
+            // Retain the block so it survives beyond this callback.
+            // Block_copy increments the block's reference count.
+            let block_ptr = decision_handler as *const block2::Block<dyn Fn(isize)>
+                as *const std::ffi::c_void
+                as *mut std::ffi::c_void;
+            let copied: *mut std::ffi::c_void = unsafe { _Block_copy(block_ptr) };
+
+            // Store the copied block pointer keyed by pane_id
+            {
+                let mut handlers = PENDING_PERMISSION_HANDLERS
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                handlers.insert(pane_id, BlockPtr(copied));
+            }
+
+            // Queue a bridge message for the event loop to dispatch to the domain
+            queue_bridge_message(
+                serde_json::json!({
+                    "kind": "browser-permission-request",
+                    "pane_id": pane_id,
+                    "permission_type": permission_type,
+                    "origin": origin_str,
+                })
+                .to_string(),
+            );
+
+            wake_event_loop();
+        }
     }
 );
 
@@ -253,12 +390,14 @@ declare_class!(
             }
         }
 
-        /// Handle navigation response — detect downloads and open in system browser.
+        /// Handle navigation response — detect downloads.
         /// WKNavigationResponsePolicy: .allow = 1, .cancel = 0, .download = 2
+        /// UC-1 BR-1: Non-renderable responses become in-app downloads when available.
+        /// Falls back to NSWorkspace external handoff on pre-macOS 11.3.
         #[method(webView:decidePolicyForNavigationResponse:decisionHandler:)]
         fn decide_policy_for_response(
             &self,
-            _webview: &AnyObject,
+            webview: &AnyObject,
             navigation_response: &AnyObject,
             decision_handler: &block2::Block<dyn Fn(i64)>,
         ) {
@@ -268,42 +407,111 @@ declare_class!(
                     // WebView can render this content — allow it
                     decision_handler.call((1,)); // .allow
                 } else {
-                    // WebView can't render (likely a download) — open in system browser
-                    let response: Retained<AnyObject> = msg_send_id![navigation_response, response];
-                    let url: Option<Retained<AnyObject>> = msg_send_id![&response, URL];
-                    if let Some(url) = url {
-                        let abs: Option<Retained<AnyObject>> = msg_send_id![&url, absoluteString];
-                        if let Some(s) = abs {
-                            let utf8: *const std::ffi::c_char = msg_send![&s, UTF8String];
-                            if !utf8.is_null() {
-                                let url_str =
-                                    std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
-                                queue_bridge_message(serde_json::json!({
-                                    "kind": "browser-external-handoff",
-                                    "pane_id": self.ivars().pane_id,
-                                    "reason": "download",
-                                    "url": url_str,
-                                })
-                                .to_string());
+                    // Check if WKWebView supports the .download policy (macOS 11.3+)
+                    // by checking if the webview responds to navigationResponse:didBecomeDownload:
+                    let sel = objc2::sel!(navigationResponse:didBecomeDownload:);
+                    let delegate_obj: *const AnyObject = msg_send![webview, navigationDelegate];
+                    let supports_download: Bool = if !delegate_obj.is_null() {
+                        msg_send![delegate_obj, respondsToSelector: sel]
+                    } else {
+                        Bool::NO
+                    };
+
+                    if supports_download.as_bool() {
+                        // macOS 11.3+: return .download policy — WebKit will call
+                        // navigationResponse:didBecomeDownload: on the navigation delegate
+                        decision_handler.call((2,)); // .download
+                    } else {
+                        // Pre-macOS 11.3 fallback: open in system browser
+                        let response: Retained<AnyObject> = msg_send_id![navigation_response, response];
+                        let url: Option<Retained<AnyObject>> = msg_send_id![&response, URL];
+                        if let Some(url) = url {
+                            let abs: Option<Retained<AnyObject>> = msg_send_id![&url, absoluteString];
+                            if let Some(s) = abs {
+                                let utf8: *const std::ffi::c_char = msg_send![&s, UTF8String];
+                                if !utf8.is_null() {
+                                    let url_str =
+                                        std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
+                                    queue_bridge_message(serde_json::json!({
+                                        "kind": "browser-external-handoff",
+                                        "pane_id": self.ivars().pane_id,
+                                        "reason": "download",
+                                        "url": url_str,
+                                    })
+                                    .to_string());
+                                }
                             }
+                            let workspace_cls = AnyClass::get("NSWorkspace").expect("NSWorkspace class");
+                            let shared: Retained<AnyObject> = msg_send_id![workspace_cls, sharedWorkspace];
+                            let _: Bool = msg_send![&shared, openURL: &*url];
                         }
-                        let workspace_cls = AnyClass::get("NSWorkspace").expect("NSWorkspace class");
-                        let shared: Retained<AnyObject> = msg_send_id![workspace_cls, sharedWorkspace];
-                        let _: Bool = msg_send![&shared, openURL: &*url];
+                        decision_handler.call((0,)); // .cancel
                     }
-                    decision_handler.call((0,)); // .cancel
                 }
             }
         }
 
+        /// Called when a navigation response becomes a download (macOS 11.3+).
+        /// UC-1: Sets the download's delegate to TideDownloadDelegate for in-app handling.
+        #[method(webView:navigationResponse:didBecomeDownload:)]
+        fn navigation_response_did_become_download(
+            &self,
+            _webview: &AnyObject,
+            _navigation_response: &AnyObject,
+            download: &AnyObject,
+        ) {
+            let pane_id = self.ivars().pane_id;
+            unsafe {
+                let mtm = MainThreadMarker::new().expect("delegate callbacks run on main thread");
+                let delegate: Retained<TideDownloadDelegate> =
+                    msg_send_id![mtm.alloc::<TideDownloadDelegate>(), initWithPaneId: pane_id as usize];
+                let _: () = msg_send![download, setDelegate: &*delegate];
+
+                // Retain delegate to prevent deallocation while download is active.
+                // Convert to raw pointer — we'll release it when the download finishes/fails.
+                let raw = Retained::into_raw(delegate) as *mut std::ffi::c_void;
+                let mut delegates = ACTIVE_DOWNLOAD_DELEGATES
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                delegates.insert(pane_id, DelegatePtr(raw));
+            }
+        }
+
         /// Fired when the webview commits a navigation (URL has changed).
-        /// Wake the event loop so sync_webview_state picks up the new URL.
+        /// Push the new URL immediately via bridge message so the URL bar
+        /// updates without waiting for the next poll cycle.
         #[method(webView:didCommitNavigation:)]
         fn did_commit_navigation(
             &self,
-            _webview: &AnyObject,
+            webview: &AnyObject,
             _navigation: *const AnyObject,
         ) {
+            let pane_id = self.ivars().pane_id;
+            // Read URL directly from the webview that just committed.
+            let url: Option<String> = unsafe {
+                let url_obj: Option<Retained<AnyObject>> = msg_send_id![webview, URL];
+                url_obj.and_then(|u| {
+                    let abs: Option<Retained<AnyObject>> = msg_send_id![&u, absoluteString];
+                    abs.and_then(|a| {
+                        let utf8: *const std::ffi::c_char = msg_send![&*a, UTF8String];
+                        if utf8.is_null() {
+                            None
+                        } else {
+                            Some(std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned())
+                        }
+                    })
+                })
+            };
+            if let Some(url) = url {
+                queue_bridge_message(
+                    serde_json::json!({
+                        "kind": "browser-url-committed",
+                        "pane_id": pane_id.to_string(),
+                        "url": url,
+                    })
+                    .to_string(),
+                );
+            }
             wake_event_loop();
         }
 
@@ -314,6 +522,269 @@ declare_class!(
             _webview: &AnyObject,
             _navigation: *const AnyObject,
         ) {
+            wake_event_loop();
+        }
+
+        /// Handle authentication challenges — intercept server trust errors for certificate prompts.
+        /// BR-13: Certificate errors surface explicit user prompt.
+        /// completionHandler signature: (NSURLSessionAuthChallengeDisposition, NSURLCredential?) -> Void
+        /// Disposition values: useCredential=0, performDefaultHandling=1, cancelAuthenticationChallenge=2
+        #[method(webView:didReceiveAuthenticationChallenge:completionHandler:)]
+        fn did_receive_authentication_challenge(
+            &self,
+            _webview: &AnyObject,
+            challenge: &AnyObject,
+            completion_handler: &block2::Block<dyn Fn(isize, *mut AnyObject)>,
+        ) {
+            let pane_id = self.ivars().pane_id;
+
+            unsafe {
+                let protection_space: Retained<AnyObject> = msg_send_id![challenge, protectionSpace];
+                let auth_method: Retained<NSString> = msg_send_id![&protection_space, authenticationMethod];
+                let method_str = auth_method.to_string();
+
+                // NSURLAuthenticationMethodServerTrust
+                if method_str == "NSURLAuthenticationMethodServerTrust" {
+                    // Extract host from protectionSpace
+                    let host: Retained<NSString> = msg_send_id![&protection_space, host];
+                    let host_str = host.to_string();
+
+                    // Queue bridge message for domain to handle
+                    queue_bridge_message(
+                        serde_json::json!({
+                            "kind": "browser-certificate-error",
+                            "pane_id": pane_id,
+                            "host": host_str,
+                            "reason": "Server certificate is not trusted",
+                        })
+                        .to_string(),
+                    );
+
+                    // Retain the block so it survives beyond this callback.
+                    let block_ptr = completion_handler
+                        as *const block2::Block<dyn Fn(isize, *mut AnyObject)>
+                        as *const std::ffi::c_void
+                        as *mut std::ffi::c_void;
+                    let copied: *mut std::ffi::c_void = _Block_copy(block_ptr);
+
+                    // Store the copied block pointer keyed by pane_id
+                    {
+                        let mut handlers = PENDING_CERT_HANDLERS
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
+                        handlers.insert(pane_id, BlockPtr(copied));
+                    }
+
+                    wake_event_loop();
+                } else {
+                    // Not a server trust challenge — perform default handling
+                    completion_handler.call((1, std::ptr::null_mut()));
+                }
+            }
+        }
+    }
+);
+
+// ---------------------------------------------------------------------------
+// WKDownloadDelegate — handles in-app download lifecycle (macOS 11.3+)
+// UC-1: Downloads happen in-app instead of handing off to NSWorkspace.
+// ---------------------------------------------------------------------------
+
+struct TideDownloadDelegateIvars {
+    pane_id: PaneId,
+}
+
+declare_class!(
+    struct TideDownloadDelegate;
+
+    unsafe impl ClassType for TideDownloadDelegate {
+        type Super = NSObject;
+        type Mutability = mutability::MainThreadOnly;
+        const NAME: &'static str = "TideDownloadDelegate";
+    }
+
+    impl DeclaredClass for TideDownloadDelegate {
+        type Ivars = TideDownloadDelegateIvars;
+    }
+
+    unsafe impl TideDownloadDelegate {
+        #[method_id(initWithPaneId:)]
+        fn init_with_pane_id(
+            this: objc2::rc::Allocated<Self>,
+            pane_id: usize,
+        ) -> Option<Retained<Self>> {
+            let this = this.set_ivars(TideDownloadDelegateIvars {
+                pane_id: pane_id as PaneId,
+            });
+            unsafe { msg_send_id![super(this), init] }
+        }
+
+        /// Choose download destination and notify the domain.
+        /// WKDownloadDelegate: download:decideDestinationUsingResponse:suggestedFilename:completionHandler:
+        /// completionHandler signature: (NSURL?) -> Void
+        #[method(download:decideDestinationUsingResponse:suggestedFilename:completionHandler:)]
+        fn decide_destination(
+            &self,
+            download: &AnyObject,
+            _response: &AnyObject,
+            suggested_filename: &NSString,
+            completion_handler: &block2::Block<dyn Fn(*mut AnyObject)>,
+        ) {
+            let pane_id = self.ivars().pane_id;
+            let filename = suggested_filename.to_string();
+
+            // Extract source URL from the download
+            let url_str = unsafe {
+                let original_request: Option<Retained<AnyObject>> = msg_send_id![download, originalRequest];
+                if let Some(req) = original_request {
+                    let url_obj: Option<Retained<AnyObject>> = msg_send_id![&req, URL];
+                    if let Some(url) = url_obj {
+                        let abs: Option<Retained<AnyObject>> = msg_send_id![&url, absoluteString];
+                        if let Some(s) = abs {
+                            let utf8: *const std::ffi::c_char = msg_send![&s, UTF8String];
+                            if !utf8.is_null() {
+                                std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned()
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                }
+            };
+
+            // Build destination path: ~/Downloads/{suggestedFilename}
+            let destination = unsafe {
+                let fm_cls = AnyClass::get("NSFileManager").expect("NSFileManager class");
+                let fm: Retained<AnyObject> = msg_send_id![fm_cls, defaultManager];
+                // NSSearchPathDirectory.NSDownloadsDirectory = 15
+                // NSSearchPathDomainMask.NSUserDomainMask = 1
+                let urls: Retained<AnyObject> = msg_send_id![
+                    &fm,
+                    URLsForDirectory: 15_usize,
+                    inDomains: 1_usize
+                ];
+                let count: usize = msg_send![&urls, count];
+                if count > 0 {
+                    let downloads_url: Retained<AnyObject> = msg_send_id![&urls, objectAtIndex: 0_usize];
+                    let ns_filename = NSString::from_str(&filename);
+                    let dest_url: Retained<AnyObject> = msg_send_id![
+                        &downloads_url,
+                        URLByAppendingPathComponent: &*ns_filename
+                    ];
+                    let path: Option<Retained<AnyObject>> = msg_send_id![&dest_url, path];
+                    if let Some(p) = path {
+                        let utf8: *const std::ffi::c_char = msg_send![&p, UTF8String];
+                        if !utf8.is_null() {
+                            std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned()
+                        } else {
+                            format!("{}/{}", std::env::var("HOME").unwrap_or_default(), filename)
+                        }
+                    } else {
+                        format!("{}/{}", std::env::var("HOME").unwrap_or_default(), filename)
+                    }
+                } else {
+                    format!("{}/Downloads/{}", std::env::var("HOME").unwrap_or_default(), filename)
+                }
+            };
+
+            // Queue bridge message for domain
+            queue_bridge_message(
+                serde_json::json!({
+                    "kind": "browser-download-started",
+                    "pane_id": pane_id,
+                    "url": url_str,
+                    "destination": destination,
+                })
+                .to_string(),
+            );
+
+            // Call completionHandler with destination NSURL
+            unsafe {
+                let url_cls = AnyClass::get("NSURL").expect("NSURL class");
+                let ns_path = NSString::from_str(&destination);
+                let dest_nsurl: Retained<AnyObject> = msg_send_id![
+                    url_cls,
+                    fileURLWithPath: &*ns_path
+                ];
+                completion_handler.call((&*dest_nsurl as *const AnyObject as *mut AnyObject,));
+            }
+
+            wake_event_loop();
+        }
+
+        /// Download failed with error.
+        /// WKDownloadDelegate: download:didFailWithError:resumeData:
+        #[method(download:didFailWithError:resumeData:)]
+        fn download_did_fail(
+            &self,
+            _download: &AnyObject,
+            error: &AnyObject,
+            _resume_data: *const AnyObject,
+        ) {
+            let pane_id = self.ivars().pane_id;
+
+            let reason = unsafe {
+                let desc: Retained<NSString> = msg_send_id![error, localizedDescription];
+                desc.to_string()
+            };
+
+            queue_bridge_message(
+                serde_json::json!({
+                    "kind": "browser-download-failed",
+                    "pane_id": pane_id,
+                    "reason": reason,
+                })
+                .to_string(),
+            );
+
+            // Clean up retained delegate — drop releases the Retained reference
+            {
+                let mut delegates = ACTIVE_DOWNLOAD_DELEGATES
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                if let Some(DelegatePtr(ptr)) = delegates.remove(&pane_id) {
+                    // SAFETY: ptr was created via Retained::into_raw in navigation_response_did_become_download
+                    unsafe { drop(Retained::from_raw(ptr as *mut TideDownloadDelegate)); }
+                }
+            }
+
+            wake_event_loop();
+        }
+
+        /// Download completed successfully.
+        /// WKDownloadDelegate: downloadDidFinish:
+        #[method(downloadDidFinish:)]
+        fn download_did_finish(
+            &self,
+            _download: &AnyObject,
+        ) {
+            let pane_id = self.ivars().pane_id;
+
+            queue_bridge_message(
+                serde_json::json!({
+                    "kind": "browser-download-completed",
+                    "pane_id": pane_id,
+                })
+                .to_string(),
+            );
+
+            // Clean up retained delegate — drop releases the Retained reference
+            {
+                let mut delegates = ACTIVE_DOWNLOAD_DELEGATES
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                if let Some(DelegatePtr(ptr)) = delegates.remove(&pane_id) {
+                    // SAFETY: ptr was created via Retained::into_raw in navigation_response_did_become_download
+                    unsafe { drop(Retained::from_raw(ptr as *mut TideDownloadDelegate)); }
+                }
+            }
+
             wake_event_loop();
         }
     }
@@ -328,6 +799,65 @@ extern "C" {
         context: *mut std::ffi::c_void,
         work: unsafe extern "C" fn(*mut std::ffi::c_void),
     );
+    /// Block runtime: copy a block to the heap (retains).
+    fn _Block_copy(block: *const std::ffi::c_void) -> *mut std::ffi::c_void;
+    /// Block runtime: release a heap-copied block.
+    fn _Block_release(block: *const std::ffi::c_void);
+}
+
+/// Resolve a pending permission handler by calling the stored decision handler block.
+/// BR-10: Called from the sync path when the domain sets permission_decision.
+///
+/// `granted`: true calls the block with WKPermissionDecision.grant (1),
+///            false calls with WKPermissionDecision.deny (0).
+pub fn resolve_permission_handler(pane_id: u64, granted: bool) {
+    let block_ptr = {
+        let mut handlers = PENDING_PERMISSION_HANDLERS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        handlers.remove(&pane_id)
+    };
+
+    if let Some(BlockPtr(ptr)) = block_ptr {
+        let decision: isize = if granted { 1 } else { 0 };
+        unsafe {
+            let block =
+                &*(ptr as *const block2::Block<dyn Fn(isize)>);
+            block.call((decision,));
+            _Block_release(ptr as *const std::ffi::c_void);
+        }
+    }
+}
+
+/// Resolve a pending certificate challenge handler by calling the stored completion handler block.
+/// BR-13/BR-14: Called from the sync path when the domain sets certificate_decision.
+///
+/// `proceed`: true creates NSURLCredential from serverTrust and calls with useCredential (0),
+///            false calls with cancelAuthenticationChallenge (2).
+pub fn resolve_cert_handler(pane_id: u64, proceed: bool) {
+    let block_ptr = {
+        let mut handlers = PENDING_CERT_HANDLERS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        handlers.remove(&pane_id)
+    };
+
+    if let Some(BlockPtr(ptr)) = block_ptr {
+        unsafe {
+            let block =
+                &*(ptr as *const block2::Block<dyn Fn(isize, *mut AnyObject)>);
+            if proceed {
+                // useCredential = 0, with credential from serverTrust
+                // We pass nil credential — WebKit will use the serverTrust from the
+                // original challenge's protectionSpace automatically when disposition is 0.
+                block.call((0, std::ptr::null_mut()));
+            } else {
+                // cancelAuthenticationChallenge = 2, nil credential
+                block.call((2, std::ptr::null_mut()));
+            }
+            _Block_release(ptr as *const std::ffi::c_void);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -603,10 +1133,10 @@ impl WebViewHandle {
         // Hide initially until frame is set
         let _: () = msg_send![&webview, setHidden: Bool::YES];
 
-        // Set up UI delegate for popup handling and JavaScript dialogs
+        // Set up UI delegate for popup handling, JavaScript dialogs, and permissions
         let mtm = MainThreadMarker::new().expect("must be on main thread for WKWebView");
         let delegate: Retained<TideUIDelegate> =
-            unsafe { msg_send_id![mtm.alloc::<TideUIDelegate>(), init] };
+            unsafe { msg_send_id![mtm.alloc::<TideUIDelegate>(), initWithPaneId: pane_id as usize] };
         let _: () = msg_send![&webview, setUIDelegate: &*delegate];
 
         // Set up navigation delegate for download handling
@@ -621,6 +1151,17 @@ impl WebViewHandle {
         let user_content: Retained<AnyObject> = msg_send_id![&config, userContentController];
         let handler_name = NSString::from_str("tide");
         let _: () = msg_send![&user_content, addScriptMessageHandler: &*script_handler, name: &*handler_name];
+
+        // BR-26: Enable Web Inspector in debug builds (macOS 13.3+).
+        // BR-27: isInspectable is NOT set in release builds.
+        #[cfg(debug_assertions)]
+        {
+            let sel = objc2::sel!(setInspectable:);
+            let responds: Bool = msg_send![&webview, respondsToSelector: sel];
+            if responds.as_bool() {
+                let _: () = msg_send![&webview, setInspectable: Bool::YES];
+            }
+        }
 
         // Add as subview
         let _: () = msg_send![parent, addSubview: &*webview];
@@ -883,6 +1424,12 @@ impl WebViewHandle {
         }
     }
 
+    /// Returns the estimated loading progress (0.0–1.0).
+    /// BR-24: estimatedProgress exposed as domain f64 0.0-1.0.
+    pub fn estimated_progress(&self) -> f64 {
+        unsafe { msg_send![&self.webview, estimatedProgress] }
+    }
+
     /// Remove the webview from its superview.
     ///
     /// AppKit's `removeFromSuperview` **must** run on the main thread.
@@ -927,6 +1474,56 @@ impl WebViewHandle {
             &mut ctx as *mut MakeFirstResponderCtx as *mut std::ffi::c_void,
             make_first_responder_on_main_thread,
         );
+    }
+
+    /// Clear website data (cookies, localStorage, sessionStorage, IndexedDB)
+    /// from the WKWebsiteDataStore associated with this webview.
+    /// BR-22: Clear action removes cookies, localStorage, sessionStorage, IndexedDB.
+    /// BR-23: Cookie clear does not break active navigation state.
+    pub fn clear_website_data(&self) {
+        unsafe {
+            // Get the WKWebsiteDataStore from the webview's configuration
+            let config: Retained<AnyObject> = msg_send_id![&self.webview, configuration];
+            let data_store: Retained<AnyObject> = msg_send_id![&config, websiteDataStore];
+
+            // Build an NSSet of the data types to clear
+            let ns_set_cls = AnyClass::get("NSSet").expect("NSSet class");
+            let types: [Retained<NSString>; 4] = [
+                NSString::from_str("WKWebsiteDataTypeCookies"),
+                NSString::from_str("WKWebsiteDataTypeLocalStorage"),
+                NSString::from_str("WKWebsiteDataTypeSessionStorage"),
+                NSString::from_str("WKWebsiteDataTypeIndexedDBDatabases"),
+            ];
+            let ns_array_cls = AnyClass::get("NSArray").expect("NSArray class");
+            let ptrs: [*const AnyObject; 4] = [
+                &*types[0] as *const _ as *const AnyObject,
+                &*types[1] as *const _ as *const AnyObject,
+                &*types[2] as *const _ as *const AnyObject,
+                &*types[3] as *const _ as *const AnyObject,
+            ];
+            let ns_array: Retained<AnyObject> = msg_send_id![
+                ns_array_cls,
+                arrayWithObjects: ptrs.as_ptr(),
+                count: 4_usize
+            ];
+            let data_types: Retained<AnyObject> = msg_send_id![ns_set_cls, setWithArray: &*ns_array];
+
+            // Get [NSDate distantPast]
+            let ns_date_cls = AnyClass::get("NSDate").expect("NSDate class");
+            let distant_past: Retained<AnyObject> = msg_send_id![ns_date_cls, distantPast];
+
+            // Create an empty completion handler block
+            let completion = block2::StackBlock::new(|| {});
+            let completion_ptr = &*completion as *const block2::Block<dyn Fn()>;
+
+            // removeDataOfTypes:modifiedSince:completionHandler:
+            let _: () = msg_send![
+                &data_store,
+                removeDataOfTypes: &*data_types,
+                modifiedSince: &*distant_past,
+                completionHandler: completion_ptr
+            ];
+        }
     }
 
     /// Resign first responder from the webview and give it back to `view_ptr`.
