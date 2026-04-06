@@ -14,6 +14,14 @@ pub struct BrowserSelectionSnapshot {
     pub collapsed: bool,
 }
 
+/// Cached Browser Pane page text and metadata captured from the webview bridge.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserSnapshot {
+    pub text: String,
+    pub page_title: Option<String>,
+    pub page_url: Option<String>,
+}
+
 /// A browser pane backed by a native WKWebView.
 pub struct BrowserPane {
     /// Stable PaneId, used to route bridge messages back to the owning pane.
@@ -44,6 +52,8 @@ pub struct BrowserPane {
     pub search: Option<SearchState>,
     /// URL bar text selection range (start_char, end_char). None = no selection.
     pub url_selection: Option<(usize, usize)>,
+    /// Latest BrowserSnapshot captured from the WKWebView bridge.
+    pub page_snapshot: Option<BrowserSnapshot>,
     /// Latest page selection snapshot captured from the WKWebView bridge.
     pub page_selection: Option<BrowserSelectionSnapshot>,
     /// Whether the selection bridge has been injected into the current page context.
@@ -80,6 +90,7 @@ impl BrowserPane {
             needs_initial_navigate: false,
             search: None,
             url_selection: None,
+            page_snapshot: None,
             page_selection: None,
             selection_bridge_installed: false,
             render_mode: false,
@@ -108,6 +119,7 @@ impl BrowserPane {
             needs_initial_navigate: true,
             search: None,
             url_selection: None,
+            page_snapshot: None,
             page_selection: None,
             selection_bridge_installed: false,
             render_mode: false,
@@ -136,6 +148,7 @@ impl BrowserPane {
             needs_initial_navigate: false,
             search: None,
             url_selection: None,
+            page_snapshot: None,
             page_selection: None,
             selection_bridge_installed: false,
             render_mode: true,
@@ -163,6 +176,7 @@ impl BrowserPane {
             needs_initial_navigate: false,
             search: None,
             url_selection: None,
+            page_snapshot: None,
             page_selection: None,
             selection_bridge_installed: false,
             render_mode: true,
@@ -220,6 +234,7 @@ impl BrowserPane {
         self.url_input_cursor = normalized.chars().count();
         self.loading = true;
         self.selection_bridge_installed = false;
+        self.clear_page_snapshot();
         self.clear_page_selection();
         if let Some(ref wv) = self.webview {
             wv.navigate(&normalized);
@@ -341,6 +356,7 @@ impl BrowserPane {
             if current != self.url && !current.is_empty() {
                 self.url = current.clone();
                 self.selection_bridge_installed = false;
+                self.clear_page_snapshot();
                 self.clear_page_selection();
                 // Only update the input text if user isn't actively editing
                 if !self.url_input_focused {
@@ -433,6 +449,7 @@ impl BrowserPane {
         let full_html = self.full_render_html().unwrap_or_default();
         wv.load_html_string(&full_html);
         self.selection_bridge_installed = false;
+        self.clear_page_snapshot();
         self.clear_page_selection();
         self.install_selection_bridge();
         self.needs_render_load = false;
@@ -443,6 +460,7 @@ impl BrowserPane {
     /// BR-27, BR-33: morphdom diffs against current DOM, preserving scroll/focus/input.
     pub fn update_render_content(&mut self, html: &str) {
         self.render_html = Some(html.to_string());
+        self.clear_page_snapshot();
         self.clear_page_selection();
         if let Some(ref wv) = self.webview {
             // Escape for JS string literal
@@ -470,6 +488,29 @@ impl BrowserPane {
         wv.evaluate_javascript(&browser_selection_bridge_script(self.id));
         self.selection_bridge_installed = true;
         true
+    }
+
+    /// Request a BrowserSnapshot refresh from the injected page bridge.
+    pub fn request_page_snapshot_refresh(&self) {
+        let Some(ref wv) = self.webview else { return };
+        wv.evaluate_javascript(
+            "if (window.__tideRequestPageSnapshot) { window.__tideRequestPageSnapshot(); }",
+        );
+    }
+
+    /// Update the latest BrowserSnapshot from the WKWebView bridge.
+    pub fn update_page_snapshot(&mut self, snapshot: Option<BrowserSnapshot>) -> bool {
+        if self.page_snapshot == snapshot {
+            return false;
+        }
+        self.page_snapshot = snapshot;
+        self.generation = self.generation.wrapping_add(1);
+        true
+    }
+
+    /// Clear any cached BrowserSnapshot.
+    pub fn clear_page_snapshot(&mut self) {
+        let _ = self.update_page_snapshot(None);
     }
 
     /// Update the latest page selection snapshot from the WKWebView bridge.
@@ -606,7 +647,14 @@ fn browser_selection_bridge_script(pane_id: PaneId) -> String {
       window.webkit.messageHandlers.tide.postMessage(JSON.stringify(payload));
     }} catch (_e) {{}}
   }};
-  const snapshot = () => {{
+  const postPageSnapshot = () => {{
+    const title = document.title || "";
+    const url = window.location ? window.location.href : "";
+    const root = document.body || document.documentElement;
+    const text = root && typeof root.innerText === "string" ? root.innerText : "";
+    post({{kind: "browser-snapshot", pane_id: paneId, text, title, url}});
+  }};
+  const postSelectionSnapshot = () => {{
     const selection = window.getSelection ? window.getSelection() : null;
     const title = document.title || "";
     const url = window.location ? window.location.href : "";
@@ -637,6 +685,10 @@ fn browser_selection_bridge_script(pane_id: PaneId) -> String {
       collapsed: !!selection.isCollapsed
     }});
   }};
+  const snapshot = () => {{
+    postPageSnapshot();
+    postSelectionSnapshot();
+  }};
   let scheduled = false;
   const schedule = () => {{
     if (scheduled) return;
@@ -646,11 +698,25 @@ fn browser_selection_bridge_script(pane_id: PaneId) -> String {
       snapshot();
     }}, 0);
   }};
+  window.__tideRequestPageSnapshot = schedule;
+  const root = document.documentElement || document.body;
+  if (root && typeof MutationObserver !== "undefined") {{
+    const observer = new MutationObserver(schedule);
+    observer.observe(root, {{
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true
+    }});
+  }}
   document.addEventListener("selectionchange", schedule, true);
   document.addEventListener("mouseup", schedule, true);
   document.addEventListener("keyup", schedule, true);
+  document.addEventListener("input", schedule, true);
+  document.addEventListener("change", schedule, true);
   document.addEventListener("touchend", schedule, true);
   window.addEventListener("focus", schedule, true);
+  window.addEventListener("load", schedule, true);
   schedule();
 }})();"#,
         pane_id = pane_id
