@@ -2,13 +2,13 @@
 
 use crate::tide_core::{LayoutEngine, PaneDecorations, Rect, Size, SplitDirection};
 
-use crate::state::drag_types::HoverTarget;
 use crate::pane::PaneKind;
-use crate::theme::*;
+use crate::state::drag_types::HoverTarget;
 use crate::state::LayoutSide;
+use crate::theme::*;
 use crate::App;
-use crate::DockPort;
 use crate::AppCorePort;
+use crate::DockPort;
 
 impl App {
     pub(crate) fn browser_native_views_obscured_by_overlays(&self) -> bool {
@@ -48,7 +48,9 @@ impl crate::application::ports::inward::LayoutPort for App {
             Some(HoverTarget::PaneContent) => CursorIcon::IBeam,
             Some(HoverTarget::DiffFileHeader) => CursorIcon::Pointer,
             Some(HoverTarget::SidebarHandle) => CursorIcon::Grab,
-            Some(HoverTarget::FileTreeBorder) | Some(HoverTarget::WsSidebarBorder) | Some(HoverTarget::DockBorder) => CursorIcon::ColResize,
+            Some(HoverTarget::FileTreeBorder)
+            | Some(HoverTarget::WsSidebarBorder)
+            | Some(HoverTarget::DockBorder) => CursorIcon::ColResize,
             Some(HoverTarget::SplitBorder(SplitDirection::Horizontal)) => CursorIcon::ColResize,
             Some(HoverTarget::SplitBorder(SplitDirection::Vertical)) => CursorIcon::RowResize,
             None => CursorIcon::Default,
@@ -156,7 +158,9 @@ impl crate::application::ports::inward::LayoutPort for App {
 
         // Create row: single "New Pane" button (no create when busy)
         if gs.is_create_row(fi) {
-            if busy { return None; }
+            if busy {
+                return None;
+            }
             let btn_right = geo.popup_x + geo.popup_w - item_pad;
 
             let new_pane_label = "New Pane";
@@ -260,10 +264,12 @@ impl crate::application::ports::inward::LayoutPort for App {
         }
     }
 
-
-
     fn palette(&self) -> &'static ThemePalette {
-        if self.window.dark_mode { &DARK } else { &LIGHT }
+        if self.window.dark_mode {
+            &DARK
+        } else {
+            &LIGHT
+        }
     }
 
     /// Compute the full layout: sidebar (optional file tree) + pane area (split tree fills remaining space).
@@ -313,7 +319,9 @@ impl crate::application::ports::inward::LayoutPort for App {
             let any_has_dock = self.panes.values().any(|pk| {
                 if let PaneKind::Terminal(tp) = pk {
                     !tp.dock_layout.all_pane_ids().is_empty()
-                } else { false }
+                } else {
+                    false
+                }
             });
             if !any_has_dock && !self.has_pinned_panes() {
                 self.dock.dock_open = false;
@@ -370,12 +378,22 @@ impl crate::application::ports::inward::LayoutPort for App {
         }
 
         // Store the pane area rect for root-level drop zone detection
-        self.pane_area_rect = Some(Rect::new(terminal_offset_x, top, terminal_area.width, terminal_area.height));
+        self.pane_area_rect = Some(Rect::new(
+            terminal_offset_x,
+            top,
+            terminal_area.width,
+            terminal_area.height,
+        ));
 
         // Store dock area rect for dock drop preview
         if show_dock {
             let ctx_offset_x = terminal_offset_x + terminal_area.width + PANE_GAP;
-            self.dock_area_rect = Some(Rect::new(ctx_offset_x, top, dock_width, logical.height - top));
+            self.dock_area_rect = Some(Rect::new(
+                ctx_offset_x,
+                top,
+                dock_width,
+                logical.height - top,
+            ));
         } else {
             self.dock_area_rect = None;
         }
@@ -401,7 +419,9 @@ impl crate::application::ports::inward::LayoutPort for App {
             }
         }
 
-        let mut rects = self.layout.compute(terminal_area, &pane_ids, self.focus.focused);
+        let mut rects = self
+            .layout
+            .compute(terminal_area, &pane_ids, self.focus.focused);
 
         // Offset rects to account for file tree panel and titlebar inset
         for (_, rect) in &mut rects {
@@ -427,10 +447,15 @@ impl crate::application::ports::inward::LayoutPort for App {
             }
             // Re-check after potential transfer
             if let Some(zp) = self.focus.zoomed_pane {
-                rects = vec![(zp, Rect::new(
-                    terminal_offset_x, top,
-                    terminal_area.width, terminal_area.height,
-                ))];
+                rects = vec![(
+                    zp,
+                    Rect::new(
+                        terminal_offset_x,
+                        top,
+                        terminal_area.width,
+                        terminal_area.height,
+                    ),
+                )];
             }
         }
 
@@ -449,18 +474,24 @@ impl crate::application::ports::inward::LayoutPort for App {
                 // Normal: split between pinned and terminal dock
                 let has_pinned = self.has_pinned_panes();
                 let owner_terminal = self.focused_terminal_id();
-                let has_terminal_dock_panes = owner_terminal.map(|tid| {
-                    if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
-                        !tp.dock_layout.pane_ids().is_empty()
-                    } else { false }
-                }).unwrap_or(false);
+                let has_terminal_dock_panes = owner_terminal
+                    .map(|tid| {
+                        if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                            !tp.dock_layout.pane_ids().is_empty()
+                        } else {
+                            false
+                        }
+                    })
+                    .unwrap_or(false);
 
                 let (pinned_width, terminal_dock_offset_x, terminal_dock_width) = if !has_pinned {
                     (0.0, ctx_offset_x, dock_width)
                 } else if !has_terminal_dock_panes {
                     (dock_width, ctx_offset_x, 0.0)
                 } else {
-                    let pw = (dock_width * self.dock.pinned_dock_ratio).max(60.0).min(dock_width - 60.0);
+                    let pw = (dock_width * self.dock.pinned_dock_ratio)
+                        .max(60.0)
+                        .min(dock_width - 60.0);
                     let tw = dock_width - pw - PANE_GAP;
                     (pw, ctx_offset_x + pw + PANE_GAP, tw.max(0.0))
                 };
@@ -470,8 +501,13 @@ impl crate::application::ports::inward::LayoutPort for App {
                     let pinned_pane_ids = self.dock.pinned_dock_layout.pane_ids();
                     if !pinned_pane_ids.is_empty() {
                         let pinned_size = Size::new(pinned_width, dock_height);
-                        let pinned_focused = self.focus.focused.filter(|id| self.is_pane_pinned(*id));
-                    let mut pr = self.dock.pinned_dock_layout.compute(pinned_size, &pinned_pane_ids, pinned_focused);
+                        let pinned_focused =
+                            self.focus.focused.filter(|id| self.is_pane_pinned(*id));
+                        let mut pr = self.dock.pinned_dock_layout.compute(
+                            pinned_size,
+                            &pinned_pane_ids,
+                            pinned_focused,
+                        );
                         for (_, rect) in &mut pr {
                             rect.x += ctx_offset_x;
                             rect.y += top;
@@ -487,7 +523,11 @@ impl crate::application::ports::inward::LayoutPort for App {
                             let dock_pane_ids = tp.dock_layout.pane_ids();
                             if !dock_pane_ids.is_empty() {
                                 let ctx_size = Size::new(terminal_dock_width, dock_height);
-                                let mut cr = tp.dock_layout.compute(ctx_size, &dock_pane_ids, tp.dock_focused);
+                                let mut cr = tp.dock_layout.compute(
+                                    ctx_size,
+                                    &dock_pane_ids,
+                                    tp.dock_focused,
+                                );
                                 for (_, rect) in &mut cr {
                                     rect.x += terminal_dock_offset_x;
                                     rect.y += top;
@@ -513,11 +553,21 @@ impl crate::application::ports::inward::LayoutPort for App {
         let term_area_right = terminal_offset_x + terminal_area.width;
         let term_area_bottom = top + terminal_area.height;
 
-        let ctx_area_x = if show_dock { term_area_right + PANE_GAP } else { 0.0 };
-        let ctx_area_right = if show_dock { ctx_area_x + dock_width } else { 0.0 };
+        let ctx_area_x = if show_dock {
+            term_area_right + PANE_GAP
+        } else {
+            0.0
+        };
+        let ctx_area_right = if show_dock {
+            ctx_area_x + dock_width
+        } else {
+            0.0
+        };
 
         // Collect all dock pane IDs across all terminals + pinned dock
-        let mut dock_pane_ids: std::collections::HashSet<u64> = self.panes.iter()
+        let mut dock_pane_ids: std::collections::HashSet<u64> = self
+            .panes
+            .iter()
             .filter_map(|(_, pk)| {
                 if let PaneKind::Terminal(tp) = pk {
                     Some(tp.dock_layout.all_pane_ids())
@@ -549,13 +599,33 @@ impl crate::application::ports::inward::LayoutPort for App {
                 let at_left_edge = (r.x - area_x).abs() < 1.0;
                 let at_right_edge = ((r.x + r.width) - area_right).abs() < 1.0;
                 let l = if at_left_edge {
-                    if is_dock { half } else { edge_inset } // dock left = inter-region gap
-                } else { half };
-                let t = if (r.y - area_y).abs() < 1.0 { edge_inset } else { half };
+                    if is_dock {
+                        half
+                    } else {
+                        edge_inset
+                    } // dock left = inter-region gap
+                } else {
+                    half
+                };
+                let t = if (r.y - area_y).abs() < 1.0 {
+                    edge_inset
+                } else {
+                    half
+                };
                 let ri = if at_right_edge {
-                    if !is_dock && show_dock { half } else { edge_inset } // terminal right = inter-region gap
-                } else { half };
-                let b = if ((r.y + r.height) - area_bottom).abs() < 1.0 { edge_inset } else { half };
+                    if !is_dock && show_dock {
+                        half
+                    } else {
+                        edge_inset
+                    } // terminal right = inter-region gap
+                } else {
+                    half
+                };
+                let b = if ((r.y + r.height) - area_bottom).abs() < 1.0 {
+                    edge_inset
+                } else {
+                    half
+                };
                 let vr = Rect::new(
                     r.x + l,
                     r.y + t,
@@ -571,9 +641,8 @@ impl crate::application::ports::inward::LayoutPort for App {
         // During border drag, skip PTY resize to avoid SIGWINCH spam and drift.
         // During window resize, always apply PTY resize so content reflows
         // incrementally instead of jumping all at once when the drag ends.
-        let skip_pty_resize = self.router.is_dragging_border()
-            || self.ft.border_dragging
-            || self.ws.border_dragging;
+        let skip_pty_resize =
+            self.router.is_dragging_border() || self.ft.border_dragging || self.ws.border_dragging;
         if !skip_pty_resize {
             let content_top = TAB_BAR_HEIGHT;
             let cell_size = self.cell_size();
@@ -631,7 +700,11 @@ impl crate::application::ports::inward::LayoutPort for App {
 
         for id in browser_ids {
             // Find the visual rect for this browser pane in the split tree
-            let visual_rect = self.visual_pane_rects.iter().find(|(pid, _)| *pid == id).map(|(_, r)| *r);
+            let visual_rect = self
+                .visual_pane_rects
+                .iter()
+                .find(|(pid, _)| *pid == id)
+                .map(|(_, r)| *r);
 
             let bp = match self.panes.get_mut(&id) {
                 Some(PaneKind::Browser(bp)) => bp,
@@ -641,7 +714,7 @@ impl crate::application::ports::inward::LayoutPort for App {
             // Create webview if not yet initialized
             if bp.webview.is_none() {
                 let handle = unsafe {
-                    crate::tide_platform::macos::webview::WebViewHandle::new(content_view)
+                    crate::tide_platform::macos::webview::WebViewHandle::new(content_view, id)
                 };
                 if let Some(handle) = handle {
                     bp.webview = Some(handle);
@@ -659,68 +732,79 @@ impl crate::application::ports::inward::LayoutPort for App {
                 if popup_open {
                     bp.set_visible(false);
                 } else {
-                // Position webview inside the pane's visual rect.
-                // Render-mode panes skip the nav bar (BR-26: no URL bar).
-                let content_top = if bp.render_mode {
-                    TAB_BAR_HEIGHT
-                } else {
-                    let nav_bar_h = (self.window.cached_cell_size.height * 1.5).round() + 4.0; // 2px gap top + nav_h + 2px gap bottom
-                    TAB_BAR_HEIGHT + nav_bar_h
-                };
+                    // Position webview inside the pane's visual rect.
+                    // Render-mode panes skip the nav bar (BR-26: no URL bar).
+                    let content_top = if bp.render_mode {
+                        TAB_BAR_HEIGHT
+                    } else {
+                        let nav_bar_h = (self.window.cached_cell_size.height * 1.5).round() + 4.0; // 2px gap top + nav_h + 2px gap bottom
+                        TAB_BAR_HEIGHT + nav_bar_h
+                    };
 
-                let x = (vr.x + PANE_PADDING) as f64;
-                let y = (vr.y + content_top) as f64;
-                let w = ((vr.width - PANE_PADDING * 2.0).max(1.0)) as f64;
-                let h = ((vr.height - content_top - PANE_PADDING).max(1.0)) as f64;
+                    let x = (vr.x + PANE_PADDING) as f64;
+                    let y = (vr.y + content_top) as f64;
+                    let w = ((vr.width - PANE_PADDING * 2.0).max(1.0)) as f64;
+                    let h = ((vr.height - content_top - PANE_PADDING).max(1.0)) as f64;
 
-                bp.set_frame(x, y, w, h);
-                bp.set_visible(true);
+                    bp.set_frame(x, y, w, h);
+                    bp.set_visible(true);
 
-                // Navigate AFTER the webview has a proper frame and is visible.
-                if bp.needs_initial_navigate && !bp.url.is_empty() {
-                    let url = bp.url.clone();
-                    bp.navigate(&url);
-                    bp.needs_initial_navigate = false;
-                }
-
-                // Load render HTML after the webview has a proper frame (BR-25).
-                if bp.render_mode && bp.needs_render_load {
-                    bp.load_render_content();
-                }
-
-                // First responder management: only the focused browser pane
-                // should become first responder. A visible-but-unfocused
-                // browser pane must NOT steal first responder from the
-                // terminal's IME proxy (causes input loss after app switch).
-                let is_focused_pane = self.focus.focused == Some(id);
-                let search_bar_active = self.focus.search_focus == Some(id);
-                let should_be_first_responder = is_focused_pane && !bp.url_input_focused && !search_bar_active;
-                if should_be_first_responder && !bp.is_first_responder {
-                    if let (Some(wv), Some(win_ptr)) =
-                        (&bp.webview, self.ports.platform.window_ptr())
-                    {
-                        unsafe { wv.make_first_responder(win_ptr); }
+                    // Navigate AFTER the webview has a proper frame and is visible.
+                    if bp.needs_initial_navigate && !bp.url.is_empty() {
+                        let url = bp.url.clone();
+                        bp.navigate(&url);
+                        bp.needs_initial_navigate = false;
                     }
-                    bp.is_first_responder = true;
-                } else if !should_be_first_responder && bp.is_first_responder {
-                    // Resign the WebView's first responder so it doesn't
-                    // compete with the IME proxy when focus moves to a
-                    // terminal or editor pane.
-                    if let (Some(wv), Some(win_ptr), Some(view_ptr)) =
-                        (&bp.webview, self.ports.platform.window_ptr(), self.ports.platform.content_view_ptr())
-                    {
-                        unsafe { wv.resign_first_responder(win_ptr, view_ptr); }
+
+                    // Load render HTML after the webview has a proper frame (BR-25).
+                    if bp.render_mode && bp.needs_render_load {
+                        bp.load_render_content();
                     }
-                    bp.is_first_responder = false;
-                }
+
+                    // First responder management: only the focused browser pane
+                    // should become first responder. A visible-but-unfocused
+                    // browser pane must NOT steal first responder from the
+                    // terminal's IME proxy (causes input loss after app switch).
+                    let is_focused_pane = self.focus.focused == Some(id);
+                    let search_bar_active = self.focus.search_focus == Some(id);
+                    let should_be_first_responder =
+                        is_focused_pane && !bp.url_input_focused && !search_bar_active;
+                    if should_be_first_responder && !bp.is_first_responder {
+                        if let (Some(wv), Some(win_ptr)) =
+                            (&bp.webview, self.ports.platform.window_ptr())
+                        {
+                            unsafe {
+                                wv.make_first_responder(win_ptr);
+                            }
+                        }
+                        bp.is_first_responder = true;
+                    } else if !should_be_first_responder && bp.is_first_responder {
+                        // Resign the WebView's first responder so it doesn't
+                        // compete with the IME proxy when focus moves to a
+                        // terminal or editor pane.
+                        if let (Some(wv), Some(win_ptr), Some(view_ptr)) = (
+                            &bp.webview,
+                            self.ports.platform.window_ptr(),
+                            self.ports.platform.content_view_ptr(),
+                        ) {
+                            unsafe {
+                                wv.resign_first_responder(win_ptr, view_ptr);
+                            }
+                        }
+                        bp.is_first_responder = false;
+                    }
                 } // else (not popup_open)
             } else {
                 // Browser pane not in the visible layout -- hide it
                 if bp.is_first_responder {
-                    if let (Some(wv), Some(win_ptr), Some(view_ptr)) =
-                        (&bp.webview, self.ports.platform.window_ptr(), self.ports.platform.content_view_ptr())
-                    {
-                        unsafe { wv.resign_first_responder(win_ptr, view_ptr); }
+                    if let (Some(wv), Some(win_ptr), Some(view_ptr)) = (
+                        &bp.webview,
+                        self.ports.platform.window_ptr(),
+                        self.ports.platform.content_view_ptr(),
+                    ) {
+                        unsafe {
+                            wv.resign_first_responder(win_ptr, view_ptr);
+                        }
                     }
                     bp.is_first_responder = false;
                 }
@@ -743,15 +827,30 @@ impl crate::application::ports::inward::LayoutPort for App {
         self.layout.remove(id);
     }
 
-    fn layout_insert_at_root(&mut self, id: crate::tide_core::PaneId, zone: crate::tide_core::DropZone) {
+    fn layout_insert_at_root(
+        &mut self,
+        id: crate::tide_core::PaneId,
+        zone: crate::tide_core::DropZone,
+    ) {
         self.layout.insert_at_root(id, zone);
     }
 
-    fn layout_insert_pane(&mut self, target: crate::tide_core::PaneId, source: crate::tide_core::PaneId, direction: SplitDirection, insert_first: bool) {
-        self.layout.insert_pane(target, source, direction, insert_first);
+    fn layout_insert_pane(
+        &mut self,
+        target: crate::tide_core::PaneId,
+        source: crate::tide_core::PaneId,
+        direction: SplitDirection,
+        insert_first: bool,
+    ) {
+        self.layout
+            .insert_pane(target, source, direction, insert_first);
     }
 
-    fn layout_add_tab(&mut self, target: crate::tide_core::PaneId, source: crate::tide_core::PaneId) -> bool {
+    fn layout_add_tab(
+        &mut self,
+        target: crate::tide_core::PaneId,
+        source: crate::tide_core::PaneId,
+    ) -> bool {
         self.layout.add_tab(target, source)
     }
 
@@ -787,15 +886,31 @@ impl crate::application::ports::inward::LayoutPort for App {
         self.router.end_drag();
     }
 
-    fn compute_drop_destination(&self, mouse: crate::tide_core::Vec2, source: crate::tide_core::PaneId) -> Option<crate::state::drag_types::DropDestination> {
+    fn compute_drop_destination(
+        &self,
+        mouse: crate::tide_core::Vec2,
+        source: crate::tide_core::PaneId,
+    ) -> Option<crate::state::drag_types::DropDestination> {
         crate::adapter::inward::drag_drop_adapter::compute_drop_destination(self, mouse, source)
     }
 
-    fn compute_drop_preview_rect(&self, source: crate::tide_core::PaneId, target: &Option<crate::state::drag_types::DropDestination>) -> Option<Rect> {
+    fn compute_drop_preview_rect(
+        &self,
+        source: crate::tide_core::PaneId,
+        target: &Option<crate::state::drag_types::DropDestination>,
+    ) -> Option<Rect> {
         crate::adapter::inward::drag_drop_adapter::compute_drop_preview_rect(self, source, target)
     }
 
-    fn layout_simulate_drop(&self, source: crate::tide_core::PaneId, target: Option<crate::tide_core::PaneId>, zone: crate::tide_core::DropZone, source_in_tree: bool, window_size: crate::tide_core::Size) -> Option<Rect> {
-        self.layout.simulate_drop(source, target, zone, source_in_tree, window_size)
+    fn layout_simulate_drop(
+        &self,
+        source: crate::tide_core::PaneId,
+        target: Option<crate::tide_core::PaneId>,
+        zone: crate::tide_core::DropZone,
+        source_in_tree: bool,
+        window_size: crate::tide_core::Size,
+    ) -> Option<Rect> {
+        self.layout
+            .simulate_drop(source, target, zone, source_in_tree, window_size)
     }
 }
