@@ -1,9 +1,11 @@
 // Spec: docs/specs/live-preview.md
 use crate::domain::editor::markdown::{LivePreviewMap, MdElementKind};
 use crate::pane::editor::EditorPane;
-use crate::pane::PaneKind;
+use crate::pane::{PaneKind, TerminalPane};
 use crate::state::FocusArea;
+use crate::ActionPort;
 use crate::App;
+use crate::DockPort;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -41,6 +43,38 @@ fn app_with_markdown_editor(contents: &str) -> (App, u64, PathBuf) {
     app.focus.focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;
     (app, id, path)
+}
+
+fn app_with_dock_markdown_editor(contents: &str) -> (App, u64, u64, PathBuf) {
+    let mut app = test_app();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    app.panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    app.focus.focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.focus.stage_focused = Some(terminal_id);
+
+    let editor_id = app.layout.alloc_id();
+    let path = temp_markdown_path("dock_selection");
+    std::fs::write(&path, contents).unwrap();
+    let pane = EditorPane::open(editor_id, &path).unwrap();
+    app.panes.insert(editor_id, PaneKind::Editor(pane));
+    app.add_pane_to_dock(editor_id);
+    app.assoc.associated_terminal.insert(editor_id, terminal_id);
+
+    app.gateway.detected_agents.insert(
+        terminal_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Codex".into(),
+            pid: 42,
+            wrapper_managed: true,
+            gateway_connected: true,
+            status: None,
+        },
+    );
+
+    (app, editor_id, terminal_id, path)
 }
 
 fn pane_content_rect(pane_rect: crate::tide_core::Rect) -> crate::tide_core::Rect {
@@ -281,4 +315,164 @@ fn mouse_selection_on_hidden_syntax_line_maps_visual_column_to_buffer_column() {
 
     assert_eq!(selection.anchor, (1, 2));
     assert_eq!(selection.end, (1, 2));
+}
+
+#[test]
+fn live_preview_selected_text_omits_hidden_syntax_markers() {
+    // UC-7 BR-1: Visible-text copy in LivePreviewMode omits hidden inline syntax markers.
+    let (mut app, id, _path) =
+        app_with_markdown_editor("cursor line\n[OpenAI](https://openai.com)\n");
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
+    let content_rect = pane_content_rect(pane_rect);
+    let cell = app.window.cached_cell_size;
+    app.visual_pane_rects = vec![(id, pane_rect)];
+
+    {
+        let pane = match app.panes.get_mut(&id) {
+            Some(PaneKind::Editor(pane)) => pane,
+            _ => panic!("expected editor pane"),
+        };
+        pane.handle_action(
+            crate::tide_editor::input::EditorAction::SetCursor { line: 0, col: 0 },
+            20,
+        );
+        pane.prepare_inline_caches(content_rect, cell, false);
+    }
+
+    let gutter_x = content_rect.x + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width;
+    let start = crate::tide_core::Vec2::new(gutter_x + 1.0, content_rect.y + cell.height + 1.0);
+    let end = crate::tide_core::Vec2::new(
+        gutter_x + 6.0 * cell.width + 1.0,
+        content_rect.y + cell.height + 1.0,
+    );
+    app.window.last_cursor_pos = start;
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(
+        &mut app,
+        crate::tide_core::MouseButton::Left,
+        &test_window_proxy(),
+    );
+    crate::adapter::inward::mouse_adapter::drag::handle_cursor_moved_logical(
+        &mut app,
+        end,
+        &test_window_proxy(),
+    );
+    crate::adapter::inward::mouse_adapter::handle_mouse_up(
+        &mut app,
+        crate::tide_core::MouseButton::Left,
+    );
+
+    let pane = match app.panes.get(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    let selection = pane.selection.as_ref().expect("selection should exist");
+    assert_eq!(pane.selected_text(selection), "OpenAI");
+}
+
+#[test]
+fn live_preview_context_artifact_capture_uses_visible_selected_text() {
+    // UC-7 BR-2: Add-comment capture in LivePreviewMode uses the same visible selected text that copy uses.
+    let (mut app, id, terminal_id, _path) =
+        app_with_dock_markdown_editor("cursor line\n[OpenAI](https://openai.com)\n");
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
+    let content_rect = pane_content_rect(pane_rect);
+    let cell = app.window.cached_cell_size;
+    app.visual_pane_rects = vec![(id, pane_rect)];
+
+    {
+        let pane = match app.panes.get_mut(&id) {
+            Some(PaneKind::Editor(pane)) => pane,
+            _ => panic!("expected editor pane"),
+        };
+        pane.handle_action(
+            crate::tide_editor::input::EditorAction::SetCursor { line: 0, col: 0 },
+            20,
+        );
+        pane.prepare_inline_caches(content_rect, cell, false);
+    }
+
+    let gutter_x = content_rect.x + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width;
+    let start = crate::tide_core::Vec2::new(gutter_x + 1.0, content_rect.y + cell.height + 1.0);
+    let end = crate::tide_core::Vec2::new(
+        gutter_x + 6.0 * cell.width + 1.0,
+        content_rect.y + cell.height + 1.0,
+    );
+    app.window.last_cursor_pos = start;
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(
+        &mut app,
+        crate::tide_core::MouseButton::Left,
+        &test_window_proxy(),
+    );
+    crate::adapter::inward::mouse_adapter::drag::handle_cursor_moved_logical(
+        &mut app,
+        end,
+        &test_window_proxy(),
+    );
+    crate::adapter::inward::mouse_adapter::handle_mouse_up(
+        &mut app,
+        crate::tide_core::MouseButton::Left,
+    );
+
+    assert!(
+        app.can_open_context_comment_composer(id),
+        "dock live preview selection should be eligible for context comment capture"
+    );
+    app.open_context_comment_composer(id);
+
+    let composer = app
+        .modal
+        .context_comment_composer
+        .as_ref()
+        .expect("context comment composer should open for a dock markdown pane");
+    assert_eq!(composer.source_pane_id, id);
+    assert_eq!(composer.associated_terminal_id, terminal_id);
+    assert_eq!(composer.content, "OpenAI");
+}
+
+#[test]
+fn live_preview_link_click_opens_rendered_link_target() {
+    // UC-7 BR-3: Link activation in LivePreviewMode opens the rendered Markdown link target.
+    let (mut app, id, _path) =
+        app_with_markdown_editor("cursor line\n[OpenAI](https://openai.com)\n");
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
+    let content_rect = pane_content_rect(pane_rect);
+    let cell = app.window.cached_cell_size;
+    app.visual_pane_rects = vec![(id, pane_rect)];
+
+    {
+        let pane = match app.panes.get_mut(&id) {
+            Some(PaneKind::Editor(pane)) => pane,
+            _ => panic!("expected editor pane"),
+        };
+        pane.handle_action(
+            crate::tide_editor::input::EditorAction::SetCursor { line: 0, col: 0 },
+            20,
+        );
+        pane.prepare_inline_caches(content_rect, cell, false);
+    }
+
+    app.window.modifiers = crate::tide_core::Modifiers {
+        meta: true,
+        ..crate::tide_core::Modifiers::default()
+    };
+
+    let click_x =
+        content_rect.x + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width + 1.0;
+    let click_y = content_rect.y + 1.0 * cell.height + 1.0;
+
+    ActionPort::handle_action(
+        &mut app,
+        crate::tide_input::Action::RouteToPane(id),
+        Some(crate::tide_core::InputEvent::MouseClick {
+            position: crate::tide_core::Vec2::new(click_x, click_y),
+            button: crate::tide_core::MouseButton::Left,
+        }),
+    );
+
+    assert!(
+        app.panes.values().any(
+            |pane| matches!(pane, PaneKind::Browser(browser) if browser.url == "https://openai.com")
+        ),
+        "cmd-click on a live preview markdown link should open the rendered link target"
+    );
 }
