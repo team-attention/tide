@@ -595,7 +595,12 @@ fn check_scrollbar_click(ctx: &mut impl MousePorts, pos: Vec2) -> bool {
 }
 
 /// Apply scrollbar drag: set scroll position based on mouse Y within rect.
-pub(super) fn apply_scrollbar_drag(ctx: &mut (impl AppCorePort + PaneAccessPort), pane_id: crate::tide_core::PaneId, rect: Rect, mouse_y: f32) {
+pub(crate) fn apply_scrollbar_drag(
+    ctx: &mut (impl AppCorePort + PaneAccessPort),
+    pane_id: crate::tide_core::PaneId,
+    rect: Rect,
+    mouse_y: f32,
+) {
     let cell_height = ctx.cell_size().height;
     let visible_rows = (rect.height / cell_height).floor() as usize;
     let ratio = ((mouse_y - rect.y) / rect.height).clamp(0.0, 1.0);

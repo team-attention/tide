@@ -9,6 +9,7 @@
 - The `Search Bar` renders IME preedit inline, but the committed query text and caret do not yet share a single visual-width model with the top-layer renderer.
 - The `Context Comment Composer` accepts IME commit text, but it does not render preedit inline and does not expose an overlay-specific IME cursor area.
 - IME cursor-area updates currently derive only from the focused `Terminal` or `Editor` caret, so overlay text inputs such as the `Search Bar` and `Context Comment Composer` can anchor the candidate window to the wrong place.
+- The `Context Comment Composer` still uses a one-line caret and cursor-area model, so long multiline composition can drift once the visible comment wraps.
 
 ### To-Be
 
@@ -17,6 +18,7 @@
 - The `Search Bar` and `Context Comment Composer` both render IME preedit inline at their own caret positions.
 - The IME candidate window follows the active overlay caret for `Search Bar` and `Context Comment Composer` instead of the underlying `Pane` cursor.
 - Long Korean composition in the `Search Bar` keeps committed text, preedit text, caret, and IME cursor area visually aligned.
+- Long Korean composition in the `Context Comment Composer` keeps committed text, preedit text, wrapped-row caret, and IME cursor area visually aligned.
 
 ### Approach
 
@@ -24,7 +26,7 @@
 2. Detect when IME preedit targets a Tide-rendered overlay and invalidate chrome immediately.
 3. Render preedit inline inside `Search Bar` and `Context Comment Composer` using the same visual-width rules as committed text.
 4. Compute overlay-specific IME cursor rectangles for `Search Bar` and `Context Comment Composer` and use them before falling back to `Terminal` or `Editor` caret geometry.
-5. Lock the long-Hangul `Search Bar` alignment rule with behavior tests before changing the renderer path.
+5. Lock the long-Hangul alignment rules for both `Search Bar` and `Context Comment Composer` with behavior tests before changing the renderer path.
 
 ## Bounded Contexts
 
@@ -101,6 +103,7 @@
   - BR-13: The `Search Bar` provides the IME cursor area while it is the active text input
   - BR-14: The `Context Comment Composer` provides the IME cursor area while it is the active text input
   - BR-15: Long Korean `Search Bar` composition keeps committed text, preedit, caret, and IME cursor area aligned
+  - BR-16: Long Korean `Context Comment Composer` composition keeps committed text, preedit, wrapped-row caret, and IME cursor area aligned
 
 ## Invariants
 
@@ -129,6 +132,7 @@
 | UC-4 | BR-13 | `search_bar_ime_cursor_area_tracks_search_caret` |
 | UC-4 | BR-14 | `context_comment_composer_ime_cursor_area_tracks_composer_caret` |
 | UC-4 | BR-15 | `search_bar_long_hangul_input_keeps_text_and_caret_aligned` |
+| UC-4 | BR-16 | `context_comment_composer_long_hangul_input_keeps_text_and_caret_aligned` |
 
 ## Location
 
