@@ -316,36 +316,19 @@ fn context_comment_composer_keeps_caret_visible_when_comment_wraps() {
         "",
     );
 
-    let popup_w = if logical.width > 560.0 {
-        (logical.width - 48.0).min(760.0).max(520.0)
-    } else {
-        (logical.width - 24.0).max(320.0)
-    };
-    let popup_h = if logical.height > 420.0 {
-        (logical.height - 48.0).min(520.0).max(320.0)
-    } else {
-        (logical.height - 24.0).max(260.0)
-    };
-    let popup_x = (logical.width - popup_w) / 2.0;
-    let popup_y = (logical.height - popup_h) / 2.0;
-    let line_h = cell_size.height + 6.0;
-    let mut input_y = popup_y + 16.0;
-    input_y += line_h + 4.0;
-    input_y += line_h;
-    input_y += line_h + 8.0;
-    input_y += line_h;
-    input_y += 5.0 * line_h + 12.0;
-    input_y += line_h;
-    let input_h = 5.0 * line_h + 4.0;
-    let input_x = popup_x + 18.0;
-    let input_w = popup_w - 36.0;
+    let (input_rect, _line_h) = crate::adapter::outward::view::overlays::composer_input_rect(
+        logical,
+        cell_size,
+    );
 
     assert!(
-        cursor_rect.x >= input_x && cursor_rect.x <= input_x + input_w - cell_size.width,
+        cursor_rect.x >= input_rect.x
+            && cursor_rect.x <= input_rect.x + input_rect.width - cell_size.width,
         "wrapped composer caret should stay inside the visible input width"
     );
     assert!(
-        cursor_rect.y >= input_y && cursor_rect.y <= input_y + input_h - cell_size.height,
+        cursor_rect.y >= input_rect.y
+            && cursor_rect.y <= input_rect.y + input_rect.height - cell_size.height,
         "wrapped composer caret should stay inside the visible input height"
     );
 }
