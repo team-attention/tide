@@ -21,12 +21,14 @@ use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::cell::Flags as CellFlags;
+use alacritty_terminal::term::cell::LineLength;
 use alacritty_terminal::term::{Config as TermConfig, Term, TermMode};
 use alacritty_terminal::tty;
 use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor, Rgb as AnsiRgb};
+use unicode_width::UnicodeWidthChar;
 
-pub mod git;
 mod color;
+pub mod git;
 mod key_input;
 
 use crate::tide_core::{
@@ -139,6 +141,7 @@ struct SharedSnapshot {
     grid: TerminalGrid,
     inverse_cursor: Option<(u16, u16)>,
     url_ranges: Vec<Vec<(usize, usize)>>,
+    wrapped_rows: Vec<bool>,
     generation: u64,
     cursor: CursorState,
 }
@@ -179,30 +182,55 @@ impl TermEventListener {
             // Foreground (OSC 10)
             256 => {
                 if dark {
-                    AnsiRgb { r: 230, g: 232, b: 242 } // dark fg: (0.9, 0.91, 0.95)
+                    AnsiRgb {
+                        r: 230,
+                        g: 232,
+                        b: 242,
+                    } // dark fg: (0.9, 0.91, 0.95)
                 } else {
-                    AnsiRgb { r: 26, g: 20, b: 13 }    // light fg: (0.10, 0.08, 0.05)
+                    AnsiRgb {
+                        r: 26,
+                        g: 20,
+                        b: 13,
+                    } // light fg: (0.10, 0.08, 0.05)
                 }
             }
             // Background (OSC 11) — report the actual visible pane background
             257 => {
                 if dark {
-                    AnsiRgb { r: 14, g: 14, b: 16 }    // dark pane_bg: (0.055, 0.055, 0.063)
+                    AnsiRgb {
+                        r: 14,
+                        g: 14,
+                        b: 16,
+                    } // dark pane_bg: (0.055, 0.055, 0.063)
                 } else {
-                    AnsiRgb { r: 240, g: 235, b: 227 }  // light pane_bg: (0.94, 0.92, 0.89)
+                    AnsiRgb {
+                        r: 240,
+                        g: 235,
+                        b: 227,
+                    } // light pane_bg: (0.94, 0.92, 0.89)
                 }
             }
             // Cursor (OSC 12) — use foreground color
             258 => {
                 if dark {
-                    AnsiRgb { r: 230, g: 232, b: 242 }
+                    AnsiRgb {
+                        r: 230,
+                        g: 232,
+                        b: 242,
+                    }
                 } else {
-                    AnsiRgb { r: 26, g: 20, b: 13 }
+                    AnsiRgb {
+                        r: 26,
+                        g: 20,
+                        b: 13,
+                    }
                 }
             }
             // Named ANSI colors (0-15)
             0..=15 => {
-                let color = Terminal::named_color_to_rgb(dark, Terminal::index_to_named(index as u8));
+                let color =
+                    Terminal::named_color_to_rgb(dark, Terminal::index_to_named(index as u8));
                 AnsiRgb {
                     r: (color.r * 255.0) as u8,
                     g: (color.g * 255.0) as u8,
@@ -229,7 +257,9 @@ impl EventListener for TermEventListener {
             Event::PtyWrite(text) => {
                 if let Ok(guard) = self.pty_writer.lock() {
                     if let Some(notifier) = guard.as_ref() {
-                        let _ = notifier.0.send(Msg::Input(Cow::Owned(text.clone().into_bytes())));
+                        let _ = notifier
+                            .0
+                            .send(Msg::Input(Cow::Owned(text.clone().into_bytes())));
                     }
                 }
             }
@@ -238,7 +268,9 @@ impl EventListener for TermEventListener {
                 let response = formatter(rgb);
                 if let Ok(guard) = self.pty_writer.lock() {
                     if let Some(notifier) = guard.as_ref() {
-                        let _ = notifier.0.send(Msg::Input(Cow::Owned(response.into_bytes())));
+                        let _ = notifier
+                            .0
+                            .send(Msg::Input(Cow::Owned(response.into_bytes())));
                     }
                 }
                 return; // No need to mark dirty or wake sync thread
@@ -254,11 +286,17 @@ impl EventListener for TermEventListener {
                 self.mode_2031.store(*enabled, Ordering::Relaxed);
                 // Immediately report current mode: CSI ? 997 ; N n (1=dark, 2=light)
                 if *enabled {
-                    let mode = if self.dark_mode.load(Ordering::Relaxed) { 1 } else { 2 };
+                    let mode = if self.dark_mode.load(Ordering::Relaxed) {
+                        1
+                    } else {
+                        2
+                    };
                     let response = format!("\x1b[?997;{}n", mode);
                     if let Ok(guard) = self.pty_writer.lock() {
                         if let Some(notifier) = guard.as_ref() {
-                            let _ = notifier.0.send(Msg::Input(Cow::Owned(response.into_bytes())));
+                            let _ = notifier
+                                .0
+                                .send(Msg::Input(Cow::Owned(response.into_bytes())));
                         }
                     }
                 }
@@ -289,6 +327,7 @@ struct GridSyncer {
     inverse_cursor: Option<(u16, u16)>,
     cached_cursor: CursorState,
     url_ranges: Vec<Vec<(usize, usize)>>,
+    wrapped_rows: Vec<bool>,
     grid_generation: u64,
     url_row_buf: String,
     dark_mode: Arc<AtomicBool>,
@@ -332,11 +371,23 @@ impl GridSyncer {
             // Copy raw cell data into flat buffer
             self.raw_buf.resize(
                 total_cells,
-                (' ', AnsiColor::Named(NamedColor::Foreground), AnsiColor::Named(NamedColor::Background), CellFlags::empty()),
+                (
+                    ' ',
+                    AnsiColor::Named(NamedColor::Foreground),
+                    AnsiColor::Named(NamedColor::Background),
+                    CellFlags::empty(),
+                ),
             );
+            self.wrapped_rows.resize(total_lines, false);
             for line_idx in 0..total_lines {
                 let line = Line(line_idx as i32 - display_offset as i32);
                 let base = line_idx * cols;
+                let grid_line = &grid[line];
+                let line_length = grid_line.line_length();
+                self.wrapped_rows[line_idx] = line_length.0 != 0
+                    && grid_line[line_length - 1]
+                        .flags
+                        .contains(CellFlags::WRAPLINE);
                 for col_idx in 0..cols {
                     let point = Point::new(line, Column(col_idx));
                     let cell = &grid[point];
@@ -373,9 +424,7 @@ impl GridSyncer {
         self.inverse_cursor = None;
         for idx in (0..total_cells).rev() {
             let flags = self.raw_buf[idx].3;
-            if flags.contains(CellFlags::INVERSE)
-                && !flags.contains(CellFlags::WIDE_CHAR_SPACER)
-            {
+            if flags.contains(CellFlags::INVERSE) && !flags.contains(CellFlags::WIDE_CHAR_SPACER) {
                 let row = idx / cols;
                 let col = idx % cols;
                 self.inverse_cursor = Some((row as u16, col as u16));
@@ -424,10 +473,15 @@ impl GridSyncer {
                         bg_is_default = false;
                     }
                     // Remap mismatched true-color backgrounds (see main cell path below).
-                    let effective_bg = if flags.contains(CellFlags::INVERSE) { &fg } else { &bg };
+                    let effective_bg = if flags.contains(CellFlags::INVERSE) {
+                        &fg
+                    } else {
+                        &bg
+                    };
                     if !bg_is_default {
                         if let AnsiColor::Spec(_) = effective_bg {
-                            let bg_lum = 0.2126 * bg_color.r + 0.7152 * bg_color.g + 0.0722 * bg_color.b;
+                            let bg_lum =
+                                0.2126 * bg_color.r + 0.7152 * bg_color.g + 0.0722 * bg_color.b;
                             if !dark_mode && bg_lum < 0.5 {
                                 bg_color = Terminal::remap_bg_for_light(bg_color);
                             } else if dark_mode && bg_lum > 0.7 {
@@ -454,10 +508,15 @@ impl GridSyncer {
                 // or Mode 2031 send dark bgs in light mode (or bright bgs in dark
                 // mode). Remap them to theme-appropriate equivalents.
                 // Named/indexed colors are already mode-aware via our palette.
-                let effective_bg = if flags.contains(CellFlags::INVERSE) { &fg } else { &bg };
+                let effective_bg = if flags.contains(CellFlags::INVERSE) {
+                    &fg
+                } else {
+                    &bg
+                };
                 if !bg_is_default {
                     if let AnsiColor::Spec(_) = effective_bg {
-                        let bg_lum = 0.2126 * bg_color.r + 0.7152 * bg_color.g + 0.0722 * bg_color.b;
+                        let bg_lum =
+                            0.2126 * bg_color.r + 0.7152 * bg_color.g + 0.0722 * bg_color.b;
                         if !dark_mode && bg_lum < 0.5 {
                             bg_color = Terminal::remap_bg_for_light(bg_color);
                         } else if dark_mode && bg_lum > 0.7 {
@@ -472,11 +531,7 @@ impl GridSyncer {
                     fg_color = Terminal::ensure_light_fg_contrast(fg_color);
                 }
 
-                let background = if bg_is_default {
-                    None
-                } else {
-                    Some(bg_color)
-                };
+                let background = if bg_is_default { None } else { Some(bg_color) };
 
                 tc.character = c;
                 tc.style.bold = flags.contains(CellFlags::BOLD);
@@ -487,7 +542,12 @@ impl GridSyncer {
                     || flags.contains(CellFlags::UNDERCURL);
 
                 tc.style.foreground = if tc.style.dim {
-                    Color::new(fg_color.r * 0.65, fg_color.g * 0.65, fg_color.b * 0.65, fg_color.a)
+                    Color::new(
+                        fg_color.r * 0.65,
+                        fg_color.g * 0.65,
+                        fg_color.b * 0.65,
+                        fg_color.a,
+                    )
                 } else {
                     fg_color
                 };
@@ -515,9 +575,8 @@ impl GridSyncer {
     /// Detect URLs in the grid and store column ranges per row.
     fn detect_urls(&mut self) {
         static URL_RE: OnceLock<regex::Regex> = OnceLock::new();
-        let re = URL_RE.get_or_init(|| {
-            regex::Regex::new(r#"https?://[^\s<>"{}|\\^`\[\]]+"#).unwrap()
-        });
+        let re =
+            URL_RE.get_or_init(|| regex::Regex::new(r#"https?://[^\s<>"{}|\\^`\[\]]+"#).unwrap());
 
         let rows = self.grid.cells.len();
         self.url_ranges.resize(rows, Vec::new());
@@ -526,7 +585,11 @@ impl GridSyncer {
             self.url_ranges[row_idx].clear();
             self.url_row_buf.clear();
             for c in row.iter() {
-                self.url_row_buf.push(if c.character == '\0' { ' ' } else { c.character });
+                self.url_row_buf.push(if c.character == '\0' {
+                    ' '
+                } else {
+                    c.character
+                });
             }
             for m in re.find_iter(&self.url_row_buf) {
                 let url = trim_url_trailing(m.as_str());
@@ -602,6 +665,7 @@ fn grid_sync_thread_main(
                 snap.grid.clone_from(&syncer.grid);
                 snap.inverse_cursor = syncer.inverse_cursor;
                 snap.url_ranges.clone_from(&syncer.url_ranges);
+                snap.wrapped_rows.clone_from(&syncer.wrapped_rows);
                 snap.generation = syncer.grid_generation;
                 snap.cursor = syncer.cached_cursor;
             }
@@ -654,6 +718,8 @@ pub struct Terminal {
     cached_cursor: CursorState,
     /// Detected URL ranges per row (read from snapshot)
     url_ranges: Vec<Vec<(usize, usize)>>,
+    /// Whether each visible row ends because of terminal wrap instead of a hard line break.
+    wrapped_rows: Vec<bool>,
     /// Grid generation counter
     grid_generation: u64,
     /// Stay-at-bottom mode (shared with sync thread via atomic)
@@ -688,7 +754,13 @@ impl Terminal {
 
     /// Create a new terminal backend, optionally starting in the given directory.
     /// If `pane_id` is provided, sets the `TIDE_PANE` env var for the child process.
-    pub fn with_cwd(cols: u16, rows: u16, cwd: Option<PathBuf>, dark_mode: bool, pane_id: Option<u64>) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn with_cwd(
+        cols: u16,
+        rows: u16,
+        cwd: Option<PathBuf>,
+        dark_mode: bool,
+        pane_id: Option<u64>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let cell_width = 8;
         let cell_height = 16;
 
@@ -703,7 +775,8 @@ impl Terminal {
 
         let dirty = Arc::new(AtomicBool::new(true));
         let pty_writer = Arc::new(Mutex::new(None));
-        let sync_thread_handle: Arc<Mutex<Option<std::thread::Thread>>> = Arc::new(Mutex::new(None));
+        let sync_thread_handle: Arc<Mutex<Option<std::thread::Thread>>> =
+            Arc::new(Mutex::new(None));
         let dark_mode_flag = Arc::new(AtomicBool::new(dark_mode));
         let mode_2031_flag = Arc::new(AtomicBool::new(false));
         let notifications: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
@@ -803,8 +876,14 @@ impl Terminal {
             grid: Self::build_empty_grid(cols, rows),
             inverse_cursor: None,
             url_ranges: Vec::new(),
+            wrapped_rows: Vec::new(),
             generation: 0,
-            cursor: CursorState { row: 0, col: 0, visible: true, shape: CursorShape::Block },
+            cursor: CursorState {
+                row: 0,
+                col: 0,
+                visible: true,
+                shape: CursorShape::Block,
+            },
         }));
 
         // Create the GridSyncer with all sync-related state
@@ -815,8 +894,14 @@ impl Terminal {
             palette_buf: [None; 256],
             grid: Self::build_empty_grid(cols, rows),
             inverse_cursor: None,
-            cached_cursor: CursorState { row: 0, col: 0, visible: true, shape: CursorShape::Block },
+            cached_cursor: CursorState {
+                row: 0,
+                col: 0,
+                visible: true,
+                shape: CursorShape::Block,
+            },
             url_ranges: Vec::new(),
+            wrapped_rows: Vec::new(),
             grid_generation: 0,
             url_row_buf: String::new(),
             dark_mode: dark_mode_flag.clone(),
@@ -835,7 +920,15 @@ impl Terminal {
             std::thread::Builder::new()
                 .name("grid-sync".to_string())
                 .spawn(move || {
-                    grid_sync_thread_main(handle, syncer, dirty, snapshot, snapshot_ready, waker, shutdown);
+                    grid_sync_thread_main(
+                        handle,
+                        syncer,
+                        dirty,
+                        snapshot,
+                        snapshot_ready,
+                        waker,
+                        shutdown,
+                    );
                 })
                 .expect("failed to spawn grid sync thread")
         };
@@ -851,8 +944,14 @@ impl Terminal {
             snapshot_ready,
             snapshot,
             inverse_cursor: None,
-            cached_cursor: CursorState { row: 0, col: 0, visible: true, shape: CursorShape::Block },
+            cached_cursor: CursorState {
+                row: 0,
+                col: 0,
+                visible: true,
+                shape: CursorShape::Block,
+            },
             url_ranges: Vec::new(),
+            wrapped_rows: Vec::new(),
             grid_generation: 0,
             stay_at_bottom,
             dark_mode: dark_mode_flag,
@@ -934,7 +1033,11 @@ impl Terminal {
 
         let path = std::str::from_utf8(&path_bytes[..len]).ok()?;
         let p = PathBuf::from(path);
-        if p.is_dir() { Some(p) } else { None }
+        if p.is_dir() {
+            Some(p)
+        } else {
+            None
+        }
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -965,6 +1068,7 @@ impl Terminal {
             std::mem::swap(&mut self.cached_grid, &mut snap.grid);
             self.inverse_cursor = snap.inverse_cursor;
             std::mem::swap(&mut self.url_ranges, &mut snap.url_ranges);
+            std::mem::swap(&mut self.wrapped_rows, &mut snap.wrapped_rows);
             self.grid_generation = snap.generation;
             self.cached_cursor = snap.cursor;
         }
@@ -1073,6 +1177,11 @@ impl Terminal {
         &self.url_ranges
     }
 
+    /// Returns whether the visible row ended because of terminal wrap.
+    pub fn visible_row_is_wrapped(&self, row: usize) -> bool {
+        self.wrapped_rows.get(row).copied().unwrap_or(false)
+    }
+
     /// Returns the current column count.
     pub fn current_cols(&self) -> u16 {
         self.cols
@@ -1081,6 +1190,47 @@ impl Terminal {
     /// Returns the current row count.
     pub fn current_rows(&self) -> u16 {
         self.rows
+    }
+
+    #[cfg(test)]
+    pub fn load_mock_screen_for_test(&mut self, content: &str) {
+        let _ = self.notifier.0.send(Msg::Shutdown);
+        let rows: Vec<&str> = content.split('\n').collect();
+        let cols = self.cols as usize;
+        let screen_lines = self.rows as usize;
+        let mut cells = vec![vec![TerminalCell::default(); cols]; screen_lines];
+        let mut wrapped_rows = vec![false; screen_lines];
+
+        for (line_idx, raw_text) in rows.iter().take(screen_lines).enumerate() {
+            let text = raw_text.trim_end_matches('\r');
+            wrapped_rows[line_idx] = !raw_text.ends_with('\r') && line_idx + 1 != rows.len();
+
+            let mut col_idx = 0usize;
+            for ch in text.chars() {
+                let width = match ch.width() {
+                    Some(width) if width > 0 => width,
+                    _ => continue,
+                };
+                if col_idx >= cols || (width == 2 && col_idx + 1 >= cols) {
+                    break;
+                }
+
+                cells[line_idx][col_idx].character = ch;
+                if width == 2 {
+                    cells[line_idx][col_idx + 1].character = '\0';
+                }
+                col_idx += width;
+            }
+        }
+
+        self.cached_grid = TerminalGrid {
+            cols: self.cols,
+            rows: self.rows,
+            cells,
+        };
+        self.wrapped_rows = wrapped_rows;
+        self.url_ranges.clear();
+        self.grid_generation += 1;
     }
 
     /// Search the full scrollback + screen buffer for case-insensitive substring matches.
@@ -1114,7 +1264,11 @@ impl Terminal {
                 let byte_col = start + byte_pos;
                 let char_col = row_text[..byte_col].chars().count();
                 results.push((abs_line, char_col, query_char_len));
-                start = byte_col + row_lower[byte_col..].chars().next().map_or(1, |c| c.len_utf8());
+                start = byte_col
+                    + row_lower[byte_col..]
+                        .chars()
+                        .next()
+                        .map_or(1, |c| c.len_utf8());
             }
         }
 
@@ -1156,9 +1310,9 @@ impl Terminal {
             // Send Mode 2031 notification only if the app opted in.
             if self.mode_2031.load(Ordering::Relaxed) {
                 let mode = if dark { 1 } else { 2 };
-                let _ = self.notifier.0.send(Msg::Input(
-                    Cow::Owned(format!("\x1b[?997;{}n", mode).into_bytes()),
-                ));
+                let _ = self.notifier.0.send(Msg::Input(Cow::Owned(
+                    format!("\x1b[?997;{}n", mode).into_bytes(),
+                )));
             }
         }
     }
