@@ -18,6 +18,7 @@ icon = ["crates/tide-app/icon.icns"]
 resources = ["crates/tide-app/resources/bin", "crates/tide-app/resources/shell-integration"]
 category = "public.app-category.developer-tools"
 osx_minimum_system_version = "13.0"
+info_plist_path = "crates/tide-app/Info.plist"
 
 [dependencies]
 # ── Existing tide-app deps ──
