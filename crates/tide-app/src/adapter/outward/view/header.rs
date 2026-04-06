@@ -470,7 +470,7 @@ pub fn render_pane_header_inner(
         (TAB_H_PAD + dot_w + title_w_raw + badge_gap + total_badge_w + close_hit_size + TAB_H_PAD)
             .clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH);
 
-    // Draw compact active tab bg + bottom accent line (VS Code style)
+    // Draw compact active tab bg + top accent line
     renderer.draw_chrome_rect(
         Rect::new(rect.x, rect.y, compact_tab_w, TAB_BAR_HEIGHT),
         p.active_tab_bg,
@@ -750,7 +750,7 @@ fn render_tab_bar_impl(
         let is_active = *tid == active_pane;
         let is_focused_tab = focused == Some(*tid);
 
-        // Active tab: subtle lighter background + 2px accent line at bottom (VS Code style)
+        // Active tab: subtle lighter background + 2px accent line at top
         if is_active {
             let bg_rect = Rect::new(cx, tab_y, tw, TAB_BAR_HEIGHT).clip_to(&tab_clip);
             if bg_rect.width > 0.0 {
@@ -800,10 +800,10 @@ fn render_tab_bar_impl(
             }
         }
 
-        let text_color = if is_focused_tab {
+        let text_color = if is_focused_tab || (is_active && is_focused) {
             p.tab_text_focused
         } else if is_active {
-            if is_focused { p.tab_text_focused } else { p.tab_text_active }
+            p.tab_text_active
         } else {
             p.tab_text
         };

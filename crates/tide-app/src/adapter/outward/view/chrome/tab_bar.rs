@@ -180,23 +180,22 @@ pub(super) fn render_pane_chrome(
                 tab_bar_bg_color,
             );
 
-            // UC-5 BR-6,7: NeedsInput — orange accent on tab header only
+            // 1px border at bottom of tab bar (or NeedsInput accent)
             if agent_needs_input {
+                // UC-5 BR-6,7: NeedsInput — orange accent at bottom of tab header
                 let t = app.timing.last_frame.elapsed().as_secs_f64();
                 let opacity = 0.45_f32 + 0.25 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
                 let accent = crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity);
-                // 2px accent line at top of tab bar
                 renderer.draw_chrome_rect(
-                    Rect::new(rect.x, rect.y, rect.width, 2.0),
+                    Rect::new(rect.x, rect.y + TAB_BAR_HEIGHT - 2.0, rect.width, 2.0),
                     accent,
                 );
+            } else {
+                renderer.draw_chrome_rect(
+                    Rect::new(rect.x, rect.y + TAB_BAR_HEIGHT, rect.width, 1.0),
+                    p.border_subtle,
+                );
             }
-
-            // 1px border at bottom of tab bar for clean separation
-            renderer.draw_chrome_rect(
-                Rect::new(rect.x, rect.y + TAB_BAR_HEIGHT, rect.width, 1.0),
-                p.border_subtle,
-            );
         }
     }
 
