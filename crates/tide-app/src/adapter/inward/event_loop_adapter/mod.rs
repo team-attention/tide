@@ -326,6 +326,43 @@ impl App {
         };
 
         match kind {
+            "browser-snapshot" => {
+                let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
+                    Some(id) => id,
+                    None => return false,
+                };
+                let text = parsed
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let page_title = parsed
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .filter(|s| !s.trim().is_empty());
+                let page_url = parsed
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .filter(|s| !s.trim().is_empty());
+
+                let snapshot = if text.trim().is_empty() && page_title.is_none() && page_url.is_none()
+                {
+                    None
+                } else {
+                    Some(crate::pane::browser::BrowserSnapshot {
+                        text,
+                        page_title,
+                        page_url,
+                    })
+                };
+
+                match self.pane_mut(pane_id) {
+                    Some(PaneKind::Browser(browser)) => browser.update_page_snapshot(snapshot),
+                    _ => false,
+                }
+            }
             "browser-selection" => {
                 let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
                     Some(id) => id,
