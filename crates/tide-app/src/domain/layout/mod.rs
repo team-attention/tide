@@ -21,6 +21,9 @@ const MIN_RATIO: f32 = 0.1;
 /// Border hit-test threshold in pixels.
 const BORDER_HIT_THRESHOLD: f32 = 8.0;
 
+/// Minimum drag distance (px) before inferring directional intent.
+const DRAG_INTENT_THRESHOLD_PX: f32 = 2.0;
+
 #[derive(Clone)]
 pub struct SplitLayout {
     pub(crate) root: Option<Node>,
@@ -766,8 +769,7 @@ impl LayoutEngine for SplitLayout {
                     // Determine preferred direction from drag delta
                     let dx = (position.x - start.x).abs();
                     let dy = (position.y - start.y).abs();
-                    // Only apply preference if user has moved enough to show intent (>= 2px)
-                    let preferred = if dx >= 2.0 || dy >= 2.0 {
+                    let preferred = if dx >= DRAG_INTENT_THRESHOLD_PX || dy >= DRAG_INTENT_THRESHOLD_PX {
                         if dx >= dy {
                             Some(SplitDirection::Horizontal) // horizontal movement → want H split border
                         } else {

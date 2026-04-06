@@ -299,54 +299,7 @@ impl Node {
         best: &mut Option<(f32, Vec<bool>)>,
         path: &mut Vec<bool>,
     ) {
-        if let Node::Split {
-            direction,
-            ratio,
-            left,
-            right,
-        } = self
-        {
-            let border_pos = match direction {
-                SplitDirection::Horizontal => rect.x + rect.width * ratio,
-                SplitDirection::Vertical => rect.y + rect.height * ratio,
-            };
-
-            // Compute distance from position to border line
-            let dist = match direction {
-                SplitDirection::Horizontal => (position.x - border_pos).abs(),
-                SplitDirection::Vertical => (position.y - border_pos).abs(),
-            };
-
-            // Check that the position is within the perpendicular extent of the border
-            let in_range = match direction {
-                SplitDirection::Horizontal => {
-                    position.y >= rect.y && position.y <= rect.y + rect.height
-                }
-                SplitDirection::Vertical => {
-                    position.x >= rect.x && position.x <= rect.x + rect.width
-                }
-            };
-
-            if in_range {
-                let dominated = match best {
-                    Some((best_dist, _)) => dist < *best_dist,
-                    None => true,
-                };
-                if dominated {
-                    *best = Some((dist, path.clone()));
-                }
-            }
-
-            let (left_rect, right_rect) = split_rect(rect, *direction, *ratio);
-
-            path.push(false); // left
-            left.find_border_at(left_rect, position, best, path);
-            path.pop();
-
-            path.push(true); // right
-            right.find_border_at(right_rect, position, best, path);
-            path.pop();
-        }
+        self.find_border_at_preferred(rect, position, best, path, None)
     }
 
     /// Like [`find_border_at`], but with an optional preferred [`SplitDirection`].

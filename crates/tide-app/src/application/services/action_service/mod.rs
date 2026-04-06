@@ -808,12 +808,14 @@ impl crate::application::ports::inward::ActionPort for App {
                 // Use pane_area_rect for correct coordinate mapping.
                 // pane_area_rect accounts for top_inset, workspace sidebar,
                 // file tree, dock, and all PANE_GAP spacing.
+                //
+                // Only call begin_drag here — border selection is deferred to
+                // the first cursor_moved (drag_border) so drag direction can
+                // disambiguate T-junction overlaps.
                 if let Some(pa) = self.pane_area_rect {
                     let drag_pos = Vec2::new(pos.x - pa.x, pos.y - pa.y);
                     let terminal_area = Size::new(pa.width, pa.height);
                     self.layout.begin_drag(drag_pos, terminal_area);
-                    self.layout.drag_border(drag_pos);
-                    self.compute_layout();
                 }
             }
             Action::None => {}
