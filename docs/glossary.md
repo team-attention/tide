@@ -19,6 +19,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **LspClient** | `LspClient` | `adapter/outward/lsp_adapter/client.rs` | Manages communication with one language server process via JSON-RPC over stdio. |
 | **LspManager** | `LspManager` | `adapter/outward/lsp_adapter/manager.rs` | Owns all LspClient instances (one per language). Orchestrates start/stop and request routing. |
 | **CompletionPopup** | `CompletionState` | `domain/pane/editor_completion.rs` | Per-EditorPane inline autocomplete dropdown. NOT part of ModalStack — coexists with typing. |
+| **BrowserSnapshot** | `BrowserSnapshot` | `domain/pane/browser.rs` | Cached page text and page metadata captured from a Browser Pane's `WKWebView` bridge for Agent Gateway observe commands. |
 
 ## Value Objects (identity-less, compared by value)
 

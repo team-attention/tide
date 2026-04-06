@@ -27,6 +27,10 @@ pub fn run_cli(args: &[String]) -> i32 {
         }
         "get-layout" => send_command("get-layout", serde_json::json!({})),
         // Phase 2 — Act
+        "browser-eval" => {
+            let params = parse_browser_eval_args(&args[1..]);
+            send_command("browser-eval", params)
+        }
         "send-keys" => {
             let params = parse_send_keys_args(&args[1..]);
             send_command("send-keys", params)
@@ -117,8 +121,10 @@ fn usage_text() -> String {
         "Commands:",
         "  list-panes                       List all panes in the active workspace",
         "  capture-pane [-t <id>] [--start <line>] [--end <line>]",
-        "                                   Read text content from a pane",
+        "                                   Read text content from a Terminal, Editor, or Browser Pane",
         "  get-layout                       Get the layout tree as JSON",
+        "  browser-eval [-t <id>] --script <js>",
+        "                                   Evaluate JavaScript in a Browser Pane and refresh BrowserSnapshot",
         "  send-keys [-t <id>] <keys...>    Send key sequences to a terminal pane",
         "  split-vertical [-t <id>]         Split pane vertically",
         "  split-horizontal [-t <id>]       Split pane horizontally",
@@ -325,6 +331,38 @@ fn parse_open_browser_args(args: &[String]) -> serde_json::Value {
     if let Some(url) = args.first() {
         if !url.starts_with('-') {
             params.insert("url".into(), serde_json::json!(url));
+        }
+    }
+    serde_json::Value::Object(params)
+}
+
+/// Parse browser-eval args: [-t <id>] --script <js>
+fn parse_browser_eval_args(args: &[String]) -> serde_json::Value {
+    let mut params = serde_json::Map::new();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-t" => {
+                if let Some(id_str) = args.get(i + 1) {
+                    if let Ok(id) = id_str.parse::<u64>() {
+                        params.insert("pane_id".into(), serde_json::json!(id));
+                    }
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "--script" => {
+                if let Some(script) = args.get(i + 1) {
+                    params.insert("script".into(), serde_json::json!(script));
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            _ => {
+                i += 1;
+            }
         }
     }
     serde_json::Value::Object(params)
@@ -686,6 +724,14 @@ mod tests {
         assert!(usage.contains("pin-context-artifact <id> [--pin|--unpin]"));
         assert!(usage.contains("remove-context-artifact <id>"));
         assert!(usage.contains("send-context-artifact <id>"));
+    }
+
+    #[test]
+    fn cli_usage_mentions_browser_eval_command() {
+        let usage = usage_text();
+        assert!(usage.contains("browser-eval [-t <id>] --script <js>"));
+        assert!(usage.contains("JavaScript"));
+        assert!(usage.contains("BrowserSnapshot"));
     }
 }
 

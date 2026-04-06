@@ -165,7 +165,7 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
         },
         {
             "name": "tide_capture_pane",
-            "description": "Read text content from a terminal or editor pane",
+            "description": "Read text content from a Terminal, Editor, or Browser Pane",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -252,8 +252,20 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
         },
         {
             "name": "tide_open_browser",
-            "description": "Open a URL in a browser pane",
+            "description": "Open a URL in a Browser Pane",
             "inputSchema": { "type": "object", "properties": { "url": { "type": "string" } } }
+        },
+        {
+            "name": "tide_browser_eval",
+            "description": "Evaluate JavaScript in a targeted Browser Pane and refresh BrowserSnapshot",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pane_id": { "type": "integer", "description": "Target pane ID (omit for self)" },
+                    "script": { "type": "string", "description": "JavaScript source to evaluate inside the Browser Pane" }
+                },
+                "required": ["script"]
+            }
         },
         {
             "name": "tide_create_context_artifact",
@@ -387,6 +399,7 @@ fn mcp_tools_call(
         "tide_open_terminal" => "open-terminal",
         "tide_open_editor" => "open-editor",
         "tide_open_browser" => "open-browser",
+        "tide_browser_eval" => "browser-eval",
         "tide_create_context_artifact" => "create-context-artifact",
         "tide_list_context_artifacts" => "list-context-artifacts",
         "tide_read_context_artifact" => "read-context-artifact",
