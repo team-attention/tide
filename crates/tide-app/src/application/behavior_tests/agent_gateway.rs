@@ -193,10 +193,8 @@ fn capture_pane_browser_returns_browser_snapshot() {
     // UC-2 BR-9: Browser returns cached BrowserSnapshot text and metadata.
     let (mut app, editor_id) = app_with_editor();
     let browser_id = app.layout.split(editor_id, SplitDirection::Horizontal);
-    let browser = crate::pane::browser::BrowserPane::with_url(
-        browser_id,
-        "https://example.com/docs".into(),
-    );
+    let browser =
+        crate::pane::browser::BrowserPane::with_url(browser_id, "https://example.com/docs".into());
     app.panes.insert(browser_id, PaneKind::Browser(browser));
 
     assert!(app.apply_webview_bridge_message(
@@ -302,10 +300,8 @@ fn browser_eval_browser_returns_ok() {
     // UC-12 BR-59: browser-eval evaluates JavaScript against the targeted Browser Pane.
     let (mut app, editor_id) = app_with_editor();
     let browser_id = app.layout.split(editor_id, SplitDirection::Horizontal);
-    let browser = crate::pane::browser::BrowserPane::with_url(
-        browser_id,
-        "https://example.com/docs".into(),
-    );
+    let browser =
+        crate::pane::browser::BrowserPane::with_url(browser_id, "https://example.com/docs".into());
     app.panes.insert(browser_id, PaneKind::Browser(browser));
 
     let result = app.handle_cli_command(

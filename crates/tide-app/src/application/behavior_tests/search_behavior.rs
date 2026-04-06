@@ -116,10 +116,9 @@ fn search_bar_inline_preedit_uses_same_visual_width_as_committed_text() {
     let cursor = query.len();
     let preedit = "테스트";
     let expected_cells = UnicodeWidthStr::width(query) + UnicodeWidthStr::width(preedit);
-    let caret_cells =
-        crate::adapter::outward::view::overlays::search_bar_cursor_advance_cells(
-            query, cursor, preedit,
-        );
+    let caret_cells = crate::adapter::outward::view::overlays::search_bar_cursor_advance_cells(
+        query, cursor, preedit,
+    );
 
     assert_eq!(caret_cells, expected_cells);
 }

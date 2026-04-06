@@ -4,46 +4,41 @@
 
 ### As-Is
 
-Stage uses `SplitLayout` with `Node::Leaf(PaneId)` leaves exclusively. Each leaf holds a single Terminal Pane. The `Node` enum already supports `LeafGroup(TabGroup)` and SplitLayout has methods for TabGroup operations (`add_tab`, `add_tab_to_first_group`, `set_active_tab`, `tab_group_containing`, `split_with_leaf_group`), but these are only used for Dock layouts.
+Stage already uses `SplitLayout` `Node::LeafGroup(TabGroup)` nodes. `render_pane_chrome()` renders per-`TabGroup` Stage tab bars through `render_stage_tab_group_bar()`, and `click_adapter/pane.rs` already routes `DropZone::Center` on a Stage target to `layout_add_tab(target_id, source)`.
 
 Key current behaviors:
-1. **Stage leaf type**: `Node::Leaf(PaneId)` only (`layout-v2.md` decision: "Stage uses SplitLayout with single-PaneId leaves -- no TabGroups").
-2. **Tab bar in Stage**: Only rendered in zoomed/stacked mode via `render_stage_tab_bar` (`adapter/outward/view/chrome/tab_bar.rs`), which shows a flat list of all Stage Panes. No per-TabGroup tab bar exists for Stage.
-3. **Center drop in Stage**: `DropZone::Center` on Stage panes falls through to the else branch in `adapter/inward/click_adapter/pane.rs:473-480`, which calls `layout_remove` + `layout_insert_pane` -- effectively treating center drops as directional inserts, not tab merges.
-4. **`add_tab_in_node`** (`domain/layout/mod.rs:502-525`): Already handles converting a `Node::Leaf` to `Node::LeafGroup` when `add_tab` targets a Leaf. This infrastructure exists but is never called for Stage layouts.
+1. **Stage tab groups already render**: `render_pane_chrome()` checks `stage_tab_groups.contains_key(&id)` and calls `render_stage_tab_group_bar()` for Stage `TabGroup`s in split mode (`crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs`).
+2. **Center drop already merges into a Stage `TabGroup`**: dropping onto a Stage `Pane` with `DropZone::Center` removes the source from Stage and calls `layout_add_tab(target_id, source)` (`crates/tide-app/src/adapter/inward/click_adapter/pane.rs`).
+3. **Stage tab drag does not start from the tab bar**: `HeaderHitAction::DockTab` switches focus and enters `PaneDragState::PendingDrag`, but `HeaderHitAction::StageTab` only focuses the target `Pane` and invalidates chrome (`crates/tide-app/src/adapter/inward/click_adapter/header.rs`).
+4. **Self-extraction is Dock-only today**: `compute_tree_drop_target()` only allows directional self-drop when the source `Pane` is in a Dock `TabGroup` with multiple tabs, so a Stage tab cannot be pulled out into a new split (`crates/tide-app/src/adapter/inward/drag_drop_adapter/mod.rs`).
+5. **Cross-area protection is only complete in one direction**: `click_adapter/pane.rs` already rejects Dock-to-Stage drops, but there is no matching Stage-to-Dock rejection before the Stage layout mutation path runs (`crates/tide-app/src/adapter/inward/click_adapter/pane.rs` and `crates/tide-app/src/adapter/inward/drag_drop_adapter/mod.rs`).
 
 ### To-Be
 
-Stage supports `LeafGroup(TabGroup)` nodes identically to Dock. Any Pane type (not just Terminal) can be grouped into a Stage TabGroup. Tab bar UI follows a unified design referencing VS Code patterns.
+Stage keeps the current `LeafGroup(TabGroup)` behavior and closes the drag-and-drop gaps around it.
 
-1. **Stage leaf type**: Both `Node::Leaf(PaneId)` and `Node::LeafGroup(TabGroup)` in Stage's SplitLayout.
-2. **Tab bar rendering**: Per-TabGroup tab bar shown for LeafGroup nodes with 2+ tabs. Single-tab LeafGroups render as normal pane headers (no tab bar). Uses a unified tab bar component shared with Dock, styled after VS Code (compact, horizontally scrollable, close button per tab, active tab highlight).
-3. **Center drop**: `DropZone::Center` on a Stage pane merges the source into the target's TabGroup (creating a LeafGroup if the target is a Leaf).
-4. **Tab operations**: `cycle_tab` (Cmd+I/O in Stage), click-to-switch, close tab (Cmd+W) all work within Stage TabGroups.
-5. **Zoom with TabGroups**: Zoomed Stage shows a flat tab bar of all Stage panes (current behavior preserved), with TabGroup membership indicated by visual grouping.
+1. **Stage tab drag starts from the tab bar**: pressing a Stage tab focuses it and enters `PaneDragState::PendingDrag`, matching Dock tab behavior.
+2. **Stage tabs can be extracted into splits**: dragging a Stage tab onto a directional self-drop zone removes it from its current `TabGroup` and creates a new Stage split next to the remaining sibling tab.
+3. **Stage tabs can move into another Stage `TabGroup`**: dropping a Stage tab onto another Stage `Pane` center zone merges it into that target `TabGroup`.
+4. **Cross-area movement stays blocked**: Dock-to-Stage blocking remains in place, and Stage-to-Dock drops are rejected so Stage and Dock stay separate drag regions.
+5. **Existing tab behavior remains**: click-to-switch, close tab, and zoomed flat Stage tab bars continue to work with the new drag rules.
 
 ### Approach
 
-1. **Enable LeafGroup in Stage SplitLayout**: Remove the conceptual restriction. No code change needed in `SplitLayout` itself -- the `add_tab` and `LeafGroup` infrastructure already works. Changes are in the callers that create/manipulate Stage layout.
-2. **Add tab to Stage TabGroup**: Wire up a new port method or extend existing ones to call `layout.add_tab(target, new_pane)` for Stage panes.
-3. **Handle center drop for Stage**: In `click_adapter/pane.rs`, when both source and target are Stage panes and zone is `DropZone::Center`, call `layout.add_tab(target, source)` instead of `layout_insert_pane`.
-4. **Close tab in Stage**: When closing a pane that is in a Stage TabGroup, call `TabGroup::remove_tab`. If the TabGroup becomes single-tab, convert `LeafGroup` back to `Leaf`. If empty, remove the node.
-5. **Stage tab bar rendering**: In `tab_bar.rs`, detect Stage LeafGroup nodes (via `layout.tab_group_containing(pane_id)`) and render a tab bar identical to Dock's, reusing `render_dock_tab_bar` or extracting a shared component.
-6. **Tab cycling**: Extend Stage Cmd+I/O to use `all_tabs_flat()` which already traverses both Leaf and LeafGroup nodes.
-7. **Session persistence**: `LayoutSnapshot::LeafGroup` already handles serialization. Old snapshots with only `Leaf` nodes load correctly (backward compatible).
+1. **Start Stage tab drags from `HeaderHitAction::StageTab`**: align the Stage tab press path in `click_adapter/header.rs` with the Dock tab press path so the pressed Stage tab becomes the drag source after focus switches.
+2. **Allow Stage self-extraction in drop targeting**: extend the self-drop allowance in `compute_tree_drop_target()` to multi-tab Stage `TabGroup`s so directional edge drops can split the source tab out.
+3. **Keep self-drop previews local to the source rect**: directional self-drop preview rectangles must be computed from the dragged Stage pane's current visual rect, not from the entire Stage pane area.
+4. **Keep Stage-only center merges and reject Stage-to-Dock drops**: preserve the existing Stage `DropZone::Center` merge path for Stage sources while adding the missing guard that keeps Stage panes out of Dock targets.
+5. **Leave close, cycle, and zoom behavior intact**: the change only expands drag initiation and drop routing around existing Stage `TabGroup` operations.
 
 ## Bounded Contexts
 
 | Module | Path | Changes |
 |--------|------|---------|
-| layout | `domain/layout/` | Add `remove_tab_or_node` method that removes a tab from a LeafGroup and collapses to Leaf if single remaining. No structural changes to Node enum. |
-| input | `domain/input/` | Add `GlobalAction::AddToTabGroup` or extend existing `SplitVertical`/`SplitHorizontal` with a tab-merge variant. |
-| renderer (view) | `adapter/outward/view/chrome/tab_bar.rs` | Detect Stage TabGroups, render per-group tab bars. Extract shared tab bar component from Dock rendering. |
-| renderer (view) | `adapter/outward/view/chrome/` | Update `render_pane_chrome` to detect Stage LeafGroups and render tab bars. |
-| click_adapter | `adapter/inward/click_adapter/pane.rs` | Handle `DropZone::Center` for Stage panes as tab merge. Handle tab click/close in Stage tab bar. |
-| pane_create_service | `application/services/pane_create_service/` | When creating a pane in Stage, optionally add as tab to focused TabGroup instead of splitting. |
-| action_service | `application/services/action_service/` | Route tab switching/closing for Stage TabGroups. |
-| session_service | `application/services/session_service/` | No changes needed -- `LayoutSnapshot::LeafGroup` already serializes/deserializes. |
+| click_adapter | `adapter/inward/click_adapter/header.rs` | Start `PaneDragState::PendingDrag` from `HeaderHitAction::StageTab` after focus switches to the pressed Stage tab. |
+| drag_drop_adapter | `adapter/inward/drag_drop_adapter/mod.rs` | Allow directional self-drop only when the source Stage `Pane` belongs to a multi-tab `TabGroup`, while keeping cross-area drag targets blocked. |
+| click_adapter | `adapter/inward/click_adapter/pane.rs` | Preserve Stage center merges for Stage sources and reject Stage-to-Dock drops before any Dock mutation path runs. |
+| layout | `domain/layout/` | Reuse the existing `TabGroup` add, remove, and collapse behavior during Stage-tab extraction and Stage-to-Stage center merges. |
 
 ## Use Cases
 
@@ -92,10 +87,10 @@ Stage supports `LeafGroup(TabGroup)` nodes identically to Dock. Any Pane type (n
 - **BR-4 (PaneId sync)**: After removal, no PaneId in SplitLayout references a pane not in `App.panes`, and vice versa.
 - **BR-5 (Last pane in Stage)**: If closing the tab results in an empty Stage, a Launcher pane is created (same as current close-last-pane behavior).
 
-### UC-3: Switch Active Tab in Stage TabGroup
+### UC-3: Switch Or Drag a Stage Tab
 
 **Actor**: User
-**Trigger**: User clicks a tab in the Stage tab bar, or uses Cmd+I/O to cycle tabs.
+**Trigger**: User clicks a tab in the Stage tab bar, drags a tab from the Stage tab bar, or uses Cmd+I/O to cycle tabs.
 **Precondition**: Focused pane is part of a Stage TabGroup with 2+ tabs.
 
 **Flow (click)**:
@@ -111,12 +106,23 @@ Stage supports `LeafGroup(TabGroup)` nodes identically to Dock. Any Pane type (n
 4. If the next pane is in a different TabGroup, `set_active_tab` is called on that TabGroup.
 5. Focus moves to the new pane.
 
+**Flow (drag)**:
+1. User presses a Stage tab T in the Stage tab bar.
+2. Tide focuses T and records `PaneDragState::PendingDrag { source_pane: T, press_pos }`.
+3. If the cursor crosses the drag threshold, Tide transitions to `PaneDragState::Dragging`.
+4. Dropping T onto a directional self-drop zone removes T from its current `TabGroup` and creates a new sibling split next to the remaining Stage tab.
+5. Dropping T onto another Stage `Pane` center zone merges T into that target `TabGroup`.
+
 **Postcondition**: Active tab updated, focused pane rendered.
 
 **Business Rules**:
 - **BR-1 (Single active tab)**: Only one tab per TabGroup is active and rendered at any time. Other tabs are hidden.
 - **BR-2 (Cycle order)**: Cmd+I/O traversal visits tabs within a TabGroup in order, then moves to the next leaf/group in layout tree order. Wraps around.
 - **BR-3 (Focus sync)**: After switching tabs, `App.focus.focused` MUST equal the TabGroup's `active_pane()`.
+- **BR-4 (Stage tab drag initiation)**: Pressing a Stage tab enters `PaneDragState::PendingDrag` after focus moves to the pressed tab.
+- **BR-5 (Stage self-extraction)**: A Stage tab in a multi-tab `TabGroup` may use directional self-drop to split out into a new Stage leaf.
+- **BR-6 (Stage-to-Stage merge)**: Dropping a Stage tab onto another Stage `Pane` center zone merges it into the target `TabGroup`.
+- **BR-7 (Self-drop preview locality)**: A directional self-drop preview for a Stage tab is derived from the dragged pane's current Stage rect, so the silhouette never expands to the entire Stage pane area.
 
 ### UC-4: Stage Tab Bar Rendering
 
@@ -144,20 +150,20 @@ Stage supports `LeafGroup(TabGroup)` nodes identically to Dock. Any Pane type (n
 
 **Actor**: User
 **Trigger**: User drags a pane and drops it onto the center zone of a Stage pane.
-**Precondition**: Source pane exists. Target pane is in Stage. Source != target.
+**Precondition**: Source pane exists in Stage. Target pane is in Stage. Source != target.
 
 **Flow**:
 1. User drags source pane over target pane. Drop zone indicator shows center merge zone.
 2. User releases. `DropZone::Center` is detected.
-3. If source is in Stage: `layout.remove(source)` removes source from its current position. Then `layout.add_tab(target, source)` merges source into target's TabGroup. (Uses existing `add_tab_in_node` which handles both Leaf and LeafGroup targets.)
-4. If source is in Dock: source is removed from Dock layout, then added to Stage TabGroup via `layout.add_tab(target, source)`.
+3. `layout.remove(source)` removes source from its current position.
+4. `layout.add_tab(target, source)` merges source into target's TabGroup. (Uses existing `add_tab_in_node` which handles both Leaf and LeafGroup targets.)
 5. Focus moves to source. Chrome invalidated.
 
 **Postcondition**: Source is now a tab in target's TabGroup in Stage.
 
 **Business Rules**:
-- **BR-1 (Center = tab merge)**: `DropZone::Center` on a Stage pane always means "add as tab", not "swap" or "insert below". This differs from current Stage behavior where center falls through to directional insert.
-- **BR-2 (Cross-region drop)**: A Dock pane dropped onto Stage center zone is removed from Dock and merged into the Stage TabGroup. The pane's PaneKind is preserved.
+- **BR-1 (Center = tab merge)**: `DropZone::Center` on a Stage pane always means "add as tab", not "swap" or "insert below".
+- **BR-2 (Cross-area block preserved)**: A Dock pane dropped onto a Stage target is rejected without mutating Stage layout, and this change adds the missing symmetric rejection for Stage panes dropped onto Dock targets.
 - **BR-3 (Self-drop with sibling extraction)**: If source and target are in the same TabGroup, and source drops onto itself with center, it is a no-op. If source drops onto a different tab in the same TabGroup, source stays (already in the group).
 - **BR-4 (Drop preview)**: `simulate_drop` should account for center zone producing a tab merge (no new split node), so the preview rect matches the target pane's rect.
 
@@ -188,7 +194,7 @@ Stage supports `LeafGroup(TabGroup)` nodes identically to Dock. Any Pane type (n
 3. **Single-tab collapse**: A `LeafGroup` with exactly 1 tab SHOULD be collapsed to a `Leaf` for simplicity (not strictly required, but preferred to avoid unnecessary tab bar rendering for single-pane groups).
 4. **Active tab validity**: `TabGroup.active` index MUST be within bounds (`0 <= active < tabs.len()`).
 5. **Generation monotonicity (Architecture Invariant #5)**: `chrome_generation` is incremented on every tab add/remove/switch, ensuring the renderer picks up changes.
-6. **Backward compatibility**: Old session snapshots with only `LayoutSnapshot::Leaf` nodes in Stage load correctly. `LayoutSnapshot::LeafGroup` nodes in Stage are a new addition but use the same serialization format as Dock LeafGroups.
+6. **Backward compatibility**: Old session snapshots with only `LayoutSnapshot::Leaf` nodes in Stage load correctly. `LayoutSnapshot::LeafGroup` nodes round-trip through the same serialization format as Dock `LeafGroup`s.
 
 ## Tests
 
@@ -206,12 +212,16 @@ Stage supports `LeafGroup(TabGroup)` nodes identically to Dock. Any Pane type (n
 | UC-3 | BR-1 | `only_active_tab_renders_in_stage_tab_group()` |
 | UC-3 | BR-2 | `cmd_io_cycles_through_all_stage_tabs_in_order()` |
 | UC-3 | BR-3 | `focus_equals_active_pane_after_tab_switch()` |
+| UC-3 | BR-4 | `pressing_stage_tab_enters_pending_drag_after_focus_switch()` |
+| UC-3 | BR-5 | `directional_self_drop_splits_stage_tab_out_of_its_group()` |
+| UC-3 | BR-6 | `dropping_stage_tab_on_other_stage_group_center_merges_it()` |
+| UC-3 | BR-7 | `directional_self_drop_preview_uses_source_rect_not_stage_area()` |
 | UC-4 | BR-1 | `tab_bar_shown_for_stage_groups_with_two_plus_tabs()` |
 | UC-4 | BR-1 | `no_tab_bar_for_single_tab_stage_group()` |
 | UC-4 | BR-3 | `stage_tab_close_button_registers_hit_zone()` |
 | UC-4 | BR-4 | `stage_tab_click_registers_switch_hit_zone()` |
 | UC-5 | BR-1 | `center_drop_on_stage_pane_merges_as_tab()` |
-| UC-5 | BR-2 | `dock_pane_dropped_on_stage_center_merges_into_tab_group()` |
+| UC-5 | BR-2 | `stage_pane_drop_target_never_enters_dock()` |
 | UC-5 | BR-3 | `self_drop_center_in_same_tab_group_is_noop()` |
 | UC-5 | BR-4 | `drop_preview_for_center_zone_matches_target_rect()` |
 | UC-6 | BR-1 | `zoomed_stage_shows_flat_tab_bar_of_all_panes()` |
