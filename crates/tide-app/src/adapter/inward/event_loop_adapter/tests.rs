@@ -1,6 +1,74 @@
-use crate::pane::browser::{BrowserPane, BrowserSelectionSnapshot};
+use crate::pane::browser::{BrowserPane, BrowserSelectionSnapshot, BrowserSnapshot};
 use crate::pane::PaneKind;
 use crate::App;
+
+#[test]
+fn browser_snapshot_bridge_message_updates_browser_pane_state() {
+    let mut app = App::new();
+    let (layout, browser_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes.insert(
+        browser_id,
+        PaneKind::Browser(BrowserPane::with_url(
+            browser_id,
+            "https://example.com".into(),
+        )),
+    );
+
+    let msg = serde_json::json!({
+        "kind": "browser-snapshot",
+        "pane_id": browser_id,
+        "text": "Page heading\nPage paragraph",
+        "title": "Example",
+        "url": "https://example.com/article"
+    })
+    .to_string();
+
+    assert!(app.apply_webview_bridge_message(&msg));
+
+    let Some(PaneKind::Browser(browser)) = app.panes.get(&browser_id) else {
+        panic!("browser pane should exist");
+    };
+    let Some(snapshot) = browser.page_snapshot.as_ref() else {
+        panic!("browser snapshot should exist");
+    };
+    assert_eq!(snapshot.text, "Page heading\nPage paragraph");
+    assert_eq!(snapshot.page_title.as_deref(), Some("Example"));
+    assert_eq!(
+        snapshot.page_url.as_deref(),
+        Some("https://example.com/article")
+    );
+}
+
+#[test]
+fn browser_snapshot_bridge_message_clears_empty_snapshot() {
+    let mut app = App::new();
+    let (layout, browser_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let mut browser = BrowserPane::with_url(browser_id, "https://example.com".into());
+    browser.page_snapshot = Some(BrowserSnapshot {
+        text: "stale".into(),
+        page_title: Some("Old".into()),
+        page_url: Some("https://example.com/old".into()),
+    });
+    app.panes.insert(browser_id, PaneKind::Browser(browser));
+
+    let msg = serde_json::json!({
+        "kind": "browser-snapshot",
+        "pane_id": browser_id,
+        "text": "",
+        "title": "",
+        "url": ""
+    })
+    .to_string();
+
+    assert!(app.apply_webview_bridge_message(&msg));
+
+    let Some(PaneKind::Browser(browser)) = app.panes.get(&browser_id) else {
+        panic!("browser pane should exist");
+    };
+    assert!(browser.page_snapshot.is_none());
+}
 
 #[test]
 fn browser_selection_bridge_message_updates_browser_pane_state() {

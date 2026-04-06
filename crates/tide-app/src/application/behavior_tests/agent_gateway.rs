@@ -2,6 +2,7 @@
 
 use serde_json::json;
 
+use crate::adapter::inward::cli_adapter::mcp;
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
 use crate::state::FocusArea;
@@ -188,15 +189,38 @@ fn capture_pane_no_target_uses_focused_pane() {
 }
 
 #[test]
-fn capture_pane_browser_returns_error() {
-    // UC-2 BR-9: Browser → error
+fn capture_pane_browser_returns_browser_snapshot() {
+    // UC-2 BR-9: Browser returns cached BrowserSnapshot text and metadata.
     let (mut app, editor_id) = app_with_editor();
     let browser_id = app.layout.split(editor_id, SplitDirection::Horizontal);
-    let browser = crate::pane::browser::BrowserPane::new(browser_id);
+    let browser = crate::pane::browser::BrowserPane::with_url(
+        browser_id,
+        "https://example.com/docs".into(),
+    );
     app.panes.insert(browser_id, PaneKind::Browser(browser));
 
-    let result = app.handle_cli_command("capture-pane", json!({"pane_id": browser_id}));
-    assert!(result.is_err());
+    assert!(app.apply_webview_bridge_message(
+        &json!({
+            "kind": "browser-snapshot",
+            "pane_id": browser_id,
+            "text": "Alpha\nBeta",
+            "title": "Example page",
+            "url": "https://example.com/docs"
+        })
+        .to_string()
+    ));
+
+    let result = app
+        .handle_cli_command("capture-pane", json!({"pane_id": browser_id}))
+        .unwrap();
+    assert_eq!(result["pane_id"], browser_id);
+    assert_eq!(result["kind"], "browser");
+    assert_eq!(result["title"], "Example page");
+    assert_eq!(result["url"], "https://example.com/docs");
+    let lines = result["lines"].as_array().unwrap();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0], "Alpha");
+    assert_eq!(lines[1], "Beta");
 }
 
 #[test]
@@ -258,6 +282,38 @@ fn send_keys_missing_keys_array_error() {
     let result = app.handle_cli_command("send-keys", json!({"pane_id": id}));
     // Editor pane → InvalidPaneKind error (checked before keys)
     assert!(result.is_err());
+}
+
+// --- UC-12: BrowserControl ---
+
+#[test]
+fn browser_eval_non_browser_returns_error() {
+    // UC-12 BR-58: browser-eval only targets Browser panes.
+    let (mut app, editor_id) = app_with_editor();
+    let result = app.handle_cli_command(
+        "browser-eval",
+        json!({"pane_id": editor_id, "script": "document.title = 'ignored';"}),
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn browser_eval_browser_returns_ok() {
+    // UC-12 BR-59: browser-eval evaluates JavaScript against the targeted Browser Pane.
+    let (mut app, editor_id) = app_with_editor();
+    let browser_id = app.layout.split(editor_id, SplitDirection::Horizontal);
+    let browser = crate::pane::browser::BrowserPane::with_url(
+        browser_id,
+        "https://example.com/docs".into(),
+    );
+    app.panes.insert(browser_id, PaneKind::Browser(browser));
+
+    let result = app.handle_cli_command(
+        "browser-eval",
+        json!({"pane_id": browser_id, "script": "document.title = 'Updated';"}),
+    );
+
+    assert_eq!(result.unwrap()["ok"], true);
 }
 
 // --- UC-4: GetLayout ---
@@ -1116,6 +1172,28 @@ fn mcp_tools_list_returns_all_commands() {
     assert!(
         html_description.contains("<body>"),
         "html property should mention rejected document tags"
+    );
+}
+
+#[test]
+fn mcp_tools_list_includes_browser_eval() {
+    // UC-12 BR-60: MCP exposes the stable Browser control tool name.
+    let tools = mcp::mcp_tool_definitions();
+    let browser_eval = tools
+        .iter()
+        .find(|tool| tool.get("name").and_then(|v| v.as_str()) == Some("tide_browser_eval"))
+        .expect("tide_browser_eval tool should be present");
+
+    let description = browser_eval["description"]
+        .as_str()
+        .expect("browser_eval description should be a string");
+    assert!(
+        description.contains("Browser Pane"),
+        "description should mention Browser Pane targeting"
+    );
+    assert!(
+        description.contains("JavaScript"),
+        "description should mention JavaScript execution"
     );
 }
 
