@@ -301,6 +301,7 @@ fn dock_selection_with_gateway_connected_paired_agent_opens_context_comment_comp
         crate::state::gateway_status::AgentInfo {
             name: "Codex",
             pid: 42,
+            wrapper_managed: true,
             gateway_connected: true,
             status: None,
         },
@@ -330,6 +331,7 @@ fn stage_selection_does_not_open_context_comment_composer() {
         crate::state::gateway_status::AgentInfo {
             name: "Codex",
             pid: 42,
+            wrapper_managed: true,
             gateway_connected: true,
             status: None,
         },
@@ -358,6 +360,7 @@ fn dock_selection_without_gateway_connected_paired_agent_does_not_open_context_c
         crate::state::gateway_status::AgentInfo {
             name: "Codex",
             pid: 42,
+            wrapper_managed: false,
             gateway_connected: false,
             status: None,
         },
@@ -381,6 +384,7 @@ fn dock_pane_with_gateway_connected_paired_agent_opens_context_comment_composer_
         crate::state::gateway_status::AgentInfo {
             name: "Codex",
             pid: 42,
+            wrapper_managed: true,
             gateway_connected: true,
             status: None,
         },
@@ -413,6 +417,7 @@ fn open_context_comment_composer_captures_browser_selection() {
         crate::state::gateway_status::AgentInfo {
             name: "Codex",
             pid: 42,
+            wrapper_managed: true,
             gateway_connected: true,
             status: None,
         },
@@ -462,6 +467,7 @@ fn submit_context_comment_composer_creates_artifact_and_delivers_to_paired_termi
         crate::state::gateway_status::AgentInfo {
             name: "Codex",
             pid: 42,
+            wrapper_managed: true,
             gateway_connected: true,
             status: None,
         },
@@ -522,6 +528,7 @@ fn submit_context_comment_composer_delivery_event_includes_artifact_body() {
         crate::state::gateway_status::AgentInfo {
             name: "Codex",
             pid: 42,
+            wrapper_managed: true,
             gateway_connected: true,
             status: None,
         },

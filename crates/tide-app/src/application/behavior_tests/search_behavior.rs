@@ -1,5 +1,6 @@
 // Spec: docs/specs/search.md
 use crate::state::search::SearchState;
+use unicode_width::UnicodeWidthStr;
 
 // --- UC-1: ExecuteSearch ---
 
@@ -93,4 +94,32 @@ fn prev_match_wraps_around_from_first_to_last() {
     state.current = Some(0);
     state.prev_match();
     assert_eq!(state.current, Some(1));
+}
+
+// --- UC-3: RenderSearchBarText ---
+
+#[test]
+fn search_bar_long_hangul_input_keeps_text_and_caret_aligned() {
+    // UC-3 BR-7: Long Korean query text keeps the rendered Search Bar text and caret visually contiguous
+    let query = "한글입력이길어질때abc";
+    let expected_cells = UnicodeWidthStr::width(query);
+    let rendered_cells =
+        crate::adapter::outward::view::overlays::search_bar_text_advance_cells(query);
+
+    assert_eq!(rendered_cells, expected_cells);
+}
+
+#[test]
+fn search_bar_inline_preedit_uses_same_visual_width_as_committed_text() {
+    // UC-3 BR-8: Search Bar committed text and IME preedit use the same visual-width rules
+    let query = "한글ab";
+    let cursor = query.len();
+    let preedit = "테스트";
+    let expected_cells = UnicodeWidthStr::width(query) + UnicodeWidthStr::width(preedit);
+    let caret_cells =
+        crate::adapter::outward::view::overlays::search_bar_cursor_advance_cells(
+            query, cursor, preedit,
+        );
+
+    assert_eq!(caret_cells, expected_cells);
 }

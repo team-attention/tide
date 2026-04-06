@@ -1044,8 +1044,11 @@ pub(crate) fn overlay_ime_cursor_area(
         let bar_x = rect.x + rect.width - bar_w - 8.0;
         let bar_y = rect.y + crate::theme::TAB_BAR_HEIGHT + 4.0;
         let text_x = bar_x + 6.0;
-        let preedit_w = visual_width_for_ime_cursor(&query, cursor, preedit);
-        let cursor_x = text_x + preedit_w * cell_size.width;
+        let cursor_x = text_x
+            + crate::adapter::outward::view::overlays::search_bar_cursor_advance_cells(
+                &query, cursor, preedit,
+            ) as f32
+                * cell_size.width;
         let cursor_y = bar_y + (crate::theme::SEARCH_BAR_HEIGHT - cell_size.height) / 2.0;
         return Some((
             id,
@@ -1080,7 +1083,7 @@ pub(crate) fn overlay_ime_cursor_area(
         let cursor_x = popup_x
             + 18.0
             + 10.0
-            + visual_width_for_ime_cursor(&composer.comment.text, composer.comment.cursor, preedit)
+            + input_cursor_advance_cells(&composer.comment.text, composer.comment.cursor, preedit)
                 * cell_size.width;
         return Some((
             composer.associated_terminal_id,
@@ -1092,7 +1095,7 @@ pub(crate) fn overlay_ime_cursor_area(
     None
 }
 
-fn visual_width_for_ime_cursor(text: &str, cursor: usize, preedit: &str) -> f32 {
+fn input_cursor_advance_cells(text: &str, cursor: usize, preedit: &str) -> f32 {
     let cursor = cursor.min(text.len());
     let before = &text[..cursor];
     let before_width: usize = before
