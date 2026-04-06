@@ -5,8 +5,8 @@
 
 mod agent_coworking_context;
 mod agent_gateway;
-mod browser_pane_ux;
 mod browser_pane_fallbacks;
+mod browser_pane_ux;
 mod browser_pane_v2;
 mod cli_workspace_routing;
 mod diff_auto_refresh;
@@ -37,6 +37,7 @@ mod session_behavior;
 mod soft_wrap_behavior;
 mod stage_tab_group;
 mod terminal_context;
+mod terminal_pane_inset;
 mod terminal_text_interaction;
 mod text_input_routing;
 mod theme_behavior;

@@ -1,3 +1,4 @@
+use crate::pane::browser::BrowserPane;
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
@@ -18,6 +19,17 @@ fn app_with_editor() -> (App, u64) {
     app.layout = layout;
     let pane = EditorPane::new_empty(id);
     app.panes.insert(id, PaneKind::Editor(pane));
+    app.focus.focused = Some(id);
+    app.focus.focus_area = FocusArea::Stage;
+    (app, id)
+}
+
+fn app_with_browser() -> (App, u64) {
+    let mut app = test_app();
+    let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let pane = BrowserPane::with_url(id, "https://example.com".to_string());
+    app.panes.insert(id, PaneKind::Browser(pane));
     app.focus.focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;
     (app, id)
@@ -186,6 +198,27 @@ fn closing_a_dirty_untitled_editor_does_not_show_save_confirm() {
 
     app.close_specific_pane(id);
     assert!(app.modal.save_confirm.is_none());
+}
+
+#[test]
+fn closing_browser_pane_moves_focus_to_another_pane() {
+    // UC-5 BR-15: Browser Pane close preserves pane lifecycle invariants
+    let (mut app, first_id) = app_with_browser();
+    app.new_editor_pane();
+    let second_id = app.focus.focused.unwrap();
+    assert_eq!(app.panes.len(), 2);
+
+    app.focus.focused = Some(first_id);
+    app.close_specific_pane(first_id);
+
+    assert_eq!(app.panes.len(), 1);
+    assert_eq!(app.focus.focused, Some(second_id));
+    assert!(matches!(
+        app.panes.get(&second_id),
+        Some(PaneKind::Editor(_))
+    ));
+    // Invariant: PaneId sync
+    assert_eq!(app.layout.pane_ids().len(), app.panes.len());
 }
 
 #[test]
