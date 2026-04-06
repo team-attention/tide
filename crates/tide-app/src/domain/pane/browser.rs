@@ -397,22 +397,16 @@ impl BrowserPane {
             self.url_selection = None;
         }
 
-        self.generation = self.generation.wrapping_add(1);
         true
     }
 
-    /// Poll the webview for state changes (URL, loading, back/forward).
-    /// Returns true if any state changed (caller should invalidate chrome).
-    pub fn sync_webview_state(&mut self) -> bool {
-        let Some(ref wv) = self.webview else {
-            return false;
-        };
-
-        let current_url = wv.current_url();
-        let loading = wv.is_loading();
-        let back = wv.can_go_back();
-        let fwd = wv.can_go_forward();
-
+    pub(crate) fn sync_webview_state_from_poll(
+        &mut self,
+        current_url: Option<String>,
+        loading: bool,
+        back: bool,
+        fwd: bool,
+    ) -> bool {
         let mut changed = false;
 
         // Sync URL: update url + url_input when webview navigated internally
@@ -440,7 +434,25 @@ impl BrowserPane {
         if !self.selection_bridge_installed && !self.loading {
             self.install_selection_bridge();
         }
+        if changed {
+            self.generation = self.generation.wrapping_add(1);
+        }
         changed
+    }
+
+    /// Poll the webview for state changes (URL, loading, back/forward).
+    /// Returns true if any state changed (caller should invalidate chrome).
+    pub fn sync_webview_state(&mut self) -> bool {
+        let Some(ref wv) = self.webview else {
+            return false;
+        };
+
+        let current_url = wv.current_url();
+        let loading = wv.is_loading();
+        let can_go_back = wv.can_go_back();
+        let can_go_forward = wv.can_go_forward();
+
+        self.sync_webview_state_from_poll(current_url, loading, can_go_back, can_go_forward)
     }
 
     /// Get the selected text in the URL bar, if any.

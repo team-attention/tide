@@ -10,8 +10,8 @@ use crate::pane::PaneKind;
 use crate::state::drag_types::HoverTarget;
 use crate::state::FocusArea;
 use crate::tide_core::{InputEvent, Key, Modifiers, MouseButton, Rect, Vec2};
-use crate::tide_platform::{PlatformEvent, WindowProxy};
 use crate::tide_input::{Action, GlobalAction};
+use crate::tide_platform::{PlatformEvent, WindowProxy};
 use crate::App;
 use std::cell::RefCell;
 use std::io;
@@ -448,7 +448,10 @@ fn content_navigation_updates_browser_url_and_actions_use_committed_state() {
         assert!(bp.sync_committed_url_from_navigation("https://example.com/docs"));
         assert_eq!(bp.url, "https://example.com/docs");
         assert_eq!(bp.url_input, "https://example.com/docs");
-        assert_eq!(bp.url_state_for_copy(), Some("https://example.com/docs".to_string()));
+        assert_eq!(
+            bp.url_state_for_copy(),
+            Some("https://example.com/docs".to_string())
+        );
         assert_eq!(
             bp.url_state_for_external_open(),
             Some("https://example.com/docs".to_string())
@@ -485,6 +488,36 @@ fn content_navigation_preserves_distinct_browser_url_draft_while_updating_commit
     assert!(bp.sync_committed_url_from_navigation("https://example.com/docs"));
     assert_eq!(bp.url, "https://example.com/docs");
     assert_eq!(bp.url_input, "https://example.com/search?q=browser");
+}
+
+#[test]
+fn polled_browser_state_changes_bump_generation_once() {
+    // UC-6 BR-26: A Browser Pane state change reported through sync_webview_state bumps generation exactly once, including loading and navigation availability changes
+    let id = 9;
+    let mut bp = BrowserPane::with_url(id, "https://example.com".to_string());
+    let start_generation = bp.generation;
+
+    assert!(bp.sync_webview_state_from_poll(
+        Some("https://example.com/docs".to_string()),
+        true,
+        true,
+        false,
+    ));
+    assert_eq!(bp.generation, start_generation + 1);
+    assert_eq!(bp.url, "https://example.com/docs");
+    assert_eq!(bp.url_input, "https://example.com/docs");
+    assert!(bp.loading);
+    assert!(bp.can_go_back);
+    assert!(!bp.can_go_forward);
+
+    let after_change = bp.generation;
+    assert!(!bp.sync_webview_state_from_poll(
+        Some("https://example.com/docs".to_string()),
+        true,
+        true,
+        false,
+    ));
+    assert_eq!(bp.generation, after_change);
 }
 
 // --- UC-5: PreserveBrowserPaneLoadingFeedback ---
