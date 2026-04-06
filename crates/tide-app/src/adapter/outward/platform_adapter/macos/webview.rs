@@ -799,6 +799,11 @@ extern "C" {
         context: *mut std::ffi::c_void,
         work: unsafe extern "C" fn(*mut std::ffi::c_void),
     );
+    fn dispatch_async_f(
+        queue: *const std::ffi::c_void,
+        context: *mut std::ffi::c_void,
+        work: unsafe extern "C" fn(*mut std::ffi::c_void),
+    );
     /// Block runtime: copy a block to the heap (retains).
     fn _Block_copy(block: *const std::ffi::c_void) -> *mut std::ffi::c_void;
     /// Block runtime: release a heap-copied block.
@@ -1040,13 +1045,16 @@ unsafe extern "C" fn resign_first_responder_on_main_thread(ctx_ptr: *mut std::ff
 }
 
 struct RemoveFromParentCtx {
-    webview: *const AnyObject,
+    /// Retained so the webview stays alive until the async block runs.
+    webview: Retained<AnyObject>,
 }
 
-/// Trampoline called on the main thread by `dispatch_sync_f`.
+/// Trampoline called on the main thread by `dispatch_async_f`.
+/// Takes ownership of the heap-allocated context and drops it after use.
 unsafe extern "C" fn remove_from_parent_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
-    let ctx = &*(ctx_ptr as *const RemoveFromParentCtx);
-    let _: () = msg_send![ctx.webview, removeFromSuperview];
+    let ctx = Box::from_raw(ctx_ptr as *mut RemoveFromParentCtx);
+    let _: () = msg_send![&*ctx.webview, removeFromSuperview];
+    // ctx dropped here — releases the Retained webview reference
 }
 
 /// Context passed through `dispatch_sync_f` to load HTML string on the main thread.
@@ -1475,13 +1483,15 @@ impl WebViewHandle {
             }
             return;
         }
-        let mut ctx = RemoveFromParentCtx {
-            webview: &*self.webview as *const AnyObject,
-        };
+        // Heap-allocate the context with a retained webview reference so it
+        // stays alive until the async block runs on the main thread.
+        let ctx = Box::into_raw(Box::new(RemoveFromParentCtx {
+            webview: self.webview.clone(),
+        }));
         unsafe {
-            dispatch_sync_f(
+            dispatch_async_f(
                 &_dispatch_main_q as *const std::ffi::c_void,
-                &mut ctx as *mut RemoveFromParentCtx as *mut std::ffi::c_void,
+                ctx as *mut std::ffi::c_void,
                 remove_from_parent_on_main_thread,
             );
         }
