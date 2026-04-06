@@ -29,6 +29,7 @@ pub struct ThemePalette {
     pub tab_bar_bg_focused: Color,
     pub active_tab_bg: Color,
     pub tab_text: Color,
+    pub tab_text_active: Color,   // active tab in unfocused pane (between dim and bright)
     pub tab_text_focused: Color,
     pub close_icon: Color,        // close button icon color
     pub dock_tab_underline: Color, // active dock tab bottom underline
@@ -139,7 +140,7 @@ pub static DARK: ThemePalette = ThemePalette {
     pane_bg:        Color::new(0.055, 0.055, 0.063, 1.0),
     file_tree_bg:   Color::new(0.071, 0.069, 0.075, 1.0),   // slightly warmer for area distinction
     border_color:   Color::new(0.039, 0.039, 0.043, 1.0),
-    border_focused: Color::new(0.769, 0.722, 0.651, 0.50),
+    border_focused: Color::new(0.769, 0.722, 0.651, 0.65),
     border_subtle:  Color::new(0.145, 0.140, 0.157, 1.0),   // stronger for clearer panel edges
 
     // Text — warm neutral
@@ -154,6 +155,7 @@ pub static DARK: ThemePalette = ThemePalette {
     tab_bar_bg_focused: Color::new(0.110, 0.106, 0.090, 1.0),   // #1C1B17 subtle warm focused
     active_tab_bg:      Color::new(0.055, 0.055, 0.063, 1.0),   // same as pane_bg #0E0E10
     tab_text:           Color::new(0.400, 0.400, 0.420, 1.0),   // slightly dimmer inactive
+    tab_text_active:    Color::new(0.600, 0.600, 0.620, 1.0),   // active tab in unfocused pane
     tab_text_focused:   Color::new(0.92, 0.92, 0.92, 1.0),      // slightly softer white
     close_icon:         Color::new(0.290, 0.290, 0.306, 1.0),
     dock_tab_underline: Color::new(0.769, 0.722, 0.651, 1.0),
@@ -277,6 +279,7 @@ pub static LIGHT: ThemePalette = ThemePalette {
     tab_bar_bg_focused: Color::new(0.94, 0.91, 0.87, 1.0),  // warm light tab bar bg focused
     active_tab_bg:      Color::new(0.96, 0.94, 0.92, 1.0),  // lighter to match surface_bg
     tab_text:           Color::new(0.42, 0.37, 0.30, 1.0),  // warm readable
+    tab_text_active:    Color::new(0.28, 0.24, 0.18, 1.0),  // active tab in unfocused pane
     tab_text_focused:   Color::new(0.10, 0.08, 0.05, 1.0),  // near-black brown
     close_icon:         Color::new(0.45, 0.38, 0.30, 1.0),  // warm close icon
     dock_tab_underline: Color::new(0.55, 0.38, 0.18, 1.0),  // chestnut

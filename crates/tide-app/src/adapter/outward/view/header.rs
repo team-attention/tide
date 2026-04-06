@@ -491,7 +491,7 @@ pub fn render_pane_header_inner(
     renderer.draw_chrome_rect(
         Rect::new(
             rect.x,
-            rect.y + TAB_BAR_HEIGHT - TAB_ACTIVE_INDICATOR_HEIGHT,
+            rect.y,
             compact_tab_w,
             TAB_ACTIVE_INDICATOR_HEIGHT,
         ),
@@ -758,13 +758,18 @@ fn render_tab_bar_impl(
             }
             let accent_rect = Rect::new(
                 cx,
-                tab_y + TAB_BAR_HEIGHT - TAB_ACTIVE_INDICATOR_HEIGHT,
+                tab_y,
                 tw,
                 TAB_ACTIVE_INDICATOR_HEIGHT,
             )
             .clip_to(&tab_clip);
             if accent_rect.width > 0.0 {
-                renderer.draw_chrome_rect(accent_rect, p.border_focused);
+                let accent_color = if is_focused {
+                    p.border_focused
+                } else {
+                    crate::tide_core::Color::new(p.border_focused.r, p.border_focused.g, p.border_focused.b, p.border_focused.a * 0.3)
+                };
+                renderer.draw_chrome_rect(accent_rect, accent_color);
             }
         }
 
@@ -795,8 +800,10 @@ fn render_tab_bar_impl(
             }
         }
 
-        let text_color = if is_focused_tab || is_active {
+        let text_color = if is_focused_tab {
             p.tab_text_focused
+        } else if is_active {
+            if is_focused { p.tab_text_focused } else { p.tab_text_active }
         } else {
             p.tab_text
         };
