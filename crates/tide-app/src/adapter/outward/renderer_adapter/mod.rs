@@ -17,6 +17,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use cosmic_text::FontSystem;
+use unicode_width::UnicodeWidthChar;
 use crate::tide_core::{Color, Rect, Renderer, Size, TextStyle, Vec2};
 
 use atlas::GlyphAtlas;
@@ -485,6 +486,8 @@ impl WgpuRenderer {
         let clip_bottom = (clip.y + clip.height) * scale;
 
         for ch in text.chars() {
+            let char_cells = ch.width().unwrap_or(1) as f32;
+
             if ch == ' ' || ch == '\t' {
                 let advance = if ch == '\t' { cell_w * 4.0 } else { cell_w };
                 cursor_x += advance;
@@ -494,7 +497,7 @@ impl WgpuRenderer {
             if let Some(bg) = style.background {
                 let qx = cursor_x;
                 let qy = start_y;
-                let qw = cell_w;
+                let qw = cell_w * char_cells;
                 let qh = self.cached_cell_size.height * scale;
                 if qx + qw > clip_left && qx < clip_right && qy + qh > clip_top && qy < clip_bottom {
                     // Push into top rect arrays
@@ -537,7 +540,7 @@ impl WgpuRenderer {
                 }
             }
 
-            cursor_x += cell_w;
+            cursor_x += cell_w * char_cells;
         }
     }
 }
