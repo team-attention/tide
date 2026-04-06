@@ -65,7 +65,7 @@ fn switching_terminals_preserves_dock_width() {
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.focus.focused = Some(t1);
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     app.dock.dock_width = 600.0;
 
@@ -90,7 +90,7 @@ fn pinning_moves_pane_to_pinned_dock_layout() {
     let e1 = app.layout.alloc_id();
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     app.focus.focused = Some(e1);
     app.toggle_dock_pin();
@@ -112,7 +112,7 @@ fn pinning_preserves_associated_terminal() {
     let e1 = app.layout.alloc_id();
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     assert_eq!(app.assoc.associated_terminal.get(&e1), Some(&t1));
 
@@ -135,12 +135,12 @@ fn pinned_panes_in_pinned_dock_layout() {
     let e1 = app.layout.alloc_id();
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     let e2 = app.layout.alloc_id();
     app.panes
         .insert(e2, PaneKind::Editor(EditorPane::new_empty(e2)));
-    app.add_pane_to_dock(e2);
+    app.add_pane_to_dock(e2, None);
 
     app.focus.focused = Some(e1);
     app.toggle_dock_pin();
@@ -163,7 +163,7 @@ fn pinned_pane_visible_from_any_terminal() {
     let e1 = app.layout.alloc_id();
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     app.focus.focused = Some(e1);
     app.toggle_dock_pin();
@@ -188,7 +188,7 @@ fn focused_terminal_not_changed_by_pinned_pane_focus() {
     let e1 = app.layout.alloc_id();
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     app.focus.focused = Some(e1);
     app.toggle_dock_pin();
@@ -218,7 +218,7 @@ fn unpinned_pane_returns_to_owning_terminal_dock() {
     let e1 = app.layout.alloc_id();
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     // Pin
     app.focus.focused = Some(e1);
@@ -245,7 +245,7 @@ fn unpinned_pane_not_in_pinned_dock_layout() {
     let e1 = app.layout.alloc_id();
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     app.focus.focused = Some(e1);
     app.toggle_dock_pin();
@@ -268,7 +268,7 @@ fn no_placeholder_when_pinned_panes_exist() {
     let e1 = app.layout.alloc_id();
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     // Pin e1
     app.focus.focused = Some(e1);
@@ -323,7 +323,7 @@ fn drag_into_pinned_group_pins_pane() {
     let e1 = app.layout.alloc_id();
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     assert!(!app.is_pane_pinned(e1));
 
@@ -347,7 +347,7 @@ fn drag_out_of_pinned_group_unpins_pane() {
     let e1 = app.layout.alloc_id();
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     // Pin
     app.focus.focused = Some(e1);
@@ -380,14 +380,14 @@ fn directional_self_drop_extracts_pinned_pane_from_pinned_tab_group() {
     let e1 = app.layout.alloc_id();
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
     app.focus.focused = Some(e1);
     app.toggle_dock_pin();
 
     let e2 = app.layout.alloc_id();
     app.panes
         .insert(e2, PaneKind::Editor(EditorPane::new_empty(e2)));
-    app.add_pane_to_dock(e2);
+    app.add_pane_to_dock(e2, None);
     app.focus.focused = Some(e2);
     app.toggle_dock_pin();
 
@@ -468,7 +468,7 @@ fn pin_keeps_focused_on_pane() {
     let e1 = app.layout.alloc_id();
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     app.focus.focused = Some(e1);
     app.toggle_dock_pin();
