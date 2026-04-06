@@ -64,12 +64,8 @@ pub(crate) fn handle_scroll(
         }
     }
 
-    // Axis isolation for editor content: only apply dominant scroll axis
-    let (editor_dx, editor_dy) = if dx.abs() > dy.abs() {
-        (dx, 0.0)
-    } else {
-        (0.0, dy)
-    };
+    let editor_dx = dx;
+    let editor_dy = dy;
 
     // Tab bar scroll: if cursor is within the tab bar header area of any pane
     let cursor_pos = ctx.last_cursor_pos();
@@ -84,12 +80,12 @@ pub(crate) fn handle_scroll(
             }
         }
         if let Some(pid) = tab_bar_pane {
-            // dx maps directly; negate dy so scroll-down = scroll tabs right
+            // Prefer horizontal scroll; fall back to vertical (negated) for mouse wheel
             let scroll_delta = if dx.abs() > dy.abs() { dx } else { -dy };
             if scroll_delta != 0.0 {
                 let offsets = &mut ctx.interaction_mut().tab_scroll_offset;
                 let offset = offsets.entry(pid).or_insert(0.0);
-                *offset = (*offset + scroll_delta * 80.0).max(0.0);
+                *offset = (*offset + scroll_delta * 20.0).max(0.0);
                 ctx.invalidate_chrome();
                 ctx.request_redraw();
             }
