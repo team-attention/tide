@@ -66,8 +66,6 @@ pub(crate) fn render_cursor_and_highlights(
     focused: Option<u64>,
     search_focus: Option<u64>,
 ) {
-    let top_offset = TAB_BAR_HEIGHT;
-
     // Compute the effective IME target and preedit width for editor cursor offset
     let ime_target = app.effective_ime_target();
     let preedit_width_cells: usize = if !app.ime.preedit.is_empty() {
@@ -83,6 +81,10 @@ pub(crate) fn render_cursor_and_highlights(
     // Always render cursor (overlay layer) — cursor blinks/moves independently
     for &(id, rect) in visual_pane_rects {
         let pane_bar = bar_offset_for(id, &app.panes, &app.modal.save_confirm);
+        let top_offset = match app.panes.get(&id) {
+            Some(PaneKind::Terminal(_)) => terminal_content_top(renderer.cell_size().height),
+            _ => TAB_BAR_HEIGHT,
+        };
         let inner = Rect::new(
             rect.x + PANE_PADDING,
             rect.y + top_offset + pane_bar,
