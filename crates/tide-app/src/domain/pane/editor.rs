@@ -299,15 +299,21 @@ impl EditorPane {
         }
     }
 
-    fn handle_soft_wrap_scroll_action(&mut self, action: &EditorAction, visible_rows: usize) -> bool {
+    fn handle_soft_wrap_scroll_action(
+        &mut self,
+        action: &EditorAction,
+        visible_rows: usize,
+    ) -> bool {
         let previous = self.soft_wrap_visual_scroll;
         match action {
             EditorAction::ScrollUp(delta) => {
-                self.soft_wrap_visual_scroll = self.soft_wrap_visual_scroll.saturating_sub(*delta as usize);
+                self.soft_wrap_visual_scroll =
+                    self.soft_wrap_visual_scroll.saturating_sub(*delta as usize);
             }
             EditorAction::ScrollDown(delta) => {
                 let max_scroll = self.soft_wrap_max_scroll(visible_rows);
-                self.soft_wrap_visual_scroll = (self.soft_wrap_visual_scroll + *delta as usize).min(max_scroll);
+                self.soft_wrap_visual_scroll =
+                    (self.soft_wrap_visual_scroll + *delta as usize).min(max_scroll);
             }
             _ => return false,
         }
@@ -610,7 +616,8 @@ impl EditorPane {
                 .wrapping_add(self.preview_h_scroll as u64)
                 .wrapping_add(cache_width)
         } else {
-            let mut gen = self.editor
+            let mut gen = self
+                .editor
                 .generation()
                 .wrapping_add(u64::from(self.split_preview_active()))
                 .wrapping_add(self.soft_wrap_visual_scroll as u64);
@@ -777,7 +784,9 @@ impl EditorPane {
     }
 
     pub fn soft_wrap_visual_row_of_line(&self, line: usize) -> Option<usize> {
-        self.wrap_map.as_ref().map(|map| map.visual_row_of_line(line))
+        self.wrap_map
+            .as_ref()
+            .map(|map| map.visual_row_of_line(line))
     }
 
     pub fn set_soft_wrap_visual_scroll(&mut self, scroll: usize, visible_rows: usize) {
@@ -830,8 +839,7 @@ impl EditorPane {
             if self.soft_wrap && !self.diff_mode {
                 if let Some(total_visual_rows) = self.soft_wrap_total_visual_rows() {
                     let target = (ratio * total_visual_rows.max(1) as f64).round() as usize;
-                    self.soft_wrap_visual_scroll =
-                        target.min(total_visual_rows.saturating_sub(1));
+                    self.soft_wrap_visual_scroll = target.min(total_visual_rows.saturating_sub(1));
                     self.sync_soft_wrap_scroll_line();
                 } else {
                     let target = (ratio * raw_line_count as f64).round() as usize;

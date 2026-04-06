@@ -113,7 +113,7 @@ Create, split, resolve, open, close, and drag Panes.
 - **Trigger**: Mouse down on tab bar + drag beyond threshold
 - **Precondition**: Source Pane exists in a TabGroup
 - **Flow**:
-  1. Mouse down → PaneDragState::PendingDrag { source, press_pos }
+  1. Mouse down on a Dock tab or Stage tab → `PaneDragState::PendingDrag { source, press_pos }`
   2. Mouse moves beyond threshold → PaneDragState::Dragging { source, drop_target }
   3. Mouse over pane → compute DropZone (Top/Bottom/Left/Right/Center)
   4. Mouse over workspace sidebar → highlight Workspace
@@ -125,6 +125,9 @@ Create, split, resolve, open, close, and drag Panes.
 - **Postcondition**: Pane moved to new position in SplitLayout or to another Workspace
 - **Business Rules**:
   - BR-15: Mouse release before threshold is a tab focus click, not a drop
+  - BR-16: Pressing a Stage tab starts the same pending-drag lifecycle as pressing a Dock tab
+  - BR-17: Directional self-drop is allowed only when the source Pane belongs to a multi-tab `TabGroup`, so a single tab may be extracted into a new split
+  - BR-18: A Stage Pane may move within Stage or to another `Workspace`, but never into Dock targets
 
 ## Invariants
 
@@ -153,11 +156,14 @@ After ANY Pane lifecycle operation:
 | UC-5: ClosePane | BR-12 | `closing_tab_in_right_group_focuses_same_group_not_left` |
 | UC-5: ClosePane | BR-12a | `closing_only_tab_in_group_focuses_neighbor_group` |
 | UC-5: ClosePane | BR-14 | `cancel_save_confirm_clears_the_modal` |
+| UC-6: DragDropPane | BR-16 | `pressing_stage_tab_enters_pending_drag_after_focus_switch` |
+| UC-6: DragDropPane | BR-17 | `directional_self_drop_splits_stage_tab_out_of_its_group` |
+| UC-6: DragDropPane | BR-18 | `stage_pane_drop_target_never_enters_dock` |
 
 ## Location
 
 | Layer | Crate | Key Files |
 |-------|-------|-----------|
-| Orchestrator | tide-app | `action/pane_lifecycle.rs`, `pane.rs` |
-| Layout | tide-layout | `split_layout.rs`, `tab_group.rs` |
-| Tests | tide-app | `behavior_tests.rs :: mod pane_lifecycle` |
+| Inward adapter | tide-app | `crates/tide-app/src/adapter/inward/click_adapter/header.rs`, `crates/tide-app/src/adapter/inward/click_adapter/pane.rs` |
+| Layout | tide-app | `crates/tide-app/src/domain/layout/mod.rs`, `crates/tide-app/src/domain/layout/node.rs`, `crates/tide-app/src/domain/layout/tab_group.rs` |
+| Tests | tide-app | `crates/tide-app/src/application/behavior_tests/pane_lifecycle.rs`, `crates/tide-app/src/application/behavior_tests/stage_tab_group.rs`, `crates/tide-app/src/application/behavior_tests/dock_behavior.rs` |

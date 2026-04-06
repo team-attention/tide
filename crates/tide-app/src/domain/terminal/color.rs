@@ -21,27 +21,27 @@ impl Terminal {
         match named {
             // Normal colors
             NamedColor::Black => Color::rgb(0.1, 0.1, 0.14),
-            NamedColor::Red => Color::rgb(1.0, 0.33, 0.33),       // #FF5555
-            NamedColor::Green => Color::rgb(0.31, 0.98, 0.48),    // #50FA7B
-            NamedColor::Yellow => Color::rgb(0.94, 0.9, 0.55),    // #F0E68D
-            NamedColor::Blue => Color::rgb(0.39, 0.58, 1.0),      // #6495FF
-            NamedColor::Magenta => Color::rgb(0.74, 0.45, 1.0),   // #BD73FF
-            NamedColor::Cyan => Color::rgb(0.35, 0.87, 0.93),     // #59DEED
-            NamedColor::White => Color::rgb(0.78, 0.8, 0.87),     // #C7CCDE
+            NamedColor::Red => Color::rgb(1.0, 0.33, 0.33), // #FF5555
+            NamedColor::Green => Color::rgb(0.31, 0.98, 0.48), // #50FA7B
+            NamedColor::Yellow => Color::rgb(0.94, 0.9, 0.55), // #F0E68D
+            NamedColor::Blue => Color::rgb(0.39, 0.58, 1.0), // #6495FF
+            NamedColor::Magenta => Color::rgb(0.74, 0.45, 1.0), // #BD73FF
+            NamedColor::Cyan => Color::rgb(0.35, 0.87, 0.93), // #59DEED
+            NamedColor::White => Color::rgb(0.78, 0.8, 0.87), // #C7CCDE
 
             // Bright colors
-            NamedColor::BrightBlack => Color::rgb(0.4, 0.42, 0.53),  // #676B87
-            NamedColor::BrightRed => Color::rgb(1.0, 0.47, 0.42),    // #FF786B
-            NamedColor::BrightGreen => Color::rgb(0.45, 1.0, 0.6),   // #73FF99
+            NamedColor::BrightBlack => Color::rgb(0.4, 0.42, 0.53), // #676B87
+            NamedColor::BrightRed => Color::rgb(1.0, 0.47, 0.42),   // #FF786B
+            NamedColor::BrightGreen => Color::rgb(0.45, 1.0, 0.6),  // #73FF99
             NamedColor::BrightYellow => Color::rgb(1.0, 0.98, 0.55), // #FFFA8D
-            NamedColor::BrightBlue => Color::rgb(0.53, 0.7, 1.0),    // #87B3FF
+            NamedColor::BrightBlue => Color::rgb(0.53, 0.7, 1.0),   // #87B3FF
             NamedColor::BrightMagenta => Color::rgb(0.85, 0.6, 1.0), // #D999FF
-            NamedColor::BrightCyan => Color::rgb(0.47, 0.94, 1.0),   // #78F0FF
+            NamedColor::BrightCyan => Color::rgb(0.47, 0.94, 1.0),  // #78F0FF
             NamedColor::BrightWhite => Color::rgb(0.95, 0.96, 0.98), // #F2F5FA
 
             // Special
-            NamedColor::Foreground => Color::rgb(0.9, 0.91, 0.95),   // #E6E8F2
-            NamedColor::Background => Color::rgb(0.0, 0.0, 0.0),     // Transparent → pane BG shows
+            NamedColor::Foreground => Color::rgb(0.9, 0.91, 0.95), // #E6E8F2
+            NamedColor::Background => Color::rgb(0.0, 0.0, 0.0),   // Transparent → pane BG shows
             _ => Color::rgb(0.9, 0.91, 0.95),
         }
     }
@@ -71,8 +71,8 @@ impl Terminal {
             NamedColor::BrightWhite => Color::rgb(0.95, 0.93, 0.90),
 
             // Special
-            NamedColor::Foreground => Color::rgb(0.10, 0.08, 0.05),  // Warm near-black
-            NamedColor::Background => Color::rgb(0.0, 0.0, 0.0),     // Transparent → pane BG shows
+            NamedColor::Foreground => Color::rgb(0.10, 0.08, 0.05), // Warm near-black
+            NamedColor::Background => Color::rgb(0.0, 0.0, 0.0),    // Transparent → pane BG shows
             _ => Color::rgb(0.12, 0.12, 0.12),
         }
     }
@@ -103,9 +103,21 @@ impl Terminal {
                 let g = (idx % 36) / 6;
                 let b = idx % 6;
                 Color::rgb(
-                    if r == 0 { 0.0 } else { (55.0 + 40.0 * r as f32) / 255.0 },
-                    if g == 0 { 0.0 } else { (55.0 + 40.0 * g as f32) / 255.0 },
-                    if b == 0 { 0.0 } else { (55.0 + 40.0 * b as f32) / 255.0 },
+                    if r == 0 {
+                        0.0
+                    } else {
+                        (55.0 + 40.0 * r as f32) / 255.0
+                    },
+                    if g == 0 {
+                        0.0
+                    } else {
+                        (55.0 + 40.0 * g as f32) / 255.0
+                    },
+                    if b == 0 {
+                        0.0
+                    } else {
+                        (55.0 + 40.0 * b as f32) / 255.0
+                    },
                 )
             }
             // 232-255: grayscale ramp
@@ -117,7 +129,11 @@ impl Terminal {
     }
 
     /// Convert color using pre-copied palette (no lock needed)
-    pub(crate) fn convert_color(dark_mode: bool, color: &AnsiColor, palette: &[Option<AnsiRgb>; 256]) -> Color {
+    pub(crate) fn convert_color(
+        dark_mode: bool,
+        color: &AnsiColor,
+        palette: &[Option<AnsiRgb>; 256],
+    ) -> Color {
         match color {
             AnsiColor::Named(named) => Self::named_color_to_rgb(dark_mode, *named),
             AnsiColor::Spec(rgb) => Color::rgb(
@@ -189,7 +205,11 @@ impl Terminal {
         if contrast < MIN_CONTRAST {
             // Target luminance for minimum contrast
             let target_lum = (BG_LUM + 0.05) / MIN_CONTRAST - 0.05;
-            let scale = if fg_lum > 0.001 { (target_lum / fg_lum).min(1.0) } else { 0.15 };
+            let scale = if fg_lum > 0.001 {
+                (target_lum / fg_lum).min(1.0)
+            } else {
+                0.15
+            };
             Color::new(
                 (color.r * scale).clamp(0.0, 1.0),
                 (color.g * scale).clamp(0.0, 1.0),

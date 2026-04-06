@@ -57,7 +57,10 @@ fn pair_diff_lines(lines: &[DiffLine]) -> Vec<SbsRow<'_>> {
     while i < lines.len() {
         match &lines[i] {
             DiffLine::Context(_) | DiffLine::Header(_) => {
-                result.push(SbsRow { left: Some(&lines[i]), right: Some(&lines[i]) });
+                result.push(SbsRow {
+                    left: Some(&lines[i]),
+                    right: Some(&lines[i]),
+                });
                 i += 1;
             }
             DiffLine::Removed(_) => {
@@ -80,7 +83,10 @@ fn pair_diff_lines(lines: &[DiffLine]) -> Vec<SbsRow<'_>> {
                 }
             }
             DiffLine::Added(_) => {
-                result.push(SbsRow { left: None, right: Some(&lines[i]) });
+                result.push(SbsRow {
+                    left: None,
+                    right: Some(&lines[i]),
+                });
                 i += 1;
             }
         }
@@ -226,27 +232,28 @@ impl DiffPane {
         map
     }
 
-
     fn load_diff_lines(&self, path: &str) -> Vec<DiffLine> {
         match git::file_diff(&self.cwd, path) {
-            Some(diff_text) => {
-                diff_text
-                    .lines()
-                    .filter_map(|l| {
-                        if l.starts_with("@@") {
-                            Some(DiffLine::Header(l.to_string()))
-                        } else if l.starts_with('+') && !l.starts_with("+++") {
-                            Some(DiffLine::Added(l[1..].to_string()))
-                        } else if l.starts_with('-') && !l.starts_with("---") {
-                            Some(DiffLine::Removed(l[1..].to_string()))
-                        } else if !l.starts_with("diff ") && !l.starts_with("index ") && !l.starts_with("---") && !l.starts_with("+++") {
-                            Some(DiffLine::Context(l.to_string()))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
-            }
+            Some(diff_text) => diff_text
+                .lines()
+                .filter_map(|l| {
+                    if l.starts_with("@@") {
+                        Some(DiffLine::Header(l.to_string()))
+                    } else if l.starts_with('+') && !l.starts_with("+++") {
+                        Some(DiffLine::Added(l[1..].to_string()))
+                    } else if l.starts_with('-') && !l.starts_with("---") {
+                        Some(DiffLine::Removed(l[1..].to_string()))
+                    } else if !l.starts_with("diff ")
+                        && !l.starts_with("index ")
+                        && !l.starts_with("---")
+                        && !l.starts_with("+++")
+                    {
+                        Some(DiffLine::Context(l.to_string()))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
             None => Vec::new(),
         }
     }
@@ -256,7 +263,9 @@ impl DiffPane {
     pub fn total_lines(&self) -> usize {
         let mut count = 0;
         for (i, _) in self.files.iter().enumerate() {
-            if i > 0 { count += 1; } // spacer before file header
+            if i > 0 {
+                count += 1;
+            } // spacer before file header
             count += 1; // file entry
             if self.expanded.contains(&i) {
                 if let Some(lines) = self.diff_cache.get(&i) {
@@ -279,10 +288,14 @@ impl DiffPane {
                 if let Some(lines) = self.diff_cache.get(&i) {
                     for line in lines {
                         let len = match line {
-                            DiffLine::Added(t) | DiffLine::Removed(t)
-                            | DiffLine::Header(t) | DiffLine::Context(t) => t.chars().count(),
+                            DiffLine::Added(t)
+                            | DiffLine::Removed(t)
+                            | DiffLine::Header(t)
+                            | DiffLine::Context(t) => t.chars().count(),
                         };
-                        if len > max { max = len; }
+                        if len > max {
+                            max = len;
+                        }
                     }
                 }
             }
@@ -299,7 +312,9 @@ impl DiffPane {
         for (fi, _) in self.files.iter().enumerate() {
             // Spacer row before each file header (except the first)
             if fi > 0 {
-                if row_idx == target_row { return; } // clicked spacer — ignore
+                if row_idx == target_row {
+                    return;
+                } // clicked spacer — ignore
                 row_idx += 1;
             }
             if row_idx == target_row {
@@ -336,8 +351,12 @@ impl DiffPane {
         let target_row = self.scroll as usize + visual_row;
         let mut row_idx = 0usize;
         for (fi, _) in self.files.iter().enumerate() {
-            if fi > 0 { row_idx += 1; } // spacer
-            if row_idx == target_row { return true; } // file header
+            if fi > 0 {
+                row_idx += 1;
+            } // spacer
+            if row_idx == target_row {
+                return true;
+            } // file header
             row_idx += 1;
             if self.expanded.contains(&fi) {
                 if let Some(lines) = self.diff_cache.get(&fi) {
@@ -358,7 +377,9 @@ impl DiffPane {
         let target_row = self.scroll as usize + visual_row;
         let mut row_idx = 0usize;
         for (fi, _) in self.files.iter().enumerate() {
-            if fi > 0 { row_idx += 1; } // spacer
+            if fi > 0 {
+                row_idx += 1;
+            } // spacer
             let header_row = row_idx;
             row_idx += 1;
             if self.expanded.contains(&fi) {
@@ -390,10 +411,16 @@ impl DiffPane {
     pub(crate) fn flat_lines(&self) -> Vec<String> {
         let mut result = Vec::new();
         for (fi, file) in self.files.iter().enumerate() {
-            if fi > 0 { result.push(String::new()); } // spacer
-            // File header
+            if fi > 0 {
+                result.push(String::new());
+            } // spacer
+              // File header
             let status_ch = match file.status.trim() {
-                "M" | " M" => 'M', "D" | " D" => 'D', "A" => 'A', "??" => 'U', _ => '?',
+                "M" | " M" => 'M',
+                "D" | " D" => 'D',
+                "A" => 'A',
+                "??" => 'U',
+                _ => '?',
             };
             result.push(format!("{} {}", status_ch, file.path));
             if self.expanded.contains(&fi) {
@@ -441,13 +468,27 @@ impl DiffPane {
         };
         let mut result = String::new();
         for row in start.0..=end.0 {
-            if row >= lines.len() { break; }
+            if row >= lines.len() {
+                break;
+            }
             let line = &lines[row];
             let char_count = line.chars().count();
-            let col_start = if row == start.0 { start.1.min(char_count) } else { 0 };
-            let col_end = if row == end.0 { end.1.min(char_count) } else { char_count };
+            let col_start = if row == start.0 {
+                start.1.min(char_count)
+            } else {
+                0
+            };
+            let col_end = if row == end.0 {
+                end.1.min(char_count)
+            } else {
+                char_count
+            };
             if col_start <= col_end {
-                let text: String = line.chars().skip(col_start).take(col_end - col_start).collect();
+                let text: String = line
+                    .chars()
+                    .skip(col_start)
+                    .take(col_end - col_start)
+                    .collect();
                 result.push_str(&text);
             }
             if row != end.0 {
@@ -460,7 +501,9 @@ impl DiffPane {
     /// Navigate to next/previous file header.
     pub fn move_selection(&mut self, delta: isize) {
         let count = self.files.len();
-        if count == 0 { return; }
+        if count == 0 {
+            return;
+        }
         let current = self.selected.unwrap_or(0) as isize;
         let next = (current + delta).clamp(0, count as isize - 1) as usize;
         self.selected = Some(next);
@@ -527,10 +570,14 @@ impl DiffPane {
 
                 // File header background — visually distinct from diff content
                 let header_bg = Color::new(1.0, 1.0, 1.0, if is_selected { 0.12 } else { 0.06 });
-                renderer.draw_grid_rect(Rect::new(rect.x, y, rect.width, cell_size.height), header_bg);
+                renderer.draw_grid_rect(
+                    Rect::new(rect.x, y, rect.width, cell_size.height),
+                    header_bg,
+                );
                 // Bottom border to separate header from diff content
                 let border_y = y + cell_size.height - 1.0;
-                renderer.draw_grid_rect(Rect::new(rect.x, border_y, rect.width, 1.0), divider_color);
+                renderer
+                    .draw_grid_rect(Rect::new(rect.x, border_y, rect.width, 1.0), divider_color);
 
                 let max_cols = (rect.width / cell_size.width).floor() as usize;
                 let mut col = 0usize;
@@ -538,10 +585,21 @@ impl DiffPane {
                 // Expand indicator: simple arrow
                 let arrow = if is_expanded { '▾' } else { '▸' };
                 let dim_style = TextStyle {
-                    foreground: dimmed_color, background: None,
-                    bold: false, dim: false, italic: false, underline: false,
+                    foreground: dimmed_color,
+                    background: None,
+                    bold: false,
+                    dim: false,
+                    italic: false,
+                    underline: false,
                 };
-                renderer.draw_grid_cell(arrow, vi, col, dim_style, cell_size, Vec2::new(rect.x, rect.y));
+                renderer.draw_grid_cell(
+                    arrow,
+                    vi,
+                    col,
+                    dim_style,
+                    cell_size,
+                    Vec2::new(rect.x, rect.y),
+                );
                 col += 2; // arrow + space
 
                 // Status letter (colored, no brackets)
@@ -560,10 +618,21 @@ impl DiffPane {
                     _ => '?',
                 };
                 let status_style = TextStyle {
-                    foreground: status_color, background: None,
-                    bold: true, dim: false, italic: false, underline: false,
+                    foreground: status_color,
+                    background: None,
+                    bold: true,
+                    dim: false,
+                    italic: false,
+                    underline: false,
                 };
-                renderer.draw_grid_cell(status_ch, vi, col, status_style, cell_size, Vec2::new(rect.x, rect.y));
+                renderer.draw_grid_cell(
+                    status_ch,
+                    vi,
+                    col,
+                    status_style,
+                    cell_size,
+                    Vec2::new(rect.x, rect.y),
+                );
                 col += 2; // status + space
 
                 // File path: directory/ dimmed, filename bold
@@ -573,12 +642,20 @@ impl DiffPane {
                     ("", file.path.as_str())
                 };
                 let dir_style = TextStyle {
-                    foreground: dimmed_color, background: None,
-                    bold: false, dim: true, italic: false, underline: false,
+                    foreground: dimmed_color,
+                    background: None,
+                    bold: false,
+                    dim: true,
+                    italic: false,
+                    underline: false,
                 };
                 let file_style = TextStyle {
-                    foreground: text_color, background: None,
-                    bold: true, dim: false, italic: false, underline: false,
+                    foreground: text_color,
+                    background: None,
+                    bold: true,
+                    dim: false,
+                    italic: false,
+                    underline: false,
                 };
                 // Build stats string early so we know how much space to reserve
                 let stats_str = if file.additions > 0 || file.deletions > 0 {
@@ -589,13 +666,31 @@ impl DiffPane {
                 let stats_reserve = stats_str.chars().count() + 2;
                 let path_max = max_cols.saturating_sub(col + stats_reserve);
                 for (ci, ch) in dir_part.chars().enumerate() {
-                    if ci >= path_max { break; }
-                    renderer.draw_grid_cell(ch, vi, col + ci, dir_style, cell_size, Vec2::new(rect.x, rect.y));
+                    if ci >= path_max {
+                        break;
+                    }
+                    renderer.draw_grid_cell(
+                        ch,
+                        vi,
+                        col + ci,
+                        dir_style,
+                        cell_size,
+                        Vec2::new(rect.x, rect.y),
+                    );
                 }
                 let file_col = col + dir_part.chars().count();
                 for (ci, ch) in file_part.chars().enumerate() {
-                    if dir_part.chars().count() + ci >= path_max { break; }
-                    renderer.draw_grid_cell(ch, vi, file_col + ci, file_style, cell_size, Vec2::new(rect.x, rect.y));
+                    if dir_part.chars().count() + ci >= path_max {
+                        break;
+                    }
+                    renderer.draw_grid_cell(
+                        ch,
+                        vi,
+                        file_col + ci,
+                        file_style,
+                        cell_size,
+                        Vec2::new(rect.x, rect.y),
+                    );
                 }
 
                 // Stats at end: +N  -N
@@ -604,12 +699,27 @@ impl DiffPane {
                     let start_col = max_cols.saturating_sub(stats_chars.len() + 1);
                     let dash_pos = stats_str.find('-').unwrap_or(stats_str.len());
                     for (ci, &ch) in stats_chars.iter().enumerate() {
-                        let color = if ci < dash_pos { added_gutter } else { removed_gutter };
-                        let stat_style = TextStyle {
-                            foreground: color, background: None,
-                            bold: false, dim: false, italic: false, underline: false,
+                        let color = if ci < dash_pos {
+                            added_gutter
+                        } else {
+                            removed_gutter
                         };
-                        renderer.draw_grid_cell(ch, vi, start_col + ci, stat_style, cell_size, Vec2::new(rect.x, rect.y));
+                        let stat_style = TextStyle {
+                            foreground: color,
+                            background: None,
+                            bold: false,
+                            dim: false,
+                            italic: false,
+                            underline: false,
+                        };
+                        renderer.draw_grid_cell(
+                            ch,
+                            vi,
+                            start_col + ci,
+                            stat_style,
+                            cell_size,
+                            Vec2::new(rect.x, rect.y),
+                        );
                     }
                 }
 
@@ -639,9 +749,19 @@ impl DiffPane {
                                 // Left pane (context / removed / header)
                                 if let Some(line) = pair.left {
                                     let (text, fg, bg, gutter_ch, is_dim) = match line {
-                                        DiffLine::Removed(t) => (t.as_str(), removed_gutter, Some(removed_bg), '-', false),
-                                        DiffLine::Header(t) => (t.as_str(), dimmed_color, None, '@', false),
-                                        DiffLine::Context(t) => (t.as_str(), dimmed_color, None, ' ', true),
+                                        DiffLine::Removed(t) => (
+                                            t.as_str(),
+                                            removed_gutter,
+                                            Some(removed_bg),
+                                            '-',
+                                            false,
+                                        ),
+                                        DiffLine::Header(t) => {
+                                            (t.as_str(), dimmed_color, None, '@', false)
+                                        }
+                                        DiffLine::Context(t) => {
+                                            (t.as_str(), dimmed_color, None, ' ', true)
+                                        }
                                         DiffLine::Added(_) => ("", dimmed_color, None, ' ', true),
                                     };
                                     if let Some(bg_color) = bg {
@@ -651,13 +771,36 @@ impl DiffPane {
                                         );
                                     }
                                     let style = TextStyle {
-                                        foreground: fg, background: None,
-                                        bold: false, dim: is_dim, italic: false, underline: false,
+                                        foreground: fg,
+                                        background: None,
+                                        bold: false,
+                                        dim: is_dim,
+                                        italic: false,
+                                        underline: false,
                                     };
-                                    renderer.draw_grid_cell(gutter_ch, vi, 1, style, cell_size, left_origin);
-                                    for (ci, ch) in text.chars().skip(file_h_scroll).enumerate().take(half_cols.saturating_sub(3)) {
+                                    renderer.draw_grid_cell(
+                                        gutter_ch,
+                                        vi,
+                                        1,
+                                        style,
+                                        cell_size,
+                                        left_origin,
+                                    );
+                                    for (ci, ch) in text
+                                        .chars()
+                                        .skip(file_h_scroll)
+                                        .enumerate()
+                                        .take(half_cols.saturating_sub(3))
+                                    {
                                         if ch != ' ' && ch != '\t' {
-                                            renderer.draw_grid_cell(ch, vi, 3 + ci, style, cell_size, left_origin);
+                                            renderer.draw_grid_cell(
+                                                ch,
+                                                vi,
+                                                3 + ci,
+                                                style,
+                                                cell_size,
+                                                left_origin,
+                                            );
                                         }
                                     }
                                 }
@@ -665,9 +808,15 @@ impl DiffPane {
                                 // Right pane (context / added / header)
                                 if let Some(line) = pair.right {
                                     let (text, fg, bg, gutter_ch, is_dim) = match line {
-                                        DiffLine::Added(t) => (t.as_str(), added_gutter, Some(added_bg), '+', false),
-                                        DiffLine::Header(t) => (t.as_str(), dimmed_color, None, '@', false),
-                                        DiffLine::Context(t) => (t.as_str(), dimmed_color, None, ' ', true),
+                                        DiffLine::Added(t) => {
+                                            (t.as_str(), added_gutter, Some(added_bg), '+', false)
+                                        }
+                                        DiffLine::Header(t) => {
+                                            (t.as_str(), dimmed_color, None, '@', false)
+                                        }
+                                        DiffLine::Context(t) => {
+                                            (t.as_str(), dimmed_color, None, ' ', true)
+                                        }
                                         DiffLine::Removed(_) => ("", dimmed_color, None, ' ', true),
                                     };
                                     if let Some(bg_color) = bg {
@@ -677,13 +826,36 @@ impl DiffPane {
                                         );
                                     }
                                     let style = TextStyle {
-                                        foreground: fg, background: None,
-                                        bold: false, dim: is_dim, italic: false, underline: false,
+                                        foreground: fg,
+                                        background: None,
+                                        bold: false,
+                                        dim: is_dim,
+                                        italic: false,
+                                        underline: false,
                                     };
-                                    renderer.draw_grid_cell(gutter_ch, vi, 1, style, cell_size, right_origin);
-                                    for (ci, ch) in text.chars().skip(file_h_scroll).enumerate().take(half_cols.saturating_sub(3)) {
+                                    renderer.draw_grid_cell(
+                                        gutter_ch,
+                                        vi,
+                                        1,
+                                        style,
+                                        cell_size,
+                                        right_origin,
+                                    );
+                                    for (ci, ch) in text
+                                        .chars()
+                                        .skip(file_h_scroll)
+                                        .enumerate()
+                                        .take(half_cols.saturating_sub(3))
+                                    {
                                         if ch != ' ' && ch != '\t' {
-                                            renderer.draw_grid_cell(ch, vi, 3 + ci, style, cell_size, right_origin);
+                                            renderer.draw_grid_cell(
+                                                ch,
+                                                vi,
+                                                3 + ci,
+                                                style,
+                                                cell_size,
+                                                right_origin,
+                                            );
                                         }
                                     }
                                 }
@@ -698,8 +870,12 @@ impl DiffPane {
                             if row_idx >= scroll && vi < visible_rows {
                                 let y = rect.y + vi as f32 * cell_size.height;
                                 let (text, fg, bg) = match line {
-                                    DiffLine::Added(t) => (t.as_str(), added_gutter, Some(added_bg)),
-                                    DiffLine::Removed(t) => (t.as_str(), removed_gutter, Some(removed_bg)),
+                                    DiffLine::Added(t) => {
+                                        (t.as_str(), added_gutter, Some(added_bg))
+                                    }
+                                    DiffLine::Removed(t) => {
+                                        (t.as_str(), removed_gutter, Some(removed_bg))
+                                    }
                                     DiffLine::Header(t) => (t.as_str(), dimmed_color, None),
                                     DiffLine::Context(t) => (t.as_str(), dimmed_color, None),
                                 };
@@ -718,20 +894,46 @@ impl DiffPane {
                                     DiffLine::Context(_) => ' ',
                                 };
                                 let gutter_style = TextStyle {
-                                    foreground: fg, background: None,
-                                    bold: false, dim: false, italic: false, underline: false,
+                                    foreground: fg,
+                                    background: None,
+                                    bold: false,
+                                    dim: false,
+                                    italic: false,
+                                    underline: false,
                                 };
-                                renderer.draw_grid_cell(gutter_ch, vi, 2, gutter_style, cell_size, Vec2::new(rect.x, rect.y));
+                                renderer.draw_grid_cell(
+                                    gutter_ch,
+                                    vi,
+                                    2,
+                                    gutter_style,
+                                    cell_size,
+                                    Vec2::new(rect.x, rect.y),
+                                );
 
                                 let content_style = TextStyle {
-                                    foreground: fg, background: None,
-                                    bold: false, dim: matches!(line, DiffLine::Context(_)),
-                                    italic: false, underline: false,
+                                    foreground: fg,
+                                    background: None,
+                                    bold: false,
+                                    dim: matches!(line, DiffLine::Context(_)),
+                                    italic: false,
+                                    underline: false,
                                 };
                                 let max_cols = (rect.width / cell_size.width).floor() as usize;
-                                for (ci, ch) in text.chars().skip(file_h_scroll).enumerate().take(max_cols.saturating_sub(4)) {
+                                for (ci, ch) in text
+                                    .chars()
+                                    .skip(file_h_scroll)
+                                    .enumerate()
+                                    .take(max_cols.saturating_sub(4))
+                                {
                                     if ch != ' ' && ch != '\t' {
-                                        renderer.draw_grid_cell(ch, vi, 4 + ci, content_style, cell_size, Vec2::new(rect.x, rect.y));
+                                        renderer.draw_grid_cell(
+                                            ch,
+                                            vi,
+                                            4 + ci,
+                                            content_style,
+                                            cell_size,
+                                            Vec2::new(rect.x, rect.y),
+                                        );
                                     }
                                 }
 
@@ -753,7 +955,6 @@ impl DiffPane {
             );
         }
     }
-
 
     pub fn generation(&self) -> u64 {
         self.generation
