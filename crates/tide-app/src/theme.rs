@@ -152,7 +152,7 @@ pub static DARK: ThemePalette = ThemePalette {
 
     // Tab bar — VS Code inspired: clean minimal, bottom indicator
     tab_bar_bg:         Color::new(0.098, 0.098, 0.110, 1.0),   // #19191C darker, cleaner
-    tab_bar_bg_focused: Color::new(0.110, 0.106, 0.090, 1.0),   // #1C1B17 subtle warm focused
+    tab_bar_bg_focused: Color::new(0.135, 0.128, 0.108, 1.0),   // brighter warm focused
     active_tab_bg:      Color::new(0.055, 0.055, 0.063, 1.0),   // same as pane_bg #0E0E10
     tab_text:           Color::new(0.400, 0.400, 0.420, 1.0),   // slightly dimmer inactive
     tab_text_active:    Color::new(0.600, 0.600, 0.620, 1.0),   // active tab in unfocused pane
@@ -276,7 +276,7 @@ pub static LIGHT: ThemePalette = ThemePalette {
 
     // Tab bar — VS Code inspired: clean minimal, bottom indicator
     tab_bar_bg:         Color::new(0.92, 0.89, 0.86, 1.0),  // slightly darker for contrast
-    tab_bar_bg_focused: Color::new(0.94, 0.91, 0.87, 1.0),  // warm light tab bar bg focused
+    tab_bar_bg_focused: Color::new(0.96, 0.93, 0.89, 1.0),  // brighter warm light tab bar bg focused
     active_tab_bg:      Color::new(0.96, 0.94, 0.92, 1.0),  // lighter to match surface_bg
     tab_text:           Color::new(0.42, 0.37, 0.30, 1.0),  // warm readable
     tab_text_active:    Color::new(0.28, 0.24, 0.18, 1.0),  // active tab in unfocused pane
@@ -390,9 +390,9 @@ pub const FILE_TREE_LINE_SPACING: f32 = 1.7;
 pub const FILE_TREE_ROW_RADIUS: f32 = 6.0;
 pub const FILE_TREE_WIDTH: f32 = 240.0;
 
-pub const TAB_BAR_HEIGHT: f32 = 34.0;
+pub const TAB_BAR_HEIGHT: f32 = 35.0;
 pub const TAB_CLOSE_ICON_SIZE: f32 = 9.0;
-pub const TAB_H_PAD: f32 = 10.0;
+pub const TAB_H_PAD: f32 = 11.0;
 pub const TAB_CONTENT_SPACING: f32 = 6.0;
 pub const TAB_ACTIVE_INDICATOR_HEIGHT: f32 = 2.0;
 pub const TAB_MAX_WIDTH: f32 = 220.0;

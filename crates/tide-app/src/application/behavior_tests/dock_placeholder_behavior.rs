@@ -50,7 +50,7 @@ fn dock_placeholder_created_on_terminal_switch_when_dock_empty() {
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.focus.focused = Some(t1);
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
     assert!(app.dock.dock_open);
 
     // Switch to t2 (dock is open, t2 has empty dock_layout)
@@ -80,14 +80,14 @@ fn dock_placeholder_not_created_when_dock_has_panes() {
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.focus.focused = Some(t1);
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     let e2 = app.layout.alloc_id();
     app.panes
         .insert(e2, PaneKind::Editor(EditorPane::new_empty(e2)));
     app.focus.focused = Some(t2);
     app.focus.stage_focused = Some(t2);
-    app.add_pane_to_dock(e2);
+    app.add_pane_to_dock(e2, None);
 
     // Switch to t1 (dock is open, t1 already has e1)
     app.focus_terminal(t1);
@@ -117,7 +117,7 @@ fn open_file_replaces_dock_placeholder_launcher() {
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.focus.focused = Some(t1);
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     // Switch to t2 → placeholder Launcher created
     app.focus_terminal(t2);
@@ -136,7 +136,7 @@ fn open_file_replaces_dock_placeholder_launcher() {
     let editor = EditorPane::new_empty(e2);
     app.panes.insert(e2, PaneKind::Editor(editor));
     app.ime.pending_creates.push(e2);
-    app.add_pane_to_dock(e2);
+    app.add_pane_to_dock(e2, None);
 
     // Placeholder should be gone, editor should be in its place
     assert!(
@@ -163,13 +163,13 @@ fn open_file_adds_tab_when_dock_focused_is_not_launcher() {
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.focus.focused = Some(t1);
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     // Open another editor — should add as tab, not replace
     let e2 = app.layout.alloc_id();
     let editor = EditorPane::new_empty(e2);
     app.panes.insert(e2, PaneKind::Editor(editor));
-    app.add_pane_to_dock(e2);
+    app.add_pane_to_dock(e2, None);
 
     if let Some(PaneKind::Terminal(tp)) = app.panes.get(&t1) {
         let dock_ids = tp.dock_layout.all_pane_ids();
@@ -193,7 +193,7 @@ fn switching_back_does_not_duplicate_placeholder() {
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.focus.focused = Some(t1);
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     // Switch to t2 → placeholder created
     app.focus_terminal(t2);
@@ -231,7 +231,7 @@ fn toggle_dock_close_reopen_no_duplicate_placeholder() {
     app.panes
         .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.focus.focused = Some(t1);
-    app.add_pane_to_dock(e1);
+    app.add_pane_to_dock(e1, None);
 
     // Switch to t2 → placeholder created
     app.focus_terminal(t2);
