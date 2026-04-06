@@ -1,8 +1,8 @@
 // Spec: docs/specs/layout-v2.md
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
-use crate::state::{FocusArea, ViewMode};
 use crate::state::drag_types::DropDestination;
+use crate::state::{FocusArea, ViewMode};
 use crate::tide_core::{DropZone, LayoutEngine};
 use crate::App;
 use crate::DockPort;

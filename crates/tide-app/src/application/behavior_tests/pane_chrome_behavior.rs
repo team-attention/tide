@@ -5,11 +5,11 @@ use std::path::PathBuf;
 
 use crate::adapter::outward::view::header::reserve_title_before_badges;
 use crate::pane::{PaneKind, TerminalPane};
-use crate::tide_terminal::git::{GitInfo, GitStatus};
 use crate::theme::{
     BADGE_GAP, BADGE_PADDING_H, DARK, LIGHT, TAB_CONTENT_SPACING, TAB_H_PAD, TAB_MAX_WIDTH,
     TAB_MIN_TITLE_WIDTH,
 };
+use crate::tide_terminal::git::{GitInfo, GitStatus};
 use crate::ui::pane_title;
 
 fn terminal_with_git_info(id: u64) -> (HashMap<u64, PaneKind>, String) {
@@ -93,7 +93,11 @@ fn active_terminal_header_preserves_title_when_git_badges_are_present() {
         Some(PaneKind::Terminal(tp)) => tp,
         _ => panic!("expected a terminal pane"),
     };
-    let git = terminal.context.git_info.as_ref().expect("expected git info");
+    let git = terminal
+        .context
+        .git_info
+        .as_ref()
+        .expect("expected git info");
     assert_eq!(git.branch, "main");
 
     let cell_w = 8.0_f32;

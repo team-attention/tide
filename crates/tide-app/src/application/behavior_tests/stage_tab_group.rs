@@ -424,7 +424,11 @@ fn directional_self_drop_splits_stage_tab_out_of_its_group() {
     );
 
     let visible_ids = app.layout.pane_ids();
-    assert_eq!(visible_ids.len(), 2, "self-extraction should leave two visible Stage panes");
+    assert_eq!(
+        visible_ids.len(),
+        2,
+        "self-extraction should leave two visible Stage panes"
+    );
     assert!(
         visible_ids.contains(&p1),
         "remaining sibling pane should still be visible"
@@ -435,7 +439,11 @@ fn directional_self_drop_splits_stage_tab_out_of_its_group() {
     );
 
     let all_ids = app.layout.all_pane_ids();
-    assert_eq!(all_ids.len(), 2, "self-extraction should preserve both Stage PaneIds");
+    assert_eq!(
+        all_ids.len(),
+        2,
+        "self-extraction should preserve both Stage PaneIds"
+    );
     assert!(all_ids.contains(&p1));
     assert!(all_ids.contains(&p2));
     assert!(
@@ -455,7 +463,9 @@ fn directional_self_drop_preview_uses_source_rect_not_stage_area() {
     let (mut app, _p1, p2) = app_with_stage_tab_group();
     crate::LayoutPort::compute_layout(&mut app);
 
-    let pane_area = app.pane_area_rect.expect("stage pane area should exist after layout");
+    let pane_area = app
+        .pane_area_rect
+        .expect("stage pane area should exist after layout");
     let source_rect = app
         .visual_pane_rects
         .iter()
