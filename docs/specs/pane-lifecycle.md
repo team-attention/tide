@@ -106,6 +106,7 @@ Create, split, resolve, open, close, and drag Panes.
   - BR-12a: If the closed tab was the only tab in its TabGroup, focus moves to a layout neighbor
   - BR-13: App always has at least one Pane (create Launcher if last one closed)
   - BR-14: Cancel on SaveConfirm clears the modal without closing
+  - BR-15: Browser Pane native teardown must complete on the main thread before Browser Pane state is dropped, so `MainThreadOnly` WebKit/AppKit objects are not released on `app-thread`
 
 ### UC-6: DragDropPane
 
@@ -136,6 +137,7 @@ After ANY Pane lifecycle operation:
 1. **PaneId sync**: Every id in `layout.pane_ids()` exists in `app.panes`, and vice versa
 2. **Focus valid**: `app.focused` is either `None` or a valid key in `app.panes`
 3. **At least one Pane**: App always has at least one Pane (Launcher if needed)
+4. **Browser Pane teardown**: Closing a Browser Pane must tear down its native view on the main thread before removal from `app.panes`, so native `MainThreadOnly` resources are not dropped on `app-thread`
 
 ## Tests
 
@@ -156,6 +158,7 @@ After ANY Pane lifecycle operation:
 | UC-5: ClosePane | BR-12 | `closing_tab_in_right_group_focuses_same_group_not_left` |
 | UC-5: ClosePane | BR-12a | `closing_only_tab_in_group_focuses_neighbor_group` |
 | UC-5: ClosePane | BR-14 | `cancel_save_confirm_clears_the_modal` |
+| UC-5: ClosePane | BR-15 | `closing_browser_pane_moves_focus_to_another_pane` |
 | UC-6: DragDropPane | BR-16 | `pressing_stage_tab_enters_pending_drag_after_focus_switch` |
 | UC-6: DragDropPane | BR-17 | `directional_self_drop_splits_stage_tab_out_of_its_group` |
 | UC-6: DragDropPane | BR-18 | `stage_pane_drop_target_never_enters_dock` |
