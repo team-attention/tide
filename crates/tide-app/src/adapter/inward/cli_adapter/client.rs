@@ -346,8 +346,10 @@ fn parse_browser_eval_args(args: &[String]) -> serde_json::Value {
                 if let Some(id_str) = args.get(i + 1) {
                     if let Ok(id) = id_str.parse::<u64>() {
                         params.insert("pane_id".into(), serde_json::json!(id));
+                        i += 2;
+                    } else {
+                        i += 1;
                     }
-                    i += 2;
                 } else {
                     i += 1;
                 }
@@ -696,7 +698,7 @@ fn run_render_stream(params: serde_json::Value) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::usage_text;
+    use super::{parse_browser_eval_args, usage_text};
 
     #[test]
     fn cli_usage_mentions_render_html_fragment_contract() {
@@ -732,6 +734,23 @@ mod tests {
         assert!(usage.contains("browser-eval [-t <id>] --script <js>"));
         assert!(usage.contains("JavaScript"));
         assert!(usage.contains("BrowserSnapshot"));
+    }
+
+    #[test]
+    fn parse_browser_eval_args_invalid_target_keeps_scanning_flags() {
+        let args = vec![
+            "-t".to_string(),
+            "not-a-number".to_string(),
+            "--script".to_string(),
+            "document.title = 'Updated'".to_string(),
+        ];
+
+        let params = parse_browser_eval_args(&args);
+        assert!(params.get("pane_id").is_none());
+        assert_eq!(
+            params.get("script").and_then(|value| value.as_str()),
+            Some("document.title = 'Updated'")
+        );
     }
 }
 

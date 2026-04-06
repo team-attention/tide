@@ -328,25 +328,16 @@ fn cli_browser_eval(
             browser.request_page_snapshot_refresh();
             Ok(json!({"ok": true}))
         }
-        PaneKind::Terminal(_) => Err(CliError::InvalidPaneKind {
+        other => Err(CliError::InvalidPaneKind {
             pane_id,
             expected: "browser",
-            actual: "terminal",
-        }),
-        PaneKind::Editor(_) => Err(CliError::InvalidPaneKind {
-            pane_id,
-            expected: "browser",
-            actual: "editor",
-        }),
-        PaneKind::Diff(_) => Err(CliError::InvalidPaneKind {
-            pane_id,
-            expected: "browser",
-            actual: "diff",
-        }),
-        PaneKind::Launcher(_) => Err(CliError::InvalidPaneKind {
-            pane_id,
-            expected: "browser",
-            actual: "launcher",
+            actual: match other {
+                PaneKind::Terminal(_) => "terminal",
+                PaneKind::Editor(_) => "editor",
+                PaneKind::Diff(_) => "diff",
+                PaneKind::Launcher(_) => "launcher",
+                PaneKind::Browser(_) => unreachable!(),
+            },
         }),
     }
 }
