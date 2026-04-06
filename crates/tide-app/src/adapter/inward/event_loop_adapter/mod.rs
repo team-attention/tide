@@ -327,12 +327,16 @@ impl App {
 
         match kind {
             "browser-external-handoff" => {
+                let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
+                    Some(id) => id,
+                    None => return false,
+                };
                 let url = parsed
                     .get("url")
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.trim().is_empty());
 
-                match self.focus.focused.and_then(|id| self.pane_mut(id)) {
+                match self.pane_mut(pane_id) {
                     Some(PaneKind::Browser(browser)) => {
                         browser.apply_external_handoff(url);
                         true
