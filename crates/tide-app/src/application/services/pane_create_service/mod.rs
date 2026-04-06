@@ -83,6 +83,12 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
     /// Resolve the context terminal for the currently focused pane.
     /// If focused is a terminal, returns it. Otherwise follows the association chain.
     fn resolve_context_terminal_id(&self) -> Option<crate::tide_core::PaneId> {
+        // CLI caller pane takes precedence — the agent explicitly told us which terminal it runs in.
+        if let Some(caller) = self.pending_cli_caller_pane {
+            if matches!(self.panes.get(&caller), Some(PaneKind::Terminal(_))) {
+                return Some(caller);
+            }
+        }
         let focused = self.focus.focused?;
         if matches!(self.panes.get(&focused), Some(PaneKind::Terminal(_))) {
             return Some(focused);
@@ -126,7 +132,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.panes.insert(new_id, PaneKind::Editor(pane));
         self.ime.pending_creates.push(new_id);
         // Route to Dock if an owner terminal exists
-        if let Some(tid) = self.focused_terminal_id().or(context_terminal) {
+        if let Some(tid) = context_terminal.or_else(|| self.focused_terminal_id()) {
             self.add_pane_to_dock(new_id);
             self.assoc.associated_terminal.insert(new_id, tid);
             self.focus.focus_area = crate::state::FocusArea::Dock;
@@ -319,7 +325,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         };
         self.panes.insert(new_id, PaneKind::Browser(pane));
         self.ime.pending_creates.push(new_id);
-        if let Some(tid) = self.focused_terminal_id().or(context_terminal) {
+        if let Some(tid) = context_terminal.or_else(|| self.focused_terminal_id()) {
             self.add_pane_to_dock(new_id);
             self.assoc.associated_terminal.insert(new_id, tid);
             self.focus.focus_area = crate::state::FocusArea::Dock;
@@ -350,7 +356,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         let pane = BrowserPane::new_render(new_id, title, html);
         self.panes.insert(new_id, PaneKind::Browser(pane));
         self.ime.pending_creates.push(new_id);
-        if let Some(tid) = self.focused_terminal_id().or(context_terminal) {
+        if let Some(tid) = context_terminal.or_else(|| self.focused_terminal_id()) {
             self.add_pane_to_dock(new_id);
             self.assoc.associated_terminal.insert(new_id, tid);
             self.focus.focus_area = crate::state::FocusArea::Dock;
@@ -379,7 +385,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         let pane = BrowserPane::new_render_stream(new_id, title);
         self.panes.insert(new_id, PaneKind::Browser(pane));
         self.ime.pending_creates.push(new_id);
-        if let Some(tid) = self.focused_terminal_id().or(context_terminal) {
+        if let Some(tid) = context_terminal.or_else(|| self.focused_terminal_id()) {
             self.add_pane_to_dock(new_id);
             self.assoc.associated_terminal.insert(new_id, tid);
             self.focus.focus_area = crate::state::FocusArea::Dock;
@@ -530,7 +536,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                 pane.editor.set_dark_mode(self.window.dark_mode);
                 self.panes.insert(new_id, PaneKind::Editor(pane));
                 self.ime.pending_creates.push(new_id);
-                if let Some(tid) = self.focused_terminal_id().or(context_terminal) {
+                if let Some(tid) = context_terminal.or_else(|| self.focused_terminal_id()) {
                     self.add_pane_to_dock(new_id);
                     self.assoc.associated_terminal.insert(new_id, tid);
                     self.focus.focus_area = crate::state::FocusArea::Dock;

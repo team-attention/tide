@@ -148,22 +148,6 @@ pub(super) fn render_pane_chrome(
         }
     }
 
-    // Cross-region highlight: show which Stage terminal owns the Dock (or vice versa)
-    let companion_id = match app.focus.focus_area {
-        FocusArea::Dock => app.focused_terminal_id(), // highlight owner terminal in Stage
-        FocusArea::Stage if app.dock.dock_open => {
-            // highlight dock's active pane
-            app.focused_terminal_id().and_then(|tid| {
-                if let Some(crate::pane::PaneKind::Terminal(tp)) = app.panes.get(&tid) {
-                    tp.dock_focused
-                } else {
-                    None
-                }
-            })
-        }
-        _ => None,
-    };
-
     // Draw pane backgrounds + borders with rounded corners
     for &(id, rect) in visual_pane_rects {
         if !app.panes.contains_key(&id) {
@@ -172,8 +156,7 @@ pub(super) fn render_pane_chrome(
         // Only show pane focus highlight when focus is in the pane area
         let is_focused = focused == Some(id)
             && matches!(app.focus.focus_area, FocusArea::Stage | FocusArea::Dock);
-        let is_companion = companion_id == Some(id);
-        // UC-5 BR-6,7: Pane border blinks orange for NeedsInput + unfocused
+        // UC-5 BR-6,7: Pane tab header blinks orange for NeedsInput + unfocused
         let agent_needs_input = !is_focused
             && app
                 .gateway
@@ -184,71 +167,7 @@ pub(super) fn render_pane_chrome(
                     matches!(s, crate::state::gateway_status::AgentStatus::NeedsInput)
                 });
 
-        let border_color = if agent_needs_input {
-            // Orange border with blink animation (same frequency as dot: ~4.2 rad/s)
-            let t = app.timing.last_frame.elapsed().as_secs_f64();
-            let opacity = 0.65_f32 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
-            crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity)
-        } else if is_companion {
-            // Dimmed version of border_focused -- same hue, lower alpha, no glow
-            crate::tide_core::Color::new(
-                p.border_focused.r,
-                p.border_focused.g,
-                p.border_focused.b,
-                p.border_focused.a * 0.6,
-            )
-        } else {
-            p.border_subtle
-        };
-        let top_border = if agent_needs_input {
-            2.0
-        } else {
-            1.0
-        };
-        let side_border = if agent_needs_input {
-            2.0_f32
-        } else {
-            1.0_f32
-        };
-
-        // NeedsInput: draw outer glow shadow
-        if agent_needs_input {
-            let t = app.timing.last_frame.elapsed().as_secs_f64();
-            let shadow_color =
-                crate::tide_core::Color::new(
-                    0.95,
-                    0.65,
-                    0.2,
-                    (0.15_f32 + 0.15 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32)
-                        .max(0.0),
-                );
-            renderer.draw_chrome_shadow(rect, shadow_color, PANE_CORNER_RADIUS, 12.0, -3.0);
-        }
-
-        if agent_needs_input {
-            // Agent needs input: draw border + inset like before
-            renderer.draw_chrome_rounded_rect(rect, border_color, PANE_CORNER_RADIUS);
-            let inset = Rect::new(
-                rect.x + side_border,
-                rect.y + top_border,
-                rect.width - 2.0 * side_border,
-                rect.height - top_border - side_border,
-            );
-            renderer.draw_chrome_rounded_rect(
-                inset,
-                p.pane_bg,
-                (PANE_CORNER_RADIUS - side_border).max(0.0),
-            );
-            let tab_bar_bg_color = if is_focused {
-                p.tab_bar_bg_focused
-            } else {
-                p.tab_bar_bg
-            };
-            renderer.draw_chrome_rect(
-                Rect::new(inset.x, inset.y, inset.width, TAB_BAR_HEIGHT),
-                tab_bar_bg_color,
-            );
-        } else {
+        {
             // Normal: no border, pane_bg fills whole area, tab_bar_bg on top
             renderer.draw_chrome_rect(rect, p.pane_bg);
             let tab_bar_bg_color = if is_focused {
@@ -260,11 +179,23 @@ pub(super) fn render_pane_chrome(
                 Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT),
                 tab_bar_bg_color,
             );
-            // 1px border at bottom of tab bar for clean separation
-            renderer.draw_chrome_rect(
-                Rect::new(rect.x, rect.y + TAB_BAR_HEIGHT, rect.width, 1.0),
-                p.border_subtle,
-            );
+
+            // 1px border at bottom of tab bar (or NeedsInput accent)
+            if agent_needs_input {
+                // UC-5 BR-6,7: NeedsInput — orange accent at bottom of tab header
+                let t = app.timing.last_frame.elapsed().as_secs_f64();
+                let opacity = 0.45_f32 + 0.25 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
+                let accent = crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity);
+                renderer.draw_chrome_rect(
+                    Rect::new(rect.x, rect.y + TAB_BAR_HEIGHT - 2.0, rect.width, 2.0),
+                    accent,
+                );
+            } else {
+                renderer.draw_chrome_rect(
+                    Rect::new(rect.x, rect.y + TAB_BAR_HEIGHT, rect.width, 1.0),
+                    p.border_subtle,
+                );
+            }
         }
     }
 
