@@ -5,8 +5,8 @@ use pulldown_cmark::{Event, Options, Parser, Tag};
 use crate::tide_core::{TerminalBackend, Vec2};
 
 use crate::domain::editor::markdown::{LivePreviewMap, MdElementKind};
-use crate::pane::editor::GUTTER_WIDTH_CELLS;
 use crate::pane::editor::EditorPane;
+use crate::pane::editor::GUTTER_WIDTH_CELLS;
 use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
@@ -24,7 +24,7 @@ impl crate::TextExtractPort for App {
                     .find(|(id, _)| *id == pane_id)?;
                 let cell_size = self.cell_size();
 
-                let content_top = TAB_BAR_HEIGHT;
+                let content_top = terminal_content_top(cell_size.height);
                 let inner_x = visual_rect.x + PANE_PADDING;
                 let inner_y = visual_rect.y + content_top;
 
@@ -33,12 +33,17 @@ impl crate::TextExtractPort for App {
                 let actual_width = max_cols as f32 * cell_size.width;
                 let extra_x = ((visual_rect.width - 2.0 * PANE_PADDING) - actual_width) / 2.0;
 
-                let col = ((position.x - inner_x - extra_x) / cell_size.width) as usize;
-                let row = ((position.y - inner_y) / cell_size.height) as usize;
+                let col = ((position.x - inner_x - extra_x) / cell_size.width).floor() as isize;
+                let row = ((position.y - inner_y) / cell_size.height).floor() as isize;
+                if row < 0 || col < 0 {
+                    return None;
+                }
 
-                Self::extract_wrapped_terminal_url(&pane.backend, row, col)
+                Self::extract_wrapped_terminal_url(&pane.backend, row as usize, col as usize)
             }
-            Some(PaneKind::Editor(pane)) => self.extract_live_preview_url_at(pane, pane_id, position),
+            Some(PaneKind::Editor(pane)) => {
+                self.extract_live_preview_url_at(pane, pane_id, position)
+            }
             _ => None,
         }
     }
@@ -62,7 +67,7 @@ impl crate::TextExtractPort for App {
             .find(|(id, _)| *id == pane_id)?;
         let cell_size = self.cell_size();
 
-        let content_top = TAB_BAR_HEIGHT;
+        let content_top = terminal_content_top(cell_size.height);
         let inner_x = visual_rect.x + PANE_PADDING;
         let inner_y = visual_rect.y + content_top;
 
@@ -72,14 +77,17 @@ impl crate::TextExtractPort for App {
         let actual_width = max_cols as f32 * cell_size.width;
         let extra_x = ((visual_rect.width - 2.0 * PANE_PADDING) - actual_width) / 2.0;
 
-        let col = ((position.x - inner_x - extra_x) / cell_size.width) as usize;
-        let row = ((position.y - inner_y) / cell_size.height) as usize;
-
-        let grid = pane.backend.grid();
-        if row >= grid.cells.len() {
+        let col = ((position.x - inner_x - extra_x) / cell_size.width).floor() as isize;
+        let row = ((position.y - inner_y) / cell_size.height).floor() as isize;
+        if row < 0 || col < 0 {
             return None;
         }
-        let line = &grid.cells[row];
+
+        let grid = pane.backend.grid();
+        if row as usize >= grid.cells.len() {
+            return None;
+        }
+        let line = &grid.cells[row as usize];
 
         // Build the full text of the row
         let row_text: String = line.iter().map(|c| c.character).collect();
@@ -92,9 +100,10 @@ impl crate::TextExtractPort for App {
         // Find the word/path segment under the cursor.
         // Expand left and right from the click column to find path-like characters.
         let chars: Vec<char> = row_text.chars().collect();
-        if col >= chars.len() {
+        if col as usize >= chars.len() {
             return None;
         }
+        let col = col as usize;
 
         let is_path_char = |c: char| -> bool {
             c.is_alphanumeric() || matches!(c, '/' | '\\' | '.' | '-' | '_' | '~')
@@ -196,7 +205,8 @@ impl App {
         let (line, buffer_col) = if pane.effective_soft_wrap() {
             let wrap_map = pane.wrap_map()?;
             let abs_visual_row = pane.soft_wrap_visual_scroll() + rel_row as usize;
-            let info = wrap_map.visual_row_to_line_info(abs_visual_row, &pane.editor.buffer.lines)?;
+            let info =
+                wrap_map.visual_row_to_line_info(abs_visual_row, &pane.editor.buffer.lines)?;
             let visual_col = (info.char_offset + rel_col as usize).min(info.char_end);
             let line_content = pane.editor.buffer.line(info.logical_line).unwrap_or("");
             (
