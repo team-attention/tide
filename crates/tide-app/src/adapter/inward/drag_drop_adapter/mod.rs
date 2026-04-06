@@ -107,18 +107,7 @@ fn source_in_multi_tab_group(
     source: PaneId,
 ) -> bool {
     if ctx.is_pane_in_dock(source) {
-        return ctx
-            .focused_terminal_id()
-            .and_then(|tid| {
-                if let Some(crate::pane::PaneKind::Terminal(tp)) = ctx.pane(tid) {
-                    tp.dock_layout
-                        .tab_group_containing(source)
-                        .map(|tg| tg.tabs.len() > 1)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(false);
+        return ctx.dock_tab_group_contains_multiple(source);
     }
 
     ctx.layout_snapshot()

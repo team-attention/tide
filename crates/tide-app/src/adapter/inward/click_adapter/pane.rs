@@ -507,7 +507,43 @@ pub(crate) fn handle_drop(
 
             if source_in_dock && target_in_dock {
                 let source_was_pinned = ctx.is_pane_pinned(source);
-                if source_was_pinned {
+                let target_is_pinned = ctx.is_pane_pinned(target_id);
+                if target_is_pinned {
+                    if !source_was_pinned {
+                        if let Some(tid) = ctx.terminal_owning(source) {
+                            ctx.dock_layout_remove(tid, source);
+                        }
+                    }
+
+                    if source == target_id {
+                        if let Some(sib) = ctx.pinned_layout_tab_group_sibling(source) {
+                            ctx.pinned_layout_remove(source);
+                            ctx.pinned_layout_split_with_leaf_group(
+                                sib,
+                                source,
+                                direction,
+                                insert_first,
+                            );
+                        } else {
+                            return;
+                        }
+                    } else {
+                        ctx.pinned_layout_remove(source);
+                        if zone == DropZone::Center {
+                            if !ctx.pinned_layout_add_tab(target_id, source) {
+                                ctx.pinned_layout_add_tab_to_first_group(source);
+                            }
+                        } else {
+                            ctx.pinned_layout_split_with_leaf_group(
+                                target_id,
+                                source,
+                                direction,
+                                insert_first,
+                            );
+                        }
+                    }
+                    ctx.pinned_layout_set_active_tab(source);
+                } else if source_was_pinned {
                     ctx.pinned_layout_remove(source);
                     // If dropping on a non-owning terminal, just unpin to associated terminal
                     let assoc_tid = ctx.associated_terminal(source);

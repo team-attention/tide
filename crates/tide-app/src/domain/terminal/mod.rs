@@ -65,6 +65,8 @@ static AGENT_WRAPPER_DIR: OnceLock<String> = OnceLock::new();
 /// Resolved from the .app bundle's Contents/Resources/shell-integration/ at startup.
 static SHELL_INTEGRATION_DIR: OnceLock<String> = OnceLock::new();
 
+static URL_RE: OnceLock<regex::Regex> = OnceLock::new();
+
 /// Discover agent wrapper and shell integration directories from the .app bundle.
 /// Called once from main after the gateway socket is ready.
 /// Looks for `Contents/Resources/bin/` and `Contents/Resources/shell-integration/`
@@ -574,9 +576,7 @@ impl GridSyncer {
 
     /// Detect URLs in the grid and store column ranges per row.
     fn detect_urls(&mut self) {
-        static URL_RE: OnceLock<regex::Regex> = OnceLock::new();
-        let re =
-            URL_RE.get_or_init(|| regex::Regex::new(r#"https?://[^\s<>"{}|\\^`\[\]]+"#).unwrap());
+        let re = terminal_url_regex();
 
         let rows = self.grid.cells.len();
         self.url_ranges.resize(rows, Vec::new());
@@ -602,9 +602,13 @@ impl GridSyncer {
     }
 }
 
+pub(crate) fn terminal_url_regex() -> &'static regex::Regex {
+    URL_RE.get_or_init(|| regex::Regex::new(r#"https?://[^\s<>"{}|\\^`\[\]]+"#).unwrap())
+}
+
 /// Trim unbalanced trailing parentheses and punctuation from a URL match.
 /// Preserves balanced parens (e.g. Wikipedia URLs like `https://en.wikipedia.org/wiki/Foo_(bar)`).
-fn trim_url_trailing(url: &str) -> &str {
+pub(crate) fn trim_url_trailing(url: &str) -> &str {
     let mut end = url.len();
     loop {
         if end == 0 {

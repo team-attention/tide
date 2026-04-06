@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::sync::OnceLock;
 
 use crate::tide_core::{TerminalBackend, Vec2};
 
@@ -183,12 +182,10 @@ impl App {
         }
         let logical_col = logical_start + col;
 
-        static URL_RE: OnceLock<regex::Regex> = OnceLock::new();
-        let re =
-            URL_RE.get_or_init(|| regex::Regex::new(r#"https?://[^\s<>"{}|\\^`\[\]]+"#).unwrap());
+        let re = crate::tide_terminal::terminal_url_regex();
 
         for matched in re.find_iter(&logical_text) {
-            let url = trim_url_trailing(matched.as_str());
+            let url = crate::tide_terminal::trim_url_trailing(matched.as_str());
             let start_col = logical_text[..matched.start()].chars().count();
             let end_col = start_col + url.chars().count();
             if logical_col >= start_col && logical_col < end_col {
@@ -300,29 +297,4 @@ impl App {
         }
         None
     }
-}
-
-fn trim_url_trailing(url: &str) -> &str {
-    let mut end = url.len();
-    loop {
-        if end == 0 {
-            break;
-        }
-        let last = url.as_bytes()[end - 1];
-        if matches!(last, b'.' | b',' | b';') {
-            end -= 1;
-            continue;
-        }
-        if last == b')' {
-            let slice = &url[..end];
-            let opens = slice.bytes().filter(|&b| b == b'(').count();
-            let closes = slice.bytes().filter(|&b| b == b')').count();
-            if closes > opens {
-                end -= 1;
-                continue;
-            }
-        }
-        break;
-    }
-    &url[..end]
 }

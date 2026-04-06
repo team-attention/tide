@@ -718,9 +718,6 @@ fn render_tab_bar_impl(
                 w += badge.text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0 + badge_gap;
             }
         }
-        if tid == active_pane {
-            w = w.clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH);
-        }
         w = w.clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH);
         tabs_info.push((tid, label, w));
     }
