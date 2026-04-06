@@ -3,6 +3,8 @@
 //! Uses raw `objc2` message sends to interact with WebKit classes,
 //! avoiding a direct WebKit crate dependency.
 
+use crate::tide_core::PaneId;
+
 use std::sync::Mutex;
 
 use objc2::rc::Retained;
@@ -179,6 +181,11 @@ declare_class!(
 // ---------------------------------------------------------------------------
 // WKNavigationDelegate — handles download responses
 // ---------------------------------------------------------------------------
+
+struct TideNavigationDelegateIvars {
+    pane_id: PaneId,
+}
+
 declare_class!(
     struct TideNavigationDelegate;
 
@@ -189,13 +196,18 @@ declare_class!(
     }
 
     impl DeclaredClass for TideNavigationDelegate {
-        type Ivars = ();
+        type Ivars = TideNavigationDelegateIvars;
     }
 
     unsafe impl TideNavigationDelegate {
-        #[method_id(init)]
-        fn init(this: objc2::rc::Allocated<Self>) -> Option<Retained<Self>> {
-            let this = this.set_ivars(());
+        #[method_id(initWithPaneId:)]
+        fn init_with_pane_id(
+            this: objc2::rc::Allocated<Self>,
+            pane_id: usize,
+        ) -> Option<Retained<Self>> {
+            let this = this.set_ivars(TideNavigationDelegateIvars {
+                pane_id: pane_id as PaneId,
+            });
             unsafe { msg_send_id![super(this), init] }
         }
 
@@ -268,6 +280,7 @@ declare_class!(
                                     std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
                                 queue_bridge_message(serde_json::json!({
                                     "kind": "browser-external-handoff",
+                                    "pane_id": self.ivars().pane_id,
                                     "reason": "download",
                                     "url": url_str,
                                 })
@@ -374,13 +387,14 @@ pub struct WebViewHandle {
 /// Context passed through `dispatch_sync_f` to create a WKWebView on the main thread.
 struct WebViewCreateCtx {
     parent_view: *mut std::ffi::c_void,
+    pane_id: PaneId,
     result: Option<WebViewHandle>,
 }
 
 /// Trampoline called on the main thread by `dispatch_sync_f`.
 unsafe extern "C" fn create_webview_on_main_thread(ctx: *mut std::ffi::c_void) {
     let ctx = &mut *(ctx as *mut WebViewCreateCtx);
-    ctx.result = WebViewHandle::new_on_main_thread(ctx.parent_view);
+    ctx.result = WebViewHandle::new_on_main_thread(ctx.parent_view, ctx.pane_id);
 }
 
 /// Context passed through `dispatch_sync_f` to navigate on the main thread.
@@ -516,14 +530,15 @@ impl WebViewHandle {
     ///
     /// # Safety
     /// `parent_view` must be a valid pointer to an NSView that outlives this handle.
-    pub unsafe fn new(parent_view: *mut std::ffi::c_void) -> Option<Self> {
+    pub unsafe fn new(parent_view: *mut std::ffi::c_void, pane_id: PaneId) -> Option<Self> {
         if MainThreadMarker::new().is_some() {
             // Already on the main thread — create directly.
-            return Self::new_on_main_thread(parent_view);
+            return Self::new_on_main_thread(parent_view, pane_id);
         }
 
         let mut ctx = WebViewCreateCtx {
             parent_view,
+            pane_id,
             result: None,
         };
         dispatch_sync_f(
@@ -538,7 +553,10 @@ impl WebViewHandle {
     ///
     /// # Safety
     /// `parent_view` must be a valid pointer to an NSView.
-    unsafe fn new_on_main_thread(parent_view: *mut std::ffi::c_void) -> Option<Self> {
+    unsafe fn new_on_main_thread(
+        parent_view: *mut std::ffi::c_void,
+        pane_id: PaneId,
+    ) -> Option<Self> {
         let parent: &AnyObject = &*(parent_view as *const AnyObject);
 
         // WKWebViewConfiguration
@@ -592,8 +610,9 @@ impl WebViewHandle {
         let _: () = msg_send![&webview, setUIDelegate: &*delegate];
 
         // Set up navigation delegate for download handling
-        let nav_delegate: Retained<TideNavigationDelegate> =
-            unsafe { msg_send_id![mtm.alloc::<TideNavigationDelegate>(), init] };
+        let nav_delegate: Retained<TideNavigationDelegate> = unsafe {
+            msg_send_id![mtm.alloc::<TideNavigationDelegate>(), initWithPaneId: pane_id as usize]
+        };
         let _: () = msg_send![&webview, setNavigationDelegate: &*nav_delegate];
 
         // Set up WKScriptMessageHandler for window.tide.send() bridge (BR-29)

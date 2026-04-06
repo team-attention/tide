@@ -18,7 +18,9 @@ Browser Pane click behavior is still split. `crates/tide-app/src/adapter/inward/
 
 `crates/tide-app/src/domain/pane/browser.rs` updates the committed Browser URL in `sync_webview_state()`, but when `url_input_focused` is true it intentionally does not update `url_input`. That means Browser Pane content can navigate while the visible Browser URL bar remains stale, even though the committed Browser URL already changed.
 
-`crates/tide-app/src/adapter/outward/platform_adapter/macos/webview.rs` treats non-renderable navigation responses as an external handoff: it opens the response URL with `NSWorkspace` and cancels Browser Pane navigation instead of managing a Browser Pane download flow. A repository search of `crates/tide-app/src` also shows no references to `AuthenticationServices`, `ASAuthorizationWebBrowserPublicKeyCredentialManager`, `passkey`, or `WKDownloadDelegate`, so Tide does not currently implement in-app passkey or download-manager integration.
+`crates/tide-app/src/adapter/outward/platform_adapter/macos/webview.rs` treats non-renderable navigation responses as an external handoff: it opens the response URL with `NSWorkspace` and cancels Browser Pane navigation instead of managing a Browser Pane download flow. But the current bridge message still does not identify the originating `PaneId`, and `crates/tide-app/src/adapter/inward/event_loop_adapter/mod.rs` applies that handoff to `self.focus.focused`, so a background Browser Pane can currently mutate the wrong Browser Pane state in a multi-Pane Workspace. A repository search of `crates/tide-app/src` also shows no references to `AuthenticationServices`, `ASAuthorizationWebBrowserPublicKeyCredentialManager`, `passkey`, or `WKDownloadDelegate`, so Tide does not currently implement in-app passkey or download-manager integration.
+
+`crates/tide-app/src/domain/pane/browser.rs` also moved Browser URL-sync logic into `sync_committed_url_from_navigation()`, but the Browser Pane `generation` bump is still split across helper methods instead of being centralized around the polled Browser Pane state transition. That means Browser Pane dirty tracking is harder to reason about and can drift when loading or back/forward state changes without a URL change.
 
 The Browser Pane target is also broader than a plain embedded surface. External `cmux` documentation describes browser surfaces with navigation, `focus-webview`, history/session handling, DOM interaction, and browser automation. Tide does not need to match that full capability set in this pass, but it does need Browser Pane interaction and fallback rules that feel like a first-class browser context instead of a passive `WKWebView`.
 
@@ -34,7 +36,8 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 6. Any `ModalStack` popup must hide the native Browser Pane view so Tide-rendered overlays stay visually above Browser Pane content.
 7. Browser Pane loading feedback remains visible even when the native `WKWebView` is hidden behind overlays or is waiting for its first usable frame.
 8. Browser Pane keeps separate committed-URL and editable-URL state, but the visible Browser URL bar must stay truthful: content-driven navigation updates the committed Browser URL immediately, and the visible Browser URL bar updates whenever the user is not actively editing a distinct Browser URL draft.
-9. Unsupported Browser Pane capability gaps are explicit in this pass. Non-renderable responses use an explicit external handoff path, and passkey or AuthenticationServices-sensitive flows are treated as Browser Pane V2 capability work rather than silently implied Browser Pane guarantees.
+9. Unsupported Browser Pane capability gaps are explicit in this pass. Non-renderable responses use an explicit external handoff path routed to the originating Browser Pane by `PaneId`, and passkey or AuthenticationServices-sensitive flows are treated as Browser Pane V2 capability work rather than silently implied Browser Pane guarantees.
+10. Browser Pane dirty tracking stays centralized: `sync_webview_state()` owns the `generation` bump for Browser Pane state it polls from the native `WKWebView`, including committed-URL, loading, and navigation-availability changes.
 
 ### Approach
 
@@ -166,6 +169,7 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
   - BR-23: Browser Pane content navigation updates the committed Browser URL even when Browser URL-bar focus changed recently
   - BR-24: Browser Pane content navigation updates the visible Browser URL bar when the user is not actively editing a distinct Browser URL draft
   - BR-25: Browser Pane chrome actions and external handoff use the committed Browser URL after content-driven navigation unless the user is actively editing a distinct Browser URL draft
+  - BR-26: A Browser Pane state change reported through `sync_webview_state()` bumps `generation` exactly once, including loading and back/forward availability changes that occur alongside or without a URL change
 
 ### UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly
 
@@ -178,14 +182,15 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
   3. Tide preserves Browser Pane FocusArea, loading, and committed Browser URL state coherently after the handoff
 - **Postcondition**: Unsupported Browser Pane flows fail predictably and visibly instead of leaving the Browser Pane in an ambiguous state
 - **Business Rules**:
-  - BR-26: Browser Pane non-renderable responses use an explicit external handoff path and must not leave Browser Pane loading feedback stuck on
-  - BR-27: Browser Pane does not promise in-app passkey or AuthenticationServices behavior in this pass; unsupported auth flows rely on explicit external handoff
-  - BR-28: External handoff preserves coherent Browser Pane chrome state, FocusArea, and committed Browser URL state after the handoff
+  - BR-27: Browser Pane non-renderable responses use an explicit external handoff path and must not leave Browser Pane loading feedback stuck on
+  - BR-28: Download-triggered external handoff carries the originating `PaneId` and must update that Browser Pane even when another Pane is focused
+  - BR-29: Browser Pane does not promise in-app passkey or AuthenticationServices behavior in this pass; unsupported auth flows rely on explicit external handoff
+  - BR-30: External handoff preserves coherent Browser Pane chrome state, FocusArea, and committed Browser URL state after the handoff
 
 ## Invariants
 
 1. **Search precedence**: `search_focus` remains the highest-priority Browser Pane text target.
-2. **Manual external handoff**: Browser Pane system-browser handoff only occurs from an explicit Browser Pane chrome action in this pass.
+2. **Explicit external handoff**: Browser Pane system-browser handoff only occurs from an explicit Browser Pane chrome action or an explicit unsupported-response fallback path in this pass.
 3. **Responder consistency**: Browser Pane native first responder must not activate while the Browser URL bar or search bar is the active Browser Pane text target.
 4. **Focus-area consistency**: Browser Pane clicks still preserve the existing FocusArea rules for Stage versus Dock.
 5. **PaneId sync**: Browser Pane UX changes preserve the PaneId sync invariant between `SplitLayout` and `App.panes`.
@@ -224,9 +229,11 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 | UC-6: SynchronizeCommittedBrowserUrlAndVisibleBrowserUrlBar | BR-23 | `browser_pane_ux` | `content_navigation_updates_the_committed_browser_url` |
 | UC-6: SynchronizeCommittedBrowserUrlAndVisibleBrowserUrlBar | BR-24 | `browser_pane_ux` | `content_navigation_updates_visible_browser_url_when_not_editing_a_distinct_draft` |
 | UC-6: SynchronizeCommittedBrowserUrlAndVisibleBrowserUrlBar | BR-25 | `browser_pane_ux` | `browser_chrome_actions_use_the_committed_browser_url_after_content_navigation` |
-| UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-26 | `browser_pane_fallbacks` | `external_handoff_requires_some_browser_url_state` |
-| UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-27 | `browser_pane_fallbacks` | `external_handoff_prefers_url_bar_draft_when_browser_is_editing` |
-| UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-28 | `browser_pane_fallbacks` | `external_handoff_prefers_committed_browser_url_when_browser_is_not_editing` |
+| UC-6: SynchronizeCommittedBrowserUrlAndVisibleBrowserUrlBar | BR-26 | `browser_pane_ux` | `polled_browser_state_changes_bump_generation_once` |
+| UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-27 | `browser_pane_fallbacks` | `external_handoff_requires_some_browser_url_state` |
+| UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-28 | `browser_pane_fallbacks` | `download_external_handoff_updates_originating_background_browser_pane` |
+| UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-29 | `browser_pane_fallbacks` | `external_handoff_prefers_url_bar_draft_when_browser_is_editing` |
+| UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-30 | `browser_pane_fallbacks` | `external_handoff_prefers_committed_browser_url_when_browser_is_not_editing` |
 
 ## Location
 
