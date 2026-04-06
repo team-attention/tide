@@ -27,6 +27,8 @@ pub struct SplitLayout {
     next_id: PaneId,
     /// The currently active drag: path to the split node being dragged.
     pub(crate) active_drag: Option<Vec<bool>>,
+    /// The position where the drag started (for deferred border selection).
+    drag_start: Option<Vec2>,
     /// The last window size used for drag computation (needed to reconstruct rects during drag).
     pub last_window_size: Option<Size>,
 }
@@ -37,6 +39,7 @@ impl SplitLayout {
             root: None,
             next_id: 1,
             active_drag: None,
+            drag_start: None,
             last_window_size: None,
         }
     }
@@ -48,6 +51,7 @@ impl SplitLayout {
             root: Some(Node::Leaf(id)),
             next_id: 2,
             active_drag: None,
+            drag_start: None,
             last_window_size: None,
         };
         (layout, id)
@@ -60,6 +64,8 @@ impl SplitLayout {
     }
 
     /// Begin a drag if the position is near a border. Called externally before drag_border.
+    /// Does NOT lock in the border yet — defers selection to `drag_border` where
+    /// the drag direction can disambiguate T-junction overlaps.
     pub fn begin_drag(&mut self, position: Vec2, window_size: Size) {
         if let Some(ref root) = self.root {
             let window_rect = Rect::new(0.0, 0.0, window_size.width, window_size.height);
@@ -67,23 +73,25 @@ impl SplitLayout {
             let mut path = Vec::new();
             root.find_border_at(window_rect, position, &mut best, &mut path);
 
-            if let Some((dist, border_path)) = best {
+            if let Some((dist, _)) = best {
                 if dist <= BORDER_HIT_THRESHOLD {
-                    self.active_drag = Some(border_path);
+                    // Don't lock in border yet — defer to drag_border for direction-aware selection
+                    self.drag_start = Some(position);
                     self.last_window_size = Some(window_size);
                 }
             }
         }
     }
 
-    /// Returns true if a border drag is in progress.
+    /// Returns true if a border drag is in progress (either deferred or locked in).
     pub fn is_dragging(&self) -> bool {
-        self.active_drag.is_some()
+        self.active_drag.is_some() || self.drag_start.is_some()
     }
 
     /// End the current drag.
     pub fn end_drag(&mut self) {
         self.active_drag = None;
+        self.drag_start = None;
     }
 
     /// Get all pane IDs in the layout.
@@ -409,6 +417,7 @@ impl SplitLayout {
             root: self.root.clone(),
             next_id: self.next_id,
             active_drag: None,
+            drag_start: None,
             last_window_size: None,
         };
 
@@ -685,6 +694,7 @@ impl SplitLayout {
             root: Some(Self::snapshot_to_node(&snap)),
             next_id: max_id + 1,
             active_drag: None,
+            drag_start: None,
             last_window_size: None,
         }
     }
@@ -749,12 +759,29 @@ impl LayoutEngine for SplitLayout {
         let drag_path = match self.active_drag {
             Some(ref p) => p.clone(),
             None => {
-                // Auto-detect: find the closest border to the position and drag it.
-                if let (Some(ref root), Some(ws)) = (&self.root, self.last_window_size) {
+                // Deferred border selection: use drag direction to disambiguate at T-junctions
+                if let (Some(start), Some(ref root), Some(ws)) = (self.drag_start, &self.root, self.last_window_size) {
                     let window_rect = Rect::new(0.0, 0.0, ws.width, ws.height);
+
+                    // Determine preferred direction from drag delta
+                    let dx = (position.x - start.x).abs();
+                    let dy = (position.y - start.y).abs();
+                    // Only apply preference if user has moved enough to show intent (>= 2px)
+                    let preferred = if dx >= 2.0 || dy >= 2.0 {
+                        if dx >= dy {
+                            Some(SplitDirection::Horizontal) // horizontal movement → want H split border
+                        } else {
+                            Some(SplitDirection::Vertical) // vertical movement → want V split border
+                        }
+                    } else {
+                        None // too little movement, no preference yet
+                    };
+
                     let mut best: Option<(f32, Vec<bool>)> = None;
                     let mut path = Vec::new();
-                    root.find_border_at(window_rect, position, &mut best, &mut path);
+                    // Use the start position for border proximity — it's where the user clicked
+                    // (at the T-junction). The current position may have moved far away.
+                    root.find_border_at_preferred(window_rect, start, &mut best, &mut path, preferred);
 
                     if let Some((_dist, border_path)) = best {
                         self.active_drag = Some(border_path.clone());

@@ -303,7 +303,7 @@ mod tests {
         let pane2 = layout.split(pane1, SplitDirection::Horizontal);
 
         layout.begin_drag(Vec2::new(400.0, 300.0), WINDOW);
-        assert!(layout.active_drag.is_some());
+        assert!(layout.drag_start.is_some());
 
         layout.drag_border(Vec2::new(600.0, 300.0));
         layout.end_drag();
@@ -325,7 +325,7 @@ mod tests {
         let pane2 = layout.split(pane1, SplitDirection::Vertical);
 
         layout.begin_drag(Vec2::new(400.0, 300.0), WINDOW);
-        assert!(layout.active_drag.is_some());
+        assert!(layout.drag_start.is_some());
 
         layout.drag_border(Vec2::new(400.0, 150.0));
         layout.end_drag();
@@ -387,6 +387,7 @@ mod tests {
 
         layout.begin_drag(Vec2::new(100.0, 300.0), WINDOW);
         assert!(layout.active_drag.is_none());
+        assert!(layout.drag_start.is_none());
     }
 
     // ──────────────────────────────────────────
@@ -400,7 +401,7 @@ mod tests {
         let pane3 = layout.split(pane2, SplitDirection::Vertical);
 
         layout.begin_drag(Vec2::new(600.0, 300.0), WINDOW);
-        assert!(layout.active_drag.is_some());
+        assert!(layout.drag_start.is_some());
 
         layout.drag_border(Vec2::new(600.0, 450.0));
         layout.end_drag();
@@ -415,6 +416,148 @@ mod tests {
 
         let r3 = rects.iter().find(|(id, _)| *id == pane3).unwrap();
         assert!(approx_eq(r3.1.height, 150.0), "got {}", r3.1.height);
+
+        assert_no_gaps_no_overlaps(&rects, WINDOW);
+    }
+
+    // ──────────────────────────────────────────
+    // T-junction drag disambiguation
+    // ──────────────────────────────────────────
+
+    #[test]
+    fn t_junction_horizontal_drag_selects_horizontal_border() {
+        // Layout: Root H-split at x=400, right child V-split at y=300
+        let (mut layout, pane1) = SplitLayout::with_initial_pane();
+        let pane2 = layout.split(pane1, SplitDirection::Horizontal); // left/right
+        let pane3 = layout.split(pane2, SplitDirection::Vertical); // top-right/bottom-right
+
+        // Click at T-junction (400, 300), then drag right to (450, 300)
+        layout.begin_drag(Vec2::new(400.0, 300.0), WINDOW);
+        layout.drag_border(Vec2::new(450.0, 300.0)); // horizontal movement
+        layout.end_drag();
+
+        let rects = layout.compute(WINDOW, &[], None);
+        let r1 = rects.iter().find(|(id, _)| *id == pane1).unwrap();
+
+        // The horizontal split should have moved: pane1 width should be ~450 (was 400)
+        assert!(
+            approx_eq(r1.1.width, 450.0),
+            "Expected left pane width ~450 after H-drag, got {}",
+            r1.1.width
+        );
+    }
+
+    #[test]
+    fn t_junction_vertical_drag_selects_vertical_border() {
+        // Layout: Root H-split at x=400, right child V-split at y=300
+        let (mut layout, pane1) = SplitLayout::with_initial_pane();
+        let pane2 = layout.split(pane1, SplitDirection::Horizontal); // left/right
+        let _pane3 = layout.split(pane2, SplitDirection::Vertical); // top-right/bottom-right
+
+        // Click at T-junction (400, 300), then drag down to (400, 450)
+        layout.begin_drag(Vec2::new(400.0, 300.0), WINDOW);
+        layout.drag_border(Vec2::new(400.0, 450.0)); // vertical movement
+        layout.end_drag();
+
+        let rects = layout.compute(WINDOW, &[], None);
+        let r2 = rects.iter().find(|(id, _)| *id == pane2).unwrap();
+
+        // The vertical split should have moved: pane2 height should be ~450 (was 300)
+        assert!(
+            approx_eq(r2.1.height, 450.0),
+            "Expected top-right pane height ~450 after V-drag, got {}",
+            r2.1.height
+        );
+
+        // And the horizontal split should NOT have moved: pane1 should still be 400 wide
+        let r1 = rects.iter().find(|(id, _)| *id == pane1).unwrap();
+        assert!(
+            approx_eq(r1.1.width, 400.0),
+            "H-split should not have moved, got left width {}",
+            r1.1.width
+        );
+    }
+
+    #[test]
+    fn drag_at_t_junction_horizontal_movement_selects_horizontal_split() {
+        // Layout:
+        //   Split(Horizontal, 0.5) [root — border at x=400]
+        //     ├── Pane A (left half: 0,0,400,600)
+        //     └── Split(Vertical, 0.5) [border at y=300, within right half only]
+        //         ├── Pane B (top-right: 400,0,400,300)
+        //         └── Pane C (bottom-right: 400,300,400,300)
+        //
+        // T-junction at ~(400, 300). Drag horizontally to select the H-split border.
+        let (mut layout, pane_a) = SplitLayout::with_initial_pane();
+        let pane_b = layout.split(pane_a, SplitDirection::Horizontal);
+        let pane_c = layout.split(pane_b, SplitDirection::Vertical);
+
+        layout.begin_drag(Vec2::new(400.0, 300.0), WINDOW);
+        layout.drag_border(Vec2::new(500.0, 300.0)); // dx=100, dy=0 → horizontal
+        layout.end_drag();
+
+        let rects = layout.compute(WINDOW, &[], None);
+
+        // Horizontal split moved: pane A should now be ~500px wide
+        let ra = rects.iter().find(|(id, _)| *id == pane_a).unwrap();
+        assert!(
+            approx_eq(ra.1.width, 500.0),
+            "Expected left pane width ~500 after H-drag, got {}",
+            ra.1.width
+        );
+
+        // Vertical split unchanged: panes B and C should still be ~300 each
+        let rb = rects.iter().find(|(id, _)| *id == pane_b).unwrap();
+        assert!(
+            approx_eq(rb.1.height, 300.0),
+            "Expected top-right pane height ~300 (unchanged), got {}",
+            rb.1.height
+        );
+        let rc = rects.iter().find(|(id, _)| *id == pane_c).unwrap();
+        assert!(
+            approx_eq(rc.1.height, 300.0),
+            "Expected bottom-right pane height ~300 (unchanged), got {}",
+            rc.1.height
+        );
+
+        assert_no_gaps_no_overlaps(&rects, WINDOW);
+    }
+
+    #[test]
+    fn drag_at_t_junction_vertical_movement_selects_vertical_split() {
+        // Same T-junction layout as above.
+        // Begin drag slightly into the right half (401, 300), drag vertically upward.
+        let (mut layout, pane_a) = SplitLayout::with_initial_pane();
+        let pane_b = layout.split(pane_a, SplitDirection::Horizontal);
+        let pane_c = layout.split(pane_b, SplitDirection::Vertical);
+
+        layout.begin_drag(Vec2::new(401.0, 300.0), WINDOW);
+        layout.drag_border(Vec2::new(401.0, 200.0)); // dx=0, dy=100 → vertical
+        layout.end_drag();
+
+        let rects = layout.compute(WINDOW, &[], None);
+
+        // Vertical split moved: pane B should be shorter (~200px), pane C taller (~400px)
+        let rb = rects.iter().find(|(id, _)| *id == pane_b).unwrap();
+        assert!(
+            approx_eq(rb.1.height, 200.0),
+            "Expected top-right pane height ~200 after V-drag, got {}",
+            rb.1.height
+        );
+        let rc = rects.iter().find(|(id, _)| *id == pane_c).unwrap();
+        assert!(
+            approx_eq(rc.1.height, 400.0),
+            "Expected bottom-right pane height ~400 after V-drag, got {}",
+            rc.1.height
+        );
+
+        // Horizontal split unchanged: pane A width should still be ~400
+        let ra = rects.iter().find(|(id, _)| *id == pane_a).unwrap();
+        assert!(
+            approx_eq(ra.1.width, 400.0),
+            "H-split should not have moved, got left width {}",
+            ra.1.width
+        );
 
         assert_no_gaps_no_overlaps(&rects, WINDOW);
     }
@@ -495,7 +638,8 @@ mod tests {
     }
 
     #[test]
-    fn test_drag_border_without_begin_uses_autodetect() {
+    fn test_drag_border_without_begin_requires_drag_start() {
+        // drag_border without begin_drag (no drag_start) should be a no-op
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
         let pane2 = layout.split(pane1, SplitDirection::Horizontal);
 
@@ -506,7 +650,8 @@ mod tests {
 
         let rects = layout.compute(WINDOW, &[pane1, pane2], None);
         let left = rects.iter().find(|(id, _)| *id == pane1).unwrap();
-        assert!(approx_eq(left.1.width, 600.0), "Expected ~600, got {}", left.1.width);
+        // Without begin_drag, drag_start is None, so drag_border is a no-op — ratio stays at 0.5
+        assert!(approx_eq(left.1.width, 400.0), "Expected ~400 (unchanged), got {}", left.1.width);
     }
 
     // ──────────────────────────────────────────
@@ -851,6 +996,7 @@ mod tests {
             root: Some(root),
             next_id: 5,
             active_drag: None,
+            drag_start: None,
             last_window_size: None,
         }
     }

@@ -349,6 +349,82 @@ impl Node {
         }
     }
 
+    /// Like [`find_border_at`], but with an optional preferred [`SplitDirection`].
+    ///
+    /// When `preferred` is `Some(dir)`, borders whose direction does NOT match
+    /// `dir` receive an additive distance penalty (`DIRECTION_PENALTY`). This
+    /// makes the algorithm favour the border that aligns with the user's drag
+    /// direction at T-junctions where both horizontal and vertical borders are
+    /// nearly equidistant.
+    ///
+    /// The penalty-adjusted distance (`effective_dist`) is stored in `best` so
+    /// that subsequent comparisons remain consistent.
+    pub(crate) fn find_border_at_preferred(
+        &self,
+        rect: Rect,
+        position: Vec2,
+        best: &mut Option<(f32, Vec<bool>)>,
+        path: &mut Vec<bool>,
+        preferred: Option<SplitDirection>,
+    ) {
+        const DIRECTION_PENALTY: f32 = 4.0;
+
+        if let Node::Split {
+            direction,
+            ratio,
+            left,
+            right,
+        } = self
+        {
+            let border_pos = match direction {
+                SplitDirection::Horizontal => rect.x + rect.width * ratio,
+                SplitDirection::Vertical => rect.y + rect.height * ratio,
+            };
+
+            // Compute distance from position to border line
+            let dist = match direction {
+                SplitDirection::Horizontal => (position.x - border_pos).abs(),
+                SplitDirection::Vertical => (position.y - border_pos).abs(),
+            };
+
+            // Apply penalty when direction does not match the preferred one
+            let effective_dist = match preferred {
+                Some(pref) if *direction != pref => dist + DIRECTION_PENALTY,
+                _ => dist,
+            };
+
+            // Check that the position is within the perpendicular extent of the border
+            let in_range = match direction {
+                SplitDirection::Horizontal => {
+                    position.y >= rect.y && position.y <= rect.y + rect.height
+                }
+                SplitDirection::Vertical => {
+                    position.x >= rect.x && position.x <= rect.x + rect.width
+                }
+            };
+
+            if in_range {
+                let dominated = match best {
+                    Some((best_dist, _)) => effective_dist < *best_dist,
+                    None => true,
+                };
+                if dominated {
+                    *best = Some((effective_dist, path.clone()));
+                }
+            }
+
+            let (left_rect, right_rect) = split_rect(rect, *direction, *ratio);
+
+            path.push(false); // left
+            left.find_border_at_preferred(left_rect, position, best, path, preferred);
+            path.pop();
+
+            path.push(true); // right
+            right.find_border_at_preferred(right_rect, position, best, path, preferred);
+            path.pop();
+        }
+    }
+
     /// Apply a drag operation: follow the path to find the split node, compute
     /// the new ratio based on position and the rect at that level.
     pub(crate) fn apply_drag(&mut self, rect: Rect, path: &[bool], position: Vec2, min_ratio: f32) {
