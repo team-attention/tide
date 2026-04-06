@@ -64,7 +64,7 @@ fn app_with_terminal_and_stage_editor() -> (App, u64, u64) {
 /// dock_open and associated_terminal to simulate the effect.
 fn add_to_dock(app: &mut App, terminal_id: u64, pane_id: u64) {
     app.focus.focused = Some(terminal_id);
-    app.add_pane_to_dock(pane_id);
+    app.add_pane_to_dock(pane_id, None);
     // If the "terminal" is actually a Launcher (test fixture), the dock_layout
     // manipulation in add_pane_to_dock is a no-op. Manually set state.
     if matches!(app.panes.get(&terminal_id), Some(PaneKind::Launcher(_))) {

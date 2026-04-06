@@ -50,7 +50,7 @@ fn app_with_two_stage_panes() -> (App, u64, u64) {
 /// For Launcher panes (test fixtures without real PTY), manually set dock state.
 fn add_to_dock(app: &mut App, terminal_id: u64, pane_id: u64) {
     app.focus.focused = Some(terminal_id);
-    app.add_pane_to_dock(pane_id);
+    app.add_pane_to_dock(pane_id, None);
     if matches!(app.panes.get(&terminal_id), Some(PaneKind::Launcher(_))) {
         app.dock.dock_open = true;
         app.assoc.associated_terminal.insert(pane_id, terminal_id);

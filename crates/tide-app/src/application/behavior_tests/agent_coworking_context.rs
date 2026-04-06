@@ -54,7 +54,7 @@ fn add_dock_editor(app: &mut App, terminal_id: u64, lines: &[&str]) -> u64 {
     app.focus.focused = Some(terminal_id);
     app.focus.stage_focused = Some(terminal_id);
     app.focus.focus_area = FocusArea::Stage;
-    app.add_pane_to_dock(editor_id);
+    app.add_pane_to_dock(editor_id, None);
     editor_id
 }
 
@@ -93,7 +93,7 @@ fn add_dock_browser(app: &mut App, terminal_id: u64) -> u64 {
     app.focus.focused = Some(terminal_id);
     app.focus.stage_focused = Some(terminal_id);
     app.focus.focus_area = FocusArea::Stage;
-    app.add_pane_to_dock(browser_id);
+    app.add_pane_to_dock(browser_id, None);
     browser_id
 }
 
