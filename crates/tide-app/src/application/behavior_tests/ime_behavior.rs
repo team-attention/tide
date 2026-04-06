@@ -388,3 +388,47 @@ fn context_comment_composer_ime_cursor_area_tracks_composer_caret() {
     assert_eq!(rect.x, expected_x);
     assert_eq!(rect.y, expected_y);
 }
+
+#[test]
+fn search_bar_long_hangul_input_keeps_text_and_caret_aligned() {
+    // UC-4 BR-15: Long Korean Search Bar composition keeps committed text, preedit, caret, and IME cursor area aligned.
+    let (mut app, id) = app_with_editor();
+    app.visual_pane_rects
+        .push((id, crate::tide_core::Rect::new(10.0, 20.0, 400.0, 240.0)));
+    app.focus.search_focus = Some(id);
+    app.ime.preedit = "입력".to_string();
+    if let Some(PaneKind::Editor(editor)) = app.panes.get_mut(&id) {
+        let mut search = SearchState::new();
+        search.input = crate::state::InputLine::with_text("한글ab".to_string());
+        editor.search = Some(search);
+    }
+
+    let (target_id, rect) = crate::adapter::inward::event_loop_adapter::overlay_ime_cursor_area(
+        app.focus.focused,
+        app.focus.search_focus,
+        &app.modal,
+        &app.panes,
+        &app.visual_pane_rects,
+        app.logical_size(),
+        app.cell_size(),
+        &app.ime.preedit,
+    )
+    .expect("search bar should provide ime cursor area");
+
+    let pane_rect = app.visual_pane_rects[0].1;
+    let bar_w = crate::theme::SEARCH_BAR_WIDTH.min(pane_rect.width - 16.0);
+    let expected_x = pane_rect.x
+        + pane_rect.width
+        - bar_w
+        - 8.0
+        + 6.0
+        + crate::adapter::outward::view::overlays::search_bar_cursor_advance_cells(
+            "한글ab",
+            "한글ab".len(),
+            &app.ime.preedit,
+        ) as f32
+            * app.cell_size().width;
+
+    assert_eq!(target_id, id);
+    assert_eq!(rect.x, expected_x);
+}

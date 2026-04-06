@@ -3,211 +3,114 @@
 ## Overview
 
 ### As-Is
-When AgentStatus changes (Running/Idle/NeedsInput), the only visual feedback is a colored dot on the pane's tab header. Problems:
-- Users may not see the dot when viewing a different pane (buried tab in stacked mode, different workspace)
-- When Tide is in the background (unfocused window), there is no way to notice the notification at all
-- The urgency difference between NeedsInput and Idle is only conveyed by dot color, which lacks visual distinction
+
+- `AgentStatus` changes already drive a tab-dot indicator and notification routing in `app.rs`.
+- `cli_notify` auto-registers wrapped agents from wrapper hooks, but `handle_terminal_notification()` can also synthesize an `Unknown` agent from raw `tide:` OSC messages.
+- Attention routing currently treats every `Idle` or `NeedsInput` status the same once it exists, regardless of whether the source came from a wrapper-managed lifecycle path.
+- Tide already supports Pane border blink, inactive `Workspace` dots, and background platform notifications, but those channels are not yet restricted to wrapped agents only.
 
 ### To-Be
-When AgentStatus changes, the notification is routed to the appropriate channel based on the user's current context (where they are looking):
 
-| User Context | NeedsInput | Idle |
-|---|---|---|
-| Focused on the pane | None | None |
-| Foreground + different pane focused | Tab dot (orange) + blink + **border blink** | Tab dot (dim green, static) |
-| Different workspace | Workspace sidebar dot + **sidebar blink** | Workspace sidebar dot |
-| Background (window unfocused) | macOS notification + dock bounce | macOS notification only |
+- Only wrapper-managed lifecycle signals may create or update attention for agent status.
+- All wrapped agents, not only one wrapper, participate in the same attention policy.
+- `Running` remains a visible in-progress status but does not trigger attention.
+- Wrapper-managed `NeedsInput` and `Idle` drive `Pane` highlight when the source `Pane` is unfocused inside the active `Workspace`.
+- Wrapper-managed `NeedsInput` and `Idle` also mark an inactive `Workspace` so the `Workspace` tree highlights pending agent attention.
+- Unmanaged OSC-only or synthetic agent states do not trigger Pane or `Workspace` attention.
 
 ### Approach
-1. Add `is_focused: bool` to `WindowState` — tracked via `PlatformEvent::Focused(bool)` events
-2. Add `send_system_notification(title, body)` and `request_user_attention()` methods to `PlatformWindow` trait
-3. Add notification routing policy to `handle_terminal_notification` and `cli_notify` handler: determine user context after status change → select channel
-4. Add blink animation to tab dot: opacity pulse when NeedsInput + unfocused
-5. Show agent notification dot on workspace sidebar items
-6. Add `has_agent_notification: bool` to `WorkspaceExtras` to propagate notification state for inactive workspaces
+
+1. Define wrapper-managed lifecycle signals as the only valid attention source.
+2. Keep the existing attention channels, but gate them on wrapper-managed agent registration.
+3. Normalize the wrapped-agent lifecycle expectations across `claude`, `gemini`, and `codex`.
+4. Add behavior tests for active `Pane`, inactive `Workspace`, and unmanaged-notification cases before changing routing code.
 
 ## Bounded Contexts
-- **platform** (`adapter/outward/platform_adapter/`) — macOS system notifications, dock bounce
-- **gateway** (`domain/state/gateway_status.rs`, `app.rs`) — notification routing policy logic
-- **renderer** (`adapter/outward/view/`) — tab dot blink, workspace sidebar dot
-- **state** (`domain/state/`) — `WindowState.is_focused`, `WorkspaceExtras.has_agent_notification`
+
+| Context | Role |
+|---------|------|
+| `gateway` | Stores agent registration and lifecycle state in `GatewayStatus` |
+| `cli_adapter` | Receives wrapper hook notifications and auto-registers wrapped agents |
+| `terminal` | Receives OSC notifications used by wrappers that cannot inject hooks |
+| `renderer` | Shows tab dots, blink animation, Pane highlight, and `Workspace` attention |
+| `workspace` | Persists inactive-`Workspace` attention state |
+| `platform` | Delivers best-effort background notifications |
 
 ## Use Cases
 
-### UC-1: RouteNotificationByContext
-- **Actor**: App (event loop)
-- **Trigger**: AgentStatus changes to Idle or NeedsInput (via notify CLI or OSC 9)
-- **Precondition**: Status change has been successfully applied
-- **Flow**:
-  1. Check if the changed pane_id is the currently focused pane (`self.focus.focused == Some(pane_id)`)
-  2. If focused → do nothing (user is already looking at it)
-  3. If not focused + pane is in the active workspace:
-     - NeedsInput → start tab dot blink (record `dot_blink_start` timestamp)
-     - Idle → static dot only (existing behavior)
-  4. If pane is in an inactive workspace:
-     - Set `has_agent_notification = true` on that workspace
-  5. If `!window.is_focused` (Tide is in background):
-     - Send macOS system notification
-     - If NeedsInput, additionally bounce dock icon
-- **Postcondition**: Appropriate notification channels activated based on user context
-- **Business Rules**:
-  - BR-1: Running status changes do not trigger notification routing (task start was just triggered by the user)
-  - BR-2: If the pane is focused, all notification channels are skipped
-  - BR-3: Background notifications are sent in addition to foreground notifications (tab dot + system notification simultaneously)
-  - BR-4: System notifications are not sent again for the same pane until the user acknowledges (focuses) it
+### UC-1: RouteWrapperManagedNotificationByContext
 
-### UC-2: TrackWindowFocusState
-- **Actor**: Platform (macOS NSWindow)
-- **Trigger**: `PlatformEvent::Focused(bool)` received
-- **Precondition**: None
+- **Actor**: App
+- **Trigger**: A wrapper-managed agent status changes to `Running`, `Idle`, or `NeedsInput`
+- **Precondition**: The source `Pane` belongs to a registered wrapped agent
 - **Flow**:
-  1. `PlatformEvent::Focused(true)` → `window.is_focused = true`
-  2. `PlatformEvent::Focused(false)` → `window.is_focused = false`
-- **Postcondition**: `WindowState.is_focused` reflects actual window focus state
+  1. Tide updates the wrapped agent status for the source `Pane`
+  2. If status is `Running`, Tide shows in-progress state only
+  3. If status is `Idle` or `NeedsInput` and the source `Pane` is unfocused in the active `Workspace`, Tide highlights that `Pane`
+  4. If status is `Idle` or `NeedsInput` and the source `Pane` lives in an inactive `Workspace`, Tide marks that `Workspace` for attention
+  5. If the window is unfocused, Tide may also forward a best-effort platform notification
+- **Postcondition**: Wrapper-managed attention is visible in the right context
 - **Business Rules**:
-  - BR-1: Initial value is `true` (window is focused at app startup)
+  - BR-1: `Running` does not trigger attention routing
+  - BR-2: A focused source `Pane` skips attention routing because the user is already looking at it
+  - BR-3: Wrapper-managed `Idle` and `NeedsInput` highlight an unfocused source `Pane` in the active `Workspace`
+  - BR-4: Wrapper-managed `Idle` and `NeedsInput` mark an inactive `Workspace` for attention
+  - BR-5: Background platform notifications are best-effort and never replace `Pane` or `Workspace` attention
 
-### UC-3: SendSystemNotification
-- **Actor**: App (invoked by notification routing policy)
-- **Trigger**: Background condition met in UC-1
-- **Precondition**: `!window.is_focused`
-- **Flow**:
-  1. Call `PlatformWindow::send_system_notification(title, body)`
-  2. Send system notification via macOS `UNUserNotificationCenter`
-  3. title: agent name (e.g. "Claude Code"), body: status message
-- **Postcondition**: Banner displayed in macOS Notification Center
-- **Business Rules**:
-  - BR-1: NeedsInput body: "{agent_name} needs your input"
-  - BR-2: Idle body: "{agent_name} finished"
-  - BR-3: Silent fail if notification permission is not granted (must not interfere with agent work)
-  - BR-4: Uses `UNUserNotificationCenter` `requestAuthorization` → `add` pattern
+### UC-2: RejectUnmanagedNotificationAttention
 
-### UC-4: BounceDockIcon
-- **Actor**: App (invoked by notification routing policy)
-- **Trigger**: NeedsInput + background condition met in UC-1
-- **Precondition**: `!window.is_focused`
+- **Actor**: App
+- **Trigger**: A `tide:` status message arrives without wrapper-managed registration
+- **Precondition**: The source `Pane` has no wrapped-agent registration
 - **Flow**:
-  1. Call `PlatformWindow::request_user_attention()`
-  2. Execute macOS `NSApp.requestUserAttention(.informational)`
-- **Postcondition**: Dock icon bounces once
+  1. Tide parses the status message
+  2. Tide declines to synthesize a new attention-driving agent record
+  3. Tide skips `Pane` and `Workspace` attention routing
+- **Postcondition**: Unmanaged notifications do not produce attention noise
 - **Business Rules**:
-  - BR-1: Use `.informational` (single bounce) only, never `.critical` (repeated bounce)
-  - BR-2: Do not bounce for Idle status
+  - BR-6: Raw `tide:` messages without wrapper-managed registration do not create a synthetic attention source
+  - BR-7: Unmanaged notifications do not set inactive-`Workspace` attention
 
-### UC-5: BlinkTabDotAndBorder
-- **Actor**: Renderer (view layer)
-- **Trigger**: chrome_generation change → tab rendering
-- **Precondition**: Pane has an agent with NeedsInput status and the pane is unfocused
-- **Flow**:
-  1. Apply blink effect when rendering NeedsInput dot
-  2. Use `app.interaction.frame_time` (or monotonic clock) to compute opacity
-  3. `opacity = 0.5 + 0.5 * sin(time * frequency)` — smooth pulse
-  4. Additionally, render the pane's border stroke in orange with the same blink opacity
-  5. Request redraw each frame (to sustain the blink animation)
-- **Postcondition**: Orange dot AND pane border pulse smoothly
-- **Business Rules**:
-  - BR-1: Blink period is approximately 1.5 seconds (frequency ≈ 4.2 rad/s)
-  - BR-2: Opacity range: 0.3 ~ 1.0 (never fully disappears)
-  - BR-3: Running and Idle dots do not blink (static)
-  - BR-4: Blink stops when the pane is focused (status cleared to None automatically)
-  - BR-5: Continuous redraw is triggered while blink is active (via timer or request_redraw)
-  - BR-6: Pane border blinks orange only for NeedsInput + unfocused (same condition as dot blink)
-  - BR-7: Border blink uses the same frequency and opacity range as the dot blink
+### UC-3: AcknowledgeWrapperManagedAttention
 
-### UC-6: ShowWorkspaceSidebarDot
-- **Actor**: Renderer (view layer — titlebar.rs)
-- **Trigger**: Workspace sidebar rendering
-- **Precondition**: Inactive workspace has `has_agent_notification == true`
+- **Actor**: User
+- **Trigger**: The user focuses the source `Pane` or switches to the flagged `Workspace`
+- **Precondition**: A wrapped agent has pending `Idle` or `NeedsInput` attention
 - **Flow**:
-  1. Check `WorkspaceExtras.has_agent_notification` when rendering workspace items
-  2. If `true`, render a small dot to the right of the workspace name with blink animation
-  3. Dot color: orange (same as NeedsInput — use highest urgency at workspace level)
-  4. Apply same blink animation as UC-5 (opacity pulse, same frequency)
-- **Postcondition**: User can identify workspaces with pending notifications in the sidebar — blinking draws attention
+  1. Focusing the source `Pane` clears the pending status indicator for that `Pane`
+  2. Switching to an inactive `Workspace` recomputes whether any wrapped agents in that `Workspace` still need attention
+- **Postcondition**: Attention state clears when the user acknowledges it
 - **Business Rules**:
-  - BR-1: Do not show sidebar dot for the active workspace (tab dots are already visible)
-  - BR-2: Clear `has_agent_notification = false` on the switched-to workspace when switching workspaces
-  - BR-3: Set `has_agent_notification` when agent status changes in an inactive workspace
-  - BR-4: Workspace sidebar dot blinks with same frequency as tab dot (≈ 4.2 rad/s)
-
-### UC-8: ShowAgentDotInTabGroup
-- **Actor**: Renderer (view layer — header.rs render_tab_bar_impl)
-- **Trigger**: Tab group rendering (dock tab bar, stage stacked tab bar)
-- **Precondition**: A pane in the tab group has an agent with non-None status
-- **Flow**:
-  1. For each tab in the tab group, check `detected_agents` for agent status
-  2. If status is Some, render a 6px dot before the tab label (same as per-pane header)
-  3. Apply same color and blink rules as UC-5
-- **Postcondition**: Agent status dot visible in tab group tabs, not just per-pane headers
-- **Business Rules**:
-  - BR-1: Dot color and blink rules identical to UC-5 (Running=green, Idle=green dim, NeedsInput=orange+blink)
-  - BR-2: Each tab in the group independently shows its own agent status
-
-### UC-9: RouteNotifyForInactiveWorkspace
-- **Actor**: CLI adapter (cli_notify handler)
-- **Trigger**: `tide notify` command received for a pane in an inactive workspace
-- **Precondition**: Pane exists in one of the cold-stored workspaces
-- **Flow**:
-  1. Check active workspace panes first (existing `has_pane`)
-  2. If not found, search all inactive workspaces for the pane
-  3. If found in an inactive workspace, update the agent status in that workspace's pane data
-  4. Route notification (sets `has_agent_notification` on the workspace)
-- **Postcondition**: Agent notifications are not silently dropped for inactive workspace panes
-- **Business Rules**:
-  - BR-1: Notifications for panes in any workspace must be processed, not just the active workspace
-
-### UC-7: ClearNotificationOnAcknowledge
-- **Actor**: App (focus_nav_service)
-- **Trigger**: User focuses the pane
-- **Precondition**: Pane has an agent with NeedsInput or Idle status
-- **Flow**:
-  1. `agent.status = None` (existing behavior — already implemented)
-  2. If the pane came from an inactive workspace: clear `has_agent_notification = false` if no other panes in that workspace have pending notifications
-  3. System notifications are managed by the OS (dismissed by user or auto-timeout)
-- **Postcondition**: Tab dot/blink cleared, sidebar dot conditionally cleared
-- **Business Rules**:
-  - BR-1: Preserve existing focus-clears-status logic
-  - BR-2: `has_agent_notification` is determined by checking all pane agent statuses within the workspace
+  - BR-8: Existing focus-clears-status behavior remains intact for wrapped agents
+  - BR-9: `Workspace` attention clears only when no wrapped agents in that `Workspace` still have pending `Idle` or `NeedsInput`
 
 ## Invariants
-1. `WindowState.is_focused` is only modified by `PlatformEvent::Focused` events
-2. System notification failure must not affect app operation (best-effort)
-3. Blink animation is active only for the NeedsInput + unfocused combination
-4. Inactive workspace `has_agent_notification` is kept consistent with actual agent statuses of panes within that workspace
+
+1. Only wrapper-managed lifecycle signals may trigger `Pane` or `Workspace` attention.
+2. `Running` remains visible as status but never causes attention routing.
+3. Inactive-`Workspace` attention reflects wrapped-agent statuses only.
+4. Best-effort platform notifications must not affect the internal attention state machine.
 
 ## Tests
 
 | UC | BR | Test function |
 |----|-----|---------------|
-| UC-1 | BR-1 | `running_status_does_not_trigger_notification_routing()` |
-| UC-1 | BR-2 | `focused_pane_skips_all_notification_channels()` |
-| UC-1 | BR-3 | `background_notification_includes_foreground_dot()` |
-| UC-1 | BR-4 | `duplicate_system_notification_suppressed_until_acknowledged()` |
-| UC-2 | BR-1 | `window_focus_state_tracks_platform_event()` |
-| UC-5 | BR-1,2 | `needs_input_dot_blinks_when_unfocused()` |
-| UC-5 | BR-3 | `idle_dot_does_not_blink()` |
-| UC-5 | BR-6,7 | `needs_input_border_blinks_orange_when_unfocused()` |
-| UC-6 | BR-1 | `active_workspace_has_no_sidebar_dot()` |
-| UC-6 | BR-2 | `workspace_switch_clears_notification_dot()` |
-| UC-6 | BR-3 | `inactive_workspace_agent_status_sets_notification_dot()` |
-| UC-6 | BR-4 | `workspace_sidebar_dot_blinks_for_notification()` |
-| UC-7 | BR-1 | `focusing_pane_clears_agent_status()` (existing test) |
-| UC-7 | BR-2 | `focusing_pane_clears_workspace_notification_if_no_others()` |
-| UC-8 | BR-1 | `tab_group_shows_agent_dot_per_tab()` |
-| UC-9 | BR-1 | `cli_notify_routes_to_inactive_workspace_pane()` |
+| UC-1 | BR-1 | `running_status_does_not_trigger_notification_routing` |
+| UC-1 | BR-2 | `focused_pane_skips_all_notification_channels` |
+| UC-1 | BR-3 | `needs_input_border_blinks_orange_when_unfocused` |
+| UC-1 | BR-4 | `inactive_workspace_agent_status_sets_notification_dot` |
+| UC-1 | BR-5 | `background_notification_includes_foreground_dot` |
+| UC-2 | BR-6 | `osc9_unmanaged_notification_does_not_create_attention_source` |
+| UC-2 | BR-7 | `unmanaged_notification_does_not_mark_inactive_workspace` |
+| UC-3 | BR-8 | `focusing_pane_clears_needs_input_status` |
+| UC-3 | BR-9 | `focusing_pane_clears_workspace_notification_if_no_others` |
 
 ## Location
 
 | Module | Path | Change |
 |--------|------|--------|
-| state | `domain/state/window.rs` | Add `is_focused: bool` field |
-| event_loop | `adapter/inward/event_loop_adapter/mod.rs` | Set `window.is_focused` on `Focused` event |
-| platform | `adapter/outward/platform_adapter/mod.rs` | Add `send_system_notification`, `request_user_attention` to `PlatformWindow` trait |
-| platform_macos | `adapter/outward/platform_adapter/macos/window.rs` | Implement `UNUserNotificationCenter` + `NSApp.requestUserAttention` |
-| gateway_port | `application/ports/inward/gateway_port/mod.rs` | Add `route_agent_notification` method |
-| app | `app.rs` | Implement notification routing policy in `handle_terminal_notification` and `cli_notify` |
-| header | `adapter/outward/view/header.rs` | Add blink animation to NeedsInput dot |
-| titlebar | `adapter/outward/view/chrome/titlebar.rs` | Add notification dot to workspace sidebar items |
-| workspace_infra | `application/services/workspace_infra_service/mod.rs` | Add `has_agent_notification` to `WorkspaceExtras` |
-| workspace_service | `application/services/workspace_service/mod.rs` | Clear `has_agent_notification` on workspace switch |
-| behavior_tests | `application/behavior_tests/agent_gateway.rs` | New tests per Tests table |
+| Gateway state | `crates/tide-app/src/domain/state/gateway_status.rs` | Track which agent records are wrapper-managed |
+| App routing | `crates/tide-app/src/app.rs` | Gate attention routing on wrapper-managed agent lifecycle signals |
+| CLI notify | `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs` | Preserve wrapped-agent auto-registration and status updates |
+| Wrapped agents | `crates/tide-app/resources/bin/claude`, `crates/tide-app/resources/bin/gemini`, `crates/tide-app/resources/bin/codex` | Normalize wrapper-managed lifecycle reporting |
+| Behavior tests | `crates/tide-app/src/application/behavior_tests/agent_gateway.rs` | Add wrapped-agent attention and unmanaged-notification coverage |

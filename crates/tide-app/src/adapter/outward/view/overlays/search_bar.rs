@@ -4,7 +4,10 @@ use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
 
-use super::{draw_cursor_beam, draw_popup_border, text_style, visual_width};
+use super::{
+    draw_cursor_beam, draw_popup_border, search_bar_cursor_advance_cells,
+    search_bar_text_advance_cells, text_style,
+};
 
 /// Render search bar UI for panes that have search visible.
 pub(super) fn render_search_bars(
@@ -91,9 +94,9 @@ pub(super) fn render_search_bars(
         let has_preedit = *is_focused && !app.ime.preedit.is_empty();
         let (before_w, preedit_w) = if *is_focused {
             (
-                visual_width(&query[..*cursor_pos]) as f32 * cell_size.width,
+                search_bar_cursor_advance_cells(query, *cursor_pos, "") as f32 * cell_size.width,
                 if has_preedit {
-                    visual_width(&app.ime.preedit) as f32 * cell_size.width
+                    search_bar_text_advance_cells(&app.ime.preedit) as f32 * cell_size.width
                 } else {
                     0.0
                 },
@@ -149,7 +152,9 @@ pub(super) fn render_search_bars(
 
         // Text cursor (beam) — only when focused
         if *is_focused {
-            let cx = text_x + before_w + preedit_w;
+            let cx = text_x
+                + search_bar_cursor_advance_cells(query, *cursor_pos, &app.ime.preedit) as f32
+                    * cell_size.width;
             draw_cursor_beam(renderer, cx, text_y, cell_size.height, p.cursor_accent);
         }
 
