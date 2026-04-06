@@ -4,13 +4,16 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::adapter::outward::view::header::reserve_title_before_badges;
+use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
+use crate::state::FocusArea;
 use crate::theme::{
     BADGE_GAP, BADGE_PADDING_H, DARK, LIGHT, TAB_CONTENT_SPACING, TAB_H_PAD, TAB_MAX_WIDTH,
     TAB_MIN_TITLE_WIDTH,
 };
 use crate::tide_terminal::git::{GitInfo, GitStatus};
 use crate::ui::pane_title;
+use crate::{App, DockPort};
 
 fn terminal_with_git_info(id: u64) -> (HashMap<u64, PaneKind>, String) {
     let pid = std::process::id();
@@ -36,6 +39,13 @@ fn color_tuple(color: crate::tide_core::Color) -> (u32, u32, u32, u32) {
         color.b.to_bits(),
         color.a.to_bits(),
     )
+}
+
+fn test_app() -> App {
+    let mut app = App::new();
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
+    app.window.window_size = (960, 640);
+    app
 }
 
 // --- UC-1: RenderFocusedPaneChrome ---
@@ -80,11 +90,41 @@ fn needs_input_attention_is_visually_distinct_from_focus_chrome() {
     assert_ne!(color_tuple(needs_input), color_tuple(LIGHT.border_focused));
 }
 
+#[test]
+fn dock_editor_inherits_needs_input_attention_from_paired_terminal() {
+    // UC-2 BR-5: A non-terminal Pane with an Associated Terminal inherits wrapper-managed NeedsInput chrome from the paired Wrapped Agent.
+    let mut app = test_app();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    app.panes.insert(terminal_id, PaneKind::Terminal(terminal));
+
+    let editor_id = app.layout.alloc_id();
+    app.panes
+        .insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
+    app.add_pane_to_dock(editor_id);
+    app.assoc.associated_terminal.insert(editor_id, terminal_id);
+    app.focus.focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.gateway.detected_agents.insert(
+        terminal_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Codex",
+            pid: 42,
+            wrapper_managed: true,
+            gateway_connected: true,
+            status: Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+        },
+    );
+
+    assert!(app.pane_agent_needs_input_attention(editor_id));
+}
+
 // --- UC-3: PreserveHeaderTitleBesideGitBadges ---
 
 #[test]
 fn active_terminal_header_preserves_title_when_git_badges_are_present() {
-    // UC-3 BR-5: Active single-pane headers keep a readable title when git branch or git status badges are present.
+    // UC-3 BR-6: Active single-pane headers keep a readable title when git branch or git status badges are present.
     let (panes, expected_title) = terminal_with_git_info(1);
     let title = pane_title(&panes, 1);
     assert_eq!(title, expected_title);
@@ -116,7 +156,7 @@ fn active_terminal_header_preserves_title_when_git_badges_are_present() {
 
 #[test]
 fn active_stage_tab_preserves_title_when_git_badges_are_present() {
-    // UC-3 BR-6: Active Stage tabs keep a readable title when git badges are present.
+    // UC-3 BR-7: Active Stage tabs keep a readable title when git badges are present.
     let (panes, expected_title) = terminal_with_git_info(2);
     let title_w = expected_title.chars().count() as f32 * 8.0;
     let branch_badge_w =
@@ -139,7 +179,7 @@ fn active_stage_tab_preserves_title_when_git_badges_are_present() {
 
 #[test]
 fn git_badges_yield_space_before_title_disappears() {
-    // UC-3 BR-7: Header layout constants keep a readable title budget beside a git badge.
+    // UC-3 BR-8: Header layout constants keep a readable title budget beside a git badge.
     let cell_w = 8.0_f32;
     let close_hit_w = 16.0_f32;
     let branch_badge_w = 4.0 * cell_w + BADGE_PADDING_H * 2.0;

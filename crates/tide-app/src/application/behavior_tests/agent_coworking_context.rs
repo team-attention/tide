@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::mpsc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::json;
 
@@ -19,11 +20,18 @@ use crate::tide_core::{LayoutEngine, SplitDirection};
 use crate::App;
 use crate::DockPort;
 
+static NEXT_MARKDOWN_FILE_ID: AtomicUsize = AtomicUsize::new(0);
+
 fn test_app() -> App {
     let mut app = App::new();
     app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
+}
+
+fn test_window_proxy() -> crate::tide_platform::WindowProxy {
+    let (tx, _rx) = std::sync::mpsc::channel();
+    crate::tide_platform::WindowProxy::new(tx, std::sync::Arc::new(|| {}))
 }
 
 fn app_with_terminal() -> (App, u64) {
@@ -55,6 +63,30 @@ fn add_dock_editor(app: &mut App, terminal_id: u64, lines: &[&str]) -> u64 {
     app.focus.stage_focused = Some(terminal_id);
     app.focus.focus_area = FocusArea::Stage;
     app.add_pane_to_dock(editor_id);
+    editor_id
+}
+
+fn temp_markdown_path(label: &str) -> PathBuf {
+    let id = NEXT_MARKDOWN_FILE_ID.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "tide_agent_coworking_context_{}_{}_{}.md",
+        std::process::id(),
+        id,
+        label
+    ))
+}
+
+fn add_dock_markdown_editor(app: &mut App, terminal_id: u64, contents: &str) -> u64 {
+    let editor_id = app.layout.alloc_id();
+    let path = temp_markdown_path("live_preview");
+    std::fs::write(&path, contents).unwrap();
+    let editor = EditorPane::open(editor_id, &path).unwrap();
+    app.panes.insert(editor_id, PaneKind::Editor(editor));
+    app.focus.focused = Some(terminal_id);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.add_pane_to_dock(editor_id);
+    app.assoc.associated_terminal.insert(editor_id, terminal_id);
     editor_id
 }
 
@@ -405,6 +437,81 @@ fn dock_pane_with_gateway_connected_paired_agent_opens_context_comment_composer_
     assert_eq!(composer.pane_kind, "editor");
     assert!(composer.selection.is_none());
     assert!(composer.content.is_empty());
+}
+
+#[test]
+fn live_preview_context_artifact_capture_uses_visible_selected_text() {
+    // UC-3 BR-21, BR-22: A Dock Markdown Pane in LivePreviewMode can open the Context Comment Composer and capture the visible selected text.
+    let (mut app, terminal_id) = app_with_terminal();
+    let editor_id = add_dock_markdown_editor(
+        &mut app,
+        terminal_id,
+        "cursor line\n[OpenAI](https://openai.com)\n",
+    );
+    app.gateway.detected_agents.insert(
+        terminal_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Codex",
+            pid: 42,
+            wrapper_managed: true,
+            gateway_connected: true,
+            status: None,
+        },
+    );
+
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
+    let content_rect = crate::tide_core::Rect::new(
+        pane_rect.x + crate::theme::PANE_PADDING,
+        pane_rect.y + crate::theme::TAB_BAR_HEIGHT,
+        pane_rect.width - 2.0 * crate::theme::PANE_PADDING,
+        (pane_rect.height - crate::theme::TAB_BAR_HEIGHT - crate::theme::PANE_PADDING).max(1.0),
+    );
+    let cell = app.window.cached_cell_size;
+    app.visual_pane_rects = vec![(editor_id, pane_rect)];
+
+    {
+        let pane = match app.panes.get_mut(&editor_id) {
+            Some(PaneKind::Editor(pane)) => pane,
+            _ => panic!("expected editor pane"),
+        };
+        pane.handle_action(
+            crate::tide_editor::input::EditorAction::SetCursor { line: 0, col: 0 },
+            20,
+        );
+        pane.prepare_inline_caches(content_rect, cell, false);
+    }
+
+    let gutter_x = content_rect.x + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width;
+    let start = crate::tide_core::Vec2::new(gutter_x + 1.0, content_rect.y + cell.height + 1.0);
+    let end = crate::tide_core::Vec2::new(
+        gutter_x + 6.0 * cell.width + 1.0,
+        content_rect.y + cell.height + 1.0,
+    );
+    app.window.last_cursor_pos = start;
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(
+        &mut app,
+        crate::tide_core::MouseButton::Left,
+        &test_window_proxy(),
+    );
+    crate::adapter::inward::mouse_adapter::drag::handle_cursor_moved_logical(
+        &mut app,
+        end,
+        &test_window_proxy(),
+    );
+    crate::adapter::inward::mouse_adapter::handle_mouse_up(
+        &mut app,
+        crate::tide_core::MouseButton::Left,
+    );
+
+    assert!(app.can_open_context_comment_composer(editor_id));
+    app.open_context_comment_composer(editor_id);
+
+    let composer = app
+        .modal
+        .context_comment_composer
+        .as_ref()
+        .expect("composer should open for live preview markdown selection");
+    assert_eq!(composer.content, "OpenAI");
 }
 
 #[test]

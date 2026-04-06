@@ -602,6 +602,10 @@ impl ContextCommentComposerState {
         self.comment.insert_char(ch);
     }
 
+    pub fn insert_newline(&mut self) {
+        self.comment.insert_char('\n');
+    }
+
     pub fn backspace(&mut self) {
         self.comment.backspace();
     }
