@@ -296,9 +296,28 @@ impl BrowserPane {
         }
     }
 
+    /// A Browser URL draft is distinct only when the user is actively editing
+    /// text that differs from the last committed Browser URL.
+    pub fn has_distinct_url_draft(&self) -> bool {
+        self.url_input_focused && self.url_input != self.url
+    }
+
+    /// Native WebView focus is an explicit request to move interaction into page
+    /// content. Empty and loading Browser Panes still stay chrome-first.
+    pub fn handle_webview_focused(&mut self) -> bool {
+        if self.loading || self.is_empty_navigation_state() {
+            self.url_input_focused = true;
+            return true;
+        }
+
+        self.url_input_focused = false;
+        self.url_selection = None;
+        false
+    }
+
     /// Browser URL state to copy for Browser Pane chrome or Cmd+C behavior.
     pub fn url_state_for_copy(&self) -> Option<String> {
-        if self.url_input_focused {
+        if self.has_distinct_url_draft() {
             self.url_selected_text()
                 .or_else(|| Some(self.url_input.clone()).filter(|s| !s.is_empty()))
                 .or_else(|| Some(self.url.clone()).filter(|s| !s.is_empty()))
@@ -313,11 +332,55 @@ impl BrowserPane {
     pub fn url_state_for_external_open(&self) -> Option<String> {
         let input = Some(self.url_input.clone()).filter(|s| !s.is_empty());
         let committed = Some(self.url.clone()).filter(|s| !s.is_empty());
-        if self.url_input_focused {
+        if self.has_distinct_url_draft() {
             input.or(committed)
         } else {
             committed.or(input)
         }
+    }
+
+    /// Apply an explicit external handoff for a Browser Pane flow that Tide
+    /// cannot complete in-app in this pass, such as a download fallback.
+    pub fn apply_external_handoff(&mut self, url: Option<&str>) {
+        let keep_distinct_draft = self.has_distinct_url_draft();
+
+        if let Some(url) = url.filter(|s| !s.is_empty()) {
+            self.url = url.to_string();
+            if !keep_distinct_draft {
+                self.url_input = self.url.clone();
+                self.url_input_cursor = self.url_input.chars().count();
+            }
+        }
+
+        self.loading = false;
+        self.selection_bridge_installed = false;
+        self.clear_page_selection();
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Sync the committed Browser URL from content-driven navigation. The
+    /// visible Browser URL bar follows unless the user is editing a distinct
+    /// draft.
+    pub fn sync_committed_url_from_navigation(&mut self, current: &str) -> bool {
+        if current.is_empty() || current == self.url {
+            return false;
+        }
+
+        let previous_committed = self.url.clone();
+        self.url = current.to_string();
+        self.selection_bridge_installed = false;
+        self.clear_page_selection();
+
+        let visible_url_is_stale_committed =
+            self.url_input_focused && self.url_input == previous_committed;
+        if !self.has_distinct_url_draft() || visible_url_is_stale_committed {
+            self.url_input = current.to_string();
+            self.url_input_cursor = self.url_input.chars().count();
+            self.url_selection = None;
+        }
+
+        self.generation = self.generation.wrapping_add(1);
+        true
     }
 
     /// Poll the webview for state changes (URL, loading, back/forward).
@@ -336,15 +399,7 @@ impl BrowserPane {
 
         // Sync URL: update url + url_input when webview navigated internally
         if let Some(current) = current_url {
-            if current != self.url && !current.is_empty() {
-                self.url = current.clone();
-                self.selection_bridge_installed = false;
-                self.clear_page_selection();
-                // Only update the input text if user isn't actively editing
-                if !self.url_input_focused {
-                    self.url_input = current.clone();
-                    self.url_input_cursor = current.chars().count();
-                }
+            if self.sync_committed_url_from_navigation(&current) {
                 changed = true;
             }
         }
@@ -363,10 +418,6 @@ impl BrowserPane {
         if fwd != self.can_go_forward {
             self.can_go_forward = fwd;
             changed = true;
-        }
-
-        if changed {
-            self.generation = self.generation.wrapping_add(1);
         }
         if !self.selection_bridge_installed && !self.loading {
             self.install_selection_bridge();
