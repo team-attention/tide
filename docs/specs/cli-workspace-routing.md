@@ -149,12 +149,29 @@ Transparent to agents. No MCP protocol changes. No new env vars.
   - BR-1: Command executes in the pane's Workspace context
   - BR-2: Active Workspace is restored after execution
 
+### UC-6: Dock routing uses caller terminal, not stage_focused
+
+- **Actor**: Agent process (via MCP bridge)
+- **Trigger**: MCP tool call that creates a dock pane (`open-browser`, `open-editor`, `render-html`) while a different Terminal is `stage_focused`
+- **Precondition**: Workspace has 2+ Terminals. Agent runs in Terminal A, but user clicked Terminal B (`stage_focused = B`).
+- **Flow**:
+  1. `handle_cli_command` sets `pending_cli_caller_pane = A`
+  2. `resolve_context_terminal_id()` returns Terminal A (correct)
+  3. Caller passes `context_terminal` to `add_pane_to_dock(new_id, Some(A))`
+  4. `add_pane_to_dock` uses the explicit `target_terminal` (A), not `focused_terminal_id()` (B)
+  5. New pane is inserted into Terminal A's `dock_layout`
+- **Postcondition**: Pane appears in the caller's Terminal's Dock, not the user-focused Terminal's Dock
+- **Business Rules**:
+  - BR-6: `add_pane_to_dock` uses the explicit `target_terminal` when provided, falling back to `focused_terminal_id()` only when `target_terminal` is None
+  - BR-7: All pane creation methods (`open_browser_pane`, `open_editor_pane`, `open_render_pane`, `open_render_stream_pane`, `new_editor_pane`) pass `resolve_context_terminal_id()` result as the target terminal
+
 ## Invariants
 
 1. **Active Workspace restoration**: After any cross-workspace CLI command execution, `ws.active` and all App fields (layout, panes, focus, dock state) MUST be restored to the user's active Workspace. This holds even if the command handler returns an error or panics.
 2. **No UI side effects on swap**: Cross-workspace context swap uses raw `save_active_workspace` / `load_active_workspace` only. It MUST NOT trigger IME commit, browser hide/show, file tree update, chrome invalidation, or `TIDE_WORKSPACE` env var update.
 3. **Param transparency**: Command handlers never see `_caller_pane` in their params. The dispatch layer strips it before forwarding.
 4. **PaneId sync maintained**: The save/load swap preserves the PaneId sync invariant (every PaneId in SplitLayout exists in App.panes and vice versa) because it swaps the entire layout+panes set atomically.
+5. **Dock placement consistency**: A pane added to a Terminal's Dock via `add_pane_to_dock` MUST appear in that Terminal's `dock_layout`, not in a different Terminal's.
 
 ## Tests
 
@@ -170,6 +187,8 @@ Transparent to agents. No MCP protocol changes. No new env vars.
 | UC-4 | BR-3 | `cli_command_with_nonexistent_caller_pane_falls_back_to_active` |
 | UC-5 | BR-1 | `notify_for_inactive_workspace_pane_updates_agent_status` |
 | UC-5 | BR-2 | `notify_for_inactive_workspace_pane_restores_active_workspace` |
+| UC-6 | BR-6 | `add_pane_to_dock_uses_target_terminal_not_stage_focused` |
+| UC-6 | BR-7 | `open_browser_pane_routes_to_caller_terminal_dock` |
 
 ## Location
 
