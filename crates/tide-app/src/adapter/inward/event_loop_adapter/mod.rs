@@ -240,10 +240,10 @@ pub(crate) fn handle_platform_event(
                 } else {
                     ctx.set_focus_area(FocusArea::Stage);
                 }
-                // WebView hit testing bypasses TideView's mouseDown, so Browser
-                // Pane content clicks must apply the same first-action rules here.
+                // WebView focus is an explicit request to move interaction into
+                // page content when the Browser Pane is already navigated.
                 if let Some(PaneKind::Browser(bp)) = ctx.pane_mut(pid) {
-                    bp.handle_content_click();
+                    bp.handle_webview_focused();
                 }
             } else {
                 ctx.set_focus_area(FocusArea::Stage);
@@ -326,6 +326,24 @@ impl App {
         };
 
         match kind {
+            "browser-external-handoff" => {
+                let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
+                    Some(id) => id,
+                    None => return false,
+                };
+                let url = parsed
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty());
+
+                match self.pane_mut(pane_id) {
+                    Some(PaneKind::Browser(browser)) => {
+                        browser.apply_external_handoff(url);
+                        true
+                    }
+                    _ => false,
+                }
+            }
             "browser-snapshot" => {
                 let pane_id = match parsed.get("pane_id").and_then(|v| v.as_u64()) {
                     Some(id) => id,
@@ -347,16 +365,16 @@ impl App {
                     .map(|s| s.to_string())
                     .filter(|s| !s.trim().is_empty());
 
-                let snapshot = if text.trim().is_empty() && page_title.is_none() && page_url.is_none()
-                {
-                    None
-                } else {
-                    Some(crate::pane::browser::BrowserSnapshot {
-                        text,
-                        page_title,
-                        page_url,
-                    })
-                };
+                let snapshot =
+                    if text.trim().is_empty() && page_title.is_none() && page_url.is_none() {
+                        None
+                    } else {
+                        Some(crate::pane::browser::BrowserSnapshot {
+                            text,
+                            page_title,
+                            page_url,
+                        })
+                    };
 
                 match self.pane_mut(pane_id) {
                     Some(PaneKind::Browser(browser)) => browser.update_page_snapshot(snapshot),
