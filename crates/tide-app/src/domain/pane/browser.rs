@@ -278,11 +278,11 @@ impl BrowserPane {
         !self.render_mode && self.url.is_empty()
     }
 
-    /// Browser Pane content clicks should keep or restore URL-bar focus while the
-    /// Browser Pane is empty, loading, or already editing the URL bar.
+    /// Browser Pane content clicks should keep URL-bar focus only while the
+    /// Browser Pane is empty or loading (nothing to interact with in content).
     pub fn content_click_routes_to_url_bar(&self) -> bool {
         !self.render_mode
-            && (self.url_input_focused || self.loading || self.is_empty_navigation_state())
+            && (self.loading || self.is_empty_navigation_state())
     }
 
     /// Apply Browser Pane first-action routing for a click in Browser Pane content.
@@ -292,6 +292,8 @@ impl BrowserPane {
             self.url_input_focused = true;
             true
         } else {
+            self.url_input_focused = false;
+            self.url_selection = None;
             false
         }
     }

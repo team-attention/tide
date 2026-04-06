@@ -603,12 +603,14 @@ fn render_browser_nav_bar(
     let url_w = nav_x + nav_w - cx - 8.0;
     if url_w > 40.0 {
         let url_rect = Rect::new(cx, nav_y + 2.0, url_w, nav_h - 4.0);
-        let url_bg = if bp.url_input_focused {
-            p.file_tree_bg
+        if bp.url_input_focused {
+            // Draw focus border (1px accent outline)
+            let border_rect = Rect::new(url_rect.x - 1.0, url_rect.y - 1.0, url_rect.width + 2.0, url_rect.height + 2.0);
+            renderer.draw_chrome_rounded_rect(border_rect, p.cursor_accent, 4.0);
+            renderer.draw_chrome_rounded_rect(url_rect, p.file_tree_bg, 3.0);
         } else {
-            p.badge_bg
-        };
-        renderer.draw_chrome_rounded_rect(url_rect, url_bg, 3.0);
+            renderer.draw_chrome_rounded_rect(url_rect, p.badge_bg, 3.0);
+        }
 
         let str_display_width = |s: &str| -> usize {
             s.chars()

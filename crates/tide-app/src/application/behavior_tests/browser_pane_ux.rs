@@ -238,8 +238,9 @@ fn clicking_browser_url_bar_positions_cursor_after_browser_actions() {
 // --- UC-3: PreserveBrowserUrlBarEditing ---
 
 #[test]
-fn incidental_browser_content_click_does_not_cancel_url_bar_editing() {
-    // UC-3 BR-11: Incidental Browser Pane content clicks do not clear Browser URL-bar focus while the user is actively editing the Browser URL bar
+fn browser_content_click_clears_url_bar_focus() {
+    // UC-3 BR-11: Clicking Browser Pane content unfocuses the URL bar
+    // (matches real browser behavior — clicking the page dismisses URL editing)
     let (mut app, id) = app_with_browser();
     if let Some(PaneKind::Browser(bp)) = app.panes.get_mut(&id) {
         bp.url = "https://example.com".to_string();
@@ -263,8 +264,7 @@ fn incidental_browser_content_click_does_not_cancel_url_bar_editing() {
             other.map(|_| "non-browser")
         ),
     };
-    assert!(bp.url_input_focused);
-    assert_eq!(bp.url_input, "https://example.com/docs");
+    assert!(!bp.url_input_focused);
 }
 
 // --- UC-4: InvokeBrowserPaneChromeActions ---
