@@ -98,6 +98,9 @@ fn main() {
         }
     });
 
+    // Install wake callback for webview navigation delegate
+    crate::tide_platform::macos::webview::set_webview_waker(combined_waker.clone());
+
     // ── WindowProxy ──────────────────────────────────────────────────
     // App thread uses this to send commands back to the main thread.
     let window_proxy = crate::tide_platform::WindowProxy::new(cmd_tx, main_waker.clone());
