@@ -3,12 +3,14 @@
 //! Uses raw `objc2` message sends to interact with WebKit classes,
 //! avoiding a direct WebKit crate dependency.
 
+use crate::tide_core::PaneId;
+
 use std::sync::Mutex;
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Bool};
 use objc2::{declare_class, msg_send, msg_send_id, mutability, ClassType, DeclaredClass};
-use objc2_foundation::{CGFloat, MainThreadMarker, NSObject, NSRect, NSPoint, NSSize, NSString};
+use objc2_foundation::{CGFloat, MainThreadMarker, NSObject, NSPoint, NSRect, NSSize, NSString};
 
 /// Global queue for URLs that should open in a new browser tab.
 /// Populated by the WKUIDelegate when Cmd+click triggers a new window request.
@@ -17,6 +19,11 @@ static NEW_TAB_URLS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// Global queue for messages received from render pane JS bridge.
 /// Populated by WKScriptMessageHandler when JS calls `window.tide.send(json)`.
 static BRIDGE_MESSAGES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+fn queue_bridge_message(message: String) {
+    let mut queue = BRIDGE_MESSAGES.lock().unwrap_or_else(|e| e.into_inner());
+    queue.push(message);
+}
 
 /// Global wake callback for triggering redraws from delegate callbacks.
 /// Set once at startup via `set_webview_waker`.
@@ -174,6 +181,11 @@ declare_class!(
 // ---------------------------------------------------------------------------
 // WKNavigationDelegate — handles download responses
 // ---------------------------------------------------------------------------
+
+struct TideNavigationDelegateIvars {
+    pane_id: PaneId,
+}
+
 declare_class!(
     struct TideNavigationDelegate;
 
@@ -184,13 +196,18 @@ declare_class!(
     }
 
     impl DeclaredClass for TideNavigationDelegate {
-        type Ivars = ();
+        type Ivars = TideNavigationDelegateIvars;
     }
 
     unsafe impl TideNavigationDelegate {
-        #[method_id(init)]
-        fn init(this: objc2::rc::Allocated<Self>) -> Option<Retained<Self>> {
-            let this = this.set_ivars(());
+        #[method_id(initWithPaneId:)]
+        fn init_with_pane_id(
+            this: objc2::rc::Allocated<Self>,
+            pane_id: usize,
+        ) -> Option<Retained<Self>> {
+            let this = this.set_ivars(TideNavigationDelegateIvars {
+                pane_id: pane_id as PaneId,
+            });
             unsafe { msg_send_id![super(this), init] }
         }
 
@@ -255,6 +272,21 @@ declare_class!(
                     let response: Retained<AnyObject> = msg_send_id![navigation_response, response];
                     let url: Option<Retained<AnyObject>> = msg_send_id![&response, URL];
                     if let Some(url) = url {
+                        let abs: Option<Retained<AnyObject>> = msg_send_id![&url, absoluteString];
+                        if let Some(s) = abs {
+                            let utf8: *const std::ffi::c_char = msg_send![&s, UTF8String];
+                            if !utf8.is_null() {
+                                let url_str =
+                                    std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
+                                queue_bridge_message(serde_json::json!({
+                                    "kind": "browser-external-handoff",
+                                    "pane_id": self.ivars().pane_id,
+                                    "reason": "download",
+                                    "url": url_str,
+                                })
+                                .to_string());
+                            }
+                        }
                         let workspace_cls = AnyClass::get("NSWorkspace").expect("NSWorkspace class");
                         let shared: Retained<AnyObject> = msg_send_id![workspace_cls, sharedWorkspace];
                         let _: Bool = msg_send![&shared, openURL: &*url];
@@ -334,8 +366,7 @@ declare_class!(
                 let utf8: *const std::ffi::c_char = msg_send![&body, UTF8String];
                 if !utf8.is_null() {
                     let msg_str = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
-                    let mut queue = BRIDGE_MESSAGES.lock().unwrap_or_else(|e| e.into_inner());
-                    queue.push(msg_str);
+                    queue_bridge_message(msg_str);
                 }
             }
         }
@@ -356,13 +387,14 @@ pub struct WebViewHandle {
 /// Context passed through `dispatch_sync_f` to create a WKWebView on the main thread.
 struct WebViewCreateCtx {
     parent_view: *mut std::ffi::c_void,
+    pane_id: PaneId,
     result: Option<WebViewHandle>,
 }
 
 /// Trampoline called on the main thread by `dispatch_sync_f`.
 unsafe extern "C" fn create_webview_on_main_thread(ctx: *mut std::ffi::c_void) {
     let ctx = &mut *(ctx as *mut WebViewCreateCtx);
-    ctx.result = WebViewHandle::new_on_main_thread(ctx.parent_view);
+    ctx.result = WebViewHandle::new_on_main_thread(ctx.parent_view, ctx.pane_id);
 }
 
 /// Context passed through `dispatch_sync_f` to navigate on the main thread.
@@ -380,16 +412,13 @@ unsafe extern "C" fn navigate_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
 
     let url_cls = AnyClass::get("NSURL").expect("NSURL class");
     let ns_url_str = NSString::from_str(url);
-    let nsurl: Option<Retained<AnyObject>> =
-        msg_send_id![url_cls, URLWithString: &*ns_url_str];
+    let nsurl: Option<Retained<AnyObject>> = msg_send_id![url_cls, URLWithString: &*ns_url_str];
     let Some(nsurl) = nsurl else { return };
 
     let req_cls = AnyClass::get("NSURLRequest").expect("NSURLRequest class");
-    let request: Retained<AnyObject> =
-        msg_send_id![req_cls, requestWithURL: &*nsurl];
+    let request: Retained<AnyObject> = msg_send_id![req_cls, requestWithURL: &*nsurl];
 
-    let _: Option<Retained<AnyObject>> =
-        msg_send_id![webview, loadRequest: &*request];
+    let _: Option<Retained<AnyObject>> = msg_send_id![webview, loadRequest: &*request];
 }
 
 /// Context passed through `dispatch_sync_f` to set the webview frame.
@@ -466,7 +495,8 @@ struct LoadHtmlCtx {
 /// Trampoline called on the main thread by `dispatch_sync_f`.
 unsafe extern "C" fn load_html_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
     let ctx = &*(ctx_ptr as *const LoadHtmlCtx);
-    let html = std::str::from_utf8_unchecked(std::slice::from_raw_parts(ctx.html_ptr, ctx.html_len));
+    let html =
+        std::str::from_utf8_unchecked(std::slice::from_raw_parts(ctx.html_ptr, ctx.html_len));
     let webview = &*ctx.webview;
     let ns_html = NSString::from_str(html);
     let _: Option<Retained<AnyObject>> = msg_send_id![
@@ -500,13 +530,17 @@ impl WebViewHandle {
     ///
     /// # Safety
     /// `parent_view` must be a valid pointer to an NSView that outlives this handle.
-    pub unsafe fn new(parent_view: *mut std::ffi::c_void) -> Option<Self> {
+    pub unsafe fn new(parent_view: *mut std::ffi::c_void, pane_id: PaneId) -> Option<Self> {
         if MainThreadMarker::new().is_some() {
             // Already on the main thread — create directly.
-            return Self::new_on_main_thread(parent_view);
+            return Self::new_on_main_thread(parent_view, pane_id);
         }
 
-        let mut ctx = WebViewCreateCtx { parent_view, result: None };
+        let mut ctx = WebViewCreateCtx {
+            parent_view,
+            pane_id,
+            result: None,
+        };
         dispatch_sync_f(
             &_dispatch_main_q as *const std::ffi::c_void,
             &mut ctx as *mut WebViewCreateCtx as *mut std::ffi::c_void,
@@ -519,7 +553,10 @@ impl WebViewHandle {
     ///
     /// # Safety
     /// `parent_view` must be a valid pointer to an NSView.
-    unsafe fn new_on_main_thread(parent_view: *mut std::ffi::c_void) -> Option<Self> {
+    unsafe fn new_on_main_thread(
+        parent_view: *mut std::ffi::c_void,
+        pane_id: PaneId,
+    ) -> Option<Self> {
         let parent: &AnyObject = &*(parent_view as *const AnyObject);
 
         // WKWebViewConfiguration
@@ -568,21 +605,19 @@ impl WebViewHandle {
 
         // Set up UI delegate for popup handling and JavaScript dialogs
         let mtm = MainThreadMarker::new().expect("must be on main thread for WKWebView");
-        let delegate: Retained<TideUIDelegate> = unsafe {
-            msg_send_id![mtm.alloc::<TideUIDelegate>(), init]
-        };
+        let delegate: Retained<TideUIDelegate> =
+            unsafe { msg_send_id![mtm.alloc::<TideUIDelegate>(), init] };
         let _: () = msg_send![&webview, setUIDelegate: &*delegate];
 
         // Set up navigation delegate for download handling
         let nav_delegate: Retained<TideNavigationDelegate> = unsafe {
-            msg_send_id![mtm.alloc::<TideNavigationDelegate>(), init]
+            msg_send_id![mtm.alloc::<TideNavigationDelegate>(), initWithPaneId: pane_id as usize]
         };
         let _: () = msg_send![&webview, setNavigationDelegate: &*nav_delegate];
 
         // Set up WKScriptMessageHandler for window.tide.send() bridge (BR-29)
-        let script_handler: Retained<TideScriptMessageHandler> = unsafe {
-            msg_send_id![mtm.alloc::<TideScriptMessageHandler>(), init]
-        };
+        let script_handler: Retained<TideScriptMessageHandler> =
+            unsafe { msg_send_id![mtm.alloc::<TideScriptMessageHandler>(), init] };
         let user_content: Retained<AnyObject> = msg_send_id![&config, userContentController];
         let handler_name = NSString::from_str("tide");
         let _: () = msg_send![&user_content, addScriptMessageHandler: &*script_handler, name: &*handler_name];
@@ -590,7 +625,12 @@ impl WebViewHandle {
         // Add as subview
         let _: () = msg_send![parent, addSubview: &*webview];
 
-        Some(Self { webview, _ui_delegate: delegate, _nav_delegate: nav_delegate, _script_handler: script_handler })
+        Some(Self {
+            webview,
+            _ui_delegate: delegate,
+            _nav_delegate: nav_delegate,
+            _script_handler: script_handler,
+        })
     }
 
     /// Navigate to a URL string.
@@ -621,16 +661,13 @@ impl WebViewHandle {
     unsafe fn navigate_inner(&self, url: &str) {
         let url_cls = AnyClass::get("NSURL").expect("NSURL class");
         let ns_url_str = NSString::from_str(url);
-        let nsurl: Option<Retained<AnyObject>> =
-            msg_send_id![url_cls, URLWithString: &*ns_url_str];
+        let nsurl: Option<Retained<AnyObject>> = msg_send_id![url_cls, URLWithString: &*ns_url_str];
         let Some(nsurl) = nsurl else { return };
 
         let req_cls = AnyClass::get("NSURLRequest").expect("NSURLRequest class");
-        let request: Retained<AnyObject> =
-            msg_send_id![req_cls, requestWithURL: &*nsurl];
+        let request: Retained<AnyObject> = msg_send_id![req_cls, requestWithURL: &*nsurl];
 
-        let _: Option<Retained<AnyObject>> =
-            msg_send_id![&self.webview, loadRequest: &*request];
+        let _: Option<Retained<AnyObject>> = msg_send_id![&self.webview, loadRequest: &*request];
     }
 
     /// Go back in history.
@@ -736,7 +773,11 @@ impl WebViewHandle {
             if utf8.is_null() {
                 None
             } else {
-                Some(std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned())
+                Some(
+                    std::ffi::CStr::from_ptr(utf8)
+                        .to_string_lossy()
+                        .into_owned(),
+                )
             }
         }
     }
@@ -750,7 +791,11 @@ impl WebViewHandle {
             if utf8.is_null() {
                 None
             } else {
-                Some(std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned())
+                Some(
+                    std::ffi::CStr::from_ptr(utf8)
+                        .to_string_lossy()
+                        .into_owned(),
+                )
             }
         }
     }
