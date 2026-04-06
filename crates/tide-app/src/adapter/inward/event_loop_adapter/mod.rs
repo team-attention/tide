@@ -595,7 +595,11 @@ impl App {
                 }
             }
             "browser-url-committed" => {
-                let pane_id = match parsed.get("pane_id").and_then(|v| v.as_str()).and_then(|s| s.parse::<u64>().ok()) {
+                let pane_id = match parsed
+                    .get("pane_id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<u64>().ok())
+                {
                     Some(id) => id,
                     None => return false,
                 };
@@ -1140,7 +1144,7 @@ impl App {
                     let max_cols = (inner_w / cell_size.width).floor() as usize;
                     let actual_w = max_cols as f32 * cell_size.width;
                     let center_x = (inner_w - actual_w) / 2.0;
-                    let top = crate::theme::TAB_BAR_HEIGHT;
+                    let top = crate::theme::terminal_content_top(cell_size.height);
                     let cx = rect.x
                         + crate::theme::PANE_PADDING
                         + center_x
