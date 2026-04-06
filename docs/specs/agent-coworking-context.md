@@ -12,6 +12,7 @@
 - Tide's vision mentions ambient context, but V1 should avoid automatic prompt injection in favor of explicit artifact pull.
 - The explicit add-comment badge is currently rendered from shared header code without `Dock` versus `Stage` context, so the affordance can appear in `Stage` even though delivery is bound to a Pane's `Associated Terminal`.
 - Immediate `Context Artifact` delivery is currently event-only. The owner-scoped `context-artifact-delivered` notification contains metadata such as `artifact_id`, but it does not inject artifact text into the paired `Terminal` or place the artifact body directly into the event payload.
+- The add-comment flow already captures `Editor` Pane selection through `capture_context_comment_snapshot()`, but the spec does not yet lock `Markdown Pane` behavior in `LivePreviewMode`, where the visible selection content can differ from the raw Markdown buffer.
 
 ### To-Be
 
@@ -24,6 +25,9 @@
 - `Browser` selection capture works for both normal navigation panes and render-mode `Browser` panes.
 - Tide does not auto-inject ambient context in V1; agents pull context explicitly when they need it.
 - The explicit add-comment affordance appears only for `Dock` panes whose paired agent is currently gateway-connected.
+- A `Dock` `Markdown Pane` in `LivePreviewMode` can open the `Context Comment Composer` without leaving authoring mode.
+- When the source `Pane` is a `Markdown Pane` in `LivePreviewMode`, the captured selection content matches the visible selection text shown to the human.
+- The `Context Comment Composer` accepts multiline comments without sacrificing the existing explicit submit flow.
 
 ### Approach
 
@@ -35,6 +39,8 @@
 6. Keep the explicit add-comment badge `Dock`-scoped and tied to paired-agent availability so `Stage` panes and disconnected agent sessions do not advertise a paired-agent action outside the `Dock` context.
 7. Format delivery text once per artifact and write it into the paired `Terminal` using the same bracketed-paste safety rules Tide already uses for explicit paste.
 8. Include artifact body fields in the owner-scoped delivery event so explicit gateway subscribers can react without a separate immediate read.
+9. Lock `Markdown Pane` `LivePreviewMode` artifact capture so add-comment uses the human-visible selection content without forcing preview-only mode.
+10. Preserve the explicit submit gesture while allowing multiline comment input and a visible composer caret as the comment grows.
 
 ## Bounded Contexts
 
@@ -96,6 +102,10 @@
   - BR-6: The artifact is Workspace-local and session-local in V1
   - BR-17: The explicit add-comment affordance appears only for `Dock` panes with a gateway-connected paired agent
   - BR-18: The explicit add-comment affordance can remain visible and open the `Context Comment Composer` even when no text selection is active
+  - BR-21: A `Dock` `Markdown Pane` in `LivePreviewMode` can open the `Context Comment Composer` while remaining in authoring mode
+  - BR-22: `Markdown Pane` artifact capture in `LivePreviewMode` uses the visible selected text rather than hidden Markdown syntax markers
+  - BR-23: The `Context Comment Composer` accepts multiline comment text from `Shift+Enter` and pasted newline content while keeping plain `Enter` as the submit gesture
+  - BR-24: The `Context Comment Composer` keeps the active caret visible inside the composer input viewport as multiline text grows
 
 ### UC-4: ArtifactReadAndList
 
@@ -193,6 +203,11 @@
 | UC-3 | BR-17 | `stage_selection_does_not_open_context_comment_composer` |
 | UC-3 | BR-17 | `dock_selection_without_gateway_connected_paired_agent_does_not_open_context_comment_composer` |
 | UC-3 | BR-18 | `dock_pane_with_gateway_connected_paired_agent_opens_context_comment_composer_without_selection` |
+| UC-3 | BR-21 | `dock_live_preview_selection_opens_context_comment_composer` |
+| UC-3 | BR-22 | `live_preview_context_artifact_capture_uses_visible_selected_text` |
+| UC-3 | BR-23 | `shift_enter_in_context_comment_composer_inserts_newline` |
+| UC-3 | BR-23 | `pasted_newlines_are_preserved_in_context_comment_composer` |
+| UC-3 | BR-24 | `context_comment_composer_keeps_caret_visible_when_comment_wraps` |
 | UC-4 | BR-7, BR-8 | `contextartifact_list_and_read_are_workspace_scoped` |
 | UC-5 | BR-9, BR-10 | `send_contextartifact_targets_only_the_paired_agent` |
 | UC-5 | BR-19 | `submit_context_comment_composer_delivery_event_includes_artifact_body` |

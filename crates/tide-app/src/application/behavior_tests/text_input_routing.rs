@@ -1,9 +1,13 @@
 // Spec: docs/specs/input-routing.md — UC-2: RouteTextInput
+use std::cell::RefCell;
+use std::rc::Rc;
 use crate::adapter::inward::text_routing_adapter::{self, TextInputTarget};
+use crate::application::ports::outward::clipboard_port::ClipboardPort;
 use crate::pane::browser::BrowserPane;
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::*;
+use crate::ClipboardSearchPort;
 use crate::tide_core::Rect;
 use crate::App;
 use std::path::PathBuf;
@@ -35,6 +39,21 @@ fn app_with_browser() -> (App, u64) {
     app.focus.focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;
     (app, id)
+}
+
+#[derive(Clone)]
+struct RecordingClipboard {
+    text: Rc<RefCell<String>>,
+}
+
+impl ClipboardPort for RecordingClipboard {
+    fn get_text(&self) -> Result<String, String> {
+        Ok(self.text.borrow().clone())
+    }
+
+    fn set_text(&self, _text: &str) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 #[test]
@@ -120,6 +139,55 @@ fn text_goes_to_context_comment_composer_when_open() {
         text_routing_adapter::text_input_target(&app),
         TextInputTarget::ContextCommentComposer
     );
+}
+
+#[test]
+fn pasted_newlines_are_preserved_in_context_comment_composer() {
+    // Spec: docs/specs/agent-coworking-context.md
+    // UC-3 BR-23: Pasted newline content is preserved in the Context Comment Composer while plain Enter remains the submit gesture.
+    let (mut app, _id) = app_with_editor();
+    app.modal.context_comment_composer = Some(ContextCommentComposerState::new(
+        1,
+        1,
+        "editor".to_string(),
+        None,
+        "selection".to_string(),
+    ));
+
+    app.send_text_to_target("alpha\nbeta");
+
+    let composer = app
+        .modal
+        .context_comment_composer
+        .as_ref()
+        .expect("composer should stay open after pasted multiline text");
+    assert_eq!(composer.comment.text, "alpha\nbeta");
+}
+
+#[test]
+fn paste_action_routes_multiline_clipboard_text_to_context_comment_composer() {
+    // Spec: docs/specs/agent-coworking-context.md
+    // UC-3 BR-23: Clipboard paste routes multiline text into the Context Comment Composer instead of the focused Pane.
+    let (mut app, _id) = app_with_editor();
+    app.modal.context_comment_composer = Some(ContextCommentComposerState::new(
+        1,
+        1,
+        "editor".to_string(),
+        None,
+        "selection".to_string(),
+    ));
+    app.ports.clipboard = Box::new(RecordingClipboard {
+        text: Rc::new(RefCell::new("alpha\nbeta".to_string())),
+    });
+
+    app.handle_paste();
+
+    let composer = app
+        .modal
+        .context_comment_composer
+        .as_ref()
+        .expect("composer should stay open after paste");
+    assert_eq!(composer.comment.text, "alpha\nbeta");
 }
 
 #[test]
