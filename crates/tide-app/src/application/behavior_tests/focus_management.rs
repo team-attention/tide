@@ -1,10 +1,10 @@
 // Spec: docs/specs/input-routing.md — UC-3: ManageFocus
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
+use crate::tide_core::LayoutEngine;
+use crate::ActionPort;
 use crate::App;
 use crate::WorkspaceNavPort;
-use crate::ActionPort;
-use crate::tide_core::LayoutEngine;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -53,9 +53,17 @@ fn focus_terminal_updates_chrome_generation_when_changing_pane() {
     let mut app = test_app();
     let (layout, id1) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
-    app.panes.insert(id1, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id1)));
-    let id2 = app.layout.split(id1, crate::tide_core::SplitDirection::Vertical);
-    app.panes.insert(id2, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id2)));
+    app.panes.insert(
+        id1,
+        PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id1)),
+    );
+    let id2 = app
+        .layout
+        .split(id1, crate::tide_core::SplitDirection::Vertical);
+    app.panes.insert(
+        id2,
+        PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id2)),
+    );
     app.focus.focused = Some(id1);
 
     let gen_before = app.cache.chrome_generation;
@@ -106,9 +114,17 @@ fn toggling_zoom_on_focused_pane_fills_entire_area() {
     let mut app = test_app();
     let (layout, id1) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
-    app.panes.insert(id1, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id1)));
-    let id2 = app.layout.split(id1, crate::tide_core::SplitDirection::Vertical);
-    app.panes.insert(id2, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id2)));
+    app.panes.insert(
+        id1,
+        PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id1)),
+    );
+    let id2 = app
+        .layout
+        .split(id1, crate::tide_core::SplitDirection::Vertical);
+    app.panes.insert(
+        id2,
+        PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id2)),
+    );
     app.focus.focused = Some(id1);
 
     assert!(app.focus.zoomed_pane.is_none());
@@ -122,7 +138,10 @@ fn toggling_zoom_again_restores_split_layout() {
     let mut app = test_app();
     let (layout, id1) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
-    app.panes.insert(id1, PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id1)));
+    app.panes.insert(
+        id1,
+        PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(id1)),
+    );
     app.focus.focused = Some(id1);
 
     app.handle_global_action(crate::tide_input::GlobalAction::ToggleStacked);

@@ -3,8 +3,21 @@ use crate::tide_platform::macos::webview::WebViewHandle;
 
 use crate::state::search::SearchState;
 
+/// Snapshot of a Browser Pane selection captured from the webview bridge.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserSelectionSnapshot {
+    pub text: String,
+    pub html: String,
+    pub context: Option<String>,
+    pub page_title: Option<String>,
+    pub page_url: Option<String>,
+    pub collapsed: bool,
+}
+
 /// A browser pane backed by a native WKWebView.
 pub struct BrowserPane {
+    /// Stable PaneId, used to route bridge messages back to the owning pane.
+    pub id: PaneId,
     /// Current URL displayed by the webview.
     pub url: String,
     /// Editable URL bar text.
@@ -31,9 +44,12 @@ pub struct BrowserPane {
     pub search: Option<SearchState>,
     /// URL bar text selection range (start_char, end_char). None = no selection.
     pub url_selection: Option<(usize, usize)>,
+    /// Latest page selection snapshot captured from the WKWebView bridge.
+    pub page_selection: Option<BrowserSelectionSnapshot>,
+    /// Whether the selection bridge has been injected into the current page context.
+    selection_bridge_installed: bool,
 
     // --- Render Pane fields (Phase 3: Generative UI) ---
-
     /// Whether this pane is in render mode (agent-provided HTML via loadHTMLString).
     /// Render-mode panes hide the URL bar and show `render_title` in the tab.
     pub render_mode: bool,
@@ -48,8 +64,9 @@ pub struct BrowserPane {
 }
 
 impl BrowserPane {
-    pub fn new(_id: PaneId) -> Self {
+    pub fn new(id: PaneId) -> Self {
         Self {
+            id,
             url: String::new(),
             url_input: String::new(),
             url_input_cursor: 0,
@@ -63,6 +80,8 @@ impl BrowserPane {
             needs_initial_navigate: false,
             search: None,
             url_selection: None,
+            page_selection: None,
+            selection_bridge_installed: false,
             render_mode: false,
             render_title: None,
             render_html: None,
@@ -71,10 +90,11 @@ impl BrowserPane {
         }
     }
 
-    pub fn with_url(_id: PaneId, url: String) -> Self {
+    pub fn with_url(id: PaneId, url: String) -> Self {
         let url_input = url.clone();
         let cursor = url_input.chars().count();
         Self {
+            id,
             url: url.clone(),
             url_input,
             url_input_cursor: cursor,
@@ -88,6 +108,8 @@ impl BrowserPane {
             needs_initial_navigate: true,
             search: None,
             url_selection: None,
+            page_selection: None,
+            selection_bridge_installed: false,
             render_mode: false,
             render_title: None,
             render_html: None,
@@ -98,8 +120,9 @@ impl BrowserPane {
 
     /// Create a new render-mode Browser pane for generative UI.
     /// BR-26: No URL bar, title in tab.
-    pub fn new_render(_id: PaneId, title: String, html: String) -> Self {
+    pub fn new_render(id: PaneId, title: String, html: String) -> Self {
         Self {
+            id,
             url: String::new(),
             url_input: String::new(),
             url_input_cursor: 0,
@@ -113,6 +136,8 @@ impl BrowserPane {
             needs_initial_navigate: false,
             search: None,
             url_selection: None,
+            page_selection: None,
+            selection_bridge_installed: false,
             render_mode: true,
             render_title: Some(title),
             render_html: Some(html),
@@ -122,8 +147,9 @@ impl BrowserPane {
     }
 
     /// Create a new render-mode Browser pane for streaming generative UI.
-    pub fn new_render_stream(_id: PaneId, title: String) -> Self {
+    pub fn new_render_stream(id: PaneId, title: String) -> Self {
         Self {
+            id,
             url: String::new(),
             url_input: String::new(),
             url_input_cursor: 0,
@@ -137,6 +163,8 @@ impl BrowserPane {
             needs_initial_navigate: false,
             search: None,
             url_selection: None,
+            page_selection: None,
+            selection_bridge_installed: false,
             render_mode: true,
             render_title: Some(title),
             render_html: None,
@@ -179,7 +207,10 @@ impl BrowserPane {
     pub fn navigate(&mut self, url: &str) {
         let normalized = if url.contains("://") {
             url.to_string()
-        } else if url.starts_with("localhost") || url.starts_with("127.0.0.1") || url.starts_with("[::1]") {
+        } else if url.starts_with("localhost")
+            || url.starts_with("127.0.0.1")
+            || url.starts_with("[::1]")
+        {
             format!("http://{}", url)
         } else {
             format!("https://{}", url)
@@ -188,6 +219,8 @@ impl BrowserPane {
         self.url_input = normalized.clone();
         self.url_input_cursor = normalized.chars().count();
         self.loading = true;
+        self.selection_bridge_installed = false;
+        self.clear_page_selection();
         if let Some(ref wv) = self.webview {
             wv.navigate(&normalized);
         }
@@ -248,7 +281,8 @@ impl BrowserPane {
     /// Browser Pane content clicks should keep or restore URL-bar focus while the
     /// Browser Pane is empty, loading, or already editing the URL bar.
     pub fn content_click_routes_to_url_bar(&self) -> bool {
-        !self.render_mode && (self.url_input_focused || self.loading || self.is_empty_navigation_state())
+        !self.render_mode
+            && (self.url_input_focused || self.loading || self.is_empty_navigation_state())
     }
 
     /// Apply Browser Pane first-action routing for a click in Browser Pane content.
@@ -269,7 +303,8 @@ impl BrowserPane {
                 .or_else(|| Some(self.url_input.clone()).filter(|s| !s.is_empty()))
                 .or_else(|| Some(self.url.clone()).filter(|s| !s.is_empty()))
         } else {
-            Some(self.url.clone()).filter(|s| !s.is_empty())
+            Some(self.url.clone())
+                .filter(|s| !s.is_empty())
                 .or_else(|| Some(self.url_input.clone()).filter(|s| !s.is_empty()))
         }
     }
@@ -288,17 +323,23 @@ impl BrowserPane {
     /// Poll the webview for state changes (URL, loading, back/forward).
     /// Returns true if any state changed (caller should invalidate chrome).
     pub fn sync_webview_state(&mut self) -> bool {
-        let wv = match self.webview {
-            Some(ref wv) => wv,
-            None => return false,
+        let Some(ref wv) = self.webview else {
+            return false;
         };
+
+        let current_url = wv.current_url();
+        let loading = wv.is_loading();
+        let back = wv.can_go_back();
+        let fwd = wv.can_go_forward();
 
         let mut changed = false;
 
         // Sync URL: update url + url_input when webview navigated internally
-        if let Some(current) = wv.current_url() {
+        if let Some(current) = current_url {
             if current != self.url && !current.is_empty() {
                 self.url = current.clone();
+                self.selection_bridge_installed = false;
+                self.clear_page_selection();
                 // Only update the input text if user isn't actively editing
                 if !self.url_input_focused {
                     self.url_input = current.clone();
@@ -309,19 +350,16 @@ impl BrowserPane {
         }
 
         // Sync loading state
-        let loading = wv.is_loading();
         if loading != self.loading {
             self.loading = loading;
             changed = true;
         }
 
         // Sync back/forward availability
-        let back = wv.can_go_back();
         if back != self.can_go_back {
             self.can_go_back = back;
             changed = true;
         }
-        let fwd = wv.can_go_forward();
         if fwd != self.can_go_forward {
             self.can_go_forward = fwd;
             changed = true;
@@ -330,23 +368,48 @@ impl BrowserPane {
         if changed {
             self.generation = self.generation.wrapping_add(1);
         }
+        if !self.selection_bridge_installed && !self.loading {
+            self.install_selection_bridge();
+        }
         changed
     }
 
     /// Get the selected text in the URL bar, if any.
     pub fn url_selected_text(&self) -> Option<String> {
         let (start, end) = self.url_selection?;
-        let (lo, hi) = if start <= end { (start, end) } else { (end, start) };
+        let (lo, hi) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
         let text: String = self.url_input.chars().skip(lo).take(hi - lo).collect();
-        if text.is_empty() { None } else { Some(text) }
+        if text.is_empty() {
+            None
+        } else {
+            Some(text)
+        }
     }
 
     /// Delete the selected text and place cursor at the start of the selection.
     pub fn url_delete_selection(&mut self) {
         if let Some((start, end)) = self.url_selection.take() {
-            let (lo, hi) = if start <= end { (start, end) } else { (end, start) };
-            let lo_byte = self.url_input.char_indices().nth(lo).map(|(i, _)| i).unwrap_or(self.url_input.len());
-            let hi_byte = self.url_input.char_indices().nth(hi).map(|(i, _)| i).unwrap_or(self.url_input.len());
+            let (lo, hi) = if start <= end {
+                (start, end)
+            } else {
+                (end, start)
+            };
+            let lo_byte = self
+                .url_input
+                .char_indices()
+                .nth(lo)
+                .map(|(i, _)| i)
+                .unwrap_or(self.url_input.len());
+            let hi_byte = self
+                .url_input
+                .char_indices()
+                .nth(hi)
+                .map(|(i, _)| i)
+                .unwrap_or(self.url_input.len());
             self.url_input.replace_range(lo_byte..hi_byte, "");
             self.url_input_cursor = lo;
         }
@@ -367,6 +430,9 @@ impl BrowserPane {
         let Some(ref wv) = self.webview else { return };
         let full_html = self.full_render_html().unwrap_or_default();
         wv.load_html_string(&full_html);
+        self.selection_bridge_installed = false;
+        self.clear_page_selection();
+        self.install_selection_bridge();
         self.needs_render_load = false;
         self.generation = self.generation.wrapping_add(1);
     }
@@ -375,6 +441,7 @@ impl BrowserPane {
     /// BR-27, BR-33: morphdom diffs against current DOM, preserving scroll/focus/input.
     pub fn update_render_content(&mut self, html: &str) {
         self.render_html = Some(html.to_string());
+        self.clear_page_selection();
         if let Some(ref wv) = self.webview {
             // Escape for JS string literal
             let escaped = html
@@ -388,6 +455,74 @@ impl BrowserPane {
             wv.evaluate_javascript(&js);
         }
         self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Install the Browser selection bridge in the current page context.
+    pub fn install_selection_bridge(&mut self) -> bool {
+        let Some(ref wv) = self.webview else {
+            return false;
+        };
+        if self.selection_bridge_installed {
+            return false;
+        }
+        wv.evaluate_javascript(&browser_selection_bridge_script(self.id));
+        self.selection_bridge_installed = true;
+        true
+    }
+
+    /// Update the latest page selection snapshot from the WKWebView bridge.
+    pub fn update_page_selection(&mut self, selection: Option<BrowserSelectionSnapshot>) -> bool {
+        if self.page_selection == selection {
+            return false;
+        }
+        self.page_selection = selection;
+        self.generation = self.generation.wrapping_add(1);
+        true
+    }
+
+    /// Clear any browser page selection snapshot.
+    pub fn clear_page_selection(&mut self) {
+        let _ = self.update_page_selection(None);
+    }
+
+    /// Selected browser text, if the bridge has captured one.
+    pub fn page_selected_text(&self) -> Option<String> {
+        let selection = self.page_selection.as_ref()?;
+        let text = selection.text.trim();
+        if text.is_empty() {
+            None
+        } else {
+            Some(selection.text.clone())
+        }
+    }
+
+    /// Browser selection content normalized into a plain string for artifact capture.
+    pub fn page_selection_content(&self) -> Option<String> {
+        let selection = self.page_selection.as_ref()?;
+        let mut parts = Vec::new();
+        let text = selection.text.trim();
+        if !text.is_empty() {
+            parts.push(text.to_string());
+        }
+        if let Some(context) = selection
+            .context
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            if !parts.is_empty() {
+                parts.push(String::new());
+            }
+            parts.push(context.to_string());
+        }
+        if parts.is_empty() {
+            let html = selection.html.trim();
+            if !html.is_empty() {
+                return Some(html.to_string());
+            }
+            return selection.page_title.clone();
+        }
+        Some(parts.join("\n"))
     }
 
     /// BR-32: Update theme CSS variables in a render pane when dark/light mode changes.
@@ -455,5 +590,67 @@ fn build_render_document(agent_html: &str) -> String {
   <div id="root">{agent_html}</div>
 </body>
 </html>"#
+    )
+}
+
+fn browser_selection_bridge_script(pane_id: PaneId) -> String {
+    format!(
+        r#"(() => {{
+  if (window.__tideSelectionBridgeInstalled) return;
+  window.__tideSelectionBridgeInstalled = true;
+  const paneId = {pane_id};
+  const post = (payload) => {{
+    try {{
+      window.webkit.messageHandlers.tide.postMessage(JSON.stringify(payload));
+    }} catch (_e) {{}}
+  }};
+  const snapshot = () => {{
+    const selection = window.getSelection ? window.getSelection() : null;
+    const title = document.title || "";
+    const url = window.location ? window.location.href : "";
+    if (!selection || selection.rangeCount === 0) {{
+      post({{kind: "browser-selection", pane_id: paneId, text: "", html: "", context: null, title, url, collapsed: true}});
+      return;
+    }}
+    const text = selection.toString();
+    if (!text || !text.trim()) {{
+      post({{kind: "browser-selection", pane_id: paneId, text: "", html: "", context: null, title, url, collapsed: true}});
+      return;
+    }}
+    const range = selection.getRangeAt(0);
+    const fragment = document.createElement("div");
+    fragment.appendChild(range.cloneContents());
+    const anchor = range.commonAncestorContainer && range.commonAncestorContainer.parentElement
+      ? range.commonAncestorContainer.parentElement
+      : document.body;
+    const context = anchor && anchor.innerText ? anchor.innerText : "";
+    post({{
+      kind: "browser-selection",
+      pane_id: paneId,
+      text,
+      html: fragment.innerHTML,
+      context,
+      title,
+      url,
+      collapsed: !!selection.isCollapsed
+    }});
+  }};
+  let scheduled = false;
+  const schedule = () => {{
+    if (scheduled) return;
+    scheduled = true;
+    setTimeout(() => {{
+      scheduled = false;
+      snapshot();
+    }}, 0);
+  }};
+  document.addEventListener("selectionchange", schedule, true);
+  document.addEventListener("mouseup", schedule, true);
+  document.addEventListener("keyup", schedule, true);
+  document.addEventListener("touchend", schedule, true);
+  window.addEventListener("focus", schedule, true);
+  schedule();
+}})();"#,
+        pane_id = pane_id
     )
 }

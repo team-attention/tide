@@ -4,7 +4,7 @@ use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
 
-use super::{visual_width, draw_popup_border, draw_cursor_beam, text_style};
+use super::{draw_cursor_beam, draw_popup_border, text_style, visual_width};
 
 /// Render search bar UI for panes that have search visible.
 pub(super) fn render_search_bars(
@@ -17,15 +17,26 @@ pub(super) fn render_search_bars(
     let cell_size = renderer.cell_size();
 
     // Helper: render a search bar floating at top-right of a given rect
-    let mut search_bars: Vec<(crate::tide_core::PaneId, Rect, String, String, usize, bool)> = Vec::new();
+    let mut search_bars: Vec<(crate::tide_core::PaneId, Rect, String, String, usize, bool)> =
+        Vec::new();
     for &(id, rect) in visual_pane_rects {
         let (query, display, cursor_pos, visible) = match app.panes.get(&id) {
             Some(PaneKind::Terminal(pane)) => match &pane.search {
-                Some(s) if s.visible => (s.input.text.clone(), s.current_display(), s.input.cursor, true),
+                Some(s) if s.visible => (
+                    s.input.text.clone(),
+                    s.current_display(),
+                    s.input.cursor,
+                    true,
+                ),
                 _ => continue,
             },
             Some(PaneKind::Editor(pane)) => match &pane.search {
-                Some(s) if s.visible => (s.input.text.clone(), s.current_display(), s.input.cursor, true),
+                Some(s) if s.visible => (
+                    s.input.text.clone(),
+                    s.current_display(),
+                    s.input.cursor,
+                    true,
+                ),
                 _ => continue,
             },
             Some(PaneKind::Browser(bp)) => match &bp.search {
@@ -35,13 +46,22 @@ pub(super) fn render_search_bars(
             _ => continue,
         };
         if visible {
-            search_bars.push((id, rect, query, display, cursor_pos, search_focus == Some(id)));
+            search_bars.push((
+                id,
+                rect,
+                query,
+                display,
+                cursor_pos,
+                search_focus == Some(id),
+            ));
         }
     }
 
     for (_id, rect, query, display, cursor_pos, is_focused) in &search_bars {
         let bar_w = SEARCH_BAR_WIDTH.min(rect.width - 16.0);
-        if bar_w < 80.0 { continue; } // too narrow to render
+        if bar_w < 80.0 {
+            continue;
+        } // too narrow to render
         let bar_h = SEARCH_BAR_HEIGHT;
         let bar_x = rect.x + rect.width - bar_w - 8.0;
         let bar_y = rect.y + TAB_BAR_HEIGHT + 4.0;
@@ -72,14 +92,23 @@ pub(super) fn render_search_bars(
         let (before_w, preedit_w) = if *is_focused {
             (
                 visual_width(&query[..*cursor_pos]) as f32 * cell_size.width,
-                if has_preedit { visual_width(&app.ime.preedit) as f32 * cell_size.width } else { 0.0 },
+                if has_preedit {
+                    visual_width(&app.ime.preedit) as f32 * cell_size.width
+                } else {
+                    0.0
+                },
             )
         } else {
             (0.0, 0.0)
         };
 
         if query.is_empty() && !has_preedit {
-            renderer.draw_top_text("Search...", Vec2::new(text_x, text_y), muted_style, text_clip);
+            renderer.draw_top_text(
+                "Search...",
+                Vec2::new(text_x, text_y),
+                muted_style,
+                text_clip,
+            );
         } else if has_preedit {
             // Split query around cursor and insert preedit
             let before = &query[..*cursor_pos];
@@ -95,14 +124,24 @@ pub(super) fn render_search_bars(
                 Rect::new(preedit_x, text_y, preedit_w, cell_size.height),
                 p.ime_preedit_bg,
             );
-            renderer.draw_top_text(&app.ime.preedit, Vec2::new(preedit_x, text_y), preedit_style, text_clip);
+            renderer.draw_top_text(
+                &app.ime.preedit,
+                Vec2::new(preedit_x, text_y),
+                preedit_style,
+                text_clip,
+            );
             // Underline
             renderer.draw_top_rect(
                 Rect::new(preedit_x, text_y + cell_size.height - 1.0, preedit_w, 1.0),
                 p.ime_preedit_fg,
             );
             if !after.is_empty() {
-                renderer.draw_top_text(after, Vec2::new(preedit_x + preedit_w, text_y), ts, text_clip);
+                renderer.draw_top_text(
+                    after,
+                    Vec2::new(preedit_x + preedit_w, text_y),
+                    ts,
+                    text_clip,
+                );
             }
         } else {
             renderer.draw_top_text(query, Vec2::new(text_x, text_y), ts, text_clip);
@@ -116,11 +155,21 @@ pub(super) fn render_search_bars(
 
         // Counter text
         let counter_clip = Rect::new(counter_x, bar_y, counter_w + 4.0, bar_h);
-        renderer.draw_top_text(display, Vec2::new(counter_x, text_y), counter_style, counter_clip);
+        renderer.draw_top_text(
+            display,
+            Vec2::new(counter_x, text_y),
+            counter_style,
+            counter_clip,
+        );
 
         // Close button
         let close_icon_x = close_x + (close_area_w - cell_size.width) / 2.0;
         let close_clip = Rect::new(close_x, bar_y, close_area_w, bar_h);
-        renderer.draw_top_text("\u{f00d}", Vec2::new(close_icon_x, text_y), counter_style, close_clip);
+        renderer.draw_top_text(
+            "\u{f00d}",
+            Vec2::new(close_icon_x, text_y),
+            counter_style,
+            close_clip,
+        );
     }
 }

@@ -164,6 +164,12 @@ pub(crate) fn handle_key_down(
         return;
     }
 
+    // Explicit context comment composer interception
+    if ctx.modal().context_comment_composer.is_some() {
+        modal::handle_context_comment_composer_key(ctx, key, &modifiers);
+        return;
+    }
+
     // Branch cleanup bar interception
     if ctx.modal().branch_cleanup.is_some() {
         let stale = ctx

@@ -18,7 +18,9 @@ fn current_worktree_badge_stays_visible_for_long_branch_names() {
     assert!(layout.badge_x + layout.badge_w <= 24.0 + 320.0 - 12.0);
     assert!(
         layout.display_name.chars().count()
-            < "feature/very-long-branch-name-that-used-to-hide-the-badge".chars().count()
+            < "feature/very-long-branch-name-that-used-to-hide-the-badge"
+                .chars()
+                .count()
     );
 }
 

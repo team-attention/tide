@@ -1,11 +1,11 @@
 use crate::tide_core::{Rect, Renderer, TextStyle, Vec2};
 
 use crate::header;
-use crate::theme::*;
 use crate::state::FocusArea;
+use crate::theme::*;
 use crate::App;
-use crate::DockPort;
 use crate::AppCorePort;
+use crate::DockPort;
 
 /// Render dock background, pane borders/backgrounds, pane headers (tab bars),
 /// and browser navigation bars. Returns the computed header hit zones.
@@ -28,40 +28,71 @@ pub(super) fn render_pane_chrome(
             let sep_h = logical.height - app.window.top_inset;
             let sep_y = app.window.top_inset;
             // Left-side gradient shadow (3 strips)
-            renderer.draw_chrome_rect(Rect::new(sep_x - 3.0, sep_y, 1.0, sep_h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.02));
-            renderer.draw_chrome_rect(Rect::new(sep_x - 2.0, sep_y, 1.0, sep_h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.04));
-            renderer.draw_chrome_rect(Rect::new(sep_x - 1.0, sep_y, 1.0, sep_h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.08));
+            renderer.draw_chrome_rect(
+                Rect::new(sep_x - 3.0, sep_y, 1.0, sep_h),
+                crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.02),
+            );
+            renderer.draw_chrome_rect(
+                Rect::new(sep_x - 2.0, sep_y, 1.0, sep_h),
+                crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.04),
+            );
+            renderer.draw_chrome_rect(
+                Rect::new(sep_x - 1.0, sep_y, 1.0, sep_h),
+                crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.08),
+            );
             // Separator line
             renderer.draw_chrome_rect(Rect::new(sep_x, sep_y, 1.0, sep_h), p.border_subtle);
             // Right-side gradient shadow (3 strips)
-            renderer.draw_chrome_rect(Rect::new(sep_x + 1.0, sep_y, 1.0, sep_h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.08));
-            renderer.draw_chrome_rect(Rect::new(sep_x + 2.0, sep_y, 1.0, sep_h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.04));
-            renderer.draw_chrome_rect(Rect::new(sep_x + 3.0, sep_y, 1.0, sep_h), crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.02));
+            renderer.draw_chrome_rect(
+                Rect::new(sep_x + 1.0, sep_y, 1.0, sep_h),
+                crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.08),
+            );
+            renderer.draw_chrome_rect(
+                Rect::new(sep_x + 2.0, sep_y, 1.0, sep_h),
+                crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.04),
+            );
+            renderer.draw_chrome_rect(
+                Rect::new(sep_x + 3.0, sep_y, 1.0, sep_h),
+                crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.02),
+            );
 
             // Draw separator between pinned group and terminal dock
             let has_pinned = app.has_pinned_panes();
-            let has_term_dock = app.focused_terminal_id()
+            let has_term_dock = app
+                .focused_terminal_id()
                 .and_then(|tid| app.panes.get(&tid))
                 .map(|pk| {
                     if let crate::pane::PaneKind::Terminal(tp) = pk {
                         !tp.dock_layout.pane_ids().is_empty()
-                    } else { false }
+                    } else {
+                        false
+                    }
                 })
                 .unwrap_or(false);
             if has_pinned && has_term_dock {
-                let pinned_w = (app.dock.dock_width * app.dock.pinned_dock_ratio).max(60.0).min(app.dock.dock_width - 60.0);
+                let pinned_w = (app.dock.dock_width * app.dock.pinned_dock_ratio)
+                    .max(60.0)
+                    .min(app.dock.dock_width - 60.0);
                 let pin_sep_x = dock_x + pinned_w + PANE_GAP / 2.0;
-                let pin_sep_rect = Rect::new(pin_sep_x, app.window.top_inset, 1.0, logical.height - app.window.top_inset);
+                let pin_sep_rect = Rect::new(
+                    pin_sep_x,
+                    app.window.top_inset,
+                    1.0,
+                    logical.height - app.window.top_inset,
+                );
                 renderer.draw_chrome_rect(pin_sep_rect, p.border_subtle);
             }
 
             // Check if the dock is empty (no dock panes and no pinned panes)
-            let dock_has_panes = app.focused_terminal_id()
+            let dock_has_panes = app
+                .focused_terminal_id()
                 .and_then(|tid| app.panes.get(&tid))
                 .map(|pk| {
                     if let crate::pane::PaneKind::Terminal(tp) = pk {
                         !tp.dock_layout.all_pane_ids().is_empty()
-                    } else { false }
+                    } else {
+                        false
+                    }
                 })
                 .unwrap_or(false);
             if !dock_has_panes && !has_pinned {
@@ -77,27 +108,39 @@ pub(super) fn render_pane_chrome(
                     dock_w - edge_inset * 2.0,
                     logical.height - app.window.top_inset - edge_inset * 2.0,
                 );
-                renderer.draw_chrome_rounded_rect(placeholder_rect, p.border_subtle, PANE_CORNER_RADIUS);
+                renderer.draw_chrome_rounded_rect(
+                    placeholder_rect,
+                    p.border_subtle,
+                    PANE_CORNER_RADIUS,
+                );
                 let inner = Rect::new(
                     placeholder_rect.x + 1.0,
                     placeholder_rect.y + 1.0,
                     placeholder_rect.width - 2.0,
                     placeholder_rect.height - 2.0,
                 );
-                renderer.draw_chrome_rounded_rect(inner, p.pane_bg, (PANE_CORNER_RADIUS - 1.0).max(0.0));
+                renderer.draw_chrome_rounded_rect(
+                    inner,
+                    p.pane_bg,
+                    (PANE_CORNER_RADIUS - 1.0).max(0.0),
+                );
 
                 // Centered hint text
                 let hint = "Cmd+4";
                 let hint_w = hint.len() as f32 * cs.width;
                 let hint_x = dock_x + (dock_w - hint_w) / 2.0;
-                let hint_y = app.window.top_inset + (logical.height - app.window.top_inset) / 2.0 - cs.height / 2.0;
+                let hint_y = app.window.top_inset + (logical.height - app.window.top_inset) / 2.0
+                    - cs.height / 2.0;
                 renderer.draw_chrome_text(
                     hint,
                     Vec2::new(hint_x, hint_y),
                     TextStyle {
                         foreground: p.badge_text_dimmed,
                         background: None,
-                        bold: false, dim: false, italic: false, underline: false,
+                        bold: false,
+                        dim: false,
+                        italic: false,
+                        underline: false,
                     },
                     inner,
                 );
@@ -113,7 +156,9 @@ pub(super) fn render_pane_chrome(
             app.focused_terminal_id().and_then(|tid| {
                 if let Some(crate::pane::PaneKind::Terminal(tp)) = app.panes.get(&tid) {
                     tp.dock_focused
-                } else { None }
+                } else {
+                    None
+                }
             })
         }
         _ => None,
@@ -121,15 +166,23 @@ pub(super) fn render_pane_chrome(
 
     // Draw pane backgrounds + borders with rounded corners
     for &(id, rect) in visual_pane_rects {
-        if !app.panes.contains_key(&id) { continue; }
+        if !app.panes.contains_key(&id) {
+            continue;
+        }
         // Only show pane focus highlight when focus is in the pane area
-        let is_focused = focused == Some(id) && matches!(app.focus.focus_area, FocusArea::Stage | FocusArea::Dock);
+        let is_focused = focused == Some(id)
+            && matches!(app.focus.focus_area, FocusArea::Stage | FocusArea::Dock);
         let is_companion = companion_id == Some(id);
         // UC-5 BR-6,7: Pane border blinks orange for NeedsInput + unfocused
         let agent_needs_input = !is_focused
-            && app.gateway.detected_agents.get(&id)
+            && app
+                .gateway
+                .detected_agents
+                .get(&id)
                 .and_then(|a| a.status)
-                .map_or(false, |s| matches!(s, crate::state::gateway_status::AgentStatus::NeedsInput));
+                .map_or(false, |s| {
+                    matches!(s, crate::state::gateway_status::AgentStatus::NeedsInput)
+                });
 
         let border_color = if agent_needs_input {
             // Orange border with blink animation (same frequency as dot: ~4.2 rad/s)
@@ -138,7 +191,12 @@ pub(super) fn render_pane_chrome(
             crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity)
         } else if is_companion {
             // Dimmed version of border_focused -- same hue, lower alpha, no glow
-            crate::tide_core::Color::new(p.border_focused.r, p.border_focused.g, p.border_focused.b, p.border_focused.a * 0.6)
+            crate::tide_core::Color::new(
+                p.border_focused.r,
+                p.border_focused.g,
+                p.border_focused.b,
+                p.border_focused.a * 0.6,
+            )
         } else {
             p.border_subtle
         };
@@ -148,7 +206,8 @@ pub(super) fn render_pane_chrome(
         // NeedsInput: draw outer glow shadow
         if agent_needs_input {
             let t = app.timing.last_frame.elapsed().as_secs_f64();
-            let opacity = (0.15_f32 + 0.15 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32).max(0.0);
+            let opacity =
+                (0.15_f32 + 0.15 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32).max(0.0);
             let shadow_color = crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity);
             renderer.draw_chrome_shadow(rect, shadow_color, PANE_CORNER_RADIUS, 12.0, -3.0);
         }
@@ -162,8 +221,16 @@ pub(super) fn render_pane_chrome(
                 rect.width - 2.0 * side_border,
                 rect.height - top_border - side_border,
             );
-            renderer.draw_chrome_rounded_rect(inset, p.pane_bg, (PANE_CORNER_RADIUS - side_border).max(0.0));
-            let tab_bar_bg_color = if is_focused { p.tab_bar_bg_focused } else { p.tab_bar_bg };
+            renderer.draw_chrome_rounded_rect(
+                inset,
+                p.pane_bg,
+                (PANE_CORNER_RADIUS - side_border).max(0.0),
+            );
+            let tab_bar_bg_color = if is_focused {
+                p.tab_bar_bg_focused
+            } else {
+                p.tab_bar_bg
+            };
             renderer.draw_chrome_rect(
                 Rect::new(inset.x, inset.y, inset.width, TAB_BAR_HEIGHT),
                 tab_bar_bg_color,
@@ -171,7 +238,11 @@ pub(super) fn render_pane_chrome(
         } else {
             // Normal: no border, pane_bg fills whole area, tab_bar_bg on top
             renderer.draw_chrome_rect(rect, p.pane_bg);
-            let tab_bar_bg_color = if is_focused { p.tab_bar_bg_focused } else { p.tab_bar_bg };
+            let tab_bar_bg_color = if is_focused {
+                p.tab_bar_bg_focused
+            } else {
+                p.tab_bar_bg
+            };
             renderer.draw_chrome_rect(
                 Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT),
                 tab_bar_bg_color,
@@ -188,7 +259,8 @@ pub(super) fn render_pane_chrome(
     let mut all_hit_zones = Vec::new();
 
     // Collect dock TabGroup info for ALL dock panes (always show tab bar in Dock)
-    let mut dock_tab_groups: std::collections::HashMap<u64, crate::tide_layout::TabGroup> = std::collections::HashMap::new();
+    let mut dock_tab_groups: std::collections::HashMap<u64, crate::tide_layout::TabGroup> =
+        std::collections::HashMap::new();
     for (_, pk) in &app.panes {
         if let crate::pane::PaneKind::Terminal(tp) = pk {
             for &(pid, _) in visual_pane_rects {
@@ -214,11 +286,18 @@ pub(super) fn render_pane_chrome(
                 tabs.extend(tp.dock_layout.all_tabs_flat());
             }
         }
-        if tabs.len() > 1 { Some(tabs) } else { None }
-    } else { None };
+        if tabs.len() > 1 {
+            Some(tabs)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     // Collect Stage LeafGroup info for per-TabGroup tab bars (UC-4)
-    let mut stage_tab_groups: std::collections::HashMap<u64, crate::tide_layout::TabGroup> = std::collections::HashMap::new();
+    let mut stage_tab_groups: std::collections::HashMap<u64, crate::tide_layout::TabGroup> =
+        std::collections::HashMap::new();
     for &(pid, _) in visual_pane_rects {
         if let Some(tg) = app.layout.tab_group_containing(pid) {
             if tg.tabs.len() >= 2 {
@@ -234,8 +313,10 @@ pub(super) fn render_pane_chrome(
 
     // Compute blink time for NeedsInput dot animation (UC-5)
     let has_blinking = app.gateway.detected_agents.iter().any(|(&id, a)| {
-        matches!(a.status, Some(crate::state::gateway_status::AgentStatus::NeedsInput))
-            && focused != Some(id)
+        matches!(
+            a.status,
+            Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+        ) && focused != Some(id)
     });
     let blink_time = if has_blinking {
         Some(app.timing.last_frame.elapsed().as_secs_f64())
@@ -254,14 +335,28 @@ pub(super) fn render_pane_chrome(
         let has_stage_tab_group = stage_tab_groups.contains_key(&id);
         let has_stage_tab_bar = is_zoomed && show_stage_tabs;
 
-        let scroll_off = app.interaction.tab_scroll_offset.get(&id).copied().unwrap_or(0.0);
+        let scroll_off = app
+            .interaction
+            .tab_scroll_offset
+            .get(&id)
+            .copied()
+            .unwrap_or(0.0);
 
         if is_dock_zoomed {
             // Dock zoomed: show flat tab bar of all dock tabs (like stage stacked)
             if let Some(ref tabs) = dock_zoomed_tabs {
                 let tab_zones = header::render_stage_tab_bar(
-                    id, rect, tabs, &app.panes, focused, p, renderer,
-                    &app.gateway.detected_agents, blink_time, scroll_off,
+                    id,
+                    rect,
+                    tabs,
+                    &app.panes,
+                    focused,
+                    p,
+                    renderer,
+                    app.can_show_context_comment_badge(id),
+                    &app.gateway.detected_agents,
+                    blink_time,
+                    scroll_off,
                 );
                 // Remap StageTab actions to DockTab for dock panes
                 for mut z in tab_zones {
@@ -274,7 +369,17 @@ pub(super) fn render_pane_chrome(
                 // Single dock pane zoomed -- render normal header
                 let agent_status = app.gateway.detected_agents.get(&id).and_then(|a| a.status);
                 let zones = header::render_pane_header_inner(
-                    id, rect, &app.panes, focused, false, false, p, renderer, agent_status, blink_time,
+                    id,
+                    rect,
+                    &app.panes,
+                    focused,
+                    false,
+                    false,
+                    app.can_show_context_comment_badge(id),
+                    p,
+                    renderer,
+                    agent_status,
+                    blink_time,
                 );
                 all_hit_zones.extend(zones);
             }
@@ -282,30 +387,68 @@ pub(super) fn render_pane_chrome(
             // Dock pane: render ONLY the tab bar (includes close/maximize)
             let tg = dock_tab_groups.get(&id).unwrap();
             let tab_zones = header::render_dock_tab_bar(
-                id, rect, tg, &app.panes, focused, &app.dock.pinned_dock_layout.all_pane_ids(), p, renderer,
-                &app.gateway.detected_agents, blink_time, scroll_off,
+                id,
+                rect,
+                tg,
+                &app.panes,
+                focused,
+                &app.dock.pinned_dock_layout.all_pane_ids(),
+                p,
+                renderer,
+                app.can_show_context_comment_badge(tg.active_pane()),
+                &app.gateway.detected_agents,
+                blink_time,
+                scroll_off,
             );
             all_hit_zones.extend(tab_zones);
         } else if has_stage_tab_bar {
             // Stage stacked/zoomed: render flat tab bar of ALL Stage panes (takes priority over per-group)
             let tab_zones = header::render_stage_tab_bar(
-                id, rect, &stage_pane_ids, &app.panes, focused, p, renderer,
-                &app.gateway.detected_agents, blink_time, scroll_off,
+                id,
+                rect,
+                &stage_pane_ids,
+                &app.panes,
+                focused,
+                p,
+                renderer,
+                false,
+                &app.gateway.detected_agents,
+                blink_time,
+                scroll_off,
             );
             all_hit_zones.extend(tab_zones);
         } else if has_stage_tab_group {
             // Stage LeafGroup with 2+ tabs: render per-TabGroup tab bar (UC-4)
             let tg = stage_tab_groups.get(&id).unwrap();
             let tab_zones = header::render_stage_tab_group_bar(
-                id, rect, tg, &app.panes, focused, p, renderer,
-                &app.gateway.detected_agents, blink_time, scroll_off,
+                id,
+                rect,
+                tg,
+                &app.panes,
+                focused,
+                p,
+                renderer,
+                false,
+                &app.gateway.detected_agents,
+                blink_time,
+                scroll_off,
             );
             all_hit_zones.extend(tab_zones);
         } else {
             // Normal pane: render per-pane header (with agent status dot)
             let agent_status = app.gateway.detected_agents.get(&id).and_then(|a| a.status);
             let zones = header::render_pane_header_inner(
-                id, rect, &app.panes, focused, is_zoomed, false, p, renderer, agent_status, blink_time,
+                id,
+                rect,
+                &app.panes,
+                focused,
+                is_zoomed,
+                false,
+                app.can_show_context_comment_badge(id),
+                p,
+                renderer,
+                agent_status,
+                blink_time,
             );
             all_hit_zones.extend(zones);
         }
@@ -369,32 +512,77 @@ fn render_browser_nav_bar(
         renderer.draw_chrome_text(
             icon,
             Vec2::new(x, text_y),
-            TextStyle { foreground: color, background: None, bold: false, dim: false, italic: false, underline: false },
+            TextStyle {
+                foreground: color,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            },
             rect,
         );
     };
 
     // Back button
-    let back_color = if bp.can_go_back { p.tab_text_focused } else { p.tab_text };
-    draw_icon_button(renderer, cx, "\u{2190}", hovered(crate::state::drag_types::HoverTarget::BrowserBack), back_color);
+    let back_color = if bp.can_go_back {
+        p.tab_text_focused
+    } else {
+        p.tab_text
+    };
+    draw_icon_button(
+        renderer,
+        cx,
+        "\u{2190}",
+        hovered(crate::state::drag_types::HoverTarget::BrowserBack),
+        back_color,
+    );
     cx += cell_w * 2.0;
 
     // Forward button
-    let fwd_color = if bp.can_go_forward { p.tab_text_focused } else { p.tab_text };
-    draw_icon_button(renderer, cx, "\u{2192}", hovered(crate::state::drag_types::HoverTarget::BrowserForward), fwd_color);
+    let fwd_color = if bp.can_go_forward {
+        p.tab_text_focused
+    } else {
+        p.tab_text
+    };
+    draw_icon_button(
+        renderer,
+        cx,
+        "\u{2192}",
+        hovered(crate::state::drag_types::HoverTarget::BrowserForward),
+        fwd_color,
+    );
     cx += cell_w * 2.0;
 
     // Refresh button
     let refresh_icon = if bp.loading { "\u{00d7}" } else { "\u{21bb}" };
-    draw_icon_button(renderer, cx, refresh_icon, hovered(crate::state::drag_types::HoverTarget::BrowserRefresh), p.tab_text_focused);
+    draw_icon_button(
+        renderer,
+        cx,
+        refresh_icon,
+        hovered(crate::state::drag_types::HoverTarget::BrowserRefresh),
+        p.tab_text_focused,
+    );
     cx += cell_w * 2.0 + 4.0;
 
     // Copy URL button
-    draw_icon_button(renderer, cx, "\u{2398}", hovered(crate::state::drag_types::HoverTarget::BrowserCopyUrl), p.tab_text_focused);
+    draw_icon_button(
+        renderer,
+        cx,
+        "\u{2398}",
+        hovered(crate::state::drag_types::HoverTarget::BrowserCopyUrl),
+        p.tab_text_focused,
+    );
     cx += cell_w * 2.0;
 
     // Open externally button
-    draw_icon_button(renderer, cx, "\u{2197}", hovered(crate::state::drag_types::HoverTarget::BrowserOpenExternal), p.tab_text_focused);
+    draw_icon_button(
+        renderer,
+        cx,
+        "\u{2197}",
+        hovered(crate::state::drag_types::HoverTarget::BrowserOpenExternal),
+        p.tab_text_focused,
+    );
     cx += cell_w * 2.0 + 4.0;
 
     // Loading progress bar (thin line below nav bar)
@@ -415,11 +603,17 @@ fn render_browser_nav_bar(
     let url_w = nav_x + nav_w - cx - 8.0;
     if url_w > 40.0 {
         let url_rect = Rect::new(cx, nav_y + 2.0, url_w, nav_h - 4.0);
-        let url_bg = if bp.url_input_focused { p.file_tree_bg } else { p.badge_bg };
+        let url_bg = if bp.url_input_focused {
+            p.file_tree_bg
+        } else {
+            p.badge_bg
+        };
         renderer.draw_chrome_rounded_rect(url_rect, url_bg, 3.0);
 
         let str_display_width = |s: &str| -> usize {
-            s.chars().map(|c| UnicodeWidthChar::width(c).unwrap_or(1)).sum()
+            s.chars()
+                .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
+                .sum()
         };
 
         let max_cols = (url_w / cell_w).floor() as usize;
@@ -433,7 +627,9 @@ fn render_browser_nav_bar(
             let mut cols = 0;
             for ch in display.chars() {
                 let w = UnicodeWidthChar::width(ch).unwrap_or(1);
-                if cols + w > max_cols.saturating_sub(1) { break; }
+                if cols + w > max_cols.saturating_sub(1) {
+                    break;
+                }
                 truncated.push(ch);
                 cols += w;
             }
@@ -441,7 +637,14 @@ fn render_browser_nav_bar(
             renderer.draw_chrome_text(
                 &truncated,
                 Vec2::new(cx + 4.0, text_y),
-                TextStyle { foreground: p.tab_text_focused, background: None, bold: false, dim: false, italic: false, underline: false },
+                TextStyle {
+                    foreground: p.tab_text_focused,
+                    background: None,
+                    bold: false,
+                    dim: false,
+                    italic: false,
+                    underline: false,
+                },
                 url_rect,
             );
 
@@ -458,10 +661,18 @@ fn render_browser_nav_bar(
 
             // Selection highlight
             if let Some((sel_lo, sel_hi)) = bp.url_selection_ordered() {
-                let sel_start_cols: usize = bp.url_input.chars().take(sel_lo)
-                    .map(|c| UnicodeWidthChar::width(c).unwrap_or(1)).sum();
-                let sel_end_cols: usize = bp.url_input.chars().take(sel_hi)
-                    .map(|c| UnicodeWidthChar::width(c).unwrap_or(1)).sum();
+                let sel_start_cols: usize = bp
+                    .url_input
+                    .chars()
+                    .take(sel_lo)
+                    .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
+                    .sum();
+                let sel_end_cols: usize = bp
+                    .url_input
+                    .chars()
+                    .take(sel_hi)
+                    .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
+                    .sum();
                 let sel_x = cx + 4.0 + sel_start_cols as f32 * cell_w;
                 let sel_w = (sel_end_cols - sel_start_cols) as f32 * cell_w;
                 renderer.draw_chrome_rect(
@@ -481,14 +692,23 @@ fn render_browser_nav_bar(
             let mut cols = 0;
             for ch in bp.url.chars() {
                 let w = UnicodeWidthChar::width(ch).unwrap_or(1);
-                if cols + w > max_cols.saturating_sub(1) { break; }
+                if cols + w > max_cols.saturating_sub(1) {
+                    break;
+                }
                 truncated.push(ch);
                 cols += w;
             }
             renderer.draw_chrome_text(
                 &truncated,
                 Vec2::new(cx + 4.0, text_y),
-                TextStyle { foreground: p.tab_text_focused, background: None, bold: false, dim: false, italic: false, underline: false },
+                TextStyle {
+                    foreground: p.tab_text_focused,
+                    background: None,
+                    bold: false,
+                    dim: false,
+                    italic: false,
+                    underline: false,
+                },
                 url_rect,
             );
         }
