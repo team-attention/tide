@@ -100,6 +100,7 @@ impl crate::App {
             "capture-selection" => cli_capture_selection(self, params),
             "get-layout" => cli_get_layout(self),
             // Phase 2 — Act
+            "browser-eval" => cli_browser_eval(self, params),
             "send-keys" => cli_send_keys(self, params),
             "split-vertical" => cli_split(self, SplitDirection::Vertical, params),
             "split-horizontal" => cli_split(self, SplitDirection::Horizontal, params),
@@ -207,7 +208,7 @@ fn cli_list_panes(
     Ok(Value::Array(result))
 }
 
-/// UC-2: CapturePaneContent — read text from a terminal or editor pane.
+/// UC-2: CapturePaneContent — read text from a terminal, editor, or Browser Pane.
 fn cli_capture_pane(
     ctx: &(impl FocusNavPort + PaneAccessPort),
     params: Value,
@@ -269,22 +270,74 @@ fn cli_capture_pane(
                 "lines": lines,
             }))
         }
-        PaneKind::Browser(_) | PaneKind::Launcher(_) => {
-            let kind_str = match pane {
-                PaneKind::Browser(_) => "browser",
-                PaneKind::Launcher(_) => "launcher",
-                _ => unreachable!(),
+        PaneKind::Browser(browser) => {
+            let snapshot = browser.page_snapshot.as_ref();
+            let content = snapshot.map(|s| s.text.as_str()).unwrap_or_default();
+            let lines = if content.is_empty() {
+                Vec::new()
+            } else {
+                content.lines().map(str::to_string).collect::<Vec<_>>()
             };
-            Err(CliError::InvalidPaneKind {
-                pane_id,
-                expected: "terminal or editor",
-                actual: kind_str,
-            })
+
+            Ok(json!({
+                "pane_id": pane_id,
+                "kind": "browser",
+                "title": snapshot.and_then(|s| s.page_title.as_deref()),
+                "url": snapshot.and_then(|s| s.page_url.as_deref()),
+                "content": content,
+                "lines": lines,
+            }))
         }
+        PaneKind::Launcher(_) => Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "terminal, editor, or browser",
+            actual: "launcher",
+        }),
         PaneKind::Diff(_) => Err(CliError::InvalidPaneKind {
             pane_id,
-            expected: "terminal or editor",
+            expected: "terminal, editor, or browser",
             actual: "diff",
+        }),
+    }
+}
+
+/// UC-12: BrowserControl — evaluate JavaScript in a Browser Pane.
+fn cli_browser_eval(
+    ctx: &mut (impl FocusNavPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = params
+        .get("pane_id")
+        .and_then(|v| v.as_u64())
+        .or_else(|| ctx.focused_pane())
+        .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+    let script = params
+        .get("script")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| CliError::InvalidParams("script required".into()))?;
+
+    let pane = ctx
+        .pane_mut(pane_id)
+        .ok_or(CliError::PaneNotFound(pane_id))?;
+
+    match pane {
+        PaneKind::Browser(browser) => {
+            if let Some(webview) = browser.webview.as_ref() {
+                webview.evaluate_javascript(script);
+            }
+            browser.request_page_snapshot_refresh();
+            Ok(json!({"ok": true}))
+        }
+        other => Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "browser",
+            actual: match other {
+                PaneKind::Terminal(_) => "terminal",
+                PaneKind::Editor(_) => "editor",
+                PaneKind::Diff(_) => "diff",
+                PaneKind::Launcher(_) => "launcher",
+                PaneKind::Browser(_) => unreachable!(),
+            },
         }),
     }
 }
@@ -1247,22 +1300,21 @@ fn cli_notify(
     let agent_name = {
         let agents = ctx.detected_agents_mut();
         if let Some(agent) = agents.get_mut(&pane_id) {
+            agent.wrapper_managed = true;
+            agent.gateway_connected = true;
             agent.status = Some(status);
             Some(agent.name)
         } else {
             // Auto-register: wrapper hook arrived before gateway modal scan.
             // Use a static str for the display name based on the hint.
-            let name: &'static str = match agent_display_name {
-                "claude" | "Claude Code" => "Claude Code",
-                "codex" | "Codex" => "Codex",
-                "gemini" | "Gemini" => "Gemini",
-                _ => "Agent",
-            };
+            let name = crate::state::gateway_status::wrapped_agent_display_name(agent_display_name)
+                .unwrap_or("Agent");
             agents.insert(
                 pane_id,
                 crate::state::gateway_status::AgentInfo {
                     name,
                     pid: 0, // PID unknown from hook — will be updated on next process scan
+                    wrapper_managed: true,
                     gateway_connected: true, // wrapper implies MCP is connected
                     status: Some(status),
                 },

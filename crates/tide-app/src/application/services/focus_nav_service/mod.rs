@@ -207,6 +207,16 @@ impl FocusNavPort for App {
     // ── Focus state mutations ──
 
     fn focus_pane(&mut self, id: PaneId) {
+        // Clear url_input_focused on the previously focused browser pane
+        // so stale IME preedit doesn't render in its URL bar.
+        if let Some(prev) = self.focus.focused {
+            if prev != id {
+                if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&prev) {
+                    bp.url_input_focused = false;
+                    bp.url_selection = None;
+                }
+            }
+        }
         self.focus.focused = Some(id);
         self.router.set_focused(id);
         // Clear NeedsInput/Idle status when the user focuses the pane — they've seen it
