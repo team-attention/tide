@@ -91,7 +91,7 @@ fn push_comment_text(
     }
 }
 
-fn composer_popup_rect(logical: Size) -> Rect {
+pub(crate) fn composer_popup_rect(logical: Size) -> Rect {
     let popup_w = if logical.width > 560.0 {
         (logical.width - 48.0).min(760.0).max(520.0)
     } else {
@@ -115,7 +115,7 @@ fn composer_input_visible_rows(logical: Size) -> usize {
     }
 }
 
-fn composer_input_rect(logical: Size, cell_size: Size) -> (Rect, f32) {
+pub(crate) fn composer_input_rect(logical: Size, cell_size: Size) -> (Rect, f32) {
     let popup_rect = composer_popup_rect(logical);
     let line_h = cell_size.height + 6.0;
     let visible_rows = composer_input_visible_rows(logical);
@@ -382,7 +382,7 @@ pub(super) fn render_context_comment_composer(
         }
     }
 
-    if !composer.comment.is_empty() || composer.comment.cursor == 0 || !app.ime.preedit.is_empty() {
+    if !composer.comment.is_empty() || !app.ime.preedit.is_empty() {
         let cursor_rect = context_comment_composer_cursor_area(
             logical,
             cell_size,
