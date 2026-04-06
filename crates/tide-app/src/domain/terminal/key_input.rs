@@ -35,7 +35,7 @@ impl Terminal {
                     vec![0x0d] // CR
                 }
             }
-            Key::Backspace => vec![0x7f],   // DEL
+            Key::Backspace => vec![0x7f], // DEL
             Key::Tab => {
                 if modifiers.shift {
                     vec![0x1b, b'[', b'Z'] // Shift+Tab = CSI Z

@@ -481,6 +481,58 @@ impl DockPort for App {
         }
     }
 
+    fn dock_tab_group_contains_multiple(&self, pane_id: PaneId) -> bool {
+        if self.is_pane_pinned(pane_id) {
+            return self
+                .dock
+                .pinned_dock_layout
+                .tab_group_containing(pane_id)
+                .map(|tg| tg.tabs.len() > 1)
+                .unwrap_or(false);
+        }
+
+        self.terminal_owning(pane_id)
+            .and_then(|terminal_id| match self.panes.get(&terminal_id) {
+                Some(PaneKind::Terminal(tp)) => tp
+                    .dock_layout
+                    .tab_group_containing(pane_id)
+                    .map(|tg| tg.tabs.len() > 1),
+                _ => None,
+            })
+            .unwrap_or(false)
+    }
+
+    fn pinned_layout_set_active_tab(&mut self, pane_id: PaneId) {
+        self.dock.pinned_dock_layout.set_active_tab(pane_id);
+    }
+
+    fn pinned_layout_add_tab_to_first_group(&mut self, pane_id: PaneId) {
+        self.dock.pinned_dock_layout.add_tab_to_first_group(pane_id);
+    }
+
+    fn pinned_layout_add_tab(&mut self, target: PaneId, source: PaneId) -> bool {
+        self.dock.pinned_dock_layout.add_tab(target, source)
+    }
+
+    fn pinned_layout_split_with_leaf_group(
+        &mut self,
+        target: PaneId,
+        source: PaneId,
+        direction: SplitDirection,
+        insert_first: bool,
+    ) {
+        self.dock
+            .pinned_dock_layout
+            .split_with_leaf_group(target, source, direction, insert_first);
+    }
+
+    fn pinned_layout_tab_group_sibling(&self, pane_id: PaneId) -> Option<PaneId> {
+        self.dock
+            .pinned_dock_layout
+            .tab_group_containing(pane_id)
+            .and_then(|tg| tg.tabs.iter().find(|&&t| t != pane_id).copied())
+    }
+
     // ── Dock drag state (mouse_adapter) ──
 
     fn dock_border_dragging(&self) -> bool {

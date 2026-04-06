@@ -200,15 +200,28 @@ pub(super) fn render_pane_chrome(
         } else {
             p.border_subtle
         };
-        let top_border = if agent_needs_input { 2.0 } else { 1.0 };
-        let side_border = if agent_needs_input { 2.0_f32 } else { 1.0_f32 };
+        let top_border = if agent_needs_input {
+            2.0
+        } else {
+            1.0
+        };
+        let side_border = if agent_needs_input {
+            2.0_f32
+        } else {
+            1.0_f32
+        };
 
         // NeedsInput: draw outer glow shadow
         if agent_needs_input {
             let t = app.timing.last_frame.elapsed().as_secs_f64();
-            let opacity =
-                (0.15_f32 + 0.15 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32).max(0.0);
-            let shadow_color = crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity);
+            let shadow_color =
+                crate::tide_core::Color::new(
+                    0.95,
+                    0.65,
+                    0.2,
+                    (0.15_f32 + 0.15 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32)
+                        .max(0.0),
+                );
             renderer.draw_chrome_shadow(rect, shadow_color, PANE_CORNER_RADIUS, 12.0, -3.0);
         }
 

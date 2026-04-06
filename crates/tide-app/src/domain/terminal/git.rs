@@ -50,7 +50,11 @@ fn detect_branch(cwd: &Path) -> Option<String> {
     let text = run_git(&["rev-parse", "--abbrev-ref", "HEAD"], cwd)
         .or_else(|| run_git(&["symbolic-ref", "--short", "HEAD"], cwd))?;
     let branch = text.trim().to_string();
-    if branch.is_empty() { None } else { Some(branch) }
+    if branch.is_empty() {
+        None
+    } else {
+        Some(branch)
+    }
 }
 
 /// A single file entry from `git status --porcelain`.
@@ -129,28 +133,26 @@ pub fn diff_numstat(cwd: &Path) -> std::collections::HashMap<String, (usize, usi
 pub fn file_diff_lines(cwd: &Path, path: &str) -> Vec<crate::pane::diff::DiffLine> {
     use crate::pane::diff::DiffLine;
     match file_diff(cwd, path) {
-        Some(diff_text) => {
-            diff_text
-                .lines()
-                .filter_map(|l| {
-                    if l.starts_with("@@") {
-                        Some(DiffLine::Header(l.to_string()))
-                    } else if l.starts_with('+') && !l.starts_with("+++") {
-                        Some(DiffLine::Added(l[1..].to_string()))
-                    } else if l.starts_with('-') && !l.starts_with("---") {
-                        Some(DiffLine::Removed(l[1..].to_string()))
-                    } else if !l.starts_with("diff ")
-                        && !l.starts_with("index ")
-                        && !l.starts_with("---")
-                        && !l.starts_with("+++")
-                    {
-                        Some(DiffLine::Context(l.to_string()))
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        }
+        Some(diff_text) => diff_text
+            .lines()
+            .filter_map(|l| {
+                if l.starts_with("@@") {
+                    Some(DiffLine::Header(l.to_string()))
+                } else if l.starts_with('+') && !l.starts_with("+++") {
+                    Some(DiffLine::Added(l[1..].to_string()))
+                } else if l.starts_with('-') && !l.starts_with("---") {
+                    Some(DiffLine::Removed(l[1..].to_string()))
+                } else if !l.starts_with("diff ")
+                    && !l.starts_with("index ")
+                    && !l.starts_with("---")
+                    && !l.starts_with("+++")
+                {
+                    Some(DiffLine::Context(l.to_string()))
+                } else {
+                    None
+                }
+            })
+            .collect(),
         None => Vec::new(),
     }
 }
@@ -166,7 +168,11 @@ pub fn list_branches(cwd: &Path) -> Vec<BranchInfo> {
         .map(|l| {
             let is_current = l.starts_with('*');
             let name = l[2..].trim().to_string();
-            BranchInfo { name, is_current, is_remote: false }
+            BranchInfo {
+                name,
+                is_current,
+                is_remote: false,
+            }
         })
         .collect()
 }
@@ -192,14 +198,17 @@ pub fn list_worktrees(cwd: &Path) -> Vec<WorktreeInfo> {
     let cwd_canonical = std::fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
 
     // Determine the main worktree path using git-common-dir (more reliable than positional)
-    let main_wt_canonical = run_git(&["rev-parse", "--git-common-dir"], cwd)
-        .map(|s| {
-            let common = std::path::PathBuf::from(s.trim());
-            // git-common-dir returns the .git dir; its parent is the main worktree
-            let abs = if common.is_absolute() { common } else { cwd.join(common) };
-            std::fs::canonicalize(abs.parent().unwrap_or(&abs))
-                .unwrap_or_else(|_| abs.parent().unwrap_or(&abs).to_path_buf())
-        });
+    let main_wt_canonical = run_git(&["rev-parse", "--git-common-dir"], cwd).map(|s| {
+        let common = std::path::PathBuf::from(s.trim());
+        // git-common-dir returns the .git dir; its parent is the main worktree
+        let abs = if common.is_absolute() {
+            common
+        } else {
+            cwd.join(common)
+        };
+        std::fs::canonicalize(abs.parent().unwrap_or(&abs))
+            .unwrap_or_else(|_| abs.parent().unwrap_or(&abs).to_path_buf())
+    });
 
     let mut worktrees = Vec::new();
     let mut current_path: Option<std::path::PathBuf> = None;
@@ -210,15 +219,22 @@ pub fn list_worktrees(cwd: &Path) -> Vec<WorktreeInfo> {
                  branch: Option<String>,
                  commit: String,
                  main_canon: &Option<std::path::PathBuf>,
-                 cwd_canon: &std::path::PathBuf| -> WorktreeInfo {
-        let path_canonical = std::fs::canonicalize(&path)
-            .unwrap_or_else(|_| path.clone());
-        let is_main = main_canon.as_ref()
+                 cwd_canon: &std::path::PathBuf|
+     -> WorktreeInfo {
+        let path_canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        let is_main = main_canon
+            .as_ref()
             .map(|m| *m == path_canonical)
             .unwrap_or(false);
         // Check if cwd is within this worktree (handles subdirectories)
         let is_current = cwd_canon.starts_with(&path_canonical);
-        WorktreeInfo { path, branch, commit, is_main, is_current }
+        WorktreeInfo {
+            path,
+            branch,
+            commit,
+            is_main,
+            is_current,
+        }
     };
 
     for line in text.lines() {
@@ -226,9 +242,11 @@ pub fn list_worktrees(cwd: &Path) -> Vec<WorktreeInfo> {
             // Flush previous entry
             if let Some(path) = current_path.take() {
                 worktrees.push(flush(
-                    path, current_branch.take(),
+                    path,
+                    current_branch.take(),
                     std::mem::take(&mut current_commit),
-                    &main_wt_canonical, &cwd_canonical,
+                    &main_wt_canonical,
+                    &cwd_canonical,
                 ));
             }
             current_path = Some(std::path::PathBuf::from(path_str));
@@ -251,8 +269,11 @@ pub fn list_worktrees(cwd: &Path) -> Vec<WorktreeInfo> {
     // Flush last entry
     if let Some(path) = current_path.take() {
         worktrees.push(flush(
-            path, current_branch.take(), current_commit,
-            &main_wt_canonical, &cwd_canonical,
+            path,
+            current_branch.take(),
+            current_commit,
+            &main_wt_canonical,
+            &cwd_canonical,
         ));
     }
 
@@ -260,12 +281,7 @@ pub fn list_worktrees(cwd: &Path) -> Vec<WorktreeInfo> {
 }
 
 /// Add a new worktree. If `new_branch` is true, creates a new branch.
-pub fn add_worktree(
-    cwd: &Path,
-    path: &Path,
-    branch: &str,
-    new_branch: bool,
-) -> Result<(), String> {
+pub fn add_worktree(cwd: &Path, path: &Path, branch: &str, new_branch: bool) -> Result<(), String> {
     let path_str = path.to_string_lossy().to_string();
     let mut args = vec!["worktree", "add"];
     if new_branch {
@@ -348,14 +364,22 @@ pub fn count_worktrees(cwd: &Path) -> usize {
 
 /// Check whether a local branch with the given name exists.
 pub fn branch_exists(cwd: &Path, branch: &str) -> bool {
-    run_git(&["rev-parse", "--verify", &format!("refs/heads/{}", branch)], cwd).is_some()
+    run_git(
+        &["rev-parse", "--verify", &format!("refs/heads/{}", branch)],
+        cwd,
+    )
+    .is_some()
 }
 
 /// Get the root directory of the repository (the top-level working directory).
 pub fn repo_root(cwd: &Path) -> Option<std::path::PathBuf> {
     let text = run_git(&["rev-parse", "--show-toplevel"], cwd)?;
     let root = text.trim();
-    if root.is_empty() { None } else { Some(std::path::PathBuf::from(root)) }
+    if root.is_empty() {
+        None
+    } else {
+        Some(std::path::PathBuf::from(root))
+    }
 }
 
 fn detect_status(cwd: &Path) -> GitStatus {

@@ -8,15 +8,17 @@ use std::path::PathBuf;
 
 use unicode_width::UnicodeWidthChar;
 
-use crate::tide_core::{Color, CursorShape, Key, Modifiers, Rect, Renderer, Size, TerminalBackend, Vec2};
+use crate::tide_core::{
+    Color, CursorShape, Key, Modifiers, Rect, Renderer, Size, TerminalBackend, Vec2,
+};
 use crate::tide_renderer::WgpuRenderer;
-use crate::tide_terminal::Terminal;
 use crate::tide_terminal::git::GitInfo;
+use crate::tide_terminal::Terminal;
 
+use crate::state::search::SearchState;
 use browser::BrowserPane;
 use diff::DiffPane;
 use editor::EditorPane;
-use crate::state::search::SearchState;
 
 pub type PaneId = crate::tide_core::PaneId;
 
@@ -84,10 +86,20 @@ pub struct TerminalPane {
 }
 
 impl TerminalPane {
-    pub fn with_cwd(id: PaneId, cols: u16, rows: u16, cwd: Option<std::path::PathBuf>, dark_mode: bool) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn with_cwd(
+        id: PaneId,
+        cols: u16,
+        rows: u16,
+        cwd: Option<std::path::PathBuf>,
+        dark_mode: bool,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let backend = Terminal::with_cwd(cols, rows, cwd, dark_mode, Some(id))?;
         Ok(Self {
-            id, backend, selection: None, search: None, cursor_suppress: 3,
+            id,
+            backend,
+            selection: None,
+            search: None,
+            cursor_suppress: 3,
             context: TerminalContext::default(),
             dock_layout: crate::tide_layout::SplitLayout::new(),
             dock_focused: None,
@@ -99,7 +111,11 @@ impl TerminalPane {
     /// so the shell starts loading in parallel with GPU initialization.
     pub fn with_terminal(id: PaneId, backend: Terminal) -> Self {
         Self {
-            id, backend, selection: None, search: None, cursor_suppress: 3,
+            id,
+            backend,
+            selection: None,
+            search: None,
+            cursor_suppress: 3,
             context: TerminalContext::default(),
             dock_layout: crate::tide_layout::SplitLayout::new(),
             dock_focused: None,
@@ -137,18 +153,19 @@ impl TerminalPane {
             } else {
                 line.len()
             };
+            let mut line_text = String::new();
             for col in col_start..col_end {
                 if col < line.len() {
                     let ch = line[col].character;
                     if ch != '\0' {
-                        result.push(ch);
+                        line_text.push(ch);
                     }
                 }
             }
-            // Trim trailing spaces from every line (including the last)
-            let trimmed = result.trim_end_matches(' ');
-            result.truncate(trimmed.len());
-            if row != end.0 {
+            let trimmed_len = line_text.trim_end_matches(' ').len();
+            line_text.truncate(trimmed_len);
+            result.push_str(&line_text);
+            if row != end.0 && !self.backend.visible_row_is_wrapped(screen_row) {
                 result.push('\n');
             }
         }
@@ -188,7 +205,12 @@ impl TerminalPane {
     }
 
     /// Render URL underlines when Cmd/Meta is held.
-    pub fn render_url_underlines(&self, rect: Rect, renderer: &mut WgpuRenderer, link_color: Color) {
+    pub fn render_url_underlines(
+        &self,
+        rect: Rect,
+        renderer: &mut WgpuRenderer,
+        link_color: Color,
+    ) {
         let cell_size = renderer.cell_size();
         let url_ranges = self.backend.url_ranges();
 
@@ -213,10 +235,7 @@ impl TerminalPane {
                 let x = offset_x + start_col as f32 * cell_size.width;
                 let y = offset_y + (row as f32 + 1.0) * cell_size.height - 1.0;
                 let w = (clamped_end - start_col) as f32 * cell_size.width;
-                renderer.draw_rect(
-                    Rect::new(x, y, w, 1.0),
-                    link_color,
-                );
+                renderer.draw_rect(Rect::new(x, y, w, 1.0), link_color);
             }
         }
     }
@@ -242,8 +261,10 @@ impl TerminalPane {
         let cy = rect.y + cursor.row as f32 * cell_size.height;
 
         // Skip rendering if cursor is outside the visible pane rect
-        if cy + cell_size.height > rect.y + rect.height || cy < rect.y
-            || cx + cell_size.width > rect.x + rect.width + extra_x || cx < rect.x
+        if cy + cell_size.height > rect.y + rect.height
+            || cy < rect.y
+            || cx + cell_size.width > rect.x + rect.width + extra_x
+            || cx < rect.x
         {
             return;
         }
@@ -267,17 +288,16 @@ impl TerminalPane {
                 };
                 let cursor_w = char_width as f32 * cell_size.width;
 
-                renderer.draw_top_rect(
-                    Rect::new(cx, cy, cursor_w, cell_size.height),
-                    cursor_color,
-                );
+                renderer.draw_top_rect(Rect::new(cx, cy, cursor_w, cell_size.height), cursor_color);
 
                 // Draw the character under the cursor in inverse color
                 if row < grid.cells.len() && col < grid.cells[row].len() {
                     let cell = &grid.cells[row][col];
                     if cell.character != ' ' && cell.character != '\0' {
                         // Pick inverse text color based on cursor brightness
-                        let lum = cursor_color.r * 0.299 + cursor_color.g * 0.587 + cursor_color.b * 0.114;
+                        let lum = cursor_color.r * 0.299
+                            + cursor_color.g * 0.587
+                            + cursor_color.b * 0.114;
                         let inv_color = if lum > 0.5 {
                             Color::rgb(0.0, 0.0, 0.0)
                         } else {

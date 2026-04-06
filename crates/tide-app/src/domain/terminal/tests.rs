@@ -70,16 +70,37 @@ mod tests {
     #[test]
     fn test_trim_url_trailing_paren() {
         // Unbalanced closing paren should be trimmed
-        assert_eq!(crate::tide_terminal::trim_url_trailing("https://example.com/page)"), "https://example.com/page");
+        assert_eq!(
+            crate::tide_terminal::trim_url_trailing("https://example.com/page)"),
+            "https://example.com/page"
+        );
         // Balanced parens (Wikipedia-style) should be preserved
-        assert_eq!(crate::tide_terminal::trim_url_trailing("https://en.wikipedia.org/wiki/Foo_(bar)"), "https://en.wikipedia.org/wiki/Foo_(bar)");
+        assert_eq!(
+            crate::tide_terminal::trim_url_trailing("https://en.wikipedia.org/wiki/Foo_(bar)"),
+            "https://en.wikipedia.org/wiki/Foo_(bar)"
+        );
         // Trailing punctuation
-        assert_eq!(crate::tide_terminal::trim_url_trailing("https://example.com/page."), "https://example.com/page");
-        assert_eq!(crate::tide_terminal::trim_url_trailing("https://example.com/page,"), "https://example.com/page");
-        assert_eq!(crate::tide_terminal::trim_url_trailing("https://example.com/page;"), "https://example.com/page");
+        assert_eq!(
+            crate::tide_terminal::trim_url_trailing("https://example.com/page."),
+            "https://example.com/page"
+        );
+        assert_eq!(
+            crate::tide_terminal::trim_url_trailing("https://example.com/page,"),
+            "https://example.com/page"
+        );
+        assert_eq!(
+            crate::tide_terminal::trim_url_trailing("https://example.com/page;"),
+            "https://example.com/page"
+        );
         // Combined: paren + punctuation
-        assert_eq!(crate::tide_terminal::trim_url_trailing("https://example.com/page)."), "https://example.com/page");
+        assert_eq!(
+            crate::tide_terminal::trim_url_trailing("https://example.com/page)."),
+            "https://example.com/page"
+        );
         // No trimming needed
-        assert_eq!(crate::tide_terminal::trim_url_trailing("https://example.com/page"), "https://example.com/page");
+        assert_eq!(
+            crate::tide_terminal::trim_url_trailing("https://example.com/page"),
+            "https://example.com/page"
+        );
     }
 }

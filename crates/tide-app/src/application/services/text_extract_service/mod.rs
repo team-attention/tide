@@ -27,45 +27,25 @@ impl crate::TextExtractPort for App {
         let inner_y = visual_rect.y + content_top;
 
         // Center offset matching render_grid
-        let max_cols = ((visual_rect.width - 2.0 * PANE_PADDING) / cell_size.width).floor() as usize;
+        let max_cols =
+            ((visual_rect.width - 2.0 * PANE_PADDING) / cell_size.width).floor() as usize;
         let actual_width = max_cols as f32 * cell_size.width;
         let extra_x = ((visual_rect.width - 2.0 * PANE_PADDING) - actual_width) / 2.0;
 
         let col = ((position.x - inner_x - extra_x) / cell_size.width) as usize;
         let row = ((position.y - inner_y) / cell_size.height) as usize;
 
-        let url_ranges = pane.backend.url_ranges();
-        if row >= url_ranges.len() {
-            return None;
-        }
-
-        // Check if click column is within a URL range
-        for &(start_col, end_col) in &url_ranges[row] {
-            if col >= start_col && col < end_col {
-                // Extract URL text from grid cells
-                let grid = pane.backend.grid();
-                if row >= grid.cells.len() {
-                    return None;
-                }
-                let line = &grid.cells[row];
-                let url: String = line.iter()
-                    .skip(start_col)
-                    .take(end_col - start_col)
-                    .map(|c| if c.character == '\0' { ' ' } else { c.character })
-                    .collect();
-                let url = url.trim().to_string();
-                if !url.is_empty() {
-                    return Some(url);
-                }
-            }
-        }
-        None
+        Self::extract_wrapped_terminal_url(&pane.backend, row, col)
     }
 
     /// Try to extract a file path from the terminal grid at the given click position.
     /// Scans the clicked row for path-like text and resolves against the terminal's CWD.
     /// Returns the resolved path and an optional line number (from `:42` suffix).
-    fn extract_file_path_at(&self, pane_id: crate::tide_core::PaneId, position: Vec2) -> Option<(PathBuf, Option<usize>)> {
+    fn extract_file_path_at(
+        &self,
+        pane_id: crate::tide_core::PaneId,
+        position: Vec2,
+    ) -> Option<(PathBuf, Option<usize>)> {
         let pane = match self.panes.get(&pane_id) {
             Some(PaneKind::Terminal(p)) => p,
             _ => return None,
@@ -82,7 +62,8 @@ impl crate::TextExtractPort for App {
         let inner_y = visual_rect.y + content_top;
 
         // Center offset matching render_grid
-        let max_cols = ((visual_rect.width - 2.0 * PANE_PADDING) / cell_size.width).floor() as usize;
+        let max_cols =
+            ((visual_rect.width - 2.0 * PANE_PADDING) / cell_size.width).floor() as usize;
         let actual_width = max_cols as f32 * cell_size.width;
         let extra_x = ((visual_rect.width - 2.0 * PANE_PADDING) - actual_width) / 2.0;
 
@@ -170,8 +151,91 @@ impl crate::TextExtractPort for App {
 }
 
 impl App {
+    fn extract_wrapped_terminal_url(
+        terminal: &crate::tide_terminal::Terminal,
+        row: usize,
+        col: usize,
+    ) -> Option<String> {
+        let grid = terminal.grid();
+        if row >= grid.cells.len() {
+            return None;
+        }
+
+        let wrapped_bounds = Self::wrapped_cluster_bounds(terminal, grid.cells.len(), row);
+        let mut logical_text = String::new();
+        let mut row_offsets = Vec::new();
+
+        for screen_row in wrapped_bounds.0..=wrapped_bounds.1 {
+            let row_text = Self::terminal_row_text(&grid.cells[screen_row]);
+            let logical_start = logical_text.chars().count();
+            let row_char_len = row_text.chars().count();
+            logical_text.push_str(&row_text);
+            row_offsets.push((screen_row, logical_start, row_char_len));
+        }
+
+        let (_, logical_start, row_char_len) = row_offsets
+            .iter()
+            .find(|(screen_row, _, _)| *screen_row == row)
+            .copied()?;
+        if col >= row_char_len {
+            return None;
+        }
+        let logical_col = logical_start + col;
+
+        let re = crate::tide_terminal::terminal_url_regex();
+
+        for matched in re.find_iter(&logical_text) {
+            let url = crate::tide_terminal::trim_url_trailing(matched.as_str());
+            let start_col = logical_text[..matched.start()].chars().count();
+            let end_col = start_col + url.chars().count();
+            if logical_col >= start_col && logical_col < end_col {
+                return Some(url.to_string());
+            }
+        }
+
+        None
+    }
+
+    fn wrapped_cluster_bounds(
+        terminal: &crate::tide_terminal::Terminal,
+        row_count: usize,
+        row: usize,
+    ) -> (usize, usize) {
+        let mut start = row;
+        while start > 0 && terminal.visible_row_is_wrapped(start - 1) {
+            start -= 1;
+        }
+
+        let mut end = row;
+        while end + 1 < row_count && terminal.visible_row_is_wrapped(end) {
+            end += 1;
+        }
+
+        (start, end)
+    }
+
+    fn terminal_row_text(line: &[crate::tide_core::TerminalCell]) -> String {
+        let mut row_text: String = line
+            .iter()
+            .map(|cell| {
+                if cell.character == '\0' {
+                    ' '
+                } else {
+                    cell.character
+                }
+            })
+            .collect();
+        let trimmed_len = row_text.trim_end_matches(' ').len();
+        row_text.truncate(trimmed_len);
+        row_text
+    }
+
     /// Search for a file by name/relative-path in the project root directory.
-    fn find_file_in_project(&self, pane_id: crate::tide_core::PaneId, filename: &str) -> Option<PathBuf> {
+    fn find_file_in_project(
+        &self,
+        pane_id: crate::tide_core::PaneId,
+        filename: &str,
+    ) -> Option<PathBuf> {
         let pane = match self.panes.get(&pane_id) {
             Some(PaneKind::Terminal(p)) => p,
             _ => return None,
@@ -183,7 +247,11 @@ impl App {
 
     /// Recursively search for a target file under `dir`, up to `max_depth`.
     /// If `target` contains `/`, match as a relative path suffix; otherwise match filename only.
-    fn find_file_recursive(dir: &std::path::Path, target: &str, max_depth: usize) -> Option<PathBuf> {
+    fn find_file_recursive(
+        dir: &std::path::Path,
+        target: &str,
+        max_depth: usize,
+    ) -> Option<PathBuf> {
         if max_depth == 0 {
             return None;
         }
@@ -196,7 +264,11 @@ impl App {
             let name_str = name.to_string_lossy();
 
             // Skip hidden and common ignored directories
-            if name_str.starts_with('.') || name_str == "node_modules" || name_str == "target" || name_str == "__pycache__" {
+            if name_str.starts_with('.')
+                || name_str == "node_modules"
+                || name_str == "target"
+                || name_str == "__pycache__"
+            {
                 continue;
             }
 
