@@ -56,6 +56,11 @@ impl App {
         // Emit pane-closed event for subscribers
         self.gateway.notify("pane-closed", serde_json::json!({"pane_id": pane_id}));
 
+        // If the closed pane was stage_focused, move it to the next target
+        if self.focus.stage_focused == Some(pane_id) {
+            self.focus.stage_focused = next_focus;
+        }
+
         if let Some(next) = next_focus {
             self.focus.focused = Some(next);
             self.router.set_focused(next);
