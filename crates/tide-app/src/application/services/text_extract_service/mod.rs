@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use pulldown_cmark::{Event, Options, Parser, Tag};
+
 use crate::tide_core::{TerminalBackend, Vec2};
 
 use crate::domain::editor::markdown::{LivePreviewMap, MdElementKind};
@@ -252,12 +254,16 @@ impl App {
     }
 
     fn parse_inline_markdown_link(fragment: &str) -> Option<String> {
-        if fragment.starts_with("![") {
-            return None;
+        let options = Options::ENABLE_STRIKETHROUGH
+            | Options::ENABLE_TABLES
+            | Options::ENABLE_TASKLISTS
+            | Options::ENABLE_FOOTNOTES;
+        for event in Parser::new_ext(fragment, options) {
+            if let Event::Start(Tag::Link { dest_url, .. }) = event {
+                return Some(dest_url.to_string());
+            }
         }
-        let split = fragment.find("](")?;
-        let target = fragment[split + 2..].strip_suffix(')')?;
-        Some(target.to_string())
+        None
     }
 
     fn char_col_to_byte(line: &str, char_col: usize) -> usize {
@@ -412,5 +418,27 @@ impl App {
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_inline_markdown_link_extracts_destination_without_title() {
+        let fragment = r#"[docs](https://example.com/docs "Docs Title")"#;
+
+        assert_eq!(
+            App::parse_inline_markdown_link(fragment).as_deref(),
+            Some("https://example.com/docs")
+        );
+    }
+
+    #[test]
+    fn parse_inline_markdown_link_ignores_images() {
+        let fragment = "![alt](https://example.com/image.png)";
+
+        assert_eq!(App::parse_inline_markdown_link(fragment), None);
     }
 }
