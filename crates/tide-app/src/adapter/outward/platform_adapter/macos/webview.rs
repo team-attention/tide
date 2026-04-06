@@ -18,6 +18,11 @@ static NEW_TAB_URLS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// Populated by WKScriptMessageHandler when JS calls `window.tide.send(json)`.
 static BRIDGE_MESSAGES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
+fn queue_bridge_message(message: String) {
+    let mut queue = BRIDGE_MESSAGES.lock().unwrap_or_else(|e| e.into_inner());
+    queue.push(message);
+}
+
 /// Drain all pending bridge messages. Call from the app event loop.
 pub fn drain_bridge_messages() -> Vec<String> {
     let mut queue = BRIDGE_MESSAGES.lock().unwrap_or_else(|e| e.into_inner());
@@ -238,6 +243,20 @@ declare_class!(
                     let response: Retained<AnyObject> = msg_send_id![navigation_response, response];
                     let url: Option<Retained<AnyObject>> = msg_send_id![&response, URL];
                     if let Some(url) = url {
+                        let abs: Option<Retained<AnyObject>> = msg_send_id![&url, absoluteString];
+                        if let Some(s) = abs {
+                            let utf8: *const std::ffi::c_char = msg_send![&s, UTF8String];
+                            if !utf8.is_null() {
+                                let url_str =
+                                    std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
+                                queue_bridge_message(serde_json::json!({
+                                    "kind": "browser-external-handoff",
+                                    "reason": "download",
+                                    "url": url_str,
+                                })
+                                .to_string());
+                            }
+                        }
                         let workspace_cls = AnyClass::get("NSWorkspace").expect("NSWorkspace class");
                         let shared: Retained<AnyObject> = msg_send_id![workspace_cls, sharedWorkspace];
                         let _: Bool = msg_send![&shared, openURL: &*url];
@@ -296,8 +315,7 @@ declare_class!(
                 let utf8: *const std::ffi::c_char = msg_send![&body, UTF8String];
                 if !utf8.is_null() {
                     let msg_str = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
-                    let mut queue = BRIDGE_MESSAGES.lock().unwrap_or_else(|e| e.into_inner());
-                    queue.push(msg_str);
+                    queue_bridge_message(msg_str);
                 }
             }
         }
