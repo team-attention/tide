@@ -22,6 +22,25 @@ pub(super) fn visual_width(s: &str) -> usize {
         .sum()
 }
 
+pub(crate) fn search_bar_text_advance_cells(text: &str) -> usize {
+    visual_width(text)
+}
+
+pub(crate) fn search_bar_cursor_advance_cells(query: &str, cursor: usize, preedit: &str) -> usize {
+    let cursor = cursor.min(query.len());
+    let cursor = if query.is_char_boundary(cursor) {
+        cursor
+    } else {
+        query
+            .char_indices()
+            .map(|(idx, _)| idx)
+            .take_while(|idx| *idx < cursor)
+            .last()
+            .unwrap_or(0)
+    };
+    search_bar_text_advance_cells(&query[..cursor]) + search_bar_text_advance_cells(preedit)
+}
+
 // ── Shared helper functions ──
 
 /// Draw a rounded popup background with border using SDF.

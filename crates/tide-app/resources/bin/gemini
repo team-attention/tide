@@ -13,6 +13,11 @@ REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|
 DEFAULTS_FILE="$(mktemp /tmp/tide-gemini.XXXXXX)"
 trap 'rm -f "$DEFAULTS_FILE"' EXIT
 
+tide_notify() {
+  "$TIDE_BIN" notify "$1" --pane "$TIDE_PANE" --agent gemini >/dev/null 2>&1 || \
+    printf '\033]9;tide:wrapped-agent:gemini:%s\007' "$1"
+}
+
 # System defaults: lowest priority — user settings always override.
 # mcpServers uses SHALLOW_MERGE (new keys additive).
 # hooks use CONCAT (arrays appended to user's hooks).
@@ -34,7 +39,7 @@ cat > "$DEFAULTS_FILE" << TIDE_EOF
 }
 TIDE_EOF
 
-# Send initial status via OSC 9 so the dot appears immediately on launch
-printf '\033]9;tide:agent-running\007'
+tide_notify agent-running
+trap 'tide_notify agent-idle; rm -f "$DEFAULTS_FILE"' EXIT
 
 GEMINI_CLI_SYSTEM_DEFAULTS_PATH="$DEFAULTS_FILE" "$REAL_CMD" "$@"

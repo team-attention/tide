@@ -756,29 +756,68 @@ impl crate::application::ports::inward::GatewayPort for App {
     }
 
     fn handle_terminal_notification(&mut self, pane_id: u64, message: &str) {
+        let mut wrapped_agent_name = None;
         let status = match message {
             "tide:agent-running" => Some(crate::state::gateway_status::AgentStatus::Running),
             "tide:agent-idle" => Some(crate::state::gateway_status::AgentStatus::Idle),
             "tide:agent-needs-input" => Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+            s if s.starts_with("tide:wrapped-agent:") => {
+                let mut parts = s.split(':');
+                let _ = parts.next();
+                let _ = parts.next();
+                let agent_name = parts.next().and_then(crate::state::gateway_status::wrapped_agent_display_name);
+                let status = match parts.next() {
+                    Some("agent-running") => Some(crate::state::gateway_status::AgentStatus::Running),
+                    Some("agent-idle") => Some(crate::state::gateway_status::AgentStatus::Idle),
+                    Some("agent-needs-input") => Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+                    _ => None,
+                };
+                if let (Some(agent_name), Some(status)) = (agent_name, status) {
+                    wrapped_agent_name = Some(agent_name);
+                    Some(status)
+                } else {
+                    log::debug!("Unknown tide notification: {}", s);
+                    return;
+                }
+            }
             s if s.starts_with("tide:") => {
                 log::debug!("Unknown tide notification: {}", s);
                 return;
             }
             _ => return, // Non-tide messages: silently ignore
         };
-        if let Some(agent) = self.gateway.detected_agents.get_mut(&pane_id) {
+        if let Some(agent_name) = wrapped_agent_name {
+            if let Some(agent) = self.gateway.detected_agents.get_mut(&pane_id) {
+                agent.name = agent_name;
+                agent.wrapper_managed = true;
+                agent.status = status;
+            } else if self.panes.contains_key(&pane_id)
+                || self
+                    .ws
+                    .workspaces
+                    .iter()
+                    .any(|workspace| workspace.panes.contains_key(&pane_id))
+            {
+                self.gateway.detected_agents.insert(
+                    pane_id,
+                    crate::state::gateway_status::AgentInfo {
+                        name: agent_name,
+                        pid: 0,
+                        wrapper_managed: true,
+                        gateway_connected: false,
+                        status,
+                    },
+                );
+            } else {
+                return;
+            }
+        } else if let Some(agent) = self.gateway.detected_agents.get_mut(&pane_id) {
+            if !agent.wrapper_managed {
+                return;
+            }
             agent.status = status;
-        } else if self.panes.contains_key(&pane_id) {
-            // Create synthetic AgentInfo for unknown agent
-            self.gateway.detected_agents.insert(
-                pane_id,
-                crate::state::gateway_status::AgentInfo {
-                    name: "Unknown",
-                    pid: 0,
-                    gateway_connected: false,
-                    status,
-                },
-            );
+        } else {
+            return;
         }
         self.cache.chrome_generation += 1;
         // Route notification based on user context (UC-1)
@@ -793,6 +832,14 @@ impl crate::application::ports::inward::GatewayPort for App {
         status: crate::state::gateway_status::AgentStatus,
     ) {
         use crate::state::gateway_status::AgentStatus;
+
+        let Some(agent) = self.gateway.detected_agents.get(&pane_id) else {
+            return;
+        };
+        if !agent.wrapper_managed {
+            return;
+        }
+        let agent_name = agent.name;
 
         // BR-1: Running status does not trigger notification routing
         if matches!(status, AgentStatus::Running) {
@@ -823,12 +870,6 @@ impl crate::application::ports::inward::GatewayPort for App {
         if !self.window.is_focused {
             // BR-4: Don't send again until acknowledged (focused)
             if !self.notified_panes.contains(&pane_id) {
-                let agent_name = self
-                    .gateway
-                    .detected_agents
-                    .get(&pane_id)
-                    .map(|a| a.name)
-                    .unwrap_or("Agent");
                 let body = match status {
                     AgentStatus::NeedsInput => format!("{} needs your input", agent_name),
                     AgentStatus::Idle => format!("{} finished", agent_name),
