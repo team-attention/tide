@@ -11,6 +11,8 @@ Tide's built-in infrastructure for programmatic control and generative UI. Alway
 - No integration path for AI tools (Claude Code, Codex, Cursor, etc.).
 - No visual indication of external connections or agent activity.
 - WKWebView only uses `loadRequest:`. No `loadHTMLString`, no JS message bridge.
+- `capture-pane` only returns `Terminal` grid content or `Editor` buffer content, so agents cannot inspect a Browser Pane without a manual selection.
+- There is no Agent Gateway command for driving an existing Browser Pane.
 - Event loop: `mpsc::channel::<AppEvent>` with `Platform(PlatformEvent)` and `Wake` variants.
 
 ### To-Be
@@ -53,6 +55,7 @@ External integrations:
 3. **MCP server** (`tide mcp`): Subcommand that speaks MCP protocol over stdio, bridges to the Unix socket internally. Agents like Claude Code connect to this.
 4. **Status indicator**: Chrome badge showing gateway state — socket listening, connected clients count, active render streams.
 5. **Generative UI**: `render-html` and `render-stream` commands load HTML into render-mode Browser panes.
+6. **Browser coworking**: `capture-pane` returns cached `BrowserSnapshot` text for Browser panes, and `browser-eval` runs JavaScript in a targeted Browser Pane so agents can inspect and drive adjacent web content.
 
 ## Bounded Contexts
 
@@ -62,8 +65,8 @@ External integrations:
 | `input` | `AppEvent::CliCommand` as new event source |
 | `terminal` | Grid capture, env vars (`TIDE_SOCKET`, `TIDE_PANE`) |
 | `layout` | Layout tree serialization, split/resize |
-| `pane` | Pane info, render-mode Browser pane |
-| `platform` | Socket lifecycle, `loadHTMLString`, JS message bridge |
+| `pane` | Pane info, render-mode Browser pane, BrowserSnapshot cache |
+| `platform` | Socket lifecycle, `loadHTMLString`, JS message bridge, Browser Pane script execution |
 
 ## Core Design
 
@@ -162,7 +165,7 @@ Socket Thread → write response → client
   - BR-6: Visible grid by default
   - BR-7: Negative start = scrollback
   - BR-8: Editor returns buffer or line range
-  - BR-9: Browser/Launcher → error
+  - BR-9: Browser returns the latest cached `BrowserSnapshot` text and metadata; `Launcher` remains unsupported
   - BR-10: No `-t` → `TIDE_PANE`
 
 ### UC-3: SendKeys
@@ -480,6 +483,21 @@ Agent                          Tide                         User
   - BR-56: If a tool's config already has `tide`, show "Enabled ✓" on modal open
   - BR-57: Agent detection does NOT continuously poll — triggered by specific events only
 
+### UC-12: BrowserControl
+
+- **Actor**: External process
+- **Trigger**: `tide cli browser-eval [-t <id>] --script <js>`
+- **Flow**:
+  1. Tide resolves the targeted Pane, defaulting to `TIDE_PANE` when no `-t` is provided
+  2. Tide validates that the target is a Browser Pane
+  3. Tide evaluates the provided JavaScript inside the Browser Pane's `WKWebView`
+  4. Tide schedules a `BrowserSnapshot` refresh so a follow-up `capture-pane` reflects the updated page state
+- **Postcondition**: The targeted Browser Pane is driven in place without creating a replacement Pane
+- **Business Rules**:
+  - BR-58: `browser-eval` only targets Browser panes
+  - BR-59: `browser-eval` evaluates JavaScript inside the targeted Browser Pane and requests a `BrowserSnapshot` refresh
+  - BR-60: MCP exposes the stable Browser control tool name `tide_browser_eval`
+
 ## Invariants
 
 1. **Always on**: Socket server starts with the app, stops with the app. No toggle. No config.
@@ -501,7 +519,8 @@ Agent                          Tide                         User
 | UC-1 | BR-5 | `list_panes_render_pane_includes_streaming_status` |
 | UC-2 | BR-6 | `capture_pane_returns_visible_grid` |
 | UC-2 | BR-7 | `capture_pane_negative_start_reads_scrollback` |
-| UC-2 | BR-9 | `capture_pane_browser_returns_error` |
+| UC-2 | BR-9 | `capture_pane_browser_returns_browser_snapshot` |
+| UC-2 | BR-9 | `capture_pane_launcher_returns_error` |
 | UC-2 | BR-10 | `capture_pane_no_target_uses_tide_pane` |
 | UC-3 | BR-11 | `send_keys_literal_writes_to_pty` |
 | UC-3 | BR-12 | `send_keys_special_names_translated` |
@@ -540,6 +559,9 @@ Agent                          Tide                         User
 | UC-11 | BR-55 | `gateway_badge_shows_error_on_bind_failure` |
 | UC-11 | BR-56 | `gateway_shows_enabled_if_config_has_tide` |
 | UC-11 | BR-57 | `gateway_agent_detection_not_continuous_poll` |
+| UC-12 | BR-58 | `browser_eval_non_browser_returns_error` |
+| UC-12 | BR-59 | `browser_eval_browser_returns_ok` |
+| UC-12 | BR-60 | `mcp_tools_list_includes_browser_eval` |
 
 ## Location
 

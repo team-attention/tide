@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Bool};
 use objc2::{declare_class, msg_send, msg_send_id, mutability, ClassType, DeclaredClass};
-use objc2_foundation::{CGFloat, MainThreadMarker, NSObject, NSRect, NSPoint, NSSize, NSString};
+use objc2_foundation::{CGFloat, MainThreadMarker, NSObject, NSPoint, NSRect, NSSize, NSString};
 
 /// Global queue for URLs that should open in a new browser tab.
 /// Populated by the WKUIDelegate when Cmd+click triggers a new window request.
@@ -21,6 +21,23 @@ static BRIDGE_MESSAGES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 fn queue_bridge_message(message: String) {
     let mut queue = BRIDGE_MESSAGES.lock().unwrap_or_else(|e| e.into_inner());
     queue.push(message);
+}
+
+/// Global wake callback for triggering redraws from delegate callbacks.
+/// Set once at startup via `set_webview_waker`.
+static WEBVIEW_WAKER: Mutex<Option<std::sync::Arc<dyn Fn() + Send + Sync>>> = Mutex::new(None);
+
+/// Install the wake callback so navigation delegate can trigger redraws.
+pub fn set_webview_waker(waker: std::sync::Arc<dyn Fn() + Send + Sync>) {
+    let mut w = WEBVIEW_WAKER.lock().unwrap_or_else(|e| e.into_inner());
+    *w = Some(waker);
+}
+
+pub fn wake_event_loop() {
+    let w = WEBVIEW_WAKER.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(ref waker) = *w {
+        waker();
+    }
 }
 
 /// Drain all pending bridge messages. Call from the app event loop.
@@ -265,6 +282,27 @@ declare_class!(
                 }
             }
         }
+
+        /// Fired when the webview commits a navigation (URL has changed).
+        /// Wake the event loop so sync_webview_state picks up the new URL.
+        #[method(webView:didCommitNavigation:)]
+        fn did_commit_navigation(
+            &self,
+            _webview: &AnyObject,
+            _navigation: *const AnyObject,
+        ) {
+            wake_event_loop();
+        }
+
+        /// Fired when the webview finishes loading a page.
+        #[method(webView:didFinishNavigation:)]
+        fn did_finish_navigation(
+            &self,
+            _webview: &AnyObject,
+            _navigation: *const AnyObject,
+        ) {
+            wake_event_loop();
+        }
     }
 );
 
@@ -360,16 +398,13 @@ unsafe extern "C" fn navigate_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
 
     let url_cls = AnyClass::get("NSURL").expect("NSURL class");
     let ns_url_str = NSString::from_str(url);
-    let nsurl: Option<Retained<AnyObject>> =
-        msg_send_id![url_cls, URLWithString: &*ns_url_str];
+    let nsurl: Option<Retained<AnyObject>> = msg_send_id![url_cls, URLWithString: &*ns_url_str];
     let Some(nsurl) = nsurl else { return };
 
     let req_cls = AnyClass::get("NSURLRequest").expect("NSURLRequest class");
-    let request: Retained<AnyObject> =
-        msg_send_id![req_cls, requestWithURL: &*nsurl];
+    let request: Retained<AnyObject> = msg_send_id![req_cls, requestWithURL: &*nsurl];
 
-    let _: Option<Retained<AnyObject>> =
-        msg_send_id![webview, loadRequest: &*request];
+    let _: Option<Retained<AnyObject>> = msg_send_id![webview, loadRequest: &*request];
 }
 
 /// Context passed through `dispatch_sync_f` to set the webview frame.
@@ -446,7 +481,8 @@ struct LoadHtmlCtx {
 /// Trampoline called on the main thread by `dispatch_sync_f`.
 unsafe extern "C" fn load_html_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
     let ctx = &*(ctx_ptr as *const LoadHtmlCtx);
-    let html = std::str::from_utf8_unchecked(std::slice::from_raw_parts(ctx.html_ptr, ctx.html_len));
+    let html =
+        std::str::from_utf8_unchecked(std::slice::from_raw_parts(ctx.html_ptr, ctx.html_len));
     let webview = &*ctx.webview;
     let ns_html = NSString::from_str(html);
     let _: Option<Retained<AnyObject>> = msg_send_id![
@@ -486,7 +522,10 @@ impl WebViewHandle {
             return Self::new_on_main_thread(parent_view);
         }
 
-        let mut ctx = WebViewCreateCtx { parent_view, result: None };
+        let mut ctx = WebViewCreateCtx {
+            parent_view,
+            result: None,
+        };
         dispatch_sync_f(
             &_dispatch_main_q as *const std::ffi::c_void,
             &mut ctx as *mut WebViewCreateCtx as *mut std::ffi::c_void,
@@ -548,21 +587,18 @@ impl WebViewHandle {
 
         // Set up UI delegate for popup handling and JavaScript dialogs
         let mtm = MainThreadMarker::new().expect("must be on main thread for WKWebView");
-        let delegate: Retained<TideUIDelegate> = unsafe {
-            msg_send_id![mtm.alloc::<TideUIDelegate>(), init]
-        };
+        let delegate: Retained<TideUIDelegate> =
+            unsafe { msg_send_id![mtm.alloc::<TideUIDelegate>(), init] };
         let _: () = msg_send![&webview, setUIDelegate: &*delegate];
 
         // Set up navigation delegate for download handling
-        let nav_delegate: Retained<TideNavigationDelegate> = unsafe {
-            msg_send_id![mtm.alloc::<TideNavigationDelegate>(), init]
-        };
+        let nav_delegate: Retained<TideNavigationDelegate> =
+            unsafe { msg_send_id![mtm.alloc::<TideNavigationDelegate>(), init] };
         let _: () = msg_send![&webview, setNavigationDelegate: &*nav_delegate];
 
         // Set up WKScriptMessageHandler for window.tide.send() bridge (BR-29)
-        let script_handler: Retained<TideScriptMessageHandler> = unsafe {
-            msg_send_id![mtm.alloc::<TideScriptMessageHandler>(), init]
-        };
+        let script_handler: Retained<TideScriptMessageHandler> =
+            unsafe { msg_send_id![mtm.alloc::<TideScriptMessageHandler>(), init] };
         let user_content: Retained<AnyObject> = msg_send_id![&config, userContentController];
         let handler_name = NSString::from_str("tide");
         let _: () = msg_send![&user_content, addScriptMessageHandler: &*script_handler, name: &*handler_name];
@@ -570,7 +606,12 @@ impl WebViewHandle {
         // Add as subview
         let _: () = msg_send![parent, addSubview: &*webview];
 
-        Some(Self { webview, _ui_delegate: delegate, _nav_delegate: nav_delegate, _script_handler: script_handler })
+        Some(Self {
+            webview,
+            _ui_delegate: delegate,
+            _nav_delegate: nav_delegate,
+            _script_handler: script_handler,
+        })
     }
 
     /// Navigate to a URL string.
@@ -601,16 +642,13 @@ impl WebViewHandle {
     unsafe fn navigate_inner(&self, url: &str) {
         let url_cls = AnyClass::get("NSURL").expect("NSURL class");
         let ns_url_str = NSString::from_str(url);
-        let nsurl: Option<Retained<AnyObject>> =
-            msg_send_id![url_cls, URLWithString: &*ns_url_str];
+        let nsurl: Option<Retained<AnyObject>> = msg_send_id![url_cls, URLWithString: &*ns_url_str];
         let Some(nsurl) = nsurl else { return };
 
         let req_cls = AnyClass::get("NSURLRequest").expect("NSURLRequest class");
-        let request: Retained<AnyObject> =
-            msg_send_id![req_cls, requestWithURL: &*nsurl];
+        let request: Retained<AnyObject> = msg_send_id![req_cls, requestWithURL: &*nsurl];
 
-        let _: Option<Retained<AnyObject>> =
-            msg_send_id![&self.webview, loadRequest: &*request];
+        let _: Option<Retained<AnyObject>> = msg_send_id![&self.webview, loadRequest: &*request];
     }
 
     /// Go back in history.
@@ -716,7 +754,11 @@ impl WebViewHandle {
             if utf8.is_null() {
                 None
             } else {
-                Some(std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned())
+                Some(
+                    std::ffi::CStr::from_ptr(utf8)
+                        .to_string_lossy()
+                        .into_owned(),
+                )
             }
         }
     }
@@ -730,7 +772,11 @@ impl WebViewHandle {
             if utf8.is_null() {
                 None
             } else {
-                Some(std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned())
+                Some(
+                    std::ffi::CStr::from_ptr(utf8)
+                        .to_string_lossy()
+                        .into_owned(),
+                )
             }
         }
     }
