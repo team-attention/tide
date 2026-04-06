@@ -2,10 +2,10 @@
 
 ## Overview
 ### As-Is
-Current state: Two rendering modes — Plain (raw markdown with syntax highlighting) and Preview (read-only pulldown_cmark formatted). `LivePreviewMode` exists, but Markdown Panes still open with `live_preview = false`, so the hybrid mode is available only after a manual toggle. The click-to-cursor path in `crates/tide-app/src/application/services/action_service/mod.rs` already reverse-maps live-preview columns, but the mouse selection path in `crates/tide-app/src/adapter/inward/mouse_adapter/selection.rs` still uses raw visual columns in the soft-wrap branch.
+Current state: Two rendering modes — Plain (raw markdown with syntax highlighting) and Preview (read-only pulldown_cmark formatted). `LivePreviewMode` exists, but Markdown Panes still open with `live_preview = false`, so the hybrid mode is available only after a manual toggle. The click-to-cursor path in `crates/tide-app/src/application/services/action_service/mod.rs` already reverse-maps live-preview columns, but the mouse selection path in `crates/tide-app/src/adapter/inward/mouse_adapter/selection.rs` still uses raw visual columns in the soft-wrap branch. `EditorPane::selected_text()` in `crates/tide-app/src/domain/pane/editor.rs` only switches to rendered-text extraction in full preview mode, and `TextExtractPort::extract_url_at()` only supports `Terminal` panes today, so `LivePreviewMode` still lacks spec coverage for visible-text copy, add-comment capture, and link activation.
 
 ### To-Be
-Markdown Panes open in `LivePreviewMode` by default while staying in authoring mode. `LivePreviewMode` renders from the raw buffer but conditionally hides/shows markdown syntax based on cursor line position. Same coordinate space as raw buffer — no line folding. Mouse click and mouse selection both reverse-map live-preview columns back into buffer columns, including when Soft Wrap is active.
+Markdown Panes open in `LivePreviewMode` by default while staying in authoring mode. `LivePreviewMode` renders from the raw buffer but conditionally hides/shows markdown syntax based on cursor line position. Same coordinate space as raw buffer — no line folding. Mouse click and mouse selection both reverse-map live-preview columns back into buffer columns, including when Soft Wrap is active. Copy, add-comment capture, and link activation all operate on the same human-visible Markdown content that `LivePreviewMode` renders on screen.
 
 ### Approach
 Three layers:
@@ -13,6 +13,7 @@ Three layers:
 2. LivePreviewMap — maps buffer byte ranges to markdown elements, classifies syntax vs content bytes.
 3. Live preview rendering — new render path using LivePreviewMap.
 4. Block-level handling — code blocks, tables always show syntax with styling.
+5. Lock visible-text interaction rules so copy, add-comment capture, and link activation reuse the same live-preview coordinate mapping.
 
 ## Bounded Contexts
 - editor (domain/editor/) — LivePreviewMap, markdown parsing
@@ -129,11 +130,26 @@ Business Rules:
 - BR-1: WrapMap uses raw buffer widths for v1 (no special live preview awareness)
 - BR-2: No correctness issues — only visual suboptimality on non-cursor lines
 
+### UC-7: VisibleTextInteraction
+Actor: User
+Trigger: The user copies a selection, opens the add-comment flow, or activates a link while `LivePreviewMode` is active
+Precondition: A `Markdown Pane` is in authoring mode with `LivePreviewMode` enabled
+Flow:
+1. Tide resolves the selection or click position through the same live-preview mapping used for cursor placement.
+2. Tide derives the human-visible text and link target from the live-preview content instead of the hidden Markdown syntax.
+3. Copy returns visible selected text, add-comment opens the `Context Comment Composer` with the visible selection text, and link activation opens the rendered link target.
+Postcondition: `LivePreviewMode` interaction matches the human-visible Markdown content without leaving authoring mode.
+Business Rules:
+- BR-1: Visible-text copy in `LivePreviewMode` omits hidden inline syntax markers from the copied text.
+- BR-2: Add-comment capture in `LivePreviewMode` uses the same visible selected text that copy uses.
+- BR-3: Link activation in `LivePreviewMode` opens the rendered Markdown link target instead of moving the cursor through hidden syntax markers.
+
 ## Invariants
 1. Line count in LivePreviewMode equals raw buffer line count (no line folding)
 2. Cursor position is always in raw buffer coordinates
 3. LivePreviewMode is mutually exclusive with full Preview mode
 4. LivePreviewMap generation matches buffer generation when valid
+5. Visible-text copy, add-comment capture, and link activation all resolve through the same live-preview mapping rules.
 
 ## Tests
 | UC | BR | Test Function |
@@ -160,6 +176,9 @@ Business Rules:
 | UC-5 | BR-4 | mouse_selection_on_hidden_syntax_line_maps_visual_column_to_buffer_column() |
 | UC-5 | BR-5 | split_preview_selection_stays_in_authoring_region() |
 | UC-6 | BR-1 | soft_wrap_uses_raw_widths() |
+| UC-7 | BR-1 | live_preview_selected_text_omits_hidden_syntax_markers() |
+| UC-7 | BR-2 | live_preview_context_artifact_capture_uses_visible_selected_text() |
+| UC-7 | BR-3 | live_preview_link_click_opens_rendered_link_target() |
 
 ## Location
 - LivePreviewMap: `crates/tide-app/src/domain/editor/markdown.rs`

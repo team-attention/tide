@@ -3,10 +3,10 @@
 ## Overview
 
 ### As-Is
-`EditorPane::open()` in `crates/tide-app/src/domain/pane/editor.rs` opens file-backed Markdown Panes with `preview_mode = false`, and the same constructor enables `soft_wrap` for prose extensions. That means Markdown authoring now starts directly in the editable Pane instead of a read-only preview path. Markdown Panes still start with `live_preview = false`, though, so the hybrid Markdown rendering path stays opt-in even after the Pane has already chosen the prose-authoring interaction model. The remaining mode split is still significant: `effective_soft_wrap()` disables wrapping while preview is active, the routing layer in `crates/tide-app/src/adapter/inward/text_routing_adapter/mod.rs` blocks text input when `preview_mode` is true, and the key handling path in `crates/tide-app/src/application/services/action_service/mod.rs` exits early for almost every key while preview is active.
+`EditorPane::open()` in `crates/tide-app/src/domain/pane/editor.rs` opens file-backed Markdown Panes with `preview_mode = false`, and the same constructor enables `soft_wrap` for prose extensions. That means Markdown authoring now starts directly in the editable Pane instead of a read-only preview path. Markdown Panes still start with `live_preview = false`, though, so the hybrid Markdown rendering path stays opt-in even after the Pane has already chosen the prose-authoring interaction model. The remaining mode split is still significant: `effective_soft_wrap()` disables wrapping while preview is active, the routing layer in `crates/tide-app/src/adapter/inward/text_routing_adapter/mod.rs` blocks text input when `preview_mode` is true, and the key handling path in `crates/tide-app/src/application/services/action_service/mod.rs` exits early for almost every key while preview is active. Preview scrolling is also enforced in multiple places now: keyboard preview navigation goes through `apply_preview_scroll()`, wheel scrolling mutates `preview_scroll` in `action_service`, and scrollbar drag writes `preview_scroll` directly in `mouse_adapter`, but the spec only locks the keyboard path today.
 
 ### To-Be
-Editor behavior remains centered on `EditorPane` and `EditorState`, and Markdown Panes continue to open in authoring mode first. Markdown authoring defaults to `LivePreviewMode` while keeping `preview_mode = false`, so text input remains enabled and preview-only mode stays an explicit toggle. Soft Wrap stays active for prose authoring, preview keeps its own rendering and scroll model, and toggle transitions preserve reading context without trapping the user in a blocked-input state. Search, IME, and click handling stay predictable across authoring and preview flows.
+Editor behavior remains centered on `EditorPane` and `EditorState`, and Markdown Panes continue to open in authoring mode first. Markdown authoring defaults to `LivePreviewMode` while keeping `preview_mode = false`, so text input remains enabled and preview-only mode stays an explicit toggle. Soft Wrap stays active for prose authoring, preview keeps its own rendering and scroll model, and toggle transitions preserve reading context without trapping the user in a blocked-input state. Search, IME, click handling, and preview scrolling stay predictable across authoring and preview flows. Preview scrolling clamps to the same valid range no matter whether the user scrolls by keyboard, mouse wheel, or scrollbar drag.
 
 ### Approach
 1. Keep the current `EditorPane` and `EditorState` architecture instead of replacing the editor core.
@@ -14,6 +14,7 @@ Editor behavior remains centered on `EditorPane` and `EditorState`, and Markdown
 3. Preserve the current preview rendering and preview scroll model, but make transitions between authoring and preview predictable.
 4. Keep text routing, IME routing, search routing, and click handling aligned with the active mode.
 5. Preserve Soft Wrap behavior for prose authoring and keep preview mode unaffected by Soft Wrap.
+6. Lock one shared preview-scroll clamping rule across keyboard, wheel, and scrollbar drag paths.
 
 ## Bounded Contexts
 
@@ -95,6 +96,8 @@ Editor behavior remains centered on `EditorPane` and `EditorState`, and Markdown
   - BR-22: `u` scrolls preview up half a page.
   - BR-23: `g` scrolls preview to the top.
   - BR-24: `G` scrolls preview to the bottom and clamps to the available preview range.
+  - BR-25: Mouse-wheel preview scrolling clamps to the same top and bottom range as keyboard preview navigation.
+  - BR-26: Scrollbar drag in preview mode clamps to the same top and bottom range as keyboard preview navigation.
 
 ### UC-5: PreviewRendering
 - **Actor**: System
@@ -106,7 +109,7 @@ Editor behavior remains centered on `EditorPane` and `EditorState`, and Markdown
   3. Code-block background areas are padded consistently with the preview layout.
 - **Postcondition**: Markdown preview renders with stable visual structure.
 - **Business Rules**:
-  - BR-25: Code-block background extends with right padding that matches the preview layout.
+  - BR-27: Code-block background extends with right padding that matches the preview layout.
 
 ## Invariants
 
@@ -142,7 +145,9 @@ Editor behavior remains centered on `EditorPane` and `EditorState`, and Markdown
 | UC-4 | BR-22 | `preview_scroll` | `u_scrolls_up_half_page` |
 | UC-4 | BR-23 | `preview_scroll` | `g_scrolls_to_top` |
 | UC-4 | BR-24 | `preview_scroll` | `capital_g_scrolls_to_bottom` |
-| UC-5 | BR-25 | `preview_rendering` | `code_block_background_has_right_padding` |
+| UC-4 | BR-25 | `preview_scroll` | `mouse_wheel_preview_scroll_clamps_to_visible_range` |
+| UC-4 | BR-26 | `preview_scroll` | `preview_scrollbar_drag_clamps_to_visible_range` |
+| UC-5 | BR-27 | `preview_rendering` | `code_block_background_has_right_padding` |
 
 ## Location
 

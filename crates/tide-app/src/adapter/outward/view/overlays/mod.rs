@@ -41,6 +41,10 @@ pub(crate) fn search_bar_cursor_advance_cells(query: &str, cursor: usize, preedi
     search_bar_text_advance_cells(&query[..cursor]) + search_bar_text_advance_cells(preedit)
 }
 
+pub(crate) use context_comment::{
+    composer_input_rect, composer_popup_rect, context_comment_composer_cursor_area,
+};
+
 // ── Shared helper functions ──
 
 /// Draw a rounded popup background with border using SDF.
