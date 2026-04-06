@@ -18,6 +18,25 @@ static NEW_TAB_URLS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// Populated by WKScriptMessageHandler when JS calls `window.tide.send(json)`.
 static BRIDGE_MESSAGES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
+/// Global wake callback for triggering redraws from delegate callbacks.
+/// Set once at startup via `set_webview_waker`.
+static WEBVIEW_WAKER: Mutex<Option<std::sync::Arc<dyn Fn() + Send + Sync>>> = Mutex::new(None);
+
+/// Install the wake callback so navigation delegate can trigger redraws.
+pub fn set_webview_waker(waker: std::sync::Arc<dyn Fn() + Send + Sync>) {
+    if let Ok(mut w) = WEBVIEW_WAKER.lock() {
+        *w = Some(waker);
+    }
+}
+
+pub fn wake_event_loop() {
+    if let Ok(w) = WEBVIEW_WAKER.lock() {
+        if let Some(ref waker) = *w {
+            waker();
+        }
+    }
+}
+
 /// Drain all pending bridge messages. Call from the app event loop.
 pub fn drain_bridge_messages() -> Vec<String> {
     let mut queue = BRIDGE_MESSAGES.lock().unwrap_or_else(|e| e.into_inner());
@@ -245,6 +264,27 @@ declare_class!(
                     decision_handler.call((0,)); // .cancel
                 }
             }
+        }
+
+        /// Fired when the webview commits a navigation (URL has changed).
+        /// Wake the event loop so sync_webview_state picks up the new URL.
+        #[method(webView:didCommitNavigation:)]
+        fn did_commit_navigation(
+            &self,
+            _webview: &AnyObject,
+            _navigation: *const AnyObject,
+        ) {
+            wake_event_loop();
+        }
+
+        /// Fired when the webview finishes loading a page.
+        #[method(webView:didFinishNavigation:)]
+        fn did_finish_navigation(
+            &self,
+            _webview: &AnyObject,
+            _navigation: *const AnyObject,
+        ) {
+            wake_event_loop();
         }
     }
 );
