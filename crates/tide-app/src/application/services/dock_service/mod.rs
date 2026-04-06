@@ -42,13 +42,15 @@ impl DockPort for App {
         !self.dock.pinned_dock_layout.all_pane_ids().is_empty()
     }
 
-    /// Add a pane to the focused Terminal's dock.
-    fn add_pane_to_dock(&mut self, new_pane_id: PaneId) {
+    /// Add a pane to a Terminal's dock.
+    /// When `target_terminal` is Some, the pane is placed in that Terminal's dock.
+    /// When None, falls back to `focused_terminal_id()` (= stage_focused).
+    fn add_pane_to_dock(&mut self, new_pane_id: PaneId, target_terminal: Option<PaneId>) {
         let launcher_to_replace = self.dock_launcher_id()
             .filter(|&lid| lid != new_pane_id);
 
         if let Some(launcher_id) = launcher_to_replace {
-            let tid = self.focused_terminal_id();
+            let tid = target_terminal.or_else(|| self.focused_terminal_id());
             if let Some(tid) = tid {
                 if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                     tp.dock_layout.replace_pane(launcher_id, new_pane_id);
@@ -63,7 +65,7 @@ impl DockPort for App {
             return;
         }
 
-        if let Some(tid) = self.focused_terminal_id() {
+        if let Some(tid) = target_terminal.or_else(|| self.focused_terminal_id()) {
             if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                 if tp.dock_layout.all_pane_ids().is_empty() {
                     tp.dock_layout.insert_leaf_group(new_pane_id);
@@ -146,7 +148,7 @@ impl DockPort for App {
                 let new_id = self.layout.alloc_id();
                 self.panes.insert(new_id, PaneKind::Launcher(new_id));
                 self.ime.pending_creates.push(new_id);
-                self.add_pane_to_dock(new_id);
+                self.add_pane_to_dock(new_id, None);
                 self.focus.focus_area = FocusArea::Dock;
                 self.focus.focused = Some(new_id);
                 self.router.set_focused(new_id);
@@ -322,7 +324,7 @@ impl DockPort for App {
         self.ime.pending_creates.push(new_id);
         let prev_focused = self.focus.focused;
         self.focus.focused = Some(tid);
-        self.add_pane_to_dock(new_id);
+        self.add_pane_to_dock(new_id, None);
         self.focus.focused = prev_focused;
     }
 

@@ -95,7 +95,7 @@ impl crate::FileOpsPort for App {
         let dp = crate::pane::diff::DiffPane::new(new_id, cwd);
         self.panes.insert(new_id, PaneKind::Diff(dp));
         if let Some(tid) = self.focused_terminal_id().or(context_terminal) {
-            self.add_pane_to_dock(new_id);
+            self.add_pane_to_dock(new_id, Some(tid));
             self.assoc.associated_terminal.insert(new_id, tid);
             self.focus.focus_area = crate::state::FocusArea::Dock;
         } else {
