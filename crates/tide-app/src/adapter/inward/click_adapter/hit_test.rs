@@ -1,14 +1,14 @@
 use crate::tide_core::{FileTreeSource, SplitDirection, Vec2};
 
-use crate::state::drag_types::HoverTarget;
 use crate::pane::PaneKind;
+use crate::state::drag_types::HoverTarget;
 use crate::theme::*;
 use crate::AppCorePort;
+use crate::DockPort;
+use crate::FileTreePort;
 use crate::LayoutPort;
 use crate::PaneAccessPort;
-use crate::FileTreePort;
 use crate::WorkspaceNavPort;
-use crate::DockPort;
 
 /// Convert a pixel position to a terminal cell (row, col) within a pane's content area.
 /// Returns None if the position is outside any terminal pane's content area.
@@ -17,9 +17,12 @@ pub(crate) fn pixel_to_cell(
     pos: Vec2,
     pane_id: crate::tide_core::PaneId,
 ) -> Option<(usize, usize)> {
-    let (_, visual_rect) = ctx.visual_pane_rects().iter().find(|(id, _)| *id == pane_id)?;
+    let (_, visual_rect) = ctx
+        .visual_pane_rects()
+        .iter()
+        .find(|(id, _)| *id == pane_id)?;
     let cell_size = ctx.cell_size();
-    let content_top = TAB_BAR_HEIGHT;
+    let content_top = terminal_content_top(cell_size.height);
     let inner_x = visual_rect.x + PANE_PADDING;
     let inner_y = visual_rect.y + content_top;
     // Center offset matching render_grid: grid is centered within the content area
@@ -54,8 +57,10 @@ pub(crate) fn compute_hover_target(
         let swap_x = logical.width - PANE_PADDING - swap_icon_w;
         let swap_y = (ctx.top_inset() - swap_icon_h) / 2.0;
         let swap_pad = 4.0_f32;
-        if pos.x >= swap_x - swap_pad && pos.x <= swap_x + swap_icon_w + swap_pad
-            && pos.y >= swap_y - swap_pad && pos.y <= swap_y + swap_icon_h + swap_pad
+        if pos.x >= swap_x - swap_pad
+            && pos.x <= swap_x + swap_icon_w + swap_pad
+            && pos.y >= swap_y - swap_pad
+            && pos.y <= swap_y + swap_icon_h + swap_pad
         {
             return Some(HoverTarget::TitlebarSwap);
         }
@@ -66,8 +71,10 @@ pub(crate) fn compute_hover_target(
         let gear_h = cs.height + 6.0;
         let gear_x = swap_x - gear_w - 8.0;
         let gear_y = (ctx.top_inset() - gear_h) / 2.0;
-        if pos.x >= gear_x && pos.x <= gear_x + gear_w
-            && pos.y >= gear_y && pos.y <= gear_y + gear_h
+        if pos.x >= gear_x
+            && pos.x <= gear_x + gear_w
+            && pos.y >= gear_y
+            && pos.y <= gear_y + gear_h
         {
             return Some(HoverTarget::TitlebarSettings);
         }
@@ -78,8 +85,10 @@ pub(crate) fn compute_hover_target(
         let theme_h = cs.height + 6.0;
         let theme_x = gear_x - theme_w - 8.0;
         let theme_y = (ctx.top_inset() - theme_h) / 2.0;
-        if pos.x >= theme_x && pos.x <= theme_x + theme_w
-            && pos.y >= theme_y && pos.y <= theme_y + theme_h
+        if pos.x >= theme_x
+            && pos.x <= theme_x + theme_w
+            && pos.y >= theme_y
+            && pos.y <= theme_y + theme_h
         {
             return Some(HoverTarget::TitlebarTheme);
         }
@@ -91,8 +100,10 @@ pub(crate) fn compute_hover_target(
         let integ_x = theme_x - integ_w - 8.0;
         let integ_y = (ctx.top_inset() - integ_h) / 2.0;
 
-        if pos.x >= integ_x && pos.x <= integ_x + integ_w
-            && pos.y >= integ_y && pos.y <= integ_y + integ_h
+        if pos.x >= integ_x
+            && pos.x <= integ_x + integ_w
+            && pos.y >= integ_y
+            && pos.y <= integ_y + integ_h
         {
             return Some(HoverTarget::TitlebarIntegration);
         }
@@ -112,8 +123,7 @@ pub(crate) fn compute_hover_target(
         ];
         for hover in &buttons {
             let btn_x = cur_right - btn_w;
-            if pos.x >= btn_x && pos.x <= btn_x + btn_w
-                && pos.y >= btn_y && pos.y <= btn_y + btn_h
+            if pos.x >= btn_x && pos.x <= btn_x + btn_w && pos.y >= btn_y && pos.y <= btn_y + btn_h
             {
                 return Some(hover.clone());
             }
@@ -123,8 +133,10 @@ pub(crate) fn compute_hover_target(
 
     // Workspace sidebar items
     if let Some(ws_rect) = ctx.ws_sidebar_rect() {
-        if pos.x >= ws_rect.x && pos.x < ws_rect.x + ws_rect.width
-            && pos.y >= ws_rect.y && pos.y < ws_rect.y + ws_rect.height
+        if pos.x >= ws_rect.x
+            && pos.x < ws_rect.x + ws_rect.width
+            && pos.y >= ws_rect.y
+            && pos.y < ws_rect.y + ws_rect.height
         {
             if let Some(geo) = ctx.ws_sidebar_geometry() {
                 for i in 0..ctx.ws_workspaces_len() {
@@ -138,7 +150,8 @@ pub(crate) fn compute_hover_target(
                 let btn_h = cs.height + 12.0;
                 let edge_inset = PANE_CORNER_RADIUS;
                 let btn_y = ws_rect.y + ws_rect.height - edge_inset - btn_h - WS_SIDEBAR_PADDING;
-                let btn_rect = crate::tide_core::Rect::new(geo.content_x, btn_y, geo.content_w, btn_h);
+                let btn_rect =
+                    crate::tide_core::Rect::new(geo.content_x, btn_y, geo.content_w, btn_h);
                 if btn_rect.contains(pos) {
                     return Some(HoverTarget::WorkspaceSidebarNewBtn);
                 }
@@ -149,8 +162,10 @@ pub(crate) fn compute_hover_target(
     // Top-edge drag handles (top strip of sidebar)
     let ft = ctx.ft();
     if let Some(ft_rect) = ft.rect {
-        if pos.y >= ft_rect.y && pos.y < ft_rect.y + PANE_PADDING
-            && pos.x >= ft_rect.x && pos.x < ft_rect.x + ft_rect.width
+        if pos.y >= ft_rect.y
+            && pos.y < ft_rect.y + PANE_PADDING
+            && pos.x >= ft_rect.x
+            && pos.x < ft_rect.x + ft_rect.width
         {
             return Some(HoverTarget::SidebarHandle);
         }
@@ -215,7 +230,11 @@ pub(crate) fn compute_hover_target(
 
     // File tree entry
     let ft = ctx.ft();
-    if ft.visible && ft.rect.is_some_and(|r| pos.x >= r.x && pos.x < r.x + r.width) {
+    if ft.visible
+        && ft
+            .rect
+            .is_some_and(|r| pos.x >= r.x && pos.x < r.x + r.width)
+    {
         let ft_rect = ft.rect.unwrap();
         let cell_size = ctx.cell_size();
         let line_height = cell_size.height * FILE_TREE_LINE_SPACING;
@@ -244,8 +263,7 @@ pub(crate) fn compute_hover_target(
             let nav_x = rect.x + PANE_PADDING;
             let nav_w = rect.width - PANE_PADDING * 2.0;
 
-            if pos.y >= nav_y && pos.y <= nav_y + nav_h
-                && pos.x >= nav_x && pos.x <= nav_x + nav_w
+            if pos.y >= nav_y && pos.y <= nav_y + nav_h && pos.x >= nav_x && pos.x <= nav_x + nav_w
             {
                 let mut cx = nav_x + 8.0;
 
@@ -301,7 +319,11 @@ pub(crate) fn compute_hover_target(
                 );
                 if pane.needs_scrollbar(inner, cell_size.height) {
                     let sb_x = inner.x + inner.width - SCROLLBAR_WIDTH_HOVER;
-                    if pos.x >= sb_x && pos.x <= inner.x + inner.width && pos.y >= inner.y && pos.y <= inner.y + inner.height {
+                    if pos.x >= sb_x
+                        && pos.x <= inner.x + inner.width
+                        && pos.y >= inner.y
+                        && pos.y <= inner.y + inner.height
+                    {
                         return Some(HoverTarget::EditorScrollbar(id));
                     }
                 }
@@ -310,8 +332,11 @@ pub(crate) fn compute_hover_target(
     }
 
     // Pane content area — show text cursor for terminal, editor, diff panes
-    let content_top = TAB_BAR_HEIGHT;
     for &(id, rect) in ctx.visual_pane_rects() {
+        let content_top = match ctx.pane(id) {
+            Some(PaneKind::Terminal(_)) => terminal_content_top(ctx.cell_size().height),
+            _ => TAB_BAR_HEIGHT,
+        };
         let content = crate::tide_core::Rect::new(
             rect.x + PANE_PADDING,
             rect.y + content_top,
@@ -350,9 +375,7 @@ fn split_border_at(ctx: &impl AppCorePort, pos: Vec2) -> Option<SplitDirection> 
     for &(id_a, rect_a) in rects {
         // Check right edge → adjacent left edge = Horizontal split (side by side)
         let right_edge = rect_a.x + rect_a.width;
-        if (pos.x - right_edge).abs() <= t
-            && pos.y >= rect_a.y
-            && pos.y <= rect_a.y + rect_a.height
+        if (pos.x - right_edge).abs() <= t && pos.y >= rect_a.y && pos.y <= rect_a.y + rect_a.height
         {
             for &(id_b, rect_b) in rects {
                 if id_b != id_a
@@ -366,9 +389,7 @@ fn split_border_at(ctx: &impl AppCorePort, pos: Vec2) -> Option<SplitDirection> 
         }
         // Check bottom edge → adjacent top edge = Vertical split (stacked)
         let bottom_edge = rect_a.y + rect_a.height;
-        if (pos.y - bottom_edge).abs() <= t
-            && pos.x >= rect_a.x
-            && pos.x <= rect_a.x + rect_a.width
+        if (pos.y - bottom_edge).abs() <= t && pos.x >= rect_a.x && pos.x <= rect_a.x + rect_a.width
         {
             for &(id_b, rect_b) in rects {
                 if id_b != id_a
