@@ -299,6 +299,29 @@ impl Node {
         best: &mut Option<(f32, Vec<bool>)>,
         path: &mut Vec<bool>,
     ) {
+        self.find_border_at_preferred(rect, position, best, path, None)
+    }
+
+    /// Like [`find_border_at`], but with an optional preferred [`SplitDirection`].
+    ///
+    /// When `preferred` is `Some(dir)`, borders whose direction does NOT match
+    /// `dir` receive an additive distance penalty (`DIRECTION_PENALTY`). This
+    /// makes the algorithm favour the border that aligns with the user's drag
+    /// direction at T-junctions where both horizontal and vertical borders are
+    /// nearly equidistant.
+    ///
+    /// The penalty-adjusted distance (`effective_dist`) is stored in `best` so
+    /// that subsequent comparisons remain consistent.
+    pub(crate) fn find_border_at_preferred(
+        &self,
+        rect: Rect,
+        position: Vec2,
+        best: &mut Option<(f32, Vec<bool>)>,
+        path: &mut Vec<bool>,
+        preferred: Option<SplitDirection>,
+    ) {
+        const DIRECTION_PENALTY: f32 = 4.0;
+
         if let Node::Split {
             direction,
             ratio,
@@ -317,6 +340,12 @@ impl Node {
                 SplitDirection::Vertical => (position.y - border_pos).abs(),
             };
 
+            // Apply penalty when direction does not match the preferred one
+            let effective_dist = match preferred {
+                Some(pref) if *direction != pref => dist + DIRECTION_PENALTY,
+                _ => dist,
+            };
+
             // Check that the position is within the perpendicular extent of the border
             let in_range = match direction {
                 SplitDirection::Horizontal => {
@@ -329,22 +358,22 @@ impl Node {
 
             if in_range {
                 let dominated = match best {
-                    Some((best_dist, _)) => dist < *best_dist,
+                    Some((best_dist, _)) => effective_dist < *best_dist,
                     None => true,
                 };
                 if dominated {
-                    *best = Some((dist, path.clone()));
+                    *best = Some((effective_dist, path.clone()));
                 }
             }
 
             let (left_rect, right_rect) = split_rect(rect, *direction, *ratio);
 
             path.push(false); // left
-            left.find_border_at(left_rect, position, best, path);
+            left.find_border_at_preferred(left_rect, position, best, path, preferred);
             path.pop();
 
             path.push(true); // right
-            right.find_border_at(right_rect, position, best, path);
+            right.find_border_at_preferred(right_rect, position, best, path, preferred);
             path.pop();
         }
     }

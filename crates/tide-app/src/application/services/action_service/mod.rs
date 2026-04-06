@@ -167,6 +167,35 @@ impl App {
             .is_some_and(|agent| agent.gateway_connected)
     }
 
+    pub(crate) fn pane_agent_needs_input_attention(
+        &self,
+        pane_id: crate::tide_core::PaneId,
+    ) -> bool {
+        use crate::state::gateway_status::AgentStatus;
+
+        let direct_status = self
+            .gateway
+            .detected_agents
+            .get(&pane_id)
+            .and_then(|agent| agent.status);
+        if matches!(direct_status, Some(AgentStatus::NeedsInput)) {
+            return true;
+        }
+
+        let associated_terminal_id = match self.panes.get(&pane_id) {
+            Some(PaneKind::Terminal(_)) => return false,
+            Some(PaneKind::Editor(_)) | Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) => {
+                self.assoc.associated_terminal.get(&pane_id).copied()
+            }
+            Some(PaneKind::Launcher(_)) | None => None,
+        };
+
+        associated_terminal_id
+            .and_then(|terminal_id| self.gateway.detected_agents.get(&terminal_id))
+            .and_then(|agent| agent.status)
+            .is_some_and(|status| matches!(status, AgentStatus::NeedsInput))
+    }
+
     fn insert_context_artifact(
         &mut self,
         source_pane_id: crate::tide_core::PaneId,
@@ -805,21 +834,18 @@ impl crate::application::ports::inward::ActionPort for App {
                 self.handle_global_action(global);
             }
             Action::DragBorder(pos) => {
-                let logical = self.logical_size();
-                let mut left = 0.0_f32;
-                let mut right = 0.0_f32;
-                if self.ft.visible {
-                    match self.window.sidebar_side {
-                        crate::LayoutSide::Left => left += self.ft.width,
-                        crate::LayoutSide::Right => right += self.ft.width,
-                    }
+                // Use pane_area_rect for correct coordinate mapping.
+                // pane_area_rect accounts for top_inset, workspace sidebar,
+                // file tree, dock, and all PANE_GAP spacing.
+                //
+                // Only call begin_drag here — border selection is deferred to
+                // the first cursor_moved (drag_border) so drag direction can
+                // disambiguate T-junction overlaps.
+                if let Some(pa) = self.pane_area_rect {
+                    let drag_pos = Vec2::new(pos.x - pa.x, pos.y - pa.y);
+                    let terminal_area = Size::new(pa.width, pa.height);
+                    self.layout.begin_drag(drag_pos, terminal_area);
                 }
-                let drag_pos = Vec2::new(pos.x - left, pos.y);
-                let terminal_area =
-                    Size::new((logical.width - left - right).max(100.0), logical.height);
-                self.layout.begin_drag(drag_pos, terminal_area);
-                self.layout.drag_border(drag_pos);
-                self.compute_layout();
             }
             Action::None => {}
         }
