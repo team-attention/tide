@@ -644,9 +644,9 @@ impl crate::application::ports::inward::LayoutPort for App {
         let skip_pty_resize =
             self.router.is_dragging_border() || self.ft.border_dragging || self.ws.border_dragging;
         if !skip_pty_resize {
-            let content_top = TAB_BAR_HEIGHT;
             let cell_size = self.cell_size();
             if cell_size.width > 0.0 {
+                let content_top = terminal_content_top(cell_size.height);
                 for &(id, vr) in &self.visual_pane_rects {
                     if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(&id) {
                         let content_rect = Rect::new(

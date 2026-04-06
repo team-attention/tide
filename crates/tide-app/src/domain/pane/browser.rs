@@ -1002,7 +1002,9 @@ impl BrowserPane {
     /// Remove the webview from the view hierarchy and drop the handle.
     pub fn destroy(&mut self) {
         if let Some(wv) = self.webview.take() {
-            wv.remove_from_parent();
+            // WebViewHandle owns MainThreadOnly AppKit/WebKit ivars, so it
+            // tears itself down on the main thread before dropping.
+            wv.destroy();
         }
     }
 }
