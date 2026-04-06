@@ -81,7 +81,7 @@ pub(crate) fn handle_scroll(
         }
         if let Some(pid) = tab_bar_pane {
             // Prefer horizontal scroll; fall back to vertical (negated) for mouse wheel
-            let scroll_delta = if dx.abs() > 0.0 { dx } else { -dy };
+            let scroll_delta = if dx.abs() > dy.abs() { dx } else { -dy };
             if scroll_delta != 0.0 {
                 let offsets = &mut ctx.interaction_mut().tab_scroll_offset;
                 let offset = offsets.entry(pid).or_insert(0.0);
