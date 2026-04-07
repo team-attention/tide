@@ -20,6 +20,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **LspManager** | `LspManager` | `adapter/outward/lsp_adapter/manager.rs` | Owns all LspClient instances (one per language). Orchestrates start/stop and request routing. |
 | **CompletionPopup** | `CompletionState` | `domain/pane/editor_completion.rs` | Per-EditorPane inline autocomplete dropdown. NOT part of ModalStack — coexists with typing. |
 | **BrowserSnapshot** | `BrowserSnapshot` | `domain/pane/browser.rs` | Cached page text and page metadata captured from a Browser Pane's `WKWebView` bridge for Agent Gateway observe commands. |
+| **WorktreeInfo** | `WorktreeInfo` | `domain/terminal/git.rs` | Cached git worktree metadata for a working directory, including its `path`, `branch`, `is_main`, and `is_current` flags. |
 
 ## Value Objects (identity-less, compared by value)
 

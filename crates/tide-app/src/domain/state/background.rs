@@ -9,6 +9,7 @@ pub(crate) type GitPollResults = HashMap<PathBuf, GitPollCwdResult>;
 pub(crate) struct GitPollCwdResult {
     pub git_info: Option<crate::tide_terminal::git::GitInfo>,
     pub worktree_count: usize,
+    pub current_worktree: Option<crate::tide_terminal::git::WorktreeInfo>,
     pub repo_root: Option<PathBuf>,
     pub status_entries: Vec<crate::tide_terminal::git::StatusEntry>,
     /// Pre-computed diff file entries for open DiffPanes.

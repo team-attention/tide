@@ -178,7 +178,7 @@ pub fn list_branches(cwd: &Path) -> Vec<BranchInfo> {
 }
 
 /// Information about a git worktree.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorktreeInfo {
     pub path: std::path::PathBuf,
     pub branch: Option<String>,

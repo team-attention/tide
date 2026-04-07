@@ -61,6 +61,8 @@ pub struct TerminalContext {
     pub shell_idle: bool,
     /// Cached worktree count for badge display (updated periodically).
     pub worktree_count: usize,
+    /// Cached current worktree metadata for close-path decisions.
+    pub current_worktree: Option<crate::tide_terminal::git::WorktreeInfo>,
     /// Whether the child shell process has died.
     pub child_dead: bool,
 }
@@ -72,6 +74,7 @@ impl Default for TerminalContext {
             git_info: None,
             shell_idle: true,
             worktree_count: 0,
+            current_worktree: None,
             child_dead: false,
         }
     }
