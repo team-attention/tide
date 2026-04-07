@@ -800,6 +800,7 @@ mod tests {
                     source_pane_id: editor_id,
                     associated_terminal_id: terminal_id,
                     pane_kind: "editor".into(),
+                    source_label: "Untitled".into(),
                     selection: None,
                     content: "keep me".into(),
                     comment: "owner stays in source workspace".into(),
