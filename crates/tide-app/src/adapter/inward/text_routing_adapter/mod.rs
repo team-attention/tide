@@ -99,7 +99,7 @@ pub(crate) fn text_input_target(ctx: &impl TextRoutingPorts) -> TextInputTarget 
 /// Compute visible editor rows and columns for a given pane.
 /// Used by text routing and IME commit paths to keep cursor visible.
 pub(crate) fn visible_editor_size(
-    ctx: &impl AppCorePort,
+    ctx: &(impl AppCorePort + PaneAccessPort),
     pane_id: crate::tide_core::PaneId,
 ) -> (usize, usize) {
     let cs = ctx.cell_size();
@@ -110,12 +110,14 @@ pub(crate) fn visible_editor_size(
         .find(|(pid, _)| *pid == pane_id)
         .map(|(_, r)| *r);
     if let Some(r) = tree_rect {
-        let rows =
-            ((r.height - content_top - crate::theme::PANE_PADDING) / cs.height).floor() as usize;
-        let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cs.width;
-        let cols = ((r.width - 2.0 * crate::theme::PANE_PADDING - 2.0 * gutter_width) / cs.width)
-            .floor() as usize;
-        (rows.max(1), cols.max(1))
+        let content_rect = crate::pane::pane_content_rect(r, content_top);
+        if let Some(PaneKind::Editor(pane)) = ctx.pane(pane_id) {
+            pane.viewport_size_for_content_rect(content_rect, cs)
+        } else {
+            let rows = (content_rect.height / cs.height).floor() as usize;
+            let cols = (content_rect.width / cs.width).floor() as usize;
+            (rows.max(1), cols.max(1))
+        }
     } else {
         (30, 80)
     }

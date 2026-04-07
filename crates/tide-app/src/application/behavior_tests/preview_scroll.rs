@@ -19,12 +19,7 @@ fn test_window_proxy() -> crate::tide_platform::WindowProxy {
 }
 
 fn preview_content_rect(pane_rect: crate::tide_core::Rect) -> crate::tide_core::Rect {
-    crate::tide_core::Rect::new(
-        pane_rect.x + PANE_PADDING,
-        pane_rect.y + TAB_BAR_HEIGHT,
-        pane_rect.width - 2.0 * PANE_PADDING,
-        (pane_rect.height - TAB_BAR_HEIGHT - PANE_PADDING).max(1.0),
-    )
+    crate::pane::pane_content_rect(pane_rect, TAB_BAR_HEIGHT)
 }
 
 fn app_with_preview_editor(line_count: usize) -> (App, u64, crate::tide_core::Rect) {
@@ -34,9 +29,7 @@ fn app_with_preview_editor(line_count: usize) -> (App, u64, crate::tide_core::Re
 
     let mut pane = EditorPane::new_empty(id);
     pane.preview_mode = true;
-    pane.editor.buffer.lines = (0..line_count)
-        .map(|idx| format!("line {}", idx))
-        .collect();
+    pane.editor.buffer.lines = (0..line_count).map(|idx| format!("line {}", idx)).collect();
     app.panes.insert(id, PaneKind::Editor(pane));
     app.focus.focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;
@@ -147,10 +140,7 @@ fn scroll_clamps_to_max() {
 fn mouse_wheel_preview_scroll_clamps_to_visible_range() {
     // UC-4 BR-27: Mouse-wheel preview scrolling clamps to the same visible range as keyboard preview navigation.
     let (mut app, id, pane_rect) = app_with_preview_editor(200);
-    let pos = crate::tide_core::Vec2::new(
-        pane_rect.x + 40.0,
-        pane_rect.y + TAB_BAR_HEIGHT + 40.0,
-    );
+    let pos = crate::tide_core::Vec2::new(pane_rect.x + 40.0, pane_rect.y + TAB_BAR_HEIGHT + 40.0);
     let max_scroll = preview_max_scroll(&app, id, pane_rect);
 
     ActionPort::handle_action(
