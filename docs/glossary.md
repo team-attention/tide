@@ -93,6 +93,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Ratio** | `f32` | Split position (0.0–1.0). Clamped to [0.1, 0.9] minimum. |
 | **Cell Size** | `Size` | Pixel dimensions of one terminal character cell (font-dependent). |
 | **Context Artifact** | concept | A Workspace-local record of an optional captured Pane selection plus an optional user comment. Bound to a source PaneId and its Associated Terminal. |
+| **Source Label** | `String` | A human-readable origin label stored on a `Context Artifact` and used in paired-agent delivery text. `Editor` Panes prefer file paths; other Pane kinds use their most useful user-facing location label. |
 | **Pinned Pane** | concept | A dock pane marked as pinned. Visible from all terminals within the workspace, displayed in a dedicated pinned TabGroup on the left side of the dock when viewed from a non-owning terminal. |
 | **Browser Pane** | `PaneKind::Browser` | A Pane backed by a native `WKWebView`. Can run in navigation mode with a URL bar or in render mode for agent-provided HTML. |
 | **Browser Pane V2** | concept | A later capability track for Browser Pane work that goes beyond Browser Pane UX hardening, including in-app download management, stronger credential integration, and deeper browser session behavior. |

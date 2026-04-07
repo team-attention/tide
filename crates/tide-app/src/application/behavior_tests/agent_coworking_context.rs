@@ -8,12 +8,17 @@ use std::sync::mpsc;
 use serde_json::json;
 
 use crate::adapter::inward::cli_adapter::mcp;
+use crate::adapter::outward::view::header::{
+    active_tab_badges, reserve_title_before_badges, HeaderHitAction,
+};
 use crate::application::ports::outward::persistence_port::Session;
 use crate::pane::browser::BrowserPane;
 use crate::pane::diff::{DiffFileEntry, DiffLine, DiffPane};
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, Selection, TerminalPane};
-use crate::state::context_artifact::format_context_artifact_terminal_input;
+use crate::state::context_artifact::{
+    format_context_artifact_terminal_input, wrap_terminal_input_for_paste,
+};
 use crate::state::FocusArea;
 use crate::state::InputLine;
 use crate::tide_core::{LayoutEngine, SplitDirection};
@@ -510,6 +515,40 @@ fn live_preview_context_artifact_capture_uses_visible_selected_text() {
 }
 
 #[test]
+fn narrow_markdown_tab_prioritizes_add_comment_badge_visibility() {
+    // UC-3 BR-25: When a narrow Dock tab bar cannot show every badge for an active Markdown Pane,
+    // the add-comment affordance stays visible ahead of the plain/live mode badge.
+    let mut editor = EditorPane::new_empty(11);
+    editor.editor.buffer.file_path = Some(PathBuf::from(
+        "/tmp/a-very-long-markdown-file-name-for-comment-priority.md",
+    ));
+    editor.live_preview = true;
+
+    let mut panes = std::collections::HashMap::new();
+    panes.insert(11, PaneKind::Editor(editor));
+
+    let active_badges = active_tab_badges(&panes, &11, true, true);
+    let badge_widths: Vec<f32> = active_badges
+        .iter()
+        .map(|badge| badge.text.chars().count() as f32 * 8.0 + crate::theme::BADGE_PADDING_H * 2.0)
+        .collect();
+    let title_layout = reserve_title_before_badges(
+        320.0,
+        &badge_widths,
+        crate::theme::TAB_MIN_TITLE_WIDTH + 4.0 + badge_widths[0],
+        crate::theme::TAB_MIN_TITLE_WIDTH,
+        4.0,
+    );
+    let visible_badges: Vec<_> = active_badges
+        .iter()
+        .take(title_layout.visible_badges)
+        .collect();
+
+    assert_eq!(title_layout.visible_badges, 1);
+    assert_eq!(visible_badges[0].action, Some(HeaderHitAction::AddComment));
+}
+
+#[test]
 fn open_context_comment_composer_captures_browser_selection() {
     // UC-3 BR-5, BR-6: Browser selections can be captured into the explicit comment composer.
     let (mut app, terminal_id) = app_with_terminal();
@@ -678,6 +717,7 @@ fn contextartifact_terminal_input_is_formatted_for_paired_agent_injection() {
         source_pane_id: 11,
         associated_terminal_id: 3,
         pane_kind: "editor".to_string(),
+        source_label: "/tmp/context.md".to_string(),
         selection: Some(Selection {
             anchor: (0, 0),
             end: (0, 5),
@@ -689,11 +729,48 @@ fn contextartifact_terminal_input_is_formatted_for_paired_agent_injection() {
 
     let prompt = format_context_artifact_terminal_input(&artifact);
     assert!(prompt.contains("Tide Context Artifact #7"));
-    assert!(prompt.contains("editor pane 11"));
+    assert!(prompt.contains("Source:"));
+    assert!(prompt.contains("/tmp/context.md"));
     assert!(prompt.contains("Comment:"));
     assert!(prompt.contains("paired only"));
     assert!(prompt.contains("Selection:"));
     assert!(prompt.contains("route"));
+}
+
+#[test]
+fn contextartifact_terminal_input_uses_human_readable_source_label() {
+    // UC-5 BR-26: Context Artifact delivery text uses a human-readable Source Label instead of pane numbering.
+    let artifact = crate::ContextArtifact {
+        artifact_id: 8,
+        source_pane_id: 14,
+        associated_terminal_id: 3,
+        pane_kind: "editor".to_string(),
+        source_label: "/tmp/nested/context.md".to_string(),
+        selection: None,
+        content: String::new(),
+        comment: "review this".to_string(),
+        pinned: false,
+    };
+
+    let prompt = format_context_artifact_terminal_input(&artifact);
+
+    assert!(prompt.contains("Source:"));
+    assert!(prompt.contains("/tmp/nested/context.md"));
+    assert!(!prompt.contains("editor pane 14"));
+}
+
+#[test]
+fn contextartifact_terminal_paste_wrapper_does_not_auto_submit() {
+    // UC-5 BR-27: Live paired-Terminal delivery pastes artifact text without auto-submitting the paired agent turn.
+    let plain = wrap_terminal_input_for_paste("hello", false);
+    assert_eq!(plain, b"hello");
+
+    let bracketed = wrap_terminal_input_for_paste("hello", true);
+    assert_eq!(bracketed, b"\x1b[200~hello\x1b[201~\x1b[D\x1b[C");
+    assert!(
+        !bracketed.ends_with(b"\r"),
+        "artifact paste must not append Enter"
+    );
 }
 
 // --- UC-4: ArtifactReadAndList ---

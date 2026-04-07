@@ -171,7 +171,7 @@ pub(crate) fn terminal_header_title_color(
 }
 
 /// Compute badges for the active tab in a tab bar (works for all pane kinds).
-fn active_tab_badges(
+pub(crate) fn active_tab_badges(
     panes: &HashMap<PaneId, PaneKind>,
     id: &PaneId,
     is_focused: bool,
@@ -208,7 +208,10 @@ fn active_tab_badges(
     };
     if let Some(comment_badge) = selection_comment_badge(panes, *id, is_focused, show_comment_badge)
     {
-        badges.push(comment_badge);
+        match panes.get(id) {
+            Some(PaneKind::Editor(ep)) if ep.is_markdown() => badges.insert(0, comment_badge),
+            _ => badges.push(comment_badge),
+        }
     }
     badges
 }
@@ -443,12 +446,18 @@ pub fn render_pane_header_inner(
 
     if let Some(comment_badge) = selection_comment_badge(panes, id, is_focused, show_comment_badge)
     {
-        inline_badges.push((
+        let comment_badge = (
             comment_badge.text,
             p.badge_text,
             badge_bg,
             comment_badge.action,
-        ));
+        );
+        match panes.get(&id) {
+            Some(PaneKind::Editor(ep)) if ep.is_markdown() => {
+                inline_badges.insert(0, comment_badge)
+            }
+            _ => inline_badges.push(comment_badge),
+        }
     }
 
     // Close icon config
@@ -501,12 +510,7 @@ pub fn render_pane_header_inner(
         );
     }
     renderer.draw_chrome_rect(
-        Rect::new(
-            rect.x,
-            rect.y,
-            compact_tab_w,
-            TAB_ACTIVE_INDICATOR_HEIGHT,
-        ),
+        Rect::new(rect.x, rect.y, compact_tab_w, TAB_ACTIVE_INDICATOR_HEIGHT),
         p.border_focused,
     );
 
@@ -768,18 +772,18 @@ fn render_tab_bar_impl(
             if bg_rect.width > 0.0 {
                 renderer.draw_chrome_rect(bg_rect, p.active_tab_bg);
             }
-            let accent_rect = Rect::new(
-                cx,
-                tab_y,
-                tw,
-                TAB_ACTIVE_INDICATOR_HEIGHT,
-            )
-            .clip_to(&tab_clip);
+            let accent_rect =
+                Rect::new(cx, tab_y, tw, TAB_ACTIVE_INDICATOR_HEIGHT).clip_to(&tab_clip);
             if accent_rect.width > 0.0 {
                 let accent_color = if is_focused {
                     p.border_focused
                 } else {
-                    crate::tide_core::Color::new(p.border_focused.r, p.border_focused.g, p.border_focused.b, p.border_focused.a * 0.3)
+                    crate::tide_core::Color::new(
+                        p.border_focused.r,
+                        p.border_focused.g,
+                        p.border_focused.b,
+                        p.border_focused.a * 0.3,
+                    )
                 };
                 renderer.draw_chrome_rect(accent_rect, accent_color);
             }

@@ -876,12 +876,14 @@ fn cli_create_context_artifact(ctx: &mut crate::App, params: Value) -> Result<Va
     let associated_terminal_id = source_terminal_for_pane(ctx, pane_id)?;
     ensure_artifact_owner(caller_terminal_id, associated_terminal_id)?;
     let (content, selection, kind) = capture_selection_details(ctx, pane_id)?;
+    let source_label = ctx.context_artifact_source_label(pane_id);
 
     let artifact = crate::ContextArtifact {
         artifact_id: ctx.context_artifacts.allocate_id(),
         source_pane_id: pane_id,
         associated_terminal_id,
         pane_kind: kind,
+        source_label,
         selection,
         content,
         comment,
