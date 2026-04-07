@@ -13,6 +13,9 @@
 - The explicit add-comment badge is currently rendered from shared header code without `Dock` versus `Stage` context, so the affordance can appear in `Stage` even though delivery is bound to a Pane's `Associated Terminal`.
 - Immediate `Context Artifact` delivery is currently event-only. The owner-scoped `context-artifact-delivered` notification contains metadata such as `artifact_id`, but it does not inject artifact text into the paired `Terminal` or place the artifact body directly into the event payload.
 - The add-comment flow already captures `Editor` Pane selection through `capture_context_comment_snapshot()`, but the spec does not yet lock `Markdown Pane` behavior in `LivePreviewMode`, where the visible selection content can differ from the raw Markdown buffer.
+- In narrow `Dock` tab bars, the add-comment affordance can lose horizontal priority to other `Markdown Pane` badges such as the `plain` / `live` mode toggle.
+- Formatted paired-agent delivery text currently identifies the source as `{pane_kind} pane {pane_id}`, which leaks Tide-internal pane identity instead of a human-readable `Source Label`.
+- Live paired-`Terminal` delivery currently appends `Enter` after the injected artifact text, which immediately submits the paired agent turn instead of leaving the pasted artifact editable in place.
 
 ### To-Be
 
@@ -28,6 +31,9 @@
 - A `Dock` `Markdown Pane` in `LivePreviewMode` can open the `Context Comment Composer` without leaving authoring mode.
 - When the source `Pane` is a `Markdown Pane` in `LivePreviewMode`, the captured selection content matches the visible selection text shown to the human.
 - The `Context Comment Composer` accepts multiline comments without sacrificing the existing explicit submit flow.
+- In narrow `Dock` tab bars, the add-comment affordance stays visible ahead of lower-priority `Markdown Pane` mode badges.
+- `Context Artifact` metadata and paired-agent delivery text use a human-readable `Source Label` instead of Tide-internal pane numbering.
+- Live paired-`Terminal` delivery pastes the formatted artifact text without auto-submitting the paired agent turn.
 
 ### Approach
 
@@ -37,10 +43,12 @@
 4. Capture selection data from `Terminal`, `Editor`, `Diff`, and `Browser` panes, including browser-page selection from normal navigation mode.
 5. Enforce `Associated Terminal` authorization on every artifact flow so delivery stays bound to the source Pane's paired agent.
 6. Keep the explicit add-comment badge `Dock`-scoped and tied to paired-agent availability so `Stage` panes and disconnected agent sessions do not advertise a paired-agent action outside the `Dock` context.
-7. Format delivery text once per artifact and write it into the paired `Terminal` using the same bracketed-paste safety rules Tide already uses for explicit paste.
-8. Include artifact body fields in the owner-scoped delivery event so explicit gateway subscribers can react without a separate immediate read.
-9. Lock `Markdown Pane` `LivePreviewMode` artifact capture so add-comment uses the human-visible selection content without forcing preview-only mode.
-10. Preserve the explicit submit gesture while allowing multiline comment input and a visible composer caret as the comment grows.
+7. Prioritize the add-comment affordance ahead of lower-priority `Markdown Pane` mode badges when a narrow `Dock` tab bar cannot show every badge at once.
+8. Capture a human-readable `Source Label` with each `Context Artifact` so paired-agent delivery text can prefer file paths and other user-facing source descriptions over Tide-internal pane numbering.
+9. Format delivery text once per artifact and write it into the paired `Terminal` using bracketed-paste safety rules without appending an automatic submit keystroke.
+10. Include artifact body fields in the owner-scoped delivery event so explicit gateway subscribers can react without a separate immediate read.
+11. Lock `Markdown Pane` `LivePreviewMode` artifact capture so add-comment uses the human-visible selection content without forcing preview-only mode.
+12. Preserve the explicit submit gesture while allowing multiline comment input and a visible composer caret as the comment grows.
 
 ## Bounded Contexts
 
@@ -106,6 +114,7 @@
   - BR-22: `Markdown Pane` artifact capture in `LivePreviewMode` uses the visible selected text rather than hidden Markdown syntax markers
   - BR-23: The `Context Comment Composer` accepts multiline comment text from `Shift+Enter` and pasted newline content while keeping plain `Enter` as the submit gesture
   - BR-24: The `Context Comment Composer` keeps the active caret visible inside the composer input viewport as multiline text grows
+  - BR-25: When a narrow `Dock` tab bar cannot show every badge for an active `Markdown Pane`, the add-comment affordance stays visible ahead of the `plain` / `live` mode badge
 
 ### UC-4: ArtifactReadAndList
 
@@ -137,6 +146,8 @@
   - BR-10: Artifact delivery never crosses terminal boundaries
   - BR-19: Owner-scoped delivery events include the artifact body needed for explicit subscriber handling
   - BR-20: Live paired-terminal delivery uses formatted `Terminal` input injection
+  - BR-26: `Context Artifact` metadata and paired-agent delivery text use a human-readable `Source Label`; `Editor` Pane artifacts prefer the file path when available
+  - BR-27: Live paired-`Terminal` delivery pastes artifact text without auto-submitting the paired agent turn
 
 ### UC-6: AssociatedTerminalAuthorization
 
@@ -208,10 +219,13 @@
 | UC-3 | BR-23 | `shift_enter_in_context_comment_composer_inserts_newline` |
 | UC-3 | BR-23 | `pasted_newlines_are_preserved_in_context_comment_composer` |
 | UC-3 | BR-24 | `context_comment_composer_keeps_caret_visible_when_comment_wraps` |
+| UC-3 | BR-25 | `narrow_markdown_tab_prioritizes_add_comment_badge_visibility` |
 | UC-4 | BR-7, BR-8 | `contextartifact_list_and_read_are_workspace_scoped` |
 | UC-5 | BR-9, BR-10 | `send_contextartifact_targets_only_the_paired_agent` |
 | UC-5 | BR-19 | `submit_context_comment_composer_delivery_event_includes_artifact_body` |
 | UC-5 | BR-20 | `contextartifact_terminal_input_is_formatted_for_paired_agent_injection` |
+| UC-5 | BR-26 | `contextartifact_terminal_input_uses_human_readable_source_label` |
+| UC-5 | BR-27 | `contextartifact_terminal_paste_wrapper_does_not_auto_submit` |
 | UC-6 | BR-11, BR-12 | `contextartifact_requests_require_the_source_associated_terminal` |
 | UC-7 | BR-13, BR-14 | `contextartifacts_are_workspace_local_and_not_persisted_to_session` |
 | UC-8 | BR-15, BR-16 | `mcp_tools_list_exposes_contextartifact_commands` |

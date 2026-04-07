@@ -27,6 +27,42 @@ use crate::TextExtractPort;
 use crate::WorkspaceNavPort;
 
 impl App {
+    pub(crate) fn context_artifact_source_label(
+        &self,
+        source_pane_id: crate::tide_core::PaneId,
+    ) -> String {
+        match self.panes.get(&source_pane_id) {
+            Some(PaneKind::Terminal(tp)) => tp
+                .context
+                .cwd
+                .as_ref()
+                .map(|cwd| cwd.display().to_string())
+                .unwrap_or_else(|| "Terminal".to_string()),
+            Some(PaneKind::Editor(ep)) => ep
+                .editor
+                .file_path()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| ep.title()),
+            Some(PaneKind::Diff(dp)) => dp
+                .files
+                .first()
+                .map(|file| dp.cwd.join(&file.path).display().to_string())
+                .unwrap_or_else(|| dp.cwd.display().to_string()),
+            Some(PaneKind::Browser(bp)) => bp
+                .page_selection
+                .as_ref()
+                .and_then(|selection| selection.page_url.clone())
+                .or_else(|| {
+                    bp.page_snapshot
+                        .as_ref()
+                        .and_then(|snapshot| snapshot.page_url.clone())
+                })
+                .or_else(|| Some(bp.url.clone()).filter(|url| !url.is_empty()))
+                .unwrap_or_else(|| bp.title()),
+            Some(PaneKind::Launcher(_)) | None => "Context Artifact".to_string(),
+        }
+    }
+
     pub(crate) fn cleanup_closed_pane_state(&mut self, pane_id: crate::tide_core::PaneId) {
         self.notify_lsp_did_close(pane_id);
         self.cache.invalidate_pane(pane_id);
@@ -206,11 +242,13 @@ impl App {
         comment: String,
         pinned: bool,
     ) -> crate::ContextArtifact {
+        let source_label = self.context_artifact_source_label(source_pane_id);
         let artifact = crate::ContextArtifact {
             artifact_id: self.context_artifacts.allocate_id(),
             source_pane_id,
             associated_terminal_id,
             pane_kind,
+            source_label,
             selection,
             content,
             comment,
@@ -253,7 +291,7 @@ impl App {
         }
 
         if !cfg!(test) {
-            let data = crate::state::context_artifact::wrap_terminal_input_for_paste_and_submit(
+            let data = crate::state::context_artifact::wrap_terminal_input_for_paste(
                 &terminal_input,
                 pane.backend.is_bracketed_paste_mode(),
             );
