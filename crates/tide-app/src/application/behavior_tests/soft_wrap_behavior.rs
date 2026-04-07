@@ -296,3 +296,99 @@ fn mouse_wheel_soft_wrap_preserves_render_wrap_width() {
 
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn mouse_wheel_scrolling_wrapped_markdown_stays_monotonic_and_keeps_cache_maps_stable() {
+    // UC-8 BR-20, BR-21, BR-23: Mouse-wheel soft-wrap authoring scroll should move by visual rows and keep wrap/live-preview caches stable across scroll-only changes.
+    let (mut app, id, path) = app_with_markdown_editor(&format!(
+        "# Heading\n\n{}\n\nThis has **bold** and _italic_ text.\n",
+        "a".repeat(1000)
+    ));
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
+    let content_rect = pane_content_rect(pane_rect);
+    let cell_size = app.window.cached_cell_size;
+    let scroll_pos = crate::tide_core::Vec2::new(
+        pane_rect.x + 40.0,
+        pane_rect.y + crate::theme::TAB_BAR_HEIGHT + 40.0,
+    );
+    app.visual_pane_rects = vec![(id, pane_rect)];
+
+    let expected_wrap_width = {
+        let pane = match app.panes.get_mut(&id) {
+            Some(PaneKind::Editor(pane)) => pane,
+            _ => panic!("expected editor pane"),
+        };
+        pane.prepare_inline_caches(content_rect, cell_size, false);
+        pane.wrap_cols_for_rect(content_rect, cell_size)
+    };
+
+    let (initial_wrap_generation, initial_live_preview_ptr) = {
+        let pane = match app.panes.get(&id) {
+            Some(PaneKind::Editor(pane)) => pane,
+            _ => panic!("expected editor pane"),
+        };
+        (
+            pane.wrap_map()
+                .map(|map| map.generation())
+                .expect("expected wrap map after initial cache preparation"),
+            pane.live_preview_map
+                .as_ref()
+                .map(|map| map as *const _ as usize)
+                .expect("expected live preview map after initial cache preparation"),
+        )
+    };
+
+    let apply_scroll = |app: &mut App, delta: f32| -> usize {
+        ActionPort::handle_action(
+            app,
+            crate::tide_input::Action::RouteToPane(id),
+            Some(crate::tide_core::InputEvent::MouseScroll {
+                delta,
+                position: scroll_pos,
+            }),
+        );
+
+        let pane = match app.panes.get_mut(&id) {
+            Some(PaneKind::Editor(pane)) => pane,
+            _ => panic!("expected editor pane"),
+        };
+        pane.prepare_inline_caches(content_rect, cell_size, false);
+
+        assert_eq!(
+            pane.wrap_map().map(|map| map.wrap_width()),
+            Some(expected_wrap_width),
+            "mouse-wheel scrolling should keep using the authoring-region wrap width"
+        );
+        assert_eq!(
+            pane.wrap_map().map(|map| map.generation()),
+            Some(initial_wrap_generation),
+            "scroll-only changes should not invalidate the WrapMap generation"
+        );
+        assert_eq!(
+            pane.live_preview_map
+                .as_ref()
+                .map(|map| map as *const _ as usize),
+            Some(initial_live_preview_ptr),
+            "scroll-only changes should not rebuild the LivePreviewMap"
+        );
+
+        pane.soft_wrap_visual_scroll()
+    };
+
+    let down_1 = apply_scroll(&mut app, -1.0);
+    let down_2 = apply_scroll(&mut app, -1.0);
+    let down_3 = apply_scroll(&mut app, -1.0);
+    let up_1 = apply_scroll(&mut app, 1.0);
+    let up_2 = apply_scroll(&mut app, 1.0);
+    let up_3 = apply_scroll(&mut app, 1.0);
+
+    assert!(down_1 > 0, "a downward trackpad swipe should advance the wrapped scroll");
+    assert!(down_2 > down_1, "repeated downward swipes should keep moving forward");
+    assert!(down_3 > down_2, "wrapped scroll should stay monotonic while swiping in one direction");
+    assert!(up_1 < down_3, "the opposite swipe direction should move back up");
+    assert!(up_2 < up_1, "repeated upward swipes should keep moving backward");
+    assert!(up_3 < up_2, "wrapped scroll should stay monotonic in the reverse direction too");
+    assert_eq!(up_3, 0, "returning with the opposite swipe direction should reach the starting scroll position");
+
+    let _ = std::fs::remove_file(path);
+}

@@ -171,7 +171,11 @@ impl EditorPane {
         let soft_wrap = Self::is_prose_extension(path);
         let live_preview = Self::is_markdown_extension(path);
         let live_preview_map = live_preview.then(|| LivePreviewMap::build(&editor.buffer.lines));
-        let live_preview_generation = if live_preview { editor.generation() } else { 0 };
+        let live_preview_generation = if live_preview {
+            editor.content_generation()
+        } else {
+            0
+        };
         Ok(Self {
             id,
             editor,
@@ -873,7 +877,7 @@ impl EditorPane {
             self.wrap_map = None;
             return false;
         }
-        let gen = self.editor.generation();
+        let gen = self.editor.content_generation();
         if let Some(ref map) = self.wrap_map {
             if map.generation() == gen && map.wrap_width() == wrap_width {
                 return false;
@@ -928,7 +932,7 @@ impl EditorPane {
 
     /// Ensure LivePreviewMap is up-to-date with current buffer.
     pub fn ensure_live_preview_map(&mut self) {
-        let gen = self.editor.generation();
+        let gen = self.editor.content_generation();
         if self.live_preview_map.is_none() || self.live_preview_generation != gen {
             self.live_preview_map = Some(LivePreviewMap::build(&self.editor.buffer.lines));
             self.live_preview_generation = gen;
