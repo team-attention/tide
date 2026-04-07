@@ -217,6 +217,20 @@ fn git_switcher_pane_cwd(
     }
 }
 
+/// Resolve the main worktree path for the repo shown in the GitSwitcher.
+fn git_switcher_main_worktree_cwd(
+    ctx: &(impl AppCorePort + PaneAccessPort + ModalPort),
+) -> Option<std::path::PathBuf> {
+    let cwd = git_switcher_pane_cwd(ctx)?;
+    let main_cwd = ctx
+        .git_list_worktrees(&cwd)
+        .into_iter()
+        .find(|wt| wt.is_main)
+        .map(|wt| wt.path)
+        .unwrap_or_else(|| cwd.clone());
+    Some(main_cwd)
+}
+
 /// Handle a git switcher popup button click.
 pub(crate) fn handle_git_switcher_button(
     ctx: &mut (impl AppCorePort + PaneAccessPort + PaneLifecyclePort + ModalPort + ActionPort + InputStatePort),
@@ -290,7 +304,7 @@ pub(crate) fn handle_git_switcher_button(
                 gs.delete_confirm = None;
             }
 
-            let cwd = git_switcher_pane_cwd(ctx);
+            let main_cwd = git_switcher_main_worktree_cwd(ctx);
 
             let (wt_path, branch_name, is_main) = {
                 let gs = ctx.modal().git_switcher.as_ref().unwrap();
@@ -302,14 +316,14 @@ pub(crate) fn handle_git_switcher_button(
                 if wt.is_current || wt.is_main { return; }
                 (wt.path.clone(), wt.branch.clone(), wt.is_main)
             };
-            if let Some(cwd) = cwd {
+            if let Some(main_cwd) = main_cwd {
                 if !is_main {
-                    if let Err(e) = ctx.git_remove_worktree(&cwd, &wt_path, true) {
+                    if let Err(e) = ctx.git_remove_worktree(&main_cwd, &wt_path, true) {
                         log::error!("Failed to remove worktree: {}", e);
                     }
                     if let Some(ref branch) = branch_name {
                         if branch != "main" && branch != "master" {
-                            if let Err(e) = ctx.git_delete_branch(&cwd, branch, true) {
+                            if let Err(e) = ctx.git_delete_branch(&main_cwd, branch, true) {
                                 log::error!("Failed to delete branch: {}", e);
                             }
                         }
