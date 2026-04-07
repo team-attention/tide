@@ -126,6 +126,7 @@ All other file types: no wrap (current behavior preserved).
   - BR-20: Soft-wrap authoring scroll advances in visual rows, not only whole logical lines
   - BR-21: Soft-wrap scroll clamping uses total visual rows so the wrapped tail remains reachable
   - BR-22: Soft-wrap scroll input reuses the same authoring-region wrap width that render-time `WrapMap` preparation uses
+  - BR-23: Scroll-only position changes do not invalidate `WrapMap` or `LivePreviewMap`; only content changes and viewport width changes do
 
 ## Invariants
 
@@ -133,7 +134,8 @@ All other file types: no wrap (current behavior preserved).
 2. **Logical↔Visual bijection**: Every (logical_line, char_offset) maps to exactly one visual row, and vice versa
 3. **No wrap in non-prose**: Files without prose extension never produce multi-row wraps
 4. **Preview separation**: Preview mode never reuses WrapMap for its own layout model
-5. **Generation sync**: WrapMap invalidation triggers generation increment for dirty tracking
+5. **Generation sync**: WrapMap invalidation from content or viewport width changes triggers generation increment for dirty tracking
+6. **Scroll cache stability**: Scroll-only position changes do not invalidate `WrapMap` or `LivePreviewMap`
 
 ## Tests
 
@@ -159,6 +161,7 @@ All other file types: no wrap (current behavior preserved).
 | UC-8 | BR-20 | `scrolling_wrapped_markdown_advances_by_visual_row()` |
 | UC-8 | BR-21 | `scrolling_wrapped_markdown_reaches_the_last_visual_row()` |
 | UC-8 | BR-22 | `mouse_wheel_soft_wrap_preserves_render_wrap_width()` |
+| UC-8 | BR-23 | `mouse_wheel_scrolling_wrapped_markdown_stays_monotonic_and_keeps_cache_maps_stable()` |
 
 ## Location
 
