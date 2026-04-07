@@ -571,12 +571,7 @@ fn check_scrollbar_click(ctx: &mut impl MousePorts, pos: Vec2) -> bool {
     let rects: Vec<_> = ctx.visual_pane_rects().to_vec();
     for (pid, vrect) in rects {
         if let Some(PaneKind::Editor(pane)) = ctx.pane(pid) {
-            let inner = Rect::new(
-                vrect.x + PANE_PADDING,
-                vrect.y + content_top_offset,
-                vrect.width - 2.0 * PANE_PADDING,
-                vrect.height - content_top_offset - PANE_PADDING,
-            );
+            let inner = crate::pane::pane_content_rect(vrect, content_top_offset);
             let scrollbar_right = inner.x + inner.width;
             let scrollbar_left = scrollbar_right - hit_width;
             if pos.x >= scrollbar_left && pos.x <= scrollbar_right

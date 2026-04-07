@@ -781,6 +781,49 @@ impl EditorPane {
         (content_width / cell_size.width).floor() as usize
     }
 
+    /// Visible rows and content columns for the current Pane mode.
+    ///
+    /// The returned columns must match the width used by `prepare_inline_caches()`
+    /// so input-time `WrapMap` rebuilds stay in sync with render-time preparation.
+    pub fn viewport_size_for_content_rect(&self, rect: Rect, cell_size: Size) -> (usize, usize) {
+        let viewport_rect = if self.preview_mode {
+            rect
+        } else {
+            self.authoring_rect(rect, cell_size)
+        };
+        let visible_rows = (viewport_rect.height / cell_size.height).floor() as usize;
+
+        if self.preview_mode {
+            let scrollbar_reserved = if self.needs_scrollbar(viewport_rect, cell_size.height) {
+                SCROLLBAR_WIDTH
+            } else {
+                0.0
+            };
+            let visible_cols = ((viewport_rect.width - scrollbar_reserved).max(0.0)
+                / cell_size.width)
+                .floor() as usize;
+            return (visible_rows.max(1), visible_cols.max(1));
+        }
+
+        if self.effective_soft_wrap() {
+            return (
+                visible_rows.max(1),
+                self.wrap_cols_for_rect(viewport_rect, cell_size).max(1),
+            );
+        }
+
+        let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+        let scrollbar_reserved = if self.needs_scrollbar(viewport_rect, cell_size.height) {
+            SCROLLBAR_WIDTH
+        } else {
+            0.0
+        };
+        let visible_cols = ((viewport_rect.width - gutter_width - scrollbar_reserved).max(0.0)
+            / cell_size.width)
+            .floor() as usize;
+        (visible_rows.max(1), visible_cols.max(1))
+    }
+
     /// Preview wrapping width for a preview rect.
     pub(crate) fn preview_wrap_width_for_rect(&self, rect: Rect, cell_size: Size) -> usize {
         (rect.width / cell_size.width).floor() as usize
