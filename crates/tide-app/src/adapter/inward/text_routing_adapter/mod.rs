@@ -110,12 +110,7 @@ pub(crate) fn visible_editor_size(
         .find(|(pid, _)| *pid == pane_id)
         .map(|(_, r)| *r);
     if let Some(r) = tree_rect {
-        let content_rect = crate::tide_core::Rect::new(
-            r.x + crate::theme::PANE_PADDING,
-            r.y + content_top,
-            r.width - 2.0 * crate::theme::PANE_PADDING,
-            (r.height - content_top - crate::theme::PANE_PADDING).max(1.0),
-        );
+        let content_rect = crate::pane::pane_content_rect(r, content_top);
         if let Some(PaneKind::Editor(pane)) = ctx.pane(pane_id) {
             pane.viewport_size_for_content_rect(content_rect, cs)
         } else {

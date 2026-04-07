@@ -39,12 +39,7 @@ fn app_with_markdown_editor(contents: &str) -> (App, u64, std::path::PathBuf) {
 }
 
 fn pane_content_rect(pane_rect: crate::tide_core::Rect) -> crate::tide_core::Rect {
-    crate::tide_core::Rect::new(
-        pane_rect.x + crate::theme::PANE_PADDING,
-        pane_rect.y + crate::theme::TAB_BAR_HEIGHT,
-        pane_rect.width - 2.0 * crate::theme::PANE_PADDING,
-        (pane_rect.height - crate::theme::TAB_BAR_HEIGHT - crate::theme::PANE_PADDING).max(1.0),
-    )
+    crate::pane::pane_content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT)
 }
 
 // --- UC-1: Open Prose File ---

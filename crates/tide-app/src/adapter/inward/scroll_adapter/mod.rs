@@ -170,12 +170,7 @@ pub(crate) fn handle_scroll(
                 }
                 Some(PaneKind::Editor(pane)) => {
                     use crate::tide_editor::input::EditorAction;
-                    let content_rect = crate::tide_core::Rect::new(
-                        rect.x + PANE_PADDING,
-                        rect.y + scroll_top_off,
-                        rect.width - 2.0 * PANE_PADDING,
-                        (rect.height - scroll_top_off - PANE_PADDING).max(1.0),
-                    );
+                    let content_rect = crate::pane::pane_content_rect(rect, scroll_top_off);
                     let (visible_rows, visible_cols) =
                         pane.viewport_size_for_content_rect(content_rect, cs);
                     if editor_dx > 0.0 {

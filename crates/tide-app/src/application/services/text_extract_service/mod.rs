@@ -181,12 +181,7 @@ impl App {
             .iter()
             .find(|(id, _)| *id == pane_id)?;
         let cell_size = self.cell_size();
-        let mut click_rect = crate::tide_core::Rect::new(
-            visual_rect.x + PANE_PADDING,
-            visual_rect.y + TAB_BAR_HEIGHT,
-            visual_rect.width - 2.0 * PANE_PADDING,
-            (visual_rect.height - TAB_BAR_HEIGHT - PANE_PADDING).max(1.0),
-        );
+        let mut click_rect = crate::pane::pane_content_rect(*visual_rect, TAB_BAR_HEIGHT);
         if let Some((editor_rect, preview_rect)) = pane.split_preview_rects(click_rect, cell_size) {
             if position.x >= preview_rect.x {
                 return None;

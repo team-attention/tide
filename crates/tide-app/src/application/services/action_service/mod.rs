@@ -642,12 +642,7 @@ impl crate::application::ports::inward::ActionPort for App {
                                     .iter()
                                     .find(|(pid, _)| *pid == id)
                                     .map(|(_, r)| {
-                                        crate::tide_core::Rect::new(
-                                            r.x + PANE_PADDING,
-                                            r.y + TAB_BAR_HEIGHT,
-                                            r.width - 2.0 * PANE_PADDING,
-                                            (r.height - TAB_BAR_HEIGHT - PANE_PADDING).max(1.0),
-                                        )
+                                        crate::pane::pane_content_rect(*r, TAB_BAR_HEIGHT)
                                     });
                                 let (visible_rows, visible_cols) = content_rect
                                     .map(|rect| {
@@ -732,14 +727,7 @@ impl crate::application::ports::inward::ActionPort for App {
                         .visual_pane_rects
                         .iter()
                         .find(|(pid, _)| *pid == id)
-                        .map(|(_, r)| {
-                            crate::tide_core::Rect::new(
-                                r.x + PANE_PADDING,
-                                r.y + TAB_BAR_HEIGHT,
-                                r.width - 2.0 * PANE_PADDING,
-                                (r.height - TAB_BAR_HEIGHT - PANE_PADDING).max(1.0),
-                            )
-                        });
+                        .map(|(_, r)| crate::pane::pane_content_rect(*r, TAB_BAR_HEIGHT));
                     match self.panes.get_mut(&id) {
                         Some(PaneKind::Editor(pane)) if pane.preview_mode => {
                             let (visible_rows, _) = content_rect

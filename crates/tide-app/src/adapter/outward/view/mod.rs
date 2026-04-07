@@ -154,12 +154,7 @@ impl App {
             }
             let pane_bar = bar_offset_for(id, &self.panes, &self.modal.save_confirm);
             if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&id) {
-                let content_rect = Rect::new(
-                    rect.x + PANE_PADDING,
-                    rect.y + TAB_BAR_HEIGHT + pane_bar,
-                    rect.width - 2.0 * PANE_PADDING,
-                    (rect.height - TAB_BAR_HEIGHT - PANE_PADDING - pane_bar).max(1.0),
-                );
+                let content_rect = crate::pane::pane_content_rect(rect, TAB_BAR_HEIGHT + pane_bar);
                 pane.prepare_inline_caches(
                     content_rect,
                     renderer.cell_size(),
