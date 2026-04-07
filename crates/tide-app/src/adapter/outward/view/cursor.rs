@@ -85,12 +85,7 @@ pub(crate) fn render_cursor_and_highlights(
             Some(PaneKind::Terminal(_)) => terminal_content_top(renderer.cell_size().height),
             _ => TAB_BAR_HEIGHT,
         };
-        let inner = Rect::new(
-            rect.x + PANE_PADDING,
-            rect.y + top_offset + pane_bar,
-            rect.width - 2.0 * PANE_PADDING,
-            (rect.height - top_offset - PANE_PADDING - pane_bar).max(1.0),
-        );
+        let inner = crate::pane::pane_content_rect(rect, top_offset + pane_bar);
         match app.panes.get(&id) {
             Some(PaneKind::Terminal(pane)) => {
                 // Only render cursor on the focused pane (and hide when search bar is active
