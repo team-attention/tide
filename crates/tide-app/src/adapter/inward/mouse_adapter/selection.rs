@@ -9,15 +9,6 @@ use crate::FocusNavPort;
 use crate::InputStatePort;
 use crate::PaneAccessPort;
 
-fn editor_content_rect(rect: Rect, content_top_offset: f32) -> Rect {
-    Rect::new(
-        rect.x + PANE_PADDING,
-        rect.y + content_top_offset,
-        rect.width - 2.0 * PANE_PADDING,
-        rect.height - content_top_offset - PANE_PADDING,
-    )
-}
-
 fn editor_hit_cell(
     pane: &crate::pane::editor::EditorPane,
     rect: Rect,
@@ -25,7 +16,7 @@ fn editor_hit_cell(
     cell_size: crate::tide_core::Size,
     content_top_offset: f32,
 ) -> Option<(usize, usize)> {
-    let content_rect = editor_content_rect(rect, content_top_offset);
+    let content_rect = crate::pane::pane_content_rect(rect, content_top_offset);
     let target_rect = if pane.preview_mode {
         content_rect
     } else {
@@ -88,7 +79,7 @@ pub(super) fn start_text_selection(
     let pos = ctx.last_cursor_pos();
     let rects: Vec<_> = ctx.visual_pane_rects().to_vec();
     let hit = rects.iter().find(|(_, r)| {
-        let content = editor_content_rect(*r, content_top_offset);
+        let content = crate::pane::pane_content_rect(*r, content_top_offset);
         content.contains(pos)
     });
     let pid = match hit {
@@ -273,7 +264,7 @@ pub(super) fn handle_selection_drag(ctx: &mut (impl AppCorePort + PaneAccessPort
 
     let pane_rects: Vec<_> = ctx.visual_pane_rects().to_vec();
     for (pid, rect) in pane_rects {
-        let content = editor_content_rect(rect, drag_top_offset);
+        let content = crate::pane::pane_content_rect(rect, drag_top_offset);
         if !content.contains(pos) {
             continue;
         }

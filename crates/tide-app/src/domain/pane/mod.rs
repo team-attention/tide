@@ -16,11 +16,21 @@ use crate::tide_terminal::git::GitInfo;
 use crate::tide_terminal::Terminal;
 
 use crate::state::search::SearchState;
+use crate::theme::PANE_PADDING;
 use browser::BrowserPane;
 use diff::DiffPane;
 use editor::EditorPane;
 
 pub type PaneId = crate::tide_core::PaneId;
+
+pub(crate) fn pane_content_rect(pane_rect: Rect, content_top_offset: f32) -> Rect {
+    Rect::new(
+        pane_rect.x + PANE_PADDING,
+        pane_rect.y + content_top_offset,
+        pane_rect.width - 2.0 * PANE_PADDING,
+        (pane_rect.height - content_top_offset - PANE_PADDING).max(1.0),
+    )
+}
 
 /// Polymorphic pane: terminal, editor, diff viewer, embedded browser, or launcher.
 pub enum PaneKind {

@@ -2,8 +2,8 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::mpsc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
 
 use serde_json::json;
 
@@ -460,12 +460,7 @@ fn live_preview_context_artifact_capture_uses_visible_selected_text() {
     );
 
     let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
-    let content_rect = crate::tide_core::Rect::new(
-        pane_rect.x + crate::theme::PANE_PADDING,
-        pane_rect.y + crate::theme::TAB_BAR_HEIGHT,
-        pane_rect.width - 2.0 * crate::theme::PANE_PADDING,
-        (pane_rect.height - crate::theme::TAB_BAR_HEIGHT - crate::theme::PANE_PADDING).max(1.0),
-    );
+    let content_rect = crate::pane::pane_content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT);
     let cell = app.window.cached_cell_size;
     app.visual_pane_rects = vec![(editor_id, pane_rect)];
 
