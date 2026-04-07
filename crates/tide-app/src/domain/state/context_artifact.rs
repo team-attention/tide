@@ -12,6 +12,7 @@ pub(crate) struct ContextArtifact {
     pub source_pane_id: PaneId,
     pub associated_terminal_id: PaneId,
     pub pane_kind: String,
+    pub source_label: String,
     pub selection: Option<Selection>,
     pub content: String,
     pub comment: String,
@@ -60,6 +61,7 @@ pub(crate) fn context_artifact_json(artifact: &ContextArtifact) -> Value {
         "pane_id": artifact.source_pane_id,
         "associated_terminal_id": artifact.associated_terminal_id,
         "pane_kind": artifact.pane_kind,
+        "source_label": artifact.source_label,
         "content": artifact.content,
         "comment": artifact.comment,
         "pinned": artifact.pinned,
@@ -68,10 +70,8 @@ pub(crate) fn context_artifact_json(artifact: &ContextArtifact) -> Value {
 }
 
 pub(crate) fn format_context_artifact_terminal_input(artifact: &ContextArtifact) -> String {
-    let mut sections = vec![format!(
-        "Tide Context Artifact #{} from {} pane {}",
-        artifact.artifact_id, artifact.pane_kind, artifact.source_pane_id
-    )];
+    let mut sections = vec![format!("Tide Context Artifact #{}", artifact.artifact_id)];
+    sections.push(format!("Source: {}", artifact.source_label));
 
     if artifact.pinned {
         sections.push("Pinned: on".to_string());
@@ -92,7 +92,7 @@ pub(crate) fn format_context_artifact_terminal_input(artifact: &ContextArtifact)
     sections.join("\n")
 }
 
-pub(crate) fn wrap_terminal_input_for_paste_and_submit(text: &str, bracketed: bool) -> Vec<u8> {
+pub(crate) fn wrap_terminal_input_for_paste(text: &str, bracketed: bool) -> Vec<u8> {
     let mut data = Vec::new();
     if bracketed {
         data.extend_from_slice(b"\x1b[200~");
@@ -103,6 +103,5 @@ pub(crate) fn wrap_terminal_input_for_paste_and_submit(text: &str, bracketed: bo
     } else {
         data.extend_from_slice(text.as_bytes());
     }
-    data.extend_from_slice(b"\r");
     data
 }
