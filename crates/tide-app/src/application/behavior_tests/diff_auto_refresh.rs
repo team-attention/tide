@@ -110,6 +110,7 @@ fn consume_git_poll_refreshes_matching_diff_panes() {
         crate::state::background::GitPollCwdResult {
             git_info: None,
             worktree_count: 0,
+            current_worktree: None,
             repo_root: Some(cwd.clone()),
             status_entries: vec![],
             diff_files: Some(files),

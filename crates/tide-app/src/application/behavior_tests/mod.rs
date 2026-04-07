@@ -29,6 +29,7 @@ mod markdown_workspace_behavior;
 mod modal_behavior;
 mod modifier_keybinding;
 mod pane_chrome_behavior;
+mod pane_close_responsiveness;
 mod pane_lifecycle;
 mod preview_scroll;
 mod render_cache_behavior;
