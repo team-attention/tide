@@ -823,43 +823,42 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         // worktree + branch. Non-worktree branches close without prompting.
         if self.modal.branch_cleanup.is_none() {
             if let Some(PaneKind::Terminal(pane)) = self.panes.get(&pane_id) {
-                if let (Some(ref gi), Some(ref cwd)) = (&pane.context.git_info, &pane.context.cwd) {
+                if let (Some(ref gi), Some(ref cwd), Some(ref current_worktree)) = (
+                    &pane.context.git_info,
+                    &pane.context.cwd,
+                    &pane.context.current_worktree,
+                ) {
                     let branch = &gi.branch;
-                    if branch != "main" && branch != "master" {
-                        // Detect if cwd is in a worktree
-                        let worktrees = self.ports.git.list_worktrees(cwd);
-                        let wt_path = worktrees
-                            .iter()
-                            .find(|wt| wt.is_current && !wt.is_main)
-                            .map(|wt| wt.path.clone());
-
-                        // Only prompt when in a worktree
-                        if let Some(wt_path) = wt_path {
-                            // Check no other terminal pane is on the same branch
-                            let other_on_same = self.panes.iter().any(|(&id, pk)| {
-                                if id == pane_id {
-                                    return false;
-                                }
-                                if let PaneKind::Terminal(tp) = pk {
-                                    tp.context
-                                        .git_info
-                                        .as_ref()
-                                        .map(|g| g.branch == *branch)
-                                        .unwrap_or(false)
-                                } else {
-                                    false
-                                }
-                            });
-                            if !other_on_same {
-                                self.modal.branch_cleanup = Some(crate::BranchCleanupState {
-                                    pane_id,
-                                    branch: branch.clone(),
-                                    worktree_path: wt_path,
-                                    cwd: cwd.clone(),
-                                });
-                                self.cache.invalidate_chrome();
-                                return;
+                    let cache_matches_cwd = cwd.starts_with(&current_worktree.path);
+                    if cache_matches_cwd
+                        && branch != "main"
+                        && branch != "master"
+                        && !current_worktree.is_main
+                    {
+                        // Check no other terminal pane is on the same branch
+                        let other_on_same = self.panes.iter().any(|(&id, pk)| {
+                            if id == pane_id {
+                                return false;
                             }
+                            if let PaneKind::Terminal(tp) = pk {
+                                tp.context
+                                    .git_info
+                                    .as_ref()
+                                    .map(|g| g.branch == *branch)
+                                    .unwrap_or(false)
+                            } else {
+                                false
+                            }
+                        });
+                        if !other_on_same {
+                            self.modal.branch_cleanup = Some(crate::BranchCleanupState {
+                                pane_id,
+                                branch: branch.clone(),
+                                worktree_path: current_worktree.path.clone(),
+                                cwd: cwd.clone(),
+                            });
+                            self.cache.invalidate_chrome();
+                            return;
                         }
                     }
                 }
