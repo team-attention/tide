@@ -215,3 +215,37 @@ fn closing_stage_terminal_without_cached_worktree_info_skips_sync_git_query() {
     assert_eq!(app.focus.focused, Some(editor_id));
     assert_eq!(app.layout.pane_ids().len(), app.panes.len());
 }
+
+#[test]
+fn closing_stage_terminal_with_stale_cached_worktree_info_skips_branch_cleanup_prompt() {
+    // UC-2 BR-5: Stale cached current WorktreeInfo whose path no longer contains the current CWD skips the branch cleanup bar
+    let (mut app, terminal_id, editor_id) = app_with_stage_terminal_and_editor();
+    let git_calls = Arc::new(AtomicUsize::new(0));
+    app.ports.git = Box::new(CountingGit {
+        list_worktree_calls: git_calls.clone(),
+    });
+
+    if let Some(PaneKind::Terminal(pane)) = app.panes.get_mut(&terminal_id) {
+        pane.context.cwd = Some(PathBuf::from("/tmp/tide-other-worktree/subdir"));
+        pane.context.git_info = Some(GitInfo {
+            branch: "feature/stale-cache".to_string(),
+            status: GitStatus::default(),
+        });
+        pane.context.current_worktree = Some(WorktreeInfo {
+            path: PathBuf::from("/tmp/tide-feature-worktree"),
+            branch: Some("feature/stale-cache".to_string()),
+            commit: "abc123".to_string(),
+            is_main: false,
+            is_current: true,
+        });
+    }
+
+    app.focus.focused = Some(terminal_id);
+    app.close_specific_pane(terminal_id);
+
+    assert_eq!(git_calls.load(Ordering::Relaxed), 0);
+    assert!(app.modal.branch_cleanup.is_none());
+    assert!(!app.panes.contains_key(&terminal_id));
+    assert_eq!(app.focus.focused, Some(editor_id));
+    assert_eq!(app.layout.pane_ids().len(), app.panes.len());
+}

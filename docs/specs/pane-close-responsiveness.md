@@ -59,6 +59,7 @@
   - BR-2: Stage Terminal Pane close must not synchronously call `GitPort::list_worktrees()`
   - BR-3: Cached non-main current `WorktreeInfo` still opens the branch cleanup bar
   - BR-4: Missing cached current `WorktreeInfo` skips the branch cleanup bar instead of blocking the close path
+  - BR-5: Stale cached current `WorktreeInfo` whose `path` no longer contains the current CWD skips the branch cleanup bar instead of using mismatched cleanup data
 
 ## Invariants
 
@@ -73,6 +74,7 @@
 | UC-1: CacheCurrentWorktreeForTerminalPane | BR-1 | `consume_git_poll_results_updates_terminal_current_worktree_context` |
 | UC-2: CloseStageTerminalPane | BR-2 | `closing_stage_terminal_uses_cached_branch_cleanup_without_sync_git_query` |
 | UC-2: CloseStageTerminalPane | BR-4 | `closing_stage_terminal_without_cached_worktree_info_skips_sync_git_query` |
+| UC-2: CloseStageTerminalPane | BR-5 | `closing_stage_terminal_with_stale_cached_worktree_info_skips_branch_cleanup_prompt` |
 
 ## Location
 

@@ -829,7 +829,12 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                     &pane.context.current_worktree,
                 ) {
                     let branch = &gi.branch;
-                    if branch != "main" && branch != "master" && !current_worktree.is_main {
+                    let cache_matches_cwd = cwd.starts_with(&current_worktree.path);
+                    if cache_matches_cwd
+                        && branch != "main"
+                        && branch != "master"
+                        && !current_worktree.is_main
+                    {
                         // Check no other terminal pane is on the same branch
                         let other_on_same = self.panes.iter().any(|(&id, pk)| {
                             if id == pane_id {
