@@ -335,6 +335,10 @@ impl App {
                             pane.context.worktree_count = result.worktree_count;
                             changed = true;
                         }
+                        if pane.context.current_worktree != result.current_worktree {
+                            pane.context.current_worktree = result.current_worktree.clone();
+                            changed = true;
+                        }
                     }
                 }
             }
@@ -445,7 +449,9 @@ impl App {
                         break;
                     }
                     let git_info = crate::tide_terminal::git::detect_git_info(&cwd);
-                    let worktree_count = crate::tide_terminal::git::count_worktrees(&cwd);
+                    let worktrees = crate::tide_terminal::git::list_worktrees(&cwd);
+                    let worktree_count = worktrees.len();
+                    let current_worktree = worktrees.into_iter().find(|wt| wt.is_current);
                     let repo_root = crate::tide_terminal::git::repo_root(&cwd);
                     let status_entries = crate::tide_terminal::git::status_files(&cwd);
 
@@ -480,6 +486,7 @@ impl App {
                         GitPollCwdResult {
                             git_info,
                             worktree_count,
+                            current_worktree,
                             repo_root,
                             status_entries,
                             diff_files,
