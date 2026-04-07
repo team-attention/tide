@@ -107,6 +107,7 @@ Create, split, resolve, open, close, and drag Panes.
   - BR-13: App always has at least one Pane (create Launcher if last one closed)
   - BR-14: Cancel on SaveConfirm clears the modal without closing
   - BR-15: Browser Pane native teardown must complete on the main thread before Browser Pane state is dropped, so `MainThreadOnly` WebKit/AppKit objects are not released on `app-thread`
+  - BR-16: Closing a Browser Pane must resolve any pending native permission or certificate handler with a deny/cancel decision before the Browser Pane native view is released
 
 ### UC-6: DragDropPane
 
@@ -138,6 +139,7 @@ After ANY Pane lifecycle operation:
 2. **Focus valid**: `app.focused` is either `None` or a valid key in `app.panes`
 3. **At least one Pane**: App always has at least one Pane (Launcher if needed)
 4. **Browser Pane teardown**: Closing a Browser Pane must tear down its native view on the main thread before removal from `app.panes`, so native `MainThreadOnly` resources are not dropped on `app-thread`
+5. **Pending native handler safety**: Closing a Browser Pane must not leave a pending native permission or certificate handler unreconciled during teardown
 
 ## Tests
 
@@ -159,6 +161,7 @@ After ANY Pane lifecycle operation:
 | UC-5: ClosePane | BR-12a | `closing_only_tab_in_group_focuses_neighbor_group` |
 | UC-5: ClosePane | BR-14 | `cancel_save_confirm_clears_the_modal` |
 | UC-5: ClosePane | BR-15 | `closing_browser_pane_moves_focus_to_another_pane` |
+| UC-5: ClosePane | BR-16 | `closing_browser_pane_with_pending_certificate_error_preserves_pane_lifecycle_invariants` |
 | UC-6: DragDropPane | BR-16 | `pressing_stage_tab_enters_pending_drag_after_focus_switch` |
 | UC-6: DragDropPane | BR-17 | `directional_self_drop_splits_stage_tab_out_of_its_group` |
 | UC-6: DragDropPane | BR-18 | `stage_pane_drop_target_never_enters_dock` |

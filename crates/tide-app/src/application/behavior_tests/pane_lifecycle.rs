@@ -222,6 +222,35 @@ fn closing_browser_pane_moves_focus_to_another_pane() {
 }
 
 #[test]
+fn closing_browser_pane_with_pending_certificate_error_preserves_pane_lifecycle_invariants() {
+    // UC-5 BR-16: Closing a Browser Pane with pending native Browser Pane state still preserves pane lifecycle invariants
+    use crate::pane::browser::BrowserCertificateError;
+
+    let (mut app, browser_id) = app_with_browser();
+    app.new_editor_pane();
+    let editor_id = app.focus.focused.unwrap();
+
+    if let Some(PaneKind::Browser(browser)) = app.panes.get_mut(&browser_id) {
+        browser.set_certificate_error(BrowserCertificateError {
+            host: "localhost".to_string(),
+            reason: "SelfSigned".to_string(),
+        });
+    }
+
+    app.focus.focused = Some(browser_id);
+    app.close_specific_pane(browser_id);
+
+    assert_eq!(app.panes.len(), 1);
+    assert_eq!(app.focus.focused, Some(editor_id));
+    assert!(matches!(
+        app.panes.get(&editor_id),
+        Some(PaneKind::Editor(_))
+    ));
+    // Invariant: PaneId sync
+    assert_eq!(app.layout.pane_ids().len(), app.panes.len());
+}
+
+#[test]
 fn closing_editor_pane_moves_focus_to_another_pane() {
     // UC-5 BR-12: After close, focus moves to an adjacent Pane
     let (mut app, _first_id) = app_with_editor();

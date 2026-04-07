@@ -939,22 +939,10 @@ unsafe extern "C" fn destroy_webview_on_main_thread(ctx_ptr: *mut std::ffi::c_vo
 /// Called on WebViewHandle drop to prevent leaks when a Browser Pane closes
 /// while permission/certificate prompts or downloads are in-flight.
 fn cleanup_pending_handlers(pane_id: u64) {
-    // Release pending permission handler block
-    if let Some(BlockPtr(ptr)) = PENDING_PERMISSION_HANDLERS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .remove(&pane_id)
-    {
-        unsafe { _Block_release(ptr as *const std::ffi::c_void) };
-    }
-    // Release pending certificate handler block
-    if let Some(BlockPtr(ptr)) = PENDING_CERT_HANDLERS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .remove(&pane_id)
-    {
-        unsafe { _Block_release(ptr as *const std::ffi::c_void) };
-    }
+    // WebKit aborts if these completion handlers are released without being
+    // called, so Browser Pane teardown must resolve them explicitly first.
+    resolve_permission_handler(pane_id, false);
+    resolve_cert_handler(pane_id, false);
     // Release active download delegate
     ACTIVE_DOWNLOAD_DELEGATES
         .lock()
@@ -1631,6 +1619,85 @@ impl WebViewHandle {
             &_dispatch_main_q as *const std::ffi::c_void,
             &mut ctx as *mut ResignFirstResponderCtx as *mut std::ffi::c_void,
             resign_first_responder_on_main_thread,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+    use std::sync::{LazyLock, Mutex};
+
+    static TEST_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+    static PERMISSION_DECISION: AtomicIsize = AtomicIsize::new(-1);
+    static CERTIFICATE_DISPOSITION: AtomicIsize = AtomicIsize::new(-1);
+    static CERTIFICATE_CREDENTIAL_WAS_NULL: AtomicBool = AtomicBool::new(false);
+
+    fn copied_permission_block_ptr() -> *mut std::ffi::c_void {
+        let block = block2::StackBlock::new(|decision: isize| {
+            PERMISSION_DECISION.store(decision, Ordering::SeqCst);
+        });
+        let block_ref: &block2::Block<dyn Fn(isize)> = &*block;
+        unsafe { _Block_copy(block_ref as *const _ as *const std::ffi::c_void) }
+    }
+
+    fn copied_certificate_block_ptr() -> *mut std::ffi::c_void {
+        let block = block2::StackBlock::new(|disposition: isize, credential: *mut AnyObject| {
+            CERTIFICATE_DISPOSITION.store(disposition, Ordering::SeqCst);
+            CERTIFICATE_CREDENTIAL_WAS_NULL.store(credential.is_null(), Ordering::SeqCst);
+        });
+        let block_ref: &block2::Block<dyn Fn(isize, *mut AnyObject)> = &*block;
+        unsafe { _Block_copy(block_ref as *const _ as *const std::ffi::c_void) }
+    }
+
+    #[test]
+    fn cleanup_pending_handlers_denies_permission_request_before_release() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let pane_id = 42_001;
+        PERMISSION_DECISION.store(-1, Ordering::SeqCst);
+
+        {
+            let mut handlers = PENDING_PERMISSION_HANDLERS
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            handlers.insert(pane_id, BlockPtr(copied_permission_block_ptr()));
+        }
+
+        cleanup_pending_handlers(pane_id);
+
+        assert_eq!(PERMISSION_DECISION.load(Ordering::SeqCst), 0);
+        assert!(
+            !PENDING_PERMISSION_HANDLERS
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains_key(&pane_id)
+        );
+    }
+
+    #[test]
+    fn cleanup_pending_handlers_cancels_certificate_request_before_release() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let pane_id = 42_002;
+        CERTIFICATE_DISPOSITION.store(-1, Ordering::SeqCst);
+        CERTIFICATE_CREDENTIAL_WAS_NULL.store(false, Ordering::SeqCst);
+
+        {
+            let mut handlers = PENDING_CERT_HANDLERS
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            handlers.insert(pane_id, BlockPtr(copied_certificate_block_ptr()));
+        }
+
+        cleanup_pending_handlers(pane_id);
+
+        assert_eq!(CERTIFICATE_DISPOSITION.load(Ordering::SeqCst), 2);
+        assert!(CERTIFICATE_CREDENTIAL_WAS_NULL.load(Ordering::SeqCst));
+        assert!(
+            !PENDING_CERT_HANDLERS
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains_key(&pane_id)
         );
     }
 }
