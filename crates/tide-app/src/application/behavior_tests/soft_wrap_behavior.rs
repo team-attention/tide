@@ -1,10 +1,50 @@
 // Spec: docs/specs/soft-wrap.md
 use crate::pane::editor::EditorPane;
+use crate::pane::PaneKind;
+use crate::state::FocusArea;
+use crate::ActionPort;
+use crate::App;
 
 fn editor_with_extension(ext: &str) -> EditorPane {
     let path = std::env::temp_dir().join(format!("tide_test_soft_wrap.{}", ext));
     std::fs::write(&path, "hello world").unwrap();
     EditorPane::open(1, &path).unwrap()
+}
+
+fn test_app() -> App {
+    let mut app = App::new();
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
+    app.window.window_size = (960, 640);
+    app
+}
+
+fn app_with_markdown_editor(contents: &str) -> (App, u64, std::path::PathBuf) {
+    let mut app = test_app();
+    let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let path = std::env::temp_dir().join(format!(
+        "tide_soft_wrap_behavior_{}_{}.md",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::write(&path, contents).unwrap();
+    let pane = EditorPane::open(id, &path).unwrap();
+    app.panes.insert(id, PaneKind::Editor(pane));
+    app.focus.focused = Some(id);
+    app.focus.focus_area = FocusArea::Stage;
+    (app, id, path)
+}
+
+fn pane_content_rect(pane_rect: crate::tide_core::Rect) -> crate::tide_core::Rect {
+    crate::tide_core::Rect::new(
+        pane_rect.x + crate::theme::PANE_PADDING,
+        pane_rect.y + crate::theme::TAB_BAR_HEIGHT,
+        pane_rect.width - 2.0 * crate::theme::PANE_PADDING,
+        (pane_rect.height - crate::theme::TAB_BAR_HEIGHT - crate::theme::PANE_PADDING).max(1.0),
+    )
 }
 
 // --- UC-1: Open Prose File ---
@@ -203,4 +243,61 @@ fn scrolling_wrapped_markdown_reaches_the_last_visual_row() {
         .unwrap()
         .saturating_sub(3);
     assert_eq!(pane.soft_wrap_visual_scroll(), expected);
+}
+
+#[test]
+fn mouse_wheel_soft_wrap_preserves_render_wrap_width() {
+    // UC-8 BR-22: Mouse-wheel soft-wrap scroll reuses the same authoring-region wrap width as render-time cache preparation
+    let (mut app, id, path) = app_with_markdown_editor(&"a".repeat(1000));
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
+    let content_rect = pane_content_rect(pane_rect);
+    let cell_size = app.window.cached_cell_size;
+    app.visual_pane_rects = vec![(id, pane_rect)];
+
+    let expected_wrap_width = {
+        let pane = match app.panes.get_mut(&id) {
+            Some(PaneKind::Editor(pane)) => pane,
+            _ => panic!("expected editor pane"),
+        };
+        pane.prepare_inline_caches(content_rect, cell_size, false);
+        pane.wrap_cols_for_rect(content_rect, cell_size)
+    };
+
+    let pane = match app.panes.get(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    assert_eq!(
+        pane.wrap_map().map(|map| map.wrap_width()),
+        Some(expected_wrap_width)
+    );
+
+    let pos = crate::tide_core::Vec2::new(
+        pane_rect.x + 40.0,
+        pane_rect.y + crate::theme::TAB_BAR_HEIGHT + 40.0,
+    );
+    ActionPort::handle_action(
+        &mut app,
+        crate::tide_input::Action::RouteToPane(id),
+        Some(crate::tide_core::InputEvent::MouseScroll {
+            delta: -1.0,
+            position: pos,
+        }),
+    );
+
+    let pane = match app.panes.get(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    assert_eq!(
+        pane.wrap_map().map(|map| map.wrap_width()),
+        Some(expected_wrap_width),
+        "soft-wrap scroll should not rebuild WrapMap with a different width than render-time preparation"
+    );
+    assert!(
+        pane.soft_wrap_visual_scroll() > 0,
+        "soft-wrap scroll should still move the viewport when the document exceeds the visible rows"
+    );
+
+    let _ = std::fs::remove_file(path);
 }

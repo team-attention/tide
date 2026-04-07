@@ -3,7 +3,7 @@
 ## Overview
 
 ### As-Is
-`EditorPane::open()` already marks prose extensions as `soft_wrap = true`, and file-backed Markdown Panes now open with `preview_mode = false` in `crates/tide-app/src/domain/pane/editor.rs`. That means `EditorPane::effective_soft_wrap()` is active immediately for Markdown authoring, while preview mode and diff mode still disable wrapping. The remaining Soft Wrap risks are no longer the open default; they are keeping wrapped authoring behavior, click mapping, selection highlighting, scroll state, and preview transitions synchronized across the two Pane modes. In particular, wrapped authoring previously mixed logical-line scroll state with visual-row rendering, and wrapped selection highlighting used logical-line row math even though mouse hit-testing already mapped wrapped clicks through `WrapMap`.
+`EditorPane::open()` already marks prose extensions as `soft_wrap = true`, and file-backed Markdown Panes now open with `preview_mode = false` in `crates/tide-app/src/domain/pane/editor.rs`. That means `EditorPane::effective_soft_wrap()` is active immediately for Markdown authoring, while preview mode and diff mode still disable wrapping. The remaining Soft Wrap risks are no longer the open default; they are keeping wrapped authoring behavior, click mapping, selection highlighting, scroll state, and preview transitions synchronized across the two Pane modes. In particular, wrapped authoring previously mixed logical-line scroll state with visual-row rendering, wrapped selection highlighting used logical-line row math even though mouse hit-testing already mapped wrapped clicks through `WrapMap`, and some input paths still recomputed `WrapMap` with a different viewport width than the render path.
 
 ### To-Be
 Prose files (`.md`, `.markdown`, `.mdown`, `.mkd`, `.txt`, `.text`) automatically soft-wrap at the viewport width while the Pane is in authoring mode. Visual behavior matches VS Code word wrap:
@@ -125,6 +125,7 @@ All other file types: no wrap (current behavior preserved).
 - **Business Rules**:
   - BR-20: Soft-wrap authoring scroll advances in visual rows, not only whole logical lines
   - BR-21: Soft-wrap scroll clamping uses total visual rows so the wrapped tail remains reachable
+  - BR-22: Soft-wrap scroll input reuses the same authoring-region wrap width that render-time `WrapMap` preparation uses
 
 ## Invariants
 
@@ -157,6 +158,7 @@ All other file types: no wrap (current behavior preserved).
 | UC-7 | BR-19 | `scrollbar_uses_visual_row_count()` |
 | UC-8 | BR-20 | `scrolling_wrapped_markdown_advances_by_visual_row()` |
 | UC-8 | BR-21 | `scrolling_wrapped_markdown_reaches_the_last_visual_row()` |
+| UC-8 | BR-22 | `mouse_wheel_soft_wrap_preserves_render_wrap_width()` |
 
 ## Location
 

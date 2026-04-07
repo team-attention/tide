@@ -637,34 +637,23 @@ impl crate::application::ports::inward::ActionPort for App {
                                     return;
                                 }
                                 let was_modified = pane.editor.is_modified();
-                                let cell_size = Some(cs_for_keys);
-                                let content_top = TAB_BAR_HEIGHT;
-                                let (visible_rows, visible_cols) = if let Some(cs) = cell_size {
-                                    let tree_rect = self
-                                        .visual_pane_rects
-                                        .iter()
-                                        .find(|(pid, _)| *pid == id)
-                                        .map(|(_, r)| *r);
-                                    if let Some(r) = tree_rect {
-                                        let rows = ((r.height - content_top - PANE_PADDING)
-                                            / cs.height)
-                                            .floor()
-                                            as usize;
-                                        let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS
-                                            as f32
-                                            * cs.width;
-                                        let cols =
-                                            ((r.width - 2.0 * PANE_PADDING - 2.0 * gutter_width)
-                                                / cs.width)
-                                                .floor()
-                                                as usize;
-                                        (rows, cols)
-                                    } else {
-                                        (30, 80)
-                                    }
-                                } else {
-                                    (30, 80)
-                                };
+                                let content_rect = self
+                                    .visual_pane_rects
+                                    .iter()
+                                    .find(|(pid, _)| *pid == id)
+                                    .map(|(_, r)| {
+                                        crate::tide_core::Rect::new(
+                                            r.x + PANE_PADDING,
+                                            r.y + TAB_BAR_HEIGHT,
+                                            r.width - 2.0 * PANE_PADDING,
+                                            (r.height - TAB_BAR_HEIGHT - PANE_PADDING).max(1.0),
+                                        )
+                                    });
+                                let (visible_rows, visible_cols) = content_rect
+                                    .map(|rect| {
+                                        pane.viewport_size_for_content_rect(rect, cs_for_keys)
+                                    })
+                                    .unwrap_or((30, 80));
                                 pane.handle_action_with_size(action, visible_rows, visible_cols);
                                 // Clear disk_changed on save (user's version wins)
                                 if is_save {
@@ -738,30 +727,24 @@ impl crate::application::ports::inward::ActionPort for App {
 
                 // Forward mouse scroll to pane
                 if let Some(InputEvent::MouseScroll { delta, .. }) = event {
-                    // Compute actual visible rows/cols for the pane
-                    let content_top = TAB_BAR_HEIGHT;
-                    let (visible_rows, visible_cols) = {
-                        let cs = self.cell_size();
-                        let rect = self
-                            .visual_pane_rects
-                            .iter()
-                            .find(|(pid, _)| *pid == id)
-                            .map(|(_, r)| *r);
-                        if let Some(r) = rect {
-                            let rows = ((r.height - content_top - PANE_PADDING) / cs.height).floor()
-                                as usize;
-                            let gutter_width =
-                                crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cs.width;
-                            let cols = ((r.width - 2.0 * PANE_PADDING - 2.0 * gutter_width)
-                                / cs.width)
-                                .floor() as usize;
-                            (rows.max(1), cols.max(1))
-                        } else {
-                            (30, 80)
-                        }
-                    };
+                    let cs = self.cell_size();
+                    let content_rect = self
+                        .visual_pane_rects
+                        .iter()
+                        .find(|(pid, _)| *pid == id)
+                        .map(|(_, r)| {
+                            crate::tide_core::Rect::new(
+                                r.x + PANE_PADDING,
+                                r.y + TAB_BAR_HEIGHT,
+                                r.width - 2.0 * PANE_PADDING,
+                                (r.height - TAB_BAR_HEIGHT - PANE_PADDING).max(1.0),
+                            )
+                        });
                     match self.panes.get_mut(&id) {
                         Some(PaneKind::Editor(pane)) if pane.preview_mode => {
+                            let (visible_rows, _) = content_rect
+                                .map(|rect| pane.viewport_size_for_content_rect(rect, cs))
+                                .unwrap_or((30, 80));
                             let acc = self.interaction.scroll_accumulator.entry(id).or_insert(0.0);
                             *acc += delta;
                             let lines = acc.trunc() as i32;
@@ -782,6 +765,9 @@ impl crate::application::ports::inward::ActionPort for App {
                             }
                         }
                         Some(PaneKind::Editor(pane)) => {
+                            let (visible_rows, visible_cols) = content_rect
+                                .map(|rect| pane.viewport_size_for_content_rect(rect, cs))
+                                .unwrap_or((30, 80));
                             // Accumulate sub-pixel scroll deltas (like terminal)
                             let acc = self.interaction.scroll_accumulator.entry(id).or_insert(0.0);
                             *acc += delta;
@@ -817,6 +803,10 @@ impl crate::application::ports::inward::ActionPort for App {
                             }
                         }
                         Some(PaneKind::Diff(dp)) => {
+                            let visible_rows = content_rect
+                                .map(|rect| (rect.height / cs.height).floor() as usize)
+                                .unwrap_or(30)
+                                .max(1);
                             let total = dp.total_lines();
                             let max_scroll = total.saturating_sub(visible_rows) as f32;
                             dp.scroll_target = (dp.scroll_target - delta).clamp(0.0, max_scroll);
