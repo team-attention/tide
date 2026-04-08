@@ -222,7 +222,11 @@ impl EditorPane {
             if self.wrap_map.is_none() {
                 self.ensure_wrap_map(80);
             }
-            if self.handle_soft_wrap_scroll_action(&action, visible_rows) {
+            if matches!(
+                action,
+                EditorAction::ScrollUp(_) | EditorAction::ScrollDown(_)
+            ) {
+                self.handle_soft_wrap_scroll_action(&action, visible_rows);
                 return;
             }
             self.editor.handle_action(action);
@@ -263,7 +267,11 @@ impl EditorPane {
                 return;
             }
             self.ensure_wrap_map(visible_cols.max(1));
-            if self.handle_soft_wrap_scroll_action(&action, visible_rows) {
+            if matches!(
+                action,
+                EditorAction::ScrollUp(_) | EditorAction::ScrollDown(_)
+            ) {
+                self.handle_soft_wrap_scroll_action(&action, visible_rows);
                 return;
             }
             self.editor.handle_action(action);
