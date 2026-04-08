@@ -11,7 +11,7 @@ pub mod wrap;
 use std::io;
 use std::path::Path;
 
-use buffer::{Buffer, Position};
+use buffer::{floor_char_boundary, Buffer, Position};
 use cursor::EditorCursor;
 use highlight::{Highlighter, StyledSpan};
 use input::EditorAction;
@@ -72,9 +72,11 @@ impl EditorState {
         if self.buffer.lines != old_lines {
             let max_line = self.buffer.line_count().saturating_sub(1);
             let new_line = self.cursor.position.line.min(max_line);
-            let max_col = self.buffer.line(new_line).map_or(0, |l| l.len());
-            let new_col = self.cursor.position.col.min(max_col);
-            self.cursor.set_position(buffer::Position { line: new_line, col: new_col });
+            let new_col = self.buffer.line(new_line).map_or(0, |line| {
+                floor_char_boundary(line, self.cursor.position.col.min(line.len()))
+            });
+            self.cursor
+                .set_position(buffer::Position { line: new_line, col: new_col });
             // Clamp scroll offsets
             let max_scroll = self.buffer.line_count().saturating_sub(1);
             self.scroll_offset = self.scroll_offset.min(max_scroll);
