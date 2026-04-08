@@ -3,16 +3,17 @@
 ## Overview
 
 ### As-Is
-`crates/tide-app/src/application/services/update_service/mod.rs` consumes `FileWatchEvent` values and tries to match them to file-backed Editor Panes by exact `Path` equality. The same path is then used to decide whether the Pane should reload from disk or mark `disk_changed`. That path match is brittle when the file watcher reports an equivalent realpath while the Editor Pane stores a symlink path. The same file-watch path also updates the Editor Pane without calling `trigger_git_poll()`, so file tree git status can stay stale until unrelated terminal output or another git-poll trigger arrives. `trigger_git_poll()` currently collects CWDs from live Terminal Panes only, even though `focused_terminal_cwd()` can resolve retained terminal context for Editor Panes whose owner Terminal has already been closed.
+`crates/tide-app/src/application/services/update_service/mod.rs` consumes `FileWatchEvent` values and tries to match them to file-backed Editor Panes by exact `Path` equality. The same path is then used to decide whether the Pane should reload from disk or mark `disk_changed`. That path match is brittle when the file watcher reports an equivalent realpath while the Editor Pane stores a symlink path. The same file-watch path also updates the Editor Pane without calling `trigger_git_poll()`, so file tree git status can stay stale until unrelated terminal output or another git-poll trigger arrives. `trigger_git_poll()` currently collects CWDs from live Terminal Panes only, even though `focused_terminal_cwd()` can resolve retained terminal context for Editor Panes whose owner Terminal has already been closed. `EditorState::reload()` also clamps the cursor only to the new line length, not to a valid UTF-8 character boundary, so a clean external reload can leave `cursor.position.col` inside a multibyte scalar and later LivePreviewMode or render-time slicing can panic.
 
 ### To-Be
-File-watch events match file-backed Editor Panes by normalized path identity rather than raw string equality. A clean Editor Pane reloads immediately when an external change arrives for the same file, even if the watcher reports an equivalent realpath. File-watch-driven Editor Pane updates also trigger the background git poll using the current editor context, including retained terminal CWDs, so file tree git status refreshes promptly.
+File-watch events match file-backed Editor Panes by normalized path identity rather than raw string equality. A clean Editor Pane reloads immediately when an external change arrives for the same file, even if the watcher reports an equivalent realpath. File-watch-driven Editor Pane updates also trigger the background git poll using the current editor context, including retained terminal CWDs, so file tree git status refreshes promptly. Clean external reload also preserves the cursor only at valid UTF-8 character boundaries so Markdown Pane rendering and LivePreviewMode cannot inherit an invalid byte offset.
 
 ### Approach
 1. Normalize file-watch event paths and Editor Pane file paths through filesystem-aware comparison before matching them.
 2. Keep the existing clean-reload vs dirty-conflict behavior once a matching Editor Pane is found.
 3. Trigger the existing background git poll after file-watch events that affect file-backed Editor Panes.
 4. Expand git-poll CWD collection to include retained terminal context and focused editor context, not only live Terminal Panes.
+5. Clamp the reloaded cursor column to the nearest valid character boundary on the reloaded line before any later render or LivePreviewMode code reads it.
 
 ## Bounded Contexts
 
@@ -38,6 +39,7 @@ File-watch events match file-backed Editor Panes by normalized path identity rat
 - **Business Rules**:
   - BR-1: File-watch matching uses normalized path identity, not raw `Path` equality alone.
   - BR-2: A clean file-backed Editor Pane reloads immediately after a matching external change.
+  - BR-5: A clean file-backed Editor Pane reload clamps the preserved cursor column to a valid UTF-8 character boundary on the reloaded line.
 
 ### UC-2: RefreshFileTreeGitStatusAfterEditorFileWatchEvent
 - **Actor**: System
@@ -64,6 +66,7 @@ File-watch events match file-backed Editor Panes by normalized path identity rat
 |----|----|-------------|------|
 | UC-1 | BR-1 | `editor_file_watch_sync` | `clean_editor_reloads_when_file_watch_event_uses_equivalent_real_path` |
 | UC-1 | BR-2 | `editor_file_watch_sync` | `clean_editor_reloads_when_file_watch_event_uses_equivalent_real_path` |
+| UC-1 | BR-5 | `editor_file_watch_sync` | `clean_editor_reload_clamps_cursor_to_character_boundary` |
 | UC-2 | BR-3 | `editor_file_watch_sync` | `file_watch_event_triggers_git_poll_for_retained_editor_context` |
 | UC-2 | BR-4 | `editor_file_watch_sync` | `file_watch_event_triggers_git_poll_for_retained_editor_context` |
 

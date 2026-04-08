@@ -117,6 +117,61 @@ fn clean_editor_reloads_when_file_watch_event_uses_equivalent_real_path() {
     let _ = std::fs::remove_dir_all(fixture_root);
 }
 
+#[test]
+fn clean_editor_reload_clamps_cursor_to_character_boundary() {
+    // UC-1 BR-5: Clean external reload preserves the cursor only at a valid UTF-8 character boundary.
+    let (fixture_root, real_path, link_path) = symlinked_file_paths("char-boundary");
+    std::fs::write(&real_path, "ab\n").unwrap();
+    let event_path = std::fs::canonicalize(&real_path).unwrap();
+
+    let watched = Arc::new(Mutex::new(Vec::new()));
+    let watcher =
+        RecordingFileWatcher::new(vec![FileWatchEvent::Modified(event_path)], watched.clone());
+    let (mut app, id) = app_with_file_backed_editor(&link_path);
+    app.ports.file_watcher = Box::new(watcher);
+    app.watch_file(&link_path);
+
+    {
+        let pane = match app.panes.get_mut(&id) {
+            Some(PaneKind::Editor(pane)) => pane,
+            _ => panic!("expected editor pane"),
+        };
+        pane.handle_action(
+            crate::tide_editor::input::EditorAction::SetCursor { line: 0, col: 1 },
+            20,
+        );
+        assert_eq!(
+            pane.editor.cursor_position().col,
+            1,
+            "setup should place cursor after 'a'"
+        );
+    }
+
+    std::fs::write(&real_path, "가나다\n").unwrap();
+    app.update();
+
+    let pane = match app.panes.get(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    let cursor = pane.editor.cursor_position();
+    let line = pane
+        .editor
+        .buffer
+        .line(cursor.line)
+        .expect("cursor line should exist");
+    assert!(
+        line.is_char_boundary(cursor.col),
+        "reloaded cursor col must be a valid character boundary"
+    );
+    assert_eq!(
+        cursor.col, 0,
+        "cursor should floor to the nearest valid boundary"
+    );
+
+    let _ = std::fs::remove_dir_all(fixture_root);
+}
+
 // --- UC-2: RefreshFileTreeGitStatusAfterEditorFileWatchEvent ---
 
 #[test]
