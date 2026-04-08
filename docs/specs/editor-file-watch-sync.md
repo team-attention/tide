@@ -39,7 +39,7 @@ File-watch events match file-backed Editor Panes by normalized path identity rat
 - **Business Rules**:
   - BR-1: File-watch matching uses normalized path identity, not raw `Path` equality alone.
   - BR-2: A clean file-backed Editor Pane reloads immediately after a matching external change.
-  - BR-5: A clean file-backed Editor Pane reload clamps the preserved cursor column to a valid UTF-8 character boundary on the reloaded line.
+  - BR-3: A clean file-backed Editor Pane reload clamps the preserved cursor column to a valid UTF-8 character boundary on the reloaded line.
 
 ### UC-2: RefreshFileTreeGitStatusAfterEditorFileWatchEvent
 - **Actor**: System
@@ -52,8 +52,8 @@ File-watch events match file-backed Editor Panes by normalized path identity rat
   4. The file tree later refreshes from the resulting git-status payload.
 - **Postcondition**: File tree git status refreshes promptly after external file changes, without waiting for unrelated terminal output.
 - **Business Rules**:
-  - BR-3: File-watch-driven Editor Pane updates trigger the background git poll.
-  - BR-4: Git-poll CWD collection includes retained terminal context when no live Terminal Pane owns the focused Editor Pane.
+  - BR-4: File-watch-driven Editor Pane updates trigger the background git poll.
+  - BR-5: Git-poll CWD collection includes retained terminal context when no live Terminal Pane owns the focused Editor Pane.
 
 ## Invariants
 
@@ -66,9 +66,9 @@ File-watch events match file-backed Editor Panes by normalized path identity rat
 |----|----|-------------|------|
 | UC-1 | BR-1 | `editor_file_watch_sync` | `clean_editor_reloads_when_file_watch_event_uses_equivalent_real_path` |
 | UC-1 | BR-2 | `editor_file_watch_sync` | `clean_editor_reloads_when_file_watch_event_uses_equivalent_real_path` |
-| UC-1 | BR-5 | `editor_file_watch_sync` | `clean_editor_reload_clamps_cursor_to_character_boundary` |
-| UC-2 | BR-3 | `editor_file_watch_sync` | `file_watch_event_triggers_git_poll_for_retained_editor_context` |
+| UC-1 | BR-3 | `editor_file_watch_sync` | `clean_editor_reload_clamps_cursor_to_character_boundary` |
 | UC-2 | BR-4 | `editor_file_watch_sync` | `file_watch_event_triggers_git_poll_for_retained_editor_context` |
+| UC-2 | BR-5 | `editor_file_watch_sync` | `file_watch_event_triggers_git_poll_for_retained_editor_context` |
 
 ## Location
 
