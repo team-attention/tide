@@ -241,6 +241,35 @@ fn scrolling_wrapped_markdown_reaches_the_last_visual_row() {
 }
 
 #[test]
+fn scrolling_wrapped_markdown_past_bottom_does_not_snap_back_to_cursor() {
+    // Regression: once soft-wrap reaches the last visual row, extra downward scroll
+    // must stay pinned there instead of falling through to raw editor scrolling and
+    // re-centering around the cursor.
+    use crate::tide_editor::input::EditorAction;
+
+    let mut pane = editor_with_extension("md");
+    pane.editor.insert_text(&"a".repeat(120));
+    pane.ensure_wrap_map(20);
+
+    for _ in 0..10 {
+        pane.handle_action_with_size(EditorAction::ScrollDown(1.0), 3, 20);
+    }
+    let expected = pane
+        .soft_wrap_total_visual_rows()
+        .unwrap()
+        .saturating_sub(3);
+    assert_eq!(pane.soft_wrap_visual_scroll(), expected);
+
+    pane.handle_action_with_size(EditorAction::ScrollDown(1.0), 3, 20);
+
+    assert_eq!(
+        pane.soft_wrap_visual_scroll(),
+        expected,
+        "scrolling beyond the bottom should stay pinned to the last visible row"
+    );
+}
+
+#[test]
 fn mouse_wheel_soft_wrap_preserves_render_wrap_width() {
     // UC-8 BR-22: Mouse-wheel soft-wrap scroll reuses the same authoring-region wrap width as render-time cache preparation
     let (mut app, id, path) = app_with_markdown_editor(&"a".repeat(1000));
@@ -382,13 +411,34 @@ fn mouse_wheel_scrolling_wrapped_markdown_stays_monotonic_and_keeps_cache_maps_s
     let up_2 = apply_scroll(&mut app, 1.0);
     let up_3 = apply_scroll(&mut app, 1.0);
 
-    assert!(down_1 > 0, "a downward trackpad swipe should advance the wrapped scroll");
-    assert!(down_2 > down_1, "repeated downward swipes should keep moving forward");
-    assert!(down_3 > down_2, "wrapped scroll should stay monotonic while swiping in one direction");
-    assert!(up_1 < down_3, "the opposite swipe direction should move back up");
-    assert!(up_2 < up_1, "repeated upward swipes should keep moving backward");
-    assert!(up_3 < up_2, "wrapped scroll should stay monotonic in the reverse direction too");
-    assert_eq!(up_3, 0, "returning with the opposite swipe direction should reach the starting scroll position");
+    assert!(
+        down_1 > 0,
+        "a downward trackpad swipe should advance the wrapped scroll"
+    );
+    assert!(
+        down_2 > down_1,
+        "repeated downward swipes should keep moving forward"
+    );
+    assert!(
+        down_3 > down_2,
+        "wrapped scroll should stay monotonic while swiping in one direction"
+    );
+    assert!(
+        up_1 < down_3,
+        "the opposite swipe direction should move back up"
+    );
+    assert!(
+        up_2 < up_1,
+        "repeated upward swipes should keep moving backward"
+    );
+    assert!(
+        up_3 < up_2,
+        "wrapped scroll should stay monotonic in the reverse direction too"
+    );
+    assert_eq!(
+        up_3, 0,
+        "returning with the opposite swipe direction should reach the starting scroll position"
+    );
 
     let _ = std::fs::remove_file(path);
 }

@@ -543,8 +543,13 @@ declare_class!(
                 let auth_method: Retained<NSString> = msg_send_id![&protection_space, authenticationMethod];
                 let method_str = auth_method.to_string();
 
-                // NSURLAuthenticationMethodServerTrust
-                if method_str == "NSURLAuthenticationMethodServerTrust" {
+                let trust_is_valid = if method_str == "NSURLAuthenticationMethodServerTrust" {
+                    protection_space_server_trust_is_valid(&protection_space)
+                } else {
+                    true
+                };
+
+                if should_prompt_for_certificate_error(&method_str, trust_is_valid) {
                     // Extract host from protectionSpace
                     let host: Retained<NSString> = msg_send_id![&protection_space, host];
                     let host_str = host.to_string();
@@ -577,7 +582,8 @@ declare_class!(
 
                     wake_event_loop();
                 } else {
-                    // Not a server trust challenge — perform default handling
+                    // Valid server-trust challenges and non-certificate
+                    // challenges should continue without surfacing a prompt.
                     completion_handler.call((1, std::ptr::null_mut()));
                 }
             }
@@ -810,6 +816,26 @@ extern "C" {
     fn _Block_release(block: *const std::ffi::c_void);
 }
 
+#[link(name = "Security", kind = "framework")]
+extern "C" {
+    fn SecTrustEvaluateWithError(
+        trust: *const std::ffi::c_void,
+        error: *mut *const std::ffi::c_void,
+    ) -> u8;
+}
+
+fn should_prompt_for_certificate_error(auth_method: &str, trust_is_valid: bool) -> bool {
+    auth_method == "NSURLAuthenticationMethodServerTrust" && !trust_is_valid
+}
+
+unsafe fn protection_space_server_trust_is_valid(protection_space: &AnyObject) -> bool {
+    let trust: *const std::ffi::c_void = msg_send![protection_space, serverTrust];
+    if trust.is_null() {
+        return false;
+    }
+    SecTrustEvaluateWithError(trust, std::ptr::null_mut()) != 0
+}
+
 /// Resolve a pending permission handler by calling the stored decision handler block.
 /// BR-10: Called from the sync path when the domain sets permission_decision.
 ///
@@ -987,6 +1013,177 @@ unsafe extern "C" fn navigate_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
     let _: Option<Retained<AnyObject>> = msg_send_id![webview, loadRequest: &*request];
 }
 
+#[derive(Clone, Copy)]
+enum WebViewVoidAction {
+    GoBack,
+    GoForward,
+    Reload,
+    ClearWebsiteData,
+}
+
+#[derive(Clone, Copy)]
+enum WebViewBoolQuery {
+    CanGoBack,
+    CanGoForward,
+    IsLoading,
+}
+
+#[derive(Clone, Copy)]
+enum WebViewF64Query {
+    EstimatedProgress,
+}
+
+#[derive(Clone, Copy)]
+enum WebViewStringQuery {
+    CurrentUrl,
+    CurrentTitle,
+}
+
+struct WebViewVoidActionCtx {
+    webview: *const AnyObject,
+    action: WebViewVoidAction,
+}
+
+struct WebViewBoolQueryCtx {
+    webview: *const AnyObject,
+    query: WebViewBoolQuery,
+    result: bool,
+}
+
+struct WebViewF64QueryCtx {
+    webview: *const AnyObject,
+    query: WebViewF64Query,
+    result: f64,
+}
+
+struct WebViewStringQueryCtx {
+    webview: *const AnyObject,
+    query: WebViewStringQuery,
+    result: Option<String>,
+}
+
+unsafe fn nsobject_utf8_string(obj: &AnyObject) -> Option<String> {
+    let utf8: *const std::ffi::c_char = msg_send![obj, UTF8String];
+    if utf8.is_null() {
+        None
+    } else {
+        Some(
+            std::ffi::CStr::from_ptr(utf8)
+                .to_string_lossy()
+                .into_owned(),
+        )
+    }
+}
+
+unsafe fn clear_website_data_inner(webview: &AnyObject) {
+    let config: Retained<AnyObject> = msg_send_id![webview, configuration];
+    let data_store: Retained<AnyObject> = msg_send_id![&config, websiteDataStore];
+
+    let ns_set_cls = AnyClass::get("NSSet").expect("NSSet class");
+    let types: [Retained<NSString>; 4] = [
+        NSString::from_str("WKWebsiteDataTypeCookies"),
+        NSString::from_str("WKWebsiteDataTypeLocalStorage"),
+        NSString::from_str("WKWebsiteDataTypeSessionStorage"),
+        NSString::from_str("WKWebsiteDataTypeIndexedDBDatabases"),
+    ];
+    let ns_array_cls = AnyClass::get("NSArray").expect("NSArray class");
+    let ptrs: [*const AnyObject; 4] = [
+        &*types[0] as *const _ as *const AnyObject,
+        &*types[1] as *const _ as *const AnyObject,
+        &*types[2] as *const _ as *const AnyObject,
+        &*types[3] as *const _ as *const AnyObject,
+    ];
+    let ns_array: Retained<AnyObject> = msg_send_id![
+        ns_array_cls,
+        arrayWithObjects: ptrs.as_ptr(),
+        count: 4_usize
+    ];
+    let data_types: Retained<AnyObject> = msg_send_id![ns_set_cls, setWithArray: &*ns_array];
+
+    let ns_date_cls = AnyClass::get("NSDate").expect("NSDate class");
+    let distant_past: Retained<AnyObject> = msg_send_id![ns_date_cls, distantPast];
+
+    let completion = block2::RcBlock::new(|| {});
+    let completion_ptr = &*completion as *const block2::Block<dyn Fn()>;
+
+    let _: () = msg_send![
+        &data_store,
+        removeDataOfTypes: &*data_types,
+        modifiedSince: &*distant_past,
+        completionHandler: completion_ptr
+    ];
+}
+
+unsafe fn perform_webview_void_action(webview: &AnyObject, action: WebViewVoidAction) {
+    match action {
+        WebViewVoidAction::GoBack => {
+            let _: Option<Retained<AnyObject>> = msg_send_id![webview, goBack];
+        }
+        WebViewVoidAction::GoForward => {
+            let _: Option<Retained<AnyObject>> = msg_send_id![webview, goForward];
+        }
+        WebViewVoidAction::Reload => {
+            let _: Option<Retained<AnyObject>> = msg_send_id![webview, reload];
+        }
+        WebViewVoidAction::ClearWebsiteData => clear_website_data_inner(webview),
+    }
+}
+
+unsafe fn perform_webview_bool_query(webview: &AnyObject, query: WebViewBoolQuery) -> bool {
+    let val: Bool = match query {
+        WebViewBoolQuery::CanGoBack => msg_send![webview, canGoBack],
+        WebViewBoolQuery::CanGoForward => msg_send![webview, canGoForward],
+        WebViewBoolQuery::IsLoading => msg_send![webview, isLoading],
+    };
+    val.as_bool()
+}
+
+unsafe fn perform_webview_f64_query(webview: &AnyObject, query: WebViewF64Query) -> f64 {
+    match query {
+        WebViewF64Query::EstimatedProgress => msg_send![webview, estimatedProgress],
+    }
+}
+
+unsafe fn perform_webview_string_query(
+    webview: &AnyObject,
+    query: WebViewStringQuery,
+) -> Option<String> {
+    match query {
+        WebViewStringQuery::CurrentUrl => {
+            let url: Option<Retained<AnyObject>> = msg_send_id![webview, URL];
+            let url = url?;
+            let abs: Option<Retained<AnyObject>> = msg_send_id![&url, absoluteString];
+            let abs = abs?;
+            nsobject_utf8_string(&abs)
+        }
+        WebViewStringQuery::CurrentTitle => {
+            let title: Option<Retained<AnyObject>> = msg_send_id![webview, title];
+            let title = title?;
+            nsobject_utf8_string(&title)
+        }
+    }
+}
+
+unsafe extern "C" fn perform_webview_void_action_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
+    let ctx = &*(ctx_ptr as *const WebViewVoidActionCtx);
+    perform_webview_void_action(&*ctx.webview, ctx.action);
+}
+
+unsafe extern "C" fn perform_webview_bool_query_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
+    let ctx = &mut *(ctx_ptr as *mut WebViewBoolQueryCtx);
+    ctx.result = perform_webview_bool_query(&*ctx.webview, ctx.query);
+}
+
+unsafe extern "C" fn perform_webview_f64_query_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
+    let ctx = &mut *(ctx_ptr as *mut WebViewF64QueryCtx);
+    ctx.result = perform_webview_f64_query(&*ctx.webview, ctx.query);
+}
+
+unsafe extern "C" fn perform_webview_string_query_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
+    let ctx = &mut *(ctx_ptr as *mut WebViewStringQueryCtx);
+    ctx.result = perform_webview_string_query(&*ctx.webview, ctx.query);
+}
+
 /// Context passed through `dispatch_sync_f` to set the webview frame.
 struct SetFrameCtx {
     webview: *const AnyObject,
@@ -1092,6 +1289,85 @@ unsafe extern "C" fn eval_js_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
 }
 
 impl WebViewHandle {
+    fn perform_void_action(&self, action: WebViewVoidAction) {
+        if MainThreadMarker::new().is_some() {
+            unsafe { perform_webview_void_action(&self.webview, action) };
+            return;
+        }
+
+        let mut ctx = WebViewVoidActionCtx {
+            webview: &*self.webview as *const AnyObject,
+            action,
+        };
+        unsafe {
+            dispatch_sync_f(
+                &_dispatch_main_q as *const std::ffi::c_void,
+                &mut ctx as *mut WebViewVoidActionCtx as *mut std::ffi::c_void,
+                perform_webview_void_action_on_main_thread,
+            );
+        }
+    }
+
+    fn perform_bool_query(&self, query: WebViewBoolQuery) -> bool {
+        if MainThreadMarker::new().is_some() {
+            return unsafe { perform_webview_bool_query(&self.webview, query) };
+        }
+
+        let mut ctx = WebViewBoolQueryCtx {
+            webview: &*self.webview as *const AnyObject,
+            query,
+            result: false,
+        };
+        unsafe {
+            dispatch_sync_f(
+                &_dispatch_main_q as *const std::ffi::c_void,
+                &mut ctx as *mut WebViewBoolQueryCtx as *mut std::ffi::c_void,
+                perform_webview_bool_query_on_main_thread,
+            );
+        }
+        ctx.result
+    }
+
+    fn perform_f64_query(&self, query: WebViewF64Query) -> f64 {
+        if MainThreadMarker::new().is_some() {
+            return unsafe { perform_webview_f64_query(&self.webview, query) };
+        }
+
+        let mut ctx = WebViewF64QueryCtx {
+            webview: &*self.webview as *const AnyObject,
+            query,
+            result: 0.0,
+        };
+        unsafe {
+            dispatch_sync_f(
+                &_dispatch_main_q as *const std::ffi::c_void,
+                &mut ctx as *mut WebViewF64QueryCtx as *mut std::ffi::c_void,
+                perform_webview_f64_query_on_main_thread,
+            );
+        }
+        ctx.result
+    }
+
+    fn perform_string_query(&self, query: WebViewStringQuery) -> Option<String> {
+        if MainThreadMarker::new().is_some() {
+            return unsafe { perform_webview_string_query(&self.webview, query) };
+        }
+
+        let mut ctx = WebViewStringQueryCtx {
+            webview: &*self.webview as *const AnyObject,
+            query,
+            result: None,
+        };
+        unsafe {
+            dispatch_sync_f(
+                &_dispatch_main_q as *const std::ffi::c_void,
+                &mut ctx as *mut WebViewStringQueryCtx as *mut std::ffi::c_void,
+                perform_webview_string_query_on_main_thread,
+            );
+        }
+        ctx.result
+    }
+
     /// Remove the webview from the view hierarchy and drop the handle on the main thread.
     ///
     /// Browser Pane teardown can run on `app-thread`, but the retained WebKit/AppKit
@@ -1278,23 +1554,17 @@ impl WebViewHandle {
 
     /// Go back in history.
     pub fn go_back(&self) {
-        unsafe {
-            let _: Option<Retained<AnyObject>> = msg_send_id![&self.webview, goBack];
-        }
+        self.perform_void_action(WebViewVoidAction::GoBack);
     }
 
     /// Go forward in history.
     pub fn go_forward(&self) {
-        unsafe {
-            let _: Option<Retained<AnyObject>> = msg_send_id![&self.webview, goForward];
-        }
+        self.perform_void_action(WebViewVoidAction::GoForward);
     }
 
     /// Reload the current page.
     pub fn reload(&self) {
-        unsafe {
-            let _: Option<Retained<AnyObject>> = msg_send_id![&self.webview, reload];
-        }
+        self.perform_void_action(WebViewVoidAction::Reload);
     }
 
     /// Set the frame rect (in logical points) of the webview.
@@ -1352,58 +1622,22 @@ impl WebViewHandle {
 
     /// Returns true if the webview can go back.
     pub fn can_go_back(&self) -> bool {
-        unsafe {
-            let val: Bool = msg_send![&self.webview, canGoBack];
-            val.as_bool()
-        }
+        self.perform_bool_query(WebViewBoolQuery::CanGoBack)
     }
 
     /// Returns true if the webview can go forward.
     pub fn can_go_forward(&self) -> bool {
-        unsafe {
-            let val: Bool = msg_send![&self.webview, canGoForward];
-            val.as_bool()
-        }
+        self.perform_bool_query(WebViewBoolQuery::CanGoForward)
     }
 
     /// Get the current URL as a string, if any.
     pub fn current_url(&self) -> Option<String> {
-        unsafe {
-            let url: Option<Retained<AnyObject>> = msg_send_id![&self.webview, URL];
-            let url = url?;
-            let abs: Option<Retained<AnyObject>> = msg_send_id![&url, absoluteString];
-            let abs = abs?;
-            // Convert NSString to Rust String
-            let ns_str: &AnyObject = &abs;
-            let utf8: *const std::ffi::c_char = msg_send![ns_str, UTF8String];
-            if utf8.is_null() {
-                None
-            } else {
-                Some(
-                    std::ffi::CStr::from_ptr(utf8)
-                        .to_string_lossy()
-                        .into_owned(),
-                )
-            }
-        }
+        self.perform_string_query(WebViewStringQuery::CurrentUrl)
     }
 
     /// Get the current page title, if any.
     pub fn current_title(&self) -> Option<String> {
-        unsafe {
-            let title: Option<Retained<AnyObject>> = msg_send_id![&self.webview, title];
-            let title = title?;
-            let utf8: *const std::ffi::c_char = msg_send![&title, UTF8String];
-            if utf8.is_null() {
-                None
-            } else {
-                Some(
-                    std::ffi::CStr::from_ptr(utf8)
-                        .to_string_lossy()
-                        .into_owned(),
-                )
-            }
-        }
+        self.perform_string_query(WebViewStringQuery::CurrentTitle)
     }
 
     /// Load HTML content directly via loadHTMLString:baseURL:.
@@ -1467,32 +1701,23 @@ impl WebViewHandle {
         } else {
             format!("window.find('{}', false, true, true)", escaped)
         };
-        let ns_js = NSString::from_str(&js);
-        unsafe {
-            let _: () = msg_send![&self.webview, evaluateJavaScript: &*ns_js completionHandler: std::ptr::null::<AnyObject>()];
-        }
+        self.evaluate_javascript(&js);
     }
 
     /// Clear find-in-page highlight by deselecting.
     pub fn clear_find(&self) {
-        let ns_js = NSString::from_str("window.getSelection().removeAllRanges()");
-        unsafe {
-            let _: () = msg_send![&self.webview, evaluateJavaScript: &*ns_js completionHandler: std::ptr::null::<AnyObject>()];
-        }
+        self.evaluate_javascript("window.getSelection().removeAllRanges()");
     }
 
     /// Returns true if the webview is currently loading.
     pub fn is_loading(&self) -> bool {
-        unsafe {
-            let val: Bool = msg_send![&self.webview, isLoading];
-            val.as_bool()
-        }
+        self.perform_bool_query(WebViewBoolQuery::IsLoading)
     }
 
     /// Returns the estimated loading progress (0.0–1.0).
     /// BR-24: estimatedProgress exposed as domain f64 0.0-1.0.
     pub fn estimated_progress(&self) -> f64 {
-        unsafe { msg_send![&self.webview, estimatedProgress] }
+        self.perform_f64_query(WebViewF64Query::EstimatedProgress)
     }
 
     /// Remove the webview from its superview.
@@ -1548,50 +1773,7 @@ impl WebViewHandle {
     /// BR-22: Clear action removes cookies, localStorage, sessionStorage, IndexedDB.
     /// BR-23: Cookie clear does not break active navigation state.
     pub fn clear_website_data(&self) {
-        unsafe {
-            // Get the WKWebsiteDataStore from the webview's configuration
-            let config: Retained<AnyObject> = msg_send_id![&self.webview, configuration];
-            let data_store: Retained<AnyObject> = msg_send_id![&config, websiteDataStore];
-
-            // Build an NSSet of the data types to clear
-            let ns_set_cls = AnyClass::get("NSSet").expect("NSSet class");
-            let types: [Retained<NSString>; 4] = [
-                NSString::from_str("WKWebsiteDataTypeCookies"),
-                NSString::from_str("WKWebsiteDataTypeLocalStorage"),
-                NSString::from_str("WKWebsiteDataTypeSessionStorage"),
-                NSString::from_str("WKWebsiteDataTypeIndexedDBDatabases"),
-            ];
-            let ns_array_cls = AnyClass::get("NSArray").expect("NSArray class");
-            let ptrs: [*const AnyObject; 4] = [
-                &*types[0] as *const _ as *const AnyObject,
-                &*types[1] as *const _ as *const AnyObject,
-                &*types[2] as *const _ as *const AnyObject,
-                &*types[3] as *const _ as *const AnyObject,
-            ];
-            let ns_array: Retained<AnyObject> = msg_send_id![
-                ns_array_cls,
-                arrayWithObjects: ptrs.as_ptr(),
-                count: 4_usize
-            ];
-            let data_types: Retained<AnyObject> =
-                msg_send_id![ns_set_cls, setWithArray: &*ns_array];
-
-            // Get [NSDate distantPast]
-            let ns_date_cls = AnyClass::get("NSDate").expect("NSDate class");
-            let distant_past: Retained<AnyObject> = msg_send_id![ns_date_cls, distantPast];
-
-            // Create an empty completion handler block
-            let completion = block2::StackBlock::new(|| {});
-            let completion_ptr = &*completion as *const block2::Block<dyn Fn()>;
-
-            // removeDataOfTypes:modifiedSince:completionHandler:
-            let _: () = msg_send![
-                &data_store,
-                removeDataOfTypes: &*data_types,
-                modifiedSince: &*distant_past,
-                completionHandler: completion_ptr
-            ];
-        }
+        self.perform_void_action(WebViewVoidAction::ClearWebsiteData);
     }
 
     /// Resign first responder from the webview and give it back to `view_ptr`.
@@ -1652,6 +1834,30 @@ mod tests {
     }
 
     #[test]
+    fn valid_server_trust_does_not_surface_certificate_prompt() {
+        assert!(!should_prompt_for_certificate_error(
+            "NSURLAuthenticationMethodServerTrust",
+            true,
+        ));
+    }
+
+    #[test]
+    fn invalid_server_trust_surfaces_certificate_prompt() {
+        assert!(should_prompt_for_certificate_error(
+            "NSURLAuthenticationMethodServerTrust",
+            false,
+        ));
+    }
+
+    #[test]
+    fn non_server_trust_challenges_use_default_handling() {
+        assert!(!should_prompt_for_certificate_error(
+            "NSURLAuthenticationMethodHTTPBasic",
+            false,
+        ));
+    }
+
+    #[test]
     fn cleanup_pending_handlers_denies_permission_request_before_release() {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let pane_id = 42_001;
@@ -1667,12 +1873,10 @@ mod tests {
         cleanup_pending_handlers(pane_id);
 
         assert_eq!(PERMISSION_DECISION.load(Ordering::SeqCst), 0);
-        assert!(
-            !PENDING_PERMISSION_HANDLERS
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .contains_key(&pane_id)
-        );
+        assert!(!PENDING_PERMISSION_HANDLERS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(&pane_id));
     }
 
     #[test]
@@ -1693,11 +1897,9 @@ mod tests {
 
         assert_eq!(CERTIFICATE_DISPOSITION.load(Ordering::SeqCst), 2);
         assert!(CERTIFICATE_CREDENTIAL_WAS_NULL.load(Ordering::SeqCst));
-        assert!(
-            !PENDING_CERT_HANDLERS
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .contains_key(&pane_id)
-        );
+        assert!(!PENDING_CERT_HANDLERS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(&pane_id));
     }
 }
