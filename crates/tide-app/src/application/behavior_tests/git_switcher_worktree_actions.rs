@@ -1,6 +1,7 @@
 // Spec: docs/specs/git-switcher-worktree-actions.md
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::application::ports::outward::GitPort;
@@ -49,6 +50,7 @@ enum GitMutation {
 struct RecordingGit {
     worktrees: Vec<WorktreeInfo>,
     mutations: Arc<Mutex<Vec<GitMutation>>>,
+    list_worktree_calls: Arc<AtomicUsize>,
 }
 
 impl GitPort for RecordingGit {
@@ -69,6 +71,7 @@ impl GitPort for RecordingGit {
     }
 
     fn list_worktrees(&self, _cwd: &Path) -> Vec<WorktreeInfo> {
+        self.list_worktree_calls.fetch_add(1, Ordering::Relaxed);
         self.worktrees.clone()
     }
 
@@ -95,20 +98,26 @@ impl GitPort for RecordingGit {
     }
 
     fn remove_worktree(&self, cwd: &Path, path: &Path, force: bool) -> Result<(), String> {
-        self.mutations.lock().unwrap().push(GitMutation::RemoveWorktree {
-            cwd: cwd.to_path_buf(),
-            path: path.to_path_buf(),
-            force,
-        });
+        self.mutations
+            .lock()
+            .unwrap()
+            .push(GitMutation::RemoveWorktree {
+                cwd: cwd.to_path_buf(),
+                path: path.to_path_buf(),
+                force,
+            });
         Ok(())
     }
 
     fn delete_branch(&self, cwd: &Path, branch: &str, force: bool) -> Result<(), String> {
-        self.mutations.lock().unwrap().push(GitMutation::DeleteBranch {
-            cwd: cwd.to_path_buf(),
-            branch: branch.to_string(),
-            force,
-        });
+        self.mutations
+            .lock()
+            .unwrap()
+            .push(GitMutation::DeleteBranch {
+                cwd: cwd.to_path_buf(),
+                branch: branch.to_string(),
+                force,
+            });
         Ok(())
     }
 }
@@ -146,12 +155,11 @@ fn clicking_git_switcher_row_runs_the_default_switch_action() {
         crate::tide_core::Rect::new(32.0, 20.0, 120.0, 24.0),
     ));
 
-    let geometry = app
-        .modal
-        .git_switcher
-        .as_ref()
-        .unwrap()
-        .geometry(app.window.cached_cell_size.height, 960.0, 640.0);
+    let geometry = app.modal.git_switcher.as_ref().unwrap().geometry(
+        app.window.cached_cell_size.height,
+        960.0,
+        640.0,
+    );
     app.window.last_cursor_pos = crate::tide_core::Vec2::new(
         geometry.popup_x + 36.0,
         geometry.list_top + geometry.line_height + geometry.line_height / 2.0,
@@ -204,15 +212,18 @@ fn deleting_git_switcher_worktree_uses_the_main_worktree_as_git_root() {
         },
     ];
     let mutations = Arc::new(Mutex::new(Vec::new()));
+    let list_worktree_calls = Arc::new(AtomicUsize::new(0));
     app.ports.git = Box::new(RecordingGit {
         worktrees: listed_worktrees.clone(),
         mutations: mutations.clone(),
+        list_worktree_calls: list_worktree_calls.clone(),
     });
     app.modal.git_switcher = Some(crate::GitSwitcherState::new(
         pane_id,
         listed_worktrees,
         crate::tide_core::Rect::new(32.0, 20.0, 120.0, 24.0),
     ));
+    let baseline_list_calls = list_worktree_calls.load(Ordering::Relaxed);
 
     crate::adapter::inward::click_adapter::header::handle_git_switcher_button(
         &mut app,
@@ -242,4 +253,9 @@ fn deleting_git_switcher_worktree_uses_the_main_worktree_as_git_root() {
         branch: "feature/delete".to_string(),
         force: true,
     }));
+    assert_eq!(
+        list_worktree_calls.load(Ordering::Relaxed),
+        baseline_list_calls,
+        "delete should reuse the git switcher snapshot instead of re-querying worktrees"
+    );
 }

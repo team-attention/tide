@@ -2,21 +2,31 @@ use crate::tide_core::{Rect, SplitDirection, TerminalBackend};
 
 use crate::header::{HeaderHitAction, HeaderHitZone};
 use crate::pane::PaneKind;
-use crate::{DockPort, FileOpsPort, GitSwitcherState, shell_escape};
-use crate::LayoutPort;
-use crate::WorkspaceNavPort;
 use crate::ActionPort;
-use crate::PaneLifecyclePort;
 use crate::AppCorePort;
 use crate::FocusNavPort;
-use crate::PaneAccessPort;
-use crate::ModalPort;
 use crate::InputStatePort;
+use crate::LayoutPort;
+use crate::ModalPort;
+use crate::PaneAccessPort;
+use crate::PaneLifecyclePort;
+use crate::WorkspaceNavPort;
+use crate::{shell_escape, DockPort, FileOpsPort, GitSwitcherState};
 
 /// Check if the current cursor position clicks on a header badge or close button.
 /// Returns true if the click was consumed.
 pub(crate) fn check_header_click(
-    ctx: &mut (impl AppCorePort + FocusNavPort + PaneAccessPort + PaneLifecyclePort + ModalPort + InputStatePort + DockPort + WorkspaceNavPort + LayoutPort + FileOpsPort + ActionPort),
+    ctx: &mut (impl AppCorePort
+              + FocusNavPort
+              + PaneAccessPort
+              + PaneLifecyclePort
+              + ModalPort
+              + InputStatePort
+              + DockPort
+              + WorkspaceNavPort
+              + LayoutPort
+              + FileOpsPort
+              + ActionPort),
 ) -> bool {
     let pos = ctx.last_cursor_pos();
     let zones: Vec<HeaderHitZone> = ctx.header_hit_zones();
@@ -55,8 +65,10 @@ pub(crate) fn check_header_click(
                             match ctx.read_file_to_string(&path) {
                                 Ok(content) => {
                                     // Need to re-borrow pane_mut after the immutable call
-                                    if let Some(PaneKind::Editor(pane)) = ctx.pane_mut(zone.pane_id) {
-                                        let lines: Vec<String> = content.lines().map(String::from).collect();
+                                    if let Some(PaneKind::Editor(pane)) = ctx.pane_mut(zone.pane_id)
+                                    {
+                                        let lines: Vec<String> =
+                                            content.lines().map(String::from).collect();
                                         pane.disk_content = Some(lines);
                                         pane.diff_mode = true;
                                     }
@@ -98,10 +110,11 @@ pub(crate) fn check_header_click(
                 }
                 HeaderHitAction::EditorFileName => {
                     // Allow drag from editor filename area
-                    ctx.interaction_mut().pane_drag = crate::state::drag_types::PaneDragState::PendingDrag {
-                        source_pane: zone.pane_id,
-                        press_pos: ctx.last_cursor_pos(),
-                    };
+                    ctx.interaction_mut().pane_drag =
+                        crate::state::drag_types::PaneDragState::PendingDrag {
+                            source_pane: zone.pane_id,
+                            press_pos: ctx.last_cursor_pos(),
+                        };
                     ctx.focus_terminal(zone.pane_id);
                     ctx.request_redraw();
                     return true;
@@ -137,10 +150,11 @@ pub(crate) fn check_header_click(
                     // Switch tab immediately for visual feedback, but also
                     // set PendingDrag to allow drag-and-drop reordering.
                     ctx.focus_terminal(target_pane_id);
-                    ctx.interaction_mut().pane_drag = crate::state::drag_types::PaneDragState::PendingDrag {
-                        source_pane: target_pane_id,
-                        press_pos: ctx.last_cursor_pos(),
-                    };
+                    ctx.interaction_mut().pane_drag =
+                        crate::state::drag_types::PaneDragState::PendingDrag {
+                            source_pane: target_pane_id,
+                            press_pos: ctx.last_cursor_pos(),
+                        };
                     ctx.invalidate_chrome();
                     ctx.invalidate_all_panes();
                     ctx.compute_layout();
@@ -152,17 +166,24 @@ pub(crate) fn check_header_click(
                     // set PendingDrag to allow drag-and-drop extraction/reordering.
                     if let Some(old_zoomed) = ctx.zoomed_pane() {
                         // Transfer tab scroll offset from old zoomed pane to new one
-                        let old_scroll = ctx.interaction_mut().tab_scroll_offset.remove(&old_zoomed).unwrap_or(0.0);
+                        let old_scroll = ctx
+                            .interaction_mut()
+                            .tab_scroll_offset
+                            .remove(&old_zoomed)
+                            .unwrap_or(0.0);
                         if old_scroll > 0.0 {
-                            ctx.interaction_mut().tab_scroll_offset.insert(target_pane_id, old_scroll);
+                            ctx.interaction_mut()
+                                .tab_scroll_offset
+                                .insert(target_pane_id, old_scroll);
                         }
                         ctx.set_zoom(Some(target_pane_id));
                     }
                     ctx.focus_terminal(target_pane_id);
-                    ctx.interaction_mut().pane_drag = crate::state::drag_types::PaneDragState::PendingDrag {
-                        source_pane: target_pane_id,
-                        press_pos: ctx.last_cursor_pos(),
-                    };
+                    ctx.interaction_mut().pane_drag =
+                        crate::state::drag_types::PaneDragState::PendingDrag {
+                            source_pane: target_pane_id,
+                            press_pos: ctx.last_cursor_pos(),
+                        };
                     ctx.invalidate_chrome();
                     ctx.invalidate_all_panes();
                     ctx.compute_layout();
@@ -197,9 +218,7 @@ fn open_git_switcher(
         if let Some(ref cwd) = pane.context.cwd {
             let cwd = cwd.clone();
             let worktrees = ctx.git_list_worktrees(&cwd);
-            let mut gs = GitSwitcherState::new(
-                pane_id, worktrees, anchor_rect,
-            );
+            let mut gs = GitSwitcherState::new(pane_id, worktrees, anchor_rect);
             gs.shell_busy = shell_busy;
             ctx.modal_mut().git_switcher = Some(gs);
         }
@@ -207,9 +226,7 @@ fn open_git_switcher(
 }
 
 /// Get the cwd of the terminal pane associated with the git switcher.
-fn git_switcher_pane_cwd(
-    ctx: &(impl PaneAccessPort + ModalPort),
-) -> Option<std::path::PathBuf> {
+fn git_switcher_pane_cwd(ctx: &(impl PaneAccessPort + ModalPort)) -> Option<std::path::PathBuf> {
     let gs = ctx.modal().git_switcher.as_ref()?;
     match ctx.pane(gs.pane_id) {
         Some(PaneKind::Terminal(p)) => p.context.cwd.clone(),
@@ -219,21 +236,27 @@ fn git_switcher_pane_cwd(
 
 /// Resolve the main worktree path for the repo shown in the GitSwitcher.
 fn git_switcher_main_worktree_cwd(
-    ctx: &(impl AppCorePort + PaneAccessPort + ModalPort),
+    ctx: &(impl PaneAccessPort + ModalPort),
 ) -> Option<std::path::PathBuf> {
-    let cwd = git_switcher_pane_cwd(ctx)?;
-    let main_cwd = ctx
-        .git_list_worktrees(&cwd)
-        .into_iter()
+    let gs = ctx.modal().git_switcher.as_ref()?;
+    let fallback_cwd = git_switcher_pane_cwd(ctx)?;
+    let main_cwd = gs
+        .worktrees
+        .iter()
         .find(|wt| wt.is_main)
-        .map(|wt| wt.path)
-        .unwrap_or_else(|| cwd.clone());
+        .map(|wt| wt.path.clone())
+        .unwrap_or(fallback_cwd);
     Some(main_cwd)
 }
 
 /// Handle a git switcher popup button click.
 pub(crate) fn handle_git_switcher_button(
-    ctx: &mut (impl AppCorePort + PaneAccessPort + PaneLifecyclePort + ModalPort + ActionPort + InputStatePort),
+    ctx: &mut (impl AppCorePort
+              + PaneAccessPort
+              + PaneLifecyclePort
+              + ModalPort
+              + ActionPort
+              + InputStatePort),
     btn: crate::SwitcherButton,
 ) {
     match btn {
@@ -259,7 +282,10 @@ pub(crate) fn handle_git_switcher_button(
                             settings.worktree.copy_files_to_worktree(&root, &wt_path);
                             if let Some(PaneKind::Terminal(pane)) = ctx.pane_mut(pane_id) {
                                 if pane.context.shell_idle {
-                                    let cmd = format!("cd {}\n", shell_escape(&wt_path.to_string_lossy()));
+                                    let cmd = format!(
+                                        "cd {}\n",
+                                        shell_escape(&wt_path.to_string_lossy())
+                                    );
                                     pane.backend.write(cmd.as_bytes());
                                 }
                             }
@@ -291,7 +317,9 @@ pub(crate) fn handle_git_switcher_button(
                 Some(gs) => (gs.is_create_row(fi), gs.delete_confirm == Some(fi)),
                 None => return,
             };
-            if is_create { return; }
+            if is_create {
+                return;
+            }
 
             if !already_confirmed {
                 if let Some(ref mut gs) = ctx.modal_mut().git_switcher {
@@ -313,7 +341,9 @@ pub(crate) fn handle_git_switcher_button(
                     None => return,
                 };
                 let wt = &gs.worktrees[entry_idx];
-                if wt.is_current || wt.is_main { return; }
+                if wt.is_current || wt.is_main {
+                    return;
+                }
                 (wt.path.clone(), wt.branch.clone(), wt.is_main)
             };
             if let Some(main_cwd) = main_cwd {
@@ -331,7 +361,7 @@ pub(crate) fn handle_git_switcher_button(
                 }
             }
 
-            refresh_git_switcher(ctx);
+            refresh_git_switcher(ctx, &wt_path);
             ctx.invalidate_chrome();
             return;
         }
@@ -379,7 +409,8 @@ pub(crate) fn handle_git_switcher_button(
 
 /// Refresh the git switcher popup in-place after a delete operation.
 fn refresh_git_switcher(
-    ctx: &mut (impl AppCorePort + PaneAccessPort + ModalPort),
+    ctx: &mut (impl PaneAccessPort + ModalPort),
+    deleted_worktree: &std::path::Path,
 ) {
     let gs = match ctx.modal().git_switcher.as_ref() {
         Some(gs) => gs,
@@ -391,35 +422,41 @@ fn refresh_git_switcher(
     let anchor_rect = gs.anchor_rect;
     let shell_busy = gs.shell_busy;
 
-    let cwd = match ctx.pane(pane_id) {
-        Some(PaneKind::Terminal(p)) => p.context.cwd.clone(),
-        _ => None,
-    };
-    if let Some(cwd) = cwd {
-        let worktrees = ctx.git_list_worktrees(&cwd);
-        let mut new_gs = GitSwitcherState::new(
-            pane_id, worktrees, anchor_rect,
-        );
-        new_gs.shell_busy = shell_busy;
-        new_gs.input.text = input_text;
-        new_gs.input.cursor = input_cursor;
-        if !new_gs.input.is_empty() {
-            let query_lower = new_gs.input.text.to_lowercase();
-            new_gs.filtered_worktrees = new_gs.worktrees.iter().enumerate()
-                .filter(|(_, wt)| {
-                    let branch_match = wt.branch.as_ref()
-                        .map(|b| b.to_lowercase().contains(&query_lower))
-                        .unwrap_or_else(|| "(detached)".contains(&query_lower));
-                    let path_match = wt.path.to_string_lossy().to_lowercase().contains(&query_lower);
-                    branch_match || path_match
-                })
-                .map(|(i, _)| i)
-                .collect();
-        }
-        let len = new_gs.current_filtered_len();
-        if new_gs.selected >= len && len > 0 {
-            new_gs.selected = len - 1;
-        }
-        ctx.modal_mut().git_switcher = Some(new_gs);
+    let worktrees = gs
+        .worktrees
+        .iter()
+        .filter(|wt| wt.path != deleted_worktree)
+        .cloned()
+        .collect();
+    let mut new_gs = GitSwitcherState::new(pane_id, worktrees, anchor_rect);
+    new_gs.shell_busy = shell_busy;
+    new_gs.input.text = input_text;
+    new_gs.input.cursor = input_cursor;
+    if !new_gs.input.is_empty() {
+        let query_lower = new_gs.input.text.to_lowercase();
+        new_gs.filtered_worktrees = new_gs
+            .worktrees
+            .iter()
+            .enumerate()
+            .filter(|(_, wt)| {
+                let branch_match = wt
+                    .branch
+                    .as_ref()
+                    .map(|b| b.to_lowercase().contains(&query_lower))
+                    .unwrap_or_else(|| "(detached)".contains(&query_lower));
+                let path_match = wt
+                    .path
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .contains(&query_lower);
+                branch_match || path_match
+            })
+            .map(|(i, _)| i)
+            .collect();
     }
+    let len = new_gs.current_filtered_len();
+    if new_gs.selected >= len && len > 0 {
+        new_gs.selected = len - 1;
+    }
+    ctx.modal_mut().git_switcher = Some(new_gs);
 }
