@@ -110,10 +110,10 @@ pub(crate) fn handle_mouse_down(ctx: &mut impl MousePorts, button: MouseButton, 
                 return;
             }
             if let Some(idx) = ctx.git_switcher_item_at(ctx.last_cursor_pos()) {
-                if let Some(ref mut gs) = ctx.modal_mut().git_switcher {
-                    gs.selected = idx;
-                }
-                ctx.invalidate_chrome();
+                crate::adapter::inward::click_adapter::header::handle_git_switcher_button(
+                    ctx,
+                    crate::SwitcherButton::Switch(idx),
+                );
                 ctx.request_redraw();
                 return;
             } else if !ctx.git_switcher_contains(ctx.last_cursor_pos()) {

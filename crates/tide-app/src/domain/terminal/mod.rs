@@ -25,6 +25,7 @@ use alacritty_terminal::term::cell::LineLength;
 use alacritty_terminal::term::{Config as TermConfig, Term, TermMode};
 use alacritty_terminal::tty;
 use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor, Rgb as AnsiRgb};
+#[cfg(test)]
 use unicode_width::UnicodeWidthChar;
 
 mod color;
