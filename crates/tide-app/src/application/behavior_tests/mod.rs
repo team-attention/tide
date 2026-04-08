@@ -19,6 +19,7 @@ mod file_tree_modified_highlight;
 mod file_tree_scroll;
 mod focus_management;
 mod git_switcher_behavior;
+mod git_switcher_worktree_actions;
 mod global_actions;
 mod ime_behavior;
 mod keyboard_routing;
