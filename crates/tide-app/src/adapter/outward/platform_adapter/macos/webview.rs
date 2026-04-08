@@ -1103,7 +1103,7 @@ unsafe fn clear_website_data_inner(webview: &AnyObject) {
     let ns_date_cls = AnyClass::get("NSDate").expect("NSDate class");
     let distant_past: Retained<AnyObject> = msg_send_id![ns_date_cls, distantPast];
 
-    let completion = block2::StackBlock::new(|| {});
+    let completion = block2::RcBlock::new(|| {});
     let completion_ptr = &*completion as *const block2::Block<dyn Fn()>;
 
     let _: () = msg_send![
@@ -1554,16 +1554,12 @@ impl WebViewHandle {
 
     /// Go back in history.
     pub fn go_back(&self) {
-        if self.can_go_back() {
-            self.perform_void_action(WebViewVoidAction::GoBack);
-        }
+        self.perform_void_action(WebViewVoidAction::GoBack);
     }
 
     /// Go forward in history.
     pub fn go_forward(&self) {
-        if self.can_go_forward() {
-            self.perform_void_action(WebViewVoidAction::GoForward);
-        }
+        self.perform_void_action(WebViewVoidAction::GoForward);
     }
 
     /// Reload the current page.
