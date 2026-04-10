@@ -71,6 +71,10 @@ impl ClipboardSearchPort for App {
                     self.input.input_sent_at = Some(self.ports.clock.now());
                 }
                 Some(PaneKind::Editor(pane)) => {
+                    if pane.preview_mode {
+                        crate::AppCorePort::request_redraw(self);
+                        return;
+                    }
                     pane.delete_selection();
                     pane.editor.insert_text(&text);
                 }

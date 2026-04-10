@@ -3,7 +3,7 @@
 ## Overview
 
 ### As-Is
-`EditorPane::open()` in `crates/tide-app/src/domain/pane/editor.rs` opens file-backed Markdown Panes with `preview_mode = false`, and the same constructor enables `soft_wrap` for prose extensions. That means Markdown authoring now starts directly in the editable Pane instead of a read-only preview path. Markdown Panes still start with `live_preview = false`, though, so the hybrid Markdown rendering path stays opt-in even after the Pane has already chosen the prose-authoring interaction model. The remaining mode split is still significant: `effective_soft_wrap()` disables wrapping while preview is active, the routing layer in `crates/tide-app/src/adapter/inward/text_routing_adapter/mod.rs` blocks text input when `preview_mode` is true, and the key handling path in `crates/tide-app/src/application/services/action_service/mod.rs` exits early for almost every key while preview is active. Preview scrolling is also enforced in multiple places now: keyboard preview navigation goes through `apply_preview_scroll()`, wheel scrolling mutates `preview_scroll` in `action_service`, and scrollbar drag writes `preview_scroll` directly in `mouse_adapter`, but the spec only locks the keyboard path today.
+`EditorPane::open()` in `crates/tide-app/src/domain/pane/editor.rs` opens file-backed Markdown Panes with `preview_mode = false`, and the same constructor enables `soft_wrap` for prose extensions. That means Markdown authoring now starts directly in the editable Pane instead of a read-only preview path. Markdown Panes still start with `live_preview = false`, though, so the hybrid Markdown rendering path stays opt-in even after the Pane has already chosen the prose-authoring interaction model. The remaining mode split is still significant: `effective_soft_wrap()` disables wrapping while preview is active, the routing layer in `crates/tide-app/src/adapter/inward/text_routing_adapter/mod.rs` blocks text input when `preview_mode` is true, and the key handling path in `crates/tide-app/src/application/services/action_service/mod.rs` exits early for almost every key while preview is active. `GlobalAction::Paste` still bypasses that preview-mode guard in `crates/tide-app/src/application/services/search_service/mod.rs`, so paste can currently delete a preview selection and mutate the raw buffer even while the Pane is in read-only preview mode. Preview scrolling is also enforced in multiple places now: keyboard preview navigation goes through `apply_preview_scroll()`, wheel scrolling mutates `preview_scroll` in `action_service`, and scrollbar drag writes `preview_scroll` directly in `mouse_adapter`, but the spec only locks the keyboard path today.
 
 ### To-Be
 Editor behavior remains centered on `EditorPane` and `EditorState`, and Markdown Panes continue to open in authoring mode first. Markdown authoring defaults to `LivePreviewMode` while keeping `preview_mode = false`, so text input remains enabled and preview-only mode stays an explicit toggle. Soft Wrap stays active for prose authoring, preview keeps its own rendering and scroll model, and toggle transitions preserve reading context without trapping the user in a blocked-input state. Search, IME, click handling, and preview scrolling stay predictable across authoring and preview flows. Preview scrolling clamps to the same valid range no matter whether the user scrolls by keyboard, mouse wheel, or scrollbar drag.
@@ -41,7 +41,7 @@ Editor behavior remains centered on `EditorPane` and `EditorState`, and Markdown
   - BR-1: A new untitled Editor Pane starts unmodified.
   - BR-2: Editing text marks the buffer as modified.
   - BR-3: Editing text and IME commits route to `EditorState` only while the Pane is in authoring mode.
-  - BR-4: Preview mode blocks editor-buffer text mutation.
+  - BR-4: Preview mode blocks editor-buffer text mutation, including paste replacement over an active selection.
   - BR-5: The search bar receives text even while preview mode is active.
   - BR-6: IME commit to File Finder does not mutate the focused Editor Pane.
 
@@ -126,6 +126,7 @@ Editor behavior remains centered on `EditorPane` and `EditorState`, and Markdown
 | UC-1 | BR-2 | `editor_behavior` | `typing_text_into_editor_marks_it_as_modified` |
 | UC-1 | BR-3 | `editor_behavior` | `text_input_routes_to_focused_editor_in_authoring_mode` |
 | UC-1 | BR-4 | `editor_behavior` | `text_input_is_blocked_in_preview_mode` |
+| UC-1 | BR-4 | `editor_behavior` | `paste_action_is_blocked_in_preview_mode_even_with_selection` |
 | UC-1 | BR-5 | `editor_behavior` | `search_bar_receives_text_in_preview_mode` |
 | UC-1 | BR-6 | `editor_behavior` | `ime_commit_to_file_finder_does_not_reach_editor` |
 | UC-2 | BR-7 | `editor_behavior` | `new_editor_has_no_file_path` |

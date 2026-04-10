@@ -179,7 +179,6 @@ fn stacking_stage_does_not_affect_dock() {
     app.focus.focused = Some(t1);
     app.focus.focus_area = FocusArea::Stage;
 
-    let dock_before = app.dock.dock_open;
     app.handle_toggle_stacked();
 
     assert_eq!(app.dock.terminal_view_mode, ViewMode::Stacked);
