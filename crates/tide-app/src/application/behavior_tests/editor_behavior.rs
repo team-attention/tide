@@ -1,10 +1,14 @@
 // Spec: docs/specs/editor.md
+use std::cell::RefCell;
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
+use crate::application::ports::outward::clipboard_port::ClipboardPort;
 use crate::ActionPort;
+use crate::ClipboardSearchPort;
 use crate::App;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT_TEST_FILE_ID: AtomicUsize = AtomicUsize::new(0);
@@ -50,6 +54,21 @@ fn app_with_markdown_editor(contents: &str) -> (App, u64, PathBuf) {
     (app, id, path)
 }
 
+#[derive(Clone)]
+struct RecordingClipboard {
+    text: Rc<RefCell<String>>,
+}
+
+impl ClipboardPort for RecordingClipboard {
+    fn get_text(&self) -> Result<String, String> {
+        Ok(self.text.borrow().clone())
+    }
+
+    fn set_text(&self, _text: &str) -> Result<(), String> {
+        Ok(())
+    }
+}
+
 // --- UC-1: EditText ---
 
 #[test]
@@ -85,6 +104,34 @@ fn text_input_is_blocked_in_preview_mode() {
     app.send_text_to_target("should not appear");
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
         assert!(!pane.editor.is_modified());
+    }
+}
+
+#[test]
+fn paste_action_is_blocked_in_preview_mode_even_with_selection() {
+    // UC-1 BR-4: Preview mode blocks paste-driven buffer mutation even when a preview selection is active.
+    let (mut app, id, _path) = app_with_markdown_editor("hello world\n");
+    app.ports.clipboard = Box::new(RecordingClipboard {
+        text: Rc::new(RefCell::new("replacement".to_string())),
+    });
+    if let Some(PaneKind::Editor(pane)) = app.panes.get_mut(&id) {
+        pane.preview_mode = true;
+        pane.selection = Some(crate::pane::Selection {
+            anchor: (0, 0),
+            end: (0, 5),
+        });
+    }
+
+    app.handle_paste();
+
+    if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
+        assert_eq!(pane.editor.buffer.line(0), Some("hello world"));
+        let selection = pane.selection.as_ref().expect("preview selection should remain");
+        assert_eq!(selection.anchor, (0, 0));
+        assert_eq!(selection.end, (0, 5));
+        assert!(!pane.editor.is_modified());
+    } else {
+        panic!("expected editor pane");
     }
 }
 

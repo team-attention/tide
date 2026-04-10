@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::super::{Action, AreaSlot, Direction, GlobalAction, Router};
+    use super::super::{Action, Direction, GlobalAction, Router};
     use crate::tide_core::{InputEvent, Key, Modifiers, MouseButton, Rect, Size, Vec2};
 
     /// Helper: creates a set of two side-by-side pane rects.
