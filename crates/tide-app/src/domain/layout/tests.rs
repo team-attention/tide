@@ -429,7 +429,7 @@ mod tests {
         // Layout: Root H-split at x=400, right child V-split at y=300
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
         let pane2 = layout.split(pane1, SplitDirection::Horizontal); // left/right
-        let pane3 = layout.split(pane2, SplitDirection::Vertical); // top-right/bottom-right
+        let _pane3 = layout.split(pane2, SplitDirection::Vertical); // top-right/bottom-right
 
         // Click at T-junction (400, 300), then drag right to (450, 300)
         layout.begin_drag(Vec2::new(400.0, 300.0), WINDOW);

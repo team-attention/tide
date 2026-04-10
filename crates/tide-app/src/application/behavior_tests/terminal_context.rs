@@ -65,7 +65,7 @@ fn new_editor_inherits_associated_terminal_from_focused_terminal() {
 #[test]
 fn new_editor_inherits_associated_terminal_from_focused_editor() {
     // UC-1 BR-1: Inheriting context via chain (editor → its terminal)
-    let (mut app, terminal_id, editor_id) = app_with_terminal_and_editor();
+    let (app, terminal_id, editor_id) = app_with_terminal_and_editor();
     assert_eq!(app.focus.focused, Some(editor_id));
 
     // The editor's associated terminal should be terminal_id

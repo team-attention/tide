@@ -432,7 +432,7 @@ fn dock_tab_next_opens_dock_if_closed() {
 fn split_vertical_in_stage_splits_stage_layout() {
     // UC-5 BR-1: SplitVertical/SplitHorizontal target the current FocusArea.
     // When in Stage they split Stage layout.
-    let (mut app, p1) = app_with_editor();
+    let (mut app, _p1) = app_with_editor();
     app.focus.focus_area = FocusArea::Stage;
 
     let pane_count_before = app.layout.pane_ids().len();
