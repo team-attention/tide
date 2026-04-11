@@ -308,18 +308,26 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                 }
             }
             _ => {
-                // Unzoom Stage if stacked
-                if self.focus.zoomed_pane.is_some() {
-                    self.focus.zoomed_pane = None;
-                    self.cache.pane_generations.clear();
+                let keep_stacked_tab_group = self.focus.zoomed_pane.is_some()
+                    && self.layout.tab_group_containing(focused).is_some();
+
+                if keep_stacked_tab_group {
+                    let cwd = self.focused_terminal_cwd();
+                    let new_id = self.layout.alloc_id();
+                    if self.layout.add_tab(focused, new_id) {
+                        self.create_terminal_pane(new_id, cwd);
+                        self.focus_terminal(new_id);
+                        return;
+                    }
                 }
-                // Stage: create Terminal directly
+
+                // Stage: create Terminal directly. If Stage is stacked, keep zoom active so
+                // the new pane appears in the stacked flat tab bar instead of unstacking.
                 let cwd = self.focused_terminal_cwd();
                 let new_id = self.layout.split(focused, direction);
                 self.create_terminal_pane(new_id, cwd);
-                self.focus.focused = Some(new_id);
-                self.router.set_focused(new_id);
-                self.focus.focus_area = crate::state::FocusArea::Stage;
+                self.focus_terminal(new_id);
+                return;
             }
         }
         self.cache.invalidate_chrome();
