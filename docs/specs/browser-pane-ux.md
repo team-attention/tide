@@ -22,7 +22,7 @@ Browser Pane click behavior is still split. `crates/tide-app/src/adapter/inward/
 
 `crates/tide-app/src/domain/pane/browser.rs` also moved Browser URL-sync logic into `sync_committed_url_from_navigation()`, but the Browser Pane `generation` bump is still split across helper methods instead of being centralized around the polled Browser Pane state transition. That means Browser Pane dirty tracking is harder to reason about and can drift when loading or back/forward state changes without a URL change.
 
-The Browser Pane target is also broader than a plain embedded surface. External browser-workspace tool documentation describes browser surfaces with navigation, `focus-webview`, history/session handling, DOM interaction, and browser automation. Tide does not need to match that full capability set in this pass, but it does need Browser Pane interaction and fallback rules that feel like a first-class browser context instead of a passive `WKWebView`.
+The Browser Pane target is also broader than a plain embedded surface. External browser-workspace tools describe browser surfaces with navigation, `focus-webview`, history/session handling, DOM interaction, and browser automation. Tide does not need to match that full capability set in this pass, but it does need Browser Pane interaction and fallback rules that feel like a first-class browser context instead of a passive `WKWebView`.
 
 ### To-Be
 
@@ -42,7 +42,7 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 ### Approach
 
 1. Add this spec so Browser Pane UX rules are explicit and traceable.
-2. Extend the Browser Pane research notes so later test and code changes are grounded in current Tide evidence and the broader browser-workspace target.
+2. Extend the Browser Pane research notes so later test and code changes are grounded in current Tide evidence and the broader browser-surface target.
 3. Add Browser Pane behavior tests for each Browser Pane state, Browser URL synchronization rule, and Browser Pane chrome action before implementation.
 4. Consolidate Browser Pane first-action routing across Browser Pane state, text routing, keyboard handling, IME routing, pane-click handling, and `WKWebView` first-responder sync.
 5. Make committed Browser URL updates and visible Browser URL-bar updates explicit so Browser Pane navigation cannot leave stale Browser URL chrome behind.

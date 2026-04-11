@@ -1,5 +1,6 @@
 // Spec: docs/specs/stage-tab-groups.md
 use crate::adapter::inward::mouse_adapter::handle_mouse_down;
+use crate::adapter::inward::scroll_adapter::handle_scroll;
 use crate::header::{HeaderHitAction, HeaderHitZone};
 use crate::pane::browser::BrowserPane;
 use crate::pane::editor::EditorPane;
@@ -9,6 +10,7 @@ use crate::state::{FocusArea, ViewMode};
 use crate::tide_core::{DropZone, LayoutEngine, MouseButton, Rect, Vec2};
 use crate::tide_platform::WindowProxy;
 use crate::App;
+use crate::PaneLifecyclePort;
 use crate::WorkspaceNavPort;
 
 fn test_app() -> App {
@@ -256,6 +258,60 @@ fn focus_moves_to_adjacent_tab_after_close() {
     }
     // If tg is None because single-tab collapsed to Leaf, that's also valid
     // but only if exactly one pane remains
+}
+
+#[test]
+fn closing_non_active_stage_tab_keeps_the_current_active_tab_focused() {
+    // UC-2 BR-3: Closing a non-active Stage tab keeps the current active tab focused.
+    let (mut app, p1) = app_with_single_pane();
+
+    let p2 = app.layout.alloc_id();
+    app.panes.insert(p2, PaneKind::Launcher(p2));
+    app.layout.add_tab(p1, p2);
+
+    let p3 = app.layout.alloc_id();
+    app.panes.insert(p3, PaneKind::Launcher(p3));
+    app.layout.add_tab(p2, p3);
+
+    let p4 = app.layout.alloc_id();
+    app.panes.insert(p4, PaneKind::Launcher(p4));
+    app.layout.add_tab(p3, p4);
+
+    app.focus_terminal(p3);
+
+    PaneLifecyclePort::close_specific_pane(&mut app, p2);
+
+    let tg = app.layout.tab_group_containing(p1).unwrap();
+    assert_eq!(app.focus.focused, Some(p3));
+    assert_eq!(tg.active_pane(), p3);
+    assert!(!tg.contains(p2));
+}
+
+#[test]
+fn closing_active_stage_tab_prefers_the_right_adjacent_tab() {
+    // UC-2 BR-3: Closing the active Stage tab prefers the tab to the right before falling back left.
+    let (mut app, p1) = app_with_single_pane();
+
+    let p2 = app.layout.alloc_id();
+    app.panes.insert(p2, PaneKind::Launcher(p2));
+    app.layout.add_tab(p1, p2);
+
+    let p3 = app.layout.alloc_id();
+    app.panes.insert(p3, PaneKind::Launcher(p3));
+    app.layout.add_tab(p2, p3);
+
+    let p4 = app.layout.alloc_id();
+    app.panes.insert(p4, PaneKind::Launcher(p4));
+    app.layout.add_tab(p3, p4);
+
+    app.focus_terminal(p3);
+
+    PaneLifecyclePort::close_specific_pane(&mut app, p3);
+
+    let tg = app.layout.tab_group_containing(p1).unwrap();
+    assert_eq!(app.focus.focused, Some(p4));
+    assert_eq!(tg.active_pane(), p4);
+    assert!(!tg.contains(p3));
 }
 
 #[test]
@@ -595,6 +651,47 @@ fn stage_tab_click_registers_switch_hit_zone() {
 
     let tg = app.layout.tab_group_containing(p1).unwrap();
     assert_eq!(tg.active_pane(), p1, "active tab should be the clicked tab");
+}
+
+#[test]
+fn stacked_stage_tab_bar_scroll_updates_offset_under_cursor() {
+    // UC-4 BR-5: Overflowed Stage tab bars keep horizontal scroll and update the owning Pane's tab-scroll offset under the cursor.
+    let (mut app, p1) = app_with_single_pane();
+    let mut active = p1;
+    for _ in 0..12 {
+        let next = app.layout.alloc_id();
+        app.panes.insert(next, PaneKind::Launcher(next));
+        app.layout.add_tab(active, next);
+        active = next;
+    }
+
+    app.focus.focused = Some(active);
+    app.focus.stage_focused = Some(active);
+    app.focus.focus_area = FocusArea::Stage;
+    app.focus.zoomed_pane = Some(active);
+    crate::LayoutPort::compute_layout(&mut app);
+
+    let pane_rect = app
+        .visual_pane_rects
+        .iter()
+        .find(|(id, _)| *id == active)
+        .map(|(_, rect)| *rect)
+        .expect("zoomed Stage pane should have a visible rect");
+    assert!(
+        crate::AppCorePort::shared_tab_max_scroll(&app, active).unwrap_or(0.0) > 0.0,
+        "the stacked Stage tab bar should actually overflow before the scroll rule is exercised"
+    );
+    app.window.last_cursor_pos = Vec2::new(pane_rect.x + 40.0, pane_rect.y + 8.0);
+
+    handle_scroll(&mut app, 0.0, -3.0);
+
+    let offset = app
+        .interaction
+        .tab_scroll_offset
+        .get(&active)
+        .copied()
+        .unwrap_or(0.0);
+    assert!(offset > 0.0, "header scroll should advance the stacked Stage tab bar");
 }
 
 // --- UC-5: Drop Pane into Stage TabGroup (Center Drop Zone) ---

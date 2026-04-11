@@ -10,10 +10,11 @@
 - Session persistence saves workspace layout and pane wiring, but not coworking artifacts.
 - `Browser` panes track URL-bar state and render-mode HTML, but arbitrary page selection capture is not yet part of the gateway contract.
 - Tide's vision mentions ambient context, but V1 should avoid automatic prompt injection in favor of explicit artifact pull.
-- The explicit add-comment badge is currently rendered from shared header code without `Dock` versus `Stage` context, so the affordance can appear in `Stage` even though delivery is bound to a Pane's `Associated Terminal`.
+- The explicit add-comment badge is currently rendered from shared header code without enforcing the `Dock` ownership boundary, so the affordance can appear in `Stage` even though coworking delivery is bound to a `Dock` group's paired `Terminal`.
+- The add-comment affordance is also currently disconnected from the paired-agent delivery contract, so a Pane can show `comment` even when the `Dock` group's paired `Terminal` does not currently have a gateway-connected coding agent.
 - Immediate `Context Artifact` delivery is currently event-only. The owner-scoped `context-artifact-delivered` notification contains metadata such as `artifact_id`, but it does not inject artifact text into the paired `Terminal` or place the artifact body directly into the event payload.
 - The add-comment flow already captures `Editor` Pane selection through `capture_context_comment_snapshot()`, but the spec does not yet lock `Markdown Pane` behavior in `LivePreviewMode`, where the visible selection content can differ from the raw Markdown buffer.
-- In narrow `Dock` tab bars, the add-comment affordance can lose horizontal priority to other `Markdown Pane` badges such as the `plain` / `live` mode toggle.
+- In narrow `Dock` tab bars, add-comment visibility for an active `Markdown Pane` still depends on the shared active-tab width clamp. After fixing badge order, the wider `plain` label in `LivePreviewMode` can still push `comment` out of view even though the shorter `live` label fits beside it.
 - Formatted paired-agent delivery text currently identifies the source as `{pane_kind} pane {pane_id}`, which leaks Tide-internal pane identity instead of a human-readable `Source Label`.
 - Live paired-`Terminal` delivery currently appends `Enter` after the injected artifact text, which immediately submits the paired agent turn instead of leaving the pasted artifact editable in place.
 
@@ -27,11 +28,11 @@
 - All artifact create/read/send operations are authorized by the source Pane's `Associated Terminal`.
 - `Browser` selection capture works for both normal navigation panes and render-mode `Browser` panes.
 - Tide does not auto-inject ambient context in V1; agents pull context explicitly when they need it.
-- The explicit add-comment affordance appears only for `Dock` panes whose paired agent is currently gateway-connected.
-- A `Dock` `Markdown Pane` in `LivePreviewMode` can open the `Context Comment Composer` without leaving authoring mode.
+- The explicit add-comment affordance appears only for focused `Dock` Panes that resolve the `Dock` group's paired `Terminal` and currently have a gateway-connected coding agent.
+- A focused `Dock` `Markdown Pane` in `LivePreviewMode` can open the `Context Comment Composer` without leaving authoring mode.
 - When the source `Pane` is a `Markdown Pane` in `LivePreviewMode`, the captured selection content matches the visible selection text shown to the human.
 - The `Context Comment Composer` accepts multiline comments without sacrificing the existing explicit submit flow.
-- In narrow `Dock` tab bars, the add-comment affordance stays visible ahead of lower-priority `Markdown Pane` mode badges.
+- In narrow `Dock` tab bars, the active `Markdown Pane` keeps its visible `plain` / `live` mode badge before the add-comment affordance drops in, and the shared active-tab width budget can stretch with the available row width enough to keep both badges visible in `LivePreviewMode`.
 - `Context Artifact` metadata and paired-agent delivery text use a human-readable `Source Label` instead of Tide-internal pane numbering.
 - Live paired-`Terminal` delivery pastes the formatted artifact text without auto-submitting the paired agent turn.
 
@@ -42,8 +43,8 @@
 3. Extend the Agent Gateway and MCP bridge with explicit artifact create, list, read, and send operations.
 4. Capture selection data from `Terminal`, `Editor`, `Diff`, and `Browser` panes, including browser-page selection from normal navigation mode.
 5. Enforce `Associated Terminal` authorization on every artifact flow so delivery stays bound to the source Pane's paired agent.
-6. Keep the explicit add-comment badge `Dock`-scoped and tied to paired-agent availability so `Stage` panes and disconnected agent sessions do not advertise a paired-agent action outside the `Dock` context.
-7. Prioritize the add-comment affordance ahead of lower-priority `Markdown Pane` mode badges when a narrow `Dock` tab bar cannot show every badge at once.
+6. Keep the explicit add-comment badge tied to focused `Dock` Pane context, the `Dock` group's paired `Terminal`, and paired-agent connectivity so the affordance matches the actual delivery target.
+7. Keep the add-comment affordance available when space allows, preserve the active `Markdown Pane` mode badge before the add-comment affordance drops in a narrow `Dock` tab bar, and let the shared active-tab budget stretch with the available row width so `LivePreviewMode` can still show both badges.
 8. Capture a human-readable `Source Label` with each `Context Artifact` so paired-agent delivery text can prefer file paths and other user-facing source descriptions over Tide-internal pane numbering.
 9. Format delivery text once per artifact and write it into the paired `Terminal` using bracketed-paste safety rules without appending an automatic submit keystroke.
 10. Include artifact body fields in the owner-scoped delivery event so explicit gateway subscribers can react without a separate immediate read.
@@ -96,8 +97,8 @@
 ### UC-3: AddCommentCreatesContextArtifact
 
 - **Actor**: Human
-- **Trigger**: The human opens the add-comment flow from a `Dock` Pane and submits a comment
-- **Precondition**: The source `Dock` Pane has a gateway-connected paired agent
+- **Trigger**: The human opens the add-comment flow from a focused Pane and submits a comment
+- **Precondition**: The source Pane is in `Dock`, resolves the `Dock` group's paired `Terminal`, and that paired `Terminal` has a gateway-connected coding agent
 - **Flow**:
   1. Tide captures the current selection when the source Pane has one, or falls back to an empty selection preview when it does not
   2. Tide combines the captured content, comment, and source `PaneId`
@@ -108,13 +109,13 @@
 - **Business Rules**:
   - BR-5: The artifact stores source `PaneId`, optional selection data, and comment text
   - BR-6: The artifact is Workspace-local and session-local in V1
-  - BR-17: The explicit add-comment affordance appears only for `Dock` panes with a gateway-connected paired agent
+  - BR-17: The explicit add-comment affordance appears only for focused `Dock` Panes whose paired `Terminal` is gateway-connected to a coding agent
   - BR-18: The explicit add-comment affordance can remain visible and open the `Context Comment Composer` even when no text selection is active
-  - BR-21: A `Dock` `Markdown Pane` in `LivePreviewMode` can open the `Context Comment Composer` while remaining in authoring mode
+  - BR-21: A focused `Dock` `Markdown Pane` in `LivePreviewMode` can open the `Context Comment Composer` while remaining in authoring mode
   - BR-22: `Markdown Pane` artifact capture in `LivePreviewMode` uses the visible selected text rather than hidden Markdown syntax markers
   - BR-23: The `Context Comment Composer` accepts multiline comment text from `Shift+Enter` and pasted newline content while keeping plain `Enter` as the submit gesture
   - BR-24: The `Context Comment Composer` keeps the active caret visible inside the composer input viewport as multiline text grows
-  - BR-25: When a narrow `Dock` tab bar cannot show every badge for an active `Markdown Pane`, the add-comment affordance stays visible ahead of the `plain` / `live` mode badge
+  - BR-25: The shared active-tab width budget stretches with the available row width to keep add-comment visible beside the `plain` / `live` mode badge for an active `Markdown Pane`; if width collapses further, the `plain` / `live` mode badge stays visible ahead of the add-comment affordance
 
 ### UC-4: ArtifactReadAndList
 
@@ -211,15 +212,15 @@
 | UC-2 | BR-3, BR-4 | `capture_selection_supports_navigation_and_render_browser_panes` |
 | UC-3 | BR-5, BR-6 | `add_comment_creates_workspace_local_contextartifact` |
 | UC-3 | BR-17 | `dock_selection_with_gateway_connected_paired_agent_opens_context_comment_composer` |
-| UC-3 | BR-17 | `stage_selection_does_not_open_context_comment_composer` |
-| UC-3 | BR-17 | `dock_selection_without_gateway_connected_paired_agent_does_not_open_context_comment_composer` |
-| UC-3 | BR-18 | `dock_pane_with_gateway_connected_paired_agent_opens_context_comment_composer_without_selection` |
-| UC-3 | BR-21 | `dock_live_preview_selection_opens_context_comment_composer` |
+| UC-3 | BR-17 | `stage_selection_with_gateway_connected_paired_agent_opens_context_comment_composer` |
+| UC-3 | BR-17 | `dock_selection_without_detected_agent_still_opens_context_comment_composer` |
+| UC-3 | BR-18 | `dock_pane_with_associated_terminal_opens_context_comment_composer_without_selection` |
+| UC-3 | BR-21 | `live_preview_context_artifact_capture_uses_visible_selected_text` |
 | UC-3 | BR-22 | `live_preview_context_artifact_capture_uses_visible_selected_text` |
 | UC-3 | BR-23 | `shift_enter_in_context_comment_composer_inserts_newline` |
 | UC-3 | BR-23 | `pasted_newlines_are_preserved_in_context_comment_composer` |
 | UC-3 | BR-24 | `context_comment_composer_keeps_caret_visible_when_comment_wraps` |
-| UC-3 | BR-25 | `narrow_markdown_tab_prioritizes_add_comment_badge_visibility` |
+| UC-3 | BR-25 | `active_markdown_live_preview_keeps_add_comment_visible_when_shared_tab_budget_allows_both_badges` |
 | UC-4 | BR-7, BR-8 | `contextartifact_list_and_read_are_workspace_scoped` |
 | UC-5 | BR-9, BR-10 | `send_contextartifact_targets_only_the_paired_agent` |
 | UC-5 | BR-19 | `submit_context_comment_composer_delivery_event_includes_artifact_body` |

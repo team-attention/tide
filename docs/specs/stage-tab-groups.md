@@ -12,6 +12,7 @@ Key current behaviors:
 3. **Stage tab drag does not start from the tab bar**: `HeaderHitAction::DockTab` switches focus and enters `PaneDragState::PendingDrag`, but `HeaderHitAction::StageTab` only focuses the target `Pane` and invalidates chrome (`crates/tide-app/src/adapter/inward/click_adapter/header.rs`).
 4. **Self-extraction is Dock-only today**: `compute_tree_drop_target()` only allows directional self-drop when the source `Pane` is in a Dock `TabGroup` with multiple tabs, so a Stage tab cannot be pulled out into a new split (`crates/tide-app/src/adapter/inward/drag_drop_adapter/mod.rs`).
 5. **Cross-area protection is only complete in one direction**: `click_adapter/pane.rs` already rejects Dock-to-Stage drops, but there is no matching Stage-to-Dock rejection before the Stage layout mutation path runs (`crates/tide-app/src/adapter/inward/click_adapter/pane.rs` and `crates/tide-app/src/adapter/inward/drag_drop_adapter/mod.rs`).
+6. **Stage close focus still falls back to layout-neighbor logic**: `force_close_editor_panel_tab()` currently asks `right_neighbor_pane()` for the next focus target before removal, which ignores `TabGroup` adjacency and can skip the remaining active tab contract that `TabGroup::remove_tab()` already defines (`crates/tide-app/src/application/services/pane_create_service/mod.rs` and `crates/tide-app/src/domain/layout/tab_group.rs`).
 
 ### To-Be
 
@@ -22,6 +23,7 @@ Stage keeps the current `LeafGroup(TabGroup)` behavior and closes the drag-and-d
 3. **Stage tabs can move into another Stage `TabGroup`**: dropping a Stage tab onto another Stage `Pane` center zone merges it into that target `TabGroup`.
 4. **Cross-area movement stays blocked**: Dock-to-Stage blocking remains in place, and Stage-to-Dock drops are rejected so Stage and Dock stay separate drag regions.
 5. **Existing tab behavior remains**: click-to-switch, close tab, and zoomed flat Stage tab bars continue to work with the new drag rules.
+6. **Stage close focus is deterministic**: closing a non-active Stage tab keeps the current active tab focused, while closing the active Stage tab prefers the tab to the right and falls back to the tab to the left when the active tab was already last.
 
 ### Approach
 
@@ -30,6 +32,7 @@ Stage keeps the current `LeafGroup(TabGroup)` behavior and closes the drag-and-d
 3. **Keep self-drop previews local to the source rect**: directional self-drop preview rectangles must be computed from the dragged Stage pane's current visual rect, not from the entire Stage pane area.
 4. **Keep Stage-only center merges and reject Stage-to-Dock drops**: preserve the existing Stage `DropZone::Center` merge path for Stage sources while adding the missing guard that keeps Stage panes out of Dock targets.
 5. **Leave close, cycle, and zoom behavior intact**: the change only expands drag initiation and drop routing around existing Stage `TabGroup` operations.
+6. **Route Stage close focus through `TabGroup` adjacency first**: when a focused Stage tab closes, resolve the next focus target from the containing `TabGroup` before falling back to the surrounding `SplitLayout`.
 
 ## Bounded Contexts
 
@@ -83,7 +86,7 @@ Stage keeps the current `LeafGroup(TabGroup)` behavior and closes the drag-and-d
 **Business Rules**:
 - **BR-1 (LeafGroup-to-Leaf collapse)**: When a TabGroup goes from 2 tabs to 1, the `LeafGroup` node MUST be replaced by a `Leaf` node containing the remaining PaneId.
 - **BR-2 (Empty TabGroup removal)**: When the last tab is removed from a TabGroup, the node is removed from SplitLayout (same as removing a Leaf).
-- **BR-3 (Focus after close)**: Focus moves to the tab that was adjacent to the closed tab (prefer the tab to the right; if closed tab was last, focus the new last tab). This matches `TabGroup::remove_tab`'s active index adjustment.
+- **BR-3 (Focus after close)**: Closing a non-active tab preserves the current active tab. Closing the active tab moves focus to the adjacent tab, preferring the tab to the right; if the closed tab was last, focus the new last tab. This matches `TabGroup::remove_tab`'s active index adjustment.
 - **BR-4 (PaneId sync)**: After removal, no PaneId in SplitLayout references a pane not in `App.panes`, and vice versa.
 - **BR-5 (Last pane in Stage)**: If closing the tab results in an empty Stage, a Launcher pane is created (same as current close-last-pane behavior).
 
@@ -144,7 +147,7 @@ Stage keeps the current `LeafGroup(TabGroup)` behavior and closes the drag-and-d
 - **BR-2 (Unified tab bar component)**: Stage and Dock tab bars use the same rendering logic. Extract a shared `render_tab_bar` function from the existing `render_dock_tab_bar`.
 - **BR-3 (Tab close hit zone)**: Each tab's close button registers a `HeaderHitAction` for closing that specific tab (not the entire pane).
 - **BR-4 (Tab click hit zone)**: Clicking a tab registers a `HeaderHitAction` to switch to that tab (`StageTab(pane_id)` or a new variant).
-- **BR-5 (Overflow handling)**: When tabs exceed the available width, tabs are truncated with ellipsis. Scroll or overflow behavior can be added later.
+- **BR-5 (Overflow handling)**: When tabs exceed the available width, the Stage tab bar keeps horizontal scroll and auto-fits the active tab back into view so newly focused tabs are never stranded offscreen.
 
 ### UC-5: Drop Pane into Stage TabGroup (Center Drop Zone)
 
@@ -207,6 +210,8 @@ Stage keeps the current `LeafGroup(TabGroup)` behavior and closes the drag-and-d
 | UC-2 | BR-1 | `closing_tab_in_two_tab_group_collapses_to_leaf()` |
 | UC-2 | BR-2 | `closing_last_tab_in_group_removes_node_from_layout()` |
 | UC-2 | BR-3 | `focus_moves_to_adjacent_tab_after_close()` |
+| UC-2 | BR-3 | `closing_non_active_stage_tab_keeps_the_current_active_tab_focused()` |
+| UC-2 | BR-3 | `closing_active_stage_tab_prefers_the_right_adjacent_tab()` |
 | UC-2 | BR-4 | `pane_id_sync_holds_after_stage_tab_close()` |
 | UC-2 | BR-5 | `closing_last_stage_pane_in_tab_group_shows_launcher()` |
 | UC-3 | BR-1 | `only_active_tab_renders_in_stage_tab_group()` |
@@ -220,6 +225,7 @@ Stage keeps the current `LeafGroup(TabGroup)` behavior and closes the drag-and-d
 | UC-4 | BR-1 | `no_tab_bar_for_single_tab_stage_group()` |
 | UC-4 | BR-3 | `stage_tab_close_button_registers_hit_zone()` |
 | UC-4 | BR-4 | `stage_tab_click_registers_switch_hit_zone()` |
+| UC-4 | BR-5 | `stacked_stage_tab_bar_scroll_updates_offset_under_cursor()` |
 | UC-5 | BR-1 | `center_drop_on_stage_pane_merges_as_tab()` |
 | UC-5 | BR-2 | `stage_pane_drop_target_never_enters_dock()` |
 | UC-5 | BR-3 | `self_drop_center_in_same_tab_group_is_noop()` |

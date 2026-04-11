@@ -388,6 +388,10 @@ fn interaction_state_new_defaults() {
     assert!(is.scrollbar_dragging.is_none());
     assert!(is.hover_target.is_none());
     assert!(is.scroll_accumulator.is_empty());
+    assert!(is.tab_scroll_offset.is_empty());
+    assert!(is.tab_scroll_last_at.is_empty());
+    assert!(is.tab_scroll_last_direction.is_empty());
+    assert!(is.tab_manual_scroll.is_empty());
 }
 
 // ── FileTreeModel ──

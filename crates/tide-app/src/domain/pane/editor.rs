@@ -18,7 +18,7 @@ use crate::tide_editor::markdown::{
 };
 
 use crate::pane::Selection;
-use crate::theme::SCROLLBAR_WIDTH;
+use crate::theme::{editor_live_preview_vertical_padding, SCROLLBAR_WIDTH};
 
 /// Width of the gutter (line numbers) in cells.
 pub(crate) const GUTTER_WIDTH_CELLS: usize = 6;
@@ -778,6 +778,33 @@ impl EditorPane {
         self.split_preview_rects(rect, cell_size)
             .map(|(editor_rect, _)| editor_rect)
             .unwrap_or(rect)
+    }
+
+    /// Shared content rect for the Pane's current rendering mode.
+    /// LivePreviewMode reserves symmetric vertical breathing room while keeping
+    /// the same coordinate space for rendering and hit-testing.
+    pub(crate) fn content_rect(
+        &self,
+        pane_rect: Rect,
+        content_top_offset: f32,
+        cell_size: Size,
+    ) -> Rect {
+        let rect = crate::pane::pane_content_rect(pane_rect, content_top_offset);
+        if self.preview_mode || !self.live_preview {
+            return rect;
+        }
+
+        let vertical_padding = editor_live_preview_vertical_padding(cell_size.height);
+        if vertical_padding <= 0.0 {
+            return rect;
+        }
+
+        Rect::new(
+            rect.x,
+            rect.y + vertical_padding,
+            rect.width,
+            (rect.height - 2.0 * vertical_padding).max(1.0),
+        )
     }
 
     /// Preview rect for split preview, if visible.

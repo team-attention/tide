@@ -176,7 +176,8 @@ pub(super) fn render_pane_chrome(
             if agent_needs_input {
                 // UC-5 BR-6,7: NeedsInput — orange accent at bottom of tab header
                 let t = app.timing.last_frame.elapsed().as_secs_f64();
-                let opacity = 0.45_f32 + 0.25 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
+                let opacity =
+                    0.45_f32 + 0.25 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
                 let accent = crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity);
                 renderer.draw_chrome_rect(
                     Rect::new(rect.x, rect.y + TAB_BAR_HEIGHT - 2.0, rect.width, 2.0),
@@ -277,6 +278,7 @@ pub(super) fn render_pane_chrome(
             .get(&id)
             .copied()
             .unwrap_or(0.0);
+        let auto_fit_active_tab = !app.interaction.tab_manual_scroll.contains(&id);
 
         if is_dock_zoomed {
             // Dock zoomed: show flat tab bar of all dock tabs (like stage stacked)
@@ -293,6 +295,7 @@ pub(super) fn render_pane_chrome(
                     &app.gateway.detected_agents,
                     blink_time,
                     scroll_off,
+                    auto_fit_active_tab,
                 );
                 // Remap StageTab actions to DockTab for dock panes
                 for mut z in tab_zones {
@@ -309,9 +312,8 @@ pub(super) fn render_pane_chrome(
                     .get(&id)
                     .and_then(|a| a.status)
                     .or_else(|| {
-                        app.pane_agent_needs_input_attention(id).then_some(
-                            crate::state::gateway_status::AgentStatus::NeedsInput,
-                        )
+                        app.pane_agent_needs_input_attention(id)
+                            .then_some(crate::state::gateway_status::AgentStatus::NeedsInput)
                     });
                 let zones = header::render_pane_header_inner(
                     id,
@@ -344,6 +346,7 @@ pub(super) fn render_pane_chrome(
                 &app.gateway.detected_agents,
                 blink_time,
                 scroll_off,
+                auto_fit_active_tab,
             );
             all_hit_zones.extend(tab_zones);
         } else if has_stage_tab_bar {
@@ -360,6 +363,7 @@ pub(super) fn render_pane_chrome(
                 &app.gateway.detected_agents,
                 blink_time,
                 scroll_off,
+                auto_fit_active_tab,
             );
             all_hit_zones.extend(tab_zones);
         } else if has_stage_tab_group {
@@ -377,6 +381,7 @@ pub(super) fn render_pane_chrome(
                 &app.gateway.detected_agents,
                 blink_time,
                 scroll_off,
+                auto_fit_active_tab,
             );
             all_hit_zones.extend(tab_zones);
         } else {
@@ -387,9 +392,8 @@ pub(super) fn render_pane_chrome(
                 .get(&id)
                 .and_then(|a| a.status)
                 .or_else(|| {
-                    app.pane_agent_needs_input_attention(id).then_some(
-                        crate::state::gateway_status::AgentStatus::NeedsInput,
-                    )
+                    app.pane_agent_needs_input_attention(id)
+                        .then_some(crate::state::gateway_status::AgentStatus::NeedsInput)
                 });
             let zones = header::render_pane_header_inner(
                 id,
@@ -559,7 +563,12 @@ fn render_browser_nav_bar(
         let url_rect = Rect::new(cx, nav_y + 2.0, url_w, nav_h - 4.0);
         if bp.url_input_focused {
             // Draw focus border (1px accent outline)
-            let border_rect = Rect::new(url_rect.x - 1.0, url_rect.y - 1.0, url_rect.width + 2.0, url_rect.height + 2.0);
+            let border_rect = Rect::new(
+                url_rect.x - 1.0,
+                url_rect.y - 1.0,
+                url_rect.width + 2.0,
+                url_rect.height + 2.0,
+            );
             renderer.draw_chrome_rounded_rect(border_rect, p.cursor_accent, 4.0);
             renderer.draw_chrome_rounded_rect(url_rect, p.file_tree_bg, 3.0);
         } else {

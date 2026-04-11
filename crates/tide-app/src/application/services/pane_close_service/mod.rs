@@ -7,6 +7,30 @@ use crate::LayoutPort;
 use crate::ActionPort;
 
 impl App {
+    pub(super) fn next_stage_focus_after_close(
+        &self,
+        pane_id: crate::tide_core::PaneId,
+    ) -> Option<crate::tide_core::PaneId> {
+        if let Some(tg) = self.layout.tab_group_containing(pane_id) {
+            if let Some(idx) = tg.tabs.iter().position(|&id| id == pane_id) {
+                if idx + 1 < tg.tabs.len() {
+                    return Some(tg.tabs[idx + 1]);
+                }
+                if idx > 0 {
+                    return Some(tg.tabs[idx - 1]);
+                }
+            }
+        }
+
+        self.layout.right_neighbor_pane(pane_id).or_else(|| {
+            self.layout
+                .pane_ids()
+                .iter()
+                .find(|&&id| id != pane_id)
+                .copied()
+        })
+    }
+
     /// Close a pane unconditionally (no dirty check, no branch cleanup check).
     /// Used by branch cleanup confirm/keep methods after cleanup is resolved.
     pub(super) fn close_pane_final(&mut self, pane_id: crate::tide_core::PaneId) {
@@ -16,6 +40,9 @@ impl App {
             self.interaction.drop_preview_start = None;
         }
         self.interaction.tab_scroll_offset.remove(&pane_id);
+        self.interaction.tab_scroll_last_at.remove(&pane_id);
+        self.interaction.tab_scroll_last_direction.remove(&pane_id);
+        self.interaction.tab_manual_scroll.remove(&pane_id);
         let remaining = self.layout.all_pane_ids();
         if remaining.len() <= 1 {
             // If other workspaces exist, close this one instead of exiting
@@ -39,12 +66,7 @@ impl App {
 
         // Determine next focus target BEFORE removal so we can find a
         // layout neighbor while the tree is still intact.
-        let next_focus = self.layout.right_neighbor_pane(pane_id)
-            .or_else(|| {
-                self.layout.all_pane_ids().iter()
-                    .find(|&&id| id != pane_id)
-                    .copied()
-            });
+        let next_focus = self.next_stage_focus_after_close(pane_id);
 
         // Retain terminal context before removing (soft delete)
         self.retain_terminal_context(pane_id);

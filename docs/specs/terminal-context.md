@@ -10,6 +10,7 @@
 - This causes two bugs:
   1. Focusing an Editor opened from a different directory resets the file tree to the first terminal's cwd
   2. Opening a file while an Editor is focused creates a new split instead of adding to the existing non-terminal TabGroup
+  3. Opening a file from a non-terminal Pane whose `Associated Terminal` only exists in `retained_contexts` can still try to target that closed Terminal's Dock, leaving the new Pane outside both `SplitLayout` and any live dock_layout
 
 ### To-Be
 
@@ -18,6 +19,7 @@
 - TabGroups are **kind-constrained**: a terminal TabGroup only holds terminals; non-terminal TabGroups hold Editor/Browser/Diff/Launcher
 - File tree root follows the focused Pane's associated terminal cwd
 - Opening a file routes to the correct non-terminal TabGroup, not the focused terminal's TabGroup
+- Opening a file only targets Dock when the chosen `Associated Terminal` is a live `Terminal` Pane; retained context still provides cwd and association, but not a Dock target
 - When a terminal is closed (soft delete), its cwd data is retained so associated Panes keep their context
 - When a terminal moves to another Workspace, its associated Panes move together
 
@@ -28,8 +30,9 @@
 3. Enforce TabGroup kind constraint: reject adding a terminal to a non-terminal TabGroup and vice versa
 4. Update `focused_terminal_cwd()` to resolve via `associated_terminal` chain
 5. Update `open_editor_pane()` to find the correct non-terminal TabGroup
-6. Update `close_pane()` to soft-delete terminals into `retained_contexts`
-7. Update `move_pane_to_workspace()` to move associated Panes together
+6. Validate Dock targets before adding a new non-terminal Pane: only live `Terminal` PaneIds may receive Dock inserts
+7. Update `close_pane()` to soft-delete terminals into `retained_contexts`
+8. Update `move_pane_to_workspace()` to move associated Panes together
 
 ## Bounded Contexts
 
@@ -88,6 +91,7 @@
   - BR-7: Files never open in a terminal TabGroup
   - BR-8: If a non-terminal TabGroup exists, reuse it (no new split)
   - BR-9: If multiple non-terminal TabGroups exist, use the most recently focused one
+  - BR-10: If the creation context resolves to retained terminal context instead of a live `Terminal` Pane, the new non-terminal Pane still inherits that `Associated Terminal` but opens in the current non-terminal group instead of a nonexistent Dock
 
 ### UC-4: TabGroupKindConstraint
 
@@ -152,6 +156,7 @@
 | UC-3 | BR-7 | `open_file_never_adds_to_terminal_tab_group` |
 | UC-3 | BR-8 | `open_file_reuses_existing_non_terminal_tab_group` |
 | UC-3 | BR-9 | `open_file_uses_most_recently_focused_non_terminal_tab_group` |
+| UC-3 | BR-10 | `opening_file_from_retained_terminal_context_reuses_the_visible_non_terminal_group` |
 | UC-4 | BR-10 | `adding_editor_to_terminal_tab_group_is_rejected` |
 | UC-4 | BR-11 | `adding_terminal_to_editor_tab_group_is_rejected` |
 | UC-5 | BR-13 | `closing_terminal_preserves_cwd_in_retained_contexts` |

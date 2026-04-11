@@ -26,6 +26,10 @@ use crate::PaneLifecyclePort;
 use crate::RouterPort;
 use crate::WorkspaceNavPort;
 
+pub(crate) fn terminal_badge_check_delay() -> Duration {
+    Duration::from_millis(16)
+}
+
 /// Events delivered to the app thread.
 pub(crate) enum AppEvent {
     /// A platform event forwarded from the main thread.
@@ -1014,7 +1018,7 @@ impl App {
         }
 
         if had_pty_output {
-            self.timing.badge_check_at = Some(self.ports.clock.now() + Duration::from_millis(150));
+            self.timing.badge_check_at = Some(self.ports.clock.now() + terminal_badge_check_delay());
         }
 
         // Drain OSC 9 notifications from terminals
@@ -1184,8 +1188,14 @@ impl App {
                     .iter()
                     .find(|(id, _)| *id == target_id)
                 {
-                    let top = crate::theme::TAB_BAR_HEIGHT;
-                    (rect.x + crate::theme::PANE_PADDING, rect.y + top)
+                    let content_rect =
+                        pane.content_rect(*rect, crate::theme::TAB_BAR_HEIGHT, cell_size);
+                    let authoring_rect = if pane.preview_mode {
+                        content_rect
+                    } else {
+                        pane.authoring_rect(content_rect, cell_size)
+                    };
+                    (authoring_rect.x, authoring_rect.y)
                 } else {
                     return;
                 };

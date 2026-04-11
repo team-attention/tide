@@ -51,22 +51,16 @@ pub(crate) struct EditorBadge {
 pub(crate) fn editor_header_badges(ep: &crate::pane::editor::EditorPane) -> Vec<EditorBadge> {
     let mut badges = Vec::new();
 
-    // Markdown mode toggle: plain ↔ live preview
-    if ep.is_markdown() && !ep.diff_mode {
-        let text = if ep.live_preview { "plain" } else { "live" };
-        badges.push(EditorBadge {
-            text: text.to_string(),
-            action: Some(HeaderHitAction::ToggleLivePreview),
-        });
-    }
-
     // Diff mode back button
     if ep.diff_mode {
         badges.push(EditorBadge {
             text: "back".to_string(),
             action: Some(HeaderHitAction::EditorBack),
         });
-    } else if ep.disk_changed && ep.editor.is_modified() && !ep.file_deleted {
+        return badges;
+    }
+
+    if ep.disk_changed && ep.editor.is_modified() && !ep.file_deleted {
         // Conflict: compare button + label
         badges.push(EditorBadge {
             text: "compare".to_string(),
@@ -78,11 +72,20 @@ pub(crate) fn editor_header_badges(ep: &crate::pane::editor::EditorPane) -> Vec<
         });
     }
 
-    // Deleted badge
     if ep.file_deleted {
         badges.push(EditorBadge {
             text: "deleted".to_string(),
             action: None,
+        });
+    }
+
+    // Markdown mode toggle: plain ↔ live preview.
+    // Mode is secondary to attention state, so it comes after file-state badges.
+    if ep.is_markdown() {
+        let text = if ep.live_preview { "plain" } else { "live" };
+        badges.push(EditorBadge {
+            text: text.to_string(),
+            action: Some(HeaderHitAction::ToggleLivePreview),
         });
     }
 
@@ -122,6 +125,99 @@ pub(crate) fn reserve_title_before_badges(
     }
 }
 
+pub(crate) fn active_tab_width_cap(available_w: f32) -> f32 {
+    (available_w - TAB_MIN_WIDTH)
+        .min(ACTIVE_TAB_SOFT_MAX_WIDTH)
+        .max(ACTIVE_TAB_MAX_WIDTH)
+}
+
+pub(crate) fn shared_tab_active_width_cap(available_w: f32, tab_count: usize) -> f32 {
+    let sibling_min_width = tab_count.saturating_sub(1) as f32 * TAB_MIN_WIDTH;
+    let row_limited = (available_w - sibling_min_width).max(TAB_MIN_WIDTH);
+    let soft_cap = ACTIVE_TAB_SOFT_MAX_WIDTH.max(available_w * 0.5);
+
+    row_limited.min(soft_cap).max(ACTIVE_TAB_MAX_WIDTH)
+}
+
+pub(crate) fn tab_status_dot_width(has_agent_status: bool) -> f32 {
+    if has_agent_status {
+        6.0 + TAB_CONTENT_SPACING
+    } else {
+        0.0
+    }
+}
+
+pub(crate) fn shared_tab_target_width(
+    label_w: f32,
+    badge_widths: &[f32],
+    has_agent_status: bool,
+    is_active: bool,
+    active_tab_cap: f32,
+) -> f32 {
+    let mut width =
+        label_w + TAB_H_PAD * 2.0 + 16.0 + TAB_CONTENT_SPACING + tab_status_dot_width(has_agent_status);
+    if is_active {
+        for badge_w in badge_widths {
+            width += *badge_w + BADGE_GAP;
+        }
+    }
+
+    let max_w = if is_active {
+        active_tab_cap
+    } else {
+        TAB_MAX_WIDTH
+    };
+    width.clamp(TAB_MIN_WIDTH, max_w)
+}
+
+pub(crate) fn fit_active_tab_scroll_offset(
+    tab_widths: &[f32],
+    active_index: usize,
+    visible_w: f32,
+    requested_scroll: f32,
+) -> f32 {
+    if tab_widths.is_empty() || visible_w <= 0.0 || active_index >= tab_widths.len() {
+        return 0.0;
+    }
+
+    let total_tabs_w: f32 = tab_widths.iter().sum();
+    let max_scroll = (total_tabs_w - visible_w).max(0.0);
+    let mut scroll = requested_scroll.clamp(0.0, max_scroll);
+
+    let active_start: f32 = tab_widths.iter().take(active_index).sum();
+    let active_end = active_start + tab_widths[active_index];
+
+    if active_end - scroll > visible_w {
+        scroll = (active_end - visible_w).clamp(0.0, max_scroll);
+    }
+    if active_start - scroll < 0.0 {
+        scroll = active_start.clamp(0.0, max_scroll);
+    }
+
+    scroll
+}
+
+pub(crate) fn resolve_tab_scroll_offset(
+    tab_widths: &[f32],
+    active_index: usize,
+    visible_w: f32,
+    requested_scroll: f32,
+    auto_fit_active: bool,
+) -> f32 {
+    if tab_widths.is_empty() || visible_w <= 0.0 {
+        return 0.0;
+    }
+
+    let total_tabs_w: f32 = tab_widths.iter().sum();
+    let max_scroll = (total_tabs_w - visible_w).max(0.0);
+    let scroll = requested_scroll.clamp(0.0, max_scroll);
+    if !auto_fit_active {
+        return scroll;
+    }
+
+    fit_active_tab_scroll_offset(tab_widths, active_index, visible_w, scroll)
+}
+
 fn selection_comment_badge(
     panes: &HashMap<PaneId, PaneKind>,
     id: PaneId,
@@ -149,6 +245,60 @@ fn selection_comment_badge(
             action: Some(HeaderHitAction::AddComment),
         }),
         _ => None,
+    }
+}
+
+fn badge_tint(color: crate::tide_core::Color, alpha: f32) -> crate::tide_core::Color {
+    crate::tide_core::Color::new(color.r, color.g, color.b, alpha)
+}
+
+fn editor_badge_colors(
+    badge: &EditorBadge,
+    p: &ThemePalette,
+    is_focused: bool,
+) -> (crate::tide_core::Color, crate::tide_core::Color) {
+    let base_bg = if is_focused {
+        p.badge_bg
+    } else {
+        p.badge_bg_unfocused
+    };
+
+    match badge.action {
+        Some(HeaderHitAction::ToggleLivePreview) => (
+            if is_focused {
+                p.tab_text_focused
+            } else {
+                p.tab_text_active
+            },
+            badge_tint(p.border_focused, if is_focused { 0.22 } else { 0.14 }),
+        ),
+        Some(HeaderHitAction::EditorBack) | Some(HeaderHitAction::EditorCompare) => {
+            (p.badge_text, p.conflict_bar_btn)
+        }
+        Some(HeaderHitAction::GitBranch) => (
+            if is_focused {
+                p.badge_git_branch
+            } else {
+                p.tab_text
+            },
+            base_bg,
+        ),
+        Some(HeaderHitAction::GitStatus) => (
+            p.git_added,
+            badge_tint(p.git_added, if is_focused { 0.16 } else { 0.10 }),
+        ),
+        Some(HeaderHitAction::AddComment) => {
+            (if is_focused { p.badge_text } else { p.tab_text }, base_bg)
+        }
+        None if badge.text == "deleted" || badge.text == "exited" => (
+            p.badge_deleted,
+            badge_tint(p.badge_deleted, if is_focused { 0.16 } else { 0.10 }),
+        ),
+        None if badge.text == "conflict" => (
+            p.badge_conflict,
+            badge_tint(p.badge_conflict, if is_focused { 0.16 } else { 0.10 }),
+        ),
+        _ => (if is_focused { p.badge_text } else { p.tab_text }, base_bg),
     }
 }
 
@@ -208,10 +358,7 @@ pub(crate) fn active_tab_badges(
     };
     if let Some(comment_badge) = selection_comment_badge(panes, *id, is_focused, show_comment_badge)
     {
-        match panes.get(id) {
-            Some(PaneKind::Editor(ep)) if ep.is_markdown() => badges.insert(0, comment_badge),
-            _ => badges.push(comment_badge),
-        }
+        badges.push(comment_badge);
     }
     badges
 }
@@ -390,17 +537,7 @@ pub fn render_pane_header_inner(
             let t = format!("{} {}", icon, file_name);
             let c = if is_focused { p.badge_text } else { p.tab_text };
             for badge in editor_header_badges(ep) {
-                let (text_color, bg) = match badge.action {
-                    Some(HeaderHitAction::EditorBack) | Some(HeaderHitAction::EditorCompare) => {
-                        (p.badge_text, p.conflict_bar_btn)
-                    }
-                    None if badge.text == "deleted" => (p.badge_deleted, badge_bg),
-                    None if badge.text == "conflict" => (p.badge_conflict, badge_bg),
-                    _ => {
-                        let cc = if is_focused { p.badge_text } else { p.tab_text };
-                        (cc, badge_bg)
-                    }
-                };
+                let (text_color, bg) = editor_badge_colors(&badge, p, is_focused);
                 inline_badges.push((badge.text.clone(), text_color, bg, badge.action.clone()));
             }
             (t, c)
@@ -446,18 +583,12 @@ pub fn render_pane_header_inner(
 
     if let Some(comment_badge) = selection_comment_badge(panes, id, is_focused, show_comment_badge)
     {
-        let comment_badge = (
+        inline_badges.push((
             comment_badge.text,
             p.badge_text,
             badge_bg,
             comment_badge.action,
-        );
-        match panes.get(&id) {
-            Some(PaneKind::Editor(ep)) if ep.is_markdown() => {
-                inline_badges.insert(0, comment_badge)
-            }
-            _ => inline_badges.push(comment_badge),
-        }
+        ));
     }
 
     // Close icon config
@@ -487,9 +618,15 @@ pub fn render_pane_header_inner(
         0.0
     };
     let title_w_raw = title.chars().count() as f32 * cell_w;
-    let compact_tab_w =
-        (TAB_H_PAD + dot_w + title_w_raw + badge_gap + total_badge_w + close_hit_size + TAB_H_PAD)
-            .clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH);
+    let compact_tab_cap = active_tab_width_cap(available_w).min(available_w.max(TAB_MIN_WIDTH));
+    let compact_tab_w = (TAB_H_PAD
+        + dot_w
+        + title_w_raw
+        + badge_gap
+        + total_badge_w
+        + close_hit_size
+        + TAB_H_PAD)
+        .clamp(TAB_MIN_WIDTH, compact_tab_cap);
 
     // Draw compact active tab bg + top accent line
     renderer.draw_chrome_rect(
@@ -569,7 +706,7 @@ pub fn render_pane_header_inner(
             text,
             *text_color,
             *bg,
-            3.0,
+            4.0,
         );
         if let Some(act) = action {
             zones.push(HeaderHitZone {
@@ -624,6 +761,7 @@ pub fn render_dock_tab_bar(
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
+    auto_fit_active_tab: bool,
 ) -> Vec<HeaderHitZone> {
     render_tab_bar_impl(
         pane_id,
@@ -641,6 +779,7 @@ pub fn render_dock_tab_bar(
         detected_agents,
         blink_time,
         tab_scroll_offset,
+        auto_fit_active_tab,
     )
 }
 
@@ -664,6 +803,7 @@ fn render_tab_bar_impl(
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
+    auto_fit_active_tab: bool,
 ) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
     let cell_size = renderer.cell_size();
@@ -711,6 +851,7 @@ fn render_tab_bar_impl(
     if max_tabs_w < 40.0 {
         return zones;
     }
+    let active_tab_cap = shared_tab_active_width_cap(max_tabs_w, tab_ids.len());
 
     // Compute tab labels and widths
     // Layout per tab: [pad 6] [dot?] [icon?] [gap 6] [title...] [spacer] [badges?] [close 16x16 (9px)] [pad 6]
@@ -723,18 +864,25 @@ fn render_tab_bar_impl(
         if pinned_ids.contains(&tid) {
             label = format!("\u{f08d} {}", label);
         }
-        let mut w = label.chars().count() as f32 * cell_w
-            + TAB_H_PAD * 2.0
-            + close_hit_size
-            + TAB_CONTENT_SPACING;
-        // Add badge width for the active tab only
-        if tid == active_pane {
-            let badges = active_tab_badges(panes, &tid, is_focused, show_comment_badge);
-            for badge in &badges {
-                w += badge.text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0 + badge_gap;
-            }
-        }
-        w = w.clamp(TAB_MIN_WIDTH, TAB_MAX_WIDTH);
+        let has_agent_status = detected_agents
+            .get(&tid)
+            .and_then(|agent| agent.status)
+            .is_some();
+        let badge_widths: Vec<f32> = if tid == active_pane {
+            active_tab_badges(panes, &tid, is_focused, show_comment_badge)
+                .iter()
+                .map(|badge| badge.text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let w = shared_tab_target_width(
+            label.chars().count() as f32 * cell_w,
+            &badge_widths,
+            has_agent_status,
+            tid == active_pane,
+            active_tab_cap,
+        );
         tabs_info.push((tid, label, w));
     }
 
@@ -742,12 +890,16 @@ fn render_tab_bar_impl(
     let tab_clip = Rect::new(content_left, tab_y, tabs_right - content_left, tab_h);
 
     // Compute total tabs width for scroll clamping
-    let total_tabs_w: f32 = tabs_info.iter().map(|(_, _, w)| *w).sum();
+    let tab_widths: Vec<f32> = tabs_info.iter().map(|(_, _, w)| *w).collect();
     let visible_w = tabs_right - content_left;
-    let max_scroll = (total_tabs_w - visible_w).max(0.0);
-
-    // Clamp scroll offset to valid range (no auto-scroll — user controls scroll position)
-    let effective_scroll = tab_scroll_offset.clamp(0.0, max_scroll);
+    let active_index = tab_ids.iter().position(|tid| *tid == active_pane).unwrap_or(0);
+    let effective_scroll = resolve_tab_scroll_offset(
+        &tab_widths,
+        active_index,
+        visible_w,
+        tab_scroll_offset,
+        auto_fit_active_tab,
+    );
 
     let mut cx = content_left - effective_scroll;
     for (tid, label, w) in &tabs_info {
@@ -812,7 +964,7 @@ fn render_tab_bar_impl(
                 if dot_rect.width > 0.0 && dot_rect.height > 0.0 {
                     renderer.draw_chrome_rounded_rect(dot_rect, dot_color, dot_size / 2.0);
                 }
-                dot_offset = dot_size + TAB_CONTENT_SPACING;
+                dot_offset = tab_status_dot_width(true);
             }
         }
 
@@ -869,48 +1021,10 @@ fn render_tab_bar_impl(
 
         // Draw all badges for active tab (between label and close button)
         if is_active && !active_badges.is_empty() {
-            let badge_bg = if is_focused {
-                p.badge_bg
-            } else {
-                p.badge_bg_unfocused
-            };
             let mut bx = cx + TAB_H_PAD + dot_offset + label_drawn_w + badge_gap;
             for badge in active_badges.iter().take(title_layout.visible_badges) {
                 let bw = badge.text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0;
-                let (b_text_color, b_bg) = match badge.action {
-                    Some(HeaderHitAction::EditorBack) | Some(HeaderHitAction::EditorCompare) => {
-                        (p.badge_text, p.conflict_bar_btn)
-                    }
-                    Some(HeaderHitAction::GitBranch) => {
-                        let cc = if is_focused_tab {
-                            p.badge_git_branch
-                        } else {
-                            p.tab_text
-                        };
-                        (cc, badge_bg)
-                    }
-                    Some(HeaderHitAction::GitStatus) => {
-                        let stat_bg = crate::tide_core::Color::new(
-                            p.git_added.r,
-                            p.git_added.g,
-                            p.git_added.b,
-                            0.094,
-                        );
-                        (p.git_added, stat_bg)
-                    }
-                    Some(HeaderHitAction::AddComment) => {
-                        let cc = if is_focused { p.badge_text } else { p.tab_text };
-                        (cc, badge_bg)
-                    }
-                    None if badge.text == "deleted" || badge.text == "exited" => {
-                        (p.badge_deleted, badge_bg)
-                    }
-                    None if badge.text == "conflict" => (p.badge_conflict, badge_bg),
-                    _ => {
-                        let cc = if is_focused { p.badge_text } else { p.tab_text };
-                        (cc, badge_bg)
-                    }
-                };
+                let (b_text_color, b_bg) = editor_badge_colors(badge, p, is_focused_tab);
                 // Clip badge to tab_clip for edge clipping
                 let badge_rect =
                     Rect::new(bx, label_y - 1.0, bw, cell_height + 2.0).clip_to(&tab_clip);
@@ -924,7 +1038,7 @@ fn render_tab_bar_impl(
                         &badge.text,
                         b_text_color,
                         b_bg,
-                        3.0,
+                        4.0,
                     );
                 }
                 if let Some(ref act) = badge.action {
@@ -1013,6 +1127,7 @@ pub fn render_stage_tab_group_bar(
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
+    auto_fit_active_tab: bool,
 ) -> Vec<HeaderHitZone> {
     render_tab_bar_impl(
         pane_id,
@@ -1030,6 +1145,7 @@ pub fn render_stage_tab_group_bar(
         detected_agents,
         blink_time,
         tab_scroll_offset,
+        auto_fit_active_tab,
     )
 }
 
@@ -1046,6 +1162,7 @@ pub fn render_stage_tab_bar(
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
+    auto_fit_active_tab: bool,
 ) -> Vec<HeaderHitZone> {
     if stage_pane_ids.len() < 2 {
         return Vec::new();
@@ -1066,11 +1183,12 @@ pub fn render_stage_tab_bar(
         detected_agents,
         blink_time,
         tab_scroll_offset,
+        auto_fit_active_tab,
     )
 }
 
 /// Get a short label for a pane in a dock tab bar.
-fn dock_tab_label(panes: &HashMap<PaneId, PaneKind>, id: PaneId) -> String {
+pub(crate) fn dock_tab_label(panes: &HashMap<PaneId, PaneKind>, id: PaneId) -> String {
     match panes.get(&id) {
         Some(PaneKind::Terminal(tp)) => {
             // Use CWD directory name (matches the per-pane header title)
@@ -1283,5 +1401,46 @@ mod tests {
             assert!(!badges.is_empty(), "expected badge for .{} file", ext);
             assert_eq!(badges[0].text, "live");
         }
+    }
+
+    #[test]
+    fn attention_badges_precede_mode_badge_for_conflicted_markdown_panes() {
+        let mut ep = make_markdown_editor(1);
+        ep.disk_changed = true;
+        ep.editor
+            .handle_action(crate::tide_editor::EditorActionKind::InsertChar('x'));
+
+        let badges = editor_header_badges(&ep);
+        let badge_texts: Vec<&str> = badges.iter().map(|badge| badge.text.as_str()).collect();
+
+        assert_eq!(
+            badge_texts,
+            vec!["compare", "conflict", "live"],
+            "attention state should outrank mode state in the shared badge order"
+        );
+    }
+
+    #[test]
+    fn mode_badge_precedes_comment_badge_for_markdown_panes() {
+        let ep = make_markdown_editor(1);
+        let mut panes = HashMap::new();
+        panes.insert(1, PaneKind::Editor(ep));
+
+        let badges = active_tab_badges(&panes, &1, true, true);
+        let badge_texts: Vec<&str> = badges.iter().map(|badge| badge.text.as_str()).collect();
+
+        assert_eq!(
+            badge_texts,
+            vec!["live", "comment"],
+            "active markdown chrome should keep the live/plain switch ahead of add-comment affordances"
+        );
+    }
+
+    #[test]
+    fn narrow_editor_header_preserves_title_before_optional_badges() {
+        let layout = reserve_title_before_badges(180.0, &[48.0, 56.0], 96.0, 64.0, 8.0);
+
+        assert_eq!(layout.visible_badges, 0);
+        assert!(layout.title_w >= 64.0);
     }
 }

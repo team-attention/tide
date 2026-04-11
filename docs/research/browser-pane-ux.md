@@ -15,7 +15,7 @@ Improve the Browser Pane so it feels less like a passive webview and more like a
 - `crates/tide-app/src/adapter/outward/platform_adapter/macos/webview.rs` handles non-renderable responses by opening the URL via `NSWorkspace` and canceling Browser Pane navigation instead of managing an in-app Browser Pane download flow.
 - `crates/tide-app/src/adapter/inward/text_routing_adapter/mod.rs`, `keyboard_adapter/mod.rs`, and `ime_adapter/mod.rs` split URL-bar, keyboard, and IME routing across multiple paths.
 - A repository search of `crates/tide-app/src` shows no references to `AuthenticationServices`, `ASAuthorizationWebBrowserPublicKeyCredentialManager`, `passkey`, or `WKDownloadDelegate`, so Tide does not currently implement in-app passkey or download-manager integration.
-- External browser-workspace tool documentation describes browser surfaces with navigation, `focus-webview`, history/session handling, DOM interaction, and browser automation, which is evidence for a more browser-like Browser Pane target even if Tide does not deliver full parity in this pass.
+- External browser-workspace tools describe browser surfaces with navigation, `focus-webview`, history/session handling, DOM interaction, and browser automation, which is evidence for a more browser-like Browser Pane target even if Tide does not deliver full parity in this pass.
 - Apple Password AutoFill documentation shows that credential behavior depends on system credential surfaces and app support, not on Tide-owned code alone.
 
 ## Current State

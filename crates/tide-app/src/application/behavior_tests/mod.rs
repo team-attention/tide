@@ -15,6 +15,7 @@ mod dock_global_behavior;
 mod dock_placeholder_behavior;
 mod editor_behavior;
 mod editor_file_watch_sync;
+mod editor_polish_behavior;
 mod file_tree_modified_highlight;
 mod file_tree_scroll;
 mod focus_management;

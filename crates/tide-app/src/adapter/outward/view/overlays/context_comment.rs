@@ -325,7 +325,13 @@ pub(super) fn render_context_comment_composer(
         title_style,
         Rect::new(content_x, y, content_w, cell_height + 2.0),
     );
-    let layout = comment_input_layout(logical, cell_size, &composer.comment.text, composer.comment.cursor, &app.ime.preedit);
+    let layout = comment_input_layout(
+        logical,
+        cell_size,
+        &composer.comment.text,
+        composer.comment.cursor,
+        &app.ime.preedit,
+    );
     let input_rect = layout.input_rect;
     renderer.draw_top_rect(
         input_rect,

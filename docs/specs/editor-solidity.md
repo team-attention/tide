@@ -9,18 +9,20 @@ The current editor already has a real `EditorState`, `EditorPane`, Markdown prev
 The editor roadmap is delivered in controlled phases instead of a rewrite.
 
 - Phase 1 establishes EditorPane solidity. Markdown opens in authoring mode, preview becomes explicit, and input, click, scroll, search, and toggle behavior feel predictable.
+- A bounded Editor Chrome polish slice applies `DESIGN.md` to the existing Pane header, TabGroup chrome, gutter, and current-line surfaces without changing `EditorState` semantics or adding new knowledge-work workflows.
 - Phase 2 adds Obsidian-like knowledge-work workflows on standard Markdown only: split preview, frontmatter-aware navigation, outline navigation, and link/backlink affordances.
 - Phase 3 adds IDE-grade polish for code editing: find and replace, folding, diagnostics, hover, go-to-definition, and similar workflows.
 
 Phase 1 is the first solidity target. It finishes the authoring-first model that already exists in the worktree and tightens the remaining behavior without changing architecture.
 
 ### Approach
-1. Capture the phased roadmap and Phase 1 behavior in specs before code changes.
+1. Capture the phased roadmap, `DESIGN.md`, and the Editor Chrome polish rules in specs before code changes.
 2. Preserve the current authoring-first Markdown defaults and harden the remaining edit and preview transitions.
-3. Keep preview as a dedicated reading mode with explicit entry, explicit exit, and synchronized context on both transitions.
-4. Preserve Soft Wrap for prose authoring and keep preview rendering independent from Soft Wrap layout.
-5. Add behavior tests for the new authoring-first flow before any implementation lands.
-6. Stage knowledge-work and IDE-polish work behind later specs so Phase 1 stays narrow and verifiable.
+3. Apply the bounded Editor Chrome polish slice through the existing Pane header, TabGroup chrome, and render paths without changing editor semantics.
+4. Keep preview as a dedicated reading mode with explicit entry, explicit exit, and synchronized context on both transitions.
+5. Preserve Soft Wrap for prose authoring and keep preview rendering independent from Soft Wrap layout.
+6. Add behavior tests for the authoring-first flow and the bounded polish slice before implementation lands.
+7. Stage knowledge-work and IDE-polish work behind later specs so the current slice stays narrow and verifiable.
 
 ## Bounded Contexts
 
@@ -130,6 +132,8 @@ Phase 1 is the first solidity target. It finishes the authoring-first model that
 
 | What | Location |
 |------|----------|
+| Design contract | `DESIGN.md` |
+| Editor polish spec | `docs/specs/editor-polish.md` |
 | Roadmap spec | `docs/specs/editor-solidity.md` |
 | Core editor behavior spec | `docs/specs/editor.md` |
 | Prose wrapping spec | `docs/specs/soft-wrap.md` |

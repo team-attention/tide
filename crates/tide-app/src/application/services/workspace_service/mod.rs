@@ -18,6 +18,9 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
             self.focus.focus_area = FocusArea::Dock;
             self.focus.focused = Some(id);
             self.router.set_focused(id);
+            self.interaction.tab_scroll_last_at.remove(&id);
+            self.interaction.tab_scroll_last_direction.remove(&id);
+            self.interaction.tab_manual_scroll.remove(&id);
             // Update dock_focused on the owning terminal (if not pinned)
             if let Some(tid) = self.terminal_owning(id) {
                 if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
@@ -48,6 +51,9 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         }
         self.focus.focused = Some(id);
         self.router.set_focused(id);
+        self.interaction.tab_scroll_last_at.remove(&id);
+        self.interaction.tab_scroll_last_direction.remove(&id);
+        self.interaction.tab_manual_scroll.remove(&id);
         // Update TabGroup active tab when focusing a Stage pane in a LeafGroup
         self.layout.set_active_tab(id);
         // Stacked mode: keep zoom on the newly focused Stage terminal
@@ -386,6 +392,9 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                 self.focus.focus_area = FocusArea::Dock;
                 self.focus.focused = Some(next_id);
                 self.router.set_focused(next_id);
+                self.interaction.tab_scroll_last_at.remove(&next_id);
+                self.interaction.tab_scroll_last_direction.remove(&next_id);
+                self.interaction.tab_manual_scroll.remove(&next_id);
                 if self.is_pane_pinned(next_id) {
                     self.dock.pinned_dock_layout.set_active_tab(next_id);
                 } else if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {

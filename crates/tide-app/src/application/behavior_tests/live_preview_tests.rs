@@ -3,6 +3,7 @@ use crate::domain::editor::markdown::{LivePreviewMap, MdElementKind};
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
 use crate::state::FocusArea;
+use crate::tide_platform::{WindowCommand, WindowProxy};
 use crate::ActionPort;
 use crate::App;
 use crate::DockPort;
@@ -77,13 +78,28 @@ fn app_with_dock_markdown_editor(contents: &str) -> (App, u64, u64, PathBuf) {
     (app, editor_id, terminal_id, path)
 }
 
-fn pane_content_rect(pane_rect: crate::tide_core::Rect) -> crate::tide_core::Rect {
-    crate::pane::pane_content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT)
+fn pane_content_rect(
+    pane_rect: crate::tide_core::Rect,
+    cell_height: f32,
+) -> crate::tide_core::Rect {
+    let base = crate::pane::pane_content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT);
+    let padding = crate::theme::editor_live_preview_vertical_padding(cell_height);
+    crate::tide_core::Rect::new(
+        base.x,
+        base.y + padding,
+        base.width,
+        (base.height - 2.0 * padding).max(1.0),
+    )
 }
 
 fn test_window_proxy() -> crate::tide_platform::WindowProxy {
     let (tx, _rx) = std::sync::mpsc::channel();
     crate::tide_platform::WindowProxy::new(tx, std::sync::Arc::new(|| {}))
+}
+
+fn test_window_proxy_with_receiver() -> (WindowProxy, std::sync::mpsc::Receiver<WindowCommand>) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    (WindowProxy::new(tx, std::sync::Arc::new(|| {})), rx)
 }
 
 // --- UC-0: OpenMarkdownInLivePreview ---
@@ -275,8 +291,8 @@ fn mouse_selection_on_hidden_syntax_line_maps_visual_column_to_buffer_column() {
     // UC-5 BR-4: Mouse selection start reverse-maps visual columns into buffer columns on non-cursor lines
     let (mut app, id, _path) = app_with_markdown_editor("cursor line\n**bold** tail\n");
     let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
-    let content_rect = pane_content_rect(pane_rect);
     let cell = app.window.cached_cell_size;
+    let content_rect = pane_content_rect(pane_rect, cell.height);
     app.visual_pane_rects = vec![(id, pane_rect)];
 
     {
@@ -318,8 +334,8 @@ fn live_preview_selected_text_omits_hidden_syntax_markers() {
     let (mut app, id, _path) =
         app_with_markdown_editor("cursor line\n[OpenAI](https://openai.com)\n");
     let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
-    let content_rect = pane_content_rect(pane_rect);
     let cell = app.window.cached_cell_size;
+    let content_rect = pane_content_rect(pane_rect, cell.height);
     app.visual_pane_rects = vec![(id, pane_rect)];
 
     {
@@ -370,8 +386,8 @@ fn live_preview_context_artifact_capture_uses_visible_selected_text() {
     let (mut app, id, terminal_id, _path) =
         app_with_dock_markdown_editor("cursor line\n[OpenAI](https://openai.com)\n");
     let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
-    let content_rect = pane_content_rect(pane_rect);
     let cell = app.window.cached_cell_size;
+    let content_rect = pane_content_rect(pane_rect, cell.height);
     app.visual_pane_rects = vec![(id, pane_rect)];
 
     {
@@ -430,8 +446,8 @@ fn live_preview_link_click_opens_rendered_link_target() {
     let (mut app, id, _path) =
         app_with_markdown_editor("cursor line\n[OpenAI](https://openai.com)\n");
     let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
-    let content_rect = pane_content_rect(pane_rect);
     let cell = app.window.cached_cell_size;
+    let content_rect = pane_content_rect(pane_rect, cell.height);
     app.visual_pane_rects = vec![(id, pane_rect)];
 
     {
@@ -470,4 +486,123 @@ fn live_preview_link_click_opens_rendered_link_target() {
         ),
         "cmd-click on a live preview markdown link should open the rendered link target"
     );
+}
+
+// --- UC-8: LivePreviewContentInset ---
+
+#[test]
+fn live_preview_content_rect_uses_vertical_padding() {
+    // UC-8 BR-1, BR-2: LivePreviewMode content reserves a half-cell inset above and below the authoring region.
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
+    let base = crate::pane::pane_content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT);
+    let content_rect = pane_content_rect(pane_rect, 16.0);
+
+    assert_eq!(
+        crate::theme::editor_live_preview_vertical_padding(16.0),
+        8.0
+    );
+    assert_eq!(content_rect.y, base.y + 8.0);
+    assert_eq!(content_rect.height, base.height - 16.0);
+}
+
+#[test]
+fn live_preview_click_mapping_respects_vertical_padding() {
+    // UC-8 BR-3, BR-4: Pointer positions inside the live-preview top inset do not map to the first row, while the first visible row still does.
+    let (mut app, id, _path) = app_with_markdown_editor("alpha\nbeta\n");
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
+    let cell = app.window.cached_cell_size;
+    let content_rect = pane_content_rect(pane_rect, cell.height);
+    app.visual_pane_rects = vec![(id, pane_rect)];
+
+    {
+        let pane = match app.panes.get_mut(&id) {
+            Some(PaneKind::Editor(pane)) => pane,
+            _ => panic!("expected editor pane"),
+        };
+        pane.prepare_inline_caches(content_rect, cell, false);
+    }
+
+    let padding_click = crate::tide_core::Vec2::new(
+        content_rect.x + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width + 2.0,
+        pane_rect.y
+            + crate::theme::TAB_BAR_HEIGHT
+            + 0.5 * crate::theme::editor_live_preview_vertical_padding(cell.height),
+    );
+    app.window.last_cursor_pos = padding_click;
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(
+        &mut app,
+        crate::tide_core::MouseButton::Left,
+        &test_window_proxy(),
+    );
+
+    let no_selection = match app.panes.get(&id) {
+        Some(PaneKind::Editor(pane)) => pane.selection.clone(),
+        _ => None,
+    };
+    assert!(no_selection.is_none());
+
+    let first_row_click = crate::tide_core::Vec2::new(
+        content_rect.x + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width + 2.0,
+        content_rect.y + 0.5 * cell.height,
+    );
+    app.window.last_cursor_pos = first_row_click;
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(
+        &mut app,
+        crate::tide_core::MouseButton::Left,
+        &test_window_proxy(),
+    );
+
+    let selection = match app.panes.get(&id) {
+        Some(PaneKind::Editor(pane)) => pane.selection.clone(),
+        _ => None,
+    }
+    .expect("selection should start on the first visible row");
+    assert_eq!(selection.anchor.0, 0);
+}
+
+#[test]
+fn live_preview_ime_cursor_area_uses_the_live_preview_inset() {
+    // UC-8 BR-5: Editor IME geometry in LivePreviewMode uses the same inset-adjusted origin as rendering.
+    let (mut app, id, _path) = app_with_markdown_editor("alpha\n");
+    let cell = app.window.cached_cell_size;
+    let pane_rect = crate::tide_core::Rect::new(24.0, 12.0, 420.0, 320.0);
+    let content_rect = pane_content_rect(pane_rect, cell.height);
+    app.pane_rects = vec![(id, pane_rect)];
+    app.visual_pane_rects = vec![(id, pane_rect)];
+    app.ime.cursor_dirty = true;
+
+    {
+        let pane = match app.panes.get_mut(&id) {
+            Some(PaneKind::Editor(pane)) => pane,
+            _ => panic!("expected editor pane"),
+        };
+        pane.prepare_inline_caches(content_rect, cell, false);
+    }
+
+    let (window, rx) = test_window_proxy_with_receiver();
+    app.poll_background_events(&window);
+
+    let mut cursor_area = None;
+    while let Ok(command) = rx.try_recv() {
+        if let WindowCommand::SetImeCursorArea {
+            pane_id,
+            x,
+            y,
+            w,
+            h,
+        } = command
+        {
+            cursor_area = Some((pane_id, x, y, w, h));
+        }
+    }
+
+    let (pane_id, x, y, w, h) = cursor_area.expect("editor IME cursor area command");
+    assert_eq!(pane_id, id);
+    assert_eq!(
+        x,
+        (content_rect.x + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width) as f64
+    );
+    assert_eq!(y, content_rect.y as f64);
+    assert_eq!(w, cell.width as f64);
+    assert_eq!(h, cell.height as f64);
 }
