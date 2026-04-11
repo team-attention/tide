@@ -37,18 +37,21 @@ Create, split, resolve, open, close, and drag Panes.
 - **Trigger**: GlobalAction::SplitVertical (Cmd+Shift+T) or GlobalAction::SplitHorizontal
 - **Precondition**: A Pane is focused
 - **Flow**:
-  1. Unzoom if zoomed
-  2. new_id = layout.split(focused_id, direction)
-     - Binary tree transformation: Leaf → Split { left: original, right: new_leaf }
-  3. Create Launcher(new_id)
-  4. Insert into app.panes HashMap
-  5. Set focused = new_id
-  6. invalidate_chrome()
-- **Postcondition**: New Launcher in a new SplitLayout node, focused
+  1. If the focused Stage Pane is zoomed, keep stacked mode active while creating the new Stage Pane
+  2. In Stage:
+     - stacked `TabGroup` case: `layout.add_tab(focused_id, new_id)`
+     - bare leaf case: `new_id = layout.split(focused_id, direction)`
+  3. In Dock: split the focused Dock `TabGroup` into a new Dock `LeafGroup`
+  4. Create the new Pane for the target area
+  5. Insert into `app.panes`
+  6. Set focused = new_id
+  7. invalidate_chrome()
+- **Postcondition**: The new Pane is focused. Stage either appends it to the current `TabGroup` or creates a new `SplitLayout` leaf, depending on the focused Stage Pane state.
 - **Business Rules**:
-  - BR-4: Split always creates a Launcher (not Terminal directly)
-  - BR-5: If Pane was zoomed, unzoom before splitting
+  - BR-4: Split in Stage creates a Terminal directly
+  - BR-5: If the focused Stage Pane was zoomed, split preserves stacked mode and focuses the new Stage Pane so the stacked flat tab bar stays visible
   - BR-6: Focus moves to the newly created Pane
+  - BR-7: If the focused Stage Pane is zoomed and belongs to a `TabGroup`, split keeps stacked mode and inserts the new Stage Pane into that `TabGroup` instead of creating a visible split
 
 ### UC-3: ResolveLauncher
 
@@ -149,8 +152,9 @@ After ANY Pane lifecycle operation:
 | UC-1: CreateTab | BR-2 | `new_editor_pane_does_nothing_without_focus` |
 | UC-1: CreateTab | BR-3 | `new_editor_pane_sets_focus_to_new_pane` |
 | UC-1: CreateTab | — | `new_editor_pane_adds_to_focused_tab_group` |
-| UC-2: SplitPane | BR-4 | `split_focuses_new_launcher_pane` |
-| UC-2: SplitPane | BR-5 | `split_unzooms_focused_pane` |
+| UC-2: SplitPane | BR-4 | `split_focuses_new_terminal_pane_in_stage` |
+| UC-2: SplitPane | BR-5 | `splitting_zoomed_stage_leaf_keeps_stacked_mode_and_focuses_the_new_pane` |
+| UC-2: SplitPane | BR-7 | `splitting_zoomed_stage_tab_group_keeps_stacked_mode_and_appends_a_new_tab` |
 | UC-2: SplitPane | — | `split_creates_new_pane_in_split_layout` |
 | UC-3: ResolveLauncher | BR-7 | `resolving_launcher_as_new_file_replaces_pane_kind_with_editor` |
 | UC-4: OpenFile | BR-8 | `opening_same_file_twice_activates_existing_tab_instead` |

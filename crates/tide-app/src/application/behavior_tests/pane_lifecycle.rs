@@ -1,10 +1,11 @@
 use crate::pane::browser::BrowserPane;
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
-use crate::state::FocusArea;
+use crate::state::{FocusArea, ViewMode};
 use crate::tide_core::LayoutEngine;
 use crate::App;
 use crate::PaneLifecyclePort;
+use crate::WorkspaceNavPort;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -33,6 +34,30 @@ fn app_with_browser() -> (App, u64) {
     app.focus.focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;
     (app, id)
+}
+
+fn app_with_terminal_tab_group() -> (App, u64, u64) {
+    let mut app = test_app();
+    let (layout, first_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.create_terminal_pane(first_id, None);
+    app.focus.focused = Some(first_id);
+    app.focus.stage_focused = Some(first_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.router.set_focused(first_id);
+
+    app.new_terminal_tab();
+    let second_id = app.focus.focused.expect("new terminal tab should focus the new pane");
+
+    let tg = app
+        .layout
+        .tab_group_containing(first_id)
+        .expect("new terminal tab should create a Stage TabGroup");
+    assert!(tg.contains(first_id));
+    assert!(tg.contains(second_id));
+    assert_eq!(tg.active_pane(), second_id);
+
+    (app, first_id, second_id)
 }
 
 // Spec: docs/specs/pane-lifecycle.md
@@ -115,12 +140,64 @@ fn split_focuses_new_terminal_pane_in_stage() {
 }
 
 #[test]
-fn split_unzooms_focused_pane() {
-    // UC-2 BR-5: If Pane was zoomed, unzoom before splitting
+fn splitting_zoomed_stage_leaf_keeps_stacked_mode_and_focuses_the_new_pane() {
+    // UC-2 BR-5: If the focused Stage Pane was zoomed, split preserves stacked mode
+    // and focuses the new Stage Pane so the stacked flat tab bar stays visible.
     let (mut app, first_id) = app_with_editor();
-    app.focus.zoomed_pane = Some(first_id);
+    app.handle_toggle_stacked();
+
+    assert_eq!(app.dock.terminal_view_mode, ViewMode::Stacked);
+    assert_eq!(app.focus.zoomed_pane, Some(first_id));
+
     app.split_with_launcher(crate::tide_core::SplitDirection::Vertical);
-    assert!(app.focus.zoomed_pane.is_none());
+
+    let new_id = app.focus.focused.expect("split should focus the new pane");
+    assert_ne!(new_id, first_id);
+    assert_eq!(app.dock.terminal_view_mode, ViewMode::Stacked);
+    assert_eq!(app.focus.zoomed_pane, Some(new_id));
+    assert_eq!(app.layout.pane_ids().len(), 2);
+    assert_eq!(app.layout.all_tabs_flat().len(), 2);
+}
+
+#[test]
+fn splitting_zoomed_stage_tab_group_keeps_stacked_mode_and_appends_a_new_tab() {
+    // UC-2 BR-7: If the focused Stage Pane is zoomed and belongs to a TabGroup,
+    // split keeps stacked mode and inserts the new Stage Pane into that TabGroup.
+    let (mut app, first_id, second_id) = app_with_terminal_tab_group();
+    app.focus.focused = Some(second_id);
+    app.focus.stage_focused = Some(second_id);
+    app.router.set_focused(second_id);
+    app.handle_toggle_stacked();
+
+    assert_eq!(app.dock.terminal_view_mode, ViewMode::Stacked);
+    assert_eq!(app.focus.zoomed_pane, Some(second_id));
+
+    let tabs_before = app
+        .layout
+        .tab_group_containing(second_id)
+        .expect("source Stage TabGroup should exist before split")
+        .tabs
+        .clone();
+    let visible_before = app.layout.pane_ids();
+
+    app.split_with_launcher(crate::tide_core::SplitDirection::Vertical);
+
+    let new_id = app.focus.focused.expect("split should focus the new pane");
+    let source_group = app
+        .layout
+        .tab_group_containing(first_id)
+        .expect("source Stage TabGroup should remain after split");
+
+    assert_eq!(app.dock.terminal_view_mode, ViewMode::Stacked);
+    assert_eq!(app.focus.zoomed_pane, Some(new_id));
+    assert_eq!(app.focus.stage_focused, Some(new_id));
+    assert_eq!(app.layout.pane_ids().len(), visible_before.len());
+    assert_eq!(source_group.tabs.len(), tabs_before.len() + 1);
+    assert_eq!(&source_group.tabs[..tabs_before.len()], &tabs_before[..]);
+    assert!(source_group.contains(new_id));
+    assert_eq!(source_group.active_pane(), new_id);
+    assert_eq!(app.focus.stage_focused, Some(new_id));
+    assert!(matches!(app.panes.get(&new_id), Some(PaneKind::Terminal(_))));
 }
 
 // --- UC-3: ResolveLauncher ---
