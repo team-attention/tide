@@ -89,6 +89,8 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Generation** | `u64` | Monotonic counter for cache invalidation. Incremented on state change. |
 | **LivePreviewMap** | struct | A data structure that maps raw-buffer byte ranges to markdown element types (inline bold, heading, code block, etc.) and classifies which bytes are syntax markers vs content. Built from pulldown_cmark source-span offsets. Used by LivePreviewMode to determine which characters to hide or style. |
 | **LivePreviewMode** | concept | A third editor rendering mode alongside Plain (raw markdown with syntax highlighting) and Preview (read-only formatted rendering). In LivePreviewMode, inline markdown syntax (e.g. `**`, `_`, backticks) is hidden on lines where the cursor is absent and revealed on the cursor's line. Block-level elements (code blocks, tables, blockquotes) always show syntax but apply visual styling. Operates in the same coordinate space as the raw buffer — no line folding. |
+| **EditorBadge** | `EditorBadge` | Shared editor-chrome label data computed in `adapter/outward/view/header.rs` and rendered in both Pane headers and TabGroup chrome. Carries visible badge text plus optional `HeaderHitAction` interactivity. |
+| **Editor Chrome** | concept | The non-document UI surrounding an Editor Pane, including the Pane header, TabGroup chrome, gutter, current-line emphasis, and related status or mode affordances. |
 | **FileTreeModel** | `FileTreeModel` | State for the FileTree chrome: root tree, scroll, cursor, and cached git status used to render FileTree rows. |
 | **Ratio** | `f32` | Split position (0.0–1.0). Clamped to [0.1, 0.9] minimum. |
 | **Cell Size** | `Size` | Pixel dimensions of one terminal character cell (font-dependent). |

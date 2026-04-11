@@ -151,18 +151,18 @@ pub static DARK: ThemePalette = ThemePalette {
     tree_row_active: Color::new(0.102, 0.102, 0.114, 1.0), // expanded folder row bg #1A1A1D
 
     // Tab bar — VS Code inspired: clean minimal, bottom indicator
-    tab_bar_bg: Color::new(0.098, 0.098, 0.110, 1.0), // #19191C darker, cleaner
-    tab_bar_bg_focused: Color::new(0.135, 0.128, 0.108, 1.0), // brighter warm focused
-    active_tab_bg: Color::new(0.055, 0.055, 0.063, 1.0), // same as pane_bg #0E0E10
-    tab_text: Color::new(0.400, 0.400, 0.420, 1.0),   // slightly dimmer inactive
-    tab_text_active: Color::new(0.600, 0.600, 0.620, 1.0), // active tab in unfocused pane
-    tab_text_focused: Color::new(0.92, 0.92, 0.92, 1.0), // slightly softer white
-    close_icon: Color::new(0.290, 0.290, 0.306, 1.0),
+    tab_bar_bg: Color::new(0.088, 0.089, 0.100, 1.0), // deeper inactive chrome
+    tab_bar_bg_focused: Color::new(0.155, 0.145, 0.124, 1.0), // clearer active-pane chrome
+    active_tab_bg: Color::new(0.071, 0.072, 0.081, 1.0), // lifted from pane bg without becoming card-like
+    tab_text: Color::new(0.370, 0.372, 0.392, 1.0),      // quieter inactive chrome
+    tab_text_active: Color::new(0.680, 0.676, 0.652, 1.0), // active tab in unfocused pane
+    tab_text_focused: Color::new(0.955, 0.948, 0.932, 1.0), // warm high-contrast title text
+    close_icon: Color::new(0.360, 0.362, 0.385, 1.0),
     dock_tab_underline: Color::new(0.769, 0.722, 0.651, 1.0),
 
     // Editor
-    gutter_text: Color::new(0.30, 0.30, 0.30, 1.0),
-    gutter_active_text: Color::new(0.65, 0.65, 0.65, 1.0),
+    gutter_text: Color::new(0.36, 0.36, 0.38, 1.0),
+    gutter_active_text: Color::new(0.80, 0.79, 0.76, 1.0),
     editor_modified: Color::new(0.831, 0.659, 0.263, 1.0),
     panel_tab_bg_active: Color::new(0.055, 0.055, 0.063, 1.0),
 
@@ -215,10 +215,10 @@ pub static DARK: ThemePalette = ThemePalette {
     diff_removed_gutter: Color::new(0.937, 0.604, 0.604, 1.0), // #EF9A9A
 
     // Header badges — alpha 0.094 = 0x18/0xFF per Tide.pen
-    badge_bg: Color::new(0.769, 0.722, 0.651, 0.094),
-    badge_bg_unfocused: Color::new(0.420, 0.420, 0.439, 0.094),
-    badge_text: Color::new(0.545, 0.545, 0.565, 1.0),
-    badge_text_dimmed: Color::new(0.290, 0.290, 0.306, 1.0),
+    badge_bg: Color::new(0.769, 0.722, 0.651, 0.135),
+    badge_bg_unfocused: Color::new(0.420, 0.420, 0.439, 0.110),
+    badge_text: Color::new(0.655, 0.650, 0.630, 1.0),
+    badge_text_dimmed: Color::new(0.360, 0.362, 0.385, 1.0),
     badge_git_branch: Color::new(0.769, 0.722, 0.651, 1.0),
     badge_git_worktree: Color::new(0.35, 0.80, 0.75, 1.0),
     badge_git_additions: Color::new(0.30, 0.80, 0.40, 1.0),
@@ -236,8 +236,8 @@ pub static DARK: ThemePalette = ThemePalette {
     link_color: Color::new(0.306, 0.580, 0.808, 1.0),
 
     // Editor enhancements
-    current_line_bg: Color::new(1.0, 1.0, 1.0, 0.03), // subtle white tint
-    indent_guide: Color::new(1.0, 1.0, 1.0, 0.06),    // very faint vertical lines
+    current_line_bg: Color::new(1.0, 1.0, 1.0, 0.055), // visible without becoming a stripe
+    indent_guide: Color::new(1.0, 1.0, 1.0, 0.095),    // quiet but easier structural read
     git_gutter_added: Color::new(0.133, 0.773, 0.369, 0.80), // green bar
     git_gutter_modified: Color::new(0.831, 0.659, 0.263, 0.80), // yellow bar
     bracket_match_bg: Color::new(1.0, 1.0, 1.0, 0.08), // subtle bracket bg
@@ -275,18 +275,18 @@ pub static LIGHT: ThemePalette = ThemePalette {
     tree_row_active: Color::new(0.88, 0.85, 0.80, 1.0), // warm active row
 
     // Tab bar — VS Code inspired: clean minimal, bottom indicator
-    tab_bar_bg: Color::new(0.92, 0.89, 0.86, 1.0), // slightly darker for contrast
-    tab_bar_bg_focused: Color::new(0.96, 0.93, 0.89, 1.0), // brighter warm light tab bar bg focused
-    active_tab_bg: Color::new(0.96, 0.94, 0.92, 1.0), // lighter to match surface_bg
-    tab_text: Color::new(0.42, 0.37, 0.30, 1.0),   // warm readable
-    tab_text_active: Color::new(0.28, 0.24, 0.18, 1.0), // active tab in unfocused pane
-    tab_text_focused: Color::new(0.10, 0.08, 0.05, 1.0), // near-black brown
-    close_icon: Color::new(0.45, 0.38, 0.30, 1.0), // warm close icon
+    tab_bar_bg: Color::new(0.90, 0.88, 0.85, 1.0), // quieter inactive chrome
+    tab_bar_bg_focused: Color::new(0.96, 0.93, 0.89, 1.0), // stronger active-pane chrome
+    active_tab_bg: Color::new(0.985, 0.972, 0.950, 1.0), // lifted active tab surface
+    tab_text: Color::new(0.50, 0.46, 0.40, 1.0),   // calmer inactive chrome text
+    tab_text_active: Color::new(0.26, 0.22, 0.17, 1.0), // stronger active tab text
+    tab_text_focused: Color::new(0.12, 0.10, 0.08, 1.0),
+    close_icon: Color::new(0.46, 0.42, 0.36, 1.0),
     dock_tab_underline: Color::new(0.55, 0.38, 0.18, 1.0), // chestnut
 
     // Editor
-    gutter_text: Color::new(0.48, 0.44, 0.38, 1.0), // warm gutter (readable)
-    gutter_active_text: Color::new(0.22, 0.18, 0.13, 1.0), // warm dark brown
+    gutter_text: Color::new(0.54, 0.50, 0.44, 1.0), // warm gutter (readable)
+    gutter_active_text: Color::new(0.18, 0.15, 0.11, 1.0), // clearer active-line anchor
     editor_modified: Color::new(0.75, 0.50, 0.15, 1.0), // warm amber
     panel_tab_bg_active: Color::new(0.90, 0.87, 0.83, 1.0), // warm panel
 
@@ -339,10 +339,10 @@ pub static LIGHT: ThemePalette = ThemePalette {
     diff_removed_gutter: Color::new(0.60, 0.15, 0.15, 1.0), // red gutter -
 
     // Header badges — warm-shifted
-    badge_bg: Color::new(0.45, 0.35, 0.20, 0.07),
-    badge_bg_unfocused: Color::new(0.45, 0.35, 0.20, 0.04),
-    badge_text: Color::new(0.30, 0.25, 0.18, 1.0), // warm brown (readable)
-    badge_text_dimmed: Color::new(0.45, 0.40, 0.32, 1.0), // warm muted
+    badge_bg: Color::new(0.45, 0.35, 0.20, 0.11),
+    badge_bg_unfocused: Color::new(0.45, 0.35, 0.20, 0.07),
+    badge_text: Color::new(0.34, 0.29, 0.22, 1.0), // warm brown (readable)
+    badge_text_dimmed: Color::new(0.50, 0.46, 0.40, 1.0), // warm muted
     badge_git_branch: Color::new(0.45, 0.25, 0.80, 1.0),
     badge_git_worktree: Color::new(0.15, 0.55, 0.50, 1.0),
     badge_git_additions: Color::new(0.15, 0.55, 0.15, 1.0),
@@ -360,8 +360,8 @@ pub static LIGHT: ThemePalette = ThemePalette {
     link_color: Color::new(0.035, 0.412, 0.855, 1.0),
 
     // Editor enhancements
-    current_line_bg: Color::new(0.0, 0.0, 0.0, 0.03), // subtle dark tint
-    indent_guide: Color::new(0.0, 0.0, 0.0, 0.06),    // very faint vertical lines
+    current_line_bg: Color::new(0.0, 0.0, 0.0, 0.055), // visible without becoming muddy
+    indent_guide: Color::new(0.0, 0.0, 0.0, 0.095),    // quiet but clearer structure
     git_gutter_added: Color::new(0.15, 0.55, 0.15, 0.80), // green bar
     git_gutter_modified: Color::new(0.70, 0.58, 0.10, 0.80), // yellow bar
     bracket_match_bg: Color::new(0.0, 0.0, 0.0, 0.06), // subtle bracket bg
@@ -386,6 +386,7 @@ pub const BORDER_WIDTH: f32 = 1.0;
 pub const PANE_GAP: f32 = 4.0;
 pub const PANE_PADDING: f32 = 12.0;
 pub const TERMINAL_TOP_PADDING_CELLS: f32 = 0.5;
+pub const EDITOR_LIVE_PREVIEW_VERTICAL_PADDING_CELLS: f32 = 0.5;
 pub const PANE_CORNER_RADIUS: f32 = 0.0;
 pub const FILE_TREE_LINE_SPACING: f32 = 1.7;
 pub const FILE_TREE_ROW_RADIUS: f32 = 6.0;
@@ -407,8 +408,18 @@ pub fn terminal_top_padding(cell_height: f32) -> f32 {
 pub fn terminal_content_top(cell_height: f32) -> f32 {
     TAB_BAR_HEIGHT + terminal_top_padding(cell_height)
 }
+
+pub fn editor_live_preview_vertical_padding(cell_height: f32) -> f32 {
+    if cell_height <= 0.0 {
+        0.0
+    } else {
+        (cell_height * EDITOR_LIVE_PREVIEW_VERTICAL_PADDING_CELLS).round()
+    }
+}
 pub const TAB_ACTIVE_INDICATOR_HEIGHT: f32 = 2.0;
 pub const TAB_MAX_WIDTH: f32 = 220.0;
+pub const ACTIVE_TAB_MAX_WIDTH: f32 = 228.0;
+pub const ACTIVE_TAB_SOFT_MAX_WIDTH: f32 = 320.0;
 pub const TAB_MIN_WIDTH: f32 = 48.0;
 pub const TAB_MIN_TITLE_WIDTH: f32 = 48.0;
 

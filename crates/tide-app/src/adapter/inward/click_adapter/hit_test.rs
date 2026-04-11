@@ -308,15 +308,9 @@ pub(crate) fn compute_hover_target(
     // Editor scrollbar hover
     {
         let cell_size = ctx.cell_size();
-        let top_offset = TAB_BAR_HEIGHT;
         for &(id, rect) in ctx.visual_pane_rects() {
             if let Some(PaneKind::Editor(pane)) = ctx.pane(id) {
-                let inner = crate::tide_core::Rect::new(
-                    rect.x + PANE_PADDING,
-                    rect.y + top_offset,
-                    rect.width - 2.0 * PANE_PADDING,
-                    (rect.height - top_offset - PANE_PADDING).max(1.0),
-                );
+                let inner = pane.content_rect(rect, TAB_BAR_HEIGHT, cell_size);
                 if pane.needs_scrollbar(inner, cell_size.height) {
                     let sb_x = inner.x + inner.width - SCROLLBAR_WIDTH_HOVER;
                     if pos.x >= sb_x
@@ -333,16 +327,18 @@ pub(crate) fn compute_hover_target(
 
     // Pane content area — show text cursor for terminal, editor, diff panes
     for &(id, rect) in ctx.visual_pane_rects() {
-        let content_top = match ctx.pane(id) {
-            Some(PaneKind::Terminal(_)) => terminal_content_top(ctx.cell_size().height),
-            _ => TAB_BAR_HEIGHT,
+        let content = match ctx.pane(id) {
+            Some(PaneKind::Terminal(_)) => {
+                crate::pane::pane_content_rect(rect, terminal_content_top(ctx.cell_size().height))
+            }
+            Some(PaneKind::Editor(pane)) => {
+                pane.content_rect(rect, TAB_BAR_HEIGHT, ctx.cell_size())
+            }
+            Some(PaneKind::Diff(_))
+            | Some(PaneKind::Browser(_))
+            | Some(PaneKind::Launcher(_))
+            | None => crate::pane::pane_content_rect(rect, TAB_BAR_HEIGHT),
         };
-        let content = crate::tide_core::Rect::new(
-            rect.x + PANE_PADDING,
-            rect.y + content_top,
-            rect.width - 2.0 * PANE_PADDING,
-            rect.height - content_top - PANE_PADDING,
-        );
         if content.contains(pos) {
             match ctx.pane(id) {
                 Some(PaneKind::Terminal(_)) | Some(PaneKind::Editor(_)) => {

@@ -81,13 +81,12 @@ pub(crate) fn render_cursor_and_highlights(
     // Always render cursor (overlay layer) — cursor blinks/moves independently
     for &(id, rect) in visual_pane_rects {
         let pane_bar = bar_offset_for(id, &app.panes, &app.modal.save_confirm);
-        let top_offset = match app.panes.get(&id) {
-            Some(PaneKind::Terminal(_)) => terminal_content_top(renderer.cell_size().height),
-            _ => TAB_BAR_HEIGHT,
-        };
-        let inner = crate::pane::pane_content_rect(rect, top_offset + pane_bar);
         match app.panes.get(&id) {
             Some(PaneKind::Terminal(pane)) => {
+                let inner = crate::pane::pane_content_rect(
+                    rect,
+                    terminal_content_top(renderer.cell_size().height) + pane_bar,
+                );
                 // Only render cursor on the focused pane (and hide when search bar is active
                 // or IME preedit is composing — preedit overlay replaces the cursor).
                 if focused == Some(id) && search_focus != Some(id) && app.ime.preedit.is_empty() {
@@ -173,6 +172,8 @@ pub(crate) fn render_cursor_and_highlights(
                 }
             }
             Some(PaneKind::Editor(pane)) => {
+                let inner =
+                    pane.content_rect(rect, TAB_BAR_HEIGHT + pane_bar, renderer.cell_size());
                 if pane.preview_mode {
                     // Render selection highlight in preview mode
                     if let Some(ref sel) = pane.selection {
@@ -210,6 +211,7 @@ pub(crate) fn render_cursor_and_highlights(
                 pane.render_scrollbar(inner, renderer, pane.search.as_ref(), p, sb_hovered);
             }
             Some(PaneKind::Diff(dp)) => {
+                let inner = crate::pane::pane_content_rect(rect, TAB_BAR_HEIGHT + pane_bar);
                 if let Some(ref sel) = dp.selection {
                     render_diff_selection(dp, inner, renderer, p, sel);
                 }

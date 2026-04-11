@@ -54,8 +54,7 @@ pub(crate) fn render_hover(
                 }
                 crate::state::drag_types::HoverTarget::PaneTabClose(pane_id) => {
                     if let Some(zone) = app.header_hit_zones.iter().find(|z| {
-                        z.pane_id == *pane_id
-                            && z.action == crate::header::HeaderHitAction::Close
+                        z.pane_id == *pane_id && z.action == crate::header::HeaderHitAction::Close
                     }) {
                         // Draw a small circular-ish background centered on the close icon
                         let size = 16.0_f32;

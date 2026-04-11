@@ -35,19 +35,13 @@ pub(crate) fn render_grid(
             .unwrap_or(u64::MAX);
         if gen != prev {
             let pane_bar = bar_offset_for(id, &app.panes, &app.modal.save_confirm);
-            let top_offset = match app.panes.get(&id) {
-                Some(PaneKind::Terminal(_)) => terminal_content_top(renderer.cell_size().height),
-                _ => TAB_BAR_HEIGHT,
-            };
-            let inner = Rect::new(
-                rect.x + PANE_PADDING,
-                rect.y + top_offset + pane_bar,
-                rect.width - 2.0 * PANE_PADDING,
-                (rect.height - top_offset - PANE_PADDING - pane_bar).max(1.0),
-            );
             renderer.begin_pane_grid(id);
             match app.panes.get(&id) {
                 Some(PaneKind::Terminal(pane)) => {
+                    let inner = crate::pane::pane_content_rect(
+                        rect,
+                        terminal_content_top(renderer.cell_size().height) + pane_bar,
+                    );
                     pane.render_grid(inner, renderer);
                     // Overlay message for dead terminals
                     if pane.context.child_dead {
@@ -81,6 +75,8 @@ pub(crate) fn render_grid(
                     gen_updates.push((id, pane.backend.grid_generation()));
                 }
                 Some(PaneKind::Editor(pane)) => {
+                    let inner =
+                        pane.content_rect(rect, TAB_BAR_HEIGHT + pane_bar, renderer.cell_size());
                     let preedit = if ime_target_id == Some(id) {
                         &app.ime.preedit
                     } else {
@@ -102,6 +98,7 @@ pub(crate) fn render_grid(
                     gen_updates.push((id, pane.generation()));
                 }
                 Some(PaneKind::Diff(dp)) => {
+                    let inner = crate::pane::pane_content_rect(rect, TAB_BAR_HEIGHT + pane_bar);
                     dp.render_grid(
                         inner,
                         renderer,
@@ -117,6 +114,7 @@ pub(crate) fn render_grid(
                 }
                 Some(PaneKind::Browser(_)) => {} // webview renders natively
                 Some(PaneKind::Launcher(_launcher_id)) => {
+                    let inner = crate::pane::pane_content_rect(rect, TAB_BAR_HEIGHT + pane_bar);
                     // Render launcher type-selection UI
                     let cs = renderer.cell_size();
                     let lines: [(&str, crate::tide_core::Color); 4] = [

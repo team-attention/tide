@@ -2,10 +2,10 @@
 
 ## Overview
 ### As-Is
-Current state: Two rendering modes — Plain (raw markdown with syntax highlighting) and Preview (read-only pulldown_cmark formatted). `LivePreviewMode` exists, but Markdown Panes still open with `live_preview = false`, so the hybrid mode is available only after a manual toggle. The click-to-cursor path in `crates/tide-app/src/application/services/action_service/mod.rs` already reverse-maps live-preview columns, but the mouse selection path in `crates/tide-app/src/adapter/inward/mouse_adapter/selection.rs` still uses raw visual columns in the soft-wrap branch. `EditorPane::selected_text()` in `crates/tide-app/src/domain/pane/editor.rs` only switches to rendered-text extraction in full preview mode, and `TextExtractPort::extract_url_at()` only supports `Terminal` panes today, so `LivePreviewMode` still lacks spec coverage for visible-text copy, add-comment capture, and link activation.
+Current state: Two rendering modes — Plain (raw markdown with syntax highlighting) and Preview (read-only pulldown_cmark formatted). `LivePreviewMode` exists, and Markdown Panes now open with `live_preview = true` while staying in authoring mode. Click-to-cursor, mouse selection, visible-text copy, add-comment capture, and link activation already share the live-preview mapping path, but the editor content rect still starts directly at `TAB_BAR_HEIGHT` with no extra vertical inset for `LivePreviewMode`. That means the first visible Markdown row sits against the Pane chrome, and pointer mapping still treats that edge as immediate content.
 
 ### To-Be
-Markdown Panes open in `LivePreviewMode` by default while staying in authoring mode. `LivePreviewMode` renders from the raw buffer but conditionally hides/shows markdown syntax based on cursor line position. Same coordinate space as raw buffer — no line folding. Mouse click and mouse selection both reverse-map live-preview columns back into buffer columns, including when Soft Wrap is active. Copy, add-comment capture, and link activation all operate on the same human-visible Markdown content that `LivePreviewMode` renders on screen.
+Markdown Panes open in `LivePreviewMode` by default while staying in authoring mode. `LivePreviewMode` renders from the raw buffer but conditionally hides/shows markdown syntax based on cursor line position. Same coordinate space as raw buffer — no line folding. Mouse click and mouse selection both reverse-map live-preview columns back into buffer columns, including when Soft Wrap is active. Copy, add-comment capture, and link activation all operate on the same human-visible Markdown content that `LivePreviewMode` renders on screen. `LivePreviewMode` content also gets a small cell-relative vertical inset so the first and last visible rows do not sit flush against the Pane chrome.
 
 ### Approach
 Three layers:
@@ -14,6 +14,7 @@ Three layers:
 3. Live preview rendering — new render path using LivePreviewMap.
 4. Block-level handling — code blocks, tables always show syntax with styling.
 5. Lock visible-text interaction rules so copy, add-comment capture, and link activation reuse the same live-preview coordinate mapping.
+6. Apply one shared `LivePreviewMode` vertical inset helper to rendering, pointer mapping, and IME geometry.
 
 ## Bounded Contexts
 - editor (domain/editor/) — LivePreviewMap, markdown parsing
@@ -144,12 +145,30 @@ Business Rules:
 - BR-2: Add-comment capture in `LivePreviewMode` uses the same visible selected text that copy uses.
 - BR-3: Link activation in `LivePreviewMode` opens the rendered Markdown link target instead of moving the cursor through hidden syntax markers.
 
+### UC-8: LivePreviewContentInset
+Actor: Tide
+Trigger: Tide renders or hit-tests a `Markdown Pane` in `LivePreviewMode`
+Precondition: The `Markdown Pane` is in authoring mode with `LivePreviewMode` enabled
+Flow:
+1. Tide derives a live-preview vertical inset from the current editor cell height.
+2. Tide positions live-preview content below `TAB_BAR_HEIGHT + inset`.
+3. Tide reserves the same inset at the bottom of the authoring region.
+4. Tide reuses the same inset-adjusted rect for rendering, pointer mapping, and editor IME geometry.
+Postcondition: `LivePreviewMode` content has breathing room above and below the visible text while interaction coordinates still match the rendered content.
+Business Rules:
+- BR-1: `LivePreviewMode` content starts half a cell below the tab bar.
+- BR-2: `LivePreviewMode` reserves the same half-cell inset at the bottom of the authoring region.
+- BR-3: Pointer positions inside the live-preview top inset do not map to the first visible row.
+- BR-4: Pointer positions on the first visible live-preview row still map to row 0 after the inset is applied.
+- BR-5: Editor IME geometry for `LivePreviewMode` uses the same inset-adjusted origin as live-preview rendering.
+
 ## Invariants
 1. Line count in LivePreviewMode equals raw buffer line count (no line folding)
 2. Cursor position is always in raw buffer coordinates
 3. LivePreviewMode is mutually exclusive with full Preview mode
 4. LivePreviewMap generation matches buffer generation when valid
 5. Visible-text copy, add-comment capture, and link activation all resolve through the same live-preview mapping rules.
+6. `LivePreviewMode` render and interaction paths share the same inset calculation.
 
 ## Tests
 | UC | BR | Test Function |
@@ -179,10 +198,14 @@ Business Rules:
 | UC-7 | BR-1 | live_preview_selected_text_omits_hidden_syntax_markers() |
 | UC-7 | BR-2 | live_preview_context_artifact_capture_uses_visible_selected_text() |
 | UC-7 | BR-3 | live_preview_link_click_opens_rendered_link_target() |
+| UC-8 | BR-1, BR-2 | live_preview_content_rect_uses_vertical_padding() |
+| UC-8 | BR-3, BR-4 | live_preview_click_mapping_respects_vertical_padding() |
+| UC-8 | BR-5 | live_preview_ime_cursor_area_uses_the_live_preview_inset() |
 
 ## Location
 - LivePreviewMap: `crates/tide-app/src/domain/editor/markdown.rs`
 - EditorPane live preview state: `crates/tide-app/src/domain/pane/editor.rs`
 - Live preview rendering: `crates/tide-app/src/domain/pane/editor_rendering.rs`
 - GlobalAction: `crates/tide-app/src/domain/input/`
+- Live preview content inset helpers: `crates/tide-app/src/theme.rs`, `crates/tide-app/src/domain/pane/editor.rs`
 - Behavior tests: `crates/tide-app/src/application/behavior_tests/`

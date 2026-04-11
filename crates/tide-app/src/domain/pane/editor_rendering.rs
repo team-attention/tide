@@ -220,7 +220,7 @@ impl EditorPane {
             let gutter_style = TextStyle {
                 foreground: gutter_color,
                 background: None,
-                bold: false,
+                bold: abs_line == cursor_line,
                 dim: false,
                 italic: false,
                 underline: false,
@@ -417,7 +417,7 @@ impl EditorPane {
             let gutter_style = TextStyle {
                 foreground: gutter_color,
                 background: None,
-                bold: false,
+                bold: abs_line == cursor_line,
                 dim: false,
                 italic: false,
                 underline: false,
@@ -734,7 +734,7 @@ impl EditorPane {
                     let gutter_style = TextStyle {
                         foreground: gutter_color,
                         background: None,
-                        bold: false,
+                        bold: abs_line == cursor_line,
                         dim: false,
                         italic: false,
                         underline: false,
@@ -1168,7 +1168,7 @@ impl EditorPane {
                     let gutter_style = TextStyle {
                         foreground: gutter_color,
                         background: None,
-                        bold: false,
+                        bold: abs_line == cursor_line,
                         dim: false,
                         italic: false,
                         underline: false,

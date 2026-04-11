@@ -15,6 +15,29 @@ use crate::PaneLifecyclePort;
 /// Results from the background git poller (one entry per CWD).
 use crate::state::background::{GitPollCwdResult, GitPollResults};
 
+pub(crate) fn sync_terminal_badge_runtime_context(
+    context: &mut crate::pane::TerminalContext,
+    new_cwd: Option<PathBuf>,
+    new_idle: bool,
+) -> bool {
+    let mut changed = false;
+
+    if new_cwd != context.cwd {
+        context.cwd = new_cwd;
+        context.git_info = None;
+        context.worktree_count = 0;
+        context.current_worktree = None;
+        changed = true;
+    }
+
+    if new_idle != context.shell_idle {
+        context.shell_idle = new_idle;
+        changed = true;
+    }
+
+    changed
+}
+
 impl App {
     pub(crate) fn sync_file_tree_path_identity_cache(&mut self) {
         let mut normalized_entry_paths = HashMap::new();
@@ -247,16 +270,14 @@ impl App {
             if let Some(PaneKind::Terminal(pane)) = self.panes.get_mut(id) {
                 // CWD (reads /proc or sysctl — no subprocess)
                 let new_cwd = pane.backend.detect_cwd_fallback();
-                if new_cwd != pane.context.cwd {
-                    pane.context.cwd = new_cwd;
+                // Shell idle
+                let new_idle = pane.backend.is_shell_idle();
+                let shell_idle_changed = new_idle != pane.context.shell_idle;
+                if sync_terminal_badge_runtime_context(&mut pane.context, new_cwd, new_idle) {
                     changed = true;
                 }
 
-                // Shell idle
-                let new_idle = pane.backend.is_shell_idle();
-                if new_idle != pane.context.shell_idle {
-                    pane.context.shell_idle = new_idle;
-                    changed = true;
+                if shell_idle_changed {
                     // BR-49: Trigger agent detection on shell_idle change
                     if let Some(pid) = pane.backend.child_pid() {
                         if let Some(mut agent) = crate::state::gateway_status::detect_agent(pid) {
