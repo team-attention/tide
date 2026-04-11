@@ -1,12 +1,12 @@
 // Spec: docs/specs/editor.md
-use std::cell::RefCell;
+use crate::application::ports::outward::clipboard_port::ClipboardPort;
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
-use crate::application::ports::outward::clipboard_port::ClipboardPort;
 use crate::ActionPort;
-use crate::ClipboardSearchPort;
 use crate::App;
+use crate::ClipboardSearchPort;
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -126,7 +126,10 @@ fn paste_action_is_blocked_in_preview_mode_even_with_selection() {
 
     if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
         assert_eq!(pane.editor.buffer.line(0), Some("hello world"));
-        let selection = pane.selection.as_ref().expect("preview selection should remain");
+        let selection = pane
+            .selection
+            .as_ref()
+            .expect("preview selection should remain");
         assert_eq!(selection.anchor, (0, 0));
         assert_eq!(selection.end, (0, 5));
         assert!(!pane.editor.is_modified());
@@ -288,7 +291,11 @@ fn click_in_authoring_mode_moves_cursor_using_current_layout() {
         + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width
         + 2.0 * cell.width
         + 1.0;
-    let y = pane_rect.y + crate::theme::TAB_BAR_HEIGHT + 1.0 * cell.height + 1.0;
+    let y = pane_rect.y
+        + crate::theme::TAB_BAR_HEIGHT
+        + crate::theme::editor_live_preview_vertical_padding(cell.height)
+        + 1.0 * cell.height
+        + 1.0;
 
     ActionPort::handle_action(
         &mut app,

@@ -16,7 +16,7 @@ fn editor_hit_cell(
     cell_size: crate::tide_core::Size,
     content_top_offset: f32,
 ) -> Option<(usize, usize)> {
-    let content_rect = crate::pane::pane_content_rect(rect, content_top_offset);
+    let content_rect = pane.content_rect(rect, content_top_offset, cell_size);
     let target_rect = if pane.preview_mode {
         content_rect
     } else {
@@ -71,15 +71,22 @@ pub(super) fn start_text_selection(
     ctx: &mut (impl AppCorePort + InputStatePort + PaneAccessPort),
 ) -> bool {
     let mods = ctx.modifiers();
-    let content_top_offset = TAB_BAR_HEIGHT;
+    let cell_size = ctx.cell_size();
     if mods.ctrl || mods.meta {
         return false;
     }
 
     let pos = ctx.last_cursor_pos();
     let rects: Vec<_> = ctx.visual_pane_rects().to_vec();
-    let hit = rects.iter().find(|(_, r)| {
-        let content = crate::pane::pane_content_rect(*r, content_top_offset);
+    let hit = rects.iter().find(|(id, r)| {
+        let content = match ctx.pane(*id) {
+            Some(PaneKind::Editor(pane)) => pane.content_rect(*r, TAB_BAR_HEIGHT, cell_size),
+            Some(PaneKind::Terminal(_))
+            | Some(PaneKind::Diff(_))
+            | Some(PaneKind::Browser(_))
+            | Some(PaneKind::Launcher(_))
+            | None => crate::pane::pane_content_rect(*r, TAB_BAR_HEIGHT),
+        };
         content.contains(pos)
     });
     let pid = match hit {
@@ -91,13 +98,13 @@ pub(super) fn start_text_selection(
 
     // Compute click position in cell coordinates for each pane type
     let term_cell = crate::adapter::inward::click_adapter::hit_test::pixel_to_cell(ctx, pos, pid);
-    let cell_size_cached = ctx.cell_size();
+    let cell_size_cached = cell_size;
     let editor_cell = {
         let cs = cell_size_cached;
         if let Some((_, rect)) = rects.iter().find(|(id, _)| *id == pid) {
             match ctx.pane(pid) {
                 Some(PaneKind::Editor(pane)) => {
-                    editor_hit_cell(pane, *rect, pos, cs, content_top_offset)
+                    editor_hit_cell(pane, *rect, pos, cs, TAB_BAR_HEIGHT)
                 }
                 _ => None,
             }
@@ -111,7 +118,7 @@ pub(super) fn start_text_selection(
         let cs = cell_size_cached;
         if let Some((_, rect)) = rects.iter().find(|(id, _)| *id == pid) {
             let cx = rect.x + PANE_PADDING;
-            let cy = rect.y + content_top_offset;
+            let cy = rect.y + TAB_BAR_HEIGHT;
             let rc = ((pos.x - cx) / cs.width).floor() as isize;
             let rr = ((pos.y - cy) / cs.height).floor() as isize;
             if rr >= 0 && rc >= 0 {
@@ -260,11 +267,17 @@ pub(super) fn start_text_selection(
 /// Extend text selection while dragging (mouse move with left button held).
 pub(super) fn handle_selection_drag(ctx: &mut (impl AppCorePort + PaneAccessPort), pos: Vec2) {
     let cell_size = ctx.cell_size();
-    let drag_top_offset = TAB_BAR_HEIGHT;
 
     let pane_rects: Vec<_> = ctx.visual_pane_rects().to_vec();
     for (pid, rect) in pane_rects {
-        let content = crate::pane::pane_content_rect(rect, drag_top_offset);
+        let content = match ctx.pane(pid) {
+            Some(PaneKind::Editor(pane)) => pane.content_rect(rect, TAB_BAR_HEIGHT, cell_size),
+            Some(PaneKind::Terminal(_))
+            | Some(PaneKind::Diff(_))
+            | Some(PaneKind::Browser(_))
+            | Some(PaneKind::Launcher(_))
+            | None => crate::pane::pane_content_rect(rect, TAB_BAR_HEIGHT),
+        };
         if !content.contains(pos) {
             continue;
         }
@@ -272,7 +285,7 @@ pub(super) fn handle_selection_drag(ctx: &mut (impl AppCorePort + PaneAccessPort
         let editor_cell = {
             match ctx.pane(pid) {
                 Some(PaneKind::Editor(pane)) => {
-                    editor_hit_cell(pane, rect, pos, cell_size, drag_top_offset)
+                    editor_hit_cell(pane, rect, pos, cell_size, TAB_BAR_HEIGHT)
                 }
                 _ => None,
             }
@@ -321,7 +334,7 @@ pub(super) fn handle_selection_drag(ctx: &mut (impl AppCorePort + PaneAccessPort
             }
             Some(PaneKind::Diff(dp)) => {
                 let cx = rect.x + PANE_PADDING;
-                let cy = rect.y + drag_top_offset;
+                let cy = rect.y + TAB_BAR_HEIGHT;
                 let rc = ((pos.x - cx) / cell_size.width).floor() as isize;
                 let rr = ((pos.y - cy) / cell_size.height).floor() as isize;
                 if rr >= 0 && rc >= 0 {

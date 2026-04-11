@@ -68,8 +68,18 @@ fn preview_only_modifiers() -> crate::tide_core::Modifiers {
     }
 }
 
-fn pane_content_rect(pane_rect: crate::tide_core::Rect) -> crate::tide_core::Rect {
-    crate::pane::pane_content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT)
+fn pane_content_rect(
+    pane_rect: crate::tide_core::Rect,
+    cell_height: f32,
+) -> crate::tide_core::Rect {
+    let base = crate::pane::pane_content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT);
+    let padding = crate::theme::editor_live_preview_vertical_padding(cell_height);
+    crate::tide_core::Rect::new(
+        base.x,
+        base.y + padding,
+        base.width,
+        (base.height - 2.0 * padding).max(1.0),
+    )
 }
 
 fn test_window_proxy() -> crate::tide_platform::WindowProxy {
@@ -175,8 +185,8 @@ fn split_preview_prepare_caches_uses_preview_region_width() {
     // UC-2 BR-9: Split preview preview lines come from preview_cache keyed by preview region width
     let (mut app, id, _path) = app_with_markdown_editor("# Title\n\nThis is a fairly long markdown paragraph that should wrap inside split preview.");
     let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 520.0, 320.0);
-    let content_rect = pane_content_rect(pane_rect);
     let cell_size = app.window.cached_cell_size;
+    let content_rect = pane_content_rect(pane_rect, cell_size.height);
 
     let pane = match app.panes.get_mut(&id) {
         Some(PaneKind::Editor(pane)) => pane,
@@ -204,8 +214,8 @@ fn split_preview_click_refreshes_wrap_map_for_authoring_region_width() {
     // UC-2 BR-8: Split preview authoring reuses a cached WrapMap built for the authoring region width
     let (mut app, id, _path) = app_with_markdown_editor(&"a".repeat(160));
     let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 520.0, 320.0);
-    let content_rect = pane_content_rect(pane_rect);
     let cell_size = app.window.cached_cell_size;
+    let content_rect = pane_content_rect(pane_rect, cell_size.height);
     app.visual_pane_rects = vec![(id, pane_rect)];
 
     let (authoring_rect, split_width_cols, full_width_cols) = {
@@ -266,8 +276,8 @@ fn split_preview_selection_stays_in_authoring_region() {
     // UC-2 BR-10: Split preview mouse selection starts only inside the authoring region
     let (mut app, id, _path) = app_with_markdown_editor("# Title\n\nBody");
     let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 520.0, 320.0);
-    let content_rect = pane_content_rect(pane_rect);
     let cell_size = app.window.cached_cell_size;
+    let content_rect = pane_content_rect(pane_rect, cell_size.height);
     app.visual_pane_rects = vec![(id, pane_rect)];
 
     let preview_rect = {

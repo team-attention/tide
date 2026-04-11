@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::tide_core::InputEvent;
 
 use crate::pane::PaneKind;
@@ -10,6 +12,45 @@ use crate::LayoutPort;
 use crate::ModalPort;
 use crate::PaneAccessPort;
 use crate::RouterPort;
+
+const SHARED_TAB_SCROLL_GAIN: f32 = 12.0;
+const SHARED_TAB_SCROLL_IDLE_WINDOW: Duration = Duration::from_millis(120);
+
+pub(crate) fn shared_tab_scroll_delta(dx: f32, dy: f32) -> f32 {
+    if dx != 0.0 { -dx } else { -dy }
+}
+
+pub(crate) fn shared_tab_scroll_is_new_gesture(
+    last_event_age: Option<Duration>,
+    last_direction: Option<f32>,
+    scroll_delta: f32,
+) -> bool {
+    if scroll_delta == 0.0 {
+        return false;
+    }
+
+    let direction = scroll_delta.signum();
+    last_event_age.map_or(true, |age| age > SHARED_TAB_SCROLL_IDLE_WINDOW)
+        || last_direction.is_some_and(|prev| prev != 0.0 && prev != direction)
+}
+
+pub(crate) fn shared_tab_scroll_step(scroll_delta: f32, cell_w: f32, is_new_gesture: bool) -> f32 {
+    if scroll_delta == 0.0 {
+        return 0.0;
+    }
+
+    let scaled = scroll_delta * SHARED_TAB_SCROLL_GAIN;
+    if !is_new_gesture {
+        return scaled;
+    }
+
+    let starter_step = (cell_w * 0.5).max(4.0);
+    scaled.signum() * scaled.abs().max(starter_step)
+}
+
+pub(crate) fn clamp_shared_tab_scroll_offset(requested_scroll: f32, max_scroll: f32) -> f32 {
+    requested_scroll.clamp(0.0, max_scroll.max(0.0))
+}
 
 /// Handle scroll event with pre-processed delta values.
 /// dx/dy are in "line" units (platform normalizes pixel/line deltas).
@@ -100,16 +141,39 @@ pub(crate) fn handle_scroll(
             }
         }
         if let Some(pid) = tab_bar_pane {
-            // Prefer horizontal scroll; fall back to vertical (negated) for mouse wheel
-            let scroll_delta = if dx.abs() > dy.abs() { dx } else { -dy };
-            if scroll_delta != 0.0 {
-                let offsets = &mut ctx.interaction_mut().tab_scroll_offset;
-                let offset = offsets.entry(pid).or_insert(0.0);
-                *offset = (*offset + scroll_delta * 20.0).max(0.0);
+            // Shared tab bars are horizontally scrollable surfaces:
+            // prefer horizontal delta when it exists, and only fall back to
+            // vertical wheel-style scrolling when no horizontal delta is present.
+            let scroll_delta = shared_tab_scroll_delta(dx, dy);
+            let max_scroll = ctx.shared_tab_max_scroll(pid).unwrap_or(0.0);
+            if max_scroll > 0.0 && scroll_delta != 0.0 {
+                let cell_w = ctx.cell_size().width;
+                let now = ctx.clock_now();
+                let interaction = ctx.interaction_mut();
+                let last_event_age = interaction
+                    .tab_scroll_last_at
+                    .get(&pid)
+                    .map(|at| now.duration_since(*at));
+                let last_direction = interaction.tab_scroll_last_direction.get(&pid).copied();
+                let is_new_gesture =
+                    shared_tab_scroll_is_new_gesture(last_event_age, last_direction, scroll_delta);
+                let offsets = &mut interaction.tab_scroll_offset;
+                let current_offset = offsets.get(&pid).copied().unwrap_or(0.0);
+                let next_offset = clamp_shared_tab_scroll_offset(
+                    current_offset
+                        + shared_tab_scroll_step(scroll_delta, cell_w, is_new_gesture),
+                    max_scroll,
+                );
+                offsets.insert(pid, next_offset);
+                interaction.tab_scroll_last_at.insert(pid, now);
+                interaction
+                    .tab_scroll_last_direction
+                    .insert(pid, scroll_delta.signum());
+                interaction.tab_manual_scroll.insert(pid);
                 ctx.invalidate_chrome();
                 ctx.request_redraw();
+                return;
             }
-            return;
         }
     }
 

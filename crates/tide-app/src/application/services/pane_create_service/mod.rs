@@ -16,6 +16,21 @@ use crate::WorkspaceNavPort;
 
 use super::action_service::LauncherChoice;
 
+impl App {
+    pub(crate) fn live_dock_terminal_for_context(
+        &self,
+        context_terminal: Option<crate::tide_core::PaneId>,
+    ) -> Option<crate::tide_core::PaneId> {
+        match context_terminal {
+            Some(tid) if matches!(self.panes.get(&tid), Some(PaneKind::Terminal(_))) => Some(tid),
+            Some(_) => None,
+            None => self
+                .focused_terminal_id()
+                .filter(|tid| matches!(self.panes.get(tid), Some(PaneKind::Terminal(_)))),
+        }
+    }
+}
+
 impl crate::application::ports::inward::PaneLifecyclePort for App {
     fn create_terminal_pane(
         &mut self,
@@ -132,7 +147,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.panes.insert(new_id, PaneKind::Editor(pane));
         self.ime.pending_creates.push(new_id);
         // Route to Dock if an owner terminal exists
-        if let Some(tid) = context_terminal.or_else(|| self.focused_terminal_id()) {
+        if let Some(tid) = self.live_dock_terminal_for_context(context_terminal) {
             self.add_pane_to_dock(new_id, Some(tid));
             self.assoc.associated_terminal.insert(new_id, tid);
             self.focus.focus_area = crate::state::FocusArea::Dock;
@@ -325,7 +340,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         };
         self.panes.insert(new_id, PaneKind::Browser(pane));
         self.ime.pending_creates.push(new_id);
-        if let Some(tid) = context_terminal.or_else(|| self.focused_terminal_id()) {
+        if let Some(tid) = self.live_dock_terminal_for_context(context_terminal) {
             self.add_pane_to_dock(new_id, Some(tid));
             self.assoc.associated_terminal.insert(new_id, tid);
             self.focus.focus_area = crate::state::FocusArea::Dock;
@@ -356,7 +371,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         let pane = BrowserPane::new_render(new_id, title, html);
         self.panes.insert(new_id, PaneKind::Browser(pane));
         self.ime.pending_creates.push(new_id);
-        if let Some(tid) = context_terminal.or_else(|| self.focused_terminal_id()) {
+        if let Some(tid) = self.live_dock_terminal_for_context(context_terminal) {
             self.add_pane_to_dock(new_id, Some(tid));
             self.assoc.associated_terminal.insert(new_id, tid);
             self.focus.focus_area = crate::state::FocusArea::Dock;
@@ -385,7 +400,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         let pane = BrowserPane::new_render_stream(new_id, title);
         self.panes.insert(new_id, PaneKind::Browser(pane));
         self.ime.pending_creates.push(new_id);
-        if let Some(tid) = context_terminal.or_else(|| self.focused_terminal_id()) {
+        if let Some(tid) = self.live_dock_terminal_for_context(context_terminal) {
             self.add_pane_to_dock(new_id, Some(tid));
             self.assoc.associated_terminal.insert(new_id, tid);
             self.focus.focus_area = crate::state::FocusArea::Dock;
@@ -536,7 +551,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                 pane.editor.set_dark_mode(self.window.dark_mode);
                 self.panes.insert(new_id, PaneKind::Editor(pane));
                 self.ime.pending_creates.push(new_id);
-                if let Some(tid) = context_terminal.or_else(|| self.focused_terminal_id()) {
+                if let Some(tid) = self.live_dock_terminal_for_context(context_terminal) {
                     self.add_pane_to_dock(new_id, Some(tid));
                     self.assoc.associated_terminal.insert(new_id, tid);
                     self.focus.focus_area = crate::state::FocusArea::Dock;
@@ -617,6 +632,9 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
             self.interaction.drop_preview_start = None;
         }
         self.interaction.tab_scroll_offset.remove(&tab_id);
+        self.interaction.tab_scroll_last_at.remove(&tab_id);
+        self.interaction.tab_scroll_last_direction.remove(&tab_id);
+        self.interaction.tab_manual_scroll.remove(&tab_id);
         // Destroy webview before removing the pane
         if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&tab_id) {
             bp.destroy();
@@ -666,14 +684,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         // Determine next focus target BEFORE removal so we can find a
         // layout neighbor while the tree is still intact.
         let next_focus = if self.focus.focused == Some(tab_id) {
-            self.layout.right_neighbor_pane(tab_id).or_else(|| {
-                // No right neighbor — pick any remaining pane
-                self.layout
-                    .pane_ids()
-                    .iter()
-                    .find(|&&id| id != tab_id)
-                    .copied()
-            })
+            self.next_stage_focus_after_close(tab_id)
         } else {
             None // Focused pane is not being closed
         };

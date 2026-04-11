@@ -95,6 +95,34 @@ fn add_dock_markdown_editor(app: &mut App, terminal_id: u64, contents: &str) -> 
     editor_id
 }
 
+fn add_dock_terminal(app: &mut App, terminal_id: u64) -> u64 {
+    let dock_terminal_id = app.layout.alloc_id();
+    let dock_terminal = TerminalPane::with_cwd(dock_terminal_id, 80, 24, None, true).unwrap();
+    app.panes
+        .insert(dock_terminal_id, PaneKind::Terminal(dock_terminal));
+    app.focus.focused = Some(terminal_id);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.add_pane_to_dock(dock_terminal_id, None);
+    app.assoc
+        .associated_terminal
+        .insert(dock_terminal_id, terminal_id);
+    dock_terminal_id
+}
+
+fn add_markdown_editor(app: &mut App, terminal_id: u64, contents: &str) -> u64 {
+    let editor_id = app.layout.split(terminal_id, SplitDirection::Vertical);
+    let path = temp_markdown_path("stage_live_preview");
+    std::fs::write(&path, contents).unwrap();
+    let editor = EditorPane::open(editor_id, &path).unwrap();
+    app.panes.insert(editor_id, PaneKind::Editor(editor));
+    app.assoc.associated_terminal.insert(editor_id, terminal_id);
+    app.focus.focused = Some(editor_id);
+    app.focus.stage_focused = Some(editor_id);
+    app.focus.focus_area = FocusArea::Stage;
+    editor_id
+}
+
 fn add_diff(app: &mut App, anchor_id: u64) -> u64 {
     let diff_id = app.layout.split(anchor_id, SplitDirection::Horizontal);
     let mut diff = DiffPane::new_empty(diff_id, PathBuf::from("/tmp"));
@@ -323,8 +351,31 @@ fn add_comment_creates_workspace_local_contextartifact() {
 }
 
 #[test]
+fn create_context_artifact_from_dock_terminal_uses_the_dock_groups_paired_terminal() {
+    // UC-3 BR-5, BR-6: Explicit artifact creation from a Dock Terminal Pane still authorizes against the Dock group's paired Terminal.
+    let (mut app, terminal_id) = app_with_terminal();
+    let dock_terminal_id = add_dock_terminal(&mut app, terminal_id);
+    if let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&dock_terminal_id) {
+        terminal.selection = Some(Selection {
+            anchor: (0, 0),
+            end: (0, 4),
+        });
+    }
+
+    let result = app
+        .handle_cli_command(
+            "create-context-artifact",
+            json!({"pane_id": dock_terminal_id, "comment": "dock terminal", "_caller_pane": terminal_id}),
+        )
+        .unwrap();
+
+    assert_eq!(result["pane_id"], dock_terminal_id);
+    assert_eq!(result["associated_terminal_id"], terminal_id);
+}
+
+#[test]
 fn dock_selection_with_gateway_connected_paired_agent_opens_context_comment_composer() {
-    // UC-3 BR-17, BR-18: The add-comment flow is available for a Dock Pane only when its paired agent is gateway-connected and the selection yields content.
+    // UC-3 BR-17, BR-18: The add-comment flow is available for an eligible Dock Pane when the selection yields content.
     let (mut app, terminal_id) = app_with_terminal();
     let editor_id = add_dock_editor(&mut app, terminal_id, &["ship it"]);
     if let Some(PaneKind::Editor(editor)) = app.panes.get_mut(&editor_id) {
@@ -352,11 +403,14 @@ fn dock_selection_with_gateway_connected_paired_agent_opens_context_comment_comp
 }
 
 #[test]
-fn stage_selection_does_not_open_context_comment_composer() {
-    // UC-3 BR-17: Stage Panes do not expose the paired-agent add-comment flow.
+fn stage_selection_with_gateway_connected_paired_agent_does_not_open_context_comment_composer() {
+    // UC-3 BR-17: Stage Panes do not show the add-comment flow even when a paired agent is connected.
     let (mut app, terminal_id) = app_with_terminal();
     let editor_id = add_editor(&mut app, terminal_id, &["ship it"]);
     app.assoc.associated_terminal.insert(editor_id, terminal_id);
+    app.focus.focused = Some(editor_id);
+    app.focus.stage_focused = Some(editor_id);
+    app.focus.focus_area = FocusArea::Stage;
     if let Some(PaneKind::Editor(editor)) = app.panes.get_mut(&editor_id) {
         editor.selection = Some(Selection {
             anchor: (0, 0),
@@ -374,16 +428,20 @@ fn stage_selection_does_not_open_context_comment_composer() {
         },
     );
 
+    assert!(!app.can_show_context_comment_badge(editor_id));
     assert!(!app.can_open_context_comment_composer(editor_id));
 
     app.open_context_comment_composer(editor_id);
 
-    assert!(app.modal.context_comment_composer.is_none());
+    assert!(
+        app.modal.context_comment_composer.is_none(),
+        "stage panes should not open the comment composer"
+    );
 }
 
 #[test]
-fn dock_selection_without_gateway_connected_paired_agent_does_not_open_context_comment_composer() {
-    // UC-3 BR-17: Dock Panes without a gateway-connected paired agent do not expose the add-comment flow.
+fn dock_selection_without_gateway_connected_agent_hides_context_comment_composer() {
+    // UC-3 BR-17: Dock Panes hide the add-comment flow when their paired Terminal is not gateway-connected.
     let (mut app, terminal_id) = app_with_terminal();
     let editor_id = add_dock_editor(&mut app, terminal_id, &["ship it"]);
     if let Some(PaneKind::Editor(editor)) = app.panes.get_mut(&editor_id) {
@@ -397,22 +455,62 @@ fn dock_selection_without_gateway_connected_paired_agent_does_not_open_context_c
         crate::state::gateway_status::AgentInfo {
             name: "Codex",
             pid: 42,
-            wrapper_managed: false,
+            wrapper_managed: true,
             gateway_connected: false,
             status: None,
         },
     );
 
+    assert!(!app.can_show_context_comment_badge(editor_id));
     assert!(!app.can_open_context_comment_composer(editor_id));
 
     app.open_context_comment_composer(editor_id);
 
-    assert!(app.modal.context_comment_composer.is_none());
+    assert!(
+        app.modal.context_comment_composer.is_none(),
+        "disconnected paired agents should not expose the comment composer"
+    );
 }
 
 #[test]
-fn dock_pane_with_gateway_connected_paired_agent_opens_context_comment_composer_without_selection()
-{
+fn dock_terminal_with_gateway_connected_paired_agent_opens_context_comment_composer() {
+    // UC-3 BR-17: Dock Terminal Panes can open the comment flow when the Dock group's paired Terminal is gateway-connected.
+    let (mut app, terminal_id) = app_with_terminal();
+    let dock_terminal_id = add_dock_terminal(&mut app, terminal_id);
+    if let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&dock_terminal_id) {
+        terminal.selection = Some(Selection {
+            anchor: (0, 0),
+            end: (0, 4),
+        });
+    }
+    app.gateway.detected_agents.insert(
+        terminal_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Codex",
+            pid: 42,
+            wrapper_managed: true,
+            gateway_connected: true,
+            status: None,
+        },
+    );
+
+    assert!(app.can_show_context_comment_badge(dock_terminal_id));
+    assert!(app.can_open_context_comment_composer(dock_terminal_id));
+
+    app.open_context_comment_composer(dock_terminal_id);
+
+    let composer = app
+        .modal
+        .context_comment_composer
+        .as_ref()
+        .expect("composer should open for a dock terminal pane");
+    assert_eq!(composer.source_pane_id, dock_terminal_id);
+    assert_eq!(composer.associated_terminal_id, terminal_id);
+    assert_eq!(composer.pane_kind, "terminal");
+}
+
+#[test]
+fn dock_pane_with_associated_terminal_opens_context_comment_composer_without_selection() {
     // UC-3 BR-18: Dock Panes can keep the add-comment affordance visible and open the Context Comment Composer without an active text selection.
     let (mut app, terminal_id) = app_with_terminal();
     let editor_id = add_dock_editor(&mut app, terminal_id, &["ship it"]);
@@ -465,21 +563,22 @@ fn live_preview_context_artifact_capture_uses_visible_selected_text() {
     );
 
     let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
-    let content_rect = crate::pane::pane_content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT);
     let cell = app.window.cached_cell_size;
     app.visual_pane_rects = vec![(editor_id, pane_rect)];
 
-    {
+    let content_rect = {
         let pane = match app.panes.get_mut(&editor_id) {
             Some(PaneKind::Editor(pane)) => pane,
             _ => panic!("expected editor pane"),
         };
+        let content_rect = pane.content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT, cell);
         pane.handle_action(
             crate::tide_editor::input::EditorAction::SetCursor { line: 0, col: 0 },
             20,
         );
         pane.prepare_inline_caches(content_rect, cell, false);
-    }
+        content_rect
+    };
 
     let gutter_x = content_rect.x + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width;
     let start = crate::tide_core::Vec2::new(gutter_x + 1.0, content_rect.y + cell.height + 1.0);
@@ -510,14 +609,13 @@ fn live_preview_context_artifact_capture_uses_visible_selected_text() {
         .modal
         .context_comment_composer
         .as_ref()
-        .expect("composer should open for live preview markdown selection");
+        .expect("composer should open for dock live preview markdown selection");
     assert_eq!(composer.content, "OpenAI");
 }
 
 #[test]
-fn narrow_markdown_tab_prioritizes_add_comment_badge_visibility() {
-    // UC-3 BR-25: When a narrow Dock tab bar cannot show every badge for an active Markdown Pane,
-    // the add-comment affordance stays visible ahead of the plain/live mode badge.
+fn active_markdown_live_preview_keeps_add_comment_visible_when_shared_tab_budget_allows_both_badges() {
+    // UC-3 BR-25: The shared active-tab width budget stretches with the available row width to keep add-comment visible beside the plain/live mode badge for an active Markdown Pane.
     let mut editor = EditorPane::new_empty(11);
     editor.editor.buffer.file_path = Some(PathBuf::from(
         "/tmp/a-very-long-markdown-file-name-for-comment-priority.md",
@@ -535,7 +633,7 @@ fn narrow_markdown_tab_prioritizes_add_comment_badge_visibility() {
     let title_layout = reserve_title_before_badges(
         320.0,
         &badge_widths,
-        crate::theme::TAB_MIN_TITLE_WIDTH + 4.0 + badge_widths[0],
+        crate::header::active_tab_width_cap(540.0) - (crate::theme::TAB_H_PAD * 2.0 + 16.0),
         crate::theme::TAB_MIN_TITLE_WIDTH,
         4.0,
     );
@@ -544,8 +642,10 @@ fn narrow_markdown_tab_prioritizes_add_comment_badge_visibility() {
         .take(title_layout.visible_badges)
         .collect();
 
-    assert_eq!(title_layout.visible_badges, 1);
-    assert_eq!(visible_badges[0].action, Some(HeaderHitAction::AddComment));
+    assert_eq!(title_layout.visible_badges, 2);
+    assert_eq!(visible_badges[0].action, Some(HeaderHitAction::ToggleLivePreview));
+    assert_eq!(visible_badges[1].action, Some(HeaderHitAction::AddComment));
+    assert!(title_layout.title_w >= crate::theme::TAB_MIN_TITLE_WIDTH);
 }
 
 #[test]

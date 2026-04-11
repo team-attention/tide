@@ -12,6 +12,7 @@ use crate::tide_core::{SplitDirection, TerminalBackend};
 use crate::tide_layout::LayoutSnapshot;
 use crate::ActionPort;
 use crate::AppCorePort;
+use crate::DockPort;
 use crate::FocusNavPort;
 use crate::GatewayPort;
 use crate::LayoutPort;
@@ -855,7 +856,22 @@ fn source_terminal_for_pane(
     pane_id: crate::tide_core::PaneId,
 ) -> Result<crate::tide_core::PaneId, CliError> {
     match ctx.pane(pane_id) {
-        Some(PaneKind::Terminal(_)) => Ok(pane_id),
+        Some(PaneKind::Terminal(_)) => {
+            if ctx.is_pane_in_dock(pane_id) {
+                ctx.assoc
+                    .associated_terminal
+                    .get(&pane_id)
+                    .copied()
+                    .or_else(|| ctx.terminal_owning(pane_id))
+                    .ok_or_else(|| {
+                        CliError::InvalidParams(format!(
+                            "pane {pane_id} has no associated terminal"
+                        ))
+                    })
+            } else {
+                Ok(pane_id)
+            }
+        }
         Some(_) => ctx
             .assoc
             .associated_terminal

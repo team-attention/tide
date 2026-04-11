@@ -27,6 +27,21 @@ use crate::TextExtractPort;
 use crate::WorkspaceNavPort;
 
 impl App {
+    fn context_comment_terminal_id(
+        &self,
+        source_pane_id: crate::tide_core::PaneId,
+    ) -> Option<crate::tide_core::PaneId> {
+        if !self.is_pane_in_dock(source_pane_id) {
+            return None;
+        }
+
+        self.assoc
+            .associated_terminal
+            .get(&source_pane_id)
+            .copied()
+            .or_else(|| self.terminal_owning(source_pane_id))
+    }
+
     pub(crate) fn context_artifact_source_label(
         &self,
         source_pane_id: crate::tide_core::PaneId,
@@ -90,14 +105,15 @@ impl App {
         source_pane_id: crate::tide_core::PaneId,
     ) -> Option<crate::ContextCommentComposerState> {
         let pane = self.panes.get(&source_pane_id)?;
-        let (associated_terminal_id, pane_kind, selection, content) = match pane {
+        let associated_terminal_id = self.context_comment_terminal_id(source_pane_id)?;
+        let (pane_kind, selection, content) = match pane {
             PaneKind::Terminal(tp) => {
                 let selection = tp.selection.clone();
                 let content = selection
                     .as_ref()
                     .map(|selection| tp.selected_text(selection))
                     .unwrap_or_default();
-                (source_pane_id, "terminal".to_string(), selection, content)
+                ("terminal".to_string(), selection, content)
             }
             PaneKind::Editor(ep) => {
                 let selection = ep.selection.clone();
@@ -105,15 +121,7 @@ impl App {
                     .as_ref()
                     .map(|selection| ep.selected_text(selection))
                     .unwrap_or_default();
-                (
-                    self.assoc
-                        .associated_terminal
-                        .get(&source_pane_id)
-                        .copied()?,
-                    "editor".to_string(),
-                    selection,
-                    content,
-                )
+                ("editor".to_string(), selection, content)
             }
             PaneKind::Diff(dp) => {
                 let selection = dp.selection.clone();
@@ -121,15 +129,7 @@ impl App {
                     .as_ref()
                     .map(|selection| dp.selected_text(selection))
                     .unwrap_or_default();
-                (
-                    self.assoc
-                        .associated_terminal
-                        .get(&source_pane_id)
-                        .copied()?,
-                    "diff".to_string(),
-                    selection,
-                    content,
-                )
+                ("diff".to_string(), selection, content)
             }
             PaneKind::Browser(bp) => {
                 let content = if bp.url_input_focused && bp.url_selection.is_some() {
@@ -144,15 +144,7 @@ impl App {
                 } else {
                     "browser".to_string()
                 };
-                (
-                    self.assoc
-                        .associated_terminal
-                        .get(&source_pane_id)
-                        .copied()?,
-                    pane_kind,
-                    None,
-                    content,
-                )
+                (pane_kind, None, content)
             }
             PaneKind::Launcher(_) => return None,
         };
@@ -182,18 +174,11 @@ impl App {
         &self,
         source_pane_id: crate::tide_core::PaneId,
     ) -> bool {
-        if !self.is_pane_in_dock(source_pane_id) {
+        if matches!(self.panes.get(&source_pane_id), Some(PaneKind::Launcher(_)) | None) {
             return false;
         }
 
-        let associated_terminal_id = match self.panes.get(&source_pane_id) {
-            Some(PaneKind::Terminal(_)) => Some(source_pane_id),
-            Some(PaneKind::Editor(_)) | Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) => {
-                self.assoc.associated_terminal.get(&source_pane_id).copied()
-            }
-            Some(PaneKind::Launcher(_)) | None => None,
-        };
-        let Some(associated_terminal_id) = associated_terminal_id else {
+        let Some(associated_terminal_id) = self.context_comment_terminal_id(source_pane_id) else {
             return false;
         };
 
@@ -485,13 +470,8 @@ impl crate::application::ports::inward::ActionPort for App {
                             if let Some(&(_, rect)) =
                                 self.visual_pane_rects.iter().find(|(pid, _)| *pid == id)
                             {
-                                let content_top = TAB_BAR_HEIGHT;
-                                let mut click_rect = crate::tide_core::Rect::new(
-                                    rect.x + PANE_PADDING,
-                                    rect.y + content_top,
-                                    rect.width - 2.0 * PANE_PADDING,
-                                    (rect.height - content_top - PANE_PADDING).max(1.0),
-                                );
+                                let mut click_rect =
+                                    pane.content_rect(rect, TAB_BAR_HEIGHT, cell_size);
                                 if let Some((editor_rect, preview_rect)) =
                                     pane.split_preview_rects(click_rect, cell_size)
                                 {
@@ -704,7 +684,7 @@ impl crate::application::ports::inward::ActionPort for App {
                                     .iter()
                                     .find(|(pid, _)| *pid == id)
                                     .map(|(_, r)| {
-                                        crate::pane::pane_content_rect(*r, TAB_BAR_HEIGHT)
+                                        pane.content_rect(*r, TAB_BAR_HEIGHT, cs_for_keys)
                                     });
                                 let (visible_rows, visible_cols) = content_rect
                                     .map(|rect| {
@@ -785,13 +765,18 @@ impl crate::application::ports::inward::ActionPort for App {
                 // Forward mouse scroll to pane
                 if let Some(InputEvent::MouseScroll { delta, .. }) = event {
                     let cs = self.cell_size();
-                    let content_rect = self
+                    let diff_content_rect = self
                         .visual_pane_rects
                         .iter()
                         .find(|(pid, _)| *pid == id)
                         .map(|(_, r)| crate::pane::pane_content_rect(*r, TAB_BAR_HEIGHT));
                     match self.panes.get_mut(&id) {
                         Some(PaneKind::Editor(pane)) if pane.preview_mode => {
+                            let content_rect = self
+                                .visual_pane_rects
+                                .iter()
+                                .find(|(pid, _)| *pid == id)
+                                .map(|(_, r)| pane.content_rect(*r, TAB_BAR_HEIGHT, cs));
                             let (visible_rows, _) = content_rect
                                 .map(|rect| pane.viewport_size_for_content_rect(rect, cs))
                                 .unwrap_or((30, 80));
@@ -815,6 +800,11 @@ impl crate::application::ports::inward::ActionPort for App {
                             }
                         }
                         Some(PaneKind::Editor(pane)) => {
+                            let content_rect = self
+                                .visual_pane_rects
+                                .iter()
+                                .find(|(pid, _)| *pid == id)
+                                .map(|(_, r)| pane.content_rect(*r, TAB_BAR_HEIGHT, cs));
                             let (visible_rows, visible_cols) = content_rect
                                 .map(|rect| pane.viewport_size_for_content_rect(rect, cs))
                                 .unwrap_or((30, 80));
@@ -853,7 +843,7 @@ impl crate::application::ports::inward::ActionPort for App {
                             }
                         }
                         Some(PaneKind::Diff(dp)) => {
-                            let visible_rows = content_rect
+                            let visible_rows = diff_content_rect
                                 .map(|rect| (rect.height / cs.height).floor() as usize)
                                 .unwrap_or(30)
                                 .max(1);

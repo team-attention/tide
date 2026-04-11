@@ -241,8 +241,13 @@ fn render_editor_ime_preedit(
     // Determine the rect for this editor pane
     let (inner_x, inner_y) =
         if let Some((_, rect)) = visual_pane_rects.iter().find(|(id, _)| *id == target_id) {
-            let top_offset = TAB_BAR_HEIGHT;
-            (rect.x + PANE_PADDING, rect.y + top_offset)
+            let content_rect = pane.content_rect(*rect, TAB_BAR_HEIGHT, cell_size);
+            let authoring_rect = if pane.preview_mode {
+                content_rect
+            } else {
+                pane.authoring_rect(content_rect, cell_size)
+            };
+            (authoring_rect.x, authoring_rect.y)
         } else {
             return;
         };

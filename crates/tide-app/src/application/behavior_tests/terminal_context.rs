@@ -5,6 +5,7 @@ use crate::state::FocusArea;
 use crate::tide_core::LayoutEngine;
 use crate::ActionPort;
 use crate::App;
+use crate::DockPort;
 use crate::PaneLifecyclePort;
 
 fn test_app() -> App {
@@ -155,6 +156,34 @@ fn open_file_adds_split_when_focused_is_non_terminal() {
     let ids = app.layout.pane_ids();
     assert!(ids.contains(&editor_id));
     assert!(ids.contains(&new_id));
+    let _ = std::fs::remove_file(&test_path);
+}
+
+#[test]
+fn opening_file_from_retained_terminal_context_reuses_the_visible_non_terminal_group() {
+    // UC-3 BR-10: Retained terminal context keeps association metadata, but file open must reuse the visible non-terminal group instead of targeting a nonexistent Dock.
+    let (mut app, terminal_id, editor_id) = app_with_terminal_and_editor();
+
+    let mut ctx = TerminalContext::default();
+    ctx.cwd = Some(std::path::PathBuf::from("/tmp/retained-open-context"));
+    app.assoc.retained_contexts.insert(terminal_id, ctx);
+    app.panes.remove(&terminal_id);
+    app.layout.remove(terminal_id);
+    app.focus.focused = Some(editor_id);
+    app.focus.focus_area = FocusArea::Stage;
+
+    let test_path = std::path::PathBuf::from("/tmp/tc_retained_open_test.txt");
+    let _ = std::fs::write(&test_path, "test");
+
+    app.open_editor_pane(test_path.clone());
+    let new_id = app.focus.focused.unwrap();
+
+    let ids = app.layout.pane_ids();
+    assert!(ids.contains(&editor_id));
+    assert!(ids.contains(&new_id));
+    assert!(!app.is_pane_in_dock(new_id));
+    assert_eq!(app.assoc.associated_terminal.get(&new_id), Some(&terminal_id));
+
     let _ = std::fs::remove_file(&test_path);
 }
 

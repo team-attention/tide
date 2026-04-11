@@ -509,6 +509,111 @@ impl crate::application::ports::inward::AppCorePort for App {
         self.dock_area_rect
     }
 
+    fn shared_tab_max_scroll(&self, pane_id: PaneId) -> Option<f32> {
+        let rect = self
+            .visual_pane_rects
+            .iter()
+            .find(|(id, _)| *id == pane_id)
+            .map(|(_, rect)| *rect)?;
+
+        let (tab_ids, active_pane, pinned_ids, is_stacked, show_comment_badge) =
+            if self.dock_zoomed_pane() == Some(pane_id) {
+                let mut tabs = self.dock.pinned_dock_layout.all_tabs_flat();
+                if let Some(tid) = self.focused_terminal_id() {
+                    if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                        tabs.extend(tp.dock_layout.all_tabs_flat());
+                    }
+                }
+                if tabs.len() < 2 {
+                    return None;
+                }
+                (tabs, pane_id, Vec::new(), true, self.can_show_context_comment_badge(pane_id))
+            } else if let Some(tg) = self
+                .dock
+                .pinned_dock_layout
+                .tab_group_containing(pane_id)
+                .or_else(|| {
+                    self.terminal_owning(pane_id).and_then(|tid| match self.panes.get(&tid) {
+                        Some(PaneKind::Terminal(tp)) => tp.dock_layout.tab_group_containing(pane_id),
+                        _ => None,
+                    })
+                })
+            {
+                (
+                    tg.tabs.clone(),
+                    tg.active_pane(),
+                    self.dock.pinned_dock_layout.all_pane_ids(),
+                    false,
+                    self.can_show_context_comment_badge(tg.active_pane()),
+                )
+            } else {
+                let stage_pane_ids = self.layout.all_tabs_flat();
+                if self.focus.zoomed_pane == Some(pane_id) && stage_pane_ids.len() > 1 {
+                    (stage_pane_ids, pane_id, Vec::new(), true, false)
+                } else if let Some(tg) = self
+                    .layout
+                    .tab_group_containing(pane_id)
+                    .filter(|tg| tg.tabs.len() >= 2)
+                {
+                    (tg.tabs.clone(), tg.active_pane(), Vec::new(), false, false)
+                } else {
+                    return None;
+                }
+            };
+
+        let cell_w = self.window.cached_cell_size.width;
+        let mut content_left = rect.x;
+        if is_stacked {
+            content_left += TAB_H_PAD + cell_w + 6.0;
+        }
+        let visible_w = (rect.x + rect.width - content_left).max(0.0);
+        if visible_w <= 0.0 {
+            return Some(0.0);
+        }
+
+        let active_tab_cap = crate::header::shared_tab_active_width_cap(visible_w, tab_ids.len());
+        let is_focused = self.focus.focused == Some(pane_id);
+        let total_tabs_w: f32 = tab_ids
+            .iter()
+            .map(|tid| {
+                let mut label = crate::header::dock_tab_label(&self.panes, *tid);
+                if pinned_ids.contains(tid) {
+                    label = format!("\u{f08d} {}", label);
+                }
+                let has_agent_status = self
+                    .gateway
+                    .detected_agents
+                    .get(tid)
+                    .and_then(|agent| agent.status)
+                    .is_some();
+                let badge_widths: Vec<f32> = if *tid == active_pane {
+                    crate::header::active_tab_badges(
+                        &self.panes,
+                        tid,
+                        is_focused,
+                        show_comment_badge,
+                    )
+                    .iter()
+                    .map(|badge| {
+                        badge.text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0
+                    })
+                    .collect()
+                } else {
+                    Vec::new()
+                };
+                crate::header::shared_tab_target_width(
+                    label.chars().count() as f32 * cell_w,
+                    &badge_widths,
+                    has_agent_status,
+                    *tid == active_pane,
+                    active_tab_cap,
+                )
+            })
+            .sum();
+
+        Some((total_tabs_w - visible_w).max(0.0))
+    }
+
     // ── Sidebar handle drag (mouse_adapter) ──
 
     fn sidebar_handle_dragging(&self) -> bool {
