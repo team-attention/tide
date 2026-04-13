@@ -98,7 +98,7 @@ impl App {
 
             match agent.status {
                 Some(AgentStatus::Running) => has_running = true,
-                Some(AgentStatus::Idle) | Some(AgentStatus::NeedsInput) => has_alert = true,
+                Some(AgentStatus::NeedsInput) | Some(AgentStatus::Idle) => has_alert = true,
                 None if agent.gateway_connected => has_connected_idle = true,
                 None => {}
             }
@@ -149,7 +149,7 @@ impl App {
 
             match agent.status {
                 Some(AgentStatus::Running) => has_running = true,
-                Some(AgentStatus::Idle) | Some(AgentStatus::NeedsInput) => has_alert = true,
+                Some(AgentStatus::NeedsInput) | Some(AgentStatus::Idle) => has_alert = true,
                 None if agent.gateway_connected => has_connected_idle = true,
                 None => {}
             }

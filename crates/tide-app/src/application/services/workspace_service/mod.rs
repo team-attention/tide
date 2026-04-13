@@ -40,6 +40,7 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         }
 
         // Stage pane: update stage_focused
+        let focus_area_changed = self.focus.focus_area != FocusArea::Stage;
         self.focus.focus_area = FocusArea::Stage;
         let prev_stage = self.focus.stage_focused;
         if matches!(
@@ -49,8 +50,20 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
             self.focus.stage_focused = Some(id);
         }
         if self.focus.focused == Some(id) && prev_stage == self.focus.stage_focused {
+            let had_wrapped_agent_attention = matches!(
+                self.gateway
+                    .detected_agents
+                    .get(&id)
+                    .and_then(|agent| agent.status),
+                Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+                    | Some(crate::state::gateway_status::AgentStatus::Idle)
+            ) || self.notified_panes.contains(&id)
+                || self.pending_completion_notification_panes.contains(&id)
+                || self.agent_notification_snippets.contains_key(&id);
             self.acknowledge_agent_attention(id);
-            self.cache.invalidate_chrome();
+            if focus_area_changed || had_wrapped_agent_attention {
+                self.cache.invalidate_chrome();
+            }
             return;
         }
         if let Some(prev_id) = self.focus.focused {

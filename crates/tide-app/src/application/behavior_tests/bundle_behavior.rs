@@ -1,10 +1,10 @@
-// Spec: docs/specs/agent-notification-routing.md
+// Spec: docs/specs/bundle-launch-compatibility.md
 
-// --- UC-12: PreventSecondLaunchOnNotificationActivation ---
+// --- UC-1: BuildLaunchCompatibleTideBundle ---
 
 #[test]
 fn source_tide_info_plist_declares_lsmultipleinstancesprohibited() {
-    // UC-12 BR-37: The source Tide Info.plist declares LSMultipleInstancesProhibited.
+    // UC-1 BR-1: The source Tide Info.plist declares LSMultipleInstancesProhibited.
     let plist = include_str!("../../../Info.plist");
 
     assert!(
@@ -15,8 +15,19 @@ fn source_tide_info_plist_declares_lsmultipleinstancesprohibited() {
 }
 
 #[test]
+fn source_tide_info_plist_omits_lsrequirescarbon() {
+    // UC-1 BR-2: The source Tide Info.plist omits LSRequiresCarbon.
+    let plist = include_str!("../../../Info.plist");
+
+    assert!(
+        !plist.contains("<key>LSRequiresCarbon</key>"),
+        "expected Tide Info.plist to omit LSRequiresCarbon for the native AppKit bundle"
+    );
+}
+
+#[test]
 fn local_bundle_build_script_stamps_lsmultipleinstancesprohibited_before_signing() {
-    // UC-12 BR-38: The local Tide.app build path stamps single-instance metadata before signing.
+    // UC-1 BR-3,5: The local Tide.app build path stamps single-instance metadata before signing and re-signs the bundle.
     let script = include_str!("../../../../../scripts/build-app.sh");
 
     assert!(
@@ -30,8 +41,21 @@ fn local_bundle_build_script_stamps_lsmultipleinstancesprohibited_before_signing
 }
 
 #[test]
+fn local_bundle_build_script_strips_lsrequirescarbon_before_signing() {
+    // UC-1 BR-4: The local Tide.app build path strips LSRequiresCarbon before signing.
+    let script = include_str!("../../../../../scripts/build-app.sh");
+
+    assert!(
+        script.contains("Delete :LSRequiresCarbon"),
+        "expected build-app.sh to remove LSRequiresCarbon from the bundled Tide.app plist"
+    );
+}
+
+// --- UC-2: ReuseExistingTideInstanceOnLaunch ---
+
+#[test]
 fn macos_launch_path_reuses_an_existing_tide_instance_before_creating_a_window() {
-    // UC-12 BR-41: The macOS startup path reuses an existing Tide instance
+    // UC-2 BR-6,7: The macOS startup path reuses an existing Tide instance
     // before creating a second Window.
     let source = include_str!("../../adapter/outward/platform_adapter/macos/app.rs");
 

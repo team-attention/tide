@@ -304,8 +304,8 @@ impl From<crate::state::gateway_status::AgentStatus> for AgentChromeState {
     fn from(status: crate::state::gateway_status::AgentStatus) -> Self {
         match status {
             crate::state::gateway_status::AgentStatus::Running => Self::Running,
-            crate::state::gateway_status::AgentStatus::Idle
-            | crate::state::gateway_status::AgentStatus::NeedsInput => Self::Attention,
+            crate::state::gateway_status::AgentStatus::Idle => Self::Attention,
+            crate::state::gateway_status::AgentStatus::NeedsInput => Self::Attention,
         }
     }
 }

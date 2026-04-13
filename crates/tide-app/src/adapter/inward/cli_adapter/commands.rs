@@ -1302,15 +1302,6 @@ fn cli_notify(
         "agent-running" => ("agent-running", Some(AgentStatus::Running)),
         "agent-idle" => ("agent-idle", Some(AgentStatus::Idle)),
         "agent-needs-input" => ("agent-needs-input", Some(AgentStatus::NeedsInput)),
-        "codex-turn-complete" => {
-            let status = classify_codex_completed_turn_payload(params.get("payload"));
-            let normalized_event = match status {
-                AgentStatus::Running => "agent-running",
-                AgentStatus::Idle => "agent-idle",
-                AgentStatus::NeedsInput => "agent-needs-input",
-            };
-            (normalized_event, Some(status))
-        }
         _ => return Err(CliError::InvalidParams(format!("unknown event: {event}"))),
     };
 
@@ -1338,11 +1329,7 @@ fn cli_notify(
         params
             .get("agent")
             .and_then(|v| v.as_str())
-            .unwrap_or(if event == "codex-turn-complete" {
-                "codex"
-            } else {
-                "Agent"
-            });
+            .unwrap_or("Agent");
 
     let agent_name = {
         let agents = ctx.detected_agents_mut();
@@ -1381,19 +1368,14 @@ fn cli_notify(
             }),
         );
         if let Some(status) = status {
-            if matches!(status, AgentStatus::NeedsInput) {
-                let notification_snippet = wrapped_agent_notification_snippet_from_payload(
-                    event,
-                    agent_display_name,
-                    params.get("payload"),
-                );
-                ctx.set_agent_notification_snippet(pane_id, notification_snippet.clone());
-                // Route notification based on user context (UC-1)
-                ctx.route_agent_notification(pane_id, status, notification_snippet);
-            } else {
-                ctx.set_agent_notification_snippet(pane_id, None);
-                ctx.route_agent_notification(pane_id, status, None);
-            }
+            let notification_snippet = wrapped_agent_notification_snippet_from_payload(
+                normalized_event,
+                agent_display_name,
+                params.get("payload"),
+            );
+            ctx.set_agent_notification_snippet(pane_id, notification_snippet.clone());
+            // Route notification based on user context (UC-1)
+            ctx.route_agent_notification(pane_id, status, notification_snippet);
         } else {
             ctx.set_agent_notification_snippet(pane_id, None);
         }
@@ -1403,12 +1385,8 @@ fn cli_notify(
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-struct CodexCompletedTurnPayload {
-    #[serde(rename = "type")]
-    payload_type: String,
-    #[serde(default)]
-    input_messages: Vec<String>,
+struct CodexStopHookPayload {
+    hook_event_name: Option<String>,
     last_assistant_message: Option<String>,
 }
 
@@ -1423,58 +1401,14 @@ struct GeminiHookPayload {
     prompt_response: Option<String>,
 }
 
-const CODEX_NEEDS_INPUT_PHRASES: &[&str] = &[
-    "what would you like me to do next",
-    "what should i do next",
-    "how would you like me to proceed",
-    "please provide",
-    "please answer",
-    "can you clarify",
-    "do you want me to",
-    "would you like me to",
-];
-
-fn classify_codex_completed_turn_payload(
-    payload: Option<&Value>,
-) -> crate::state::gateway_status::AgentStatus {
-    use crate::state::gateway_status::AgentStatus;
-
-    let Some(payload) = payload else {
-        return AgentStatus::Idle;
-    };
-    let Ok(payload) = serde_json::from_value::<CodexCompletedTurnPayload>(payload.clone()) else {
-        return AgentStatus::Idle;
-    };
-    if payload.payload_type != "agent-turn-complete" {
-        return AgentStatus::Idle;
-    }
-
-    let Some(last_message) = payload.last_assistant_message else {
-        return AgentStatus::Idle;
-    };
-    let normalized = last_message.trim().to_ascii_lowercase();
-    if normalized.is_empty() {
-        return AgentStatus::Idle;
-    }
-
-    if CODEX_NEEDS_INPUT_PHRASES
-        .iter()
-        .any(|phrase| normalized_matches_codex_prompt(&normalized, phrase))
-    {
-        return AgentStatus::NeedsInput;
-    }
-
-    AgentStatus::Idle
-}
-
 fn wrapped_agent_notification_snippet_from_payload(
     event: &str,
     agent_hint: &str,
     payload: Option<&Value>,
 ) -> Option<String> {
     match agent_hint {
-        "codex" if event == "codex-turn-complete" => payload
-            .and_then(codex_completed_turn_notification_snippet)
+        "codex" if event == "agent-idle" => payload
+            .and_then(codex_stop_hook_notification_snippet)
             .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
         "claude" => payload
             .and_then(claude_notification_snippet)
@@ -1486,15 +1420,12 @@ fn wrapped_agent_notification_snippet_from_payload(
     }
 }
 
-fn codex_completed_turn_notification_snippet(payload: &Value) -> Option<String> {
-    serde_json::from_value::<CodexCompletedTurnPayload>(payload.clone())
+fn codex_stop_hook_notification_snippet(payload: &Value) -> Option<String> {
+    serde_json::from_value::<CodexStopHookPayload>(payload.clone())
         .ok()
-        .and_then(|payload| {
-            if payload.payload_type == "agent-turn-complete" {
-                payload.last_assistant_message
-            } else {
-                None
-            }
+        .and_then(|payload| match payload.hook_event_name.as_deref() {
+            Some("Stop") | None => payload.last_assistant_message,
+            _ => None,
         })
 }
 
@@ -1512,17 +1443,6 @@ fn gemini_notification_snippet(event: &str, payload: &Value) -> Option<String> {
             "agent-needs-input" => payload.message.or(payload.prompt_response),
             _ => None,
         })
-}
-
-fn normalized_matches_codex_prompt(normalized_message: &str, phrase: &str) -> bool {
-    if normalized_message == phrase {
-        return true;
-    }
-
-    normalized_message
-        .strip_prefix(phrase)
-        .and_then(|suffix| suffix.chars().next())
-        .is_some_and(|ch| ch.is_ascii_whitespace() || matches!(ch, ':' | '?' | '!' | ','))
 }
 
 fn translate_key(key: &str) -> Vec<u8> {

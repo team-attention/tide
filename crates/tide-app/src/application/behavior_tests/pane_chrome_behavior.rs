@@ -14,8 +14,7 @@ use crate::adapter::outward::view::header::{
     reserve_title_before_badges, resolve_tab_scroll_offset, shared_tab_active_width_cap,
     shared_tab_target_width, stage_terminal_dot_color, stage_terminal_dot_status,
     stage_terminal_dot_visual_state, tab_status_dot_width, terminal_chrome_agent_status,
-    terminal_chrome_visual_state, terminal_header_title_color, AgentChromeState,
-    HeaderHitAction,
+    terminal_chrome_visual_state, terminal_header_title_color, AgentChromeState, HeaderHitAction,
 };
 use crate::adapter::outward::view::{
     integration_toggle_notification_indicator_color, pane_surface_attention_status,
@@ -176,13 +175,11 @@ fn integration_toggle_notification_indicator_uses_error_for_denied_status() {
 #[test]
 fn integration_toggle_notification_indicator_hides_when_auto_integration_is_disabled() {
     // UC-7 BR-4: Disabled auto-integration hides the notification-authorization indicator.
-    assert!(
-        integration_toggle_notification_indicator_color(
-            false,
-            crate::state::NotificationAuthorizationStatus::Authorized
-        )
-        .is_none()
-    );
+    assert!(integration_toggle_notification_indicator_color(
+        false,
+        crate::state::NotificationAuthorizationStatus::Authorized
+    )
+    .is_none());
 }
 
 // --- UC-1: RenderFocusedPaneChrome ---
@@ -207,7 +204,7 @@ fn focused_header_accent_renders_without_agent_status() {
     assert!(LIGHT.border_focused.a > 0.0);
 }
 
-// --- UC-2: RenderNeedsInputAttentionChrome ---
+// --- UC-2: RenderWrappedAgentIdleAndNeedsInputChrome ---
 
 #[test]
 fn stage_terminal_attention_does_not_use_pane_surface_fill_or_underline() {
@@ -233,20 +230,43 @@ fn stage_terminal_attention_does_not_use_pane_surface_fill_or_underline() {
 }
 
 #[test]
-fn idle_and_needs_input_share_the_same_stage_terminal_alert_family() {
-    // UC-2 BR-4: Idle and NeedsInput share the same orange alert dot family on Stage Terminal chrome.
-    let idle_color =
-        stage_terminal_dot_color(crate::state::gateway_status::AgentStatus::Idle, Some(0.0));
-    let needs_input_color = stage_terminal_dot_color(
-        crate::state::gateway_status::AgentStatus::NeedsInput,
-        Some(0.0),
+fn idle_stage_terminal_renders_an_orange_blinking_dot_until_acknowledged() {
+    // UC-2 BR-4: Idle completion stays in the orange blinking attention family until acknowledgment clears it.
+    let terminal_id = 12;
+    let terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    let mut panes = HashMap::new();
+    panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    let mut detected_agents = HashMap::new();
+    detected_agents.insert(
+        terminal_id,
+        wrapped_agent_info(crate::state::gateway_status::AgentStatus::Idle),
     );
 
-    assert_eq!(idle_color.r.to_bits(), needs_input_color.r.to_bits());
-    assert_eq!(idle_color.g.to_bits(), needs_input_color.g.to_bits());
-    assert_eq!(idle_color.b.to_bits(), needs_input_color.b.to_bits());
-    assert!(idle_color.r > idle_color.g);
-    assert!(idle_color.g > idle_color.b);
+    assert_eq!(
+        terminal_chrome_agent_status(&panes, &detected_agents, terminal_id),
+        Some(crate::state::gateway_status::AgentStatus::Idle)
+    );
+    assert_eq!(
+        stage_terminal_dot_status(&panes, &detected_agents, terminal_id, true),
+        Some(crate::state::gateway_status::AgentStatus::Idle)
+    );
+    assert_eq!(
+        terminal_chrome_visual_state(&panes, &detected_agents, terminal_id),
+        Some(AgentChromeState::Attention)
+    );
+    assert_eq!(
+        stage_terminal_dot_visual_state(&panes, &detected_agents, terminal_id, true),
+        Some(AgentChromeState::Attention)
+    );
+
+    let start =
+        stage_terminal_dot_color(crate::state::gateway_status::AgentStatus::Idle, Some(0.0));
+    let later = stage_terminal_dot_color(
+        crate::state::gateway_status::AgentStatus::Idle,
+        Some(quarter_phase_blink_time()),
+    );
+    assert!(start.r > start.g && start.g > start.b);
+    assert_ne!(start.a.to_bits(), later.a.to_bits());
 }
 
 #[test]
@@ -272,7 +292,7 @@ fn focused_stage_terminal_keeps_its_alert_dot_until_acknowledged() {
 
 #[test]
 fn inactive_workspace_alert_renders_an_orange_blinking_dot() {
-    // UC-4 BR-11: An inactive Workspace item with unresolved Stage-terminal Idle or NeedsInput renders an orange blinking dot.
+    // UC-4 BR-11: An inactive Workspace item with unresolved Stage-terminal NeedsInput renders an orange blinking dot.
     let status = workspace_item_indicator_status(false, false, true, false);
     let start = workspace_item_indicator_color(status.expect("inactive alert status"), Some(0.0));
     let later = workspace_item_indicator_color(
@@ -298,7 +318,7 @@ fn workspace_running_renders_a_green_dot() {
 
 #[test]
 fn active_workspace_running_uses_the_live_stage_terminal_state() {
-    // UC-4 BR-12: The active Workspace item reads Running from the live Stage Terminal state.
+    // UC-4 BR-15: The active Workspace item reads Running from the live Stage Terminal state.
     let mut app = test_app();
     let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
@@ -312,7 +332,8 @@ fn active_workspace_running_uses_the_live_stage_terminal_state() {
         wrapped_agent_info(crate::state::gateway_status::AgentStatus::Running),
     );
 
-    let (has_running, has_alert, has_connected_idle) = app.workspace_stage_agent_flags(app.ws.active);
+    let (has_running, has_alert, has_connected_idle) =
+        app.workspace_stage_agent_flags(app.ws.active);
 
     assert!(has_running);
     assert!(!has_alert);
@@ -325,7 +346,7 @@ fn active_workspace_running_uses_the_live_stage_terminal_state() {
 
 #[test]
 fn active_workspace_alert_renders_an_orange_blinking_dot() {
-    // UC-4 BR-11: An active Workspace item with unresolved Stage-terminal attention still renders the orange blinking dot.
+    // UC-4 BR-14: An active Workspace item with unresolved Stage-terminal attention still renders the orange blinking dot.
     let status = workspace_item_indicator_status(true, false, true, false)
         .expect("active workspace alert status");
     let start = workspace_item_indicator_color(status, Some(0.0));
@@ -338,7 +359,7 @@ fn active_workspace_alert_renders_an_orange_blinking_dot() {
 
 #[test]
 fn workspace_alert_takes_precedence_over_running() {
-    // UC-4 BR-13: A Workspace item with both running and alerting Stage terminals shows the alert state.
+    // UC-4 BR-17: A Workspace item with both running and alerting Stage terminals shows the alert state.
     assert_eq!(
         workspace_item_indicator_status(true, true, true, false),
         Some(AgentChromeState::Attention)
@@ -347,6 +368,38 @@ fn workspace_alert_takes_precedence_over_running() {
         workspace_item_indicator_status(false, true, true, false),
         Some(AgentChromeState::Attention)
     );
+}
+
+#[test]
+fn workspace_idle_completion_renders_an_orange_blinking_dot() {
+    // UC-4 BR-14: A Workspace item with unresolved Idle completion renders the orange blinking attention dot.
+    let mut app = test_app();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    app.panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    app.focus.focused = Some(terminal_id);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.gateway.detected_agents.insert(
+        terminal_id,
+        wrapped_agent_info(crate::state::gateway_status::AgentStatus::Idle),
+    );
+
+    let (has_running, has_alert, has_connected_idle) =
+        app.workspace_stage_agent_flags(app.ws.active);
+    assert!(!has_running);
+    assert!(has_alert);
+    assert!(!has_connected_idle);
+
+    let status = workspace_item_indicator_status(true, has_running, has_alert, has_connected_idle)
+        .expect("idle completion workspace indicator");
+    assert_eq!(status, AgentChromeState::Attention);
+
+    let start = workspace_item_indicator_color(status, Some(0.0));
+    let later = workspace_item_indicator_color(status, Some(quarter_phase_blink_time()));
+    assert!(start.r > start.g && start.g > start.b);
+    assert_ne!(start.a.to_bits(), later.a.to_bits());
 }
 
 #[test]
@@ -457,38 +510,41 @@ fn running_stage_terminal_uses_a_green_dot_signal() {
 }
 
 #[test]
-fn attention_stage_terminal_renders_an_orange_blinking_dot() {
-    // UC-3 BR-10: Unresolved Idle and NeedsInput render an orange blinking Stage-terminal dot.
+fn needs_input_stage_terminal_renders_an_orange_blinking_dot() {
+    // UC-3 BR-10: NeedsInput renders an orange blinking Stage-terminal dot.
     let terminal_id = 12;
     let terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
     let mut panes = HashMap::new();
     panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    let mut detected_agents = HashMap::new();
+    detected_agents.insert(
+        terminal_id,
+        wrapped_agent_info(crate::state::gateway_status::AgentStatus::NeedsInput),
+    );
 
-    for status in [
-        crate::state::gateway_status::AgentStatus::Idle,
+    assert_eq!(
+        terminal_chrome_agent_status(&panes, &detected_agents, terminal_id),
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
+    assert_eq!(
+        stage_terminal_dot_status(&panes, &detected_agents, terminal_id, true),
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
+    let start = stage_terminal_dot_color(
         crate::state::gateway_status::AgentStatus::NeedsInput,
-    ] {
-        let mut detected_agents = HashMap::new();
-        detected_agents.insert(terminal_id, wrapped_agent_info(status));
-
-        assert_eq!(
-            terminal_chrome_agent_status(&panes, &detected_agents, terminal_id),
-            Some(status)
-        );
-        assert_eq!(
-            stage_terminal_dot_status(&panes, &detected_agents, terminal_id, true),
-            Some(status)
-        );
-        let start = stage_terminal_dot_color(status, Some(0.0));
-        let later = stage_terminal_dot_color(status, Some(quarter_phase_blink_time()));
-        assert!(start.r > start.g && start.g > start.b);
-        assert_ne!(start.a.to_bits(), later.a.to_bits());
-    }
+        Some(0.0),
+    );
+    let later = stage_terminal_dot_color(
+        crate::state::gateway_status::AgentStatus::NeedsInput,
+        Some(quarter_phase_blink_time()),
+    );
+    assert!(start.r > start.g && start.g > start.b);
+    assert_ne!(start.a.to_bits(), later.a.to_bits());
 }
 
 #[test]
-fn wrapped_agent_alert_blink_uses_a_stable_timebase() {
-    // UC-3 BR-10: Wrapped-agent alert blink uses a stable origin rather than per-frame elapsed time.
+fn wrapped_agent_completion_and_input_required_blink_use_a_stable_timebase() {
+    // UC-3 BR-11: Completion and input-required attention use a stable blink origin rather than per-frame elapsed time.
     let origin = std::time::Instant::now();
     let later = origin
         .checked_add(Duration::from_secs_f64(quarter_phase_blink_time()))
@@ -500,22 +556,19 @@ fn wrapped_agent_alert_blink_uses_a_stable_timebase() {
     assert_eq!(start.to_bits(), 0.0f64.to_bits());
     assert!(progressed > start);
 
-    let stage_start =
-        stage_terminal_dot_color(crate::state::gateway_status::AgentStatus::Idle, Some(start));
-    let stage_later = stage_terminal_dot_color(
+    for status in [
         crate::state::gateway_status::AgentStatus::Idle,
-        Some(progressed),
-    );
-    let workspace_start = workspace_item_indicator_color(
-        crate::state::gateway_status::AgentStatus::Idle,
-        Some(start),
-    );
-    let workspace_later = workspace_item_indicator_color(
-        crate::state::gateway_status::AgentStatus::Idle,
-        Some(progressed),
-    );
+        crate::state::gateway_status::AgentStatus::NeedsInput,
+    ] {
+        let stage_start = stage_terminal_dot_color(status, Some(start));
+        let stage_later = stage_terminal_dot_color(status, Some(progressed));
+        assert_ne!(stage_start.a.to_bits(), stage_later.a.to_bits());
+    }
 
-    assert_ne!(stage_start.a.to_bits(), stage_later.a.to_bits());
+    let workspace_start = workspace_item_indicator_color(AgentChromeState::Attention, Some(start));
+    let workspace_later =
+        workspace_item_indicator_color(AgentChromeState::Attention, Some(progressed));
+
     assert_ne!(workspace_start.a.to_bits(), workspace_later.a.to_bits());
 }
 

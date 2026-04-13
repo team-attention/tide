@@ -173,6 +173,8 @@ pub(crate) struct App {
     /// Pane IDs that have already sent a system notification and haven't been
     /// acknowledged (focused) yet. Prevents duplicate notifications (UC-1 BR-4).
     pub(crate) notified_panes: std::collections::HashSet<PaneId>,
+    /// Pane IDs with an undelivered Wrapped Agent Completion Notification.
+    pub(crate) pending_completion_notification_panes: std::collections::HashSet<PaneId>,
     /// Last unresolved notification snippet per wrapped-agent source Pane.
     pub(crate) agent_notification_snippets: HashMap<PaneId, String>,
 }
@@ -225,6 +227,7 @@ impl App {
             pending_cli_caller_pane: None,
             pending_platform_commands: Vec::new(),
             notified_panes: std::collections::HashSet::new(),
+            pending_completion_notification_panes: std::collections::HashSet::new(),
             agent_notification_snippets: HashMap::new(),
         }
     }
@@ -297,6 +300,7 @@ impl App {
 
     pub(crate) fn acknowledge_agent_attention(&mut self, pane_id: PaneId) {
         let mut affected_workspaces = Vec::new();
+        let mut clear_completion_state = false;
 
         if let Some(workspace_idx) = self.find_workspace_for_pane(pane_id) {
             if !affected_workspaces.contains(&workspace_idx) {
@@ -306,14 +310,21 @@ impl App {
         if let Some(agent) = self.gateway.detected_agents.get_mut(&pane_id) {
             if matches!(
                 agent.status,
-                Some(crate::state::gateway_status::AgentStatus::NeedsInput)
-                    | Some(crate::state::gateway_status::AgentStatus::Idle)
+                Some(crate::state::gateway_status::AgentStatus::Idle)
             ) {
                 agent.status = None;
+                clear_completion_state = true;
             }
         }
-        self.notified_panes.remove(&pane_id);
-        self.agent_notification_snippets.remove(&pane_id);
+        if clear_completion_state
+            || self
+                .pending_completion_notification_panes
+                .contains(&pane_id)
+        {
+            self.notified_panes.remove(&pane_id);
+            self.pending_completion_notification_panes.remove(&pane_id);
+            self.agent_notification_snippets.remove(&pane_id);
+        }
 
         for workspace_idx in affected_workspaces {
             self.refresh_workspace_agent_notification(workspace_idx);
@@ -329,6 +340,7 @@ impl App {
 
         self.gateway.detected_agents.remove(&pane_id);
         self.notified_panes.remove(&pane_id);
+        self.pending_completion_notification_panes.remove(&pane_id);
         self.agent_notification_snippets.remove(&pane_id);
 
         for workspace_idx in affected_workspaces {
@@ -1072,9 +1084,10 @@ impl crate::application::ports::inward::GatewayPort for App {
                         "agent-running",
                         Some(crate::state::gateway_status::AgentStatus::Running),
                     )),
-                    Some("agent-idle") => {
-                        Some(("agent-idle", Some(crate::state::gateway_status::AgentStatus::Idle)))
-                    }
+                    Some("agent-idle") => Some((
+                        "agent-idle",
+                        Some(crate::state::gateway_status::AgentStatus::Idle),
+                    )),
                     Some("agent-needs-input") => Some((
                         "agent-needs-input",
                         Some(crate::state::gateway_status::AgentStatus::NeedsInput),
@@ -1158,6 +1171,7 @@ impl crate::application::ports::inward::GatewayPort for App {
             Some(crate::state::gateway_status::AgentStatus::Running)
         ) {
             self.agent_notification_snippets.remove(&pane_id);
+            self.pending_completion_notification_panes.remove(&pane_id);
         }
         if self.is_terminal_pane_in_any_workspace(pane_id) {
             self.queue_notification_permission_request_if_auto_integration_enabled();
@@ -1216,15 +1230,69 @@ impl crate::application::ports::inward::GatewayPort for App {
         // BR-1: Running status does not trigger notification routing
         if matches!(status, AgentStatus::Running) {
             self.agent_notification_snippets.remove(&pane_id);
+            self.notified_panes.remove(&pane_id);
+            self.pending_completion_notification_panes.remove(&pane_id);
+            while self.ws.workspace_extras.len() <= self.ws.active {
+                self.ws.workspace_extras.push(WorkspaceExtras::new());
+            }
             return;
         }
 
-        // Idle is projection-only. Clear any cached snippet so it cannot be reused
-        // by a later NeedsInput transition without a fresh payload.
         if matches!(status, AgentStatus::Idle) {
-            self.agent_notification_snippets.remove(&pane_id);
+            self.notified_panes.remove(&pane_id);
+            if let Some(snippet) = notification_snippet.as_ref() {
+                self.agent_notification_snippets
+                    .insert(pane_id, snippet.to_string());
+                self.pending_completion_notification_panes.insert(pane_id);
+            }
+            while self.ws.workspace_extras.len() <= self.ws.active {
+                self.ws.workspace_extras.push(WorkspaceExtras::new());
+            }
+            let completion_pending = self
+                .pending_completion_notification_panes
+                .contains(&pane_id);
+            let completion_snippet = if completion_pending {
+                notification_snippet
+                    .or_else(|| self.agent_notification_snippets.get(&pane_id).cloned())
+                    .or_else(|| self.visible_wrapped_agent_notification_snippet(pane_id))
+            } else {
+                None
+            };
+
+            let pane_is_current_focus = self.window.is_focused
+                && self.focus.focused == Some(pane_id)
+                && if self.is_pane_in_dock(pane_id) {
+                    self.focus.focus_area == crate::state::FocusArea::Dock
+                } else {
+                    self.focus.focus_area == crate::state::FocusArea::Stage
+                };
+
+            if pane_is_current_focus {
+                self.cache.needs_redraw = true;
+                return;
+            }
+
+            if self.pending_completion_notification_panes.remove(&pane_id) {
+                let body = completion_snippet
+                    .or_else(|| self.visible_wrapped_agent_notification_snippet(pane_id))
+                    .unwrap_or_else(|| format!("{} finished a turn", agent_name));
+                self.pending_platform_commands.push(
+                    crate::tide_platform::WindowCommand::SendSystemNotification {
+                        title: notification_title,
+                        body,
+                        pane_id,
+                    },
+                );
+                self.agent_notification_snippets.remove(&pane_id);
+            }
             self.cache.needs_redraw = true;
             return;
+        }
+
+        let cleared_completion_pending =
+            self.pending_completion_notification_panes.remove(&pane_id);
+        if cleared_completion_pending && notification_snippet.is_none() {
+            self.agent_notification_snippets.remove(&pane_id);
         }
 
         let notification_snippet = notification_snippet
@@ -1276,14 +1344,19 @@ impl crate::application::ports::inward::GatewayPort for App {
 impl App {
     fn wrapped_agent_notification_title(&self, pane_id: PaneId) -> Option<String> {
         if self.panes.contains_key(&pane_id) {
-            return Some(format!("Tide - {}", crate::ui::pane_title(&self.panes, pane_id)));
+            return Some(format!(
+                "Tide - {}",
+                crate::ui::pane_title(&self.panes, pane_id)
+            ));
         }
 
         self.ws.workspaces.iter().find_map(|workspace| {
-            workspace
-                .panes
-                .contains_key(&pane_id)
-                .then(|| format!("Tide - {}", crate::ui::pane_title(&workspace.panes, pane_id)))
+            workspace.panes.contains_key(&pane_id).then(|| {
+                format!(
+                    "Tide - {}",
+                    crate::ui::pane_title(&workspace.panes, pane_id)
+                )
+            })
         })
     }
 
