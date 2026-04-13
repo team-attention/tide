@@ -31,6 +31,7 @@ mod lsp_completion;
 mod markdown_workspace_behavior;
 mod modal_behavior;
 mod modifier_keybinding;
+mod notification_activation_relay;
 mod pane_chrome_behavior;
 mod pane_close_responsiveness;
 mod pane_lifecycle;

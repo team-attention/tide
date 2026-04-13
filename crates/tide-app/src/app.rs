@@ -501,6 +501,11 @@ impl crate::application::ports::inward::AppCorePort for App {
         self.cache.needs_redraw = true;
     }
 
+    fn queue_show_window(&mut self) {
+        self.pending_platform_commands
+            .push(crate::tide_platform::WindowCommand::ShowWindow);
+    }
+
     fn sync_file_tree_modified_editor_cache(&mut self) {
         App::sync_file_tree_modified_editor_cache(self);
     }

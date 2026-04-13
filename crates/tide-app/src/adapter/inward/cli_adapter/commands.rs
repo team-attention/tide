@@ -18,6 +18,7 @@ use crate::GatewayPort;
 use crate::LayoutPort;
 use crate::PaneAccessPort;
 use crate::PaneLifecyclePort;
+use crate::WorkspaceNavPort;
 
 use super::protocol::CliError;
 
@@ -31,6 +32,7 @@ pub(crate) trait CliPorts:
     + LayoutPort
     + PaneAccessPort
     + PaneLifecyclePort
+    + WorkspaceNavPort
 {
 }
 impl<
@@ -40,7 +42,8 @@ impl<
             + GatewayPort
             + LayoutPort
             + PaneAccessPort
-            + PaneLifecyclePort,
+            + PaneLifecyclePort
+            + WorkspaceNavPort,
     > CliPorts for T
 {
 }
@@ -108,6 +111,7 @@ impl crate::App {
             "split-horizontal" => cli_split(self, SplitDirection::Horizontal, params),
             "close-pane" => cli_close_pane(self, params),
             "focus-pane" => cli_focus_pane(self, params),
+            "activate-notification-target" => cli_activate_notification_target(self, params),
             "resize-pane" => cli_resize_pane(self, params),
             "open-terminal" => cli_open_terminal(self, params),
             "open-editor" => cli_open_editor(self, params),
@@ -542,6 +546,25 @@ fn cli_focus_pane(
 
     ctx.focus_pane(pane_id);
     ctx.gateway_notify("focus-changed", json!({"pane_id": pane_id}));
+    Ok(json!({"ok": true}))
+}
+
+fn cli_activate_notification_target(
+    ctx: &mut (impl AppCorePort + PaneAccessPort + WorkspaceNavPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = params
+        .get("pane_id")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| CliError::InvalidParams("pane_id required".into()))?;
+
+    if !ctx.has_pane_in_any_workspace(pane_id) {
+        return Ok(json!({"ok": true}));
+    }
+
+    ctx.activate_notification_target(pane_id);
+    ctx.queue_show_window();
+    ctx.request_redraw();
     Ok(json!({"ok": true}))
 }
 

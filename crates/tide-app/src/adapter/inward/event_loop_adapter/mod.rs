@@ -314,6 +314,7 @@ pub(crate) fn handle_platform_event(
         }
         PlatformEvent::SystemNotificationActivated { pane_id } => {
             ctx.activate_notification_target(pane_id);
+            window.show_window();
             ctx.request_redraw();
         }
         PlatformEvent::NotificationAuthorizationStatusChanged { status } => {
@@ -1080,6 +1081,9 @@ impl App {
             let cmds: Vec<_> = self.pending_platform_commands.drain(..).collect();
             for cmd in cmds {
                 match cmd {
+                    WindowCommand::ShowWindow => {
+                        window.show_window();
+                    }
                     WindowCommand::SendSystemNotification {
                         ref title,
                         ref body,

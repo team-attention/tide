@@ -2,6 +2,8 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::io::Write;
+use std::os::unix::net::UnixStream;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -23,7 +25,7 @@ use super::super::{CursorIcon, EventCallback, PlatformWindow, WindowConfig};
 const INITIAL_BG_RED: f64 = 0.08;
 const INITIAL_BG_GREEN: f64 = 0.08;
 const INITIAL_BG_BLUE: f64 = 0.10;
-const NOTIFICATION_TARGET_PREFIX: &str = "tide-pane:";
+const NOTIFICATION_TARGET_PREFIX: &str = "tide-target:";
 static NOTIFICATION_DELIVERY_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 use super::ime_proxy::ImeProxyView;
@@ -118,16 +120,64 @@ declare_class!(
     }
 );
 
-fn notification_identifier_for_pane(pane_id: u64) -> String {
-    let delivery_id = NOTIFICATION_DELIVERY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    format!("{NOTIFICATION_TARGET_PREFIX}{pane_id}:{delivery_id}")
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NotificationActivationTarget {
+    tide_instance_pid: u32,
+    pane_id: u64,
 }
 
-fn notification_target_from_identifier(identifier: &str) -> Option<u64> {
-    identifier
-        .strip_prefix(NOTIFICATION_TARGET_PREFIX)
-        .and_then(|value| value.split(':').next())
-        .and_then(|value| value.parse::<u64>().ok())
+fn notification_identifier_for_target(target: NotificationActivationTarget) -> String {
+    let delivery_id = NOTIFICATION_DELIVERY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!(
+        "{NOTIFICATION_TARGET_PREFIX}{}:{}:{delivery_id}",
+        target.tide_instance_pid, target.pane_id
+    )
+}
+
+fn notification_target_from_identifier(identifier: &str) -> Option<NotificationActivationTarget> {
+    let mut parts = identifier.strip_prefix(NOTIFICATION_TARGET_PREFIX)?.split(':');
+    let tide_instance_pid = parts.next()?.parse::<u32>().ok()?;
+    let pane_id = parts.next()?.parse::<u64>().ok()?;
+    let _delivery_id = parts.next()?;
+    Some(NotificationActivationTarget {
+        tide_instance_pid,
+        pane_id,
+    })
+}
+
+fn notification_relay_socket_path_for_tide_instance(tide_instance_pid: u32) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("tide-{tide_instance_pid}.sock"))
+}
+
+fn relay_notification_activation(target: NotificationActivationTarget) -> bool {
+    let socket_path = notification_relay_socket_path_for_tide_instance(target.tide_instance_pid);
+    let mut stream = match UnixStream::connect(&socket_path) {
+        Ok(stream) => stream,
+        Err(_) => return false,
+    };
+
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "activate-notification-target",
+        "params": {
+            "pane_id": target.pane_id,
+        },
+    });
+
+    writeln!(
+        stream,
+        "{}",
+        serde_json::to_string(&request).unwrap_or_default()
+    )
+    .is_ok()
+}
+
+fn terminate_current_tide_instance() {
+    unsafe {
+        let app_cls = objc2::runtime::AnyClass::get("NSApplication").expect("NSApplication");
+        let nsapp: Retained<AnyObject> = msg_send_id![app_cls, sharedApplication];
+        let _: () = msg_send![&nsapp, terminate: std::ptr::null::<AnyObject>()];
+    }
 }
 
 pub(crate) const NOTIFICATION_AUTHORIZATION_OPTIONS: usize = 0x07;
@@ -237,10 +287,20 @@ declare_class!(
                 let notification: Retained<AnyObject> = msg_send_id![response, notification];
                 let request: Retained<AnyObject> = msg_send_id![&notification, request];
                 let identifier: Retained<NSString> = msg_send_id![&request, identifier];
-                if let Some(pane_id) = notification_target_from_identifier(&identifier.to_string()) {
-                    self.emit(super::super::PlatformEvent::SystemNotificationActivated {
-                        pane_id,
-                    });
+                if let Some(target) = notification_target_from_identifier(&identifier.to_string()) {
+                    if target.tide_instance_pid == std::process::id() {
+                        self.emit(super::super::PlatformEvent::SystemNotificationActivated {
+                            pane_id: target.pane_id,
+                        });
+                    } else if relay_notification_activation(target) {
+                        let should_terminate = super::app::with_main_window(|window| {
+                            !window.window_revealed.get()
+                        })
+                        .unwrap_or(true);
+                        if should_terminate {
+                            terminate_current_tide_instance();
+                        }
+                    }
                 }
             }
             completion.call(());
@@ -293,6 +353,7 @@ pub struct MacosWindow {
     ime_proxies: RefCell<HashMap<u64, Retained<ImeProxyView>>>,
     notification_center_delegate: Retained<TideNotificationCenterDelegate>,
     notification_authorization_requested: Cell<bool>,
+    window_revealed: Cell<bool>,
 }
 
 impl MacosWindow {
@@ -441,9 +502,8 @@ impl MacosWindow {
             let _: () = msg_send![&ns_window, setAlphaValue: 0.0_f64];
         }
 
-        // Center and show (invisible due to alpha=0, but events still flow)
+        // Center without ordering front. show_window() owns reveal + activation.
         ns_window.center();
-        ns_window.makeKeyAndOrderFront(None);
 
         // Set the window delegate for resize/focus/close events
         let delegate = super::view::TideWindowDelegate::new(Rc::clone(&callback), mtm);
@@ -471,6 +531,7 @@ impl MacosWindow {
             ime_proxies: RefCell::new(HashMap::new()),
             notification_center_delegate,
             notification_authorization_requested: Cell::new(false),
+            window_revealed: Cell::new(false),
         }
     }
 }
@@ -604,8 +665,14 @@ impl PlatformWindow for MacosWindow {
 
     fn show_window(&self) {
         unsafe {
+            self.ns_window.makeKeyAndOrderFront(None);
+            let app_cls = objc2::runtime::AnyClass::get("NSApplication").expect("NSApplication");
+            let nsapp: Retained<AnyObject> = msg_send_id![app_cls, sharedApplication];
+            #[allow(deprecated)]
+            let _: () = msg_send![&nsapp, activateIgnoringOtherApps: true];
             let _: () = msg_send![&self.ns_window, setAlphaValue: 1.0_f64];
         }
+        self.window_revealed.set(true);
     }
 
     fn send_system_notification(&self, title: &str, body: &str, pane_id: u64) {
@@ -642,7 +709,10 @@ impl PlatformWindow for MacosWindow {
             let null_trigger: *const AnyObject = std::ptr::null();
             let request: Retained<AnyObject> = msg_send_id![
                 notif_req_cls,
-                requestWithIdentifier: &*NSString::from_str(&notification_identifier_for_pane(pane_id))
+                requestWithIdentifier: &*NSString::from_str(&notification_identifier_for_target(NotificationActivationTarget {
+                    tide_instance_pid: std::process::id(),
+                    pane_id,
+                }))
                 content: &*content
                 trigger: null_trigger
             ];
@@ -672,21 +742,42 @@ impl PlatformWindow for MacosWindow {
 
 #[cfg(test)]
 mod tests {
-    use super::{notification_identifier_for_pane, notification_target_from_identifier};
+    use super::{
+        notification_identifier_for_target, notification_relay_socket_path_for_tide_instance,
+        notification_target_from_identifier, NotificationActivationTarget,
+    };
 
     #[test]
-    fn notification_identifier_round_trips_the_target_pane_id() {
-        let identifier = notification_identifier_for_pane(42);
-        assert_eq!(notification_target_from_identifier(&identifier), Some(42));
+    fn notification_identifier_round_trips_the_tide_instance_pid_and_target_pane_id() {
+        let target = NotificationActivationTarget {
+            tide_instance_pid: 4242,
+            pane_id: 42,
+        };
+        let identifier = notification_identifier_for_target(target);
+        assert_eq!(notification_target_from_identifier(&identifier), Some(target));
     }
 
     #[test]
-    fn notification_identifier_is_unique_per_delivery_for_the_same_pane() {
-        let first = notification_identifier_for_pane(7);
-        let second = notification_identifier_for_pane(7);
+    fn notification_identifier_is_unique_per_delivery_for_the_same_tide_instance_and_pane() {
+        let target = NotificationActivationTarget {
+            tide_instance_pid: 77,
+            pane_id: 7,
+        };
+        let first = notification_identifier_for_target(target);
+        let second = notification_identifier_for_target(target);
 
         assert_ne!(first, second);
-        assert_eq!(notification_target_from_identifier(&first), Some(7));
-        assert_eq!(notification_target_from_identifier(&second), Some(7));
+        assert_eq!(notification_target_from_identifier(&first), Some(target));
+        assert_eq!(notification_target_from_identifier(&second), Some(target));
+    }
+
+    #[test]
+    fn notification_relay_socket_path_uses_the_target_tide_instance_pid() {
+        let path = notification_relay_socket_path_for_tide_instance(1234);
+
+        assert_eq!(
+            path,
+            std::env::temp_dir().join("tide-1234.sock")
+        );
     }
 }
