@@ -29,6 +29,8 @@ if [ ! -d "$APP_BUNDLE" ]; then
 fi
 
 /usr/libexec/PlistBuddy -c "Delete :LSRequiresCarbon" "$APP_PLIST" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c "Delete :LSMultipleInstancesProhibited" "$APP_PLIST" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c "Add :LSMultipleInstancesProhibited bool true" "$APP_PLIST"
 
 codesign --force --deep --sign - --identifier com.eatnug.tide "$APP_BUNDLE"
 

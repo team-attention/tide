@@ -293,20 +293,60 @@ fn badge_tint(color: crate::tide_core::Color, alpha: f32) -> crate::tide_core::C
     crate::tide_core::Color::new(color.r, color.g, color.b, alpha)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AgentChromeState {
+    ConnectedIdle,
+    Running,
+    Attention,
+}
+
+impl From<crate::state::gateway_status::AgentStatus> for AgentChromeState {
+    fn from(status: crate::state::gateway_status::AgentStatus) -> Self {
+        match status {
+            crate::state::gateway_status::AgentStatus::Running => Self::Running,
+            crate::state::gateway_status::AgentStatus::Idle
+            | crate::state::gateway_status::AgentStatus::NeedsInput => Self::Attention,
+        }
+    }
+}
+
 pub(crate) fn stage_terminal_dot_color(
-    status: crate::state::gateway_status::AgentStatus,
+    state: impl Into<AgentChromeState>,
     blink_time: Option<f64>,
 ) -> crate::tide_core::Color {
-    use crate::state::gateway_status::AgentStatus;
-
-    match status {
-        AgentStatus::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
-        AgentStatus::Idle | AgentStatus::NeedsInput => {
+    match state.into() {
+        AgentChromeState::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
+        AgentChromeState::Attention => {
             let opacity = blink_time
                 .map(|t| 0.72 + 0.28 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32)
                 .unwrap_or(0.9);
             crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity)
         }
+        AgentChromeState::ConnectedIdle => crate::tide_core::Color::new(0.36, 0.56, 0.82, 1.0),
+    }
+}
+
+pub(crate) fn agent_status_dot_color(
+    status: crate::state::gateway_status::AgentStatus,
+    attention_unresolved: bool,
+    blink_time: Option<f64>,
+) -> crate::tide_core::Color {
+    let chrome_state = match status {
+        crate::state::gateway_status::AgentStatus::Idle if !attention_unresolved => {
+            AgentChromeState::ConnectedIdle
+        }
+        _ => AgentChromeState::from(status),
+    };
+
+    match chrome_state {
+        AgentChromeState::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
+        AgentChromeState::Attention => {
+            let opacity = blink_time
+                .map(|t| 0.85 + 0.15 * (t * crate::theme::AGENT_BLINK_FREQUENCY).cos() as f32)
+                .unwrap_or(1.0);
+            crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity)
+        }
+        AgentChromeState::ConnectedIdle => crate::tide_core::Color::new(0.3, 0.55, 0.95, 1.0),
     }
 }
 
@@ -324,6 +364,24 @@ pub(crate) fn terminal_chrome_agent_status(
     }
 }
 
+pub(crate) fn terminal_chrome_visual_state(
+    panes: &HashMap<PaneId, PaneKind>,
+    detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
+    pane_id: PaneId,
+) -> Option<AgentChromeState> {
+    match panes.get(&pane_id) {
+        Some(PaneKind::Terminal(_)) => detected_agents
+            .get(&pane_id)
+            .filter(|agent| agent.wrapper_managed)
+            .and_then(|agent| match agent.status {
+                Some(status) => Some(AgentChromeState::from(status)),
+                None if agent.gateway_connected => Some(AgentChromeState::ConnectedIdle),
+                None => None,
+            }),
+        _ => None,
+    }
+}
+
 pub(crate) fn stage_terminal_dot_status(
     panes: &HashMap<PaneId, PaneKind>,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
@@ -335,6 +393,19 @@ pub(crate) fn stage_terminal_dot_status(
     }
 
     terminal_chrome_agent_status(panes, detected_agents, pane_id)
+}
+
+pub(crate) fn stage_terminal_dot_visual_state(
+    panes: &HashMap<PaneId, PaneKind>,
+    detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
+    pane_id: PaneId,
+    is_stage_surface: bool,
+) -> Option<AgentChromeState> {
+    if !is_stage_surface {
+        return None;
+    }
+
+    terminal_chrome_visual_state(panes, detected_agents, pane_id)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -462,47 +533,6 @@ pub(crate) fn active_tab_badges(
     badges
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AgentChromeState {
-    ConnectedIdle,
-    Running,
-    Attention,
-}
-
-impl From<crate::state::gateway_status::AgentStatus> for AgentChromeState {
-    fn from(status: crate::state::gateway_status::AgentStatus) -> Self {
-        match status {
-            crate::state::gateway_status::AgentStatus::Running => Self::Running,
-            crate::state::gateway_status::AgentStatus::Idle => Self::ConnectedIdle,
-            crate::state::gateway_status::AgentStatus::NeedsInput => Self::Attention,
-        }
-    }
-}
-
-pub(crate) fn agent_status_dot_color(
-    status: crate::state::gateway_status::AgentStatus,
-    attention_unresolved: bool,
-    blink_time: Option<f64>,
-) -> crate::tide_core::Color {
-    let chrome_state = match status {
-        crate::state::gateway_status::AgentStatus::Idle if attention_unresolved => {
-            AgentChromeState::Attention
-        }
-        _ => AgentChromeState::from(status),
-    };
-
-    match chrome_state {
-        AgentChromeState::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
-        AgentChromeState::Attention => {
-            let opacity = blink_time
-                .map(|t| 0.85 + 0.15 * (t * crate::theme::AGENT_BLINK_FREQUENCY).cos() as f32)
-                .unwrap_or(1.0);
-            crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity)
-        }
-        AgentChromeState::ConnectedIdle => crate::tide_core::Color::new(0.3, 0.55, 0.95, 1.0),
-    }
-}
-
 /// Render the header for a single pane.
 /// Returns hit zones for click handling.
 /// When `has_dock_tab_bar` is true, skips the title badge and pane-specific badges
@@ -529,7 +559,6 @@ pub fn render_pane_header(
         p,
         renderer,
         None,
-        false,
         None,
         false,
     )
@@ -545,8 +574,7 @@ pub fn render_pane_header_inner(
     show_comment_badge: bool,
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
-    agent_status: Option<crate::state::gateway_status::AgentStatus>,
-    agent_attention_unresolved: bool,
+    agent_chrome_state: Option<AgentChromeState>,
     blink_time: Option<f64>,
     show_stage_terminal_dot: bool,
 ) -> Vec<HeaderHitZone> {
@@ -580,14 +608,14 @@ pub fn render_pane_header_inner(
     // --- Build content: [pad 6] [dot?] [icon 14x14] [gap 6] [title...] [spacer] [badges...] [close 16x16 (9px icon)] [pad 6] ---
     let mut cx = rect.x + TAB_H_PAD;
 
-    let visible_dot_status = if show_stage_terminal_dot {
-        agent_status
+    let visible_dot_state = if show_stage_terminal_dot {
+        agent_chrome_state
     } else {
         None
     };
 
     let dot_x = cx;
-    if visible_dot_status.is_some() {
+    if visible_dot_state.is_some() {
         cx += 8.0_f32 + TAB_CONTENT_SPACING;
     }
 
@@ -730,7 +758,7 @@ pub fn render_pane_header_inner(
     }
 
     // Compute COMPACT tab width: [pad] [dot?] [title] [gap] [badges] [close 16] [pad]
-    let dot_w = tab_status_dot_width(visible_dot_status.is_some());
+    let dot_w = tab_status_dot_width(visible_dot_state.is_some());
     let title_w_raw = title.chars().count() as f32 * cell_w;
     let compact_tab_cap = active_tab_width_cap(available_w).min(available_w.max(TAB_MIN_WIDTH));
     let compact_tab_w =
@@ -738,7 +766,7 @@ pub fn render_pane_header_inner(
             .clamp(TAB_MIN_WIDTH, compact_tab_cap);
 
     // Draw compact active tab bg + top accent line
-    for step in single_pane_header_paint_steps(visible_dot_status.is_some()) {
+    for step in single_pane_header_paint_steps(visible_dot_state.is_some()) {
         match step {
             SinglePaneHeaderPaintStep::Background => {
                 renderer.draw_chrome_rect(
@@ -764,9 +792,8 @@ pub fn render_pane_header_inner(
                 );
             }
             SinglePaneHeaderPaintStep::Dot => {
-                if let Some(status) = visible_dot_status {
-                    let dot_color =
-                        agent_status_dot_color(status, agent_attention_unresolved, blink_time);
+                if let Some(state) = visible_dot_state {
+                    let dot_color = stage_terminal_dot_color(state, blink_time);
                     let dot_size = 8.0_f32;
                     let dot_y = rect.y + (TAB_BAR_HEIGHT - dot_size) / 2.0;
                     renderer.draw_chrome_rounded_rect(
@@ -887,7 +914,6 @@ pub fn render_dock_tab_bar(
     renderer: &mut WgpuRenderer,
     show_comment_badge: bool,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
-    attention_panes: &std::collections::HashSet<PaneId>,
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
     auto_fit_active_tab: bool,
@@ -906,7 +932,6 @@ pub fn render_dock_tab_bar(
         false,
         show_comment_badge,
         detected_agents,
-        attention_panes,
         blink_time,
         tab_scroll_offset,
         auto_fit_active_tab,
@@ -931,7 +956,6 @@ fn render_tab_bar_impl(
     is_stacked: bool,
     show_comment_badge: bool,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
-    attention_panes: &std::collections::HashSet<PaneId>,
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
     auto_fit_active_tab: bool,
@@ -996,7 +1020,7 @@ fn render_tab_bar_impl(
             label = format!("\u{f08d} {}", label);
         }
         let has_agent_status =
-            stage_terminal_dot_status(panes, detected_agents, tid, !is_dock).is_some();
+            stage_terminal_dot_visual_state(panes, detected_agents, tid, !is_dock).is_some();
         let badge_widths: Vec<f32> = if tid == active_pane {
             active_tab_badges(panes, &tid, is_focused, show_comment_badge)
                 .iter()
@@ -1074,9 +1098,9 @@ fn render_tab_bar_impl(
 
         // Agent status dot
         let mut dot_offset = 0.0_f32;
-        if let Some(status) = stage_terminal_dot_status(panes, detected_agents, *tid, !is_dock) {
-            let dot_color =
-                agent_status_dot_color(status, attention_panes.contains(tid), blink_time);
+        if let Some(state) = stage_terminal_dot_visual_state(panes, detected_agents, *tid, !is_dock)
+        {
+            let dot_color = stage_terminal_dot_color(state, blink_time);
             let dot_size = 8.0_f32;
             let dot_x = cx + TAB_H_PAD;
             let dot_y = tab_y + (tab_h - dot_size) / 2.0;
@@ -1252,8 +1276,7 @@ fn render_tab_bar_impl(
             visible_w,
             effective_scroll,
         );
-        let edge_color =
-            stage_terminal_dot_color(crate::state::gateway_status::AgentStatus::Idle, blink_time);
+        let edge_color = stage_terminal_dot_color(AgentChromeState::Attention, blink_time);
         let dot_size = 8.0_f32;
         let dot_y = tab_y + (tab_h - dot_size) / 2.0;
 
@@ -1291,7 +1314,6 @@ pub fn render_stage_tab_group_bar(
     renderer: &mut WgpuRenderer,
     show_comment_badge: bool,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
-    attention_panes: &std::collections::HashSet<PaneId>,
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
     auto_fit_active_tab: bool,
@@ -1310,7 +1332,6 @@ pub fn render_stage_tab_group_bar(
         false,
         show_comment_badge,
         detected_agents,
-        attention_panes,
         blink_time,
         tab_scroll_offset,
         auto_fit_active_tab,
@@ -1328,7 +1349,6 @@ pub fn render_stage_tab_bar(
     renderer: &mut WgpuRenderer,
     show_comment_badge: bool,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
-    attention_panes: &std::collections::HashSet<PaneId>,
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
     auto_fit_active_tab: bool,
@@ -1350,7 +1370,6 @@ pub fn render_stage_tab_bar(
         true,
         show_comment_badge,
         detected_agents,
-        attention_panes,
         blink_time,
         tab_scroll_offset,
         auto_fit_active_tab,

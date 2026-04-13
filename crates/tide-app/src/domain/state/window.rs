@@ -2,6 +2,17 @@
 
 use super::focus::LayoutSide;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum NotificationAuthorizationStatus {
+    #[default]
+    Unknown,
+    NotDetermined,
+    Denied,
+    Authorized,
+    Provisional,
+    Ephemeral,
+}
+
 pub(crate) struct WindowState {
     pub scale_factor: f32,
     pub window_size: (u32, u32),
@@ -20,6 +31,7 @@ pub(crate) struct WindowState {
     pub sidebar_handle_dragging: bool,
     /// Whether the window currently has OS focus. Tracked via `PlatformEvent::Focused`.
     pub is_focused: bool,
+    pub notification_authorization_status: NotificationAuthorizationStatus,
 }
 
 impl WindowState {
@@ -41,6 +53,7 @@ impl WindowState {
             sidebar_side: LayoutSide::Left,
             sidebar_handle_dragging: false,
             is_focused: true,
+            notification_authorization_status: NotificationAuthorizationStatus::Unknown,
         }
     }
 
@@ -70,5 +83,11 @@ impl WindowState {
             self.window_size.0 as f32 / self.scale_factor,
             self.window_size.1 as f32 / self.scale_factor,
         )
+    }
+}
+
+impl NotificationAuthorizationStatus {
+    pub fn is_unresolved(self) -> bool {
+        matches!(self, Self::Unknown | Self::NotDetermined)
     }
 }
