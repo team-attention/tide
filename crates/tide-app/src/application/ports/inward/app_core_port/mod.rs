@@ -92,6 +92,7 @@ pub(crate) trait AppCorePort {
     fn clock_now(&self) -> std::time::Instant;
     fn is_window_focused(&self) -> bool;
     fn set_window_focused(&mut self, focused: bool);
+    fn acknowledge_attention_for_focused_pane(&mut self);
     fn save_full_session(&mut self);
     fn delete_running_marker(&mut self);
 

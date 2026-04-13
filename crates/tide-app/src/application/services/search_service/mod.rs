@@ -3,9 +3,9 @@
 use crate::tide_core::{PaneId, TerminalBackend};
 
 use crate::adapter::inward::text_routing_adapter::{text_input_target, TextInputTarget};
+use crate::application::ports::inward::ClipboardSearchPort;
 use crate::pane::PaneKind;
 use crate::state::search::SearchState;
-use crate::application::ports::inward::ClipboardSearchPort;
 use crate::App;
 
 impl ClipboardSearchPort for App {
@@ -27,7 +27,10 @@ impl ClipboardSearchPort for App {
                 if let Some(text) = completion.insert_text() {
                     let prefix_len = completion.prefix.len();
                     let end = pane.editor.cursor_position();
-                    let start = crate::tide_editor::buffer::Position { line: end.line, col: end.col.saturating_sub(prefix_len) };
+                    let start = crate::tide_editor::buffer::Position {
+                        line: end.line,
+                        col: end.col.saturating_sub(prefix_len),
+                    };
                     let new_pos = pane.editor.buffer.delete_range(start, end);
                     pane.editor.cursor.set_position(new_pos);
                     pane.editor.insert_text(&text);
@@ -170,7 +173,10 @@ impl ClipboardSearchPort for App {
     }
 
     fn clipboard_set_text(&self, text: &str) -> Result<(), String> {
-        self.ports.clipboard.set_text(text).map_err(|e| e.to_string())
+        self.ports
+            .clipboard
+            .set_text(text)
+            .map_err(|e| e.to_string())
     }
 
     fn clipboard_get_text(&self) -> Result<String, String> {

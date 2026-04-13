@@ -17,7 +17,11 @@ const SHARED_TAB_SCROLL_GAIN: f32 = 12.0;
 const SHARED_TAB_SCROLL_IDLE_WINDOW: Duration = Duration::from_millis(120);
 
 pub(crate) fn shared_tab_scroll_delta(dx: f32, dy: f32) -> f32 {
-    if dx != 0.0 { -dx } else { -dy }
+    if dx != 0.0 {
+        -dx
+    } else {
+        -dy
+    }
 }
 
 pub(crate) fn shared_tab_scroll_is_new_gesture(
@@ -160,8 +164,7 @@ pub(crate) fn handle_scroll(
                 let offsets = &mut interaction.tab_scroll_offset;
                 let current_offset = offsets.get(&pid).copied().unwrap_or(0.0);
                 let next_offset = clamp_shared_tab_scroll_offset(
-                    current_offset
-                        + shared_tab_scroll_step(scroll_delta, cell_w, is_new_gesture),
+                    current_offset + shared_tab_scroll_step(scroll_delta, cell_w, is_new_gesture),
                     max_scroll,
                 );
                 offsets.insert(pid, next_offset);

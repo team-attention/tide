@@ -982,6 +982,13 @@ impl Terminal {
         }
     }
 
+    #[cfg(test)]
+    pub fn queue_notification_for_test(&self, message: &str) {
+        if let Ok(mut queue) = self.notifications.lock() {
+            queue.push(message.to_string());
+        }
+    }
+
     /// Detect the user's preferred shell
     fn detect_shell() -> String {
         std::env::var("SHELL").unwrap_or_else(|_| {

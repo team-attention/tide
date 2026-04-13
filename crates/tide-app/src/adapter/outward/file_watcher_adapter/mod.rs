@@ -1,10 +1,10 @@
 // FileWatcher adapter implementations.
 
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
-use crate::application::ports::outward::file_watcher_port::{FileWatcherPort, FileWatchEvent};
+use crate::application::ports::outward::file_watcher_port::{FileWatchEvent, FileWatcherPort};
 
 // ── Real implementation (production) ──
 
@@ -124,7 +124,11 @@ impl FileWatcherPort for NoopFileWatcher {
     fn init(&mut self, _waker: Option<crate::tide_platform::WakeCallback>) {}
     fn watch(&mut self, _path: &Path) {}
     fn unwatch(&mut self, _path: &Path) {}
-    fn poll_events(&mut self) -> Vec<FileWatchEvent> { Vec::new() }
-    fn is_dirty(&self) -> bool { false }
+    fn poll_events(&mut self) -> Vec<FileWatchEvent> {
+        Vec::new()
+    }
+    fn is_dirty(&self) -> bool {
+        false
+    }
     fn clear_dirty(&self) {}
 }

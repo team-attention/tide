@@ -7,6 +7,14 @@ use crate::App;
 use crate::AppCorePort;
 use crate::DockPort;
 
+pub(crate) fn pane_surface_attention_status(
+    status: Option<crate::state::gateway_status::AgentStatus>,
+    _is_focused: bool,
+) -> Option<crate::state::gateway_status::AgentStatus> {
+    let _ = status;
+    None
+}
+
 /// Render dock background, pane borders/backgrounds, pane headers (tab bars),
 /// and browser navigation bars. Returns the computed header hit zones.
 pub(super) fn render_pane_chrome(
@@ -156,8 +164,6 @@ pub(super) fn render_pane_chrome(
         // Only show pane focus highlight when focus is in the pane area
         let is_focused = focused == Some(id)
             && matches!(app.focus.focus_area, FocusArea::Stage | FocusArea::Dock);
-        let agent_attention = app.pane_has_unresolved_wrapped_agent_attention(id)
-            || app.pane_agent_needs_input_attention(id);
 
         {
             // Normal: no border, pane_bg fills whole area, tab_bar_bg on top
@@ -171,24 +177,10 @@ pub(super) fn render_pane_chrome(
                 Rect::new(rect.x, rect.y, rect.width, TAB_BAR_HEIGHT),
                 tab_bar_bg_color,
             );
-
-            // 1px border at bottom of tab bar (or NeedsInput accent)
-            if agent_attention {
-                // Wrapped Agent attention uses an orange accent until acknowledged.
-                let t = app.timing.last_frame.elapsed().as_secs_f64();
-                let opacity =
-                    0.45_f32 + 0.25 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
-                let accent = crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity);
-                renderer.draw_chrome_rect(
-                    Rect::new(rect.x, rect.y + TAB_BAR_HEIGHT - 2.0, rect.width, 2.0),
-                    accent,
-                );
-            } else {
-                renderer.draw_chrome_rect(
-                    Rect::new(rect.x, rect.y + TAB_BAR_HEIGHT, rect.width, 1.0),
-                    p.border_subtle,
-                );
-            }
+            renderer.draw_chrome_rect(
+                Rect::new(rect.x, rect.y + TAB_BAR_HEIGHT, rect.width, 1.0),
+                p.border_subtle,
+            );
         }
     }
 
@@ -248,21 +240,14 @@ pub(super) fn render_pane_chrome(
     let stage_pane_ids = app.layout.all_tabs_flat();
     let show_stage_tabs = app.focus.zoomed_pane.is_some() && stage_pane_ids.len() > 1;
 
-    // Compute blink time for unresolved Wrapped Agent attention.
-    let has_blinking = app.gateway.detected_agents.iter().any(|(&id, agent)| {
-        matches!(
-            agent.status,
-            Some(crate::state::gateway_status::AgentStatus::NeedsInput)
-        ) || (matches!(
-            agent.status,
-            Some(crate::state::gateway_status::AgentStatus::Idle)
-        ) && app.notified_panes.contains(&id))
-    });
-    let blink_time = if has_blinking {
-        Some(app.timing.last_frame.elapsed().as_secs_f64())
-    } else {
-        None
-    };
+    // Compute blink time for wrapped-agent alert animation across Stage terminals
+    // and inactive Workspace indicators.
+    let has_blinking = app.has_any_stage_wrapped_agent_alert();
+    let blink_time = crate::adapter::outward::view::wrapped_agent_blink_time(
+        app.ports.clock.now(),
+        app.timing.wrapped_agent_blink_at,
+        has_blinking,
+    );
 
     for &(id, rect) in visual_pane_rects {
         // Skip stale pane rects (pane was removed but layout not yet recomputed)
@@ -310,17 +295,9 @@ pub(super) fn render_pane_chrome(
                 }
             } else {
                 // Single dock pane zoomed -- render normal header
-                let agent_status = app
-                    .pane_agent_attention_status(id)
-                    .or_else(|| {
-                        app.pane_agent_needs_input_attention(id)
-                            .then_some(crate::state::gateway_status::AgentStatus::NeedsInput)
-                    });
-                let agent_attention_unresolved = app.pane_has_unresolved_wrapped_agent_attention(id)
-                    || matches!(
-                        agent_status,
-                        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
-                    );
+                let agent_status = app.pane_agent_attention_status(id);
+                let agent_attention_unresolved =
+                    app.pane_has_unresolved_wrapped_agent_attention(id);
                 let zones = header::render_pane_header_inner(
                     id,
                     rect,
@@ -334,6 +311,7 @@ pub(super) fn render_pane_chrome(
                     agent_status,
                     agent_attention_unresolved,
                     blink_time,
+                    false,
                 );
                 all_hit_zones.extend(zones);
             }
@@ -396,17 +374,9 @@ pub(super) fn render_pane_chrome(
             all_hit_zones.extend(tab_zones);
         } else {
             // Normal pane: render per-pane header (with agent status dot)
-            let agent_status = app
-                .pane_agent_attention_status(id)
-                .or_else(|| {
-                    app.pane_agent_needs_input_attention(id)
-                        .then_some(crate::state::gateway_status::AgentStatus::NeedsInput)
-                });
-            let agent_attention_unresolved = app.pane_has_unresolved_wrapped_agent_attention(id)
-                || matches!(
-                    agent_status,
-                    Some(crate::state::gateway_status::AgentStatus::NeedsInput)
-                );
+            let agent_status = app.pane_agent_attention_status(id);
+            let agent_attention_unresolved =
+                app.pane_has_unresolved_wrapped_agent_attention(id);
             let zones = header::render_pane_header_inner(
                 id,
                 rect,
@@ -420,6 +390,7 @@ pub(super) fn render_pane_chrome(
                 agent_status,
                 agent_attention_unresolved,
                 blink_time,
+                !app.is_pane_in_dock(id),
             );
             all_hit_zones.extend(zones);
         }

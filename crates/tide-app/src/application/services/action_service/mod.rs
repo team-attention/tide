@@ -174,7 +174,10 @@ impl App {
         &self,
         source_pane_id: crate::tide_core::PaneId,
     ) -> bool {
-        if matches!(self.panes.get(&source_pane_id), Some(PaneKind::Launcher(_)) | None) {
+        if matches!(
+            self.panes.get(&source_pane_id),
+            Some(PaneKind::Launcher(_)) | None
+        ) {
             return false;
         }
 
@@ -199,17 +202,7 @@ impl App {
             return true;
         }
 
-        let associated_terminal_id = match self.panes.get(&pane_id) {
-            Some(PaneKind::Terminal(_)) => return false,
-            Some(PaneKind::Editor(_)) | Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) => {
-                self.assoc.associated_terminal.get(&pane_id).copied()
-            }
-            Some(PaneKind::Launcher(_)) | None => None,
-        };
-
-        associated_terminal_id
-            .and_then(|terminal_id| self.gateway.detected_agents.get(&terminal_id))
-            .and_then(|agent| agent.status)
+        self.pane_agent_attention_status(pane_id)
             .is_some_and(|status| matches!(status, AgentStatus::NeedsInput))
     }
 
@@ -225,6 +218,11 @@ impl App {
                 .filter(|agent| agent.wrapper_managed)
                 .and_then(|agent| agent.status),
             _ => None,
+            Some(PaneKind::Editor(_))
+            | Some(PaneKind::Diff(_))
+            | Some(PaneKind::Browser(_))
+            | Some(PaneKind::Launcher(_))
+            | None => None,
         }
     }
 

@@ -32,7 +32,10 @@ impl crate::FileOpsPort for App {
             }
         }
         // 4. Fallback
-        self.ports.fs.current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        self.ports
+            .fs
+            .current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
     }
 
     /// Open the file finder UI (floating popup).
@@ -104,7 +107,12 @@ impl crate::FileOpsPort for App {
                 Some(id) => id,
                 None => return,
             };
-            self.layout.insert_pane(focused, new_id, crate::tide_core::SplitDirection::Vertical, false);
+            self.layout.insert_pane(
+                focused,
+                new_id,
+                crate::tide_core::SplitDirection::Vertical,
+                false,
+            );
         }
         self.focus.focused = Some(new_id);
         self.router.set_focused(new_id);
@@ -115,7 +123,13 @@ impl crate::FileOpsPort for App {
 
 impl App {
     /// Recursively scan a directory, collecting file paths relative to base_dir.
-    fn scan_dir(dir: &std::path::Path, base_dir: &std::path::Path, entries: &mut Vec<PathBuf>, depth: usize, max_depth: usize) {
+    fn scan_dir(
+        dir: &std::path::Path,
+        base_dir: &std::path::Path,
+        entries: &mut Vec<PathBuf>,
+        depth: usize,
+        max_depth: usize,
+    ) {
         if depth > max_depth {
             return;
         }
@@ -130,7 +144,8 @@ impl App {
             let name = file_name.to_string_lossy();
 
             // Skip .git and common large/generated directories
-            if name == ".git" || name == "node_modules" || name == "target" || name == "__pycache__" {
+            if name == ".git" || name == "node_modules" || name == "target" || name == "__pycache__"
+            {
                 continue;
             }
 

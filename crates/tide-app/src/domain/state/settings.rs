@@ -15,7 +15,9 @@ pub struct TideSettings {
     pub auto_integration: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 impl Default for TideSettings {
     fn default() -> Self {
@@ -44,15 +46,21 @@ pub struct KeybindingOverride {
 
 impl KeybindingOverride {
     /// Convert to a (Hotkey, GlobalAction) pair.
-    pub fn to_binding(&self) -> Option<(crate::tide_input::Hotkey, crate::tide_input::GlobalAction)> {
+    pub fn to_binding(
+        &self,
+    ) -> Option<(crate::tide_input::Hotkey, crate::tide_input::GlobalAction)> {
         let action = crate::tide_input::GlobalAction::from_action_key(&self.action)?;
         let key = crate::tide_input::Hotkey::key_from_name(&self.key)?;
-        let hotkey = crate::tide_input::Hotkey::new(key, self.shift, self.ctrl, self.meta, self.alt);
+        let hotkey =
+            crate::tide_input::Hotkey::new(key, self.shift, self.ctrl, self.meta, self.alt);
         Some((hotkey, action))
     }
 
     /// Create from a Hotkey and GlobalAction.
-    pub fn from_binding(hotkey: &crate::tide_input::Hotkey, action: &crate::tide_input::GlobalAction) -> Self {
+    pub fn from_binding(
+        hotkey: &crate::tide_input::Hotkey,
+        action: &crate::tide_input::GlobalAction,
+    ) -> Self {
         Self {
             action: action.action_key().to_string(),
             key: hotkey.key_name(),
@@ -88,7 +96,11 @@ impl Default for WorktreeSettings {
 impl WorktreeSettings {
     /// Copy configured files from repo root into a newly created worktree.
     /// Logs errors but does not fail.
-    pub fn copy_files_to_worktree(&self, repo_root: &std::path::Path, worktree_path: &std::path::Path) {
+    pub fn copy_files_to_worktree(
+        &self,
+        repo_root: &std::path::Path,
+        worktree_path: &std::path::Path,
+    ) {
         let files = match &self.copy_files {
             Some(f) if !f.is_empty() => f,
             _ => return,
@@ -102,12 +114,21 @@ impl WorktreeSettings {
             }
             if let Some(parent) = dst.parent() {
                 if let Err(e) = std::fs::create_dir_all(parent) {
-                    log::error!("copy_files: failed to create dir {}: {}", parent.display(), e);
+                    log::error!(
+                        "copy_files: failed to create dir {}: {}",
+                        parent.display(),
+                        e
+                    );
                     continue;
                 }
             }
             if let Err(e) = std::fs::copy(&src, &dst) {
-                log::error!("copy_files: failed to copy {} -> {}: {}", src.display(), dst.display(), e);
+                log::error!(
+                    "copy_files: failed to copy {} -> {}: {}",
+                    src.display(),
+                    dst.display(),
+                    e
+                );
             }
         }
     }
@@ -194,4 +215,3 @@ pub fn build_keybinding_map(settings: &TideSettings) -> crate::tide_input::Keybi
         .collect();
     crate::tide_input::KeybindingMap::with_overrides(overrides)
 }
-

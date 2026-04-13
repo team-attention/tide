@@ -30,8 +30,14 @@ pub fn managed_server_path(lang: Language) -> Option<PathBuf> {
     let path = match lang {
         Language::Rust => lsp_bin_dir().join("rust-analyzer"),
         Language::Go => lsp_bin_dir().join("gopls"),
-        Language::TypeScript => lsp_npm_dir().join("node_modules").join(".bin").join("typescript-language-server"),
-        Language::Python => lsp_npm_dir().join("node_modules").join(".bin").join("pyright-langserver"),
+        Language::TypeScript => lsp_npm_dir()
+            .join("node_modules")
+            .join(".bin")
+            .join("typescript-language-server"),
+        Language::Python => lsp_npm_dir()
+            .join("node_modules")
+            .join(".bin")
+            .join("pyright-langserver"),
     };
     if path.exists() {
         Some(path)
@@ -77,7 +83,9 @@ fn install_server(lang: Language, shell_path: &str) -> bool {
     log::info!("LSP install: starting {:?}", lang);
     let result = match lang {
         Language::Rust => install_rust_analyzer(),
-        Language::TypeScript => install_npm_server("typescript-language-server", &["typescript"], shell_path),
+        Language::TypeScript => {
+            install_npm_server("typescript-language-server", &["typescript"], shell_path)
+        }
         Language::Python => install_npm_server("pyright", &[], shell_path),
         Language::Go => install_gopls(shell_path),
     };
@@ -118,7 +126,12 @@ fn install_rust_analyzer() -> Result<(), String> {
     let bin_path = bin_dir.join("rust-analyzer");
 
     // Download with curl
-    run_command("curl", &["-L", "-o", gz_path.to_str().unwrap(), &url], None, "")?;
+    run_command(
+        "curl",
+        &["-L", "-o", gz_path.to_str().unwrap(), &url],
+        None,
+        "",
+    )?;
 
     // Decompress
     run_command("gunzip", &["-f", gz_path.to_str().unwrap()], None, "")?;
@@ -130,7 +143,11 @@ fn install_rust_analyzer() -> Result<(), String> {
 }
 
 /// Install an npm-based LSP server (typescript-language-server, pyright).
-fn install_npm_server(package: &str, extra_packages: &[&str], shell_path: &str) -> Result<(), String> {
+fn install_npm_server(
+    package: &str,
+    extra_packages: &[&str],
+    shell_path: &str,
+) -> Result<(), String> {
     // Check if node/npm is available
     if !command_exists("node", shell_path) {
         return Err("Node.js is not installed — required for this LSP server".to_string());
@@ -179,7 +196,13 @@ fn get_latest_github_release(owner: &str, repo: &str) -> Result<String, String> 
         owner, repo
     );
     let output = std::process::Command::new("curl")
-        .args(["-s", "-L", "-H", "Accept: application/vnd.github.v3+json", &url])
+        .args([
+            "-s",
+            "-L",
+            "-H",
+            "Accept: application/vnd.github.v3+json",
+            &url,
+        ])
         .output()
         .map_err(|e| format!("curl: {}", e))?;
 
@@ -189,7 +212,8 @@ fn get_latest_github_release(owner: &str, repo: &str) -> Result<String, String> 
 
     let body: serde_json::Value = serde_json::from_slice(&output.stdout)
         .map_err(|e| format!("Failed to parse GitHub API response: {}", e))?;
-    let tag = body["tag_name"].as_str()
+    let tag = body["tag_name"]
+        .as_str()
         .ok_or_else(|| "Failed to find 'tag_name' in GitHub API response".to_string())?;
 
     Ok(tag.to_string())
@@ -206,7 +230,12 @@ fn command_exists(cmd: &str, shell_path: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn run_command(cmd: &str, args: &[&str], cwd: Option<&Path>, shell_path: &str) -> Result<(), String> {
+fn run_command(
+    cmd: &str,
+    args: &[&str],
+    cwd: Option<&Path>,
+    shell_path: &str,
+) -> Result<(), String> {
     let mut command = std::process::Command::new(cmd);
     command.args(args);
     if !shell_path.is_empty() {
@@ -223,7 +252,12 @@ fn run_command(cmd: &str, args: &[&str], cwd: Option<&Path>, shell_path: &str) -
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("{} exited with {}: {}", cmd, output.status, stderr.chars().take(500).collect::<String>()));
+        return Err(format!(
+            "{} exited with {}: {}",
+            cmd,
+            output.status,
+            stderr.chars().take(500).collect::<String>()
+        ));
     }
     Ok(())
 }
@@ -250,7 +284,12 @@ fn run_command_with_env(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("{} exited with {}: {}", cmd, output.status, stderr.chars().take(500).collect::<String>()));
+        return Err(format!(
+            "{} exited with {}: {}",
+            cmd,
+            output.status,
+            stderr.chars().take(500).collect::<String>()
+        ));
     }
     Ok(())
 }

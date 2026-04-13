@@ -1,7 +1,7 @@
 // PaneAccessPort — read/write access to individual panes.
 
-use crate::tide_core::PaneId;
 use crate::pane::PaneKind;
+use crate::tide_core::PaneId;
 
 pub(crate) trait PaneAccessPort {
     fn pane(&self, id: PaneId) -> Option<&PaneKind>;

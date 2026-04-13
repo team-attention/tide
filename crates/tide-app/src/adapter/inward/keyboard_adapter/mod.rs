@@ -8,8 +8,8 @@ mod preview;
 
 use crate::tide_core::{InputEvent, Key, Modifiers};
 
-use crate::state::drag_types::PaneDragState;
 use crate::pane::PaneKind;
+use crate::state::drag_types::PaneDragState;
 use crate::state::FocusArea;
 use crate::ActionPort;
 use crate::AppCorePort;
@@ -17,8 +17,8 @@ use crate::ClipboardSearchPort;
 use crate::FileOpsPort;
 use crate::FileTreePort;
 use crate::FocusNavPort;
-use crate::InputStatePort;
 use crate::ImeStatePort;
+use crate::InputStatePort;
 use crate::ModalPort;
 use crate::PaneAccessPort;
 use crate::PaneLifecyclePort;
@@ -347,14 +347,13 @@ pub(crate) fn handle_key_down(
                                 return;
                             }
                             Key::Char('x') | Key::Char('X') => {
-                                let text =
-                                    ctx.pane(focused_id).and_then(|p| {
-                                        if let PaneKind::Browser(bp) = p {
-                                            bp.url_selected_text()
-                                        } else {
-                                            None
-                                        }
-                                    });
+                                let text = ctx.pane(focused_id).and_then(|p| {
+                                    if let PaneKind::Browser(bp) = p {
+                                        bp.url_selected_text()
+                                    } else {
+                                        None
+                                    }
+                                });
                                 if let Some(text) = text {
                                     let _ = ctx.clipboard_set_text(&text);
                                     if let Some(PaneKind::Browser(bp)) = ctx.pane_mut(focused_id) {

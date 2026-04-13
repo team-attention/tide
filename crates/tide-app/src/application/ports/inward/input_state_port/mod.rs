@@ -1,7 +1,7 @@
 // InputStatePort — input timing, cursor position, and interaction state.
 
-use crate::tide_core::{Modifiers, Vec2};
 use crate::state::InteractionState;
+use crate::tide_core::{Modifiers, Vec2};
 
 pub(crate) trait InputStatePort {
     fn last_cursor_pos(&self) -> Vec2;

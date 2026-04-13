@@ -3,7 +3,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::application::ports::outward::fs_port::{FileSystemPort, DirEntry};
+use crate::application::ports::outward::fs_port::{DirEntry, FileSystemPort};
 
 /// Real filesystem implementation.
 pub(crate) struct RealFileSystem;
@@ -108,7 +108,10 @@ impl FileSystemPort for NoopFileSystem {
     }
 
     fn current_dir(&self) -> io::Result<PathBuf> {
-        Err(io::Error::new(io::ErrorKind::NotFound, "NoopFileSystem has no current directory"))
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "NoopFileSystem has no current directory",
+        ))
     }
 
     fn home_dir(&self) -> Option<PathBuf> {

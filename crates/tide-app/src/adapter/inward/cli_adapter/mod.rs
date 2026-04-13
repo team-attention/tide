@@ -4,12 +4,12 @@
 // parsing JSON-RPC 2.0 requests. Each request is enqueued as a CliCommand
 // into the app event loop's mpsc channel for single-threaded dispatch.
 
-pub(crate) mod protocol;
-pub(crate) mod commands;
 pub(crate) mod client;
-pub(crate) mod server;
+pub(crate) mod commands;
 pub(crate) mod mcp;
 pub(crate) mod notify;
+pub(crate) mod protocol;
+pub(crate) mod server;
 
 use std::sync::mpsc;
 

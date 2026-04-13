@@ -1,6 +1,8 @@
 // Persistence adapter implementations.
 
-use crate::application::ports::outward::persistence_port::{PersistencePort, Session, SessionContextArea};
+use crate::application::ports::outward::persistence_port::{
+    PersistencePort, Session, SessionContextArea,
+};
 use crate::state::settings::TideSettings;
 
 // ── Real implementation (production) ──
@@ -51,12 +53,20 @@ pub(crate) struct NoopPersistence;
 
 impl PersistencePort for NoopPersistence {
     fn save_session(&self, _session: &Session) {}
-    fn load_session(&self) -> Option<Session> { None }
+    fn load_session(&self) -> Option<Session> {
+        None
+    }
     fn save_context_area_session(&self, _data: &SessionContextArea) {}
-    fn load_context_area_session(&self) -> Option<SessionContextArea> { None }
+    fn load_context_area_session(&self) -> Option<SessionContextArea> {
+        None
+    }
     fn create_running_marker(&self) {}
     fn delete_running_marker(&self) {}
-    fn is_crash_recovery(&self) -> bool { false }
+    fn is_crash_recovery(&self) -> bool {
+        false
+    }
     fn save_settings(&self, _settings: &TideSettings) {}
-    fn load_settings(&self) -> TideSettings { TideSettings::default() }
+    fn load_settings(&self) -> TideSettings {
+        TideSettings::default()
+    }
 }

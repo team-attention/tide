@@ -14,5 +14,5 @@ mod search_service;
 pub(crate) mod session_service;
 mod text_extract_service;
 mod update_service;
-mod workspace_service;
 pub(crate) mod workspace_infra_service;
+mod workspace_service;

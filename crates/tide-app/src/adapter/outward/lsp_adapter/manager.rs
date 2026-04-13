@@ -139,7 +139,10 @@ pub struct LspManager {
 impl LspManager {
     pub fn new(root_path: PathBuf, waker: Option<Arc<dyn Fn() + Send + Sync>>) -> Self {
         let shell_path = resolve_shell_path();
-        log::info!("LSP: resolved shell PATH: {}", &shell_path[..shell_path.len().min(200)]);
+        log::info!(
+            "LSP: resolved shell PATH: {}",
+            &shell_path[..shell_path.len().min(200)]
+        );
         Self {
             clients: HashMap::new(),
             root_path,
@@ -164,7 +167,13 @@ impl LspManager {
         // Try to resolve the server command (managed path or system PATH)
         if let Some((cmd, args)) = lang.resolve_command(&self.shell_path) {
             let args_refs: Vec<&str> = args.iter().map(|s| *s).collect();
-            match LspClient::start(&cmd, &args_refs, &self.root_path, self.waker.clone(), &self.shell_path) {
+            match LspClient::start(
+                &cmd,
+                &args_refs,
+                &self.root_path,
+                self.waker.clone(),
+                &self.shell_path,
+            ) {
                 Some(client) => {
                     log::info!("LSP: started {} for {:?}", cmd, lang);
                     self.install_status.insert(lang, InstallStatus::Installed);
@@ -179,7 +188,11 @@ impl LspManager {
         }
 
         // Server not found — trigger auto-install if not already attempted
-        let status = self.install_status.get(&lang).copied().unwrap_or(InstallStatus::NotAttempted);
+        let status = self
+            .install_status
+            .get(&lang)
+            .copied()
+            .unwrap_or(InstallStatus::NotAttempted);
         match status {
             InstallStatus::NotAttempted => {
                 log::info!("LSP: {:?} server not found, starting auto-install", lang);
@@ -191,14 +204,15 @@ impl LspManager {
                 false
             }
             InstallStatus::Installing => false, // Still installing
-            InstallStatus::Installed => false,   // Installed but start failed (shouldn't happen)
-            InstallStatus::Failed => false,      // Won't retry
+            InstallStatus::Installed => false,  // Installed but start failed (shouldn't happen)
+            InstallStatus::Failed => false,     // Won't retry
         }
     }
 
     /// Get trigger characters for a language.
     pub fn trigger_characters(&self, lang: Language) -> &[String] {
-        self.clients.get(&lang)
+        self.clients
+            .get(&lang)
             .map(|c| c.trigger_characters.as_slice())
             .unwrap_or(&[])
     }
@@ -207,9 +221,14 @@ impl LspManager {
     pub fn did_open(&mut self, uri: &str, lang: Language, text: &str) {
         if !self.ensure_server(lang) {
             // Server not available yet — queue the open for when install completes
-            let status = self.install_status.get(&lang).copied().unwrap_or(InstallStatus::NotAttempted);
+            let status = self
+                .install_status
+                .get(&lang)
+                .copied()
+                .unwrap_or(InstallStatus::NotAttempted);
             if status == InstallStatus::Installing {
-                self.pending_opens.push((uri.to_string(), lang, text.to_string()));
+                self.pending_opens
+                    .push((uri.to_string(), lang, text.to_string()));
             }
             return;
         }
@@ -264,7 +283,13 @@ impl LspManager {
     ) {
         if let Some(&lang) = self.open_docs.get(uri) {
             if let Some(client) = self.clients.get_mut(&lang) {
-                let id = client.request_completion(uri, line, character, trigger_kind, trigger_character);
+                let id = client.request_completion(
+                    uri,
+                    line,
+                    character,
+                    trigger_kind,
+                    trigger_character,
+                );
                 self.pending_completion = Some((lang, id, uri.to_string()));
             }
         }
@@ -276,7 +301,9 @@ impl LspManager {
         // Check for completed background installations
         let installing_langs: Vec<Language> = self.install_handles.keys().copied().collect();
         for lang in installing_langs {
-            let done = self.install_handles.get(&lang)
+            let done = self
+                .install_handles
+                .get(&lang)
                 .map(|h| h.is_finished())
                 .unwrap_or(false);
             if done {
@@ -287,7 +314,8 @@ impl LspManager {
                             self.install_status.insert(lang, InstallStatus::Installed);
                             // Try to start the server now and replay pending opens
                             if self.ensure_server(lang) {
-                                let pending: Vec<(String, Language, String)> = self.pending_opens
+                                let pending: Vec<(String, Language, String)> = self
+                                    .pending_opens
                                     .drain(..)
                                     .filter(|(_, l, _)| *l == lang)
                                     .collect();
@@ -371,9 +399,13 @@ impl Drop for LspManager {
     }
 }
 
-pub(crate) fn parse_completion_response(value: serde_json::Value, uri: &str) -> Option<CompletionResponse> {
+pub(crate) fn parse_completion_response(
+    value: serde_json::Value,
+    uri: &str,
+) -> Option<CompletionResponse> {
     // Response can be CompletionList or Vec<CompletionItem>
-    let items = if let Ok(list) = serde_json::from_value::<protocol::CompletionList>(value.clone()) {
+    let items = if let Ok(list) = serde_json::from_value::<protocol::CompletionList>(value.clone())
+    {
         list.items
     } else if let Ok(items) = serde_json::from_value::<Vec<protocol::LspCompletionItem>>(value) {
         items
@@ -381,18 +413,21 @@ pub(crate) fn parse_completion_response(value: serde_json::Value, uri: &str) -> 
         return None;
     };
 
-    let items: Vec<CompletionItemData> = items.into_iter().map(|item| {
-        let text_edit_new_text = item.text_edit.as_ref().and_then(extract_text_edit_new_text);
-        CompletionItemData {
-            label: item.label,
-            kind: item.kind,
-            insert_text: text_edit_new_text.or(item.insert_text),
-            sort_text: item.sort_text,
-            filter_text: item.filter_text,
-            preselect: item.preselect.unwrap_or(false),
-            detail: item.detail,
-        }
-    }).collect();
+    let items: Vec<CompletionItemData> = items
+        .into_iter()
+        .map(|item| {
+            let text_edit_new_text = item.text_edit.as_ref().and_then(extract_text_edit_new_text);
+            CompletionItemData {
+                label: item.label,
+                kind: item.kind,
+                insert_text: text_edit_new_text.or(item.insert_text),
+                sort_text: item.sort_text,
+                filter_text: item.filter_text,
+                preselect: item.preselect.unwrap_or(false),
+                detail: item.detail,
+            }
+        })
+        .collect();
 
     if items.is_empty() {
         return None;
@@ -406,7 +441,8 @@ pub(crate) fn parse_completion_response(value: serde_json::Value, uri: &str) -> 
 }
 
 fn extract_text_edit_new_text(text_edit: &serde_json::Value) -> Option<String> {
-    text_edit.get("newText")
+    text_edit
+        .get("newText")
         .and_then(|value| value.as_str())
         .map(str::to_string)
 }

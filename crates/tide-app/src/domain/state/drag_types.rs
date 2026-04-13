@@ -88,7 +88,10 @@ impl HoverTarget {
     /// Returns true if this hover target has any visual feedback (overlay or chrome).
     /// Targets that only change the cursor icon (no rendered output) return false.
     pub(crate) fn has_visual_feedback(&self) -> bool {
-        !matches!(self, HoverTarget::BrowserUrlBar | HoverTarget::PaneContent | HoverTarget::DiffFileHeader)
+        !matches!(
+            self,
+            HoverTarget::BrowserUrlBar | HoverTarget::PaneContent | HoverTarget::DiffFileHeader
+        )
     }
 }
 

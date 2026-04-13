@@ -1,8 +1,8 @@
 // PaneLifecyclePort — pane creation, closing, and replacement.
 // Source: domain/action/pane_create.rs + domain/action/pane_close.rs
 
-use std::path::PathBuf;
 use crate::tide_core::PaneId;
+use std::path::PathBuf;
 
 pub(crate) trait PaneLifecyclePort {
     // ── Creation ──

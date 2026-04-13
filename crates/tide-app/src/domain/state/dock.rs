@@ -17,7 +17,17 @@ pub(crate) struct DockState {
 
 impl DockState {
     pub fn new() -> Self {
-        Self { terminal_view_mode: ViewMode::Split, dock_open: false, dock_width: 400.0, dock_border_dragging: false, dock_split_dragging: false, pinned_dock_layout: crate::tide_layout::SplitLayout::new(), pinned_dock_ratio: 0.5, pinned_border_dragging: false, dock_zoomed: false }
+        Self {
+            terminal_view_mode: ViewMode::Split,
+            dock_open: false,
+            dock_width: 400.0,
+            dock_border_dragging: false,
+            dock_split_dragging: false,
+            pinned_dock_layout: crate::tide_layout::SplitLayout::new(),
+            pinned_dock_ratio: 0.5,
+            pinned_border_dragging: false,
+            dock_zoomed: false,
+        }
     }
 
     pub fn has_pinned_panes(&self) -> bool {

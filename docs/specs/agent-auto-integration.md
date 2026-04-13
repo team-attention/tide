@@ -3,131 +3,135 @@
 ## Overview
 
 ### As-Is
-Tide terminal 안에서 `claude`, `codex`, `gemini` 등 코딩 에이전트를 실행하면:
-- MCP 서버를 수동으로 등록해야 에이전트가 Tide를 제어할 수 있다 (`enable-integration` CLI 명령 또는 유저가 직접 설정)
-- 에이전트가 작업 완료/입력 대기 상태일 때 알림이 없어서 유저가 계속 해당 pane을 확인해야 한다
-- `GatewayStatus`에서 에이전트 프로세스 감지(`detect_agent`)와 MCP 연결 상태 추적은 이미 구현되어 있으나, 에이전트의 lifecycle 상태(running/idle/needs-input)는 추적하지 않는다
+
+- `TideSettings.auto_integration` is persisted in `crates/tide-app/src/domain/state/settings.rs` and defaults to `true`.
+- `discover_agent_resources()` in `crates/tide-app/src/domain/terminal/mod.rs` discovers bundled resources for the fixed Wrapped Agent set: `claude`, `codex`, and `gemini`.
+- Every new `Terminal` exports `TIDE_SOCKET`, `TIDE_PANE`, `TIDE_WORKSPACE`, and `TIDE_BIN`. When auto-integration is enabled, the PTY environment also injects `__TIDE_WRAPPER_DIR` and overrides `ZDOTDIR` so Tide's shell integration can place the bundled wrappers ahead of the real commands.
+- The checked-in Codex wrapper now uses the official Codex `notify` config to invoke `tide notify codex-turn-complete --pane ... --agent codex`, with the completed-turn JSON payload appended by Codex as the final argv item, while still reporting `agent-running` on launch and keeping an `EXIT` fallback for `agent-idle`.
+- The checked-in Codex-specific spec already requires a documented `UserPromptSubmit` hook so each new Codex turn can return the source `Pane` to `Running` instead of relying on one launch-time `Running` signal for the whole session.
+- There is still no checked-in Tide integration for a Codex `NeedsInput` lifecycle signal.
 
 ### To-Be
-Tide terminal에서 코딩 에이전트를 실행하면:
-- MCP 서버가 자동으로 에이전트에 등록된다 (zero-config)
-- Lifecycle hooks가 자동 주입되어 에이전트 상태가 Tide에 보고된다
-- 에이전트가 유저 입력을 기다리거나 작업이 끝나면 시각적 알림이 표시된다
+
+- Keep auto-integration zero-config for the fixed Wrapped Agent set: `claude`, `codex`, and `gemini`.
+- Keep the Codex wrapper aligned with the official Codex turn-complete notification contract and the documented `UserPromptSubmit` hook instead of treating Codex as launch/exit-only.
+- Continue to treat wrapper-managed lifecycle signals as the only source of Wrapped Agent attention.
 
 ### Approach
-1. Tide 앱 시작 시 `$TMPDIR/tide-<pid>-bin/`에 에이전트별 래퍼 스크립트 생성
-2. Terminal PTY의 PATH에 래퍼 디렉토리를 prepend하여 `claude` 등 명령을 가로챔
-3. 래퍼가 임시 settings JSON (MCP config + lifecycle hooks) 생성 후 원본 바이너리를 `exec`
-4. Hooks가 `Tide notify <event>` CLI subcommand를 호출 → Agent Gateway로 상태 전파
-5. `AgentInfo`에 `AgentStatus` 추가, 상태에 따라 tab에 시각적 indicator 표시
+
+1. Keep resource discovery and PTY environment injection as the only auto-integration boundary inside Tide.
+2. Treat `tide notify` as the primary wrapper signal path, with wrapped-agent OSC 9 fallback only where the checked-in wrapper actually implements it.
+3. Keep the supported Wrapped Agent list fixed to `claude`, `codex`, and `gemini`.
+4. Use the official Codex `notify` config to forward the completed-turn payload into Tide's Codex-specific classifier without guessing unofficial Codex behavior.
+5. Verify bundled wrapper contracts with behavior tests that read the checked-in wrapper resources instead of guessing external coding-agent configuration.
+
+## Adapter Contracts
+
+The wrapper scripts are the agent-specific translation layer. They own the hook, event, and payload names for their agent, then Tide translates the result into the shared `AgentStatus` lifecycle state before UI or routing reads it.
+
+| Agent | Checked-in wrapper inputs | Shared state mapping | Tide entrypoints that own translation |
+|-------|--------------------------|----------------------|---------------------------------------|
+| `claude` | `Notification` -> `agent-needs-input`, `Stop` -> `agent-idle`, `UserPromptSubmit` -> `agent-running`, plus OSC 9 fallback `tide:wrapped-agent:claude:<event>` | `Notification` -> `NeedsInput`, `Stop` -> `Idle`, `UserPromptSubmit` -> `Running` | `crates/tide-app/resources/bin/claude`, `crates/tide-app/src/app.rs::handle_terminal_notification`, `crates/tide-app/src/app.rs::route_agent_notification`, `crates/tide-app/src/application/services/workspace_infra_service/mod.rs::refresh_workspace_agent_notification`, `crates/tide-app/src/application/services/workspace_service/mod.rs::activate_notification_target` |
+| `codex` | launch-time `agent-running`, `UserPromptSubmit` -> `agent-running`, official `notify` completed-turn `codex-turn-complete` with appended JSON payload, `EXIT` fallback `agent-idle`, plus OSC 9 fallback `tide:wrapped-agent:codex:<event>` | `agent-running` -> `Running`, completed-turn payload -> `Idle` or `NeedsInput` via the Codex-specific helper in `docs/specs/codex-needs-input-attention.md` | `crates/tide-app/resources/bin/codex`, `crates/tide-app/src/adapter/inward/cli_adapter/notify.rs::run_notify`, `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs::cli_notify`, `crates/tide-app/src/app.rs::handle_terminal_notification`, `crates/tide-app/src/app.rs::route_agent_notification` |
+| `gemini` | `BeforeAgent` -> `agent-running`, `AfterAgent` -> `agent-idle`, `Notification` -> `agent-needs-input`, plus OSC 9 fallback `tide:wrapped-agent:gemini:<event>` | `BeforeAgent` -> `Running`, `AfterAgent` -> `Idle`, `Notification` -> `NeedsInput` | `crates/tide-app/resources/bin/gemini`, `crates/tide-app/src/app.rs::handle_terminal_notification`, `crates/tide-app/src/app.rs::route_agent_notification`, `crates/tide-app/src/application/services/workspace_infra_service/mod.rs::refresh_workspace_agent_notification`, `crates/tide-app/src/application/services/workspace_service/mod.rs::activate_notification_target` |
+
+The common routing rule is the same for all three agents: UI chrome and app routing consume only the normalized `AgentStatus`, while inactive-Workspace highlighting and notification activation are projections of that shared state.
 
 ## Bounded Contexts
-- **terminal** (`domain/terminal/`) — 래퍼 스크립트 생성, PATH injection in PTY env
-- **gateway** (`adapter/inward/cli_adapter/`, `domain/state/gateway_status.rs`) — notify subcommand, AgentStatus tracking
-- **renderer** (`adapter/outward/view/chrome/`) — 탭 상태 indicator rendering
+
+| Context | Role |
+|---------|------|
+| `terminal` | Discovers bundled wrapper resources and injects wrapper-related environment into each `Terminal` PTY |
+| `gateway` | Receives wrapper-managed lifecycle reports through `notify` and stores `AgentStatus` |
+| `wrapper` | Encodes the evidence-backed agent-specific launch contract for `claude`, `codex`, and `gemini` |
 
 ## Use Cases
 
-### UC-1: GenerateAgentWrappers
-- **Actor**: Tide App (startup)
-- **Trigger**: App 초기화 시 (Gateway socket 설정 직후)
-- **Precondition**: Tide binary path resolvable via `std::env::current_exe()`
-- **Flow**:
-  1. `$TMPDIR/tide-<pid>-bin/` 디렉토리 생성
-  2. 지원 에이전트별 (claude, codex, gemini) 래퍼 스크립트 생성
-  3. 각 래퍼: 원본 바이너리 찾기 → 임시 settings JSON 생성 (MCP + hooks) → `exec` 원본
-  4. 래퍼 디렉토리 경로를 `AGENT_WRAPPER_DIR` static에 저장
-- **Postcondition**: 래퍼 스크립트가 실행 가능한 상태로 존재
-- **Business Rules**:
-  - BR-1: 래퍼는 PATH에서 자기 자신의 디렉토리를 제거한 후 원본 바이너리를 탐색해야 한다
-  - BR-2: 원본 바이너리가 없으면 표준 "command not found" 메시지를 출력하고 exit 127
-  - BR-3: 임시 settings 파일은 `trap ... EXIT`으로 프로세스 종료 시 정리
-  - BR-4: 각 에이전트의 settings format에 맞게 MCP + hooks JSON 생성 (Claude: `--settings`, Codex/Gemini: 각자 포맷)
+### UC-1: DiscoverAgentResources
 
-### UC-2: InjectWrapperPATH
-- **Actor**: Terminal (PTY spawn)
-- **Trigger**: 새 Terminal pane 생성 시
-- **Precondition**: `AGENT_WRAPPER_DIR`이 설정되어 있음
+- **Actor**: Tide App
+- **Trigger**: App startup after the Agent Gateway socket path is ready
+- **Precondition**: The app bundle resources are available under `Contents/Resources`
 - **Flow**:
-  1. 기존 env 설정 (TERM, COLORTERM, TIDE_SOCKET 등) 수행
-  2. `TIDE_BIN` 환경변수에 Tide 바이너리 경로 설정
-  3. `PATH`에 래퍼 디렉토리를 prepend
-- **Postcondition**: 해당 terminal에서 `claude` 입력 시 래퍼가 실행됨
+  1. Tide resolves the bundled wrapper directory
+  2. Tide resolves the bundled shell-integration directory
+  3. Tide caches those paths for later `Terminal` creation
+- **Postcondition**: Future `Terminal` spawns can opt into Tide-managed wrapper integration
 - **Business Rules**:
-  - BR-1: 래퍼 디렉토리가 PATH의 맨 앞에 위치해야 함 (원본보다 우선)
-  - BR-2: `TIDE_BIN`은 `std::env::current_exe()` 결과를 사용
+  - BR-1: Auto-integration resource discovery is limited to the bundled `claude`, `codex`, and `gemini` wrapper set
+  - BR-2: Missing resource directories leave wrapper injection disabled instead of guessing external locations
 
-### UC-3: NotifyAgentStatus
-- **Actor**: Agent lifecycle hook (외부 프로세스)
-- **Trigger**: `Tide notify <event-type> --pane <id>` CLI 실행
-- **Precondition**: `TIDE_SOCKET` 환경변수가 설정되어 있음
-- **Flow**:
-  1. args 파싱: event-type, pane id
-  2. `TIDE_SOCKET`으로 Gateway 소켓에 연결
-  3. JSON-RPC `notify` 메서드 전송: `{"event": "<type>", "pane": <id>}`
-  4. 즉시 종료 (응답 대기 불필요)
-- **Postcondition**: Gateway에 에이전트 상태 이벤트 전달됨
-- **Business Rules**:
-  - BR-1: 지원 이벤트: `agent-running`, `agent-idle`, `agent-needs-input`
-  - BR-2: 소켓 연결 실패 시 silent exit (exit 0) — 에이전트 작업을 방해하지 않음
-  - BR-3: fire-and-forget — 응답을 기다리지 않음
+### UC-2: InjectWrapperEnvironment
 
-### UC-4: HandleAgentNotify
-- **Actor**: Agent Gateway (App event loop)
-- **Trigger**: `notify` CLI 커맨드 수신
-- **Precondition**: pane_id가 유효한 terminal pane
+- **Actor**: `Terminal`
+- **Trigger**: A `Terminal` PTY is created
+- **Precondition**: Tide knows the current Gateway socket path and Pane identity
 - **Flow**:
-  1. event type에 따라 AgentInfo의 status 업데이트
-  2. `gateway_notify` 로 subscribers에 브로드캐스트
-  3. chrome_generation bump → 탭 indicator 업데이트 트리거
-- **Postcondition**: `AgentInfo.status`가 업데이트되고 UI에 반영됨
+  1. Tide exports `TIDE_SOCKET`, `TIDE_PANE`, `TIDE_WORKSPACE`, and `TIDE_BIN`
+  2. If auto-integration is enabled, Tide also exports wrapper and shell-integration environment
+  3. The child shell starts with Tide's wrapper path available
+- **Postcondition**: A Wrapped Agent launched from that `Terminal` can discover Tide without manual setup
 - **Business Rules**:
-  - BR-1: `agent-running` → `AgentStatus::Running`
-  - BR-2: `agent-idle` → `AgentStatus::Idle`
-  - BR-3: `agent-needs-input` → `AgentStatus::NeedsInput`
-  - BR-4: pane_id에 해당하는 detected_agent가 없으면 무시 (에러 아님)
+  - BR-3: `TIDE_BIN` is exported even when wrapper auto-integration is disabled
+  - BR-4: Wrapper path injection only happens while auto-integration is enabled
 
-### UC-5: RenderAgentStatusIndicator
-- **Actor**: Renderer (view layer)
-- **Trigger**: chrome_generation 변경 시 탭 렌더링
-- **Precondition**: 해당 pane에 detected agent가 있고 status가 Idle이 아님
+### UC-3: ReportWrappedAgentLifecycle
+
+- **Actor**: Wrapped Agent
+- **Trigger**: A bundled wrapper emits a lifecycle report
+- **Precondition**: The child process inherited Tide's environment
 - **Flow**:
-  1. 탭 타이틀 옆에 상태 dot 렌더링
-  2. Running → 초록 dot, NeedsInput → 주황 dot, Idle → 없음
-- **Postcondition**: 유저가 탭을 보고 에이전트 상태를 즉시 파악 가능
+  1. The wrapper calls `tide notify` when available
+  2. If the checked-in wrapper supports it, the wrapper may fall back to wrapped-agent OSC 9
+  3. Tide updates `AgentStatus` through the Gateway path
+- **Postcondition**: Tide receives only wrapper-managed lifecycle state
 - **Business Rules**:
-  - BR-1: dot은 탭 타이틀 왼쪽에 작은 원으로 표시
-  - BR-2: NeedsInput 상태에서 해당 pane이 unfocused면 dot이 깜빡이거나 더 눈에 띄게 표시
+  - BR-5: Wrapper-managed lifecycle reports must carry a Pane identity
+  - BR-6: Wrapper transport details must stay grounded in the checked-in wrapper resources, not assumed from external coding-agent docs
+
+### UC-4: PreserveCodexWrapperContract
+
+- **Actor**: Tide wrapper maintainer
+- **Trigger**: The bundled Codex wrapper changes
+- **Precondition**: `crates/tide-app/resources/bin/codex` is the source of truth
+- **Flow**:
+  1. The Codex wrapper injects Tide MCP server config into the real `codex` command
+  2. The Codex wrapper reports `agent-running` before exec
+  3. The Codex wrapper configures Codex `notify` to forward the completed-turn payload into Tide's Codex-specific classifier
+  4. The Codex wrapper keeps an `EXIT` fallback for `agent-idle`
+  5. Tide does not assume an unsupported Codex `NeedsInput` signal beyond the checked-in script
+- **Postcondition**: Codex integration remains evidence-backed and stable
+- **Business Rules**:
+  - BR-7: The Codex wrapper injects Tide MCP server config and nothing broader than the checked-in `mcp_servers.tide.*` overrides
+  - BR-8: The Codex wrapper reports `agent-running` on launch
+  - BR-9: The Codex wrapper forwards the official Codex completed-turn payload through the checked-in `notify` config
+  - BR-10: The Codex wrapper keeps an `EXIT` fallback for `agent-idle`
+  - BR-11: The Codex wrapper does not claim a Codex `NeedsInput` signal without checked-in Tide integration
+  - BR-12: The Codex `NeedsInput` decision belongs to the Tide-side helper documented in `docs/specs/codex-needs-input-attention.md`, not to the wrapper script
 
 ## Invariants
-1. 래퍼 스크립트는 원본 바이너리의 동작을 변경하지 않는다 (MCP/hooks 설정만 추가)
-2. 래퍼 디렉토리 제거(PATH에서) 후 `command -v`로 찾은 바이너리가 원본임을 보장
-3. `Tide notify` 실패가 에이전트 프로세스에 영향을 주지 않음 (non-blocking, exit 0)
-4. 여러 Tide 인스턴스가 동시 실행돼도 PID 기반 디렉토리로 충돌 없음
+
+1. Auto-integration stays limited to the bundled `claude`, `codex`, and `gemini` wrappers.
+2. Tide does not guess coding-agent hook APIs or config keys beyond what the checked-in wrapper resources prove.
+3. PTY environment injection remains the only auto-integration path Tide owns directly.
 
 ## Tests
 
 | UC | BR | Test function |
 |----|-----|---------------|
-| UC-4 | BR-1 | `notify_agent_running_updates_status()` |
-| UC-4 | BR-2 | `notify_agent_idle_updates_status()` |
-| UC-4 | BR-3 | `notify_agent_needs_input_updates_status()` |
-| UC-4 | BR-4 | `notify_ignores_unknown_pane()` |
-| UC-3 | BR-1 | `notify_rejects_unknown_event_type()` |
-| UC-4 | — | `notify_requires_event_param()` |
-| UC-4 | — | `notify_requires_pane_param()` |
-| UC-4 | — | `notify_bumps_chrome_generation()` |
-| UC-4 | — | `notify_does_not_bump_chrome_when_no_agent()` |
-| UC-1 | — | `wrapper_scripts_are_generated_at_known_path()` |
+| UC-4 | BR-7 | `codex_wrapper_injects_tide_mcp_and_turn_complete_notify` |
+| UC-4 | BR-8 | `codex_wrapper_injects_tide_mcp_and_turn_complete_notify` |
+| UC-4 | BR-9 | `codex_wrapper_injects_tide_mcp_and_turn_complete_notify` |
+| UC-4 | BR-10 | `codex_wrapper_injects_tide_mcp_and_turn_complete_notify` |
+| UC-4 | BR-11 | `codex_wrapper_injects_tide_mcp_and_turn_complete_notify` |
+| UC-4 | BR-12 | `codex_completed_turn_payload_classifies_idle_or_needs_input` |
+| UC-1 | BR-1 | `wrapper_scripts_are_generated_at_known_path` |
 
 ## Location
 
 | Module | Path | Change |
 |--------|------|--------|
-| terminal | `domain/terminal/mod.rs` | `AGENT_WRAPPER_DIR`, `generate_agent_wrappers()`, PATH injection |
-| main | `main.rs` | `notify` subcommand routing |
-| cli_adapter | `adapter/inward/cli_adapter/notify.rs` | **NEW** — notify CLI client |
-| cli_adapter | `adapter/inward/cli_adapter/mod.rs` | register notify module |
-| cli_adapter | `adapter/inward/cli_adapter/commands.rs` | `notify` command handler |
-| gateway_status | `domain/state/gateway_status.rs` | `AgentStatus` enum, extend `AgentInfo` |
-| titlebar | `adapter/outward/view/chrome/titlebar.rs` | agent status dot rendering |
+| Settings | `crates/tide-app/src/domain/state/settings.rs` | Persists the auto-integration toggle with a `true` default |
+| Terminal | `crates/tide-app/src/domain/terminal/mod.rs` | Discovers wrapper resources and injects wrapper-related PTY environment |
+| Wrapper | `crates/tide-app/resources/bin/codex` | Defines the evidence-backed Codex wrapper contract |
+| Behavior tests | `crates/tide-app/src/application/behavior_tests/agent_gateway.rs` | Verifies the checked-in wrapper contract without guessing external agent config |

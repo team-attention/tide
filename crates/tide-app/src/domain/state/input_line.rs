@@ -7,7 +7,10 @@ pub(crate) struct InputLine {
 
 impl InputLine {
     pub fn new() -> Self {
-        Self { text: String::new(), cursor: 0 }
+        Self {
+            text: String::new(),
+            cursor: 0,
+        }
     }
 
     pub fn with_text(text: String) -> Self {
@@ -74,11 +77,26 @@ pub(crate) fn shell_escape(s: &str) -> String {
     if s.bytes().any(|b| b < 0x20 && b != b'\t') {
         return "''".to_string();
     }
-    if s.contains(' ') || s.contains('\'') || s.contains('"') || s.contains('\\')
-        || s.contains('$') || s.contains('`') || s.contains('!') || s.contains('(')
-        || s.contains(')') || s.contains('&') || s.contains(';') || s.contains('|')
-        || s.contains('*') || s.contains('?') || s.contains('[') || s.contains(']')
-        || s.contains('{') || s.contains('}') || s.contains('#') || s.contains('~')
+    if s.contains(' ')
+        || s.contains('\'')
+        || s.contains('"')
+        || s.contains('\\')
+        || s.contains('$')
+        || s.contains('`')
+        || s.contains('!')
+        || s.contains('(')
+        || s.contains(')')
+        || s.contains('&')
+        || s.contains(';')
+        || s.contains('|')
+        || s.contains('*')
+        || s.contains('?')
+        || s.contains('[')
+        || s.contains(']')
+        || s.contains('{')
+        || s.contains('}')
+        || s.contains('#')
+        || s.contains('~')
         || s.contains('\t')
     {
         format!("'{}'", s.replace('\'', "'\\''"))

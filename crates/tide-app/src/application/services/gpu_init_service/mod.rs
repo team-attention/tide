@@ -26,7 +26,9 @@ impl App {
                 raw_display_handle: raw_display.into(),
                 raw_window_handle: raw_handle.into(),
             };
-            instance.create_surface_unsafe(target).expect("create surface")
+            instance
+                .create_surface_unsafe(target)
+                .expect("create surface")
         };
 
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -99,7 +101,10 @@ impl App {
             Arc::clone(&device),
             Arc::clone(&queue),
             config.clone(),
-            self.bg.event_loop_waker.clone().expect("waker must be set before GPU init"),
+            self.bg
+                .event_loop_waker
+                .clone()
+                .expect("waker must be set before GPU init"),
         );
         self.ports.gpu.set_render_thread(rt);
 

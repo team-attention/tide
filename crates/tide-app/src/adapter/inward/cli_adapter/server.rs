@@ -9,10 +9,13 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 
+use super::protocol::{JsonRpcErrorResponse, JsonRpcRequest, JsonRpcResponse};
 use super::CliCommand;
-use super::protocol::{JsonRpcRequest, JsonRpcResponse, JsonRpcErrorResponse};
 use crate::event_loop::AppEvent;
 use crate::tide_platform::WakeCallback;
 
@@ -24,15 +27,23 @@ pub(crate) struct ConnectedClients {
 
 impl ConnectedClients {
     pub fn new() -> Self {
-        Self { pids: Mutex::new(HashSet::new()) }
+        Self {
+            pids: Mutex::new(HashSet::new()),
+        }
     }
 
     pub fn add(&self, pid: u32) {
-        self.pids.lock().unwrap_or_else(|e| e.into_inner()).insert(pid);
+        self.pids
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(pid);
     }
 
     pub fn remove(&self, pid: u32) {
-        self.pids.lock().unwrap_or_else(|e| e.into_inner()).remove(&pid);
+        self.pids
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&pid);
     }
 
     /// Snapshot the current set of connected PIDs. Called from the app thread.
@@ -54,10 +65,7 @@ pub(crate) struct GatewayServer {
 
 impl GatewayServer {
     /// Start the socket server on a background thread.
-    pub fn start(
-        event_tx: mpsc::Sender<AppEvent>,
-        waker: WakeCallback,
-    ) -> std::io::Result<Self> {
+    pub fn start(event_tx: mpsc::Sender<AppEvent>, waker: WakeCallback) -> std::io::Result<Self> {
         let pid = std::process::id();
         let tmpdir = std::env::temp_dir();
         let socket_path = tmpdir.join(format!("tide-{pid}.sock"));
@@ -245,7 +253,10 @@ impl GatewayServer {
             return;
         }
         let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if let Some(pid_str) = filename.strip_prefix("tide-").and_then(|s| s.strip_suffix(".sock")) {
+        if let Some(pid_str) = filename
+            .strip_prefix("tide-")
+            .and_then(|s| s.strip_suffix(".sock"))
+        {
             if let Ok(pid) = pid_str.parse::<i32>() {
                 if unsafe { libc::kill(pid, 0) } != 0 {
                     let _ = std::fs::remove_file(path);
@@ -267,13 +278,17 @@ fn get_peer_pid(stream: &std::os::unix::net::UnixStream) -> Option<u32> {
     let ret = unsafe {
         libc::getsockopt(
             fd,
-            0,  // SOL_LOCAL
-            2,  // LOCAL_PEERPID
+            0, // SOL_LOCAL
+            2, // LOCAL_PEERPID
             &mut pid as *mut _ as *mut libc::c_void,
             &mut len,
         )
     };
-    if ret == 0 && pid > 0 { Some(pid as u32) } else { None }
+    if ret == 0 && pid > 0 {
+        Some(pid as u32)
+    } else {
+        None
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -286,7 +301,9 @@ impl Drop for GatewayServer {
         self.shutdown.store(true, Ordering::Relaxed);
         let _ = std::fs::remove_file(&self.socket_path);
 
-        let latest = self.socket_path.parent()
+        let latest = self
+            .socket_path
+            .parent()
             .map(|p| p.join("tide-latest.sock"))
             .unwrap_or_default();
         if let Ok(target) = std::fs::read_link(&latest) {

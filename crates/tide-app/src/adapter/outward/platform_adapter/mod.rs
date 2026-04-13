@@ -164,6 +164,9 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     /// Silent fail if permission is not granted.
     fn send_system_notification(&self, _title: &str, _body: &str, _pane_id: u64) {}
 
+    /// Request macOS notification permission proactively.
+    fn request_notification_permission(&self) {}
+
     /// Request user attention (dock bounce). Uses informational (single bounce).
     fn request_user_attention(&self) {}
 }
@@ -234,6 +237,7 @@ pub enum WindowCommand {
         body: String,
         pane_id: u64,
     },
+    RequestNotificationPermission,
     RequestUserAttention,
 }
 
@@ -256,15 +260,16 @@ pub fn show_close_confirm() -> bool {
     unsafe extern "C" fn show_alert(ctx: *mut std::ffi::c_void) {
         use objc2::msg_send;
         use objc2::msg_send_id;
-        use objc2::runtime::{AnyClass, AnyObject};
         use objc2::rc::Retained;
+        use objc2::runtime::{AnyClass, AnyObject};
         use objc2_foundation::NSString;
 
         let result = &*(ctx as *const AtomicBool);
         unsafe {
             let alert_cls = AnyClass::get("NSAlert").expect("NSAlert class must exist");
             let alert: Retained<AnyObject> = msg_send_id![alert_cls, new];
-            let _: () = msg_send![&alert, setMessageText: &*NSString::from_str("Close this window?")];
+            let _: () =
+                msg_send![&alert, setMessageText: &*NSString::from_str("Close this window?")];
             let _: () = msg_send![&alert, setInformativeText: &*NSString::from_str("All running processes will be terminated.")];
             let _: () = msg_send![&alert, addButtonWithTitle: &*NSString::from_str("Close")];
             let _: () = msg_send![&alert, addButtonWithTitle: &*NSString::from_str("Cancel")];
@@ -295,7 +300,13 @@ pub fn execute_window_command(window: &dyn PlatformWindow, cmd: WindowCommand) {
         WindowCommand::CreateImeProxy(id) => window.create_ime_proxy(id),
         WindowCommand::RemoveImeProxy(id) => window.remove_ime_proxy(id),
         WindowCommand::FocusImeProxy(id) => window.focus_ime_proxy(id),
-        WindowCommand::SetImeCursorArea { pane_id, x, y, w, h } => {
+        WindowCommand::SetImeCursorArea {
+            pane_id,
+            x,
+            y,
+            w,
+            h,
+        } => {
             window.set_ime_proxy_cursor_area(pane_id, x, y, w, h);
         }
         WindowCommand::SendSystemNotification {
@@ -304,6 +315,9 @@ pub fn execute_window_command(window: &dyn PlatformWindow, cmd: WindowCommand) {
             pane_id,
         } => {
             window.send_system_notification(title, body, pane_id);
+        }
+        WindowCommand::RequestNotificationPermission => {
+            window.request_notification_permission();
         }
         WindowCommand::RequestUserAttention => {
             window.request_user_attention();
@@ -324,10 +338,7 @@ pub struct WindowProxy {
 }
 
 impl WindowProxy {
-    pub fn new(
-        cmd_tx: std::sync::mpsc::Sender<WindowCommand>,
-        waker: WakeCallback,
-    ) -> Self {
+    pub fn new(cmd_tx: std::sync::mpsc::Sender<WindowCommand>, waker: WakeCallback) -> Self {
         Self { cmd_tx, waker }
     }
 
@@ -370,7 +381,13 @@ impl WindowProxy {
     }
 
     pub fn set_ime_proxy_cursor_area(&self, pane_id: u64, x: f64, y: f64, w: f64, h: f64) {
-        self.send(WindowCommand::SetImeCursorArea { pane_id, x, y, w, h });
+        self.send(WindowCommand::SetImeCursorArea {
+            pane_id,
+            x,
+            y,
+            w,
+            h,
+        });
     }
 
     pub fn send_system_notification(&self, title: &str, body: &str, pane_id: u64) {
@@ -379,6 +396,10 @@ impl WindowProxy {
             body: body.to_string(),
             pane_id,
         });
+    }
+
+    pub fn request_notification_permission(&self) {
+        self.send(WindowCommand::RequestNotificationPermission);
     }
 
     pub fn request_user_attention(&self) {
@@ -398,25 +419,49 @@ pub(crate) struct RealPlatform {
 unsafe impl Send for RealPlatform {}
 
 impl RealPlatform {
-    pub fn new() -> Self { Self { content_view_ptr: None, window_ptr: None, window_shown: false } }
+    pub fn new() -> Self {
+        Self {
+            content_view_ptr: None,
+            window_ptr: None,
+            window_shown: false,
+        }
+    }
 }
 
 impl PlatformPort for RealPlatform {
-    fn set_content_view_ptr(&mut self, ptr: Option<*mut std::ffi::c_void>) { self.content_view_ptr = ptr; }
-    fn content_view_ptr(&self) -> Option<*mut std::ffi::c_void> { self.content_view_ptr }
-    fn set_window_ptr(&mut self, ptr: Option<*mut std::ffi::c_void>) { self.window_ptr = ptr; }
-    fn window_ptr(&self) -> Option<*mut std::ffi::c_void> { self.window_ptr }
-    fn window_shown(&self) -> bool { self.window_shown }
-    fn set_window_shown(&mut self, shown: bool) { self.window_shown = shown; }
+    fn set_content_view_ptr(&mut self, ptr: Option<*mut std::ffi::c_void>) {
+        self.content_view_ptr = ptr;
+    }
+    fn content_view_ptr(&self) -> Option<*mut std::ffi::c_void> {
+        self.content_view_ptr
+    }
+    fn set_window_ptr(&mut self, ptr: Option<*mut std::ffi::c_void>) {
+        self.window_ptr = ptr;
+    }
+    fn window_ptr(&self) -> Option<*mut std::ffi::c_void> {
+        self.window_ptr
+    }
+    fn window_shown(&self) -> bool {
+        self.window_shown
+    }
+    fn set_window_shown(&mut self, shown: bool) {
+        self.window_shown = shown;
+    }
 }
 
 pub(crate) struct NoopPlatform;
 
 impl PlatformPort for NoopPlatform {
     fn set_content_view_ptr(&mut self, _ptr: Option<*mut std::ffi::c_void>) {}
-    fn content_view_ptr(&self) -> Option<*mut std::ffi::c_void> { None }
+    fn content_view_ptr(&self) -> Option<*mut std::ffi::c_void> {
+        None
+    }
     fn set_window_ptr(&mut self, _ptr: Option<*mut std::ffi::c_void>) {}
-    fn window_ptr(&self) -> Option<*mut std::ffi::c_void> { None }
-    fn window_shown(&self) -> bool { false }
+    fn window_ptr(&self) -> Option<*mut std::ffi::c_void> {
+        None
+    }
+    fn window_shown(&self) -> bool {
+        false
+    }
     fn set_window_shown(&mut self, _shown: bool) {}
 }

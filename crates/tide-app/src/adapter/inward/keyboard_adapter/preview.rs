@@ -5,8 +5,8 @@
 
 use crate::tide_core::{FileTreeSource, Key, Modifiers};
 
-use crate::pane::PaneKind;
 use super::KeyboardPorts;
+use crate::pane::PaneKind;
 
 pub(super) fn handle_file_tree_nav_key(
     ctx: &mut impl KeyboardPorts,
@@ -253,11 +253,7 @@ pub(super) fn handle_search_bar_key(
         }
         Key::Char(ch) => {
             if !modifiers.ctrl && !modifiers.meta {
-                crate::adapter::inward::search_adapter::search_bar_insert(
-                    ctx,
-                    search_pane_id,
-                    ch,
-                );
+                crate::adapter::inward::search_adapter::search_bar_insert(ctx, search_pane_id, ch);
             }
         }
         _ => {}

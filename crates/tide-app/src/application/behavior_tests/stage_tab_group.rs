@@ -691,7 +691,10 @@ fn stacked_stage_tab_bar_scroll_updates_offset_under_cursor() {
         .get(&active)
         .copied()
         .unwrap_or(0.0);
-    assert!(offset > 0.0, "header scroll should advance the stacked Stage tab bar");
+    assert!(
+        offset > 0.0,
+        "header scroll should advance the stacked Stage tab bar"
+    );
 }
 
 // --- UC-5: Drop Pane into Stage TabGroup (Center Drop Zone) ---

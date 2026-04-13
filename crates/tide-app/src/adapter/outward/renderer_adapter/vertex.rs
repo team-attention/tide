@@ -39,12 +39,12 @@ pub struct GlyphVertex {
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct ChromeRectVertex {
-    pub position: [f32; 2],      // quad corner position (px)
-    pub color: [f32; 4],         // RGBA
-    pub rect_center: [f32; 2],   // rect center (px)
-    pub rect_half: [f32; 2],     // half-width, half-height (px)
-    pub corner_radius: f32,      // rounded corner radius (px)
-    pub shadow_blur: f32,        // >0 = shadow mode: soft falloff over this radius (px)
+    pub position: [f32; 2],    // quad corner position (px)
+    pub color: [f32; 4],       // RGBA
+    pub rect_center: [f32; 2], // rect center (px)
+    pub rect_half: [f32; 2],   // half-width, half-height (px)
+    pub corner_radius: f32,    // rounded corner radius (px)
+    pub shadow_blur: f32,      // >0 = shadow mode: soft falloff over this radius (px)
 }
 
 impl ChromeRectVertex {
@@ -124,9 +124,9 @@ impl GlyphVertex {
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct GridBgInstance {
-    pub position: [f32; 2],  // top-left corner (physical px)
-    pub size: [f32; 2],      // width, height (physical px)
-    pub color: [f32; 4],     // RGBA
+    pub position: [f32; 2], // top-left corner (physical px)
+    pub size: [f32; 2],     // width, height (physical px)
+    pub color: [f32; 4],    // RGBA
 }
 
 impl GridBgInstance {
@@ -161,11 +161,11 @@ impl GridBgInstance {
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct GridGlyphInstance {
-    pub position: [f32; 2],  // top-left corner (physical px)
-    pub size: [f32; 2],      // width, height (physical px)
-    pub uv_min: [f32; 2],    // atlas UV min
-    pub uv_max: [f32; 2],    // atlas UV max
-    pub color: [f32; 4],     // RGBA
+    pub position: [f32; 2], // top-left corner (physical px)
+    pub size: [f32; 2],     // width, height (physical px)
+    pub uv_min: [f32; 2],   // atlas UV min
+    pub uv_max: [f32; 2],   // atlas UV max
+    pub color: [f32; 4],    // RGBA
 }
 
 impl GridGlyphInstance {

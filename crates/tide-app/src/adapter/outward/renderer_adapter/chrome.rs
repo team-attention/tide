@@ -44,12 +44,26 @@ impl WgpuRenderer {
         self.chrome_rect_vertices.push(vert(qx + qw, qy));
         self.chrome_rect_vertices.push(vert(qx + qw, qy + qh));
         self.chrome_rect_vertices.push(vert(qx, qy + qh));
-        self.chrome_rect_indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        self.chrome_rect_indices.extend_from_slice(&[
+            base,
+            base + 1,
+            base + 2,
+            base,
+            base + 2,
+            base + 3,
+        ]);
     }
 
     /// Draw a soft outer shadow for a rounded rect (SDF-based blur).
     /// `blur` = blur radius in logical pixels, `spread` = expand/shrink of shadow shape.
-    pub fn draw_chrome_shadow(&mut self, rect: Rect, color: Color, radius: f32, blur: f32, spread: f32) {
+    pub fn draw_chrome_shadow(
+        &mut self,
+        rect: Rect,
+        color: Color,
+        radius: f32,
+        blur: f32,
+        spread: f32,
+    ) {
         let s = self.scale_factor;
         // Shadow shape = rect adjusted by spread (negative = smaller)
         let sx = (rect.x - spread) * s;
@@ -83,7 +97,14 @@ impl WgpuRenderer {
         self.chrome_rect_vertices.push(vert(qx + qw, qy));
         self.chrome_rect_vertices.push(vert(qx + qw, qy + qh));
         self.chrome_rect_vertices.push(vert(qx, qy + qh));
-        self.chrome_rect_indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        self.chrome_rect_indices.extend_from_slice(&[
+            base,
+            base + 1,
+            base + 2,
+            base,
+            base + 2,
+            base + 3,
+        ]);
     }
 
     /// Draw text into the cached chrome layer.
@@ -114,7 +135,8 @@ impl WgpuRenderer {
                 let qy = start_y;
                 let qw = cell_w * char_cells;
                 let qh = self.cached_cell_size.height * scale;
-                if qx + qw > clip_left && qx < clip_right && qy + qh > clip_top && qy < clip_bottom {
+                if qx + qw > clip_left && qx < clip_right && qy + qh > clip_top && qy < clip_bottom
+                {
                     // Clip to clip rect
                     let cx0 = qx.max(clip_left);
                     let cy0 = qy.max(clip_top);
@@ -138,7 +160,14 @@ impl WgpuRenderer {
                     self.chrome_rect_vertices.push(vert(cx1, cy0));
                     self.chrome_rect_vertices.push(vert(cx1, cy1));
                     self.chrome_rect_vertices.push(vert(cx0, cy1));
-                    self.chrome_rect_indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+                    self.chrome_rect_indices.extend_from_slice(&[
+                        base,
+                        base + 1,
+                        base + 2,
+                        base,
+                        base + 2,
+                        base + 3,
+                    ]);
                 }
             }
 
@@ -151,7 +180,8 @@ impl WgpuRenderer {
                 let gw = region.em_width * em_scale;
                 let gh = region.em_height * em_scale;
 
-                if gx + gw > clip_left && gx < clip_right && gy + gh > clip_top && gy < clip_bottom {
+                if gx + gw > clip_left && gx < clip_right && gy + gh > clip_top && gy < clip_bottom
+                {
                     // Clip glyph quad to clip rect, adjusting UV coordinates proportionally
                     let (cx0, cy0, cx1, cy1) = (
                         gx.max(clip_left),
@@ -168,12 +198,40 @@ impl WgpuRenderer {
                     let v1 = region.uv_min[1] + uv_h * ((cy1 - gy) / gh);
 
                     let base = self.chrome_glyph_vertices.len() as u32;
-                    let c = [style.foreground.r, style.foreground.g, style.foreground.b, style.foreground.a];
-                    self.chrome_glyph_vertices.push(GlyphVertex { position: [cx0, cy0], uv: [u0, v0], color: c });
-                    self.chrome_glyph_vertices.push(GlyphVertex { position: [cx1, cy0], uv: [u1, v0], color: c });
-                    self.chrome_glyph_vertices.push(GlyphVertex { position: [cx1, cy1], uv: [u1, v1], color: c });
-                    self.chrome_glyph_vertices.push(GlyphVertex { position: [cx0, cy1], uv: [u0, v1], color: c });
-                    self.chrome_glyph_indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+                    let c = [
+                        style.foreground.r,
+                        style.foreground.g,
+                        style.foreground.b,
+                        style.foreground.a,
+                    ];
+                    self.chrome_glyph_vertices.push(GlyphVertex {
+                        position: [cx0, cy0],
+                        uv: [u0, v0],
+                        color: c,
+                    });
+                    self.chrome_glyph_vertices.push(GlyphVertex {
+                        position: [cx1, cy0],
+                        uv: [u1, v0],
+                        color: c,
+                    });
+                    self.chrome_glyph_vertices.push(GlyphVertex {
+                        position: [cx1, cy1],
+                        uv: [u1, v1],
+                        color: c,
+                    });
+                    self.chrome_glyph_vertices.push(GlyphVertex {
+                        position: [cx0, cy1],
+                        uv: [u0, v1],
+                        color: c,
+                    });
+                    self.chrome_glyph_indices.extend_from_slice(&[
+                        base,
+                        base + 1,
+                        base + 2,
+                        base,
+                        base + 2,
+                        base + 3,
+                    ]);
                 }
             }
 
