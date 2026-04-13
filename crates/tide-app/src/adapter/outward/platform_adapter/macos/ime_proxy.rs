@@ -22,9 +22,7 @@ use std::rc::Rc;
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool, Sel};
-use objc2::{
-    declare_class, msg_send, msg_send_id, mutability, sel, ClassType, DeclaredClass,
-};
+use objc2::{declare_class, msg_send, msg_send_id, mutability, sel, ClassType, DeclaredClass};
 use objc2_app_kit::{NSEvent, NSTextInputClient, NSView};
 use objc2_foundation::MainThreadMarker;
 use objc2_foundation::{
@@ -35,9 +33,7 @@ use crate::tide_core::{Key, Modifiers};
 
 use super::super::{EventCallback, PlatformEvent, PlatformWindow};
 
-use super::view::{
-    key_and_modifiers_from_event, modifiers_from_flags, nsstring_from_anyobject,
-};
+use super::view::{key_and_modifiers_from_event, modifiers_from_flags, nsstring_from_anyobject};
 
 pub struct ImeProxyViewIvars {
     callback: Rc<RefCell<EventCallback>>,
@@ -595,10 +591,7 @@ impl ImeProxyView {
             callback,
             pane_id: Cell::new(pane_id),
             marked_text: RefCell::new(String::new()),
-            ime_cursor_rect: Cell::new(NSRect::new(
-                NSPoint::new(0.0, 0.0),
-                NSSize::new(1.0, 20.0),
-            )),
+            ime_cursor_rect: Cell::new(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1.0, 20.0))),
             ime_handled: Cell::new(false),
             current_event: RefCell::new(None),
             committed_text: RefCell::new(String::new()),
@@ -614,10 +607,9 @@ impl ImeProxyView {
         if let Some(superview) = unsafe { self.superview() } {
             let frame = superview.frame();
             let flipped_y = frame.size.height - y - h;
-            self.ivars().ime_cursor_rect.set(NSRect::new(
-                NSPoint::new(x, flipped_y),
-                NSSize::new(w, h),
-            ));
+            self.ivars()
+                .ime_cursor_rect
+                .set(NSRect::new(NSPoint::new(x, flipped_y), NSSize::new(w, h)));
         }
     }
 
@@ -637,15 +629,28 @@ impl ImeProxyView {
     /// rendering until all events are processed — prevents flicker from
     /// intermediate states (e.g. Backspace before replacement commit).
     fn flush_deferred_events(&self) {
-        let events: Vec<PlatformEvent> = self.ivars().deferred_events.borrow_mut().drain(..).collect();
+        let events: Vec<PlatformEvent> = self
+            .ivars()
+            .deferred_events
+            .borrow_mut()
+            .drain(..)
+            .collect();
         if events.is_empty() {
             return;
         }
-        super::emit_event(&self.ivars().callback, PlatformEvent::BatchStart, "ImeProxyView");
+        super::emit_event(
+            &self.ivars().callback,
+            PlatformEvent::BatchStart,
+            "ImeProxyView",
+        );
         for event in events {
             super::emit_event(&self.ivars().callback, event, "ImeProxyView");
         }
-        super::emit_event(&self.ivars().callback, PlatformEvent::BatchEnd, "ImeProxyView");
+        super::emit_event(
+            &self.ivars().callback,
+            PlatformEvent::BatchEnd,
+            "ImeProxyView",
+        );
     }
 }
 

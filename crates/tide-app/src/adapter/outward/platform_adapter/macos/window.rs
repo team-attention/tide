@@ -10,13 +10,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool, NSObject};
 use objc2::{declare_class, msg_send, msg_send_id, mutability, ClassType, DeclaredClass};
+use objc2_app_kit::{NSBackingStoreType, NSView, NSWindow, NSWindowStyleMask};
 use objc2_foundation::MainThreadMarker;
-use objc2_app_kit::{
-    NSBackingStoreType, NSView, NSWindow, NSWindowStyleMask,
-};
-use objc2_foundation::{
-    CGFloat, NSMutableArray, NSPoint, NSRect, NSSize, NSString,
-};
+use objc2_foundation::{CGFloat, NSMutableArray, NSPoint, NSRect, NSSize, NSString};
 use raw_window_handle::{
     AppKitDisplayHandle, AppKitWindowHandle, DisplayHandle, HandleError, HasDisplayHandle,
     HasWindowHandle, RawDisplayHandle, RawWindowHandle, WindowHandle,
@@ -296,9 +292,8 @@ impl MacosWindow {
         };
         if config.transparent_titlebar {
             ns_window.setTitlebarAppearsTransparent(true);
-            ns_window.setTitleVisibility(
-                objc2_app_kit::NSWindowTitleVisibility::NSWindowTitleHidden,
-            );
+            ns_window
+                .setTitleVisibility(objc2_app_kit::NSWindowTitleVisibility::NSWindowTitleHidden);
         }
 
         // Set minimum size
@@ -561,8 +556,7 @@ impl PlatformWindow for MacosWindow {
     fn request_user_attention(&self) {
         // NSApp.requestUserAttention(.informational) — single dock bounce
         unsafe {
-            let app_cls = objc2::runtime::AnyClass::get("NSApplication")
-                .expect("NSApplication");
+            let app_cls = objc2::runtime::AnyClass::get("NSApplication").expect("NSApplication");
             let nsapp: Retained<AnyObject> = msg_send_id![app_cls, sharedApplication];
             let _: () = msg_send![&nsapp, requestUserAttention: 0_isize]; // NSInformationalRequest = 0
         }

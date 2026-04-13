@@ -47,7 +47,9 @@ pub(crate) fn emit_event(
                 loop {
                     let queued: Vec<PlatformEvent> = REENTRANT_QUEUE.with(|q| {
                         let mut q = q.borrow_mut();
-                        if q.is_empty() { return Vec::new(); }
+                        if q.is_empty() {
+                            return Vec::new();
+                        }
                         std::mem::take(&mut *q)
                     });
                     if queued.is_empty() {
