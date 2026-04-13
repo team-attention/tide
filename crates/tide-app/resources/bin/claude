@@ -38,14 +38,14 @@ TIDE_EOF
 cat > "$HOOKS_FILE" << TIDE_EOF
 {
   "hooks": {
-    "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": "$TIDE_BIN notify agent-needs-input --pane $TIDE_PANE --agent claude"}]}],
-    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "$TIDE_BIN notify agent-idle --pane $TIDE_PANE --agent claude"}]}],
+    "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": "$TIDE_BIN notify agent-needs-input --pane $TIDE_PANE --agent claude --payload-stdin"}]}],
+    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "$TIDE_BIN notify agent-idle --pane $TIDE_PANE --agent claude --payload-stdin"}]}],
     "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent claude"}]}]
   }
 }
 TIDE_EOF
 
-tide_notify agent-running
-trap 'tide_notify agent-idle; rm -f "$MCP_FILE" "$HOOKS_FILE"' EXIT
+tide_notify agent-attached
+trap 'tide_notify agent-detached; rm -f "$MCP_FILE" "$HOOKS_FILE"' EXIT
 
 "$REAL_CMD" --mcp-config "$MCP_FILE" --settings "$HOOKS_FILE" "$@"

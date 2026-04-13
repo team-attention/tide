@@ -13,12 +13,13 @@ use crate::adapter::outward::view::header::{
     active_tab_badges, active_tab_width_cap, overflowed_stage_alert_tab_edges,
     reserve_title_before_badges, resolve_tab_scroll_offset, shared_tab_active_width_cap,
     shared_tab_target_width, stage_terminal_dot_color, stage_terminal_dot_status,
-    tab_status_dot_width, terminal_chrome_agent_status, terminal_header_title_color,
+    stage_terminal_dot_visual_state, tab_status_dot_width, terminal_chrome_agent_status,
+    terminal_chrome_visual_state, terminal_header_title_color, AgentChromeState,
     HeaderHitAction,
 };
 use crate::adapter::outward::view::{
-    pane_surface_attention_status, workspace_item_indicator_color, workspace_item_indicator_status,
-    wrapped_agent_blink_time,
+    integration_toggle_notification_indicator_color, pane_surface_attention_status,
+    workspace_item_indicator_color, workspace_item_indicator_status, wrapped_agent_blink_time,
 };
 use crate::application::services::file_tree_service::sync_terminal_badge_runtime_context;
 use crate::pane::editor::EditorPane;
@@ -107,8 +108,81 @@ fn wrapped_agent_info(
     }
 }
 
+fn connected_idle_wrapped_agent_info() -> crate::state::gateway_status::AgentInfo {
+    crate::state::gateway_status::AgentInfo {
+        name: "Codex",
+        pid: 42,
+        wrapper_managed: true,
+        gateway_connected: true,
+        status: None,
+    }
+}
+
 fn quarter_phase_blink_time() -> f64 {
     std::f64::consts::FRAC_PI_2 / AGENT_BLINK_FREQUENCY
+}
+
+fn color_distance(a: crate::tide_core::Color, b: crate::tide_core::Color) -> f32 {
+    (a.r - b.r).abs() + (a.g - b.g).abs() + (a.b - b.b).abs() + (a.a - b.a).abs()
+}
+
+#[test]
+fn integration_toggle_notification_indicator_uses_success_for_authorized_states() {
+    // UC-7 BR-1: Authorized notification states use the success indicator on the integration toggle.
+    for status in [
+        crate::state::NotificationAuthorizationStatus::Authorized,
+        crate::state::NotificationAuthorizationStatus::Provisional,
+        crate::state::NotificationAuthorizationStatus::Ephemeral,
+    ] {
+        let color = integration_toggle_notification_indicator_color(true, status)
+            .expect("authorized notification status should render an indicator");
+        assert!(
+            color_distance(color, crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0)) < 0.001,
+            "expected success indicator color for {status:?}, got {color:?}"
+        );
+    }
+}
+
+#[test]
+fn integration_toggle_notification_indicator_uses_warning_for_unknown_and_not_determined() {
+    // UC-7 BR-2: Unknown and not-determined notification states use the warning indicator.
+    for status in [
+        crate::state::NotificationAuthorizationStatus::Unknown,
+        crate::state::NotificationAuthorizationStatus::NotDetermined,
+    ] {
+        let color = integration_toggle_notification_indicator_color(true, status)
+            .expect("warning notification status should render an indicator");
+        assert!(
+            color_distance(color, crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0)) < 0.001,
+            "expected warning indicator color for {status:?}, got {color:?}"
+        );
+    }
+}
+
+#[test]
+fn integration_toggle_notification_indicator_uses_error_for_denied_status() {
+    // UC-7 BR-3: Denied notification status uses the error indicator.
+    let color = integration_toggle_notification_indicator_color(
+        true,
+        crate::state::NotificationAuthorizationStatus::Denied,
+    )
+    .expect("denied notification status should render an indicator");
+    assert!(
+        color_distance(color, DARK.diff_removed_gutter) < 0.001,
+        "expected denied indicator color, got {color:?}"
+    );
+}
+
+#[test]
+fn integration_toggle_notification_indicator_hides_when_auto_integration_is_disabled() {
+    // UC-7 BR-4: Disabled auto-integration hides the notification-authorization indicator.
+    assert!(
+        integration_toggle_notification_indicator_color(
+            false,
+            crate::state::NotificationAuthorizationStatus::Authorized
+        )
+        .is_none()
+    );
 }
 
 // --- UC-1: RenderFocusedPaneChrome ---
@@ -199,7 +273,7 @@ fn focused_stage_terminal_keeps_its_alert_dot_until_acknowledged() {
 #[test]
 fn inactive_workspace_alert_renders_an_orange_blinking_dot() {
     // UC-4 BR-11: An inactive Workspace item with unresolved Stage-terminal Idle or NeedsInput renders an orange blinking dot.
-    let status = workspace_item_indicator_status(false, false, true);
+    let status = workspace_item_indicator_status(false, false, true, false);
     let start = workspace_item_indicator_color(status.expect("inactive alert status"), Some(0.0));
     let later = workspace_item_indicator_color(
         status.expect("inactive alert status"),
@@ -213,8 +287,8 @@ fn inactive_workspace_alert_renders_an_orange_blinking_dot() {
 #[test]
 fn workspace_running_renders_a_green_dot() {
     // UC-4 BR-12: A Workspace item with Stage-terminal Running renders a green dot.
-    let status =
-        workspace_item_indicator_status(false, true, false).expect("running workspace indicator");
+    let status = workspace_item_indicator_status(false, true, false, false)
+        .expect("running workspace indicator");
     let color = workspace_item_indicator_color(status, Some(0.0));
 
     assert!(color.g > color.r);
@@ -238,24 +312,83 @@ fn active_workspace_running_uses_the_live_stage_terminal_state() {
         wrapped_agent_info(crate::state::gateway_status::AgentStatus::Running),
     );
 
-    let (has_running, has_alert) = app.workspace_stage_agent_flags(app.ws.active);
+    let (has_running, has_alert, has_connected_idle) = app.workspace_stage_agent_flags(app.ws.active);
 
     assert!(has_running);
     assert!(!has_alert);
+    assert!(!has_connected_idle);
     assert_eq!(
-        workspace_item_indicator_status(true, has_running, has_alert),
-        Some(crate::state::gateway_status::AgentStatus::Running)
+        workspace_item_indicator_status(true, has_running, has_alert, has_connected_idle),
+        Some(AgentChromeState::Running)
     );
 }
 
 #[test]
-fn active_workspace_does_not_duplicate_the_alert_dot() {
-    // UC-4 BR-13: The active Workspace item does not duplicate the active Stage-terminal alert dot with a second orange alert dot.
-    assert_eq!(workspace_item_indicator_status(true, false, true), None);
+fn active_workspace_alert_renders_an_orange_blinking_dot() {
+    // UC-4 BR-11: An active Workspace item with unresolved Stage-terminal attention still renders the orange blinking dot.
+    let status = workspace_item_indicator_status(true, false, true, false)
+        .expect("active workspace alert status");
+    let start = workspace_item_indicator_color(status, Some(0.0));
+    let later = workspace_item_indicator_color(status, Some(quarter_phase_blink_time()));
+
+    assert_eq!(status, AgentChromeState::Attention);
+    assert!(start.r > start.g && start.g > start.b);
+    assert_ne!(start.a.to_bits(), later.a.to_bits());
+}
+
+#[test]
+fn workspace_alert_takes_precedence_over_running() {
+    // UC-4 BR-13: A Workspace item with both running and alerting Stage terminals shows the alert state.
     assert_eq!(
-        workspace_item_indicator_status(true, true, false),
-        Some(crate::state::gateway_status::AgentStatus::Running)
+        workspace_item_indicator_status(true, true, true, false),
+        Some(AgentChromeState::Attention)
     );
+    assert_eq!(
+        workspace_item_indicator_status(false, true, true, false),
+        Some(AgentChromeState::Attention)
+    );
+}
+
+#[test]
+fn connected_wrapped_agent_without_active_status_renders_idle_presence_dot() {
+    // UC-8 BR-32: Wrapped Agent Presence without an active AgentStatus renders the idle-presence dot.
+    let terminal_id = 13;
+    let terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    let mut panes = HashMap::new();
+    panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    let mut detected_agents = HashMap::new();
+    detected_agents.insert(terminal_id, connected_idle_wrapped_agent_info());
+
+    assert_eq!(
+        terminal_chrome_agent_status(&panes, &detected_agents, terminal_id),
+        None
+    );
+    assert_eq!(
+        terminal_chrome_visual_state(&panes, &detected_agents, terminal_id),
+        Some(AgentChromeState::ConnectedIdle)
+    );
+    assert_eq!(
+        stage_terminal_dot_visual_state(&panes, &detected_agents, terminal_id, true),
+        Some(AgentChromeState::ConnectedIdle)
+    );
+
+    let color = stage_terminal_dot_color(AgentChromeState::ConnectedIdle, Some(0.0));
+    assert!(color.b > color.g);
+    assert!(color.g > color.r);
+    assert_eq!(color.a, 1.0);
+}
+
+#[test]
+fn workspace_connected_idle_renders_an_idle_presence_dot() {
+    // UC-8 BR-33: A Workspace item with only connected-idle Wrapped Agent Presence renders the idle-presence dot.
+    let status =
+        workspace_item_indicator_status(false, false, false, true).expect("idle presence state");
+    assert_eq!(status, AgentChromeState::ConnectedIdle);
+
+    let color = workspace_item_indicator_color(status, Some(0.0));
+    assert!(color.b > color.g);
+    assert!(color.g > color.r);
+    assert_eq!(color.a, 1.0);
 }
 
 #[test]

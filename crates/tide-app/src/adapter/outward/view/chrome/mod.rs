@@ -11,7 +11,10 @@ use crate::App;
 #[cfg(test)]
 pub(crate) use tab_bar::pane_surface_attention_status;
 #[cfg(test)]
-pub(crate) use titlebar::{workspace_item_indicator_color, workspace_item_indicator_status};
+pub(crate) use titlebar::{
+    integration_toggle_notification_indicator_color, workspace_item_indicator_color,
+    workspace_item_indicator_status,
+};
 
 /// Render the chrome layer: file tree panel, editor panel + tabs, pane backgrounds,
 /// focused borders, headers, and grip dots.

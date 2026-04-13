@@ -19,7 +19,9 @@ pub fn run_notify(args: &[String]) -> i32 {
             eprintln!(
                 "Usage: tide notify <event> --pane <id> [--agent <name>] [--payload-stdin] [payload-json]"
             );
-            eprintln!("Events: agent-running, agent-idle, agent-needs-input, codex-turn-complete");
+            eprintln!(
+                "Events: agent-attached, agent-detached, agent-running, agent-idle, agent-needs-input, codex-turn-complete"
+            );
             return 0; // silent exit — don't break agent hooks
         }
     };
@@ -140,11 +142,11 @@ fn read_payload_from_stdin() -> Option<serde_json::Value> {
     if stdin.read_to_string(&mut input).is_err() {
         return None;
     }
-    let input = input.trim();
-    if input.is_empty() {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
         return None;
     }
-    serde_json::from_str(input).ok()
+    serde_json::from_str(trimmed).ok()
 }
 
 /// Find the socket path to connect to.

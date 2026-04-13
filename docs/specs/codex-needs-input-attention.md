@@ -4,7 +4,7 @@
 
 ### As-Is
 
-- Tide already supports wrapper-managed `AgentStatus::NeedsInput` in `crates/tide-app/src/app.rs`, `crates/tide-app/src/application/services/workspace_infra_service/mod.rs`, and the chrome renderers, but the current Codex wrapper in `crates/tide-app/resources/bin/codex` only reports `agent-running` on launch and forwards the completed-turn payload into Tide, with process `EXIT` still acting as an `agent-idle` fallback.
+- Tide already supports wrapper-managed `AgentStatus::NeedsInput` in `crates/tide-app/src/app.rs`, `crates/tide-app/src/application/services/workspace_infra_service/mod.rs`, and the chrome renderers, but the current Codex wrapper in `crates/tide-app/resources/bin/codex` still marks presence on launch and forwards the completed-turn payload into Tide, with process `EXIT` still acting as the fallback wrapper teardown path.
 - The current Claude wrapper in `crates/tide-app/resources/bin/claude` is different: it maps Claude's `Notification`, `Stop`, and `UserPromptSubmit` hooks directly to `agent-needs-input`, `agent-idle`, and `agent-running`.
 - OpenAI's official Codex config reference documents a top-level `notify` command that receives a JSON payload from Codex.
 - OpenAI's official Codex hooks docs document `UserPromptSubmit`, `Stop`, `PreToolUse`, and `PostToolUse`, with hooks gated behind `[features] codex_hooks = true` and loaded from `hooks.json`.
@@ -16,21 +16,21 @@
 
 - Codex `NeedsInput` in Tide must use a Codex-specific attention adapter, not the Claude `Notification` model.
 - Tide should treat Codex turn completion as the primary stable signal source, then classify that completed turn as `Idle` or `NeedsInput` from the official Codex payload.
-- Tide should use Codex `UserPromptSubmit` to return the source `Pane` to `Running` at the beginning of each new turn.
+- Tide should use Codex `UserPromptSubmit` to return the source `Pane` to `Running` at the beginning of each new turn, while launch only marks `Wrapped Agent Presence`.
 - Tide must not infer Codex `NeedsInput` from unverified hook ordering or unsupported hook outputs.
 
 ### Approach
 
 1. Add a Codex-specific CLI entrypoint, invoked from Codex `notify`, that parses the official payload passed by Codex and maps it to Tide lifecycle events.
 2. Keep `notify` as the primary completed-turn source because it is documented in Codex config and already yields completed-turn payload data.
-3. Enable Codex hooks only for `UserPromptSubmit` so Tide can emit `agent-running` on every new turn, instead of relying on one launch-time `Running` signal for the whole session.
+3. Enable Codex hooks only for `UserPromptSubmit` so Tide can emit `agent-running` on every new turn, while launch only reports `agent-attached` for idle presence.
 4. Use a conservative Codex-specific classifier over `last_assistant_message` to decide whether a completed turn is `Idle` or `NeedsInput`.
 5. Fail closed for `NeedsInput`: unknown payloads or unclassified messages may still produce `Idle`, but must not be upgraded to `NeedsInput` without an explicit classifier match.
 6. Do not use `PreToolUse` or unsupported `permissionDecision: "ask"` semantics to infer permission waits until Tide has repo-backed evidence for Codex approval ordering.
 
 ## Adapter Contract
 
-- The Codex wrapper remains the source of the official signal surface: `UserPromptSubmit` for turn start, `notify` for completed turns, and `EXIT` for the fallback `agent-idle` report.
+- The Codex wrapper remains the source of the official signal surface: `UserPromptSubmit` for turn start, `notify` for completed turns, and `EXIT` for the fallback `agent-detached` report.
 - Tide owns the Codex-specific helper that classifies the completed-turn payload before shared routing consumes it.
 - The helper input is the official completed-turn `agent-turn-complete` payload, with `last_assistant_message` as the primary decision field and `input_messages` as supporting context only.
 - The helper returns `Running` for `UserPromptSubmit`, `Idle` for a completed turn that does not match the checked-in classifier, and `NeedsInput` only for a completed turn whose normalized `last_assistant_message` matches a checked-in request phrase.

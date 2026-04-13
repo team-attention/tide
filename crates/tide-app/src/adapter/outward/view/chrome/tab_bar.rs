@@ -295,9 +295,11 @@ pub(super) fn render_pane_chrome(
                 }
             } else {
                 // Single dock pane zoomed -- render normal header
-                let agent_status = app.pane_agent_attention_status(id);
-                let agent_attention_unresolved =
-                    app.pane_has_unresolved_wrapped_agent_attention(id);
+                let agent_chrome_state = crate::header::terminal_chrome_visual_state(
+                    &app.panes,
+                    &app.gateway.detected_agents,
+                    id,
+                );
                 let zones = header::render_pane_header_inner(
                     id,
                     rect,
@@ -308,8 +310,7 @@ pub(super) fn render_pane_chrome(
                     app.can_show_context_comment_badge(id),
                     p,
                     renderer,
-                    agent_status,
-                    agent_attention_unresolved,
+                    agent_chrome_state,
                     blink_time,
                     false,
                 );
@@ -329,7 +330,6 @@ pub(super) fn render_pane_chrome(
                 renderer,
                 app.can_show_context_comment_badge(tg.active_pane()),
                 &app.gateway.detected_agents,
-                &app.notified_panes,
                 blink_time,
                 scroll_off,
                 auto_fit_active_tab,
@@ -347,7 +347,6 @@ pub(super) fn render_pane_chrome(
                 renderer,
                 false,
                 &app.gateway.detected_agents,
-                &app.notified_panes,
                 blink_time,
                 scroll_off,
                 auto_fit_active_tab,
@@ -366,7 +365,6 @@ pub(super) fn render_pane_chrome(
                 renderer,
                 false,
                 &app.gateway.detected_agents,
-                &app.notified_panes,
                 blink_time,
                 scroll_off,
                 auto_fit_active_tab,
@@ -374,9 +372,11 @@ pub(super) fn render_pane_chrome(
             all_hit_zones.extend(tab_zones);
         } else {
             // Normal pane: render per-pane header (with agent status dot)
-            let agent_status = app.pane_agent_attention_status(id);
-            let agent_attention_unresolved =
-                app.pane_has_unresolved_wrapped_agent_attention(id);
+            let agent_chrome_state = crate::header::terminal_chrome_visual_state(
+                &app.panes,
+                &app.gateway.detected_agents,
+                id,
+            );
             let zones = header::render_pane_header_inner(
                 id,
                 rect,
@@ -387,8 +387,7 @@ pub(super) fn render_pane_chrome(
                 app.can_show_context_comment_badge(id),
                 p,
                 renderer,
-                agent_status,
-                agent_attention_unresolved,
+                agent_chrome_state,
                 blink_time,
                 !app.is_pane_in_dock(id),
             );

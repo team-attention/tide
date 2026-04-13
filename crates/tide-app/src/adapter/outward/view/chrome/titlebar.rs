@@ -6,44 +6,66 @@ use crate::App;
 use crate::PaneLifecyclePort;
 
 pub(crate) fn workspace_item_indicator_status(
-    is_active: bool,
+    _is_active: bool,
     has_running: bool,
     has_alert: bool,
-) -> Option<crate::state::gateway_status::AgentStatus> {
-    use crate::state::gateway_status::AgentStatus;
+    has_connected_idle: bool,
+) -> Option<crate::header::AgentChromeState> {
+    use crate::header::AgentChromeState;
 
     if has_alert {
-        if is_active {
-            if has_running {
-                return Some(AgentStatus::Running);
-            }
-            return None;
-        }
-        return Some(AgentStatus::Idle);
+        return Some(AgentChromeState::Attention);
     }
 
     if has_running {
-        return Some(AgentStatus::Running);
+        return Some(AgentChromeState::Running);
+    }
+
+    if has_connected_idle {
+        return Some(AgentChromeState::ConnectedIdle);
     }
 
     None
 }
 
 pub(crate) fn workspace_item_indicator_color(
-    status: crate::state::gateway_status::AgentStatus,
+    status: impl Into<crate::header::AgentChromeState>,
     blink_time: Option<f64>,
 ) -> crate::tide_core::Color {
-    use crate::state::gateway_status::AgentStatus;
+    use crate::header::AgentChromeState;
 
-    match status {
-        AgentStatus::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
-        AgentStatus::Idle | AgentStatus::NeedsInput => {
+    match status.into() {
+        AgentChromeState::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
+        AgentChromeState::Attention => {
             let opacity = blink_time
                 .map(|t| 0.65 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32)
                 .unwrap_or(1.0);
             crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity)
         }
+        AgentChromeState::ConnectedIdle => crate::tide_core::Color::new(0.36, 0.56, 0.82, 1.0),
     }
+}
+
+pub(crate) fn integration_toggle_notification_indicator_color(
+    auto_integration: bool,
+    status: crate::state::NotificationAuthorizationStatus,
+) -> Option<crate::tide_core::Color> {
+    if !auto_integration {
+        return None;
+    }
+
+    Some(match status {
+        crate::state::NotificationAuthorizationStatus::Authorized
+        | crate::state::NotificationAuthorizationStatus::Provisional
+        | crate::state::NotificationAuthorizationStatus::Ephemeral => {
+            crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0)
+        }
+        crate::state::NotificationAuthorizationStatus::Unknown
+        | crate::state::NotificationAuthorizationStatus::NotDetermined => {
+            crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0)
+        }
+        crate::state::NotificationAuthorizationStatus::Denied => DARK.diff_removed_gutter,
+    })
 }
 
 /// Render the titlebar background, title text, icons, and toggle buttons.
@@ -230,6 +252,19 @@ pub(super) fn render_titlebar_and_sidebar(
                     },
                     tb,
                 );
+                if let Some(indicator_color) = integration_toggle_notification_indicator_color(
+                    is_active,
+                    app.window.notification_authorization_status,
+                ) {
+                    let indicator_size = 5.0_f32;
+                    let indicator_x = integ_x + integ_w - indicator_size - 3.0;
+                    let indicator_y = integ_y + 3.0;
+                    renderer.draw_chrome_rounded_rect(
+                        Rect::new(indicator_x, indicator_y, indicator_size, indicator_size),
+                        indicator_color,
+                        indicator_size / 2.0,
+                    );
+                }
             }
 
             let btn_right = integ_x - TITLEBAR_BUTTON_GAP;
@@ -430,9 +465,14 @@ pub(super) fn render_titlebar_and_sidebar(
         for i in 0..app.ws.workspaces.len() {
             let is_active = i == app.ws.active;
             let ws_name = app.ws.workspaces[i].name.clone();
-            let (has_running, has_alert) = app.workspace_stage_agent_flags(i);
+            let (has_running, has_alert, has_connected_idle) = app.workspace_stage_agent_flags(i);
             let indicator_status =
-                workspace_item_indicator_status(is_active, has_running, has_alert);
+                workspace_item_indicator_status(
+                    is_active,
+                    has_running,
+                    has_alert,
+                    has_connected_idle,
+                );
             let indicator_color =
                 indicator_status.map(|status| workspace_item_indicator_color(status, blink_time));
 
@@ -560,8 +600,7 @@ pub(super) fn render_titlebar_and_sidebar(
                 );
                 if matches!(
                     indicator_status,
-                    Some(crate::state::gateway_status::AgentStatus::Idle)
-                        | Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+                    Some(crate::header::AgentChromeState::Attention)
                 ) {
                     renderer.draw_chrome_rounded_rect(
                         Rect::new(dot_x - 2.0, dot_y - 2.0, dot_size + 4.0, dot_size + 4.0),

@@ -104,9 +104,13 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Context Comment Composer** | `ContextCommentComposerState` | A `ModalStack` popup that previews the current captured Pane selection when available, accepts a user comment, and creates a `Context Artifact` for Artifact Delivery. |
 | **Wrapped Agent** | concept | A coding agent process launched through a Tide `Agent Wrapper`. Only a `Wrapped Agent` may drive wrapper-managed attention such as split-`Pane` highlight or inactive-`Workspace` highlight. |
 | **Wrapper-Managed Lifecycle Signal** | concept | A lifecycle update (`Running`, `Idle`, or `NeedsInput`) emitted through a Tide `Agent Wrapper` path, either by wrapper hooks or by wrapper-owned OSC 9 reporting. |
+| **Wrapped Agent Presence** | concept | The wrapper-managed connected state for a direct Stage `Terminal`. Tide derives it from `wrapper_managed` plus `gateway_connected`, even when `AgentInfo.status` is `None`. |
 | **Tide Instance** | concept | A single running Tide process identified by its PID and Agent Gateway socket path. Notification activation relay targets the owning `Tide Instance`, not an arbitrary bundled app launch. |
 | **Notification Activation Relay** | concept | The handoff path that routes a macOS system-notification activation to the owning `Tide Instance`, then focuses the target `Pane` inside the correct `Workspace` without opening an extra Tide Window. |
 | **Terminal-Owned Attention** | concept | The wrapped-agent attention projection owned only by the direct wrapped-agent `Terminal` in Stage. It renders on the owning `Terminal` chrome and on the owning `Workspace` item, but never through an `Associated Terminal` onto a non-terminal `Pane`. |
+| **AgentChromeState** | `AgentChromeState` | Renderer-facing visual state for a wrapped-agent dot: `ConnectedIdle`, `Running`, or `Attention`. It is derived from `AgentStatus` plus `Wrapped Agent Presence`; it is not itself a routing state. |
+| **Notification Snippet** | concept | The single-line wrapped-agent response text Tide prefers for a macOS notification body. Tide derives it from structured wrapper payloads when available and otherwise falls back to the owning `Terminal`'s visible grid. |
+| **NotificationAuthorizationStatus** | enum | Tide's normalized view of the OS notification-permission state for the bundled macOS app: `Unknown`, `NotDetermined`, `Denied`, `Authorized`, `Provisional`, or `Ephemeral`. Stored in `WindowState` and used only as a runtime diagnostic and chrome signal. |
 
 ## Architecture Concepts
 
@@ -137,7 +141,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Render Pane** | A Browser pane in render mode (`render_mode: true`). Displays agent-provided HTML via `loadHTMLString` instead of URL navigation. No URL bar, title shown in tab. |
 | **Render Runtime** | Pre-injected HTML head (morphdom, Tailwind CSS, Tide theme CSS vars, JS bridge) loaded into every Render Pane before agent HTML. |
 | **Render Stream** | A long-lived connection where an agent sends HTML chunks to a Render Pane. Each chunk is a full HTML snapshot; morphdom diffs against the current DOM. |
-| **AgentStatus** | Lifecycle status of a coding agent process: `Running`, `Idle`, or `NeedsInput`. Wrapper-managed attention uses only `Wrapper-Managed Lifecycle Signal` updates reported by `Wrapped Agent` paths. Stored in `AgentInfo.status`. |
+| **AgentStatus** | Lifecycle status of a coding agent process: `Running`, `Idle`, or `NeedsInput`. Wrapper-managed notification routing uses only `Wrapper-Managed Lifecycle Signal` updates reported by `Wrapped Agent` paths. Stored in `AgentInfo.status`. |
 | **Agent Wrapper** | A shell script in `$TMPDIR/tide-<pid>-bin/` that shadows a coding agent binary (e.g. `claude`). Injects MCP server config and lifecycle hooks via `--settings`, then `exec`s the real binary. |
 | **Caller Pane** | The `_caller_pane` field injected into CLI command params by the MCP bridge (from `TIDE_PANE` env var). Identifies which terminal pane originated the command, enabling cross-workspace command routing. Stripped before reaching command handlers. |
 | **Cross-Workspace Routing** | The mechanism by which a CLI command targeting a pane in a non-active Workspace is executed in the correct Workspace context. Uses raw `save_active_workspace` / `load_active_workspace` swap (not `switch_workspace`) to avoid UI side effects. See `docs/specs/cli-workspace-routing.md`. |

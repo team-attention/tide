@@ -237,6 +237,7 @@ impl FocusNavPort for App {
         self.notified_panes.remove(&id);
         self.refresh_workspace_agent_notification(self.ws.active);
         self.cache.invalidate_chrome();
+        self.reroute_backgrounded_wrapped_agent_attention();
     }
 
     fn set_focus_area(&mut self, area: FocusArea) {

@@ -37,7 +37,7 @@ pub(crate) use input_latency::InputLatencyState;
 pub(crate) use input_line::{abbreviate_path, shell_escape, InputLine};
 pub(crate) use interaction::InteractionState;
 pub(crate) use timing::TimingState;
-pub(crate) use window::WindowState;
+pub(crate) use window::{NotificationAuthorizationStatus, WindowState};
 pub(crate) use workspace_mgr::WorkspaceManager;
 
 #[cfg(test)]

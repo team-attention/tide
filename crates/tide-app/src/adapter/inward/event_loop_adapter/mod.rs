@@ -317,6 +317,9 @@ pub(crate) fn handle_platform_event(
             window.show_window();
             ctx.request_redraw();
         }
+        PlatformEvent::NotificationAuthorizationStatusChanged { status } => {
+            ctx.set_notification_authorization_status(status);
+        }
     }
 
     // Process deferred fullscreen toggle
@@ -777,14 +780,16 @@ impl App {
                                     );
                                 self.gateway.detected_agents.insert(id, agent);
                             } else {
-                                // Don't remove agents that have active status — the process
-                                // scan can fail intermittently (race with workspace switch, etc.)
-                                let has_status = self
-                                    .gateway
-                                    .detected_agents
-                                    .get(&id)
-                                    .map_or(false, |a| a.status.is_some());
-                                if !has_status {
+                                // Keep wrapper-managed presence even when process scan misses a
+                                // launch window or intermittently fails across Workspace swaps.
+                                let keep_existing = self.gateway.detected_agents.get(&id).map_or(
+                                    false,
+                                    |a| {
+                                        a.status.is_some()
+                                            || (a.wrapper_managed && a.gateway_connected)
+                                    },
+                                );
+                                if !keep_existing {
                                     self.gateway.detected_agents.remove(&id);
                                 }
                             }
