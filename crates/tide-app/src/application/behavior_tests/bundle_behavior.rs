@@ -1,22 +1,21 @@
 // Spec: docs/specs/bundle-launch-compatibility.md
 
-// --- UC-1: BuildLaunchCompatibleTideBundle ---
+// --- UC-1: BuildMultiInstanceTideBundle ---
 
 #[test]
-fn source_tide_info_plist_declares_lsmultipleinstancesprohibited() {
-    // UC-1 BR-1: The source Tide Info.plist declares LSMultipleInstancesProhibited.
+fn source_tide_info_plist_omits_lsmultipleinstancesprohibited() {
+    // UC-1 BR-1: The source Tide plist must not declare LSMultipleInstancesProhibited.
     let plist = include_str!("../../../Info.plist");
 
     assert!(
-        plist.contains("<key>LSMultipleInstancesProhibited</key>")
-            && plist.contains("<key>LSMultipleInstancesProhibited</key>\n  <true/>"),
-        "expected Tide Info.plist to prohibit multiple instances via Launch Services"
+        !plist.contains("<key>LSMultipleInstancesProhibited</key>"),
+        "expected Tide Info.plist to omit LSMultipleInstancesProhibited so multiple Tide instances remain launchable"
     );
 }
 
 #[test]
 fn source_tide_info_plist_omits_lsrequirescarbon() {
-    // UC-1 BR-2: The source Tide Info.plist omits LSRequiresCarbon.
+    // UC-1 BR-2: The source Tide plist must not declare LSRequiresCarbon.
     let plist = include_str!("../../../Info.plist");
 
     assert!(
@@ -26,23 +25,19 @@ fn source_tide_info_plist_omits_lsrequirescarbon() {
 }
 
 #[test]
-fn local_bundle_build_script_stamps_lsmultipleinstancesprohibited_before_signing() {
-    // UC-1 BR-3,5: The local Tide.app build path stamps single-instance metadata before signing and re-signs the bundle.
+fn local_bundle_build_script_does_not_stamp_lsmultipleinstancesprohibited_before_signing() {
+    // UC-1 BR-3: The local Tide.app build path must not stamp LSMultipleInstancesProhibited before signing.
     let script = include_str!("../../../../../scripts/build-app.sh");
 
     assert!(
-        script.contains("LSMultipleInstancesProhibited"),
-        "expected build-app.sh to stamp LSMultipleInstancesProhibited into the built Tide.app"
-    );
-    assert!(
-        script.contains("codesign --force --deep --sign - --identifier com.eatnug.tide"),
-        "expected build-app.sh to re-sign Tide.app with the stable bundle identifier"
+        !script.contains("LSMultipleInstancesProhibited"),
+        "expected build-app.sh to preserve multi-instance launch behavior and not stamp LSMultipleInstancesProhibited"
     );
 }
 
 #[test]
 fn local_bundle_build_script_strips_lsrequirescarbon_before_signing() {
-    // UC-1 BR-4: The local Tide.app build path strips LSRequiresCarbon before signing.
+    // UC-1 BR-4: The local Tide.app build path must strip LSRequiresCarbon from the bundled plist before signing.
     let script = include_str!("../../../../../scripts/build-app.sh");
 
     assert!(
@@ -51,30 +46,48 @@ fn local_bundle_build_script_strips_lsrequirescarbon_before_signing() {
     );
 }
 
-// --- UC-2: ReuseExistingTideInstanceOnLaunch ---
+#[test]
+fn local_bundle_build_script_re_signs_tide_app_with_the_stable_bundle_identifier() {
+    // UC-1 BR-5: The local Tide.app build path must re-sign Tide.app with the stable bundle identifier.
+    let script = include_str!("../../../../../scripts/build-app.sh");
+
+    assert!(
+        script.contains("codesign --force --deep --sign - --identifier com.eatnug.tide"),
+        "expected build-app.sh to re-sign Tide.app with the stable bundle identifier"
+    );
+}
+
+// --- UC-2: LaunchIndependentTideInstance ---
 
 #[test]
-fn macos_launch_path_reuses_an_existing_tide_instance_before_creating_a_window() {
-    // UC-2 BR-6,7: The macOS startup path reuses an existing Tide instance
-    // before creating a second Window.
+fn macos_launch_path_does_not_query_existing_tide_instances_before_creating_a_window() {
+    // UC-2 BR-6: The macOS startup path must not query existing Tide instances before creating a Window.
     let source = include_str!("../../adapter/outward/platform_adapter/macos/app.rs");
 
-    let reuse_guard = source
-        .find("runningApplicationsWithBundleIdentifier")
-        .expect("expected MacosApp::run to query existing Tide instances");
-    let activate_existing = source
-        .find("activateWithOptions")
-        .expect("expected MacosApp::run to activate an existing Tide instance");
-    let create_window = source
-        .find("MacosWindow::new")
-        .expect("expected MacosApp::run to create a Tide window");
+    assert!(
+        !source.contains("runningApplicationsWithBundleIdentifier"),
+        "expected MacosApp::run to stop querying existing Tide instances before creating a Window"
+    );
+}
+
+#[test]
+fn macos_launch_path_does_not_activate_an_existing_tide_instance_before_creating_a_window() {
+    // UC-2 BR-7: The macOS startup path must not activate an existing Tide instance before creating a Window.
+    let source = include_str!("../../adapter/outward/platform_adapter/macos/app.rs");
 
     assert!(
-        reuse_guard < create_window,
-        "expected Tide to check for an existing instance before creating a Window"
+        !source.contains("activateWithOptions"),
+        "expected MacosApp::run to stop activating an existing Tide instance before creating a Window"
     );
+}
+
+#[test]
+fn macos_launch_path_creates_a_window_for_the_new_tide_process() {
+    // UC-2 BR-8: The macOS startup path must create a Window for the new Tide process.
+    let source = include_str!("../../adapter/outward/platform_adapter/macos/app.rs");
+
     assert!(
-        activate_existing < create_window,
-        "expected Tide to activate the existing instance before creating a Window"
+        source.contains("MacosWindow::new"),
+        "expected MacosApp::run to create a Window for the new Tide process"
     );
 }
