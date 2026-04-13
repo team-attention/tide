@@ -1381,14 +1381,19 @@ fn cli_notify(
             }),
         );
         if let Some(status) = status {
-            let notification_snippet = wrapped_agent_notification_snippet_from_payload(
-                event,
-                agent_display_name,
-                params.get("payload"),
-            );
-            ctx.set_agent_notification_snippet(pane_id, notification_snippet.clone());
-            // Route notification based on user context (UC-1)
-            ctx.route_agent_notification(pane_id, status, notification_snippet);
+            if matches!(status, AgentStatus::NeedsInput) {
+                let notification_snippet = wrapped_agent_notification_snippet_from_payload(
+                    event,
+                    agent_display_name,
+                    params.get("payload"),
+                );
+                ctx.set_agent_notification_snippet(pane_id, notification_snippet.clone());
+                // Route notification based on user context (UC-1)
+                ctx.route_agent_notification(pane_id, status, notification_snippet);
+            } else {
+                ctx.set_agent_notification_snippet(pane_id, None);
+                ctx.route_agent_notification(pane_id, status, None);
+            }
         } else {
             ctx.set_agent_notification_snippet(pane_id, None);
         }
