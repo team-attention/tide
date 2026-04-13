@@ -1158,7 +1158,10 @@ impl crate::application::ports::inward::GatewayPort for App {
         } else {
             return;
         }
-        if status.is_some() {
+        if matches!(
+            status,
+            Some(crate::state::gateway_status::AgentStatus::Running)
+        ) {
             self.agent_notification_snippets.remove(&pane_id);
         }
         if self.is_terminal_pane_in_any_workspace(pane_id) {
@@ -1213,19 +1216,29 @@ impl crate::application::ports::inward::GatewayPort for App {
 
         let notification_snippet = notification_snippet
             .as_deref()
-            .and_then(crate::state::gateway_status::normalize_notification_snippet)
+            .and_then(crate::state::gateway_status::normalize_notification_snippet);
+
+        // BR-1: Running status does not trigger notification routing
+        if matches!(status, AgentStatus::Running) {
+            self.agent_notification_snippets.remove(&pane_id);
+            return;
+        }
+
+        // Idle is projection-only. Clear any cached snippet so it cannot be reused
+        // by a later NeedsInput transition without a fresh payload.
+        if matches!(status, AgentStatus::Idle) {
+            self.agent_notification_snippets.remove(&pane_id);
+            self.cache.needs_redraw = true;
+            return;
+        }
+
+        let notification_snippet = notification_snippet
             .or_else(|| self.agent_notification_snippets.get(&pane_id).cloned())
             .or_else(|| self.visible_wrapped_agent_notification_snippet(pane_id));
 
         if let Some(snippet) = notification_snippet.as_ref() {
             self.agent_notification_snippets
                 .insert(pane_id, snippet.clone());
-        }
-
-        // BR-1: Running status does not trigger notification routing
-        if matches!(status, AgentStatus::Running) {
-            self.agent_notification_snippets.remove(&pane_id);
-            return;
         }
 
         let pane_is_current_focus = self.window.is_focused
@@ -1245,7 +1258,6 @@ impl crate::application::ports::inward::GatewayPort for App {
         if !self.notified_panes.contains(&pane_id) {
             let body = notification_snippet.unwrap_or_else(|| match status {
                 AgentStatus::NeedsInput => format!("{} needs your input", agent_name),
-                AgentStatus::Idle => format!("{} finished", agent_name),
                 _ => unreachable!(),
             });
             self.pending_platform_commands.push(
