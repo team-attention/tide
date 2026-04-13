@@ -29,8 +29,8 @@ impl MacosApp {
     /// `callback` is invoked for every platform event (key, mouse, IME, resize, etc.).
     /// This function does **not** return — it calls `[NSApp run]`.
     pub fn run(config: WindowConfig, callback: EventCallback) -> ! {
-        let mtm = MainThreadMarker::new()
-            .expect("MacosApp::run must be called from the main thread");
+        let mtm =
+            MainThreadMarker::new().expect("MacosApp::run must be called from the main thread");
 
         let app = NSApplication::sharedApplication(mtm);
         app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
@@ -62,7 +62,9 @@ impl MacosApp {
         );
 
         // Run the event loop (never returns)
-        unsafe { app.run(); }
+        unsafe {
+            app.run();
+        }
 
         unreachable!("NSApp.run() should never return")
     }

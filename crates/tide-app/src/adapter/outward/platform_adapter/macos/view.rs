@@ -6,14 +6,11 @@ use std::rc::Rc;
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool, NSObject};
-use objc2::{
-    declare_class, msg_send, msg_send_id, mutability, ClassType, DeclaredClass,
+use objc2::{declare_class, msg_send, msg_send_id, mutability, ClassType, DeclaredClass};
+use objc2_app_kit::{
+    NSEvent, NSEventModifierFlags, NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindow,
 };
 use objc2_foundation::MainThreadMarker;
-use objc2_app_kit::{
-    NSEvent, NSEventModifierFlags, NSTrackingArea,
-    NSTrackingAreaOptions, NSView, NSWindow,
-};
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use objc2_quartz_core::CAMetalLayer;
 
@@ -446,17 +443,20 @@ impl TideView {
         // top-down coordinates in the view's bounds space.  No manual
         // y-flip needed.
         let point = unsafe { event.locationInWindow() };
-        let converted: NSPoint = unsafe { msg_send![self, convertPoint:point fromView:std::ptr::null::<NSView>()] };
+        let converted: NSPoint =
+            unsafe { msg_send![self, convertPoint:point fromView:std::ptr::null::<NSView>()] };
         (converted.x, converted.y)
     }
 
     fn backing_scale(&self) -> f64 {
         unsafe {
             let window: Option<Retained<objc2_app_kit::NSWindow>> = msg_send_id![self, window];
-            window.map(|w| {
-                let s: f64 = msg_send![&w, backingScaleFactor];
-                s
-            }).unwrap_or(1.0)
+            window
+                .map(|w| {
+                    let s: f64 = msg_send![&w, backingScaleFactor];
+                    s
+                })
+                .unwrap_or(1.0)
         }
     }
 }
@@ -552,7 +552,9 @@ declare_class!(
 
 impl TideWindowDelegate {
     pub fn new(callback: Rc<RefCell<EventCallback>>, mtm: MainThreadMarker) -> Retained<Self> {
-        let this = mtm.alloc::<Self>().set_ivars(TideWindowDelegateIvars { callback });
+        let this = mtm
+            .alloc::<Self>()
+            .set_ivars(TideWindowDelegateIvars { callback });
         unsafe { msg_send_id![super(this), init] }
     }
 
@@ -561,7 +563,9 @@ impl TideWindowDelegate {
     }
 
     /// Extract the window's content view size from a notification.
-    fn window_size_from_notification(notification: &objc2_foundation::NSNotification) -> (u32, u32) {
+    fn window_size_from_notification(
+        notification: &objc2_foundation::NSNotification,
+    ) -> (u32, u32) {
         unsafe {
             let obj = notification.object();
             if let Some(obj) = obj {
@@ -584,30 +588,80 @@ impl TideWindowDelegate {
 
 pub(super) fn key_from_keycode(keycode: u16) -> Key {
     match keycode {
-        0x00 => Key::Char('a'), 0x01 => Key::Char('s'), 0x02 => Key::Char('d'),
-        0x03 => Key::Char('f'), 0x04 => Key::Char('h'), 0x05 => Key::Char('g'),
-        0x06 => Key::Char('z'), 0x07 => Key::Char('x'), 0x08 => Key::Char('c'),
-        0x09 => Key::Char('v'), 0x0B => Key::Char('b'), 0x0C => Key::Char('q'),
-        0x0D => Key::Char('w'), 0x0E => Key::Char('e'), 0x0F => Key::Char('r'),
-        0x10 => Key::Char('y'), 0x11 => Key::Char('t'), 0x12 => Key::Char('1'),
-        0x13 => Key::Char('2'), 0x14 => Key::Char('3'), 0x15 => Key::Char('4'),
-        0x16 => Key::Char('6'), 0x17 => Key::Char('5'), 0x19 => Key::Char('9'),
-        0x1A => Key::Char('7'), 0x1C => Key::Char('8'), 0x1D => Key::Char('0'),
-        0x1E => Key::Char(']'), 0x1F => Key::Char('o'), 0x20 => Key::Char('u'),
-        0x21 => Key::Char('['), 0x22 => Key::Char('i'), 0x23 => Key::Char('p'),
-        0x25 => Key::Char('l'), 0x26 => Key::Char('j'), 0x28 => Key::Char('k'),
-        0x2A => Key::Char('\\'), 0x2B => Key::Char(','), 0x2C => Key::Char('/'),
-        0x2D => Key::Char('n'), 0x2E => Key::Char('m'), 0x2F => Key::Char('.'),
-        0x27 => Key::Char('\''), 0x29 => Key::Char(';'),
-        0x18 => Key::Char('='), 0x1B => Key::Char('-'), 0x32 => Key::Char('`'),
-        0x24 => Key::Enter, 0x30 => Key::Tab, 0x31 => Key::Char(' '),
-        0x33 => Key::Backspace, 0x35 => Key::Escape, 0x75 => Key::Delete,
-        0x7E => Key::Up, 0x7D => Key::Down, 0x7B => Key::Left, 0x7C => Key::Right,
-        0x73 => Key::Home, 0x77 => Key::End, 0x74 => Key::PageUp, 0x79 => Key::PageDown,
+        0x00 => Key::Char('a'),
+        0x01 => Key::Char('s'),
+        0x02 => Key::Char('d'),
+        0x03 => Key::Char('f'),
+        0x04 => Key::Char('h'),
+        0x05 => Key::Char('g'),
+        0x06 => Key::Char('z'),
+        0x07 => Key::Char('x'),
+        0x08 => Key::Char('c'),
+        0x09 => Key::Char('v'),
+        0x0B => Key::Char('b'),
+        0x0C => Key::Char('q'),
+        0x0D => Key::Char('w'),
+        0x0E => Key::Char('e'),
+        0x0F => Key::Char('r'),
+        0x10 => Key::Char('y'),
+        0x11 => Key::Char('t'),
+        0x12 => Key::Char('1'),
+        0x13 => Key::Char('2'),
+        0x14 => Key::Char('3'),
+        0x15 => Key::Char('4'),
+        0x16 => Key::Char('6'),
+        0x17 => Key::Char('5'),
+        0x19 => Key::Char('9'),
+        0x1A => Key::Char('7'),
+        0x1C => Key::Char('8'),
+        0x1D => Key::Char('0'),
+        0x1E => Key::Char(']'),
+        0x1F => Key::Char('o'),
+        0x20 => Key::Char('u'),
+        0x21 => Key::Char('['),
+        0x22 => Key::Char('i'),
+        0x23 => Key::Char('p'),
+        0x25 => Key::Char('l'),
+        0x26 => Key::Char('j'),
+        0x28 => Key::Char('k'),
+        0x2A => Key::Char('\\'),
+        0x2B => Key::Char(','),
+        0x2C => Key::Char('/'),
+        0x2D => Key::Char('n'),
+        0x2E => Key::Char('m'),
+        0x2F => Key::Char('.'),
+        0x27 => Key::Char('\''),
+        0x29 => Key::Char(';'),
+        0x18 => Key::Char('='),
+        0x1B => Key::Char('-'),
+        0x32 => Key::Char('`'),
+        0x24 => Key::Enter,
+        0x30 => Key::Tab,
+        0x31 => Key::Char(' '),
+        0x33 => Key::Backspace,
+        0x35 => Key::Escape,
+        0x75 => Key::Delete,
+        0x7E => Key::Up,
+        0x7D => Key::Down,
+        0x7B => Key::Left,
+        0x7C => Key::Right,
+        0x73 => Key::Home,
+        0x77 => Key::End,
+        0x74 => Key::PageUp,
+        0x79 => Key::PageDown,
         0x72 => Key::Insert,
-        0x7A => Key::F(1), 0x78 => Key::F(2), 0x63 => Key::F(3), 0x76 => Key::F(4),
-        0x60 => Key::F(5), 0x61 => Key::F(6), 0x62 => Key::F(7), 0x64 => Key::F(8),
-        0x65 => Key::F(9), 0x6D => Key::F(10), 0x67 => Key::F(11), 0x6F => Key::F(12),
+        0x7A => Key::F(1),
+        0x78 => Key::F(2),
+        0x63 => Key::F(3),
+        0x76 => Key::F(4),
+        0x60 => Key::F(5),
+        0x61 => Key::F(6),
+        0x62 => Key::F(7),
+        0x64 => Key::F(8),
+        0x65 => Key::F(9),
+        0x6D => Key::F(10),
+        0x67 => Key::F(11),
+        0x6F => Key::F(12),
         _ => Key::Char('?'),
     }
 }
