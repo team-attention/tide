@@ -614,7 +614,8 @@ fn live_preview_context_artifact_capture_uses_visible_selected_text() {
 }
 
 #[test]
-fn active_markdown_live_preview_keeps_add_comment_visible_when_shared_tab_budget_allows_both_badges() {
+fn active_markdown_live_preview_keeps_add_comment_visible_when_shared_tab_budget_allows_both_badges(
+) {
     // UC-3 BR-25: The shared active-tab width budget stretches with the available row width to keep add-comment visible beside the plain/live mode badge for an active Markdown Pane.
     let mut editor = EditorPane::new_empty(11);
     editor.editor.buffer.file_path = Some(PathBuf::from(
@@ -643,7 +644,10 @@ fn active_markdown_live_preview_keeps_add_comment_visible_when_shared_tab_budget
         .collect();
 
     assert_eq!(title_layout.visible_badges, 2);
-    assert_eq!(visible_badges[0].action, Some(HeaderHitAction::ToggleLivePreview));
+    assert_eq!(
+        visible_badges[0].action,
+        Some(HeaderHitAction::ToggleLivePreview)
+    );
     assert_eq!(visible_badges[1].action, Some(HeaderHitAction::AddComment));
     assert!(title_layout.title_w >= crate::theme::TAB_MIN_TITLE_WIDTH);
 }

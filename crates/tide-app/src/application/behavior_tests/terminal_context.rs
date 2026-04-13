@@ -182,7 +182,10 @@ fn opening_file_from_retained_terminal_context_reuses_the_visible_non_terminal_g
     assert!(ids.contains(&editor_id));
     assert!(ids.contains(&new_id));
     assert!(!app.is_pane_in_dock(new_id));
-    assert_eq!(app.assoc.associated_terminal.get(&new_id), Some(&terminal_id));
+    assert_eq!(
+        app.assoc.associated_terminal.get(&new_id),
+        Some(&terminal_id)
+    );
 
     let _ = std::fs::remove_file(&test_path);
 }

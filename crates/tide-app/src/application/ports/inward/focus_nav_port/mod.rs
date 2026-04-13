@@ -1,9 +1,9 @@
 // FocusNavPort — directional focus movement, scrolling, and focus state queries/mutations.
 // Source: domain/action/focus_nav.rs
 
+use crate::state::FocusArea;
 use crate::tide_core::PaneId;
 use crate::tide_input::Direction;
-use crate::state::FocusArea;
 
 pub(crate) trait FocusNavPort {
     // ── Directional navigation ──

@@ -1,10 +1,10 @@
 use crate::tide_core::LayoutEngine;
 
-use crate::state::drag_types::PaneDragState;
 use crate::pane::PaneKind;
+use crate::state::drag_types::PaneDragState;
+use crate::ActionPort;
 use crate::App;
 use crate::LayoutPort;
-use crate::ActionPort;
 
 impl App {
     pub(super) fn next_stage_focus_after_close(
@@ -76,7 +76,8 @@ impl App {
         self.cleanup_closed_pane_state(pane_id);
 
         // Emit pane-closed event for subscribers
-        self.gateway.notify("pane-closed", serde_json::json!({"pane_id": pane_id}));
+        self.gateway
+            .notify("pane-closed", serde_json::json!({"pane_id": pane_id}));
 
         // If the closed pane was stage_focused, move it to the next target
         if self.focus.stage_focused == Some(pane_id) {
@@ -90,7 +91,8 @@ impl App {
             if self.focus.zoomed_pane == Some(pane_id) {
                 self.focus.zoomed_pane = Some(next);
             }
-            self.gateway.notify("focus-changed", serde_json::json!({"pane_id": next}));
+            self.gateway
+                .notify("focus-changed", serde_json::json!({"pane_id": next}));
         } else {
             self.focus.focused = None;
         }
@@ -105,9 +107,15 @@ impl App {
     pub(super) fn retain_terminal_context(&mut self, pane_id: crate::tide_core::PaneId) {
         if let Some(PaneKind::Terminal(pane)) = self.panes.get(&pane_id) {
             // Only retain if some pane still references this terminal
-            let has_dependents = self.assoc.associated_terminal.values().any(|&v| v == pane_id);
+            let has_dependents = self
+                .assoc
+                .associated_terminal
+                .values()
+                .any(|&v| v == pane_id);
             if has_dependents {
-                self.assoc.retained_contexts.insert(pane_id, pane.context.clone());
+                self.assoc
+                    .retained_contexts
+                    .insert(pane_id, pane.context.clone());
             }
         }
     }

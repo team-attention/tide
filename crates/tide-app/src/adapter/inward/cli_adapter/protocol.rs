@@ -60,7 +60,11 @@ pub(crate) enum CliError {
     MethodNotFound(String),
     InvalidParams(String),
     PaneNotFound(u64),
-    InvalidPaneKind { pane_id: u64, expected: &'static str, actual: &'static str },
+    InvalidPaneKind {
+        pane_id: u64,
+        expected: &'static str,
+        actual: &'static str,
+    },
 }
 
 impl CliError {
@@ -78,7 +82,11 @@ impl CliError {
             CliError::MethodNotFound(m) => format!("method not found: {m}"),
             CliError::InvalidParams(m) => format!("invalid params: {m}"),
             CliError::PaneNotFound(id) => format!("pane not found: {id}"),
-            CliError::InvalidPaneKind { pane_id, expected, actual } => {
+            CliError::InvalidPaneKind {
+                pane_id,
+                expected,
+                actual,
+            } => {
                 format!("pane {pane_id} is {actual}, expected {expected}")
             }
         }

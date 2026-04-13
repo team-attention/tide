@@ -1,8 +1,8 @@
 // FileOpsPort — file finder and diff pane operations.
 // Source: domain/action/file_ops.rs
 
-use std::path::PathBuf;
 use crate::tide_core::PaneId;
+use std::path::PathBuf;
 
 pub(crate) trait FileOpsPort {
     fn resolve_base_dir(&self) -> PathBuf;

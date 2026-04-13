@@ -323,16 +323,30 @@ pub struct Hotkey {
 
 impl Hotkey {
     pub fn new(key: Key, shift: bool, ctrl: bool, meta: bool, alt: bool) -> Self {
-        Self { key, shift, ctrl, meta, alt }
+        Self {
+            key,
+            shift,
+            ctrl,
+            meta,
+            alt,
+        }
     }
 
     /// Format this hotkey as a human-readable string (e.g. "Cmd+Shift+T").
     pub fn display(&self) -> String {
         let mut parts: Vec<String> = Vec::new();
-        if self.ctrl { parts.push("Ctrl".to_string()); }
-        if self.meta { parts.push("Cmd".to_string()); }
-        if self.alt { parts.push("Alt".to_string()); }
-        if self.shift { parts.push("Shift".to_string()); }
+        if self.ctrl {
+            parts.push("Ctrl".to_string());
+        }
+        if self.meta {
+            parts.push("Cmd".to_string());
+        }
+        if self.alt {
+            parts.push("Alt".to_string());
+        }
+        if self.shift {
+            parts.push("Shift".to_string());
+        }
         parts.push(display_key(&self.key));
         parts.join("+")
     }
@@ -441,55 +455,196 @@ impl KeybindingMap {
     pub fn default_bindings() -> Vec<(Hotkey, GlobalAction)> {
         vec![
             // ── Current-area operations (Cmd) ──
-            (Hotkey::new(Key::Char('t'), false, false, true, false), GlobalAction::NewTab),
-            (Hotkey::new(Key::Char('\\'), false, false, true, false), GlobalAction::SplitHorizontal),
-            (Hotkey::new(Key::Char('\\'), true, false, true, false), GlobalAction::SplitVertical),
-            (Hotkey::new(Key::Char('w'), false, false, true, false), GlobalAction::ClosePane),
-            (Hotkey::new(Key::Char('w'), true, false, true, false), GlobalAction::CloseWorkspace),
-            (Hotkey::new(Key::Char('v'), false, false, true, false), GlobalAction::Paste),
-            (Hotkey::new(Key::Char('c'), false, false, true, false), GlobalAction::Copy),
-            (Hotkey::new(Key::Char('f'), false, true, true, false), GlobalAction::ToggleFullscreen),
-            (Hotkey::new(Key::Char('f'), false, false, true, false), GlobalAction::Find),
-            (Hotkey::new(Key::Enter, false, false, true, false), GlobalAction::ToggleStacked),
-            (Hotkey::new(Key::Enter, false, true, true, false), GlobalAction::DockToggleStacked),
-            (Hotkey::new(Key::Char('d'), true, false, true, false), GlobalAction::ToggleTheme),
-            (Hotkey::new(Key::Char('1'), false, false, true, false), GlobalAction::FocusArea(AreaSlot::Slot1)),
-            (Hotkey::new(Key::Char('2'), false, false, true, false), GlobalAction::FocusArea(AreaSlot::Slot2)),
-            (Hotkey::new(Key::Char('3'), false, false, true, false), GlobalAction::FocusArea(AreaSlot::Slot3)),
-            (Hotkey::new(Key::Char('4'), false, false, true, false), GlobalAction::FocusArea(AreaSlot::Slot4)),
-            (Hotkey::new(Key::Char('['), false, false, true, false), GlobalAction::WorkspacePrev),
-            (Hotkey::new(Key::Char(']'), false, false, true, false), GlobalAction::WorkspaceNext),
+            (
+                Hotkey::new(Key::Char('t'), false, false, true, false),
+                GlobalAction::NewTab,
+            ),
+            (
+                Hotkey::new(Key::Char('\\'), false, false, true, false),
+                GlobalAction::SplitHorizontal,
+            ),
+            (
+                Hotkey::new(Key::Char('\\'), true, false, true, false),
+                GlobalAction::SplitVertical,
+            ),
+            (
+                Hotkey::new(Key::Char('w'), false, false, true, false),
+                GlobalAction::ClosePane,
+            ),
+            (
+                Hotkey::new(Key::Char('w'), true, false, true, false),
+                GlobalAction::CloseWorkspace,
+            ),
+            (
+                Hotkey::new(Key::Char('v'), false, false, true, false),
+                GlobalAction::Paste,
+            ),
+            (
+                Hotkey::new(Key::Char('c'), false, false, true, false),
+                GlobalAction::Copy,
+            ),
+            (
+                Hotkey::new(Key::Char('f'), false, true, true, false),
+                GlobalAction::ToggleFullscreen,
+            ),
+            (
+                Hotkey::new(Key::Char('f'), false, false, true, false),
+                GlobalAction::Find,
+            ),
+            (
+                Hotkey::new(Key::Enter, false, false, true, false),
+                GlobalAction::ToggleStacked,
+            ),
+            (
+                Hotkey::new(Key::Enter, false, true, true, false),
+                GlobalAction::DockToggleStacked,
+            ),
+            (
+                Hotkey::new(Key::Char('d'), true, false, true, false),
+                GlobalAction::ToggleTheme,
+            ),
+            (
+                Hotkey::new(Key::Char('1'), false, false, true, false),
+                GlobalAction::FocusArea(AreaSlot::Slot1),
+            ),
+            (
+                Hotkey::new(Key::Char('2'), false, false, true, false),
+                GlobalAction::FocusArea(AreaSlot::Slot2),
+            ),
+            (
+                Hotkey::new(Key::Char('3'), false, false, true, false),
+                GlobalAction::FocusArea(AreaSlot::Slot3),
+            ),
+            (
+                Hotkey::new(Key::Char('4'), false, false, true, false),
+                GlobalAction::FocusArea(AreaSlot::Slot4),
+            ),
+            (
+                Hotkey::new(Key::Char('['), false, false, true, false),
+                GlobalAction::WorkspacePrev,
+            ),
+            (
+                Hotkey::new(Key::Char(']'), false, false, true, false),
+                GlobalAction::WorkspaceNext,
+            ),
             // Navigate (Cmd+HJKL, no arrow keys)
-            (Hotkey::new(Key::Char('h'), false, false, true, false), GlobalAction::Navigate(Direction::Left)),
-            (Hotkey::new(Key::Char('j'), false, false, true, false), GlobalAction::Navigate(Direction::Down)),
-            (Hotkey::new(Key::Char('k'), false, false, true, false), GlobalAction::Navigate(Direction::Up)),
-            (Hotkey::new(Key::Char('l'), false, false, true, false), GlobalAction::Navigate(Direction::Right)),
-            (Hotkey::new(Key::Char('i'), false, false, true, false), GlobalAction::TabPrev),
-            (Hotkey::new(Key::Char('o'), false, false, true, false), GlobalAction::TabNext),
-            (Hotkey::new(Key::Char('o'), true, false, true, false), GlobalAction::FileFinder),
-            (Hotkey::new(Key::Char('n'), false, false, true, false), GlobalAction::NewWindow),
-            (Hotkey::new(Key::Char('n'), true, false, true, false), GlobalAction::NewWorkspace),
-            (Hotkey::new(Key::Char('+'), false, false, true, false), GlobalAction::FontSizeUp),
-            (Hotkey::new(Key::Char('='), false, false, true, false), GlobalAction::FontSizeUp),
-            (Hotkey::new(Key::Char('-'), false, false, true, false), GlobalAction::FontSizeDown),
-            (Hotkey::new(Key::Char('0'), false, false, true, false), GlobalAction::FontSizeReset),
-            (Hotkey::new(Key::Char(','), false, false, true, false), GlobalAction::OpenConfig),
-            (Hotkey::new(Key::Char('b'), true, false, true, false), GlobalAction::OpenBrowser),
-            (Hotkey::new(Key::Char('r'), false, false, true, false), GlobalAction::BrowserReload),
-            (Hotkey::new(Key::Char('u'), false, false, true, false), GlobalAction::ScrollHalfPageUp),
-            (Hotkey::new(Key::Char('d'), false, false, true, false), GlobalAction::ScrollHalfPageDown),
-            (Hotkey::new(Key::Char('p'), true, false, true, false), GlobalAction::ToggleDockPin),
-            (Hotkey::new(Key::Char('l'), true, false, true, false), GlobalAction::ToggleLivePreview),
+            (
+                Hotkey::new(Key::Char('h'), false, false, true, false),
+                GlobalAction::Navigate(Direction::Left),
+            ),
+            (
+                Hotkey::new(Key::Char('j'), false, false, true, false),
+                GlobalAction::Navigate(Direction::Down),
+            ),
+            (
+                Hotkey::new(Key::Char('k'), false, false, true, false),
+                GlobalAction::Navigate(Direction::Up),
+            ),
+            (
+                Hotkey::new(Key::Char('l'), false, false, true, false),
+                GlobalAction::Navigate(Direction::Right),
+            ),
+            (
+                Hotkey::new(Key::Char('i'), false, false, true, false),
+                GlobalAction::TabPrev,
+            ),
+            (
+                Hotkey::new(Key::Char('o'), false, false, true, false),
+                GlobalAction::TabNext,
+            ),
+            (
+                Hotkey::new(Key::Char('o'), true, false, true, false),
+                GlobalAction::FileFinder,
+            ),
+            (
+                Hotkey::new(Key::Char('n'), false, false, true, false),
+                GlobalAction::NewWindow,
+            ),
+            (
+                Hotkey::new(Key::Char('n'), true, false, true, false),
+                GlobalAction::NewWorkspace,
+            ),
+            (
+                Hotkey::new(Key::Char('+'), false, false, true, false),
+                GlobalAction::FontSizeUp,
+            ),
+            (
+                Hotkey::new(Key::Char('='), false, false, true, false),
+                GlobalAction::FontSizeUp,
+            ),
+            (
+                Hotkey::new(Key::Char('-'), false, false, true, false),
+                GlobalAction::FontSizeDown,
+            ),
+            (
+                Hotkey::new(Key::Char('0'), false, false, true, false),
+                GlobalAction::FontSizeReset,
+            ),
+            (
+                Hotkey::new(Key::Char(','), false, false, true, false),
+                GlobalAction::OpenConfig,
+            ),
+            (
+                Hotkey::new(Key::Char('b'), true, false, true, false),
+                GlobalAction::OpenBrowser,
+            ),
+            (
+                Hotkey::new(Key::Char('r'), false, false, true, false),
+                GlobalAction::BrowserReload,
+            ),
+            (
+                Hotkey::new(Key::Char('u'), false, false, true, false),
+                GlobalAction::ScrollHalfPageUp,
+            ),
+            (
+                Hotkey::new(Key::Char('d'), false, false, true, false),
+                GlobalAction::ScrollHalfPageDown,
+            ),
+            (
+                Hotkey::new(Key::Char('p'), true, false, true, false),
+                GlobalAction::ToggleDockPin,
+            ),
+            (
+                Hotkey::new(Key::Char('l'), true, false, true, false),
+                GlobalAction::ToggleLivePreview,
+            ),
             // ── Cross-area Dock operations (Cmd+Ctrl) ──
-            (Hotkey::new(Key::Char('h'), false, true, true, false), GlobalAction::DockNavigate(Direction::Left)),
-            (Hotkey::new(Key::Char('j'), false, true, true, false), GlobalAction::DockNavigate(Direction::Down)),
-            (Hotkey::new(Key::Char('k'), false, true, true, false), GlobalAction::DockNavigate(Direction::Up)),
-            (Hotkey::new(Key::Char('l'), false, true, true, false), GlobalAction::DockNavigate(Direction::Right)),
-            (Hotkey::new(Key::Char('\\'), false, true, true, false), GlobalAction::DockSplitHorizontal),
-            (Hotkey::new(Key::Char('\\'), true, true, true, false), GlobalAction::DockSplitVertical),
-            (Hotkey::new(Key::Char('t'), false, true, true, false), GlobalAction::DockNewTab),
-            (Hotkey::new(Key::Char('i'), false, true, true, false), GlobalAction::DockTabPrev),
-            (Hotkey::new(Key::Char('o'), false, true, true, false), GlobalAction::DockTabNext),
+            (
+                Hotkey::new(Key::Char('h'), false, true, true, false),
+                GlobalAction::DockNavigate(Direction::Left),
+            ),
+            (
+                Hotkey::new(Key::Char('j'), false, true, true, false),
+                GlobalAction::DockNavigate(Direction::Down),
+            ),
+            (
+                Hotkey::new(Key::Char('k'), false, true, true, false),
+                GlobalAction::DockNavigate(Direction::Up),
+            ),
+            (
+                Hotkey::new(Key::Char('l'), false, true, true, false),
+                GlobalAction::DockNavigate(Direction::Right),
+            ),
+            (
+                Hotkey::new(Key::Char('\\'), false, true, true, false),
+                GlobalAction::DockSplitHorizontal,
+            ),
+            (
+                Hotkey::new(Key::Char('\\'), true, true, true, false),
+                GlobalAction::DockSplitVertical,
+            ),
+            (
+                Hotkey::new(Key::Char('t'), false, true, true, false),
+                GlobalAction::DockNewTab,
+            ),
+            (
+                Hotkey::new(Key::Char('i'), false, true, true, false),
+                GlobalAction::DockTabPrev,
+            ),
+            (
+                Hotkey::new(Key::Char('o'), false, true, true, false),
+                GlobalAction::DockTabNext,
+            ),
         ]
     }
 
@@ -523,7 +678,8 @@ impl KeybindingMap {
 
     /// Get the first hotkey bound to a given action.
     pub fn hotkey_for(&self, action: &GlobalAction) -> Option<&Hotkey> {
-        self.bindings.iter()
+        self.bindings
+            .iter()
             .find(|(_, a)| a.action_key() == action.action_key())
             .map(|(h, _)| h)
     }
@@ -666,14 +822,12 @@ impl Router {
             }
             // Cmd+\ -> split vertical, Cmd+Shift+\ -> split horizontal
             // Cmd+Ctrl+\ -> dock split vertical, Cmd+Ctrl+Shift+\ -> dock split horizontal
-            Key::Char('\\') | Key::Char('|') => {
-                match (modifiers.ctrl, modifiers.shift) {
-                    (true, true) => Some(GlobalAction::DockSplitVertical),
-                    (true, false) => Some(GlobalAction::DockSplitHorizontal),
-                    (false, true) => Some(GlobalAction::SplitVertical),
-                    (false, false) => Some(GlobalAction::SplitHorizontal),
-                }
-            }
+            Key::Char('\\') | Key::Char('|') => match (modifiers.ctrl, modifiers.shift) {
+                (true, true) => Some(GlobalAction::DockSplitVertical),
+                (true, false) => Some(GlobalAction::DockSplitHorizontal),
+                (false, true) => Some(GlobalAction::SplitVertical),
+                (false, false) => Some(GlobalAction::SplitHorizontal),
+            },
             // Cmd+W -> close pane, Cmd+Shift+W -> close workspace
             Key::Char('w') | Key::Char('W') => {
                 if modifiers.shift {
@@ -848,11 +1002,7 @@ impl Router {
 
     // ── Mouse move processing ───────────────────
 
-    fn process_mouse_move(
-        &mut self,
-        position: Vec2,
-        pane_rects: &[(PaneId, Rect)],
-    ) -> Action {
+    fn process_mouse_move(&mut self, position: Vec2, pane_rects: &[(PaneId, Rect)]) -> Action {
         self.hovered = self.pane_at(position, pane_rects);
         Action::None
     }

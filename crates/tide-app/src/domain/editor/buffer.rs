@@ -47,11 +47,16 @@ pub fn word_boundary_left(line: &str, byte_col: usize) -> usize {
 
     // 2. Skip same-category chars backwards
     let cat_word = is_word_char(chars[idx - 1].1);
-    while idx > 0 && !chars[idx - 1].1.is_whitespace() && is_word_char(chars[idx - 1].1) == cat_word {
+    while idx > 0 && !chars[idx - 1].1.is_whitespace() && is_word_char(chars[idx - 1].1) == cat_word
+    {
         idx -= 1;
     }
 
-    if idx == 0 { 0 } else { chars[idx].0 }
+    if idx == 0 {
+        0
+    } else {
+        chars[idx].0
+    }
 }
 
 /// Find the byte offset of the next word boundary from `byte_col` in `line`.
@@ -77,14 +82,20 @@ pub fn word_boundary_right(line: &str, byte_col: usize) -> usize {
         }
         if idx < chars.len() {
             let cat_word = is_word_char(chars[idx].1);
-            while idx < chars.len() && !chars[idx].1.is_whitespace() && is_word_char(chars[idx].1) == cat_word {
+            while idx < chars.len()
+                && !chars[idx].1.is_whitespace()
+                && is_word_char(chars[idx].1) == cat_word
+            {
                 idx += 1;
             }
         }
     } else {
         // Skip same-category chars, then skip whitespace
         let cat_word = is_word_char(first_ch);
-        while idx < chars.len() && !chars[idx].1.is_whitespace() && is_word_char(chars[idx].1) == cat_word {
+        while idx < chars.len()
+            && !chars[idx].1.is_whitespace()
+            && is_word_char(chars[idx].1) == cat_word
+        {
             idx += 1;
         }
     }
@@ -203,9 +214,21 @@ impl Buffer {
         if pos.line >= self.lines.len() {
             return;
         }
-        let col = floor_char_boundary(&self.lines[pos.line], pos.col.min(self.lines[pos.line].len()));
-        let actual_pos = Position { line: pos.line, col };
-        self.undo_stack.push((EditOp::InsertChar { pos: actual_pos, ch }, pos));
+        let col = floor_char_boundary(
+            &self.lines[pos.line],
+            pos.col.min(self.lines[pos.line].len()),
+        );
+        let actual_pos = Position {
+            line: pos.line,
+            col,
+        };
+        self.undo_stack.push((
+            EditOp::InsertChar {
+                pos: actual_pos,
+                ch,
+            },
+            pos,
+        ));
         self.redo_stack.clear();
         self.lines[pos.line].insert(col, ch);
         self.generation += 1;
@@ -219,14 +242,31 @@ impl Buffer {
         let col = floor_char_boundary(&self.lines[pos.line], pos.col);
         if col < line_len {
             let ch = self.lines[pos.line].remove(col);
-            let actual_pos = Position { line: pos.line, col };
-            self.undo_stack.push((EditOp::DeleteChar { pos: actual_pos, ch, merged_next: false }, pos));
+            let actual_pos = Position {
+                line: pos.line,
+                col,
+            };
+            self.undo_stack.push((
+                EditOp::DeleteChar {
+                    pos: actual_pos,
+                    ch,
+                    merged_next: false,
+                },
+                pos,
+            ));
             self.redo_stack.clear();
             self.generation += 1;
         } else if pos.line + 1 < self.lines.len() {
             // Delete at end of line: merge with next line
             let next = self.lines.remove(pos.line + 1);
-            self.undo_stack.push((EditOp::DeleteChar { pos, ch: '\n', merged_next: true }, pos));
+            self.undo_stack.push((
+                EditOp::DeleteChar {
+                    pos,
+                    ch: '\n',
+                    merged_next: true,
+                },
+                pos,
+            ));
             self.redo_stack.clear();
             self.lines[pos.line].push_str(&next);
             self.generation += 1;
@@ -239,17 +279,26 @@ impl Buffer {
             return pos;
         }
         if pos.col > 0 {
-            let col = floor_char_boundary(&self.lines[pos.line], pos.col.min(self.lines[pos.line].len()));
+            let col = floor_char_boundary(
+                &self.lines[pos.line],
+                pos.col.min(self.lines[pos.line].len()),
+            );
             if col > 0 {
                 let prev = floor_char_boundary(&self.lines[pos.line], col - 1);
                 let ch = self.lines[pos.line].remove(prev);
-                let result_pos = Position { line: pos.line, col: prev };
-                self.undo_stack.push((EditOp::Backspace {
-                    original_pos: pos,
-                    result_pos,
-                    ch: Some(ch),
-                    merged_line: false,
-                }, pos));
+                let result_pos = Position {
+                    line: pos.line,
+                    col: prev,
+                };
+                self.undo_stack.push((
+                    EditOp::Backspace {
+                        original_pos: pos,
+                        result_pos,
+                        ch: Some(ch),
+                        merged_line: false,
+                    },
+                    pos,
+                ));
                 self.redo_stack.clear();
                 self.generation += 1;
                 return result_pos;
@@ -263,13 +312,19 @@ impl Buffer {
             let current = self.lines.remove(pos.line);
             let new_col = self.lines[pos.line - 1].len();
             self.lines[pos.line - 1].push_str(&current);
-            let result_pos = Position { line: pos.line - 1, col: new_col };
-            self.undo_stack.push((EditOp::Backspace {
-                original_pos: pos,
-                result_pos,
-                ch: None,
-                merged_line: true,
-            }, pos));
+            let result_pos = Position {
+                line: pos.line - 1,
+                col: new_col,
+            };
+            self.undo_stack.push((
+                EditOp::Backspace {
+                    original_pos: pos,
+                    result_pos,
+                    ch: None,
+                    merged_line: true,
+                },
+                pos,
+            ));
             self.redo_stack.clear();
             self.generation += 1;
             result_pos
@@ -282,9 +337,16 @@ impl Buffer {
         if pos.line >= self.lines.len() {
             return pos;
         }
-        let col = floor_char_boundary(&self.lines[pos.line], pos.col.min(self.lines[pos.line].len()));
-        let actual_pos = Position { line: pos.line, col };
-        self.undo_stack.push((EditOp::InsertNewline { pos: actual_pos }, pos));
+        let col = floor_char_boundary(
+            &self.lines[pos.line],
+            pos.col.min(self.lines[pos.line].len()),
+        );
+        let actual_pos = Position {
+            line: pos.line,
+            col,
+        };
+        self.undo_stack
+            .push((EditOp::InsertNewline { pos: actual_pos }, pos));
         self.redo_stack.clear();
         let rest = self.lines[pos.line][col..].to_string();
         self.lines[pos.line].truncate(col);
@@ -306,7 +368,11 @@ impl Buffer {
 
     /// Return the character count of the longest line.
     pub fn max_line_chars(&self) -> usize {
-        self.lines.iter().map(|l| l.chars().count()).max().unwrap_or(0)
+        self.lines
+            .iter()
+            .map(|l| l.chars().count())
+            .max()
+            .unwrap_or(0)
     }
 
     /// Delete text between two byte-offset positions, returning the new cursor position (start).
@@ -331,8 +397,14 @@ impl Buffer {
             deleted_lines.push(self.lines[end_line][..end_col].to_string());
         }
 
-        let actual_start = Position { line: start.line, col: start_col };
-        let actual_end = Position { line: end_line, col: end_col };
+        let actual_start = Position {
+            line: start.line,
+            col: start_col,
+        };
+        let actual_end = Position {
+            line: end_line,
+            col: end_col,
+        };
         self.undo_stack.push((
             super::undo::EditOp::DeleteRange {
                 start: actual_start,
@@ -352,7 +424,10 @@ impl Buffer {
             self.lines.drain((start.line + 1)..=end_line);
         }
         self.generation += 1;
-        Position { line: start.line, col: start_col }
+        Position {
+            line: start.line,
+            col: start_col,
+        }
     }
 
     /// Insert a block of text at `pos`, returning the end position after insertion.
@@ -361,8 +436,14 @@ impl Buffer {
         if pos.line >= self.lines.len() || text.is_empty() {
             return pos;
         }
-        let col = floor_char_boundary(&self.lines[pos.line], pos.col.min(self.lines[pos.line].len()));
-        let actual_pos = Position { line: pos.line, col };
+        let col = floor_char_boundary(
+            &self.lines[pos.line],
+            pos.col.min(self.lines[pos.line].len()),
+        );
+        let actual_pos = Position {
+            line: pos.line,
+            col,
+        };
 
         let suffix = self.lines[pos.line][col..].to_string();
         self.lines[pos.line].truncate(col);
@@ -375,7 +456,10 @@ impl Buffer {
             self.lines[pos.line].push_str(text_lines[0]);
             let end_col = self.lines[pos.line].len();
             self.lines[pos.line].push_str(&suffix);
-            Position { line: pos.line, col: end_col }
+            Position {
+                line: pos.line,
+                col: end_col,
+            }
         } else {
             self.lines[pos.line].push_str(text_lines[0]);
             for (i, tl) in text_lines[1..text_lines.len() - 1].iter().enumerate() {
@@ -386,10 +470,20 @@ impl Buffer {
             let end_col = last_line.len();
             last_line.push_str(&suffix);
             self.lines.insert(last_idx, last_line);
-            Position { line: last_idx, col: end_col }
+            Position {
+                line: last_idx,
+                col: end_col,
+            }
         };
 
-        self.undo_stack.push((EditOp::InsertText { pos: actual_pos, text: normalized, end_pos }, pos));
+        self.undo_stack.push((
+            EditOp::InsertText {
+                pos: actual_pos,
+                text: normalized,
+                end_pos,
+            },
+            pos,
+        ));
         self.redo_stack.clear();
         self.generation += 1;
         end_pos
@@ -406,8 +500,14 @@ impl Buffer {
             return self.backspace(pos);
         }
         let boundary = word_boundary_left(&self.lines[pos.line], col);
-        let start = Position { line: pos.line, col: boundary };
-        let end = Position { line: pos.line, col };
+        let start = Position {
+            line: pos.line,
+            col: boundary,
+        };
+        let end = Position {
+            line: pos.line,
+            col,
+        };
         self.delete_range(start, end)
     }
 
@@ -424,8 +524,14 @@ impl Buffer {
             return;
         }
         let boundary = word_boundary_right(&self.lines[pos.line], col);
-        let start = Position { line: pos.line, col };
-        let end = Position { line: pos.line, col: boundary };
+        let start = Position {
+            line: pos.line,
+            col,
+        };
+        let end = Position {
+            line: pos.line,
+            col: boundary,
+        };
         self.delete_range(start, end);
     }
 
@@ -438,8 +544,14 @@ impl Buffer {
         if col == 0 {
             return pos;
         }
-        let start = Position { line: pos.line, col: 0 };
-        let end = Position { line: pos.line, col };
+        let start = Position {
+            line: pos.line,
+            col: 0,
+        };
+        let end = Position {
+            line: pos.line,
+            col,
+        };
         self.delete_range(start, end)
     }
 
@@ -453,31 +565,53 @@ impl Buffer {
         if col >= line_len {
             return;
         }
-        let start = Position { line: pos.line, col };
-        let end = Position { line: pos.line, col: line_len };
+        let start = Position {
+            line: pos.line,
+            col,
+        };
+        let end = Position {
+            line: pos.line,
+            col: line_len,
+        };
         self.delete_range(start, end);
     }
 
     /// Delete the entire line at line_idx. Returns the new cursor position.
     pub fn delete_line(&mut self, line_idx: usize) -> Position {
         if line_idx >= self.lines.len() {
-            return Position { line: line_idx, col: 0 };
+            return Position {
+                line: line_idx,
+                col: 0,
+            };
         }
-        let cursor_before = Position { line: line_idx, col: 0 };
+        let cursor_before = Position {
+            line: line_idx,
+            col: 0,
+        };
         if self.lines.len() == 1 {
             let content = std::mem::take(&mut self.lines[0]);
-            self.undo_stack.push((EditOp::DeleteLine { line: 0, content }, cursor_before));
+            self.undo_stack
+                .push((EditOp::DeleteLine { line: 0, content }, cursor_before));
             self.redo_stack.clear();
             self.lines[0] = String::new();
             self.generation += 1;
             return Position { line: 0, col: 0 };
         }
         let content = self.lines.remove(line_idx);
-        self.undo_stack.push((EditOp::DeleteLine { line: line_idx, content }, cursor_before));
+        self.undo_stack.push((
+            EditOp::DeleteLine {
+                line: line_idx,
+                content,
+            },
+            cursor_before,
+        ));
         self.redo_stack.clear();
         self.generation += 1;
         let new_line = line_idx.min(self.lines.len().saturating_sub(1));
-        Position { line: new_line, col: 0 }
+        Position {
+            line: new_line,
+            col: 0,
+        }
     }
 
     /// Swap line_idx with line_idx-1 (move line up). Returns true if swap happened.
@@ -487,8 +621,14 @@ impl Buffer {
         }
         self.lines.swap(line_idx, line_idx - 1);
         self.undo_stack.push((
-            EditOp::SwapLines { line_a: line_idx - 1, line_b: line_idx },
-            Position { line: line_idx, col: 0 },
+            EditOp::SwapLines {
+                line_a: line_idx - 1,
+                line_b: line_idx,
+            },
+            Position {
+                line: line_idx,
+                col: 0,
+            },
         ));
         self.redo_stack.clear();
         self.generation += 1;
@@ -502,8 +642,14 @@ impl Buffer {
         }
         self.lines.swap(line_idx, line_idx + 1);
         self.undo_stack.push((
-            EditOp::SwapLines { line_a: line_idx, line_b: line_idx + 1 },
-            Position { line: line_idx, col: 0 },
+            EditOp::SwapLines {
+                line_a: line_idx,
+                line_b: line_idx + 1,
+            },
+            Position {
+                line: line_idx,
+                col: 0,
+            },
         ));
         self.redo_stack.clear();
         self.generation += 1;
@@ -532,8 +678,14 @@ impl Buffer {
         if remove == 0 {
             return 0;
         }
-        let start = Position { line: line_idx, col: 0 };
-        let end = Position { line: line_idx, col: remove };
+        let start = Position {
+            line: line_idx,
+            col: 0,
+        };
+        let end = Position {
+            line: line_idx,
+            col: remove,
+        };
         self.delete_range(start, end);
         remove
     }
@@ -545,7 +697,6 @@ impl Buffer {
     pub fn generation(&self) -> u64 {
         self.generation
     }
-
 }
 
 #[cfg(test)]
@@ -833,11 +984,11 @@ mod tests {
     #[test]
     fn word_boundary_with_punctuation() {
         // "fn hello_world(x)" — underscores are word chars
-        assert_eq!(word_boundary_right("fn hello_world(x)", 0), 2);   // skip "fn"
-        assert_eq!(word_boundary_right("fn hello_world(x)", 2), 14);  // skip " " then "hello_world"
+        assert_eq!(word_boundary_right("fn hello_world(x)", 0), 2); // skip "fn"
+        assert_eq!(word_boundary_right("fn hello_world(x)", 2), 14); // skip " " then "hello_world"
         assert_eq!(word_boundary_right("fn hello_world(x)", 14), 15); // skip "("
-        assert_eq!(word_boundary_left("fn hello_world(x)", 15), 14);  // back to "("
-        assert_eq!(word_boundary_left("fn hello_world(x)", 14), 3);   // back to "hello_world"
+        assert_eq!(word_boundary_left("fn hello_world(x)", 15), 14); // back to "("
+        assert_eq!(word_boundary_left("fn hello_world(x)", 14), 3); // back to "hello_world"
     }
 
     // ── Delete word tests ──

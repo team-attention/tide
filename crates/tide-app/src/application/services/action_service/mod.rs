@@ -174,7 +174,10 @@ impl App {
         &self,
         source_pane_id: crate::tide_core::PaneId,
     ) -> bool {
-        if matches!(self.panes.get(&source_pane_id), Some(PaneKind::Launcher(_)) | None) {
+        if matches!(
+            self.panes.get(&source_pane_id),
+            Some(PaneKind::Launcher(_)) | None
+        ) {
             return false;
         }
 
@@ -194,27 +197,27 @@ impl App {
     ) -> bool {
         use crate::state::gateway_status::AgentStatus;
 
-        let direct_status = self
-            .gateway
-            .detected_agents
-            .get(&pane_id)
-            .and_then(|agent| agent.status);
-        if matches!(direct_status, Some(AgentStatus::NeedsInput)) {
-            return true;
-        }
-
-        let associated_terminal_id = match self.panes.get(&pane_id) {
-            Some(PaneKind::Terminal(_)) => return false,
-            Some(PaneKind::Editor(_)) | Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) => {
-                self.assoc.associated_terminal.get(&pane_id).copied()
-            }
-            Some(PaneKind::Launcher(_)) | None => None,
-        };
-
-        associated_terminal_id
-            .and_then(|terminal_id| self.gateway.detected_agents.get(&terminal_id))
-            .and_then(|agent| agent.status)
+        self.pane_agent_attention_status(pane_id)
             .is_some_and(|status| matches!(status, AgentStatus::NeedsInput))
+    }
+
+    pub(crate) fn pane_agent_attention_status(
+        &self,
+        pane_id: crate::tide_core::PaneId,
+    ) -> Option<crate::state::gateway_status::AgentStatus> {
+        match self.panes.get(&pane_id) {
+            Some(PaneKind::Terminal(_)) => self
+                .gateway
+                .detected_agents
+                .get(&pane_id)
+                .filter(|agent| agent.wrapper_managed)
+                .and_then(|agent| agent.status),
+            Some(PaneKind::Editor(_))
+            | Some(PaneKind::Diff(_))
+            | Some(PaneKind::Browser(_))
+            | Some(PaneKind::Launcher(_))
+            | None => None,
+        }
     }
 
     fn insert_context_artifact(

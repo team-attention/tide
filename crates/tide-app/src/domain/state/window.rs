@@ -46,14 +46,23 @@ impl WindowState {
 
     pub fn lookup_cell_size(&self, font_size: f32) -> crate::tide_core::Size {
         let idx = (font_size.round() as u32).saturating_sub(8) as usize;
-        self.cell_size_table.get(idx).copied().unwrap_or(self.cached_cell_size)
+        self.cell_size_table
+            .get(idx)
+            .copied()
+            .unwrap_or(self.cached_cell_size)
     }
 
     #[allow(dead_code)]
-    pub fn cell_size(&self) -> crate::tide_core::Size { self.cached_cell_size }
+    pub fn cell_size(&self) -> crate::tide_core::Size {
+        self.cached_cell_size
+    }
 
     pub fn palette(&self) -> &'static crate::theme::ThemePalette {
-        if self.dark_mode { &crate::theme::DARK } else { &crate::theme::LIGHT }
+        if self.dark_mode {
+            &crate::theme::DARK
+        } else {
+            &crate::theme::LIGHT
+        }
     }
 
     pub fn logical_size(&self) -> crate::tide_core::Size {

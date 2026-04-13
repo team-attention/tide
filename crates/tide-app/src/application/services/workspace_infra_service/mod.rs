@@ -8,6 +8,7 @@ use crate::tide_layout::SplitLayout;
 use crate::pane::PaneKind;
 use crate::state::{FocusArea, ViewMode};
 use crate::App;
+use crate::DockPort;
 use crate::LayoutPort;
 use crate::PaneLifecyclePort;
 
@@ -31,7 +32,8 @@ pub(crate) struct WorkspaceExtras {
     pub focus_area: FocusArea,
     pub stage_focused: Option<PaneId>,
     pub pinned_dock_layout: crate::tide_layout::SplitLayout,
-    /// True when an agent in this (inactive) workspace has a pending notification.
+    /// True when this workspace still has unresolved Wrapped Agent attention.
+    /// The sidebar chrome only renders this for inactive Workspaces.
     pub has_agent_notification: bool,
 }
 
@@ -51,6 +53,148 @@ impl WorkspaceExtras {
 }
 
 impl App {
+    pub(crate) fn next_workspace_pane_id(&self) -> PaneId {
+        let max_live_or_stored = self
+            .panes
+            .keys()
+            .copied()
+            .chain(
+                self.ws
+                    .workspaces
+                    .iter()
+                    .flat_map(|workspace| workspace.panes.keys().copied()),
+            )
+            .chain(self.gateway.detected_agents.keys().copied())
+            .max()
+            .unwrap_or(0);
+
+        max_live_or_stored.saturating_add(1)
+    }
+
+    pub(crate) fn rebase_active_workspace_layout_pane_allocator(&mut self) {
+        let next_pane_id = self.next_workspace_pane_id();
+        self.layout.ensure_next_id_at_least(next_pane_id);
+    }
+
+    fn active_stage_terminal_agent_flags(&self) -> (bool, bool) {
+        use crate::state::gateway_status::AgentStatus;
+
+        let mut has_running = false;
+        let mut has_alert = false;
+
+        for (&pane_id, pane) in &self.panes {
+            if !matches!(pane, PaneKind::Terminal(_)) || self.is_pane_in_dock(pane_id) {
+                continue;
+            }
+            let Some(status) = self
+                .gateway
+                .detected_agents
+                .get(&pane_id)
+                .filter(|agent| agent.wrapper_managed)
+                .and_then(|agent| agent.status)
+            else {
+                continue;
+            };
+
+            match status {
+                AgentStatus::Running => has_running = true,
+                AgentStatus::Idle | AgentStatus::NeedsInput => has_alert = true,
+            }
+        }
+
+        (has_running, has_alert)
+    }
+
+    fn stage_terminal_agent_flags_for(
+        &self,
+        layout: &SplitLayout,
+        panes: &HashMap<PaneId, PaneKind>,
+    ) -> (bool, bool) {
+        use crate::state::gateway_status::AgentStatus;
+
+        let mut has_running = false;
+        let mut has_alert = false;
+
+        let stage_pane_ids = layout.all_pane_ids();
+        let pane_ids: Vec<PaneId> = if stage_pane_ids.is_empty() {
+            panes
+                .iter()
+                .filter_map(|(pane_id, pane)| {
+                    if matches!(pane, PaneKind::Terminal(_)) {
+                        Some(*pane_id)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            stage_pane_ids
+        };
+
+        for pane_id in pane_ids {
+            if !matches!(panes.get(&pane_id), Some(PaneKind::Terminal(_))) {
+                continue;
+            }
+            let Some(status) = self
+                .gateway
+                .detected_agents
+                .get(&pane_id)
+                .filter(|agent| agent.wrapper_managed)
+                .and_then(|agent| agent.status)
+            else {
+                continue;
+            };
+
+            match status {
+                AgentStatus::Running => has_running = true,
+                AgentStatus::Idle | AgentStatus::NeedsInput => has_alert = true,
+            }
+        }
+
+        (has_running, has_alert)
+    }
+
+    pub(crate) fn workspace_stage_agent_flags(&self, workspace_idx: usize) -> (bool, bool) {
+        if workspace_idx == self.ws.active {
+            return self.active_stage_terminal_agent_flags();
+        }
+
+        self.ws
+            .workspaces
+            .get(workspace_idx)
+            .map(|workspace| {
+                self.stage_terminal_agent_flags_for(&workspace.layout, &workspace.panes)
+            })
+            .unwrap_or((false, false))
+    }
+
+    pub(crate) fn has_any_stage_wrapped_agent_alert(&self) -> bool {
+        if self.workspace_stage_agent_flags(self.ws.active).1 {
+            return true;
+        }
+
+        self.ws
+            .workspaces
+            .iter()
+            .enumerate()
+            .any(|(workspace_idx, _)| {
+                workspace_idx != self.ws.active && self.workspace_stage_agent_flags(workspace_idx).1
+            })
+    }
+
+    fn workspace_has_wrapped_agent_attention(&self, workspace_idx: usize) -> bool {
+        self.workspace_stage_agent_flags(workspace_idx).1
+    }
+
+    pub(crate) fn refresh_workspace_agent_notification(&mut self, workspace_idx: usize) {
+        while self.ws.workspace_extras.len() <= workspace_idx {
+            self.ws.workspace_extras.push(WorkspaceExtras::new());
+        }
+
+        self.ws.workspace_extras[workspace_idx].has_agent_notification =
+            self.workspace_has_wrapped_agent_attention(workspace_idx);
+    }
+
     fn ensure_active_workspace_artifact_store(&mut self) -> &mut crate::ContextArtifactStore {
         while self.ws.workspace_context_artifacts.len() <= self.ws.active {
             self.ws
@@ -147,6 +291,8 @@ impl App {
         let artifacts = &mut self.ws.workspace_context_artifacts[self.ws.active];
         std::mem::swap(&mut self.context_artifacts, artifacts);
 
+        self.rebase_active_workspace_layout_pane_allocator();
+
         // Ensure stage_focused is set — older sessions don't persist it,
         // and without it dock operations (Cmd+4) silently fail.
         if self.focus.stage_focused.is_none() {
@@ -178,6 +324,7 @@ impl App {
         if idx == self.ws.active || idx >= self.ws.workspaces.len() {
             return;
         }
+        self.refresh_workspace_agent_notification(self.ws.active);
         // Commit any pending IME composition to the current workspace's pane
         // before swapping state, otherwise the preedit text is lost.
         if self.ime.composing {
@@ -200,10 +347,7 @@ impl App {
         self.save_active_workspace();
         self.ws.active = idx;
         self.load_active_workspace();
-        // Clear agent notification for the workspace we're switching to (UC-6 BR-2)
-        if self.ws.active < self.ws.workspace_extras.len() {
-            self.ws.workspace_extras[self.ws.active].has_agent_notification = false;
-        }
+        self.refresh_workspace_agent_notification(self.ws.active);
         // Update TIDE_WORKSPACE for new terminals spawned in this workspace
         let ws_name = self.ws.workspaces[idx].name.clone();
         crate::tide_terminal::set_active_workspace_name(ws_name);
@@ -274,7 +418,8 @@ impl App {
 
         self.save_active_workspace();
 
-        let (layout, pane_id) = SplitLayout::with_initial_pane();
+        let pane_id = self.next_workspace_pane_id();
+        let (layout, pane_id) = SplitLayout::with_initial_pane_id(pane_id);
         self.layout = layout;
         self.focus.focused = Some(pane_id);
         self.panes = HashMap::new();

@@ -21,7 +21,13 @@ pub(crate) trait LayoutPort {
     // ── Layout tree manipulation (click_adapter) ──
     fn layout_remove(&mut self, id: PaneId);
     fn layout_insert_at_root(&mut self, id: PaneId, zone: crate::tide_core::DropZone);
-    fn layout_insert_pane(&mut self, target: PaneId, source: PaneId, direction: crate::tide_core::SplitDirection, insert_first: bool);
+    fn layout_insert_pane(
+        &mut self,
+        target: PaneId,
+        source: PaneId,
+        direction: crate::tide_core::SplitDirection,
+        insert_first: bool,
+    );
     fn layout_add_tab(&mut self, target: PaneId, source: PaneId) -> bool;
 
     // ── Hit-test helpers (from drag_drop_adapter, used by click_adapter) ──
@@ -34,7 +40,22 @@ pub(crate) trait LayoutPort {
     fn layout_drag_border(&mut self, pos: Vec2);
     fn router_is_dragging_border(&self) -> bool;
     fn router_end_drag(&mut self);
-    fn compute_drop_destination(&self, mouse: Vec2, source: PaneId) -> Option<crate::state::drag_types::DropDestination>;
-    fn compute_drop_preview_rect(&self, source: PaneId, target: &Option<crate::state::drag_types::DropDestination>) -> Option<crate::tide_core::Rect>;
-    fn layout_simulate_drop(&self, source: PaneId, target: Option<PaneId>, zone: crate::tide_core::DropZone, source_in_tree: bool, window_size: crate::tide_core::Size) -> Option<crate::tide_core::Rect>;
+    fn compute_drop_destination(
+        &self,
+        mouse: Vec2,
+        source: PaneId,
+    ) -> Option<crate::state::drag_types::DropDestination>;
+    fn compute_drop_preview_rect(
+        &self,
+        source: PaneId,
+        target: &Option<crate::state::drag_types::DropDestination>,
+    ) -> Option<crate::tide_core::Rect>;
+    fn layout_simulate_drop(
+        &self,
+        source: PaneId,
+        target: Option<PaneId>,
+        zone: crate::tide_core::DropZone,
+        source_in_tree: bool,
+        window_size: crate::tide_core::Size,
+    ) -> Option<crate::tide_core::Rect>;
 }

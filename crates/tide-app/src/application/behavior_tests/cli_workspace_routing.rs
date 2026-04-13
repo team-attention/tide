@@ -364,8 +364,10 @@ fn add_pane_to_dock_uses_target_terminal_not_stage_focused() {
 
     // stage_focused = t1, but we want to add a pane to t2's dock
     let editor_id = app.layout.alloc_id();
-    app.panes
-        .insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
+    app.panes.insert(
+        editor_id,
+        PaneKind::Editor(EditorPane::new_empty(editor_id)),
+    );
 
     app.add_pane_to_dock(editor_id, Some(t2));
 
@@ -388,8 +390,10 @@ fn add_pane_to_dock_falls_back_to_focused_when_target_is_none() {
     let (mut app, t1, _t2) = app_with_two_real_terminals();
 
     let editor_id = app.layout.alloc_id();
-    app.panes
-        .insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
+    app.panes.insert(
+        editor_id,
+        PaneKind::Editor(EditorPane::new_empty(editor_id)),
+    );
 
     app.add_pane_to_dock(editor_id, None);
 

@@ -182,6 +182,11 @@ pub(crate) fn handle_platform_event(
         PlatformEvent::Focused(focused) => {
             ctx.set_window_focused(focused);
             if focused {
+                if matches!(ctx.current_focus_area(), FocusArea::Stage | FocusArea::Dock)
+                    && ctx.focused_pane().is_some()
+                {
+                    ctx.acknowledge_attention_for_focused_pane();
+                }
                 ctx.set_modifiers(crate::tide_core::Modifiers::default());
                 // windowDidBecomeKey may have changed the actual first
                 // responder via LAST_IME_TARGET, making browser panes'
@@ -306,6 +311,10 @@ pub(crate) fn handle_platform_event(
             let pos = physical_to_logical(position);
             ctx.set_last_cursor_pos(pos);
             crate::adapter::inward::scroll_adapter::handle_scroll(ctx, dx, dy);
+        }
+        PlatformEvent::SystemNotificationActivated { pane_id } => {
+            ctx.activate_notification_target(pane_id);
+            ctx.request_redraw();
         }
     }
 
@@ -758,6 +767,7 @@ impl App {
                                 // returns a fresh AgentInfo with status: None)
                                 if let Some(existing) = self.gateway.detected_agents.get(&id) {
                                     agent.status = existing.status;
+                                    agent.wrapper_managed = existing.wrapper_managed;
                                 }
                                 agent.gateway_connected =
                                     crate::state::gateway_status::is_agent_connected(
@@ -804,14 +814,10 @@ impl App {
                 crate::AppCorePort::request_redraw(&mut self);
             }
 
-            // Agent NeedsInput blink: continuous redraw while any unfocused agent needs input (UC-5 BR-5)
+            // Wrapped-agent alert blink: continuous redraw while any Stage Terminal
+            // or inactive Workspace still has unresolved alert state.
             {
-                let has_blinking = self.gateway.detected_agents.iter().any(|(&id, a)| {
-                    matches!(
-                        a.status,
-                        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
-                    ) && self.focus.focused != Some(id)
-                });
+                let has_blinking = self.has_any_stage_wrapped_agent_alert();
                 if has_blinking {
                     crate::AppCorePort::request_redraw(&mut self);
                 }
@@ -1018,12 +1024,15 @@ impl App {
         }
 
         if had_pty_output {
-            self.timing.badge_check_at = Some(self.ports.clock.now() + terminal_badge_check_delay());
+            self.timing.badge_check_at =
+                Some(self.ports.clock.now() + terminal_badge_check_delay());
         }
 
         // Drain OSC 9 notifications from terminals
         {
-            let terminal_ids: Vec<u64> = self
+            let mut terminal_notifications = Vec::new();
+
+            let active_terminal_ids: Vec<u64> = self
                 .panes
                 .iter()
                 .filter_map(|(&id, pk)| {
@@ -1034,13 +1043,29 @@ impl App {
                     }
                 })
                 .collect();
-            for id in terminal_ids {
+            for id in active_terminal_ids {
                 if let Some(PaneKind::Terminal(tp)) = self.panes.get(&id) {
-                    let notifications = tp.backend.drain_notifications();
-                    for msg in notifications {
-                        self.handle_terminal_notification(id, &msg);
+                    for msg in tp.backend.drain_notifications() {
+                        terminal_notifications.push((id, msg));
                     }
                 }
+            }
+
+            for (workspace_idx, workspace) in self.ws.workspaces.iter().enumerate() {
+                if workspace_idx == self.ws.active {
+                    continue;
+                }
+                for (&id, pane) in &workspace.panes {
+                    if let PaneKind::Terminal(tp) = pane {
+                        for msg in tp.backend.drain_notifications() {
+                            terminal_notifications.push((id, msg));
+                        }
+                    }
+                }
+            }
+
+            for (id, msg) in terminal_notifications {
+                self.handle_terminal_notification(id, &msg);
             }
         }
 
@@ -1053,13 +1078,17 @@ impl App {
                     WindowCommand::SendSystemNotification {
                         ref title,
                         ref body,
+                        pane_id,
                     } => {
-                        window.send_system_notification(title, body);
+                        window.send_system_notification(title, body, pane_id);
                     }
                     WindowCommand::RequestUserAttention => {
                         window.request_user_attention();
                     }
-                    _ => {} // Only notification commands expected here
+                    WindowCommand::RequestNotificationPermission => {
+                        window.request_notification_permission();
+                    }
+                    _ => {}
                 }
             }
         }

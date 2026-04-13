@@ -56,12 +56,11 @@ impl WgpuRenderer {
             source: wgpu::ShaderSource::Wgsl(RECT_SHADER.into()),
         });
 
-        let rect_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("rect_pipeline_layout"),
-                bind_group_layouts: &[&uniform_bind_group_layout],
-                push_constant_ranges: &[],
-            });
+        let rect_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("rect_pipeline_layout"),
+            bind_group_layouts: &[&uniform_bind_group_layout],
+            push_constant_ranges: &[],
+        });
 
         let rect_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("rect_pipeline"),
@@ -353,24 +352,26 @@ impl WgpuRenderer {
         let mut mono_em_descender = 0.2_f32;
 
         // Shape a test character to discover cosmic-text's resolved font face
-        let resolve_face = |font_system: &mut cosmic_text::FontSystem, bold: bool| -> Option<fontdb::ID> {
-            use cosmic_text::{
-                Attrs, Buffer as CosmicBuffer, Family, Metrics, Shaping,
+        let resolve_face =
+            |font_system: &mut cosmic_text::FontSystem, bold: bool| -> Option<fontdb::ID> {
+                use cosmic_text::{Attrs, Buffer as CosmicBuffer, Family, Metrics, Shaping};
+                let metrics = Metrics::new(14.0, 16.8);
+                let mut buffer = CosmicBuffer::new(font_system, metrics);
+                let attrs = if bold {
+                    Attrs::new()
+                        .family(Family::Monospace)
+                        .weight(cosmic_text::Weight::BOLD)
+                } else {
+                    Attrs::new().family(Family::Monospace)
+                };
+                buffer.set_text(font_system, "M", attrs, Shaping::Advanced);
+                buffer.shape_until_scroll(font_system, false);
+                buffer
+                    .layout_runs()
+                    .next()
+                    .and_then(|run| run.glyphs.first())
+                    .map(|g| g.font_id)
             };
-            let metrics = Metrics::new(14.0, 16.8);
-            let mut buffer = CosmicBuffer::new(font_system, metrics);
-            let attrs = if bold {
-                Attrs::new().family(Family::Monospace).weight(cosmic_text::Weight::BOLD)
-            } else {
-                Attrs::new().family(Family::Monospace)
-            };
-            buffer.set_text(font_system, "M", attrs, Shaping::Advanced);
-            buffer.shape_until_scroll(font_system, false);
-            buffer.layout_runs()
-                .next()
-                .and_then(|run| run.glyphs.first())
-                .map(|g| g.font_id)
-        };
 
         // Register exact font faces for regular and bold
         for bold in [false, true] {

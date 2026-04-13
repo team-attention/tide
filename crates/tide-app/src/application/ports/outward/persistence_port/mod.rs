@@ -1,8 +1,8 @@
 // PersistencePort — session save/load, settings, and crash recovery marker.
 
+use crate::state::settings::TideSettings;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use crate::state::settings::TideSettings;
 
 // ──────────────────────────────────────────────
 // Serializable session types (port data contract)

@@ -15,7 +15,7 @@ pub struct SearchMatch {
 pub struct SearchState {
     pub input: InputLine,
     pub matches: Vec<SearchMatch>,
-    pub current: Option<usize>,   // index into matches
+    pub current: Option<usize>, // index into matches
     pub visible: bool,
 }
 
@@ -66,7 +66,8 @@ impl SearchState {
 /// scrolling triggers a grid refresh).
 pub fn execute_search_terminal(state: &mut SearchState, terminal: &Terminal) {
     // Remember current match position so we can restore it
-    let prev_pos = state.current
+    let prev_pos = state
+        .current
         .and_then(|i| state.matches.get(i))
         .map(|m| (m.line, m.col));
 
@@ -86,7 +87,9 @@ pub fn execute_search_terminal(state: &mut SearchState, terminal: &Terminal) {
     if !state.matches.is_empty() {
         // Try to restore current match to the same position
         state.current = if let Some((line, col)) = prev_pos {
-            state.matches.iter()
+            state
+                .matches
+                .iter()
                 .position(|m| m.line == line && m.col == col)
                 .or(Some(0))
         } else {
@@ -98,10 +101,14 @@ pub fn execute_search_terminal(state: &mut SearchState, terminal: &Terminal) {
 /// Execute search over preview lines (case-insensitive).
 /// Each preview line's text is the concatenation of its span texts (excluding newlines).
 /// Match coordinates are in preview-line space so highlights and navigation work directly.
-pub fn execute_search_preview(state: &mut SearchState, preview_lines: &[crate::tide_editor::markdown::PreviewLine]) {
+pub fn execute_search_preview(
+    state: &mut SearchState,
+    preview_lines: &[crate::tide_editor::markdown::PreviewLine],
+) {
     use unicode_width::UnicodeWidthChar;
 
-    let prev_pos = state.current
+    let prev_pos = state
+        .current
         .and_then(|i| state.matches.get(i))
         .map(|m| (m.line, m.col));
 
@@ -113,11 +120,18 @@ pub fn execute_search_preview(state: &mut SearchState, preview_lines: &[crate::t
     }
 
     let query_lower = state.input.text.to_lowercase();
-    let query_display_width: usize = state.input.text.chars().map(|c| c.width().unwrap_or(1)).sum();
+    let query_display_width: usize = state
+        .input
+        .text
+        .chars()
+        .map(|c| c.width().unwrap_or(1))
+        .sum();
 
     for (line_idx, pline) in preview_lines.iter().enumerate() {
         // Build the full text of this preview line from spans
-        let line_text: String = pline.spans.iter()
+        let line_text: String = pline
+            .spans
+            .iter()
             .flat_map(|s| s.text.chars())
             .filter(|c| *c != '\n')
             .collect();
@@ -127,7 +141,8 @@ pub fn execute_search_preview(state: &mut SearchState, preview_lines: &[crate::t
         while let Some(byte_pos) = line_lower[start..].find(&query_lower) {
             let byte_col = start + byte_pos;
             // Convert byte offset to display-cell column
-            let display_col: usize = line_text[..byte_col].chars()
+            let display_col: usize = line_text[..byte_col]
+                .chars()
                 .map(|c| c.width().unwrap_or(1))
                 .sum();
             state.matches.push(SearchMatch {
@@ -135,13 +150,19 @@ pub fn execute_search_preview(state: &mut SearchState, preview_lines: &[crate::t
                 col: display_col,
                 len: query_display_width,
             });
-            start = byte_col + line_lower[byte_col..].chars().next().map_or(1, |c| c.len_utf8());
+            start = byte_col
+                + line_lower[byte_col..]
+                    .chars()
+                    .next()
+                    .map_or(1, |c| c.len_utf8());
         }
     }
 
     if !state.matches.is_empty() {
         state.current = if let Some((line, col)) = prev_pos {
-            state.matches.iter()
+            state
+                .matches
+                .iter()
                 .position(|m| m.line == line && m.col == col)
                 .or(Some(0))
         } else {
@@ -153,7 +174,8 @@ pub fn execute_search_preview(state: &mut SearchState, preview_lines: &[crate::t
 /// Execute search over an editor buffer's lines (case-insensitive).
 /// Preserves the current match position across re-executions.
 pub fn execute_search_editor(state: &mut SearchState, lines: &[String]) {
-    let prev_pos = state.current
+    let prev_pos = state
+        .current
         .and_then(|i| state.matches.get(i))
         .map(|m| (m.line, m.col));
 
@@ -179,13 +201,19 @@ pub fn execute_search_editor(state: &mut SearchState, lines: &[String]) {
                 len: query_char_len,
             });
             // Advance by one character (not one byte) to find overlapping matches
-            start = byte_col + line_lower[byte_col..].chars().next().map_or(1, |c| c.len_utf8());
+            start = byte_col
+                + line_lower[byte_col..]
+                    .chars()
+                    .next()
+                    .map_or(1, |c| c.len_utf8());
         }
     }
 
     if !state.matches.is_empty() {
         state.current = if let Some((line, col)) = prev_pos {
-            state.matches.iter()
+            state
+                .matches
+                .iter()
                 .position(|m| m.line == line && m.col == col)
                 .or(Some(0))
         } else {
@@ -208,9 +236,21 @@ mod tests {
     fn next_match_cycles() {
         let mut s = SearchState::new();
         s.matches = vec![
-            SearchMatch { line: 0, col: 0, len: 1 },
-            SearchMatch { line: 1, col: 0, len: 1 },
-            SearchMatch { line: 2, col: 0, len: 1 },
+            SearchMatch {
+                line: 0,
+                col: 0,
+                len: 1,
+            },
+            SearchMatch {
+                line: 1,
+                col: 0,
+                len: 1,
+            },
+            SearchMatch {
+                line: 2,
+                col: 0,
+                len: 1,
+            },
         ];
         s.next_match();
         assert_eq!(s.current, Some(0));
@@ -226,8 +266,16 @@ mod tests {
     fn prev_match_cycles() {
         let mut s = SearchState::new();
         s.matches = vec![
-            SearchMatch { line: 0, col: 0, len: 1 },
-            SearchMatch { line: 1, col: 0, len: 1 },
+            SearchMatch {
+                line: 0,
+                col: 0,
+                len: 1,
+            },
+            SearchMatch {
+                line: 1,
+                col: 0,
+                len: 1,
+            },
         ];
         s.prev_match();
         assert_eq!(s.current, Some(1)); // starts from end
@@ -251,7 +299,14 @@ mod tests {
         let mut s = SearchState::new();
         assert_eq!(s.current_display(), "0/0");
 
-        s.matches = vec![SearchMatch { line: 0, col: 0, len: 1 }; 5];
+        s.matches = vec![
+            SearchMatch {
+                line: 0,
+                col: 0,
+                len: 1
+            };
+            5
+        ];
         assert_eq!(s.current_display(), "0/5");
 
         s.current = Some(2);

@@ -5,4 +5,3 @@ pub(crate) mod services;
 mod behavior_tests;
 
 pub(crate) use services::action_service::LauncherChoice;
-

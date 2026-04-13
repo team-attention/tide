@@ -3,18 +3,21 @@ use crate::tide_editor::input::EditorAction;
 use crate::tide_input::Direction;
 
 use crate::pane::PaneKind;
+use crate::state::FocusArea;
 #[allow(unused_imports)]
 use crate::tide_core::LayoutEngine;
-use crate::state::FocusArea;
 use crate::App;
-use crate::FocusNavPort;
 use crate::AppCorePort;
+use crate::FocusNavPort;
 use crate::WorkspaceNavPort;
 
 impl FocusNavPort for App {
     /// Navigate file tree cursor: J(Down) = next, K(Up) = prev. H/L ignored.
     fn navigate_file_tree(&mut self, direction: Direction) {
-        let entry_count = self.ft.tree.as_ref()
+        let entry_count = self
+            .ft
+            .tree
+            .as_ref()
             .map(|t| t.visible_entries().len())
             .unwrap_or(0);
         if entry_count == 0 {
@@ -53,7 +56,9 @@ impl FocusNavPort for App {
         // Zoomed/stacked mode: cycle through all Stage panes in layout order
         if self.focus.zoomed_pane.is_some() {
             let all = self.layout.all_tabs_flat();
-            if all.len() < 2 { return; }
+            if all.len() < 2 {
+                return;
+            }
             let pos = all.iter().position(|&id| id == current_id).unwrap_or(0);
             let next_pos = match direction {
                 Direction::Right | Direction::Down => (pos + 1) % all.len(),
@@ -69,7 +74,9 @@ impl FocusNavPort for App {
         // Only consider Stage pane rects (exclude dock panes)
         let stage_ids: std::collections::HashSet<crate::tide_core::PaneId> =
             self.layout.pane_ids().into_iter().collect();
-        let stage_rects: Vec<(crate::tide_core::PaneId, crate::tide_core::Rect)> = self.pane_rects.iter()
+        let stage_rects: Vec<(crate::tide_core::PaneId, crate::tide_core::Rect)> = self
+            .pane_rects
+            .iter()
             .filter(|(id, _)| stage_ids.contains(id))
             .copied()
             .collect();
@@ -98,22 +105,26 @@ impl FocusNavPort for App {
             let (valid, overlaps, dist) = match direction {
                 Direction::Left => (
                     dx < -1.0,
-                    rect.y < current_rect.y + current_rect.height && rect.y + rect.height > current_rect.y,
+                    rect.y < current_rect.y + current_rect.height
+                        && rect.y + rect.height > current_rect.y,
                     dx.abs(),
                 ),
                 Direction::Right => (
                     dx > 1.0,
-                    rect.y < current_rect.y + current_rect.height && rect.y + rect.height > current_rect.y,
+                    rect.y < current_rect.y + current_rect.height
+                        && rect.y + rect.height > current_rect.y,
                     dx.abs(),
                 ),
                 Direction::Up => (
                     dy < -1.0,
-                    rect.x < current_rect.x + current_rect.width && rect.x + rect.width > current_rect.x,
+                    rect.x < current_rect.x + current_rect.width
+                        && rect.x + rect.width > current_rect.x,
                     dy.abs(),
                 ),
                 Direction::Down => (
                     dy > 1.0,
-                    rect.x < current_rect.x + current_rect.width && rect.x + rect.width > current_rect.x,
+                    rect.x < current_rect.x + current_rect.width
+                        && rect.x + rect.width > current_rect.x,
                     dy.abs(),
                 ),
             };
@@ -141,7 +152,9 @@ impl FocusNavPort for App {
         };
 
         let cs = self.cell_size();
-        let rect = self.visual_pane_rects.iter()
+        let rect = self
+            .visual_pane_rects
+            .iter()
             .find(|(pid, _)| *pid == pane_id)
             .map(|(_, r)| *r);
         let visible_rows = rect
@@ -219,18 +232,7 @@ impl FocusNavPort for App {
         }
         self.focus.focused = Some(id);
         self.router.set_focused(id);
-        // Clear NeedsInput/Idle status when the user focuses the pane — they've seen it
-        if let Some(agent) = self.gateway.detected_agents.get_mut(&id) {
-            if matches!(
-                agent.status,
-                Some(crate::state::gateway_status::AgentStatus::NeedsInput)
-                    | Some(crate::state::gateway_status::AgentStatus::Idle)
-            ) {
-                agent.status = None;
-            }
-        }
-        // Clear notification suppression so future notifications can fire (UC-7 BR-1)
-        self.notified_panes.remove(&id);
+        self.acknowledge_agent_attention(id);
         self.cache.invalidate_chrome();
     }
 

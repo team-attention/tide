@@ -2,8 +2,8 @@
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use pulldown_cmark::Alignment;
 use crate::tide_core::{Color, TextStyle};
+use pulldown_cmark::Alignment;
 
 use super::highlight::StyledSpan;
 
@@ -141,22 +141,34 @@ fn render_table(
     let border_style = TextStyle {
         foreground: theme.blockquote,
         background: None,
-        bold: false, dim: false, italic: false, underline: false,
+        bold: false,
+        dim: false,
+        italic: false,
+        underline: false,
     };
     let header_style = TextStyle {
         foreground: theme.bold,
         background: None,
-        bold: true, dim: false, italic: false, underline: false,
+        bold: true,
+        dim: false,
+        italic: false,
+        underline: false,
     };
     let cell_style = TextStyle {
         foreground: theme.body,
         background: None,
-        bold: false, dim: false, italic: false, underline: false,
+        bold: false,
+        dim: false,
+        italic: false,
+        underline: false,
     };
     let indent_style = TextStyle {
         foreground: theme.body,
         background: None,
-        bold: false, dim: false, italic: false, underline: false,
+        bold: false,
+        dim: false,
+        italic: false,
+        underline: false,
     };
 
     // Helper: build a horizontal rule line
@@ -172,33 +184,56 @@ fn render_table(
         text.push_str(right);
         PreviewLine {
             spans: vec![
-                StyledSpan { text: " ".repeat(indent), style: indent_style },
-                StyledSpan { text, style: border_style },
+                StyledSpan {
+                    text: " ".repeat(indent),
+                    style: indent_style,
+                },
+                StyledSpan {
+                    text,
+                    style: border_style,
+                },
             ],
             bg_color: None,
         }
     };
 
     // Helper: build one visual line of a (possibly multi-line) row
-    let make_visual_line = |wrapped_cells: &[Vec<String>], line_idx: usize, is_header: bool| -> PreviewLine {
-        let style = if is_header { header_style } else { cell_style };
-        let mut spans = vec![
-            StyledSpan { text: " ".repeat(indent), style: indent_style },
-            StyledSpan { text: "\u{2502}".to_string(), style: border_style },
-        ];
-        for (i, w) in col_widths.iter().enumerate() {
-            let line_text = wrapped_cells.get(i)
-                .and_then(|lines| lines.get(line_idx))
-                .map(|s| s.as_str())
-                .unwrap_or("");
-            let line_w = line_text.width();
-            let pad_right = w.saturating_sub(line_w);
-            let padded = format!(" {}{} ", line_text, " ".repeat(pad_right));
-            spans.push(StyledSpan { text: padded, style });
-            spans.push(StyledSpan { text: "\u{2502}".to_string(), style: border_style });
-        }
-        PreviewLine { spans, bg_color: None }
-    };
+    let make_visual_line =
+        |wrapped_cells: &[Vec<String>], line_idx: usize, is_header: bool| -> PreviewLine {
+            let style = if is_header { header_style } else { cell_style };
+            let mut spans = vec![
+                StyledSpan {
+                    text: " ".repeat(indent),
+                    style: indent_style,
+                },
+                StyledSpan {
+                    text: "\u{2502}".to_string(),
+                    style: border_style,
+                },
+            ];
+            for (i, w) in col_widths.iter().enumerate() {
+                let line_text = wrapped_cells
+                    .get(i)
+                    .and_then(|lines| lines.get(line_idx))
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
+                let line_w = line_text.width();
+                let pad_right = w.saturating_sub(line_w);
+                let padded = format!(" {}{} ", line_text, " ".repeat(pad_right));
+                spans.push(StyledSpan {
+                    text: padded,
+                    style,
+                });
+                spans.push(StyledSpan {
+                    text: "\u{2502}".to_string(),
+                    style: border_style,
+                });
+            }
+            PreviewLine {
+                spans,
+                bg_color: None,
+            }
+        };
 
     // Top border ┌───┬───┐
     result.push(make_rule("\u{250C}", "\u{252C}", "\u{2510}", "\u{2500}"));
@@ -210,11 +245,17 @@ fn render_table(
         }
 
         // Wrap each cell to fit its column width
-        let wrapped_cells: Vec<Vec<String>> = (0..num_cols).map(|i| {
-            let cell_text = row.get(i).map(|s| s.as_str()).unwrap_or("");
-            wrap_cell_text(cell_text, col_widths[i])
-        }).collect();
-        let row_height = wrapped_cells.iter().map(|lines| lines.len()).max().unwrap_or(1);
+        let wrapped_cells: Vec<Vec<String>> = (0..num_cols)
+            .map(|i| {
+                let cell_text = row.get(i).map(|s| s.as_str()).unwrap_or("");
+                wrap_cell_text(cell_text, col_widths[i])
+            })
+            .collect();
+        let row_height = wrapped_cells
+            .iter()
+            .map(|lines| lines.len())
+            .max()
+            .unwrap_or(1);
         let is_header = ri < header_count;
 
         for line_idx in 0..row_height {
@@ -232,7 +273,7 @@ pub fn render_markdown_preview(
     theme: &MarkdownTheme,
     wrap_width: usize,
 ) -> Vec<PreviewLine> {
-    use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd, HeadingLevel, CodeBlockKind};
+    use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
     let source: String = lines.join("\n");
     let opts = Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TABLES;
@@ -268,14 +309,20 @@ pub fn render_markdown_preview(
     let indent = 2; // 2-cell left indent for all content
     let effective_width = wrap_width.saturating_sub(indent);
 
-    let flush_line = |spans: &mut Vec<StyledSpan>, bg: &Option<Color>, out: &mut Vec<PreviewLine>, col: &mut usize| {
+    let flush_line = |spans: &mut Vec<StyledSpan>,
+                      bg: &Option<Color>,
+                      out: &mut Vec<PreviewLine>,
+                      col: &mut usize| {
         // Add leading indent
         let mut line_spans = vec![StyledSpan {
             text: " ".repeat(indent),
             style: TextStyle {
                 foreground: theme.body,
                 background: None,
-                bold: false, dim: false, italic: false, underline: false,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
             },
         }];
         line_spans.append(spans);
@@ -293,19 +340,32 @@ pub fn render_markdown_preview(
         });
     };
 
-    let style_for = |theme: &MarkdownTheme, heading: &Option<HeadingLevel>, bold: bool, italic: bool, in_link: bool, in_code_block: bool, in_blockquote: bool| -> TextStyle {
+    let style_for = |theme: &MarkdownTheme,
+                     heading: &Option<HeadingLevel>,
+                     bold: bool,
+                     italic: bool,
+                     in_link: bool,
+                     in_code_block: bool,
+                     in_blockquote: bool|
+     -> TextStyle {
         if in_code_block {
             return TextStyle {
                 foreground: theme.code_fg,
                 background: None,
-                bold: false, dim: false, italic: false, underline: false,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
             };
         }
         if in_link {
             return TextStyle {
                 foreground: theme.link,
                 background: None,
-                bold: false, dim: false, italic: false, underline: true,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: true,
             };
         }
         if let Some(level) = heading {
@@ -318,8 +378,12 @@ pub fn render_markdown_preview(
             return TextStyle {
                 foreground: color,
                 background: None,
-                bold: true, dim: false,
-                italic: matches!(level, HeadingLevel::H4 | HeadingLevel::H5 | HeadingLevel::H6),
+                bold: true,
+                dim: false,
+                italic: matches!(
+                    level,
+                    HeadingLevel::H4 | HeadingLevel::H5 | HeadingLevel::H6
+                ),
                 underline: false,
             };
         }
@@ -327,34 +391,49 @@ pub fn render_markdown_preview(
             return TextStyle {
                 foreground: theme.blockquote,
                 background: None,
-                bold, dim: false, italic: true, underline: false,
+                bold,
+                dim: false,
+                italic: true,
+                underline: false,
             };
         }
         if bold && italic {
             return TextStyle {
                 foreground: theme.bold,
                 background: None,
-                bold: true, dim: false, italic: true, underline: false,
+                bold: true,
+                dim: false,
+                italic: true,
+                underline: false,
             };
         }
         if bold {
             return TextStyle {
                 foreground: theme.bold,
                 background: None,
-                bold: true, dim: false, italic: false, underline: false,
+                bold: true,
+                dim: false,
+                italic: false,
+                underline: false,
             };
         }
         if italic {
             return TextStyle {
                 foreground: theme.italic,
                 background: None,
-                bold: false, dim: false, italic: true, underline: false,
+                bold: false,
+                dim: false,
+                italic: true,
+                underline: false,
             };
         }
         TextStyle {
             foreground: theme.body,
             background: None,
-            bold: false, dim: false, italic: false, underline: false,
+            bold: false,
+            dim: false,
+            italic: false,
+            underline: false,
         }
     };
 
@@ -400,7 +479,15 @@ pub fn render_markdown_preview(
                     if !result.is_empty() {
                         push_empty_line(&mut result);
                     }
-                    render_table(&table_rows, &table_alignments, header_count, theme, indent, effective_width, &mut result);
+                    render_table(
+                        &table_rows,
+                        &table_alignments,
+                        header_count,
+                        theme,
+                        indent,
+                        effective_width,
+                        &mut result,
+                    );
                     push_empty_line(&mut result);
                     in_table = false;
                     table_rows.clear();
@@ -436,12 +523,22 @@ pub fn render_markdown_preview(
                 }
             }
             Event::End(TagEnd::Heading(_)) => {
-                flush_line(&mut current_spans, &current_bg, &mut result, &mut current_col);
+                flush_line(
+                    &mut current_spans,
+                    &current_bg,
+                    &mut result,
+                    &mut current_col,
+                );
                 heading_level = None;
             }
             Event::Start(Tag::Paragraph) => {}
             Event::End(TagEnd::Paragraph) => {
-                flush_line(&mut current_spans, &current_bg, &mut result, &mut current_col);
+                flush_line(
+                    &mut current_spans,
+                    &current_bg,
+                    &mut result,
+                    &mut current_col,
+                );
                 // Don't push blank line inside list items (loose lists wrap content
                 // in paragraphs, but the extra spacing looks wrong in a terminal).
                 if list_depth == 0 {
@@ -453,7 +550,12 @@ pub fn render_markdown_preview(
             }
             Event::End(TagEnd::BlockQuote(_)) => {
                 if !current_spans.is_empty() {
-                    flush_line(&mut current_spans, &current_bg, &mut result, &mut current_col);
+                    flush_line(
+                        &mut current_spans,
+                        &current_bg,
+                        &mut result,
+                        &mut current_col,
+                    );
                 }
                 in_blockquote = false;
                 push_empty_line(&mut result);
@@ -472,7 +574,10 @@ pub fn render_markdown_preview(
                         style: TextStyle {
                             foreground: theme.body,
                             background: None,
-                            bold: false, dim: false, italic: false, underline: false,
+                            bold: false,
+                            dim: false,
+                            italic: false,
+                            underline: false,
                         },
                     }],
                     bg_color: current_bg,
@@ -486,16 +591,29 @@ pub fn render_markdown_preview(
                             style: TextStyle {
                                 foreground: theme.blockquote,
                                 background: None,
-                                bold: false, dim: true, italic: true, underline: false,
+                                bold: false,
+                                dim: true,
+                                italic: true,
+                                underline: false,
                             },
                         });
-                        flush_line(&mut current_spans, &current_bg, &mut result, &mut current_col);
+                        flush_line(
+                            &mut current_spans,
+                            &current_bg,
+                            &mut result,
+                            &mut current_col,
+                        );
                     }
                 }
             }
             Event::End(TagEnd::CodeBlock) => {
                 if !current_spans.is_empty() {
-                    flush_line(&mut current_spans, &current_bg, &mut result, &mut current_col);
+                    flush_line(
+                        &mut current_spans,
+                        &current_bg,
+                        &mut result,
+                        &mut current_col,
+                    );
                 }
                 // Bottom padding line with bg
                 result.push(PreviewLine {
@@ -504,7 +622,10 @@ pub fn render_markdown_preview(
                         style: TextStyle {
                             foreground: theme.body,
                             background: None,
-                            bold: false, dim: false, italic: false, underline: false,
+                            bold: false,
+                            dim: false,
+                            italic: false,
+                            underline: false,
                         },
                     }],
                     bg_color: current_bg,
@@ -523,7 +644,12 @@ pub fn render_markdown_preview(
             }
             Event::End(TagEnd::List(_)) => {
                 if !current_spans.is_empty() {
-                    flush_line(&mut current_spans, &current_bg, &mut result, &mut current_col);
+                    flush_line(
+                        &mut current_spans,
+                        &current_bg,
+                        &mut result,
+                        &mut current_col,
+                    );
                 }
                 list_depth = list_depth.saturating_sub(1);
                 ordered_counters.pop();
@@ -548,7 +674,12 @@ pub fn render_markdown_preview(
             }
             Event::End(TagEnd::Item) => {
                 if !current_spans.is_empty() {
-                    flush_line(&mut current_spans, &current_bg, &mut result, &mut current_col);
+                    flush_line(
+                        &mut current_spans,
+                        &current_bg,
+                        &mut result,
+                        &mut current_col,
+                    );
                 }
             }
             Event::Start(Tag::Emphasis) => {
@@ -581,7 +712,10 @@ pub fn render_markdown_preview(
                         style: TextStyle {
                             foreground: theme.list_marker,
                             background: None,
-                            bold: false, dim: false, italic: false, underline: false,
+                            bold: false,
+                            dim: false,
+                            italic: false,
+                            underline: false,
                         },
                     });
                     current_col += mw;
@@ -590,7 +724,15 @@ pub fn render_markdown_preview(
                     0
                 };
 
-                let style = style_for(theme, &heading_level, bold, italic, in_link, in_code_block, in_blockquote);
+                let style = style_for(
+                    theme,
+                    &heading_level,
+                    bold,
+                    italic,
+                    in_link,
+                    in_code_block,
+                    in_blockquote,
+                );
 
                 if in_code_block {
                     // Code blocks: render line by line, no word wrapping.
@@ -600,7 +742,12 @@ pub fn render_markdown_preview(
                     for (li, line) in code_lines.iter().enumerate() {
                         // Flush previous code line if there's content accumulated
                         if current_col > 0 {
-                            flush_line(&mut current_spans, &current_bg, &mut result, &mut current_col);
+                            flush_line(
+                                &mut current_spans,
+                                &current_bg,
+                                &mut result,
+                                &mut current_col,
+                            );
                         }
                         if !line.is_empty() {
                             let padded = format!(" {}", line);
@@ -617,7 +764,10 @@ pub fn render_markdown_preview(
                                     style: TextStyle {
                                         foreground: theme.body,
                                         background: None,
-                                        bold: false, dim: false, italic: false, underline: false,
+                                        bold: false,
+                                        dim: false,
+                                        italic: false,
+                                        underline: false,
                                     },
                                 }],
                                 bg_color: current_bg,
@@ -635,7 +785,10 @@ pub fn render_markdown_preview(
                             style: TextStyle {
                                 foreground: theme.blockquote,
                                 background: None,
-                                bold: false, dim: false, italic: false, underline: false,
+                                bold: false,
+                                dim: false,
+                                italic: false,
+                                underline: false,
                             },
                         });
                         current_col += prefix_len;
@@ -647,15 +800,26 @@ pub fn render_markdown_preview(
                     for word in text.split_inclusive(char::is_whitespace) {
                         let word_len = word.width();
                         // If word fits after wrapping to a new line, do a simple word wrap
-                        if current_col + word_len > effective_width && current_col > wrap_min && word_len <= effective_width {
-                            flush_line(&mut current_spans, &current_bg, &mut result, &mut current_col);
+                        if current_col + word_len > effective_width
+                            && current_col > wrap_min
+                            && word_len <= effective_width
+                        {
+                            flush_line(
+                                &mut current_spans,
+                                &current_bg,
+                                &mut result,
+                                &mut current_col,
+                            );
                             if !blockquote_prefix.is_empty() {
                                 current_spans.push(StyledSpan {
                                     text: blockquote_prefix.to_string(),
                                     style: TextStyle {
                                         foreground: theme.blockquote,
                                         background: None,
-                                        bold: false, dim: false, italic: false, underline: false,
+                                        bold: false,
+                                        dim: false,
+                                        italic: false,
+                                        underline: false,
                                     },
                                 });
                                 current_col += prefix_len;
@@ -673,17 +837,28 @@ pub fn render_markdown_preview(
                                 if current_col + ch_w > effective_width && current_col > wrap_min {
                                     // Flush accumulated chars
                                     if !char_buf.is_empty() {
-                                        current_spans.push(StyledSpan { text: char_buf.clone(), style });
+                                        current_spans.push(StyledSpan {
+                                            text: char_buf.clone(),
+                                            style,
+                                        });
                                         char_buf.clear();
                                     }
-                                    flush_line(&mut current_spans, &current_bg, &mut result, &mut current_col);
+                                    flush_line(
+                                        &mut current_spans,
+                                        &current_bg,
+                                        &mut result,
+                                        &mut current_col,
+                                    );
                                     if !blockquote_prefix.is_empty() {
                                         current_spans.push(StyledSpan {
                                             text: blockquote_prefix.to_string(),
                                             style: TextStyle {
                                                 foreground: theme.blockquote,
                                                 background: None,
-                                                bold: false, dim: false, italic: false, underline: false,
+                                                bold: false,
+                                                dim: false,
+                                                italic: false,
+                                                underline: false,
                                             },
                                         });
                                         current_col += prefix_len;
@@ -693,7 +868,10 @@ pub fn render_markdown_preview(
                                 current_col += ch_w;
                             }
                             if !char_buf.is_empty() {
-                                current_spans.push(StyledSpan { text: char_buf, style });
+                                current_spans.push(StyledSpan {
+                                    text: char_buf,
+                                    style,
+                                });
                             }
                         } else {
                             // Word fits on current line
@@ -716,7 +894,10 @@ pub fn render_markdown_preview(
                         style: TextStyle {
                             foreground: theme.list_marker,
                             background: None,
-                            bold: false, dim: false, italic: false, underline: false,
+                            bold: false,
+                            dim: false,
+                            italic: false,
+                            underline: false,
                         },
                     });
                     current_col += marker.width();
@@ -724,15 +905,26 @@ pub fn render_markdown_preview(
                 let code_text = format!(" {} ", code);
                 let code_len = code_text.width();
                 // Don't wrap inline code away from a list marker that was just placed
-                if current_col + code_len > effective_width && current_col > 0 && !just_placed_marker {
-                    flush_line(&mut current_spans, &current_bg, &mut result, &mut current_col);
+                if current_col + code_len > effective_width
+                    && current_col > 0
+                    && !just_placed_marker
+                {
+                    flush_line(
+                        &mut current_spans,
+                        &current_bg,
+                        &mut result,
+                        &mut current_col,
+                    );
                 }
                 current_spans.push(StyledSpan {
                     text: code_text,
                     style: TextStyle {
                         foreground: theme.code_fg,
                         background: Some(theme.code_bg),
-                        bold: false, dim: false, italic: false, underline: false,
+                        bold: false,
+                        dim: false,
+                        italic: false,
+                        underline: false,
                     },
                 });
                 current_col += code_len;
@@ -741,16 +933,34 @@ pub fn render_markdown_preview(
                 // Treat soft breaks as spaces (markdown paragraph continuation)
                 current_spans.push(StyledSpan {
                     text: " ".to_string(),
-                    style: style_for(theme, &heading_level, bold, italic, in_link, in_code_block, in_blockquote),
+                    style: style_for(
+                        theme,
+                        &heading_level,
+                        bold,
+                        italic,
+                        in_link,
+                        in_code_block,
+                        in_blockquote,
+                    ),
                 });
                 current_col += 1;
             }
             Event::HardBreak => {
-                flush_line(&mut current_spans, &current_bg, &mut result, &mut current_col);
+                flush_line(
+                    &mut current_spans,
+                    &current_bg,
+                    &mut result,
+                    &mut current_col,
+                );
             }
             Event::Rule => {
                 if !current_spans.is_empty() {
-                    flush_line(&mut current_spans, &current_bg, &mut result, &mut current_col);
+                    flush_line(
+                        &mut current_spans,
+                        &current_bg,
+                        &mut result,
+                        &mut current_col,
+                    );
                 }
                 let rule_len = effective_width.min(60);
                 result.push(PreviewLine {
@@ -760,7 +970,10 @@ pub fn render_markdown_preview(
                             style: TextStyle {
                                 foreground: theme.body,
                                 background: None,
-                                bold: false, dim: false, italic: false, underline: false,
+                                bold: false,
+                                dim: false,
+                                italic: false,
+                                underline: false,
                             },
                         },
                         StyledSpan {
@@ -768,7 +981,10 @@ pub fn render_markdown_preview(
                             style: TextStyle {
                                 foreground: theme.rule,
                                 background: None,
-                                bold: false, dim: false, italic: false, underline: false,
+                                bold: false,
+                                dim: false,
+                                italic: false,
+                                underline: false,
                             },
                         },
                     ],
@@ -783,7 +999,12 @@ pub fn render_markdown_preview(
 
     // Flush any remaining content
     if !current_spans.is_empty() {
-        flush_line(&mut current_spans, &current_bg, &mut result, &mut current_col);
+        flush_line(
+            &mut current_spans,
+            &current_bg,
+            &mut result,
+            &mut current_col,
+        );
     }
 
     result
@@ -807,7 +1028,7 @@ pub enum MdElementKind {
     Strikethrough,
 
     // Block elements — syntax always visible, styled
-    Heading(u8),  // level 1–6
+    Heading(u8), // level 1–6
     CodeBlock,
     BlockQuote,
     ListItem,
@@ -881,7 +1102,7 @@ struct PendingElement {
 impl LivePreviewMap {
     /// Build a `LivePreviewMap` from buffer lines using pulldown_cmark's offset iterator.
     pub fn build(lines: &[String]) -> Self {
-        use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd, HeadingLevel};
+        use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
         let source: String = lines.join("\n");
         let line_starts = build_line_starts(&source);

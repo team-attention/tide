@@ -4,36 +4,36 @@
 // layout engine, input router, file tree, and CWD following.
 
 // ── Module declarations ──
-mod domain;
-mod application;
 mod adapter;
-mod theme;
 mod app;
+mod application;
+mod domain;
 mod layout_compute;
+mod theme;
 
 // ── Absorbed crate aliases (use tide_X:: paths still work) ──
-pub(crate) use domain::core_types as tide_core;
-pub(crate) use domain::terminal as tide_terminal;
-pub(crate) use domain::editor as tide_editor;
-pub(crate) use domain::layout as tide_layout;
-pub(crate) use domain::input as tide_input;
-pub(crate) use domain::tree as tide_tree;
-pub(crate) use adapter::outward::renderer_adapter as tide_renderer;
-pub(crate) use adapter::outward::platform_adapter as tide_platform;
 pub(crate) use adapter::outward::lsp_adapter as tide_lsp;
+pub(crate) use adapter::outward::platform_adapter as tide_platform;
+pub(crate) use adapter::outward::renderer_adapter as tide_renderer;
+pub(crate) use domain::core_types as tide_core;
+pub(crate) use domain::editor as tide_editor;
+pub(crate) use domain::input as tide_input;
+pub(crate) use domain::layout as tide_layout;
+pub(crate) use domain::terminal as tide_terminal;
+pub(crate) use domain::tree as tide_tree;
 
 // ── Facade re-exports (preserve existing crate-internal paths) ──
-pub(crate) use domain::state;
-pub(crate) use domain::pane;
-pub(crate) use application as action;
 pub(crate) use adapter::inward::event_loop_adapter as event_loop;
-pub(crate) use application::services as update;
 pub(crate) use adapter::outward::view as rendering;
+pub(crate) use application as action;
+pub(crate) use application::services as update;
+pub(crate) use domain::pane;
+pub(crate) use domain::state;
 pub(crate) use rendering::header;
 pub(crate) use rendering::ui;
 
-pub(crate) use state::*;
 pub(crate) use application::ports::*;
+pub(crate) use state::*;
 pub(crate) use update::workspace_infra_service::{Workspace, WorkspaceExtras};
 
 pub(crate) use app::App;
@@ -127,6 +127,7 @@ fn main() {
 
     // ── App setup ────────────────────────────────────────────────────
     let mut app = App::new();
+    app.queue_notification_permission_request_if_auto_integration_enabled();
     // Store gateway status
     if let Some(ref server) = _gateway_server {
         app.gateway.listening = true;

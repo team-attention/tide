@@ -1,6 +1,8 @@
 // Cursor management for the editor.
 
-use super::buffer::{floor_char_boundary, word_boundary_left, word_boundary_right, Buffer, Position};
+use super::buffer::{
+    floor_char_boundary, word_boundary_left, word_boundary_right, Buffer, Position,
+};
 
 pub struct EditorCursor {
     pub position: Position,
@@ -114,7 +116,10 @@ impl EditorCursor {
     pub fn move_doc_end(&mut self, buffer: &Buffer) {
         let last_line = buffer.line_count().saturating_sub(1);
         let last_col = buffer.line(last_line).map_or(0, |l| l.len());
-        self.position = Position { line: last_line, col: last_col };
+        self.position = Position {
+            line: last_line,
+            col: last_col,
+        };
         self.desired_col = last_col;
     }
 

@@ -24,11 +24,15 @@ impl Node {
         match self {
             Node::Leaf(_) => None,
             Node::LeafGroup(tg) => {
-                if tg.contains(pane) { Some(tg) } else { None }
+                if tg.contains(pane) {
+                    Some(tg)
+                } else {
+                    None
+                }
             }
-            Node::Split { left, right, .. } => {
-                left.find_tab_group(pane).or_else(|| right.find_tab_group(pane))
-            }
+            Node::Split { left, right, .. } => left
+                .find_tab_group(pane)
+                .or_else(|| right.find_tab_group(pane)),
         }
     }
 
@@ -45,7 +49,11 @@ impl Node {
             Node::Leaf(id) if *id == target => {
                 let original = Node::Leaf(*id);
                 let new_leaf = Node::LeafGroup(TabGroup::single(new_id));
-                let (l, r) = if insert_first { (new_leaf, original) } else { (original, new_leaf) };
+                let (l, r) = if insert_first {
+                    (new_leaf, original)
+                } else {
+                    (original, new_leaf)
+                };
                 *self = Node::Split {
                     direction,
                     ratio: 0.5,
@@ -58,7 +66,11 @@ impl Node {
             Node::LeafGroup(tg) if tg.contains(target) => {
                 let original = Node::LeafGroup(tg.clone());
                 let new_leaf = Node::LeafGroup(TabGroup::single(new_id));
-                let (l, r) = if insert_first { (new_leaf, original) } else { (original, new_leaf) };
+                let (l, r) = if insert_first {
+                    (new_leaf, original)
+                } else {
+                    (original, new_leaf)
+                };
                 *self = Node::Split {
                     direction,
                     ratio: 0.5,
@@ -68,7 +80,13 @@ impl Node {
                 true
             }
             Node::LeafGroup(_) => false,
-            Node::Split { direction: dir, ratio, left, right, .. } => {
+            Node::Split {
+                direction: dir,
+                ratio,
+                left,
+                right,
+                ..
+            } => {
                 if left.split_pane_as_group(target, new_id, direction, insert_first) {
                     if *dir == direction {
                         let n_left = left.count_chain_leaves(*dir);
@@ -152,9 +170,12 @@ impl Node {
     pub(crate) fn count_chain_leaves(&self, dir: SplitDirection) -> usize {
         match self {
             Node::Leaf(_) | Node::LeafGroup(_) => 1,
-            Node::Split { direction, left, right, .. } if *direction == dir => {
-                left.count_chain_leaves(dir) + right.count_chain_leaves(dir)
-            }
+            Node::Split {
+                direction,
+                left,
+                right,
+                ..
+            } if *direction == dir => left.count_chain_leaves(dir) + right.count_chain_leaves(dir),
             _ => 1,
         }
     }
@@ -195,7 +216,13 @@ impl Node {
                 true
             }
             Node::LeafGroup(_) => false,
-            Node::Split { direction: dir, ratio, left, right, .. } => {
+            Node::Split {
+                direction: dir,
+                ratio,
+                left,
+                right,
+                ..
+            } => {
                 if left.split_pane(target, new_id, direction) {
                     if *dir == direction {
                         let n_left = left.count_chain_leaves(*dir);
@@ -244,7 +271,12 @@ impl Node {
                 }
             }
             Node::LeafGroup(_) => None,
-            Node::Split { direction, ratio, left, right } => {
+            Node::Split {
+                direction,
+                ratio,
+                left,
+                right,
+            } => {
                 let dir = *direction;
 
                 // Try removing from left child
@@ -391,12 +423,8 @@ impl Node {
             if path.is_empty() {
                 // This is the target split node. Update its ratio.
                 let new_ratio = match direction {
-                    SplitDirection::Horizontal => {
-                        (position.x - rect.x) / rect.width
-                    }
-                    SplitDirection::Vertical => {
-                        (position.y - rect.y) / rect.height
-                    }
+                    SplitDirection::Horizontal => (position.x - rect.x) / rect.width,
+                    SplitDirection::Vertical => (position.y - rect.y) / rect.height,
                 };
                 *ratio = new_ratio.clamp(min_ratio, 1.0 - min_ratio);
             } else {
@@ -443,7 +471,10 @@ impl Node {
     /// Set the ratio of the split node whose immediate child contains the given pane.
     /// Returns true if the ratio was set.
     pub(crate) fn set_parent_ratio(&mut self, pane: PaneId, new_ratio: f32) -> bool {
-        if let Node::Split { ratio, left, right, .. } = self {
+        if let Node::Split {
+            ratio, left, right, ..
+        } = self
+        {
             let in_left = left.contains(pane);
             let in_right = right.contains(pane);
             if in_left || in_right {
@@ -590,7 +621,13 @@ impl Node {
                 true
             }
             Node::LeafGroup(_) => false,
-            Node::Split { direction: dir, ratio, left, right, .. } => {
+            Node::Split {
+                direction: dir,
+                ratio,
+                left,
+                right,
+                ..
+            } => {
                 if left.insert_pane_at(target, new_pane, direction, insert_first) {
                     if *dir == direction {
                         let n_left = left.count_chain_leaves(*dir);
@@ -625,7 +662,12 @@ impl Node {
         match self {
             Node::Leaf(id) => (*id == pane, None),
             Node::LeafGroup(tg) => (tg.contains(pane), None),
-            Node::Split { direction, left, right, .. } => {
+            Node::Split {
+                direction,
+                left,
+                right,
+                ..
+            } => {
                 // Check left subtree
                 let (found_left, neighbor) = left.find_right_neighbor_impl(pane);
                 if found_left {
@@ -835,8 +877,10 @@ pub(crate) fn min_ratio_for_direction(
             if rect.height < 1.0 {
                 return 0.1;
             }
-            let min_tiling_h =
-                MIN_ROWS * cell_size.height + half_gap + decorations.tab_bar_height + decorations.padding;
+            let min_tiling_h = MIN_ROWS * cell_size.height
+                + half_gap
+                + decorations.tab_bar_height
+                + decorations.padding;
             (min_tiling_h / rect.height).clamp(0.05, 0.45)
         }
     }

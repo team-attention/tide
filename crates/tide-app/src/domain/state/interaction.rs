@@ -1,9 +1,9 @@
 // InteractionState — mouse/drag/scroll interaction state.
 
+use super::drag_types::{HoverTarget, PaneDragState};
+use crate::tide_core::{PaneId, Rect};
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
-use crate::tide_core::{PaneId, Rect};
-use super::drag_types::{PaneDragState, HoverTarget};
 
 pub(crate) struct InteractionState {
     pub pane_drag: PaneDragState,

@@ -7,6 +7,8 @@ pub mod webview;
 mod window;
 
 pub use app::MacosApp;
+#[cfg(test)]
+pub(crate) use window::foreground_notification_presentation_options;
 
 use std::cell::RefCell;
 use std::rc::Rc;

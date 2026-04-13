@@ -7,6 +7,7 @@ use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
 use crate::state::FocusArea;
 use crate::tide_core::{LayoutEngine, SplitDirection};
+use crate::tide_platform::WindowProxy;
 use crate::App;
 use crate::GatewayPort;
 
@@ -55,6 +56,11 @@ fn app_with_terminal() -> (App, u64) {
     app.focus.focus_area = FocusArea::Stage;
     app.focus.stage_focused = Some(id);
     (app, id)
+}
+
+fn test_window_proxy() -> WindowProxy {
+    let (tx, _rx) = std::sync::mpsc::channel();
+    WindowProxy::new(tx, std::sync::Arc::new(|| {}))
 }
 
 // --- UC-1: ListPanes ---
@@ -1349,6 +1355,86 @@ fn wrapper_scripts_are_generated_at_known_path() {
     assert!(expected_dir.contains(&format!("tide-{}-bin", pid)));
 }
 
+#[test]
+fn codex_wrapper_injects_tide_mcp_turn_complete_notify_and_prompt_submit_hook() {
+    // UC-4 BR-7: The Codex wrapper injects Tide MCP server config from the checked-in script.
+    // UC-4 BR-8: The Codex wrapper reports agent-running on launch.
+    // Spec: docs/specs/codex-needs-input-attention.md
+    // UC-1 BR-1: Codex agent-running is emitted on each UserPromptSubmit, not just on launch.
+    // UC-1 BR-2: Codex prompt-submit integration uses the documented UserPromptSubmit hook path.
+    // UC-2 BR-3: The Codex wrapper forwards the completed-turn payload through Codex notify config.
+    // UC-3 BR-7: The Codex wrapper does not depend on a Notification hook.
+    let wrapper_path = format!("{}/resources/bin/codex", env!("CARGO_MANIFEST_DIR"));
+    let wrapper = std::fs::read_to_string(&wrapper_path)
+        .unwrap_or_else(|err| panic!("failed to read {wrapper_path}: {err}"));
+
+    assert!(wrapper.contains("mcp_servers.tide.command"));
+    assert!(wrapper.contains("mcp_servers.tide.args"));
+    assert!(wrapper.contains("tide_notify \"agent-running\""));
+    assert!(wrapper.contains("features.codex_hooks=true"));
+    assert!(wrapper.contains("\"UserPromptSubmit\""));
+    assert!(wrapper.contains("$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent codex"));
+    assert!(
+        wrapper.contains("notify=[\\\"$TIDE_BIN\\\",\\\"notify\\\",\\\"codex-turn-complete\\\"")
+    );
+    assert!(wrapper.contains("tide_notify \"agent-idle\""));
+    assert!(wrapper.contains("rm -rf \"$TIDE_CODEX_HOME\""));
+    assert!(wrapper.contains("tide:wrapped-agent:codex:$1"));
+    assert!(!wrapper.contains("\"Notification\""));
+    assert!(!wrapper.contains("agent-needs-input"));
+}
+
+#[test]
+fn codex_prompt_submit_hook_reports_running_for_each_new_turn() {
+    // Spec: docs/specs/codex-needs-input-attention.md
+    // UC-1 BR-1: Codex UserPromptSubmit returns the source Pane to Running for each new turn.
+    let (mut app, pane_id) = app_with_terminal();
+    app.gateway.detected_agents.insert(
+        pane_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Codex",
+            pid: 12345,
+            wrapper_managed: true,
+            gateway_connected: true,
+            status: None,
+        },
+    );
+
+    app.handle_cli_command(
+        "notify",
+        json!({"event": "agent-running", "pane": pane_id, "agent": "codex"}),
+    )
+    .unwrap();
+
+    assert_eq!(
+        app.gateway.detected_agents.get(&pane_id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
+
+    app.gateway
+        .detected_agents
+        .get_mut(&pane_id)
+        .unwrap()
+        .status = Some(crate::state::gateway_status::AgentStatus::Idle);
+    app.acknowledge_agent_attention(pane_id);
+
+    assert_eq!(
+        app.gateway.detected_agents.get(&pane_id).unwrap().status,
+        None
+    );
+
+    app.handle_cli_command(
+        "notify",
+        json!({"event": "agent-running", "pane": pane_id, "agent": "codex"}),
+    )
+    .unwrap();
+
+    assert_eq!(
+        app.gateway.detected_agents.get(&pane_id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
+}
+
 // --- Unknown method ---
 
 #[test]
@@ -1378,6 +1464,50 @@ fn toggle_auto_integration_flips_setting() {
     assert!(!app.settings.auto_integration);
     app.toggle_auto_integration();
     assert!(app.settings.auto_integration);
+}
+
+#[test]
+fn auto_integration_bootstrap_requests_notification_permission_when_enabled() {
+    // UC-5 BR-1: Startup proactively requests notification permission when persisted auto-integration is enabled.
+    let mut app = test_app();
+    app.pending_platform_commands.clear();
+
+    app.queue_notification_permission_request_if_auto_integration_enabled();
+
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::RequestNotificationPermission)
+    ));
+}
+
+#[test]
+fn enabling_auto_integration_requests_notification_permission() {
+    // UC-5 BR-2: Toggling auto-integration on queues a proactive notification-permission request.
+    let (mut app, _id) = app_with_editor();
+    app.pending_platform_commands.clear();
+
+    app.toggle_auto_integration();
+    assert!(!app.settings.auto_integration);
+    assert!(app.pending_platform_commands.is_empty());
+
+    app.toggle_auto_integration();
+    assert!(app.settings.auto_integration);
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::RequestNotificationPermission)
+    ));
+}
+
+#[test]
+fn disabling_auto_integration_does_not_request_notification_permission() {
+    // UC-5 BR-3: Toggling auto-integration off does not queue a permission request.
+    let (mut app, _id) = app_with_editor();
+    app.pending_platform_commands.clear();
+
+    app.toggle_auto_integration();
+
+    assert!(!app.settings.auto_integration);
+    assert!(app.pending_platform_commands.is_empty());
 }
 
 // --- UC-4: RemoveGatewayModal ---
@@ -1444,6 +1574,48 @@ fn osc9_agent_idle_updates_status() {
 }
 
 #[test]
+fn wrapped_agent_osc9_auto_registers_and_requests_redraw() {
+    // UC-2 BR-4,5,6: Wrapped-agent OSC 9 registers a Wrapped Agent and invalidates chrome immediately.
+    let (mut app, id) = app_with_editor();
+    app.cache.needs_redraw = false;
+    let gen_before = app.cache.chrome_generation;
+
+    app.handle_terminal_notification(id, "tide:wrapped-agent:codex:agent-idle");
+
+    let agent = app.gateway.detected_agents.get(&id).unwrap();
+    assert_eq!(agent.name, "Codex");
+    assert!(agent.wrapper_managed);
+    assert_eq!(
+        agent.status,
+        Some(crate::state::gateway_status::AgentStatus::Idle)
+    );
+    assert!(app.cache.chrome_generation > gen_before);
+    assert!(app.cache.needs_redraw);
+}
+
+#[test]
+fn wrapped_agent_osc9_broadcasts_agent_status_changed_event() {
+    // UC-2 BR-4,5,6: Wrapped-agent OSC 9 drives the same subscriber event as the CLI notify path.
+    let (mut app, id) = app_with_editor();
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    app.gateway
+        .subscribers
+        .push(crate::state::gateway_status::Subscriber {
+            tx,
+            event_filter: vec!["agent-status-changed".into()],
+            owner_pane_id: None,
+        });
+
+    app.handle_terminal_notification(id, "tide:wrapped-agent:codex:agent-needs-input");
+
+    let msg = rx.try_recv().unwrap();
+    assert!(msg.contains("agent-status-changed"));
+    assert!(msg.contains("\"pane_id\":1") || msg.contains(&format!("\"pane_id\":{}", id)));
+    assert!(msg.contains("agent-needs-input"));
+    assert!(msg.contains("Codex"));
+}
+
+#[test]
 fn osc9_unknown_tide_message_ignored() {
     // UC-2 BR-4: Unknown tide: messages are ignored (no crash, no status change)
     let (mut app, id) = app_with_detected_agent();
@@ -1501,6 +1673,84 @@ fn focusing_pane_clears_idle_status() {
     assert_eq!(app.gateway.detected_agents.get(&id).unwrap().status, None);
 }
 
+#[test]
+fn focusing_associated_pane_does_not_clear_paired_terminal_attention() {
+    // UC-7 BR-22: Focusing a non-terminal Pane that has an Associated Terminal does not clear the wrapped-agent Terminal alert.
+    use crate::FocusNavPort;
+
+    let (mut app, terminal_id) = app_with_terminal();
+    let editor_id = app.layout.split(terminal_id, SplitDirection::Horizontal);
+    app.panes.insert(
+        editor_id,
+        PaneKind::Editor(EditorPane::new_empty(editor_id)),
+    );
+    app.assoc.associated_terminal.insert(editor_id, terminal_id);
+    app.gateway.detected_agents.insert(
+        terminal_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Codex",
+            pid: 42,
+            wrapper_managed: true,
+            gateway_connected: true,
+            status: Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+        },
+    );
+    app.notified_panes.insert(terminal_id);
+    app.focus.focused = Some(terminal_id);
+
+    app.focus_pane(editor_id);
+
+    assert_eq!(
+        app.gateway
+            .detected_agents
+            .get(&terminal_id)
+            .unwrap()
+            .status,
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
+    assert!(app.notified_panes.contains(&terminal_id));
+}
+
+#[test]
+fn focusing_terminal_clears_wrapped_agent_attention() {
+    // UC-3 BR-8: Focusing the wrapped-agent Terminal acknowledges its pending attention.
+    use crate::WorkspaceNavPort;
+
+    let (mut app, first_terminal_id) = app_with_terminal();
+    let second_terminal_id = app
+        .layout
+        .split(first_terminal_id, SplitDirection::Horizontal);
+    let second_terminal = TerminalPane::with_cwd(second_terminal_id, 80, 24, None, true).unwrap();
+    app.panes
+        .insert(second_terminal_id, PaneKind::Terminal(second_terminal));
+    app.focus.focused = Some(second_terminal_id);
+    app.focus.stage_focused = Some(second_terminal_id);
+
+    app.gateway.detected_agents.insert(
+        first_terminal_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Codex",
+            pid: 42,
+            wrapper_managed: true,
+            gateway_connected: true,
+            status: Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+        },
+    );
+    app.notified_panes.insert(first_terminal_id);
+
+    app.focus_terminal(first_terminal_id);
+
+    assert_eq!(
+        app.gateway
+            .detected_agents
+            .get(&first_terminal_id)
+            .unwrap()
+            .status,
+        None
+    );
+    assert!(!app.notified_panes.contains(&first_terminal_id));
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Spec: docs/specs/agent-notification-routing.md
 // ────────────────────────────────────────────────────────────────────────────
@@ -1537,14 +1787,146 @@ fn running_status_does_not_trigger_notification_routing() {
 }
 
 #[test]
-fn focused_pane_skips_all_notification_channels() {
-    // UC-1 BR-2: If the pane is focused, all notification channels are skipped
+fn running_status_clears_inactive_workspace_highlight_when_no_pending_attention_remains() {
+    // UC-1 BR-4: Inactive-Workspace attention is recomputed on Running transitions too.
+    use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
+
+    let mut app = test_app();
+    let (layout, active_pane_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes.insert(
+        active_pane_id,
+        PaneKind::Editor(EditorPane::new_empty(active_pane_id)),
+    );
+    app.focus.focused = Some(active_pane_id);
+
+    let (mut inactive_layout, inactive_root_id) =
+        crate::tide_layout::SplitLayout::with_initial_pane();
+    let inactive_pane_id = inactive_layout.split(inactive_root_id, SplitDirection::Horizontal);
+    let inactive_root = TerminalPane::with_cwd(inactive_root_id, 80, 24, None, true).unwrap();
+    let inactive_terminal = TerminalPane::with_cwd(inactive_pane_id, 80, 24, None, true).unwrap();
+    let mut inactive_panes = std::collections::HashMap::new();
+    inactive_panes.insert(inactive_root_id, PaneKind::Terminal(inactive_root));
+    inactive_panes.insert(inactive_pane_id, PaneKind::Terminal(inactive_terminal));
+
+    app.ws.workspaces.push(Workspace {
+        name: "WS1".into(),
+        layout: crate::tide_layout::SplitLayout::new(),
+        focused: None,
+        panes: std::collections::HashMap::new(),
+    });
+    app.ws.workspaces.push(Workspace {
+        name: "WS2".into(),
+        layout: inactive_layout,
+        focused: None,
+        panes: inactive_panes,
+    });
+    app.ws.workspace_extras.push(WorkspaceExtras::new());
+    let mut inactive_extras = WorkspaceExtras::new();
+    inactive_extras.has_agent_notification = true;
+    app.ws.workspace_extras.push(inactive_extras);
+    app.ws.active = 0;
+    app.window.is_focused = false;
+
+    app.gateway.detected_agents.insert(
+        inactive_pane_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Codex",
+            pid: 12345,
+            wrapper_managed: true,
+            gateway_connected: true,
+            status: Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+        },
+    );
+
+    app.handle_terminal_notification(inactive_pane_id, "tide:agent-running");
+
+    assert_eq!(
+        app.gateway
+            .detected_agents
+            .get(&inactive_pane_id)
+            .unwrap()
+            .status,
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
+    assert!(
+        !app.ws.workspace_extras[1].has_agent_notification,
+        "Running must clear stale inactive-Workspace highlight when no Idle or NeedsInput panes remain"
+    );
+    assert!(
+        app.pending_platform_commands.is_empty(),
+        "Running still must not emit background notification commands"
+    );
+    assert!(!app.notified_panes.contains(&inactive_pane_id));
+}
+
+#[test]
+fn background_notification_routes_for_focused_pane_when_window_is_unfocused() {
+    // UC-3 BR-9: Window blur still routes the macOS notification path for the focused Pane.
     let (mut app, agent_pane) = app_with_detected_agent();
     app.focus.focused = Some(agent_pane);
     app.window.is_focused = false;
     app.handle_terminal_notification(agent_pane, "tide:agent-needs-input");
-    // Even though window is unfocused, focused pane skips notifications
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, .. })
+            if *pane_id == agent_pane
+    ));
+    assert!(matches!(
+        app.pending_platform_commands.get(1),
+        Some(crate::tide_platform::WindowCommand::RequestUserAttention)
+    ));
+    assert!(app.notified_panes.contains(&agent_pane));
+}
+
+#[test]
+fn unfocused_wrapped_agent_terminal_routes_notification_while_window_is_focused() {
+    // UC-3 BR-11: A wrapped-agent Terminal that is not the focused Pane may queue macOS notification attention while the Tide window stays focused.
+    let (mut app, target_terminal_id) = app_with_terminal();
+    let focused_terminal_id = app
+        .layout
+        .split(target_terminal_id, SplitDirection::Horizontal);
+    let focused_terminal = TerminalPane::with_cwd(focused_terminal_id, 80, 24, None, true).unwrap();
+    app.panes
+        .insert(focused_terminal_id, PaneKind::Terminal(focused_terminal));
+    app.focus.focused = Some(focused_terminal_id);
+    app.focus.stage_focused = Some(focused_terminal_id);
+    app.window.is_focused = true;
+    app.gateway.detected_agents.insert(
+        target_terminal_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Codex",
+            pid: 12345,
+            wrapper_managed: true,
+            gateway_connected: true,
+            status: None,
+        },
+    );
+
+    app.handle_terminal_notification(target_terminal_id, "tide:agent-needs-input");
+
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, .. })
+            if *pane_id == target_terminal_id
+    ));
+    assert!(matches!(
+        app.pending_platform_commands.get(1),
+        Some(crate::tide_platform::WindowCommand::RequestUserAttention)
+    ));
+    assert!(app.notified_panes.contains(&target_terminal_id));
+}
+
+#[test]
+fn focused_pane_skips_background_notification_while_window_is_focused() {
+    // UC-3 BR-11: The active Pane skips background notification routing while the Tide window is focused.
+    let (mut app, agent_pane) = app_with_detected_agent();
+    app.focus.focused = Some(agent_pane);
+    app.window.is_focused = true;
+    app.handle_terminal_notification(agent_pane, "tide:agent-needs-input");
+
     assert!(app.pending_platform_commands.is_empty());
+    assert!(!app.notified_panes.contains(&agent_pane));
 }
 
 #[test]
@@ -1553,12 +1935,26 @@ fn background_notification_includes_foreground_dot() {
     let (mut app, agent_pane, _) = app_with_unfocused_agent();
     app.window.is_focused = false;
     app.handle_terminal_notification(agent_pane, "tide:agent-needs-input");
-    // System notification queued
-    assert!(!app.pending_platform_commands.is_empty());
+    // System notification queued with the source Pane target preserved for activation.
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, .. })
+            if *pane_id == agent_pane
+    ));
     // Agent status dot is also set (foreground indicator)
     assert_eq!(
         app.gateway.detected_agents.get(&agent_pane).unwrap().status,
         Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn foreground_notification_presentation_uses_banner_and_sound() {
+    // UC-3 BR-14: Frontmost Tide notifications still use banner-capable presentation options.
+    assert_eq!(
+        crate::tide_platform::macos::foreground_notification_presentation_options(),
+        0x12
     );
 }
 
@@ -1588,6 +1984,141 @@ fn duplicate_system_notification_suppressed_until_acknowledged() {
     assert!(!app.pending_platform_commands.is_empty());
 }
 
+// --- UC-2: ClassifyCodexCompletedTurns ---
+
+#[test]
+fn codex_completed_turn_payload_classifies_idle_or_needs_input() {
+    // UC-2 BR-6: Codex completed-turn payloads normalize to shared Idle or NeedsInput states.
+    let (mut app, pane_id) = app_with_editor();
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    app.gateway
+        .subscribers
+        .push(crate::state::gateway_status::Subscriber {
+            tx,
+            event_filter: vec!["agent-status-changed".into()],
+            owner_pane_id: None,
+        });
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "codex-turn-complete",
+            "pane": pane_id,
+            "agent": "codex",
+            "payload": {
+                "type": "agent-turn-complete",
+                "thread-id": "thread-1",
+                "turn-id": "turn-1",
+                "cwd": "/tmp/project",
+                "input-messages": ["Continue."],
+                "last-assistant-message": "what should i do next?"
+            }
+        }),
+    )
+    .unwrap();
+
+    let needs_input_event = rx.try_recv().unwrap();
+    assert!(needs_input_event.contains("agent-needs-input"));
+    assert!(needs_input_event.contains("Codex"));
+    assert_eq!(
+        app.gateway.detected_agents.get(&pane_id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "codex-turn-complete",
+            "pane": pane_id,
+            "agent": "codex",
+            "payload": {
+                "type": "agent-turn-complete",
+                "thread-id": "thread-2",
+                "turn-id": "turn-2",
+                "cwd": "/tmp/project",
+                "input-messages": ["Continue."],
+                "last-assistant-message": "rename complete and verified cargo build succeeds."
+            }
+        }),
+    )
+    .unwrap();
+
+    let idle_event = rx.try_recv().unwrap();
+    assert!(idle_event.contains("agent-idle"));
+    assert_eq!(
+        app.gateway.detected_agents.get(&pane_id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::Idle)
+    );
+}
+
+#[test]
+fn codex_completed_turn_payload_falls_back_to_idle_when_unclassified() {
+    // UC-2 BR-7: Unclassified Codex completed-turn payloads fail closed to Idle.
+    let (mut app, pane_id) = app_with_editor();
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    app.gateway
+        .subscribers
+        .push(crate::state::gateway_status::Subscriber {
+            tx,
+            event_filter: vec!["agent-status-changed".into()],
+            owner_pane_id: None,
+        });
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "codex-turn-complete",
+            "pane": pane_id,
+            "agent": "codex",
+            "payload": {
+                "type": "agent-turn-complete",
+                "thread-id": "thread-3",
+                "turn-id": "turn-3",
+                "cwd": "/tmp/project",
+                "input-messages": ["Continue."]
+            }
+        }),
+    )
+    .unwrap();
+
+    let idle_event = rx.try_recv().unwrap();
+    assert!(idle_event.contains("agent-idle"));
+    assert_eq!(
+        app.gateway.detected_agents.get(&pane_id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::Idle)
+    );
+}
+
+#[test]
+fn codex_unknown_notify_payload_does_not_map_to_needs_input() {
+    // UC-2 BR-8: Unknown Codex payloads must not synthesize NeedsInput.
+    let (mut app, pane_id) = app_with_editor();
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "codex-turn-complete",
+            "pane": pane_id,
+            "agent": "codex",
+            "payload": {
+                "type": "after-agent",
+                "thread-id": "thread-4",
+                "turn-id": "turn-4",
+                "cwd": "/tmp/project",
+                "input-messages": ["Continue."],
+                "last-assistant-message": "what would you like me to do next"
+            }
+        }),
+    )
+    .unwrap();
+
+    let agent = app.gateway.detected_agents.get(&pane_id).unwrap();
+    assert_eq!(agent.name, "Codex");
+    assert_eq!(
+        agent.status,
+        Some(crate::state::gateway_status::AgentStatus::Idle)
+    );
+}
+
 // --- UC-2: TrackWindowFocusState ---
 
 #[test]
@@ -1614,74 +2145,322 @@ fn needs_input_dot_blinks_when_unfocused() {
 }
 
 #[test]
-fn idle_dot_does_not_blink() {
-    // UC-5 BR-3: Running and Idle dots do not blink (static)
-    // Verify that blink is only applied for NeedsInput, not Idle
+fn idle_status_enters_the_same_alert_lifecycle_family() {
+    // UC-5 BR-3: Idle stays an alert lifecycle state after the wrapped agent finishes.
     let (mut app, agent_pane, _) = app_with_unfocused_agent();
     app.handle_terminal_notification(agent_pane, "tide:agent-idle");
-    // Idle status should not trigger needs_redraw for blink animation
-    // (needs_redraw may be set for other reasons, but route_agent_notification
-    //  only sets it for NeedsInput)
     let status = app.gateway.detected_agents.get(&agent_pane).unwrap().status;
     assert_eq!(
         status,
         Some(crate::state::gateway_status::AgentStatus::Idle)
     );
-    // No blink animation: only NeedsInput triggers continuous redraw
 }
 
-// --- UC-6: ShowWorkspaceSidebarDot ---
+// --- UC-6: ResolveAttentionOnWindowFocus ---
 
 #[test]
-fn active_workspace_has_no_sidebar_dot() {
-    // UC-6 BR-1: Do not show sidebar dot for the active workspace
+fn window_focus_acknowledges_attention_for_the_already_focused_pane() {
+    // UC-6 BR-19: Restoring window focus acknowledges the already-focused Pane.
+    // UC-6 BR-20: Restoring window focus clears notification suppression for that Pane.
+    use crate::adapter::inward::event_loop_adapter::handle_platform_event;
+
+    let (mut app, agent_pane) = app_with_detected_agent();
+    app.focus.focused = Some(agent_pane);
+    app.focus.focus_area = FocusArea::Stage;
+    app.window.is_focused = false;
+    app.gateway
+        .detected_agents
+        .get_mut(&agent_pane)
+        .unwrap()
+        .status = Some(crate::state::gateway_status::AgentStatus::NeedsInput);
+    app.notified_panes.insert(agent_pane);
+
+    handle_platform_event(
+        &mut app,
+        crate::tide_platform::PlatformEvent::Focused(true),
+        &test_window_proxy(),
+    );
+
+    assert!(app.window.is_focused);
+    assert_eq!(
+        app.gateway.detected_agents.get(&agent_pane).unwrap().status,
+        None
+    );
+    assert!(!app.notified_panes.contains(&agent_pane));
+}
+
+#[test]
+fn workspace_notification_recomputes_for_remaining_pending_panes() {
+    // UC-3 BR-12: Inactive-Workspace highlight recomputes from remaining unresolved Wrapped Agent panes.
     use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
-    let mut app = test_app();
+    use crate::WorkspaceNavPort;
+    let (mut app, active_terminal_id) = app_with_terminal();
+    let (mut inactive_layout, first_terminal_id) =
+        crate::tide_layout::SplitLayout::with_initial_pane();
+    let second_terminal_id = inactive_layout.split(first_terminal_id, SplitDirection::Horizontal);
+
+    let first_terminal = TerminalPane::with_cwd(first_terminal_id, 80, 24, None, true).unwrap();
+    let second_terminal = TerminalPane::with_cwd(second_terminal_id, 80, 24, None, true).unwrap();
+    let mut inactive_panes = std::collections::HashMap::new();
+    inactive_panes.insert(first_terminal_id, PaneKind::Terminal(first_terminal));
+    inactive_panes.insert(second_terminal_id, PaneKind::Terminal(second_terminal));
+
     app.ws.workspaces.push(Workspace {
         name: "WS1".into(),
         layout: crate::tide_layout::SplitLayout::new(),
-        focused: None,
-        panes: std::collections::HashMap::new(),
-    });
-    app.ws.workspace_extras.push(WorkspaceExtras::new());
-    app.ws.active = 0;
-    // Even if has_agent_notification is true on the active workspace, it should be irrelevant
-    app.ws.workspace_extras[0].has_agent_notification = true;
-    // The rendering logic skips active workspace — tested by checking the flag exists
-    // but the view code only renders dot for !is_active (UC-6 BR-1)
-    assert!(app.ws.workspace_extras[0].has_agent_notification);
-}
-
-#[test]
-fn workspace_switch_clears_notification_dot() {
-    // UC-6 BR-2: Clear has_agent_notification on the switched-to workspace
-    use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
-    let mut app = test_app();
-    // Create two workspaces
-    app.ws.workspaces.push(Workspace {
-        name: "WS1".into(),
-        layout: crate::tide_layout::SplitLayout::new(),
-        focused: None,
+        focused: Some(active_terminal_id),
         panes: std::collections::HashMap::new(),
     });
     app.ws.workspaces.push(Workspace {
         name: "WS2".into(),
-        layout: crate::tide_layout::SplitLayout::new(),
-        focused: None,
-        panes: std::collections::HashMap::new(),
+        layout: inactive_layout,
+        focused: Some(first_terminal_id),
+        panes: inactive_panes,
     });
-    let mut extras1 = WorkspaceExtras::new();
-    extras1.has_agent_notification = false;
-    let mut extras2 = WorkspaceExtras::new();
-    extras2.has_agent_notification = true;
-    app.ws.workspace_extras.push(extras1);
-    app.ws.workspace_extras.push(extras2);
+    app.ws.workspace_extras.push(WorkspaceExtras::new());
+    let mut inactive_extras = WorkspaceExtras::new();
+    inactive_extras.has_agent_notification = true;
+    app.ws.workspace_extras.push(inactive_extras);
     app.ws.active = 0;
 
-    // Switch to WS2
+    for (pane_id, status) in [
+        (
+            first_terminal_id,
+            crate::state::gateway_status::AgentStatus::NeedsInput,
+        ),
+        (
+            second_terminal_id,
+            crate::state::gateway_status::AgentStatus::Idle,
+        ),
+    ] {
+        app.gateway.detected_agents.insert(
+            pane_id,
+            crate::state::gateway_status::AgentInfo {
+                name: "Codex",
+                pid: pane_id as u32,
+                wrapper_managed: true,
+                gateway_connected: true,
+                status: Some(status),
+            },
+        );
+    }
+
     app.switch_workspace(1);
-    // has_agent_notification should be cleared on the switched-to workspace
-    assert!(!app.ws.workspace_extras[1].has_agent_notification);
+    assert!(
+        app.ws.workspace_extras[1].has_agent_notification,
+        "switching into the Workspace must preserve recomputed attention while pending panes remain"
+    );
+
+    app.focus_terminal(first_terminal_id);
+    assert_eq!(
+        app.gateway
+            .detected_agents
+            .get(&first_terminal_id)
+            .unwrap()
+            .status,
+        None
+    );
+    assert_eq!(
+        app.gateway
+            .detected_agents
+            .get(&second_terminal_id)
+            .unwrap()
+            .status,
+        Some(crate::state::gateway_status::AgentStatus::Idle)
+    );
+    assert!(
+        app.ws.workspace_extras[1].has_agent_notification,
+        "acknowledging one pane must keep the Workspace highlight while another pane is still pending"
+    );
+
+    app.switch_workspace(0);
+    assert!(
+        app.ws.workspace_extras[1].has_agent_notification,
+        "leaving the Workspace must preserve the inactive highlight while another pending pane remains"
+    );
+}
+
+// --- UC-8: PreservePaneIdIdentityAcrossWorkspaces ---
+
+#[test]
+fn new_workspace_seeds_a_distinct_root_terminal_pane_id() {
+    // UC-8 BR-25: new_workspace() seeds its initial Stage Terminal above every existing PaneId.
+    let mut app = test_app();
+    let (layout, left_terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes.insert(
+        left_terminal_id,
+        PaneKind::Terminal(TerminalPane::with_cwd(left_terminal_id, 80, 24, None, true).unwrap()),
+    );
+    let right_terminal_id = app
+        .layout
+        .split(left_terminal_id, SplitDirection::Horizontal);
+    app.panes.insert(
+        right_terminal_id,
+        PaneKind::Terminal(TerminalPane::with_cwd(right_terminal_id, 80, 24, None, true).unwrap()),
+    );
+    app.focus.focused = Some(right_terminal_id);
+    app.focus.stage_focused = Some(right_terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+
+    app.new_workspace();
+
+    let new_workspace_terminal_id = app.focus.focused.expect("new Workspace root");
+    assert_ne!(new_workspace_terminal_id, left_terminal_id);
+    assert_ne!(new_workspace_terminal_id, right_terminal_id);
+    assert!(new_workspace_terminal_id > right_terminal_id);
+}
+
+#[test]
+fn switching_back_to_an_older_workspace_rebases_future_pane_ids_above_other_workspaces() {
+    // UC-8 BR-26: Loading an older Workspace rebases its SplitLayout allocator above other Workspaces.
+    let mut app = test_app();
+    let (layout, left_terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes.insert(
+        left_terminal_id,
+        PaneKind::Terminal(TerminalPane::with_cwd(left_terminal_id, 80, 24, None, true).unwrap()),
+    );
+    let right_terminal_id = app
+        .layout
+        .split(left_terminal_id, SplitDirection::Horizontal);
+    app.panes.insert(
+        right_terminal_id,
+        PaneKind::Terminal(TerminalPane::with_cwd(right_terminal_id, 80, 24, None, true).unwrap()),
+    );
+    app.focus.focused = Some(right_terminal_id);
+    app.focus.stage_focused = Some(right_terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+
+    app.new_workspace();
+    let workspace_two_root_id = app.focus.focused.expect("Workspace 2 root");
+    let workspace_two_second_id = app
+        .layout
+        .split(workspace_two_root_id, SplitDirection::Horizontal);
+    app.panes.insert(
+        workspace_two_second_id,
+        PaneKind::Terminal(
+            TerminalPane::with_cwd(workspace_two_second_id, 80, 24, None, true).unwrap(),
+        ),
+    );
+    let workspace_two_third_id = app
+        .layout
+        .split(workspace_two_second_id, SplitDirection::Vertical);
+    app.panes.insert(
+        workspace_two_third_id,
+        PaneKind::Terminal(
+            TerminalPane::with_cwd(workspace_two_third_id, 80, 24, None, true).unwrap(),
+        ),
+    );
+
+    app.switch_workspace(0);
+    let rebased_terminal_id = app
+        .layout
+        .split(right_terminal_id, SplitDirection::Vertical);
+
+    assert!(rebased_terminal_id > workspace_two_third_id);
+}
+
+#[test]
+fn wrapped_agent_attention_does_not_leak_across_workspaces_after_switching_back() {
+    // UC-8 BR-27: Wrapped-agent attention stays attached to the owning Workspace instead of leaking through PaneId reuse.
+    let mut app = test_app();
+    let (layout, left_terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes.insert(
+        left_terminal_id,
+        PaneKind::Terminal(TerminalPane::with_cwd(left_terminal_id, 80, 24, None, true).unwrap()),
+    );
+    let right_terminal_id = app
+        .layout
+        .split(left_terminal_id, SplitDirection::Horizontal);
+    app.panes.insert(
+        right_terminal_id,
+        PaneKind::Terminal(TerminalPane::with_cwd(right_terminal_id, 80, 24, None, true).unwrap()),
+    );
+    app.focus.focused = Some(right_terminal_id);
+    app.focus.stage_focused = Some(right_terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+
+    app.new_workspace();
+    let workspace_two_terminal_id = app.focus.focused.expect("Workspace 2 root");
+    app.gateway.detected_agents.insert(
+        workspace_two_terminal_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Codex",
+            pid: workspace_two_terminal_id as u32,
+            wrapper_managed: true,
+            gateway_connected: true,
+            status: Some(crate::state::gateway_status::AgentStatus::Idle),
+        },
+    );
+
+    app.switch_workspace(0);
+
+    assert_eq!(app.pane_agent_attention_status(left_terminal_id), None);
+    assert_eq!(app.pane_agent_attention_status(right_terminal_id), None);
+    assert_eq!(app.workspace_stage_agent_flags(0), (false, false));
+    assert_eq!(app.workspace_stage_agent_flags(1), (false, true));
+    assert!(!app.ws.workspace_extras[0].has_agent_notification);
+    assert!(app.ws.workspace_extras[1].has_agent_notification);
+}
+
+#[test]
+fn switching_workspace_preserves_attention_on_an_unfocused_stage_terminal() {
+    // UC-4 BR-16: Switching into a Workspace does not acknowledge an unfocused Stage Terminal alert.
+    use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
+
+    let (mut app, active_terminal_id) = app_with_terminal();
+    let (mut inactive_layout, left_terminal_id) =
+        crate::tide_layout::SplitLayout::with_initial_pane();
+    let right_terminal_id = inactive_layout.split(left_terminal_id, SplitDirection::Horizontal);
+
+    let left_terminal = TerminalPane::with_cwd(left_terminal_id, 80, 24, None, true).unwrap();
+    let right_terminal = TerminalPane::with_cwd(right_terminal_id, 80, 24, None, true).unwrap();
+    let mut inactive_panes = std::collections::HashMap::new();
+    inactive_panes.insert(left_terminal_id, PaneKind::Terminal(left_terminal));
+    inactive_panes.insert(right_terminal_id, PaneKind::Terminal(right_terminal));
+
+    app.ws.workspaces.push(Workspace {
+        name: "WS1".into(),
+        layout: crate::tide_layout::SplitLayout::new(),
+        focused: Some(active_terminal_id),
+        panes: std::collections::HashMap::new(),
+    });
+    app.ws.workspaces.push(Workspace {
+        name: "WS2".into(),
+        layout: inactive_layout,
+        focused: Some(left_terminal_id),
+        panes: inactive_panes,
+    });
+    app.ws.workspace_extras.push(WorkspaceExtras::new());
+    let mut inactive_extras = WorkspaceExtras::new();
+    inactive_extras.has_agent_notification = true;
+    app.ws.workspace_extras.push(inactive_extras);
+    app.ws.active = 0;
+
+    app.gateway.detected_agents.insert(
+        right_terminal_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Codex",
+            pid: right_terminal_id as u32,
+            wrapper_managed: true,
+            gateway_connected: true,
+            status: Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+        },
+    );
+
+    app.switch_workspace(1);
+
+    assert_eq!(app.focus.focused, Some(left_terminal_id));
+    assert_eq!(
+        app.gateway
+            .detected_agents
+            .get(&right_terminal_id)
+            .unwrap()
+            .status,
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
 }
 
 #[test]
@@ -1697,13 +2476,15 @@ fn inactive_workspace_agent_status_sets_notification_dot() {
     app.panes.insert(pane_id, PaneKind::Editor(pane));
     app.focus.focused = Some(pane_id);
 
-    // Create WS2 with an agent pane
-    let agent_pane_id = 999;
+    // Create WS2 with an agent Terminal in the Stage layout
+    let (mut inactive_layout, inactive_root_id) =
+        crate::tide_layout::SplitLayout::with_initial_pane();
+    let agent_pane_id = inactive_layout.split(inactive_root_id, SplitDirection::Horizontal);
+    let inactive_root = TerminalPane::with_cwd(inactive_root_id, 80, 24, None, true).unwrap();
+    let inactive_terminal = TerminalPane::with_cwd(agent_pane_id, 80, 24, None, true).unwrap();
     let mut ws2_panes = std::collections::HashMap::new();
-    ws2_panes.insert(
-        agent_pane_id,
-        PaneKind::Editor(EditorPane::new_empty(agent_pane_id)),
-    );
+    ws2_panes.insert(inactive_root_id, PaneKind::Terminal(inactive_root));
+    ws2_panes.insert(agent_pane_id, PaneKind::Terminal(inactive_terminal));
 
     app.ws.workspaces.push(Workspace {
         name: "WS1".into(),
@@ -1713,7 +2494,7 @@ fn inactive_workspace_agent_status_sets_notification_dot() {
     });
     app.ws.workspaces.push(Workspace {
         name: "WS2".into(),
-        layout: crate::tide_layout::SplitLayout::new(),
+        layout: inactive_layout,
         focused: None,
         panes: ws2_panes,
     });
@@ -1729,7 +2510,7 @@ fn inactive_workspace_agent_status_sets_notification_dot() {
             pid: 12345,
             wrapper_managed: true,
             gateway_connected: true,
-            status: None,
+            status: Some(crate::state::gateway_status::AgentStatus::NeedsInput),
         },
     );
 
@@ -1739,6 +2520,71 @@ fn inactive_workspace_agent_status_sets_notification_dot() {
         crate::state::gateway_status::AgentStatus::NeedsInput,
     );
     assert!(app.ws.workspace_extras[1].has_agent_notification);
+}
+
+#[test]
+fn inactive_workspace_osc9_notification_sets_workspace_dot_without_loading_workspace() {
+    // UC-1 BR-4: Wrapped-agent OSC 9 from an inactive Workspace updates attention without a Workspace switch.
+    use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
+
+    let mut app = test_app();
+    let (layout, active_pane_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes.insert(
+        active_pane_id,
+        PaneKind::Editor(EditorPane::new_empty(active_pane_id)),
+    );
+    app.focus.focused = Some(active_pane_id);
+    app.focus.focus_area = FocusArea::Stage;
+
+    let (mut inactive_layout, inactive_root_id) =
+        crate::tide_layout::SplitLayout::with_initial_pane();
+    let inactive_terminal_id = inactive_layout.split(inactive_root_id, SplitDirection::Horizontal);
+    let inactive_root = TerminalPane::with_cwd(inactive_root_id, 80, 24, None, true).unwrap();
+    let inactive_terminal =
+        TerminalPane::with_cwd(inactive_terminal_id, 80, 24, None, true).unwrap();
+    inactive_terminal
+        .backend
+        .queue_notification_for_test("tide:wrapped-agent:codex:agent-needs-input");
+
+    let mut ws2_panes = std::collections::HashMap::new();
+    ws2_panes.insert(inactive_root_id, PaneKind::Terminal(inactive_root));
+    ws2_panes.insert(inactive_terminal_id, PaneKind::Terminal(inactive_terminal));
+
+    app.ws.workspaces.push(Workspace {
+        name: "WS1".into(),
+        layout: crate::tide_layout::SplitLayout::new(),
+        focused: None,
+        panes: std::collections::HashMap::new(),
+    });
+    app.ws.workspaces.push(Workspace {
+        name: "WS2".into(),
+        layout: inactive_layout,
+        focused: None,
+        panes: ws2_panes,
+    });
+    app.ws.workspace_extras.push(WorkspaceExtras::new());
+    app.ws.workspace_extras.push(WorkspaceExtras::new());
+    app.ws.active = 0;
+
+    let window = test_window_proxy();
+    app.poll_background_events(&window);
+
+    let agent = app
+        .gateway
+        .detected_agents
+        .get(&inactive_terminal_id)
+        .unwrap();
+    assert_eq!(agent.name, "Codex");
+    assert!(agent.wrapper_managed);
+    assert_eq!(
+        agent.status,
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
+    assert!(app.ws.workspace_extras[1].has_agent_notification);
+    assert_eq!(app.ws.active, 0);
+    assert!(app.panes.contains_key(&active_pane_id));
+    assert!(!app.panes.contains_key(&inactive_terminal_id));
 }
 
 #[test]
@@ -1803,8 +2649,7 @@ fn focusing_pane_clears_workspace_notification_if_no_others() {
 
 #[test]
 fn needs_input_border_blinks_orange_when_unfocused() {
-    // UC-5 BR-6,7: Pane border blinks orange for NeedsInput + unfocused
-    // Uses same frequency and opacity range as dot blink
+    // UC-5 BR-6,7: Unfocused NeedsInput keeps the alert redraw path alive for the blinking Stage-terminal dot.
     let (mut app, agent_pane, other_pane) = app_with_unfocused_agent();
     app.handle_terminal_notification(agent_pane, "tide:agent-needs-input");
     let status = app.gateway.detected_agents.get(&agent_pane).unwrap().status;
@@ -1814,7 +2659,7 @@ fn needs_input_border_blinks_orange_when_unfocused() {
     );
     // Pane is unfocused (other_pane is focused)
     assert_eq!(app.focus.focused, Some(other_pane));
-    // needs_redraw should be set (for blink animation including border)
+    // needs_redraw should be set so the alert dot can animate.
     assert!(app.cache.needs_redraw);
 }
 
@@ -1886,4 +2731,121 @@ fn cli_notify_routes_to_inactive_workspace_pane() {
     // has_pane_in_any_workspace should find panes in inactive workspaces
     assert!(app.has_pane_in_any_workspace(agent_pane_id));
     assert!(!app.has_pane_in_any_workspace(99999)); // non-existent pane
+}
+
+// --- UC-4: ActivateSystemNotificationTarget ---
+
+#[test]
+fn macos_notification_activation_switches_to_target_workspace_and_focuses_target_pane() {
+    // UC-4 BR-13: Notification activation must switch to the target Workspace.
+    // UC-4 BR-14: Notification activation must focus the target Pane.
+    // UC-4 BR-15: Notification activation must resolve the same attention cues as direct focus.
+    use crate::adapter::inward::event_loop_adapter::handle_platform_event;
+    use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
+
+    let (mut app, active_pane_id) = app_with_terminal();
+
+    let target_pane_id = 999;
+    let mut inactive_layout = crate::tide_layout::SplitLayout::new();
+    inactive_layout.insert_leaf_group(target_pane_id);
+    let inactive_terminal = TerminalPane::with_cwd(target_pane_id, 80, 24, None, true).unwrap();
+    let mut inactive_panes = std::collections::HashMap::new();
+    inactive_panes.insert(target_pane_id, PaneKind::Terminal(inactive_terminal));
+
+    app.ws.workspaces.push(Workspace {
+        name: "WS1".into(),
+        layout: crate::tide_layout::SplitLayout::new(),
+        focused: None,
+        panes: std::collections::HashMap::new(),
+    });
+    app.ws.workspaces.push(Workspace {
+        name: "WS2".into(),
+        layout: inactive_layout,
+        focused: Some(target_pane_id),
+        panes: inactive_panes,
+    });
+    app.ws.workspace_extras.push(WorkspaceExtras::new());
+    app.ws.workspace_extras.push(WorkspaceExtras::new());
+    app.ws.workspace_extras[1].has_agent_notification = true;
+    app.ws.active = 0;
+    app.focus.focused = Some(active_pane_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.focus.stage_focused = Some(active_pane_id);
+
+    app.gateway.detected_agents.insert(
+        target_pane_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Codex",
+            pid: 77,
+            wrapper_managed: true,
+            gateway_connected: true,
+            status: Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+        },
+    );
+    app.notified_panes.insert(target_pane_id);
+
+    handle_platform_event(
+        &mut app,
+        crate::tide_platform::PlatformEvent::SystemNotificationActivated {
+            pane_id: target_pane_id,
+        },
+        &test_window_proxy(),
+    );
+
+    assert_eq!(app.ws.active, 1);
+    assert_eq!(app.focus.focused, Some(target_pane_id));
+    assert_eq!(app.focus.focus_area, FocusArea::Stage);
+    assert_eq!(app.focus.stage_focused, Some(target_pane_id));
+    assert!(!app.ws.workspace_extras[1].has_agent_notification);
+    assert_eq!(
+        app.gateway
+            .detected_agents
+            .get(&target_pane_id)
+            .unwrap()
+            .status,
+        None
+    );
+    assert!(!app.notified_panes.contains(&target_pane_id));
+}
+
+#[test]
+fn notification_activation_with_missing_pane_is_no_op() {
+    // UC-5 BR-18: Activating a notification for a missing Pane leaves state unchanged.
+    use crate::adapter::inward::event_loop_adapter::handle_platform_event;
+
+    let (mut app, active_pane_id) = app_with_terminal();
+    app.focus.focused = Some(active_pane_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.focus.stage_focused = Some(active_pane_id);
+    app.notified_panes.insert(active_pane_id);
+    app.gateway.detected_agents.insert(
+        active_pane_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Codex",
+            pid: 88,
+            wrapper_managed: true,
+            gateway_connected: true,
+            status: Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+        },
+    );
+
+    handle_platform_event(
+        &mut app,
+        crate::tide_platform::PlatformEvent::SystemNotificationActivated { pane_id: 404 },
+        &test_window_proxy(),
+    );
+
+    assert_eq!(app.ws.active, 0);
+    assert_eq!(app.focus.focused, Some(active_pane_id));
+    assert_eq!(app.focus.focus_area, FocusArea::Stage);
+    assert_eq!(app.focus.stage_focused, Some(active_pane_id));
+    assert!(app.notified_panes.contains(&active_pane_id));
+    assert_eq!(
+        app.gateway
+            .detected_agents
+            .get(&active_pane_id)
+            .unwrap()
+            .status,
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
 }

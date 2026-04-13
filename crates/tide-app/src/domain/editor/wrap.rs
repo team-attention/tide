@@ -297,11 +297,7 @@ mod tests {
         // line 0: 10 chars → 1 row
         // line 1: 50 chars → 2 rows at width 40
         // line 2: 5 chars → 1 row
-        let l = lines(&[
-            "short line",
-            &"a".repeat(50),
-            "end",
-        ]);
+        let l = lines(&["short line", &"a".repeat(50), "end"]);
         let map = WrapMap::build(&l, 40, 0);
         assert_eq!(map.total_visual_rows(), 4);
         assert_eq!(map.visual_rows_for(0), 1);

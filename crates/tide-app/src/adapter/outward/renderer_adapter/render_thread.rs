@@ -45,7 +45,15 @@ impl RenderThreadHandle {
         let handle = std::thread::Builder::new()
             .name("render".to_string())
             .spawn(move || {
-                run(surface, device, queue, initial_config, job_rx, result_tx, waker);
+                run(
+                    surface,
+                    device,
+                    queue,
+                    initial_config,
+                    job_rx,
+                    result_tx,
+                    waker,
+                );
             })
             .expect("failed to spawn render thread");
 
@@ -111,10 +119,9 @@ fn run(
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("render_encoder"),
-            });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("render_encoder"),
+        });
 
         let mut renderer = job.renderer;
         renderer.render_frame(&mut encoder, &view);

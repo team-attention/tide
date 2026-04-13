@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
     use super::super::*;
+    use crate::tide_core::FileTreeSource;
     use std::fs;
     use tempfile::TempDir;
-    use crate::tide_core::FileTreeSource;
 
     /// Helper to create a temp directory with some structure.
     fn setup_temp_dir() -> TempDir {
@@ -30,7 +30,10 @@ mod tests {
         let tree = FsTree::new(tmp.path().to_path_buf());
 
         let entries = tree.visible_entries();
-        assert!(!entries.is_empty(), "entries should be populated after set_root");
+        assert!(
+            !entries.is_empty(),
+            "entries should be populated after set_root"
+        );
     }
 
     #[test]
@@ -64,7 +67,10 @@ mod tests {
 
         // Directories: alpha_dir, beta_dir  (alphabetical)
         // Files: able.txt, charlie.txt  (alphabetical)
-        assert_eq!(names, vec!["alpha_dir", "beta_dir", "able.txt", "charlie.txt"]);
+        assert_eq!(
+            names,
+            vec!["alpha_dir", "beta_dir", "able.txt", "charlie.txt"]
+        );
     }
 
     #[test]
@@ -211,7 +217,10 @@ mod tests {
 
         for entry in tree.visible_entries() {
             if entry.entry.is_dir {
-                assert!(entry.has_children, "directories should have has_children=true");
+                assert!(
+                    entry.has_children,
+                    "directories should have has_children=true"
+                );
             } else {
                 assert!(!entry.has_children, "files should have has_children=false");
             }

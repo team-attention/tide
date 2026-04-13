@@ -38,6 +38,7 @@ pub(crate) trait WorkspaceNavPort {
     fn set_ws_show_sidebar(&mut self, v: bool);
     fn new_workspace(&mut self);
     fn switch_workspace(&mut self, idx: usize);
+    fn activate_notification_target(&mut self, pane_id: PaneId);
     fn ws_reorder(&mut self, src: usize, target: usize);
     fn workspace_sidebar_item_rect(&self, idx: usize) -> Option<crate::tide_core::Rect>;
 }

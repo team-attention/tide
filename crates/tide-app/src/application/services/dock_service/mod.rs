@@ -29,7 +29,11 @@ impl DockPort for App {
     /// Check if a pane is in any terminal's dock_layout OR in the pinned dock layout.
     fn is_pane_in_dock(&self, pane_id: PaneId) -> bool {
         self.terminal_owning(pane_id).is_some()
-            || self.dock.pinned_dock_layout.all_pane_ids().contains(&pane_id)
+            || self
+                .dock
+                .pinned_dock_layout
+                .all_pane_ids()
+                .contains(&pane_id)
     }
 
     /// Check if a pane is in the pinned dock layout.
@@ -46,8 +50,7 @@ impl DockPort for App {
     /// When `target_terminal` is Some, the pane is placed in that Terminal's dock.
     /// When None, falls back to `focused_terminal_id()` (= stage_focused).
     fn add_pane_to_dock(&mut self, new_pane_id: PaneId, target_terminal: Option<PaneId>) {
-        let launcher_to_replace = self.dock_launcher_id()
-            .filter(|&lid| lid != new_pane_id);
+        let launcher_to_replace = self.dock_launcher_id().filter(|&lid| lid != new_pane_id);
 
         if let Some(launcher_id) = launcher_to_replace {
             let tid = target_terminal.or_else(|| self.focused_terminal_id());
@@ -87,7 +90,11 @@ impl DockPort for App {
     /// Toggle Dock visibility (Cmd+4).
     fn toggle_dock(&mut self) {
         if self.dock.dock_open {
-            let focused_in_dock = self.focus.focused.map(|f| self.is_pane_in_dock(f)).unwrap_or(false);
+            let focused_in_dock = self
+                .focus
+                .focused
+                .map(|f| self.is_pane_in_dock(f))
+                .unwrap_or(false);
 
             if focused_in_dock {
                 // Close + focus Stage terminal
@@ -119,11 +126,17 @@ impl DockPort for App {
             }
         } else {
             // Open
-            let has_terminal_dock = self.focus.stage_focused.map(|tid| {
-                if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
-                    !tp.dock_layout.all_pane_ids().is_empty()
-                } else { false }
-            }).unwrap_or(false);
+            let has_terminal_dock = self
+                .focus
+                .stage_focused
+                .map(|tid| {
+                    if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                        !tp.dock_layout.all_pane_ids().is_empty()
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
             let has_pinned = self.has_pinned_panes();
 
             if has_terminal_dock || has_pinned {
@@ -139,7 +152,8 @@ impl DockPort for App {
                             }
                         }
                     }
-                } else if let Some(pf) = self.dock.pinned_dock_layout.pane_ids().into_iter().next() {
+                } else if let Some(pf) = self.dock.pinned_dock_layout.pane_ids().into_iter().next()
+                {
                     self.focus.focused = Some(pf);
                     self.router.set_focused(pf);
                 }
@@ -156,8 +170,12 @@ impl DockPort for App {
         }
         // Safety: ensure something is focused
         if self.focus.focused.is_none() {
-            if let Some(tid) = self.layout.pane_ids().into_iter()
-                .find(|&id| matches!(self.panes.get(&id), Some(PaneKind::Terminal(_)))) {
+            if let Some(tid) = self
+                .layout
+                .pane_ids()
+                .into_iter()
+                .find(|&id| matches!(self.panes.get(&id), Some(PaneKind::Terminal(_))))
+            {
                 self.focus.focused = Some(tid);
                 self.router.set_focused(tid);
                 self.focus.focus_area = FocusArea::Stage;
@@ -180,7 +198,9 @@ impl DockPort for App {
                 let any_has_dock = self.panes.values().any(|pk| {
                     if let PaneKind::Terminal(tp) = pk {
                         !tp.dock_layout.all_pane_ids().is_empty()
-                    } else { false }
+                    } else {
+                        false
+                    }
                 });
                 if !any_has_dock {
                     self.dock.dock_open = false;
@@ -228,7 +248,8 @@ impl DockPort for App {
                     }
                 } else {
                     let visible = tp.dock_layout.pane_ids();
-                    let next = tp.dock_focused
+                    let next = tp
+                        .dock_focused
                         .filter(|f| remaining.contains(f))
                         .or_else(|| visible.first().copied())
                         .unwrap_or(remaining[0]);
@@ -238,7 +259,10 @@ impl DockPort for App {
                     self.router.set_focused(next);
                 }
             } else {
-                let remaining: Vec<PaneId> = self.assoc.associated_terminal.iter()
+                let remaining: Vec<PaneId> = self
+                    .assoc
+                    .associated_terminal
+                    .iter()
                     .filter(|(_, &t)| t == tid)
                     .map(|(&p, _)| p)
                     .collect();
@@ -260,12 +284,16 @@ impl DockPort for App {
 
     /// Close a Terminal and cascade to all its dock panes.
     fn cascade_close_terminal(&mut self, terminal_id: PaneId) {
-        let mut dock_pane_ids: Vec<PaneId> = if let Some(PaneKind::Terminal(tp)) = self.panes.get(&terminal_id) {
-            tp.dock_layout.all_pane_ids()
-        } else {
-            Vec::new()
-        };
-        let associated: Vec<PaneId> = self.assoc.associated_terminal.iter()
+        let mut dock_pane_ids: Vec<PaneId> =
+            if let Some(PaneKind::Terminal(tp)) = self.panes.get(&terminal_id) {
+                tp.dock_layout.all_pane_ids()
+            } else {
+                Vec::new()
+            };
+        let associated: Vec<PaneId> = self
+            .assoc
+            .associated_terminal
+            .iter()
             .filter(|(_, &tid)| tid == terminal_id)
             .map(|(&pid, _)| pid)
             .collect();
@@ -289,15 +317,23 @@ impl DockPort for App {
     /// create a placeholder Launcher.
     /// If pinned panes exist, remove any placeholder Launchers.
     fn ensure_dock_placeholder(&mut self) {
-        if !self.dock.dock_open { return; }
+        if !self.dock.dock_open {
+            return;
+        }
         if self.has_pinned_panes() {
             // Remove placeholder Launchers — pinned panes fill that role
             if let Some(tid) = self.focus.stage_focused {
-                let launchers: Vec<PaneId> = if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
-                    tp.dock_layout.all_pane_ids().into_iter()
+                let launchers: Vec<PaneId> = if let Some(PaneKind::Terminal(tp)) =
+                    self.panes.get(&tid)
+                {
+                    tp.dock_layout
+                        .all_pane_ids()
+                        .into_iter()
                         .filter(|&pid| matches!(self.panes.get(&pid), Some(PaneKind::Launcher(_))))
                         .collect()
-                } else { Vec::new() };
+                } else {
+                    Vec::new()
+                };
                 for lid in launchers {
                     if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                         tp.dock_layout.remove(lid);
@@ -317,7 +353,9 @@ impl DockPort for App {
             None => return,
         };
         let is_empty = matches!(self.panes.get(&tid), Some(PaneKind::Terminal(tp)) if tp.dock_layout.all_pane_ids().is_empty());
-        if !is_empty { return; }
+        if !is_empty {
+            return;
+        }
 
         let new_id = self.layout.alloc_id();
         self.panes.insert(new_id, PaneKind::Launcher(new_id));
@@ -355,7 +393,8 @@ impl DockPort for App {
 
         if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
             if let Some(dock_focused) = tp.dock_focused {
-                tp.dock_layout.split_with_leaf_group(dock_focused, new_id, direction, false);
+                tp.dock_layout
+                    .split_with_leaf_group(dock_focused, new_id, direction, false);
             } else {
                 tp.dock_layout.insert_leaf_group(new_id);
             }
@@ -377,7 +416,9 @@ impl DockPort for App {
         let any_has_dock = self.panes.values().any(|pk| {
             if let PaneKind::Terminal(tp) = pk {
                 !tp.dock_layout.all_pane_ids().is_empty()
-            } else { false }
+            } else {
+                false
+            }
         });
         if !any_has_dock && !self.has_pinned_panes() {
             self.dock.dock_open = false;
@@ -416,7 +457,12 @@ impl DockPort for App {
         self.dock.pinned_dock_layout.remove(id);
     }
 
-    fn dock_layout_insert_at_root(&mut self, terminal_id: PaneId, source: PaneId, zone: crate::tide_core::DropZone) {
+    fn dock_layout_insert_at_root(
+        &mut self,
+        terminal_id: PaneId,
+        source: PaneId,
+        zone: crate::tide_core::DropZone,
+    ) {
         if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&terminal_id) {
             tp.dock_layout.insert_at_root(source, zone);
         }
@@ -468,15 +514,28 @@ impl DockPort for App {
         }
     }
 
-    fn dock_layout_split_with_leaf_group(&mut self, terminal_id: PaneId, target: PaneId, source: PaneId, direction: SplitDirection, insert_first: bool) {
+    fn dock_layout_split_with_leaf_group(
+        &mut self,
+        terminal_id: PaneId,
+        target: PaneId,
+        source: PaneId,
+        direction: SplitDirection,
+        insert_first: bool,
+    ) {
         if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&terminal_id) {
-            tp.dock_layout.split_with_leaf_group(target, source, direction, insert_first);
+            tp.dock_layout
+                .split_with_leaf_group(target, source, direction, insert_first);
         }
     }
 
-    fn dock_layout_tab_group_sibling(&self, terminal_id: PaneId, pane_id: PaneId) -> Option<PaneId> {
+    fn dock_layout_tab_group_sibling(
+        &self,
+        terminal_id: PaneId,
+        pane_id: PaneId,
+    ) -> Option<PaneId> {
         if let Some(PaneKind::Terminal(tp)) = self.panes.get(&terminal_id) {
-            tp.dock_layout.tab_group_containing(pane_id)
+            tp.dock_layout
+                .tab_group_containing(pane_id)
                 .and_then(|tg| tg.tabs.iter().find(|&&t| t != pane_id).copied())
         } else {
             None
@@ -573,7 +632,11 @@ impl DockPort for App {
         self.dock.dock_width = w;
     }
 
-    fn dock_begin_split_drag(&mut self, local_pos: crate::tide_core::Vec2, dock_size: crate::tide_core::Size) -> bool {
+    fn dock_begin_split_drag(
+        &mut self,
+        local_pos: crate::tide_core::Vec2,
+        dock_size: crate::tide_core::Size,
+    ) -> bool {
         if let Some(tid) = self.focused_terminal_id() {
             if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                 tp.dock_layout.begin_drag(local_pos, dock_size);
@@ -609,7 +672,11 @@ impl DockPort for App {
         if self.is_pane_pinned(pane_id) {
             // Unpin: move from pinned_dock_layout to associated terminal's dock_layout
             self.dock.pinned_dock_layout.remove(pane_id);
-            let target_tid = self.assoc.associated_terminal.get(&pane_id).copied()
+            let target_tid = self
+                .assoc
+                .associated_terminal
+                .get(&pane_id)
+                .copied()
                 .or_else(|| self.focus.stage_focused);
             if let Some(tid) = target_tid {
                 let is_current = self.focus.stage_focused == Some(tid);

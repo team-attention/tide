@@ -47,7 +47,10 @@ fn app_with_terminal_tab_group() -> (App, u64, u64) {
     app.router.set_focused(first_id);
 
     app.new_terminal_tab();
-    let second_id = app.focus.focused.expect("new terminal tab should focus the new pane");
+    let second_id = app
+        .focus
+        .focused
+        .expect("new terminal tab should focus the new pane");
 
     let tg = app
         .layout
@@ -197,7 +200,10 @@ fn splitting_zoomed_stage_tab_group_keeps_stacked_mode_and_appends_a_new_tab() {
     assert!(source_group.contains(new_id));
     assert_eq!(source_group.active_pane(), new_id);
     assert_eq!(app.focus.stage_focused, Some(new_id));
-    assert!(matches!(app.panes.get(&new_id), Some(PaneKind::Terminal(_))));
+    assert!(matches!(
+        app.panes.get(&new_id),
+        Some(PaneKind::Terminal(_))
+    ));
 }
 
 // --- UC-3: ResolveLauncher ---

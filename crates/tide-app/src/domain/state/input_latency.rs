@@ -11,6 +11,13 @@ pub(crate) struct InputLatencyState {
 
 impl InputLatencyState {
     pub fn new() -> Self {
-        Self { input_just_sent: false, input_sent_at: None, scroll_at: None, batch_depth: 0, last_shift_up: None, shift_tap_clean: false }
+        Self {
+            input_just_sent: false,
+            input_sent_at: None,
+            scroll_at: None,
+            batch_depth: 0,
+            last_shift_up: None,
+            shift_tap_clean: false,
+        }
     }
 }

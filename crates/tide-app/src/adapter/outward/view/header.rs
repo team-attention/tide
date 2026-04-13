@@ -141,7 +141,7 @@ pub(crate) fn shared_tab_active_width_cap(available_w: f32, tab_count: usize) ->
 
 pub(crate) fn tab_status_dot_width(has_agent_status: bool) -> f32 {
     if has_agent_status {
-        6.0 + TAB_CONTENT_SPACING
+        8.0 + TAB_CONTENT_SPACING
     } else {
         0.0
     }
@@ -154,8 +154,11 @@ pub(crate) fn shared_tab_target_width(
     is_active: bool,
     active_tab_cap: f32,
 ) -> f32 {
-    let mut width =
-        label_w + TAB_H_PAD * 2.0 + 16.0 + TAB_CONTENT_SPACING + tab_status_dot_width(has_agent_status);
+    let mut width = label_w
+        + TAB_H_PAD * 2.0
+        + 16.0
+        + TAB_CONTENT_SPACING
+        + tab_status_dot_width(has_agent_status);
     if is_active {
         for badge_w in badge_widths {
             width += *badge_w + BADGE_GAP;
@@ -218,6 +221,44 @@ pub(crate) fn resolve_tab_scroll_offset(
     fit_active_tab_scroll_offset(tab_widths, active_index, visible_w, scroll)
 }
 
+pub(crate) fn overflowed_stage_alert_tab_edges(
+    tab_widths: &[f32],
+    alert_indices: &[usize],
+    visible_w: f32,
+    scroll_offset: f32,
+) -> (bool, bool) {
+    if tab_widths.is_empty() || alert_indices.is_empty() || visible_w <= 0.0 {
+        return (false, false);
+    }
+
+    let total_tabs_w: f32 = tab_widths.iter().sum();
+    let max_scroll = (total_tabs_w - visible_w).max(0.0);
+    let scroll = scroll_offset.clamp(0.0, max_scroll);
+    let visible_start = scroll;
+    let visible_end = scroll + visible_w;
+    let mut left = false;
+    let mut right = false;
+    let mut tab_start = 0.0_f32;
+
+    for (index, width) in tab_widths.iter().enumerate() {
+        let tab_end = tab_start + *width;
+        if alert_indices.contains(&index) {
+            if tab_start < visible_start {
+                left = true;
+            }
+            if tab_end > visible_end {
+                right = true;
+            }
+            if left && right {
+                break;
+            }
+        }
+        tab_start = tab_end;
+    }
+
+    (left, right)
+}
+
 fn selection_comment_badge(
     panes: &HashMap<PaneId, PaneKind>,
     id: PaneId,
@@ -250,6 +291,64 @@ fn selection_comment_badge(
 
 fn badge_tint(color: crate::tide_core::Color, alpha: f32) -> crate::tide_core::Color {
     crate::tide_core::Color::new(color.r, color.g, color.b, alpha)
+}
+
+pub(crate) fn stage_terminal_dot_color(
+    status: crate::state::gateway_status::AgentStatus,
+    blink_time: Option<f64>,
+) -> crate::tide_core::Color {
+    use crate::state::gateway_status::AgentStatus;
+
+    match status {
+        AgentStatus::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
+        AgentStatus::Idle | AgentStatus::NeedsInput => {
+            let opacity = blink_time
+                .map(|t| 0.72 + 0.28 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32)
+                .unwrap_or(0.9);
+            crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity)
+        }
+    }
+}
+
+pub(crate) fn terminal_chrome_agent_status(
+    panes: &HashMap<PaneId, PaneKind>,
+    detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
+    pane_id: PaneId,
+) -> Option<crate::state::gateway_status::AgentStatus> {
+    match panes.get(&pane_id) {
+        Some(PaneKind::Terminal(_)) => detected_agents
+            .get(&pane_id)
+            .filter(|agent| agent.wrapper_managed)
+            .and_then(|agent| agent.status),
+        _ => None,
+    }
+}
+
+pub(crate) fn stage_terminal_dot_status(
+    panes: &HashMap<PaneId, PaneKind>,
+    detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
+    pane_id: PaneId,
+    is_stage_surface: bool,
+) -> Option<crate::state::gateway_status::AgentStatus> {
+    if !is_stage_surface {
+        return None;
+    }
+
+    terminal_chrome_agent_status(panes, detected_agents, pane_id)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SinglePaneHeaderPaintStep {
+    Background,
+    Dot,
+}
+
+fn single_pane_header_paint_steps(has_visible_dot: bool) -> Vec<SinglePaneHeaderPaintStep> {
+    let mut steps = vec![SinglePaneHeaderPaintStep::Background];
+    if has_visible_dot {
+        steps.push(SinglePaneHeaderPaintStep::Dot);
+    }
+    steps
 }
 
 fn editor_badge_colors(
@@ -390,6 +489,7 @@ pub fn render_pane_header(
         renderer,
         None,
         None,
+        false,
     )
 }
 
@@ -405,6 +505,7 @@ pub fn render_pane_header_inner(
     renderer: &mut WgpuRenderer,
     agent_status: Option<crate::state::gateway_status::AgentStatus>,
     blink_time: Option<f64>,
+    show_stage_terminal_dot: bool,
 ) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
     let cell_size = renderer.cell_size();
@@ -436,41 +537,15 @@ pub fn render_pane_header_inner(
     // --- Build content: [pad 6] [dot?] [icon 14x14] [gap 6] [title...] [spacer] [badges...] [close 16x16 (9px icon)] [pad 6] ---
     let mut cx = rect.x + TAB_H_PAD;
 
-    // Agent status dot
-    if let Some(status) = agent_status {
-        use crate::state::gateway_status::AgentStatus;
-        let mut dot_color = match status {
-            AgentStatus::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
-            AgentStatus::Idle => crate::tide_core::Color::new(0.3, 0.8, 0.4, 0.6),
-            AgentStatus::NeedsInput => crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0),
-        };
-        if matches!(status, AgentStatus::NeedsInput) && !is_focused {
-            if let Some(t) = blink_time {
-                let opacity = 0.65 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
-                dot_color.a = opacity;
-            }
-        }
-        let dot_size = 6.0_f32;
-        let dot_y = rect.y + (TAB_BAR_HEIGHT - dot_size) / 2.0;
-        renderer.draw_chrome_rounded_rect(
-            Rect::new(cx, dot_y, dot_size, dot_size),
-            dot_color,
-            dot_size / 2.0,
-        );
-        if matches!(status, AgentStatus::NeedsInput) {
-            let glow = crate::tide_core::Color::new(
-                dot_color.r,
-                dot_color.g,
-                dot_color.b,
-                0.3 * dot_color.a,
-            );
-            renderer.draw_chrome_rounded_rect(
-                Rect::new(cx - 2.0, dot_y - 2.0, dot_size + 4.0, dot_size + 4.0),
-                glow,
-                (dot_size + 4.0) / 2.0,
-            );
-        }
-        cx += dot_size + TAB_CONTENT_SPACING;
+    let visible_dot_status = if show_stage_terminal_dot {
+        agent_status
+    } else {
+        None
+    };
+
+    let dot_x = cx;
+    if visible_dot_status.is_some() {
+        cx += 8.0_f32 + TAB_CONTENT_SPACING;
     }
 
     // Collect inline badges
@@ -612,44 +687,53 @@ pub fn render_pane_header_inner(
     }
 
     // Compute COMPACT tab width: [pad] [dot?] [title] [gap] [badges] [close 16] [pad]
-    let dot_w = if agent_status.is_some() {
-        6.0 + TAB_CONTENT_SPACING
-    } else {
-        0.0
-    };
+    let dot_w = tab_status_dot_width(visible_dot_status.is_some());
     let title_w_raw = title.chars().count() as f32 * cell_w;
     let compact_tab_cap = active_tab_width_cap(available_w).min(available_w.max(TAB_MIN_WIDTH));
-    let compact_tab_w = (TAB_H_PAD
-        + dot_w
-        + title_w_raw
-        + badge_gap
-        + total_badge_w
-        + close_hit_size
-        + TAB_H_PAD)
-        .clamp(TAB_MIN_WIDTH, compact_tab_cap);
+    let compact_tab_w =
+        (TAB_H_PAD + dot_w + title_w_raw + badge_gap + total_badge_w + close_hit_size + TAB_H_PAD)
+            .clamp(TAB_MIN_WIDTH, compact_tab_cap);
 
     // Draw compact active tab bg + top accent line
-    renderer.draw_chrome_rect(
-        Rect::new(rect.x, rect.y, compact_tab_w, TAB_BAR_HEIGHT),
-        p.active_tab_bg,
-    );
-    // Reset area beyond compact tab to unfocused tab bar bg
-    // (render_pane_chrome draws tab_bar_bg_focused across the full width)
-    if compact_tab_w < available_w {
-        renderer.draw_chrome_rect(
-            Rect::new(
-                rect.x + compact_tab_w,
-                rect.y,
-                available_w - compact_tab_w,
-                TAB_BAR_HEIGHT,
-            ),
-            p.tab_bar_bg,
-        );
+    for step in single_pane_header_paint_steps(visible_dot_status.is_some()) {
+        match step {
+            SinglePaneHeaderPaintStep::Background => {
+                renderer.draw_chrome_rect(
+                    Rect::new(rect.x, rect.y, compact_tab_w, TAB_BAR_HEIGHT),
+                    p.active_tab_bg,
+                );
+                // Reset area beyond compact tab to unfocused tab bar bg
+                // (render_pane_chrome draws tab_bar_bg_focused across the full width)
+                if compact_tab_w < available_w {
+                    renderer.draw_chrome_rect(
+                        Rect::new(
+                            rect.x + compact_tab_w,
+                            rect.y,
+                            available_w - compact_tab_w,
+                            TAB_BAR_HEIGHT,
+                        ),
+                        p.tab_bar_bg,
+                    );
+                }
+                renderer.draw_chrome_rect(
+                    Rect::new(rect.x, rect.y, compact_tab_w, TAB_ACTIVE_INDICATOR_HEIGHT),
+                    p.border_focused,
+                );
+            }
+            SinglePaneHeaderPaintStep::Dot => {
+                if let Some(status) = visible_dot_status {
+                    let dot_color = stage_terminal_dot_color(status, blink_time);
+                    let dot_size = 8.0_f32;
+                    let dot_y = rect.y + (TAB_BAR_HEIGHT - dot_size) / 2.0;
+                    renderer.draw_chrome_rounded_rect(
+                        Rect::new(dot_x, dot_y, dot_size, dot_size),
+                        dot_color,
+                        dot_size / 2.0,
+                    );
+                }
+            }
+        }
     }
-    renderer.draw_chrome_rect(
-        Rect::new(rect.x, rect.y, compact_tab_w, TAB_ACTIVE_INDICATOR_HEIGHT),
-        p.border_focused,
-    );
 
     // Position close icon relative to compact tab width
     let close_hit_x = rect.x + compact_tab_w - TAB_H_PAD - close_hit_size;
@@ -864,10 +948,8 @@ fn render_tab_bar_impl(
         if pinned_ids.contains(&tid) {
             label = format!("\u{f08d} {}", label);
         }
-        let has_agent_status = detected_agents
-            .get(&tid)
-            .and_then(|agent| agent.status)
-            .is_some();
+        let has_agent_status =
+            stage_terminal_dot_status(panes, detected_agents, tid, !is_dock).is_some();
         let badge_widths: Vec<f32> = if tid == active_pane {
             active_tab_badges(panes, &tid, is_focused, show_comment_badge)
                 .iter()
@@ -892,7 +974,10 @@ fn render_tab_bar_impl(
     // Compute total tabs width for scroll clamping
     let tab_widths: Vec<f32> = tabs_info.iter().map(|(_, _, w)| *w).collect();
     let visible_w = tabs_right - content_left;
-    let active_index = tab_ids.iter().position(|tid| *tid == active_pane).unwrap_or(0);
+    let active_index = tab_ids
+        .iter()
+        .position(|tid| *tid == active_pane)
+        .unwrap_or(0);
     let effective_scroll = resolve_tab_scroll_offset(
         &tab_widths,
         active_index,
@@ -917,7 +1002,6 @@ fn render_tab_bar_impl(
 
         let is_active = *tid == active_pane;
         let is_focused_tab = focused == Some(*tid);
-
         // Active tab: subtle lighter background + 2px accent line at top
         if is_active {
             let bg_rect = Rect::new(cx, tab_y, tw, TAB_BAR_HEIGHT).clip_to(&tab_clip);
@@ -943,29 +1027,16 @@ fn render_tab_bar_impl(
 
         // Agent status dot
         let mut dot_offset = 0.0_f32;
-        if let Some(agent) = detected_agents.get(tid) {
-            if let Some(status) = agent.status {
-                use crate::state::gateway_status::AgentStatus;
-                let mut dot_color = match status {
-                    AgentStatus::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
-                    AgentStatus::Idle => crate::tide_core::Color::new(0.3, 0.8, 0.4, 0.6),
-                    AgentStatus::NeedsInput => crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0),
-                };
-                if matches!(status, AgentStatus::NeedsInput) && !is_focused_tab {
-                    if let Some(t) = blink_time {
-                        dot_color.a =
-                            0.65 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
-                    }
-                }
-                let dot_size = 6.0_f32;
-                let dot_x = cx + TAB_H_PAD;
-                let dot_y = tab_y + (tab_h - dot_size) / 2.0;
-                let dot_rect = Rect::new(dot_x, dot_y, dot_size, dot_size).clip_to(&tab_clip);
-                if dot_rect.width > 0.0 && dot_rect.height > 0.0 {
-                    renderer.draw_chrome_rounded_rect(dot_rect, dot_color, dot_size / 2.0);
-                }
-                dot_offset = tab_status_dot_width(true);
+        if let Some(status) = stage_terminal_dot_status(panes, detected_agents, *tid, !is_dock) {
+            let dot_color = stage_terminal_dot_color(status, blink_time);
+            let dot_size = 8.0_f32;
+            let dot_x = cx + TAB_H_PAD;
+            let dot_y = tab_y + (tab_h - dot_size) / 2.0;
+            let dot_rect = Rect::new(dot_x, dot_y, dot_size, dot_size).clip_to(&tab_clip);
+            if dot_rect.width > 0.0 && dot_rect.height > 0.0 {
+                renderer.draw_chrome_rounded_rect(dot_rect, dot_color, dot_size / 2.0);
             }
+            dot_offset = tab_status_dot_width(true);
         }
 
         let text_color = if is_focused_tab || (is_active && is_focused) {
@@ -1107,6 +1178,53 @@ fn render_tab_bar_impl(
         }
 
         cx += tw; // no gap between tabs (spacing = 0)
+    }
+
+    if !is_dock {
+        let alert_indices: Vec<usize> = tab_ids
+            .iter()
+            .enumerate()
+            .filter_map(|(index, tid)| {
+                stage_terminal_dot_status(panes, detected_agents, *tid, true).and_then(|status| {
+                    if matches!(
+                        status,
+                        crate::state::gateway_status::AgentStatus::Idle
+                            | crate::state::gateway_status::AgentStatus::NeedsInput
+                    ) {
+                        Some(index)
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect();
+        let (show_left_edge, show_right_edge) = overflowed_stage_alert_tab_edges(
+            &tab_widths,
+            &alert_indices,
+            visible_w,
+            effective_scroll,
+        );
+        let edge_color =
+            stage_terminal_dot_color(crate::state::gateway_status::AgentStatus::Idle, blink_time);
+        let dot_size = 8.0_f32;
+        let dot_y = tab_y + (tab_h - dot_size) / 2.0;
+
+        if show_left_edge {
+            let dot_x = content_left + 4.0;
+            renderer.draw_chrome_rounded_rect(
+                Rect::new(dot_x, dot_y, dot_size, dot_size),
+                edge_color,
+                dot_size / 2.0,
+            );
+        }
+        if show_right_edge {
+            let dot_x = tabs_right - dot_size - 4.0;
+            renderer.draw_chrome_rounded_rect(
+                Rect::new(dot_x, dot_y, dot_size, dot_size),
+                edge_color,
+                dot_size / 2.0,
+            );
+        }
     }
 
     zones
@@ -1442,5 +1560,20 @@ mod tests {
 
         assert_eq!(layout.visible_badges, 0);
         assert!(layout.title_w >= 64.0);
+    }
+
+    #[test]
+    fn single_pane_header_paints_status_dot_after_background() {
+        assert_eq!(
+            single_pane_header_paint_steps(true),
+            vec![
+                SinglePaneHeaderPaintStep::Background,
+                SinglePaneHeaderPaintStep::Dot,
+            ]
+        );
+        assert_eq!(
+            single_pane_header_paint_steps(false),
+            vec![SinglePaneHeaderPaintStep::Background]
+        );
     }
 }

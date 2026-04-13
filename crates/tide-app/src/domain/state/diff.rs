@@ -4,11 +4,11 @@
 #[derive(Debug, Clone)]
 pub enum DiffOp {
     /// Line exists in both disk and buffer (unchanged).
-    Equal(usize),      // buffer line index
+    Equal(usize), // buffer line index
     /// Line exists only in buffer (added).
-    Insert(usize),     // buffer line index
+    Insert(usize), // buffer line index
     /// Line exists only on disk (deleted).
-    Delete(usize),     // disk line index
+    Delete(usize), // disk line index
 }
 
 /// Compute a line-level unified diff between disk content and buffer content.
@@ -97,9 +97,18 @@ mod tests {
         let ops = compute_diff(&disk, &buffer);
 
         // Expected: Equal(a), Delete(b), Insert(x), Equal(c), Equal(d), Insert(e)
-        let equals = ops.iter().filter(|op| matches!(op, DiffOp::Equal(_))).count();
-        let inserts = ops.iter().filter(|op| matches!(op, DiffOp::Insert(_))).count();
-        let deletes = ops.iter().filter(|op| matches!(op, DiffOp::Delete(_))).count();
+        let equals = ops
+            .iter()
+            .filter(|op| matches!(op, DiffOp::Equal(_)))
+            .count();
+        let inserts = ops
+            .iter()
+            .filter(|op| matches!(op, DiffOp::Insert(_)))
+            .count();
+        let deletes = ops
+            .iter()
+            .filter(|op| matches!(op, DiffOp::Delete(_)))
+            .count();
         assert_eq!(equals, 3); // a, c, d
         assert_eq!(deletes, 1); // b
         assert_eq!(inserts, 2); // x, e

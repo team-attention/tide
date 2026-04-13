@@ -1,9 +1,9 @@
 // GpuPort — GPU device, renderer, surface, and render thread.
 
-use std::sync::Arc;
 use crate::tide_core::PaneId;
-use crate::tide_renderer::WgpuRenderer;
 use crate::tide_renderer::render_thread::RenderThreadHandle;
+use crate::tide_renderer::WgpuRenderer;
+use std::sync::Arc;
 
 pub(crate) trait GpuPort {
     fn renderer(&self) -> Option<&WgpuRenderer>;

@@ -5,12 +5,15 @@ use crate::search;
 use crate::theme::*;
 use crate::AppCorePort;
 use crate::FocusNavPort;
-use crate::PaneAccessPort;
 use crate::InputStatePort;
+use crate::PaneAccessPort;
 
 // ── Trait alias for search adapter ports ──
 
-pub(crate) trait SearchPorts: AppCorePort + FocusNavPort + PaneAccessPort + InputStatePort {}
+pub(crate) trait SearchPorts:
+    AppCorePort + FocusNavPort + PaneAccessPort + InputStatePort
+{
+}
 impl<T: AppCorePort + FocusNavPort + PaneAccessPort + InputStatePort> SearchPorts for T {}
 
 // ── Search bar click handling ────────────────
@@ -51,7 +54,9 @@ fn check_search_bar_at(ctx: &mut impl SearchPorts, pos: Vec2, id: PaneId, rect: 
     }
 
     let bar_w = SEARCH_BAR_WIDTH.min(rect.width - 16.0);
-    if bar_w < 80.0 { return false; }
+    if bar_w < 80.0 {
+        return false;
+    }
     let bar_h = SEARCH_BAR_HEIGHT;
     let bar_x = rect.x + rect.width - bar_w - 8.0;
     let bar_y = rect.y + TAB_BAR_HEIGHT + 4.0;
@@ -66,8 +71,12 @@ fn check_search_bar_at(ctx: &mut impl SearchPorts, pos: Vec2, id: PaneId, rect: 
     if pos.x >= close_x {
         // Close search
         match ctx.pane_mut(id) {
-            Some(PaneKind::Terminal(pane)) => { pane.search = None; }
-            Some(PaneKind::Editor(pane)) => { pane.search = None; }
+            Some(PaneKind::Terminal(pane)) => {
+                pane.search = None;
+            }
+            Some(PaneKind::Editor(pane)) => {
+                pane.search = None;
+            }
             Some(PaneKind::Diff(_)) | Some(PaneKind::Browser(_)) | Some(PaneKind::Launcher(_)) => {}
             None => {}
         }
@@ -86,7 +95,11 @@ fn check_search_bar_at(ctx: &mut impl SearchPorts, pos: Vec2, id: PaneId, rect: 
 
 fn editor_visible_rows(ctx: &impl AppCorePort, pane_id: PaneId) -> usize {
     let cs = ctx.cell_size();
-    if let Some(&(_, rect)) = ctx.visual_pane_rects().iter().find(|(id, _)| *id == pane_id) {
+    if let Some(&(_, rect)) = ctx
+        .visual_pane_rects()
+        .iter()
+        .find(|(id, _)| *id == pane_id)
+    {
         return ((rect.height - TAB_BAR_HEIGHT - PANE_PADDING) / cs.height).floor() as usize;
     }
     30
@@ -95,7 +108,11 @@ fn editor_visible_rows(ctx: &impl AppCorePort, pane_id: PaneId) -> usize {
 fn editor_visible_cols(ctx: &impl AppCorePort, pane_id: PaneId) -> usize {
     let cs = ctx.cell_size();
     let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cs.width;
-    if let Some(&(_, rect)) = ctx.visual_pane_rects().iter().find(|(id, _)| *id == pane_id) {
+    if let Some(&(_, rect)) = ctx
+        .visual_pane_rects()
+        .iter()
+        .find(|(id, _)| *id == pane_id)
+    {
         let cw = rect.width - 2.0 * PANE_PADDING - 2.0 * gutter_width;
         return (cw / cs.width).floor().max(1.0) as usize;
     }
@@ -200,13 +217,19 @@ pub(crate) fn search_bar_delete(ctx: &mut impl SearchPorts, pane_id: PaneId) {
 pub(crate) fn search_bar_cursor_left(ctx: &mut impl PaneAccessPort, pane_id: PaneId) {
     match ctx.pane_mut(pane_id) {
         Some(PaneKind::Terminal(pane)) => {
-            if let Some(ref mut s) = pane.search { s.input.move_cursor_left(); }
+            if let Some(ref mut s) = pane.search {
+                s.input.move_cursor_left();
+            }
         }
         Some(PaneKind::Editor(pane)) => {
-            if let Some(ref mut s) = pane.search { s.input.move_cursor_left(); }
+            if let Some(ref mut s) = pane.search {
+                s.input.move_cursor_left();
+            }
         }
         Some(PaneKind::Browser(bp)) => {
-            if let Some(ref mut s) = bp.search { s.input.move_cursor_left(); }
+            if let Some(ref mut s) = bp.search {
+                s.input.move_cursor_left();
+            }
         }
         Some(PaneKind::Diff(_)) | Some(PaneKind::Launcher(_)) => {}
         None => {}
@@ -216,13 +239,19 @@ pub(crate) fn search_bar_cursor_left(ctx: &mut impl PaneAccessPort, pane_id: Pan
 pub(crate) fn search_bar_cursor_right(ctx: &mut impl PaneAccessPort, pane_id: PaneId) {
     match ctx.pane_mut(pane_id) {
         Some(PaneKind::Terminal(pane)) => {
-            if let Some(ref mut s) = pane.search { s.input.move_cursor_right(); }
+            if let Some(ref mut s) = pane.search {
+                s.input.move_cursor_right();
+            }
         }
         Some(PaneKind::Editor(pane)) => {
-            if let Some(ref mut s) = pane.search { s.input.move_cursor_right(); }
+            if let Some(ref mut s) = pane.search {
+                s.input.move_cursor_right();
+            }
         }
         Some(PaneKind::Browser(bp)) => {
-            if let Some(ref mut s) = bp.search { s.input.move_cursor_right(); }
+            if let Some(ref mut s) = bp.search {
+                s.input.move_cursor_right();
+            }
         }
         Some(PaneKind::Diff(_)) | Some(PaneKind::Launcher(_)) => {}
         None => {}
@@ -263,7 +292,9 @@ fn search_scroll_to_current(ctx: &mut impl SearchPorts, pane_id: PaneId) {
                     let rows = pane.backend.current_rows() as usize;
                     let screen_start = history_size + rows;
                     if match_line < screen_start {
-                        let desired_offset = screen_start.saturating_sub(match_line).saturating_sub(rows / 2);
+                        let desired_offset = screen_start
+                            .saturating_sub(match_line)
+                            .saturating_sub(rows / 2);
                         let current_offset = pane.backend.display_offset();
                         let delta = desired_offset as i32 - current_offset as i32;
                         if delta != 0 {
@@ -274,8 +305,10 @@ fn search_scroll_to_current(ctx: &mut impl SearchPorts, pane_id: PaneId) {
             }
         }
         Some(PaneKind::Editor(pane)) => {
-            let match_info = pane.search.as_ref()
-                .and_then(|s| s.current.map(|idx| (s.matches[idx].line, s.matches[idx].col, s.matches[idx].len)));
+            let match_info = pane.search.as_ref().and_then(|s| {
+                s.current
+                    .map(|idx| (s.matches[idx].line, s.matches[idx].col, s.matches[idx].len))
+            });
             if let Some((m_line, m_col, m_len)) = match_info {
                 if pane.preview_mode {
                     let line_count = pane.preview_line_count();
@@ -293,7 +326,11 @@ fn search_scroll_to_current(ctx: &mut impl SearchPorts, pane_id: PaneId) {
                     if m_col < h_scroll {
                         pane.editor.set_h_scroll_offset(m_col.saturating_sub(4));
                     } else if m_col + m_len > h_scroll + visible_cols {
-                        pane.editor.set_h_scroll_offset((m_col + m_len).saturating_sub(visible_cols).saturating_add(4));
+                        pane.editor.set_h_scroll_offset(
+                            (m_col + m_len)
+                                .saturating_sub(visible_cols)
+                                .saturating_add(4),
+                        );
                     }
                 }
             }
@@ -316,7 +353,9 @@ pub(crate) fn search_next_match(ctx: &mut impl SearchPorts, pane_id: PaneId) {
                     let rows = pane.backend.current_rows() as usize;
                     let screen_start = history_size + rows;
                     if match_line < screen_start {
-                        let desired_offset = screen_start.saturating_sub(match_line).saturating_sub(rows / 2);
+                        let desired_offset = screen_start
+                            .saturating_sub(match_line)
+                            .saturating_sub(rows / 2);
                         let current_offset = pane.backend.display_offset();
                         let delta = desired_offset as i32 - current_offset as i32;
                         if delta != 0 {
@@ -329,7 +368,8 @@ pub(crate) fn search_next_match(ctx: &mut impl SearchPorts, pane_id: PaneId) {
         Some(PaneKind::Editor(pane)) => {
             let match_info = if let Some(ref mut s) = pane.search {
                 s.next_match();
-                s.current.map(|idx| (s.matches[idx].line, s.matches[idx].col, s.matches[idx].len))
+                s.current
+                    .map(|idx| (s.matches[idx].line, s.matches[idx].col, s.matches[idx].len))
             } else {
                 None
             };
@@ -350,7 +390,11 @@ pub(crate) fn search_next_match(ctx: &mut impl SearchPorts, pane_id: PaneId) {
                     if m_col < h_scroll {
                         pane.editor.set_h_scroll_offset(m_col.saturating_sub(4));
                     } else if m_col + m_len > h_scroll + visible_cols {
-                        pane.editor.set_h_scroll_offset((m_col + m_len).saturating_sub(visible_cols).saturating_add(4));
+                        pane.editor.set_h_scroll_offset(
+                            (m_col + m_len)
+                                .saturating_sub(visible_cols)
+                                .saturating_add(4),
+                        );
                     }
                 }
             }
@@ -383,7 +427,9 @@ pub(crate) fn search_prev_match(ctx: &mut impl SearchPorts, pane_id: PaneId) {
                     let rows = pane.backend.current_rows() as usize;
                     let screen_start = history_size + rows;
                     if match_line < screen_start {
-                        let desired_offset = screen_start.saturating_sub(match_line).saturating_sub(rows / 2);
+                        let desired_offset = screen_start
+                            .saturating_sub(match_line)
+                            .saturating_sub(rows / 2);
                         let current_offset = pane.backend.display_offset();
                         let delta = desired_offset as i32 - current_offset as i32;
                         if delta != 0 {
@@ -396,7 +442,8 @@ pub(crate) fn search_prev_match(ctx: &mut impl SearchPorts, pane_id: PaneId) {
         Some(PaneKind::Editor(pane)) => {
             let match_info = if let Some(ref mut s) = pane.search {
                 s.prev_match();
-                s.current.map(|idx| (s.matches[idx].line, s.matches[idx].col, s.matches[idx].len))
+                s.current
+                    .map(|idx| (s.matches[idx].line, s.matches[idx].col, s.matches[idx].len))
             } else {
                 None
             };
@@ -417,7 +464,11 @@ pub(crate) fn search_prev_match(ctx: &mut impl SearchPorts, pane_id: PaneId) {
                     if m_col < h_scroll {
                         pane.editor.set_h_scroll_offset(m_col.saturating_sub(4));
                     } else if m_col + m_len > h_scroll + visible_cols {
-                        pane.editor.set_h_scroll_offset((m_col + m_len).saturating_sub(visible_cols).saturating_add(4));
+                        pane.editor.set_h_scroll_offset(
+                            (m_col + m_len)
+                                .saturating_sub(visible_cols)
+                                .saturating_add(4),
+                        );
                     }
                 }
             }

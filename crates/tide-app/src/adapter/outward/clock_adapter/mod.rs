@@ -1,7 +1,7 @@
 // Clock adapter implementations.
 
-use std::time::Instant;
 use crate::application::ports::outward::clock_port::ClockPort;
+use std::time::Instant;
 
 /// Real clock implementation using std::time::Instant.
 pub(crate) struct SystemClock;

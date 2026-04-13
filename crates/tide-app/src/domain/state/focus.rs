@@ -42,6 +42,12 @@ pub(crate) struct FocusState {
 
 impl FocusState {
     pub fn new() -> Self {
-        Self { focused: None, focus_area: FocusArea::Stage, stage_focused: None, zoomed_pane: None, search_focus: None }
+        Self {
+            focused: None,
+            focus_area: FocusArea::Stage,
+            stage_focused: None,
+            zoomed_pane: None,
+            search_focus: None,
+        }
     }
 }

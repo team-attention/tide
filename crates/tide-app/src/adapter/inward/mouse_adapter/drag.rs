@@ -3,13 +3,17 @@
 use crate::tide_core::{InputEvent, Vec2};
 use crate::tide_platform::WindowProxy;
 
+use super::MousePorts;
 use crate::state::drag_types::PaneDragState;
 use crate::theme::*;
-use super::MousePorts;
 
 /// Main entry point for cursor-moved events. Dispatches to drag handlers,
 /// selection drag, or hover tracking depending on current state.
-pub(crate) fn handle_cursor_moved_logical(ctx: &mut impl MousePorts, pos: Vec2, window: &WindowProxy) {
+pub(crate) fn handle_cursor_moved_logical(
+    ctx: &mut impl MousePorts,
+    pos: Vec2,
+    window: &WindowProxy,
+) {
     ctx.set_last_cursor_pos(pos);
 
     // Handle workspace sidebar drag
@@ -126,17 +130,38 @@ pub(crate) fn handle_cursor_moved_logical(ctx: &mut impl MousePorts, pos: Vec2, 
     // Handle pane drag — extract needed values to avoid borrow conflicts.
     enum DragSnapshot {
         Idle,
-        Pending { source: crate::tide_core::PaneId, press_pos: Vec2 },
-        Active { source: crate::tide_core::PaneId, prev_target: Option<crate::state::drag_types::DropDestination>, prev_preview: Option<crate::tide_core::Rect>, label: String },
+        Pending {
+            source: crate::tide_core::PaneId,
+            press_pos: Vec2,
+        },
+        Active {
+            source: crate::tide_core::PaneId,
+            prev_target: Option<crate::state::drag_types::DropDestination>,
+            prev_preview: Option<crate::tide_core::Rect>,
+            label: String,
+        },
     }
     let snap = match &ctx.interaction().pane_drag {
         PaneDragState::Idle => DragSnapshot::Idle,
-        PaneDragState::PendingDrag { source_pane, press_pos } => {
-            DragSnapshot::Pending { source: *source_pane, press_pos: *press_pos }
-        }
-        PaneDragState::Dragging { source_pane, drop_target, cached_preview_rect, source_label, .. } => {
-            DragSnapshot::Active { source: *source_pane, prev_target: drop_target.clone(), prev_preview: *cached_preview_rect, label: source_label.clone() }
-        }
+        PaneDragState::PendingDrag {
+            source_pane,
+            press_pos,
+        } => DragSnapshot::Pending {
+            source: *source_pane,
+            press_pos: *press_pos,
+        },
+        PaneDragState::Dragging {
+            source_pane,
+            drop_target,
+            cached_preview_rect,
+            source_label,
+            ..
+        } => DragSnapshot::Active {
+            source: *source_pane,
+            prev_target: drop_target.clone(),
+            prev_preview: *cached_preview_rect,
+            label: source_label.clone(),
+        },
     };
     match snap {
         DragSnapshot::Pending { source, press_pos } => {
@@ -161,7 +186,12 @@ pub(crate) fn handle_cursor_moved_logical(ctx: &mut impl MousePorts, pos: Vec2, 
             ctx.request_redraw();
             return;
         }
-        DragSnapshot::Active { source, prev_target, prev_preview, label } => {
+        DragSnapshot::Active {
+            source,
+            prev_target,
+            prev_preview,
+            label,
+        } => {
             let new_target = ctx.compute_drop_destination(pos, source);
             let target_changed = new_target != prev_target;
             let preview = if target_changed {
@@ -208,17 +238,18 @@ pub(crate) fn handle_cursor_moved_logical(ctx: &mut impl MousePorts, pos: Vec2, 
         }
 
         // Hover target
-        let new_hover = crate::adapter::inward::click_adapter::hit_test::compute_hover_target(ctx, pos);
+        let new_hover =
+            crate::adapter::inward::click_adapter::hit_test::compute_hover_target(ctx, pos);
         let old_hover = ctx.interaction().hover_target.clone();
         if new_hover != old_hover {
-            let chrome_affected = old_hover
-                .as_ref()
-                .map_or(false, |h| h.affects_chrome())
+            let chrome_affected = old_hover.as_ref().map_or(false, |h| h.affects_chrome())
                 || new_hover.as_ref().map_or(false, |h| h.affects_chrome());
             let visual_changed = old_hover
                 .as_ref()
                 .map_or(false, |h| h.has_visual_feedback())
-                || new_hover.as_ref().map_or(false, |h| h.has_visual_feedback());
+                || new_hover
+                    .as_ref()
+                    .map_or(false, |h| h.has_visual_feedback());
             ctx.interaction_mut().hover_target = new_hover;
             ctx.update_cursor_icon(window);
             if chrome_affected {

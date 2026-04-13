@@ -4,25 +4,31 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::adapter::inward::event_loop_adapter::terminal_badge_check_delay;
 use crate::adapter::inward::scroll_adapter::{
     clamp_shared_tab_scroll_offset, handle_scroll, shared_tab_scroll_delta,
     shared_tab_scroll_is_new_gesture, shared_tab_scroll_step,
 };
-use crate::adapter::inward::event_loop_adapter::terminal_badge_check_delay;
-use crate::application::services::file_tree_service::sync_terminal_badge_runtime_context;
 use crate::adapter::outward::view::header::{
-    active_tab_badges, active_tab_width_cap, reserve_title_before_badges,
-    resolve_tab_scroll_offset, shared_tab_active_width_cap,
-    shared_tab_target_width, tab_status_dot_width, terminal_header_title_color, HeaderHitAction,
+    active_tab_badges, active_tab_width_cap, overflowed_stage_alert_tab_edges,
+    reserve_title_before_badges, resolve_tab_scroll_offset, shared_tab_active_width_cap,
+    shared_tab_target_width, stage_terminal_dot_color, stage_terminal_dot_status,
+    tab_status_dot_width, terminal_chrome_agent_status, terminal_header_title_color,
+    HeaderHitAction,
 };
+use crate::adapter::outward::view::{
+    pane_surface_attention_status, workspace_item_indicator_color, workspace_item_indicator_status,
+    wrapped_agent_blink_time,
+};
+use crate::application::services::file_tree_service::sync_terminal_badge_runtime_context;
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalContext, TerminalPane};
 use crate::state::FocusArea;
-use crate::tide_core::Rect;
 use crate::theme::{
-    ACTIVE_TAB_MAX_WIDTH, BADGE_GAP, BADGE_PADDING_H, DARK, LIGHT, TAB_BAR_HEIGHT,
-    TAB_CONTENT_SPACING, TAB_H_PAD, TAB_MAX_WIDTH, TAB_MIN_TITLE_WIDTH,
+    ACTIVE_TAB_MAX_WIDTH, AGENT_BLINK_FREQUENCY, BADGE_GAP, BADGE_PADDING_H, DARK, LIGHT,
+    TAB_BAR_HEIGHT, TAB_CONTENT_SPACING, TAB_H_PAD, TAB_MAX_WIDTH, TAB_MIN_TITLE_WIDTH,
 };
+use crate::tide_core::Rect;
 use crate::tide_terminal::git::{GitInfo, GitStatus, WorktreeInfo};
 use crate::ui::pane_title;
 use crate::{App, DockPort};
@@ -89,6 +95,22 @@ fn test_app() -> App {
     app
 }
 
+fn wrapped_agent_info(
+    status: crate::state::gateway_status::AgentStatus,
+) -> crate::state::gateway_status::AgentInfo {
+    crate::state::gateway_status::AgentInfo {
+        name: "Codex",
+        pid: 42,
+        wrapper_managed: true,
+        gateway_connected: true,
+        status: Some(status),
+    }
+}
+
+fn quarter_phase_blink_time() -> f64 {
+    std::f64::consts::FRAC_PI_2 / AGENT_BLINK_FREQUENCY
+}
+
 // --- UC-1: RenderFocusedPaneChrome ---
 
 #[test]
@@ -114,26 +136,131 @@ fn focused_header_accent_renders_without_agent_status() {
 // --- UC-2: RenderNeedsInputAttentionChrome ---
 
 #[test]
-fn needs_input_attention_is_stronger_than_focus_chrome() {
-    // UC-2 BR-3: Wrapper-managed NeedsInput chrome remains stronger than ordinary focus chrome.
-    let needs_input = crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0);
-
-    assert!(needs_input.a > DARK.border_focused.a);
-    assert!(needs_input.a > LIGHT.border_focused.a);
+fn stage_terminal_attention_does_not_use_pane_surface_fill_or_underline() {
+    // UC-2 BR-3: Wrapper-managed attention is dot-only and does not add pane-surface fill or underline.
+    assert_eq!(
+        pane_surface_attention_status(Some(crate::state::gateway_status::AgentStatus::Idle), true),
+        None
+    );
+    assert_eq!(
+        pane_surface_attention_status(
+            Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+            false,
+        ),
+        None
+    );
+    assert_eq!(
+        pane_surface_attention_status(
+            Some(crate::state::gateway_status::AgentStatus::Running),
+            false,
+        ),
+        None
+    );
 }
 
 #[test]
-fn needs_input_attention_is_visually_distinct_from_focus_chrome() {
-    // UC-2 BR-4: Focus chrome and wrapper-managed NeedsInput chrome are distinct signals.
-    let needs_input = crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0);
+fn idle_and_needs_input_share_the_same_stage_terminal_alert_family() {
+    // UC-2 BR-4: Idle and NeedsInput share the same orange alert dot family on Stage Terminal chrome.
+    let idle_color =
+        stage_terminal_dot_color(crate::state::gateway_status::AgentStatus::Idle, Some(0.0));
+    let needs_input_color = stage_terminal_dot_color(
+        crate::state::gateway_status::AgentStatus::NeedsInput,
+        Some(0.0),
+    );
 
-    assert_ne!(color_tuple(needs_input), color_tuple(DARK.border_focused));
-    assert_ne!(color_tuple(needs_input), color_tuple(LIGHT.border_focused));
+    assert_eq!(idle_color.r.to_bits(), needs_input_color.r.to_bits());
+    assert_eq!(idle_color.g.to_bits(), needs_input_color.g.to_bits());
+    assert_eq!(idle_color.b.to_bits(), needs_input_color.b.to_bits());
+    assert!(idle_color.r > idle_color.g);
+    assert!(idle_color.g > idle_color.b);
 }
 
 #[test]
-fn dock_editor_inherits_needs_input_attention_from_paired_terminal() {
-    // UC-2 BR-5: A non-terminal Pane with an Associated Terminal inherits wrapper-managed NeedsInput chrome from the paired Wrapped Agent.
+fn focused_stage_terminal_keeps_its_alert_dot_until_acknowledged() {
+    // UC-2 BR-6: A focused direct wrapped-agent Stage Terminal keeps its alert dot until acknowledgment clears the status.
+    let terminal_id = 10;
+    let terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    let mut panes = HashMap::new();
+    panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    let mut detected_agents = HashMap::new();
+    detected_agents.insert(
+        terminal_id,
+        wrapped_agent_info(crate::state::gateway_status::AgentStatus::NeedsInput),
+    );
+
+    assert_eq!(
+        stage_terminal_dot_status(&panes, &detected_agents, terminal_id, true),
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
+}
+
+// --- UC-4: RenderWorkspaceIndicatorChrome ---
+
+#[test]
+fn inactive_workspace_alert_renders_an_orange_blinking_dot() {
+    // UC-4 BR-11: An inactive Workspace item with unresolved Stage-terminal Idle or NeedsInput renders an orange blinking dot.
+    let status = workspace_item_indicator_status(false, false, true);
+    let start = workspace_item_indicator_color(status.expect("inactive alert status"), Some(0.0));
+    let later = workspace_item_indicator_color(
+        status.expect("inactive alert status"),
+        Some(quarter_phase_blink_time()),
+    );
+
+    assert!(start.r > start.g && start.g > start.b);
+    assert_ne!(start.a.to_bits(), later.a.to_bits());
+}
+
+#[test]
+fn workspace_running_renders_a_green_dot() {
+    // UC-4 BR-12: A Workspace item with Stage-terminal Running renders a green dot.
+    let status =
+        workspace_item_indicator_status(false, true, false).expect("running workspace indicator");
+    let color = workspace_item_indicator_color(status, Some(0.0));
+
+    assert!(color.g > color.r);
+    assert!(color.g > color.b);
+    assert_eq!(color.a, 1.0);
+}
+
+#[test]
+fn active_workspace_running_uses_the_live_stage_terminal_state() {
+    // UC-4 BR-12: The active Workspace item reads Running from the live Stage Terminal state.
+    let mut app = test_app();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    app.panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    app.focus.focused = Some(terminal_id);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.gateway.detected_agents.insert(
+        terminal_id,
+        wrapped_agent_info(crate::state::gateway_status::AgentStatus::Running),
+    );
+
+    let (has_running, has_alert) = app.workspace_stage_agent_flags(app.ws.active);
+
+    assert!(has_running);
+    assert!(!has_alert);
+    assert_eq!(
+        workspace_item_indicator_status(true, has_running, has_alert),
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
+}
+
+#[test]
+fn active_workspace_does_not_duplicate_the_alert_dot() {
+    // UC-4 BR-13: The active Workspace item does not duplicate the active Stage-terminal alert dot with a second orange alert dot.
+    assert_eq!(workspace_item_indicator_status(true, false, true), None);
+    assert_eq!(
+        workspace_item_indicator_status(true, true, false),
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
+}
+
+#[test]
+fn editor_does_not_inherit_wrapped_agent_chrome_from_associated_terminal() {
+    // UC-2 BR-5: A non-terminal Pane never inherits wrapped-agent pane chrome from its Associated Terminal.
     let mut app = test_app();
     let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
@@ -141,31 +268,168 @@ fn dock_editor_inherits_needs_input_attention_from_paired_terminal() {
     app.panes.insert(terminal_id, PaneKind::Terminal(terminal));
 
     let editor_id = app.layout.alloc_id();
-    app.panes
-        .insert(editor_id, PaneKind::Editor(EditorPane::new_empty(editor_id)));
+    app.panes.insert(
+        editor_id,
+        PaneKind::Editor(EditorPane::new_empty(editor_id)),
+    );
     app.add_pane_to_dock(editor_id, Some(terminal_id));
     app.assoc.associated_terminal.insert(editor_id, terminal_id);
     app.focus.focused = Some(terminal_id);
     app.focus.focus_area = FocusArea::Stage;
     app.gateway.detected_agents.insert(
         terminal_id,
-        crate::state::gateway_status::AgentInfo {
-            name: "Codex",
-            pid: 42,
-            wrapper_managed: true,
-            gateway_connected: true,
-            status: Some(crate::state::gateway_status::AgentStatus::NeedsInput),
-        },
+        wrapped_agent_info(crate::state::gateway_status::AgentStatus::NeedsInput),
     );
 
-    assert!(app.pane_agent_needs_input_attention(editor_id));
+    assert_eq!(app.pane_agent_attention_status(editor_id), None);
 }
 
-// --- UC-3: PreserveHeaderTitleBesideGitBadges ---
+// --- UC-3: RenderStageTerminalDot ---
+
+#[test]
+fn running_stage_terminal_renders_the_wrapped_agent_dot() {
+    // UC-3 BR-7: Only a direct wrapped-agent owner Terminal in Stage may render the wrapped-agent status dot.
+    let terminal_id = 11;
+    let terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    let mut panes = HashMap::new();
+    panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    let mut detected_agents = HashMap::new();
+    detected_agents.insert(
+        terminal_id,
+        wrapped_agent_info(crate::state::gateway_status::AgentStatus::Running),
+    );
+
+    assert_eq!(
+        terminal_chrome_agent_status(&panes, &detected_agents, terminal_id),
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
+    assert_eq!(
+        stage_terminal_dot_status(&panes, &detected_agents, terminal_id, true),
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
+    assert_eq!(tab_status_dot_width(true), 8.0 + TAB_CONTENT_SPACING);
+}
+
+#[test]
+fn running_stage_terminal_uses_a_green_dot_signal() {
+    // UC-3 BR-8: Running renders a solid green Stage-terminal dot.
+    let color = stage_terminal_dot_color(
+        crate::state::gateway_status::AgentStatus::Running,
+        Some(0.0),
+    );
+
+    assert!(color.g > color.r);
+    assert!(color.g > color.b);
+    assert_eq!(color.a, 1.0);
+}
+
+#[test]
+fn attention_stage_terminal_renders_an_orange_blinking_dot() {
+    // UC-3 BR-10: Unresolved Idle and NeedsInput render an orange blinking Stage-terminal dot.
+    let terminal_id = 12;
+    let terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    let mut panes = HashMap::new();
+    panes.insert(terminal_id, PaneKind::Terminal(terminal));
+
+    for status in [
+        crate::state::gateway_status::AgentStatus::Idle,
+        crate::state::gateway_status::AgentStatus::NeedsInput,
+    ] {
+        let mut detected_agents = HashMap::new();
+        detected_agents.insert(terminal_id, wrapped_agent_info(status));
+
+        assert_eq!(
+            terminal_chrome_agent_status(&panes, &detected_agents, terminal_id),
+            Some(status)
+        );
+        assert_eq!(
+            stage_terminal_dot_status(&panes, &detected_agents, terminal_id, true),
+            Some(status)
+        );
+        let start = stage_terminal_dot_color(status, Some(0.0));
+        let later = stage_terminal_dot_color(status, Some(quarter_phase_blink_time()));
+        assert!(start.r > start.g && start.g > start.b);
+        assert_ne!(start.a.to_bits(), later.a.to_bits());
+    }
+}
+
+#[test]
+fn wrapped_agent_alert_blink_uses_a_stable_timebase() {
+    // UC-3 BR-10: Wrapped-agent alert blink uses a stable origin rather than per-frame elapsed time.
+    let origin = std::time::Instant::now();
+    let later = origin
+        .checked_add(Duration::from_secs_f64(quarter_phase_blink_time()))
+        .expect("blink sample instant");
+
+    let start = wrapped_agent_blink_time(origin, origin, true).expect("start blink time");
+    let progressed = wrapped_agent_blink_time(later, origin, true).expect("later blink time");
+
+    assert_eq!(start.to_bits(), 0.0f64.to_bits());
+    assert!(progressed > start);
+
+    let stage_start =
+        stage_terminal_dot_color(crate::state::gateway_status::AgentStatus::Idle, Some(start));
+    let stage_later = stage_terminal_dot_color(
+        crate::state::gateway_status::AgentStatus::Idle,
+        Some(progressed),
+    );
+    let workspace_start = workspace_item_indicator_color(
+        crate::state::gateway_status::AgentStatus::Idle,
+        Some(start),
+    );
+    let workspace_later = workspace_item_indicator_color(
+        crate::state::gateway_status::AgentStatus::Idle,
+        Some(progressed),
+    );
+
+    assert_ne!(stage_start.a.to_bits(), stage_later.a.to_bits());
+    assert_ne!(workspace_start.a.to_bits(), workspace_later.a.to_bits());
+}
+
+#[test]
+fn dock_terminal_does_not_render_the_wrapped_agent_dot() {
+    // UC-3 BR-9: Dock chrome does not render the wrapped-agent status dot, even when the docked Pane is a Terminal.
+    let terminal_id = 13;
+    let terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    let mut panes = HashMap::new();
+    panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    let mut detected_agents = HashMap::new();
+    detected_agents.insert(
+        terminal_id,
+        wrapped_agent_info(crate::state::gateway_status::AgentStatus::Running),
+    );
+
+    assert_eq!(
+        stage_terminal_dot_status(&panes, &detected_agents, terminal_id, false),
+        None
+    );
+}
+
+// --- UC-5: RenderOverflowedAlertEdgeIndicator ---
+
+#[test]
+fn overflowed_alert_stage_tab_sets_the_left_edge_indicator() {
+    // UC-5 BR-14: A hidden alert tab left of the visible range renders an orange blinking left-edge indicator.
+    let (left, right) = overflowed_stage_alert_tab_edges(&[96.0, 96.0, 96.0], &[0], 140.0, 120.0);
+
+    assert!(left);
+    assert!(!right);
+}
+
+#[test]
+fn overflowed_alert_stage_tab_sets_the_right_edge_indicator() {
+    // UC-5 BR-15: A hidden alert tab right of the visible range renders an orange blinking right-edge indicator.
+    let (left, right) = overflowed_stage_alert_tab_edges(&[96.0, 96.0, 96.0], &[2], 140.0, 0.0);
+
+    assert!(!left);
+    assert!(right);
+}
+
+// --- UC-6: PreserveHeaderTitleBesideGitBadges ---
 
 #[test]
 fn active_terminal_header_preserves_title_when_git_badges_are_present() {
-    // UC-3 BR-6: Active single-pane headers keep a readable title when git branch or git status badges are present.
+    // UC-6 BR-16: Active single-pane headers keep a readable title when git branch or git status badges are present.
     let (panes, expected_title) = terminal_with_git_info(1);
     let title = pane_title(&panes, 1);
     assert_eq!(title, expected_title);
@@ -197,7 +461,7 @@ fn active_terminal_header_preserves_title_when_git_badges_are_present() {
 
 #[test]
 fn active_stage_tab_preserves_title_when_git_badges_are_present() {
-    // UC-3 BR-7: Active Stage tabs keep a readable title when git badges are present.
+    // UC-6 BR-17: Active Stage tabs keep a readable title when git badges are present.
     let (panes, expected_title) = terminal_with_git_info(2);
     let title_w = expected_title.chars().count() as f32 * 8.0;
     let branch_badge_w =
@@ -220,7 +484,7 @@ fn active_stage_tab_preserves_title_when_git_badges_are_present() {
 
 #[test]
 fn git_badges_yield_space_before_title_disappears() {
-    // UC-3 BR-8: Header layout constants keep a readable title budget beside a git badge.
+    // UC-6 BR-18: Header layout constants keep a readable title budget beside a git badge.
     let cell_w = 8.0_f32;
     let close_hit_w = 16.0_f32;
     let branch_badge_w = 4.0 * cell_w + BADGE_PADDING_H * 2.0;
@@ -237,7 +501,7 @@ fn git_badges_yield_space_before_title_disappears() {
 
 #[test]
 fn focused_tabs_use_a_brighter_tint_than_unfocused_tabs() {
-    // UC-4 BR-10: Focused tabs use a brighter tint than unfocused tabs in the shared header and tab-bar rendering paths.
+    // UC-7 BR-20: Focused tabs use a brighter tint than unfocused tabs in the shared header and tab-bar rendering paths.
     assert!(
         color_brightness(DARK.tab_bar_bg_focused) >= color_brightness(DARK.tab_bar_bg) + 0.03,
         "focused dark tab chrome should be visibly brighter than unfocused tab chrome"
@@ -250,7 +514,7 @@ fn focused_tabs_use_a_brighter_tint_than_unfocused_tabs() {
 
 #[test]
 fn shared_tab_chrome_is_slightly_larger_across_all_surfaces() {
-    // UC-4 BR-9: Shared tab chrome uses a slightly larger height and padding budget across Stage tabs, Dock tabs, and single-Pane headers.
+    // UC-7 BR-19: Shared tab chrome uses a slightly larger height and padding budget across Stage tabs, Dock tabs, and single-Pane headers.
     assert!(
         TAB_BAR_HEIGHT >= 35.0,
         "shared tab chrome should gain at least one pixel of height"
@@ -275,7 +539,7 @@ fn shared_tab_chrome_is_slightly_larger_across_all_surfaces() {
 
 #[test]
 fn busy_terminal_labels_use_a_readable_color_path() {
-    // UC-4 BR-11: Busy Terminal Pane headers use a readable label color instead of the dimmed badge color path.
+    // UC-7 BR-21: Busy Terminal Pane headers use a readable label color instead of the dimmed badge color path.
     assert!(
         terminal_header_title_color(&DARK, false, false) == DARK.tab_text,
         "busy terminal labels should use the shared tab text color when unfocused"
@@ -296,7 +560,7 @@ fn busy_terminal_labels_use_a_readable_color_path() {
 
 #[test]
 fn active_markdown_live_preview_chrome_keeps_plain_and_comment_badges_visible() {
-    // UC-4 BR-12: The shared active-tab width budget stretches with the available row width enough to keep both live-preview critical badges visible without collapsing the title below its minimum.
+    // UC-7 BR-22: The shared active-tab width budget stretches with the available row width enough to keep both live-preview critical badges visible without collapsing the title below its minimum.
     let mut editor = EditorPane::new_empty(1);
     editor.editor.buffer.file_path = Some(PathBuf::from("README.md"));
     editor.live_preview = true;
@@ -325,7 +589,7 @@ fn active_markdown_live_preview_chrome_keeps_plain_and_comment_badges_visible() 
 
 #[test]
 fn stacked_stage_active_terminal_tab_keeps_git_status_badges_when_agent_dot_is_present() {
-    // UC-4 BR-13: A stacked Stage active Terminal Pane keeps both git badges visible even when a connected-agent status dot shares the same tab-width budget.
+    // UC-7 BR-23: A stacked Stage active Terminal Pane keeps both git badges visible even when a connected-agent status dot shares the same tab-width budget.
     let mut terminal = TerminalPane::with_cwd(7, 80, 24, None, true).unwrap();
     terminal.context.git_info = Some(GitInfo {
         branch: "main".to_string(),
@@ -367,7 +631,7 @@ fn stacked_stage_active_terminal_tab_keeps_git_status_badges_when_agent_dot_is_p
 
 #[test]
 fn overflowed_shared_tab_bar_keeps_the_active_tab_visible() {
-    // UC-4 BR-14: Overflowed shared tab bars auto-fit the active tab into view when a stale scroll offset would otherwise hide it.
+    // UC-7 BR-24: Overflowed shared tab bars auto-fit the active tab into view when a stale scroll offset would otherwise hide it.
     let tab_widths = [120.0, 120.0, 120.0, 220.0];
     let visible_w = 260.0;
     let adjusted_scroll = resolve_tab_scroll_offset(&tab_widths, 3, visible_w, 0.0, true);
@@ -381,11 +645,12 @@ fn overflowed_shared_tab_bar_keeps_the_active_tab_visible() {
 
 #[test]
 fn manual_shared_tab_scroll_does_not_snap_back_to_the_active_tab() {
-    // UC-4 BR-14: Manual shared-tab scrolling remains stable instead of being auto-fit back toward the active tab every render.
+    // UC-7 BR-24: Manual shared-tab scrolling remains stable instead of being auto-fit back toward the active tab every render.
     let tab_widths = [120.0, 120.0, 120.0, 220.0];
     let visible_w = 260.0;
     let requested_scroll = 80.0;
-    let adjusted_scroll = resolve_tab_scroll_offset(&tab_widths, 3, visible_w, requested_scroll, false);
+    let adjusted_scroll =
+        resolve_tab_scroll_offset(&tab_widths, 3, visible_w, requested_scroll, false);
     let active_start = tab_widths[..3].iter().sum::<f32>() - adjusted_scroll;
     let active_end = active_start + tab_widths[3];
 
@@ -395,7 +660,7 @@ fn manual_shared_tab_scroll_does_not_snap_back_to_the_active_tab() {
 
 #[test]
 fn shared_tab_scroll_prioritizes_horizontal_delta_before_vertical_fallback() {
-    // UC-4 BR-15: A precise shared-tab gesture follows horizontal intent before vertical fallback.
+    // UC-7 BR-25: A precise shared-tab gesture follows horizontal intent before vertical fallback.
     assert_eq!(shared_tab_scroll_delta(0.2, -0.6), -0.2);
     assert_eq!(shared_tab_scroll_delta(-0.2, 0.6), 0.2);
     assert_eq!(shared_tab_scroll_delta(0.0, -0.6), 0.6);
@@ -404,7 +669,7 @@ fn shared_tab_scroll_prioritizes_horizontal_delta_before_vertical_fallback() {
 
 #[test]
 fn shared_tab_scroll_uses_a_modest_starter_step_only_for_fresh_gestures() {
-    // UC-4 BR-16: A fresh shared-tab stroke gets a modest visible starter step, but continuous motion stays lighter.
+    // UC-7 BR-26: A fresh shared-tab stroke gets a modest visible starter step, but continuous motion stays lighter.
     let fresh_step = shared_tab_scroll_step(0.1, 8.0, true);
     let continuous_step = shared_tab_scroll_step(0.1, 8.0, false);
 
@@ -416,7 +681,7 @@ fn shared_tab_scroll_uses_a_modest_starter_step_only_for_fresh_gestures() {
 
 #[test]
 fn shared_tab_scroll_treats_direction_change_as_a_fresh_gesture() {
-    // UC-4 BR-16: A direction change or idle gap restarts the starter-step rule.
+    // UC-7 BR-26: A direction change or idle gap restarts the starter-step rule.
     assert!(shared_tab_scroll_is_new_gesture(None, None, 0.1));
     assert!(!shared_tab_scroll_is_new_gesture(
         Some(Duration::from_millis(40)),
@@ -437,14 +702,14 @@ fn shared_tab_scroll_treats_direction_change_as_a_fresh_gesture() {
 
 #[test]
 fn shared_tab_scroll_matches_editor_horizontal_direction() {
-    // UC-4 BR-17: Shared tab bars use the same horizontal sign convention as editor and diff panes.
+    // UC-7 BR-27: Shared tab bars use the same horizontal sign convention as editor and diff panes.
     assert!(shared_tab_scroll_delta(0.2, 0.0) < 0.0);
     assert!(shared_tab_scroll_delta(-0.2, 0.0) > 0.0);
 }
 
 #[test]
 fn shared_tab_scroll_offset_clamps_at_visible_bounds() {
-    // UC-4 BR-18: Shared tab scroll offset is clamped at input time so reverse motion starts immediately from the visible edge.
+    // UC-7 BR-28: Shared tab scroll offset is clamped at input time so reverse motion starts immediately from the visible edge.
     assert_eq!(clamp_shared_tab_scroll_offset(96.0, 80.0), 80.0);
     assert_eq!(clamp_shared_tab_scroll_offset(-12.0, 80.0), 0.0);
     assert_eq!(clamp_shared_tab_scroll_offset(24.0, 80.0), 24.0);
@@ -452,13 +717,13 @@ fn shared_tab_scroll_offset_clamps_at_visible_bounds() {
 
 #[test]
 fn terminal_badge_refresh_delay_matches_a_single_frame_scale_budget() {
-    // UC-4 BR-19: PTY-driven terminal badge refresh uses a near-immediate frame-scale delay.
+    // UC-7 BR-29: PTY-driven terminal badge refresh uses a near-immediate frame-scale delay.
     assert_eq!(terminal_badge_check_delay(), Duration::from_millis(16));
 }
 
 #[test]
 fn single_pane_header_scroll_falls_through_to_preview_content() {
-    // UC-4 BR-20: A non-overflow single-pane header must not swallow scroll that should reach pane content.
+    // UC-7 BR-30: A non-overflow single-pane header must not swallow scroll that should reach pane content.
     let (mut app, pane_id, pane_rect) = app_with_single_preview_editor(200);
     app.window.last_cursor_pos = crate::tide_core::Vec2::new(pane_rect.x + 24.0, pane_rect.y + 8.0);
 
@@ -476,7 +741,7 @@ fn single_pane_header_scroll_falls_through_to_preview_content() {
 
 #[test]
 fn terminal_cwd_change_clears_stale_git_badges_before_poll_results_arrive() {
-    // UC-4 BR-21: A Terminal Pane cwd change clears stale git branch, git status, and worktree chrome before fresh poll results arrive.
+    // UC-7 BR-31: A Terminal Pane cwd change clears stale git branch, git status, and worktree chrome before fresh poll results arrive.
     let mut context = TerminalContext {
         cwd: Some(PathBuf::from("/tmp/tide-old-repo")),
         git_info: Some(GitInfo {

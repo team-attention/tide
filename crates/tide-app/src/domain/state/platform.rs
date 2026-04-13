@@ -7,5 +7,11 @@ pub(crate) struct PlatformPtrs {
 }
 
 impl PlatformPtrs {
-    pub fn new() -> Self { Self { content_view_ptr: None, window_ptr: None, window_shown: false } }
+    pub fn new() -> Self {
+        Self {
+            content_view_ptr: None,
+            window_ptr: None,
+            window_shown: false,
+        }
+    }
 }
