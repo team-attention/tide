@@ -75,6 +75,15 @@ pub(crate) fn wrapped_agent_display_name(agent_name: &str) -> Option<&'static st
     }
 }
 
+pub(crate) fn normalize_notification_snippet(text: &str) -> Option<String> {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
+
 /// Tracks the state of the Agent Gateway for chrome badge rendering.
 pub(crate) struct GatewayStatus {
     pub listening: bool,

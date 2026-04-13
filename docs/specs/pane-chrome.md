@@ -4,11 +4,11 @@
 
 ### As-Is
 
-`render_pane_chrome()` in `crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs`, `render_pane_header_inner()` in `crates/tide-app/src/adapter/outward/view/header.rs`, and the Workspace sidebar rendering in `titlebar.rs` already project Wrapped Agent lifecycle into Tide chrome, but the attention signal still splits between multiple visual paths. Stage `Terminal` dots, pane-surface fill, pane-surface underline, inactive `Workspace` indicators, and overflow edge cues do not all come from the same `Terminal-Owned Attention` model, so the user can see an inactive `Workspace` alert without an equally obvious Stage `Terminal` alert source after switching into that `Workspace`. The recent Stage/Dock ownership fix already prevents file tabs from inheriting wrapped-agent chrome through `Associated Terminal`, but the chrome still needs a simpler dot-only attention model on Workspace items and direct Stage `Terminal`s only.
+`render_pane_chrome()` in `crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs`, `render_pane_header_inner()` in `crates/tide-app/src/adapter/outward/view/header.rs`, and the Workspace sidebar rendering in `titlebar.rs` already project Wrapped Agent lifecycle into Tide chrome, but the attention signal still splits between multiple visual paths. Stage `Terminal` dots, pane-surface fill, pane-surface underline, inactive `Workspace` indicators, and overflow edge cues do not all come from the same `Terminal-Owned Attention` model, so the user can see an inactive `Workspace` alert without an equally obvious Stage `Terminal` alert source after switching into that `Workspace`. The recent Stage/Dock ownership fix already prevents file tabs from inheriting wrapped-agent chrome through `Associated Terminal`, but the chrome still needs a simpler dot-only attention model on Workspace items and direct Stage `Terminal`s only. Launch-time wrapper integration also still reports `Running`, which makes an idle wrapped-agent prompt appear green before the first turn starts.
 
 ### To-Be
 
-Focused `Pane`s stay easy to identify in both Stage and Dock through the current brighter active header/tab treatment, without adding a new full-pane outline around the terminal body. `Terminal-Owned Attention` is dot-only: it renders only on `Workspace` list items and on direct wrapped-agent owner `Terminal`s in Stage. A direct wrapped-agent Stage `Terminal` with `Running` shows a solid green dot. A direct wrapped-agent Stage `Terminal` with unresolved `Idle` or `NeedsInput` shows the same orange blinking dot family, and that blink must follow a stable clock that does not depend on frame-to-frame render cadence. Tide does not add wrapped-agent fill or underline to the entire Stage `Pane` surface. Non-terminal `Pane`s never inherit wrapped-agent dots through `Associated Terminal`, and Dock chrome never renders a wrapped-agent dot. If an alerting Stage `Terminal` lives in an active Stage `TabGroup`, its tab shows the orange blinking dot; if that tab is scrolled out of the visible tab strip, the tab-strip edge in the hidden direction shows the same orange blinking dot instead. Workspace items show a green dot when their Stage area contains a wrapped-agent `Terminal` that is still `Running`. Inactive Workspace items show an orange blinking dot when their Stage area contains an unresolved wrapped-agent alert, using the same stable blink clock. The active Workspace item does not duplicate the active Stage-terminal alert dot with a second orange Workspace alert dot. Active headers, active Stage tabs, and busy `Terminal Pane` headers preserve readable labels before optional git badges consume the remaining width. The shared active-tab width budget continues to reserve space for the Stage-terminal dot, shared tab scrolling remains stable and directionally consistent, and git badges continue to refresh on a near-immediate frame-scale delay.
+Focused `Pane`s stay easy to identify in both Stage and Dock through the current brighter active header/tab treatment, without adding a new full-pane outline around the terminal body. `Terminal-Owned Attention` is dot-only: it renders only on `Workspace` list items and on direct wrapped-agent owner `Terminal`s in Stage. A direct wrapped-agent Stage `Terminal` with `Running` shows a solid green dot. A direct wrapped-agent Stage `Terminal` with unresolved `Idle` or `NeedsInput` shows the same orange blinking dot family, and that blink must follow a stable clock that does not depend on frame-to-frame render cadence. A direct wrapped-agent Stage `Terminal` with `Wrapped Agent Presence` but no active `AgentStatus` shows a solid idle-presence dot in a muted cool color. Tide does not add wrapped-agent fill or underline to the entire Stage `Pane` surface. Non-terminal `Pane`s never inherit wrapped-agent dots through `Associated Terminal`, and Dock chrome never renders a wrapped-agent dot. If an alerting Stage `Terminal` lives in an active Stage `TabGroup`, its tab shows the orange blinking dot; if that tab is scrolled out of the visible tab strip, the tab-strip edge in the hidden direction shows the same orange blinking dot instead. Workspace items show the strongest direct Stage-terminal state for that `Workspace`, regardless of whether the `Workspace` is active or inactive: orange blinking alert takes precedence over green running, which takes precedence over idle-presence. Active headers, active Stage tabs, and busy `Terminal Pane` headers preserve readable labels before optional git badges consume the remaining width. The shared active-tab width budget continues to reserve space for the Stage-terminal dot, shared tab scrolling remains stable and directionally consistent, and git badges continue to refresh on a near-immediate frame-scale delay.
 
 ### Approach
 
@@ -17,9 +17,10 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 3. Remove wrapper-managed pane-surface fill and underline from Stage `Pane` chrome.
 4. Map direct Stage-terminal `Running` to a solid green dot.
 5. Map direct Stage-terminal `Idle` and `NeedsInput` to the same orange blinking alert dot family, driven by a stable blink clock instead of frame delta.
-6. Project Workspace list-item dots from Stage terminals only: green for running, orange blinking for inactive alert, using the same stable blink clock.
-7. Suppress active-Workspace orange alert duplication so the active Workspace relies on the Stage-terminal alert dot instead.
-8. When an alerting Stage-terminal tab is scrolled outside the visible shared-tab range, render the orange blinking indicator on the corresponding tab-strip edge.
+6. Map `Wrapped Agent Presence` plus `AgentStatus = None` to a solid idle-presence dot on direct Stage `Terminal`s.
+7. Project Workspace list-item dots from Stage terminals only: orange blinking for alert, green for running, idle-presence color for connected idle, using the same stable blink clock and the same strongest-state precedence for active and inactive `Workspace`s.
+8. Keep the `Workspace` item synchronized with the strongest visible Stage-terminal state instead of suppressing active-Workspace alerts.
+9. When an alerting Stage-terminal tab is scrolled outside the visible shared-tab range, render the orange blinking indicator on the corresponding tab-strip edge.
 9. Reserve a minimum title region in active headers and active tabs, eliding optional git badges before the title disappears.
 10. Use a readable shared label color path for busy `Terminal Pane` headers so terminal names do not fall back to a dimmed badge color.
 11. Apply the same title-preservation and shared sizing rules to the shared header and tab-bar rendering paths so Stage tabs, Dock tabs, and single-Pane headers stay consistent.
@@ -40,6 +41,7 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 | `renderer` | Draws pane headers, shared tab bars, Workspace items, and overflow edge indicators |
 | `theme` | Supplies the colors and spacing tokens used by Stage-terminal dots, Workspace dots, and shared-tab sizing |
 | `gateway` | Provides wrapper-managed `AgentStatus` used to project running and alert dots from direct wrapped-agent Stage terminals |
+| `gateway` | Provides `Wrapped Agent Presence` through `wrapper_managed` plus `gateway_connected` for idle-presence dots |
 
 ## Use Cases
 
@@ -96,13 +98,14 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 - **Precondition**: The target `Workspace` contains at least one Stage `Terminal`
 - **Flow**:
   1. Tide resolves the strongest Stage-terminal wrapped-agent state in the `Workspace`
-  2. Tide maps Stage-terminal `Running` to a green Workspace item dot
-  3. Tide maps unresolved Stage-terminal `Idle` or `NeedsInput` to an orange blinking Workspace item dot only when the `Workspace` is inactive
-- **Postcondition**: Workspace items reflect Stage-terminal running or inactive alert state with a dot-only indicator
+  2. Tide maps the strongest Stage-terminal state to the Workspace item dot with alert precedence
+  3. Tide renders the same strongest-state mapping for active and inactive `Workspace`s
+- **Postcondition**: Workspace items reflect the strongest Stage-terminal wrapped-agent state with a dot-only indicator
 - **Business Rules**:
-  - BR-11: An inactive `Workspace` item with unresolved Stage-terminal `Idle` or `NeedsInput` renders an orange blinking dot from the same stable blink clock
-  - BR-12: A `Workspace` item with Stage-terminal `Running` renders a green dot
-  - BR-13: The active `Workspace` item does not duplicate the active Stage-terminal alert dot with a second orange alert dot
+  - BR-11: A `Workspace` item with unresolved Stage-terminal `Idle` or `NeedsInput` renders an orange blinking dot from the same stable blink clock
+  - BR-12: A `Workspace` item with Stage-terminal `Running` and no alert renders a green dot
+  - BR-13: A `Workspace` item with both running and alerting Stage terminals renders the orange alert state
+  - BR-14: A `Workspace` item with only connected-idle Stage terminals renders the idle-presence dot
 
 ### UC-5: RenderOverflowedAlertEdgeIndicator
 
@@ -169,6 +172,7 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 5. Header title preservation rules apply consistently to single-pane headers and active tabs.
 6. Shared tab sizing changes apply consistently to Stage tabs, Dock tabs, and single-pane headers.
 7. Wrapped-agent alert blink uses a stable timebase instead of per-frame elapsed time.
+8. `Wrapped Agent Presence` may render an idle-presence dot, but it must not route macOS notifications by itself.
 
 ## Tests
 
@@ -186,8 +190,10 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 | UC-3 | BR-10 | `attention_stage_terminal_renders_an_orange_blinking_dot` |
 | UC-3 | BR-10 | `wrapped_agent_alert_blink_uses_a_stable_timebase` |
 | UC-4 | BR-11 | `inactive_workspace_alert_renders_an_orange_blinking_dot` |
+| UC-4 | BR-11 | `active_workspace_alert_renders_an_orange_blinking_dot` |
 | UC-4 | BR-12 | `workspace_running_renders_a_green_dot` |
-| UC-4 | BR-13 | `active_workspace_does_not_duplicate_the_alert_dot` |
+| UC-4 | BR-13 | `workspace_alert_takes_precedence_over_running` |
+| UC-4 | BR-14 | `workspace_connected_idle_renders_an_idle_presence_dot` |
 | UC-5 | BR-14 | `overflowed_alert_stage_tab_sets_the_left_edge_indicator` |
 | UC-5 | BR-15 | `overflowed_alert_stage_tab_sets_the_right_edge_indicator` |
 | UC-6 | BR-16 | `active_terminal_header_preserves_title_when_git_badges_are_present` |
@@ -208,6 +214,8 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 | UC-7 | BR-29 | `terminal_badge_refresh_delay_matches_a_single_frame_scale_budget` |
 | UC-7 | BR-30 | `single_pane_header_scroll_falls_through_to_preview_content` |
 | UC-7 | BR-31 | `terminal_cwd_change_clears_stale_git_badges_before_poll_results_arrive` |
+| UC-8 | BR-32 | `connected_wrapped_agent_without_active_status_renders_idle_presence_dot` |
+| UC-8 | BR-33 | `workspace_connected_idle_renders_an_idle_presence_dot` |
 
 ## Location
 

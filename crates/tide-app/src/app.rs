@@ -14,6 +14,7 @@ use crate::theme::*;
 use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
 use crate::AppCorePort;
 use crate::DockPort;
+use crate::GatewayPort;
 use crate::LayoutPort;
 
 // Adapter implementations
@@ -172,6 +173,8 @@ pub(crate) struct App {
     /// Pane IDs that have already sent a system notification and haven't been
     /// acknowledged (focused) yet. Prevents duplicate notifications (UC-1 BR-4).
     pub(crate) notified_panes: std::collections::HashSet<PaneId>,
+    /// Last unresolved notification snippet per wrapped-agent source Pane.
+    pub(crate) agent_notification_snippets: HashMap<PaneId, String>,
 }
 
 // Safety: App contains raw pointers (content_view_ptr, window_ptr) and browser
@@ -222,6 +225,7 @@ impl App {
             pending_cli_caller_pane: None,
             pending_platform_commands: Vec::new(),
             notified_panes: std::collections::HashSet::new(),
+            agent_notification_snippets: HashMap::new(),
         }
     }
 
@@ -256,6 +260,41 @@ impl App {
         }
     }
 
+    fn is_terminal_pane_in_any_workspace(&self, pane_id: PaneId) -> bool {
+        matches!(
+            self.panes.get(&pane_id),
+            Some(crate::pane::PaneKind::Terminal(_))
+        ) || self.ws.workspaces.iter().any(|workspace| {
+            matches!(
+                workspace.panes.get(&pane_id),
+                Some(crate::pane::PaneKind::Terminal(_))
+            )
+        })
+    }
+
+    pub(crate) fn reroute_backgrounded_wrapped_agent_attention(&mut self) {
+        let pending_attention: Vec<_> = self
+            .gateway
+            .detected_agents
+            .iter()
+            .filter(|(_, agent)| agent.wrapper_managed)
+            .filter_map(|(&pane_id, agent)| match agent.status {
+                Some(crate::state::gateway_status::AgentStatus::Idle) => {
+                    Some((pane_id, crate::state::gateway_status::AgentStatus::Idle))
+                }
+                Some(crate::state::gateway_status::AgentStatus::NeedsInput) => Some((
+                    pane_id,
+                    crate::state::gateway_status::AgentStatus::NeedsInput,
+                )),
+                _ => None,
+            })
+            .collect();
+
+        for (pane_id, status) in pending_attention {
+            self.route_agent_notification(pane_id, status, None);
+        }
+    }
+
     pub(crate) fn acknowledge_agent_attention(&mut self, pane_id: PaneId) {
         let mut affected_workspaces = Vec::new();
 
@@ -274,6 +313,23 @@ impl App {
             }
         }
         self.notified_panes.remove(&pane_id);
+        self.agent_notification_snippets.remove(&pane_id);
+
+        for workspace_idx in affected_workspaces {
+            self.refresh_workspace_agent_notification(workspace_idx);
+        }
+    }
+
+    pub(crate) fn detach_wrapped_agent(&mut self, pane_id: PaneId) {
+        let mut affected_workspaces = Vec::new();
+
+        if let Some(workspace_idx) = self.find_workspace_for_pane(pane_id) {
+            affected_workspaces.push(workspace_idx);
+        }
+
+        self.gateway.detected_agents.remove(&pane_id);
+        self.notified_panes.remove(&pane_id);
+        self.agent_notification_snippets.remove(&pane_id);
 
         for workspace_idx in affected_workspaces {
             self.refresh_workspace_agent_notification(workspace_idx);
@@ -638,7 +694,7 @@ impl crate::application::ports::inward::AppCorePort for App {
                 if pinned_ids.contains(tid) {
                     label = format!("\u{f08d} {}", label);
                 }
-                let has_agent_status = crate::header::stage_terminal_dot_status(
+                let has_agent_status = crate::header::stage_terminal_dot_visual_state(
                     &self.panes,
                     &self.gateway.detected_agents,
                     *tid,
@@ -745,6 +801,44 @@ impl crate::application::ports::inward::AppCorePort for App {
 
     fn set_window_focused(&mut self, focused: bool) {
         self.window.is_focused = focused;
+        if focused {
+            if self.settings.auto_integration
+                && self
+                    .window
+                    .notification_authorization_status
+                    .is_unresolved()
+            {
+                self.queue_notification_permission_request();
+            }
+        } else {
+            self.reroute_backgrounded_wrapped_agent_attention();
+        }
+    }
+
+    fn set_notification_authorization_status(
+        &mut self,
+        status: crate::state::NotificationAuthorizationStatus,
+    ) {
+        self.window.notification_authorization_status = status;
+        match status {
+            crate::state::NotificationAuthorizationStatus::Denied => {
+                log::warn!(
+                    "Notification authorization is denied. Open System Settings > Notifications > Tide to allow Tide notifications."
+                );
+            }
+            crate::state::NotificationAuthorizationStatus::Unknown
+            | crate::state::NotificationAuthorizationStatus::NotDetermined => {
+                log::warn!(
+                    "Notification authorization is {:?}. Check System Settings > Notifications > Tide if Tide does not appear in the list.",
+                    status
+                );
+            }
+            crate::state::NotificationAuthorizationStatus::Authorized
+            | crate::state::NotificationAuthorizationStatus::Provisional
+            | crate::state::NotificationAuthorizationStatus::Ephemeral => {}
+        }
+        self.cache.invalidate_chrome();
+        self.request_redraw();
     }
 
     fn acknowledge_attention_for_focused_pane(&mut self) {
@@ -932,9 +1026,26 @@ impl crate::application::ports::inward::GatewayPort for App {
         &mut self.gateway.detected_agents
     }
 
+    fn set_agent_notification_snippet(
+        &mut self,
+        pane_id: u64,
+        notification_snippet: Option<String>,
+    ) {
+        match notification_snippet {
+            Some(snippet) => {
+                self.agent_notification_snippets.insert(pane_id, snippet);
+            }
+            None => {
+                self.agent_notification_snippets.remove(&pane_id);
+            }
+        }
+    }
+
     fn handle_terminal_notification(&mut self, pane_id: u64, message: &str) {
         let mut wrapped_agent_name = None;
         let (event_name, status) = match message {
+            "tide:agent-attached" => ("agent-attached", None),
+            "tide:agent-detached" => ("agent-detached", None),
             "tide:agent-running" => (
                 "agent-running",
                 Some(crate::state::gateway_status::AgentStatus::Running),
@@ -955,24 +1066,25 @@ impl crate::application::ports::inward::GatewayPort for App {
                     .next()
                     .and_then(crate::state::gateway_status::wrapped_agent_display_name);
                 let parsed_status = match parts.next() {
+                    Some("agent-attached") => Some(("agent-attached", None)),
+                    Some("agent-detached") => Some(("agent-detached", None)),
                     Some("agent-running") => Some((
                         "agent-running",
-                        crate::state::gateway_status::AgentStatus::Running,
+                        Some(crate::state::gateway_status::AgentStatus::Running),
                     )),
-                    Some("agent-idle") => Some((
-                        "agent-idle",
-                        crate::state::gateway_status::AgentStatus::Idle,
-                    )),
+                    Some("agent-idle") => {
+                        Some(("agent-idle", Some(crate::state::gateway_status::AgentStatus::Idle)))
+                    }
                     Some("agent-needs-input") => Some((
                         "agent-needs-input",
-                        crate::state::gateway_status::AgentStatus::NeedsInput,
+                        Some(crate::state::gateway_status::AgentStatus::NeedsInput),
                     )),
                     _ => None,
                 };
                 if let (Some(agent_name), Some((event_name, status))) = (agent_name, parsed_status)
                 {
                     wrapped_agent_name = Some(agent_name);
-                    (event_name, Some(status))
+                    (event_name, status)
                 } else {
                     log::debug!("Unknown tide notification: {}", s);
                     return;
@@ -984,10 +1096,33 @@ impl crate::application::ports::inward::GatewayPort for App {
             }
             _ => return, // Non-tide messages: silently ignore
         };
+        if event_name == "agent-detached" {
+            let agent_name = self
+                .gateway
+                .detected_agents
+                .get(&pane_id)
+                .filter(|agent| agent.wrapper_managed)
+                .map(|agent| agent.name)
+                .or(wrapped_agent_name);
+            self.detach_wrapped_agent(pane_id);
+            self.cache.invalidate_chrome();
+            if let Some(agent_name) = agent_name {
+                self.gateway.notify(
+                    "agent-status-changed",
+                    serde_json::json!({
+                        "pane_id": pane_id,
+                        "status": event_name,
+                        "agent": agent_name,
+                    }),
+                );
+            }
+            return;
+        }
         if let Some(agent_name) = wrapped_agent_name {
             if let Some(agent) = self.gateway.detected_agents.get_mut(&pane_id) {
                 agent.name = agent_name;
                 agent.wrapper_managed = true;
+                agent.gateway_connected = true;
                 agent.status = status;
             } else if self.panes.contains_key(&pane_id)
                 || self
@@ -1002,7 +1137,7 @@ impl crate::application::ports::inward::GatewayPort for App {
                         name: agent_name,
                         pid: 0,
                         wrapper_managed: true,
-                        gateway_connected: false,
+                        gateway_connected: true,
                         status,
                     },
                 );
@@ -1013,9 +1148,16 @@ impl crate::application::ports::inward::GatewayPort for App {
             if !agent.wrapper_managed {
                 return;
             }
+            agent.gateway_connected = true;
             agent.status = status;
         } else {
             return;
+        }
+        if status.is_some() {
+            self.agent_notification_snippets.remove(&pane_id);
+        }
+        if self.is_terminal_pane_in_any_workspace(pane_id) {
+            self.queue_notification_permission_request_if_auto_integration_enabled();
         }
         self.cache.invalidate_chrome();
         if let Some(agent) = self.gateway.detected_agents.get(&pane_id) {
@@ -1030,7 +1172,7 @@ impl crate::application::ports::inward::GatewayPort for App {
         }
         // Route notification based on user context (UC-1)
         if let Some(s) = status {
-            self.route_agent_notification(pane_id, s);
+            self.route_agent_notification(pane_id, s, None);
         }
     }
 
@@ -1038,6 +1180,7 @@ impl crate::application::ports::inward::GatewayPort for App {
         &mut self,
         pane_id: u64,
         status: crate::state::gateway_status::AgentStatus,
+        notification_snippet: Option<String>,
     ) {
         use crate::state::gateway_status::AgentStatus;
 
@@ -1048,6 +1191,9 @@ impl crate::application::ports::inward::GatewayPort for App {
             return;
         }
         let agent_name = agent.name;
+        let notification_title = self
+            .wrapped_agent_notification_title(pane_id)
+            .unwrap_or_else(|| format!("Tide - {}", agent_name));
 
         // Refresh the inactive-Workspace projection for every wrapper-managed status
         // change before deciding whether this transition should emit attention.
@@ -1060,29 +1206,46 @@ impl crate::application::ports::inward::GatewayPort for App {
             }
         }
 
+        let notification_snippet = notification_snippet
+            .as_deref()
+            .and_then(crate::state::gateway_status::normalize_notification_snippet)
+            .or_else(|| self.agent_notification_snippets.get(&pane_id).cloned())
+            .or_else(|| self.visible_wrapped_agent_notification_snippet(pane_id));
+
+        if let Some(snippet) = notification_snippet.as_ref() {
+            self.agent_notification_snippets
+                .insert(pane_id, snippet.clone());
+        }
+
         // BR-1: Running status does not trigger notification routing
         if matches!(status, AgentStatus::Running) {
+            self.agent_notification_snippets.remove(&pane_id);
             return;
         }
 
-        let window_unfocused = !self.window.is_focused;
-        let pane_unfocused = self.focus.focused != Some(pane_id);
+        let pane_is_current_focus = self.window.is_focused
+            && self.focus.focused == Some(pane_id)
+            && if self.is_pane_in_dock(pane_id) {
+                self.focus.focus_area == crate::state::FocusArea::Dock
+            } else {
+                self.focus.focus_area == crate::state::FocusArea::Stage
+            };
 
-        if !window_unfocused && !pane_unfocused {
+        if pane_is_current_focus {
             return;
         }
 
         // Background notifications are sent whenever the wrapped-agent Terminal
-        // is not the focused Pane, or whenever the Tide window is blurred.
+        // is not the current UI focus, or whenever the Tide window is blurred.
         if !self.notified_panes.contains(&pane_id) {
-            let body = match status {
+            let body = notification_snippet.unwrap_or_else(|| match status {
                 AgentStatus::NeedsInput => format!("{} needs your input", agent_name),
                 AgentStatus::Idle => format!("{} finished", agent_name),
                 _ => unreachable!(),
-            };
+            });
             self.pending_platform_commands.push(
                 crate::tide_platform::WindowCommand::SendSystemNotification {
-                    title: agent_name.to_string(),
+                    title: notification_title,
                     body,
                     pane_id,
                 },
@@ -1096,6 +1259,62 @@ impl crate::application::ports::inward::GatewayPort for App {
 
         self.cache.needs_redraw = true;
     }
+}
+
+impl App {
+    fn wrapped_agent_notification_title(&self, pane_id: PaneId) -> Option<String> {
+        if self.panes.contains_key(&pane_id) {
+            return Some(format!("Tide - {}", crate::ui::pane_title(&self.panes, pane_id)));
+        }
+
+        self.ws.workspaces.iter().find_map(|workspace| {
+            workspace
+                .panes
+                .contains_key(&pane_id)
+                .then(|| format!("Tide - {}", crate::ui::pane_title(&workspace.panes, pane_id)))
+        })
+    }
+
+    fn visible_wrapped_agent_notification_snippet(&self, pane_id: PaneId) -> Option<String> {
+        let pane = self.panes.get(&pane_id).or_else(|| {
+            self.ws
+                .workspaces
+                .iter()
+                .find_map(|workspace| workspace.panes.get(&pane_id))
+        })?;
+        let PaneKind::Terminal(terminal) = pane else {
+            return None;
+        };
+
+        let lines: Vec<String> = terminal
+            .backend
+            .grid()
+            .cells
+            .iter()
+            .filter_map(|row| {
+                let raw = row.iter().map(|cell| cell.character).collect::<String>();
+                crate::state::gateway_status::normalize_notification_snippet(raw.trim_end())
+            })
+            .collect();
+
+        lines
+            .iter()
+            .rev()
+            .find(|line| line.starts_with('•') || line.starts_with("- ") || line.starts_with("* "))
+            .cloned()
+            .or_else(|| {
+                lines
+                    .iter()
+                    .rev()
+                    .find(|line| !looks_like_terminal_notification_noise(line))
+                    .cloned()
+            })
+            .or_else(|| lines.last().cloned())
+    }
+}
+
+fn looks_like_terminal_notification_noise(line: &str) -> bool {
+    line.starts_with("Tip:") || line.starts_with("model:") || line.starts_with("directory:")
 }
 
 // ── PaneAccessPort ──

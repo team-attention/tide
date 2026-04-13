@@ -145,7 +145,7 @@ All keybindings are customizable via `~/.config/tide/settings.json`. Open it wit
 
 ```sh
 cargo build --release                    # binary
-cargo bundle --release -p tide-app       # macOS .app bundle
+./scripts/build-app.sh                   # macOS .app bundle + Info.plist fixup + ad-hoc sign
 ./scripts/build-dmg.sh                   # signed + notarized DMG
 ```
 

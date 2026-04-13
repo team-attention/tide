@@ -3,6 +3,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool, NSObject};
@@ -23,9 +24,19 @@ const INITIAL_BG_RED: f64 = 0.08;
 const INITIAL_BG_GREEN: f64 = 0.08;
 const INITIAL_BG_BLUE: f64 = 0.10;
 const NOTIFICATION_TARGET_PREFIX: &str = "tide-pane:";
+static NOTIFICATION_DELIVERY_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 use super::ime_proxy::ImeProxyView;
 use super::view::TideView;
+
+extern "C" {
+    static _dispatch_main_q: std::ffi::c_void;
+    fn dispatch_async_f(
+        queue: *const std::ffi::c_void,
+        context: *mut std::ffi::c_void,
+        work: unsafe extern "C" fn(*mut std::ffi::c_void),
+    );
+}
 
 // ── TideWindow: NSWindow subclass for accessibility ──
 
@@ -108,12 +119,14 @@ declare_class!(
 );
 
 fn notification_identifier_for_pane(pane_id: u64) -> String {
-    format!("{NOTIFICATION_TARGET_PREFIX}{pane_id}")
+    let delivery_id = NOTIFICATION_DELIVERY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!("{NOTIFICATION_TARGET_PREFIX}{pane_id}:{delivery_id}")
 }
 
 fn notification_target_from_identifier(identifier: &str) -> Option<u64> {
     identifier
         .strip_prefix(NOTIFICATION_TARGET_PREFIX)
+        .and_then(|value| value.split(':').next())
         .and_then(|value| value.parse::<u64>().ok())
 }
 
@@ -126,6 +139,73 @@ fn notification_authorization_options() -> usize {
 
 pub(crate) fn foreground_notification_presentation_options() -> usize {
     FOREGROUND_NOTIFICATION_PRESENTATION_OPTIONS
+}
+
+fn map_notification_authorization_status(
+    raw_status: isize,
+) -> crate::state::NotificationAuthorizationStatus {
+    match raw_status {
+        0 => crate::state::NotificationAuthorizationStatus::NotDetermined,
+        1 => crate::state::NotificationAuthorizationStatus::Denied,
+        2 => crate::state::NotificationAuthorizationStatus::Authorized,
+        3 => crate::state::NotificationAuthorizationStatus::Provisional,
+        4 => crate::state::NotificationAuthorizationStatus::Ephemeral,
+        _ => crate::state::NotificationAuthorizationStatus::Unknown,
+    }
+}
+
+struct EmitNotificationAuthorizationStatusCtx {
+    status: crate::state::NotificationAuthorizationStatus,
+}
+
+struct RefreshNotificationAuthorizationStatusCtx;
+
+unsafe extern "C" fn emit_notification_authorization_status_on_main_thread(
+    ctx_ptr: *mut std::ffi::c_void,
+) {
+    let ctx = Box::from_raw(ctx_ptr as *mut EmitNotificationAuthorizationStatusCtx);
+    super::app::with_main_window(|window| {
+        super::emit_event(
+            &window.callback,
+            super::super::PlatformEvent::NotificationAuthorizationStatusChanged {
+                status: ctx.status,
+            },
+            "MacosWindow::notificationAuthorizationStatus",
+        );
+    });
+}
+
+unsafe extern "C" fn refresh_notification_authorization_status_on_main_thread(
+    ctx_ptr: *mut std::ffi::c_void,
+) {
+    let _ctx = Box::from_raw(ctx_ptr as *mut RefreshNotificationAuthorizationStatusCtx);
+    super::app::with_main_window(|window| {
+        window.refresh_notification_authorization_status();
+    });
+}
+
+fn schedule_notification_authorization_status_emit(
+    status: crate::state::NotificationAuthorizationStatus,
+) {
+    let ctx = Box::new(EmitNotificationAuthorizationStatusCtx { status });
+    unsafe {
+        dispatch_async_f(
+            &_dispatch_main_q,
+            Box::into_raw(ctx) as *mut std::ffi::c_void,
+            emit_notification_authorization_status_on_main_thread,
+        );
+    }
+}
+
+fn schedule_notification_authorization_status_refresh() {
+    let ctx = Box::new(RefreshNotificationAuthorizationStatusCtx);
+    unsafe {
+        dispatch_async_f(
+            &_dispatch_main_q,
+            Box::into_raw(ctx) as *mut std::ffi::c_void,
+            refresh_notification_authorization_status_on_main_thread,
+        );
+    }
 }
 
 pub struct TideNotificationCenterDelegateIvars {
@@ -216,7 +296,45 @@ pub struct MacosWindow {
 }
 
 impl MacosWindow {
+    fn publish_notification_authorization_status(
+        &self,
+        status: crate::state::NotificationAuthorizationStatus,
+    ) {
+        self.notification_authorization_requested
+            .set(!status.is_unresolved());
+        schedule_notification_authorization_status_emit(status);
+    }
+
+    pub(crate) fn refresh_notification_authorization_status(&self) {
+        unsafe {
+            let center_cls = match objc2::runtime::AnyClass::get("UNUserNotificationCenter") {
+                Some(cls) => cls,
+                None => {
+                    self.publish_notification_authorization_status(
+                        crate::state::NotificationAuthorizationStatus::Unknown,
+                    );
+                    return;
+                }
+            };
+            let center: Retained<AnyObject> = msg_send_id![center_cls, currentNotificationCenter];
+            let completion = block2::RcBlock::new(|settings: *mut AnyObject| {
+                let status = if settings.is_null() {
+                    crate::state::NotificationAuthorizationStatus::Unknown
+                } else {
+                    let raw_status: isize = msg_send![settings, authorizationStatus];
+                    map_notification_authorization_status(raw_status)
+                };
+                schedule_notification_authorization_status_emit(status);
+            });
+            let completion_ptr = &*completion as *const block2::Block<dyn Fn(*mut AnyObject)>;
+            let _: () = msg_send![&center,
+                getNotificationSettingsWithCompletionHandler: completion_ptr
+            ];
+        }
+    }
+
     fn request_notification_authorization(&self, options: usize) {
+        self.refresh_notification_authorization_status();
         if self.notification_authorization_requested.replace(true) {
             return;
         }
@@ -227,7 +345,19 @@ impl MacosWindow {
                 None => return,
             };
             let center: Retained<AnyObject> = msg_send_id![center_cls, currentNotificationCenter];
-            let completion = block2::RcBlock::new(|_granted: Bool, _error: *mut AnyObject| {});
+            let completion = block2::RcBlock::new(|granted: Bool, error: *mut AnyObject| {
+                if error.is_null() {
+                    log::info!(
+                        "Notification authorization request completed: granted={}",
+                        granted.as_bool()
+                    );
+                } else {
+                    log::warn!(
+                        "Notification authorization request completed with an NSError pointer; Tide will refresh authorization status from UNUserNotificationCenter."
+                    );
+                }
+                schedule_notification_authorization_status_refresh();
+            });
             let completion_ptr = &*completion as *const block2::Block<dyn Fn(Bool, *mut AnyObject)>;
             let _: () = msg_send![&center,
                 requestAuthorizationWithOptions: options
@@ -491,7 +621,13 @@ impl PlatformWindow for MacosWindow {
                 None => return, // UNUserNotificationCenter not available
             };
             let center: Retained<AnyObject> = msg_send_id![center_cls, currentNotificationCenter];
-            let completion = block2::RcBlock::new(|_error: *mut AnyObject| {});
+            let completion = block2::RcBlock::new(|error: *mut AnyObject| {
+                if !error.is_null() {
+                    log::warn!(
+                        "UNUserNotificationCenter.addNotificationRequest returned an NSError pointer for a Tide notification."
+                    );
+                }
+            });
             let completion_ptr = &*completion as *const block2::Block<dyn Fn(*mut AnyObject)>;
 
             // Create notification content
@@ -531,5 +667,26 @@ impl PlatformWindow for MacosWindow {
             let nsapp: Retained<AnyObject> = msg_send_id![app_cls, sharedApplication];
             let _: () = msg_send![&nsapp, requestUserAttention: 0_isize]; // NSInformationalRequest = 0
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{notification_identifier_for_pane, notification_target_from_identifier};
+
+    #[test]
+    fn notification_identifier_round_trips_the_target_pane_id() {
+        let identifier = notification_identifier_for_pane(42);
+        assert_eq!(notification_target_from_identifier(&identifier), Some(42));
+    }
+
+    #[test]
+    fn notification_identifier_is_unique_per_delivery_for_the_same_pane() {
+        let first = notification_identifier_for_pane(7);
+        let second = notification_identifier_for_pane(7);
+
+        assert_ne!(first, second);
+        assert_eq!(notification_target_from_identifier(&first), Some(7));
+        assert_eq!(notification_target_from_identifier(&second), Some(7));
     }
 }

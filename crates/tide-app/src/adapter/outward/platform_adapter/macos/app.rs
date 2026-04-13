@@ -5,8 +5,10 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 use objc2::rc::Retained;
+use objc2::runtime::{AnyClass, AnyObject, Bool};
+use objc2::{msg_send, msg_send_id};
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
-use objc2_foundation::MainThreadMarker;
+use objc2_foundation::{MainThreadMarker, NSString};
 
 use super::super::{EventCallback, WakeCallback, WindowConfig};
 
@@ -19,6 +21,69 @@ static GLOBAL_VIEW: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_
 /// Coalescing flag: prevents duplicate wakeup scheduling when a wakeup
 /// is already pending. Cleared by the main thread in triggerRedraw.
 static WAKEUP_PENDING: AtomicBool = AtomicBool::new(false);
+const NS_APPLICATION_ACTIVATE_ALL_WINDOWS: usize = 1 << 0;
+
+fn main_bundle_identifier() -> Option<Retained<NSString>> {
+    unsafe {
+        let bundle_cls = AnyClass::get("NSBundle")?;
+        let bundle: Retained<AnyObject> = msg_send_id![bundle_cls, mainBundle];
+        msg_send_id![&bundle, bundleIdentifier]
+    }
+}
+
+fn activate_existing_tide_instance_if_running() -> bool {
+    unsafe {
+        let Some(bundle_identifier) = main_bundle_identifier() else {
+            return false;
+        };
+        let Some(running_application_cls) = AnyClass::get("NSRunningApplication") else {
+            return false;
+        };
+
+        let current_application: Retained<AnyObject> =
+            msg_send_id![running_application_cls, currentApplication];
+        let current_pid: i32 = msg_send![&current_application, processIdentifier];
+
+        let running_applications: Retained<AnyObject> = msg_send_id![
+            running_application_cls,
+            runningApplicationsWithBundleIdentifier: &*bundle_identifier
+        ];
+        let count: usize = msg_send![&running_applications, count];
+        for index in 0..count {
+            let running_application: Retained<AnyObject> =
+                msg_send_id![&running_applications, objectAtIndex: index];
+            let process_identifier: i32 = msg_send![&running_application, processIdentifier];
+            let terminated: Bool = msg_send![&running_application, isTerminated];
+            if process_identifier <= 0
+                || process_identifier == current_pid
+                || terminated.as_bool()
+            {
+                continue;
+            }
+
+            let _: Bool = msg_send![&running_application, unhide];
+            let activated: Bool = msg_send![
+                &running_application,
+                activateWithOptions: NS_APPLICATION_ACTIVATE_ALL_WINDOWS
+            ];
+            if activated.as_bool() {
+                log::info!(
+                    "Reused existing Tide instance pid={} for bundle {}",
+                    process_identifier,
+                    bundle_identifier
+                );
+                return true;
+            }
+
+            log::warn!(
+                "Found an existing Tide instance pid={} but activateWithOptions failed; continuing current launch",
+                process_identifier
+            );
+        }
+
+        false
+    }
+}
 
 /// macOS platform entry point.
 pub struct MacosApp;
@@ -35,6 +100,10 @@ impl MacosApp {
         let app = NSApplication::sharedApplication(mtm);
         app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
 
+        if activate_existing_tide_instance_if_running() {
+            std::process::exit(0);
+        }
+
         // Create window + view
         let callback = Rc::new(RefCell::new(callback));
         let window = MacosWindow::new(&config, Rc::clone(&callback), mtm);
@@ -48,6 +117,9 @@ impl MacosApp {
         // Store the window so it lives as long as the app
         MAIN_WINDOW.with(|cell| {
             cell.replace(Some(window));
+            if let Some(window) = cell.borrow().as_ref() {
+                window.refresh_notification_authorization_status();
+            }
         });
 
         // Emit a synthetic event to trigger Phase 1 initialization immediately,

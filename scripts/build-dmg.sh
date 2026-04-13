@@ -72,7 +72,9 @@ printf "${YELLOW}Tide DMG Installer Builder (v%s)${NC}\n\n" "$VERSION"
 
 # ── Step 1: Build .app bundle ──────────────────────────────────────
 if [ "$SKIP_BUILD" = false ]; then
-    step "cargo bundle (release)" cargo bundle --release -p tide-app
+    step "build Tide.app" "$ROOT_DIR/scripts/build-app.sh"
+else
+    step "fix up existing Tide.app" "$ROOT_DIR/scripts/build-app.sh" --skip-build
 fi
 
 if [ ! -d "$APP_BUNDLE" ]; then

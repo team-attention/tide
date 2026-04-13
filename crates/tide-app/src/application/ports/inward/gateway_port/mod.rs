@@ -18,6 +18,12 @@ pub(crate) trait GatewayPort {
     fn toggle_auto_integration(&mut self);
     /// Mutable access to detected agents map for status updates.
     fn detected_agents_mut(&mut self) -> &mut std::collections::HashMap<u64, AgentInfo>;
+    /// Set or clear the stored notification snippet for a wrapped-agent Pane.
+    fn set_agent_notification_snippet(
+        &mut self,
+        pane_id: u64,
+        notification_snippet: Option<String>,
+    );
     /// Handle a terminal notification (OSC 9) message for a pane.
     fn handle_terminal_notification(&mut self, pane_id: u64, message: &str);
     /// Route agent notification to appropriate channels based on user context.
@@ -25,5 +31,6 @@ pub(crate) trait GatewayPort {
         &mut self,
         pane_id: u64,
         status: crate::state::gateway_status::AgentStatus,
+        notification_snippet: Option<String>,
     );
 }

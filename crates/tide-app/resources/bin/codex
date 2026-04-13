@@ -24,8 +24,8 @@ tide_notify() {
     tide_osc9 "tide:wrapped-agent:codex:$1"
 }
 
-# Report Running on start and Idle on exit. Codex does not emit NeedsInput here.
-tide_notify "agent-running"
+# Report wrapper-managed presence on start and Idle on exit.
+tide_notify "agent-attached"
 
 # Build a temporary CODEX_HOME overlay so Tide can add hooks.json without
 # mutating the user's real Codex home. Existing config/state entries are
@@ -85,7 +85,7 @@ else
 TIDE_EOF
 fi
 
-trap 'tide_notify "agent-idle"; rm -rf "$TIDE_CODEX_HOME"' EXIT
+trap 'tide_notify "agent-detached"; rm -rf "$TIDE_CODEX_HOME"' EXIT
 
 CODEX_HOME="$TIDE_CODEX_HOME" "$REAL_CMD" \
   -c "features.codex_hooks=true" \

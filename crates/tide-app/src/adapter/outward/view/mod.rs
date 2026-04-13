@@ -9,7 +9,8 @@ pub(crate) mod ui;
 
 #[cfg(test)]
 pub(crate) use chrome::{
-    pane_surface_attention_status, workspace_item_indicator_color, workspace_item_indicator_status,
+    integration_toggle_notification_indicator_color, pane_surface_attention_status,
+    workspace_item_indicator_color, workspace_item_indicator_status,
 };
 #[cfg(test)]
 pub(crate) use cursor::editor_selection_rects;

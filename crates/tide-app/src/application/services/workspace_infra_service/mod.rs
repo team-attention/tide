@@ -76,44 +76,47 @@ impl App {
         self.layout.ensure_next_id_at_least(next_pane_id);
     }
 
-    fn active_stage_terminal_agent_flags(&self) -> (bool, bool) {
+    fn active_stage_terminal_agent_flags(&self) -> (bool, bool, bool) {
         use crate::state::gateway_status::AgentStatus;
 
         let mut has_running = false;
         let mut has_alert = false;
+        let mut has_connected_idle = false;
 
         for (&pane_id, pane) in &self.panes {
             if !matches!(pane, PaneKind::Terminal(_)) || self.is_pane_in_dock(pane_id) {
                 continue;
             }
-            let Some(status) = self
+            let Some(agent) = self
                 .gateway
                 .detected_agents
                 .get(&pane_id)
                 .filter(|agent| agent.wrapper_managed)
-                .and_then(|agent| agent.status)
             else {
                 continue;
             };
 
-            match status {
-                AgentStatus::Running => has_running = true,
-                AgentStatus::Idle | AgentStatus::NeedsInput => has_alert = true,
+            match agent.status {
+                Some(AgentStatus::Running) => has_running = true,
+                Some(AgentStatus::Idle) | Some(AgentStatus::NeedsInput) => has_alert = true,
+                None if agent.gateway_connected => has_connected_idle = true,
+                None => {}
             }
         }
 
-        (has_running, has_alert)
+        (has_running, has_alert, has_connected_idle)
     }
 
     fn stage_terminal_agent_flags_for(
         &self,
         layout: &SplitLayout,
         panes: &HashMap<PaneId, PaneKind>,
-    ) -> (bool, bool) {
+    ) -> (bool, bool, bool) {
         use crate::state::gateway_status::AgentStatus;
 
         let mut has_running = false;
         let mut has_alert = false;
+        let mut has_connected_idle = false;
 
         let stage_pane_ids = layout.all_pane_ids();
         let pane_ids: Vec<PaneId> = if stage_pane_ids.is_empty() {
@@ -135,26 +138,27 @@ impl App {
             if !matches!(panes.get(&pane_id), Some(PaneKind::Terminal(_))) {
                 continue;
             }
-            let Some(status) = self
+            let Some(agent) = self
                 .gateway
                 .detected_agents
                 .get(&pane_id)
                 .filter(|agent| agent.wrapper_managed)
-                .and_then(|agent| agent.status)
             else {
                 continue;
             };
 
-            match status {
-                AgentStatus::Running => has_running = true,
-                AgentStatus::Idle | AgentStatus::NeedsInput => has_alert = true,
+            match agent.status {
+                Some(AgentStatus::Running) => has_running = true,
+                Some(AgentStatus::Idle) | Some(AgentStatus::NeedsInput) => has_alert = true,
+                None if agent.gateway_connected => has_connected_idle = true,
+                None => {}
             }
         }
 
-        (has_running, has_alert)
+        (has_running, has_alert, has_connected_idle)
     }
 
-    pub(crate) fn workspace_stage_agent_flags(&self, workspace_idx: usize) -> (bool, bool) {
+    pub(crate) fn workspace_stage_agent_flags(&self, workspace_idx: usize) -> (bool, bool, bool) {
         if workspace_idx == self.ws.active {
             return self.active_stage_terminal_agent_flags();
         }
@@ -165,7 +169,7 @@ impl App {
             .map(|workspace| {
                 self.stage_terminal_agent_flags_for(&workspace.layout, &workspace.panes)
             })
-            .unwrap_or((false, false))
+            .unwrap_or((false, false, false))
     }
 
     pub(crate) fn has_any_stage_wrapped_agent_alert(&self) -> bool {
@@ -369,6 +373,7 @@ impl App {
         self.compute_layout();
         self.update_file_tree_cwd();
         self.sync_browser_webview_frames();
+        self.reroute_backgrounded_wrapped_agent_attention();
     }
 
     /// Returns the workspace index containing the given pane.

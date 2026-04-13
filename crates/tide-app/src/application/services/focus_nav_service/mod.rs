@@ -234,6 +234,7 @@ impl FocusNavPort for App {
         self.router.set_focused(id);
         self.acknowledge_agent_attention(id);
         self.cache.invalidate_chrome();
+        self.reroute_backgrounded_wrapped_agent_attention();
     }
 
     fn set_focus_area(&mut self, area: FocusArea) {

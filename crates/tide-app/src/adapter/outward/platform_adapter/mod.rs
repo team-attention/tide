@@ -92,6 +92,11 @@ pub enum PlatformEvent {
     SystemNotificationActivated {
         pane_id: u64,
     },
+    /// The macOS notification center reported the bundled app's current
+    /// notification-authorization status.
+    NotificationAuthorizationStatusChanged {
+        status: crate::state::NotificationAuthorizationStatus,
+    },
 }
 
 /// Mouse button identifiers.

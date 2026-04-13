@@ -35,6 +35,7 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
             self.acknowledge_agent_attention(id);
             self.cache.invalidate_chrome();
             self.sync_browser_webview_frames();
+            self.reroute_backgrounded_wrapped_agent_attention();
             return;
         }
 
@@ -74,6 +75,7 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         self.cache.invalidate_chrome();
         self.update_file_tree_cwd();
         self.sync_browser_webview_frames();
+        self.reroute_backgrounded_wrapped_agent_attention();
     }
 
     /// Resolve an AreaSlot to a FocusArea.
@@ -127,6 +129,7 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
             }
         }
         self.cache.invalidate_chrome();
+        self.reroute_backgrounded_wrapped_agent_attention();
     }
 
     fn toggle_file_tree_visibility(&mut self) {
@@ -150,6 +153,7 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         }
         self.cache.invalidate_chrome();
         self.compute_layout();
+        self.reroute_backgrounded_wrapped_agent_attention();
     }
 
     fn toggle_dock_visibility(&mut self) {
@@ -178,6 +182,7 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         }
         self.cache.invalidate_chrome();
         self.compute_layout();
+        self.reroute_backgrounded_wrapped_agent_attention();
     }
 
     fn handle_navigate(&mut self, direction: crate::tide_input::Direction) {

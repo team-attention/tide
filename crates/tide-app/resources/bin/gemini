@@ -32,14 +32,14 @@ cat > "$DEFAULTS_FILE" << TIDE_EOF
     }
   },
   "hooks": {
-    "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": "$TIDE_BIN notify agent-needs-input --pane $TIDE_PANE --agent gemini"}]}],
-    "AfterAgent": [{"matcher": "", "hooks": [{"type": "command", "command": "$TIDE_BIN notify agent-idle --pane $TIDE_PANE --agent gemini"}]}],
+    "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": "$TIDE_BIN notify agent-needs-input --pane $TIDE_PANE --agent gemini --payload-stdin"}]}],
+    "AfterAgent": [{"matcher": "", "hooks": [{"type": "command", "command": "$TIDE_BIN notify agent-idle --pane $TIDE_PANE --agent gemini --payload-stdin"}]}],
     "BeforeAgent": [{"matcher": "", "hooks": [{"type": "command", "command": "$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent gemini"}]}]
   }
 }
 TIDE_EOF
 
-tide_notify agent-running
-trap 'tide_notify agent-idle; rm -f "$DEFAULTS_FILE"' EXIT
+tide_notify agent-attached
+trap 'tide_notify agent-detached; rm -f "$DEFAULTS_FILE"' EXIT
 
 GEMINI_CLI_SYSTEM_DEFAULTS_PATH="$DEFAULTS_FILE" "$REAL_CMD" "$@"

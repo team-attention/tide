@@ -1297,9 +1297,11 @@ fn cli_notify(
         .ok_or_else(|| CliError::InvalidParams("pane (u64) required".into()))?;
 
     let (normalized_event, status) = match event {
-        "agent-running" => ("agent-running", AgentStatus::Running),
-        "agent-idle" => ("agent-idle", AgentStatus::Idle),
-        "agent-needs-input" => ("agent-needs-input", AgentStatus::NeedsInput),
+        "agent-attached" => ("agent-attached", None),
+        "agent-detached" => ("agent-detached", None),
+        "agent-running" => ("agent-running", Some(AgentStatus::Running)),
+        "agent-idle" => ("agent-idle", Some(AgentStatus::Idle)),
+        "agent-needs-input" => ("agent-needs-input", Some(AgentStatus::NeedsInput)),
         "codex-turn-complete" => {
             let status = classify_codex_completed_turn_payload(params.get("payload"));
             let normalized_event = match status {
@@ -1307,13 +1309,25 @@ fn cli_notify(
                 AgentStatus::Idle => "agent-idle",
                 AgentStatus::NeedsInput => "agent-needs-input",
             };
-            (normalized_event, status)
+            (normalized_event, Some(status))
         }
         _ => return Err(CliError::InvalidParams(format!("unknown event: {event}"))),
     };
 
     // Only process notify for panes that actually exist (in any workspace)
     if !ctx.has_pane_in_any_workspace(pane_id) {
+        return Ok(json!({"ok": true}));
+    }
+
+    if event == "agent-detached" {
+        let agent_key = params
+            .get("agent")
+            .and_then(|v| v.as_str())
+            .unwrap_or("agent");
+        ctx.handle_terminal_notification(
+            pane_id,
+            &format!("tide:wrapped-agent:{agent_key}:agent-detached"),
+        );
         return Ok(json!({"ok": true}));
     }
 
@@ -1335,7 +1349,7 @@ fn cli_notify(
         if let Some(agent) = agents.get_mut(&pane_id) {
             agent.wrapper_managed = true;
             agent.gateway_connected = true;
-            agent.status = Some(status);
+            agent.status = status;
             Some(agent.name)
         } else {
             // Auto-register: wrapper hook arrived before gateway modal scan.
@@ -1349,7 +1363,7 @@ fn cli_notify(
                     pid: 0, // PID unknown from hook — will be updated on next process scan
                     wrapper_managed: true,
                     gateway_connected: true, // wrapper implies MCP is connected
-                    status: Some(status),
+                    status,
                 },
             );
             Some(name)
@@ -1366,8 +1380,18 @@ fn cli_notify(
                 "agent": name,
             }),
         );
-        // Route notification based on user context (UC-1)
-        ctx.route_agent_notification(pane_id, status);
+        if let Some(status) = status {
+            let notification_snippet = wrapped_agent_notification_snippet_from_payload(
+                event,
+                agent_display_name,
+                params.get("payload"),
+            );
+            ctx.set_agent_notification_snippet(pane_id, notification_snippet.clone());
+            // Route notification based on user context (UC-1)
+            ctx.route_agent_notification(pane_id, status, notification_snippet);
+        } else {
+            ctx.set_agent_notification_snippet(pane_id, None);
+        }
     }
 
     Ok(json!({"ok": true}))
@@ -1381,6 +1405,17 @@ struct CodexCompletedTurnPayload {
     #[serde(default)]
     input_messages: Vec<String>,
     last_assistant_message: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeHookPayload {
+    message: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiHookPayload {
+    message: Option<String>,
+    prompt_response: Option<String>,
 }
 
 const CODEX_NEEDS_INPUT_PHRASES: &[&str] = &[
@@ -1425,6 +1460,53 @@ fn classify_codex_completed_turn_payload(
     }
 
     AgentStatus::Idle
+}
+
+fn wrapped_agent_notification_snippet_from_payload(
+    event: &str,
+    agent_hint: &str,
+    payload: Option<&Value>,
+) -> Option<String> {
+    match agent_hint {
+        "codex" if event == "codex-turn-complete" => payload
+            .and_then(codex_completed_turn_notification_snippet)
+            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
+        "claude" => payload
+            .and_then(claude_notification_snippet)
+            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
+        "gemini" => payload
+            .and_then(|value| gemini_notification_snippet(event, value))
+            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
+        _ => None,
+    }
+}
+
+fn codex_completed_turn_notification_snippet(payload: &Value) -> Option<String> {
+    serde_json::from_value::<CodexCompletedTurnPayload>(payload.clone())
+        .ok()
+        .and_then(|payload| {
+            if payload.payload_type == "agent-turn-complete" {
+                payload.last_assistant_message
+            } else {
+                None
+            }
+        })
+}
+
+fn claude_notification_snippet(payload: &Value) -> Option<String> {
+    serde_json::from_value::<ClaudeHookPayload>(payload.clone())
+        .ok()
+        .and_then(|payload| payload.message)
+}
+
+fn gemini_notification_snippet(event: &str, payload: &Value) -> Option<String> {
+    serde_json::from_value::<GeminiHookPayload>(payload.clone())
+        .ok()
+        .and_then(|payload| match event {
+            "agent-idle" => payload.prompt_response.or(payload.message),
+            "agent-needs-input" => payload.message.or(payload.prompt_response),
+            _ => None,
+        })
 }
 
 fn normalized_matches_codex_prompt(normalized_message: &str, phrase: &str) -> bool {

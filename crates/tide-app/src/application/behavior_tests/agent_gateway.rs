@@ -1358,7 +1358,7 @@ fn wrapper_scripts_are_generated_at_known_path() {
 #[test]
 fn codex_wrapper_injects_tide_mcp_turn_complete_notify_and_prompt_submit_hook() {
     // UC-4 BR-7: The Codex wrapper injects Tide MCP server config from the checked-in script.
-    // UC-4 BR-8: The Codex wrapper reports agent-running on launch.
+    // UC-4 BR-8: The Codex wrapper reports agent-attached on launch.
     // Spec: docs/specs/codex-needs-input-attention.md
     // UC-1 BR-1: Codex agent-running is emitted on each UserPromptSubmit, not just on launch.
     // UC-1 BR-2: Codex prompt-submit integration uses the documented UserPromptSubmit hook path.
@@ -1370,18 +1370,111 @@ fn codex_wrapper_injects_tide_mcp_turn_complete_notify_and_prompt_submit_hook() 
 
     assert!(wrapper.contains("mcp_servers.tide.command"));
     assert!(wrapper.contains("mcp_servers.tide.args"));
-    assert!(wrapper.contains("tide_notify \"agent-running\""));
+    assert!(wrapper.contains("tide_notify \"agent-attached\""));
     assert!(wrapper.contains("features.codex_hooks=true"));
     assert!(wrapper.contains("\"UserPromptSubmit\""));
     assert!(wrapper.contains("$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent codex"));
     assert!(
         wrapper.contains("notify=[\\\"$TIDE_BIN\\\",\\\"notify\\\",\\\"codex-turn-complete\\\"")
     );
-    assert!(wrapper.contains("tide_notify \"agent-idle\""));
+    assert!(wrapper.contains("tide_notify \"agent-detached\""));
     assert!(wrapper.contains("rm -rf \"$TIDE_CODEX_HOME\""));
     assert!(wrapper.contains("tide:wrapped-agent:codex:$1"));
     assert!(!wrapper.contains("\"Notification\""));
     assert!(!wrapper.contains("agent-needs-input"));
+}
+
+#[test]
+fn claude_wrapper_forwards_hook_stdin_payloads_for_notification_and_stop() {
+    // Spec: docs/specs/agent-auto-integration.md
+    // UC-5 BR-13: Claude Notification and Stop hooks forward stdin JSON through tide notify.
+    let wrapper_path = format!("{}/resources/bin/claude", env!("CARGO_MANIFEST_DIR"));
+    let wrapper = std::fs::read_to_string(&wrapper_path)
+        .unwrap_or_else(|err| panic!("failed to read {wrapper_path}: {err}"));
+
+    assert!(wrapper
+        .contains("notify agent-needs-input --pane $TIDE_PANE --agent claude --payload-stdin"));
+    assert!(wrapper.contains("notify agent-idle --pane $TIDE_PANE --agent claude --payload-stdin"));
+    assert!(wrapper.contains("tide_notify agent-attached"));
+    assert!(wrapper.contains("tide_notify agent-detached"));
+    assert!(wrapper.contains("notify agent-running --pane $TIDE_PANE --agent claude"));
+}
+
+#[test]
+fn gemini_wrapper_forwards_hook_stdin_payloads_for_notification_and_after_agent() {
+    // Spec: docs/specs/agent-auto-integration.md
+    // UC-5 BR-14: Gemini Notification and AfterAgent hooks forward stdin JSON through tide notify.
+    let wrapper_path = format!("{}/resources/bin/gemini", env!("CARGO_MANIFEST_DIR"));
+    let wrapper = std::fs::read_to_string(&wrapper_path)
+        .unwrap_or_else(|err| panic!("failed to read {wrapper_path}: {err}"));
+
+    assert!(wrapper
+        .contains("notify agent-needs-input --pane $TIDE_PANE --agent gemini --payload-stdin"));
+    assert!(wrapper.contains("notify agent-idle --pane $TIDE_PANE --agent gemini --payload-stdin"));
+    assert!(wrapper.contains("tide_notify agent-attached"));
+    assert!(wrapper.contains("tide_notify agent-detached"));
+    assert!(wrapper.contains("notify agent-running --pane $TIDE_PANE --agent gemini"));
+}
+
+#[test]
+fn agent_attached_marks_presence_without_running_or_notification_routing() {
+    // Spec: docs/specs/agent-notification-routing.md
+    // UC-14 BR-39: Launch-time wrapper integration marks presence without forcing Running.
+    // UC-14 BR-40: Presence alone does not route notifications.
+    let (mut app, pane_id) = app_with_terminal();
+    app.pending_platform_commands.clear();
+
+    app.handle_cli_command(
+        "notify",
+        json!({"event": "agent-attached", "pane": pane_id, "agent": "codex"}),
+    )
+    .unwrap();
+
+    let agent = app
+        .gateway
+        .detected_agents
+        .get(&pane_id)
+        .expect("agent should be registered");
+
+    assert!(agent.wrapper_managed);
+    assert!(agent.gateway_connected);
+    assert_eq!(agent.status, None);
+    assert!(app.pending_platform_commands.is_empty());
+}
+
+#[test]
+fn agent_detached_clears_wrapped_agent_presence_and_attention() {
+    // Spec: docs/specs/agent-notification-routing.md
+    // UC-14 BR-42: Wrapper EXIT clears presence and unresolved wrapped-agent attention.
+    let (mut app, pane_id) = app_with_terminal();
+    app.window.is_focused = false;
+    app.gateway.detected_agents.insert(
+        pane_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Codex",
+            pid: 12345,
+            wrapper_managed: true,
+            gateway_connected: true,
+            status: Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+        },
+    );
+    app.notified_panes.insert(pane_id);
+    app.agent_notification_snippets
+        .insert(pane_id, "Need an answer".into());
+    app.refresh_workspace_agent_notification(app.ws.active);
+    assert!(app.ws.workspace_extras[app.ws.active].has_agent_notification);
+
+    app.handle_cli_command(
+        "notify",
+        json!({"event": "agent-detached", "pane": pane_id, "agent": "codex"}),
+    )
+    .unwrap();
+
+    assert!(!app.gateway.detected_agents.contains_key(&pane_id));
+    assert!(!app.notified_panes.contains(&pane_id));
+    assert!(!app.agent_notification_snippets.contains_key(&pane_id));
+    assert!(!app.ws.workspace_extras[app.ws.active].has_agent_notification);
+    assert!(app.pending_platform_commands.is_empty());
 }
 
 #[test]
@@ -1499,6 +1592,20 @@ fn enabling_auto_integration_requests_notification_permission() {
 }
 
 #[test]
+fn wrapped_agent_lifecycle_signal_requests_notification_permission_as_a_fallback() {
+    // UC-10 BR-32: A wrapper-managed lifecycle signal also queues the notification-permission request as a fallback.
+    let (mut app, agent_pane) = app_with_terminal();
+    app.pending_platform_commands.clear();
+
+    app.handle_terminal_notification(agent_pane, "tide:wrapped-agent:codex:agent-running");
+
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::RequestNotificationPermission)
+    ));
+}
+
+#[test]
 fn disabling_auto_integration_does_not_request_notification_permission() {
     // UC-5 BR-3: Toggling auto-integration off does not queue a permission request.
     let (mut app, _id) = app_with_editor();
@@ -1508,6 +1615,28 @@ fn disabling_auto_integration_does_not_request_notification_permission() {
 
     assert!(!app.settings.auto_integration);
     assert!(app.pending_platform_commands.is_empty());
+}
+
+#[test]
+fn focusing_the_window_retries_notification_permission_when_authorization_is_unresolved() {
+    // UC-5 BR-4: When Tide regains focus with unresolved notification authorization, it retries the permission request.
+    use crate::adapter::inward::event_loop_adapter::handle_platform_event;
+
+    let mut app = test_app();
+    app.pending_platform_commands.clear();
+    app.window.notification_authorization_status =
+        crate::state::NotificationAuthorizationStatus::NotDetermined;
+
+    handle_platform_event(
+        &mut app,
+        crate::tide_platform::PlatformEvent::Focused(true),
+        &test_window_proxy(),
+    );
+
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::RequestNotificationPermission)
+    ));
 }
 
 // --- UC-4: RemoveGatewayModal ---
@@ -1905,15 +2034,19 @@ fn unfocused_wrapped_agent_terminal_routes_notification_while_window_is_focused(
 
     app.handle_terminal_notification(target_terminal_id, "tide:agent-needs-input");
 
-    assert!(matches!(
-        app.pending_platform_commands.first(),
-        Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, .. })
-            if *pane_id == target_terminal_id
-    ));
-    assert!(matches!(
-        app.pending_platform_commands.get(1),
-        Some(crate::tide_platform::WindowCommand::RequestUserAttention)
-    ));
+    assert!(app.pending_platform_commands.iter().any(|command| {
+        matches!(
+            command,
+            crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, .. }
+                if *pane_id == target_terminal_id
+        )
+    }));
+    assert!(app.pending_platform_commands.iter().any(|command| {
+        matches!(
+            command,
+            crate::tide_platform::WindowCommand::RequestUserAttention
+        )
+    }));
     assert!(app.notified_panes.contains(&target_terminal_id));
 }
 
@@ -1927,6 +2060,68 @@ fn focused_pane_skips_background_notification_while_window_is_focused() {
 
     assert!(app.pending_platform_commands.is_empty());
     assert!(!app.notified_panes.contains(&agent_pane));
+}
+
+#[test]
+fn focusing_another_pane_after_an_unresolved_alert_routes_a_system_notification() {
+    // UC-9 BR-28: Leaving an unresolved wrapped-agent Terminal routes the background notification path immediately.
+    use crate::WorkspaceNavPort;
+
+    let (mut app, agent_pane) = app_with_terminal();
+    let other_terminal_id = app.layout.split(agent_pane, SplitDirection::Horizontal);
+    let other_terminal = TerminalPane::with_cwd(other_terminal_id, 80, 24, None, true).unwrap();
+    app.panes
+        .insert(other_terminal_id, PaneKind::Terminal(other_terminal));
+    app.focus.focused = Some(agent_pane);
+    app.focus.stage_focused = Some(agent_pane);
+    app.window.is_focused = true;
+
+    app.handle_terminal_notification(agent_pane, "tide:wrapped-agent:codex:agent-needs-input");
+    app.pending_platform_commands.clear();
+
+    app.focus_terminal(other_terminal_id);
+
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, .. })
+            if *pane_id == agent_pane
+    ));
+    assert!(matches!(
+        app.pending_platform_commands.get(1),
+        Some(crate::tide_platform::WindowCommand::RequestUserAttention)
+    ));
+    assert!(app.notified_panes.contains(&agent_pane));
+}
+
+#[test]
+fn window_blur_after_an_unresolved_alert_routes_a_system_notification() {
+    // UC-9 BR-29: Window blur re-routes an unresolved wrapped-agent alert into a system notification.
+    use crate::adapter::inward::event_loop_adapter::handle_platform_event;
+
+    let (mut app, agent_pane) = app_with_terminal();
+    app.focus.focused = Some(agent_pane);
+    app.focus.stage_focused = Some(agent_pane);
+    app.window.is_focused = true;
+
+    app.handle_terminal_notification(agent_pane, "tide:wrapped-agent:codex:agent-needs-input");
+    app.pending_platform_commands.clear();
+
+    handle_platform_event(
+        &mut app,
+        crate::tide_platform::PlatformEvent::Focused(false),
+        &test_window_proxy(),
+    );
+
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, .. })
+            if *pane_id == agent_pane
+    ));
+    assert!(matches!(
+        app.pending_platform_commands.get(1),
+        Some(crate::tide_platform::WindowCommand::RequestUserAttention)
+    ));
+    assert!(app.notified_panes.contains(&agent_pane));
 }
 
 #[test]
@@ -1946,6 +2141,69 @@ fn background_notification_includes_foreground_dot() {
         app.gateway.detected_agents.get(&agent_pane).unwrap().status,
         Some(crate::state::gateway_status::AgentStatus::NeedsInput),
     );
+}
+
+#[test]
+fn codex_completed_turn_notification_uses_last_assistant_message_snippet() {
+    // UC-11 BR-33: Codex completed-turn notifications use last_assistant_message as the body.
+    use crate::PaneAccessPort;
+    let (mut app, pane_id) = app_with_terminal();
+    app.window.is_focused = false;
+    let expected_title = format!("Tide - {}", app.pane_title(pane_id));
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "codex-turn-complete",
+            "pane": pane_id,
+            "agent": "codex",
+            "payload": {
+                "type": "agent-turn-complete",
+                "thread-id": "thread-1",
+                "turn-id": "turn-1",
+                "cwd": "/tmp/project",
+                "input-messages": ["Continue."],
+                "last-assistant-message": "Implemented the parser fix and updated the tests."
+            }
+        }),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::SendSystemNotification { title, pane_id: body_pane_id, body, .. })
+            if *body_pane_id == pane_id
+                && title == &expected_title
+                && body == "Implemented the parser fix and updated the tests."
+    ));
+}
+
+#[test]
+fn gemini_after_agent_notification_uses_prompt_response_snippet() {
+    // UC-11 BR-34: Gemini AfterAgent notifications use prompt_response as the body.
+    let (mut app, pane_id) = app_with_terminal();
+    app.window.is_focused = false;
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "agent-idle",
+            "pane": pane_id,
+            "agent": "gemini",
+            "payload": {
+                "hook_event_name": "AfterAgent",
+                "prompt": "Explain this codebase",
+                "prompt_response": "The codebase is split into a Terminal domain, Workspace services, and renderer adapters."
+            }
+        }),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id: body_pane_id, body, .. })
+            if *body_pane_id == pane_id && body == "The codebase is split into a Terminal domain, Workspace services, and renderer adapters."
+    ));
 }
 
 #[cfg(target_os = "macos")]
@@ -1982,6 +2240,81 @@ fn duplicate_system_notification_suppressed_until_acknowledged() {
     app.focus.focused = Some(0); // unfocus
     app.handle_terminal_notification(agent_pane, "tide:agent-needs-input");
     assert!(!app.pending_platform_commands.is_empty());
+}
+
+#[test]
+fn wrapped_agent_notification_falls_back_to_visible_terminal_snippet() {
+    // UC-11 BR-35: When no structured payload snippet exists, Tide falls back to the owning Terminal's visible text.
+    let (mut app, target_terminal_id) = app_with_terminal();
+    let focused_terminal_id = app
+        .layout
+        .split(target_terminal_id, SplitDirection::Horizontal);
+    let focused_terminal = TerminalPane::with_cwd(focused_terminal_id, 80, 24, None, true).unwrap();
+    app.panes
+        .insert(focused_terminal_id, PaneKind::Terminal(focused_terminal));
+    app.focus.focused = Some(focused_terminal_id);
+    app.focus.stage_focused = Some(focused_terminal_id);
+    app.window.is_focused = true;
+    if let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&target_terminal_id) {
+        terminal.backend.load_mock_screen_for_test(
+            "model: claude-sonnet\nTip: Tide help text\n• Finalized the parser fix and verified the behavior tests.\n",
+        );
+    }
+
+    app.handle_terminal_notification(target_terminal_id, "tide:wrapped-agent:claude:agent-idle");
+
+    assert!(app.pending_platform_commands.iter().any(|command| {
+        matches!(
+            command,
+            crate::tide_platform::WindowCommand::SendSystemNotification { title, pane_id, body, .. }
+                if *pane_id == target_terminal_id
+                    && title.starts_with("Tide - ")
+                    && body == "• Finalized the parser fix and verified the behavior tests."
+        )
+    }));
+}
+
+#[test]
+fn backgrounded_wrapped_agent_reroute_reuses_the_stored_notification_snippet() {
+    // UC-11 BR-36: Re-routing an unresolved wrapped-agent alert reuses the stored snippet.
+    use crate::WorkspaceNavPort;
+
+    let (mut app, agent_pane) = app_with_terminal();
+    let other_terminal_id = app.layout.split(agent_pane, SplitDirection::Horizontal);
+    let other_terminal = TerminalPane::with_cwd(other_terminal_id, 80, 24, None, true).unwrap();
+    app.panes
+        .insert(other_terminal_id, PaneKind::Terminal(other_terminal));
+    app.focus.focused = Some(agent_pane);
+    app.focus.stage_focused = Some(agent_pane);
+    app.window.is_focused = true;
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "agent-idle",
+            "pane": agent_pane,
+            "agent": "gemini",
+            "payload": {
+                "hook_event_name": "AfterAgent",
+                "prompt": "Summarize the repo",
+                "prompt_response": "Summarized the repo layout and highlighted the gateway routing path."
+            }
+        }),
+    )
+    .unwrap();
+    assert!(
+        app.pending_platform_commands.is_empty(),
+        "the focused Terminal should not route a background notification yet"
+    );
+
+    app.focus_terminal(other_terminal_id);
+
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, body, .. })
+            if *pane_id == agent_pane
+                && body == "Summarized the repo layout and highlighted the gateway routing path."
+    ));
 }
 
 // --- UC-2: ClassifyCodexCompletedTurns ---
@@ -2126,6 +2459,52 @@ fn window_focus_state_tracks_platform_event() {
     // UC-2 BR-1: Initial value is true, tracks PlatformEvent::Focused
     let app = test_app();
     assert!(app.window.is_focused); // initial = true
+}
+
+#[test]
+fn notification_authorization_status_event_updates_window_state() {
+    // UC-6 BR-1: macOS notification-authorization snapshots update WindowState.
+    use crate::adapter::inward::event_loop_adapter::handle_platform_event;
+
+    let mut app = test_app();
+    assert_eq!(
+        app.window.notification_authorization_status,
+        crate::state::NotificationAuthorizationStatus::Unknown
+    );
+
+    handle_platform_event(
+        &mut app,
+        crate::tide_platform::PlatformEvent::NotificationAuthorizationStatusChanged {
+            status: crate::state::NotificationAuthorizationStatus::Authorized,
+        },
+        &test_window_proxy(),
+    );
+
+    assert_eq!(
+        app.window.notification_authorization_status,
+        crate::state::NotificationAuthorizationStatus::Authorized
+    );
+}
+
+#[test]
+fn unknown_notification_authorization_status_is_preserved() {
+    // UC-6 BR-3: Tide preserves Unknown notification-authorization status instead of guessing a resolved state.
+    use crate::adapter::inward::event_loop_adapter::handle_platform_event;
+
+    let mut app = test_app();
+
+    handle_platform_event(
+        &mut app,
+        crate::tide_platform::PlatformEvent::NotificationAuthorizationStatusChanged {
+            status: crate::state::NotificationAuthorizationStatus::Unknown,
+        },
+        &test_window_proxy(),
+    );
+
+    assert_eq!(
+        app.window.notification_authorization_status,
+        crate::state::NotificationAuthorizationStatus::Unknown
+    );
 }
 
 // --- UC-5: BlinkTabDot ---
@@ -2399,8 +2778,8 @@ fn wrapped_agent_attention_does_not_leak_across_workspaces_after_switching_back(
 
     assert_eq!(app.pane_agent_attention_status(left_terminal_id), None);
     assert_eq!(app.pane_agent_attention_status(right_terminal_id), None);
-    assert_eq!(app.workspace_stage_agent_flags(0), (false, false));
-    assert_eq!(app.workspace_stage_agent_flags(1), (false, true));
+    assert_eq!(app.workspace_stage_agent_flags(0), (false, false, false));
+    assert_eq!(app.workspace_stage_agent_flags(1), (false, true, false));
     assert!(!app.ws.workspace_extras[0].has_agent_notification);
     assert!(app.ws.workspace_extras[1].has_agent_notification);
 }
@@ -2518,6 +2897,7 @@ fn inactive_workspace_agent_status_sets_notification_dot() {
     app.route_agent_notification(
         agent_pane_id,
         crate::state::gateway_status::AgentStatus::NeedsInput,
+        None,
     );
     assert!(app.ws.workspace_extras[1].has_agent_notification);
 }
