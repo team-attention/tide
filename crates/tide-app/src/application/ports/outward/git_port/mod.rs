@@ -11,7 +11,13 @@ pub(crate) trait GitPort {
     fn count_worktrees(&self, cwd: &Path) -> usize;
     fn repo_root(&self, cwd: &Path) -> Option<PathBuf>;
     fn branch_exists(&self, cwd: &Path, branch: &str) -> bool;
-    fn add_worktree(&self, cwd: &Path, path: &Path, branch: &str, new_branch: bool) -> Result<(), String>;
+    fn add_worktree(
+        &self,
+        cwd: &Path,
+        path: &Path,
+        branch: &str,
+        new_branch: bool,
+    ) -> Result<(), String>;
     fn remove_worktree(&self, cwd: &Path, path: &Path, force: bool) -> Result<(), String>;
     fn delete_branch(&self, cwd: &Path, branch: &str, force: bool) -> Result<(), String>;
 }

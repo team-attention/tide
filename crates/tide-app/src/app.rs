@@ -236,12 +236,57 @@ impl App {
         }
     }
 
+    fn queue_notification_permission_request(&mut self) {
+        if self.pending_platform_commands.iter().any(|cmd| {
+            matches!(
+                cmd,
+                crate::tide_platform::WindowCommand::RequestNotificationPermission
+            )
+        }) {
+            return;
+        }
+
+        self.pending_platform_commands
+            .push(crate::tide_platform::WindowCommand::RequestNotificationPermission);
+    }
+
+    pub(crate) fn queue_notification_permission_request_if_auto_integration_enabled(&mut self) {
+        if self.settings.auto_integration {
+            self.queue_notification_permission_request();
+        }
+    }
+
+    pub(crate) fn acknowledge_agent_attention(&mut self, pane_id: PaneId) {
+        let mut affected_workspaces = Vec::new();
+
+        if let Some(workspace_idx) = self.find_workspace_for_pane(pane_id) {
+            if !affected_workspaces.contains(&workspace_idx) {
+                affected_workspaces.push(workspace_idx);
+            }
+        }
+        if let Some(agent) = self.gateway.detected_agents.get_mut(&pane_id) {
+            if matches!(
+                agent.status,
+                Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+                    | Some(crate::state::gateway_status::AgentStatus::Idle)
+            ) {
+                agent.status = None;
+            }
+        }
+        self.notified_panes.remove(&pane_id);
+
+        for workspace_idx in affected_workspaces {
+            self.refresh_workspace_agent_notification(workspace_idx);
+        }
+    }
+
     /// Create the initial terminal pane.
     pub(crate) fn create_initial_pane(
         &mut self,
         early_terminal: Option<crate::tide_terminal::Terminal>,
     ) {
-        let (layout, pane_id) = SplitLayout::with_initial_pane();
+        let pane_id = self.next_workspace_pane_id();
+        let (layout, pane_id) = SplitLayout::with_initial_pane_id(pane_id);
         self.layout = layout;
 
         let cell_size = self.cell_size();
@@ -516,7 +561,7 @@ impl crate::application::ports::inward::AppCorePort for App {
             .find(|(id, _)| *id == pane_id)
             .map(|(_, rect)| *rect)?;
 
-        let (tab_ids, active_pane, pinned_ids, is_stacked, show_comment_badge) =
+        let (tab_ids, active_pane, pinned_ids, is_stacked, show_comment_badge, is_stage_surface) =
             if self.dock_zoomed_pane() == Some(pane_id) {
                 let mut tabs = self.dock.pinned_dock_layout.all_tabs_flat();
                 if let Some(tid) = self.focused_terminal_id() {
@@ -527,16 +572,26 @@ impl crate::application::ports::inward::AppCorePort for App {
                 if tabs.len() < 2 {
                     return None;
                 }
-                (tabs, pane_id, Vec::new(), true, self.can_show_context_comment_badge(pane_id))
+                (
+                    tabs,
+                    pane_id,
+                    Vec::new(),
+                    true,
+                    self.can_show_context_comment_badge(pane_id),
+                    false,
+                )
             } else if let Some(tg) = self
                 .dock
                 .pinned_dock_layout
                 .tab_group_containing(pane_id)
                 .or_else(|| {
-                    self.terminal_owning(pane_id).and_then(|tid| match self.panes.get(&tid) {
-                        Some(PaneKind::Terminal(tp)) => tp.dock_layout.tab_group_containing(pane_id),
-                        _ => None,
-                    })
+                    self.terminal_owning(pane_id)
+                        .and_then(|tid| match self.panes.get(&tid) {
+                            Some(PaneKind::Terminal(tp)) => {
+                                tp.dock_layout.tab_group_containing(pane_id)
+                            }
+                            _ => None,
+                        })
                 })
             {
                 (
@@ -545,17 +600,25 @@ impl crate::application::ports::inward::AppCorePort for App {
                     self.dock.pinned_dock_layout.all_pane_ids(),
                     false,
                     self.can_show_context_comment_badge(tg.active_pane()),
+                    false,
                 )
             } else {
                 let stage_pane_ids = self.layout.all_tabs_flat();
                 if self.focus.zoomed_pane == Some(pane_id) && stage_pane_ids.len() > 1 {
-                    (stage_pane_ids, pane_id, Vec::new(), true, false)
+                    (stage_pane_ids, pane_id, Vec::new(), true, false, true)
                 } else if let Some(tg) = self
                     .layout
                     .tab_group_containing(pane_id)
                     .filter(|tg| tg.tabs.len() >= 2)
                 {
-                    (tg.tabs.clone(), tg.active_pane(), Vec::new(), false, false)
+                    (
+                        tg.tabs.clone(),
+                        tg.active_pane(),
+                        Vec::new(),
+                        false,
+                        false,
+                        true,
+                    )
                 } else {
                     return None;
                 }
@@ -580,12 +643,13 @@ impl crate::application::ports::inward::AppCorePort for App {
                 if pinned_ids.contains(tid) {
                     label = format!("\u{f08d} {}", label);
                 }
-                let has_agent_status = self
-                    .gateway
-                    .detected_agents
-                    .get(tid)
-                    .and_then(|agent| agent.status)
-                    .is_some();
+                let has_agent_status = crate::header::stage_terminal_dot_status(
+                    &self.panes,
+                    &self.gateway.detected_agents,
+                    *tid,
+                    is_stage_surface,
+                )
+                .is_some();
                 let badge_widths: Vec<f32> = if *tid == active_pane {
                     crate::header::active_tab_badges(
                         &self.panes,
@@ -594,9 +658,7 @@ impl crate::application::ports::inward::AppCorePort for App {
                         show_comment_badge,
                     )
                     .iter()
-                    .map(|badge| {
-                        badge.text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0
-                    })
+                    .map(|badge| badge.text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0)
                     .collect()
                 } else {
                     Vec::new()
@@ -688,6 +750,13 @@ impl crate::application::ports::inward::AppCorePort for App {
 
     fn set_window_focused(&mut self, focused: bool) {
         self.window.is_focused = focused;
+    }
+
+    fn acknowledge_attention_for_focused_pane(&mut self) {
+        if let Some(pane_id) = self.focus.focused {
+            self.acknowledge_agent_attention(pane_id);
+            self.cache.invalidate_chrome();
+        }
     }
 
     fn save_full_session(&mut self) {
@@ -855,6 +924,9 @@ impl crate::application::ports::inward::GatewayPort for App {
     fn toggle_auto_integration(&mut self) {
         self.settings.auto_integration = !self.settings.auto_integration;
         crate::tide_terminal::set_auto_integration(self.settings.auto_integration);
+        if self.settings.auto_integration {
+            self.queue_notification_permission_request();
+        }
         self.ports.persistence.save_settings(&self.settings);
         self.cache.chrome_generation += 1;
     }
@@ -867,24 +939,45 @@ impl crate::application::ports::inward::GatewayPort for App {
 
     fn handle_terminal_notification(&mut self, pane_id: u64, message: &str) {
         let mut wrapped_agent_name = None;
-        let status = match message {
-            "tide:agent-running" => Some(crate::state::gateway_status::AgentStatus::Running),
-            "tide:agent-idle" => Some(crate::state::gateway_status::AgentStatus::Idle),
-            "tide:agent-needs-input" => Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+        let (event_name, status) = match message {
+            "tide:agent-running" => (
+                "agent-running",
+                Some(crate::state::gateway_status::AgentStatus::Running),
+            ),
+            "tide:agent-idle" => (
+                "agent-idle",
+                Some(crate::state::gateway_status::AgentStatus::Idle),
+            ),
+            "tide:agent-needs-input" => (
+                "agent-needs-input",
+                Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+            ),
             s if s.starts_with("tide:wrapped-agent:") => {
                 let mut parts = s.split(':');
                 let _ = parts.next();
                 let _ = parts.next();
-                let agent_name = parts.next().and_then(crate::state::gateway_status::wrapped_agent_display_name);
-                let status = match parts.next() {
-                    Some("agent-running") => Some(crate::state::gateway_status::AgentStatus::Running),
-                    Some("agent-idle") => Some(crate::state::gateway_status::AgentStatus::Idle),
-                    Some("agent-needs-input") => Some(crate::state::gateway_status::AgentStatus::NeedsInput),
+                let agent_name = parts
+                    .next()
+                    .and_then(crate::state::gateway_status::wrapped_agent_display_name);
+                let parsed_status = match parts.next() {
+                    Some("agent-running") => Some((
+                        "agent-running",
+                        crate::state::gateway_status::AgentStatus::Running,
+                    )),
+                    Some("agent-idle") => Some((
+                        "agent-idle",
+                        crate::state::gateway_status::AgentStatus::Idle,
+                    )),
+                    Some("agent-needs-input") => Some((
+                        "agent-needs-input",
+                        crate::state::gateway_status::AgentStatus::NeedsInput,
+                    )),
                     _ => None,
                 };
-                if let (Some(agent_name), Some(status)) = (agent_name, status) {
+                if let (Some(agent_name), Some((event_name, status))) = (agent_name, parsed_status)
+                {
                     wrapped_agent_name = Some(agent_name);
-                    Some(status)
+                    (event_name, Some(status))
                 } else {
                     log::debug!("Unknown tide notification: {}", s);
                     return;
@@ -929,7 +1022,17 @@ impl crate::application::ports::inward::GatewayPort for App {
         } else {
             return;
         }
-        self.cache.chrome_generation += 1;
+        self.cache.invalidate_chrome();
+        if let Some(agent) = self.gateway.detected_agents.get(&pane_id) {
+            self.gateway.notify(
+                "agent-status-changed",
+                serde_json::json!({
+                    "pane_id": pane_id,
+                    "status": event_name,
+                    "agent": agent.name,
+                }),
+            );
+        }
         // Route notification based on user context (UC-1)
         if let Some(s) = status {
             self.route_agent_notification(pane_id, s, None);
@@ -957,7 +1060,6 @@ impl crate::application::ports::inward::GatewayPort for App {
             return;
         }
         let agent_name = agent.name;
-
         if matches!(status, AgentStatus::Running) {
             self.notified_panes.remove(&pane_id);
             if let Some(workspace_idx) = self.find_workspace_for_pane(pane_id) {
@@ -965,7 +1067,6 @@ impl crate::application::ports::inward::GatewayPort for App {
             }
             return;
         }
-
         let pane_is_current_focus = self.focus.focused == Some(pane_id);
         let already_unacknowledged = self.notified_panes.contains(&pane_id);
 
@@ -1002,7 +1103,6 @@ impl crate::application::ports::inward::GatewayPort for App {
                     .push(crate::tide_platform::WindowCommand::RequestUserAttention);
             }
         }
-
         self.cache.needs_redraw = true;
     }
 }

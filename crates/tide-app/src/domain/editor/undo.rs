@@ -8,15 +8,32 @@ pub(crate) enum EditOp {
     /// Inserted a char at position.
     InsertChar { pos: Position, ch: char },
     /// Deleted a char at position (forward delete).
-    DeleteChar { pos: Position, ch: char, merged_next: bool },
+    DeleteChar {
+        pos: Position,
+        ch: char,
+        merged_next: bool,
+    },
     /// Backspace: deleted char before position. `result_pos` is the cursor after backspace.
-    Backspace { original_pos: Position, result_pos: Position, ch: Option<char>, merged_line: bool },
+    Backspace {
+        original_pos: Position,
+        result_pos: Position,
+        ch: Option<char>,
+        merged_line: bool,
+    },
     /// Inserted a newline at position.
     InsertNewline { pos: Position },
     /// Deleted a range of text (e.g. selection delete). Stores the deleted lines for undo.
-    DeleteRange { start: Position, end: Position, deleted_lines: Vec<String> },
+    DeleteRange {
+        start: Position,
+        end: Position,
+        deleted_lines: Vec<String>,
+    },
     /// Inserted a block of text (e.g. paste). Stores the text and end position for undo.
-    InsertText { pos: Position, text: String, end_pos: Position },
+    InsertText {
+        pos: Position,
+        text: String,
+        end_pos: Position,
+    },
     /// Deleted an entire line.
     DeleteLine { line: usize, content: String },
     /// Swapped two adjacent lines.
@@ -37,7 +54,11 @@ impl Buffer {
                     false
                 }
             }
-            EditOp::DeleteChar { pos, ch, merged_next } => {
+            EditOp::DeleteChar {
+                pos,
+                ch,
+                merged_next,
+            } => {
                 if pos.line >= self.lines.len() {
                     false
                 } else if *merged_next {
@@ -54,7 +75,12 @@ impl Buffer {
                     true
                 }
             }
-            EditOp::Backspace { original_pos, result_pos, ch, merged_line } => {
+            EditOp::Backspace {
+                original_pos,
+                result_pos,
+                ch,
+                merged_line,
+            } => {
                 if *merged_line {
                     // Reverse of line merge: split line at result_pos.col
                     if original_pos.line > 0 && original_pos.line - 1 < self.lines.len() {
@@ -90,7 +116,11 @@ impl Buffer {
                     false
                 }
             }
-            EditOp::DeleteRange { start, end: _, ref deleted_lines } => {
+            EditOp::DeleteRange {
+                start,
+                end: _,
+                ref deleted_lines,
+            } => {
                 if start.line >= self.lines.len() || deleted_lines.is_empty() {
                     false
                 } else {
@@ -103,7 +133,9 @@ impl Buffer {
                         self.lines[start.line].push_str(&suffix);
                     } else {
                         self.lines[start.line].push_str(&deleted_lines[0]);
-                        for (i, line) in deleted_lines[1..deleted_lines.len() - 1].iter().enumerate() {
+                        for (i, line) in
+                            deleted_lines[1..deleted_lines.len() - 1].iter().enumerate()
+                        {
                             self.lines.insert(start.line + 1 + i, line.clone());
                         }
                         let last_idx = start.line + deleted_lines.len() - 1;
@@ -114,7 +146,11 @@ impl Buffer {
                     true
                 }
             }
-            EditOp::InsertText { pos, ref text, end_pos } => {
+            EditOp::InsertText {
+                pos,
+                ref text,
+                end_pos,
+            } => {
                 // Reverse of text insert: delete the range [pos..end_pos]
                 if pos.line >= self.lines.len() {
                     false
@@ -173,12 +209,19 @@ impl Buffer {
                 if pos.line < self.lines.len() {
                     let col = pos.col.min(self.lines[pos.line].len());
                     self.lines[pos.line].insert(col, *ch);
-                    Some(Position { line: pos.line, col: col + ch.len_utf8() })
+                    Some(Position {
+                        line: pos.line,
+                        col: col + ch.len_utf8(),
+                    })
                 } else {
                     None
                 }
             }
-            EditOp::DeleteChar { pos, ch, merged_next } => {
+            EditOp::DeleteChar {
+                pos,
+                ch,
+                merged_next,
+            } => {
                 if pos.line >= self.lines.len() {
                     None
                 } else if *merged_next {
@@ -200,7 +243,12 @@ impl Buffer {
                     }
                 }
             }
-            EditOp::Backspace { result_pos, ch, merged_line, original_pos } => {
+            EditOp::Backspace {
+                result_pos,
+                ch,
+                merged_line,
+                original_pos,
+            } => {
                 if *merged_line {
                     if original_pos.line < self.lines.len() && original_pos.line > 0 {
                         let current = self.lines.remove(original_pos.line);
@@ -231,7 +279,10 @@ impl Buffer {
                     let rest = self.lines[pos.line][col..].to_string();
                     self.lines[pos.line].truncate(col);
                     self.lines.insert(pos.line + 1, rest);
-                    Some(Position { line: pos.line + 1, col: 0 })
+                    Some(Position {
+                        line: pos.line + 1,
+                        col: 0,
+                    })
                 } else {
                     None
                 }
@@ -272,7 +323,10 @@ impl Buffer {
                         self.lines[pos.line].push_str(text_lines[0]);
                         let end_col = self.lines[pos.line].len();
                         self.lines[pos.line].push_str(&suffix);
-                        Some(Position { line: pos.line, col: end_col })
+                        Some(Position {
+                            line: pos.line,
+                            col: end_col,
+                        })
                     } else {
                         self.lines[pos.line].push_str(text_lines[0]);
                         for (i, tl) in text_lines[1..text_lines.len() - 1].iter().enumerate() {
@@ -283,7 +337,10 @@ impl Buffer {
                         let end_col = last_line.len();
                         last_line.push_str(&suffix);
                         self.lines.insert(last_idx, last_line);
-                        Some(Position { line: last_idx, col: end_col })
+                        Some(Position {
+                            line: last_idx,
+                            col: end_col,
+                        })
                     }
                 }
             }
@@ -296,7 +353,10 @@ impl Buffer {
                         self.lines.remove(*line);
                     }
                     let new_line = (*line).min(self.lines.len().saturating_sub(1));
-                    Some(Position { line: new_line, col: 0 })
+                    Some(Position {
+                        line: new_line,
+                        col: 0,
+                    })
                 } else {
                     None
                 }
@@ -307,8 +367,15 @@ impl Buffer {
                     self.lines.swap(*line_a, *line_b);
                     // Determine cursor: if original was swap_up (cursor was at line_b),
                     // cursor goes to line_a; if swap_down (cursor at line_a), goes to line_b
-                    let cursor_line = if cursor_before.line == *line_b { *line_a } else { *line_b };
-                    Some(Position { line: cursor_line, col: cursor_before.col })
+                    let cursor_line = if cursor_before.line == *line_b {
+                        *line_a
+                    } else {
+                        *line_b
+                    };
+                    Some(Position {
+                        line: cursor_line,
+                        col: cursor_before.col,
+                    })
                 } else {
                     None
                 }

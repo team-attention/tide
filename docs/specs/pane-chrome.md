@@ -4,40 +4,42 @@
 
 ### As-Is
 
-`render_pane_chrome()` in `crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs` gives unfocused `Pane`s with `AgentStatus::NeedsInput` a blinking orange border and shadow, but ordinary focused `Pane`s still render with `border_subtle` and mostly rely on header background changes for emphasis. The current `NeedsInput` lookup reads `gateway.detected_agents` by the rendered `PaneId`, so non-terminal `Pane`s with an `Associated Terminal` can miss wrapper-managed attention even when their paired `Wrapped Agent` is reporting `NeedsInput`. In `crates/tide-app/src/adapter/outward/view/header.rs`, the active-header layout computes compact tab width from the full title plus the full git badge width, then clamps the overall tab width and only afterwards caps the title region. The shared header and tab-bar paths also use a very tight `TAB_BAR_HEIGHT` / `TAB_H_PAD` / `TAB_CONTENT_SPACING` budget, and the busy `Terminal Pane` label path still falls back to `badge_text_dimmed`, which makes the label read too dark. That same fixed active-tab width clamp is just tight enough that an active live-preview `Markdown Pane` can fit `live + comment` but lose `comment` when the mode badge widens to `plain`, even when the row still has room to stretch a bit. The same clamp can also hide a stacked Stage `Terminal Pane` git status badge even when sibling tabs still have spare width to yield, because the tab-width calculation does not reserve space for the connected-agent status dot before badge elision runs. Overflowed shared tab bars also auto-fit the active tab every render, so an explicit manual scroll offset in a shared Dock or Stage tab bar is immediately pulled back toward the active tab instead of behaving like a persistent horizontal browse position. On macOS, precise trackpad scroll deltas are normalized down before they reach the shared tab bar scroll path, and that path currently applies the same hard minimum step to every non-zero delta. Combined with `if dx.abs() > dy.abs() { dx } else { -dy }` in the shared tab scroll selection, diagonal precise gestures can be driven by vertical fallback instead of horizontal intent, which makes the tab strip feel over-sensitive. The shared tab bar also applies positive horizontal delta in the opposite direction from the editor and diff horizontal scroll paths, so left/right swipe intent feels reversed relative to the rest of Tide. Finally, shared tab scroll offset is only clamped during render, not when the offset is stored, so repeated strokes at the far edge accumulate hidden overscroll debt and the first reverse stroke has to burn through that debt before the visible tab strip moves back. Separately, PTY output currently schedules `badge_check_at` for `now + 150ms` before `update_terminal_badges()` and `trigger_git_poll()` run, so git branch and status badges can visibly lag behind terminal activity even when the app is otherwise idle. When `update_terminal_badges()` does notice a `Terminal Pane` `cwd` change, it swaps the cached `cwd` immediately but leaves the previous repo's `git_info`, `worktree_count`, and `current_worktree` in place until the next background git poll result arrives, so stale git badges can remain visible after a directory change.
-`render_pane_chrome()` in `crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs` gives unfocused `Pane`s with `AgentStatus::NeedsInput` a blinking orange border and shadow, but ordinary focused `Pane`s still render with `border_subtle` and mostly rely on header background changes for emphasis. The current `NeedsInput` lookup reads `gateway.detected_agents` by the rendered `PaneId`, so non-terminal `Pane`s with an `Associated Terminal` can miss wrapper-managed attention even when their paired `Wrapped Agent` is reporting `NeedsInput`. In `crates/tide-app/src/adapter/outward/view/header.rs`, the active-header layout computes compact tab width from the full title plus the full git badge width, then clamps the overall tab width and only afterwards caps the title region. The shared header and tab-bar paths also use a very tight `TAB_BAR_HEIGHT` / `TAB_H_PAD` / `TAB_CONTENT_SPACING` budget, and the busy `Terminal Pane` label path still falls back to `badge_text_dimmed`, which makes the label read too dark. That same fixed active-tab width clamp is just tight enough that an active live-preview `Markdown Pane` can fit `live + comment` but lose `comment` when the mode badge widens to `plain`, even when the row still has room to stretch a bit. The same clamp can also hide a stacked Stage `Terminal Pane` git status badge even when sibling tabs still have spare width to yield, because the tab-width calculation does not reserve space for the connected-agent status dot before badge elision runs. Overflowed shared tab bars also auto-fit the active tab every render, so an explicit manual scroll offset in a shared Dock or Stage tab bar is immediately pulled back toward the active tab instead of behaving like a persistent horizontal browse position. On macOS, precise trackpad scroll deltas are normalized down before they reach the shared tab bar scroll path, and that path currently applies the same hard minimum step to every non-zero delta. Combined with `if dx.abs() > dy.abs() { dx } else { -dy }` in the shared tab scroll selection, diagonal precise gestures can be driven by vertical fallback instead of horizontal intent, which makes the tab strip feel over-sensitive. The shared tab bar also applies positive horizontal delta in the opposite direction from the editor and diff horizontal scroll paths, so left/right swipe intent feels reversed relative to the rest of Tide. Finally, shared tab scroll offset is only clamped during render, not when the offset is stored, so repeated strokes at the far edge accumulate hidden overscroll debt and the first reverse stroke has to burn through that debt before the visible tab strip moves back. Shared tab scroll routing also claims any pane header before it knows whether that surface can actually scroll, so a single-pane header or a non-overflowing shared header can swallow wheel and trackpad input that should have fallen through to the underlying pane content. Separately, PTY output currently schedules `badge_check_at` for `now + 150ms` before `update_terminal_badges()` and `trigger_git_poll()` run, so git branch and status badges can visibly lag behind terminal activity even when the app is otherwise idle.
+`render_pane_chrome()` in `crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs`, `render_pane_header_inner()` in `crates/tide-app/src/adapter/outward/view/header.rs`, and the Workspace sidebar rendering in `titlebar.rs` already project Wrapped Agent lifecycle into Tide chrome, but the attention signal still splits between multiple visual paths. Stage `Terminal` dots, pane-surface fill, pane-surface underline, inactive `Workspace` indicators, and overflow edge cues do not all come from the same `Terminal-Owned Attention` model, so the user can see an inactive `Workspace` alert without an equally obvious Stage `Terminal` alert source after switching into that `Workspace`. The recent Stage/Dock ownership fix already prevents file tabs from inheriting wrapped-agent chrome through `Associated Terminal`, but the chrome still needs a simpler dot-only attention model on Workspace items and direct Stage `Terminal`s only.
 
 ### To-Be
 
-Focused `Pane`s are easy to identify in both Stage and Dock through stronger active header/tab treatment and a slightly brighter focused tint, without adding a new full-pane outline around the terminal body. All tabs and headers gain a small shared increase in breathing room so the chrome feels a little less cramped. Wrapper-managed `NeedsInput` attention remains a stronger and clearly different signal. Non-terminal `Pane`s inherit wrapper-managed `NeedsInput` attention from their paired `Wrapped Agent` through the `Associated Terminal`. Active headers, active Stage tabs, and busy `Terminal Pane` headers preserve readable labels before optional git badges consume the remaining width. The shared active-tab width budget also stretches with the available row width after sibling tabs reserve their minimum width, so active tabs can grow when they need badge space without filling the whole row, and a connected-agent status dot is counted in that width budget before git badge elision runs. Overflowed shared tab bars keep horizontal scroll, but Tide only auto-fits the active tab when the active `Pane` changes, so explicit manual tab scrolling remains stable instead of snapping back every frame. Precise trackpad gestures on shared tab bars prioritize horizontal delta when one is present, use only a modest starter step on a fresh stroke, continue with lighter continuous motion, follow the same horizontal direction convention as editor and diff panes, and clamp stored shared-tab offset to the visible scroll bounds so reversing from an edge starts moving immediately. Git branch and status badges also refresh on the next frame-scale check after PTY output instead of waiting a visibly long fixed delay. When a `Terminal Pane` `cwd` changes, Tide clears stale git branch, git status, and worktree chrome immediately and waits for the new background poll result to repopulate them.
-Focused `Pane`s are easy to identify in both Stage and Dock through stronger active header/tab treatment and a slightly brighter focused tint, without adding a new full-pane outline around the terminal body. All tabs and headers gain a small shared increase in breathing room so the chrome feels a little less cramped. Wrapper-managed `NeedsInput` attention remains a stronger and clearly different signal. Non-terminal `Pane`s inherit wrapper-managed `NeedsInput` attention from their paired `Wrapped Agent` through the `Associated Terminal`. Active headers, active Stage tabs, and busy `Terminal Pane` headers preserve readable labels before optional git badges consume the remaining width. The shared active-tab width budget also stretches with the available row width after sibling tabs reserve their minimum width, so active tabs can grow when they need badge space without filling the whole row, and a connected-agent status dot is counted in that width budget before git badge elision runs. Overflowed shared tab bars keep horizontal scroll, but Tide only auto-fits the active tab when the active `Pane` changes, so explicit manual tab scrolling remains stable instead of snapping back every frame. Precise trackpad gestures on shared tab bars prioritize horizontal delta when one is present, use only a modest starter step on a fresh stroke, continue with lighter continuous motion, follow the same horizontal direction convention as editor and diff panes, and clamp stored shared-tab offset to the visible scroll bounds so reversing from an edge starts moving immediately. Header-area scroll is only consumed by a shared tab surface that can actually move horizontally; otherwise the input falls through to the underlying pane content. Git branch and status badges also refresh on the next frame-scale check after PTY output instead of waiting a visibly long fixed delay.
+Focused `Pane`s stay easy to identify in both Stage and Dock through the current brighter active header/tab treatment, without adding a new full-pane outline around the terminal body. `Terminal-Owned Attention` is dot-only: it renders only on `Workspace` list items and on direct wrapped-agent owner `Terminal`s in Stage. A direct wrapped-agent Stage `Terminal` with `Running` shows a solid green dot. A direct wrapped-agent Stage `Terminal` with unresolved `Idle` or `NeedsInput` shows the same orange blinking dot family, and that blink must follow a stable clock that does not depend on frame-to-frame render cadence. Tide does not add wrapped-agent fill or underline to the entire Stage `Pane` surface. Non-terminal `Pane`s never inherit wrapped-agent dots through `Associated Terminal`, and Dock chrome never renders a wrapped-agent dot. If an alerting Stage `Terminal` lives in an active Stage `TabGroup`, its tab shows the orange blinking dot; if that tab is scrolled out of the visible tab strip, the tab-strip edge in the hidden direction shows the same orange blinking dot instead. Workspace items show a green dot when their Stage area contains a wrapped-agent `Terminal` that is still `Running`. Inactive Workspace items show an orange blinking dot when their Stage area contains an unresolved wrapped-agent alert, using the same stable blink clock. The active Workspace item does not duplicate the active Stage-terminal alert dot with a second orange Workspace alert dot. Active headers, active Stage tabs, and busy `Terminal Pane` headers preserve readable labels before optional git badges consume the remaining width. The shared active-tab width budget continues to reserve space for the Stage-terminal dot, shared tab scrolling remains stable and directionally consistent, and git badges continue to refresh on a near-immediate frame-scale delay.
 
 ### Approach
 
-1. Strengthen the active header/tab treatment for focused `Pane`s so focus does not depend on subtle background shifts alone, without introducing a new full-pane outline.
-2. Slightly increase the shared tab sizing budget so Stage tabs, Dock tabs, and single-Pane headers all gain the same extra breathing room, including an active-tab cap that stretches with the available row width after sibling tabs reserve their minimum width.
-3. Keep wrapper-managed `NeedsInput` attention stronger than focus chrome and visually distinct from it.
-4. Resolve wrapper-managed `NeedsInput` through the source `Pane` or its `Associated Terminal` so non-terminal `Pane`s inherit paired-agent attention.
-5. Reserve a minimum title region in active headers and active tabs, eliding optional git badges before the title disappears.
-6. Use a readable shared label color path for busy `Terminal Pane` headers so terminal names do not fall back to a dimmed badge color.
-7. Apply the same title-preservation and shared sizing rules to the shared header and tab-bar rendering paths so Stage tabs, Dock tabs, and single-Pane headers stay consistent.
-8. Reserve shared-tab width for the connected-agent status dot before badge elision runs so git status survives the same row budget when agent presence turns on.
-9. Keep explicit horizontal tab scrolling stable by auto-fitting the active tab only on active-tab changes, not on every render while the user is manually browsing overflowed tabs.
-10. Make shared tab bars treat horizontal precise delta as the primary gesture signal, leaving vertical fallback for wheel-style scrolling when no horizontal delta is present.
-11. Give shared tab bars a modest starter step only on a fresh precise stroke or an immediate direction change, then fall back to lighter continuous motion so tab scrolling feels responsive without becoming over-sensitive.
-12. Use the same horizontal delta sign convention for shared tab bars that editor and diff panes already use, so horizontal scroll direction stays consistent across Tide.
-13. Clamp stored shared-tab scroll offset to the visible bounds at input time, not only during render, so edge overscroll never creates hidden reverse-scroll debt.
-14. Schedule PTY-driven terminal badge refresh on a near-immediate frame-scale delay instead of a long fixed delay.
-15. Only consume header-area scroll for shared tab bars that actually have horizontal overflow; otherwise route the scroll to the pane content below.
-16. Clear stale terminal git and worktree badge state as soon as cached `cwd` changes, before the next background git poll result arrives.
+1. Keep the dedicated focused header/tab treatment for Stage and Dock `Pane`s.
+2. Limit wrapped-agent chrome to `Terminal-Owned Attention` on the direct wrapped-agent owner `Terminal`; do not inherit dots through `Associated Terminal`.
+3. Remove wrapper-managed pane-surface fill and underline from Stage `Pane` chrome.
+4. Map direct Stage-terminal `Running` to a solid green dot.
+5. Map direct Stage-terminal `Idle` and `NeedsInput` to the same orange blinking alert dot family, driven by a stable blink clock instead of frame delta.
+6. Project Workspace list-item dots from Stage terminals only: green for running, orange blinking for inactive alert, using the same stable blink clock.
+7. Suppress active-Workspace orange alert duplication so the active Workspace relies on the Stage-terminal alert dot instead.
+8. When an alerting Stage-terminal tab is scrolled outside the visible shared-tab range, render the orange blinking indicator on the corresponding tab-strip edge.
+9. Reserve a minimum title region in active headers and active tabs, eliding optional git badges before the title disappears.
+10. Use a readable shared label color path for busy `Terminal Pane` headers so terminal names do not fall back to a dimmed badge color.
+11. Apply the same title-preservation and shared sizing rules to the shared header and tab-bar rendering paths so Stage tabs, Dock tabs, and single-Pane headers stay consistent.
+12. Reserve shared-tab width for the Stage-terminal dot whenever a visible Stage `Terminal` has direct wrapper-managed lifecycle state.
+13. Keep explicit horizontal tab scrolling stable by auto-fitting the active tab only on active-tab changes, not on every render while the user is manually browsing overflowed tabs.
+14. Make shared tab bars treat horizontal precise delta as the primary gesture signal, leaving vertical fallback for wheel-style scrolling when no horizontal delta is present.
+15. Give shared tab bars a modest starter step only on a fresh precise stroke or an immediate direction change, then fall back to lighter continuous motion so tab scrolling feels responsive without becoming over-sensitive.
+16. Use the same horizontal delta sign convention for shared tab bars that editor and diff panes already use, so horizontal scroll direction stays consistent across Tide.
+17. Clamp stored shared-tab scroll offset to the visible bounds at input time, not only during render, so edge overscroll never creates hidden reverse-scroll debt.
+18. Schedule PTY-driven terminal badge refresh on a near-immediate frame-scale delay instead of a long fixed delay.
+19. Only consume header-area scroll for shared tab bars that actually have horizontal overflow; otherwise route the scroll to the pane content below.
+20. Clear stale terminal git and worktree badge state as soon as cached `cwd` changes, before the next background git poll result arrives.
 
 ## Bounded Contexts
 
 | Context | Role |
 |---------|------|
-| `renderer` | Draws pane borders, tab bars, headers, and badge layout |
-| `theme` | Supplies the colors and spacing tokens used by focus chrome, shared tab sizing, and badge chrome |
-| `gateway` | Provides wrapper-managed `AgentStatus` used to distinguish `NeedsInput` attention from normal focus |
+| `renderer` | Draws pane headers, shared tab bars, Workspace items, and overflow edge indicators |
+| `theme` | Supplies the colors and spacing tokens used by Stage-terminal dots, Workspace dots, and shared-tab sizing |
+| `gateway` | Provides wrapper-managed `AgentStatus` used to project running and alert dots from direct wrapped-agent Stage terminals |
 
 ## Use Cases
 
@@ -55,22 +57,68 @@ Focused `Pane`s are easy to identify in both Stage and Dock through stronger act
   - BR-1: Focused Stage and Dock `Pane`s use a dedicated active header/tab cue that is stronger than unfocused header chrome
   - BR-2: Focus chrome remains visible when the focused `Pane` has no wrapper-managed agent state, without adding a new full-pane outline
 
-### UC-2: RenderNeedsInputAttentionChrome
+### UC-2: RenderTerminalOwnedAttention
 
 - **Actor**: System
-- **Trigger**: Chrome rendering for an unfocused `Pane` with wrapper-managed `AgentStatus::NeedsInput`
-- **Precondition**: The source `Pane` is unfocused and has wrapper-managed `NeedsInput`
+- **Trigger**: Chrome rendering for a direct wrapped-agent Stage `Terminal`
+- **Precondition**: The direct wrapped-agent owner `Terminal` is in Stage
 - **Flow**:
-  1. Tide resolves the wrapper-managed agent status for the source `Pane`
-  2. Tide draws the stronger attention chrome treatment for `NeedsInput`
-  3. Tide avoids reusing the ordinary focused-`Pane` treatment for wrapper-managed attention
-- **Postcondition**: Wrapper-managed `NeedsInput` remains distinguishable from normal focus
+  1. Tide resolves the direct wrapped-agent status for the Stage `Terminal`
+  2. Tide renders only the direct Stage-terminal dot for wrapper-managed attention
+  3. Tide avoids projecting wrapped-agent pane chrome onto non-terminal `Pane`s or the full `Pane` surface
+- **Postcondition**: Wrapped-agent attention stays attached to the owning Stage `Terminal`
 - **Business Rules**:
-  - BR-3: Wrapper-managed `NeedsInput` chrome remains stronger than ordinary focus chrome
-  - BR-4: Focus chrome and wrapper-managed `NeedsInput` chrome are visually distinct signals
-  - BR-5: A non-terminal `Pane` with an `Associated Terminal` inherits wrapper-managed `NeedsInput` chrome from the paired `Wrapped Agent`
+  - BR-3: Wrapper-managed attention does not add fill or underline to the Stage `Pane` surface
+  - BR-4: `Idle` and `NeedsInput` share the same orange blinking Stage-terminal alert dot family
+  - BR-5: A non-terminal `Pane` never inherits wrapped-agent pane chrome from its `Associated Terminal`
+  - BR-6: A focused direct wrapped-agent Stage `Terminal` keeps its alert dot while the alert remains unresolved
 
-### UC-3: PreserveHeaderTitleBesideGitBadges
+### UC-3: RenderStageTerminalDot
+
+- **Actor**: System
+- **Trigger**: Header or tab chrome rendering for a direct wrapped-agent owner `Terminal` in Stage
+- **Precondition**: The target `Pane` is a Stage `Terminal` with direct wrapper-managed lifecycle state
+- **Flow**:
+  1. Tide resolves the direct wrapper-managed lifecycle state for the Stage `Terminal`
+  2. Tide reserves dot width in the Stage header or tab
+  3. Tide renders the Stage-terminal dot with the color and animation for that state
+- **Postcondition**: The Stage-terminal dot reflects the wrapped-agent state on the direct wrapped-agent owner
+- **Business Rules**:
+  - BR-7: Only a direct wrapped-agent owner `Terminal` in Stage may render the wrapped-agent dot
+  - BR-8: `Running` renders a solid green Stage-terminal dot
+  - BR-9: Dock chrome does not render the wrapped-agent dot, even when the docked `Pane` is a `Terminal`
+  - BR-10: Unresolved `Idle` and `NeedsInput` render the same orange blinking Stage-terminal dot family from a stable blink clock that does not reset every frame
+
+### UC-4: RenderWorkspaceIndicatorChrome
+
+- **Actor**: System
+- **Trigger**: Workspace sidebar chrome rendering when any Stage `Terminal` in that `Workspace` has direct wrapper-managed lifecycle state
+- **Precondition**: The target `Workspace` contains at least one Stage `Terminal`
+- **Flow**:
+  1. Tide resolves the strongest Stage-terminal wrapped-agent state in the `Workspace`
+  2. Tide maps Stage-terminal `Running` to a green Workspace item dot
+  3. Tide maps unresolved Stage-terminal `Idle` or `NeedsInput` to an orange blinking Workspace item dot only when the `Workspace` is inactive
+- **Postcondition**: Workspace items reflect Stage-terminal running or inactive alert state with a dot-only indicator
+- **Business Rules**:
+  - BR-11: An inactive `Workspace` item with unresolved Stage-terminal `Idle` or `NeedsInput` renders an orange blinking dot from the same stable blink clock
+  - BR-12: A `Workspace` item with Stage-terminal `Running` renders a green dot
+  - BR-13: The active `Workspace` item does not duplicate the active Stage-terminal alert dot with a second orange alert dot
+
+### UC-5: RenderOverflowedAlertEdgeIndicator
+
+- **Actor**: System
+- **Trigger**: Shared-tab rendering for an active Stage `TabGroup` or zoomed Stage tab strip with alert tabs outside the visible scroll region
+- **Precondition**: At least one direct wrapped-agent Stage `Terminal` tab with unresolved `Idle` or `NeedsInput` is clipped by shared-tab scrolling
+- **Flow**:
+  1. Tide computes the visible shared-tab range after scroll offset and clipping
+  2. Tide determines whether alert tabs exist left of the visible range, right of the visible range, or both
+  3. Tide renders the orange blinking edge indicator on the corresponding tab-strip edge
+- **Postcondition**: Hidden wrapped-agent alert tabs remain discoverable while scrolled out of view
+- **Business Rules**:
+  - BR-14: A hidden alert tab left of the visible range renders an orange blinking left-edge indicator
+  - BR-15: A hidden alert tab right of the visible range renders an orange blinking right-edge indicator
+
+### UC-6: PreserveHeaderTitleBesideGitBadges
 
 - **Actor**: System
 - **Trigger**: Chrome rendering for an active header or active Stage tab with git badges
@@ -82,11 +130,11 @@ Focused `Pane`s are easy to identify in both Stage and Dock through stronger act
   4. Tide truncates or elides optional git badges before collapsing the visible title
 - **Postcondition**: The active title remains readable beside optional git badges
 - **Business Rules**:
-  - BR-6: Active single-pane headers keep a readable title when git branch or git status badges are present
-  - BR-7: Active Stage tabs keep a readable title when git branch or git status badges are present
-  - BR-8: Optional git badges yield space before the visible title disappears
+  - BR-16: Active single-pane headers keep a readable title when git branch or git status badges are present
+  - BR-17: Active Stage tabs keep a readable title when git branch or git status badges are present
+  - BR-18: Optional git badges yield space before the visible title disappears
 
-### UC-4: RenderSharedTabSizingAndReadableTerminalLabels
+### UC-7: RenderSharedTabSizingAndReadableTerminalLabels
 
 - **Actor**: System
 - **Trigger**: Chrome rendering for a shared header or tab surface
@@ -98,27 +146,29 @@ Focused `Pane`s are easy to identify in both Stage and Dock through stronger act
   4. Tide renders busy `Terminal Pane` labels with a readable text color instead of the dimmed badge color path
 - **Postcondition**: Tabs feel slightly larger, focused tabs feel more emphasized, and terminal labels remain readable
 - **Business Rules**:
-  - BR-9: Shared tab chrome uses a slightly larger height, padding, and row-aware active-tab width budget across Stage tabs, Dock tabs, and single-Pane headers
-  - BR-10: Focused tabs use a brighter tint than unfocused tabs in the shared header and tab-bar rendering paths
-  - BR-11: Busy `Terminal Pane` headers use a readable label color instead of the dimmed badge color path
-  - BR-12: The shared active-tab width budget stretches with the available row width after sibling tabs reserve their minimum width, enough to keep both `plain` and `comment` badges visible for an active live-preview `Markdown Pane` while preserving the minimum title region
-  - BR-13: A stacked Stage active `Terminal Pane` keeps its git branch and git status badges visible when the row still has spare width after sibling tabs reserve their minimum width, including when the same tab renders a connected-agent status dot
-  - BR-14: Overflowed shared tab bars preserve explicit horizontal scroll; active-tab auto-fit runs when the active `Pane` changes, but not on every render against a manual user scroll offset
-  - BR-15: A precise shared-tab gesture uses horizontal delta before vertical fallback, so diagonal trackpad strokes follow horizontal intent instead of being steered by vertical fallback
-  - BR-16: A fresh shared-tab trackpad stroke or immediate direction change produces a modest visible starter step, but continuous events use lighter motion instead of applying the same hard minimum step to every delta
-  - BR-17: Shared tab bars use the same horizontal scroll direction convention as editor and diff panes
-  - BR-18: Shared tab scroll offset is clamped to the visible bounds when input is applied, so reversing from the far edge does not wait for hidden overscroll debt to drain
-  - BR-19: PTY output schedules terminal badge refresh on the next frame-scale delay rather than a 150ms timer, so git badges appear promptly after output settles
-  - BR-20: Header-area scroll is only consumed by an overflowed shared tab bar; single-pane headers and non-overflowing shared headers fall through to pane scroll handling
-  - BR-21: A `Terminal Pane` `cwd` change clears stale git branch, git status, and worktree chrome immediately before fresh poll results arrive
+  - BR-19: Shared tab chrome uses a slightly larger height, padding, and row-aware active-tab width budget across Stage tabs, Dock tabs, and single-Pane headers
+  - BR-20: Focused tabs use a brighter tint than unfocused tabs in the shared header and tab-bar rendering paths
+  - BR-21: Busy `Terminal Pane` headers use a readable label color instead of the dimmed badge color path
+  - BR-22: The shared active-tab width budget stretches with the available row width after sibling tabs reserve their minimum width, enough to keep both `plain` and `comment` badges visible for an active live-preview `Markdown Pane` while preserving the minimum title region
+  - BR-23: A stacked Stage active `Terminal Pane` keeps its git branch and git status badges visible when the row still has spare width after sibling tabs reserve their minimum width, including when the same tab renders a connected-agent status dot
+  - BR-24: Overflowed shared tab bars preserve explicit horizontal scroll; active-tab auto-fit runs when the active `Pane` changes, but not on every render against a manual user scroll offset
+  - BR-25: A precise shared-tab gesture uses horizontal delta before vertical fallback, so diagonal trackpad strokes follow horizontal intent instead of being steered by vertical fallback
+  - BR-26: A fresh shared-tab trackpad stroke or immediate direction change produces a modest visible starter step, but continuous events use lighter motion instead of applying the same hard minimum step to every delta
+  - BR-27: Shared tab bars use the same horizontal scroll direction convention as editor and diff panes
+  - BR-28: Shared tab scroll offset is clamped to the visible bounds when input is applied, so reversing from the far edge does not wait for hidden overscroll debt to drain
+  - BR-29: PTY output schedules terminal badge refresh on the next frame-scale delay rather than a 150ms timer, so git badges appear promptly after output settles
+  - BR-30: Header-area scroll is only consumed by an overflowed shared tab bar; single-pane headers and non-overflowing shared headers fall through to pane scroll handling
+  - BR-31: A `Terminal Pane` `cwd` change clears stale git branch, git status, and worktree chrome immediately before fresh poll results arrive
 
 ## Invariants
 
 1. Focus chrome does not depend on wrapper-managed agent state.
-2. Wrapper-managed `NeedsInput` attention remains visually stronger than ordinary focus chrome.
-3. Ordinary focus does not introduce a new full-pane outline around the terminal body.
-4. Header title preservation rules apply consistently to single-pane headers and active tabs.
-5. Shared tab sizing changes apply consistently to Stage tabs, Dock tabs, and single-pane headers.
+2. Wrapped-agent attention uses a dot-only projection on direct Stage `Terminal` chrome and `Workspace` items.
+3. Wrapped-agent dots appear only on Workspace items and direct wrapped-agent Stage `Terminal` chrome.
+4. Ordinary focus does not introduce a new full-pane outline around the terminal body.
+5. Header title preservation rules apply consistently to single-pane headers and active tabs.
+6. Shared tab sizing changes apply consistently to Stage tabs, Dock tabs, and single-pane headers.
+7. Wrapped-agent alert blink uses a stable timebase instead of per-frame elapsed time.
 
 ## Tests
 
@@ -126,33 +176,46 @@ Focused `Pane`s are easy to identify in both Stage and Dock through stronger act
 |----|-----|---------------|
 | UC-1 | BR-1 | `focused_header_accent_is_visually_distinct_from_unfocused_chrome` |
 | UC-1 | BR-2 | `focused_header_accent_renders_without_agent_status` |
-| UC-2 | BR-3 | `needs_input_attention_is_stronger_than_focus_chrome` |
-| UC-2 | BR-4 | `needs_input_attention_is_visually_distinct_from_focus_chrome` |
-| UC-2 | BR-5 | `dock_editor_inherits_needs_input_attention_from_paired_terminal` |
-| UC-3 | BR-6 | `active_terminal_header_preserves_title_when_git_badges_are_present` |
-| UC-3 | BR-7 | `active_stage_tab_preserves_title_when_git_badges_are_present` |
-| UC-3 | BR-8 | `git_badges_yield_space_before_title_disappears` |
-| UC-4 | BR-9 | `shared_tab_chrome_is_slightly_larger_across_all_surfaces` |
-| UC-4 | BR-10 | `focused_tabs_use_a_brighter_tint_than_unfocused_tabs` |
-| UC-4 | BR-11 | `busy_terminal_labels_use_a_readable_color_path` |
-| UC-4 | BR-12 | `active_markdown_live_preview_chrome_keeps_plain_and_comment_badges_visible` |
-| UC-4 | BR-13 | `stacked_stage_active_terminal_tab_keeps_git_status_badges_when_agent_dot_is_present` |
-| UC-4 | BR-14 | `overflowed_shared_tab_bar_keeps_the_active_tab_visible` |
-| UC-4 | BR-14 | `manual_shared_tab_scroll_does_not_snap_back_to_the_active_tab` |
-| UC-4 | BR-15 | `shared_tab_scroll_prioritizes_horizontal_delta_before_vertical_fallback` |
-| UC-4 | BR-16 | `shared_tab_scroll_uses_a_modest_starter_step_only_for_fresh_gestures` |
-| UC-4 | BR-16 | `shared_tab_scroll_treats_direction_change_as_a_fresh_gesture` |
-| UC-4 | BR-17 | `shared_tab_scroll_matches_editor_horizontal_direction` |
-| UC-4 | BR-18 | `shared_tab_scroll_offset_clamps_at_visible_bounds` |
-| UC-4 | BR-19 | `terminal_badge_refresh_delay_matches_a_single_frame_scale_budget` |
-| UC-4 | BR-20 | `single_pane_header_scroll_falls_through_to_preview_content` |
-| UC-4 | BR-21 | `terminal_cwd_change_clears_stale_git_badges_before_poll_results_arrive` |
+| UC-2 | BR-3 | `stage_terminal_attention_does_not_use_pane_surface_fill_or_underline` |
+| UC-2 | BR-4 | `idle_and_needs_input_share_the_same_stage_terminal_alert_family` |
+| UC-2 | BR-5 | `editor_does_not_inherit_wrapped_agent_chrome_from_associated_terminal` |
+| UC-2 | BR-6 | `focused_stage_terminal_keeps_its_alert_dot_until_acknowledged` |
+| UC-3 | BR-7 | `running_stage_terminal_renders_the_wrapped_agent_dot` |
+| UC-3 | BR-8 | `running_stage_terminal_uses_a_green_dot_signal` |
+| UC-3 | BR-9 | `dock_terminal_does_not_render_the_wrapped_agent_dot` |
+| UC-3 | BR-10 | `attention_stage_terminal_renders_an_orange_blinking_dot` |
+| UC-3 | BR-10 | `wrapped_agent_alert_blink_uses_a_stable_timebase` |
+| UC-4 | BR-11 | `inactive_workspace_alert_renders_an_orange_blinking_dot` |
+| UC-4 | BR-12 | `workspace_running_renders_a_green_dot` |
+| UC-4 | BR-13 | `active_workspace_does_not_duplicate_the_alert_dot` |
+| UC-5 | BR-14 | `overflowed_alert_stage_tab_sets_the_left_edge_indicator` |
+| UC-5 | BR-15 | `overflowed_alert_stage_tab_sets_the_right_edge_indicator` |
+| UC-6 | BR-16 | `active_terminal_header_preserves_title_when_git_badges_are_present` |
+| UC-6 | BR-17 | `active_stage_tab_preserves_title_when_git_badges_are_present` |
+| UC-6 | BR-18 | `git_badges_yield_space_before_title_disappears` |
+| UC-7 | BR-19 | `shared_tab_chrome_is_slightly_larger_across_all_surfaces` |
+| UC-7 | BR-20 | `focused_tabs_use_a_brighter_tint_than_unfocused_tabs` |
+| UC-7 | BR-21 | `busy_terminal_labels_use_a_readable_color_path` |
+| UC-7 | BR-22 | `active_markdown_live_preview_chrome_keeps_plain_and_comment_badges_visible` |
+| UC-7 | BR-23 | `stacked_stage_active_terminal_tab_keeps_git_status_badges_when_agent_dot_is_present` |
+| UC-7 | BR-24 | `overflowed_shared_tab_bar_keeps_the_active_tab_visible` |
+| UC-7 | BR-24 | `manual_shared_tab_scroll_does_not_snap_back_to_the_active_tab` |
+| UC-7 | BR-25 | `shared_tab_scroll_prioritizes_horizontal_delta_before_vertical_fallback` |
+| UC-7 | BR-26 | `shared_tab_scroll_uses_a_modest_starter_step_only_for_fresh_gestures` |
+| UC-7 | BR-26 | `shared_tab_scroll_treats_direction_change_as_a_fresh_gesture` |
+| UC-7 | BR-27 | `shared_tab_scroll_matches_editor_horizontal_direction` |
+| UC-7 | BR-28 | `shared_tab_scroll_offset_clamps_at_visible_bounds` |
+| UC-7 | BR-29 | `terminal_badge_refresh_delay_matches_a_single_frame_scale_budget` |
+| UC-7 | BR-30 | `single_pane_header_scroll_falls_through_to_preview_content` |
+| UC-7 | BR-31 | `terminal_cwd_change_clears_stale_git_badges_before_poll_results_arrive` |
 
 ## Location
 
 | Module | Path | Change |
 |--------|------|--------|
-| Chrome renderer | `crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs` | Focus and wrapper-managed attention border treatment |
-| Header renderer | `crates/tide-app/src/adapter/outward/view/header.rs` | Title and git badge layout for active headers and active tabs |
+| Action service | `crates/tide-app/src/application/services/action_service/mod.rs` | Direct wrapped-agent Stage-terminal status resolution for pane chrome |
+| Chrome renderer | `crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs` | Stage-terminal dot placement plus overflow edge indicators |
+| Header renderer | `crates/tide-app/src/adapter/outward/view/header.rs` | Stage-terminal dot rendering plus title and git badge layout |
+| Workspace sidebar renderer | `crates/tide-app/src/adapter/outward/view/chrome/titlebar.rs` | Workspace item running/alert dot rendering |
 | Theme palette | `crates/tide-app/src/theme.rs` | Colors and spacing tokens used by the new chrome treatment and shared tab sizing |
 | Terminal badge updater | `crates/tide-app/src/application/services/file_tree_service/mod.rs` | Cached `cwd` and git chrome synchronization for `Terminal Pane` badges |

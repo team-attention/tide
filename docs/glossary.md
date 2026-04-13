@@ -9,7 +9,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | Term | Type | Location | Description |
 |------|------|----------|-------------|
 | **Pane** | `PaneKind` | `domain/pane/mod.rs` | A content container identified by `PaneId`. Can be Terminal, Editor, Diff, Browser, or Launcher. |
-| **PaneId** | `u64` | `domain/core_types.rs` | Unique identity of a pane. Allocated incrementally by `SplitLayout::alloc_id()`. |
+| **PaneId** | `u64` | `domain/core_types.rs` | Unique identity of a pane. App-created Workspaces must keep `PaneId` unique across all live and cold-stored Workspaces; each loaded `SplitLayout` rebases its allocator above the current global maximum before creating more panes. |
 | **Markdown Pane** | `PaneKind::Editor` | `domain/pane/editor.rs` | An Editor Pane backed by a Markdown file. Supports authoring mode, preview-only mode, LivePreviewMode, and split preview behavior. |
 | **Workspace** | `Workspace` | `application/services/workspace_infra_service/mod.rs` | An isolated set of panes + layout + focus. Only one is active at a time. |
 | **TabGroup** | `TabGroup` | `domain/layout/tab_group.rs` | Multiple panes stacked in one layout slot. Only the active tab renders. |
@@ -106,6 +106,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Wrapper-Managed Lifecycle Signal** | concept | A lifecycle update (`Running`, `Idle`, or `NeedsInput`) emitted through a Tide `Agent Wrapper` path, either by wrapper hooks or by wrapper-owned OSC 9 reporting. |
 | **Tide Instance** | concept | A single running Tide process identified by its PID and Agent Gateway socket path. Notification activation relay targets the owning `Tide Instance`, not an arbitrary bundled app launch. |
 | **Notification Activation Relay** | concept | The handoff path that routes a macOS system-notification activation to the owning `Tide Instance`, then focuses the target `Pane` inside the correct `Workspace` without opening an extra Tide Window. |
+| **Terminal-Owned Attention** | concept | The wrapped-agent attention projection owned only by the direct wrapped-agent `Terminal` in Stage. It renders on the owning `Terminal` chrome and on the owning `Workspace` item, but never through an `Associated Terminal` onto a non-terminal `Pane`. |
 
 ## Architecture Concepts
 

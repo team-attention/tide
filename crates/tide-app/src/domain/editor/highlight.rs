@@ -131,43 +131,44 @@ impl Highlighter {
         let resume_line;
 
         let highlighter = SyntectHighlighter::new(&self.theme);
-        let (mut parse_state, mut highlight_state) = if checkpoint_idx > 0
-            && checkpoint_idx <= cache.checkpoints.len()
-        {
-            // Resume from a cached checkpoint.
-            resume_line = checkpoint_idx * CHECKPOINT_INTERVAL;
-            cache.checkpoints[checkpoint_idx - 1].clone()
-        } else if checkpoint_idx > 0 {
-            // We don't have the requested checkpoint yet. Find the latest one
-            // we do have and parse forward from there.
-            if cache.checkpoints.is_empty() {
+        let (mut parse_state, mut highlight_state) =
+            if checkpoint_idx > 0 && checkpoint_idx <= cache.checkpoints.len() {
+                // Resume from a cached checkpoint.
+                resume_line = checkpoint_idx * CHECKPOINT_INTERVAL;
+                cache.checkpoints[checkpoint_idx - 1].clone()
+            } else if checkpoint_idx > 0 {
+                // We don't have the requested checkpoint yet. Find the latest one
+                // we do have and parse forward from there.
+                if cache.checkpoints.is_empty() {
+                    resume_line = 0;
+                    (
+                        ParseState::new(syntax),
+                        HighlightState::new(&highlighter, ScopeStack::new()),
+                    )
+                } else {
+                    let have = cache.checkpoints.len();
+                    resume_line = have * CHECKPOINT_INTERVAL;
+                    cache.checkpoints[have - 1].clone()
+                }
+            } else {
                 resume_line = 0;
                 (
                     ParseState::new(syntax),
                     HighlightState::new(&highlighter, ScopeStack::new()),
                 )
-            } else {
-                let have = cache.checkpoints.len();
-                resume_line = have * CHECKPOINT_INTERVAL;
-                cache.checkpoints[have - 1].clone()
-            }
-        } else {
-            resume_line = 0;
-            (
-                ParseState::new(syntax),
-                HighlightState::new(&highlighter, ScopeStack::new()),
-            )
-        };
+            };
 
         // Get the theme's default background to filter it out from spans.
-        let theme_bg = self.theme.settings.background.unwrap_or(
-            syntect::highlighting::Color {
+        let theme_bg = self
+            .theme
+            .settings
+            .background
+            .unwrap_or(syntect::highlighting::Color {
                 r: 0,
                 g: 0,
                 b: 0,
                 a: 255,
-            },
-        );
+            });
 
         let end_line = (start_line + count).min(lines.len());
         let mut result = Vec::with_capacity(count);
@@ -189,16 +190,21 @@ impl Highlighter {
             // Save checkpoint at interval boundaries.
             let cp_slot = (i + 1) / CHECKPOINT_INTERVAL;
             if (i + 1) % CHECKPOINT_INTERVAL == 0 && cp_slot > cache.checkpoints.len() {
-                cache.checkpoints
+                cache
+                    .checkpoints
                     .push((parse_state.clone(), highlight_state.clone()));
             }
 
             // Only build StyledSpans for visible lines.
             if i >= start_line {
-                let regions: Vec<(Style, &str)> =
-                    RangedHighlightIterator::new(&mut highlight_state, &ops, &line_with_newline, &highlighter)
-                        .map(|(style, text, _range)| (style, text))
-                        .collect();
+                let regions: Vec<(Style, &str)> = RangedHighlightIterator::new(
+                    &mut highlight_state,
+                    &ops,
+                    &line_with_newline,
+                    &highlighter,
+                )
+                .map(|(style, text, _range)| (style, text))
+                .collect();
 
                 let spans: Vec<StyledSpan> = regions
                     .into_iter()
@@ -215,17 +221,16 @@ impl Highlighter {
                         let is_black = style.background.r == 0
                             && style.background.g == 0
                             && style.background.b == 0;
-                        let bg =
-                            if style.background.a > 0 && !is_theme_bg && !is_black {
-                                Some(Color::new(
-                                    style.background.r as f32 / 255.0,
-                                    style.background.g as f32 / 255.0,
-                                    style.background.b as f32 / 255.0,
-                                    style.background.a as f32 / 255.0,
-                                ))
-                            } else {
-                                None
-                            };
+                        let bg = if style.background.a > 0 && !is_theme_bg && !is_black {
+                            Some(Color::new(
+                                style.background.r as f32 / 255.0,
+                                style.background.g as f32 / 255.0,
+                                style.background.b as f32 / 255.0,
+                                style.background.a as f32 / 255.0,
+                            ))
+                        } else {
+                            None
+                        };
                         StyledSpan {
                             text: text.trim_end_matches('\n').to_string(),
                             style: TextStyle {
@@ -248,7 +253,12 @@ impl Highlighter {
                 result.push(spans);
             } else {
                 // Still need to advance highlight_state for non-visible lines.
-                for _ in RangedHighlightIterator::new(&mut highlight_state, &ops, &line_with_newline, &highlighter) {}
+                for _ in RangedHighlightIterator::new(
+                    &mut highlight_state,
+                    &ops,
+                    &line_with_newline,
+                    &highlighter,
+                ) {}
             }
         }
 

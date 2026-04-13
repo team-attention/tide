@@ -49,9 +49,7 @@ impl EditorState {
     pub fn open(path: &Path) -> io::Result<Self> {
         let buffer = Buffer::from_file(path)?;
         let highlighter = Highlighter::new();
-        let syntax_name = highlighter
-            .detect_syntax(path)
-            .map(|s| s.name.clone());
+        let syntax_name = highlighter.detect_syntax(path).map(|s| s.name.clone());
 
         Ok(Self {
             buffer,
@@ -75,8 +73,10 @@ impl EditorState {
             let new_col = self.buffer.line(new_line).map_or(0, |line| {
                 floor_char_boundary(line, self.cursor.position.col.min(line.len()))
             });
-            self.cursor
-                .set_position(buffer::Position { line: new_line, col: new_col });
+            self.cursor.set_position(buffer::Position {
+                line: new_line,
+                col: new_col,
+            });
             // Clamp scroll offsets
             let max_scroll = self.buffer.line_count().saturating_sub(1);
             self.scroll_offset = self.scroll_offset.min(max_scroll);
@@ -110,7 +110,8 @@ impl EditorState {
             EditorAction::Enter => {
                 // Capture leading whitespace from current line for auto-indent
                 let indent = if let Some(line) = self.buffer.line(self.cursor.position.line) {
-                    let ws: String = line.chars()
+                    let ws: String = line
+                        .chars()
                         .take_while(|c| *c == ' ' || *c == '\t')
                         .collect();
                     ws
@@ -203,14 +204,18 @@ impl EditorState {
                 let line = line.min(self.buffer.line_count().saturating_sub(1));
                 // col is a character index (from mouse click) — convert to byte offset
                 let byte_col = if let Some(line_str) = self.buffer.line(line) {
-                    line_str.char_indices()
+                    line_str
+                        .char_indices()
                         .nth(col)
                         .map(|(i, _)| i)
                         .unwrap_or(line_str.len())
                 } else {
                     0
                 };
-                self.cursor.set_position(Position { line, col: byte_col });
+                self.cursor.set_position(Position {
+                    line,
+                    col: byte_col,
+                });
             }
             EditorAction::ScrollUp(delta) => {
                 let prev = self.scroll_offset;
@@ -247,9 +252,10 @@ impl EditorState {
 
     /// Get syntax-highlighted lines for the visible viewport.
     pub fn visible_highlighted_lines(&self, visible_rows: usize) -> Vec<Vec<StyledSpan>> {
-        let syntax_ref = self.syntax.as_ref().and_then(|name| {
-            self.highlighter.syntax_set().find_syntax_by_name(name)
-        });
+        let syntax_ref = self
+            .syntax
+            .as_ref()
+            .and_then(|name| self.highlighter.syntax_set().find_syntax_by_name(name));
         let syntax: &SyntaxReference = match syntax_ref {
             Some(s) => s,
             None => self.highlighter.plain_text_syntax(),
@@ -321,7 +327,10 @@ impl EditorState {
     pub fn file_display_name(&self) -> String {
         match self.buffer.file_path.as_ref() {
             Some(path) => {
-                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("Untitled");
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Untitled");
                 let parent = path.parent();
                 let parent_name = parent.and_then(|p| p.file_name()).and_then(|n| n.to_str());
                 let grandparent_name = parent
@@ -405,10 +414,14 @@ impl EditorState {
 
         // Find the bracket at cursor or just before cursor
         let (bracket_char, bracket_byte) = {
-            let at_cursor = line_text.get(byte_col..byte_col + 1).and_then(|s| s.chars().next());
+            let at_cursor = line_text
+                .get(byte_col..byte_col + 1)
+                .and_then(|s| s.chars().next());
             let before_cursor = if byte_col > 0 {
                 let prev_start = line_text.floor_char_boundary(byte_col.saturating_sub(1));
-                line_text.get(prev_start..byte_col).and_then(|s| s.chars().next())
+                line_text
+                    .get(prev_start..byte_col)
+                    .and_then(|s| s.chars().next())
             } else {
                 None
             };
@@ -447,7 +460,10 @@ impl EditorState {
             _ => return None,
         };
 
-        let start_pos = Position { line: pos.line, col: bracket_byte };
+        let start_pos = Position {
+            line: pos.line,
+            col: bracket_byte,
+        };
 
         if forward {
             // Scan forward from start_pos
@@ -459,10 +475,20 @@ impl EditorState {
                 let text = self.buffer.line(line_idx)?;
                 for (byte_i, ch) in text[col_start..].char_indices() {
                     let abs_byte = col_start + byte_i;
-                    if ch == open { depth += 1; }
-                    if ch == close { depth -= 1; }
+                    if ch == open {
+                        depth += 1;
+                    }
+                    if ch == close {
+                        depth -= 1;
+                    }
                     if depth == 0 {
-                        return Some((start_pos, Position { line: line_idx, col: abs_byte }));
+                        return Some((
+                            start_pos,
+                            Position {
+                                line: line_idx,
+                                col: abs_byte,
+                            },
+                        ));
                     }
                 }
                 line_idx += 1;
@@ -482,14 +508,26 @@ impl EditorState {
                     text
                 };
                 for (byte_i, ch) in scan_text.char_indices().rev() {
-                    if ch == close { depth += 1; }
-                    if ch == open { depth -= 1; }
+                    if ch == close {
+                        depth += 1;
+                    }
+                    if ch == open {
+                        depth -= 1;
+                    }
                     if depth == 0 {
-                        return Some((Position { line: line_idx as usize, col: byte_i }, start_pos));
+                        return Some((
+                            Position {
+                                line: line_idx as usize,
+                                col: byte_i,
+                            },
+                            start_pos,
+                        ));
                     }
                 }
                 line_idx -= 1;
-                if line_idx < 0 { break; }
+                if line_idx < 0 {
+                    break;
+                }
                 scan_from_end = true;
             }
         }

@@ -27,6 +27,8 @@ const INITIAL_BG_GREEN: f64 = 0.08;
 const INITIAL_BG_BLUE: f64 = 0.10;
 const NOTIFICATION_TARGET_PREFIX: &str = "tide-target:";
 static NOTIFICATION_DELIVERY_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+pub(crate) const NOTIFICATION_AUTHORIZATION_OPTIONS: usize = 0x07;
+pub(crate) const FOREGROUND_NOTIFICATION_PRESENTATION_OPTIONS: usize = 0x12;
 
 use super::ime_proxy::ImeProxyView;
 use super::view::TideView;
@@ -180,6 +182,14 @@ fn terminate_current_tide_instance() {
     }
 }
 
+fn notification_authorization_options() -> usize {
+    NOTIFICATION_AUTHORIZATION_OPTIONS
+}
+
+pub(crate) fn foreground_notification_presentation_options() -> usize {
+    FOREGROUND_NOTIFICATION_PRESENTATION_OPTIONS
+}
+
 pub struct TideNotificationCenterDelegateIvars {
     callback: Rc<RefCell<EventCallback>>,
 }
@@ -228,6 +238,25 @@ declare_class!(
             }
             completion.call(());
         }
+
+        #[method(userNotificationCenter:willPresentNotification:withCompletionHandler:)]
+        fn will_present_notification(
+            &self,
+            _center: &AnyObject,
+            notification: &AnyObject,
+            completion: &block2::Block<dyn Fn(usize)>,
+        ) {
+            let options = unsafe {
+                let request: Retained<AnyObject> = msg_send_id![notification, request];
+                let identifier: Retained<NSString> = msg_send_id![&request, identifier];
+                if notification_target_from_identifier(&identifier.to_string()).is_some() {
+                    foreground_notification_presentation_options()
+                } else {
+                    0
+                }
+            };
+            completion.call((options,));
+        }
     }
 );
 
@@ -257,9 +286,30 @@ pub struct MacosWindow {
     ime_proxies: RefCell<HashMap<u64, Retained<ImeProxyView>>>,
     notification_center_delegate: Retained<TideNotificationCenterDelegate>,
     window_revealed: Cell<bool>,
+    notification_authorization_requested: Cell<bool>,
 }
 
 impl MacosWindow {
+    fn request_notification_authorization(&self, options: usize) {
+        if self.notification_authorization_requested.replace(true) {
+            return;
+        }
+
+        unsafe {
+            let center_cls = match objc2::runtime::AnyClass::get("UNUserNotificationCenter") {
+                Some(cls) => cls,
+                None => return,
+            };
+            let center: Retained<AnyObject> = msg_send_id![center_cls, currentNotificationCenter];
+            let completion = block2::RcBlock::new(|_granted: Bool, _error: *mut AnyObject| {});
+            let completion_ptr = &*completion as *const block2::Block<dyn Fn(Bool, *mut AnyObject)>;
+            let _: () = msg_send![&center,
+                requestAuthorizationWithOptions: options
+                completionHandler: completion_ptr
+            ];
+        }
+    }
+
     pub fn new(
         config: &WindowConfig,
         callback: Rc<RefCell<EventCallback>>,
@@ -364,6 +414,7 @@ impl MacosWindow {
             ime_proxies: RefCell::new(HashMap::new()),
             notification_center_delegate,
             window_revealed: Cell::new(false),
+            notification_authorization_requested: Cell::new(false),
         }
     }
 }
@@ -508,22 +559,19 @@ impl PlatformWindow for MacosWindow {
     }
 
     fn send_system_notification(&self, title: &str, body: &str, pane_id: u64) {
-        // UNUserNotificationCenter: requestAuthorization → add pattern.
-        // Silent fail if permission not granted (BR-3).
+        // Permission is requested proactively during setup; keep a send-path fallback
+        // so first-use still works if startup or toggle timing was missed.
+        if !self.notification_authorization_requested.get() {
+            self.request_notification_permission();
+        }
         unsafe {
             let center_cls = match objc2::runtime::AnyClass::get("UNUserNotificationCenter") {
                 Some(cls) => cls,
                 None => return, // UNUserNotificationCenter not available
             };
             let center: Retained<AnyObject> = msg_send_id![center_cls, currentNotificationCenter];
-
-            // Request authorization (idempotent after first grant).
-            // completionHandler is a nullable block — pass null.
-            let null_block: *const std::ffi::c_void = std::ptr::null();
-            let _: () = msg_send![&center,
-                requestAuthorizationWithOptions: 0x07_usize
-                completionHandler: null_block
-            ];
+            let completion = block2::RcBlock::new(|_error: *mut AnyObject| {});
+            let completion_ptr = &*completion as *const block2::Block<dyn Fn(*mut AnyObject)>;
 
             // Create notification content
             let content_cls = objc2::runtime::AnyClass::get("UNMutableNotificationContent")
@@ -548,9 +596,14 @@ impl PlatformWindow for MacosWindow {
             // Add request to notification center (fire-and-forget)
             let _: () = msg_send![&center,
                 addNotificationRequest: &*request
-                withCompletionHandler: null_block
+                withCompletionHandler: completion_ptr
             ];
         }
+    }
+
+    fn request_notification_permission(&self) {
+        // Alert + sound + badge, matching the notification send path.
+        self.request_notification_authorization(notification_authorization_options());
     }
 
     fn request_user_attention(&self) {

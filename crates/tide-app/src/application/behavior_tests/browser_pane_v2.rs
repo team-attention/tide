@@ -1,10 +1,10 @@
 // Spec: docs/specs/browser-pane-v2.md
-use crate::ActionPort;
 use crate::application::ports::outward::process_port::ProcessPort;
 use crate::pane::browser::BrowserPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
 use crate::tide_core::{LayoutEngine, SplitDirection};
+use crate::ActionPort;
 use crate::App;
 use std::cell::RefCell;
 use std::io;
@@ -109,7 +109,10 @@ fn download_response_enters_browser_pane_download_state() {
     }
 
     let bp = get_browser(&app, id);
-    assert!(bp.download_state.is_some(), "Browser Pane should enter download state");
+    assert!(
+        bp.download_state.is_some(),
+        "Browser Pane should enter download state"
+    );
     let dl = bp.download_state.as_ref().unwrap();
     assert_eq!(dl.url, "https://example.com/report.pdf");
     assert_eq!(dl.destination, "/tmp/report.pdf");
@@ -130,7 +133,10 @@ fn download_lifecycle_preserves_browser_pane_loading_and_url_state() {
     // Committed URL stays at the page URL, not the download URL
     assert_eq!(bp.url, "https://example.com/files");
     // Loading should reflect the page state, not be stuck
-    assert!(!bp.loading, "Page loading should clear when download takes over");
+    assert!(
+        !bp.loading,
+        "Page loading should clear when download takes over"
+    );
     assert!(bp.download_state.is_some());
 }
 
@@ -151,7 +157,10 @@ fn download_capability_failure_falls_back_to_explicit_external_handoff() {
 
     // Should fall back to external handoff
     app.open_focused_browser_externally();
-    assert!(!opened_urls.borrow().is_empty(), "Should have handed off to external browser");
+    assert!(
+        !opened_urls.borrow().is_empty(),
+        "Should have handed off to external browser"
+    );
 }
 
 // --- UC-3: StrengthenBrowserPaneSessionState ---
@@ -227,7 +236,10 @@ fn permission_request_surfaces_in_browser_pane() {
         origin: "https://meet.example.com".to_string(),
     });
 
-    assert!(bp.pending_permission.is_some(), "Permission request should surface in Browser Pane");
+    assert!(
+        bp.pending_permission.is_some(),
+        "Permission request should surface in Browser Pane"
+    );
     let perm = bp.pending_permission.as_ref().unwrap();
     assert_eq!(perm.kind, BrowserPermissionKind::Camera);
     assert_eq!(perm.origin, "https://meet.example.com");
@@ -250,9 +262,18 @@ fn denied_permission_preserves_browser_pane_state() {
     let loading_before = bp.loading;
     bp.deny_permission();
 
-    assert_eq!(bp.url, url_before, "URL must not change after permission denial");
-    assert_eq!(bp.loading, loading_before, "Loading must not change after permission denial");
-    assert!(bp.pending_permission.is_none(), "Pending permission must clear after resolution");
+    assert_eq!(
+        bp.url, url_before,
+        "URL must not change after permission denial"
+    );
+    assert_eq!(
+        bp.loading, loading_before,
+        "Loading must not change after permission denial"
+    );
+    assert!(
+        bp.pending_permission.is_none(),
+        "Pending permission must clear after resolution"
+    );
 }
 
 #[test]
@@ -386,10 +407,22 @@ fn right_click_shows_context_menu_with_actions() {
 
     let actions = bp.build_context_menu_actions();
     assert!(!actions.is_empty(), "Context menu should have actions");
-    assert!(actions.contains(&ContextMenuAction::CopyLink), "Should have copy link action");
-    assert!(actions.contains(&ContextMenuAction::CopySelection), "Should have copy selection action");
-    assert!(actions.contains(&ContextMenuAction::OpenLinkInNewTab), "Should have open in new tab action");
-    assert!(actions.contains(&ContextMenuAction::OpenLinkExternally), "Should have open externally action");
+    assert!(
+        actions.contains(&ContextMenuAction::CopyLink),
+        "Should have copy link action"
+    );
+    assert!(
+        actions.contains(&ContextMenuAction::CopySelection),
+        "Should have copy selection action"
+    );
+    assert!(
+        actions.contains(&ContextMenuAction::OpenLinkInNewTab),
+        "Should have open in new tab action"
+    );
+    assert!(
+        actions.contains(&ContextMenuAction::OpenLinkExternally),
+        "Should have open externally action"
+    );
 }
 
 #[test]
@@ -407,9 +440,18 @@ fn render_mode_context_menu_omits_navigation_actions() {
     });
 
     let actions = bp.build_context_menu_actions();
-    assert!(!actions.contains(&ContextMenuAction::OpenLinkInNewTab), "Render mode should omit open in new tab");
-    assert!(!actions.contains(&ContextMenuAction::OpenLinkExternally), "Render mode should omit open externally");
-    assert!(actions.contains(&ContextMenuAction::CopySelection), "Render mode should still allow copy selection");
+    assert!(
+        !actions.contains(&ContextMenuAction::OpenLinkInNewTab),
+        "Render mode should omit open in new tab"
+    );
+    assert!(
+        !actions.contains(&ContextMenuAction::OpenLinkExternally),
+        "Render mode should omit open externally"
+    );
+    assert!(
+        actions.contains(&ContextMenuAction::CopySelection),
+        "Render mode should still allow copy selection"
+    );
 }
 
 #[test]
@@ -457,10 +499,22 @@ fn browser_pane_created_with_url_has_no_parent_state() {
     let bp = BrowserPane::with_url(id, "https://example.com/popup".to_string());
 
     assert_eq!(bp.url, "https://example.com/popup");
-    assert!(!bp.can_go_back, "New BrowserPane must not have back navigation");
-    assert!(!bp.can_go_forward, "New BrowserPane must not have forward navigation");
-    assert!(bp.page_snapshot.is_none(), "New BrowserPane must not have page snapshot");
-    assert!(bp.page_selection.is_none(), "New BrowserPane must not have page selection");
+    assert!(
+        !bp.can_go_back,
+        "New BrowserPane must not have back navigation"
+    );
+    assert!(
+        !bp.can_go_forward,
+        "New BrowserPane must not have forward navigation"
+    );
+    assert!(
+        bp.page_snapshot.is_none(),
+        "New BrowserPane must not have page snapshot"
+    );
+    assert!(
+        bp.page_selection.is_none(),
+        "New BrowserPane must not have page selection"
+    );
 }
 
 // --- UC-8: ManageBrowserPaneCookiesAndStorage ---
@@ -474,7 +528,10 @@ fn clear_cookies_removes_all_website_data() {
 
     bp.request_clear_website_data();
 
-    assert!(bp.needs_clear_data, "needs_clear_data flag should be set after clear request");
+    assert!(
+        bp.needs_clear_data,
+        "needs_clear_data flag should be set after clear request"
+    );
 }
 
 #[test]
@@ -493,8 +550,14 @@ fn cookie_clear_preserves_navigation_state() {
     bp.request_clear_website_data();
 
     assert_eq!(bp.url, url_before, "URL must not change after cookie clear");
-    assert_eq!(bp.can_go_back, back_before, "Back navigation must not change after cookie clear");
-    assert_eq!(bp.can_go_forward, fwd_before, "Forward navigation must not change after cookie clear");
+    assert_eq!(
+        bp.can_go_back, back_before,
+        "Back navigation must not change after cookie clear"
+    );
+    assert_eq!(
+        bp.can_go_forward, fwd_before,
+        "Forward navigation must not change after cookie clear"
+    );
     assert!(!bp.loading, "Loading must not start after cookie clear");
 }
 
@@ -520,7 +583,10 @@ fn load_progress_exposed_as_domain_float() {
     assert!(bp.load_progress <= 1.0, "Load progress must not exceed 1.0");
 
     bp.sync_load_progress(-0.1);
-    assert!(bp.load_progress >= 0.0, "Load progress must not go below 0.0");
+    assert!(
+        bp.load_progress >= 0.0,
+        "Load progress must not go below 0.0"
+    );
 }
 
 #[test]
@@ -534,7 +600,10 @@ fn load_progress_resets_on_new_navigation() {
     // Start a new navigation
     bp.navigate("https://example.com/other");
 
-    assert_eq!(bp.load_progress, 0.0, "Load progress must reset to 0.0 on new navigation");
+    assert_eq!(
+        bp.load_progress, 0.0,
+        "Load progress must reset to 0.0 on new navigation"
+    );
     assert!(bp.loading, "Loading must be true after new navigation");
 }
 

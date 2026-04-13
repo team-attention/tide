@@ -103,15 +103,20 @@ impl WgpuRenderer {
                 let bg_inst_start = self.grid_bg_instances.len();
                 let glyph_inst_start = self.grid_glyph_instances.len();
 
-                self.grid_bg_instances.extend_from_slice(&cache.bg_instances);
-                self.grid_glyph_instances.extend_from_slice(&cache.glyph_instances);
+                self.grid_bg_instances
+                    .extend_from_slice(&cache.bg_instances);
+                self.grid_glyph_instances
+                    .extend_from_slice(&cache.glyph_instances);
 
-                self.pane_grid_ranges.insert(id, PaneGridRange {
-                    bg_inst_start,
-                    bg_inst_count: cache.bg_instances.len(),
-                    glyph_inst_start,
-                    glyph_inst_count: cache.glyph_instances.len(),
-                });
+                self.pane_grid_ranges.insert(
+                    id,
+                    PaneGridRange {
+                        bg_inst_start,
+                        bg_inst_count: cache.bg_instances.len(),
+                        glyph_inst_start,
+                        glyph_inst_count: cache.glyph_instances.len(),
+                    },
+                );
             }
         }
 
@@ -142,7 +147,8 @@ impl WgpuRenderer {
             // In-place instance replacement
             self.grid_bg_instances[range.bg_inst_start..range.bg_inst_start + range.bg_inst_count]
                 .copy_from_slice(&cache.bg_instances);
-            self.grid_glyph_instances[range.glyph_inst_start..range.glyph_inst_start + range.glyph_inst_count]
+            self.grid_glyph_instances
+                [range.glyph_inst_start..range.glyph_inst_start + range.glyph_inst_count]
                 .copy_from_slice(&cache.glyph_instances);
 
             self.grid_partial_uploads.push(range);
@@ -217,7 +223,10 @@ impl WgpuRenderer {
 
         // Determine target arrays
         let (bg, gl) = if self.active_pane_id.is_some() {
-            (&mut self.active_pane_cache.bg_instances, &mut self.active_pane_cache.glyph_instances)
+            (
+                &mut self.active_pane_cache.bg_instances,
+                &mut self.active_pane_cache.glyph_instances,
+            )
         } else {
             (&mut self.grid_bg_instances, &mut self.grid_glyph_instances)
         };
@@ -243,7 +252,12 @@ impl WgpuRenderer {
                 size: [gw, gh],
                 uv_min: region.uv_min,
                 uv_max: region.uv_max,
-                color: [style.foreground.r, style.foreground.g, style.foreground.b, style.foreground.a],
+                color: [
+                    style.foreground.r,
+                    style.foreground.g,
+                    style.foreground.b,
+                    style.foreground.a,
+                ],
             });
         }
     }

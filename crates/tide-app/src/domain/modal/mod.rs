@@ -1,9 +1,9 @@
 // ModalStack and all modal state types.
 
-use std::path::PathBuf;
+use super::state::input_line::{abbreviate_path, expand_tilde, InputLine};
+use crate::theme::{CONTEXT_MENU_W, POPUP_INPUT_PADDING, POPUP_LINE_EXTRA};
 use crate::tide_core::{PaneId, Rect, Vec2};
-use crate::theme::{POPUP_INPUT_PADDING, POPUP_LINE_EXTRA, CONTEXT_MENU_W};
-use super::state::input_line::{InputLine, abbreviate_path, expand_tilde};
+use std::path::PathBuf;
 
 // ──────────────────────────────────────────────
 // Save-as input state (floating popup with directory + filename)
@@ -114,10 +114,10 @@ pub(crate) struct FileFinderGeometry {
 pub(crate) struct FileFinderState {
     pub input: InputLine,
     pub base_dir: PathBuf,
-    pub entries: Vec<PathBuf>,          // all files (relative to base_dir)
-    pub filtered: Vec<usize>,           // indices into entries
-    pub selected: usize,                // index into filtered
-    pub scroll_offset: usize,           // scroll offset in filtered list
+    pub entries: Vec<PathBuf>, // all files (relative to base_dir)
+    pub filtered: Vec<usize>,  // indices into entries
+    pub selected: usize,       // index into filtered
+    pub scroll_offset: usize,  // scroll offset in filtered list
     /// When set, the selected file replaces this pane (e.g. a Launcher) instead of opening a new tab.
     pub replace_pane_id: Option<crate::tide_core::PaneId>,
 }
@@ -137,7 +137,12 @@ impl FileFinderState {
     }
 
     /// Compute popup geometry given cell size and logical window dimensions.
-    pub fn geometry(&self, cell_height: f32, logical_width: f32, _logical_height: f32) -> FileFinderGeometry {
+    pub fn geometry(
+        &self,
+        cell_height: f32,
+        logical_width: f32,
+        _logical_height: f32,
+    ) -> FileFinderGeometry {
         let line_height = cell_height * crate::theme::FILE_TREE_LINE_SPACING;
         let input_h = cell_height + POPUP_INPUT_PADDING;
         let popup_w = FILE_FINDER_POPUP_W.min(logical_width - 32.0);
@@ -215,7 +220,10 @@ impl FileFinderState {
             self.filtered = (0..self.entries.len()).collect();
         } else {
             let query_lower = self.input.text.to_lowercase();
-            self.filtered = self.entries.iter().enumerate()
+            self.filtered = self
+                .entries
+                .iter()
+                .enumerate()
                 .filter(|(_, path)| {
                     let name = path.to_string_lossy().to_lowercase();
                     name.contains(&query_lower)
@@ -235,9 +243,9 @@ impl FileFinderState {
 /// Button types available in the git switcher popup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SwitcherButton {
-    Switch(usize),     // filtered index
-    NewPane(usize),    // filtered index
-    Delete(usize),     // filtered index
+    Switch(usize),  // filtered index
+    NewPane(usize), // filtered index
+    Delete(usize),  // filtered index
 }
 
 /// Pre-computed popup geometry for the git switcher, shared between rendering and hit-testing.
@@ -291,23 +299,42 @@ impl GitSwitcherState {
     }
 
     /// Compute popup geometry given cell size and logical window dimensions.
-    pub fn geometry(&self, cell_height: f32, logical_width: f32, logical_height: f32) -> GitSwitcherGeometry {
+    pub fn geometry(
+        &self,
+        cell_height: f32,
+        logical_width: f32,
+        logical_height: f32,
+    ) -> GitSwitcherGeometry {
         // Git switcher uses 36px rows to match Pen design (spacious branch items)
         let line_height = 36.0_f32.max(cell_height + POPUP_LINE_EXTRA);
         let input_h = 36.0_f32; // per Pen design
         let popup_w = GIT_SWITCHER_POPUP_W;
-        let popup_x = self.anchor_rect.x.min(logical_width - popup_w - 4.0).max(0.0);
+        let popup_x = self
+            .anchor_rect
+            .x
+            .min(logical_width - popup_w - 4.0)
+            .max(0.0);
         let current_len = self.current_filtered_len();
         let max_visible = GIT_SWITCHER_MAX_VISIBLE.min(current_len);
         let new_wt_btn_h = 0.0;
         let hint_bar_h = 28.0_f32;
-        let content_h = 2.0 + input_h + 4.0 + max_visible as f32 * line_height + new_wt_btn_h + 4.0 + hint_bar_h;
+        let content_h = 2.0
+            + input_h
+            + 4.0
+            + max_visible as f32 * line_height
+            + new_wt_btn_h
+            + 4.0
+            + hint_bar_h;
         // Vertical clamping: prefer below anchor, flip above if not enough space
         let below_y = self.anchor_rect.y + self.anchor_rect.height + 4.0;
         let popup_y = if below_y + content_h > logical_height {
             // Try above the anchor
             let above_y = self.anchor_rect.y - content_h - 4.0;
-            if above_y >= 0.0 { above_y } else { below_y.min(logical_height - content_h).max(0.0) }
+            if above_y >= 0.0 {
+                above_y
+            } else {
+                below_y.min(logical_height - content_h).max(0.0)
+            }
         } else {
             below_y
         };
@@ -386,7 +413,9 @@ impl GitSwitcherState {
         }
         let q_lower = q.to_lowercase();
         !self.filtered_worktrees.iter().any(|&i| {
-            self.worktrees[i].branch.as_ref()
+            self.worktrees[i]
+                .branch
+                .as_ref()
                 .map(|b| b.to_lowercase() == q_lower)
                 .unwrap_or(false)
         })
@@ -401,18 +430,26 @@ impl GitSwitcherState {
         self.base_filtered_len() + if self.has_create_row() { 1 } else { 0 }
     }
 
-
     fn filter(&mut self) {
         if self.input.is_empty() {
             self.filtered_worktrees = (0..self.worktrees.len()).collect();
         } else {
             let query_lower = self.input.text.to_lowercase();
-            self.filtered_worktrees = self.worktrees.iter().enumerate()
+            self.filtered_worktrees = self
+                .worktrees
+                .iter()
+                .enumerate()
                 .filter(|(_, wt)| {
-                    let branch_match = wt.branch.as_ref()
+                    let branch_match = wt
+                        .branch
+                        .as_ref()
                         .map(|b| b.to_lowercase().contains(&query_lower))
                         .unwrap_or_else(|| "(detached)".contains(&query_lower));
-                    let path_match = wt.path.to_string_lossy().to_lowercase().contains(&query_lower);
+                    let path_match = wt
+                        .path
+                        .to_string_lossy()
+                        .to_lowercase()
+                        .contains(&query_lower);
                     branch_match || path_match
                 })
                 .map(|(i, _)| i)
@@ -437,13 +474,29 @@ pub(crate) enum ContextMenuAction {
 }
 
 impl ContextMenuAction {
-    const FILE_ACTIONS: [ContextMenuAction; 2] = [ContextMenuAction::Rename, ContextMenuAction::Delete];
-    const DIR_ACTIONS: [ContextMenuAction; 5] = [ContextMenuAction::CdHere, ContextMenuAction::OpenTerminalHere, ContextMenuAction::RevealInFinder, ContextMenuAction::Rename, ContextMenuAction::Delete];
-    const DIR_ACTIONS_BUSY: [ContextMenuAction; 4] = [ContextMenuAction::OpenTerminalHere, ContextMenuAction::RevealInFinder, ContextMenuAction::Rename, ContextMenuAction::Delete];
+    const FILE_ACTIONS: [ContextMenuAction; 2] =
+        [ContextMenuAction::Rename, ContextMenuAction::Delete];
+    const DIR_ACTIONS: [ContextMenuAction; 5] = [
+        ContextMenuAction::CdHere,
+        ContextMenuAction::OpenTerminalHere,
+        ContextMenuAction::RevealInFinder,
+        ContextMenuAction::Rename,
+        ContextMenuAction::Delete,
+    ];
+    const DIR_ACTIONS_BUSY: [ContextMenuAction; 4] = [
+        ContextMenuAction::OpenTerminalHere,
+        ContextMenuAction::RevealInFinder,
+        ContextMenuAction::Rename,
+        ContextMenuAction::Delete,
+    ];
 
     pub fn items(is_dir: bool, shell_idle: bool) -> &'static [ContextMenuAction] {
         if is_dir {
-            if shell_idle { &Self::DIR_ACTIONS } else { &Self::DIR_ACTIONS_BUSY }
+            if shell_idle {
+                &Self::DIR_ACTIONS
+            } else {
+                &Self::DIR_ACTIONS_BUSY
+            }
         } else {
             &Self::FILE_ACTIONS
         }
@@ -461,11 +514,11 @@ impl ContextMenuAction {
 
     pub fn icon(&self) -> &'static str {
         match self {
-            ContextMenuAction::CdHere => "\u{f07b}",  // folder icon
-            ContextMenuAction::OpenTerminalHere => "\u{f120}",  // terminal icon
-            ContextMenuAction::RevealInFinder => "\u{f07c}",  // folder-open icon
-            ContextMenuAction::Rename => "\u{f044}",  //
-            ContextMenuAction::Delete => "\u{f1f8}",  //
+            ContextMenuAction::CdHere => "\u{f07b}", // folder icon
+            ContextMenuAction::OpenTerminalHere => "\u{f120}", // terminal icon
+            ContextMenuAction::RevealInFinder => "\u{f07c}", // folder-open icon
+            ContextMenuAction::Rename => "\u{f044}", //
+            ContextMenuAction::Delete => "\u{f1f8}", //
         }
     }
 }
@@ -490,13 +543,18 @@ impl ContextMenuState {
         let item_count = self.items().len() as f32;
         // Width from longest label: left inset + icon (2.5 cells) + label chars + right padding
         let cell_w = cell_height * 0.6; // approximate cell width from height
-        let max_label_len = self.items().iter()
+        let max_label_len = self
+            .items()
+            .iter()
             .map(|a| a.label().chars().count())
             .max()
             .unwrap_or(0) as f32;
-        let content_w = crate::theme::POPUP_TEXT_INSET + 2.5 * cell_w + max_label_len * cell_w + crate::theme::POPUP_TEXT_INSET;
+        let content_w = crate::theme::POPUP_TEXT_INSET
+            + 2.5 * cell_w
+            + max_label_len * cell_w
+            + crate::theme::POPUP_TEXT_INSET;
         let popup_w = content_w.max(CONTEXT_MENU_W);
-        let popup_h = item_count * line_height + 8.0;  // items + padding
+        let popup_h = item_count * line_height + 8.0; // items + padding
         let x = self.position.x.min(logical_width - popup_w - 4.0).max(0.0);
         let y = self.position.y.min(logical_height - popup_h - 4.0).max(0.0);
         Rect::new(x, y, popup_w, popup_h)

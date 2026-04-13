@@ -70,10 +70,7 @@ mod tests {
 
         // Left pane (original)
         let left = rects.iter().find(|(id, _)| *id == pane1).unwrap();
-        assert!(rect_approx_eq(
-            &left.1,
-            &Rect::new(0.0, 0.0, 400.0, 600.0)
-        ));
+        assert!(rect_approx_eq(&left.1, &Rect::new(0.0, 0.0, 400.0, 600.0)));
 
         // Right pane (new)
         let right = rects.iter().find(|(id, _)| *id == pane2).unwrap();
@@ -97,10 +94,7 @@ mod tests {
 
         // Top pane (original)
         let top = rects.iter().find(|(id, _)| *id == pane1).unwrap();
-        assert!(rect_approx_eq(
-            &top.1,
-            &Rect::new(0.0, 0.0, 800.0, 300.0)
-        ));
+        assert!(rect_approx_eq(&top.1, &Rect::new(0.0, 0.0, 800.0, 300.0)));
 
         // Bottom pane (new)
         let bottom = rects.iter().find(|(id, _)| *id == pane2).unwrap();
@@ -130,7 +124,10 @@ mod tests {
         assert!(rect_approx_eq(&r2.1, &Rect::new(400.0, 0.0, 400.0, 300.0)));
 
         let r3 = rects.iter().find(|(id, _)| *id == pane3).unwrap();
-        assert!(rect_approx_eq(&r3.1, &Rect::new(400.0, 300.0, 400.0, 300.0)));
+        assert!(rect_approx_eq(
+            &r3.1,
+            &Rect::new(400.0, 300.0, 400.0, 300.0)
+        ));
     }
 
     #[test]
@@ -151,7 +148,10 @@ mod tests {
         let r2 = rects.iter().find(|(id, _)| *id == pane2).unwrap();
         assert!(rect_approx_eq(&r2.1, &Rect::new(400.0, 0.0, 400.0, 300.0)));
         let r4 = rects.iter().find(|(id, _)| *id == pane4).unwrap();
-        assert!(rect_approx_eq(&r4.1, &Rect::new(400.0, 300.0, 400.0, 300.0)));
+        assert!(rect_approx_eq(
+            &r4.1,
+            &Rect::new(400.0, 300.0, 400.0, 300.0)
+        ));
     }
 
     // ──────────────────────────────────────────
@@ -167,7 +167,10 @@ mod tests {
         let rects = layout.compute(WINDOW, &[pane1], None);
         assert_eq!(rects.len(), 1);
         assert_eq!(rects[0].0, pane1);
-        assert!(rect_approx_eq(&rects[0].1, &Rect::new(0.0, 0.0, 800.0, 600.0)));
+        assert!(rect_approx_eq(
+            &rects[0].1,
+            &Rect::new(0.0, 0.0, 800.0, 600.0)
+        ));
     }
 
     #[test]
@@ -179,7 +182,10 @@ mod tests {
         let rects = layout.compute(WINDOW, &[pane2], None);
         assert_eq!(rects.len(), 1);
         assert_eq!(rects[0].0, pane2);
-        assert!(rect_approx_eq(&rects[0].1, &Rect::new(0.0, 0.0, 800.0, 600.0)));
+        assert!(rect_approx_eq(
+            &rects[0].1,
+            &Rect::new(0.0, 0.0, 800.0, 600.0)
+        ));
     }
 
     #[test]
@@ -285,8 +291,7 @@ mod tests {
                 r
             );
             assert!(
-                r.x + r.width <= window.width + 0.01
-                    && r.y + r.height <= window.height + 0.01,
+                r.x + r.width <= window.width + 0.01 && r.y + r.height <= window.height + 0.01,
                 "Pane {id} exceeds window bounds: {:?}",
                 r
             );
@@ -312,8 +317,16 @@ mod tests {
         let left = rects.iter().find(|(id, _)| *id == pane1).unwrap();
         let right = rects.iter().find(|(id, _)| *id == pane2).unwrap();
 
-        assert!(approx_eq(left.1.width, 600.0), "Expected left width ~600, got {}", left.1.width);
-        assert!(approx_eq(right.1.width, 200.0), "Expected right width ~200, got {}", right.1.width);
+        assert!(
+            approx_eq(left.1.width, 600.0),
+            "Expected left width ~600, got {}",
+            left.1.width
+        );
+        assert!(
+            approx_eq(right.1.width, 200.0),
+            "Expected right width ~200, got {}",
+            right.1.width
+        );
         assert!(approx_eq(right.1.x, 600.0));
 
         assert_no_gaps_no_overlaps(&rects, WINDOW);
@@ -334,8 +347,16 @@ mod tests {
         let top = rects.iter().find(|(id, _)| *id == pane1).unwrap();
         let bottom = rects.iter().find(|(id, _)| *id == pane2).unwrap();
 
-        assert!(approx_eq(top.1.height, 150.0), "Expected top height ~150, got {}", top.1.height);
-        assert!(approx_eq(bottom.1.height, 450.0), "Expected bottom height ~450, got {}", bottom.1.height);
+        assert!(
+            approx_eq(top.1.height, 150.0),
+            "Expected top height ~150, got {}",
+            top.1.height
+        );
+        assert!(
+            approx_eq(bottom.1.height, 450.0),
+            "Expected bottom height ~450, got {}",
+            bottom.1.height
+        );
 
         assert_no_gaps_no_overlaps(&rects, WINDOW);
     }
@@ -630,11 +651,17 @@ mod tests {
         let (layout, pane1) = SplitLayout::with_initial_pane();
         let small = Size::new(100.0, 50.0);
         let rects = layout.compute(small, &[pane1], None);
-        assert!(rect_approx_eq(&rects[0].1, &Rect::new(0.0, 0.0, 100.0, 50.0)));
+        assert!(rect_approx_eq(
+            &rects[0].1,
+            &Rect::new(0.0, 0.0, 100.0, 50.0)
+        ));
 
         let large = Size::new(3840.0, 2160.0);
         let rects = layout.compute(large, &[pane1], None);
-        assert!(rect_approx_eq(&rects[0].1, &Rect::new(0.0, 0.0, 3840.0, 2160.0)));
+        assert!(rect_approx_eq(
+            &rects[0].1,
+            &Rect::new(0.0, 0.0, 3840.0, 2160.0)
+        ));
     }
 
     #[test]
@@ -651,7 +678,11 @@ mod tests {
         let rects = layout.compute(WINDOW, &[pane1, pane2], None);
         let left = rects.iter().find(|(id, _)| *id == pane1).unwrap();
         // Without begin_drag, drag_start is None, so drag_border is a no-op — ratio stays at 0.5
-        assert!(approx_eq(left.1.width, 400.0), "Expected ~400 (unchanged), got {}", left.1.width);
+        assert!(
+            approx_eq(left.1.width, 400.0),
+            "Expected ~400 (unchanged), got {}",
+            left.1.width
+        );
     }
 
     // ──────────────────────────────────────────
@@ -743,7 +774,10 @@ mod tests {
 
         let rects = layout.compute(WINDOW, &[], None);
         assert_eq!(rects.len(), 1);
-        assert!(rect_approx_eq(&rects[0].1, &Rect::new(0.0, 0.0, 800.0, 600.0)));
+        assert!(rect_approx_eq(
+            &rects[0].1,
+            &Rect::new(0.0, 0.0, 800.0, 600.0)
+        ));
     }
 
     #[test]
@@ -1018,7 +1052,11 @@ mod tests {
         // Pane 4 should be on the far left, full height
         let r4 = rects.iter().find(|(id, _)| *id == 4).unwrap();
         assert!(approx_eq(r4.1.x, 0.0), "pane 4 x: {}", r4.1.x);
-        assert!(approx_eq(r4.1.height, 600.0), "pane 4 height: {}", r4.1.height);
+        assert!(
+            approx_eq(r4.1.height, 600.0),
+            "pane 4 height: {}",
+            r4.1.height
+        );
 
         // Panes 2 and 3 should be stacked vertically in the middle column
         let r2 = rects.iter().find(|(id, _)| *id == 2).unwrap();
@@ -1028,7 +1066,11 @@ mod tests {
 
         // Pane 1 should be on the far right, full height
         let r1 = rects.iter().find(|(id, _)| *id == 1).unwrap();
-        assert!(approx_eq(r1.1.height, 600.0), "pane 1 height: {}", r1.1.height);
+        assert!(
+            approx_eq(r1.1.height, 600.0),
+            "pane 1 height: {}",
+            r1.1.height
+        );
         assert!(r1.1.x > r2.1.x, "pane 1 should be right of pane 2");
     }
 
@@ -1074,7 +1116,11 @@ mod tests {
         assert!(r4.1.x > r2.1.x, "pane 4 should be right of pane 2");
         assert!(r4.1.x < r1.1.x, "pane 4 should be left of pane 1");
         // Pane 4 should be full height (it's a standalone column)
-        assert!(approx_eq(r4.1.height, 600.0), "pane 4 height: {}", r4.1.height);
+        assert!(
+            approx_eq(r4.1.height, 600.0),
+            "pane 4 height: {}",
+            r4.1.height
+        );
     }
 
     // ──────────────────────────────────────────
@@ -1097,7 +1143,11 @@ mod tests {
         let r2 = rects.iter().find(|(id, _)| *id == 2).unwrap();
         assert!(r4.1.x > r1.1.x, "pane 4 should be right of pane 1");
         assert!(r1.1.x > r2.1.x, "pane 1 should be right of pane 2");
-        assert!(approx_eq(r4.1.height, 600.0), "pane 4 height: {}", r4.1.height);
+        assert!(
+            approx_eq(r4.1.height, 600.0),
+            "pane 4 height: {}",
+            r4.1.height
+        );
     }
 
     // ──────────────────────────────────────────
@@ -1148,7 +1198,10 @@ mod tests {
         // Panes 2 and 1 should be in the top row, side by side
         let r2 = rects.iter().find(|(id, _)| *id == 2).unwrap();
         let r1 = rects.iter().find(|(id, _)| *id == 1).unwrap();
-        assert!(approx_eq(r2.1.y, 0.0) || approx_eq(r1.1.y, 0.0), "top row at y=0");
+        assert!(
+            approx_eq(r2.1.y, 0.0) || approx_eq(r1.1.y, 0.0),
+            "top row at y=0"
+        );
         assert!(approx_eq(r2.1.y, r1.1.y), "2 and 1 should share y");
 
         // Pane 3 should be in the middle row, full width
@@ -1207,8 +1260,14 @@ mod tests {
         // After swap: pane 4 should be where pane 1 was, and vice versa
         let r4_after = rects_after.iter().find(|(id, _)| *id == 4).unwrap().1;
         let r1_after = rects_after.iter().find(|(id, _)| *id == 1).unwrap().1;
-        assert!(rect_approx_eq(&r4_after, &r1_before), "pane 4 should be at pane 1's old position");
-        assert!(rect_approx_eq(&r1_after, &r4_before), "pane 1 should be at pane 4's old position");
+        assert!(
+            rect_approx_eq(&r4_after, &r1_before),
+            "pane 4 should be at pane 1's old position"
+        );
+        assert!(
+            rect_approx_eq(&r1_after, &r4_before),
+            "pane 1 should be at pane 4's old position"
+        );
     }
 
     // ──────────────────────────────────────────
@@ -1275,7 +1334,8 @@ mod tests {
         let layout = make_quadrant_layout();
 
         // Simulate moving pane 4 to pane 1's left (source_in_tree = true)
-        let preview = layout.simulate_drop(4, Some(1), crate::tide_core::DropZone::Left, true, WINDOW);
+        let preview =
+            layout.simulate_drop(4, Some(1), crate::tide_core::DropZone::Left, true, WINDOW);
         assert!(preview.is_some(), "simulate_drop should return a rect");
         let r = preview.unwrap();
         // Pane 4 should be full height (standalone column)

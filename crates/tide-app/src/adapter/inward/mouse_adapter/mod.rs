@@ -6,37 +6,67 @@ mod selection;
 use crate::tide_core::{FileTreeSource, InputEvent, MouseButton, Rect, Vec2};
 use crate::tide_platform::WindowProxy;
 
-use crate::state::drag_types::PaneDragState;
 use crate::pane::PaneKind;
+use crate::state::drag_types::PaneDragState;
 use crate::theme::*;
-use crate::FileOpsPort;
-use crate::DockPort;
-use crate::AppCorePort;
-use crate::LayoutPort;
-use crate::WorkspaceNavPort;
 use crate::ActionPort;
-use crate::PaneLifecyclePort;
-use crate::ModalPort;
-use crate::InputStatePort;
-use crate::FocusNavPort;
-use crate::PaneAccessPort;
+use crate::AppCorePort;
+use crate::DockPort;
+use crate::FileOpsPort;
 use crate::FileTreePort;
+use crate::FocusNavPort;
 use crate::GatewayPort;
+use crate::InputStatePort;
+use crate::LayoutPort;
+use crate::ModalPort;
+use crate::PaneAccessPort;
+use crate::PaneLifecyclePort;
 use crate::RouterPort;
+use crate::WorkspaceNavPort;
 
 // ── Trait alias for mouse adapter ports ──
 
 pub(crate) trait MousePorts:
-    AppCorePort + FocusNavPort + PaneAccessPort + PaneLifecyclePort
-    + ModalPort + InputStatePort + DockPort + WorkspaceNavPort
-    + LayoutPort + FileOpsPort + ActionPort + FileTreePort
-    + GatewayPort + RouterPort {}
-impl<T: AppCorePort + FocusNavPort + PaneAccessPort + PaneLifecyclePort
-    + ModalPort + InputStatePort + DockPort + WorkspaceNavPort
-    + LayoutPort + FileOpsPort + ActionPort + FileTreePort
-    + GatewayPort + RouterPort> MousePorts for T {}
+    AppCorePort
+    + FocusNavPort
+    + PaneAccessPort
+    + PaneLifecyclePort
+    + ModalPort
+    + InputStatePort
+    + DockPort
+    + WorkspaceNavPort
+    + LayoutPort
+    + FileOpsPort
+    + ActionPort
+    + FileTreePort
+    + GatewayPort
+    + RouterPort
+{
+}
+impl<
+        T: AppCorePort
+            + FocusNavPort
+            + PaneAccessPort
+            + PaneLifecyclePort
+            + ModalPort
+            + InputStatePort
+            + DockPort
+            + WorkspaceNavPort
+            + LayoutPort
+            + FileOpsPort
+            + ActionPort
+            + FileTreePort
+            + GatewayPort
+            + RouterPort,
+    > MousePorts for T
+{
+}
 
-pub(crate) fn handle_mouse_down(ctx: &mut impl MousePorts, button: MouseButton, window: &WindowProxy) {
+pub(crate) fn handle_mouse_down(
+    ctx: &mut impl MousePorts,
+    button: MouseButton,
+    window: &WindowProxy,
+) {
     if button == MouseButton::Left {
         ctx.interaction_mut().mouse_left_pressed = true;
 
@@ -70,7 +100,6 @@ pub(crate) fn handle_mouse_down(ctx: &mut impl MousePorts, button: MouseButton, 
             ctx.request_redraw();
             return;
         }
-
 
         if ctx.modal().save_as_input.is_some() {
             if !ctx.save_as_contains(ctx.last_cursor_pos()) {
@@ -126,14 +155,20 @@ pub(crate) fn handle_mouse_down(ctx: &mut impl MousePorts, button: MouseButton, 
 
     // Branch cleanup bar clicks
     if button == MouseButton::Left && ctx.modal().branch_cleanup.is_some() {
-        if crate::adapter::inward::click_adapter::pane::handle_branch_cleanup_click(ctx, ctx.last_cursor_pos()) {
+        if crate::adapter::inward::click_adapter::pane::handle_branch_cleanup_click(
+            ctx,
+            ctx.last_cursor_pos(),
+        ) {
             return;
         }
     }
 
     // Notification bar clicks
     if button == MouseButton::Left {
-        if crate::adapter::inward::click_adapter::pane::handle_notification_bar_click(ctx, ctx.last_cursor_pos()) {
+        if crate::adapter::inward::click_adapter::pane::handle_notification_bar_click(
+            ctx,
+            ctx.last_cursor_pos(),
+        ) {
             return;
         }
     }
@@ -168,22 +203,28 @@ pub(crate) fn handle_mouse_down(ctx: &mut impl MousePorts, button: MouseButton, 
                     let content_y = ft_rect.y + PANE_CORNER_RADIUS;
                     let adjusted_y = pos.y - content_y - FILE_TREE_HEADER_HEIGHT;
                     let ft_scroll = ctx.ft().scroll;
-                    let index =
-                        ((adjusted_y + ft_scroll) / line_height) as usize;
+                    let index = ((adjusted_y + ft_scroll) / line_height) as usize;
 
                     let entry_info = ctx.ft().tree.as_ref().and_then(|tree| {
                         let entries = tree.visible_entries();
-                        entries.get(index).map(|entry| {
-                            (entry.entry.path.clone(), entry.entry.is_dir)
-                        })
+                        entries
+                            .get(index)
+                            .map(|entry| (entry.entry.path.clone(), entry.entry.is_dir))
                     });
 
                     if let Some((path, is_dir)) = entry_info {
                         ctx.modal_mut().context_menu = None;
                         ctx.modal_mut().file_tree_rename = None;
-                        let shell_idle = ctx.focused_pane()
+                        let shell_idle = ctx
+                            .focused_pane()
                             .and_then(|tid| ctx.pane(tid))
-                            .map(|pk| if let crate::PaneKind::Terminal(tp) = pk { tp.context.shell_idle } else { false })
+                            .map(|pk| {
+                                if let crate::PaneKind::Terminal(tp) = pk {
+                                    tp.context.shell_idle
+                                } else {
+                                    false
+                                }
+                            })
                             .unwrap_or(false);
                         ctx.modal_mut().context_menu = Some(crate::ContextMenuState {
                             entry_index: index,
@@ -250,7 +291,10 @@ pub(crate) fn handle_mouse_down(ctx: &mut impl MousePorts, button: MouseButton, 
 
     // Config page
     if button == MouseButton::Left && ctx.modal().config_page.is_some() {
-        crate::adapter::inward::click_adapter::pane::handle_config_page_click(ctx, ctx.last_cursor_pos());
+        crate::adapter::inward::click_adapter::pane::handle_config_page_click(
+            ctx,
+            ctx.last_cursor_pos(),
+        );
         ctx.request_redraw();
         return;
     }
@@ -324,7 +368,6 @@ fn handle_mouse_input_core(ctx: &mut impl MousePorts, button: MouseButton, _wind
             }
         }
 
-
         // Browser navigation bar clicks
         match &hover {
             Some(target @ crate::state::drag_types::HoverTarget::BrowserBack)
@@ -385,13 +428,20 @@ fn handle_mouse_input_core(ctx: &mut impl MousePorts, button: MouseButton, _wind
 
             // Pinned group / terminal dock border drag
             if let Some(dock_rect) = ctx.dock_area_rect() {
-                let has_term_dock = ctx.focused_terminal_id().map(|tid| {
-                    if let Some(crate::pane::PaneKind::Terminal(tp)) = ctx.pane(tid) {
-                        !tp.dock_layout.pane_ids().is_empty()
-                    } else { false }
-                }).unwrap_or(false);
+                let has_term_dock = ctx
+                    .focused_terminal_id()
+                    .map(|tid| {
+                        if let Some(crate::pane::PaneKind::Terminal(tp)) = ctx.pane(tid) {
+                            !tp.dock_layout.pane_ids().is_empty()
+                        } else {
+                            false
+                        }
+                    })
+                    .unwrap_or(false);
                 if ctx.has_pinned_panes() && has_term_dock {
-                    let pinned_w = (dock_rect.width * ctx.dock_pinned_ratio()).max(60.0).min(dock_rect.width - 60.0);
+                    let pinned_w = (dock_rect.width * ctx.dock_pinned_ratio())
+                        .max(60.0)
+                        .min(dock_rect.width - 60.0);
                     let border_x = dock_rect.x + pinned_w;
                     if (ctx.last_cursor_pos().x - border_x).abs() < 5.0 {
                         ctx.set_dock_pinned_border_dragging(true);
@@ -574,8 +624,10 @@ fn check_scrollbar_click(ctx: &mut impl MousePorts, pos: Vec2) -> bool {
             let inner = crate::pane::pane_content_rect(vrect, content_top_offset);
             let scrollbar_right = inner.x + inner.width;
             let scrollbar_left = scrollbar_right - hit_width;
-            if pos.x >= scrollbar_left && pos.x <= scrollbar_right
-                && pos.y >= inner.y && pos.y <= inner.y + inner.height
+            if pos.x >= scrollbar_left
+                && pos.x <= scrollbar_right
+                && pos.y >= inner.y
+                && pos.y <= inner.y + inner.height
                 && pane.needs_scrollbar(inner, cell_height)
             {
                 ctx.interaction_mut().scrollbar_dragging = Some(pid);

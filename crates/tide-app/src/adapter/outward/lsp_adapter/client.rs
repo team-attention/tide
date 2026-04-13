@@ -67,9 +67,10 @@ impl LspClient {
             .join("lsp")
             .join("logs");
         let _ = fs::create_dir_all(&log_dir);
-        let stderr_cfg = fs::File::create(log_dir.join(format!("{}.stderr.log", command.replace('/', "_"))))
-            .map(Stdio::from)
-            .unwrap_or_else(|_| Stdio::null());
+        let stderr_cfg =
+            fs::File::create(log_dir.join(format!("{}.stderr.log", command.replace('/', "_"))))
+                .map(Stdio::from)
+                .unwrap_or_else(|_| Stdio::null());
 
         let mut child = Command::new(command)
             .args(args)
@@ -185,7 +186,8 @@ impl LspClient {
                         return false;
                     }
                     if let Some(result) = result {
-                        if let Ok(init_result) = serde_json::from_value::<InitializeResult>(result) {
+                        if let Ok(init_result) = serde_json::from_value::<InitializeResult>(result)
+                        {
                             self.trigger_characters = init_result
                                 .capabilities
                                 .completion_provider
@@ -253,7 +255,8 @@ impl LspClient {
         if self.initialized {
             self.send_notification("textDocument/didOpen", Some(params));
         } else {
-            self.pending_after_init.push(("textDocument/didOpen".to_string(), Some(params)));
+            self.pending_after_init
+                .push(("textDocument/didOpen".to_string(), Some(params)));
         }
     }
 
@@ -271,7 +274,8 @@ impl LspClient {
         if self.initialized {
             self.send_notification("textDocument/didChange", Some(params));
         } else {
-            self.pending_after_init.push(("textDocument/didChange".to_string(), Some(params)));
+            self.pending_after_init
+                .push(("textDocument/didChange".to_string(), Some(params)));
         }
     }
 
@@ -282,7 +286,8 @@ impl LspClient {
         if self.initialized {
             self.send_notification("textDocument/didSave", Some(params));
         } else {
-            self.pending_after_init.push(("textDocument/didSave".to_string(), Some(params)));
+            self.pending_after_init
+                .push(("textDocument/didSave".to_string(), Some(params)));
         }
     }
 
@@ -294,7 +299,8 @@ impl LspClient {
         if self.initialized {
             self.send_notification("textDocument/didClose", Some(params));
         } else {
-            self.pending_after_init.push(("textDocument/didClose".to_string(), Some(params)));
+            self.pending_after_init
+                .push(("textDocument/didClose".to_string(), Some(params)));
         }
     }
 
@@ -313,14 +319,19 @@ impl LspClient {
             return 0;
         }
         let params = CompletionParams {
-            text_document: TextDocumentIdentifier { uri: uri.to_string() },
+            text_document: TextDocumentIdentifier {
+                uri: uri.to_string(),
+            },
             position: LspPosition { line, character },
             context: Some(CompletionContext {
                 trigger_kind,
                 trigger_character: trigger_character.map(|s| s.to_string()),
             }),
         };
-        self.send_request("textDocument/completion", Some(serde_json::to_value(params).unwrap()))
+        self.send_request(
+            "textDocument/completion",
+            Some(serde_json::to_value(params).unwrap()),
+        )
     }
 
     // ── Lifecycle ──

@@ -118,7 +118,10 @@ impl App {
             }
 
             let (kind, tchar) = if is_trigger {
-                (crate::tide_lsp::protocol::COMPLETION_TRIGGER_CHARACTER, Some(s))
+                (
+                    crate::tide_lsp::protocol::COMPLETION_TRIGGER_CHARACTER,
+                    Some(s),
+                )
             } else {
                 (crate::tide_lsp::protocol::COMPLETION_TRIGGER_INVOKED, None)
             };
@@ -135,7 +138,11 @@ impl App {
         };
 
         self.ports.lsp.request_completion(
-            &uri, line, character, trigger_kind, trigger_char.as_deref(),
+            &uri,
+            line,
+            character,
+            trigger_kind,
+            trigger_char.as_deref(),
         );
     }
 
@@ -167,7 +174,9 @@ impl App {
         };
 
         self.ports.lsp.request_completion(
-            &uri, line, character,
+            &uri,
+            line,
+            character,
             crate::tide_lsp::protocol::COMPLETION_TRIGGER_INVOKED,
             None,
         );
@@ -180,8 +189,10 @@ impl App {
         if let Some(response) = response {
             let pane_id = self.find_pane_by_uri(&response.uri);
             if let Some(pane_id) = pane_id {
-                let items: Vec<CompletionItem> = response.items.into_iter().map(|item| {
-                    CompletionItem {
+                let items: Vec<CompletionItem> = response
+                    .items
+                    .into_iter()
+                    .map(|item| CompletionItem {
                         label: item.label,
                         kind: lsp_kind_to_completion_kind(item.kind),
                         insert_text: item.insert_text,
@@ -189,8 +200,8 @@ impl App {
                         filter_text: item.filter_text,
                         preselect: item.preselect,
                         detail: item.detail,
-                    }
-                }).collect();
+                    })
+                    .collect();
 
                 if !items.is_empty() {
                     if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&pane_id) {
@@ -198,8 +209,15 @@ impl App {
                         let prefix = if let Some(line_text) = pane.editor.buffer.line(pos.line) {
                             let byte_col = pos.col.min(line_text.len());
                             let before_cursor = &line_text[..byte_col];
-                            let word_start = before_cursor.rfind(|ch: char| !ch.is_alphanumeric() && ch != '_')
-                                .map(|i| i + before_cursor[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1))
+                            let word_start = before_cursor
+                                .rfind(|ch: char| !ch.is_alphanumeric() && ch != '_')
+                                .map(|i| {
+                                    i + before_cursor[i..]
+                                        .chars()
+                                        .next()
+                                        .map(|c| c.len_utf8())
+                                        .unwrap_or(1)
+                                })
                                 .unwrap_or(0);
                             before_cursor[word_start..].to_string()
                         } else {

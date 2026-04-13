@@ -38,7 +38,10 @@ pub enum EditorAction {
     ScrollLeft(f32),
     ScrollRight(f32),
     /// Set cursor to a specific buffer position (from mouse click).
-    SetCursor { line: usize, col: usize },
+    SetCursor {
+        line: usize,
+        col: usize,
+    },
 }
 
 /// Map a Key + Modifiers to an EditorAction.
@@ -49,7 +52,10 @@ pub fn key_to_editor_action(key: &Key, modifiers: &Modifiers) -> Option<EditorAc
     }
 
     // Cmd+Shift+Z / Ctrl+Shift+Z -> Redo
-    if (modifiers.ctrl || modifiers.meta) && modifiers.shift && matches!(key, Key::Char('z') | Key::Char('Z')) {
+    if (modifiers.ctrl || modifiers.meta)
+        && modifiers.shift
+        && matches!(key, Key::Char('z') | Key::Char('Z'))
+    {
         return Some(EditorAction::Redo);
     }
 
@@ -64,7 +70,10 @@ pub fn key_to_editor_action(key: &Key, modifiers: &Modifiers) -> Option<EditorAc
     }
 
     // Cmd+Shift+K -> Delete line
-    if (modifiers.ctrl || modifiers.meta) && modifiers.shift && matches!(key, Key::Char('k') | Key::Char('K')) {
+    if (modifiers.ctrl || modifiers.meta)
+        && modifiers.shift
+        && matches!(key, Key::Char('k') | Key::Char('K'))
+    {
         return Some(EditorAction::DeleteLine);
     }
 

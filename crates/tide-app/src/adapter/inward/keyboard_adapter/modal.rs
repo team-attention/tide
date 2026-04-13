@@ -43,11 +43,7 @@ pub(super) fn handle_git_switcher_key(
             }
         }
         Key::Enter => {
-            let selected = ctx
-                .modal()
-                .git_switcher
-                .as_ref()
-                .map(|gs| gs.selected);
+            let selected = ctx.modal().git_switcher.as_ref().map(|gs| gs.selected);
             if let Some(selected) = selected {
                 let btn = if modifiers.meta {
                     // Cmd+Enter → split into new pane
@@ -56,9 +52,7 @@ pub(super) fn handle_git_switcher_key(
                     // Enter → cd into worktree in current terminal
                     crate::SwitcherButton::Switch(selected)
                 };
-                crate::adapter::inward::click_adapter::header::handle_git_switcher_button(
-                    ctx, btn,
-                );
+                crate::adapter::inward::click_adapter::header::handle_git_switcher_button(ctx, btn);
             }
             return;
         }
@@ -207,11 +201,7 @@ pub(super) fn handle_file_finder_key(
     ctx.request_redraw();
 }
 
-pub(super) fn handle_save_as_key(
-    ctx: &mut impl KeyboardPorts,
-    key: Key,
-    modifiers: &Modifiers,
-) {
+pub(super) fn handle_save_as_key(ctx: &mut impl KeyboardPorts, key: Key, modifiers: &Modifiers) {
     match key {
         Key::Escape => {
             ctx.modal_mut().save_as_input = None;
@@ -222,14 +212,10 @@ pub(super) fn handle_save_as_key(
             }
         }
         Key::Enter => {
-            let resolved = ctx
-                .modal()
-                .save_as_input
-                .as_ref()
-                .and_then(|input| {
-                    let pane_id = input.pane_id;
-                    input.resolve_path().map(|p| (pane_id, p))
-                });
+            let resolved = ctx.modal().save_as_input.as_ref().and_then(|input| {
+                let pane_id = input.pane_id;
+                input.resolve_path().map(|p| (pane_id, p))
+            });
             ctx.modal_mut().save_as_input = None;
             if let Some((pane_id, path)) = resolved {
                 let path_str = path.to_string_lossy().to_string();
@@ -654,8 +640,7 @@ pub(super) fn handle_config_page_key(
         }
         Key::Backspace => {
             if let Some(page) = ctx.modal_mut().config_page.as_mut() {
-                if page.section == ConfigSection::Keybindings
-                    && page.selected < page.bindings.len()
+                if page.section == ConfigSection::Keybindings && page.selected < page.bindings.len()
                 {
                     let action_key = page.bindings[page.selected].0.action_key();
                     let defaults = crate::tide_input::KeybindingMap::default_bindings();

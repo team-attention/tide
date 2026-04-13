@@ -1,12 +1,12 @@
 // File tree implementation (Stream D)
 // Implements crate::tide_core::FileTreeSource with fs watching via notify
 
+use crate::tide_core::{FileEntry, FileTreeSource, TreeEntry};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Instant;
-use crate::tide_core::{FileEntry, FileTreeSource, TreeEntry};
 use unicode_normalization::UnicodeNormalization;
 
 /// Reads a directory and returns sorted FileEntry items.

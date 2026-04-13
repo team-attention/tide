@@ -202,7 +202,12 @@ mod tests {
 
         let event = InputEvent::KeyPress {
             key: Key::Char('['),
-            modifiers: Modifiers { shift: false, ctrl: false, meta: true, alt: false },
+            modifiers: Modifiers {
+                shift: false,
+                ctrl: false,
+                meta: true,
+                alt: false,
+            },
         };
         let action = router.process(event, &panes);
 
@@ -217,7 +222,12 @@ mod tests {
 
         let event = InputEvent::KeyPress {
             key: Key::Char(']'),
-            modifiers: Modifiers { shift: false, ctrl: false, meta: true, alt: false },
+            modifiers: Modifiers {
+                shift: false,
+                ctrl: false,
+                meta: true,
+                alt: false,
+            },
         };
         let action = router.process(event, &panes);
 

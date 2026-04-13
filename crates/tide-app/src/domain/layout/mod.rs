@@ -7,7 +7,9 @@ mod tests;
 
 pub use tab_group::TabGroup;
 
-use crate::tide_core::{DropZone, LayoutEngine, PaneDecorations, PaneId, Rect, Size, SplitDirection, Vec2};
+use crate::tide_core::{
+    DropZone, LayoutEngine, PaneDecorations, PaneId, Rect, Size, SplitDirection, Vec2,
+};
 
 use node::Node;
 
@@ -50,9 +52,13 @@ impl SplitLayout {
     /// Create a layout with a single initial pane and return both the layout and the PaneId.
     pub fn with_initial_pane() -> (Self, PaneId) {
         let id: PaneId = 1;
+        Self::with_initial_pane_id(id)
+    }
+
+    pub fn with_initial_pane_id(id: PaneId) -> (Self, PaneId) {
         let layout = Self {
             root: Some(Node::Leaf(id)),
-            next_id: 2,
+            next_id: id.saturating_add(1),
             active_drag: None,
             drag_start: None,
             last_window_size: None,
@@ -64,6 +70,10 @@ impl SplitLayout {
         let id = self.next_id;
         self.next_id += 1;
         id
+    }
+
+    pub fn ensure_next_id_at_least(&mut self, next_id: PaneId) {
+        self.next_id = self.next_id.max(next_id);
     }
 
     /// Begin a drag if the position is near a border. Called externally before drag_border.
@@ -117,7 +127,14 @@ impl SplitLayout {
 
     /// Equalize the root split's ratio based on same-direction chain leaf counts.
     fn equalize_root_chain(&mut self) {
-        if let Some(Node::Split { direction, ratio, left, right, .. }) = &mut self.root {
+        if let Some(Node::Split {
+            direction,
+            ratio,
+            left,
+            right,
+            ..
+        }) = &mut self.root
+        {
             let dir = *direction;
             let n_left = left.count_chain_leaves(dir);
             let n_right = right.count_chain_leaves(dir);
@@ -307,7 +324,12 @@ impl SplitLayout {
     /// Move `source` pane to the root level with tree restructuring.
     /// Uses original rects (before removal) to rebuild remaining panes into a
     /// direction-appropriate tree, then inserts source at root.
-    pub fn restructure_move_to_root(&mut self, source: PaneId, zone: DropZone, window_size: Size) -> bool {
+    pub fn restructure_move_to_root(
+        &mut self,
+        source: PaneId,
+        zone: DropZone,
+        window_size: Size,
+    ) -> bool {
         if zone == DropZone::Center {
             return false;
         }
@@ -348,7 +370,13 @@ impl SplitLayout {
     /// Move `source` pane relative to `target` pane with tree restructuring.
     /// Center zone = swap (no restructuring). Directional = rebuild remaining tree
     /// from original rects, then insert source next to target.
-    pub fn restructure_move_pane(&mut self, source: PaneId, target: PaneId, zone: DropZone, window_size: Size) -> bool {
+    pub fn restructure_move_pane(
+        &mut self,
+        source: PaneId,
+        target: PaneId,
+        zone: DropZone,
+        window_size: Size,
+    ) -> bool {
         if source == target {
             return false;
         }
@@ -454,7 +482,10 @@ impl SplitLayout {
         }
 
         let rects = sim.compute(window_size, &[], None);
-        rects.into_iter().find(|(id, _)| *id == source).map(|(_, r)| r)
+        rects
+            .into_iter()
+            .find(|(id, _)| *id == source)
+            .map(|(_, r)| r)
     }
 
     /// Swap the positions of two panes in the layout tree.
@@ -589,8 +620,7 @@ impl SplitLayout {
             Node::Leaf(_) => None,
             Node::LeafGroup(tg) => Some(tg),
             Node::Split { left, right, .. } => {
-                Self::first_tab_group_in_node(left)
-                    .or_else(|| Self::first_tab_group_in_node(right))
+                Self::first_tab_group_in_node(left).or_else(|| Self::first_tab_group_in_node(right))
             }
         }
     }
@@ -607,7 +637,13 @@ impl SplitLayout {
     /// Split a node and create a new LeafGroup in the new position.
     /// Used for Dock splits where new panes should be TabGroups.
     /// `insert_first`: if true, the new pane goes left/top; if false, right/bottom.
-    pub fn split_with_leaf_group(&mut self, target: PaneId, new_pane: PaneId, direction: SplitDirection, insert_first: bool) -> bool {
+    pub fn split_with_leaf_group(
+        &mut self,
+        target: PaneId,
+        new_pane: PaneId,
+        direction: SplitDirection,
+        insert_first: bool,
+    ) -> bool {
         if let Some(ref mut root) = self.root {
             root.split_pane_as_group(target, new_pane, direction, insert_first)
         } else {
@@ -678,7 +714,12 @@ impl SplitLayout {
                 tabs: tg.tabs.clone(),
                 active: tg.active,
             },
-            Node::Split { direction, ratio, left, right } => LayoutSnapshot::Split {
+            Node::Split {
+                direction,
+                ratio,
+                left,
+                right,
+            } => LayoutSnapshot::Split {
                 direction: *direction,
                 ratio: *ratio,
                 left: Box::new(Self::node_to_snapshot(left)),
@@ -706,16 +747,23 @@ impl SplitLayout {
         match snap {
             LayoutSnapshot::Leaf { tabs, active } => {
                 // Backward compatibility: use the active tab from old multi-tab snapshots
-                let id = tabs.get(*active).or_else(|| tabs.first()).copied().unwrap_or(0);
+                let id = tabs
+                    .get(*active)
+                    .or_else(|| tabs.first())
+                    .copied()
+                    .unwrap_or(0);
                 Node::Leaf(id)
             }
-            LayoutSnapshot::LeafGroup { tabs, active } => {
-                Node::LeafGroup(TabGroup {
-                    tabs: tabs.clone(),
-                    active: *active,
-                })
-            }
-            LayoutSnapshot::Split { direction, ratio, left, right } => Node::Split {
+            LayoutSnapshot::LeafGroup { tabs, active } => Node::LeafGroup(TabGroup {
+                tabs: tabs.clone(),
+                active: *active,
+            }),
+            LayoutSnapshot::Split {
+                direction,
+                ratio,
+                left,
+                right,
+            } => Node::Split {
                 direction: *direction,
                 ratio: *ratio,
                 left: Box::new(Self::snapshot_to_node(left)),
@@ -763,27 +811,36 @@ impl LayoutEngine for SplitLayout {
             Some(ref p) => p.clone(),
             None => {
                 // Deferred border selection: use drag direction to disambiguate at T-junctions
-                if let (Some(start), Some(ref root), Some(ws)) = (self.drag_start, &self.root, self.last_window_size) {
+                if let (Some(start), Some(ref root), Some(ws)) =
+                    (self.drag_start, &self.root, self.last_window_size)
+                {
                     let window_rect = Rect::new(0.0, 0.0, ws.width, ws.height);
 
                     // Determine preferred direction from drag delta
                     let dx = (position.x - start.x).abs();
                     let dy = (position.y - start.y).abs();
-                    let preferred = if dx >= DRAG_INTENT_THRESHOLD_PX || dy >= DRAG_INTENT_THRESHOLD_PX {
-                        if dx >= dy {
-                            Some(SplitDirection::Horizontal) // horizontal movement → want H split border
+                    let preferred =
+                        if dx >= DRAG_INTENT_THRESHOLD_PX || dy >= DRAG_INTENT_THRESHOLD_PX {
+                            if dx >= dy {
+                                Some(SplitDirection::Horizontal) // horizontal movement → want H split border
+                            } else {
+                                Some(SplitDirection::Vertical) // vertical movement → want V split border
+                            }
                         } else {
-                            Some(SplitDirection::Vertical) // vertical movement → want V split border
-                        }
-                    } else {
-                        None // too little movement, no preference yet
-                    };
+                            None // too little movement, no preference yet
+                        };
 
                     let mut best: Option<(f32, Vec<bool>)> = None;
                     let mut path = Vec::new();
                     // Use the start position for border proximity — it's where the user clicked
                     // (at the T-junction). The current position may have moved far away.
-                    root.find_border_at_preferred(window_rect, start, &mut best, &mut path, preferred);
+                    root.find_border_at_preferred(
+                        window_rect,
+                        start,
+                        &mut best,
+                        &mut path,
+                        preferred,
+                    );
 
                     if let Some((_dist, border_path)) = best {
                         self.active_drag = Some(border_path.clone());

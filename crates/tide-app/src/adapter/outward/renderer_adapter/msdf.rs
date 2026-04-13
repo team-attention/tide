@@ -18,8 +18,7 @@ impl FontData {
     }
 
     pub fn face(&self) -> ttf_parser::Face<'_> {
-        ttf_parser::Face::parse(&self.data, self.face_index)
-            .expect("failed to parse font face")
+        ttf_parser::Face::parse(&self.data, self.face_index).expect("failed to parse font face")
     }
 }
 
@@ -45,7 +44,14 @@ impl MsdfFontStore {
 
     /// Register a font directly from raw data.
     /// Used to ensure MSDF uses the exact same font face that cosmic-text resolved.
-    pub fn register_font(&mut self, family: &str, bold: bool, italic: bool, data: Vec<u8>, face_index: u32) {
+    pub fn register_font(
+        &mut self,
+        family: &str,
+        bold: bool,
+        italic: bool,
+        data: Vec<u8>,
+        face_index: u32,
+    ) {
         let key = FontKey {
             family: family.to_string(),
             bold,
@@ -88,16 +94,29 @@ impl MsdfFontStore {
         }
 
         let db = font_system.db();
-        let weight = if bold { fontdb::Weight::BOLD } else { fontdb::Weight::NORMAL };
-        let style = if italic { fontdb::Style::Italic } else { fontdb::Style::Normal };
+        let weight = if bold {
+            fontdb::Weight::BOLD
+        } else {
+            fontdb::Weight::NORMAL
+        };
+        let style = if italic {
+            fontdb::Style::Italic
+        } else {
+            fontdb::Style::Normal
+        };
 
         let face_id = if family == "Monospace" {
             // fontdb::Family::Monospace requires set_monospace_family() which
             // cosmic-text doesn't configure.  Try well-known monospace fonts
             // in preference order to match cosmic-text's resolution.
             const MONOSPACE_CANDIDATES: &[&str] = &[
-                "Menlo", "SF Mono", "Monaco", "DejaVu Sans Mono",
-                "Liberation Mono", "Courier New", "Courier",
+                "Menlo",
+                "SF Mono",
+                "Monaco",
+                "DejaVu Sans Mono",
+                "Liberation Mono",
+                "Courier New",
+                "Courier",
             ];
             let mut found = None;
             for candidate in MONOSPACE_CANDIDATES {
@@ -200,7 +219,10 @@ fn generate_msdf_glyph(face: &ttf_parser::Face<'_>, character: char) -> Option<M
         Some(b) => b,
         None => {
             if character.is_ascii_graphic() {
-                log::warn!("MSDF: no bounding box for '{character}' glyph_id={:?}", glyph_id);
+                log::warn!(
+                    "MSDF: no bounding box for '{character}' glyph_id={:?}",
+                    glyph_id
+                );
             }
             return None;
         }
@@ -220,7 +242,10 @@ fn generate_msdf_glyph(face: &ttf_parser::Face<'_>, character: char) -> Option<M
         Some(s) => s,
         None => {
             if character.is_ascii_graphic() {
-                log::warn!("MSDF: load_shape_from_face returned None for '{character}' glyph_id={:?}", glyph_id);
+                log::warn!(
+                    "MSDF: load_shape_from_face returned None for '{character}' glyph_id={:?}",
+                    glyph_id
+                );
             }
             return None;
         }

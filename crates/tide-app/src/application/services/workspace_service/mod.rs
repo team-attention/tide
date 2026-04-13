@@ -1,6 +1,6 @@
 // Workspace, focus, navigation, and config page management.
 
-use crate::tide_core::{PaneId};
+use crate::tide_core::PaneId;
 use crate::tide_input::AreaSlot;
 
 use crate::pane::PaneKind;
@@ -42,7 +42,10 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         // Stage pane: update stage_focused
         self.focus.focus_area = FocusArea::Stage;
         let prev_stage = self.focus.stage_focused;
-        if matches!(self.panes.get(&id), Some(PaneKind::Terminal(_)) | Some(PaneKind::Launcher(_))) {
+        if matches!(
+            self.panes.get(&id),
+            Some(PaneKind::Terminal(_)) | Some(PaneKind::Launcher(_))
+        ) {
             self.focus.stage_focused = Some(id);
         }
         if self.focus.focused == Some(id) && prev_stage == self.focus.stage_focused {
@@ -90,7 +93,12 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
             FocusArea::FileTree => {
                 if self.focus.focus_area == FocusArea::FileTree {
                     self.ft.visible = false;
-                    if self.focus.focused.map(|f| self.is_pane_in_dock(f)).unwrap_or(false) {
+                    if self
+                        .focus
+                        .focused
+                        .map(|f| self.is_pane_in_dock(f))
+                        .unwrap_or(false)
+                    {
                         self.focus.focus_area = FocusArea::Dock;
                     } else {
                         self.focus.focus_area = FocusArea::Stage;
@@ -127,7 +135,12 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         if self.ft.visible {
             self.ft.visible = false;
             if self.focus.focus_area == FocusArea::FileTree {
-                if self.focus.focused.map(|f| self.is_pane_in_dock(f)).unwrap_or(false) {
+                if self
+                    .focus
+                    .focused
+                    .map(|f| self.is_pane_in_dock(f))
+                    .unwrap_or(false)
+                {
                     self.focus.focus_area = FocusArea::Dock;
                 } else {
                     self.focus.focus_area = FocusArea::Stage;
@@ -178,10 +191,13 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                 if self.focus.zoomed_pane.is_some() {
                     let dir = match direction {
                         crate::tide_input::Direction::Left | crate::tide_input::Direction::Up => -1,
-                        crate::tide_input::Direction::Right | crate::tide_input::Direction::Down => 1,
+                        crate::tide_input::Direction::Right
+                        | crate::tide_input::Direction::Down => 1,
                     };
                     let ids = self.layout.all_tabs_flat();
-                    if ids.len() < 2 { return; }
+                    if ids.len() < 2 {
+                        return;
+                    }
                     let current = self.focus.focused.unwrap_or(0);
                     if let Some(pos) = ids.iter().position(|&id| id == current) {
                         let next_pos = if dir > 0 {
@@ -203,7 +219,8 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                 if self.dock.dock_zoomed {
                     let dir = match direction {
                         crate::tide_input::Direction::Left | crate::tide_input::Direction::Up => -1,
-                        crate::tide_input::Direction::Right | crate::tide_input::Direction::Down => 1,
+                        crate::tide_input::Direction::Right
+                        | crate::tide_input::Direction::Down => 1,
                     };
                     let tid = match self.focus.stage_focused {
                         Some(id) => id,
@@ -213,11 +230,27 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                     if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
                         pane_ids.extend(tp.dock_layout.all_tabs_flat());
                     }
-                    if pane_ids.len() < 2 { return; }
+                    if pane_ids.len() < 2 {
+                        return;
+                    }
                     // Use dock_focused (not self.focus.focused which may be a Stage pane)
-                    let current = self.panes.get(&tid)
-                        .and_then(|pk| if let PaneKind::Terminal(tp) = pk { tp.dock_focused } else { None })
-                        .or_else(|| self.dock.pinned_dock_layout.all_tabs_flat().into_iter().next())
+                    let current = self
+                        .panes
+                        .get(&tid)
+                        .and_then(|pk| {
+                            if let PaneKind::Terminal(tp) = pk {
+                                tp.dock_focused
+                            } else {
+                                None
+                            }
+                        })
+                        .or_else(|| {
+                            self.dock
+                                .pinned_dock_layout
+                                .all_tabs_flat()
+                                .into_iter()
+                                .next()
+                        })
                         .unwrap_or(0);
                     if let Some(pos) = pane_ids.iter().position(|&id| id == current) {
                         let next_pos = if dir > 0 {
@@ -247,11 +280,15 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                 // Collect dock pane rects from pane_rects (exclude stage panes)
                 let stage_ids: std::collections::HashSet<PaneId> =
                     self.layout.pane_ids().into_iter().collect();
-                let dock_rects: Vec<(PaneId, crate::tide_core::Rect)> = self.pane_rects.iter()
+                let dock_rects: Vec<(PaneId, crate::tide_core::Rect)> = self
+                    .pane_rects
+                    .iter()
                     .filter(|(id, _)| !stage_ids.contains(id))
                     .copied()
                     .collect();
-                if dock_rects.len() < 2 { return; }
+                if dock_rects.len() < 2 {
+                    return;
+                }
 
                 let current_rect = match dock_rects.iter().find(|(id, _)| *id == current_id) {
                     Some((_, r)) => *r,
@@ -262,7 +299,9 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
 
                 let mut best: Option<(PaneId, f32)> = None;
                 for &(id, rect) in &dock_rects {
-                    if id == current_id { continue; }
+                    if id == current_id {
+                        continue;
+                    }
                     let ox = rect.x + rect.width / 2.0;
                     let oy = rect.y + rect.height / 2.0;
                     let dx = ox - cx;
@@ -271,27 +310,33 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                     let (valid, overlaps, dist) = match direction {
                         crate::tide_input::Direction::Left => (
                             dx < -1.0,
-                            rect.y < current_rect.y + current_rect.height && rect.y + rect.height > current_rect.y,
+                            rect.y < current_rect.y + current_rect.height
+                                && rect.y + rect.height > current_rect.y,
                             dx.abs(),
                         ),
                         crate::tide_input::Direction::Right => (
                             dx > 1.0,
-                            rect.y < current_rect.y + current_rect.height && rect.y + rect.height > current_rect.y,
+                            rect.y < current_rect.y + current_rect.height
+                                && rect.y + rect.height > current_rect.y,
                             dx.abs(),
                         ),
                         crate::tide_input::Direction::Up => (
                             dy < -1.0,
-                            rect.x < current_rect.x + current_rect.width && rect.x + rect.width > current_rect.x,
+                            rect.x < current_rect.x + current_rect.width
+                                && rect.x + rect.width > current_rect.x,
                             dy.abs(),
                         ),
                         crate::tide_input::Direction::Down => (
                             dy > 1.0,
-                            rect.x < current_rect.x + current_rect.width && rect.x + rect.width > current_rect.x,
+                            rect.x < current_rect.x + current_rect.width
+                                && rect.x + rect.width > current_rect.x,
                             dy.abs(),
                         ),
                     };
 
-                    if !valid { continue; }
+                    if !valid {
+                        continue;
+                    }
                     let score = if overlaps { dist } else { dist + 100000.0 };
                     if best.is_none_or(|(_, d)| score < d) {
                         best = Some((id, score));
@@ -361,7 +406,9 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                     Some(tg) => tg.clone(),
                     None => return, // bare Leaf, no tabs to cycle
                 };
-                if tg.tabs.len() <= 1 { return; }
+                if tg.tabs.len() <= 1 {
+                    return;
+                }
                 let pos = tg.tabs.iter().position(|&id| id == current).unwrap_or(0);
                 let next_pos = if direction > 0 {
                     (pos + 1) % tg.tabs.len()
@@ -384,10 +431,14 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                     _ => Vec::new(),
                 };
                 pane_ids.extend(terminal_tabs);
-                if pane_ids.len() <= 1 { return; }
+                if pane_ids.len() <= 1 {
+                    return;
+                }
 
                 let current = self.focus.focused.filter(|id| pane_ids.contains(id));
-                let pos = current.and_then(|c| pane_ids.iter().position(|&id| id == c)).unwrap_or(0);
+                let pos = current
+                    .and_then(|c| pane_ids.iter().position(|&id| id == c))
+                    .unwrap_or(0);
                 let next_pos = if direction > 0 {
                     (pos + 1) % pane_ids.len()
                 } else {
@@ -423,7 +474,9 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
             None => return,
         };
         let pane_ids = self.layout.pane_ids();
-        if pane_ids.len() < 2 { return; }
+        if pane_ids.len() < 2 {
+            return;
+        }
         let idx = match pane_ids.iter().position(|&id| id == current_id) {
             Some(i) => i,
             None => return,
@@ -499,7 +552,11 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
                     .collect();
-                if files.is_empty() { None } else { Some(files) }
+                if files.is_empty() {
+                    None
+                } else {
+                    Some(files)
+                }
             };
 
             self.ports.persistence.save_settings(&self.settings);
@@ -635,22 +692,35 @@ impl App {
                     })
                     .unwrap_or(crate::tide_input::Hotkey::new(
                         crate::tide_core::Key::Char('?'),
-                        false, false, false, false,
+                        false,
+                        false,
+                        false,
+                        false,
                     ));
                 (action, hotkey)
             })
             .collect();
 
-        let worktree_pattern = self.settings.worktree.base_dir_pattern
+        let worktree_pattern = self
+            .settings
+            .worktree
+            .base_dir_pattern
             .clone()
             .unwrap_or_default();
 
-        let copy_files = self.settings.worktree.copy_files
+        let copy_files = self
+            .settings
+            .worktree
+            .copy_files
             .as_ref()
             .map(|v| v.join(", "))
             .unwrap_or_default();
 
-        self.modal.config_page = Some(crate::ConfigPageState::new(bindings, worktree_pattern, copy_files));
+        self.modal.config_page = Some(crate::ConfigPageState::new(
+            bindings,
+            worktree_pattern,
+            copy_files,
+        ));
         self.cache.invalidate_chrome();
     }
 }

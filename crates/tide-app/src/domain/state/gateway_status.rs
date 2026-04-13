@@ -42,7 +42,7 @@ pub(crate) struct AgentInfo {
 /// path_pattern is matched against proc_pidpath (full executable path).
 /// proc_name_pattern is matched against proc_name (may be version number for Node.js apps).
 const KNOWN_AGENTS: &[(&str, &str, &str)] = &[
-    ("claude", "claude", "Claude Code"),    // path: .../claude/... or proc_name: claude
+    ("claude", "claude", "Claude Code"), // path: .../claude/... or proc_name: claude
     ("codex", "codex", "Codex"),
     ("gemini", "gemini", "Gemini"),
     ("aider", "aider", "Aider"),
@@ -123,8 +123,8 @@ impl GatewayStatus {
         let msg = serde_json::to_string(&notification).unwrap_or_default();
 
         self.subscribers.retain(|sub| {
-            let matches = sub.event_filter.is_empty()
-                || sub.event_filter.iter().any(|f| f == event_type);
+            let matches =
+                sub.event_filter.is_empty() || sub.event_filter.iter().any(|f| f == event_type);
             if matches {
                 sub.tx.send(msg.clone()).is_ok()
             } else {
@@ -151,8 +151,8 @@ impl GatewayStatus {
             if sub.owner_pane_id != Some(owner_pane_id) {
                 return true;
             }
-            let matches = sub.event_filter.is_empty()
-                || sub.event_filter.iter().any(|f| f == event_type);
+            let matches =
+                sub.event_filter.is_empty() || sub.event_filter.iter().any(|f| f == event_type);
             if matches {
                 sub.tx.send(msg.clone()).is_ok()
             } else {
@@ -164,7 +164,9 @@ impl GatewayStatus {
     /// Sync connected PIDs from the background socket thread.
     /// Returns true if the set changed.
     pub fn sync_connected_pids(&mut self) -> bool {
-        let Some(ref shared) = self.connected_clients_shared else { return false };
+        let Some(ref shared) = self.connected_clients_shared else {
+            return false;
+        };
         let new_pids = shared.snapshot();
         let new_count = new_pids.len();
         if new_pids != self.connected_pids {
@@ -205,11 +207,18 @@ pub(crate) fn is_agent_connected(agent_pid: u32, connected_pids: &HashSet<u32>) 
 #[cfg(target_os = "macos")]
 fn is_descendant_of(pid: u32, ancestor_pid: u32) -> bool {
     let mut current = pid;
-    for _ in 0..10 { // max depth to prevent infinite loops
-        if current <= 1 { return false; }
+    for _ in 0..10 {
+        // max depth to prevent infinite loops
+        if current <= 1 {
+            return false;
+        }
         let ppid = get_ppid(current);
-        if ppid == 0 { return false; }
-        if ppid == ancestor_pid { return true; }
+        if ppid == 0 {
+            return false;
+        }
+        if ppid == ancestor_pid {
+            return true;
+        }
         current = ppid;
     }
     false
@@ -226,12 +235,12 @@ fn get_ppid(pid: u32) -> u32 {
     // proc_bsdinfo struct — pbi_ppid at offset 16, total size 136 bytes.
     #[repr(C)]
     struct ProcBsdInfo {
-        pbi_flags: u32,     // offset 0
-        pbi_status: u32,    // offset 4
-        pbi_xstatus: u32,   // offset 8
-        pbi_pid: u32,       // offset 12
-        pbi_ppid: u32,      // offset 16
-        _pad: [u8; 116],    // pad to 136 bytes total (5*4 + 116 = 136)
+        pbi_flags: u32,   // offset 0
+        pbi_status: u32,  // offset 4
+        pbi_xstatus: u32, // offset 8
+        pbi_pid: u32,     // offset 12
+        pbi_ppid: u32,    // offset 16
+        _pad: [u8; 116],  // pad to 136 bytes total (5*4 + 116 = 136)
     }
 
     let mut info: ProcBsdInfo = unsafe { std::mem::zeroed() };
@@ -246,7 +255,11 @@ fn get_ppid(pid: u32) -> u32 {
             size,
         )
     };
-    if ret > 0 { info.pbi_ppid } else { 0 }
+    if ret > 0 {
+        info.pbi_ppid
+    } else {
+        0
+    }
 }
 
 /// Detect agent processes in the child process tree of a given shell PID.
@@ -259,7 +272,9 @@ pub(crate) fn detect_agent(shell_pid: u32) -> Option<AgentInfo> {
 
 #[cfg(target_os = "macos")]
 fn detect_agent_recursive(parent_pid: u32, depth: u32) -> Option<AgentInfo> {
-    if depth > 5 { return None; } // prevent infinite recursion
+    if depth > 5 {
+        return None;
+    } // prevent infinite recursion
 
     let children = find_children_via_allpids(parent_pid);
     for child_pid in children {
@@ -314,7 +329,9 @@ pub(crate) fn detect_agent(_shell_pid: u32) -> Option<AgentInfo> {
 fn find_children_via_allpids(parent_pid: u32) -> Vec<i32> {
     // Get all PIDs
     let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
-    if count <= 0 { return Vec::new(); }
+    if count <= 0 {
+        return Vec::new();
+    }
     let mut all_pids = vec![0i32; count as usize];
     let result = unsafe {
         libc::proc_listallpids(
@@ -322,14 +339,18 @@ fn find_children_via_allpids(parent_pid: u32) -> Vec<i32> {
             (all_pids.len() * std::mem::size_of::<i32>()) as i32,
         )
     };
-    if result <= 0 { return Vec::new(); }
+    if result <= 0 {
+        return Vec::new();
+    }
     let n = result as usize / std::mem::size_of::<i32>();
     all_pids.truncate(n);
 
     // Filter by PPID
     let mut children = Vec::new();
     for &pid in &all_pids {
-        if pid <= 0 { continue; }
+        if pid <= 0 {
+            continue;
+        }
         let ppid = get_ppid(pid as u32);
         if ppid == parent_pid {
             children.push(pid);
@@ -342,10 +363,11 @@ fn find_children_via_allpids(parent_pid: u32) -> Vec<i32> {
 #[cfg(target_os = "macos")]
 fn proc_pidpath(pid: i32) -> Option<String> {
     let mut buf = [0u8; 4096]; // PROC_PIDPATHINFO_MAXSIZE
-    let ret = unsafe {
-        libc::proc_pidpath(pid, buf.as_mut_ptr() as *mut libc::c_void, buf.len() as u32)
-    };
-    if ret <= 0 { return None; }
+    let ret =
+        unsafe { libc::proc_pidpath(pid, buf.as_mut_ptr() as *mut libc::c_void, buf.len() as u32) };
+    if ret <= 0 {
+        return None;
+    }
     std::ffi::CStr::from_bytes_until_nul(&buf)
         .ok()
         .and_then(|s| s.to_str().ok())
@@ -355,9 +377,12 @@ fn proc_pidpath(pid: i32) -> Option<String> {
 #[cfg(target_os = "macos")]
 fn proc_name(pid: i32) -> Option<String> {
     let mut buf = [0u8; 1024];
-    let result = unsafe {
-        libc::proc_name(pid, buf.as_mut_ptr() as *mut libc::c_void, buf.len() as u32)
-    };
-    if result <= 0 { return None; }
-    std::str::from_utf8(&buf[..result as usize]).ok().map(|s| s.to_string())
+    let result =
+        unsafe { libc::proc_name(pid, buf.as_mut_ptr() as *mut libc::c_void, buf.len() as u32) };
+    if result <= 0 {
+        return None;
+    }
+    std::str::from_utf8(&buf[..result as usize])
+        .ok()
+        .map(|s| s.to_string())
 }

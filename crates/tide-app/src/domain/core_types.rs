@@ -14,7 +14,12 @@ pub struct Rect {
 
 impl Rect {
     pub fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
-        Self { x, y, width, height }
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
     pub fn contains(&self, point: Vec2) -> bool {
@@ -87,7 +92,10 @@ impl Color {
 
     /// Return a copy with alpha scaled by `factor` (clamped to 0..=1).
     pub fn with_alpha_factor(self, factor: f32) -> Self {
-        Self { a: self.a * factor.clamp(0.0, 1.0), ..self }
+        Self {
+            a: self.a * factor.clamp(0.0, 1.0),
+            ..self
+        }
     }
 
     pub const BLACK: Self = Self::new(0.0, 0.0, 0.0, 1.0);

@@ -1,8 +1,6 @@
 // GPU renderer implementation
 // Implements crate::tide_core::Renderer using wgpu + MSDF font rendering
 
-pub(crate) mod port_impl;
-pub(crate) mod render_thread;
 mod atlas;
 mod chrome;
 mod font;
@@ -10,15 +8,17 @@ mod grid;
 mod init;
 mod msdf;
 mod overlay;
+pub(crate) mod port_impl;
+pub(crate) mod render_thread;
 mod shaders;
 mod vertex;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use crate::tide_core::{Color, Rect, Renderer, Size, TextStyle, Vec2};
 use cosmic_text::FontSystem;
 use unicode_width::UnicodeWidthChar;
-use crate::tide_core::{Color, Rect, Renderer, Size, TextStyle, Vec2};
 
 use atlas::GlyphAtlas;
 use grid::PaneGridCache;
@@ -330,7 +330,6 @@ impl WgpuRenderer {
         &self.cell_size_table
     }
 
-
     /// Update the scale factor used for logical-to-physical coordinate conversion.
     pub fn set_scale_factor(&mut self, scale: f32) {
         if (scale - self.scale_factor).abs() > 0.001 {
@@ -372,12 +371,26 @@ impl WgpuRenderer {
         self.top_rounded_rect_vertices.push(vert(qx + qw, qy));
         self.top_rounded_rect_vertices.push(vert(qx + qw, qy + qh));
         self.top_rounded_rect_vertices.push(vert(qx, qy + qh));
-        self.top_rounded_rect_indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        self.top_rounded_rect_indices.extend_from_slice(&[
+            base,
+            base + 1,
+            base + 2,
+            base,
+            base + 2,
+            base + 3,
+        ]);
     }
 
     /// Draw a shadow in the top layer (SDF-based blur, same as `draw_chrome_shadow` but
     /// writes to `top_rounded_rect_vertices`).
-    pub fn draw_top_shadow(&mut self, rect: Rect, color: Color, radius: f32, blur: f32, spread: f32) {
+    pub fn draw_top_shadow(
+        &mut self,
+        rect: Rect,
+        color: Color,
+        radius: f32,
+        blur: f32,
+        spread: f32,
+    ) {
         let s = self.scale_factor;
         let sx = (rect.x - spread) * s;
         let sy = (rect.y - spread) * s;
@@ -409,7 +422,14 @@ impl WgpuRenderer {
         self.top_rounded_rect_vertices.push(vert(qx + qw, qy));
         self.top_rounded_rect_vertices.push(vert(qx + qw, qy + qh));
         self.top_rounded_rect_vertices.push(vert(qx, qy + qh));
-        self.top_rounded_rect_indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        self.top_rounded_rect_indices.extend_from_slice(&[
+            base,
+            base + 1,
+            base + 2,
+            base,
+            base + 2,
+            base + 3,
+        ]);
     }
 
     /// Draw a rect in the top layer (rendered after all text).
@@ -421,10 +441,22 @@ impl WgpuRenderer {
 
         let base = self.top_rect_vertices.len() as u32;
         let c = [color.r, color.g, color.b, color.a];
-        self.top_rect_vertices.push(RectVertex { position: [x, y], color: c });
-        self.top_rect_vertices.push(RectVertex { position: [x + w, y], color: c });
-        self.top_rect_vertices.push(RectVertex { position: [x + w, y + h], color: c });
-        self.top_rect_vertices.push(RectVertex { position: [x, y + h], color: c });
+        self.top_rect_vertices.push(RectVertex {
+            position: [x, y],
+            color: c,
+        });
+        self.top_rect_vertices.push(RectVertex {
+            position: [x + w, y],
+            color: c,
+        });
+        self.top_rect_vertices.push(RectVertex {
+            position: [x + w, y + h],
+            color: c,
+        });
+        self.top_rect_vertices.push(RectVertex {
+            position: [x, y + h],
+            color: c,
+        });
         self.top_rect_indices.push(base);
         self.top_rect_indices.push(base + 1);
         self.top_rect_indices.push(base + 2);
@@ -435,7 +467,14 @@ impl WgpuRenderer {
 
     /// Draw a single glyph in the top layer (rendered after all other layers).
     /// Used for rendering inverse cursor characters on top of the cursor rect.
-    pub fn draw_top_glyph(&mut self, ch: char, position: Vec2, color: Color, bold: bool, italic: bool) {
+    pub fn draw_top_glyph(
+        &mut self,
+        ch: char,
+        position: Vec2,
+        color: Color,
+        bold: bool,
+        italic: bool,
+    ) {
         let scale = self.scale_factor;
         let em_scale = self.em_scale();
         let baseline_y = self.baseline_y(self.cached_cell_size.height * scale);
@@ -457,10 +496,26 @@ impl WgpuRenderer {
 
             let base = self.top_glyph_vertices.len() as u32;
             let c = [color.r, color.g, color.b, color.a];
-            self.top_glyph_vertices.push(GlyphVertex { position: [gx, gy], uv: [region.uv_min[0], region.uv_min[1]], color: c });
-            self.top_glyph_vertices.push(GlyphVertex { position: [gx + gw, gy], uv: [region.uv_max[0], region.uv_min[1]], color: c });
-            self.top_glyph_vertices.push(GlyphVertex { position: [gx + gw, gy + gh], uv: [region.uv_max[0], region.uv_max[1]], color: c });
-            self.top_glyph_vertices.push(GlyphVertex { position: [gx, gy + gh], uv: [region.uv_min[0], region.uv_max[1]], color: c });
+            self.top_glyph_vertices.push(GlyphVertex {
+                position: [gx, gy],
+                uv: [region.uv_min[0], region.uv_min[1]],
+                color: c,
+            });
+            self.top_glyph_vertices.push(GlyphVertex {
+                position: [gx + gw, gy],
+                uv: [region.uv_max[0], region.uv_min[1]],
+                color: c,
+            });
+            self.top_glyph_vertices.push(GlyphVertex {
+                position: [gx + gw, gy + gh],
+                uv: [region.uv_max[0], region.uv_max[1]],
+                color: c,
+            });
+            self.top_glyph_vertices.push(GlyphVertex {
+                position: [gx, gy + gh],
+                uv: [region.uv_min[0], region.uv_max[1]],
+                color: c,
+            });
             self.top_glyph_indices.push(base);
             self.top_glyph_indices.push(base + 1);
             self.top_glyph_indices.push(base + 2);
@@ -499,14 +554,27 @@ impl WgpuRenderer {
                 let qy = start_y;
                 let qw = cell_w * char_cells;
                 let qh = self.cached_cell_size.height * scale;
-                if qx + qw > clip_left && qx < clip_right && qy + qh > clip_top && qy < clip_bottom {
+                if qx + qw > clip_left && qx < clip_right && qy + qh > clip_top && qy < clip_bottom
+                {
                     // Push into top rect arrays
                     let base = self.top_rect_vertices.len() as u32;
                     let c = [bg.r, bg.g, bg.b, bg.a];
-                    self.top_rect_vertices.push(RectVertex { position: [qx, qy], color: c });
-                    self.top_rect_vertices.push(RectVertex { position: [qx + qw, qy], color: c });
-                    self.top_rect_vertices.push(RectVertex { position: [qx + qw, qy + qh], color: c });
-                    self.top_rect_vertices.push(RectVertex { position: [qx, qy + qh], color: c });
+                    self.top_rect_vertices.push(RectVertex {
+                        position: [qx, qy],
+                        color: c,
+                    });
+                    self.top_rect_vertices.push(RectVertex {
+                        position: [qx + qw, qy],
+                        color: c,
+                    });
+                    self.top_rect_vertices.push(RectVertex {
+                        position: [qx + qw, qy + qh],
+                        color: c,
+                    });
+                    self.top_rect_vertices.push(RectVertex {
+                        position: [qx, qy + qh],
+                        color: c,
+                    });
                     self.top_rect_indices.push(base);
                     self.top_rect_indices.push(base + 1);
                     self.top_rect_indices.push(base + 2);
@@ -524,13 +592,35 @@ impl WgpuRenderer {
                 let gw = region.em_width * em_scale;
                 let gh = region.em_height * em_scale;
 
-                if gx + gw > clip_left && gx < clip_right && gy + gh > clip_top && gy < clip_bottom {
+                if gx + gw > clip_left && gx < clip_right && gy + gh > clip_top && gy < clip_bottom
+                {
                     let base = self.top_glyph_vertices.len() as u32;
-                    let c = [style.foreground.r, style.foreground.g, style.foreground.b, style.foreground.a];
-                    self.top_glyph_vertices.push(GlyphVertex { position: [gx, gy], uv: [region.uv_min[0], region.uv_min[1]], color: c });
-                    self.top_glyph_vertices.push(GlyphVertex { position: [gx + gw, gy], uv: [region.uv_max[0], region.uv_min[1]], color: c });
-                    self.top_glyph_vertices.push(GlyphVertex { position: [gx + gw, gy + gh], uv: [region.uv_max[0], region.uv_max[1]], color: c });
-                    self.top_glyph_vertices.push(GlyphVertex { position: [gx, gy + gh], uv: [region.uv_min[0], region.uv_max[1]], color: c });
+                    let c = [
+                        style.foreground.r,
+                        style.foreground.g,
+                        style.foreground.b,
+                        style.foreground.a,
+                    ];
+                    self.top_glyph_vertices.push(GlyphVertex {
+                        position: [gx, gy],
+                        uv: [region.uv_min[0], region.uv_min[1]],
+                        color: c,
+                    });
+                    self.top_glyph_vertices.push(GlyphVertex {
+                        position: [gx + gw, gy],
+                        uv: [region.uv_max[0], region.uv_min[1]],
+                        color: c,
+                    });
+                    self.top_glyph_vertices.push(GlyphVertex {
+                        position: [gx + gw, gy + gh],
+                        uv: [region.uv_max[0], region.uv_max[1]],
+                        color: c,
+                    });
+                    self.top_glyph_vertices.push(GlyphVertex {
+                        position: [gx, gy + gh],
+                        uv: [region.uv_min[0], region.uv_max[1]],
+                        color: c,
+                    });
                     self.top_glyph_indices.push(base);
                     self.top_glyph_indices.push(base + 1);
                     self.top_glyph_indices.push(base + 2);

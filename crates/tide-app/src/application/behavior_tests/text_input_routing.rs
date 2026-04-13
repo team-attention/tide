@@ -1,16 +1,16 @@
 // Spec: docs/specs/input-routing.md — UC-2: RouteTextInput
-use std::cell::RefCell;
-use std::rc::Rc;
 use crate::adapter::inward::text_routing_adapter::{self, TextInputTarget};
 use crate::application::ports::outward::clipboard_port::ClipboardPort;
 use crate::pane::browser::BrowserPane;
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::*;
-use crate::ClipboardSearchPort;
 use crate::tide_core::Rect;
 use crate::App;
+use crate::ClipboardSearchPort;
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 fn test_app() -> App {
     let mut app = App::new();

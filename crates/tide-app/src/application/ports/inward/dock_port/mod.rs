@@ -28,7 +28,12 @@ pub(crate) trait DockPort {
 
     // ── Dock layout manipulation (for handle_drop) ──
     fn pinned_layout_remove(&mut self, id: PaneId);
-    fn dock_layout_insert_at_root(&mut self, terminal_id: PaneId, source: PaneId, zone: crate::tide_core::DropZone);
+    fn dock_layout_insert_at_root(
+        &mut self,
+        terminal_id: PaneId,
+        source: PaneId,
+        zone: crate::tide_core::DropZone,
+    );
     fn dock_layout_set_focused(&mut self, terminal_id: PaneId, pane_id: PaneId);
     fn dock_layout_set_active_tab(&mut self, terminal_id: PaneId, pane_id: PaneId);
     fn dock_layout_remove(&mut self, terminal_id: PaneId, pane_id: PaneId);
@@ -36,13 +41,27 @@ pub(crate) trait DockPort {
     fn dock_layout_insert_leaf_group(&mut self, terminal_id: PaneId, pane_id: PaneId);
     fn dock_layout_all_pane_ids_empty(&self, terminal_id: PaneId) -> bool;
     fn dock_layout_add_tab(&mut self, terminal_id: PaneId, target: PaneId, source: PaneId) -> bool;
-    fn dock_layout_split_with_leaf_group(&mut self, terminal_id: PaneId, target: PaneId, source: PaneId, direction: SplitDirection, insert_first: bool);
-    fn dock_layout_tab_group_sibling(&self, terminal_id: PaneId, pane_id: PaneId) -> Option<PaneId>;
+    fn dock_layout_split_with_leaf_group(
+        &mut self,
+        terminal_id: PaneId,
+        target: PaneId,
+        source: PaneId,
+        direction: SplitDirection,
+        insert_first: bool,
+    );
+    fn dock_layout_tab_group_sibling(&self, terminal_id: PaneId, pane_id: PaneId)
+        -> Option<PaneId>;
     fn dock_tab_group_contains_multiple(&self, pane_id: PaneId) -> bool;
     fn pinned_layout_set_active_tab(&mut self, pane_id: PaneId);
     fn pinned_layout_add_tab_to_first_group(&mut self, pane_id: PaneId);
     fn pinned_layout_add_tab(&mut self, target: PaneId, source: PaneId) -> bool;
-    fn pinned_layout_split_with_leaf_group(&mut self, target: PaneId, source: PaneId, direction: SplitDirection, insert_first: bool);
+    fn pinned_layout_split_with_leaf_group(
+        &mut self,
+        target: PaneId,
+        source: PaneId,
+        direction: SplitDirection,
+        insert_first: bool,
+    );
     fn pinned_layout_tab_group_sibling(&self, pane_id: PaneId) -> Option<PaneId>;
 
     // ── Dock drag state (mouse_adapter) ──
@@ -55,7 +74,11 @@ pub(crate) trait DockPort {
     fn dock_pinned_ratio(&self) -> f32;
     fn set_dock_pinned_ratio(&mut self, ratio: f32);
     fn set_dock_width(&mut self, w: f32);
-    fn dock_begin_split_drag(&mut self, local_pos: crate::tide_core::Vec2, dock_size: crate::tide_core::Size) -> bool;
+    fn dock_begin_split_drag(
+        &mut self,
+        local_pos: crate::tide_core::Vec2,
+        dock_size: crate::tide_core::Size,
+    ) -> bool;
     fn dock_drag_split_border(&mut self, local_pos: crate::tide_core::Vec2);
     fn dock_end_split_drag(&mut self);
 }

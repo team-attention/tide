@@ -101,11 +101,7 @@ impl WgpuRenderer {
 
     /// Submit batched draw calls to a render pass.
     /// Draws: grid rects → chrome rects → overlay rects → grid glyphs → chrome glyphs → overlay glyphs → top rects → top glyphs
-    pub fn render_frame(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
-    ) {
+    pub fn render_frame(&mut self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
         let vb_usage = wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST;
         let ib_usage = wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST;
 
@@ -126,12 +122,26 @@ impl WgpuRenderer {
             // Full upload: all instances
             if !self.grid_bg_instances.is_empty() {
                 let data = bytemuck::cast_slice(&self.grid_bg_instances);
-                Self::ensure_buffer_capacity(&self.device, &mut self.grid_bg_inst_buf, &mut self.grid_bg_inst_buf_capacity, data.len(), vb_usage, "grid_bg_inst_buf");
+                Self::ensure_buffer_capacity(
+                    &self.device,
+                    &mut self.grid_bg_inst_buf,
+                    &mut self.grid_bg_inst_buf_capacity,
+                    data.len(),
+                    vb_usage,
+                    "grid_bg_inst_buf",
+                );
                 self.queue.write_buffer(&self.grid_bg_inst_buf, 0, data);
             }
             if !self.grid_glyph_instances.is_empty() {
                 let data = bytemuck::cast_slice(&self.grid_glyph_instances);
-                Self::ensure_buffer_capacity(&self.device, &mut self.grid_glyph_inst_buf, &mut self.grid_glyph_inst_buf_capacity, data.len(), vb_usage, "grid_glyph_inst_buf");
+                Self::ensure_buffer_capacity(
+                    &self.device,
+                    &mut self.grid_glyph_inst_buf,
+                    &mut self.grid_glyph_inst_buf_capacity,
+                    data.len(),
+                    vb_usage,
+                    "grid_glyph_inst_buf",
+                );
                 self.queue.write_buffer(&self.grid_glyph_inst_buf, 0, data);
             }
             self.grid_needs_upload = false;
@@ -144,13 +154,21 @@ impl WgpuRenderer {
                     let start = range.bg_inst_start;
                     let end = start + range.bg_inst_count;
                     let data = bytemuck::cast_slice(&self.grid_bg_instances[start..end]);
-                    self.queue.write_buffer(&self.grid_bg_inst_buf, (start * bg_stride) as u64, data);
+                    self.queue.write_buffer(
+                        &self.grid_bg_inst_buf,
+                        (start * bg_stride) as u64,
+                        data,
+                    );
                 }
                 if range.glyph_inst_count > 0 {
                     let start = range.glyph_inst_start;
                     let end = start + range.glyph_inst_count;
                     let data = bytemuck::cast_slice(&self.grid_glyph_instances[start..end]);
-                    self.queue.write_buffer(&self.grid_glyph_inst_buf, (start * glyph_stride) as u64, data);
+                    self.queue.write_buffer(
+                        &self.grid_glyph_inst_buf,
+                        (start * glyph_stride) as u64,
+                        data,
+                    );
                 }
             }
             self.grid_partial_uploads.clear();
@@ -160,18 +178,46 @@ impl WgpuRenderer {
         if self.chrome_needs_upload {
             if !self.chrome_rect_vertices.is_empty() {
                 let vb_bytes = bytemuck::cast_slice(&self.chrome_rect_vertices);
-                Self::ensure_buffer_capacity(&self.device, &mut self.chrome_rect_vb, &mut self.chrome_rect_vb_capacity, vb_bytes.len(), vb_usage, "chrome_rect_vb");
+                Self::ensure_buffer_capacity(
+                    &self.device,
+                    &mut self.chrome_rect_vb,
+                    &mut self.chrome_rect_vb_capacity,
+                    vb_bytes.len(),
+                    vb_usage,
+                    "chrome_rect_vb",
+                );
                 self.queue.write_buffer(&self.chrome_rect_vb, 0, vb_bytes);
                 let ib_bytes = bytemuck::cast_slice(&self.chrome_rect_indices);
-                Self::ensure_buffer_capacity(&self.device, &mut self.chrome_rect_ib, &mut self.chrome_rect_ib_capacity, ib_bytes.len(), ib_usage, "chrome_rect_ib");
+                Self::ensure_buffer_capacity(
+                    &self.device,
+                    &mut self.chrome_rect_ib,
+                    &mut self.chrome_rect_ib_capacity,
+                    ib_bytes.len(),
+                    ib_usage,
+                    "chrome_rect_ib",
+                );
                 self.queue.write_buffer(&self.chrome_rect_ib, 0, ib_bytes);
             }
             if !self.chrome_glyph_vertices.is_empty() {
                 let vb_bytes = bytemuck::cast_slice(&self.chrome_glyph_vertices);
-                Self::ensure_buffer_capacity(&self.device, &mut self.chrome_glyph_vb, &mut self.chrome_glyph_vb_capacity, vb_bytes.len(), vb_usage, "chrome_glyph_vb");
+                Self::ensure_buffer_capacity(
+                    &self.device,
+                    &mut self.chrome_glyph_vb,
+                    &mut self.chrome_glyph_vb_capacity,
+                    vb_bytes.len(),
+                    vb_usage,
+                    "chrome_glyph_vb",
+                );
                 self.queue.write_buffer(&self.chrome_glyph_vb, 0, vb_bytes);
                 let ib_bytes = bytemuck::cast_slice(&self.chrome_glyph_indices);
-                Self::ensure_buffer_capacity(&self.device, &mut self.chrome_glyph_ib, &mut self.chrome_glyph_ib_capacity, ib_bytes.len(), ib_usage, "chrome_glyph_ib");
+                Self::ensure_buffer_capacity(
+                    &self.device,
+                    &mut self.chrome_glyph_ib,
+                    &mut self.chrome_glyph_ib_capacity,
+                    ib_bytes.len(),
+                    ib_usage,
+                    "chrome_glyph_ib",
+                );
                 self.queue.write_buffer(&self.chrome_glyph_ib, 0, ib_bytes);
             }
             self.chrome_needs_upload = false;
@@ -183,19 +229,47 @@ impl WgpuRenderer {
 
         if has_overlay_rects {
             let vb_bytes = bytemuck::cast_slice(&self.rect_vertices);
-            Self::ensure_buffer_capacity(&self.device, &mut self.rect_vb, &mut self.rect_vb_capacity, vb_bytes.len(), vb_usage, "rect_vb");
+            Self::ensure_buffer_capacity(
+                &self.device,
+                &mut self.rect_vb,
+                &mut self.rect_vb_capacity,
+                vb_bytes.len(),
+                vb_usage,
+                "rect_vb",
+            );
             self.queue.write_buffer(&self.rect_vb, 0, vb_bytes);
             let ib_bytes = bytemuck::cast_slice(&self.rect_indices);
-            Self::ensure_buffer_capacity(&self.device, &mut self.rect_ib, &mut self.rect_ib_capacity, ib_bytes.len(), ib_usage, "rect_ib");
+            Self::ensure_buffer_capacity(
+                &self.device,
+                &mut self.rect_ib,
+                &mut self.rect_ib_capacity,
+                ib_bytes.len(),
+                ib_usage,
+                "rect_ib",
+            );
             self.queue.write_buffer(&self.rect_ib, 0, ib_bytes);
         }
 
         if has_overlay_glyphs {
             let vb_bytes = bytemuck::cast_slice(&self.glyph_vertices);
-            Self::ensure_buffer_capacity(&self.device, &mut self.glyph_vb, &mut self.glyph_vb_capacity, vb_bytes.len(), vb_usage, "glyph_vb");
+            Self::ensure_buffer_capacity(
+                &self.device,
+                &mut self.glyph_vb,
+                &mut self.glyph_vb_capacity,
+                vb_bytes.len(),
+                vb_usage,
+                "glyph_vb",
+            );
             self.queue.write_buffer(&self.glyph_vb, 0, vb_bytes);
             let ib_bytes = bytemuck::cast_slice(&self.glyph_indices);
-            Self::ensure_buffer_capacity(&self.device, &mut self.glyph_ib, &mut self.glyph_ib_capacity, ib_bytes.len(), ib_usage, "glyph_ib");
+            Self::ensure_buffer_capacity(
+                &self.device,
+                &mut self.glyph_ib,
+                &mut self.glyph_ib_capacity,
+                ib_bytes.len(),
+                ib_usage,
+                "glyph_ib",
+            );
             self.queue.write_buffer(&self.glyph_ib, 0, ib_bytes);
         }
 
@@ -206,28 +280,72 @@ impl WgpuRenderer {
 
         if has_top_rects {
             let vb_bytes = bytemuck::cast_slice(&self.top_rect_vertices);
-            Self::ensure_buffer_capacity(&self.device, &mut self.top_rect_vb, &mut self.top_rect_vb_capacity, vb_bytes.len(), vb_usage, "top_rect_vb");
+            Self::ensure_buffer_capacity(
+                &self.device,
+                &mut self.top_rect_vb,
+                &mut self.top_rect_vb_capacity,
+                vb_bytes.len(),
+                vb_usage,
+                "top_rect_vb",
+            );
             self.queue.write_buffer(&self.top_rect_vb, 0, vb_bytes);
             let ib_bytes = bytemuck::cast_slice(&self.top_rect_indices);
-            Self::ensure_buffer_capacity(&self.device, &mut self.top_rect_ib, &mut self.top_rect_ib_capacity, ib_bytes.len(), ib_usage, "top_rect_ib");
+            Self::ensure_buffer_capacity(
+                &self.device,
+                &mut self.top_rect_ib,
+                &mut self.top_rect_ib_capacity,
+                ib_bytes.len(),
+                ib_usage,
+                "top_rect_ib",
+            );
             self.queue.write_buffer(&self.top_rect_ib, 0, ib_bytes);
         }
 
         if has_top_rounded_rects {
             let vb_bytes = bytemuck::cast_slice(&self.top_rounded_rect_vertices);
-            Self::ensure_buffer_capacity(&self.device, &mut self.top_rounded_rect_vb, &mut self.top_rounded_rect_vb_capacity, vb_bytes.len(), vb_usage, "top_rounded_rect_vb");
-            self.queue.write_buffer(&self.top_rounded_rect_vb, 0, vb_bytes);
+            Self::ensure_buffer_capacity(
+                &self.device,
+                &mut self.top_rounded_rect_vb,
+                &mut self.top_rounded_rect_vb_capacity,
+                vb_bytes.len(),
+                vb_usage,
+                "top_rounded_rect_vb",
+            );
+            self.queue
+                .write_buffer(&self.top_rounded_rect_vb, 0, vb_bytes);
             let ib_bytes = bytemuck::cast_slice(&self.top_rounded_rect_indices);
-            Self::ensure_buffer_capacity(&self.device, &mut self.top_rounded_rect_ib, &mut self.top_rounded_rect_ib_capacity, ib_bytes.len(), ib_usage, "top_rounded_rect_ib");
-            self.queue.write_buffer(&self.top_rounded_rect_ib, 0, ib_bytes);
+            Self::ensure_buffer_capacity(
+                &self.device,
+                &mut self.top_rounded_rect_ib,
+                &mut self.top_rounded_rect_ib_capacity,
+                ib_bytes.len(),
+                ib_usage,
+                "top_rounded_rect_ib",
+            );
+            self.queue
+                .write_buffer(&self.top_rounded_rect_ib, 0, ib_bytes);
         }
 
         if has_top_glyphs {
             let vb_bytes = bytemuck::cast_slice(&self.top_glyph_vertices);
-            Self::ensure_buffer_capacity(&self.device, &mut self.top_glyph_vb, &mut self.top_glyph_vb_capacity, vb_bytes.len(), vb_usage, "top_glyph_vb");
+            Self::ensure_buffer_capacity(
+                &self.device,
+                &mut self.top_glyph_vb,
+                &mut self.top_glyph_vb_capacity,
+                vb_bytes.len(),
+                vb_usage,
+                "top_glyph_vb",
+            );
             self.queue.write_buffer(&self.top_glyph_vb, 0, vb_bytes);
             let ib_bytes = bytemuck::cast_slice(&self.top_glyph_indices);
-            Self::ensure_buffer_capacity(&self.device, &mut self.top_glyph_ib, &mut self.top_glyph_ib_capacity, ib_bytes.len(), ib_usage, "top_glyph_ib");
+            Self::ensure_buffer_capacity(
+                &self.device,
+                &mut self.top_glyph_ib,
+                &mut self.top_glyph_ib_capacity,
+                ib_bytes.len(),
+                ib_usage,
+                "top_glyph_ib",
+            );
             self.queue.write_buffer(&self.top_glyph_ib, 0, ib_bytes);
         }
 
@@ -328,7 +446,10 @@ impl WgpuRenderer {
                 pass.set_pipeline(&self.chrome_rounded_pipeline);
                 pass.set_bind_group(0, &self.uniform_bind_group, &[]);
                 pass.set_vertex_buffer(0, self.top_rounded_rect_vb.slice(..));
-                pass.set_index_buffer(self.top_rounded_rect_ib.slice(..), wgpu::IndexFormat::Uint32);
+                pass.set_index_buffer(
+                    self.top_rounded_rect_ib.slice(..),
+                    wgpu::IndexFormat::Uint32,
+                );
                 pass.draw_indexed(0..top_rounded_rect_count, 0, 0..1);
             }
             // Then flat rects (borders, highlights, etc.)

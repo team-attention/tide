@@ -1,7 +1,5 @@
-use cosmic_text::{
-    Attrs, Buffer as CosmicBuffer, Family, FontSystem, Metrics, Shaping,
-};
 use crate::tide_core::Size;
+use cosmic_text::{Attrs, Buffer as CosmicBuffer, Family, FontSystem, Metrics, Shaping};
 
 use super::atlas::{AtlasRegion, GlyphCacheKey};
 use super::WgpuRenderer;
@@ -29,13 +27,8 @@ mod coretext_fallback {
         let cf_text = CFString::new(&text);
         let range = CFRange::init(0, text.encode_utf16().count() as isize);
 
-        let fallback_ref = unsafe {
-            CTFontCreateForString(
-                base.as_CFTypeRef(),
-                cf_text.as_CFTypeRef(),
-                range,
-            )
-        };
+        let fallback_ref =
+            unsafe { CTFontCreateForString(base.as_CFTypeRef(), cf_text.as_CFTypeRef(), range) };
         if fallback_ref.is_null() {
             return None;
         }
@@ -58,7 +51,11 @@ const FONT_SIZE_MIN: u32 = 8;
 const FONT_SIZE_MAX: u32 = 32;
 
 impl WgpuRenderer {
-    pub(crate) fn compute_cell_size(font_system: &mut FontSystem, scale_factor: f32, base_font_size: f32) -> Size {
+    pub(crate) fn compute_cell_size(
+        font_system: &mut FontSystem,
+        scale_factor: f32,
+        base_font_size: f32,
+    ) -> Size {
         let font_size = base_font_size * scale_factor;
         let line_height = (font_size * 1.2).ceil();
         let metrics = Metrics::new(font_size, line_height);
@@ -86,7 +83,10 @@ impl WgpuRenderer {
 
     /// Precompute cell sizes for every integer font size (8..=32) so that
     /// set_font_size() can do a table lookup instead of font shaping.
-    pub(crate) fn precompute_cell_sizes(font_system: &mut FontSystem, scale_factor: f32) -> Vec<Size> {
+    pub(crate) fn precompute_cell_sizes(
+        font_system: &mut FontSystem,
+        scale_factor: f32,
+    ) -> Vec<Size> {
         (FONT_SIZE_MIN..=FONT_SIZE_MAX)
             .map(|s| Self::compute_cell_size(font_system, scale_factor, s as f32))
             .collect()
@@ -161,7 +161,12 @@ impl WgpuRenderer {
     /// Generate and cache an MSDF glyph, returning its atlas region.
     /// Tries Monospace first, then cosmic-text font fallback (which discovers
     /// Nerd Fonts, CJK fonts, etc.), then macOS CoreText as a final fallback.
-    pub(crate) fn ensure_glyph_cached(&mut self, character: char, bold: bool, italic: bool) -> AtlasRegion {
+    pub(crate) fn ensure_glyph_cached(
+        &mut self,
+        character: char,
+        bold: bool,
+        italic: bool,
+    ) -> AtlasRegion {
         let key = GlyphCacheKey {
             character,
             bold,
@@ -216,8 +221,7 @@ impl WgpuRenderer {
             if let Some(family_name) =
                 coretext_fallback::discover_font_for_char(character, font_size)
             {
-                let region =
-                    self.try_generate_msdf(character, bold, italic, &family_name);
+                let region = self.try_generate_msdf(character, bold, italic, &family_name);
                 if !region.is_empty() {
                     self.atlas.cache.insert(key, region);
                     return region;
@@ -257,8 +261,13 @@ impl WgpuRenderer {
                             font_data = Some((data.to_vec(), index));
                         });
                     if let Some((data, index)) = font_data {
-                        self.msdf_font_store
-                            .register_font(&family_key, fb_bold, fb_italic, data, index);
+                        self.msdf_font_store.register_font(
+                            &family_key,
+                            fb_bold,
+                            fb_italic,
+                            data,
+                            index,
+                        );
                         let region =
                             self.try_generate_msdf(character, fb_bold, fb_italic, &family_key);
                         if !region.is_empty() {
@@ -270,8 +279,11 @@ impl WgpuRenderer {
                 #[cfg(target_os = "macos")]
                 {
                     let font_size = (self.base_font_size * self.scale_factor) as f64;
-                    if let Some(family_name) = coretext_fallback::discover_font_for_char(character, font_size) {
-                        let region = self.try_generate_msdf(character, fb_bold, fb_italic, &family_name);
+                    if let Some(family_name) =
+                        coretext_fallback::discover_font_for_char(character, font_size)
+                    {
+                        let region =
+                            self.try_generate_msdf(character, fb_bold, fb_italic, &family_name);
                         if !region.is_empty() {
                             self.atlas.cache.insert(key, region);
                             return region;
@@ -312,13 +324,18 @@ impl WgpuRenderer {
         };
 
         // Ensure font is loaded
-        let loaded = self.msdf_font_store.load_font(&self.font_system, family, bold, italic);
+        let loaded = self
+            .msdf_font_store
+            .load_font(&self.font_system, family, bold, italic);
         if !loaded {
             return empty;
         }
 
         // Generate MSDF
-        let msdf_glyph = match self.msdf_font_store.generate(family, bold, italic, character) {
+        let msdf_glyph = match self
+            .msdf_font_store
+            .generate(family, bold, italic, character)
+        {
             Some(g) => g,
             None => return empty,
         };

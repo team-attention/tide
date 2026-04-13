@@ -11,7 +11,12 @@ pub(crate) trait ActionPort {
     fn open_context_comment_composer(&mut self, source_pane_id: crate::tide_core::PaneId);
     fn submit_context_comment_composer(&mut self) -> bool;
     fn split_pane(&mut self, direction: SplitDirection, cwd: Option<std::path::PathBuf>);
-    fn split_pane_from(&mut self, source: crate::tide_core::PaneId, direction: SplitDirection, cwd: Option<std::path::PathBuf>) -> Option<crate::tide_core::PaneId>;
+    fn split_pane_from(
+        &mut self,
+        source: crate::tide_core::PaneId,
+        direction: SplitDirection,
+        cwd: Option<std::path::PathBuf>,
+    ) -> Option<crate::tide_core::PaneId>;
     fn cleanup_retained_context(&mut self, closed_pane_id: crate::tide_core::PaneId);
     fn exit_app(&self);
 }

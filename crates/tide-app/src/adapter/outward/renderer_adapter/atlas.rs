@@ -155,10 +155,7 @@ impl GlyphAtlas {
             },
         );
 
-        let uv_min = [
-            x as f32 / ATLAS_SIZE as f32,
-            y as f32 / ATLAS_SIZE as f32,
-        ];
+        let uv_min = [x as f32 / ATLAS_SIZE as f32, y as f32 / ATLAS_SIZE as f32];
         let uv_max = [
             (x + texel_width) as f32 / ATLAS_SIZE as f32,
             (y + texel_height) as f32 / ATLAS_SIZE as f32,

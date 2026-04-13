@@ -1319,10 +1319,19 @@ fn cli_notify(
         .and_then(|v| v.as_u64())
         .ok_or_else(|| CliError::InvalidParams("pane (u64) required".into()))?;
 
-    let status = match event {
-        "agent-running" => AgentStatus::Running,
-        "agent-idle" => AgentStatus::Idle,
-        "agent-needs-input" => AgentStatus::NeedsInput,
+    let (normalized_event, status) = match event {
+        "agent-running" => ("agent-running", AgentStatus::Running),
+        "agent-idle" => ("agent-idle", AgentStatus::Idle),
+        "agent-needs-input" => ("agent-needs-input", AgentStatus::NeedsInput),
+        "codex-turn-complete" => {
+            let status = classify_codex_completed_turn_payload(params.get("payload"));
+            let normalized_event = match status {
+                AgentStatus::Running => "agent-running",
+                AgentStatus::Idle => "agent-idle",
+                AgentStatus::NeedsInput => "agent-needs-input",
+            };
+            (normalized_event, status)
+        }
         _ => return Err(CliError::InvalidParams(format!("unknown event: {event}"))),
     };
 
@@ -1337,7 +1346,11 @@ fn cli_notify(
     let agent_display_name = params
         .get("agent")
         .and_then(|v| v.as_str())
-        .unwrap_or("Agent");
+        .unwrap_or(if event == "codex-turn-complete" {
+            "codex"
+        } else {
+            "Agent"
+        });
     let notification_body = wrapped_agent_notification_snippet_from_payload(
         agent_display_name,
         event,
@@ -1376,7 +1389,7 @@ fn cli_notify(
             "agent-status-changed",
             json!({
                 "pane_id": pane_id,
-                "status": event,
+                "status": normalized_event,
                 "agent": name,
             }),
         );
@@ -1415,6 +1428,71 @@ fn codex_stop_hook_notification_snippet(payload: &Value) -> Option<String> {
             Some("Stop") | None => payload.last_assistant_message,
             _ => None,
         })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct CodexCompletedTurnPayload {
+    #[serde(rename = "type")]
+    payload_type: String,
+    #[serde(default)]
+    input_messages: Vec<String>,
+    last_assistant_message: Option<String>,
+}
+
+const CODEX_NEEDS_INPUT_PHRASES: &[&str] = &[
+    "what would you like me to do next",
+    "what should i do next",
+    "how would you like me to proceed",
+    "please provide",
+    "please answer",
+    "can you clarify",
+    "do you want me to",
+    "would you like me to",
+];
+
+fn classify_codex_completed_turn_payload(
+    payload: Option<&Value>,
+) -> crate::state::gateway_status::AgentStatus {
+    use crate::state::gateway_status::AgentStatus;
+
+    let Some(payload) = payload else {
+        return AgentStatus::Idle;
+    };
+    let Ok(payload) = serde_json::from_value::<CodexCompletedTurnPayload>(payload.clone()) else {
+        return AgentStatus::Idle;
+    };
+    if payload.payload_type != "agent-turn-complete" {
+        return AgentStatus::Idle;
+    }
+
+    let Some(last_message) = payload.last_assistant_message else {
+        return AgentStatus::Idle;
+    };
+    let normalized = last_message.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        return AgentStatus::Idle;
+    }
+
+    if CODEX_NEEDS_INPUT_PHRASES
+        .iter()
+        .any(|phrase| normalized_matches_codex_prompt(&normalized, phrase))
+    {
+        return AgentStatus::NeedsInput;
+    }
+
+    AgentStatus::Idle
+}
+
+fn normalized_matches_codex_prompt(normalized_message: &str, phrase: &str) -> bool {
+    if normalized_message == phrase {
+        return true;
+    }
+
+    normalized_message
+        .strip_prefix(phrase)
+        .and_then(|suffix| suffix.chars().next())
+        .is_some_and(|ch| ch.is_ascii_whitespace() || matches!(ch, ':' | '?' | '!' | ','))
 }
 
 fn translate_key(key: &str) -> Vec<u8> {

@@ -5,6 +5,47 @@ use crate::theme::*;
 use crate::App;
 use crate::PaneLifecyclePort;
 
+pub(crate) fn workspace_item_indicator_status(
+    is_active: bool,
+    has_running: bool,
+    has_alert: bool,
+) -> Option<crate::state::gateway_status::AgentStatus> {
+    use crate::state::gateway_status::AgentStatus;
+
+    if has_alert {
+        if is_active {
+            if has_running {
+                return Some(AgentStatus::Running);
+            }
+            return None;
+        }
+        return Some(AgentStatus::Idle);
+    }
+
+    if has_running {
+        return Some(AgentStatus::Running);
+    }
+
+    None
+}
+
+pub(crate) fn workspace_item_indicator_color(
+    status: crate::state::gateway_status::AgentStatus,
+    blink_time: Option<f64>,
+) -> crate::tide_core::Color {
+    use crate::state::gateway_status::AgentStatus;
+
+    match status {
+        AgentStatus::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
+        AgentStatus::Idle | AgentStatus::NeedsInput => {
+            let opacity = blink_time
+                .map(|t| 0.65 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32)
+                .unwrap_or(1.0);
+            crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity)
+        }
+    }
+}
+
 /// Render the titlebar background, title text, icons, and toggle buttons.
 /// Also renders the workspace sidebar if visible.
 pub(super) fn render_titlebar_and_sidebar(
@@ -13,6 +54,12 @@ pub(super) fn render_titlebar_and_sidebar(
     p: &ThemePalette,
     logical: crate::tide_core::Size,
 ) {
+    let blink_time = crate::adapter::outward::view::wrapped_agent_blink_time(
+        app.ports.clock.now(),
+        app.timing.wrapped_agent_blink_at,
+        app.has_any_stage_wrapped_agent_alert(),
+    );
+
     // Draw titlebar background, border, and title (macOS transparent titlebar)
     if app.window.top_inset > 0.0 {
         let tb = Rect::new(0.0, 0.0, logical.width, app.window.top_inset);
@@ -383,6 +430,11 @@ pub(super) fn render_titlebar_and_sidebar(
         for i in 0..app.ws.workspaces.len() {
             let is_active = i == app.ws.active;
             let ws_name = app.ws.workspaces[i].name.clone();
+            let (has_running, has_alert) = app.workspace_stage_agent_flags(i);
+            let indicator_status =
+                workspace_item_indicator_status(is_active, has_running, has_alert);
+            let indicator_color =
+                indicator_status.map(|status| workspace_item_indicator_color(status, blink_time));
 
             let item_rect = geo.item_rect(i);
 
@@ -403,9 +455,11 @@ pub(super) fn render_titlebar_and_sidebar(
                     accent,
                 );
             } else {
-                // Hover highlight (matches file_tree.rs row radius)
-                if matches!(app.interaction.hover_target, Some(HoverTarget::WorkspaceSidebarItem(idx)) if idx == i)
-                {
+                if matches!(
+                    app.interaction.hover_target,
+                    Some(HoverTarget::WorkspaceSidebarItem(idx)) if idx == i
+                ) {
+                    // Hover highlight (matches file_tree.rs row radius)
                     renderer.draw_chrome_rounded_rect(item_rect, p.badge_bg, FILE_TREE_ROW_RADIUS);
                 }
             }
@@ -495,33 +549,23 @@ pub(super) fn render_titlebar_and_sidebar(
                 }
             }
 
-            // UC-6: Agent notification dot for inactive workspaces
-            if !is_active {
-                let has_notification = app
-                    .ws
-                    .workspace_extras
-                    .get(i)
-                    .map_or(false, |e| e.has_agent_notification);
-                if has_notification {
-                    let dot_size = 6.0_f32;
-                    let dot_x = item_rect.x + item_rect.width - WS_SIDEBAR_ITEM_PAD_H - dot_size;
-                    let dot_y = item_rect.y + (item_rect.height - dot_size) / 2.0;
-                    // UC-6 BR-4: Blink with same frequency as tab dot (~4.2 rad/s)
-                    let opacity = {
-                        let t = app.timing.last_frame.elapsed().as_secs_f64();
-                        0.65 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32
-                    };
-                    let orange = crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity);
-                    renderer.draw_chrome_rounded_rect(
-                        Rect::new(dot_x, dot_y, dot_size, dot_size),
-                        orange,
-                        dot_size / 2.0,
-                    );
-                    // Glow effect for sidebar dot
-                    let glow = crate::tide_core::Color::new(0.95, 0.65, 0.2, 0.3 * opacity);
+            if let Some(color) = indicator_color {
+                let dot_size = 8.0_f32;
+                let dot_x = item_rect.x + item_rect.width - WS_SIDEBAR_ITEM_PAD_H - dot_size;
+                let dot_y = item_rect.y + (item_rect.height - dot_size) / 2.0;
+                renderer.draw_chrome_rounded_rect(
+                    Rect::new(dot_x, dot_y, dot_size, dot_size),
+                    color,
+                    dot_size / 2.0,
+                );
+                if matches!(
+                    indicator_status,
+                    Some(crate::state::gateway_status::AgentStatus::Idle)
+                        | Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+                ) {
                     renderer.draw_chrome_rounded_rect(
                         Rect::new(dot_x - 2.0, dot_y - 2.0, dot_size + 4.0, dot_size + 4.0),
-                        glow,
+                        crate::tide_core::Color::new(color.r, color.g, color.b, color.a * 0.3),
                         (dot_size + 4.0) / 2.0,
                     );
                 }

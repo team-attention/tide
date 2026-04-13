@@ -19,7 +19,7 @@ pub fn run_notify(args: &[String]) -> i32 {
             eprintln!(
                 "Usage: tide notify <event> --pane <id> [--agent <name>] [--payload-stdin] [payload-json]"
             );
-            eprintln!("Events: agent-running, agent-idle, agent-needs-input");
+            eprintln!("Events: agent-running, agent-idle, agent-needs-input, codex-turn-complete");
             return 0; // silent exit — don't break agent hooks
         }
     };
@@ -57,7 +57,10 @@ pub fn run_notify(args: &[String]) -> i32 {
     if let Ok(pane_str) = std::env::var("TIDE_PANE") {
         if let Ok(pane_id) = pane_str.parse::<u64>() {
             if let Some(obj) = params.as_object_mut() {
-                obj.insert("_caller_pane".to_string(), serde_json::Value::Number(pane_id.into()));
+                obj.insert(
+                    "_caller_pane".to_string(),
+                    serde_json::Value::Number(pane_id.into()),
+                );
             }
         }
     }
@@ -70,7 +73,11 @@ pub fn run_notify(args: &[String]) -> i32 {
     });
 
     // Fire-and-forget: send the request and exit without waiting for response.
-    let _ = writeln!(stream, "{}", serde_json::to_string(&request).unwrap_or_default());
+    let _ = writeln!(
+        stream,
+        "{}",
+        serde_json::to_string(&request).unwrap_or_default()
+    );
     0
 }
 

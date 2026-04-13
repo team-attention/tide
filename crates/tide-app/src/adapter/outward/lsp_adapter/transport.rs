@@ -12,7 +12,10 @@ pub fn send_request(stdin: &mut ChildStdin, request: &JsonRpcRequest) -> std::io
 }
 
 /// Write a JSON-RPC notification to the LSP server's stdin.
-pub fn send_notification(stdin: &mut ChildStdin, notif: &JsonRpcNotification) -> std::io::Result<()> {
+pub fn send_notification(
+    stdin: &mut ChildStdin,
+    notif: &JsonRpcNotification,
+) -> std::io::Result<()> {
     let body = serde_json::to_string(notif)?;
     write_message(stdin, &body)
 }
@@ -38,7 +41,10 @@ pub fn read_message(reader: &mut BufReader<ChildStdout>) -> std::io::Result<Json
         }
         if let Some(len_str) = trimmed.strip_prefix("Content-Length: ") {
             content_length = len_str.trim().parse().map_err(|e| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, format!("bad Content-Length: {}", e))
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("bad Content-Length: {}", e),
+                )
             })?;
         }
     }
@@ -54,11 +60,17 @@ pub fn read_message(reader: &mut BufReader<ChildStdout>) -> std::io::Result<Json
     let mut body = vec![0u8; content_length];
     reader.read_exact(&mut body)?;
     let body_str = String::from_utf8(body).map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, format!("invalid UTF-8: {}", e))
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("invalid UTF-8: {}", e),
+        )
     })?;
 
     serde_json::from_str(&body_str).map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, format!("invalid JSON: {}", e))
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("invalid JSON: {}", e),
+        )
     })
 }
 

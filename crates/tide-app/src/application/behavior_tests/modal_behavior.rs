@@ -1,9 +1,9 @@
 // Spec: docs/specs/modal.md
-use crate::AppCorePort;
 use crate::pane::PaneKind;
 use crate::state::*;
 use crate::tide_core::Rect;
 use crate::App;
+use crate::AppCorePort;
 use std::path::PathBuf;
 
 fn test_app() -> App {
@@ -272,13 +272,8 @@ fn shift_enter_in_context_comment_composer_inserts_newline() {
     // Spec: docs/specs/agent-coworking-context.md
     // UC-3 BR-23: The Context Comment Composer accepts multiline comment text from Shift+Enter while keeping plain Enter as submit.
     let (mut app, _id) = app_with_editor();
-    let mut composer = ContextCommentComposerState::new(
-        1,
-        1,
-        "editor".to_string(),
-        None,
-        "selection".to_string(),
-    );
+    let mut composer =
+        ContextCommentComposerState::new(1, 1, "editor".to_string(), None, "selection".to_string());
     composer.comment = InputLine::with_text("alpha".to_string());
     app.modal.context_comment_composer = Some(composer);
 
@@ -316,10 +311,8 @@ fn context_comment_composer_keeps_caret_visible_when_comment_wraps() {
         "",
     );
 
-    let (input_rect, _line_h) = crate::adapter::outward::view::overlays::composer_input_rect(
-        logical,
-        cell_size,
-    );
+    let (input_rect, _line_h) =
+        crate::adapter::outward::view::overlays::composer_input_rect(logical, cell_size);
 
     assert!(
         cursor_rect.x >= input_rect.x

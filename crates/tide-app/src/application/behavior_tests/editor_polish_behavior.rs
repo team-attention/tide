@@ -43,9 +43,8 @@ fn active_markdown_pane_shows_explicit_mode_badge() {
     let badges = active_tab_badges(&panes, &1, true, false);
 
     assert!(
-        badges
-            .iter()
-            .any(|badge| badge.text == "live" && badge.action == Some(HeaderHitAction::ToggleLivePreview)),
+        badges.iter().any(|badge| badge.text == "live"
+            && badge.action == Some(HeaderHitAction::ToggleLivePreview)),
         "focused Markdown panes should surface an explicit mode badge"
     );
 }
