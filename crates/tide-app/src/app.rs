@@ -1225,17 +1225,15 @@ impl crate::application::ports::inward::GatewayPort for App {
             return;
         }
 
-        // Idle is projection-only. Clear any cached snippet so it cannot be reused
-        // by a later NeedsInput transition without a fresh payload.
-        if matches!(status, AgentStatus::Idle) {
-            self.agent_notification_snippets.remove(&pane_id);
-            self.cache.needs_redraw = true;
-            return;
-        }
-
-        let notification_snippet = notification_snippet
-            .or_else(|| self.agent_notification_snippets.get(&pane_id).cloned())
-            .or_else(|| self.visible_wrapped_agent_notification_snippet(pane_id));
+        let notification_snippet = match status {
+            AgentStatus::NeedsInput => notification_snippet
+                .or_else(|| self.visible_wrapped_agent_notification_snippet(pane_id))
+                .or_else(|| self.agent_notification_snippets.get(&pane_id).cloned()),
+            AgentStatus::Idle => notification_snippet
+                .or_else(|| self.agent_notification_snippets.get(&pane_id).cloned())
+                .or_else(|| self.visible_wrapped_agent_notification_snippet(pane_id)),
+            AgentStatus::Running => unreachable!(),
+        };
 
         if let Some(snippet) = notification_snippet.as_ref() {
             self.agent_notification_snippets
@@ -1258,8 +1256,9 @@ impl crate::application::ports::inward::GatewayPort for App {
         // is not the current UI focus, or whenever the Tide window is blurred.
         if !self.notified_panes.contains(&pane_id) {
             let body = notification_snippet.unwrap_or_else(|| match status {
+                AgentStatus::Idle => format!("{} finished", agent_name),
                 AgentStatus::NeedsInput => format!("{} needs your input", agent_name),
-                _ => unreachable!(),
+                AgentStatus::Running => unreachable!(),
             });
             self.pending_platform_commands.push(
                 crate::tide_platform::WindowCommand::SendSystemNotification {

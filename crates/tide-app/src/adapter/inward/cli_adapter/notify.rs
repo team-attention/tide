@@ -66,6 +66,16 @@ pub fn run_notify(args: &[String]) -> i32 {
             }
         }
     }
+    if let Ok(instance_pid_str) = std::env::var("TIDE_INSTANCE_PID") {
+        if let Ok(instance_pid) = instance_pid_str.parse::<u32>() {
+            if let Some(obj) = params.as_object_mut() {
+                obj.insert(
+                    "tide_instance_pid".to_string(),
+                    serde_json::Value::Number(instance_pid.into()),
+                );
+            }
+        }
+    }
 
     let request = serde_json::json!({
         "jsonrpc": "2.0",
@@ -149,17 +159,13 @@ fn read_payload_from_stdin() -> Option<serde_json::Value> {
     serde_json::from_str(trimmed).ok()
 }
 
-/// Find the socket path to connect to.
-/// Priority: $TIDE_SOCKET → $TMPDIR/tide-latest.sock
+/// Find the owning Agent Gateway socket path for wrapper-hook delivery.
+/// Wrapper hooks must use the explicit Tide socket from the owning PTY.
 fn find_socket_path() -> Option<String> {
     if let Ok(path) = std::env::var("TIDE_SOCKET") {
         if std::path::Path::new(&path).exists() {
             return Some(path);
         }
-    }
-    let latest = std::env::temp_dir().join("tide-latest.sock");
-    if latest.exists() {
-        return Some(latest.to_string_lossy().into_owned());
     }
     None
 }

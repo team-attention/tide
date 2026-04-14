@@ -820,6 +820,10 @@ impl Terminal {
         if let Some(id) = pane_id {
             env.insert(String::from("TIDE_PANE"), id.to_string());
         }
+        env.insert(
+            String::from("TIDE_INSTANCE_PID"),
+            std::process::id().to_string(),
+        );
         if let Ok(guard) = ACTIVE_WORKSPACE_NAME.lock() {
             if let Some(ref name) = *guard {
                 env.insert(String::from("TIDE_WORKSPACE"), name.clone());

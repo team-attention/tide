@@ -6,28 +6,33 @@
 
 - The bundled `Info.plist` omits `LSRequiresCarbon`, and `scripts/build-app.sh` strips the obsolete key before signing the local `Tide.app` bundle.
 - The checked-in `codex` wrapper already uses a temporary `CODEX_HOME` overlay, emits `agent-attached` on launch, enables the documented `UserPromptSubmit` hook, forwards the official completed-turn payload through Codex `notify`, and emits `agent-detached` on `EXIT`.
-- Shared wrapped-agent routing already treats `Running` as visible-only, keeps `Idle` as projection-only for notification delivery, and routes alerts only for unresolved `NeedsInput`.
+- The wrapper-hook `notify` client still accepts any gateway socket that receives the request, because wrapped-agent lifecycle payloads do not carry the owning `Tide Instance` identity. A stale or misrouted hook can therefore deliver wrapper-managed notifications into the wrong `Tide Instance` when another instance has the same `PaneId`.
+- Shared wrapped-agent routing already treats `Running` as visible-only, routes background macOS notifications for unresolved `Idle` and `NeedsInput`, and reserves `RequestUserAttention` for unresolved `NeedsInput`.
 - Focusing a wrapped-agent source `Pane` clears notification suppression without clearing `NeedsInput`, while a later `Running` signal does not acknowledge the unresolved alert on its own.
 - macOS system notifications already encode the owning `Tide Instance` and target `PaneId`, and activation relays to the owning `Tide Instance` before focusing the target `Workspace` and `Pane`.
+- The non-owning Tide notification-relay path only terminates an unrevealed launcher window today, so an already revealed non-owning Tide Window can stay frontmost after a successful relay and steal focus from the owning `Tide Instance`.
 - This release-integration spec and its behavior tests still expect the older Codex `Stop` hook contract and a `Running`-clears-suppression rule, so they no longer match the merged code.
 
 ### To-Be
 
-- The local `Tide.app` bundle path omits `LSRequiresCarbon`, and the local bundle build script strips it before signing.
+- The local `Tide.app` bundle path omits `LSRequiresCarbon`, and the local bundle build script strips it before signing while keeping the bundle multi-instance capable.
 - The `codex` wrapper injects the documented `UserPromptSubmit` hook through a temporary `CODEX_HOME` overlay, forwards completed turns through the official Codex `notify` command, and keeps `agent-attached`/`agent-detached` as the wrapper-owned presence signals.
-- `Idle` and `NeedsInput` may still render unresolved attention chrome until the user acknowledges the source `Pane`, but only `NeedsInput` is allowed to route a macOS notification.
+- Wrapper-managed hook notifications require the owning `TIDE_SOCKET`, and the payload carries the owning `Tide Instance` PID. A gateway must ignore wrapper-managed lifecycle notifications whose owning `Tide Instance` PID does not match the current process.
+- `Idle` and `NeedsInput` may still render unresolved attention chrome until the user acknowledges the source `Pane`, and both may route a macOS notification when the source `Pane` is backgrounded.
+- Only `NeedsInput` is allowed to request user attention.
 - Focusing an `Idle` wrapped-agent `Pane` acknowledges the completion notification and returns the source `Pane` to connected-idle chrome.
 - Focusing a `NeedsInput` wrapped-agent `Pane` clears notification suppression without clearing the `NeedsInput` lifecycle state.
 - A new `Running` signal does not acknowledge unresolved wrapped-agent attention by itself.
 - macOS system notifications encode the owning `Tide Instance` and target `PaneId`, and notification activation relays to the owning `Tide Instance` before revealing the correct Tide Window.
+- A non-owning Tide process that successfully relays notification activation must not leave its own Tide Window frontmost; revealed non-owning windows hide themselves, and unrevealed relay launches terminate.
 
 ### Approach
 
-1. Add glossary terms for `Tide Instance` and `Notification Activation Relay`.
+1. Add glossary terms for `Tide Instance`, `Notification Activation Relay`, and `Tide Window`.
 2. Keep behavior tests that pin bundle launch compatibility, Codex wrapper wiring, wrapped-agent attention semantics, and notification activation relay.
 3. Port the minimum code needed on top of `team-attention/tide` `main`:
    1. bundle metadata + local build script
-   2. Codex `CODEX_HOME` overlay + `UserPromptSubmit` hook + completed-turn notify
+   2. Codex `CODEX_HOME` overlay + `UserPromptSubmit` hook + completed-turn notify + owning-instance wrapper hook delivery
    3. wrapped-agent attention routing + acknowledgment semantics
    4. macOS notification target encoding + activation relay
 4. Align the release-integration spec and behavior tests with the merged wrapper and routing contract.
@@ -51,13 +56,17 @@
 - **Trigger**: Building a local `Tide.app`
 - **Precondition**: The repo is on a release branch
 - **Flow**:
-  1. The source `Info.plist` omits obsolete bundle keys that break the native AppKit launch path
-  2. The local build script reuses the bundled `Tide.app`, strips obsolete keys, and re-signs the bundle
-- **Postcondition**: The local `Tide.app` launches as a native multi-instance bundle
+  1. The source `Info.plist` omits obsolete bundle keys that break the native AppKit launch path and does not prohibit multiple Tide windows
+  2. The local build script reuses the bundled `Tide.app`, strips obsolete keys, keeps the bundle multi-instance capable, and re-signs the bundle
+  3. The macOS launch path creates a Tide Window instead of reusing another Tide Instance during ordinary launch
+- **Postcondition**: The local `Tide.app` can launch another Tide Window while still allowing notification activation to target the owning Tide Instance
 - **Business Rules**:
   - BR-1: The source Tide `Info.plist` must omit `LSRequiresCarbon`
   - BR-2: The local bundle build script must strip `LSRequiresCarbon` before signing
   - BR-3: `MacosApp::run` must defer app activation until explicit window reveal
+  - BR-16: The source Tide `Info.plist` must not declare `LSMultipleInstancesProhibited`
+  - BR-17: The local Tide.app build script must not stamp `LSMultipleInstancesProhibited` and must re-sign with the stable Tide bundle identifier
+  - BR-18: `MacosApp::run` must not reuse an existing Tide Instance during ordinary launch
 
 ### UC-2: ReportCodexLifecycleFromPromptSubmitAndCompletedTurnNotify
 
@@ -74,6 +83,8 @@
   - BR-4: The wrapper must not mutate the user’s real `CODEX_HOME`
   - BR-5: The wrapper must install `UserPromptSubmit` and the official completed-turn `notify` wiring
   - BR-6: The notify client must accept payload JSON from stdin
+  - BR-7: Wrapper-hook `notify` must require the owning `TIDE_SOCKET`
+  - BR-8: Wrapper-hook `notify` must forward the owning `Tide Instance` PID, and a mismatched gateway must ignore the wrapped-agent lifecycle notification
 
 ### UC-3: PreserveWrappedAgentAttentionUntilAcknowledged
 
@@ -109,6 +120,7 @@
   - BR-13: Notification activation must queue Tide Window reveal for the owning `Tide Instance`
   - BR-14: `MacosWindow::new` must keep the Tide Window hidden until `show_window()`
   - BR-15: `show_window()` must own `makeKeyAndOrderFront` plus app activation
+  - BR-19: A non-owning Tide process that successfully relays notification activation must not leave a non-owning Tide Window frontmost
 
 ## Invariants
 
@@ -124,9 +136,16 @@
 | UC-1 | BR-1 | `source_tide_info_plist_omits_lsrequirescarbon` |
 | UC-1 | BR-2 | `local_bundle_build_script_strips_lsrequirescarbon_before_signing` |
 | UC-1 | BR-3 | `macos_launch_path_defers_activation_until_window_reveal` |
+| UC-1 | BR-16 | `source_tide_info_plist_does_not_prohibit_multiple_instances` |
+| UC-1 | BR-17 | `local_bundle_build_script_does_not_stamp_lsmultipleinstancesprohibited_before_signing` |
+| UC-1 | BR-18 | `macos_launch_path_does_not_reuse_an_existing_tide_instance_before_creating_a_window` |
 | UC-2 | BR-4 | `codex_wrapper_uses_a_temporary_codex_home_overlay` |
 | UC-2 | BR-5 | `codex_wrapper_installs_user_prompt_submit_hook_and_turn_complete_notify` |
 | UC-2 | BR-6 | `notify_client_accepts_payload_from_stdin` |
+| UC-2 | BR-7 | `notify_client_requires_an_explicit_tide_socket_for_wrapper_hooks` |
+| UC-2 | BR-8 | `terminal_pty_env_exports_the_owning_tide_instance_pid` |
+| UC-2 | BR-8 | `notify_client_forwards_the_owning_tide_instance_pid` |
+| UC-2 | BR-8 | `notify_for_a_different_tide_instance_is_ignored` |
 | UC-3 | BR-7 | `idle_status_is_attention_orange_until_acknowledged_then_connected_blue` |
 | UC-3 | BR-8 | `idle_status_is_attention_orange_until_acknowledged_then_connected_blue` |
 | UC-3 | BR-9 | `needs_input_status_stays_attention_orange_when_focused` |
@@ -136,6 +155,7 @@
 | UC-4 | BR-13 | `activate_notification_target_cli_command_queues_window_reveal` |
 | UC-4 | BR-14 | `macos_window_construction_keeps_window_hidden_until_show_window` |
 | UC-4 | BR-15 | `macos_show_window_orders_front_and_activates_the_app` |
+| UC-4 | BR-19 | `macos_notification_activation_relay_suppresses_non_owning_window_after_successful_relay` |
 
 ## Location
 
@@ -143,9 +163,9 @@
 |--------|------|--------|
 | Bundle metadata | `crates/tide-app/Info.plist`, `scripts/build-app.sh` | Remove obsolete bundle key and restore local build script |
 | Wrapped-agent wrappers | `crates/tide-app/resources/bin/codex` | Install the Codex hook overlay and forward completed turns through the official `notify` command |
-| Notify client | `crates/tide-app/src/adapter/inward/cli_adapter/notify.rs` | Accept `--payload-stdin` |
-| CLI adapter | `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs` | Decode payloads and support activation relay |
+| Notify client | `crates/tide-app/src/adapter/inward/cli_adapter/notify.rs` | Accept `--payload-stdin`, require the owning `TIDE_SOCKET`, and forward the owning `Tide Instance` PID for wrapper-hook delivery |
+| CLI adapter | `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs` | Decode payloads, ignore mismatched wrapped-agent lifecycle deliveries, and support activation relay |
 | App routing | `crates/tide-app/src/app.rs` | Preserve idle/needs-input attention semantics and notification suppression behavior |
 | Workspace navigation | `crates/tide-app/src/application/services/workspace_service/mod.rs` | Focus notification targets in the owning `Workspace` |
 | macOS platform | `crates/tide-app/src/adapter/outward/platform_adapter/macos/{app.rs,window.rs}` | Relay notification activation and defer reveal |
-| Behavior tests | `crates/tide-app/src/application/behavior_tests/wrapped_agent_release_integration.rs` | Coverage for release integration regressions |
+| Behavior tests | `crates/tide-app/src/application/behavior_tests/{wrapped_agent_release_integration.rs,bundle_behavior.rs}` | Coverage for release integration regressions |

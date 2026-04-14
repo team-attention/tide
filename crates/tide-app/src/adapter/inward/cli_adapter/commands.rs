@@ -1319,6 +1319,11 @@ fn cli_notify(
         .and_then(|v| v.as_u64())
         .ok_or_else(|| CliError::InvalidParams("pane (u64) required".into()))?;
 
+    let matches_current_tide_instance = params
+        .get("tide_instance_pid")
+        .and_then(|v| v.as_u64())
+        .map_or(true, |pid| pid == std::process::id() as u64);
+
     let (normalized_event, status) = match event {
         "agent-attached" => ("agent-attached", None),
         "agent-detached" => ("agent-detached", None),
@@ -1336,6 +1341,10 @@ fn cli_notify(
         }
         _ => return Err(CliError::InvalidParams(format!("unknown event: {event}"))),
     };
+
+    if !matches_current_tide_instance {
+        return Ok(json!({"ok": true}));
+    }
 
     // Only process notify for panes that actually exist (in any workspace)
     if !ctx.has_pane_in_any_workspace(pane_id) {
@@ -1403,19 +1412,19 @@ fn cli_notify(
             }),
         );
         if let Some(status) = status {
-            if matches!(status, AgentStatus::NeedsInput) {
-                let notification_snippet = wrapped_agent_notification_snippet_from_payload(
-                    event,
-                    agent_display_name,
-                    params.get("payload"),
-                );
-                ctx.set_agent_notification_snippet(pane_id, notification_snippet.clone());
-                // Route notification based on user context (UC-1)
-                ctx.route_agent_notification(pane_id, status, notification_snippet);
-            } else {
-                ctx.set_agent_notification_snippet(pane_id, None);
-                ctx.route_agent_notification(pane_id, status, None);
-            }
+            let notification_snippet =
+                if matches!(status, AgentStatus::Idle | AgentStatus::NeedsInput) {
+                    wrapped_agent_notification_snippet_from_payload(
+                        event,
+                        agent_display_name,
+                        params.get("payload"),
+                    )
+                } else {
+                    None
+                };
+            ctx.set_agent_notification_snippet(pane_id, notification_snippet.clone());
+            // Route notification based on user context (UC-1)
+            ctx.route_agent_notification(pane_id, status, notification_snippet);
         } else {
             ctx.set_agent_notification_snippet(pane_id, None);
         }

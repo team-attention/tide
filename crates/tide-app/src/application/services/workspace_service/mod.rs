@@ -652,13 +652,8 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
             self.switch_workspace(target_workspace);
         }
 
-        if matches!(
-            self.panes.get(&pane_id),
-            Some(PaneKind::Terminal(_)) | Some(PaneKind::Launcher(_))
-        ) {
-            self.focus_terminal(pane_id);
-        } else if self.panes.contains_key(&pane_id) {
-            self.focus_pane(pane_id);
+        if self.panes.contains_key(&pane_id) {
+            self.focus_pane_for_notification_activation(pane_id);
         }
     }
 
@@ -680,6 +675,68 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
 }
 
 impl App {
+    fn focus_pane_for_notification_activation(&mut self, id: PaneId) {
+        if let Some(prev) = self.focus.focused {
+            if prev != id {
+                if let Some(PaneKind::Browser(bp)) = self.panes.get_mut(&prev) {
+                    bp.url_input_focused = false;
+                    bp.url_selection = None;
+                }
+            }
+        }
+
+        if self.is_pane_in_dock(id) {
+            self.focus.focus_area = FocusArea::Dock;
+            self.focus.focused = Some(id);
+            self.router.set_focused(id);
+            self.interaction.tab_scroll_last_at.remove(&id);
+            self.interaction.tab_scroll_last_direction.remove(&id);
+            self.interaction.tab_manual_scroll.remove(&id);
+            if let Some(tid) = self.terminal_owning(id) {
+                if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                    tp.dock_focused = Some(id);
+                    tp.dock_layout.set_active_tab(id);
+                }
+            }
+            if self.is_pane_pinned(id) {
+                self.dock.pinned_dock_layout.set_active_tab(id);
+            }
+            self.cache.invalidate_chrome();
+            self.sync_browser_webview_frames();
+            return;
+        }
+
+        self.focus.focus_area = FocusArea::Stage;
+        let prev_stage = self.focus.stage_focused;
+        if matches!(
+            self.panes.get(&id),
+            Some(PaneKind::Terminal(_)) | Some(PaneKind::Launcher(_))
+        ) {
+            self.focus.stage_focused = Some(id);
+        }
+        if self.focus.focused == Some(id) && prev_stage == self.focus.stage_focused {
+            return;
+        }
+        if let Some(prev_id) = self.focus.focused {
+            self.dismiss_completion(prev_id);
+        }
+        self.focus.focused = Some(id);
+        self.router.set_focused(id);
+        self.interaction.tab_scroll_last_at.remove(&id);
+        self.interaction.tab_scroll_last_direction.remove(&id);
+        self.interaction.tab_manual_scroll.remove(&id);
+        self.layout.set_active_tab(id);
+        if self.focus.zoomed_pane.is_some() && !self.is_pane_in_dock(id) {
+            self.focus.zoomed_pane = Some(id);
+        }
+        if prev_stage != self.focus.stage_focused {
+            self.swap_dock_state(id);
+        }
+        self.cache.invalidate_chrome();
+        self.update_file_tree_cwd();
+        self.sync_browser_webview_frames();
+    }
+
     fn open_config_page(&mut self) {
         use crate::tide_input::{GlobalAction as GA, KeybindingMap};
 

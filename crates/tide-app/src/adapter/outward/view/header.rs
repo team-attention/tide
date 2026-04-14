@@ -126,7 +126,7 @@ pub(crate) fn reserve_title_before_badges(
 }
 
 pub(crate) fn active_tab_width_cap(available_w: f32) -> f32 {
-    (available_w - TAB_MIN_WIDTH)
+    available_w
         .min(ACTIVE_TAB_SOFT_MAX_WIDTH)
         .max(ACTIVE_TAB_MAX_WIDTH)
 }

@@ -719,6 +719,36 @@ fn active_markdown_live_preview_chrome_keeps_plain_and_comment_badges_visible() 
 }
 
 #[test]
+fn single_pane_markdown_live_preview_header_keeps_plain_and_comment_badges_visible() {
+    // UC-7 BR-19, BR-22: Single-pane headers must not waste the available width budget when runtime cell metrics make the plain badge wider than the live badge.
+    let mut editor = EditorPane::new_empty(1);
+    editor.editor.buffer.file_path = Some(PathBuf::from("a.md"));
+    editor.live_preview = true;
+
+    let mut panes = HashMap::new();
+    panes.insert(1, PaneKind::Editor(editor));
+
+    let cell_w = 9.0_f32;
+    let badges = active_tab_badges(&panes, &1, true, true);
+    let badge_widths: Vec<f32> = badges
+        .iter()
+        .map(|badge| badge.text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0)
+        .collect();
+    let layout = reserve_title_before_badges(
+        6.0 * cell_w,
+        &badge_widths,
+        active_tab_width_cap(240.0) - (TAB_H_PAD * 2.0 + 16.0),
+        TAB_MIN_TITLE_WIDTH,
+        4.0,
+    );
+
+    assert_eq!(layout.visible_badges, 2);
+    assert!(layout.title_w >= TAB_MIN_TITLE_WIDTH);
+    assert_eq!(badges[0].action, Some(HeaderHitAction::ToggleLivePreview));
+    assert_eq!(badges[1].action, Some(HeaderHitAction::AddComment));
+}
+
+#[test]
 fn stacked_stage_active_terminal_tab_keeps_git_status_badges_when_agent_dot_is_present() {
     // UC-7 BR-23: A stacked Stage active Terminal Pane keeps both git badges visible even when a connected-agent status dot shares the same tab-width budget.
     let mut terminal = TerminalPane::with_cwd(7, 80, 24, None, true).unwrap();
@@ -906,4 +936,20 @@ fn terminal_cwd_change_clears_stale_git_badges_before_poll_results_arrive() {
     assert!(context.git_info.is_none());
     assert_eq!(context.worktree_count, 0);
     assert!(context.current_worktree.is_none());
+}
+
+#[test]
+fn git_poller_prefers_the_latest_cwd_request_after_quick_repo_switches() {
+    // UC-7 BR-32: The background git poller must prefer the latest queued cwd refresh request before publishing repo chrome results.
+    let older = vec![PathBuf::from("/tmp/tide-life")];
+    let latest = vec![PathBuf::from("/tmp/tide-minder")];
+    let newest = vec![PathBuf::from("/tmp/tide-timetable")];
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<PathBuf>>();
+    tx.send(latest.clone()).unwrap();
+    tx.send(newest.clone()).unwrap();
+
+    let coalesced =
+        crate::application::services::file_tree_service::latest_git_poll_cwds(&rx, older);
+
+    assert_eq!(coalesced, newest);
 }

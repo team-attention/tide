@@ -218,11 +218,6 @@ impl App {
                 .filter(|agent| agent.wrapper_managed)
                 .and_then(|agent| agent.status),
             _ => None,
-            Some(PaneKind::Editor(_))
-            | Some(PaneKind::Diff(_))
-            | Some(PaneKind::Browser(_))
-            | Some(PaneKind::Launcher(_))
-            | None => None,
         }
     }
 
@@ -1042,9 +1037,7 @@ impl crate::application::ports::inward::ActionPort for App {
                 self.apply_font_size(14.0);
             }
             GlobalAction::NewWindow => {
-                if let Ok(exe) = std::env::current_exe() {
-                    let _ = std::process::Command::new(exe).spawn();
-                }
+                let _ = self.ports.process.launch_new_tide_window();
             }
             GlobalAction::NewFile => {
                 self.new_editor_pane();
