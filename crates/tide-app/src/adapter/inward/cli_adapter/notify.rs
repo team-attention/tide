@@ -1,11 +1,12 @@
-// Agent lifecycle notification client: `tide notify <event> --pane <id> [--agent <name>]`
+// Agent lifecycle notification client:
+// `tide notify <event> --pane <id> [--agent <name>] [--payload-stdin] [payload-json]`
 //
 // Lightweight fire-and-forget process called by agent wrapper hooks.
 // Connects to the Agent Gateway socket, sends a single JSON-RPC "notify"
 // command, and exits immediately. Designed for minimal latency since
 // hooks run synchronously within the agent's lifecycle.
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 
 /// Run the notify client with the given arguments.
@@ -15,7 +16,9 @@ pub fn run_notify(args: &[String]) -> i32 {
     let parsed = match parse_args(args) {
         Some(p) => p,
         None => {
-            eprintln!("Usage: tide notify <event> --pane <id> [--agent <name>]");
+            eprintln!(
+                "Usage: tide notify <event> --pane <id> [--agent <name>] [--payload-stdin] [payload-json]"
+            );
             eprintln!("Events: agent-running, agent-idle, agent-needs-input");
             return 0; // silent exit — don't break agent hooks
         }
@@ -37,6 +40,16 @@ pub fn run_notify(args: &[String]) -> i32 {
     });
     if let Some(agent) = parsed.agent {
         params["agent"] = serde_json::json!(agent);
+    }
+    let payload = parsed.payload.or_else(|| {
+        if parsed.payload_from_stdin {
+            read_payload_from_stdin()
+        } else {
+            None
+        }
+    });
+    if let Some(payload) = payload {
+        params["payload"] = payload;
     }
 
     // Inject _caller_pane from TIDE_PANE env var so the gateway can route
@@ -65,9 +78,11 @@ struct ParsedArgs {
     event: String,
     pane_id: u64,
     agent: Option<String>,
+    payload: Option<serde_json::Value>,
+    payload_from_stdin: bool,
 }
 
-/// Parse `<event> --pane <id> [--agent <name>]` from args.
+/// Parse `<event> --pane <id> [--agent <name>] [--payload-stdin] [payload-json]` from args.
 fn parse_args(args: &[String]) -> Option<ParsedArgs> {
     if args.is_empty() {
         return None;
@@ -76,6 +91,8 @@ fn parse_args(args: &[String]) -> Option<ParsedArgs> {
     let event = args[0].clone();
     let mut pane_id = None;
     let mut agent = None;
+    let mut payload = None;
+    let mut payload_from_stdin = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -88,11 +105,39 @@ fn parse_args(args: &[String]) -> Option<ParsedArgs> {
                 agent = args.get(i + 1).cloned();
                 i += 2;
             }
-            _ => { i += 1; }
+            "--payload-stdin" => {
+                payload_from_stdin = true;
+                i += 1;
+            }
+            _ => {
+                if payload.is_none() {
+                    payload = serde_json::from_str(&args[i]).ok();
+                }
+                i += 1;
+            }
         }
     }
 
-    Some(ParsedArgs { event, pane_id: pane_id?, agent })
+    Some(ParsedArgs {
+        event,
+        pane_id: pane_id?,
+        agent,
+        payload,
+        payload_from_stdin,
+    })
+}
+
+fn read_payload_from_stdin() -> Option<serde_json::Value> {
+    let mut stdin = std::io::stdin();
+    let mut input = String::new();
+    if stdin.read_to_string(&mut input).is_err() {
+        return None;
+    }
+    let input = input.trim();
+    if input.is_empty() {
+        return None;
+    }
+    serde_json::from_str(input).ok()
 }
 
 /// Find the socket path to connect to.

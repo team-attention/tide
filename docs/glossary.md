@@ -102,6 +102,8 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Context Comment Composer** | `ContextCommentComposerState` | A `ModalStack` popup that previews the current captured Pane selection when available, accepts a user comment, and creates a `Context Artifact` for Artifact Delivery. |
 | **Wrapped Agent** | concept | A coding agent process launched through a Tide `Agent Wrapper`. Only a `Wrapped Agent` may drive wrapper-managed attention such as split-`Pane` highlight or inactive-`Workspace` highlight. |
 | **Wrapper-Managed Lifecycle Signal** | concept | A lifecycle update (`Running`, `Idle`, or `NeedsInput`) emitted through a Tide `Agent Wrapper` path, either by wrapper hooks or by wrapper-owned OSC 9 reporting. |
+| **Tide Instance** | concept | A single running Tide process identified by its PID and Agent Gateway socket path. Notification activation relay targets the owning `Tide Instance`, not an arbitrary bundled app launch. |
+| **Notification Activation Relay** | concept | The handoff path that routes a macOS system-notification activation to the owning `Tide Instance`, then focuses the target `Pane` inside the correct `Workspace` without opening an extra Tide Window. |
 
 ## Architecture Concepts
 

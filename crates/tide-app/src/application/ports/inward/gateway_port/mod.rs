@@ -25,5 +25,6 @@ pub(crate) trait GatewayPort {
         &mut self,
         pane_id: u64,
         status: crate::state::gateway_status::AgentStatus,
+        notification_body: Option<String>,
     );
 }

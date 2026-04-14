@@ -209,11 +209,7 @@ impl App {
     ) -> bool {
         use crate::state::gateway_status::AgentStatus;
 
-        let direct_status = self
-            .gateway
-            .detected_agents
-            .get(&pane_id)
-            .and_then(|agent| agent.status);
+        let direct_status = self.pane_agent_attention_status(pane_id);
         if matches!(direct_status, Some(AgentStatus::NeedsInput)) {
             return true;
         }
@@ -230,6 +226,34 @@ impl App {
             .and_then(|terminal_id| self.gateway.detected_agents.get(&terminal_id))
             .and_then(|agent| agent.status)
             .is_some_and(|status| matches!(status, AgentStatus::NeedsInput))
+    }
+
+    pub(crate) fn pane_agent_attention_status(
+        &self,
+        pane_id: crate::tide_core::PaneId,
+    ) -> Option<crate::state::gateway_status::AgentStatus> {
+        match self.panes.get(&pane_id) {
+            Some(PaneKind::Terminal(_)) => self
+                .gateway
+                .detected_agents
+                .get(&pane_id)
+                .filter(|agent| agent.wrapper_managed)
+                .and_then(|agent| agent.status),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn pane_has_unresolved_wrapped_agent_attention(
+        &self,
+        pane_id: crate::tide_core::PaneId,
+    ) -> bool {
+        use crate::state::gateway_status::AgentStatus;
+
+        match self.pane_agent_attention_status(pane_id) {
+            Some(AgentStatus::NeedsInput) => true,
+            Some(AgentStatus::Idle) => self.notified_panes.contains(&pane_id),
+            _ => false,
+        }
     }
 
     fn insert_context_artifact(

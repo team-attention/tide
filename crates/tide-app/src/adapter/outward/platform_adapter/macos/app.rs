@@ -61,10 +61,6 @@ impl MacosApp {
             "MacosApp::init",
         );
 
-        // activate() requires macOS 14.0+; keep deprecated variant for macOS 13 compat.
-        #[allow(deprecated)]
-        app.activateIgnoringOtherApps(true);
-
         // Run the event loop (never returns)
         unsafe { app.run(); }
 

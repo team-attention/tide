@@ -303,6 +303,11 @@ pub(crate) fn handle_platform_event(
             ctx.set_last_cursor_pos(pos);
             crate::adapter::inward::scroll_adapter::handle_scroll(ctx, dx, dy);
         }
+        PlatformEvent::SystemNotificationActivated { pane_id } => {
+            ctx.activate_notification_target(pane_id);
+            window.show_window();
+            ctx.request_redraw();
+        }
     }
 
     // Process deferred fullscreen toggle
@@ -1046,11 +1051,15 @@ impl App {
             let cmds: Vec<_> = self.pending_platform_commands.drain(..).collect();
             for cmd in cmds {
                 match cmd {
+                    WindowCommand::ShowWindow => {
+                        window.show_window();
+                    }
                     WindowCommand::SendSystemNotification {
                         ref title,
                         ref body,
+                        pane_id,
                     } => {
-                        window.send_system_notification(title, body);
+                        window.send_system_notification(title, body, pane_id);
                     }
                     WindowCommand::RequestUserAttention => {
                         window.request_user_attention();

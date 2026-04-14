@@ -29,6 +29,8 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
             if self.is_pane_pinned(id) {
                 self.dock.pinned_dock_layout.set_active_tab(id);
             }
+            self.notified_panes.remove(&id);
+            self.refresh_workspace_agent_notification(self.ws.active);
             self.cache.invalidate_chrome();
             self.sync_browser_webview_frames();
             return;
@@ -41,6 +43,8 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
             self.focus.stage_focused = Some(id);
         }
         if self.focus.focused == Some(id) && prev_stage == self.focus.stage_focused {
+            self.notified_panes.remove(&id);
+            self.refresh_workspace_agent_notification(self.ws.active);
             return;
         }
         if let Some(prev_id) = self.focus.focused {
@@ -58,6 +62,8 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         if prev_stage != self.focus.stage_focused {
             self.swap_dock_state(id);
         }
+        self.notified_panes.remove(&id);
+        self.refresh_workspace_agent_notification(self.ws.active);
         self.cache.invalidate_chrome();
         self.update_file_tree_cwd();
         self.sync_browser_webview_frames();
@@ -564,6 +570,25 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
 
     fn switch_workspace(&mut self, idx: usize) {
         App::switch_workspace(self, idx);
+    }
+
+    fn activate_notification_target(&mut self, pane_id: PaneId) {
+        let Some(target_workspace) = self.find_workspace_for_pane(pane_id) else {
+            return;
+        };
+
+        if target_workspace != self.ws.active {
+            self.switch_workspace(target_workspace);
+        }
+
+        if matches!(
+            self.panes.get(&pane_id),
+            Some(PaneKind::Terminal(_)) | Some(PaneKind::Launcher(_))
+        ) {
+            self.focus_terminal(pane_id);
+        } else if self.panes.contains_key(&pane_id) {
+            self.focus_pane(pane_id);
+        }
     }
 
     fn ws_reorder(&mut self, src: usize, target: usize) {

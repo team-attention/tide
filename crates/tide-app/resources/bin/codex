@@ -1,8 +1,8 @@
 #!/bin/sh
 # Tide auto-injected wrapper for Codex CLI.
-# Uses -c flag for additive MCP server injection (deep table merge — new keys additive).
-# Codex CLI has no repo-visible external hook injection path (unlike Claude/Gemini),
-# so this wrapper only guarantees Running on launch and Idle on exit.
+# Uses -c flag for additive config injection (deep table merge — new keys additive).
+# Codex hooks are enabled through a temporary CODEX_HOME overlay so Tide can
+# report UserPromptSubmit and Stop without mutating the user's real CODEX_HOME.
 
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|${SELF_DIR}||g")" command -v codex 2>/dev/null)"
@@ -10,6 +10,10 @@ REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|
 
 # Skip injection if not inside Tide
 [ -z "$TIDE_BIN" ] && exec "$REAL_CMD" "$@"
+
+REAL_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+TIDE_CODEX_HOME="$(mktemp -d /tmp/tide-codex-home.XXXXXX)"
+HOOKS_FILE="$TIDE_CODEX_HOME/hooks.json"
 
 # Wrapper-owned OSC 9 helper used only as a fallback when `tide notify` is unavailable.
 tide_osc9() { printf '\033]9;%s\007' "$1"; }
@@ -19,11 +23,89 @@ tide_notify() {
     tide_osc9 "tide:wrapped-agent:codex:$1"
 }
 
-# Report Running on start and Idle on exit. Codex does not emit NeedsInput here.
-tide_notify "agent-running"
-trap 'tide_notify "agent-idle"' EXIT
+# Build a temporary CODEX_HOME overlay so Tide can add hooks.json without
+# mutating the user's real Codex home. Existing config/state entries are
+# symlinked through, while Tide owns the overlay hooks file.
+if [ -d "$REAL_CODEX_HOME" ]; then
+  for entry in "$REAL_CODEX_HOME"/* "$REAL_CODEX_HOME"/.[!.]* "$REAL_CODEX_HOME"/..?*; do
+    [ -e "$entry" ] || continue
+    base="$(basename "$entry")"
+    [ "$base" = "hooks.json" ] && continue
+    ln -s "$entry" "$TIDE_CODEX_HOME/$base"
+  done
+fi
 
-"$REAL_CMD" \
+if [ -f "$REAL_CODEX_HOME/hooks.json" ] && command -v python3 >/dev/null 2>&1; then
+  TIDE_RUNNING_HOOK_COMMAND="$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent codex" \
+  TIDE_STOP_HOOK_COMMAND="$TIDE_BIN notify agent-idle --pane $TIDE_PANE --agent codex --payload-stdin" \
+    python3 - "$REAL_CODEX_HOME/hooks.json" "$HOOKS_FILE" <<'PY'
+import json
+import os
+import sys
+
+src, dst = sys.argv[1], sys.argv[2]
+with open(src, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+hooks = data.setdefault("hooks", {})
+user_prompt_groups = hooks.setdefault("UserPromptSubmit", [])
+user_prompt_groups.append(
+    {
+        "hooks": [
+            {
+                "type": "command",
+                "command": os.environ["TIDE_RUNNING_HOOK_COMMAND"],
+            }
+        ]
+    }
+)
+stop_groups = hooks.setdefault("Stop", [])
+stop_groups.append(
+    {
+        "hooks": [
+            {
+                "type": "command",
+                "command": os.environ["TIDE_STOP_HOOK_COMMAND"],
+            }
+        ]
+    }
+)
+
+with open(dst, "w", encoding="utf-8") as f:
+    json.dump(data, f)
+PY
+else
+  cat > "$HOOKS_FILE" << TIDE_EOF
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent codex"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$TIDE_BIN notify agent-idle --pane $TIDE_PANE --agent codex --payload-stdin"
+          }
+        ]
+      }
+    ]
+  }
+}
+TIDE_EOF
+fi
+
+trap 'rm -rf "$TIDE_CODEX_HOME"' EXIT
+
+CODEX_HOME="$TIDE_CODEX_HOME" "$REAL_CMD" \
   -c "mcp_servers.tide.command=\"$TIDE_BIN\"" \
   -c "mcp_servers.tide.args=[\"mcp\"]" \
   -c "mcp_servers.tide.env.TIDE_SOCKET=\"$TIDE_SOCKET\"" \

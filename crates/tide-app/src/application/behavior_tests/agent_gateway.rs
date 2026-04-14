@@ -1473,8 +1473,8 @@ fn osc9_unmanaged_notification_does_not_create_attention_source() {
 }
 
 #[test]
-fn focusing_pane_clears_needs_input_status() {
-    // Focusing a pane with NeedsInput should clear the status (user has seen it)
+fn focusing_pane_preserves_needs_input_status() {
+    // Wrapped-agent NeedsInput remains active after focus until the next Running signal.
     use crate::FocusNavPort;
     let (mut app, id) = app_with_detected_agent();
     app.handle_terminal_notification(id, "tide:agent-needs-input");
@@ -1483,12 +1483,15 @@ fn focusing_pane_clears_needs_input_status() {
         Some(crate::state::gateway_status::AgentStatus::NeedsInput)
     );
     app.focus_pane(id);
-    assert_eq!(app.gateway.detected_agents.get(&id).unwrap().status, None);
+    assert_eq!(
+        app.gateway.detected_agents.get(&id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
 }
 
 #[test]
-fn focusing_pane_clears_idle_status() {
-    // Focusing a pane with Idle (task completed) should clear the status
+fn focusing_pane_preserves_idle_status() {
+    // Wrapped-agent Idle remains connected idle after focus so the Pane can render acknowledged completion chrome.
     use crate::FocusNavPort;
     let (mut app, id) = app_with_detected_agent();
     app.handle_terminal_notification(id, "tide:agent-running");
@@ -1498,7 +1501,10 @@ fn focusing_pane_clears_idle_status() {
         Some(crate::state::gateway_status::AgentStatus::Idle)
     );
     app.focus_pane(id);
-    assert_eq!(app.gateway.detected_agents.get(&id).unwrap().status, None);
+    assert_eq!(
+        app.gateway.detected_agents.get(&id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::Idle)
+    );
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -1737,6 +1743,7 @@ fn inactive_workspace_agent_status_sets_notification_dot() {
     app.route_agent_notification(
         agent_pane_id,
         crate::state::gateway_status::AgentStatus::NeedsInput,
+        None,
     );
     assert!(app.ws.workspace_extras[1].has_agent_notification);
 }
@@ -1795,7 +1802,7 @@ fn focusing_pane_clears_workspace_notification_if_no_others() {
     assert!(!app.notified_panes.contains(&agent_pane));
     assert_eq!(
         app.gateway.detected_agents.get(&agent_pane).unwrap().status,
-        None
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
     );
 }
 

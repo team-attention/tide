@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::pane::PaneKind;
@@ -16,6 +17,7 @@ use crate::GatewayPort;
 use crate::LayoutPort;
 use crate::PaneAccessPort;
 use crate::PaneLifecyclePort;
+use crate::WorkspaceNavPort;
 
 use super::protocol::CliError;
 
@@ -29,6 +31,7 @@ pub(crate) trait CliPorts:
     + LayoutPort
     + PaneAccessPort
     + PaneLifecyclePort
+    + WorkspaceNavPort
 {
 }
 impl<
@@ -38,7 +41,8 @@ impl<
             + GatewayPort
             + LayoutPort
             + PaneAccessPort
-            + PaneLifecyclePort,
+            + PaneLifecyclePort
+            + WorkspaceNavPort,
     > CliPorts for T
 {
 }
@@ -106,6 +110,7 @@ impl crate::App {
             "split-horizontal" => cli_split(self, SplitDirection::Horizontal, params),
             "close-pane" => cli_close_pane(self, params),
             "focus-pane" => cli_focus_pane(self, params),
+            "activate-notification-target" => cli_activate_notification_target(self, params),
             "resize-pane" => cli_resize_pane(self, params),
             "open-terminal" => cli_open_terminal(self, params),
             "open-editor" => cli_open_editor(self, params),
@@ -540,6 +545,25 @@ fn cli_focus_pane(
 
     ctx.focus_pane(pane_id);
     ctx.gateway_notify("focus-changed", json!({"pane_id": pane_id}));
+    Ok(json!({"ok": true}))
+}
+
+fn cli_activate_notification_target(
+    ctx: &mut (impl AppCorePort + PaneAccessPort + WorkspaceNavPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = params
+        .get("pane_id")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| CliError::InvalidParams("pane_id required".into()))?;
+
+    if !ctx.has_pane_in_any_workspace(pane_id) {
+        return Ok(json!({"ok": true}));
+    }
+
+    ctx.activate_notification_target(pane_id);
+    ctx.queue_show_window();
+    ctx.request_redraw();
     Ok(json!({"ok": true}))
 }
 
@@ -1298,6 +1322,11 @@ fn cli_notify(
         .get("agent")
         .and_then(|v| v.as_str())
         .unwrap_or("Agent");
+    let notification_body = wrapped_agent_notification_snippet_from_payload(
+        agent_display_name,
+        event,
+        params.get("payload"),
+    );
 
     let agent_name = {
         let agents = ctx.detected_agents_mut();
@@ -1336,10 +1365,40 @@ fn cli_notify(
             }),
         );
         // Route notification based on user context (UC-1)
-        ctx.route_agent_notification(pane_id, status);
+        ctx.route_agent_notification(pane_id, status, notification_body);
     }
 
     Ok(json!({"ok": true}))
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CodexStopHookPayload {
+    #[serde(default)]
+    hook_event_name: Option<String>,
+    #[serde(default)]
+    last_assistant_message: Option<String>,
+}
+
+fn wrapped_agent_notification_snippet_from_payload(
+    agent_name: &str,
+    event: &str,
+    payload: Option<&Value>,
+) -> Option<String> {
+    match agent_name {
+        "codex" if event == "agent-idle" => payload
+            .and_then(codex_stop_hook_notification_snippet)
+            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
+        _ => None,
+    }
+}
+
+fn codex_stop_hook_notification_snippet(payload: &Value) -> Option<String> {
+    serde_json::from_value::<CodexStopHookPayload>(payload.clone())
+        .ok()
+        .and_then(|payload| match payload.hook_event_name.as_deref() {
+            Some("Stop") | None => payload.last_assistant_message,
+            _ => None,
+        })
 }
 
 fn translate_key(key: &str) -> Vec<u8> {

@@ -51,6 +51,42 @@ impl WorkspaceExtras {
 }
 
 impl App {
+    fn workspace_has_wrapped_agent_attention(
+        &self,
+        workspace_idx: usize,
+    ) -> bool {
+        use crate::state::gateway_status::AgentStatus;
+
+        let Some(workspace) = self.ws.workspaces.get(workspace_idx) else {
+            return false;
+        };
+
+        workspace.panes.iter().any(|(&pane_id, _pane)| {
+            self.gateway
+                .detected_agents
+                .get(&pane_id)
+                .filter(|agent| agent.wrapper_managed)
+                .and_then(|agent| agent.status)
+                .is_some_and(|status| {
+                    matches!(status, AgentStatus::NeedsInput)
+                        || (matches!(status, AgentStatus::Idle)
+                            && self.notified_panes.contains(&pane_id))
+                })
+        })
+    }
+
+    pub(crate) fn refresh_workspace_agent_notification(
+        &mut self,
+        workspace_idx: usize,
+    ) {
+        while self.ws.workspace_extras.len() <= workspace_idx {
+            self.ws.workspace_extras.push(WorkspaceExtras::new());
+        }
+
+        self.ws.workspace_extras[workspace_idx].has_agent_notification =
+            self.workspace_has_wrapped_agent_attention(workspace_idx);
+    }
+
     fn ensure_active_workspace_artifact_store(&mut self) -> &mut crate::ContextArtifactStore {
         while self.ws.workspace_context_artifacts.len() <= self.ws.active {
             self.ws
@@ -106,6 +142,8 @@ impl App {
         }
         let artifacts = &mut self.ws.workspace_context_artifacts[self.ws.active];
         std::mem::swap(&mut self.context_artifacts, artifacts);
+
+        self.refresh_workspace_agent_notification(self.ws.active);
     }
 
     /// Load the active workspace's state from the workspaces vec into App fields.
@@ -197,9 +235,11 @@ impl App {
                 bp.is_first_responder = false;
             }
         }
+        let previous_workspace = self.ws.active;
         self.save_active_workspace();
         self.ws.active = idx;
         self.load_active_workspace();
+        self.refresh_workspace_agent_notification(previous_workspace);
         // Clear agent notification for the workspace we're switching to (UC-6 BR-2)
         if self.ws.active < self.ws.workspace_extras.len() {
             self.ws.workspace_extras[self.ws.active].has_agent_notification = false;
