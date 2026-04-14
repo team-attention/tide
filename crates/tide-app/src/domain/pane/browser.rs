@@ -609,6 +609,12 @@ impl BrowserPane {
         !self.render_mode && self.url.is_empty()
     }
 
+    /// The native `WKWebView` stays hidden for empty navigation-mode panes so
+    /// Tide's own Pane background remains visible instead of the default white surface.
+    pub fn native_webview_should_be_visible(&self, obscured_by_overlay: bool) -> bool {
+        !obscured_by_overlay && !self.is_empty_navigation_state()
+    }
+
     /// Browser Pane content clicks should keep URL-bar focus only while the
     /// Browser Pane has no committed URL yet (nothing to interact with).
     /// Once a URL is committed, content is interactable even if still loading.

@@ -13,6 +13,25 @@ use crate::PaneLifecyclePort;
 use crate::WorkspaceNavPort;
 use crate::{shell_escape, DockPort, FileOpsPort, GitSwitcherState};
 
+fn focus_header_context(
+    ctx: &mut (impl WorkspaceNavPort + PaneAccessPort + DockPort),
+    pane_id: crate::tide_core::PaneId,
+) {
+    if ctx.pane(pane_id).is_some() {
+        ctx.focus_terminal(pane_id);
+    }
+}
+
+fn resolve_terminal_launcher_if_needed(
+    ctx: &mut (impl FocusNavPort + PaneAccessPort + PaneLifecyclePort),
+) {
+    if let Some(new_id) = ctx.focused_pane() {
+        if matches!(ctx.pane(new_id), Some(PaneKind::Launcher(_))) {
+            ctx.resolve_launcher(new_id, crate::action::LauncherChoice::Terminal);
+        }
+    }
+}
+
 /// Check if the current cursor position clicks on a header badge or close button.
 /// Returns true if the click was consumed.
 pub(crate) fn check_header_click(
@@ -35,6 +54,47 @@ pub(crate) fn check_header_click(
             match zone.action {
                 HeaderHitAction::Close => {
                     ctx.close_specific_pane(zone.pane_id);
+                    ctx.request_redraw();
+                    return true;
+                }
+                HeaderHitAction::NewTerminal => {
+                    focus_header_context(ctx, zone.pane_id);
+                    ctx.new_terminal_tab();
+                    resolve_terminal_launcher_if_needed(ctx);
+                    ctx.request_redraw();
+                    return true;
+                }
+                HeaderHitAction::NewFile => {
+                    focus_header_context(ctx, zone.pane_id);
+                    ctx.new_editor_pane();
+                    ctx.request_redraw();
+                    return true;
+                }
+                HeaderHitAction::OpenBrowser => {
+                    focus_header_context(ctx, zone.pane_id);
+                    ctx.open_browser_pane(None);
+                    ctx.request_redraw();
+                    return true;
+                }
+                HeaderHitAction::SplitHorizontal => {
+                    focus_header_context(ctx, zone.pane_id);
+                    if ctx.is_pane_in_dock(zone.pane_id) {
+                        ctx.dock_split_new_tab_group(SplitDirection::Horizontal);
+                        resolve_terminal_launcher_if_needed(ctx);
+                    } else {
+                        ctx.split_with_launcher(SplitDirection::Horizontal);
+                    }
+                    ctx.request_redraw();
+                    return true;
+                }
+                HeaderHitAction::SplitVertical => {
+                    focus_header_context(ctx, zone.pane_id);
+                    if ctx.is_pane_in_dock(zone.pane_id) {
+                        ctx.dock_split_new_tab_group(SplitDirection::Vertical);
+                        resolve_terminal_launcher_if_needed(ctx);
+                    } else {
+                        ctx.split_with_launcher(SplitDirection::Vertical);
+                    }
                     ctx.request_redraw();
                     return true;
                 }

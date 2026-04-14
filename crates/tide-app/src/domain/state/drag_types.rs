@@ -35,6 +35,7 @@ pub(crate) enum HoverTarget {
     PaneTabBar(PaneId),
     PaneTabClose(PaneId),
     PaneMaximize(PaneId),
+    HeaderAction(PaneId, crate::header::HeaderHitAction),
     FileFinderItem(usize),
     SidebarHandle,
     TitlebarSwap,
@@ -80,6 +81,7 @@ impl HoverTarget {
                 | HoverTarget::BrowserCopyUrl
                 | HoverTarget::BrowserOpenExternal
                 | HoverTarget::PaneTabClose(_)
+                | HoverTarget::HeaderAction(_, _)
                 | HoverTarget::WorkspaceSidebarItem(_)
                 | HoverTarget::WorkspaceSidebarNewBtn
         )

@@ -192,6 +192,13 @@ pub(crate) fn compute_hover_target(
         return Some(HoverTarget::SplitBorder(dir));
     }
 
+    // Focused header action strip buttons
+    for zone in ctx.header_hit_zones() {
+        if zone.rect.contains(pos) && crate::header::is_header_action_strip_action(&zone.action) {
+            return Some(HoverTarget::HeaderAction(zone.pane_id, zone.action));
+        }
+    }
+
     // Pane tab bar close button (before general tab bar check)
     if let Some(pane_id) = ctx.pane_tab_close_at(pos) {
         return Some(HoverTarget::PaneTabClose(pane_id));

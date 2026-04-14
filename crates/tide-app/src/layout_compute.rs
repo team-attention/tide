@@ -36,6 +36,7 @@ impl crate::application::ports::inward::LayoutPort for App {
             | Some(HoverTarget::TitlebarWorkspace)
             | Some(HoverTarget::TitlebarDock)
             | Some(HoverTarget::PaneMaximize(_))
+            | Some(HoverTarget::HeaderAction(_, _))
             | Some(HoverTarget::BrowserBack)
             | Some(HoverTarget::BrowserForward)
             | Some(HoverTarget::BrowserRefresh)
@@ -752,7 +753,7 @@ impl crate::application::ports::inward::LayoutPort for App {
                     bp.clear_certificate_decision();
                 }
 
-                if popup_open {
+                if !bp.native_webview_should_be_visible(popup_open) {
                     bp.set_visible(false);
                 } else {
                     // Position webview inside the pane's visual rect.
