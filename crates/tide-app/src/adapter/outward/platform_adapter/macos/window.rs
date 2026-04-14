@@ -198,6 +198,24 @@ fn terminate_current_tide_instance() {
     }
 }
 
+fn hide_current_tide_instance() {
+    unsafe {
+        let app_cls = objc2::runtime::AnyClass::get("NSApplication").expect("NSApplication");
+        let nsapp: Retained<AnyObject> = msg_send_id![app_cls, sharedApplication];
+        let _: () = msg_send![&nsapp, hide: std::ptr::null::<AnyObject>()];
+    }
+}
+
+fn suppress_current_tide_instance_after_successful_relay() {
+    let should_hide =
+        super::app::with_main_window(|window| window.window_revealed.get()).unwrap_or(false);
+    if should_hide {
+        hide_current_tide_instance();
+    } else {
+        terminate_current_tide_instance();
+    }
+}
+
 fn notification_authorization_options() -> usize {
     NOTIFICATION_AUTHORIZATION_OPTIONS
 }
@@ -309,13 +327,7 @@ declare_class!(
                         });
                     } else if relay_notification_activation(target) {
                         restore_latest_socket_symlink(target.tide_instance_pid);
-                        let should_terminate = super::app::with_main_window(|window| {
-                            !window.window_revealed.get()
-                        })
-                        .unwrap_or(true);
-                        if should_terminate {
-                            terminate_current_tide_instance();
-                        }
+                        suppress_current_tide_instance_after_successful_relay();
                     }
                 }
             }

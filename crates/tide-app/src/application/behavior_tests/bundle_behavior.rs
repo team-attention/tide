@@ -1,27 +1,93 @@
-// Spec: docs/specs/agent-notification-routing.md
+// Spec: docs/specs/window-launch.md
+use crate::application::ports::inward::ActionPort;
+use crate::application::ports::outward::process_port::ProcessPort;
+use crate::tide_input::GlobalAction;
+use crate::App;
+use std::cell::Cell;
+use std::io;
+use std::path::Path;
+use std::rc::Rc;
 
-// --- UC-12: PreventSecondLaunchOnNotificationActivation ---
+fn test_app() -> App {
+    let mut app = App::new();
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
+    app.window.window_size = (960, 640);
+    app
+}
+
+#[derive(Clone)]
+struct RecordingProcess {
+    launched_windows: Rc<Cell<u32>>,
+}
+
+impl ProcessPort for RecordingProcess {
+    fn open_with_default_app(&self, _path: &Path) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn reveal_in_finder(&self, _path: &Path) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn open_url(&self, _url: &str) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn launch_new_tide_window(&self) -> io::Result<()> {
+        self.launched_windows
+            .set(self.launched_windows.get().saturating_add(1));
+        Ok(())
+    }
+}
+
+// --- UC-1: DispatchNewWindowGlobalAction ---
 
 #[test]
-fn source_tide_info_plist_declares_lsmultipleinstancesprohibited() {
-    // UC-12 BR-37: The source Tide Info.plist declares LSMultipleInstancesProhibited.
+fn new_window_global_action_uses_process_port() {
+    // UC-1 BR-1: `GlobalAction::NewWindow` must delegate to `ProcessPort`.
+    let mut app = test_app();
+    let launched_windows = Rc::new(Cell::new(0));
+    app.ports.process = Box::new(RecordingProcess {
+        launched_windows: Rc::clone(&launched_windows),
+    });
+
+    app.handle_global_action(GlobalAction::NewWindow);
+
+    assert_eq!(launched_windows.get(), 1);
+}
+
+#[test]
+fn system_process_prefers_open_n_for_bundled_tide_windows() {
+    // UC-1 BR-2: `SystemProcess` prefers `open -n <Tide.app>` for bundled Tide launches.
+    let source = include_str!("../../adapter/outward/process_adapter/mod.rs");
+
+    assert!(source.contains("fn launch_new_tide_window(&self)"));
+    assert!(source.contains("std::env::current_exe()"));
+    assert!(source.contains("std::process::Command::new(\"open\")"));
+    assert!(source.contains(".arg(\"-n\")"));
+}
+
+// --- UC-2: LaunchAnotherBundledTideWindow ---
+
+#[test]
+fn source_tide_info_plist_does_not_prohibit_multiple_instances() {
+    // UC-2 BR-3: The source Tide `Info.plist` must not declare `LSMultipleInstancesProhibited`.
     let plist = include_str!("../../../Info.plist");
 
     assert!(
-        plist.contains("<key>LSMultipleInstancesProhibited</key>")
-            && plist.contains("<key>LSMultipleInstancesProhibited</key>\n  <true/>"),
-        "expected Tide Info.plist to prohibit multiple instances via Launch Services"
+        !plist.contains("<key>LSMultipleInstancesProhibited</key>"),
+        "expected Tide Info.plist to allow multiple Tide windows"
     );
 }
 
 #[test]
-fn local_bundle_build_script_stamps_lsmultipleinstancesprohibited_before_signing() {
-    // UC-12 BR-38: The local Tide.app build path stamps single-instance metadata before signing.
+fn local_bundle_build_script_does_not_stamp_lsmultipleinstancesprohibited_before_signing() {
+    // UC-2 BR-4: The local Tide.app build path must not stamp `LSMultipleInstancesProhibited`.
     let script = include_str!("../../../../../scripts/build-app.sh");
 
     assert!(
-        script.contains("LSMultipleInstancesProhibited"),
-        "expected build-app.sh to stamp LSMultipleInstancesProhibited into the built Tide.app"
+        !script.contains("LSMultipleInstancesProhibited"),
+        "expected build-app.sh not to stamp single-instance metadata into Tide.app"
     );
     assert!(
         script.contains("codesign --force --deep --sign - --identifier com.eatnug.tide"),
@@ -30,27 +96,20 @@ fn local_bundle_build_script_stamps_lsmultipleinstancesprohibited_before_signing
 }
 
 #[test]
-fn macos_launch_path_reuses_an_existing_tide_instance_before_creating_a_window() {
-    // UC-12 BR-41: The macOS startup path reuses an existing Tide instance
-    // before creating a second Window.
+fn macos_launch_path_does_not_reuse_an_existing_tide_instance_before_creating_a_window() {
+    // UC-2 BR-5: `MacosApp::run` must not reuse an existing Tide instance before creating a Tide Window.
     let source = include_str!("../../adapter/outward/platform_adapter/macos/app.rs");
 
-    let reuse_guard = source
-        .find("runningApplicationsWithBundleIdentifier")
-        .expect("expected MacosApp::run to query existing Tide instances");
-    let activate_existing = source
-        .find("activateWithOptions")
-        .expect("expected MacosApp::run to activate an existing Tide instance");
-    let create_window = source
-        .find("MacosWindow::new")
-        .expect("expected MacosApp::run to create a Tide window");
-
     assert!(
-        reuse_guard < create_window,
-        "expected Tide to check for an existing instance before creating a Window"
+        !source.contains("activate_existing_tide_instance_if_running()"),
+        "expected MacosApp::run not to reuse an existing Tide instance during ordinary launch"
     );
     assert!(
-        activate_existing < create_window,
-        "expected Tide to activate the existing instance before creating a Window"
+        !source.contains("runningApplicationsWithBundleIdentifier"),
+        "expected MacosApp::run not to query running Tide instances during ordinary launch"
+    );
+    assert!(
+        source.contains("MacosWindow::new"),
+        "expected MacosApp::run to still create a Tide Window"
     );
 }

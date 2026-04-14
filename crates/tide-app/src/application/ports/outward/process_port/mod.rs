@@ -7,4 +7,7 @@ pub(crate) trait ProcessPort {
     fn open_with_default_app(&self, path: &Path) -> io::Result<()>;
     fn reveal_in_finder(&self, path: &Path) -> io::Result<()>;
     fn open_url(&self, url: &str) -> io::Result<()>;
+    fn launch_new_tide_window(&self) -> io::Result<()> {
+        Ok(())
+    }
 }

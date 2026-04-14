@@ -38,6 +38,72 @@ pub(crate) fn sync_terminal_badge_runtime_context(
     changed
 }
 
+pub(crate) fn latest_git_poll_cwds(
+    cwd_rx: &std::sync::mpsc::Receiver<Vec<PathBuf>>,
+    mut cwds: Vec<PathBuf>,
+) -> Vec<PathBuf> {
+    while let Ok(newer_cwds) = cwd_rx.try_recv() {
+        cwds = newer_cwds;
+    }
+    cwds
+}
+
+fn collect_git_poll_results_for_cwds(
+    cwds: Vec<PathBuf>,
+    stop_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> GitPollResults {
+    let mut results: GitPollResults = std::collections::HashMap::new();
+    for cwd in cwds {
+        if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        let git_info = crate::tide_terminal::git::detect_git_info(&cwd);
+        let worktrees = crate::tide_terminal::git::list_worktrees(&cwd);
+        let worktree_count = worktrees.len();
+        let current_worktree = worktrees.into_iter().find(|wt| wt.is_current);
+        let repo_root = crate::tide_terminal::git::repo_root(&cwd);
+        let status_entries = crate::tide_terminal::git::status_files(&cwd);
+
+        let (diff_files, diff_cache) = if !status_entries.is_empty() {
+            let numstat = crate::tide_terminal::git::diff_numstat(&cwd);
+            let files: Vec<crate::pane::diff::DiffFileEntry> = status_entries
+                .iter()
+                .map(|e| {
+                    let (add, del) = numstat.get(&e.path).copied().unwrap_or((0, 0));
+                    crate::pane::diff::DiffFileEntry {
+                        status: e.status.clone(),
+                        path: e.path.clone(),
+                        additions: add,
+                        deletions: del,
+                    }
+                })
+                .collect();
+            let mut cache = std::collections::HashMap::new();
+            for (i, entry) in files.iter().enumerate() {
+                let lines = crate::tide_terminal::git::file_diff_lines(&cwd, &entry.path);
+                cache.insert(i, lines);
+            }
+            (Some(files), Some(cache))
+        } else {
+            (None, None)
+        };
+
+        results.insert(
+            cwd,
+            GitPollCwdResult {
+                git_info,
+                worktree_count,
+                current_worktree,
+                repo_root,
+                status_entries,
+                diff_files,
+                diff_cache,
+            },
+        );
+    }
+    results
+}
+
 impl App {
     pub(crate) fn sync_file_tree_path_identity_cache(&mut self) {
         let mut normalized_entry_paths = HashMap::new();
@@ -457,68 +523,26 @@ impl App {
         let handle = std::thread::spawn(move || {
             while !stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
                 // Wait for CWD list from main thread (with timeout)
-                let cwds = match cwd_rx.recv_timeout(std::time::Duration::from_secs(2)) {
+                let mut cwds = match cwd_rx.recv_timeout(std::time::Duration::from_secs(2)) {
                     Ok(cwds) => cwds,
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                 };
 
-                // Query git info for each unique CWD
-                let mut results: GitPollResults = std::collections::HashMap::new();
-                for cwd in cwds {
-                    if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-                        break;
+                loop {
+                    cwds = latest_git_poll_cwds(&cwd_rx, cwds);
+                    let results = collect_git_poll_results_for_cwds(cwds.clone(), &stop_flag);
+                    let newest_cwds = latest_git_poll_cwds(&cwd_rx, cwds.clone());
+                    if newest_cwds != cwds {
+                        cwds = newest_cwds;
+                        continue;
                     }
-                    let git_info = crate::tide_terminal::git::detect_git_info(&cwd);
-                    let worktrees = crate::tide_terminal::git::list_worktrees(&cwd);
-                    let worktree_count = worktrees.len();
-                    let current_worktree = worktrees.into_iter().find(|wt| wt.is_current);
-                    let repo_root = crate::tide_terminal::git::repo_root(&cwd);
-                    let status_entries = crate::tide_terminal::git::status_files(&cwd);
 
-                    // Compute diff data for open DiffPanes
-                    let (diff_files, diff_cache) = if !status_entries.is_empty() {
-                        let numstat = crate::tide_terminal::git::diff_numstat(&cwd);
-                        let files: Vec<crate::pane::diff::DiffFileEntry> = status_entries
-                            .iter()
-                            .map(|e| {
-                                let (add, del) = numstat.get(&e.path).copied().unwrap_or((0, 0));
-                                crate::pane::diff::DiffFileEntry {
-                                    status: e.status.clone(),
-                                    path: e.path.clone(),
-                                    additions: add,
-                                    deletions: del,
-                                }
-                            })
-                            .collect();
-                        let mut cache = std::collections::HashMap::new();
-                        for (i, entry) in files.iter().enumerate() {
-                            let lines =
-                                crate::tide_terminal::git::file_diff_lines(&cwd, &entry.path);
-                            cache.insert(i, lines);
-                        }
-                        (Some(files), Some(cache))
-                    } else {
-                        (None, None)
-                    };
-
-                    results.insert(
-                        cwd,
-                        GitPollCwdResult {
-                            git_info,
-                            worktree_count,
-                            current_worktree,
-                            repo_root,
-                            status_entries,
-                            diff_files,
-                            diff_cache,
-                        },
-                    );
-                }
-
-                let _ = tx.send(results);
-                if let Some(ref w) = waker {
-                    w();
+                    let _ = tx.send(results);
+                    if let Some(ref w) = waker {
+                        w();
+                    }
+                    break;
                 }
             }
         });

@@ -162,6 +162,36 @@ fn notify_client_accepts_payload_from_stdin() {
     assert!(source.contains("read_payload_from_stdin"));
 }
 
+#[test]
+fn notify_client_requires_an_explicit_tide_socket_for_wrapper_hooks() {
+    // UC-2 BR-7: Wrapper-hook notify must require the owning TIDE_SOCKET and must not fall back to tide-latest.sock.
+    let source = include_str!("../../adapter/inward/cli_adapter/notify.rs");
+
+    assert!(source.contains("std::env::var(\"TIDE_SOCKET\")"));
+    assert!(
+        !source.contains("tide-latest.sock"),
+        "wrapper-hook notify must not fall back to the latest Tide socket"
+    );
+}
+
+#[test]
+fn notify_client_forwards_the_owning_tide_instance_pid() {
+    // UC-2 BR-8: Wrapper-hook notify forwards the owning Tide Instance PID so a mismatched gateway can ignore the event.
+    let source = include_str!("../../adapter/inward/cli_adapter/notify.rs");
+
+    assert!(source.contains("std::env::var(\"TIDE_INSTANCE_PID\")"));
+    assert!(source.contains("\"tide_instance_pid\""));
+}
+
+#[test]
+fn terminal_pty_env_exports_the_owning_tide_instance_pid() {
+    // UC-2 BR-8: PTY env exports the owning Tide Instance PID so wrapper hooks can forward it.
+    let source = include_str!("../../domain/terminal/mod.rs");
+
+    assert!(source.contains("String::from(\"TIDE_INSTANCE_PID\")"));
+    assert!(source.contains("std::process::id().to_string()"));
+}
+
 // --- UC-3: PreserveWrappedAgentAttentionUntilAcknowledged ---
 
 #[test]
@@ -268,6 +298,21 @@ fn activate_notification_target_cli_command_queues_window_reveal() {
         app.pending_platform_commands.last(),
         Some(WindowCommand::ShowWindow)
     ));
+}
+
+#[test]
+fn macos_notification_activation_relay_suppresses_non_owning_window_after_successful_relay() {
+    // UC-4 BR-19: A non-owning Tide process that successfully relays notification activation must not leave a non-owning Tide Window frontmost.
+    let source = include_str!("../../adapter/outward/platform_adapter/macos/window.rs");
+    let relay_start = source
+        .find("} else if relay_notification_activation(target) {")
+        .expect("expected notification relay branch");
+    let relay_body = &source[relay_start..];
+
+    assert!(relay_body.contains("suppress_current_tide_instance_after_successful_relay();"));
+    assert!(source.contains("fn suppress_current_tide_instance_after_successful_relay()"));
+    assert!(source.contains("hide_current_tide_instance();"));
+    assert!(source.contains("terminate_current_tide_instance();"));
 }
 
 #[test]
