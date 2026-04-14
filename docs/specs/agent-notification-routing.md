@@ -18,9 +18,10 @@
 - `Idle` and `NeedsInput` may both queue macOS notifications when the source wrapped-agent `Terminal` is backgrounded.
 - `Idle` may update pane chrome and inactive Workspace chrome, but it must not request user attention.
 - `NeedsInput` is the strongest routed alert state: it may queue macOS notifications and request user attention.
+- `NeedsInput` macOS notifications attach the default system sound when the platform notification API supports it.
 - `Running` remains visible-only and never routes attention.
 - The supported wrapped-agent set stays fixed to `claude`, `codex`, and `gemini`.
-- Codex completed-turn payloads classify conservatively: return `NeedsInput` only when `last_assistant_message` clearly requests user input, otherwise return `Idle`.
+- Codex completed-turn payloads classify conservatively: return `NeedsInput` only when `last_assistant_message` clearly requests user input, including short confirmation or permission prompts, otherwise return `Idle`.
 - Notification routing, duplicate suppression, snippet reuse, and notification activation all consume the normalized common state after adapter-specific parsing.
 - Notification bodies prefer a `Notification Snippet`, but the title and alert routing remain Tide-owned and Pane-based.
 
@@ -84,7 +85,7 @@
 
 - Trigger: Tide routes an `Idle` or `NeedsInput` alert.
 - Preconditions: a structured `Notification Snippet` may or may not be available.
-- Flow: Tide prefers structured payload text, falls back to the visible `Terminal` grid when needed, and otherwise emits a generic lifecycle body.
+- Flow: Tide prefers structured payload text. For Codex, when no trusted payload snippet exists, Tide emits a generic lifecycle body instead of surfacing visible terminal transport text. For the other wrapped agents, Tide can still fall back to the visible `Terminal` grid when needed, and otherwise emits a generic lifecycle body.
 - Postconditions: the body is stable across reroutes for the same unresolved alert.
 
 ### UC-7: PreservePaneIdIdentityAcrossWorkspaces
@@ -155,6 +156,7 @@
 ### UC-4: RouteBackgroundAttention
 
 - BR-5: `Idle` and `NeedsInput` may queue a macOS notification for backgrounded wrapped-agent `Terminal`s, but only `NeedsInput` may request user attention.
+- BR-5: `Idle` and `NeedsInput` may queue a macOS notification for backgrounded wrapped-agent `Terminal`s, but only `NeedsInput` may request user attention, and the macOS notification content should attach the default system sound when available.
 - BR-6: Background rerouting, duplicate suppression, and frontmost presentation apply to unresolved `Idle` and `NeedsInput` attention.
 - BR-7: Routed notification bodies prefer structured snippets for both `Idle` and `NeedsInput`, then fall back to visible `Terminal` text before generic lifecycle text.
 
@@ -165,8 +167,8 @@
 
 ### UC-6: ComposeWrappedAgentNotificationBody
 
-- BR-10: Codex notifications must prefer `last_assistant_message` when the payload provides one.
-- BR-11: When no structured snippet is available, Tide must fall back to the owning `Terminal`'s visible grid before falling back to generic lifecycle text.
+- BR-10: Codex notifications must prefer `last_assistant_message` when the payload provides one, including short confirmation or permission prompts that should route as `NeedsInput`.
+- BR-11: When no structured snippet is available, non-Codex wrapped agents must fall back to the owning `Terminal`'s visible grid before falling back to generic lifecycle text, and Codex must not surface raw transport text as the notification body. The macOS notification path should still attach the default system sound for routed alerts.
 
 ### UC-7: PreservePaneIdIdentityAcrossWorkspaces
 

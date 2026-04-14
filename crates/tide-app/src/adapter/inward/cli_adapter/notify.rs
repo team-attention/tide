@@ -20,7 +20,7 @@ pub fn run_notify(args: &[String]) -> i32 {
                 "Usage: tide notify <event> --pane <id> [--agent <name>] [--payload-stdin] [payload-json]"
             );
             eprintln!(
-                "Events: agent-attached, agent-detached, agent-running, agent-idle, agent-needs-input, codex-turn-complete"
+                "Events: agent-attached, agent-detached, agent-running, agent-idle, agent-needs-input, codex-stop, codex-turn-complete"
             );
             return 0; // silent exit — don't break agent hooks
         }

@@ -224,6 +224,13 @@ pub(crate) fn foreground_notification_presentation_options() -> usize {
     FOREGROUND_NOTIFICATION_PRESENTATION_OPTIONS
 }
 
+fn default_notification_sound() -> Option<Retained<AnyObject>> {
+    unsafe {
+        let sound_cls = objc2::runtime::AnyClass::get("UNNotificationSound")?;
+        Some(msg_send_id![sound_cls, defaultSound])
+    }
+}
+
 fn map_notification_authorization_status(
     raw_status: isize,
 ) -> crate::state::NotificationAuthorizationStatus {
@@ -730,6 +737,9 @@ impl PlatformWindow for MacosWindow {
             let content: Retained<AnyObject> = msg_send_id![content_cls, new];
             let _: () = msg_send![&content, setTitle: &*NSString::from_str(title)];
             let _: () = msg_send![&content, setBody: &*NSString::from_str(body)];
+            if let Some(sound) = default_notification_sound() {
+                let _: () = msg_send![&content, setSound: &*sound];
+            }
 
             let notif_req_cls = objc2::runtime::AnyClass::get("UNNotificationRequest")
                 .expect("UNNotificationRequest");
@@ -769,7 +779,10 @@ impl PlatformWindow for MacosWindow {
 
 #[cfg(test)]
 mod tests {
-    use super::{notification_identifier_for_pane, notification_target_from_identifier};
+    use super::{
+        default_notification_sound, notification_identifier_for_pane,
+        notification_target_from_identifier,
+    };
 
     #[test]
     fn notification_identifier_round_trips_the_target_pane_id() {
@@ -793,5 +806,10 @@ mod tests {
             notification_target_from_identifier(&second).map(|target| target.pane_id),
             Some(7)
         );
+    }
+
+    #[test]
+    fn default_notification_sound_is_available_for_notification_delivery() {
+        assert!(default_notification_sound().is_some());
     }
 }

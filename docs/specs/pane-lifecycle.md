@@ -123,6 +123,7 @@ Create, split, resolve, open, close, and drag Panes.
   3. Mouse over pane → compute DropZone (Top/Bottom/Left/Right/Center)
   4. Mouse over workspace sidebar → highlight Workspace
   5. Mouse released:
+     - clear the current hover target immediately
      - On pane DropZone → layout.move_pane(source, target, zone)
      - On Workspace sidebar → move_pane_to_workspace(source, ws_idx)
      - On root DropZone → layout.move_pane_to_root(source, zone)
@@ -133,6 +134,8 @@ Create, split, resolve, open, close, and drag Panes.
   - BR-16: Pressing a Stage tab starts the same pending-drag lifecycle as pressing a Dock tab
   - BR-17: Directional self-drop is allowed only when the source Pane belongs to a multi-tab `TabGroup`, so a single tab may be extracted into a new split
   - BR-18: A Stage Pane may move within Stage or to another `Workspace`, but never into Dock targets
+  - BR-19: Mouse release clears the current hover target immediately so hover visuals do not wait for the next mouse move
+  - BR-20: Mouse release still completes border-drag and pane-drag cleanup before returning
 
 ## Invariants
 
@@ -169,6 +172,8 @@ After ANY Pane lifecycle operation:
 | UC-6: DragDropPane | BR-16 | `pressing_stage_tab_enters_pending_drag_after_focus_switch` |
 | UC-6: DragDropPane | BR-17 | `directional_self_drop_splits_stage_tab_out_of_its_group` |
 | UC-6: DragDropPane | BR-18 | `stage_pane_drop_target_never_enters_dock` |
+| UC-6: DragDropPane | BR-19 | `mouse_release_clears_hover_target_immediately` |
+| UC-6: DragDropPane | BR-20 | `mouse_release_still_completes_border_drag_cleanup` |
 
 ## Location
 
