@@ -11,11 +11,14 @@
 - The official Codex hooks docs do not document a `Notification` hook like Claude's.
 - OpenAI's open-source Codex hook implementation shows the current notification payload shape as `agent-turn-complete`, including `input_messages` and `last_assistant_message`.
 - OpenAI's official Codex hooks docs document `PreToolUse` only for `Bash`, and explicitly say unsupported output forms such as `permissionDecision: "ask"` fail open today.
+- The checked-in `read_codex_transcript_resolution()` helper only inspects `response_item` assistant messages, while current local Codex transcripts also emit final-answer text through `event_msg.agent_message` and `event_msg.task_complete.last_agent_message`.
+- A real locally captured Codex `Stop` hook stdin payload uses `snake_case` keys such as `transcript_path`, `hook_event_name`, and `last_assistant_message`, but the checked-in `CodexStopHookPayload` parser still expects `kebab-case`, so Tide drops the transcript path and fallback assistant message before notification routing.
 
 ### To-Be
 
 - Codex `NeedsInput` in Tide must use a Codex-specific attention adapter, not the Claude `Notification` model.
 - Tide should treat Codex `Stop` as the primary turn-complete signal, use `transcript_path` to confirm the current thread is the main thread, and classify the final main-thread assistant response as `Idle` or `NeedsInput`, including short confirmation or permission prompts such as `yes` and `allow`.
+- Transcript resolution should accept the checked-in Codex transcript shapes in priority order: `response_item` final-answer assistant messages, `event_msg.agent_message` with `phase = final_answer`, then `event_msg.task_complete.last_agent_message`, before falling back to payload text.
 - Tide should use Codex `UserPromptSubmit` to return the source `Pane` to `Running` at the beginning of each new turn, while launch only marks `Wrapped Agent Presence`.
 - Tide must not infer Codex `NeedsInput` from unverified hook ordering or unsupported hook outputs.
 
@@ -23,16 +26,19 @@
 
 1. Add a Codex-specific CLI entrypoint, invoked from Codex `Stop`, that parses the official hook payload passed on stdin and maps it to Tide lifecycle events.
 2. Use `transcript_path` as the source of truth for the final assistant response so Tide can prefer the main-thread final answer over intermediate terminal text or stale payload text.
-3. Enable Codex hooks for `UserPromptSubmit` and `Stop` so Tide can emit `agent-running` at turn start and only finalize completion after Codex declares the turn stopped.
-4. Use a conservative Codex-specific classifier over the resolved final assistant message to decide whether a completed turn is `Idle` or `NeedsInput`.
-5. Fail closed for `NeedsInput`: unknown payloads, subagent transcripts, or unclassified messages may still produce `Idle`, but must not be upgraded to `NeedsInput` without an explicit classifier match.
-6. Do not use `PreToolUse` or unsupported `permissionDecision: "ask"` semantics to infer permission waits until Tide has repo-backed evidence for Codex approval ordering.
+3. Resolve the transcript by accepting the checked-in Codex record shapes in order: `response_item` final answer, `event_msg.agent_message` final answer, then `event_msg.task_complete.last_agent_message`.
+4. Enable Codex hooks for `UserPromptSubmit` and `Stop` so Tide can emit `agent-running` at turn start and only finalize completion after Codex declares the turn stopped.
+5. Use a conservative Codex-specific classifier over the resolved final assistant message to decide whether a completed turn is `Idle` or `NeedsInput`.
+6. Fail closed for `NeedsInput`: unknown payloads, subagent transcripts, or unclassified messages may still produce `Idle`, but must not be upgraded to `NeedsInput` without an explicit classifier match.
+7. Do not use `PreToolUse` or unsupported `permissionDecision: "ask"` semantics to infer permission waits until Tide has repo-backed evidence for Codex approval ordering.
 
 ## Adapter Contract
 
 - The Codex wrapper remains the source of the official signal surface: `UserPromptSubmit` for turn start, `Stop` for turn completion, and `EXIT` for the fallback `agent-detached` report.
 - Tide owns the Codex-specific helper that resolves the final assistant response from the `Stop` hook payload before shared routing consumes it.
 - The helper input is the official `Stop` hook payload, with `transcript_path` as the primary decision source, `last_assistant_message` as a fallback when the transcript is unavailable, and the transcript session metadata as the guard against subagent threads.
+- The helper must parse the real official `Stop` hook field names in `snake_case`, while tolerating the older internal `kebab-case` spellings where manual notify calls or legacy tests still use them.
+- The helper must accept current checked-in Codex transcript record shapes from both `response_item` and `event_msg` records so notification routing can recover the final main-thread assistant response even when only the `event_msg` forms are present at hook time.
 - The helper returns `Running` for `UserPromptSubmit`, ignores subagent `Stop` transcripts, returns `Idle` for a completed main-thread turn that does not match the checked-in classifier, and returns `NeedsInput` only for a completed main-thread turn whose normalized final assistant message matches a checked-in request phrase or short confirmation/permission prompt.
 - The shared routing, inactive-Workspace projection, and notification activation rules live in `docs/specs/agent-notification-routing.md`; this spec only defines the Codex-specific classifier boundary.
 
@@ -68,17 +74,18 @@
 - **Precondition**: The payload type is recognized by Tide
 - **Flow**:
   1. Tide parses the Codex `Stop` hook payload
-  2. Tide resolves the final main-thread assistant response from `transcript_path`, falling back to `last_assistant_message` only if the transcript is unavailable
+  2. Tide resolves the final main-thread assistant response from `transcript_path`, preferring `response_item` final-answer text, then `event_msg.agent_message` final-answer text, then `event_msg.task_complete.last_agent_message`, and falling back to `last_assistant_message` only if the transcript is unavailable
   3. Tide ignores the event if the transcript belongs to a subagent thread
   4. Tide classifies the completed turn as either `Idle` or `NeedsInput`
   5. Tide routes the resulting wrapper-managed attention through the existing gateway path
 - **Postcondition**: Completed Codex turns produce the right Tide attention state
 - **Business Rules**:
   - BR-3: `Stop` is the primary Codex turn-complete payload Tide recognizes
-  - BR-4: Tide must prefer the final main-thread assistant response from `transcript_path` over intermediate payload text when both exist
-  - BR-5: A Codex turn is upgraded to `NeedsInput` only when the Codex-specific classifier matches a checked-in rule
-  - BR-6: A recognized completed-turn payload that does not match the classifier falls back to `Idle`
-  - BR-7: A subagent transcript must not produce a routed Codex lifecycle update
+  - BR-4: Tide must parse the official Codex `Stop` hook payload when its field names arrive in `snake_case`
+  - BR-5: Tide must prefer the final main-thread assistant response from `transcript_path` over intermediate payload text when both exist, accepting the checked-in `response_item` and `event_msg` final-answer record shapes
+  - BR-6: A Codex turn is upgraded to `NeedsInput` only when the Codex-specific classifier matches a checked-in rule
+  - BR-7: A recognized completed-turn payload that does not match the classifier falls back to `Idle`
+  - BR-8: A subagent transcript must not produce a routed Codex lifecycle update
 
 ### UC-3: PreserveCodexSpecificSafetyBoundary
 
@@ -110,9 +117,12 @@
 | UC-1 | BR-2 | `codex_wrapper_injects_tide_mcp_turn_stop_hook_and_prompt_submit_hook` |
 | UC-2 | BR-3 | `codex_stop_payload_classifies_idle_or_needs_input` |
 | UC-2 | BR-4 | `codex_stop_payload_prefers_main_thread_transcript_over_payload_text` |
-| UC-2 | BR-5 | `codex_stop_payload_classifies_idle_or_needs_input` |
-| UC-2 | BR-6 | `codex_stop_payload_falls_back_to_idle_when_unclassified` |
-| UC-2 | BR-7 | `codex_stop_payload_ignores_subagent_transcript` |
+| UC-2 | BR-5 | `codex_stop_payload_prefers_main_thread_transcript_over_payload_text` |
+| UC-2 | BR-5 | `codex_stop_notification_uses_event_msg_final_answer_snippet` |
+| UC-2 | BR-5 | `codex_stop_notification_uses_task_complete_last_agent_message_snippet` |
+| UC-2 | BR-6 | `codex_stop_payload_classifies_idle_or_needs_input` |
+| UC-2 | BR-7 | `codex_stop_payload_falls_back_to_idle_when_unclassified` |
+| UC-2 | BR-8 | `codex_stop_payload_ignores_subagent_transcript` |
 | UC-3 | BR-8 | `codex_wrapper_does_not_depend_on_notification_hook` |
 | UC-3 | BR-9 | `codex_integration_does_not_emit_needs_input_from_pretooluse_without_classifier` |
 | UC-3 | BR-10 | `codex_stop_payload_classifies_idle_or_needs_input` |

@@ -1543,9 +1543,10 @@ struct CodexCompletedTurnPayload {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 struct CodexStopHookPayload {
+    #[serde(alias = "transcript-path")]
     transcript_path: Option<PathBuf>,
+    #[serde(alias = "last-assistant-message")]
     last_assistant_message: Option<String>,
 }
 
@@ -1629,7 +1630,9 @@ fn read_codex_transcript_resolution(
     let file = File::open(transcript_path).ok()?;
     let reader = BufReader::new(file);
     let mut last_assistant_message = None;
-    let mut final_assistant_message = None;
+    let mut response_item_final_assistant_message = None;
+    let mut event_msg_final_assistant_message = None;
+    let mut task_complete_assistant_message = None;
 
     for line in reader.lines() {
         let line = line.ok()?;
@@ -1645,30 +1648,62 @@ fn read_codex_transcript_resolution(
             return Some(CodexTranscriptResolution::IgnoreSubagent);
         }
 
-        if value.get("type").and_then(Value::as_str) != Some("response_item") {
-            continue;
-        }
-
         let Some(payload) = value.get("payload") else {
             continue;
         };
-        if payload.get("type").and_then(Value::as_str) != Some("message")
-            || payload.get("role").and_then(Value::as_str) != Some("assistant")
-        {
-            continue;
-        }
 
-        let message = codex_transcript_message_text(payload);
-        if message.is_some() {
-            last_assistant_message = message.clone();
-        }
-        if payload.get("phase").and_then(Value::as_str) == Some("final_answer") {
-            final_assistant_message = message;
+        match value.get("type").and_then(Value::as_str) {
+            Some("response_item") => {
+                if payload.get("type").and_then(Value::as_str) != Some("message")
+                    || payload.get("role").and_then(Value::as_str) != Some("assistant")
+                {
+                    continue;
+                }
+
+                let message = codex_transcript_message_text(payload);
+                if message.is_some() {
+                    last_assistant_message = message.clone();
+                }
+                if payload.get("phase").and_then(Value::as_str) == Some("final_answer") {
+                    response_item_final_assistant_message = message;
+                }
+            }
+            Some("event_msg") => match payload.get("type").and_then(Value::as_str) {
+                Some("agent_message") => {
+                    let message = payload
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .filter(|text| !text.trim().is_empty())
+                        .map(str::to_string);
+                    if message.is_some() {
+                        last_assistant_message = message.clone();
+                    }
+                    if payload.get("phase").and_then(Value::as_str) == Some("final_answer") {
+                        event_msg_final_assistant_message = message;
+                    }
+                }
+                Some("task_complete") => {
+                    let message = payload
+                        .get("last_agent_message")
+                        .and_then(Value::as_str)
+                        .filter(|text| !text.trim().is_empty())
+                        .map(str::to_string);
+                    if message.is_some() {
+                        last_assistant_message = message.clone();
+                        task_complete_assistant_message = message;
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
         }
     }
 
     Some(CodexTranscriptResolution::MainThreadMessage(
-        final_assistant_message.or(last_assistant_message),
+        response_item_final_assistant_message
+            .or(event_msg_final_assistant_message)
+            .or(task_complete_assistant_message)
+            .or(last_assistant_message),
     ))
 }
 

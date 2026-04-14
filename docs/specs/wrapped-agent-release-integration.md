@@ -4,24 +4,24 @@
 
 ### As-Is
 
-- The bundled `Info.plist` omits `LSRequiresCarbon`, and `scripts/build-app.sh` strips the obsolete key before signing the local `Tide.app` bundle.
+- The source `Info.plist` omits `LSRequiresCarbon`, but the local bundled `Tide.app` can still retain the obsolete key after `cargo bundle`, and `scripts/build-app.sh` currently swallows strip failures before signing.
 - The checked-in `codex` wrapper already uses a temporary `CODEX_HOME` overlay, emits `agent-attached` on launch, enables the documented `UserPromptSubmit` hook, but still forwards turn completion through top-level Codex `notify` instead of waiting for the documented `Stop` hook and transcript-based main-thread confirmation.
 - The wrapper-hook `notify` client still accepts any gateway socket that receives the request, because wrapped-agent lifecycle payloads do not carry the owning `Tide Instance` identity. A stale or misrouted hook can therefore deliver wrapper-managed notifications into the wrong `Tide Instance` when another instance has the same `PaneId`.
 - Shared wrapped-agent routing already treats `Running` as visible-only, routes background macOS notifications for unresolved `Idle` and `NeedsInput`, and reserves `RequestUserAttention` for unresolved `NeedsInput`.
-- Focusing a wrapped-agent source `Pane` clears notification suppression without clearing `NeedsInput`, while a later `Running` signal does not acknowledge the unresolved alert on its own.
+- Focusing a wrapped-agent source `Pane` now acknowledges unresolved wrapped-agent attention immediately in the focused Tide Window, while a later `Running` signal still does not acknowledge the unresolved alert on its own.
 - macOS system notifications already encode the owning `Tide Instance` and target `PaneId`, and activation relays to the owning `Tide Instance` before focusing the target `Workspace` and `Pane`.
 - The non-owning Tide notification-relay path only terminates an unrevealed launcher window today, so an already revealed non-owning Tide Window can stay frontmost after a successful relay and steal focus from the owning `Tide Instance`.
 - This release-integration spec and its behavior tests still expect the older Codex `Stop` hook contract and a `Running`-clears-suppression rule, so they no longer match the merged code.
 
 ### To-Be
 
-- The local `Tide.app` bundle path omits `LSRequiresCarbon`, and the local bundle build script strips it before signing while keeping the bundle multi-instance capable.
+- The local `Tide.app` bundle path omits `LSRequiresCarbon`, and the local bundle build script strips it before signing, verifies the key is gone, and fails closed if the obsolete key survives while keeping the bundle multi-instance capable.
 - The `codex` wrapper injects the documented `UserPromptSubmit` and `Stop` hooks through a temporary `CODEX_HOME` overlay, uses the `Stop` hook payload and transcript file to finalize main-thread completion, and keeps `agent-attached`/`agent-detached` as the wrapper-owned presence signals.
 - Wrapper-managed hook notifications require the owning `TIDE_SOCKET`, and the payload carries the owning `Tide Instance` PID. A gateway must ignore wrapper-managed lifecycle notifications whose owning `Tide Instance` PID does not match the current process.
 - `Idle` and `NeedsInput` may still render unresolved attention chrome until the user acknowledges the source `Pane`, and both may route a macOS notification when the source `Pane` is backgrounded.
 - Only `NeedsInput` is allowed to request user attention.
 - Focusing an `Idle` wrapped-agent `Pane` acknowledges the completion notification and returns the source `Pane` to connected-idle chrome.
-- Focusing a `NeedsInput` wrapped-agent `Pane` clears notification suppression without clearing the `NeedsInput` lifecycle state.
+- Focusing a `NeedsInput` wrapped-agent `Pane` acknowledges the unresolved alert and clears notification suppression.
 - A new `Running` signal does not acknowledge unresolved wrapped-agent attention by itself.
 - macOS system notifications encode the owning `Tide Instance` and target `PaneId`, and notification activation relays to the owning `Tide Instance` before revealing the correct Tide Window.
 - A non-owning Tide process that successfully relays notification activation must not leave its own Tide Window frontmost; revealed non-owning windows hide themselves, and unrevealed relay launches terminate.
@@ -63,6 +63,7 @@
 - **Business Rules**:
   - BR-1: The source Tide `Info.plist` must omit `LSRequiresCarbon`
   - BR-2: The local bundle build script must strip `LSRequiresCarbon` before signing
+  - BR-19: The local bundle build script must fail closed if `LSRequiresCarbon` is still present before signing
   - BR-3: `MacosApp::run` must defer app activation until explicit window reveal
   - BR-16: The source Tide `Info.plist` must not declare `LSMultipleInstancesProhibited`
   - BR-17: The local Tide.app build script must not stamp `LSMultipleInstancesProhibited` and must re-sign with the stable Tide bundle identifier
@@ -95,14 +96,14 @@
 - **Flow**:
   1. `Idle` and `NeedsInput` mark the source `Pane` as unresolved attention when it is unfocused
   2. Focusing the source `Pane` acknowledges `Idle`, turning it into connected idle chrome
-  3. Focusing the source `Pane` does not acknowledge `NeedsInput`
+  3. Focusing the source `Pane` acknowledges unresolved `NeedsInput` in the active Tide Window
   4. The next `Running` signal does not acknowledge the unresolved alert by itself
 - **Postcondition**: Completion and true input-needed states remain distinguishable after the user looks at the source `Pane`
 - **Business Rules**:
   - BR-7: Unacknowledged `Idle` must render attention chrome
   - BR-8: Acknowledged `Idle` must render connected-idle chrome
   - BR-9: `NeedsInput` must remain attention chrome even when focused
-  - BR-10: Focusing a source `Pane` must clear notification suppression without clearing `NeedsInput`
+- BR-10: Focusing a source `Pane` in the active Tide Window must acknowledge unresolved attention and clear notification suppression
   - BR-11: `Running` must not clear unresolved notification suppression on its own
 
 ### UC-4: RelayNotificationActivationToOwningTideInstance
@@ -126,7 +127,7 @@
 ## Invariants
 
 1. Wrapped-agent attention must derive from `AgentStatus` updates, not from message text classification.
-2. A focused `Pane` may acknowledge `Idle`, but `NeedsInput` must survive focus until the next `Running`.
+2. A focused `Pane` in the active Tide Window acknowledges unresolved `Idle` and `NeedsInput`, while a later `Running` signal still does not acknowledge unresolved attention on its own.
 3. Notification activation must target the owning `Tide Instance` and `PaneId`.
 4. The local bundle path must preserve native AppKit launch compatibility.
 
@@ -150,7 +151,7 @@
 | UC-3 | BR-7 | `idle_status_is_attention_orange_until_acknowledged_then_connected_blue` |
 | UC-3 | BR-8 | `idle_status_is_attention_orange_until_acknowledged_then_connected_blue` |
 | UC-3 | BR-9 | `needs_input_status_stays_attention_orange_when_focused` |
-| UC-3 | BR-10 | `focusing_wrapped_agent_pane_clears_notification_suppression_without_clearing_needs_input` |
+| UC-3 | BR-10 | `focusing_wrapped_agent_pane_acknowledges_needs_input_and_clears_notification_suppression` |
 | UC-3 | BR-11 | `running_status_does_not_clear_stale_notification_suppression` |
 | UC-4 | BR-12 | `activate_notification_target_cli_command_switches_to_target_workspace_and_focuses_the_target_pane` |
 | UC-4 | BR-13 | `activate_notification_target_cli_command_queues_window_reveal` |

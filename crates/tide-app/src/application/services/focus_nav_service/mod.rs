@@ -232,10 +232,12 @@ impl FocusNavPort for App {
         }
         self.focus.focused = Some(id);
         self.router.set_focused(id);
-        // Focus acknowledges completion notifications but does not clear
-        // the Wrapped Agent lifecycle state itself.
-        self.notified_panes.remove(&id);
-        self.refresh_workspace_agent_notification(self.ws.active);
+        if self.window.is_focused && self.pane_has_unresolved_wrapped_agent_attention(id) {
+            self.acknowledge_agent_attention(id);
+        } else {
+            self.notified_panes.remove(&id);
+            self.refresh_workspace_agent_notification(self.ws.active);
+        }
         self.cache.invalidate_chrome();
         self.reroute_backgrounded_wrapped_agent_attention_excluding(Some(id));
     }

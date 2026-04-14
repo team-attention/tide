@@ -28,7 +28,15 @@ if [ ! -d "$APP_BUNDLE" ]; then
     exit 1
 fi
 
-/usr/libexec/PlistBuddy -c "Delete :LSRequiresCarbon" "$APP_PLIST" >/dev/null 2>&1 || true
+if /usr/libexec/PlistBuddy -c "Print :LSRequiresCarbon" "$APP_PLIST" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c "Delete :LSRequiresCarbon" "$APP_PLIST"
+fi
+
+if /usr/libexec/PlistBuddy -c "Print :LSRequiresCarbon" "$APP_PLIST" >/dev/null 2>&1; then
+    echo "Failed to strip LSRequiresCarbon from $APP_PLIST" >&2
+    exit 1
+fi
+
 codesign --force --deep --sign - --identifier com.eatnug.tide "$APP_BUNDLE"
 
 echo "Built Tide.app at $APP_BUNDLE"
