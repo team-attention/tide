@@ -219,18 +219,10 @@ impl FocusNavPort for App {
         }
         self.focus.focused = Some(id);
         self.router.set_focused(id);
-        // Clear NeedsInput/Idle status when the user focuses the pane — they've seen it
-        if let Some(agent) = self.gateway.detected_agents.get_mut(&id) {
-            if matches!(
-                agent.status,
-                Some(crate::state::gateway_status::AgentStatus::NeedsInput)
-                    | Some(crate::state::gateway_status::AgentStatus::Idle)
-            ) {
-                agent.status = None;
-            }
-        }
-        // Clear notification suppression so future notifications can fire (UC-7 BR-1)
+        // Focus acknowledges completion notifications but does not clear
+        // the Wrapped Agent lifecycle state itself.
         self.notified_panes.remove(&id);
+        self.refresh_workspace_agent_notification(self.ws.active);
         self.cache.invalidate_chrome();
     }
 

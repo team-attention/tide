@@ -6,8 +6,8 @@
 #[cfg(target_os = "macos")]
 pub mod macos;
 
-use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use crate::tide_core::{Key, Modifiers};
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 // ──────────────────────────────────────────────
 // Platform Events
@@ -88,6 +88,10 @@ pub enum PlatformEvent {
     BatchStart,
     /// End an event batch and allow rendering to proceed.
     BatchEnd,
+    /// A macOS system notification created by Tide was activated by the user.
+    SystemNotificationActivated {
+        pane_id: u64,
+    },
 }
 
 /// Mouse button identifiers.
@@ -158,7 +162,7 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
 
     /// Send a macOS system notification via UNUserNotificationCenter.
     /// Silent fail if permission is not granted.
-    fn send_system_notification(&self, _title: &str, _body: &str) {}
+    fn send_system_notification(&self, _title: &str, _body: &str, _pane_id: u64) {}
 
     /// Request user attention (dock bounce). Uses informational (single bounce).
     fn request_user_attention(&self) {}
@@ -225,7 +229,11 @@ pub enum WindowCommand {
         w: f64,
         h: f64,
     },
-    SendSystemNotification { title: String, body: String },
+    SendSystemNotification {
+        title: String,
+        body: String,
+        pane_id: u64,
+    },
     RequestUserAttention,
 }
 
@@ -290,8 +298,12 @@ pub fn execute_window_command(window: &dyn PlatformWindow, cmd: WindowCommand) {
         WindowCommand::SetImeCursorArea { pane_id, x, y, w, h } => {
             window.set_ime_proxy_cursor_area(pane_id, x, y, w, h);
         }
-        WindowCommand::SendSystemNotification { ref title, ref body } => {
-            window.send_system_notification(title, body);
+        WindowCommand::SendSystemNotification {
+            ref title,
+            ref body,
+            pane_id,
+        } => {
+            window.send_system_notification(title, body, pane_id);
         }
         WindowCommand::RequestUserAttention => {
             window.request_user_attention();
@@ -361,10 +373,11 @@ impl WindowProxy {
         self.send(WindowCommand::SetImeCursorArea { pane_id, x, y, w, h });
     }
 
-    pub fn send_system_notification(&self, title: &str, body: &str) {
+    pub fn send_system_notification(&self, title: &str, body: &str, pane_id: u64) {
         self.send(WindowCommand::SendSystemNotification {
             title: title.to_string(),
             body: body.to_string(),
+            pane_id,
         });
     }
 

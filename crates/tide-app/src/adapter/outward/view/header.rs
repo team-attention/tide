@@ -216,6 +216,47 @@ pub(crate) fn active_tab_badges(
     badges
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AgentChromeState {
+    ConnectedIdle,
+    Running,
+    Attention,
+}
+
+impl From<crate::state::gateway_status::AgentStatus> for AgentChromeState {
+    fn from(status: crate::state::gateway_status::AgentStatus) -> Self {
+        match status {
+            crate::state::gateway_status::AgentStatus::Running => Self::Running,
+            crate::state::gateway_status::AgentStatus::Idle => Self::ConnectedIdle,
+            crate::state::gateway_status::AgentStatus::NeedsInput => Self::Attention,
+        }
+    }
+}
+
+pub(crate) fn agent_status_dot_color(
+    status: crate::state::gateway_status::AgentStatus,
+    attention_unresolved: bool,
+    blink_time: Option<f64>,
+) -> crate::tide_core::Color {
+    let chrome_state = match status {
+        crate::state::gateway_status::AgentStatus::Idle if attention_unresolved => {
+            AgentChromeState::Attention
+        }
+        _ => AgentChromeState::from(status),
+    };
+
+    match chrome_state {
+        AgentChromeState::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
+        AgentChromeState::Attention => {
+            let opacity = blink_time
+                .map(|t| 0.85 + 0.15 * (t * crate::theme::AGENT_BLINK_FREQUENCY).cos() as f32)
+                .unwrap_or(1.0);
+            crate::tide_core::Color::new(0.95, 0.65, 0.2, opacity)
+        }
+        AgentChromeState::ConnectedIdle => crate::tide_core::Color::new(0.3, 0.55, 0.95, 1.0),
+    }
+}
+
 /// Render the header for a single pane.
 /// Returns hit zones for click handling.
 /// When `has_dock_tab_bar` is true, skips the title badge and pane-specific badges
@@ -242,6 +283,7 @@ pub fn render_pane_header(
         p,
         renderer,
         None,
+        false,
         None,
     )
 }
@@ -257,6 +299,7 @@ pub fn render_pane_header_inner(
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
     agent_status: Option<crate::state::gateway_status::AgentStatus>,
+    agent_attention_unresolved: bool,
     blink_time: Option<f64>,
 ) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
@@ -291,18 +334,7 @@ pub fn render_pane_header_inner(
 
     // Agent status dot
     if let Some(status) = agent_status {
-        use crate::state::gateway_status::AgentStatus;
-        let mut dot_color = match status {
-            AgentStatus::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
-            AgentStatus::Idle => crate::tide_core::Color::new(0.3, 0.8, 0.4, 0.6),
-            AgentStatus::NeedsInput => crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0),
-        };
-        if matches!(status, AgentStatus::NeedsInput) && !is_focused {
-            if let Some(t) = blink_time {
-                let opacity = 0.65 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
-                dot_color.a = opacity;
-            }
-        }
+        let dot_color = agent_status_dot_color(status, agent_attention_unresolved, blink_time);
         let dot_size = 6.0_f32;
         let dot_y = rect.y + (TAB_BAR_HEIGHT - dot_size) / 2.0;
         renderer.draw_chrome_rounded_rect(
@@ -310,7 +342,11 @@ pub fn render_pane_header_inner(
             dot_color,
             dot_size / 2.0,
         );
-        if matches!(status, AgentStatus::NeedsInput) {
+        if matches!(
+            status,
+            crate::state::gateway_status::AgentStatus::NeedsInput
+        ) || agent_attention_unresolved
+        {
             let glow = crate::tide_core::Color::new(
                 dot_color.r,
                 dot_color.g,
@@ -622,6 +658,7 @@ pub fn render_dock_tab_bar(
     renderer: &mut WgpuRenderer,
     show_comment_badge: bool,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
+    attention_panes: &std::collections::HashSet<PaneId>,
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
 ) -> Vec<HeaderHitZone> {
@@ -639,6 +676,7 @@ pub fn render_dock_tab_bar(
         false,
         show_comment_badge,
         detected_agents,
+        attention_panes,
         blink_time,
         tab_scroll_offset,
     )
@@ -662,6 +700,7 @@ fn render_tab_bar_impl(
     is_stacked: bool,
     show_comment_badge: bool,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
+    attention_panes: &std::collections::HashSet<PaneId>,
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
 ) -> Vec<HeaderHitZone> {
@@ -793,18 +832,11 @@ fn render_tab_bar_impl(
         let mut dot_offset = 0.0_f32;
         if let Some(agent) = detected_agents.get(tid) {
             if let Some(status) = agent.status {
-                use crate::state::gateway_status::AgentStatus;
-                let mut dot_color = match status {
-                    AgentStatus::Running => crate::tide_core::Color::new(0.3, 0.8, 0.4, 1.0),
-                    AgentStatus::Idle => crate::tide_core::Color::new(0.3, 0.8, 0.4, 0.6),
-                    AgentStatus::NeedsInput => crate::tide_core::Color::new(0.95, 0.65, 0.2, 1.0),
-                };
-                if matches!(status, AgentStatus::NeedsInput) && !is_focused_tab {
-                    if let Some(t) = blink_time {
-                        dot_color.a =
-                            0.65 + 0.35 * (t * crate::theme::AGENT_BLINK_FREQUENCY).sin() as f32;
-                    }
-                }
+                let dot_color = agent_status_dot_color(
+                    status,
+                    attention_panes.contains(tid),
+                    blink_time,
+                );
                 let dot_size = 6.0_f32;
                 let dot_x = cx + TAB_H_PAD;
                 let dot_y = tab_y + (tab_h - dot_size) / 2.0;
@@ -1011,6 +1043,7 @@ pub fn render_stage_tab_group_bar(
     renderer: &mut WgpuRenderer,
     show_comment_badge: bool,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
+    attention_panes: &std::collections::HashSet<PaneId>,
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
 ) -> Vec<HeaderHitZone> {
@@ -1028,6 +1061,7 @@ pub fn render_stage_tab_group_bar(
         false,
         show_comment_badge,
         detected_agents,
+        attention_panes,
         blink_time,
         tab_scroll_offset,
     )
@@ -1044,6 +1078,7 @@ pub fn render_stage_tab_bar(
     renderer: &mut WgpuRenderer,
     show_comment_badge: bool,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
+    attention_panes: &std::collections::HashSet<PaneId>,
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
 ) -> Vec<HeaderHitZone> {
@@ -1064,6 +1099,7 @@ pub fn render_stage_tab_bar(
         true,
         show_comment_badge,
         detected_agents,
+        attention_panes,
         blink_time,
         tab_scroll_offset,
     )

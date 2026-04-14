@@ -388,6 +388,11 @@ impl crate::application::ports::inward::AppCorePort for App {
         self.cache.needs_redraw = true;
     }
 
+    fn queue_show_window(&mut self) {
+        self.pending_platform_commands
+            .push(crate::tide_platform::WindowCommand::ShowWindow);
+    }
+
     fn sync_file_tree_modified_editor_cache(&mut self) {
         App::sync_file_tree_modified_editor_cache(self);
     }
@@ -822,7 +827,7 @@ impl crate::application::ports::inward::GatewayPort for App {
         self.cache.chrome_generation += 1;
         // Route notification based on user context (UC-1)
         if let Some(s) = status {
-            self.route_agent_notification(pane_id, s);
+            self.route_agent_notification(pane_id, s, None);
         }
     }
 
@@ -830,8 +835,15 @@ impl crate::application::ports::inward::GatewayPort for App {
         &mut self,
         pane_id: u64,
         status: crate::state::gateway_status::AgentStatus,
+        notification_body: Option<String>,
     ) {
         use crate::state::gateway_status::AgentStatus;
+
+        if let Some(agent) = self.gateway.detected_agents.get_mut(&pane_id) {
+            if agent.wrapper_managed {
+                agent.status = Some(status);
+            }
+        }
 
         let Some(agent) = self.gateway.detected_agents.get(&pane_id) else {
             return;
@@ -841,59 +853,52 @@ impl crate::application::ports::inward::GatewayPort for App {
         }
         let agent_name = agent.name;
 
-        // BR-1: Running status does not trigger notification routing
         if matches!(status, AgentStatus::Running) {
+            self.notified_panes.remove(&pane_id);
+            if let Some(workspace_idx) = self.find_workspace_for_pane(pane_id) {
+                self.refresh_workspace_agent_notification(workspace_idx);
+            }
             return;
         }
 
-        // BR-2: If the pane is focused, skip all notification channels
-        if self.focus.focused == Some(pane_id) {
-            return;
+        let pane_is_current_focus = self.focus.focused == Some(pane_id);
+        let already_unacknowledged = self.notified_panes.contains(&pane_id);
+
+        if !pane_is_current_focus
+            && matches!(status, AgentStatus::Idle | AgentStatus::NeedsInput)
+        {
+            self.notified_panes.insert(pane_id);
         }
 
-        // Check if pane is in the active workspace
-        let in_active_workspace = self.panes.contains_key(&pane_id);
-
-        if !in_active_workspace {
-            // Pane is in an inactive workspace — set workspace notification dot (UC-6 BR-3)
-            for (i, ws) in self.ws.workspaces.iter().enumerate() {
-                if i != self.ws.active && ws.panes.contains_key(&pane_id) {
-                    if i < self.ws.workspace_extras.len() {
-                        self.ws.workspace_extras[i].has_agent_notification = true;
-                    }
-                    break;
-                }
-            }
+        if let Some(workspace_idx) = self.find_workspace_for_pane(pane_id) {
+            self.refresh_workspace_agent_notification(workspace_idx);
         }
 
-        // BR-3: Background notifications sent in addition to foreground notifications
-        if !self.window.is_focused {
-            // BR-4: Don't send again until acknowledged (focused)
-            if !self.notified_panes.contains(&pane_id) {
-                let body = match status {
-                    AgentStatus::NeedsInput => format!("{} needs your input", agent_name),
-                    AgentStatus::Idle => format!("{} finished", agent_name),
-                    _ => unreachable!(),
-                };
-                self.pending_platform_commands.push(
-                    crate::tide_platform::WindowCommand::SendSystemNotification {
-                        title: agent_name.to_string(),
-                        body,
-                    },
-                );
-                // UC-4: Dock bounce only for NeedsInput
-                if matches!(status, AgentStatus::NeedsInput) {
-                    self.pending_platform_commands
-                        .push(crate::tide_platform::WindowCommand::RequestUserAttention);
-                }
-                self.notified_panes.insert(pane_id);
-            }
-        }
-
-        // Request redraw for blink animation (UC-5)
-        if matches!(status, AgentStatus::NeedsInput) {
+        if pane_is_current_focus {
             self.cache.needs_redraw = true;
+            return;
         }
+
+        if !self.window.is_focused && !already_unacknowledged {
+            let body = notification_body.unwrap_or_else(|| match status {
+                AgentStatus::NeedsInput => format!("{} needs your input", agent_name),
+                AgentStatus::Idle => format!("{} finished", agent_name),
+                AgentStatus::Running => unreachable!(),
+            });
+            self.pending_platform_commands.push(
+                crate::tide_platform::WindowCommand::SendSystemNotification {
+                    title: agent_name.to_string(),
+                    body,
+                    pane_id,
+                },
+            );
+            if matches!(status, AgentStatus::NeedsInput) {
+                self.pending_platform_commands
+                    .push(crate::tide_platform::WindowCommand::RequestUserAttention);
+            }
+        }
+
+        self.cache.needs_redraw = true;
     }
 }
 
