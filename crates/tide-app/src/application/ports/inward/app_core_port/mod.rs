@@ -17,6 +17,7 @@ pub(crate) trait AppCorePort {
     fn invalidate_pane(&mut self, id: PaneId);
     fn invalidate_all_panes(&mut self);
     fn request_redraw(&mut self);
+    fn queue_show_window(&mut self);
     fn sync_file_tree_modified_editor_cache(&mut self);
 
     // ── State queries ──

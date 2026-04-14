@@ -19,9 +19,9 @@ pub fn assert_pane_focused(app: &TestApp, pane_id: u64) {
     let panes = app.list_panes().expect("list_panes failed");
     let arr = panes.as_array().expect("list_panes should return an array");
 
-    let focused = arr.iter().find(|p| {
-        p.get("focused").and_then(|v| v.as_bool()) == Some(true)
-    });
+    let focused = arr
+        .iter()
+        .find(|p| p.get("focused").and_then(|v| v.as_bool()) == Some(true));
 
     match focused {
         Some(p) => {

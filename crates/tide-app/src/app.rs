@@ -489,6 +489,11 @@ impl crate::application::ports::inward::AppCorePort for App {
         self.cache.needs_redraw = true;
     }
 
+    fn queue_show_window(&mut self) {
+        self.pending_platform_commands
+            .push(crate::tide_platform::WindowCommand::ShowWindow);
+    }
+
     fn sync_file_tree_modified_editor_cache(&mut self) {
         App::sync_file_tree_modified_editor_cache(self);
     }
@@ -1072,9 +1077,10 @@ impl crate::application::ports::inward::GatewayPort for App {
                         "agent-running",
                         Some(crate::state::gateway_status::AgentStatus::Running),
                     )),
-                    Some("agent-idle") => {
-                        Some(("agent-idle", Some(crate::state::gateway_status::AgentStatus::Idle)))
-                    }
+                    Some("agent-idle") => Some((
+                        "agent-idle",
+                        Some(crate::state::gateway_status::AgentStatus::Idle),
+                    )),
                     Some("agent-needs-input") => Some((
                         "agent-needs-input",
                         Some(crate::state::gateway_status::AgentStatus::NeedsInput),
@@ -1268,7 +1274,6 @@ impl crate::application::ports::inward::GatewayPort for App {
             }
             self.notified_panes.insert(pane_id);
         }
-
         self.cache.needs_redraw = true;
     }
 }
@@ -1276,14 +1281,19 @@ impl crate::application::ports::inward::GatewayPort for App {
 impl App {
     fn wrapped_agent_notification_title(&self, pane_id: PaneId) -> Option<String> {
         if self.panes.contains_key(&pane_id) {
-            return Some(format!("Tide - {}", crate::ui::pane_title(&self.panes, pane_id)));
+            return Some(format!(
+                "Tide - {}",
+                crate::ui::pane_title(&self.panes, pane_id)
+            ));
         }
 
         self.ws.workspaces.iter().find_map(|workspace| {
-            workspace
-                .panes
-                .contains_key(&pane_id)
-                .then(|| format!("Tide - {}", crate::ui::pane_title(&workspace.panes, pane_id)))
+            workspace.panes.contains_key(&pane_id).then(|| {
+                format!(
+                    "Tide - {}",
+                    crate::ui::pane_title(&workspace.panes, pane_id)
+                )
+            })
         })
     }
 

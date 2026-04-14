@@ -168,10 +168,10 @@ impl TestApp {
         }
 
         // Return the result field
-        response
-            .get("result")
-            .cloned()
-            .ok_or_else(|| format!("Invalid JSON-RPC response: missing 'result' field. Response: {response}").into())
+        response.get("result").cloned().ok_or_else(|| {
+            format!("Invalid JSON-RPC response: missing 'result' field. Response: {response}")
+                .into()
+        })
     }
 
     // ── Convenience methods ─────────────────────────────────────────

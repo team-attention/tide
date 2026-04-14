@@ -197,6 +197,11 @@ impl App {
     ) -> bool {
         use crate::state::gateway_status::AgentStatus;
 
+        let direct_status = self.pane_agent_attention_status(pane_id);
+        if matches!(direct_status, Some(AgentStatus::NeedsInput)) {
+            return true;
+        }
+
         self.pane_agent_attention_status(pane_id)
             .is_some_and(|status| matches!(status, AgentStatus::NeedsInput))
     }
@@ -212,11 +217,25 @@ impl App {
                 .get(&pane_id)
                 .filter(|agent| agent.wrapper_managed)
                 .and_then(|agent| agent.status),
+            _ => None,
             Some(PaneKind::Editor(_))
             | Some(PaneKind::Diff(_))
             | Some(PaneKind::Browser(_))
             | Some(PaneKind::Launcher(_))
             | None => None,
+        }
+    }
+
+    pub(crate) fn pane_has_unresolved_wrapped_agent_attention(
+        &self,
+        pane_id: crate::tide_core::PaneId,
+    ) -> bool {
+        use crate::state::gateway_status::AgentStatus;
+
+        match self.pane_agent_attention_status(pane_id) {
+            Some(AgentStatus::NeedsInput) => true,
+            Some(AgentStatus::Idle) => self.notified_panes.contains(&pane_id),
+            _ => false,
         }
     }
 

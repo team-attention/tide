@@ -153,7 +153,7 @@ cargo build --release                    # binary
 
 Mockups live in `ui.pen` (Pencil).
 
-
+Inspiration: [workspace-ui](https://example.com/) — workspace sidebar + splits + session restore.
 
 ## License
 

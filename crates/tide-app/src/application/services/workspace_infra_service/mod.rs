@@ -254,6 +254,8 @@ impl App {
         }
         let artifacts = &mut self.ws.workspace_context_artifacts[self.ws.active];
         std::mem::swap(&mut self.context_artifacts, artifacts);
+
+        self.refresh_workspace_agent_notification(self.ws.active);
     }
 
     /// Load the active workspace's state from the workspaces vec into App fields.
@@ -348,10 +350,15 @@ impl App {
                 bp.is_first_responder = false;
             }
         }
+        let previous_workspace = self.ws.active;
         self.save_active_workspace();
         self.ws.active = idx;
         self.load_active_workspace();
-        self.refresh_workspace_agent_notification(self.ws.active);
+        self.refresh_workspace_agent_notification(previous_workspace);
+        // Clear agent notification for the workspace we're switching to (UC-6 BR-2)
+        if self.ws.active < self.ws.workspace_extras.len() {
+            self.ws.workspace_extras[self.ws.active].has_agent_notification = false;
+        }
         // Update TIDE_WORKSPACE for new terminals spawned in this workspace
         let ws_name = self.ws.workspaces[idx].name.clone();
         crate::tide_terminal::set_active_workspace_name(ws_name);

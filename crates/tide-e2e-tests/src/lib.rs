@@ -1,2 +1,2 @@
-pub mod harness;
 pub mod assertions;
+pub mod harness;

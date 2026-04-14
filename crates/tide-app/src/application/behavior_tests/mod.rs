@@ -47,3 +47,4 @@ mod text_input_routing;
 mod theme_behavior;
 mod titlebar_toggle_behavior;
 mod workspace_behavior;
+mod wrapped_agent_release_integration;
