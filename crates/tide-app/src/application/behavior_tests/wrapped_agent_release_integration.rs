@@ -119,6 +119,21 @@ fn local_bundle_build_script_strips_lsrequirescarbon_before_signing() {
 }
 
 #[test]
+fn local_bundle_build_script_fails_closed_if_lsrequirescarbon_survives() {
+    // UC-1 BR-19: The local Tide.app build script must verify LSRequiresCarbon is gone before codesign.
+    let script = include_str!("../../../../../scripts/build-app.sh");
+
+    assert!(
+        script.contains("Print :LSRequiresCarbon"),
+        "expected build-app.sh to verify LSRequiresCarbon is absent before codesign"
+    );
+    assert!(
+        !script.contains("Delete :LSRequiresCarbon\" \"$APP_PLIST\" >/dev/null 2>&1 || true"),
+        "expected build-app.sh not to swallow LSRequiresCarbon strip failures"
+    );
+}
+
+#[test]
 fn macos_launch_path_defers_activation_until_window_reveal() {
     // UC-1 BR-3: MacosApp::run must defer activation until show_window().
     let source = include_str!("../../adapter/outward/platform_adapter/macos/app.rs");
@@ -217,8 +232,8 @@ fn needs_input_status_stays_attention_orange_when_focused() {
 }
 
 #[test]
-fn focusing_wrapped_agent_pane_clears_notification_suppression_without_clearing_needs_input() {
-    // UC-3 BR-10: Focusing the source Pane clears notification suppression without clearing NeedsInput.
+fn focusing_wrapped_agent_pane_acknowledges_needs_input_and_clears_notification_suppression() {
+    // UC-3 BR-10, UC-5 BR-8: Focusing the source Pane acknowledges NeedsInput and clears notification suppression.
     use crate::FocusNavPort;
 
     let (mut app, agent_pane_id, _) =
@@ -234,7 +249,7 @@ fn focusing_wrapped_agent_pane_clears_notification_suppression_without_clearing_
             .get(&agent_pane_id)
             .unwrap()
             .status,
-        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+        None
     );
 }
 

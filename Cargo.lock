@@ -3002,7 +3002,7 @@ dependencies = [
 
 [[package]]
 name = "tide-app"
-version = "0.51.8"
+version = "0.51.9"
 dependencies = [
  "alacritty_terminal",
  "arboard",
@@ -3044,7 +3044,7 @@ dependencies = [
 
 [[package]]
 name = "tide-e2e-tests"
-version = "0.51.8"
+version = "0.51.9"
 dependencies = [
  "serde",
  "serde_json",

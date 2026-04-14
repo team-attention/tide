@@ -1879,8 +1879,8 @@ fn focusing_associated_pane_does_not_clear_paired_terminal_attention() {
 }
 
 #[test]
-fn focusing_terminal_clears_notification_suppression_without_clearing_status() {
-    // UC-5 BR-8: Focusing the wrapped-agent Terminal in the active window clears duplicate suppression without clearing AgentStatus.
+fn focusing_terminal_acknowledges_attention_and_clears_notification_suppression() {
+    // UC-5 BR-8: Focusing the wrapped-agent Terminal in the active window acknowledges unresolved attention and clears duplicate suppression.
     use crate::WorkspaceNavPort;
 
     let (mut app, first_terminal_id) = app_with_terminal();
@@ -1913,7 +1913,7 @@ fn focusing_terminal_clears_notification_suppression_without_clearing_status() {
             .get(&first_terminal_id)
             .unwrap()
             .status,
-        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+        None
     );
     assert!(!app.notified_panes.contains(&first_terminal_id));
 }
@@ -2262,10 +2262,10 @@ fn codex_stop_notification_uses_transcript_final_answer_snippet() {
             "pane": pane_id,
             "agent": "codex",
             "payload": {
-                "hook-event-name": "Stop",
-                "turn-id": "turn-1",
-                "transcript-path": transcript_path,
-                "last-assistant-message": "Stale payload text that should not win."
+                "hook_event_name": "Stop",
+                "turn_id": "turn-1",
+                "transcript_path": transcript_path,
+                "last_assistant_message": "Stale payload text that should not win."
             }
         }),
     )
@@ -2285,6 +2285,82 @@ fn codex_stop_notification_uses_transcript_final_answer_snippet() {
             crate::tide_platform::WindowCommand::RequestUserAttention
         ))
     );
+}
+
+#[test]
+fn codex_stop_notification_uses_event_msg_final_answer_snippet() {
+    // UC-2 BR-4, UC-6 BR-10: Codex Stop notifications accept event_msg final-answer text when response_item text is absent.
+    use crate::PaneAccessPort;
+    let (mut app, pane_id) = app_with_terminal();
+    app.window.is_focused = false;
+    let expected_title = format!("Tide - {}", app.pane_title(pane_id));
+    let transcript_path = write_codex_transcript(
+        "{\"type\":\"session_meta\",\"payload\":{\"id\":\"main-thread\"}}\n\
+         {\"timestamp\":\"2026-04-14T12:00:00.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"agent_message\",\"message\":\"Resolved the final answer from event_msg.\",\"phase\":\"final_answer\"}}\n",
+    );
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "codex-stop",
+            "pane": pane_id,
+            "agent": "codex",
+            "payload": {
+                "hook_event_name": "Stop",
+                "turn_id": "turn-event-msg",
+                "transcript_path": transcript_path,
+                "last_assistant_message": "Stale payload text that should not win."
+            }
+        }),
+    )
+    .unwrap();
+    let _ = std::fs::remove_file(&transcript_path);
+
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::SendSystemNotification { title, pane_id: body_pane_id, body, .. })
+            if *body_pane_id == pane_id
+                && title == &expected_title
+                && body == "Resolved the final answer from event_msg."
+    ));
+}
+
+#[test]
+fn codex_stop_notification_uses_task_complete_last_agent_message_snippet() {
+    // UC-2 BR-4, UC-6 BR-10: Codex Stop notifications accept task_complete.last_agent_message when other structured text is absent.
+    use crate::PaneAccessPort;
+    let (mut app, pane_id) = app_with_terminal();
+    app.window.is_focused = false;
+    let expected_title = format!("Tide - {}", app.pane_title(pane_id));
+    let transcript_path = write_codex_transcript(
+        "{\"type\":\"session_meta\",\"payload\":{\"id\":\"main-thread\"}}\n\
+         {\"timestamp\":\"2026-04-14T12:00:01.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\",\"turn_id\":\"turn-task-complete\",\"last_agent_message\":\"Resolved the final answer from task_complete.\"}}\n",
+    );
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "codex-stop",
+            "pane": pane_id,
+            "agent": "codex",
+            "payload": {
+                "hook_event_name": "Stop",
+                "turn_id": "turn-task-complete",
+                "transcript_path": transcript_path,
+                "last_assistant_message": "Stale payload text that should not win."
+            }
+        }),
+    )
+    .unwrap();
+    let _ = std::fs::remove_file(&transcript_path);
+
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::SendSystemNotification { title, pane_id: body_pane_id, body, .. })
+            if *body_pane_id == pane_id
+                && title == &expected_title
+                && body == "Resolved the final answer from task_complete."
+    ));
 }
 
 #[test]
@@ -2569,10 +2645,10 @@ fn codex_stop_payload_classifies_idle_or_needs_input() {
                 "pane": pane_id,
                 "agent": "codex",
                 "payload": {
-                    "hook-event-name": "Stop",
-                    "turn-id": turn_id,
-                    "transcript-path": transcript_path,
-                    "last-assistant-message": payload_message
+                    "hook_event_name": "Stop",
+                    "turn_id": turn_id,
+                    "transcript_path": transcript_path,
+                    "last_assistant_message": payload_message
                 }
             }),
         )
@@ -2609,9 +2685,9 @@ fn codex_stop_payload_falls_back_to_idle_when_unclassified() {
             "pane": pane_id,
             "agent": "codex",
             "payload": {
-                "hook-event-name": "Stop",
-                "turn-id": "turn-3",
-                "last-assistant-message": "rename complete and verified cargo build succeeds."
+                "hook_event_name": "Stop",
+                "turn_id": "turn-3",
+                "last_assistant_message": "rename complete and verified cargo build succeeds."
             }
         }),
     )
@@ -2640,10 +2716,10 @@ fn codex_stop_payload_ignores_subagent_transcript() {
             "pane": pane_id,
             "agent": "codex",
             "payload": {
-                "hook-event-name": "Stop",
-                "turn-id": "turn-4",
-                "transcript-path": transcript_path,
-                "last-assistant-message": "allow"
+                "hook_event_name": "Stop",
+                "turn_id": "turn-4",
+                "transcript_path": transcript_path,
+                "last_assistant_message": "allow"
             }
         }),
     )
@@ -2672,9 +2748,9 @@ fn codex_stop_notification_uses_generic_body_without_trusted_snippet() {
             "pane": pane_id,
             "agent": "codex",
             "payload": {
-                "hook-event-name": "Stop",
-                "turn-id": "turn-5",
-                "last-assistant-message": null
+                "hook_event_name": "Stop",
+                "turn_id": "turn-5",
+                "last_assistant_message": null
             }
         }),
     )
@@ -2934,7 +3010,7 @@ fn window_focus_acknowledges_attention_for_the_already_focused_pane() {
 
 #[test]
 fn workspace_notification_recomputes_for_remaining_pending_panes() {
-    // UC-3 BR-12: Inactive-Workspace highlight recomputes from remaining unresolved Wrapped Agent panes.
+    // UC-3 BR-12, UC-5 BR-8: Inactive-Workspace highlight recomputes from remaining unresolved Wrapped Agent panes after direct focus acknowledges one source Pane.
     use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
     use crate::WorkspaceNavPort;
     let (mut app, active_terminal_id) = app_with_terminal();
@@ -3001,7 +3077,7 @@ fn workspace_notification_recomputes_for_remaining_pending_panes() {
             .get(&first_terminal_id)
             .unwrap()
             .status,
-        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+        None
     );
     assert_eq!(
         app.gateway

@@ -32,8 +32,12 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
             if self.is_pane_pinned(id) {
                 self.dock.pinned_dock_layout.set_active_tab(id);
             }
-            self.notified_panes.remove(&id);
-            self.refresh_workspace_agent_notification(self.ws.active);
+            if self.window.is_focused && self.pane_has_unresolved_wrapped_agent_attention(id) {
+                self.acknowledge_agent_attention(id);
+            } else {
+                self.notified_panes.remove(&id);
+                self.refresh_workspace_agent_notification(self.ws.active);
+            }
             self.cache.invalidate_chrome();
             self.sync_browser_webview_frames();
             self.reroute_backgrounded_wrapped_agent_attention_excluding(Some(id));
@@ -50,8 +54,12 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
             self.focus.stage_focused = Some(id);
         }
         if self.focus.focused == Some(id) && prev_stage == self.focus.stage_focused {
-            self.notified_panes.remove(&id);
-            self.refresh_workspace_agent_notification(self.ws.active);
+            if self.window.is_focused && self.pane_has_unresolved_wrapped_agent_attention(id) {
+                self.acknowledge_agent_attention(id);
+            } else {
+                self.notified_panes.remove(&id);
+                self.refresh_workspace_agent_notification(self.ws.active);
+            }
             return;
         }
         if let Some(prev_id) = self.focus.focused {
@@ -72,8 +80,12 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         if prev_stage != self.focus.stage_focused {
             self.swap_dock_state(id);
         }
-        self.notified_panes.remove(&id);
-        self.refresh_workspace_agent_notification(self.ws.active);
+        if self.window.is_focused && self.pane_has_unresolved_wrapped_agent_attention(id) {
+            self.acknowledge_agent_attention(id);
+        } else {
+            self.notified_panes.remove(&id);
+            self.refresh_workspace_agent_notification(self.ws.active);
+        }
         self.cache.invalidate_chrome();
         self.update_file_tree_cwd();
         self.sync_browser_webview_frames();
