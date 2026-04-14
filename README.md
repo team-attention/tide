@@ -153,7 +153,7 @@ cargo build --release                    # binary
 
 Mockups live in `ui.pen` (Pencil).
 
-
+Inspiration: [cmux](https://www.cmux.dev/) — workspace sidebar + splits + session restore.
 
 ## License
 

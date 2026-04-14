@@ -18,6 +18,7 @@ use crate::GatewayPort;
 use crate::LayoutPort;
 use crate::PaneAccessPort;
 use crate::PaneLifecyclePort;
+use crate::WorkspaceNavPort;
 
 use super::protocol::CliError;
 
@@ -31,6 +32,7 @@ pub(crate) trait CliPorts:
     + LayoutPort
     + PaneAccessPort
     + PaneLifecyclePort
+    + WorkspaceNavPort
 {
 }
 impl<
@@ -40,7 +42,8 @@ impl<
             + GatewayPort
             + LayoutPort
             + PaneAccessPort
-            + PaneLifecyclePort,
+            + PaneLifecyclePort
+            + WorkspaceNavPort,
     > CliPorts for T
 {
 }
@@ -108,6 +111,7 @@ impl crate::App {
             "split-horizontal" => cli_split(self, SplitDirection::Horizontal, params),
             "close-pane" => cli_close_pane(self, params),
             "focus-pane" => cli_focus_pane(self, params),
+            "activate-notification-target" => cli_activate_notification_target(self, params),
             "resize-pane" => cli_resize_pane(self, params),
             "open-terminal" => cli_open_terminal(self, params),
             "open-editor" => cli_open_editor(self, params),
@@ -542,6 +546,25 @@ fn cli_focus_pane(
 
     ctx.focus_pane(pane_id);
     ctx.gateway_notify("focus-changed", json!({"pane_id": pane_id}));
+    Ok(json!({"ok": true}))
+}
+
+fn cli_activate_notification_target(
+    ctx: &mut (impl AppCorePort + PaneAccessPort + WorkspaceNavPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = params
+        .get("pane_id")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| CliError::InvalidParams("pane_id required".into()))?;
+
+    if !ctx.has_pane_in_any_workspace(pane_id) {
+        return Ok(json!({"ok": true}));
+    }
+
+    ctx.activate_notification_target(pane_id);
+    ctx.queue_show_window();
+    ctx.request_redraw();
     Ok(json!({"ok": true}))
 }
 
@@ -1343,7 +1366,6 @@ fn cli_notify(
             } else {
                 "Agent"
             });
-
     let agent_name = {
         let agents = ctx.detected_agents_mut();
         if let Some(agent) = agents.get_mut(&pane_id) {
@@ -1400,6 +1422,53 @@ fn cli_notify(
     }
 
     Ok(json!({"ok": true}))
+}
+
+fn wrapped_agent_notification_snippet_from_payload(
+    event: &str,
+    agent_hint: &str,
+    payload: Option<&Value>,
+) -> Option<String> {
+    match agent_hint {
+        "codex" if event == "codex-turn-complete" => payload
+            .and_then(codex_completed_turn_notification_snippet)
+            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
+        "claude" => payload
+            .and_then(claude_notification_snippet)
+            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
+        "gemini" => payload
+            .and_then(|value| gemini_notification_snippet(event, value))
+            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
+        _ => None,
+    }
+}
+
+fn codex_completed_turn_notification_snippet(payload: &Value) -> Option<String> {
+    serde_json::from_value::<CodexCompletedTurnPayload>(payload.clone())
+        .ok()
+        .and_then(|payload| {
+            if payload.payload_type == "agent-turn-complete" {
+                payload.last_assistant_message
+            } else {
+                None
+            }
+        })
+}
+
+fn claude_notification_snippet(payload: &Value) -> Option<String> {
+    serde_json::from_value::<ClaudeHookPayload>(payload.clone())
+        .ok()
+        .and_then(|payload| payload.message)
+}
+
+fn gemini_notification_snippet(event: &str, payload: &Value) -> Option<String> {
+    serde_json::from_value::<GeminiHookPayload>(payload.clone())
+        .ok()
+        .and_then(|payload| match event {
+            "agent-idle" => payload.prompt_response.or(payload.message),
+            "agent-needs-input" => payload.message.or(payload.prompt_response),
+            _ => None,
+        })
 }
 
 #[derive(Debug, Deserialize)]
@@ -1465,53 +1534,6 @@ fn classify_codex_completed_turn_payload(
     }
 
     AgentStatus::Idle
-}
-
-fn wrapped_agent_notification_snippet_from_payload(
-    event: &str,
-    agent_hint: &str,
-    payload: Option<&Value>,
-) -> Option<String> {
-    match agent_hint {
-        "codex" if event == "codex-turn-complete" => payload
-            .and_then(codex_completed_turn_notification_snippet)
-            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
-        "claude" => payload
-            .and_then(claude_notification_snippet)
-            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
-        "gemini" => payload
-            .and_then(|value| gemini_notification_snippet(event, value))
-            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
-        _ => None,
-    }
-}
-
-fn codex_completed_turn_notification_snippet(payload: &Value) -> Option<String> {
-    serde_json::from_value::<CodexCompletedTurnPayload>(payload.clone())
-        .ok()
-        .and_then(|payload| {
-            if payload.payload_type == "agent-turn-complete" {
-                payload.last_assistant_message
-            } else {
-                None
-            }
-        })
-}
-
-fn claude_notification_snippet(payload: &Value) -> Option<String> {
-    serde_json::from_value::<ClaudeHookPayload>(payload.clone())
-        .ok()
-        .and_then(|payload| payload.message)
-}
-
-fn gemini_notification_snippet(event: &str, payload: &Value) -> Option<String> {
-    serde_json::from_value::<GeminiHookPayload>(payload.clone())
-        .ok()
-        .and_then(|payload| match event {
-            "agent-idle" => payload.prompt_response.or(payload.message),
-            "agent-needs-input" => payload.message.or(payload.prompt_response),
-            _ => None,
-        })
 }
 
 fn normalized_matches_codex_prompt(normalized_message: &str, phrase: &str) -> bool {

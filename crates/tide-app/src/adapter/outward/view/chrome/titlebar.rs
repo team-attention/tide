@@ -466,13 +466,12 @@ pub(super) fn render_titlebar_and_sidebar(
             let is_active = i == app.ws.active;
             let ws_name = app.ws.workspaces[i].name.clone();
             let (has_running, has_alert, has_connected_idle) = app.workspace_stage_agent_flags(i);
-            let indicator_status =
-                workspace_item_indicator_status(
-                    is_active,
-                    has_running,
-                    has_alert,
-                    has_connected_idle,
-                );
+            let indicator_status = workspace_item_indicator_status(
+                is_active,
+                has_running,
+                has_alert,
+                has_connected_idle,
+            );
             let indicator_color =
                 indicator_status.map(|status| workspace_item_indicator_color(status, blink_time));
 

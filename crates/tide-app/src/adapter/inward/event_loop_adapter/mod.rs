@@ -314,6 +314,7 @@ pub(crate) fn handle_platform_event(
         }
         PlatformEvent::SystemNotificationActivated { pane_id } => {
             ctx.activate_notification_target(pane_id);
+            window.show_window();
             ctx.request_redraw();
         }
         PlatformEvent::NotificationAuthorizationStatusChanged { status } => {
@@ -781,13 +782,11 @@ impl App {
                             } else {
                                 // Keep wrapper-managed presence even when process scan misses a
                                 // launch window or intermittently fails across Workspace swaps.
-                                let keep_existing = self.gateway.detected_agents.get(&id).map_or(
-                                    false,
-                                    |a| {
+                                let keep_existing =
+                                    self.gateway.detected_agents.get(&id).map_or(false, |a| {
                                         a.status.is_some()
                                             || (a.wrapper_managed && a.gateway_connected)
-                                    },
-                                );
+                                    });
                                 if !keep_existing {
                                     self.gateway.detected_agents.remove(&id);
                                 }
@@ -1080,6 +1079,9 @@ impl App {
             let cmds: Vec<_> = self.pending_platform_commands.drain(..).collect();
             for cmd in cmds {
                 match cmd {
+                    WindowCommand::ShowWindow => {
+                        window.show_window();
+                    }
                     WindowCommand::SendSystemNotification {
                         ref title,
                         ref body,

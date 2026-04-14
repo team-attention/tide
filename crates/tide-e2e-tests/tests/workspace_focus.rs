@@ -49,7 +49,11 @@ fn test_send_keys_and_capture() {
         || {
             app.capture_pane(pane_id)
                 .ok()
-                .and_then(|c| c.get("content").and_then(|v| v.as_str()).map(|s| s.contains("hello")))
+                .and_then(|c| {
+                    c.get("content")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.contains("hello"))
+                })
                 .unwrap_or(false)
         },
     )

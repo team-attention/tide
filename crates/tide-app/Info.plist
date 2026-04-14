@@ -30,8 +30,6 @@
   <string>13.0</string>
   <key>LSMultipleInstancesProhibited</key>
   <true/>
-  <key>LSRequiresCarbon</key>
-  <true/>
   <key>NSHighResolutionCapable</key>
   <true/>
 

@@ -74,9 +74,9 @@
 
 ### UC-5: ResolveNeedsInputAttention
 
-- Trigger: the user focuses the source wrapped-agent `Terminal` or activates its delivered notification.
+- Trigger: the user focuses the source wrapped-agent `Terminal` while Tide is focused, or Tide regains focus with that `Pane` already focused after a routed notification.
 - Preconditions: the source `Pane` still carries unresolved `NeedsInput` attention.
-- Flow: Tide clears the unresolved alert, clears duplicate suppression, and recomputes the affected Workspace chrome.
+- Flow: Tide clears duplicate suppression on direct focus, and the focused-window restore path may also acknowledge the unresolved lifecycle state before recomputing the affected Workspace chrome.
 - Postconditions: `Idle` remains a projection state and does not need alert acknowledgment.
 
 ### UC-6: ComposeWrappedAgentNotificationBody
@@ -91,7 +91,7 @@
 - Trigger: a notification activation targets a `Pane`.
 - Preconditions: the delivered notification refers to a source `PaneId`.
 - Flow: Tide resolves the owning `Workspace`, then focuses the target `Pane`.
-- Postconditions: notification activation cannot leak attention across Workspaces through `PaneId` reuse.
+- Postconditions: notification activation cannot leak attention across Workspaces through `PaneId` reuse, and acknowledgment remains the responsibility of the normal focused-window path.
 
 ## Invariants
 
@@ -100,7 +100,7 @@
 - `Idle` may update chrome and inactive Workspace projection, but it never queues macOS notifications or requests user attention.
 - `NeedsInput` is the only lifecycle state that may queue macOS notifications or request user attention.
 - `Wrapped Agent Presence` is separate from `AgentStatus`; a connected wrapped-agent `Terminal` with no active status may render `ConnectedIdle`.
-- Direct focus on the wrapped-agent `Terminal`, or activation of its delivered notification, is the only resolution path for unresolved `NeedsInput` attention.
+- Direct focus on the wrapped-agent `Terminal` clears duplicate suppression, while the focused-window restore path is responsible for acknowledging the unresolved lifecycle state.
 - `PaneId` values used by routed notifications must remain unique across live and cold-stored Workspaces so activation resolves the correct source `Pane`.
 - Duplicate suppression may block repeated `NeedsInput` deliveries until acknowledgment, but it must not broaden the set of routable states.
 
@@ -126,8 +126,9 @@
 | UC-4 | BR-4 | existing | `needs_input_border_blinks_orange_when_unfocused` |
 | UC-4 | BR-4 | new | `background_notification_routes_for_focused_pane_when_window_is_unfocused` |
 | UC-4 | BR-4 | new | `window_blur_after_an_unresolved_alert_routes_a_system_notification` |
-| UC-5 | BR-5 | existing | `focusing_terminal_clears_wrapped_agent_attention` |
+| UC-5 | BR-5 | existing | `focusing_terminal_clears_notification_suppression_without_clearing_status` |
 | UC-5 | BR-5 | new | `notification_activation_with_missing_pane_is_no_op` |
+| UC-5 | BR-5 | existing | `window_focus_acknowledges_attention_for_the_already_focused_pane` |
 | UC-6 | BR-6 | existing | `codex_completed_turn_notification_uses_last_assistant_message_snippet` |
 | UC-6 | BR-6 | new | `backgrounded_wrapped_agent_reroute_reuses_the_stored_notification_snippet` |
 | UC-7 | BR-7 | existing | `macos_notification_activation_switches_to_target_workspace_and_focuses_target_pane` |
@@ -156,8 +157,8 @@
 
 ### UC-5: ResolveNeedsInputAttention
 
-- BR-8: Focusing the source wrapped-agent `Terminal` or activating its delivered notification clears unresolved `NeedsInput` attention.
-- BR-9: Acknowledgment recomputes the affected Workspace chrome after clearing unresolved attention.
+- BR-8: Focusing the source wrapped-agent `Terminal` in the active Tide window clears duplicate suppression without changing `AgentStatus`.
+- BR-9: Restoring Tide window focus to an already-focused source `Pane` acknowledges unresolved attention and recomputes the affected Workspace chrome.
 
 ### UC-6: ComposeWrappedAgentNotificationBody
 
@@ -168,6 +169,7 @@
 
 - BR-12: Notification activation must resolve the correct owning `Workspace` from the source `PaneId`.
 - BR-13: `PaneId` reuse across live or cold-stored Workspaces must not cause a routed notification to target the wrong `Pane`.
+- BR-14: Notification activation focuses the target `Workspace` and source `Pane`, but it does not acknowledge unresolved attention until the focused-window path runs.
 
 ## Failure Cases
 

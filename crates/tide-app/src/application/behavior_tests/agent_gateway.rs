@@ -1774,8 +1774,8 @@ fn osc9_unmanaged_notification_does_not_create_attention_source() {
 }
 
 #[test]
-fn focusing_pane_clears_needs_input_status() {
-    // Focusing a pane with NeedsInput should clear the status (user has seen it)
+fn focusing_pane_preserves_needs_input_status() {
+    // Wrapped-agent NeedsInput remains active after focus until the next Running signal.
     use crate::FocusNavPort;
     let (mut app, id) = app_with_detected_agent();
     app.handle_terminal_notification(id, "tide:agent-needs-input");
@@ -1784,12 +1784,15 @@ fn focusing_pane_clears_needs_input_status() {
         Some(crate::state::gateway_status::AgentStatus::NeedsInput)
     );
     app.focus_pane(id);
-    assert_eq!(app.gateway.detected_agents.get(&id).unwrap().status, None);
+    assert_eq!(
+        app.gateway.detected_agents.get(&id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
 }
 
 #[test]
-fn focusing_pane_clears_idle_status() {
-    // Focusing a pane with Idle (task completed) should clear the status
+fn focusing_pane_preserves_idle_status() {
+    // Wrapped-agent Idle remains connected idle after focus so the Pane can render acknowledged completion chrome.
     use crate::FocusNavPort;
     let (mut app, id) = app_with_detected_agent();
     app.handle_terminal_notification(id, "tide:agent-running");
@@ -1799,7 +1802,10 @@ fn focusing_pane_clears_idle_status() {
         Some(crate::state::gateway_status::AgentStatus::Idle)
     );
     app.focus_pane(id);
-    assert_eq!(app.gateway.detected_agents.get(&id).unwrap().status, None);
+    assert_eq!(
+        app.gateway.detected_agents.get(&id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::Idle)
+    );
 }
 
 #[test]
@@ -1841,8 +1847,8 @@ fn focusing_associated_pane_does_not_clear_paired_terminal_attention() {
 }
 
 #[test]
-fn focusing_terminal_clears_wrapped_agent_attention() {
-    // UC-3 BR-8: Focusing the wrapped-agent Terminal acknowledges its pending attention.
+fn focusing_terminal_clears_notification_suppression_without_clearing_status() {
+    // UC-5 BR-8: Focusing the wrapped-agent Terminal in the active window clears duplicate suppression without clearing AgentStatus.
     use crate::WorkspaceNavPort;
 
     let (mut app, first_terminal_id) = app_with_terminal();
@@ -1875,7 +1881,7 @@ fn focusing_terminal_clears_wrapped_agent_attention() {
             .get(&first_terminal_id)
             .unwrap()
             .status,
-        None
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
     );
     assert!(!app.notified_panes.contains(&first_terminal_id));
 }
@@ -2238,10 +2244,10 @@ fn foreground_notification_presentation_uses_banner_and_sound() {
 
 #[test]
 fn duplicate_system_notification_suppressed_until_acknowledged() {
-    // UC-4 BR-6: NeedsInput system notifications are not sent again until user acknowledges (focuses).
+    // UC-4 BR-6: NeedsInput system notifications are not sent again until the source Pane is focused in the active window.
     use crate::FocusNavPort;
     let (mut app, agent_pane, _) = app_with_unfocused_agent();
-    app.window.is_focused = false;
+    app.window.is_focused = true;
 
     // First notification: should queue
     app.handle_terminal_notification(agent_pane, "tide:agent-needs-input");
@@ -2390,11 +2396,13 @@ fn stale_idle_snippet_does_not_override_future_needs_input_visible_fallback() {
                 && body == "• Fresh visible fallback text from the terminal."
     ));
     assert!(
-        app.pending_platform_commands.iter().all(|command| !matches!(
-            command,
-            crate::tide_platform::WindowCommand::SendSystemNotification { body, .. }
-                if body == "Stale idle completion text that must not be reused."
-        )),
+        app.pending_platform_commands
+            .iter()
+            .all(|command| !matches!(
+                command,
+                crate::tide_platform::WindowCommand::SendSystemNotification { body, .. }
+                    if body == "Stale idle completion text that must not be reused."
+            )),
         "later NeedsInput notifications must not reuse the earlier Idle snippet"
     );
 }
@@ -2622,7 +2630,12 @@ fn idle_wrapped_agent_states_do_not_enqueue_notifications_or_attention() {
     claude_app.window.is_focused = false;
     claude_app.handle_terminal_notification(claude_pane, "tide:wrapped-agent:claude:agent-idle");
     assert_eq!(
-        claude_app.gateway.detected_agents.get(&claude_pane).unwrap().status,
+        claude_app
+            .gateway
+            .detected_agents
+            .get(&claude_pane)
+            .unwrap()
+            .status,
         Some(crate::state::gateway_status::AgentStatus::Idle)
     );
     assert!(!has_alert_command(&claude_app.pending_platform_commands));
@@ -2630,7 +2643,9 @@ fn idle_wrapped_agent_states_do_not_enqueue_notifications_or_attention() {
 
     {
         let (mut codex_app, source_pane) = app_with_terminal();
-        let focused_pane = codex_app.layout.split(source_pane, SplitDirection::Horizontal);
+        let focused_pane = codex_app
+            .layout
+            .split(source_pane, SplitDirection::Horizontal);
         let focused_terminal = TerminalPane::with_cwd(focused_pane, 80, 24, None, true).unwrap();
         codex_app
             .panes
@@ -2657,7 +2672,12 @@ fn idle_wrapped_agent_states_do_not_enqueue_notifications_or_attention() {
             )
             .unwrap();
         assert_eq!(
-            codex_app.gateway.detected_agents.get(&source_pane).unwrap().status,
+            codex_app
+                .gateway
+                .detected_agents
+                .get(&source_pane)
+                .unwrap()
+                .status,
             Some(crate::state::gateway_status::AgentStatus::Idle)
         );
         assert!(!has_alert_command(&codex_app.pending_platform_commands));
@@ -2666,7 +2686,9 @@ fn idle_wrapped_agent_states_do_not_enqueue_notifications_or_attention() {
 
     {
         let (mut gemini_app, source_pane) = app_with_terminal();
-        let focused_pane = gemini_app.layout.split(source_pane, SplitDirection::Horizontal);
+        let focused_pane = gemini_app
+            .layout
+            .split(source_pane, SplitDirection::Horizontal);
         let focused_terminal = TerminalPane::with_cwd(focused_pane, 80, 24, None, true).unwrap();
         gemini_app
             .panes
@@ -2690,7 +2712,12 @@ fn idle_wrapped_agent_states_do_not_enqueue_notifications_or_attention() {
             )
             .unwrap();
         assert_eq!(
-            gemini_app.gateway.detected_agents.get(&source_pane).unwrap().status,
+            gemini_app
+                .gateway
+                .detected_agents
+                .get(&source_pane)
+                .unwrap()
+                .status,
             Some(crate::state::gateway_status::AgentStatus::Idle)
         );
         assert!(!has_alert_command(&gemini_app.pending_platform_commands));
@@ -2789,8 +2816,8 @@ fn workspace_notification_recomputes_for_remaining_pending_panes() {
 
     app.switch_workspace(1);
     assert!(
-        app.ws.workspace_extras[1].has_agent_notification,
-        "switching into the Workspace must preserve recomputed attention while pending panes remain"
+        !app.ws.workspace_extras[1].has_agent_notification,
+        "switching into the Workspace clears the inactive-Workspace sidebar highlight while it is active"
     );
 
     app.focus_terminal(first_terminal_id);
@@ -2800,7 +2827,7 @@ fn workspace_notification_recomputes_for_remaining_pending_panes() {
             .get(&first_terminal_id)
             .unwrap()
             .status,
-        None
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
     );
     assert_eq!(
         app.gateway
@@ -2812,7 +2839,7 @@ fn workspace_notification_recomputes_for_remaining_pending_panes() {
     );
     assert!(
         app.ws.workspace_extras[1].has_agent_notification,
-        "acknowledging one pane must keep the Workspace highlight while another pane is still pending"
+        "refreshing the active Workspace should recompute its attention state from the remaining pending panes"
     );
 
     app.switch_workspace(0);
@@ -3184,7 +3211,7 @@ fn focusing_pane_clears_workspace_notification_if_no_others() {
     assert!(!app.notified_panes.contains(&agent_pane));
     assert_eq!(
         app.gateway.detected_agents.get(&agent_pane).unwrap().status,
-        None
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
     );
 }
 
@@ -3282,7 +3309,7 @@ fn cli_notify_routes_to_inactive_workspace_pane() {
 fn macos_notification_activation_switches_to_target_workspace_and_focuses_target_pane() {
     // UC-4 BR-13: Notification activation must switch to the target Workspace.
     // UC-4 BR-14: Notification activation must focus the target Pane.
-    // UC-4 BR-15: Notification activation must resolve the same attention cues as direct focus.
+    // UC-7 BR-14: Notification activation routes to the target Pane, but focused-window acknowledgment still runs separately.
     use crate::adapter::inward::event_loop_adapter::handle_platform_event;
     use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
 
@@ -3339,14 +3366,14 @@ fn macos_notification_activation_switches_to_target_workspace_and_focuses_target
     assert_eq!(app.focus.focused, Some(target_pane_id));
     assert_eq!(app.focus.focus_area, FocusArea::Stage);
     assert_eq!(app.focus.stage_focused, Some(target_pane_id));
-    assert!(!app.ws.workspace_extras[1].has_agent_notification);
+    assert!(app.ws.workspace_extras[1].has_agent_notification);
     assert_eq!(
         app.gateway
             .detected_agents
             .get(&target_pane_id)
             .unwrap()
             .status,
-        None
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
     );
     assert!(!app.notified_panes.contains(&target_pane_id));
 }
