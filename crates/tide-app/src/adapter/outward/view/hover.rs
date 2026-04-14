@@ -64,6 +64,15 @@ pub(crate) fn render_hover(
                         renderer.draw_rect(bg_rect, p.hover_close);
                     }
                 }
+                crate::state::drag_types::HoverTarget::HeaderAction(pane_id, action) => {
+                    if let Some(zone) = app
+                        .header_hit_zones
+                        .iter()
+                        .find(|z| z.pane_id == *pane_id && &z.action == action)
+                    {
+                        renderer.draw_rect(zone.rect, p.hover_tab);
+                    }
+                }
                 crate::state::drag_types::HoverTarget::FileFinderItem(_) => {
                     // File finder hover — rendered inline in overlays
                 }

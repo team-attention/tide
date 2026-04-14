@@ -106,6 +106,17 @@ fn new_empty_browser_pane_starts_with_url_bar_focused() {
 }
 
 #[test]
+fn empty_browser_pane_hides_the_native_webview_until_navigation() {
+    // UC-1 BR-31: An empty Browser Pane keeps the native WKWebView hidden until it has a committed Browser URL, so the Tide Pane background stays visible
+    let empty = BrowserPane::new(1);
+    let navigated = BrowserPane::with_url(2, "https://example.com".to_string());
+
+    assert!(!empty.native_webview_should_be_visible(false));
+    assert!(!empty.native_webview_should_be_visible(true));
+    assert!(navigated.native_webview_should_be_visible(false));
+}
+
+#[test]
 fn clicking_empty_browser_pane_content_preserves_url_bar_focus() {
     // UC-1 BR-4: Clicking Browser Pane content in an empty Browser Pane restores or preserves Browser URL-bar focus instead of switching to native content focus
     let (mut app, id) = app_with_browser();

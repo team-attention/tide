@@ -29,15 +29,16 @@ The Browser Pane target is also broader than a plain embedded surface. External 
 Browser Pane behavior must become state-driven, address-bar-truthful, and explicit about capability boundaries:
 
 1. Empty Browser Pane and loading Browser Pane are chrome-first states. Clicks and typing default to the URL bar until the user confirms navigation or explicitly activates a different Browser Pane target.
-2. Navigated Browser Pane is content-first. After successful navigation, Browser Pane content interaction defaults to the native `WKWebView` unless the user explicitly focuses the URL bar or the search bar.
-3. Search-active Browser Pane always routes text input to the search bar before the URL bar or the native `WKWebView`.
-4. URL-bar editing persists across incidental Browser Pane clicks until the user confirms or cancels editing, instead of silently bouncing focus back to Browser Pane content.
-5. Browser Pane chrome keeps explicit `Copy URL` and `Open externally` actions. External handoff is manual-only in this pass.
-6. Any `ModalStack` popup must hide the native Browser Pane view so Tide-rendered overlays stay visually above Browser Pane content.
-7. Browser Pane loading feedback remains visible even when the native `WKWebView` is hidden behind overlays or is waiting for its first usable frame.
-8. Browser Pane keeps separate committed-URL and editable-URL state, but the visible Browser URL bar must stay truthful: content-driven navigation updates the committed Browser URL immediately, and the visible Browser URL bar updates whenever the user is not actively editing a distinct Browser URL draft.
-9. Unsupported Browser Pane capability gaps are explicit in this pass. Non-renderable responses use an explicit external handoff path routed to the originating Browser Pane by `PaneId`, and passkey or AuthenticationServices-sensitive flows are treated as Browser Pane V2 capability work rather than silently implied Browser Pane guarantees.
-10. Browser Pane dirty tracking stays centralized: `sync_webview_state()` owns the `generation` bump for Browser Pane state it polls from the native `WKWebView`, including committed-URL, loading, and navigation-availability changes.
+2. Empty Browser Pane hides the native `WKWebView` until the user has a committed Browser URL, so the Tide `Pane` background remains visible instead of the default white native surface.
+3. Navigated Browser Pane is content-first. After successful navigation, Browser Pane content interaction defaults to the native `WKWebView` unless the user explicitly focuses the URL bar or the search bar.
+4. Search-active Browser Pane always routes text input to the search bar before the URL bar or the native `WKWebView`.
+5. URL-bar editing persists across incidental Browser Pane clicks until the user confirms or cancels editing, instead of silently bouncing focus back to Browser Pane content.
+6. Browser Pane chrome keeps explicit `Copy URL` and `Open externally` actions. External handoff is manual-only in this pass.
+7. Any `ModalStack` popup must hide the native Browser Pane view so Tide-rendered overlays stay visually above Browser Pane content.
+8. Browser Pane loading feedback remains visible even when the native `WKWebView` is hidden behind overlays or is waiting for its first usable frame.
+9. Browser Pane keeps separate committed-URL and editable-URL state, but the visible Browser URL bar must stay truthful: content-driven navigation updates the committed Browser URL immediately, and the visible Browser URL bar updates whenever the user is not actively editing a distinct Browser URL draft.
+10. Unsupported Browser Pane capability gaps are explicit in this pass. Non-renderable responses use an explicit external handoff path routed to the originating Browser Pane by `PaneId`, and passkey or AuthenticationServices-sensitive flows are treated as Browser Pane V2 capability work rather than silently implied Browser Pane guarantees.
+11. Browser Pane dirty tracking stays centralized: `sync_webview_state()` owns the `generation` bump for Browser Pane state it polls from the native `WKWebView`, including committed-URL, loading, and navigation-availability changes.
 
 ### Approach
 
@@ -49,7 +50,8 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 6. Keep Browser Pane chrome hit testing and rendering aligned with the existing `Copy URL` and `Open externally` actions, routed through valid inward ports and `ProcessPort::open_url()`.
 7. Route Browser Pane native-view hiding through one shared overlay check so every `ModalStack` popup obscures the native `WKWebView` consistently.
 8. Preserve Browser Pane loading feedback when the native `WKWebView` is hidden or still waiting for its first frame.
-9. Keep unsupported download and passkey flows explicit: this pass hardens Browser Pane fallback behavior, while in-app download management and AuthenticationServices integration remain Browser Pane V2 work.
+9. Keep empty Browser Pane native-view visibility explicit so Tide keeps its own dark `Pane` background until first navigation.
+10. Keep unsupported download and passkey flows explicit: this pass hardens Browser Pane fallback behavior, while in-app download management and AuthenticationServices integration remain Browser Pane V2 work.
 
 ## Bounded Contexts
 
@@ -86,6 +88,7 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
   - BR-3: Typing or pasting in a loading Browser Pane routes text to the Browser URL bar
   - BR-4: Clicking Browser Pane content in an empty Browser Pane restores or preserves Browser URL-bar focus instead of switching to native content focus
   - BR-5: Clicking Browser Pane content in a loading Browser Pane preserves Browser URL-bar focus until navigation completes or the user explicitly focuses another Browser Pane target
+  - BR-31: An empty Browser Pane keeps the native `WKWebView` hidden until it has a committed Browser URL, so the Tide `Pane` background stays visible
 
 ### UC-2: RouteFirstActionInNavigatedOrSearchActiveBrowserPane
 
@@ -196,6 +199,7 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 5. **PaneId sync**: Browser Pane UX changes preserve the PaneId sync invariant between `SplitLayout` and `App.panes`.
 6. **Committed URL truthfulness**: `BrowserPane.url` remains the source of truth for committed Browser URL state even when Browser URL-bar draft text is temporarily different.
 7. **Explicit capability boundary**: This pass can improve Browser Pane fallback behavior, but it does not imply full in-app download-manager or passkey capability.
+8. **Empty-state background consistency**: An empty navigation-mode Browser Pane must not reveal the default native `WKWebView` background before first navigation.
 
 ## Tests
 
@@ -206,6 +210,7 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 | UC-1: RouteFirstActionInEmptyOrLoadingBrowserPane | BR-3 | `browser_pane_ux` | `typing_in_loading_browser_pane_routes_text_to_url_bar` |
 | UC-1: RouteFirstActionInEmptyOrLoadingBrowserPane | BR-4 | `browser_pane_ux` | `clicking_empty_browser_pane_content_preserves_url_bar_focus` |
 | UC-1: RouteFirstActionInEmptyOrLoadingBrowserPane | BR-5 | `browser_pane_ux` | `clicking_loading_browser_pane_content_preserves_url_bar_focus` |
+| UC-1: RouteFirstActionInEmptyOrLoadingBrowserPane | BR-31 | `browser_pane_ux` | `empty_browser_pane_hides_the_native_webview_until_navigation` |
 | UC-2: RouteFirstActionInNavigatedOrSearchActiveBrowserPane | BR-6 | `browser_pane_ux` | `search_active_browser_pane_routes_text_to_search_bar` |
 | UC-2: RouteFirstActionInNavigatedOrSearchActiveBrowserPane | BR-7 | `browser_pane_ux` | `clicking_navigated_browser_pane_content_focuses_webview` |
 | UC-2: RouteFirstActionInNavigatedOrSearchActiveBrowserPane | BR-8 | `browser_pane_ux` | `typing_in_navigated_browser_pane_without_url_focus_is_consumed_by_content` |
