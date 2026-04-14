@@ -141,16 +141,15 @@ fn codex_wrapper_uses_a_temporary_codex_home_overlay() {
 }
 
 #[test]
-fn codex_wrapper_installs_user_prompt_submit_hook_and_turn_complete_notify() {
-    // UC-2 BR-5: The wrapper must install UserPromptSubmit and the official completed-turn notify wiring.
+fn codex_wrapper_installs_user_prompt_submit_and_stop_hooks() {
+    // UC-2 BR-5: The wrapper must install UserPromptSubmit and Stop hook wiring.
     let wrapper = include_str!("../../../resources/bin/codex");
 
     assert!(wrapper.contains("\"UserPromptSubmit\""));
+    assert!(wrapper.contains("\"Stop\""));
     assert!(wrapper.contains("features.codex_hooks=true"));
-    assert!(
-        wrapper.contains("notify=[\\\"$TIDE_BIN\\\",\\\"notify\\\",\\\"codex-turn-complete\\\"")
-    );
-    assert!(!wrapper.contains("\"Stop\""));
+    assert!(wrapper.contains("notify codex-stop --pane $TIDE_PANE --agent codex --payload-stdin"));
+    assert!(!wrapper.contains("codex-turn-complete"));
 }
 
 #[test]

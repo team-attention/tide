@@ -2,6 +2,8 @@
 // All command functions are free functions taking port trait bounds.
 // App.handle_cli_command() is the thin dispatch bridge.
 
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
 use serde::Deserialize;
@@ -1324,12 +1326,33 @@ fn cli_notify(
         .and_then(|v| v.as_u64())
         .map_or(true, |pid| pid == std::process::id() as u64);
 
+    let codex_stop_resolution = if event == "codex-stop" {
+        Some(resolve_codex_stop_payload(params.get("payload")))
+    } else {
+        None
+    };
+
     let (normalized_event, status) = match event {
         "agent-attached" => ("agent-attached", None),
         "agent-detached" => ("agent-detached", None),
         "agent-running" => ("agent-running", Some(AgentStatus::Running)),
         "agent-idle" => ("agent-idle", Some(AgentStatus::Idle)),
         "agent-needs-input" => ("agent-needs-input", Some(AgentStatus::NeedsInput)),
+        "codex-stop" => {
+            let status = match codex_stop_resolution.as_ref() {
+                Some(CodexStopResolution::IgnoreSubagent) => AgentStatus::Idle,
+                Some(CodexStopResolution::Resolved { assistant_message }) => {
+                    classify_codex_assistant_message(assistant_message.as_deref())
+                }
+                None => AgentStatus::Idle,
+            };
+            let normalized_event = match status {
+                AgentStatus::Running => "agent-running",
+                AgentStatus::Idle => "agent-idle",
+                AgentStatus::NeedsInput => "agent-needs-input",
+            };
+            (normalized_event, Some(status))
+        }
         "codex-turn-complete" => {
             let status = classify_codex_completed_turn_payload(params.get("payload"));
             let normalized_event = match status {
@@ -1351,6 +1374,13 @@ fn cli_notify(
         return Ok(json!({"ok": true}));
     }
 
+    if matches!(
+        codex_stop_resolution,
+        Some(CodexStopResolution::IgnoreSubagent)
+    ) {
+        return Ok(json!({"ok": true}));
+    }
+
     if event == "agent-detached" {
         let agent_key = params
             .get("agent")
@@ -1366,15 +1396,13 @@ fn cli_notify(
     // Update status if this pane has a detected agent.
     // If no agent is registered yet (wrapper hook fired before process scan),
     // auto-register from the agent name hint or with a generic name.
-    let agent_display_name =
-        params
-            .get("agent")
-            .and_then(|v| v.as_str())
-            .unwrap_or(if event == "codex-turn-complete" {
-                "codex"
-            } else {
-                "Agent"
-            });
+    let agent_display_name = params.get("agent").and_then(|v| v.as_str()).unwrap_or(
+        if matches!(event, "codex-turn-complete" | "codex-stop") {
+            "codex"
+        } else {
+            "Agent"
+        },
+    );
     let agent_name = {
         let agents = ctx.detected_agents_mut();
         if let Some(agent) = agents.get_mut(&pane_id) {
@@ -1412,16 +1440,31 @@ fn cli_notify(
             }),
         );
         if let Some(status) = status {
-            let notification_snippet =
+            let mut notification_snippet =
                 if matches!(status, AgentStatus::Idle | AgentStatus::NeedsInput) {
-                    wrapped_agent_notification_snippet_from_payload(
-                        event,
-                        agent_display_name,
-                        params.get("payload"),
-                    )
+                    codex_stop_resolution
+                        .as_ref()
+                        .and_then(codex_stop_notification_snippet)
+                        .or_else(|| {
+                            wrapped_agent_notification_snippet_from_payload(
+                                event,
+                                agent_display_name,
+                                params.get("payload"),
+                            )
+                        })
                 } else {
                     None
                 };
+            if matches!(event, "codex-turn-complete" | "codex-stop")
+                && matches!(status, AgentStatus::Idle | AgentStatus::NeedsInput)
+                && notification_snippet.is_none()
+            {
+                notification_snippet = Some(match status {
+                    AgentStatus::Idle => format!("{name} finished"),
+                    AgentStatus::NeedsInput => format!("{name} needs your input"),
+                    AgentStatus::Running => unreachable!(),
+                });
+            }
             ctx.set_agent_notification_snippet(pane_id, notification_snippet.clone());
             // Route notification based on user context (UC-1)
             ctx.route_agent_notification(pane_id, status, notification_snippet);
@@ -1464,6 +1507,15 @@ fn codex_completed_turn_notification_snippet(payload: &Value) -> Option<String> 
         })
 }
 
+fn codex_stop_notification_snippet(resolution: &CodexStopResolution) -> Option<String> {
+    match resolution {
+        CodexStopResolution::IgnoreSubagent => None,
+        CodexStopResolution::Resolved { assistant_message } => assistant_message
+            .as_deref()
+            .and_then(crate::state::gateway_status::normalize_notification_snippet),
+    }
+}
+
 fn claude_notification_snippet(payload: &Value) -> Option<String> {
     serde_json::from_value::<ClaudeHookPayload>(payload.clone())
         .ok()
@@ -1490,6 +1542,25 @@ struct CodexCompletedTurnPayload {
     last_assistant_message: Option<String>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct CodexStopHookPayload {
+    transcript_path: Option<PathBuf>,
+    last_assistant_message: Option<String>,
+}
+
+#[derive(Debug)]
+enum CodexStopResolution {
+    IgnoreSubagent,
+    Resolved { assistant_message: Option<String> },
+}
+
+#[derive(Debug)]
+enum CodexTranscriptResolution {
+    IgnoreSubagent,
+    MainThreadMessage(Option<String>),
+}
+
 #[derive(Debug, Deserialize)]
 struct ClaudeHookPayload {
     message: Option<String>,
@@ -1502,6 +1573,15 @@ struct GeminiHookPayload {
 }
 
 const CODEX_NEEDS_INPUT_PHRASES: &[&str] = &[
+    "yes",
+    "allow",
+    "approve",
+    "confirm",
+    "please allow",
+    "please approve",
+    "grant permission",
+    "can i proceed",
+    "may i proceed",
     "what would you like me to do next",
     "what should i do next",
     "how would you like me to proceed",
@@ -1512,22 +1592,128 @@ const CODEX_NEEDS_INPUT_PHRASES: &[&str] = &[
     "would you like me to",
 ];
 
+fn resolve_codex_stop_payload(payload: Option<&Value>) -> CodexStopResolution {
+    let Some(payload) = payload else {
+        return CodexStopResolution::Resolved {
+            assistant_message: None,
+        };
+    };
+    let Ok(payload) = serde_json::from_value::<CodexStopHookPayload>(payload.clone()) else {
+        return CodexStopResolution::Resolved {
+            assistant_message: None,
+        };
+    };
+
+    if let Some(transcript_path) = payload.transcript_path.as_deref() {
+        match read_codex_transcript_resolution(transcript_path) {
+            Some(CodexTranscriptResolution::IgnoreSubagent) => {
+                return CodexStopResolution::IgnoreSubagent;
+            }
+            Some(CodexTranscriptResolution::MainThreadMessage(assistant_message)) => {
+                return CodexStopResolution::Resolved {
+                    assistant_message: assistant_message.or(payload.last_assistant_message),
+                };
+            }
+            None => {}
+        }
+    }
+
+    CodexStopResolution::Resolved {
+        assistant_message: payload.last_assistant_message,
+    }
+}
+
+fn read_codex_transcript_resolution(
+    transcript_path: &std::path::Path,
+) -> Option<CodexTranscriptResolution> {
+    let file = File::open(transcript_path).ok()?;
+    let reader = BufReader::new(file);
+    let mut last_assistant_message = None;
+    let mut final_assistant_message = None;
+
+    for line in reader.lines() {
+        let line = line.ok()?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let value: Value = serde_json::from_str(trimmed).ok()?;
+
+        if value.get("type").and_then(Value::as_str) == Some("session_meta")
+            && value.pointer("/payload/source/subagent").is_some()
+        {
+            return Some(CodexTranscriptResolution::IgnoreSubagent);
+        }
+
+        if value.get("type").and_then(Value::as_str) != Some("response_item") {
+            continue;
+        }
+
+        let Some(payload) = value.get("payload") else {
+            continue;
+        };
+        if payload.get("type").and_then(Value::as_str) != Some("message")
+            || payload.get("role").and_then(Value::as_str) != Some("assistant")
+        {
+            continue;
+        }
+
+        let message = codex_transcript_message_text(payload);
+        if message.is_some() {
+            last_assistant_message = message.clone();
+        }
+        if payload.get("phase").and_then(Value::as_str) == Some("final_answer") {
+            final_assistant_message = message;
+        }
+    }
+
+    Some(CodexTranscriptResolution::MainThreadMessage(
+        final_assistant_message.or(last_assistant_message),
+    ))
+}
+
+fn codex_transcript_message_text(payload: &Value) -> Option<String> {
+    let content = payload.get("content")?.as_array()?;
+    let text = content
+        .iter()
+        .filter_map(|item| {
+            if item.get("type").and_then(Value::as_str) == Some("output_text") {
+                item.get("text").and_then(Value::as_str)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
 fn classify_codex_completed_turn_payload(
     payload: Option<&Value>,
 ) -> crate::state::gateway_status::AgentStatus {
-    use crate::state::gateway_status::AgentStatus;
-
     let Some(payload) = payload else {
-        return AgentStatus::Idle;
+        return crate::state::gateway_status::AgentStatus::Idle;
     };
     let Ok(payload) = serde_json::from_value::<CodexCompletedTurnPayload>(payload.clone()) else {
-        return AgentStatus::Idle;
+        return crate::state::gateway_status::AgentStatus::Idle;
     };
     if payload.payload_type != "agent-turn-complete" {
-        return AgentStatus::Idle;
+        return crate::state::gateway_status::AgentStatus::Idle;
     }
 
-    let Some(last_message) = payload.last_assistant_message else {
+    classify_codex_assistant_message(payload.last_assistant_message.as_deref())
+}
+
+fn classify_codex_assistant_message(
+    assistant_message: Option<&str>,
+) -> crate::state::gateway_status::AgentStatus {
+    use crate::state::gateway_status::AgentStatus;
+
+    let Some(last_message) = assistant_message else {
         return AgentStatus::Idle;
     };
     let normalized = last_message.trim().to_ascii_lowercase();

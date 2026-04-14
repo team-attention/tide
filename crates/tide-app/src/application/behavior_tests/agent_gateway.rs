@@ -63,6 +63,19 @@ fn test_window_proxy() -> WindowProxy {
     WindowProxy::new(tx, std::sync::Arc::new(|| {}))
 }
 
+fn write_codex_transcript(contents: &str) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!(
+        "tide_test_codex_transcript_{}_{}.jsonl",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::write(&path, contents).unwrap();
+    path
+}
+
 // --- UC-1: ListPanes ---
 
 #[test]
@@ -1375,13 +1388,13 @@ fn wrapper_scripts_are_generated_at_known_path() {
 }
 
 #[test]
-fn codex_wrapper_injects_tide_mcp_turn_complete_notify_and_prompt_submit_hook() {
+fn codex_wrapper_injects_tide_mcp_turn_stop_hook_and_prompt_submit_hook() {
     // UC-4 BR-7: The Codex wrapper injects Tide MCP server config from the checked-in script.
     // UC-4 BR-8: The Codex wrapper reports agent-attached on launch.
     // Spec: docs/specs/codex-needs-input-attention.md
     // UC-1 BR-1: Codex agent-running is emitted on each UserPromptSubmit, not just on launch.
     // UC-1 BR-2: Codex prompt-submit integration uses the documented UserPromptSubmit hook path.
-    // UC-2 BR-3: The Codex wrapper forwards the completed-turn payload through Codex notify config.
+    // UC-2 BR-3: The Codex wrapper forwards the Stop hook payload through tide notify.
     // UC-3 BR-7: The Codex wrapper does not depend on a Notification hook.
     let wrapper_path = format!("{}/resources/bin/codex", env!("CARGO_MANIFEST_DIR"));
     let wrapper = std::fs::read_to_string(&wrapper_path)
@@ -1392,14 +1405,14 @@ fn codex_wrapper_injects_tide_mcp_turn_complete_notify_and_prompt_submit_hook() 
     assert!(wrapper.contains("tide_notify \"agent-attached\""));
     assert!(wrapper.contains("features.codex_hooks=true"));
     assert!(wrapper.contains("\"UserPromptSubmit\""));
+    assert!(wrapper.contains("\"Stop\""));
     assert!(wrapper.contains("$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent codex"));
-    assert!(
-        wrapper.contains("notify=[\\\"$TIDE_BIN\\\",\\\"notify\\\",\\\"codex-turn-complete\\\"")
-    );
+    assert!(wrapper.contains("notify codex-stop --pane $TIDE_PANE --agent codex --payload-stdin"));
     assert!(wrapper.contains("tide_notify \"agent-detached\""));
     assert!(wrapper.contains("rm -rf \"$TIDE_CODEX_HOME\""));
     assert!(wrapper.contains("tide:wrapped-agent:codex:$1"));
     assert!(!wrapper.contains("\"Notification\""));
+    assert!(!wrapper.contains("codex-turn-complete"));
     assert!(!wrapper.contains("agent-needs-input"));
 }
 
@@ -2183,37 +2196,42 @@ fn background_notification_includes_foreground_dot() {
 }
 
 #[test]
-fn codex_completed_turn_notification_uses_last_assistant_message_snippet() {
-    // UC-2 BR-2, UC-6 BR-10: Codex completed-turn notifications use last_assistant_message as the body.
+fn codex_stop_notification_uses_transcript_final_answer_snippet() {
+    // UC-2 BR-4, UC-6 BR-10: Codex Stop notifications prefer the final main-thread transcript answer as the body.
     use crate::PaneAccessPort;
     let (mut app, pane_id) = app_with_terminal();
     app.window.is_focused = false;
     let expected_title = format!("Tide - {}", app.pane_title(pane_id));
+    let transcript_path = write_codex_transcript(
+        "{\"type\":\"session_meta\",\"payload\":{\"id\":\"main-thread\"}}\n\
+         {\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Intermediate commentary.\"}],\"phase\":\"commentary\"}}\n\
+         {\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"<subagent_notification>{\\\"agent_path\\\":\\\"codex\\\"}</subagent_notification>\"}]}}\n\
+         {\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Implemented the final main-thread answer.\"}],\"phase\":\"final_answer\"}}\n",
+    );
 
     app.handle_cli_command(
         "notify",
         json!({
-            "event": "codex-turn-complete",
+            "event": "codex-stop",
             "pane": pane_id,
             "agent": "codex",
             "payload": {
-                "type": "agent-turn-complete",
-                "thread-id": "thread-1",
+                "hook-event-name": "Stop",
                 "turn-id": "turn-1",
-                "cwd": "/tmp/project",
-                "input-messages": ["Continue."],
-                "last-assistant-message": "Implemented the parser fix and updated the tests."
+                "transcript-path": transcript_path,
+                "last-assistant-message": "Stale payload text that should not win."
             }
         }),
     )
     .unwrap();
+    let _ = std::fs::remove_file(&transcript_path);
 
     assert!(matches!(
         app.pending_platform_commands.first(),
         Some(crate::tide_platform::WindowCommand::SendSystemNotification { title, pane_id: body_pane_id, body, .. })
             if *body_pane_id == pane_id
                 && title == &expected_title
-                && body == "Implemented the parser fix and updated the tests."
+                && body == "Implemented the final main-thread answer."
     ));
     assert!(
         !app.pending_platform_commands.iter().any(|command| matches!(
@@ -2452,8 +2470,82 @@ fn stale_idle_snippet_does_not_override_future_needs_input_visible_fallback() {
 // --- UC-2: ClassifyCodexCompletedTurns ---
 
 #[test]
-fn codex_completed_turn_payload_classifies_idle_or_needs_input() {
-    // UC-2 BR-6: Codex completed-turn payloads normalize to shared Idle or NeedsInput states.
+fn codex_stop_payload_classifies_idle_or_needs_input() {
+    // UC-2 BR-5: Codex Stop payloads normalize to shared Idle or NeedsInput states.
+    let (mut app, pane_id) = app_with_editor();
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    app.gateway
+        .subscribers
+        .push(crate::state::gateway_status::Subscriber {
+            tx,
+            event_filter: vec!["agent-status-changed".into()],
+            owner_pane_id: None,
+        });
+
+    for (turn_id, transcript_text, payload_message, expected_event, expected_status) in [
+        (
+            "turn-1",
+            "what should i do next?",
+            "rename complete and verified cargo build succeeds.",
+            "agent-needs-input",
+            crate::state::gateway_status::AgentStatus::NeedsInput,
+        ),
+        (
+            "turn-2",
+            "yes",
+            "Implemented everything cleanly.",
+            "agent-needs-input",
+            crate::state::gateway_status::AgentStatus::NeedsInput,
+        ),
+        (
+            "turn-3",
+            "rename complete and verified cargo build succeeds.",
+            "allow",
+            "agent-idle",
+            crate::state::gateway_status::AgentStatus::Idle,
+        ),
+        (
+            "turn-4",
+            "allow",
+            "rename complete and verified cargo build succeeds.",
+            "agent-needs-input",
+            crate::state::gateway_status::AgentStatus::NeedsInput,
+        ),
+    ] {
+        let transcript_path = write_codex_transcript(&format!(
+            "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"main-thread\"}}}}\n\
+             {{\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{{\"type\":\"output_text\",\"text\":\"{transcript_text}\"}}],\"phase\":\"final_answer\"}}}}\n"
+        ));
+        app.handle_cli_command(
+            "notify",
+            json!({
+                "event": "codex-stop",
+                "pane": pane_id,
+                "agent": "codex",
+                "payload": {
+                    "hook-event-name": "Stop",
+                    "turn-id": turn_id,
+                    "transcript-path": transcript_path,
+                    "last-assistant-message": payload_message
+                }
+            }),
+        )
+        .unwrap();
+        let _ = std::fs::remove_file(&transcript_path);
+
+        let event = rx.try_recv().unwrap();
+        assert!(event.contains(expected_event));
+        assert!(event.contains("Codex"));
+        assert_eq!(
+            app.gateway.detected_agents.get(&pane_id).unwrap().status,
+            Some(expected_status)
+        );
+    }
+}
+
+#[test]
+fn codex_stop_payload_falls_back_to_idle_when_unclassified() {
+    // UC-2 BR-6: Unclassified Codex Stop payloads fail closed to Idle.
     let (mut app, pane_id) = app_with_editor();
     let (tx, rx) = std::sync::mpsc::channel::<String>();
     app.gateway
@@ -2467,41 +2559,12 @@ fn codex_completed_turn_payload_classifies_idle_or_needs_input() {
     app.handle_cli_command(
         "notify",
         json!({
-            "event": "codex-turn-complete",
+            "event": "codex-stop",
             "pane": pane_id,
             "agent": "codex",
             "payload": {
-                "type": "agent-turn-complete",
-                "thread-id": "thread-1",
-                "turn-id": "turn-1",
-                "cwd": "/tmp/project",
-                "input-messages": ["Continue."],
-                "last-assistant-message": "what should i do next?"
-            }
-        }),
-    )
-    .unwrap();
-
-    let needs_input_event = rx.try_recv().unwrap();
-    assert!(needs_input_event.contains("agent-needs-input"));
-    assert!(needs_input_event.contains("Codex"));
-    assert_eq!(
-        app.gateway.detected_agents.get(&pane_id).unwrap().status,
-        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
-    );
-
-    app.handle_cli_command(
-        "notify",
-        json!({
-            "event": "codex-turn-complete",
-            "pane": pane_id,
-            "agent": "codex",
-            "payload": {
-                "type": "agent-turn-complete",
-                "thread-id": "thread-2",
-                "turn-id": "turn-2",
-                "cwd": "/tmp/project",
-                "input-messages": ["Continue."],
+                "hook-event-name": "Stop",
+                "turn-id": "turn-3",
                 "last-assistant-message": "rename complete and verified cargo build succeeds."
             }
         }),
@@ -2517,70 +2580,77 @@ fn codex_completed_turn_payload_classifies_idle_or_needs_input() {
 }
 
 #[test]
-fn codex_completed_turn_payload_falls_back_to_idle_when_unclassified() {
-    // UC-2 BR-7: Unclassified Codex completed-turn payloads fail closed to Idle.
+fn codex_stop_payload_ignores_subagent_transcript() {
+    // UC-2 BR-7: Subagent transcripts must not synthesize a routed Codex lifecycle update.
     let (mut app, pane_id) = app_with_editor();
-    let (tx, rx) = std::sync::mpsc::channel::<String>();
-    app.gateway
-        .subscribers
-        .push(crate::state::gateway_status::Subscriber {
-            tx,
-            event_filter: vec!["agent-status-changed".into()],
-            owner_pane_id: None,
-        });
-
+    let transcript_path = write_codex_transcript(
+        "{\"type\":\"session_meta\",\"payload\":{\"id\":\"subagent-thread\",\"source\":{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"main-thread\",\"depth\":1}}}}}\n\
+         {\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"allow\"}],\"phase\":\"final_answer\"}}\n",
+    );
     app.handle_cli_command(
         "notify",
         json!({
-            "event": "codex-turn-complete",
+            "event": "codex-stop",
             "pane": pane_id,
             "agent": "codex",
             "payload": {
-                "type": "agent-turn-complete",
-                "thread-id": "thread-3",
-                "turn-id": "turn-3",
-                "cwd": "/tmp/project",
-                "input-messages": ["Continue."]
+                "hook-event-name": "Stop",
+                "turn-id": "turn-4",
+                "transcript-path": transcript_path,
+                "last-assistant-message": "allow"
             }
         }),
     )
     .unwrap();
+    let _ = std::fs::remove_file(&transcript_path);
 
-    let idle_event = rx.try_recv().unwrap();
-    assert!(idle_event.contains("agent-idle"));
-    assert_eq!(
-        app.gateway.detected_agents.get(&pane_id).unwrap().status,
-        Some(crate::state::gateway_status::AgentStatus::Idle)
-    );
+    assert!(app.gateway.detected_agents.get(&pane_id).is_none());
+    assert!(app.pending_platform_commands.is_empty());
 }
 
 #[test]
-fn codex_unknown_notify_payload_does_not_map_to_needs_input() {
-    // UC-2 BR-8: Unknown Codex payloads must not synthesize NeedsInput.
-    let (mut app, pane_id) = app_with_editor();
+fn codex_stop_notification_uses_generic_body_without_trusted_snippet() {
+    // UC-6 BR-10, BR-11: Codex Stop notifications use generic lifecycle text when no trusted snippet exists.
+    let (mut app, pane_id) = app_with_terminal();
+    app.window.is_focused = false;
+    if let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&pane_id) {
+        terminal.backend.load_mock_screen_for_test(
+            "{\"id\":\"main\",\"role\":\"main\"}\n<subagent_notification>{\"agent_path\":\"codex\"}</subagent_notification>\n",
+        );
+    }
+
     app.handle_cli_command(
         "notify",
         json!({
-            "event": "codex-turn-complete",
+            "event": "codex-stop",
             "pane": pane_id,
             "agent": "codex",
             "payload": {
-                "type": "after-agent",
-                "thread-id": "thread-4",
-                "turn-id": "turn-4",
-                "cwd": "/tmp/project",
-                "input-messages": ["Continue."],
-                "last-assistant-message": "what would you like me to do next"
+                "hook-event-name": "Stop",
+                "turn-id": "turn-5",
+                "last-assistant-message": null
             }
         }),
     )
     .unwrap();
 
-    let agent = app.gateway.detected_agents.get(&pane_id).unwrap();
-    assert_eq!(agent.name, "Codex");
-    assert_eq!(
-        agent.status,
-        Some(crate::state::gateway_status::AgentStatus::Idle)
+    assert!(
+        app.pending_platform_commands.iter().any(|command| matches!(
+            command,
+            crate::tide_platform::WindowCommand::SendSystemNotification {
+                pane_id: body_pane_id,
+                body,
+                ..
+            } if *body_pane_id == pane_id && body == "Codex finished"
+        )),
+        "expected a Codex notification with the generic lifecycle body, got {:?}",
+        app.pending_platform_commands
+    );
+    assert!(
+        !app.pending_platform_commands.iter().any(|command| matches!(
+            command,
+            crate::tide_platform::WindowCommand::RequestUserAttention
+        ))
     );
 }
 

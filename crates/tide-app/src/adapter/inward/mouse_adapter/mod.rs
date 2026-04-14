@@ -505,7 +505,17 @@ fn handle_mouse_input_core(ctx: &mut impl MousePorts, button: MouseButton, _wind
 }
 
 pub(crate) fn handle_mouse_up(ctx: &mut impl MousePorts, button: MouseButton) {
-    if button == MouseButton::Left {
+    let hover_cleared = if button == MouseButton::Left {
+        let interaction = ctx.interaction_mut();
+        interaction.mouse_left_pressed = false;
+        interaction.hover_target.take().is_some()
+    } else {
+        false
+    };
+    if hover_cleared {
+        ctx.invalidate_chrome();
+        ctx.request_redraw();
+    } else if button == MouseButton::Left {
         ctx.interaction_mut().mouse_left_pressed = false;
     }
 

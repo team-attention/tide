@@ -1,9 +1,8 @@
 #!/bin/sh
 # Tide auto-injected wrapper for Codex CLI.
-# Uses -c flag for additive config injection (deep table merge — new keys additive).
-# Codex's official notify config appends the completed-turn JSON payload as the
-# final argv item, so Tide can classify turn completion into Idle or NeedsInput
-# while keeping launch/EXIT lifecycle reports in Tide.
+# Uses -c flag for additive config injection (deep table merge — new keys additive)
+# plus a temporary hooks.json overlay so Tide can observe UserPromptSubmit and
+# Stop without mutating the user's real CODEX_HOME.
 
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|${SELF_DIR}||g")" command -v codex 2>/dev/null)"
@@ -40,7 +39,8 @@ if [ -d "$REAL_CODEX_HOME" ]; then
 fi
 
 if [ -f "$REAL_CODEX_HOME/hooks.json" ] && command -v python3 >/dev/null 2>&1; then
-  TIDE_HOOK_COMMAND="$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent codex" \
+  TIDE_RUNNING_HOOK_COMMAND="$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent codex" \
+  TIDE_STOP_HOOK_COMMAND="$TIDE_BIN notify codex-stop --pane $TIDE_PANE --agent codex --payload-stdin" \
     python3 - "$REAL_CODEX_HOME/hooks.json" "$HOOKS_FILE" <<'PY'
 import json
 import os
@@ -51,17 +51,22 @@ with open(src, "r", encoding="utf-8") as f:
     data = json.load(f)
 
 hooks = data.setdefault("hooks", {})
-groups = hooks.setdefault("UserPromptSubmit", [])
-groups.append(
-    {
-        "hooks": [
-            {
-                "type": "command",
-                "command": os.environ["TIDE_HOOK_COMMAND"],
-            }
-        ]
-    }
-)
+
+def append_command_hook(event_name: str, command: str) -> None:
+    groups = hooks.setdefault(event_name, [])
+    groups.append(
+        {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": command,
+                }
+            ]
+        }
+    )
+
+append_command_hook("UserPromptSubmit", os.environ["TIDE_RUNNING_HOOK_COMMAND"])
+append_command_hook("Stop", os.environ["TIDE_STOP_HOOK_COMMAND"])
 
 with open(dst, "w", encoding="utf-8") as f:
     json.dump(data, f)
@@ -79,6 +84,16 @@ else
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$TIDE_BIN notify codex-stop --pane $TIDE_PANE --agent codex --payload-stdin"
+          }
+        ]
+      }
     ]
   }
 }
@@ -89,7 +104,6 @@ trap 'tide_notify "agent-detached"; rm -rf "$TIDE_CODEX_HOME"' EXIT
 
 CODEX_HOME="$TIDE_CODEX_HOME" "$REAL_CMD" \
   -c "features.codex_hooks=true" \
-  -c "notify=[\"$TIDE_BIN\",\"notify\",\"codex-turn-complete\",\"--pane\",\"$TIDE_PANE\",\"--agent\",\"codex\"]" \
   -c "mcp_servers.tide.command=\"$TIDE_BIN\"" \
   -c "mcp_servers.tide.args=[\"mcp\"]" \
   -c "mcp_servers.tide.env.TIDE_SOCKET=\"$TIDE_SOCKET\"" \

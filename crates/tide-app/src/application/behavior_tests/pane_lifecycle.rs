@@ -397,3 +397,39 @@ fn cancel_save_confirm_clears_the_modal() {
     app.cancel_save_confirm();
     assert!(app.modal.save_confirm.is_none());
 }
+
+#[test]
+fn mouse_release_clears_hover_target_immediately() {
+    // UC-6 BR-19: Mouse release clears the current hover target immediately so hover visuals do not wait for the next mouse move
+    let (mut app, id) = app_with_editor();
+    app.interaction.hover_target = Some(crate::state::drag_types::HoverTarget::PaneContent);
+
+    crate::adapter::inward::mouse_adapter::handle_mouse_up(
+        &mut app,
+        crate::tide_core::MouseButton::Left,
+    );
+
+    assert!(app.interaction.hover_target.is_none());
+    assert_eq!(app.focus.focused, Some(id));
+    assert_eq!(app.focus.focus_area, FocusArea::Stage);
+}
+
+#[test]
+fn mouse_release_still_completes_border_drag_cleanup() {
+    // UC-6 BR-20: Mouse release still completes border-drag cleanup before returning
+    let (mut app, id) = app_with_editor();
+    app.ft.border_dragging = true;
+    app.interaction.hover_target = Some(crate::state::drag_types::HoverTarget::SplitBorder(
+        crate::tide_core::SplitDirection::Horizontal,
+    ));
+
+    crate::adapter::inward::mouse_adapter::handle_mouse_up(
+        &mut app,
+        crate::tide_core::MouseButton::Left,
+    );
+
+    assert!(app.interaction.hover_target.is_none());
+    assert!(!app.ft.border_dragging);
+    assert_eq!(app.focus.focused, Some(id));
+    assert_eq!(app.focus.focus_area, FocusArea::Stage);
+}
