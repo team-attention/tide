@@ -28,11 +28,15 @@ fn app_with_wrapped_agent_status(
     let (layout, agent_pane_id) = SplitLayout::with_initial_pane();
     app.layout = layout;
     let agent_terminal = TerminalPane::with_cwd(agent_pane_id, 80, 24, None, true).unwrap();
-    app.panes.insert(agent_pane_id, PaneKind::Terminal(agent_terminal));
+    app.panes
+        .insert(agent_pane_id, PaneKind::Terminal(agent_terminal));
 
-    let other_pane_id = app.layout.split(agent_pane_id, crate::tide_core::SplitDirection::Vertical);
+    let other_pane_id = app
+        .layout
+        .split(agent_pane_id, crate::tide_core::SplitDirection::Vertical);
     let other_terminal = TerminalPane::with_cwd(other_pane_id, 80, 24, None, true).unwrap();
-    app.panes.insert(other_pane_id, PaneKind::Terminal(other_terminal));
+    app.panes
+        .insert(other_pane_id, PaneKind::Terminal(other_terminal));
 
     app.focus.focused = Some(other_pane_id);
     app.focus.focus_area = FocusArea::Stage;
@@ -137,12 +141,16 @@ fn codex_wrapper_uses_a_temporary_codex_home_overlay() {
 }
 
 #[test]
-fn codex_wrapper_installs_user_prompt_submit_and_stop_hooks() {
-    // UC-2 BR-5: The wrapper must install both UserPromptSubmit and Stop hooks.
+fn codex_wrapper_installs_user_prompt_submit_hook_and_turn_complete_notify() {
+    // UC-2 BR-5: The wrapper must install UserPromptSubmit and the official completed-turn notify wiring.
     let wrapper = include_str!("../../../resources/bin/codex");
 
     assert!(wrapper.contains("\"UserPromptSubmit\""));
-    assert!(wrapper.contains("\"Stop\""));
+    assert!(wrapper.contains("features.codex_hooks=true"));
+    assert!(
+        wrapper.contains("notify=[\\\"$TIDE_BIN\\\",\\\"notify\\\",\\\"codex-turn-complete\\\"")
+    );
+    assert!(!wrapper.contains("\"Stop\""));
 }
 
 #[test]
@@ -192,14 +200,18 @@ fn focusing_wrapped_agent_pane_clears_notification_suppression_without_clearing_
 
     assert!(!app.notified_panes.contains(&agent_pane_id));
     assert_eq!(
-        app.gateway.detected_agents.get(&agent_pane_id).unwrap().status,
+        app.gateway
+            .detected_agents
+            .get(&agent_pane_id)
+            .unwrap()
+            .status,
         Some(crate::state::gateway_status::AgentStatus::NeedsInput)
     );
 }
 
 #[test]
-fn running_status_clears_stale_notification_suppression() {
-    // UC-3 BR-11: Running clears stale notification suppression so the next completion can notify again.
+fn running_status_does_not_clear_stale_notification_suppression() {
+    // UC-3 BR-11: Running does not clear unresolved notification suppression on its own.
     let (mut app, agent_pane_id, _) =
         app_with_wrapped_agent_status(crate::state::gateway_status::AgentStatus::Idle);
     app.notified_panes.insert(agent_pane_id);
@@ -209,7 +221,15 @@ fn running_status_clears_stale_notification_suppression() {
         json!({ "event": "agent-running", "pane": agent_pane_id, "agent": "codex" }),
     );
 
-    assert!(!app.notified_panes.contains(&agent_pane_id));
+    assert!(app.notified_panes.contains(&agent_pane_id));
+    assert_eq!(
+        app.gateway
+            .detected_agents
+            .get(&agent_pane_id)
+            .unwrap()
+            .status,
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
 }
 
 // --- UC-4: RelayNotificationActivationToOwningTideInstance ---
@@ -254,7 +274,9 @@ fn activate_notification_target_cli_command_queues_window_reveal() {
 fn macos_window_construction_keeps_window_hidden_until_show_window() {
     // UC-4 BR-14: MacosWindow::new must keep the Tide Window hidden until show_window().
     let source = include_str!("../../adapter/outward/platform_adapter/macos/window.rs");
-    let new_start = source.find("pub fn new(").expect("expected MacosWindow::new");
+    let new_start = source
+        .find("pub fn new(")
+        .expect("expected MacosWindow::new");
     let show_start = source
         .find("fn show_window(&self)")
         .expect("expected MacosWindow::show_window");

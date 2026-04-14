@@ -782,13 +782,11 @@ impl App {
                             } else {
                                 // Keep wrapper-managed presence even when process scan misses a
                                 // launch window or intermittently fails across Workspace swaps.
-                                let keep_existing = self.gateway.detected_agents.get(&id).map_or(
-                                    false,
-                                    |a| {
+                                let keep_existing =
+                                    self.gateway.detected_agents.get(&id).map_or(false, |a| {
                                         a.status.is_some()
                                             || (a.wrapper_managed && a.gateway_connected)
-                                    },
-                                );
+                                    });
                                 if !keep_existing {
                                     self.gateway.detected_agents.remove(&id);
                                 }

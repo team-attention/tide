@@ -281,7 +281,6 @@ pub(super) fn render_pane_chrome(
                     renderer,
                     app.can_show_context_comment_badge(id),
                     &app.gateway.detected_agents,
-                    &app.notified_panes,
                     blink_time,
                     scroll_off,
                     auto_fit_active_tab,

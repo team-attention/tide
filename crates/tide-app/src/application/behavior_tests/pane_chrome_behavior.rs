@@ -14,8 +14,7 @@ use crate::adapter::outward::view::header::{
     reserve_title_before_badges, resolve_tab_scroll_offset, shared_tab_active_width_cap,
     shared_tab_target_width, stage_terminal_dot_color, stage_terminal_dot_status,
     stage_terminal_dot_visual_state, tab_status_dot_width, terminal_chrome_agent_status,
-    terminal_chrome_visual_state, terminal_header_title_color, AgentChromeState,
-    HeaderHitAction,
+    terminal_chrome_visual_state, terminal_header_title_color, AgentChromeState, HeaderHitAction,
 };
 use crate::adapter::outward::view::{
     integration_toggle_notification_indicator_color, pane_surface_attention_status,
@@ -176,13 +175,11 @@ fn integration_toggle_notification_indicator_uses_error_for_denied_status() {
 #[test]
 fn integration_toggle_notification_indicator_hides_when_auto_integration_is_disabled() {
     // UC-7 BR-4: Disabled auto-integration hides the notification-authorization indicator.
-    assert!(
-        integration_toggle_notification_indicator_color(
-            false,
-            crate::state::NotificationAuthorizationStatus::Authorized
-        )
-        .is_none()
-    );
+    assert!(integration_toggle_notification_indicator_color(
+        false,
+        crate::state::NotificationAuthorizationStatus::Authorized
+    )
+    .is_none());
 }
 
 // --- UC-1: RenderFocusedPaneChrome ---
@@ -312,7 +309,8 @@ fn active_workspace_running_uses_the_live_stage_terminal_state() {
         wrapped_agent_info(crate::state::gateway_status::AgentStatus::Running),
     );
 
-    let (has_running, has_alert, has_connected_idle) = app.workspace_stage_agent_flags(app.ws.active);
+    let (has_running, has_alert, has_connected_idle) =
+        app.workspace_stage_agent_flags(app.ws.active);
 
     assert!(has_running);
     assert!(!has_alert);

@@ -144,7 +144,9 @@ fn notification_identifier_for_pane(pane_id: u64) -> String {
 }
 
 fn notification_target_from_identifier(identifier: &str) -> Option<NotificationActivationTarget> {
-    let mut parts = identifier.strip_prefix(NOTIFICATION_TARGET_PREFIX)?.split(':');
+    let mut parts = identifier
+        .strip_prefix(NOTIFICATION_TARGET_PREFIX)?
+        .split(':');
     let tide_instance_pid = parts.next()?.parse::<u32>().ok()?;
     let pane_id = parts.next()?.parse::<u64>().ok()?;
     let _delivery_id = parts.next()?;
@@ -154,9 +156,7 @@ fn notification_target_from_identifier(identifier: &str) -> Option<NotificationA
     })
 }
 
-fn notification_relay_socket_path_for_tide_instance(
-    tide_instance_pid: u32,
-) -> std::path::PathBuf {
+fn notification_relay_socket_path_for_tide_instance(tide_instance_pid: u32) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("tide-{tide_instance_pid}.sock"))
 }
 
