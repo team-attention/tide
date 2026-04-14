@@ -36,7 +36,7 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
             self.refresh_workspace_agent_notification(self.ws.active);
             self.cache.invalidate_chrome();
             self.sync_browser_webview_frames();
-            self.reroute_backgrounded_wrapped_agent_attention();
+            self.reroute_backgrounded_wrapped_agent_attention_excluding(Some(id));
             return;
         }
 
@@ -77,7 +77,7 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         self.cache.invalidate_chrome();
         self.update_file_tree_cwd();
         self.sync_browser_webview_frames();
-        self.reroute_backgrounded_wrapped_agent_attention();
+        self.reroute_backgrounded_wrapped_agent_attention_excluding(Some(id));
     }
 
     /// Resolve an AreaSlot to a FocusArea.
