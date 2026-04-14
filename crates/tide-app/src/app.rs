@@ -273,11 +273,19 @@ impl App {
     }
 
     pub(crate) fn reroute_backgrounded_wrapped_agent_attention(&mut self) {
+        self.reroute_backgrounded_wrapped_agent_attention_excluding(None);
+    }
+
+    pub(crate) fn reroute_backgrounded_wrapped_agent_attention_excluding(
+        &mut self,
+        excluded_pane_id: Option<PaneId>,
+    ) {
         let pending_attention: Vec<_> = self
             .gateway
             .detected_agents
             .iter()
             .filter(|(_, agent)| agent.wrapper_managed)
+            .filter(|(pane_id, _)| Some(**pane_id) != excluded_pane_id)
             .filter_map(|(&pane_id, agent)| match agent.status {
                 Some(crate::state::gateway_status::AgentStatus::Idle) => {
                     Some((pane_id, crate::state::gateway_status::AgentStatus::Idle))

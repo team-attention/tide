@@ -1918,6 +1918,52 @@ fn focusing_terminal_clears_notification_suppression_without_clearing_status() {
     assert!(!app.notified_panes.contains(&first_terminal_id));
 }
 
+#[test]
+fn focusing_idle_terminal_does_not_queue_a_replacement_background_notification() {
+    // UC-5 BR-8: Direct focus must not re-route the same Idle alert as a replacement background notification.
+    use crate::WorkspaceNavPort;
+
+    let (mut app, target_terminal_id) = app_with_terminal();
+    let other_terminal_id = app
+        .layout
+        .split(target_terminal_id, SplitDirection::Horizontal);
+    let other_terminal = TerminalPane::with_cwd(other_terminal_id, 80, 24, None, true).unwrap();
+    app.panes
+        .insert(other_terminal_id, PaneKind::Terminal(other_terminal));
+    app.focus.focused = Some(other_terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.focus.stage_focused = Some(other_terminal_id);
+    app.window.is_focused = false;
+
+    app.gateway.detected_agents.insert(
+        target_terminal_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Codex",
+            pid: 42,
+            wrapper_managed: true,
+            gateway_connected: true,
+            status: Some(crate::state::gateway_status::AgentStatus::Idle),
+        },
+    );
+    app.notified_panes.insert(target_terminal_id);
+
+    app.focus_terminal(target_terminal_id);
+
+    assert_eq!(app.focus.focused, Some(target_terminal_id));
+    assert!(
+        app.pending_platform_commands.iter().all(|command| !matches!(
+            command,
+            crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, .. }
+                if *pane_id == target_terminal_id
+        )),
+        "direct focus should not synthesize a replacement background notification for the same Idle alert"
+    );
+    assert!(
+        !app.notified_panes.contains(&target_terminal_id),
+        "direct focus should still clear duplicate suppression for the focused Idle pane"
+    );
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Spec: docs/specs/agent-notification-routing.md
 // ────────────────────────────────────────────────────────────────────────────

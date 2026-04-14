@@ -78,7 +78,7 @@
 
 - Trigger: the user focuses the source wrapped-agent `Terminal` while Tide is focused, or Tide regains focus with that `Pane` already focused after a routed notification.
 - Preconditions: the source `Pane` still carries unresolved wrapped-agent attention.
-- Flow: Tide clears duplicate suppression on direct focus, and the focused-window restore path may also acknowledge the unresolved lifecycle state before recomputing the affected Workspace chrome.
+- Flow: Tide clears duplicate suppression on direct focus, excludes the newly focused source `Pane` from the same reroute pass so it does not synthesize a replacement background notification, and the focused-window restore path may also acknowledge the unresolved lifecycle state before recomputing the affected Workspace chrome.
 - Postconditions: `Idle` and `NeedsInput` both acknowledge through the normal focused-window path.
 
 ### UC-6: ComposeWrappedAgentNotificationBody
@@ -163,6 +163,7 @@
 ### UC-5: ResolveBackgroundAttention
 
 - BR-8: Focusing the source wrapped-agent `Terminal` in the active Tide window clears duplicate suppression without changing `AgentStatus`.
+- BR-8: Focusing the source wrapped-agent `Terminal` must not queue a replacement background notification for that same unresolved alert during the same reroute pass.
 - BR-9: Restoring Tide window focus to an already-focused source `Pane` acknowledges unresolved attention and recomputes the affected Workspace chrome.
 
 ### UC-6: ComposeWrappedAgentNotificationBody
