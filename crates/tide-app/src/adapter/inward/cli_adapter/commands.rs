@@ -1357,14 +1357,15 @@ fn cli_notify(
     // Update status if this pane has a detected agent.
     // If no agent is registered yet (wrapper hook fired before process scan),
     // auto-register from the agent name hint or with a generic name.
-    let agent_display_name = params
-        .get("agent")
-        .and_then(|v| v.as_str())
-        .unwrap_or(if event == "codex-turn-complete" {
-            "codex"
-        } else {
-            "Agent"
-        });
+    let agent_display_name =
+        params
+            .get("agent")
+            .and_then(|v| v.as_str())
+            .unwrap_or(if event == "codex-turn-complete" {
+                "codex"
+            } else {
+                "Agent"
+            });
     let agent_name = {
         let agents = ctx.detected_agents_mut();
         if let Some(agent) = agents.get_mut(&pane_id) {
@@ -1533,53 +1534,6 @@ fn classify_codex_completed_turn_payload(
     }
 
     AgentStatus::Idle
-}
-
-fn wrapped_agent_notification_snippet_from_payload(
-    event: &str,
-    agent_hint: &str,
-    payload: Option<&Value>,
-) -> Option<String> {
-    match agent_hint {
-        "codex" if event == "codex-turn-complete" => payload
-            .and_then(codex_completed_turn_notification_snippet)
-            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
-        "claude" => payload
-            .and_then(claude_notification_snippet)
-            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
-        "gemini" => payload
-            .and_then(|value| gemini_notification_snippet(event, value))
-            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
-        _ => None,
-    }
-}
-
-fn codex_completed_turn_notification_snippet(payload: &Value) -> Option<String> {
-    serde_json::from_value::<CodexCompletedTurnPayload>(payload.clone())
-        .ok()
-        .and_then(|payload| {
-            if payload.payload_type == "agent-turn-complete" {
-                payload.last_assistant_message
-            } else {
-                None
-            }
-        })
-}
-
-fn claude_notification_snippet(payload: &Value) -> Option<String> {
-    serde_json::from_value::<ClaudeHookPayload>(payload.clone())
-        .ok()
-        .and_then(|payload| payload.message)
-}
-
-fn gemini_notification_snippet(event: &str, payload: &Value) -> Option<String> {
-    serde_json::from_value::<GeminiHookPayload>(payload.clone())
-        .ok()
-        .and_then(|payload| match event {
-            "agent-idle" => payload.prompt_response.or(payload.message),
-            "agent-needs-input" => payload.message.or(payload.prompt_response),
-            _ => None,
-        })
 }
 
 fn normalized_matches_codex_prompt(normalized_message: &str, phrase: &str) -> bool {

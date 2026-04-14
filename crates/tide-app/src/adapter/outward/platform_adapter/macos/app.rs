@@ -54,9 +54,7 @@ fn activate_existing_tide_instance_if_running() -> bool {
                 msg_send_id![&running_applications, objectAtIndex: index];
             let process_identifier: i32 = msg_send![&running_application, processIdentifier];
             let terminated: Bool = msg_send![&running_application, isTerminated];
-            if process_identifier <= 0
-                || process_identifier == current_pid
-                || terminated.as_bool()
+            if process_identifier <= 0 || process_identifier == current_pid || terminated.as_bool()
             {
                 continue;
             }
