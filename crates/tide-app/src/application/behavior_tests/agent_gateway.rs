@@ -2094,11 +2094,13 @@ fn background_notification_routes_for_focused_pane_when_window_is_unfocused() {
     app.focus.focused = Some(agent_pane);
     app.window.is_focused = false;
     app.handle_terminal_notification(agent_pane, "tide:agent-needs-input");
-    assert!(matches!(
-        app.pending_platform_commands.first(),
-        Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, .. })
-            if *pane_id == agent_pane
-    ));
+    assert!(app.pending_platform_commands.iter().any(|command| {
+        matches!(
+            command,
+            crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, .. }
+                if *pane_id == agent_pane
+        )
+    }));
     assert!(matches!(
         app.pending_platform_commands.get(1),
         Some(crate::tide_platform::WindowCommand::RequestUserAttention)
@@ -2149,8 +2151,8 @@ fn unfocused_wrapped_agent_terminal_routes_notification_while_window_is_focused(
 }
 
 #[test]
-fn focused_pane_skips_background_notification_while_window_is_focused() {
-    // UC-3 BR-11: The active Pane skips background notification routing while the Tide window is focused.
+fn focused_needs_input_pane_skips_background_notification_while_window_is_focused() {
+    // UC-4 BR-5: NeedsInput does not request background notification routing for the already-focused Pane while the Tide Window is focused.
     let (mut app, agent_pane) = app_with_detected_agent();
     app.focus.focused = Some(agent_pane);
     app.window.is_focused = true;
@@ -2158,6 +2160,118 @@ fn focused_pane_skips_background_notification_while_window_is_focused() {
 
     assert!(app.pending_platform_commands.is_empty());
     assert!(!app.notified_panes.contains(&agent_pane));
+}
+
+#[test]
+fn focused_idle_wrapped_agent_terminal_queues_completion_notification() {
+    // Spec: docs/specs/agent-notification-routing.md
+    // UC-4 BR-5: Idle may queue a completion notification for the already-focused wrapped-agent Terminal.
+    let (mut app, agent_pane) = app_with_terminal();
+    app.focus.focused = Some(agent_pane);
+    app.focus.focus_area = FocusArea::Stage;
+    app.focus.stage_focused = Some(agent_pane);
+    app.window.is_focused = true;
+
+    app.handle_terminal_notification(agent_pane, "tide:wrapped-agent:codex:agent-running");
+    app.pending_platform_commands.clear();
+
+    app.handle_terminal_notification(agent_pane, "tide:wrapped-agent:codex:agent-idle");
+
+    assert!(app.pending_platform_commands.iter().any(|command| {
+        matches!(
+            command,
+            crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, .. }
+                if *pane_id == agent_pane
+        )
+    }));
+    assert!(
+        app.pending_platform_commands
+            .iter()
+            .all(|command| !matches!(
+                command,
+                crate::tide_platform::WindowCommand::RequestUserAttention
+            )),
+        "Idle completion must not request user attention"
+    );
+    assert!(app.notified_panes.contains(&agent_pane));
+}
+
+#[test]
+fn window_blur_after_focused_completion_does_not_queue_duplicate_notification() {
+    // Spec: docs/specs/agent-notification-routing.md
+    // UC-4 BR-6: Focused Idle completion sets duplicate suppression before a later Focused(false) reroute.
+    use crate::adapter::inward::event_loop_adapter::handle_platform_event;
+    use crate::tide_platform::WindowCommand;
+
+    let (mut app, agent_pane) = app_with_terminal();
+    app.focus.focused = Some(agent_pane);
+    app.focus.focus_area = FocusArea::Stage;
+    app.focus.stage_focused = Some(agent_pane);
+    app.window.is_focused = true;
+
+    app.handle_terminal_notification(agent_pane, "tide:wrapped-agent:codex:agent-running");
+    app.pending_platform_commands.clear();
+    app.handle_terminal_notification(agent_pane, "tide:wrapped-agent:codex:agent-idle");
+    let notification_count_before_blur = app
+        .pending_platform_commands
+        .iter()
+        .filter(|command| {
+            matches!(
+                command,
+                WindowCommand::SendSystemNotification { pane_id, .. } if *pane_id == agent_pane
+            )
+        })
+        .count();
+
+    handle_platform_event(
+        &mut app,
+        crate::tide_platform::PlatformEvent::Focused(false),
+        &test_window_proxy(),
+    );
+
+    let notification_count_after_blur = app
+        .pending_platform_commands
+        .iter()
+        .filter(|command| {
+            matches!(
+                command,
+                WindowCommand::SendSystemNotification { pane_id, .. } if *pane_id == agent_pane
+            )
+        })
+        .count();
+
+    assert_eq!(notification_count_before_blur, 1);
+    assert_eq!(notification_count_after_blur, 1);
+    assert!(app.notified_panes.contains(&agent_pane));
+}
+
+#[test]
+fn focused_running_signal_clears_prior_completion_notification_suppression() {
+    // Spec: docs/specs/agent-notification-routing.md
+    // UC-4 BR-6: A later focused Running signal clears prior focused completion suppression for the next completed turn.
+    let (mut app, agent_pane) = app_with_terminal();
+    app.focus.focused = Some(agent_pane);
+    app.focus.focus_area = FocusArea::Stage;
+    app.focus.stage_focused = Some(agent_pane);
+    app.window.is_focused = true;
+
+    app.handle_terminal_notification(agent_pane, "tide:wrapped-agent:codex:agent-running");
+    app.pending_platform_commands.clear();
+    app.handle_terminal_notification(agent_pane, "tide:wrapped-agent:codex:agent-idle");
+    assert!(app.notified_panes.contains(&agent_pane));
+
+    app.pending_platform_commands.clear();
+    app.handle_terminal_notification(agent_pane, "tide:wrapped-agent:codex:agent-running");
+    assert!(!app.notified_panes.contains(&agent_pane));
+
+    app.handle_terminal_notification(agent_pane, "tide:wrapped-agent:codex:agent-idle");
+    assert!(app.pending_platform_commands.iter().any(|command| {
+        matches!(
+            command,
+            crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, .. }
+                if *pane_id == agent_pane
+        )
+    }));
 }
 
 #[test]
@@ -2478,8 +2592,8 @@ fn wrapped_agent_notification_falls_back_to_visible_terminal_snippet() {
 }
 
 #[test]
-fn backgrounded_wrapped_agent_reroute_reuses_the_stored_notification_snippet() {
-    // UC-6 BR-10, BR-11: Re-routing an unresolved Idle alert reuses the stored snippet.
+fn focused_idle_notification_uses_structured_snippet_and_suppresses_later_reroute() {
+    // UC-4 BR-6, UC-6 BR-10: Focused Idle completion uses the structured snippet and suppresses a later focus-leave reroute.
     use crate::WorkspaceNavPort;
 
     let (mut app, agent_pane) = app_with_terminal();
@@ -2505,25 +2619,43 @@ fn backgrounded_wrapped_agent_reroute_reuses_the_stored_notification_snippet() {
         }),
     )
     .unwrap();
-    assert!(
-        app.pending_platform_commands.is_empty(),
-        "the focused Terminal should not route a background notification yet"
-    );
 
-    app.focus_terminal(other_terminal_id);
-
-    assert!(matches!(
-        app.pending_platform_commands.first(),
-        Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, body, .. })
-            if *pane_id == agent_pane
-                && body == "Summarized the repo layout and highlighted the gateway routing path."
-    ));
+    let notification_count_before_focus_leave = app
+        .pending_platform_commands
+        .iter()
+        .filter(|command| {
+            matches!(
+                command,
+                crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, body, .. }
+                    if *pane_id == agent_pane
+                        && body == "Summarized the repo layout and highlighted the gateway routing path."
+            )
+        })
+        .count();
+    assert_eq!(notification_count_before_focus_leave, 1);
+    assert!(app.notified_panes.contains(&agent_pane));
     assert!(
         !app.pending_platform_commands.iter().any(|command| matches!(
             command,
             crate::tide_platform::WindowCommand::RequestUserAttention
         ))
     );
+
+    app.focus_terminal(other_terminal_id);
+
+    let notification_count_after_focus_leave = app
+        .pending_platform_commands
+        .iter()
+        .filter(|command| {
+            matches!(
+                command,
+                crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, body, .. }
+                    if *pane_id == agent_pane
+                        && body == "Summarized the repo layout and highlighted the gateway routing path."
+            )
+        })
+        .count();
+    assert_eq!(notification_count_after_focus_leave, 1);
 }
 
 #[test]

@@ -10,6 +10,7 @@
 - The notification path already stores a `Notification Snippet` and uses notification activation to jump to the source `Pane`.
 - The direct-focus paths in `focus_terminal()` and `focus_pane()` currently clear duplicate suppression for the focused source `Pane`, but they leave the unresolved wrapped-agent lifecycle state active.
 - `route_agent_notification()` still formats `AgentStatus::Idle` into `SendSystemNotification` for backgrounded wrapped-agent panes, so current routing still alerts on `Idle`.
+- `route_agent_notification()` currently returns before queuing a macOS notification when the source `Terminal` is the focused `Pane` in the focused Tide Window, so a completed foreground turn can stay unresolved until `PlatformEvent::Focused(false)` reroutes it while the user leaves Tide.
 - The Codex transcript helper currently only inspects `response_item` assistant messages, even though current local Codex transcripts also emit final-answer text through `event_msg.agent_message` and `event_msg.task_complete.last_agent_message`.
 - A real locally captured Codex `Stop` hook stdin payload uses `snake_case` keys such as `transcript_path` and `last_assistant_message`, but the checked-in parser still expects `kebab-case`, so notification routing falls through to the generic `Codex finished` body.
 - Existing behavior tests still assert some `agent-idle` notification deliveries and body paths, including the `agent-idle` notification coverage in `gemini_after_agent_notification_uses_prompt_response_snippet`.
@@ -19,6 +20,9 @@
 
 - `AgentStatus` remains the single lifecycle state UI and routing consume.
 - `Idle` and `NeedsInput` may both queue macOS notifications when the source wrapped-agent `Terminal` is backgrounded.
+- `Idle` queues a macOS completion notification even when the source wrapped-agent `Terminal` is already the focused `Pane` in the focused Tide Window.
+- A foreground `Idle` completion marks the source `Pane` as notified before the Tide Window can lose focus, so leaving Tide does not synthesize a duplicate on-leave notification for the same completed turn.
+- A later `Running` signal from the already-focused source `Terminal` clears the prior foreground completion notification suppression, allowing the next focused completion to notify again.
 - `Idle` may update pane chrome and inactive Workspace chrome, but it must not request user attention.
 - `NeedsInput` is the strongest routed alert state: it may queue macOS notifications and request user attention.
 - `NeedsInput` macOS notifications attach the default system sound when the platform notification API supports it.
@@ -35,7 +39,7 @@
 1. Normalize wrapper-managed signals in Tide entrypoints before any routing or chrome projection reads them.
 2. Keep agent-specific parsing in the wrapper adapters or the Codex helper, then collapse results into `Running`, `Idle`, or `NeedsInput`.
 3. Route backgrounded `Idle` and `NeedsInput` into macOS notification delivery, but reserve `RequestUserAttention` for `NeedsInput`.
-4. Keep `Idle` in the chrome and inactive Workspace projection path while also preserving completion notifications for backgrounded wrapped-agent `Terminal`s.
+4. Keep `Idle` in the chrome and inactive Workspace projection path while also preserving completion notifications for backgrounded and already-focused wrapped-agent `Terminal`s.
 5. Reuse the existing focus and notification-activation path to clear unresolved wrapped-agent attention and to recompute affected Workspace chrome, with direct focus acknowledging the source `Pane` immediately.
 6. Store and reuse `Notification Snippet` values per source `Pane` so rerouted alerts keep their text without changing the routing rule.
 7. Treat direct wrapped-agent `Terminal` identity as the source of routing and activation, and keep `PaneId` uniqueness across Workspaces for notification safety.
@@ -76,8 +80,8 @@
 
 - Trigger: a wrapped agent reaches `Idle` or `NeedsInput`, or an unresolved wrapped-agent source becomes backgrounded later.
 - Preconditions: the `Pane` is not already acknowledged and duplicate suppression does not block delivery.
-- Flow: Tide may queue a macOS notification for backgrounded `Idle` or `NeedsInput`, may request user attention only for `NeedsInput`, and may present the alert even when the app is frontmost if the source `Pane` is not the focused `Pane`.
-- Postconditions: backgrounded `Idle` and `NeedsInput` enter the routed-alert path, but only `NeedsInput` escalates into user-attention requests.
+- Flow: Tide may queue a macOS notification for `Idle` or `NeedsInput`, may request user attention only for `NeedsInput`, and may present an `Idle` completion notification even when the app is frontmost and the source `Terminal` is the focused `Pane`.
+- Postconditions: `Idle` completion and backgrounded `NeedsInput` enter the routed-alert path, but only `NeedsInput` escalates into user-attention requests. A focused `Idle` completion is marked as already notified before any later Tide Window blur reroute.
 
 ### UC-5: ResolveBackgroundAttention
 
@@ -104,12 +108,13 @@
 
 - `AgentStatus` is the only lifecycle state UI and routing consume.
 - `Running` is visible-only and never queues alert delivery.
-- `Idle` may update chrome and inactive Workspace projection, and it may queue a macOS notification when the source wrapped-agent `Terminal` is backgrounded, but it never requests user attention.
+- `Idle` may update chrome and inactive Workspace projection, and it may queue a macOS notification when the source wrapped-agent `Terminal` is backgrounded or already focused in the focused Tide Window, but it never requests user attention.
 - `NeedsInput` may queue macOS notifications and may request user attention.
 - `Wrapped Agent Presence` is separate from `AgentStatus`; a connected wrapped-agent `Terminal` with no active status may render `ConnectedIdle`.
 - Direct focus on the wrapped-agent `Terminal` clears duplicate suppression, while the focused-window restore path is responsible for acknowledging the unresolved lifecycle state.
 - `PaneId` values used by routed notifications must remain unique across live and cold-stored Workspaces so activation resolves the correct source `Pane`.
 - Duplicate suppression may block repeated `Idle` or `NeedsInput` deliveries until acknowledgment, but it must not broaden the set of routable states.
+- Focused `Idle` completion delivery must set duplicate suppression immediately, and a later focused `Running` signal may clear only that focused source's prior completion suppression so the next completed turn can notify.
 
 ## Tests
 
@@ -132,6 +137,9 @@
 | UC-4 | BR-4 | new | `idle_wrapped_agent_states_queue_notifications_without_user_attention` |
 | UC-4 | BR-5 | existing | `background_notification_routes_for_focused_pane_when_window_is_unfocused` |
 | UC-4 | BR-5 | existing | `window_blur_after_an_unresolved_alert_routes_a_system_notification` |
+| UC-4 | BR-5 | new | `focused_idle_wrapped_agent_terminal_queues_completion_notification` |
+| UC-4 | BR-6 | new | `window_blur_after_focused_completion_does_not_queue_duplicate_notification` |
+| UC-4 | BR-6 | new | `focused_running_signal_clears_prior_completion_notification_suppression` |
 | UC-5 | BR-6 | new | `focusing_terminal_acknowledges_attention_and_clears_notification_suppression` |
 | UC-5 | BR-6 | new | `notification_activation_with_missing_pane_is_no_op` |
 | UC-5 | BR-6 | existing | `window_focus_acknowledges_attention_for_the_already_focused_pane` |
@@ -140,7 +148,7 @@
 | UC-6 | BR-7 | new | `codex_stop_notification_uses_task_complete_last_agent_message_snippet` |
 | UC-6 | BR-7 | existing | `gemini_after_agent_notification_uses_prompt_response_snippet` |
 | UC-6 | BR-7 | existing | `wrapped_agent_notification_falls_back_to_visible_terminal_snippet` |
-| UC-6 | BR-7 | existing | `backgrounded_wrapped_agent_reroute_reuses_the_stored_notification_snippet` |
+| UC-6 | BR-7 | updated | `focused_idle_notification_uses_structured_snippet_and_suppresses_later_reroute` |
 | UC-7 | BR-7 | existing | `macos_notification_activation_switches_to_target_workspace_and_focuses_target_pane` |
 | UC-7 | BR-7 | new | `notification_activation_does_not_queue_a_duplicate_background_notification_before_window_focus` |
 | UC-7 | BR-7 | new | `wrapped_agent_attention_does_not_leak_across_workspaces_after_switching_back` |
@@ -162,9 +170,9 @@
 
 ### UC-4: RouteBackgroundAttention
 
-- BR-5: `Idle` and `NeedsInput` may queue a macOS notification for backgrounded wrapped-agent `Terminal`s, but only `NeedsInput` may request user attention.
-- BR-5: `Idle` and `NeedsInput` may queue a macOS notification for backgrounded wrapped-agent `Terminal`s, but only `NeedsInput` may request user attention, and the macOS notification content should attach the default system sound when available.
-- BR-6: Background rerouting, duplicate suppression, and frontmost presentation apply to unresolved `Idle` and `NeedsInput` attention.
+- BR-5: `Idle` and `NeedsInput` may queue a macOS notification for backgrounded wrapped-agent `Terminal`s, and `Idle` may queue a completion notification for the already-focused wrapped-agent `Terminal`; only `NeedsInput` may request user attention.
+- BR-5: The macOS notification content should attach the default system sound when available.
+- BR-6: Background rerouting, duplicate suppression, and frontmost presentation apply to unresolved `Idle` and `NeedsInput` attention. A focused `Idle` completion must set duplicate suppression before a later `Focused(false)` reroute, and a later `Running` signal from that same focused source may clear suppression for the next completion.
 - BR-7: Routed notification bodies prefer structured snippets for both `Idle` and `NeedsInput`, then fall back to visible `Terminal` text before generic lifecycle text.
 
 ### UC-5: ResolveBackgroundAttention

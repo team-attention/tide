@@ -10,7 +10,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool, NSObject};
 use objc2::{declare_class, msg_send, msg_send_id, mutability, ClassType, DeclaredClass};
-use objc2_app_kit::{NSBackingStoreType, NSView, NSWindow, NSWindowStyleMask};
+use objc2_app_kit::{
+    NSApplicationActivationOptions, NSBackingStoreType, NSRunningApplication, NSView, NSWindow,
+    NSWindowStyleMask,
+};
 use objc2_foundation::MainThreadMarker;
 use objc2_foundation::{CGFloat, NSMutableArray, NSPoint, NSRect, NSSize, NSString};
 use raw_window_handle::{
@@ -700,11 +703,16 @@ impl PlatformWindow for MacosWindow {
 
     fn show_window(&self) {
         unsafe {
+            self.ns_window.deminiaturize(None);
             self.ns_window.makeKeyAndOrderFront(None);
-            let app_cls = objc2::runtime::AnyClass::get("NSApplication").expect("NSApplication");
-            let nsapp: Retained<AnyObject> = msg_send_id![app_cls, sharedApplication];
+            self.ns_window.orderFrontRegardless();
+            self.ns_window.makeMainWindow();
+            let running_app = NSRunningApplication::currentApplication();
             #[allow(deprecated)]
-            let _: () = msg_send![&nsapp, activateIgnoringOtherApps: true];
+            let activation_options = NSApplicationActivationOptions::NSApplicationActivateAllWindows
+                | NSApplicationActivationOptions::NSApplicationActivateIgnoringOtherApps;
+            #[allow(deprecated)]
+            let _: bool = running_app.activateWithOptions(activation_options);
             let _: () = msg_send![&self.ns_window, setAlphaValue: 1.0_f64];
         }
         self.window_revealed.set(true);
