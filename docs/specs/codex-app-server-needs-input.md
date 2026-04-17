@@ -15,7 +15,7 @@
 - Codex App Server requests that require user approval or user input update the source `Pane`'s wrapped-agent `AgentStatus` to `NeedsInput`.
 - Codex App Server turn lifecycle notifications may update the source `Pane` to `Running` or `Idle` when the payload includes `turn/started` or `turn/completed`.
 - Codex App Server thread status notifications may update the source `Pane` to `NeedsInput` when `thread/status/changed` reports `waitingOnApproval`.
-- The Codex `Agent Wrapper` owns app-server launch and Codex App Server Watcher launch while preserving the existing hook path as a fallback.
+- The Codex `Agent Wrapper` keeps App Server launch and Codex App Server Watcher launch available as an explicit opt-in path while preserving the existing hook path as the default.
 
 ### Approach
 
@@ -24,7 +24,7 @@
 3. Normalize Codex App Server `turn/started` and `turn/completed` notifications into `Running` and `Idle`.
 4. Normalize Codex App Server `thread/status/changed` notifications into `NeedsInput`, `Running`, or `Idle` when the status payload is recognized.
 5. Derive a `Notification Snippet` from structured request payload fields before falling back to generic text.
-6. Update the Codex `Agent Wrapper` to prefer an app-server-backed remote Codex TUI when supported, and keep the current hook-injected direct Codex CLI launch as fallback.
+6. Keep the Codex `Agent Wrapper` App Server path available behind `TIDE_CODEX_APP_SERVER=1`, and keep the hook-injected direct Codex CLI launch as the default.
 
 ## Bounded Contexts
 
@@ -87,7 +87,7 @@
 
 - Actor: User launching `codex` inside a Tide `Terminal` Pane.
 - Trigger: The Codex `Agent Wrapper` is first on `PATH`.
-- Precondition: `TIDE_BIN` and `TIDE_PANE` are present.
+- Precondition: `TIDE_BIN`, `TIDE_PANE`, and `TIDE_CODEX_APP_SERVER=1` are present.
 - Flow:
   1. The Codex `Agent Wrapper` reports `agent-attached`.
   2. The wrapper creates a temporary `CODEX_HOME` overlay as before.
@@ -97,9 +97,10 @@
   6. If app-server launch fails, the wrapper falls back to the existing direct Codex CLI launch.
 - Postcondition: The visible Codex TUI remains in the same Terminal `Pane`.
 - Business Rules:
-  - BR-13: The wrapper owns Codex App Server and watcher process lifecycle.
+  - BR-13: The wrapper owns Codex App Server and watcher process lifecycle when App Server remote mode is explicitly enabled.
   - BR-14: The wrapper preserves existing MCP and hook injection for fallback.
   - BR-15: The wrapper still reports `agent-detached` and removes its temporary `CODEX_HOME` and wrapper-owned app-server log files on exit.
+  - BR-16: The wrapper launches the direct Codex CLI by default when `TIDE_CODEX_APP_SERVER` is unset.
 
 ## Invariants
 
@@ -118,7 +119,7 @@
 | UC-3 | BR-9 | `codex_app_server_waiting_on_approval_thread_status_marks_needs_input` |
 | UC-3 | BR-10, BR-11 | `codex_app_server_thread_status_updates_running_and_idle` |
 | UC-3 | BR-12 | `codex_app_server_unsupported_payload_does_not_change_status` |
-| UC-4 | BR-13, BR-14, BR-15 | `codex_wrapper_launches_app_server_remote_tui_and_watcher` |
+| UC-4 | BR-13, BR-14, BR-15, BR-16 | `codex_wrapper_launches_direct_cli_by_default_and_app_server_only_when_enabled` |
 
 ## Location
 

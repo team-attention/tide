@@ -13,6 +13,7 @@
 - OpenAI's official Codex hooks docs document `PreToolUse` only for `Bash`, and explicitly say unsupported output forms such as `permissionDecision: "ask"` fail open today.
 - The checked-in `read_codex_transcript_resolution()` helper only inspects `response_item` assistant messages, while current local Codex transcripts also emit final-answer text through `event_msg.agent_message` and `event_msg.task_complete.last_agent_message`.
 - A real locally captured Codex `Stop` hook stdin payload uses `snake_case` keys such as `transcript_path`, `hook_event_name`, and `last_assistant_message`, but the checked-in `CodexStopHookPayload` parser still expects `kebab-case`, so Tide drops the transcript path and fallback assistant message before notification routing.
+- The checked-in Codex App Server path can map structured approval requests into `AgentStatus::NeedsInput`, but a visible Codex TUI permission prompt can still appear only as `Terminal` text when App Server transport is unavailable or disabled.
 
 ### To-Be
 
@@ -20,6 +21,8 @@
 - Tide should treat Codex `Stop` as the primary turn-complete signal, use `transcript_path` to confirm the current thread is the main thread, and classify the final main-thread assistant response as `Idle` or `NeedsInput`, including short confirmation or permission prompts such as `yes` and `allow`.
 - Transcript resolution should accept the checked-in Codex transcript shapes in priority order: `response_item` final-answer assistant messages, `event_msg.agent_message` with `phase = final_answer`, then `event_msg.task_complete.last_agent_message`, before falling back to payload text.
 - Tide should use Codex `UserPromptSubmit` to return the source `Pane` to `Running` at the beginning of each new turn, while launch only marks `Wrapped Agent Presence`.
+- While a Codex `Terminal` shows a recognizable permission prompt, Tide should emit a wrapper-managed `NeedsInput` lifecycle update from the visible `Terminal` text even if no Codex App Server event arrives.
+- Codex App Server remote mode should be an explicit opt-in helper path, not the default launch path, because the user-facing contract is the `Agent Wrapper` lifecycle state rather than the App Server transport.
 - Tide must not infer Codex `NeedsInput` from unverified hook ordering or unsupported hook outputs.
 
 ### Approach
@@ -31,6 +34,8 @@
 5. Use a conservative Codex-specific classifier over the resolved final assistant message to decide whether a completed turn is `Idle` or `NeedsInput`.
 6. Fail closed for `NeedsInput`: unknown payloads, subagent transcripts, or unclassified messages may still produce `Idle`, but must not be upgraded to `NeedsInput` without an explicit classifier match.
 7. Do not use `PreToolUse` or unsupported `permissionDecision: "ask"` semantics to infer permission waits until Tide has repo-backed evidence for Codex approval ordering.
+8. Add a visible-`Terminal` fallback classifier for the Codex TUI permission prompt shape that asks whether to allow an MCP server tool call, including the checked-in choice set shown by Codex.
+9. Keep Codex App Server launch code available behind `TIDE_CODEX_APP_SERVER=1`, but use the direct Codex CLI launch as the default path.
 
 ## Adapter Contract
 
@@ -40,6 +45,8 @@
 - The helper must parse the real official `Stop` hook field names in `snake_case`, while tolerating the older internal `kebab-case` spellings where manual notify calls or legacy tests still use them.
 - The helper must accept current checked-in Codex transcript record shapes from both `response_item` and `event_msg` records so notification routing can recover the final main-thread assistant response even when only the `event_msg` forms are present at hook time.
 - The helper returns `Running` for `UserPromptSubmit`, ignores subagent `Stop` transcripts, returns `Idle` for a completed main-thread turn that does not match the checked-in classifier, and returns `NeedsInput` only for a completed main-thread turn whose normalized final assistant message matches a checked-in request phrase or short confirmation/permission prompt.
+- The App scans visible `Terminal` text for a Codex permission prompt only for a `Wrapped Agent` whose display name is `Codex`; a match updates that `Pane` to `AgentStatus::NeedsInput` and routes the prompt text as the `Notification Snippet`.
+- The visible-`Terminal` fallback is conservative: it only matches a prompt that asks to allow an MCP server to run a tool and includes the Codex approval-choice surface.
 - The shared routing, inactive-Workspace projection, and notification activation rules live in `docs/specs/agent-notification-routing.md`; this spec only defines the Codex-specific classifier boundary.
 
 ## Bounded Contexts
@@ -102,12 +109,45 @@
   - BR-9: Tide must not depend on `PreToolUse` approval inference until approval ordering is proven for Codex
   - BR-10: Codex-specific classification rules live in Tide code and tests, not ad hoc shell-string matching inside the wrapper
 
+### UC-4: DetectVisibleCodexPermissionPrompt
+
+- **Actor**: Codex `Agent Wrapper`
+- **Trigger**: A wrapped Codex `Terminal` receives new output
+- **Precondition**: The source `Pane` is a wrapper-managed Codex `Terminal`
+- **Flow**:
+  1. Tide reads the visible `Terminal` grid text
+  2. Tide matches a prompt asking whether to allow an MCP server to run a tool
+  3. Tide confirms the visible Codex approval choices are present
+  4. Tide updates the source `Pane` to `AgentStatus::NeedsInput`
+  5. Tide routes the prompt text through the existing wrapped-agent notification path
+- **Postcondition**: A visible Codex permission prompt produces the normal `NeedsInput` chrome and notification behavior even without a Codex App Server event
+- **Business Rules**:
+  - BR-11: Visible Codex MCP tool permission prompts map to `AgentStatus::NeedsInput`
+  - BR-12: Visible prompt detection must only run for wrapper-managed Codex `Terminal` Panes
+  - BR-13: The prompt line should be used as the `Notification Snippet`
+
+### UC-5: LaunchCodexDirectByDefault
+
+- **Actor**: User
+- **Trigger**: The user runs `codex` from a Tide-managed `Terminal`
+- **Precondition**: The Codex `Agent Wrapper` is first on `PATH`
+- **Flow**:
+  1. The wrapper reports `agent-attached`
+  2. The wrapper creates the temporary `CODEX_HOME` overlay and hook config
+  3. Unless `TIDE_CODEX_APP_SERVER=1`, the wrapper launches the real Codex CLI directly in the current `Terminal` working directory
+  4. If `TIDE_CODEX_APP_SERVER=1`, the wrapper may attempt the Codex App Server remote mode and fall back to direct launch on failure
+- **Postcondition**: The default Codex launch path preserves the user's `Terminal` working directory and does not depend on App Server transport
+- **Business Rules**:
+  - BR-14: Codex App Server remote mode is opt-in through `TIDE_CODEX_APP_SERVER=1`
+  - BR-15: Direct Codex launch remains the default and keeps the existing hook and MCP injection
+
 ## Invariants
 
 1. Claude and Codex do not share the same attention source model.
 2. Codex `NeedsInput` is derived from documented Codex events, checked-in classification rules, and the main-thread transcript only.
-3. Unknown or subagent Codex stop payloads fail closed for routed attention.
-4. Existing wrapper-managed attention rendering stays generic; only the Codex event adapter is agent-specific.
+3. Visible Codex permission prompts may produce `NeedsInput` only for wrapper-managed Codex `Terminal` Panes.
+4. Unknown or subagent Codex stop payloads fail closed for routed attention.
+5. Existing wrapper-managed attention rendering stays generic; only the Codex event adapter is agent-specific.
 
 ## Tests
 
@@ -126,6 +166,9 @@
 | UC-3 | BR-8 | `codex_wrapper_does_not_depend_on_notification_hook` |
 | UC-3 | BR-9 | `codex_integration_does_not_emit_needs_input_from_pretooluse_without_classifier` |
 | UC-3 | BR-10 | `codex_stop_payload_classifies_idle_or_needs_input` |
+| UC-4 | BR-11, BR-12, BR-13 | `visible_codex_mcp_permission_prompt_marks_needs_input` |
+| UC-4 | BR-12 | `visible_codex_permission_prompt_is_ignored_for_unmanaged_terminal` |
+| UC-5 | BR-14, BR-15 | `codex_wrapper_launches_direct_cli_by_default_and_app_server_only_when_enabled` |
 
 ## Location
 
@@ -134,6 +177,8 @@
 | Wrapper | `crates/tide-app/resources/bin/codex` | Inject Codex `UserPromptSubmit` and `Stop` hooks and point Codex to Tide-managed helper commands |
 | CLI adapter | `crates/tide-app/src/adapter/inward/cli_adapter/` | Add a Codex-specific helper that parses the official `Stop` hook payload and transcript file and maps it to Tide lifecycle events |
 | Gateway | `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs` | Reuse existing `notify` handling once the Codex helper resolves the main-thread final answer into `Idle` vs `NeedsInput` |
+| App | `crates/tide-app/src/app.rs` | Detect visible Codex permission prompts in wrapper-managed `Terminal` Panes and route `NeedsInput` |
+| Event loop | `crates/tide-app/src/adapter/inward/event_loop_adapter/mod.rs` | Run the visible-`Terminal` prompt scan after new terminal output |
 | Shared routing | `docs/specs/agent-notification-routing.md` | Defines the common `AgentStatus` routing, inactive-Workspace projection, and notification activation behavior |
 | Specs | `docs/specs/agent-auto-integration.md`, `docs/specs/agent-notification-routing.md`, `docs/specs/codex-needs-input-attention.md` | Record the Codex-specific event model |
 | Behavior tests | `crates/tide-app/src/application/behavior_tests/agent_gateway.rs` | Verify Codex running and completed-turn classification rules |

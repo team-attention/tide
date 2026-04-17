@@ -158,7 +158,7 @@ codex_app_server_cleanup() {
 codex_app_server_launch() {
   # codex app-server --listen ws://127.0.0.1:<port>
   # codex --remote ws://127.0.0.1:<port>
-  [ "${TIDE_CODEX_APP_SERVER:-1}" = "0" ] && return 125
+  [ "${TIDE_CODEX_APP_SERVER:-0}" = "1" ] || return 125
   [ -x "$SELF_DIR/codex-app-server-watch" ] || return 125
 
   CODEX_APP_SERVER_PORT="$(codex_find_app_server_port)" || return 125
