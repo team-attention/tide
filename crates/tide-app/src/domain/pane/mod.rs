@@ -152,12 +152,15 @@ impl TerminalPane {
         let visible_start = history_size.saturating_sub(display_offset);
         let visible_end = visible_start + grid.cells.len();
 
-        let mut result = String::new();
+        let mut logical_lines = Vec::new();
+        let mut current_line = String::new();
+        let mut saw_visible_row = false;
         for row in start.0..=end.0 {
             // Skip rows outside the visible screen
             if row < visible_start || row >= visible_end {
                 continue;
             }
+            saw_visible_row = true;
             let screen_row = row - visible_start;
             let line = &grid.cells[screen_row];
             let col_start = if row == start.0 { start.1 } else { 0 };
@@ -177,12 +180,38 @@ impl TerminalPane {
             }
             let trimmed_len = line_text.trim_end_matches(' ').len();
             line_text.truncate(trimmed_len);
-            result.push_str(&line_text);
-            if row != end.0 && !self.backend.visible_row_is_wrapped(screen_row) {
-                result.push('\n');
+            current_line.push_str(&line_text);
+            if row != end.0 {
+                if !self.backend.visible_row_is_wrapped(screen_row) {
+                    logical_lines.push(current_line);
+                    current_line = String::new();
+                }
             }
         }
-        result
+        if saw_visible_row {
+            logical_lines.push(current_line);
+        }
+
+        let non_empty_lines: Vec<&mut String> = logical_lines
+            .iter_mut()
+            .filter(|line| !line.is_empty())
+            .collect();
+
+        if non_empty_lines.len() > 1 {
+            let common_blank_margin = non_empty_lines
+                .iter()
+                .map(|line| line.chars().take_while(|&ch| ch == ' ').count())
+                .min()
+                .unwrap_or(0);
+
+            if common_blank_margin > 0 {
+                for line in non_empty_lines {
+                    line.drain(..common_blank_margin);
+                }
+            }
+        }
+
+        logical_lines.join("\n")
     }
 
     /// Render the grid cells into the cached grid layer.
