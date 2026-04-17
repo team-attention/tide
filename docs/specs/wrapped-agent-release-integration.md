@@ -9,7 +9,7 @@
 - The wrapper-hook `notify` client still accepts any gateway socket that receives the request, because wrapped-agent lifecycle payloads do not carry the owning `Tide Instance` identity. A stale or misrouted hook can therefore deliver wrapper-managed notifications into the wrong `Tide Instance` when another instance has the same `PaneId`.
 - Shared wrapped-agent routing already treats `Running` as visible-only, routes background macOS notifications for unresolved `Idle` and `NeedsInput`, and reserves `RequestUserAttention` for unresolved `NeedsInput`.
 - Focusing a wrapped-agent source `Pane` now acknowledges unresolved wrapped-agent attention immediately in the focused Tide Window, while a later `Running` signal still does not acknowledge the unresolved alert on its own.
-- macOS system notifications already encode the owning `Tide Instance` and target `PaneId`, and activation relays to the owning `Tide Instance` before focusing the target `Workspace` and `Pane`.
+- macOS system notifications already encode the owning `Tide Instance` and target `PaneId`, and activation relays to the owning `Tide Instance` before focusing the target `Workspace` and `Pane`, but `show_window()` currently only calls `makeKeyAndOrderFront` and `activateIgnoringOtherApps`, which is not enough to pin Full-Screen Space reveal behavior.
 - The non-owning Tide notification-relay path only terminates an unrevealed launcher window today, so an already revealed non-owning Tide Window can stay frontmost after a successful relay and steal focus from the owning `Tide Instance`.
 - This release-integration spec and its behavior tests still expect the older Codex `Stop` hook contract and a `Running`-clears-suppression rule, so they no longer match the merged code.
 
@@ -23,12 +23,12 @@
 - Focusing an `Idle` wrapped-agent `Pane` acknowledges the completion notification and returns the source `Pane` to connected-idle chrome.
 - Focusing a `NeedsInput` wrapped-agent `Pane` acknowledges the unresolved alert and clears notification suppression.
 - A new `Running` signal does not acknowledge unresolved wrapped-agent attention by itself.
-- macOS system notifications encode the owning `Tide Instance` and target `PaneId`, and notification activation relays to the owning `Tide Instance` before revealing the correct Tide Window.
+- macOS system notifications encode the owning `Tide Instance` and target `PaneId`, and notification activation relays to the owning `Tide Instance` before revealing the correct Tide Window, including when that Tide Window is in a Full-Screen Space.
 - A non-owning Tide process that successfully relays notification activation must not leave its own Tide Window frontmost; revealed non-owning windows hide themselves, and unrevealed relay launches terminate.
 
 ### Approach
 
-1. Add glossary terms for `Tide Instance`, `Notification Activation Relay`, and `Tide Window`.
+1. Add glossary terms for `Tide Instance`, `Notification Activation Relay`, `Tide Window`, and `Full-Screen Space`.
 2. Keep behavior tests that pin bundle launch compatibility, Codex wrapper wiring, wrapped-agent attention semantics, and notification activation relay.
 3. Port the minimum code needed on top of `team-attention/tide` `main`:
    1. bundle metadata + local build script
@@ -121,7 +121,7 @@
   - BR-12: `activate-notification-target` must switch to the target `Workspace` and focus the target `Pane`
   - BR-13: Notification activation must queue Tide Window reveal for the owning `Tide Instance`
   - BR-14: `MacosWindow::new` must keep the Tide Window hidden until `show_window()`
-  - BR-15: `show_window()` must own `makeKeyAndOrderFront` plus app activation
+  - BR-15: `show_window()` must own `makeKeyAndOrderFront`, full-window app activation, and ordering calls strong enough to reveal a Tide Window in a Full-Screen Space
   - BR-19: A non-owning Tide process that successfully relays notification activation must not leave a non-owning Tide Window frontmost
 
 ## Invariants
@@ -157,6 +157,7 @@
 | UC-4 | BR-13 | `activate_notification_target_cli_command_queues_window_reveal` |
 | UC-4 | BR-14 | `macos_window_construction_keeps_window_hidden_until_show_window` |
 | UC-4 | BR-15 | `macos_show_window_orders_front_and_activates_the_app` |
+| UC-4 | BR-15 | `macos_show_window_uses_full_window_activation_for_full_screen_space` |
 | UC-4 | BR-19 | `macos_notification_activation_relay_suppresses_non_owning_window_after_successful_relay` |
 
 ## Location
