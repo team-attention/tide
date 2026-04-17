@@ -100,12 +100,102 @@ else
 TIDE_EOF
 fi
 
-trap 'tide_notify "agent-detached"; rm -rf "$TIDE_CODEX_HOME"' EXIT
+trap 'codex_app_server_cleanup; tide_notify "agent-detached"; rm -rf "$TIDE_CODEX_HOME"' EXIT
 
-CODEX_HOME="$TIDE_CODEX_HOME" "$REAL_CMD" \
-  -c "features.codex_hooks=true" \
-  -c "mcp_servers.tide.command=\"$TIDE_BIN\"" \
-  -c "mcp_servers.tide.args=[\"mcp\"]" \
-  -c "mcp_servers.tide.env.TIDE_SOCKET=\"$TIDE_SOCKET\"" \
-  -c "mcp_servers.tide.env.TIDE_PANE=\"$TIDE_PANE\"" \
-  "$@"
+codex_direct_launch() {
+  CODEX_HOME="$TIDE_CODEX_HOME" "$REAL_CMD" \
+    -c "features.codex_hooks=true" \
+    -c "mcp_servers.tide.command=\"$TIDE_BIN\"" \
+    -c "mcp_servers.tide.args=[\"mcp\"]" \
+    -c "mcp_servers.tide.env.TIDE_SOCKET=\"$TIDE_SOCKET\"" \
+    -c "mcp_servers.tide.env.TIDE_PANE=\"$TIDE_PANE\"" \
+    "$@"
+}
+
+codex_find_app_server_port() {
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 - <<'PY'
+import socket
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+}
+
+codex_wait_for_app_server() {
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 - "$1" <<'PY'
+import socket
+import sys
+import time
+
+port = int(sys.argv[1])
+deadline = time.time() + 8
+while time.time() < deadline:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.25) as sock:
+            sock.sendall(
+                f"GET /readyz HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n".encode()
+            )
+            response = sock.recv(128)
+            if b" 200 " in response:
+                raise SystemExit(0)
+    except OSError:
+        pass
+    time.sleep(0.05)
+raise SystemExit(1)
+PY
+}
+
+codex_app_server_cleanup() {
+  [ -n "$CODEX_APP_SERVER_WATCHER_PID" ] && kill "$CODEX_APP_SERVER_WATCHER_PID" >/dev/null 2>&1
+  [ -n "$CODEX_APP_SERVER_PID" ] && kill "$CODEX_APP_SERVER_PID" >/dev/null 2>&1
+}
+
+codex_app_server_launch() {
+  # codex app-server --listen ws://127.0.0.1:<port>
+  # codex --remote ws://127.0.0.1:<port>
+  [ "${TIDE_CODEX_APP_SERVER:-1}" = "0" ] && return 125
+  [ -x "$SELF_DIR/codex-app-server-watch" ] || return 125
+
+  CODEX_APP_SERVER_PORT="$(codex_find_app_server_port)" || return 125
+  [ -n "$CODEX_APP_SERVER_PORT" ] || return 125
+  CODEX_APP_SERVER_URL="ws://127.0.0.1:$CODEX_APP_SERVER_PORT"
+  CODEX_APP_SERVER_LOG="${TMPDIR:-/tmp}/tide-codex-app-server.$$.$CODEX_APP_SERVER_PORT.log"
+  CODEX_APP_SERVER_WATCHER_LOG="${TMPDIR:-/tmp}/tide-codex-app-server-watch.$$.$CODEX_APP_SERVER_PORT.log"
+
+  CODEX_HOME="$TIDE_CODEX_HOME" "$REAL_CMD" app-server \
+    --listen "$CODEX_APP_SERVER_URL" \
+    -c "features.codex_hooks=true" \
+    -c "mcp_servers.tide.command=\"$TIDE_BIN\"" \
+    -c "mcp_servers.tide.args=[\"mcp\"]" \
+    -c "mcp_servers.tide.env.TIDE_SOCKET=\"$TIDE_SOCKET\"" \
+    -c "mcp_servers.tide.env.TIDE_PANE=\"$TIDE_PANE\"" \
+    >"$CODEX_APP_SERVER_LOG" 2>&1 &
+  CODEX_APP_SERVER_PID=$!
+
+  if ! codex_wait_for_app_server "$CODEX_APP_SERVER_PORT"; then
+    codex_app_server_cleanup
+    return 125
+  fi
+
+  "$SELF_DIR/codex-app-server-watch" \
+    "$CODEX_APP_SERVER_URL" \
+    --pane "$TIDE_PANE" \
+    --tide-bin "$TIDE_BIN" \
+    >"$CODEX_APP_SERVER_WATCHER_LOG" 2>&1 &
+  CODEX_APP_SERVER_WATCHER_PID=$!
+
+  CODEX_HOME="$TIDE_CODEX_HOME" "$REAL_CMD" --remote "$CODEX_APP_SERVER_URL" "$@"
+}
+
+codex_exit_status=0
+codex_app_server_launch "$@"
+codex_exit_status=$?
+if [ "$codex_exit_status" -eq 125 ]; then
+  codex_direct_launch "$@"
+  codex_exit_status=$?
+fi
+codex_app_server_cleanup
+exit "$codex_exit_status"
