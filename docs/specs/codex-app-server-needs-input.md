@@ -99,7 +99,7 @@
 - Business Rules:
   - BR-13: The wrapper owns Codex App Server and watcher process lifecycle.
   - BR-14: The wrapper preserves existing MCP and hook injection for fallback.
-  - BR-15: The wrapper still reports `agent-detached` and removes its temporary `CODEX_HOME` on exit.
+  - BR-15: The wrapper still reports `agent-detached` and removes its temporary `CODEX_HOME` and wrapper-owned app-server log files on exit.
 
 ## Invariants
 

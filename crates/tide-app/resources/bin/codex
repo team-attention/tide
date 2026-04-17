@@ -151,6 +151,8 @@ PY
 codex_app_server_cleanup() {
   [ -n "$CODEX_APP_SERVER_WATCHER_PID" ] && kill "$CODEX_APP_SERVER_WATCHER_PID" >/dev/null 2>&1
   [ -n "$CODEX_APP_SERVER_PID" ] && kill "$CODEX_APP_SERVER_PID" >/dev/null 2>&1
+  [ -n "$CODEX_APP_SERVER_LOG" ] && rm -f "$CODEX_APP_SERVER_LOG"
+  [ -n "$CODEX_APP_SERVER_WATCHER_LOG" ] && rm -f "$CODEX_APP_SERVER_WATCHER_LOG"
 }
 
 codex_app_server_launch() {

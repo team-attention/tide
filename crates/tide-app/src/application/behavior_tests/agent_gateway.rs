@@ -1702,7 +1702,7 @@ fn codex_app_server_unsupported_payload_does_not_change_status() {
 fn codex_wrapper_launches_app_server_remote_tui_and_watcher() {
     // UC-4 BR-13: The wrapper owns Codex App Server and watcher process lifecycle.
     // UC-4 BR-14: The wrapper preserves existing MCP and hook injection for fallback.
-    // UC-4 BR-15: The wrapper still reports agent-detached and removes its temporary CODEX_HOME on exit.
+    // UC-4 BR-15: The wrapper still reports agent-detached and removes temporary wrapper-owned files on exit.
     let wrapper_path = format!("{}/resources/bin/codex", env!("CARGO_MANIFEST_DIR"));
     let wrapper = std::fs::read_to_string(&wrapper_path)
         .unwrap_or_else(|err| panic!("failed to read {wrapper_path}: {err}"));
@@ -1717,6 +1717,8 @@ fn codex_wrapper_launches_app_server_remote_tui_and_watcher() {
     assert!(wrapper.contains("\"Stop\""));
     assert!(wrapper.contains("tide_notify \"agent-detached\""));
     assert!(wrapper.contains("rm -rf \"$TIDE_CODEX_HOME\""));
+    assert!(wrapper.contains("rm -f \"$CODEX_APP_SERVER_LOG\""));
+    assert!(wrapper.contains("rm -f \"$CODEX_APP_SERVER_WATCHER_LOG\""));
 }
 
 #[test]
