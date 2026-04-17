@@ -1699,14 +1699,16 @@ fn codex_app_server_unsupported_payload_does_not_change_status() {
 }
 
 #[test]
-fn codex_wrapper_launches_app_server_remote_tui_and_watcher() {
-    // UC-4 BR-13: The wrapper owns Codex App Server and watcher process lifecycle.
+fn codex_wrapper_launches_direct_cli_by_default_and_app_server_only_when_enabled() {
+    // UC-4 BR-13: The wrapper owns Codex App Server and watcher process lifecycle when explicitly enabled.
     // UC-4 BR-14: The wrapper preserves existing MCP and hook injection for fallback.
     // UC-4 BR-15: The wrapper still reports agent-detached and removes temporary wrapper-owned files on exit.
+    // UC-4 BR-16: The wrapper launches direct Codex by default when TIDE_CODEX_APP_SERVER is unset.
     let wrapper_path = format!("{}/resources/bin/codex", env!("CARGO_MANIFEST_DIR"));
     let wrapper = std::fs::read_to_string(&wrapper_path)
         .unwrap_or_else(|err| panic!("failed to read {wrapper_path}: {err}"));
 
+    assert!(wrapper.contains("[ \"${TIDE_CODEX_APP_SERVER:-0}\" = \"1\" ] || return 125"));
     assert!(wrapper.contains("codex app-server"));
     assert!(wrapper.contains("--listen ws://127.0.0.1:"));
     assert!(wrapper.contains("codex-app-server-watch"));
@@ -1863,6 +1865,70 @@ fn codex_prompt_submit_hook_reports_running_for_each_new_turn() {
         app.gateway.detected_agents.get(&pane_id).unwrap().status,
         Some(crate::state::gateway_status::AgentStatus::Running)
     );
+}
+
+#[test]
+fn visible_codex_mcp_permission_prompt_marks_needs_input() {
+    // Spec: docs/specs/codex-needs-input-attention.md
+    // UC-4 BR-11, BR-12, BR-13: Visible Codex MCP tool permission prompts map to NeedsInput for wrapper-managed Codex Terminal Panes.
+    let (mut app, pane_id) = app_with_terminal();
+    app.window.is_focused = false;
+    app.handle_cli_command(
+        "notify",
+        json!({"event": "agent-running", "pane": pane_id, "agent": "codex"}),
+    )
+    .unwrap();
+    app.pending_platform_commands.clear();
+
+    if let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&pane_id) {
+        terminal.backend.load_mock_screen_for_test(
+            "Calling google_workspace.google_workspace_auth_status({})\n\
+             Allow the google_workspace MCP server to run tool \"google_workspace_auth_status\"?\n\
+             > 1. Allow  Run the tool and continue.\n\
+               2. Allow for this session  Run the tool and remember this choice for this session.\n\
+               3. Always allow  Run the tool and remember this choice for future tool calls.\n\
+               4. Cancel  Cancel this tool call\n\
+             enter to submit | esc to cancel",
+        );
+    }
+
+    assert!(app.scan_visible_terminal_text_for_wrapped_agent_status(pane_id));
+
+    assert_eq!(
+        app.gateway.detected_agents.get(&pane_id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id: body_pane_id, body, .. })
+            if *body_pane_id == pane_id
+                && body.starts_with("Allow the google_workspace MCP server to run tool")
+    ));
+    assert!(app.pending_platform_commands.iter().any(|command| matches!(
+        command,
+        crate::tide_platform::WindowCommand::RequestUserAttention
+    )));
+}
+
+#[test]
+fn visible_codex_permission_prompt_is_ignored_for_unmanaged_terminal() {
+    // Spec: docs/specs/codex-needs-input-attention.md
+    // UC-4 BR-12: Visible prompt detection only runs for wrapper-managed Codex Terminal Panes.
+    let (mut app, pane_id) = app_with_terminal();
+    if let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&pane_id) {
+        terminal.backend.load_mock_screen_for_test(
+            "Allow the google_workspace MCP server to run tool \"google_workspace_auth_status\"?\n\
+             1. Allow\n\
+             2. Allow for this session\n\
+             3. Always allow\n\
+             4. Cancel\n\
+             enter to submit | esc to cancel",
+        );
+    }
+
+    assert!(!app.scan_visible_terminal_text_for_wrapped_agent_status(pane_id));
+    assert!(!app.gateway.detected_agents.contains_key(&pane_id));
+    assert!(app.pending_platform_commands.is_empty());
 }
 
 // --- Unknown method ---
