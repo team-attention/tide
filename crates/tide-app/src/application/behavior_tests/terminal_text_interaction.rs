@@ -8,7 +8,7 @@ use crate::application::ports::outward::clipboard_port::ClipboardPort;
 use crate::pane::{PaneKind, Selection, TerminalPane};
 use crate::state::FocusArea;
 use crate::theme::{terminal_content_top, PANE_PADDING, TAB_BAR_HEIGHT};
-use crate::tide_core::{InputEvent, MouseButton, Rect, Vec2};
+use crate::tide_core::{InputEvent, MouseButton, Rect, TerminalBackend, Vec2};
 use crate::tide_input::{Action, GlobalAction};
 use crate::App;
 
@@ -145,6 +145,74 @@ fn copying_terminal_selection_across_wrapped_rows_omits_the_wrap_newline() {
 }
 
 #[test]
+fn copying_wrapped_terminal_selection_trims_the_margin_after_joining_rows() {
+    // UC-2 BR-2: A wrapped visible row does not insert a newline into copied text
+    // UC-2 BR-4: Copying trims only common selected blank margin cells before copied logical lines
+    let head = "    logical-output-";
+    let tail = "continues";
+    let second_line = "      child";
+    let writes = Rc::new(RefCell::new(Vec::new()));
+    let (mut app, terminal_id) = app_with_terminal(28, 6);
+    app.ports.clipboard = Box::new(RecordingClipboard {
+        writes: writes.clone(),
+    });
+
+    if let Some(PaneKind::Terminal(pane)) = app.panes.get_mut(&terminal_id) {
+        pane.backend
+            .load_mock_screen_for_test(&format!("{head}\n{tail}\r\n{second_line}"));
+        let visible_start = pane
+            .backend
+            .history_size()
+            .saturating_sub(pane.backend.display_offset());
+        pane.selection = Some(Selection {
+            anchor: (visible_start, 0),
+            end: (visible_start + 2, second_line.chars().count()),
+        });
+    }
+
+    app.handle_global_action(GlobalAction::Copy);
+
+    assert_eq!(
+        writes.borrow().as_slice(),
+        &["logical-output-continues\n  child".to_string()]
+    );
+}
+
+#[test]
+fn terminal_wrap_metadata_from_the_emulator_joins_copied_rows() {
+    // UC-2 BR-2: A wrapped visible row does not insert a newline into copied text
+    let mut pane = TerminalPane::with_cwd(99, 8, 4, None, true).unwrap();
+
+    pane.backend.bench_sync_grid();
+    pane.backend.bench_write_to_term(b"\x1b[2J\x1b[Habcdefghi");
+    pane.backend.bench_sync_grid();
+    pane.backend.bench_sync_grid();
+
+    let wrapped_row = pane
+        .backend
+        .grid()
+        .cells
+        .iter()
+        .enumerate()
+        .find_map(|(row, cells)| {
+            let text: String = cells.iter().map(|cell| cell.character).collect();
+            text.starts_with("abcdefgh").then_some(row)
+        })
+        .expect("expected injected wrapped Terminal text");
+    let visible_start = pane
+        .backend
+        .history_size()
+        .saturating_sub(pane.backend.display_offset());
+    let selection = Selection {
+        anchor: (visible_start + wrapped_row, 0),
+        end: (visible_start + wrapped_row + 1, 1),
+    };
+
+    assert!(pane.backend.visible_row_is_wrapped(wrapped_row));
+    assert_eq!(pane.selected_text(&selection), "abcdefghi");
+}
+
+#[test]
 fn copying_terminal_selection_across_a_hard_line_break_preserves_newline() {
     // UC-2 BR-3: A non-wrapped visible row preserves a newline in copied text when the selection continues to the next row
     let writes = Rc::new(RefCell::new(Vec::new()));
@@ -168,4 +236,115 @@ fn copying_terminal_selection_across_a_hard_line_break_preserves_newline() {
     app.handle_global_action(GlobalAction::Copy);
 
     assert_eq!(writes.borrow().as_slice(), &["alpha\nbeta".to_string()]);
+}
+
+#[test]
+fn copying_terminal_selection_trims_common_selected_blank_margin() {
+    // UC-2 BR-4: Copying trims only common selected blank margin cells before copied logical lines
+    let writes = Rc::new(RefCell::new(Vec::new()));
+    let (mut app, terminal_id) = app_with_terminal(16, 6);
+    app.ports.clipboard = Box::new(RecordingClipboard {
+        writes: writes.clone(),
+    });
+
+    if let Some(PaneKind::Terminal(pane)) = app.panes.get_mut(&terminal_id) {
+        pane.backend
+            .load_mock_screen_for_test("    alpha\r\n      beta");
+        let visible_start = pane
+            .backend
+            .history_size()
+            .saturating_sub(pane.backend.display_offset());
+        pane.selection = Some(Selection {
+            anchor: (visible_start, 0),
+            end: (visible_start + 1, 10),
+        });
+    }
+
+    app.handle_global_action(GlobalAction::Copy);
+
+    assert_eq!(writes.borrow().as_slice(), &["alpha\n  beta".to_string()]);
+}
+
+#[test]
+fn copying_single_indented_terminal_line_preserves_indentation() {
+    // UC-2 BR-4: Copying preserves relative indentation after the first visible content column
+    let writes = Rc::new(RefCell::new(Vec::new()));
+    let (mut app, terminal_id) = app_with_terminal(12, 6);
+    app.ports.clipboard = Box::new(RecordingClipboard {
+        writes: writes.clone(),
+    });
+
+    if let Some(PaneKind::Terminal(pane)) = app.panes.get_mut(&terminal_id) {
+        pane.backend.load_mock_screen_for_test("  beta");
+        let visible_start = pane
+            .backend
+            .history_size()
+            .saturating_sub(pane.backend.display_offset());
+        pane.selection = Some(Selection {
+            anchor: (visible_start, 0),
+            end: (visible_start, 6),
+        });
+    }
+
+    app.handle_global_action(GlobalAction::Copy);
+
+    assert_eq!(writes.borrow().as_slice(), &["  beta".to_string()]);
+}
+
+#[test]
+fn copying_single_wrapped_indented_terminal_line_preserves_indentation() {
+    // UC-2 BR-4: Copying preserves relative indentation after the first visible content column
+    let head = "  long-output-";
+    let tail = "continues";
+    let writes = Rc::new(RefCell::new(Vec::new()));
+    let (mut app, terminal_id) = app_with_terminal(20, 6);
+    app.ports.clipboard = Box::new(RecordingClipboard {
+        writes: writes.clone(),
+    });
+
+    if let Some(PaneKind::Terminal(pane)) = app.panes.get_mut(&terminal_id) {
+        pane.backend
+            .load_mock_screen_for_test(&format!("{head}\n{tail}"));
+        let visible_start = pane
+            .backend
+            .history_size()
+            .saturating_sub(pane.backend.display_offset());
+        pane.selection = Some(Selection {
+            anchor: (visible_start, 0),
+            end: (visible_start + 1, tail.chars().count()),
+        });
+    }
+
+    app.handle_global_action(GlobalAction::Copy);
+
+    assert_eq!(
+        writes.borrow().as_slice(),
+        &["  long-output-continues".to_string()]
+    );
+}
+
+#[test]
+fn copying_terminal_selection_preserves_later_indentation_without_shared_margin() {
+    // UC-2 BR-4: Copying preserves relative indentation after the first visible content column
+    let writes = Rc::new(RefCell::new(Vec::new()));
+    let (mut app, terminal_id) = app_with_terminal(12, 6);
+    app.ports.clipboard = Box::new(RecordingClipboard {
+        writes: writes.clone(),
+    });
+
+    if let Some(PaneKind::Terminal(pane)) = app.panes.get_mut(&terminal_id) {
+        pane.backend.load_mock_screen_for_test("alpha\r\n  beta");
+        let visible_start = pane
+            .backend
+            .history_size()
+            .saturating_sub(pane.backend.display_offset());
+        pane.selection = Some(Selection {
+            anchor: (visible_start, 0),
+            end: (visible_start + 1, 6),
+        });
+    }
+
+    app.handle_global_action(GlobalAction::Copy);
+
+    assert_eq!(writes.borrow().as_slice(), &["alpha\n  beta".to_string()]);
 }
