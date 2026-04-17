@@ -348,3 +348,66 @@ fn copying_terminal_selection_preserves_later_indentation_without_shared_margin(
 
     assert_eq!(writes.borrow().as_slice(), &["alpha\n  beta".to_string()]);
 }
+
+#[test]
+fn copying_application_reflowed_terminal_prose_joins_continuation_rows() {
+    // UC-2 BR-5: A full-width application-rendered prose reflow row may omit
+    // the copied newline when the next selected row is a continuation.
+    let writes = Rc::new(RefCell::new(Vec::new()));
+    let (mut app, terminal_id) = app_with_terminal(12, 6);
+    app.ports.clipboard = Box::new(RecordingClipboard {
+        writes: writes.clone(),
+    });
+
+    if let Some(PaneKind::Terminal(pane)) = app.panes.get_mut(&terminal_id) {
+        pane.backend
+            .load_mock_screen_for_test("확인해야 합\r\n니다\r\n다음 줄");
+        let visible_start = pane
+            .backend
+            .history_size()
+            .saturating_sub(pane.backend.display_offset());
+        assert!(!pane.backend.visible_row_is_wrapped(0));
+        pane.selection = Some(Selection {
+            anchor: (visible_start, 0),
+            end: (visible_start + 2, 7),
+        });
+    }
+
+    app.handle_global_action(GlobalAction::Copy);
+
+    assert_eq!(
+        writes.borrow().as_slice(),
+        &["확인해야 합니다\n다음 줄".to_string()]
+    );
+}
+
+#[test]
+fn copying_application_reflowed_terminal_prose_preserves_new_block_rows() {
+    // UC-2 BR-5: The reflow fallback preserves obvious new block rows.
+    let writes = Rc::new(RefCell::new(Vec::new()));
+    let (mut app, terminal_id) = app_with_terminal(11, 6);
+    app.ports.clipboard = Box::new(RecordingClipboard {
+        writes: writes.clone(),
+    });
+
+    if let Some(PaneKind::Terminal(pane)) = app.panes.get_mut(&terminal_id) {
+        pane.backend
+            .load_mock_screen_for_test("완료기준 정\r\n1. 새 항목");
+        let visible_start = pane
+            .backend
+            .history_size()
+            .saturating_sub(pane.backend.display_offset());
+        assert!(!pane.backend.visible_row_is_wrapped(0));
+        pane.selection = Some(Selection {
+            anchor: (visible_start, 0),
+            end: (visible_start + 1, 10),
+        });
+    }
+
+    app.handle_global_action(GlobalAction::Copy);
+
+    assert_eq!(
+        writes.borrow().as_slice(),
+        &["완료기준 정\n1. 새 항목".to_string()]
+    );
+}

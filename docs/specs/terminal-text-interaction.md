@@ -10,6 +10,7 @@
 
 - Cmd/Ctrl-click on any visible row segment of a wrapped URL opens the full URL
 - Copying a `Terminal Pane` selection across wrapped visible rows keeps the wrapped rows contiguous
+- Copying a `Terminal Pane` selection across `Application-Rendered Prose Reflow Row` continuations keeps likely visual continuations contiguous
 - Copying across an actual terminal line break still preserves the newline
 - Copying trims only the common selected blank margin before copied logical lines, while preserving relative indentation after the first visible content column
 
@@ -17,8 +18,9 @@
 1. Reconstruct the logical text cluster around the clicked visible terminal row before resolving URLs.
 2. Preserve wrap metadata from the terminal sync path so text interaction code can distinguish terminal wraps from hard line breaks.
 3. Update `TerminalPane::selected_text()` to suppress synthetic newlines for wrapped visible rows while preserving real line breaks.
-4. Update `TerminalPane::selected_text()` to trim common selected blank margin cells after logical wrapped lines are reconstructed.
-5. Cover the behavior with behavior tests for URL activation and copy serialization.
+4. Add a conservative fallback for `Application-Rendered Prose Reflow Row`s that fill the selected terminal row but do not carry emulator wrap metadata.
+5. Update `TerminalPane::selected_text()` to trim common selected blank margin cells after logical wrapped lines are reconstructed.
+6. Cover the behavior with behavior tests for URL activation and copy serialization.
 
 ## Bounded Contexts
 
@@ -57,12 +59,14 @@
   - BR-2: A wrapped visible row does not insert a newline into copied text
   - BR-3: A non-wrapped visible row preserves a newline in copied text when the selection continues to the next row
   - BR-4: Copying trims only common selected blank margin cells before copied logical lines, preserving relative indentation after the first visible content column
+  - BR-5: A full-width `Application-Rendered Prose Reflow Row` may omit the copied newline when the next selected row is a continuation rather than a new block
 
 ## Invariants
 
 1. `Terminal Pane` copy output must remain stable for non-wrapped selections.
 2. Wrapped URL resolution must use the same visible terminal rows that the user clicked, not unrelated scrollback rows.
 3. Terminal text interaction must not require direct mutation from inward adapters.
+4. `Application-Rendered Prose Reflow Row` fallback must stay conservative and preserve obvious new block starts.
 
 ## Tests
 
@@ -77,6 +81,8 @@
 | UC-2 | BR-4 | `copying_single_indented_terminal_line_preserves_indentation` |
 | UC-2 | BR-4 | `copying_single_wrapped_indented_terminal_line_preserves_indentation` |
 | UC-2 | BR-4 | `copying_terminal_selection_preserves_later_indentation_without_shared_margin` |
+| UC-2 | BR-5 | `copying_application_reflowed_terminal_prose_joins_continuation_rows` |
+| UC-2 | BR-5 | `copying_application_reflowed_terminal_prose_preserves_new_block_rows` |
 
 ## Location
 

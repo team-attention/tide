@@ -80,6 +80,34 @@ impl Default for TerminalContext {
     }
 }
 
+fn terminal_selection_row_fills_width(
+    line: &[crate::tide_core::TerminalCell],
+    selected_col_end: usize,
+) -> bool {
+    if selected_col_end < line.len() {
+        return false;
+    }
+
+    line.iter()
+        .rposition(|cell| cell.character != ' ')
+        .is_some_and(|last_used_col| last_used_col >= line.len().saturating_sub(2))
+}
+
+fn terminal_selection_row_starts_new_block(trimmed: &str) -> bool {
+    trimmed.starts_with("- ")
+        || trimmed.starts_with("* ")
+        || trimmed.starts_with("+ ")
+        || trimmed.starts_with("> ")
+        || trimmed.starts_with('#')
+        || trimmed.starts_with("```")
+        || trimmed.chars().next().is_some_and(|ch| ch.is_ascii_digit())
+            && trimmed
+                .chars()
+                .skip_while(|ch| ch.is_ascii_digit())
+                .next()
+                .is_some_and(|ch| ch == '.' || ch == ')')
+}
+
 pub struct TerminalPane {
     #[allow(dead_code)]
     pub id: PaneId,
@@ -182,7 +210,19 @@ impl TerminalPane {
             line_text.truncate(trimmed_len);
             current_line.push_str(&line_text);
             if row != end.0 {
-                if !self.backend.visible_row_is_wrapped(screen_row) {
+                let application_reflow_continuation =
+                    terminal_selection_row_fills_width(line, col_end)
+                        && self.selected_next_terminal_row_is_continuation(
+                            row,
+                            end.0,
+                            end.1,
+                            visible_start,
+                            visible_end,
+                            &grid.cells,
+                        );
+                if !self.backend.visible_row_is_wrapped(screen_row)
+                    && !application_reflow_continuation
+                {
                     logical_lines.push(current_line);
                     current_line = String::new();
                 }
@@ -212,6 +252,40 @@ impl TerminalPane {
         }
 
         logical_lines.join("\n")
+    }
+
+    fn selected_next_terminal_row_is_continuation(
+        &self,
+        row: usize,
+        selection_end_row: usize,
+        selection_end_col: usize,
+        visible_start: usize,
+        visible_end: usize,
+        cells: &[Vec<crate::tide_core::TerminalCell>],
+    ) -> bool {
+        let next_row = row + 1;
+        if next_row > selection_end_row || next_row < visible_start || next_row >= visible_end {
+            return false;
+        }
+
+        let next_screen_row = next_row - visible_start;
+        let Some(line) = cells.get(next_screen_row) else {
+            return false;
+        };
+        let col_end = if next_row == selection_end_row {
+            selection_end_col.min(line.len())
+        } else {
+            line.len()
+        };
+        let mut text = String::new();
+        for col in 0..col_end {
+            let ch = line[col].character;
+            if ch != '\0' {
+                text.push(ch);
+            }
+        }
+        let trimmed = text.trim_start();
+        !trimmed.is_empty() && !terminal_selection_row_starts_new_block(trimmed)
     }
 
     /// Render the grid cells into the cached grid layer.
