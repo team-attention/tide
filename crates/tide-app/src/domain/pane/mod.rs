@@ -192,20 +192,20 @@ impl TerminalPane {
             logical_lines.push(current_line);
         }
 
-        let non_empty_logical_line_count =
-            logical_lines.iter().filter(|line| !line.is_empty()).count();
-        let should_trim_common_blank_margin = non_empty_logical_line_count > 1;
+        let non_empty_lines: Vec<&mut String> = logical_lines
+            .iter_mut()
+            .filter(|line| !line.is_empty())
+            .collect();
 
-        if should_trim_common_blank_margin {
-            let common_blank_margin = logical_lines
+        if non_empty_lines.len() > 1 {
+            let common_blank_margin = non_empty_lines
                 .iter()
-                .filter(|line| !line.is_empty())
                 .map(|line| line.chars().take_while(|&ch| ch == ' ').count())
                 .min()
                 .unwrap_or(0);
 
             if common_blank_margin > 0 {
-                for line in logical_lines.iter_mut().filter(|line| !line.is_empty()) {
+                for line in non_empty_lines {
                     line.drain(..common_blank_margin);
                 }
             }
