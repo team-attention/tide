@@ -357,5 +357,22 @@ fn macos_show_window_orders_front_and_activates_the_app() {
     let show_body = &source[show_start..];
 
     assert!(show_body.contains("makeKeyAndOrderFront(None)"));
-    assert!(show_body.contains("activateIgnoringOtherApps"));
+    assert!(show_body.contains("activateWithOptions"));
+    assert!(!show_body.contains("activateIgnoringOtherApps: true"));
+}
+
+#[test]
+fn macos_show_window_uses_full_window_activation_for_full_screen_space() {
+    // UC-4 BR-15: show_window() must use ordering and all-window activation strong enough to reveal a Full-Screen Space Tide Window.
+    let source = include_str!("../../adapter/outward/platform_adapter/macos/window.rs");
+    let show_start = source
+        .find("fn show_window(&self)")
+        .expect("expected MacosWindow::show_window");
+    let show_body = &source[show_start..];
+
+    assert!(show_body.contains("deminiaturize(None)"));
+    assert!(show_body.contains("orderFrontRegardless()"));
+    assert!(show_body.contains("makeMainWindow()"));
+    assert!(show_body.contains("NSRunningApplication::currentApplication()"));
+    assert!(show_body.contains("NSApplicationActivateAllWindows"));
 }

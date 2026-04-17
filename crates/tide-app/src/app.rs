@@ -1227,9 +1227,20 @@ impl crate::application::ports::inward::GatewayPort for App {
             .as_deref()
             .and_then(crate::state::gateway_status::normalize_notification_snippet);
 
+        let pane_is_current_focus = self.window.is_focused
+            && self.focus.focused == Some(pane_id)
+            && if self.is_pane_in_dock(pane_id) {
+                self.focus.focus_area == crate::state::FocusArea::Dock
+            } else {
+                self.focus.focus_area == crate::state::FocusArea::Stage
+            };
+
         // BR-1: Running status does not trigger notification routing
         if matches!(status, AgentStatus::Running) {
             self.agent_notification_snippets.remove(&pane_id);
+            if pane_is_current_focus {
+                self.notified_panes.remove(&pane_id);
+            }
             return;
         }
 
@@ -1248,15 +1259,7 @@ impl crate::application::ports::inward::GatewayPort for App {
                 .insert(pane_id, snippet.clone());
         }
 
-        let pane_is_current_focus = self.window.is_focused
-            && self.focus.focused == Some(pane_id)
-            && if self.is_pane_in_dock(pane_id) {
-                self.focus.focus_area == crate::state::FocusArea::Dock
-            } else {
-                self.focus.focus_area == crate::state::FocusArea::Stage
-            };
-
-        if pane_is_current_focus {
+        if pane_is_current_focus && matches!(status, AgentStatus::NeedsInput) {
             return;
         }
 
