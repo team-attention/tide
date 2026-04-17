@@ -1416,6 +1416,311 @@ fn codex_wrapper_injects_tide_mcp_turn_stop_hook_and_prompt_submit_hook() {
     assert!(!wrapper.contains("agent-needs-input"));
 }
 
+// --- UC-16: CodexAppServerNeedsInput (Spec: docs/specs/codex-app-server-needs-input.md) ---
+
+#[test]
+fn codex_app_server_command_approval_marks_needs_input() {
+    // UC-1 BR-1: item/commandExecution/requestApproval maps to AgentStatus::NeedsInput.
+    // UC-1 BR-2: Command approval snippets prefer params.reason.
+    let (mut app, pane_id) = app_with_terminal();
+    app.window.is_focused = false;
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "codex-app-server-event",
+            "pane": pane_id,
+            "agent": "codex",
+            "payload": {
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "item/commandExecution/requestApproval",
+                "params": {
+                    "itemId": "item-1",
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "reason": "Do you want to update ~/.codex/config.toml?",
+                    "command": "python3 -c 'from pathlib import Path'"
+                }
+            }
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(
+        app.gateway.detected_agents.get(&pane_id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id: body_pane_id, body, .. })
+            if *body_pane_id == pane_id
+                && body == "Do you want to update ~/.codex/config.toml?"
+    ));
+    assert!(app.pending_platform_commands.iter().any(|command| matches!(
+        command,
+        crate::tide_platform::WindowCommand::RequestUserAttention
+    )));
+}
+
+#[test]
+fn codex_app_server_user_input_requests_mark_needs_input() {
+    // UC-2 BR-3: item/fileChange/requestApproval maps to AgentStatus::NeedsInput.
+    // UC-2 BR-4: item/permissions/requestApproval maps to AgentStatus::NeedsInput.
+    // UC-2 BR-5: item/tool/requestUserInput maps to AgentStatus::NeedsInput.
+    // UC-2 BR-6: mcpServer/elicitation/request maps to AgentStatus::NeedsInput.
+    for payload in [
+        json!({
+            "method": "item/fileChange/requestApproval",
+            "params": {
+                "itemId": "item-file",
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "reason": "Approve file change?"
+            }
+        }),
+        json!({
+            "method": "item/permissions/requestApproval",
+            "params": {
+                "itemId": "item-perm",
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "reason": "Grant additional permissions?"
+            }
+        }),
+        json!({
+            "method": "item/tool/requestUserInput",
+            "params": {
+                "itemId": "item-tool",
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "questions": [
+                    {
+                        "id": "choice",
+                        "header": "Confirm",
+                        "question": "Which option should Codex use?"
+                    }
+                ]
+            }
+        }),
+        json!({
+            "method": "mcpServer/elicitation/request",
+            "params": {
+                "serverName": "google_workspace",
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "mode": "form",
+                "message": "Choose the Google Workspace account."
+            }
+        }),
+    ] {
+        let (mut app, pane_id) = app_with_detected_agent();
+        app.handle_cli_command(
+            "notify",
+            json!({
+                "event": "codex-app-server-event",
+                "pane": pane_id,
+                "agent": "codex",
+                "payload": payload
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(
+            app.gateway.detected_agents.get(&pane_id).unwrap().status,
+            Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+        );
+    }
+}
+
+#[test]
+fn codex_app_server_turn_lifecycle_updates_running_and_idle() {
+    // UC-3 BR-7: turn/started maps to AgentStatus::Running.
+    // UC-3 BR-8: turn/completed maps to AgentStatus::Idle.
+    let (mut app, pane_id) = app_with_detected_agent();
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "codex-app-server-event",
+            "pane": pane_id,
+            "agent": "codex",
+            "payload": {
+                "method": "turn/started",
+                "params": {"threadId": "thread-1", "turnId": "turn-1"}
+            }
+        }),
+    )
+    .unwrap();
+    assert_eq!(
+        app.gateway.detected_agents.get(&pane_id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "codex-app-server-event",
+            "pane": pane_id,
+            "agent": "codex",
+            "payload": {
+                "method": "turn/completed",
+                "params": {"threadId": "thread-1", "turnId": "turn-1"}
+            }
+        }),
+    )
+    .unwrap();
+    assert_eq!(
+        app.gateway.detected_agents.get(&pane_id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::Idle)
+    );
+}
+
+#[test]
+fn codex_app_server_waiting_on_approval_thread_status_marks_needs_input() {
+    // UC-3 BR-9: thread/status/changed waitingOnApproval maps to AgentStatus::NeedsInput.
+    let (mut app, pane_id) = app_with_terminal();
+    app.window.is_focused = false;
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "codex-app-server-event",
+            "pane": pane_id,
+            "agent": "codex",
+            "payload": {
+                "method": "thread/status/changed",
+                "params": {
+                    "threadId": "thread-1",
+                    "status": {
+                        "type": "active",
+                        "activeFlags": ["waitingOnApproval"]
+                    }
+                }
+            }
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(
+        app.gateway.detected_agents.get(&pane_id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id: body_pane_id, body, .. })
+            if *body_pane_id == pane_id && body == "Codex is waiting for approval"
+    ));
+}
+
+#[test]
+fn codex_app_server_thread_status_updates_running_and_idle() {
+    // UC-3 BR-10: thread/status/changed active maps to AgentStatus::Running.
+    // UC-3 BR-11: thread/status/changed idle maps to AgentStatus::Idle.
+    let (mut app, pane_id) = app_with_detected_agent();
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "codex-app-server-event",
+            "pane": pane_id,
+            "agent": "codex",
+            "payload": {
+                "method": "thread/status/changed",
+                "params": {
+                    "threadId": "thread-1",
+                    "status": {
+                        "type": "active",
+                        "activeFlags": []
+                    }
+                }
+            }
+        }),
+    )
+    .unwrap();
+    assert_eq!(
+        app.gateway.detected_agents.get(&pane_id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "codex-app-server-event",
+            "pane": pane_id,
+            "agent": "codex",
+            "payload": {
+                "method": "thread/status/changed",
+                "params": {
+                    "threadId": "thread-1",
+                    "status": {
+                        "type": "idle",
+                        "activeFlags": []
+                    }
+                }
+            }
+        }),
+    )
+    .unwrap();
+    assert_eq!(
+        app.gateway.detected_agents.get(&pane_id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::Idle)
+    );
+}
+
+#[test]
+fn codex_app_server_unsupported_payload_does_not_change_status() {
+    // UC-3 BR-12: Unsupported Codex App Server payload methods are ignored without changing status.
+    let (mut app, pane_id) = app_with_detected_agent();
+    app.gateway
+        .detected_agents
+        .get_mut(&pane_id)
+        .unwrap()
+        .status = Some(crate::state::gateway_status::AgentStatus::Running);
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "codex-app-server-event",
+            "pane": pane_id,
+            "agent": "codex",
+            "payload": {
+                "method": "mcpServer/startupStatus/updated",
+                "params": {"threadId": "thread-1"}
+            }
+        }),
+    )
+    .unwrap();
+
+    assert_eq!(
+        app.gateway.detected_agents.get(&pane_id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
+}
+
+#[test]
+fn codex_wrapper_launches_app_server_remote_tui_and_watcher() {
+    // UC-4 BR-13: The wrapper owns Codex App Server and watcher process lifecycle.
+    // UC-4 BR-14: The wrapper preserves existing MCP and hook injection for fallback.
+    // UC-4 BR-15: The wrapper still reports agent-detached and removes temporary wrapper-owned files on exit.
+    let wrapper_path = format!("{}/resources/bin/codex", env!("CARGO_MANIFEST_DIR"));
+    let wrapper = std::fs::read_to_string(&wrapper_path)
+        .unwrap_or_else(|err| panic!("failed to read {wrapper_path}: {err}"));
+
+    assert!(wrapper.contains("codex app-server"));
+    assert!(wrapper.contains("--listen ws://127.0.0.1:"));
+    assert!(wrapper.contains("codex-app-server-watch"));
+    assert!(wrapper.contains("--remote ws://127.0.0.1:"));
+    assert!(wrapper.contains("codex_app_server_cleanup"));
+    assert!(wrapper.contains("mcp_servers.tide.command"));
+    assert!(wrapper.contains("\"UserPromptSubmit\""));
+    assert!(wrapper.contains("\"Stop\""));
+    assert!(wrapper.contains("tide_notify \"agent-detached\""));
+    assert!(wrapper.contains("rm -rf \"$TIDE_CODEX_HOME\""));
+    assert!(wrapper.contains("rm -f \"$CODEX_APP_SERVER_LOG\""));
+    assert!(wrapper.contains("rm -f \"$CODEX_APP_SERVER_WATCHER_LOG\""));
+}
+
 #[test]
 fn claude_wrapper_forwards_hook_stdin_payloads_for_notification_and_stop() {
     // Spec: docs/specs/agent-auto-integration.md
