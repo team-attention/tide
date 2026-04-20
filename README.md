@@ -13,7 +13,7 @@
 
 </div>
 
-Tide keeps your shell, files, editor, browser, diffs, and AI coding agents in one shared Workspace. Split terminals in the Stage, pin supporting Panes in the Dock, and let Claude Code, Codex, or Gemini see and control the Workspace through Tide's Agent Gateway.
+Tide keeps your shell, files, editor, browser, diffs, and AI coding agents in one shared Workspace. Run Terminal Panes in the Stage, keep each Terminal's supporting workbench in the Dock, and let Claude Code, Codex, or Gemini see and control the Workspace through Tide's Agent Gateway.
 
 ## Features
 
@@ -25,9 +25,9 @@ Launch Claude Code, Codex, or Gemini from a Terminal Pane. Tide's Agent Wrapper 
 
 Each Workspace has its own Pane layout and focus state. Split the Stage, stack Panes in TabGroups, move between Workspaces, and zoom into the focused Pane when you need more room.
 
-### Dock for review surfaces
+### Dock as a per-Terminal workbench
 
-Keep the Terminal in the Stage and open supporting Panes in the Dock: Editor, Browser, Diff, and Launcher. Pin a Dock Pane when it should stay visible across terminals in the Workspace.
+Keep the Terminal in the Stage and open its supporting Panes in the Dock: inspect code in an Editor Pane, check a running app in a Browser Pane, compare a Diff Pane, or keep a Render Pane beside the command that produced it. Dock Panes follow their Associated Terminal, while pinned Panes stay visible across terminals in the Workspace.
 
 ### Browser and render Panes
 
@@ -66,14 +66,14 @@ cargo build --release                    # binary
 - **Workspace Sidebar**: switch between task Workspaces.
 - **FileTree**: browse files rooted at the focused Terminal's working directory.
 - **Stage**: the main area for Terminal Panes, splits, and TabGroups.
-- **Dock**: supporting Panes for editing, browsing, reviewing, and agent-generated UI.
+- **Dock**: the focused Terminal's workbench for code, Browser, Diff, and agent-generated UI Panes.
 
 ## Quick Start
 
 1. Open Tide. It starts with one Workspace and one Terminal Pane.
 2. Run a coding agent inside the Terminal, such as Claude Code, Codex, or Gemini.
 3. Split the Stage with `Cmd+Shift+T` or add a Terminal tab with `Cmd+T`.
-4. Open the Dock with `Cmd+\` and create an Editor, Browser, Diff, or Launcher Pane.
+4. Open the Dock with `Cmd+\` and create an Editor, Browser, Diff, or Launcher Pane tied to the focused Terminal.
 5. Use `Cmd+1` through `Cmd+4` to move between Workspace Sidebar, FileTree, Stage, and Dock.
 
 ## Keyboard Shortcuts
