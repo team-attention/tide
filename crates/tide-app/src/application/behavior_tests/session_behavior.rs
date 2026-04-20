@@ -1,5 +1,8 @@
-// Spec: docs/specs/session.md — UC-1: SaveLoadSession
+// Spec: docs/specs/session.md
 use crate::application::ports::outward::persistence_port::{Session, SessionLayout};
+use crate::pane::PaneKind;
+
+// --- UC-1: SaveLoadSession ---
 
 #[test]
 fn session_preserves_dark_mode_preference() {
@@ -68,4 +71,50 @@ fn session_without_sidebar_fields_uses_defaults() {
     let session: Session = serde_json::from_str(json).unwrap();
     assert_eq!(session.sidebar_side, "left");
     assert!(session.sidebar_outer);
+}
+
+// --- UC-2: CreateFreshWorkspaceWithoutSession ---
+
+#[test]
+fn fresh_workspace_keeps_prespawned_terminal_at_startup_geometry_before_layout() {
+    // UC-2 BR-4: A pre-spawned initial Terminal must not be resized from 80x24 using the whole Tide Window before layout computation
+    let mut app = crate::App::new();
+    app.window.window_size = (1800, 1095);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
+    let early_terminal =
+        crate::tide_terminal::Terminal::with_cwd(80, 24, None, true, Some(1)).unwrap();
+
+    app.create_initial_pane(Some(early_terminal));
+
+    let terminal = app
+        .panes
+        .values()
+        .find_map(|pane| match pane {
+            PaneKind::Terminal(terminal) => Some(terminal),
+            _ => None,
+        })
+        .expect("fresh workspace should contain an initial Terminal Pane");
+    assert_eq!(terminal.backend.current_cols(), 80);
+    assert_eq!(terminal.backend.current_rows(), 24);
+}
+
+#[test]
+fn fresh_workspace_uses_startup_geometry_when_creating_initial_terminal_before_layout() {
+    // UC-2 BR-5: A non-pre-spawned initial Terminal must use the same 80x24 startup geometry before layout computation
+    let mut app = crate::App::new();
+    app.window.window_size = (1800, 1095);
+    app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
+
+    app.create_initial_pane(None);
+
+    let terminal = app
+        .panes
+        .values()
+        .find_map(|pane| match pane {
+            PaneKind::Terminal(terminal) => Some(terminal),
+            _ => None,
+        })
+        .expect("fresh workspace should contain an initial Terminal Pane");
+    assert_eq!(terminal.backend.current_cols(), 80);
+    assert_eq!(terminal.backend.current_rows(), 24);
 }

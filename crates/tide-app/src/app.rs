@@ -12,7 +12,6 @@ use crate::pane::{PaneKind, TerminalPane};
 use crate::state;
 use crate::theme::*;
 use crate::update::workspace_infra_service::{Workspace, WorkspaceExtras};
-use crate::AppCorePort;
 use crate::DockPort;
 use crate::GatewayPort;
 use crate::LayoutPort;
@@ -34,6 +33,9 @@ use crate::application::ports::outward::{
     ClipboardPort, ClockPort, FileSystemPort, FileWatcherPort, GitPort, GpuPort, LspPort,
     PersistencePort, PlatformPort, ProcessPort, TerminalFactoryPort,
 };
+
+const INITIAL_TERMINAL_COLS: u16 = 80;
+const INITIAL_TERMINAL_ROWS: u16 = 24;
 
 /// Aggregates all outward port implementations. Injected into App.
 pub(crate) struct Ports {
@@ -428,29 +430,14 @@ impl App {
         let (layout, pane_id) = SplitLayout::with_initial_pane_id(pane_id);
         self.layout = layout;
 
-        let cell_size = self.cell_size();
-        let logical_w = self.window.window_size.0 as f32 / self.window.scale_factor;
-        let logical_h = self.window.window_size.1 as f32 / self.window.scale_factor;
-
-        let cols = if cell_size.width > 0.0 {
-            ((logical_w / cell_size.width).max(1.0).min(1000.0)) as u16
-        } else {
-            80
-        };
-        let rows = if cell_size.height > 0.0 {
-            ((logical_h / cell_size.height).max(1.0).min(500.0)) as u16
-        } else {
-            24
-        };
-
         let result = if let Some(mut terminal) = early_terminal {
-            terminal.resize(cols, rows);
+            terminal.resize(INITIAL_TERMINAL_COLS, INITIAL_TERMINAL_ROWS);
             Ok(TerminalPane::with_terminal(pane_id, terminal))
         } else {
             self.ports.terminal_factory.create_terminal(
                 pane_id,
-                cols,
-                rows,
+                INITIAL_TERMINAL_COLS,
+                INITIAL_TERMINAL_ROWS,
                 None,
                 self.window.dark_mode,
             )
