@@ -1,10 +1,10 @@
 <div align="center">
 
-![Tide](assets/icon.png)
+<img src="assets/icon.png" alt="Tide" width="96" />
 
 # Tide
 
-**A GPU-rendered terminal workspace for macOS**
+**A native macOS task workspace for terminals, agents, editor panes, and browser panes.**
 
 [![Release](https://img.shields.io/github/v/release/team-attention/tide?style=flat-square&color=blue)](https://github.com/team-attention/tide/releases)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
@@ -13,135 +13,37 @@
 
 </div>
 
-Terminals, files, editor, browser — all in one window. Organize them into workspaces, split them, tab them, zoom into one. Context stays with you however you work.
+Tide keeps your shell, files, editor, browser, diffs, and AI coding agents in one shared Workspace. Split terminals in the Stage, pin supporting Panes in the Dock, and let Claude Code, Codex, or Gemini see and control the Workspace through Tide's Agent Gateway.
 
-## Quick Start
+## Features
+
+### Agent-aware terminals
+
+Launch Claude Code, Codex, or Gemini from a Terminal Pane. Tide's Agent Wrapper wires up MCP tools and lifecycle hooks automatically, then shows when the Wrapped Agent is running, idle, or waiting for input.
+
+### Workspaces, splits, and tabs
+
+Each Workspace has its own Pane layout and focus state. Split the Stage, stack Panes in TabGroups, move between Workspaces, and zoom into the focused Pane when you need more room.
+
+### Dock for review surfaces
+
+Keep the Terminal in the Stage and open supporting Panes in the Dock: Editor, Browser, Diff, and Launcher. Pin a Dock Pane when it should stay visible across terminals in the Workspace.
+
+### Browser and render Panes
+
+Open a Browser Pane for docs, previews, and local apps. Agents can also create Render Panes with `tide_render_html` for task dashboards, checklists, or custom UI.
+
+### Shared context for agents
+
+Every Pane is observable through the Agent Gateway. Agents can list Panes, capture Terminal or Editor content, open files, send keys, open browser URLs, and inspect layout.
+
+## Install
+
+### DMG
 
 Download the latest `.dmg` from [Releases](https://github.com/team-attention/tide/releases), open it, and drag Tide to Applications.
 
-When you open Tide, you start with a single workspace and a terminal ready to go.
-
-The main area (**stage**) is for terminals — split and tab them freely. When you need an editor, browser, or other pane, open it in the **dock** (`Cmd+\`). A **launcher** appears to let you pick what to create:
-
-| Key | What it opens |
-|-----|---------------|
-| `T` | Terminal |
-| `E` | New file (editor) |
-| `O` | Open file |
-| `B` | Browser |
-
-## Core Concepts
-
-Tide's window is divided into up to four regions:
-
-```
-┌───────────┬──────────┬─────────────────────┬──────────┐
-│           │          │                     │          │
-│ Workspace │  File    │      Stage          │   Dock   │
-│ Sidebar   │  Tree    │   (main splits)     │  (pinned │
-│           │          │                     │  panes)  │
-│           │          │                     │          │
-└───────────┴──────────┴─────────────────────┴──────────┘
-   Cmd+1       Cmd+2          Cmd+3              Cmd+4
-```
-
-- **Workspace Sidebar** — lists all workspaces with name, branch, and working directory. `Cmd+1` toggles it on/off.
-- **File Tree** — shows the filesystem rooted at your focused terminal's working directory. `Cmd+2` to focus.
-- **Stage** — your main work area, dedicated to terminals. Split and tab them to orchestrate multiple shells side by side (`Cmd+T` for a new tab, `Cmd+Shift+T` to split). `Cmd+3` to focus.
-- **Dock** — a side panel for non-terminal panes (editors, browsers, etc.). Open a new pane with `Cmd+\` — a launcher lets you pick the type. Pin a pane with `Cmd+Shift+P` to keep it visible across all terminals in the workspace. `Cmd+4` to focus.
-
-### Workspaces
-
-A workspace is an independent set of panes + layout + focus state. Think of it like a virtual desktop inside Tide.
-
-- `Cmd+[` / `Cmd+]` — switch between workspaces
-- `Cmd+Shift+N` — new workspace
-- `Cmd+Shift+W` — close workspace
-
-### Pane Types
-
-| Type | Description |
-|------|-------------|
-| **Terminal** | Full terminal emulator (alacritty backend) |
-| **Editor** | Text editor with syntax highlighting and LSP autocompletion |
-| **Browser** | Embedded web browser |
-| **Diff** | Diff viewer |
-| **Launcher** | Quick picker for creating new panes |
-
-## Keybindings
-
-All keybindings are customizable via `~/.config/tide/settings.json`. Open it with `Cmd+,`.
-
-### Stage (terminals)
-
-| Key | Action |
-|-----|--------|
-| `Cmd+T` | New terminal tab |
-| `Cmd+Shift+T` | Split vertically with new terminal |
-| `Cmd+W` | Close current tab |
-
-### Dock (editors, browsers, etc.)
-
-| Key | Action |
-|-----|--------|
-| `Cmd+\` | New pane horizontally (opens launcher) |
-| `Cmd+Shift+\` | New pane vertically (opens launcher) |
-| `Cmd+Shift+P` | Pin / unpin pane to dock |
-
-### Navigation
-
-| Key | Action |
-|-----|--------|
-| `Cmd+H/J/K/L` | Move focus across splits (left/down/up/right) |
-| `Cmd+I` | Previous tab in group |
-| `Cmd+O` | Next tab in group |
-| `Cmd+1` | Toggle workspace sidebar |
-| `Cmd+2/3/4` | Focus file tree / stage / dock |
-| `Cmd+Enter` | Zoom — expand focused pane to fill the workspace (toggle) |
-
-### Workspaces
-
-| Key | Action |
-|-----|--------|
-| `Cmd+[` | Previous workspace |
-| `Cmd+]` | Next workspace |
-| `Cmd+Shift+N` | New workspace |
-| `Cmd+Shift+W` | Close workspace |
-
-### File & Search
-
-| Key | Action |
-|-----|--------|
-| `Cmd+Shift+O` | File finder |
-| `Cmd+F` | Find |
-
-### Window & Display
-
-| Key | Action |
-|-----|--------|
-| `Cmd+N` | New window |
-| `Cmd+Ctrl+F` | Toggle fullscreen |
-| `Cmd+Shift+D` | Toggle light/dark theme |
-| `Cmd++` / `Cmd+-` | Font size up / down |
-| `Cmd+0` | Reset font size |
-
-### Scroll
-
-| Key | Action |
-|-----|--------|
-| `Cmd+U` | Scroll half page up |
-| `Cmd+D` | Scroll half page down |
-
-### Browser (when a browser pane is focused)
-
-| Key | Action |
-|-----|--------|
-| `Cmd+[` | Back |
-| `Cmd+]` | Forward |
-| `Cmd+R` | Reload |
-| `Cmd+Shift+B` | Open new browser pane |
-
-## Build from Source
+### From source
 
 ```sh
 cargo build --release                    # binary
@@ -149,11 +51,83 @@ cargo build --release                    # binary
 ./scripts/build-dmg.sh                   # signed + notarized DMG
 ```
 
-## Design Reference
+## How Tide Is Organized
 
-Mockups live in `ui.pen` (Pencil).
+```text
+┌───────────┬──────────┬─────────────────────┬──────────┐
+│ Workspace │ FileTree │        Stage        │   Dock   │
+│ Sidebar   │          │  Terminal Panes     │ Editor   │
+│           │          │  splits + tabs      │ Browser  │
+│           │          │                     │ Diff     │
+└───────────┴──────────┴─────────────────────┴──────────┘
+   Cmd+1       Cmd+2          Cmd+3              Cmd+4
+```
 
-Inspiration: [cmux](https://www.cmux.dev/) — workspace sidebar + splits + session restore.
+- **Workspace Sidebar**: switch between task Workspaces.
+- **FileTree**: browse files rooted at the focused Terminal's working directory.
+- **Stage**: the main area for Terminal Panes, splits, and TabGroups.
+- **Dock**: supporting Panes for editing, browsing, reviewing, and agent-generated UI.
+
+## Quick Start
+
+1. Open Tide. It starts with one Workspace and one Terminal Pane.
+2. Run a coding agent inside the Terminal, such as Claude Code, Codex, or Gemini.
+3. Split the Stage with `Cmd+Shift+T` or add a Terminal tab with `Cmd+T`.
+4. Open the Dock with `Cmd+\` and create an Editor, Browser, Diff, or Launcher Pane.
+5. Use `Cmd+1` through `Cmd+4` to move between Workspace Sidebar, FileTree, Stage, and Dock.
+
+## Keyboard Shortcuts
+
+All keybindings are customizable in `~/.config/tide/settings.json`. Open settings with `Cmd+,`.
+
+### Workspace
+
+| Shortcut | Action |
+| --- | --- |
+| `Cmd+[` / `Cmd+]` | Previous / next Workspace |
+| `Cmd+Shift+N` | New Workspace |
+| `Cmd+Shift+W` | Close Workspace |
+| `Cmd+1` | Toggle Workspace Sidebar |
+
+### Panes
+
+| Shortcut | Action |
+| --- | --- |
+| `Cmd+T` | New Terminal tab |
+| `Cmd+Shift+T` | Split Stage with a new Terminal |
+| `Cmd+\` | Open Launcher in the Dock |
+| `Cmd+Shift+\` | Open Launcher in a vertical Dock split |
+| `Cmd+W` | Close focused Pane |
+| `Cmd+Enter` | Zoom focused Pane |
+
+### Navigation
+
+| Shortcut | Action |
+| --- | --- |
+| `Cmd+H/J/K/L` | Move focus left/down/up/right |
+| `Cmd+I` / `Cmd+O` | Previous / next tab in a TabGroup |
+| `Cmd+2` / `Cmd+3` / `Cmd+4` | Focus FileTree / Stage / Dock |
+
+### Browser
+
+| Shortcut | Action |
+| --- | --- |
+| `Cmd+[` / `Cmd+]` | Back / forward |
+| `Cmd+R` | Reload |
+| `Cmd+Shift+B` | Open new Browser Pane |
+
+## Why Tide?
+
+Tide is not trying to replace your terminal, editor, browser, or LLM. It is a shared task environment around them.
+
+Terminals are still the substrate. The difference is that the surrounding Workspace is structured: Panes have identity, layout is inspectable, context can be captured, and agents can use the same surfaces the human is using.
+
+## Documentation
+
+- [Vision](docs/vision.md)
+- [System docs](docs/README.md)
+- [Domain glossary](docs/glossary.md)
+- [Behavior tests guide](docs/testing/behavior-tests.md)
 
 ## License
 
