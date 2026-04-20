@@ -4,7 +4,7 @@
 
 # Tide
 
-**A native macOS task workspace for terminals, agents, editor panes, and browser panes.**
+**A native macOS workspace for coding agents, Terminal Panes, files, and Browser Panes.**
 
 [![Release](https://img.shields.io/github/v/release/team-attention/tide?style=flat-square&color=blue)](https://github.com/team-attention/tide/releases)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
@@ -13,15 +13,15 @@
 
 </div>
 
-Tide keeps your shell, files, editor, browser, diffs, and AI coding agents in one shared Workspace. Run Terminal Panes in the Stage, keep each Terminal's supporting workbench in the Dock, and let Claude Code, Codex, or Gemini see and control the Workspace through Tide's Agent Gateway.
+Tide changes the coding-agent workflow: run Claude Code, Codex, or Gemini side by side in Terminal Panes, separate larger tasks into Workspaces, inspect files in the FileTree, and keep each Terminal's supporting Editor, Browser, Diff, and Render Panes in the Dock. Through the Agent Gateway, agents can work with the same Workspace context you are looking at.
 
 https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad
 
 ## Features
 
-### Agent-aware terminals
+### Run multiple coding agents at once
 
-Launch Claude Code, Codex, or Gemini from a Terminal Pane. Tide's Agent Wrapper wires up MCP tools and lifecycle hooks automatically, then shows when the Wrapped Agent is running, idle, or waiting for input.
+Launch Claude Code, Codex, or Gemini from Terminal Panes. Split agents side by side in the Stage, keep separate tasks in separate Workspaces, and see when each Wrapped Agent is running, idle, or waiting for input.
 
 ### Workspaces, splits, and tabs
 
@@ -33,11 +33,11 @@ Keep the Terminal in the Stage and open its supporting Panes in the Dock: inspec
 
 ### Browser and render Panes
 
-Open a Browser Pane for docs, previews, and local apps. Agents can also create Render Panes with `tide_render_html` for task dashboards, checklists, or custom UI.
+Open a Browser Pane for docs, previews, and local apps. Agents can also create Render Panes with `tide_render_html` for task dashboards, checklists, or custom UI in the same Workspace.
 
 ### Shared context for agents
 
-Every Pane is observable through the Agent Gateway. Agents can list Panes, capture Terminal or Editor content, open files, send keys, open browser URLs, and inspect layout.
+Every Pane is observable through the Agent Gateway and MCP bridge. Agents can list Panes, capture Terminal or Editor content, open files, send keys, open browser URLs, render UI, and inspect layout.
 
 ## Install
 
