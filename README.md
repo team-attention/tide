@@ -74,9 +74,10 @@ cargo build --release                    # binary
 
 1. Open Tide. It starts with one Workspace and one Terminal Pane.
 2. Run a coding agent inside the Terminal, such as Claude Code, Codex, or Gemini.
-3. Split the Stage with `Cmd+Shift+T` or add a Terminal tab with `Cmd+T`.
-4. Open the Dock with `Cmd+\` and create an Editor, Browser, Diff, or Launcher Pane tied to the focused Terminal.
-5. Use `Cmd+1` through `Cmd+4` to move between Workspace Sidebar, FileTree, Stage, and Dock.
+3. Split the Stage with `Cmd+\` or add a Terminal tab with `Cmd+T`.
+4. Create a Dock Launcher with `Cmd+Ctrl+\`, then press `B` for a Browser Pane, `E` for a new Editor Pane, or `O` to open a file.
+5. The Dock is tied to the focused Terminal Pane in the Stage. When you move between Terminal Panes, the Dock swaps to that Terminal's workbench.
+6. Use `Cmd+2` for the FileTree, `Cmd+1` for the Workspace Sidebar, `Cmd+[` / `Cmd+]` to switch Workspaces, and `Cmd+Shift+N` for a new Workspace.
 
 ## Keyboard Shortcuts
 
@@ -96,11 +97,21 @@ All keybindings are customizable in `~/.config/tide/settings.json`. Open setting
 | Shortcut | Action |
 | --- | --- |
 | `Cmd+T` | New Terminal tab |
-| `Cmd+Shift+T` | Split Stage with a new Terminal |
-| `Cmd+\` | Open Launcher in the Dock |
-| `Cmd+Shift+\` | Open Launcher in a vertical Dock split |
+| `Cmd+\` | Split the current area horizontally |
+| `Cmd+Shift+\` | Split the current area vertically |
+| `Cmd+Ctrl+\` | Split the Dock with a Launcher |
+| `Cmd+Ctrl+T` | New Launcher tab in the Dock |
 | `Cmd+W` | Close focused Pane |
-| `Cmd+Enter` | Zoom focused Pane |
+| `Cmd+Enter` | Toggle stacked view |
+
+### Launcher
+
+| Key | Action |
+| --- | --- |
+| `B` | Browser Pane |
+| `E` | New Editor Pane |
+| `O` | Open file |
+| `T` | Terminal Pane |
 
 ### Navigation
 
