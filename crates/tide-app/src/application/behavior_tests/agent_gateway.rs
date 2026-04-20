@@ -3092,6 +3092,48 @@ fn stale_idle_snippet_does_not_override_future_needs_input_visible_fallback() {
     );
 }
 
+#[test]
+fn needs_input_notification_prefers_structured_snippet_over_visible_terminal_fallback() {
+    // UC-6 BR-11: An explicit Notification Snippet outranks the visible Terminal fallback.
+    let (mut app, source_pane) = app_with_terminal();
+    app.window.is_focused = false;
+    if let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&source_pane) {
+        terminal.backend.load_mock_screen_for_test(
+            "model: gemini-pro\nTip: Tide help text\n• Visible fallback text that should not win.\n",
+        );
+    }
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "agent-needs-input",
+            "pane": source_pane,
+            "agent": "gemini",
+            "payload": {
+                "message": "Structured question from the agent hook."
+            }
+        }),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        app.pending_platform_commands.first(),
+        Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, body, .. })
+            if *pane_id == source_pane
+                && body == "Structured question from the agent hook."
+    ));
+    assert!(
+        app.pending_platform_commands
+            .iter()
+            .all(|command| !matches!(
+                command,
+                crate::tide_platform::WindowCommand::SendSystemNotification { body, .. }
+                    if body == "• Visible fallback text that should not win."
+            )),
+        "structured NeedsInput snippets must outrank visible Terminal fallback text"
+    );
+}
+
 // --- UC-2: ClassifyCodexCompletedTurns ---
 
 #[test]

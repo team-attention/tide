@@ -1298,10 +1298,6 @@ impl crate::application::ports::inward::GatewayPort for App {
             }
         }
 
-        let notification_snippet = notification_snippet
-            .as_deref()
-            .and_then(crate::state::gateway_status::normalize_notification_snippet);
-
         let pane_is_current_focus = self.window.is_focused
             && self.focus.focused == Some(pane_id)
             && if self.is_pane_in_dock(pane_id) {
@@ -1319,15 +1315,8 @@ impl crate::application::ports::inward::GatewayPort for App {
             return;
         }
 
-        let notification_snippet = match status {
-            AgentStatus::NeedsInput => notification_snippet
-                .or_else(|| self.visible_wrapped_agent_notification_snippet(pane_id))
-                .or_else(|| self.agent_notification_snippets.get(&pane_id).cloned()),
-            AgentStatus::Idle => notification_snippet
-                .or_else(|| self.agent_notification_snippets.get(&pane_id).cloned())
-                .or_else(|| self.visible_wrapped_agent_notification_snippet(pane_id)),
-            AgentStatus::Running => unreachable!(),
-        };
+        let notification_snippet =
+            self.agent_notification_snippet_for_status(pane_id, status, notification_snippet);
 
         if let Some(snippet) = notification_snippet.as_ref() {
             self.agent_notification_snippets
@@ -1364,6 +1353,29 @@ impl crate::application::ports::inward::GatewayPort for App {
 }
 
 impl App {
+    fn agent_notification_snippet_for_status(
+        &self,
+        pane_id: PaneId,
+        status: crate::state::gateway_status::AgentStatus,
+        notification_snippet: Option<String>,
+    ) -> Option<String> {
+        use crate::state::gateway_status::AgentStatus;
+
+        let explicit_snippet = notification_snippet
+            .as_deref()
+            .and_then(crate::state::gateway_status::normalize_notification_snippet);
+
+        match status {
+            AgentStatus::NeedsInput => explicit_snippet
+                .or_else(|| self.visible_wrapped_agent_notification_snippet(pane_id))
+                .or_else(|| self.agent_notification_snippets.get(&pane_id).cloned()),
+            AgentStatus::Idle => explicit_snippet
+                .or_else(|| self.agent_notification_snippets.get(&pane_id).cloned())
+                .or_else(|| self.visible_wrapped_agent_notification_snippet(pane_id)),
+            AgentStatus::Running => None,
+        }
+    }
+
     fn wrapped_agent_notification_title(&self, pane_id: PaneId) -> Option<String> {
         if self.panes.contains_key(&pane_id) {
             return Some(format!(

@@ -1461,36 +1461,15 @@ fn cli_notify(
             }),
         );
         if let Some(status) = status {
-            let mut notification_snippet =
-                if matches!(status, AgentStatus::Idle | AgentStatus::NeedsInput) {
-                    codex_stop_resolution
-                        .as_ref()
-                        .and_then(codex_stop_notification_snippet)
-                        .or_else(|| {
-                            codex_app_server_resolution
-                                .as_ref()
-                                .and_then(codex_app_server_notification_snippet)
-                        })
-                        .or_else(|| {
-                            wrapped_agent_notification_snippet_from_payload(
-                                event,
-                                agent_display_name,
-                                params.get("payload"),
-                            )
-                        })
-                } else {
-                    None
-                };
-            if matches!(event, "codex-turn-complete" | "codex-stop")
-                && matches!(status, AgentStatus::Idle | AgentStatus::NeedsInput)
-                && notification_snippet.is_none()
-            {
-                notification_snippet = Some(match status {
-                    AgentStatus::Idle => format!("{name} finished"),
-                    AgentStatus::NeedsInput => format!("{name} needs your input"),
-                    AgentStatus::Running => unreachable!(),
-                });
-            }
+            let notification_snippet = wrapped_agent_notification_snippet_for_status(
+                event,
+                status,
+                agent_display_name,
+                name,
+                params.get("payload"),
+                codex_stop_resolution.as_ref(),
+                codex_app_server_resolution.as_ref(),
+            );
             ctx.set_agent_notification_snippet(pane_id, notification_snippet.clone());
             // Route notification based on user context (UC-1)
             ctx.route_agent_notification(pane_id, status, notification_snippet);
@@ -1500,6 +1479,50 @@ fn cli_notify(
     }
 
     Ok(json!({"ok": true}))
+}
+
+fn wrapped_agent_notification_snippet_for_status(
+    event: &str,
+    status: crate::state::gateway_status::AgentStatus,
+    agent_hint: &str,
+    agent_name: &str,
+    payload: Option<&Value>,
+    codex_stop_resolution: Option<&CodexStopResolution>,
+    codex_app_server_resolution: Option<&CodexAppServerResolution>,
+) -> Option<String> {
+    use crate::state::gateway_status::AgentStatus;
+
+    if !matches!(status, AgentStatus::Idle | AgentStatus::NeedsInput) {
+        return None;
+    }
+
+    let snippet = codex_stop_resolution
+        .and_then(codex_stop_notification_snippet)
+        .or_else(|| codex_app_server_resolution.and_then(codex_app_server_notification_snippet))
+        .or_else(|| wrapped_agent_notification_snippet_from_payload(event, agent_hint, payload));
+
+    snippet.or_else(|| {
+        if matches!(event, "codex-turn-complete" | "codex-stop") {
+            Some(generic_agent_lifecycle_snippet(agent_name, status))
+        } else {
+            None
+        }
+    })
+}
+
+fn generic_agent_lifecycle_snippet(
+    agent_name: &str,
+    status: crate::state::gateway_status::AgentStatus,
+) -> String {
+    match status {
+        crate::state::gateway_status::AgentStatus::Idle => format!("{agent_name} finished"),
+        crate::state::gateway_status::AgentStatus::NeedsInput => {
+            format!("{agent_name} needs your input")
+        }
+        crate::state::gateway_status::AgentStatus::Running => {
+            format!("{agent_name} is running")
+        }
+    }
 }
 
 fn wrapped_agent_notification_snippet_from_payload(

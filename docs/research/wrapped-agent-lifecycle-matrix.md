@@ -13,6 +13,7 @@ This document is descriptive, not normative. It summarizes the code currently ch
 
 - `crates/tide-app/resources/bin/claude`
 - `crates/tide-app/resources/bin/codex`
+- `crates/tide-app/resources/bin/codex-app-server-watch`
 - `crates/tide-app/resources/bin/gemini`
 - `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs`
 - `crates/tide-app/src/app.rs`
@@ -27,7 +28,7 @@ This document is descriptive, not normative. It summarizes the code currently ch
 | Wrapped Agent | Wrapper path | Launch / presence | Running | Idle | NeedsInput | Detach |
 |---|---|---|---|---|---|---|
 | Claude | `crates/tide-app/resources/bin/claude` | `agent-attached` | `UserPromptSubmit -> agent-running` | `Stop -> agent-idle --payload-stdin` | `Notification -> agent-needs-input --payload-stdin` | `EXIT -> agent-detached` |
-| Codex | `crates/tide-app/resources/bin/codex` | `agent-attached` | `UserPromptSubmit -> agent-running` | `codex-turn-complete` classified to `Idle` or `NeedsInput` | same completed-turn classifier | `EXIT -> agent-detached` |
+| Codex | `crates/tide-app/resources/bin/codex` | `agent-attached` | `UserPromptSubmit -> agent-running`; opt-in App Server `turn/started` | `Stop -> codex-stop --payload-stdin`; opt-in App Server `turn/completed` | `codex-stop` classifier, opt-in App Server approval/input requests, or visible MCP permission prompt fallback | `EXIT -> agent-detached` |
 | Gemini | `crates/tide-app/resources/bin/gemini` | `agent-attached` | `BeforeAgent -> agent-running` | `AfterAgent -> agent-idle --payload-stdin` | `Notification -> agent-needs-input --payload-stdin` | `EXIT -> agent-detached` |
 
 ## Tide-Managed State
@@ -52,13 +53,26 @@ This document is descriptive, not normative. It summarizes the code currently ch
 | `Idle` | The wrapped agent finished a turn. |
 | `NeedsInput` | The wrapped agent is waiting for user input. |
 
-For Codex, `codex-turn-complete` is classified in `commands.rs`:
+For Codex, `codex-stop` is the primary completed-turn signal in `commands.rs`.
+The older `codex-turn-complete` notify event is still accepted by the handler.
 
-- `NeedsInput` only when `last-assistant-message` begins with a checked-in explicit request phrase.
-- `Idle` for all unclassified completed turns.
+- `codex-stop` prefers `transcript_path` and accepts current transcript shapes before falling back to `last_assistant_message`.
+- `NeedsInput` is returned only when the resolved assistant message begins with a checked-in explicit request phrase.
+- `Idle` is returned for unclassified completed turns.
+- `codex-app-server-event` is an opt-in structured path for App Server requests and lifecycle notifications.
+- Visible `Terminal` prompt scanning only handles a conservative Codex MCP permission prompt fallback.
 
 Current checked-in `CODEX_NEEDS_INPUT_PHRASES`:
 
+- `yes`
+- `allow`
+- `approve`
+- `confirm`
+- `please allow`
+- `please approve`
+- `grant permission`
+- `can i proceed`
+- `may i proceed`
 - `what would you like me to do next`
 - `what should i do next`
 - `how would you like me to proceed`
@@ -135,37 +149,39 @@ Current checked-in routing is implemented in `App::route_agent_notification()` i
 | Wrapped-agent state | macOS notification | `RequestUserAttention` |
 |---|---|
 | `Running` | never | never |
-| `Idle` | currently never | never |
-| `NeedsInput` | yes, unless the source Pane is the focused Pane in the focused Tide window | yes |
+| `Idle` | yes, unless duplicate suppression blocks it | never |
+| `NeedsInput` | yes, unless the source Pane is the focused Pane in the focused Tide window or duplicate suppression blocks it | yes when delivered |
 
 Current routing details:
 
 1. `Running` immediately returns and clears any cached snippet.
-2. `Idle` immediately returns and clears any cached snippet.
-3. `NeedsInput` continues into notification routing.
-4. If the source Pane is the current UI focus and the Tide window is focused, Tide suppresses the macOS notification.
+2. `Idle` and `NeedsInput` continue into notification routing.
+3. If the source Pane is the current UI focus and the Tide window is focused, Tide suppresses `NeedsInput` macOS notification delivery.
+4. Focused `Idle` may still queue a completion notification.
 5. Otherwise Tide queues `SendSystemNotification`.
 6. Only `NeedsInput` also queues `RequestUserAttention`.
 7. `notified_panes` suppresses duplicate routed notifications until acknowledgment.
 
 ## Notification Body Sources
 
-Notification body derivation order in current checked-in code:
+Notification body derivation in current checked-in code is status-specific:
 
-1. structured payload snippet from the wrapper / Codex completed-turn payload
-2. stored unresolved snippet for the same Pane
-3. visible `Terminal` grid fallback
-4. generic fallback text
+1. An explicit `Notification Snippet` passed into routing wins first.
+2. `NeedsInput` without an explicit snippet prefers the visible `Terminal` grid fallback, then a stored unresolved snippet for the same Pane.
+3. `Idle` without an explicit snippet prefers the stored unresolved snippet for the same Pane, then the visible `Terminal` grid fallback.
+4. If no snippet is available, routing emits generic lifecycle text.
 
 Current structured sources:
 
 | Wrapped Agent | Event | Structured body source |
 |---|---|---|
 | Claude | `agent-needs-input` | `payload.message` |
-| Claude | `agent-idle` | no structured source in current checked-in `cli_notify()` path because Idle clears the snippet before routing |
+| Claude | `agent-idle` | `payload.message` |
+| Codex | `codex-stop` | transcript final assistant text, then `payload.last_assistant_message`, then generic lifecycle text |
 | Codex | `codex-turn-complete` | `payload.last-assistant-message` |
+| Codex | `codex-app-server-event` | request reason, command, first question, elicitation message, or waiting-on-approval text |
 | Gemini | `agent-needs-input` | `payload.message` or `payload.prompt_response` via helper |
-| Gemini | `agent-idle` | `payload.prompt_response` via helper, but current checked-in routing returns before delivery |
+| Gemini | `agent-idle` | `payload.prompt_response` or `payload.message` via helper |
 
 ## Acknowledgment / Focus Behavior
 
@@ -176,11 +192,12 @@ There are two distinct paths:
 `focus_nav_service::focus_pane()` currently:
 
 - sets the focused Pane
-- removes that Pane from `notified_panes`
+- acknowledges unresolved `Idle` or `NeedsInput` attention when the Tide Window is focused
+- otherwise removes that Pane from `notified_panes`
 - refreshes Workspace projection
-- does not clear `AgentInfo.status`
+- reroutes backgrounded wrapped-agent attention excluding the newly focused Pane
 
-So direct focus clears duplicate suppression, but does not itself clear the wrapped-agent lifecycle state.
+So direct focus clears duplicate suppression and can also clear the wrapped-agent lifecycle attention state.
 
 ### Focused-window acknowledgment
 
@@ -219,7 +236,7 @@ Current checked-in UI makes these look the same:
 - `Idle`
 - `NeedsInput`
 
-That means the user can see an orange wrapped-agent dot even when the code will not send a macOS notification.
+That means the user can see the same orange wrapped-agent dot for a completed turn and for a user-input wait, even though only `NeedsInput` requests user attention.
 
 ### Integration-toggle dot vs wrapped-agent dot
 
@@ -230,14 +247,10 @@ These are different systems:
 
 They are independent.
 
-## Recent Regression Note
+## Historical Routing Note
 
-Git evidence in this repo shows that commit `c9e547a` changed `route_agent_notification()` so `Idle` now returns before notification delivery.
+Current checked-in routing sends macOS notifications for both `Idle` and `NeedsInput` when duplicate suppression and focus rules allow it.
 
-Before that change:
-
-- `Idle` and `NeedsInput` both routed `SendSystemNotification`
-- only `NeedsInput` added `RequestUserAttention`
-- generic idle fallback body was `<Agent> finished`
-
-Current checked-in code no longer does that.
+- `Idle` and `NeedsInput` both can route `SendSystemNotification`.
+- Only `NeedsInput` adds `RequestUserAttention`.
+- The generic idle fallback body is `<Agent> finished`.
