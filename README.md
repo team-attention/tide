@@ -15,7 +15,7 @@
 
 Tide keeps your shell, files, editor, browser, diffs, and AI coding agents in one shared Workspace. Run Terminal Panes in the Stage, keep each Terminal's supporting workbench in the Dock, and let Claude Code, Codex, or Gemini see and control the Workspace through Tide's Agent Gateway.
 
-https://github.com/user-attachments/assets/275e80db-a203-44b1-b388-539bdb739866
+https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad
 
 ## Features
 
