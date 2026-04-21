@@ -8,7 +8,7 @@ use objc2::rc::Retained;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use objc2_foundation::MainThreadMarker;
 
-use super::super::{EventCallback, WakeCallback, WindowConfig};
+use super::super::{EventCallback, PlatformWindow, WakeCallback, WindowConfig};
 
 use super::window::MacosWindow;
 
@@ -33,7 +33,9 @@ impl MacosApp {
             MainThreadMarker::new().expect("MacosApp::run must be called from the main thread");
 
         let app = NSApplication::sharedApplication(mtm);
-        app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+        // Start without a Dock icon. show_window() promotes the app to Regular
+        // only when this Tide Instance really needs to reveal its Tide Window.
+        app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
 
         // Create window + view
         let callback = Rc::new(RefCell::new(callback));
@@ -53,16 +55,14 @@ impl MacosApp {
             }
         });
 
-        // Emit a synthetic event to trigger Phase 1 initialization immediately,
-        // before the run loop starts. Without this, Phase 1 may be delayed until
-        // the first event arrives from the run loop (e.g., windowDidBecomeKey),
-        // leaving TideView as the first responder. TideView's keyDown is a no-op,
-        // so any key presses before Phase 1 are silently dropped.
-        super::emit_event(
-            &callback,
-            super::super::PlatformEvent::RedrawRequested,
-            "MacosApp::init",
-        );
+        // Queue the first redraw on the run loop instead of emitting it
+        // synchronously. Notification-launched non-owning instances then get a
+        // chance to relay activation before any first-frame Tide Window reveal.
+        MAIN_WINDOW.with(|cell| {
+            if let Some(window) = cell.borrow().as_ref() {
+                window.request_redraw();
+            }
+        });
 
         // Run the event loop (never returns)
         unsafe {

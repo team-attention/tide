@@ -11,8 +11,8 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool, NSObject};
 use objc2::{declare_class, msg_send, msg_send_id, mutability, ClassType, DeclaredClass};
 use objc2_app_kit::{
-    NSApplicationActivationOptions, NSBackingStoreType, NSRunningApplication, NSView, NSWindow,
-    NSWindowStyleMask,
+    NSApplication, NSApplicationActivationOptions, NSApplicationActivationPolicy,
+    NSBackingStoreType, NSRunningApplication, NSView, NSWindow, NSWindowStyleMask,
 };
 use objc2_foundation::MainThreadMarker;
 use objc2_foundation::{CGFloat, NSMutableArray, NSPoint, NSRect, NSSize, NSString};
@@ -702,6 +702,8 @@ impl PlatformWindow for MacosWindow {
     }
 
     fn show_window(&self) {
+        let app = NSApplication::sharedApplication(self.mtm);
+        app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
         unsafe {
             self.ns_window.deminiaturize(None);
             self.ns_window.makeKeyAndOrderFront(None);

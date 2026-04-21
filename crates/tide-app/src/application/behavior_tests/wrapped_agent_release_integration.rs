@@ -135,13 +135,35 @@ fn local_bundle_build_script_fails_closed_if_lsrequirescarbon_survives() {
 
 #[test]
 fn macos_launch_path_defers_activation_until_window_reveal() {
-    // UC-1 BR-3: MacosApp::run must defer activation until show_window().
+    // UC-1 BR-3: MacosApp::run must defer regular app activation until explicit window reveal.
     let source = include_str!("../../adapter/outward/platform_adapter/macos/app.rs");
+    let window_source = include_str!("../../adapter/outward/platform_adapter/macos/window.rs");
+    let show_start = window_source
+        .find("fn show_window(&self)")
+        .expect("expected MacosWindow::show_window");
+    let show_body = &window_source[show_start..];
+
+    assert!(source.contains("NSApplicationActivationPolicy::Accessory"));
+    assert!(
+        !source.contains("setActivationPolicy(NSApplicationActivationPolicy::Regular)"),
+        "expected MacosApp::run to defer regular app activation until show_window()"
+    );
+    assert!(show_body.contains("setActivationPolicy(NSApplicationActivationPolicy::Regular)"));
+}
+
+#[test]
+fn macos_launch_path_schedules_initial_redraw_on_run_loop() {
+    // UC-1 BR-20: MacosApp::run must schedule initial redraw on the run loop instead of directly revealing a startup Tide Window before notification responses can be delivered.
+    let source = include_str!("../../adapter/outward/platform_adapter/macos/app.rs");
+    let run_start = source.find("pub fn run(").expect("expected MacosApp::run");
+    let app_run_start = source.find("app.run();").expect("expected NSApp.run");
+    let startup_body = &source[run_start..app_run_start];
 
     assert!(
-        !source.contains("activateIgnoringOtherApps(true)"),
-        "expected MacosApp::run to defer app activation until show_window()"
+        !startup_body.contains("super::emit_event("),
+        "expected startup to avoid synchronous RedrawRequested before NSApp.run()"
     );
+    assert!(startup_body.contains("window.request_redraw();"));
 }
 
 // --- UC-2: ReportCodexLifecycleFromHooks ---

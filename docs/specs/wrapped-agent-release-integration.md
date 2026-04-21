@@ -11,6 +11,7 @@
 - Focusing a wrapped-agent source `Pane` now acknowledges unresolved wrapped-agent attention immediately in the focused Tide Window, while a later `Running` signal still does not acknowledge the unresolved alert on its own.
 - macOS system notifications already encode the owning `Tide Instance` and target `PaneId`, and activation relays to the owning `Tide Instance` before focusing the target `Workspace` and `Pane`, but `show_window()` currently only calls `makeKeyAndOrderFront` and `activateIgnoringOtherApps`, which is not enough to pin Full-Screen Space reveal behavior.
 - The non-owning Tide notification-relay path only terminates an unrevealed launcher window today, so an already revealed non-owning Tide Window can stay frontmost after a successful relay and steal focus from the owning `Tide Instance`.
+- `MacosApp::run` sets the app activation policy to `Regular` and directly emits the initial `RedrawRequested` before `NSApp.run()` starts. A notification-launched, non-owning `Tide Instance` can therefore show a Dock icon and reveal its own hidden startup window before the notification response delegate relays activation to the owning `Tide Instance`.
 - This release-integration spec and its behavior tests still expect the older Codex `Stop` hook contract and a `Running`-clears-suppression rule, so they no longer match the merged code.
 
 ### To-Be
@@ -24,7 +25,8 @@
 - Focusing a `NeedsInput` wrapped-agent `Pane` acknowledges the unresolved alert and clears notification suppression.
 - A new `Running` signal does not acknowledge unresolved wrapped-agent attention by itself.
 - macOS system notifications encode the owning `Tide Instance` and target `PaneId`, and notification activation relays to the owning `Tide Instance` before revealing the correct Tide Window, including when that Tide Window is in a Full-Screen Space.
-- A non-owning Tide process that successfully relays notification activation must not leave its own Tide Window frontmost; revealed non-owning windows hide themselves, and unrevealed relay launches terminate.
+- `MacosApp::run` starts without a Dock icon and schedules initial redraw on the run loop, giving notification response delivery a chance to relay before any automatic first-frame reveal.
+- A non-owning Tide process that successfully relays notification activation must not leave its own Tide Window frontmost or leave a separate Dock icon visible; revealed non-owning windows hide themselves, and unrevealed relay launches terminate.
 
 ### Approach
 
@@ -64,7 +66,8 @@
   - BR-1: The source Tide `Info.plist` must omit `LSRequiresCarbon`
   - BR-2: The local bundle build script must strip `LSRequiresCarbon` before signing
   - BR-19: The local bundle build script must fail closed if `LSRequiresCarbon` is still present before signing
-  - BR-3: `MacosApp::run` must defer app activation until explicit window reveal
+  - BR-3: `MacosApp::run` must defer regular app activation until explicit window reveal
+  - BR-20: `MacosApp::run` must schedule initial redraw on the run loop instead of directly revealing a startup Tide Window before notification responses can be delivered
   - BR-16: The source Tide `Info.plist` must not declare `LSMultipleInstancesProhibited`
   - BR-17: The local Tide.app build script must not stamp `LSMultipleInstancesProhibited` and must re-sign with the stable Tide bundle identifier
   - BR-18: `MacosApp::run` must not reuse an existing Tide Instance during ordinary launch
@@ -122,7 +125,7 @@
   - BR-13: Notification activation must queue Tide Window reveal for the owning `Tide Instance`
   - BR-14: `MacosWindow::new` must keep the Tide Window hidden until `show_window()`
   - BR-15: `show_window()` must own `makeKeyAndOrderFront`, full-window app activation, and ordering calls strong enough to reveal a Tide Window in a Full-Screen Space
-  - BR-19: A non-owning Tide process that successfully relays notification activation must not leave a non-owning Tide Window frontmost
+  - BR-19: A non-owning Tide process that successfully relays notification activation must not leave a non-owning Tide Window frontmost or a separate Dock icon visible
 
 ## Invariants
 
@@ -138,6 +141,7 @@
 | UC-1 | BR-1 | `source_tide_info_plist_omits_lsrequirescarbon` |
 | UC-1 | BR-2 | `local_bundle_build_script_strips_lsrequirescarbon_before_signing` |
 | UC-1 | BR-3 | `macos_launch_path_defers_activation_until_window_reveal` |
+| UC-1 | BR-20 | `macos_launch_path_schedules_initial_redraw_on_run_loop` |
 | UC-1 | BR-16 | `source_tide_info_plist_does_not_prohibit_multiple_instances` |
 | UC-1 | BR-17 | `local_bundle_build_script_does_not_stamp_lsmultipleinstancesprohibited_before_signing` |
 | UC-1 | BR-18 | `macos_launch_path_does_not_reuse_an_existing_tide_instance_before_creating_a_window` |
