@@ -1127,6 +1127,9 @@ impl App {
                 match cmd {
                     WindowCommand::ShowWindow => {
                         window.show_window();
+                        if let Some(target) = self.effective_ime_target() {
+                            window.focus_ime_proxy(target);
+                        }
                     }
                     WindowCommand::CreateWindow => {
                         window.create_window();

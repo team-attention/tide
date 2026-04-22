@@ -12,6 +12,7 @@
 - macOS system notifications already encode the owning `Tide Instance` and target `PaneId`, and activation relays to the owning `Tide Instance` before focusing the target `Workspace` and `Pane`, but `show_window()` currently only calls `makeKeyAndOrderFront` and `activateIgnoringOtherApps`, which is not enough to pin Full-Screen Space reveal behavior.
 - The non-owning Tide notification-relay path only terminates an unrevealed launcher window today, so an already revealed non-owning Tide Window can stay frontmost after a successful relay and steal focus from the owning `Tide Instance`.
 - `MacosApp::run` sets the app activation policy to `Regular` and directly emits the initial `RedrawRequested` before `NSApp.run()` starts. A notification-launched, non-owning `Tide Instance` can therefore show a Dock icon and reveal its own hidden startup window before the notification response delegate relays activation to the owning `Tide Instance`.
+- Notification activation queues Tide Window reveal through the same pending platform command drain used by other app-thread requests. That drain can run after IME proxy synchronization, so `show_window()` can leave the native first responder stale even though the target `Pane` is focused in domain state.
 - This release-integration spec and its behavior tests still expect the older Codex `Stop` hook contract and a `Running`-clears-suppression rule, so they no longer match the merged code.
 
 ### To-Be
@@ -25,6 +26,7 @@
 - Focusing a `NeedsInput` wrapped-agent `Pane` acknowledges the unresolved alert and clears notification suppression.
 - A new `Running` signal does not acknowledge unresolved wrapped-agent attention by itself.
 - macOS system notifications encode the owning `Tide Instance` and target `PaneId`, and notification activation relays to the owning `Tide Instance` before revealing the correct Tide Window, including when that Tide Window is in a Full-Screen Space.
+- Notification activation restores the native keyboard/IME target after revealing the owning Tide Window, so the focused `Pane` receives input immediately after the user clicks the notification.
 - `MacosApp::run` starts without a Dock icon and schedules initial redraw on the run loop, giving notification response delivery a chance to relay before any automatic first-frame reveal.
 - A non-owning Tide process that successfully relays notification activation must not leave its own Tide Window frontmost or leave a separate Dock icon visible; revealed non-owning windows hide themselves, and unrevealed relay launches terminate.
 
@@ -125,6 +127,7 @@
   - BR-13: Notification activation must queue Tide Window reveal for the owning `Tide Instance`
   - BR-14: `MacosWindow::new` must keep the Tide Window hidden until `show_window()`
   - BR-15: `show_window()` must own `makeKeyAndOrderFront`, full-window app activation, and ordering calls strong enough to reveal a Tide Window in a Full-Screen Space
+  - BR-21: Notification activation reveal must restore the native keyboard/IME target after `show_window()`
   - BR-19: A non-owning Tide process that successfully relays notification activation must not leave a non-owning Tide Window frontmost or a separate Dock icon visible
 
 ## Invariants
@@ -162,6 +165,7 @@
 | UC-4 | BR-14 | `macos_window_construction_keeps_window_hidden_until_show_window` |
 | UC-4 | BR-15 | `macos_show_window_orders_front_and_activates_the_app` |
 | UC-4 | BR-15 | `macos_show_window_uses_full_window_activation_for_full_screen_space` |
+| UC-4 | BR-21 | `notification_window_reveal_restores_ime_proxy_focus_after_show_window` |
 | UC-4 | BR-19 | `macos_notification_activation_relay_suppresses_non_owning_window_after_successful_relay` |
 
 ## Location

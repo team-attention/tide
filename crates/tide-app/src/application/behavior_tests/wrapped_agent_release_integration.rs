@@ -342,6 +342,35 @@ fn activate_notification_target_cli_command_queues_window_reveal() {
 }
 
 #[test]
+fn notification_window_reveal_restores_ime_proxy_focus_after_show_window() {
+    // UC-4 BR-21: notification activation reveal must restore the native keyboard/IME target after show_window().
+    let source = include_str!("../../adapter/inward/event_loop_adapter/mod.rs");
+    let pending_start = source
+        .find("Drain pending platform commands")
+        .expect("expected pending platform command drain");
+    let pending_body = &source[pending_start..];
+    let show_start = pending_body
+        .find("WindowCommand::ShowWindow => {")
+        .expect("expected pending ShowWindow branch");
+    let show_body = &pending_body[show_start..];
+    let show_window_index = show_body
+        .find("window.show_window();")
+        .expect("expected ShowWindow branch to reveal the Tide Window");
+    let focus_index = show_body
+        .find("window.focus_ime_proxy(target);")
+        .expect("expected ShowWindow branch to restore IME proxy focus");
+
+    assert!(
+        show_window_index < focus_index,
+        "notification reveal must restore IME proxy focus after show_window()"
+    );
+    assert!(
+        show_body.contains("self.effective_ime_target()"),
+        "notification reveal should use the current focused Pane as the native IME target"
+    );
+}
+
+#[test]
 fn macos_notification_activation_relay_suppresses_non_owning_window_after_successful_relay() {
     // UC-4 BR-19: A non-owning Tide process that successfully relays notification activation must not leave a non-owning Tide Window frontmost.
     let source = include_str!("../../adapter/outward/platform_adapter/macos/window.rs");

@@ -74,11 +74,13 @@
   1. Tide resolves the notification identifier into the owning `Tide Instance` PID and target `PaneId`
   2. A non-owning Tide process relays `activate-notification-target` to the owning `Tide Instance`
   3. The owning Tide process focuses the target `Workspace` and `Pane`, then reveals the owning Tide `Window`
+  4. Tide restores the native keyboard/IME target after the owning Tide `Window` is revealed
 - **Postcondition**: Notification activation focuses the owning Tide `Window`
 - **Business Rules**:
   - BR-6: macOS system notifications must encode the owning `Tide Instance` PID, `TideWindowId`, and target `PaneId`
   - BR-7: A non-owning Tide process must relay notification activation to the owning `Tide Instance` and suppress its own Tide `Window`
   - BR-8: `activate-notification-target` must focus the target `Workspace` and `Pane`, then queue Tide `Window` reveal
+  - BR-9: Notification activation reveal must restore the native keyboard/IME target after `show_window()`
 
 ## Invariants
 
@@ -100,6 +102,7 @@
 | UC-3 | BR-7 | `macos_notification_activation_relay_suppresses_non_owning_window_after_successful_relay` |
 | UC-3 | BR-8 | `activate_notification_target_cli_command_switches_to_target_workspace_and_focuses_the_target_pane` |
 | UC-3 | BR-8 | `activate_notification_target_cli_command_queues_window_reveal` |
+| UC-3 | BR-9 | `notification_window_reveal_restores_ime_proxy_focus_after_show_window` |
 
 ## Location
 
