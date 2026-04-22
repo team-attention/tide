@@ -38,6 +38,14 @@ pub(crate) enum AppEvent {
     Wake,
     /// A command from an external process via the Agent Gateway socket.
     CliCommand(crate::adapter::inward::cli_adapter::CliCommand),
+    /// Reload process-global settings into this App runtime.
+    ReloadSettings,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlatformEventOutcome {
+    Continue,
+    ShutdownWindow,
 }
 
 // ── Trait alias for event_loop_adapter ports ──
@@ -95,11 +103,11 @@ pub(crate) fn handle_platform_event(
     ctx: &mut impl EventLoopPorts,
     event: PlatformEvent,
     window: &WindowProxy,
-) {
+) -> PlatformEventOutcome {
     match event {
         PlatformEvent::BatchStart => {
             ctx.increment_batch_depth();
-            return;
+            return PlatformEventOutcome::Continue;
         }
         PlatformEvent::BatchEnd => {
             ctx.decrement_batch_depth();
@@ -109,18 +117,18 @@ pub(crate) fn handle_platform_event(
             // Rendering is handled by the app thread loop, not here.
             // RedrawRequested from the main thread is just a wake signal.
             ctx.request_redraw();
-            return;
+            return PlatformEventOutcome::Continue;
         }
         PlatformEvent::CloseRequested => {
             // Check if there are running terminals or dirty editors
             if ctx.has_terminals() || ctx.has_dirty_editors() {
                 if !crate::tide_platform::show_close_confirm() {
-                    return;
+                    return PlatformEventOutcome::Continue;
                 }
             }
             ctx.save_full_session();
-            ctx.delete_running_marker();
-            std::process::exit(0);
+            window.close_window();
+            return PlatformEventOutcome::ShutdownWindow;
         }
         PlatformEvent::Resized { width, height } => {
             ctx.set_window_size(width, height);
@@ -327,6 +335,8 @@ pub(crate) fn handle_platform_event(
         ctx.clear_pending_fullscreen_toggle();
         window.set_fullscreen(!ctx.is_fullscreen());
     }
+
+    PlatformEventOutcome::Continue
 }
 
 // ── Infrastructure methods (stay on impl App) ──
@@ -650,7 +660,7 @@ impl App {
         self.ports.platform.set_window_ptr(window.window_ptr());
 
         let saved_session = self.ports.persistence.load_session();
-        let is_crash = self.ports.persistence.is_crash_recovery();
+        let is_crash = self.allow_crash_recovery && self.ports.persistence.is_crash_recovery();
 
         // Clean up stale shell init lock files (pyenv rehash, rbenv rehash, etc.)
         // before spawning any terminals. These tools use file-based locks that can
@@ -674,10 +684,18 @@ impl App {
             // Pre-spawn PTY with estimated dimensions (80x24) BEFORE GPU init.
             // The shell starts loading ~/.zshrc in parallel with GPU initialization,
             // so the prompt appears sooner after launch.
+            let workspace_name = self.active_workspace_name();
             let early_terminal = self
                 .ports
                 .terminal_factory
-                .pre_spawn_terminal(80, 24, self.window.dark_mode, Some(1))
+                .pre_spawn_terminal(
+                    80,
+                    24,
+                    self.window.dark_mode,
+                    Some(1),
+                    self.tide_window_id,
+                    Some(&workspace_name),
+                )
                 .ok();
 
             self.init_gpu(window); // Shell is loading in parallel
@@ -704,7 +722,7 @@ impl App {
         event_rx: std::sync::mpsc::Receiver<AppEvent>,
         window: WindowProxy,
     ) {
-        loop {
+        'run: loop {
             let timeout = self.next_timeout();
 
             // Block until an event arrives or a timer fires
@@ -718,7 +736,10 @@ impl App {
             for app_event in event.into_iter().chain(event_rx.try_iter()) {
                 match app_event {
                     AppEvent::Platform(event) => {
-                        handle_platform_event(&mut self, event, &window);
+                        let outcome = handle_platform_event(&mut self, event, &window);
+                        if outcome == PlatformEventOutcome::ShutdownWindow {
+                            break 'run;
+                        }
                         // Sync IME proxy views (infrastructure — stays on App)
                         self.sync_ime_proxies(&window);
                     }
@@ -738,15 +759,23 @@ impl App {
                         // keyboard input goes to the old pane's ImeProxyView.
                         self.sync_ime_proxies(&window);
                     }
+                    AppEvent::ReloadSettings => {
+                        self.reload_settings_from_persistence();
+                    }
                     AppEvent::Wake => {}
                 }
             }
 
             // Poll background sources (PTY output, file watcher, git)
             self.poll_background_events(&window);
+            if self.tide_window_close_requested {
+                break 'run;
+            }
 
             // Drain bridge messages from render pane JS bridge (BR-30)
-            for msg in crate::tide_platform::macos::webview::drain_bridge_messages() {
+            for msg in crate::tide_platform::macos::webview::drain_bridge_messages_for_window(
+                self.tide_window_id,
+            ) {
                 if !msg.is_empty() {
                     if self.apply_webview_bridge_message(&msg) {
                         self.invalidate_chrome();
@@ -800,7 +829,9 @@ impl App {
             // Periodic session auto-save for crash recovery (every 30s)
             {
                 let now = self.ports.clock.now();
-                if now.duration_since(self.timing.last_session_save) >= Duration::from_secs(30) {
+                if self.window.is_focused
+                    && now.duration_since(self.timing.last_session_save) >= Duration::from_secs(30)
+                {
                     self.save_full_session();
                     self.timing.last_session_save = now;
                 }
@@ -1097,6 +1128,12 @@ impl App {
                     WindowCommand::ShowWindow => {
                         window.show_window();
                     }
+                    WindowCommand::CreateWindow => {
+                        window.create_window();
+                    }
+                    WindowCommand::CloseWindow => {
+                        window.close_window();
+                    }
                     WindowCommand::SendSystemNotification {
                         ref title,
                         ref body,
@@ -1109,6 +1146,9 @@ impl App {
                     }
                     WindowCommand::RequestNotificationPermission => {
                         window.request_notification_permission();
+                    }
+                    WindowCommand::BroadcastSettingsChanged => {
+                        window.broadcast_settings_changed();
                     }
                     _ => {}
                 }
@@ -1132,7 +1172,9 @@ impl App {
         }
 
         // Browser Cmd+click new-tab requests
-        let new_tab_urls = crate::tide_platform::macos::webview::drain_new_tab_urls();
+        let new_tab_urls = crate::tide_platform::macos::webview::drain_new_tab_urls_for_window(
+            self.tide_window_id,
+        );
         for url in new_tab_urls {
             self.open_browser_pane(Some(url));
         }

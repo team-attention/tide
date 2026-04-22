@@ -41,6 +41,189 @@ pub(crate) use app::App;
 // Expose types that other modules reference as `crate::X`
 use pane::PaneKind;
 
+#[derive(Clone)]
+struct GatewayRuntimeInfo {
+    listening: bool,
+    socket_path: Option<String>,
+    connected_clients_shared:
+        Option<std::sync::Arc<adapter::inward::cli_adapter::server::ConnectedClients>>,
+}
+
+impl GatewayRuntimeInfo {
+    fn from_server(server: Option<&adapter::inward::cli_adapter::server::GatewayServer>) -> Self {
+        match server {
+            Some(server) => Self {
+                listening: true,
+                socket_path: Some(server.socket_path.to_string_lossy().to_string()),
+                connected_clients_shared: Some(server.connected_clients.clone()),
+            },
+            None => Self {
+                listening: false,
+                socket_path: None,
+                connected_clients_shared: None,
+            },
+        }
+    }
+}
+
+#[derive(Clone)]
+struct WindowRuntimeShared {
+    config: crate::tide_platform::WindowConfig,
+    command_tx: std::sync::mpsc::Sender<crate::tide_platform::WindowCommandEnvelope>,
+    command_rx: std::rc::Rc<
+        std::cell::RefCell<std::sync::mpsc::Receiver<crate::tide_platform::WindowCommandEnvelope>>,
+    >,
+    main_waker: crate::tide_platform::WakeCallback,
+    gateway_router: std::sync::Arc<adapter::inward::cli_adapter::server::GatewayCommandRouter>,
+    gateway_info: GatewayRuntimeInfo,
+}
+
+fn configure_window_app(
+    app: &mut App,
+    tide_window_id: crate::tide_core::TideWindowId,
+    allow_crash_recovery: bool,
+    gateway_info: &GatewayRuntimeInfo,
+    combined_waker: crate::tide_platform::WakeCallback,
+) {
+    app.tide_window_id = tide_window_id;
+    app.allow_crash_recovery = allow_crash_recovery;
+    if !allow_crash_recovery {
+        app.window.is_focused = false;
+    }
+    app.queue_notification_permission_request_if_auto_integration_enabled();
+    app.gateway.listening = gateway_info.listening;
+    app.gateway.socket_path = gateway_info.socket_path.clone();
+    app.gateway.connected_clients_shared = gateway_info.connected_clients_shared.clone();
+    app.bg.event_loop_waker = Some(combined_waker.clone());
+    app.ports.file_watcher.init(Some(combined_waker));
+
+    if !app.settings.keybindings.is_empty() {
+        let map = state::settings::build_keybinding_map(&app.settings);
+        app.router.keybinding_map = Some(map);
+    }
+}
+
+fn combined_waker_for(
+    event_tx: std::sync::mpsc::Sender<event_loop::AppEvent>,
+    main_waker: crate::tide_platform::WakeCallback,
+) -> crate::tide_platform::WakeCallback {
+    std::sync::Arc::new(move || {
+        let _ = event_tx.send(event_loop::AppEvent::Wake);
+        main_waker();
+    })
+}
+
+fn drain_window_commands(shared: &WindowRuntimeShared) {
+    let mut commands = Vec::new();
+    while let Ok(command) = shared.command_rx.borrow_mut().try_recv() {
+        commands.push(command);
+    }
+
+    for envelope in commands {
+        match envelope.command {
+            crate::tide_platform::WindowCommand::CreateWindow => {
+                create_tide_window_runtime(shared);
+            }
+            crate::tide_platform::WindowCommand::CloseWindow => {
+                shared
+                    .gateway_router
+                    .unregister_window(envelope.tide_window_id);
+                let close_request = crate::tide_platform::macos::MacosApp::request_close_window(
+                    envelope.tide_window_id,
+                );
+                if close_request.remaining_window_count == 0 {
+                    update::session_service::delete_running_marker();
+                    std::process::exit(0);
+                }
+            }
+            crate::tide_platform::WindowCommand::BroadcastSettingsChanged => {
+                shared.gateway_router.broadcast_reload_settings();
+            }
+            command => {
+                crate::tide_platform::macos::with_window(envelope.tide_window_id, |window| {
+                    crate::tide_platform::execute_window_command(window, command)
+                });
+            }
+        }
+    }
+}
+
+fn build_window_callback(
+    shared: WindowRuntimeShared,
+    tide_window_id: crate::tide_core::TideWindowId,
+    allow_crash_recovery: bool,
+) -> crate::tide_platform::EventCallback {
+    let (event_tx, event_rx) = std::sync::mpsc::channel::<event_loop::AppEvent>();
+    let combined_waker = combined_waker_for(event_tx.clone(), shared.main_waker.clone());
+    shared
+        .gateway_router
+        .register_window(tide_window_id, event_tx.clone(), combined_waker.clone());
+
+    let mut app = App::new();
+    configure_window_app(
+        &mut app,
+        tide_window_id,
+        allow_crash_recovery,
+        &shared.gateway_info,
+        combined_waker,
+    );
+
+    let window_proxy = crate::tide_platform::WindowProxy::new_for_window(
+        tide_window_id,
+        shared.command_tx.clone(),
+        shared.main_waker.clone(),
+    );
+
+    let init_state = std::rc::Rc::new(std::cell::RefCell::new(Some((
+        app,
+        event_rx,
+        window_proxy.clone(),
+    ))));
+    let initialized = std::rc::Rc::new(std::cell::Cell::new(false));
+
+    Box::new(move |event, window| {
+        if matches!(event, crate::tide_platform::PlatformEvent::Focused(true)) {
+            shared.gateway_router.set_active_window(tide_window_id);
+        }
+
+        if !initialized.get() {
+            if let Some((mut app, rx, proxy)) = init_state.borrow_mut().take() {
+                app.init_phase1(window);
+                app.sync_ime_proxies(&proxy);
+                app.compute_layout();
+                crate::AppCorePort::request_redraw(&mut app);
+
+                drain_window_commands(&shared);
+
+                std::thread::Builder::new()
+                    .name(format!("app-thread-{}", tide_window_id.get()))
+                    .spawn(move || {
+                        app.app_thread_run(rx, proxy);
+                    })
+                    .expect("failed to spawn app thread");
+
+                initialized.set(true);
+            }
+            return;
+        }
+
+        drain_window_commands(&shared);
+        if !matches!(event, crate::tide_platform::PlatformEvent::RedrawRequested) {
+            let _ = event_tx.send(event_loop::AppEvent::Platform(event));
+        }
+    })
+}
+
+fn create_tide_window_runtime(shared: &WindowRuntimeShared) -> crate::tide_core::TideWindowId {
+    let tide_window_id = crate::tide_platform::macos::MacosApp::allocate_window_id();
+    let callback = build_window_callback(shared.clone(), tide_window_id, false);
+    crate::tide_platform::macos::MacosApp::create_window(
+        tide_window_id,
+        shared.config.clone(),
+        callback,
+    )
+}
+
 // ──────────────────────────────────────────────
 // Entry point
 // ──────────────────────────────────────────────
@@ -75,75 +258,39 @@ fn main() {
 
     env_logger::init();
 
-    // ── Channels ──────────────────────────────────────────────────────
-    // event channel: main thread → app thread (platform events + wake signals)
-    // command channel: app thread → main thread (window mutations)
-    let (event_tx, event_rx) = std::sync::mpsc::channel::<event_loop::AppEvent>();
-    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<crate::tide_platform::WindowCommand>();
-
-    // ── Wakers ────────────────────────────────────────────────────────
-    // Main thread waker: posts NSEvent + triggerRedraw to wake the main run loop
-    // and cause the callback to fire (which drains window commands).
+    // Main thread waker: posts NSEvent + triggerRedraw to wake the run loop.
     let main_waker = crate::tide_platform::macos::MacosApp::create_waker();
+    let gateway_router =
+        std::sync::Arc::new(adapter::inward::cli_adapter::server::GatewayCommandRouter::new());
 
-    // Combined waker for background threads (PTY, file watcher, render thread):
-    // wakes both the app thread (via event channel) and the main thread (via NSEvent).
-    let waker_tx = std::sync::Arc::new(std::sync::Mutex::new(event_tx.clone()));
-    let combined_waker: crate::tide_platform::WakeCallback = std::sync::Arc::new({
+    crate::tide_platform::macos::webview::set_webview_waker(std::sync::Arc::new({
+        let gateway_router = gateway_router.clone();
         let main_waker = main_waker.clone();
-        let waker_tx = waker_tx.clone();
         move || {
-            let _ = waker_tx.lock().unwrap().send(event_loop::AppEvent::Wake);
+            gateway_router.wake_all();
             main_waker();
         }
-    });
-
-    // Install wake callback for webview navigation delegate
-    crate::tide_platform::macos::webview::set_webview_waker(combined_waker.clone());
-
-    // ── WindowProxy ──────────────────────────────────────────────────
-    // App thread uses this to send commands back to the main thread.
-    let window_proxy = crate::tide_platform::WindowProxy::new(cmd_tx, main_waker.clone());
+    }));
 
     // ── Agent Gateway (always on) ───────────────────────────────────
     // Start the socket server before app setup so terminals inherit TIDE_SOCKET.
-    let _gateway_server = match adapter::inward::cli_adapter::server::GatewayServer::start(
-        event_tx.clone(),
-        combined_waker.clone(),
-    ) {
-        Ok(server) => {
-            let path = server.socket_path.to_string_lossy().to_string();
-            log::info!("Agent Gateway listening on {}", path);
-            crate::tide_terminal::set_gateway_socket_path(path);
-            // Discover agent wrapper scripts in .app bundle Resources
-            crate::tide_terminal::discover_agent_resources();
-            Some(server)
-        }
-        Err(e) => {
-            log::warn!("Agent Gateway failed to start: {e}");
-            None
-        }
-    };
+    let _gateway_server =
+        match adapter::inward::cli_adapter::server::GatewayServer::start(gateway_router.clone()) {
+            Ok(server) => {
+                let path = server.socket_path.to_string_lossy().to_string();
+                log::info!("Agent Gateway listening on {}", path);
+                crate::tide_terminal::set_gateway_socket_path(path);
+                // Discover agent wrapper scripts in .app bundle Resources
+                crate::tide_terminal::discover_agent_resources();
+                Some(server)
+            }
+            Err(e) => {
+                log::warn!("Agent Gateway failed to start: {e}");
+                None
+            }
+        };
+    let gateway_info = GatewayRuntimeInfo::from_server(_gateway_server.as_ref());
 
-    // ── App setup ────────────────────────────────────────────────────
-    let mut app = App::new();
-    app.queue_notification_permission_request_if_auto_integration_enabled();
-    // Store gateway status
-    if let Some(ref server) = _gateway_server {
-        app.gateway.listening = true;
-        app.gateway.socket_path = Some(server.socket_path.to_string_lossy().to_string());
-        app.gateway.connected_clients_shared = Some(server.connected_clients.clone());
-    }
-    app.bg.event_loop_waker = Some(combined_waker.clone());
-    app.ports.file_watcher.init(Some(combined_waker));
-
-    // Initialize keybinding map from saved settings
-    if !app.settings.keybindings.is_empty() {
-        let map = state::settings::build_keybinding_map(&app.settings);
-        app.router.keybinding_map = Some(map);
-    }
-
-    // Try loading a saved session to restore window size
     let saved_session = update::session_service::load_session();
     let (win_w, win_h) = saved_session
         .as_ref()
@@ -159,61 +306,22 @@ fn main() {
         transparent_titlebar: true,
     };
 
-    // ── Phase 1 handoff state ────────────────────────────────────────
-    // Shared between the main thread callback and Phase 1 initialization.
-    // After Phase 1, the App + event_rx + proxy are moved to the app thread.
-    let init_state = std::sync::Arc::new(std::sync::Mutex::new(Some((
-        app,
-        event_rx,
-        window_proxy.clone(),
-    ))));
-    let init_state_cb = init_state.clone();
-    let initialized = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let initialized_cb = initialized.clone();
+    let (command_tx, command_rx) =
+        std::sync::mpsc::channel::<crate::tide_platform::WindowCommandEnvelope>();
+    let shared = WindowRuntimeShared {
+        config: config.clone(),
+        command_tx,
+        command_rx: std::rc::Rc::new(std::cell::RefCell::new(command_rx)),
+        main_waker,
+        gateway_router,
+        gateway_info,
+    };
 
-    // ── Run the macOS event loop ─────────────────────────────────────
-    // Phase 1: first event triggers GPU init on main thread, then spawns app thread.
-    // Phase 2: all subsequent events are forwarded to the app thread.
-    crate::tide_platform::macos::MacosApp::run(
+    let first_tide_window_id = crate::tide_platform::macos::MacosApp::allocate_window_id();
+    let first_callback = build_window_callback(shared, first_tide_window_id, true);
+    crate::tide_platform::macos::MacosApp::run_with_window(
+        first_tide_window_id,
         config,
-        Box::new(move |event, window| {
-            // Phase 1: one-time initialization (main thread)
-            if !initialized_cb.load(std::sync::atomic::Ordering::Acquire) {
-                if let Some((mut app, rx, proxy)) = init_state_cb.lock().unwrap().take() {
-                    // GPU init, session restore, pane creation (needs real window)
-                    app.init_phase1(window);
-
-                    // Sync IME proxies using WindowProxy (commands go to cmd_tx)
-                    app.sync_ime_proxies(&proxy);
-                    app.compute_layout();
-
-                    // Drain any window commands generated during init
-                    while let Ok(cmd) = cmd_rx.try_recv() {
-                        crate::tide_platform::execute_window_command(window, cmd);
-                    }
-
-                    // Spawn the app thread
-                    std::thread::Builder::new()
-                        .name("app-thread".into())
-                        .spawn(move || {
-                            app.app_thread_run(rx, proxy);
-                        })
-                        .expect("failed to spawn app thread");
-
-                    initialized_cb.store(true, std::sync::atomic::Ordering::Release);
-                }
-                return;
-            }
-
-            // Phase 2: drain commands FIRST so IME proxy focus etc. execute
-            // before macOS dispatches the next event to first responder.
-            while let Ok(cmd) = cmd_rx.try_recv() {
-                crate::tide_platform::execute_window_command(window, cmd);
-            }
-            // Forward event to app thread
-            if !matches!(event, crate::tide_platform::PlatformEvent::RedrawRequested) {
-                let _ = event_tx.send(event_loop::AppEvent::Platform(event));
-            }
-        }),
+        first_callback,
     );
 }

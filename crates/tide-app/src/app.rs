@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::tide_core::{PaneId, Rect, Size, TerminalBackend};
+use crate::tide_core::{PaneId, Rect, Size, TerminalBackend, TideWindowId};
 use crate::tide_input::Router;
 use crate::tide_layout::SplitLayout;
 use crate::tide_tree::FsTree;
@@ -92,6 +92,9 @@ impl Ports {
 // ──────────────────────────────────────────────
 
 pub(crate) struct App {
+    pub(crate) tide_window_id: TideWindowId,
+    pub(crate) allow_crash_recovery: bool,
+
     // Port abstractions for external boundaries
     pub(crate) ports: Ports,
 
@@ -172,6 +175,9 @@ pub(crate) struct App {
     // Pending platform commands queued by notification routing, drained by event loop.
     pub(crate) pending_platform_commands: Vec<crate::tide_platform::WindowCommand>,
 
+    // True after this App has requested its owning Tide Window to close.
+    pub(crate) tide_window_close_requested: bool,
+
     /// Pane IDs that have already sent a system notification and haven't been
     /// acknowledged (focused) yet. Prevents duplicate notifications (UC-1 BR-4).
     pub(crate) notified_panes: std::collections::HashSet<PaneId>,
@@ -193,6 +199,8 @@ impl App {
             0.0
         };
         Self {
+            tide_window_id: TideWindowId::default(),
+            allow_crash_recovery: false,
             ports: Ports::noop(),
             panes: HashMap::new(),
             layout: SplitLayout::new(),
@@ -226,6 +234,7 @@ impl App {
             pending_subscribe_tx: None,
             pending_cli_caller_pane: None,
             pending_platform_commands: Vec::new(),
+            tide_window_close_requested: false,
             notified_panes: std::collections::HashSet::new(),
             agent_notification_snippets: HashMap::new(),
         }
@@ -260,6 +269,28 @@ impl App {
         if self.settings.auto_integration {
             self.queue_notification_permission_request();
         }
+    }
+
+    pub(crate) fn active_workspace_name(&self) -> String {
+        self.ws
+            .workspaces
+            .get(self.ws.active)
+            .map(|workspace| workspace.name.clone())
+            .unwrap_or_else(|| "Workspace 1".to_string())
+    }
+
+    pub(crate) fn reload_settings_from_persistence(&mut self) {
+        let settings = self.ports.persistence.load_settings();
+        crate::tide_terminal::set_auto_integration(settings.auto_integration);
+        if settings.keybindings.is_empty() {
+            self.router.keybinding_map = None;
+        } else {
+            self.router.keybinding_map = Some(state::settings::build_keybinding_map(&settings));
+        }
+        self.settings = settings;
+        self.queue_notification_permission_request_if_auto_integration_enabled();
+        self.cache.invalidate_chrome();
+        self.cache.needs_redraw = true;
     }
 
     fn is_terminal_pane_in_any_workspace(&self, pane_id: PaneId) -> bool {
@@ -434,12 +465,15 @@ impl App {
             terminal.resize(INITIAL_TERMINAL_COLS, INITIAL_TERMINAL_ROWS);
             Ok(TerminalPane::with_terminal(pane_id, terminal))
         } else {
+            let workspace_name = self.active_workspace_name();
             self.ports.terminal_factory.create_terminal(
                 pane_id,
                 INITIAL_TERMINAL_COLS,
                 INITIAL_TERMINAL_ROWS,
                 None,
                 self.window.dark_mode,
+                self.tide_window_id,
+                Some(&workspace_name),
             )
         };
 
@@ -468,7 +502,6 @@ impl App {
         self.sync_file_tree_modified_editor_cache();
         self.timing.last_cwd = Some(cwd);
 
-        crate::tide_terminal::set_active_workspace_name("Workspace 1".to_string());
         self.ws.workspaces.push(Workspace {
             name: "Workspace 1".to_string(),
             layout: SplitLayout::new(),
@@ -1092,6 +1125,8 @@ impl crate::application::ports::inward::GatewayPort for App {
             self.queue_notification_permission_request();
         }
         self.ports.persistence.save_settings(&self.settings);
+        self.pending_platform_commands
+            .push(crate::tide_platform::WindowCommand::BroadcastSettingsChanged);
         self.cache.chrome_generation += 1;
     }
 

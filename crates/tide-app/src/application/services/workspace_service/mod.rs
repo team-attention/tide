@@ -577,6 +577,8 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
             };
 
             self.ports.persistence.save_settings(&self.settings);
+            self.pending_platform_commands
+                .push(crate::tide_platform::WindowCommand::BroadcastSettingsChanged);
 
             let map = crate::state::settings::build_keybinding_map(&self.settings);
             if map.bindings.len() == crate::tide_input::KeybindingMap::default_bindings().len()

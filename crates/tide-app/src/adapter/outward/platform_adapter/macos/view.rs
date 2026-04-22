@@ -14,7 +14,7 @@ use objc2_foundation::MainThreadMarker;
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use objc2_quartz_core::CAMetalLayer;
 
-use crate::tide_core::{Key, Modifiers};
+use crate::tide_core::{Key, Modifiers, TideWindowId};
 
 use super::super::{EventCallback, MouseButton, PlatformEvent, PlatformWindow};
 
@@ -23,6 +23,7 @@ use super::super::{EventCallback, MouseButton, PlatformEvent, PlatformWindow};
 // ──────────────────────────────────────────────
 
 pub struct TideViewIvars {
+    tide_window_id: TideWindowId,
     callback: Rc<RefCell<EventCallback>>,
     layer: RefCell<Option<Retained<CAMetalLayer>>>,
 }
@@ -409,8 +410,13 @@ declare_class!(
 );
 
 impl TideView {
-    pub fn new(callback: Rc<RefCell<EventCallback>>, mtm: MainThreadMarker) -> Retained<Self> {
+    pub fn new(
+        tide_window_id: TideWindowId,
+        callback: Rc<RefCell<EventCallback>>,
+        mtm: MainThreadMarker,
+    ) -> Retained<Self> {
         let this = mtm.alloc::<Self>().set_ivars(TideViewIvars {
+            tide_window_id,
             callback,
             layer: RefCell::new(None),
         });
@@ -435,7 +441,12 @@ impl TideView {
     }
 
     fn emit(&self, event: PlatformEvent) {
-        super::emit_event(&self.ivars().callback, event, "TideView");
+        super::emit_event(
+            self.ivars().tide_window_id,
+            &self.ivars().callback,
+            event,
+            "TideView",
+        );
     }
 
     fn mouse_pos(&self, event: &NSEvent) -> (f64, f64) {
@@ -466,6 +477,7 @@ impl TideView {
 // ──────────────────────────────────────────────
 
 pub struct TideWindowDelegateIvars {
+    tide_window_id: TideWindowId,
     callback: Rc<RefCell<EventCallback>>,
 }
 
@@ -496,9 +508,9 @@ declare_class!(
             // when the window becomes key (e.g., app activation, alt-tab).
             // Doing this synchronously avoids the async round-trip through
             // the app thread, which would leave a gap where input is dropped.
-            let pane_id = super::LAST_IME_TARGET.load(std::sync::atomic::Ordering::Relaxed);
+            let pane_id = super::last_ime_target(self.ivars().tide_window_id);
             if pane_id != 0 {
-                super::app::with_main_window(|window| {
+                super::app::with_window(self.ivars().tide_window_id, |window| {
                     window.focus_ime_proxy(pane_id);
                 });
             }
@@ -551,15 +563,25 @@ declare_class!(
 );
 
 impl TideWindowDelegate {
-    pub fn new(callback: Rc<RefCell<EventCallback>>, mtm: MainThreadMarker) -> Retained<Self> {
-        let this = mtm
-            .alloc::<Self>()
-            .set_ivars(TideWindowDelegateIvars { callback });
+    pub fn new(
+        tide_window_id: TideWindowId,
+        callback: Rc<RefCell<EventCallback>>,
+        mtm: MainThreadMarker,
+    ) -> Retained<Self> {
+        let this = mtm.alloc::<Self>().set_ivars(TideWindowDelegateIvars {
+            tide_window_id,
+            callback,
+        });
         unsafe { msg_send_id![super(this), init] }
     }
 
     fn emit(&self, event: PlatformEvent) {
-        super::emit_event(&self.ivars().callback, event, "TideWindowDelegate");
+        super::emit_event(
+            self.ivars().tide_window_id,
+            &self.ivars().callback,
+            event,
+            "TideWindowDelegate",
+        );
     }
 
     /// Extract the window's content view size from a notification.

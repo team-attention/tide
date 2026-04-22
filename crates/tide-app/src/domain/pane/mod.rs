@@ -134,7 +134,35 @@ impl TerminalPane {
         cwd: Option<std::path::PathBuf>,
         dark_mode: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let backend = Terminal::with_cwd(cols, rows, cwd, dark_mode, Some(id))?;
+        Self::with_cwd_for_window(
+            id,
+            cols,
+            rows,
+            cwd,
+            dark_mode,
+            crate::tide_core::TideWindowId::default(),
+            None,
+        )
+    }
+
+    pub fn with_cwd_for_window(
+        id: PaneId,
+        cols: u16,
+        rows: u16,
+        cwd: Option<std::path::PathBuf>,
+        dark_mode: bool,
+        tide_window_id: crate::tide_core::TideWindowId,
+        workspace_name: Option<&str>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let backend = Terminal::with_cwd_for_window(
+            cols,
+            rows,
+            cwd,
+            dark_mode,
+            Some(id),
+            Some(tide_window_id),
+            workspace_name,
+        )?;
         Ok(Self {
             id,
             backend,

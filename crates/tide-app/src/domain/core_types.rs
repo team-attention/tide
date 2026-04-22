@@ -69,6 +69,27 @@ impl Vec2 {
 
 pub type PaneId = u64;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TideWindowId(u64);
+
+impl TideWindowId {
+    pub const MAIN: Self = Self(1);
+
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl Default for TideWindowId {
+    fn default() -> Self {
+        Self::MAIN
+    }
+}
+
 // ──────────────────────────────────────────────
 // Colors
 // ──────────────────────────────────────────────

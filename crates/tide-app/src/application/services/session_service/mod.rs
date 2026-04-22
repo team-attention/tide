@@ -260,6 +260,7 @@ impl App {
         } else {
             24
         };
+        let workspace_name = self.active_workspace_name();
 
         for (pane_id, cwd) in &pane_infos {
             match self.ports.terminal_factory.create_terminal(
@@ -268,6 +269,8 @@ impl App {
                 rows,
                 cwd.as_deref(),
                 self.window.dark_mode,
+                self.tide_window_id,
+                Some(&workspace_name),
             ) {
                 Ok(pane) => {
                     self.install_pty_waker(&pane);

@@ -29,13 +29,14 @@ use objc2_foundation::{
     NSArray, NSAttributedString, NSNotFound, NSPoint, NSRange, NSRect, NSSize, NSString,
 };
 
-use crate::tide_core::{Key, Modifiers};
+use crate::tide_core::{Key, Modifiers, TideWindowId};
 
 use super::super::{EventCallback, PlatformEvent, PlatformWindow};
 
 use super::view::{key_and_modifiers_from_event, modifiers_from_flags, nsstring_from_anyobject};
 
 pub struct ImeProxyViewIvars {
+    tide_window_id: TideWindowId,
     callback: Rc<RefCell<EventCallback>>,
     pane_id: Cell<u64>,
     marked_text: RefCell<String>,
@@ -194,13 +195,13 @@ declare_class!(
             // go to the right proxy.  This catches edge cases where the
             // async waker hasn't drained pending focus_ime_proxy commands.
             let my_id = self.ivars().pane_id.get();
-            let target_id = super::LAST_IME_TARGET.load(std::sync::atomic::Ordering::Relaxed);
+            let target_id = super::last_ime_target(self.ivars().tide_window_id);
             if my_id != target_id && target_id != 0 {
                 log::warn!(
                     "ImeProxyView keyDown on pane {my_id} but target is {target_id} — \
                      re-establishing correct first responder"
                 );
-                super::app::with_main_window(|window| {
+                super::app::with_window(self.ivars().tide_window_id, |window| {
                     window.focus_ime_proxy(target_id);
                 });
             }
@@ -583,11 +584,13 @@ declare_class!(
 
 impl ImeProxyView {
     pub fn new(
+        tide_window_id: TideWindowId,
         callback: Rc<RefCell<EventCallback>>,
         mtm: MainThreadMarker,
         pane_id: u64,
     ) -> Retained<Self> {
         let this = mtm.alloc::<Self>().set_ivars(ImeProxyViewIvars {
+            tide_window_id,
             callback,
             pane_id: Cell::new(pane_id),
             marked_text: RefCell::new(String::new()),
@@ -620,7 +623,12 @@ impl ImeProxyView {
         if self.ivars().deferring.get() {
             self.ivars().deferred_events.borrow_mut().push(event);
         } else {
-            super::emit_event(&self.ivars().callback, event, "ImeProxyView");
+            super::emit_event(
+                self.ivars().tide_window_id,
+                &self.ivars().callback,
+                event,
+                "ImeProxyView",
+            );
         }
     }
 
@@ -639,14 +647,21 @@ impl ImeProxyView {
             return;
         }
         super::emit_event(
+            self.ivars().tide_window_id,
             &self.ivars().callback,
             PlatformEvent::BatchStart,
             "ImeProxyView",
         );
         for event in events {
-            super::emit_event(&self.ivars().callback, event, "ImeProxyView");
+            super::emit_event(
+                self.ivars().tide_window_id,
+                &self.ivars().callback,
+                event,
+                "ImeProxyView",
+            );
         }
         super::emit_event(
+            self.ivars().tide_window_id,
             &self.ivars().callback,
             PlatformEvent::BatchEnd,
             "ImeProxyView",

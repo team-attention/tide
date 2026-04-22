@@ -2,7 +2,6 @@ use crate::tide_core::LayoutEngine;
 
 use crate::pane::PaneKind;
 use crate::state::drag_types::PaneDragState;
-use crate::ActionPort;
 use crate::App;
 use crate::LayoutPort;
 
@@ -52,7 +51,10 @@ impl App {
             }
             // Show native confirmation before closing the app
             if crate::tide_platform::show_close_confirm() {
-                self.exit_app();
+                self.save_full_session();
+                self.pending_platform_commands
+                    .push(crate::tide_platform::WindowCommand::CloseWindow);
+                self.tide_window_close_requested = true;
             }
             return;
         }

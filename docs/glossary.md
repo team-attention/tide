@@ -10,6 +10,7 @@ All paths below are relative to `crates/tide-app/src/`.
 |------|------|----------|-------------|
 | **Pane** | `PaneKind` | `domain/pane/mod.rs` | A content container identified by `PaneId`. Can be Terminal, Editor, Diff, Browser, or Launcher. |
 | **PaneId** | `u64` | `domain/core_types.rs` | Unique identity of a pane. App-created Workspaces must keep `PaneId` unique across all live and cold-stored Workspaces; each loaded `SplitLayout` rebases its allocator above the current global maximum before creating more panes. |
+| **TideWindowId** | `TideWindowId` | `domain/core_types.rs` | Unique identity of a `Tide Window` inside one `Tide Instance`. Platform commands carry this id so the main thread mutates the addressed native window. |
 | **Markdown Pane** | `PaneKind::Editor` | `domain/pane/editor.rs` | An Editor Pane backed by a Markdown file. Supports authoring mode, preview-only mode, LivePreviewMode, and split preview behavior. |
 | **Workspace** | `Workspace` | `application/services/workspace_infra_service/mod.rs` | An isolated set of panes + layout + focus. Only one is active at a time. |
 | **TabGroup** | `TabGroup` | `domain/layout/tab_group.rs` | Multiple panes stacked in one layout slot. Only the active tab renders. |
@@ -37,6 +38,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **TerminalGrid** | `TerminalGrid` | `domain/core_types.rs` | 2D array of `TerminalCell` — the terminal's visible content. |
 | **CursorState** | `CursorState` | `domain/core_types.rs` | Position + visibility + shape of a terminal cursor. |
 | **DropTarget** | `DropTarget` | `domain/core_types.rs` | Where a dragged pane can land: `Pane(id, zone)` or `Root(zone)`. |
+| **WebViewTarget** | `WebViewTarget` | `adapter/outward/platform_adapter/macos/webview.rs` | Value key for Browser Pane native state owned by one `Tide Window`, combining `TideWindowId` and `PaneId`. |
 
 ## Aggregates (consistency boundaries)
 
@@ -109,12 +111,13 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Wrapped Agent Presence** | concept | The wrapper-managed connected state for a direct Stage `Terminal`. Tide derives it from `wrapper_managed` plus `gateway_connected`, even when `AgentInfo.status` is `None`. |
 | **Tide Instance** | concept | A single running Tide process identified by its PID and Agent Gateway socket path. Notification activation relay targets the owning `Tide Instance`, not an arbitrary bundled app launch. |
 | **Notification Activation Relay** | concept | The handoff path that routes a macOS system-notification activation to the owning `Tide Instance`, then focuses the target `Pane` inside the correct `Workspace` without opening an extra Tide Window. |
-| **Tide Window** | concept | One native OS window owned by one `Tide Instance`. `GlobalAction::NewWindow` launches another `Tide Instance`, and notification activation reveals the owning `Tide Window`. |
+| **Tide Window** | concept | One native OS window owned by one `Tide Instance`. `GlobalAction::NewWindow` creates another `Tide Window` in the same `Tide Instance`, and notification activation reveals the owning `Tide Window`. |
 | **Full-Screen Space** | concept | A macOS Space occupied by a full-screen `Tide Window`. Notification activation must reveal that `Tide Window` instead of leaving focus on the desktop Space. |
 | **Terminal-Owned Attention** | concept | The wrapped-agent attention projection owned only by the direct wrapped-agent `Terminal` in Stage. It renders on the owning `Terminal` chrome and on the owning `Workspace` item, but never through an `Associated Terminal` onto a non-terminal `Pane`. |
 | **AgentChromeState** | `AgentChromeState` | Renderer-facing visual state for a wrapped-agent dot: `ConnectedIdle`, `Running`, or `Attention`. It is derived from `AgentStatus` plus `Wrapped Agent Presence`; it is not itself a routing state. |
 | **Notification Snippet** | concept | The single-line wrapped-agent response text Tide prefers for a macOS notification body. Tide derives it from structured wrapper payloads when available and otherwise falls back to the owning `Terminal`'s visible grid. |
 | **NotificationAuthorizationStatus** | enum | Tide's normalized view of the OS notification-permission state for the bundled macOS app: `Unknown`, `NotDetermined`, `Denied`, `Authorized`, `Provisional`, or `Ephemeral`. Stored in `WindowState` and used only as a runtime diagnostic and chrome signal. |
+| **Cascaded Tide Window Position** | concept | The native macOS placement used for newly created `Tide Window`s in one `Tide Instance`. Each new `Tide Window` is offset from the prior placement so the new title bar remains visible. |
 
 ## Architecture Concepts
 

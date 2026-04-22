@@ -2,6 +2,7 @@
 use crate::application::ports::inward::ActionPort;
 use crate::application::ports::outward::process_port::ProcessPort;
 use crate::tide_input::GlobalAction;
+use crate::tide_platform::WindowCommand;
 use crate::App;
 use std::cell::Cell;
 use std::io;
@@ -43,8 +44,8 @@ impl ProcessPort for RecordingProcess {
 // --- UC-1: DispatchNewWindowGlobalAction ---
 
 #[test]
-fn new_window_global_action_uses_process_port() {
-    // UC-1 BR-1: `GlobalAction::NewWindow` must delegate to `ProcessPort`.
+fn new_window_global_action_queues_create_window_without_process_launch() {
+    // single-process-multi-window UC-1 BR-2, BR-3: NewWindow requests an in-process Tide Window.
     let mut app = test_app();
     let launched_windows = Rc::new(Cell::new(0));
     app.ports.process = Box::new(RecordingProcess {
@@ -53,7 +54,11 @@ fn new_window_global_action_uses_process_port() {
 
     app.handle_global_action(GlobalAction::NewWindow);
 
-    assert_eq!(launched_windows.get(), 1);
+    assert_eq!(launched_windows.get(), 0);
+    assert!(matches!(
+        app.pending_platform_commands.last(),
+        Some(WindowCommand::CreateWindow)
+    ));
 }
 
 #[test]

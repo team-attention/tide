@@ -33,7 +33,7 @@ pub mod git;
 mod key_input;
 
 use crate::tide_core::{
-    Color, CursorShape, CursorState, TerminalBackend, TerminalCell, TerminalGrid,
+    Color, CursorShape, CursorState, TerminalBackend, TerminalCell, TerminalGrid, TideWindowId,
 };
 
 /// Number of scrollback history lines to keep.
@@ -96,17 +96,6 @@ pub fn discover_agent_resources() {
     let shell_dir = res_base.join("shell-integration");
     if shell_dir.is_dir() {
         let _ = SHELL_INTEGRATION_DIR.set(shell_dir.to_string_lossy().to_string());
-    }
-}
-
-/// Global workspace name for TIDE_WORKSPACE env var.
-/// Updated when the active workspace changes.
-static ACTIVE_WORKSPACE_NAME: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-
-/// Set the active workspace name. Called on workspace switch and creation.
-pub fn set_active_workspace_name(name: String) {
-    if let Ok(mut guard) = ACTIVE_WORKSPACE_NAME.lock() {
-        *guard = Some(name);
     }
 }
 
@@ -766,6 +755,18 @@ impl Terminal {
         dark_mode: bool,
         pane_id: Option<u64>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::with_cwd_for_window(cols, rows, cwd, dark_mode, pane_id, None, None)
+    }
+
+    pub fn with_cwd_for_window(
+        cols: u16,
+        rows: u16,
+        cwd: Option<PathBuf>,
+        dark_mode: bool,
+        pane_id: Option<u64>,
+        tide_window_id: Option<TideWindowId>,
+        workspace_name: Option<&str>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let cell_width = 8;
         let cell_height = 16;
 
@@ -820,14 +821,15 @@ impl Terminal {
         if let Some(id) = pane_id {
             env.insert(String::from("TIDE_PANE"), id.to_string());
         }
+        if let Some(id) = tide_window_id {
+            env.insert(String::from("TIDE_WINDOW"), id.get().to_string());
+        }
         env.insert(
             String::from("TIDE_INSTANCE_PID"),
             std::process::id().to_string(),
         );
-        if let Ok(guard) = ACTIVE_WORKSPACE_NAME.lock() {
-            if let Some(ref name) = *guard {
-                env.insert(String::from("TIDE_WORKSPACE"), name.clone());
-            }
+        if let Some(name) = workspace_name {
+            env.insert(String::from("TIDE_WORKSPACE"), name.to_string());
         }
         // TIDE_BIN is always set (supports manual `tide` CLI usage)
         if let Ok(exe) = std::env::current_exe() {
