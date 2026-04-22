@@ -28,19 +28,10 @@ impl WebViewTarget {
     }
 }
 
-struct WindowBridgeMessage {
-    tide_window_id: TideWindowId,
-    message: String,
-}
-
-struct WindowNewTabRequest {
-    tide_window_id: TideWindowId,
-    url: String,
-}
-
 /// Global queue for URLs that should open in a new browser tab.
 /// Populated by the WKUIDelegate when Cmd+click triggers a new window request.
-static NEW_TAB_URLS: Mutex<Vec<WindowNewTabRequest>> = Mutex::new(Vec::new());
+static NEW_TAB_URLS: std::sync::LazyLock<Mutex<HashMap<TideWindowId, Vec<String>>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Wrapper around a raw block pointer for the permission decision handler.
 /// SAFETY: These pointers are created by WebKit on the main thread and must be
@@ -71,22 +62,17 @@ static ACTIVE_DOWNLOAD_DELEGATES: std::sync::LazyLock<Mutex<HashMap<WebViewTarge
 
 /// Global queue for messages received from render pane JS bridge.
 /// Populated by WKScriptMessageHandler when JS calls `window.tide.send(json)`.
-static BRIDGE_MESSAGES: Mutex<Vec<WindowBridgeMessage>> = Mutex::new(Vec::new());
+static BRIDGE_MESSAGES: std::sync::LazyLock<Mutex<HashMap<TideWindowId, Vec<String>>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub(crate) fn queue_bridge_message_for_window(tide_window_id: TideWindowId, message: String) {
     let mut queue = BRIDGE_MESSAGES.lock().unwrap_or_else(|e| e.into_inner());
-    queue.push(WindowBridgeMessage {
-        tide_window_id,
-        message,
-    });
+    queue.entry(tide_window_id).or_default().push(message);
 }
 
 pub(crate) fn queue_new_tab_url_for_window(tide_window_id: TideWindowId, url: String) {
     let mut queue = NEW_TAB_URLS.lock().unwrap_or_else(|e| e.into_inner());
-    queue.push(WindowNewTabRequest {
-        tide_window_id,
-        url,
-    });
+    queue.entry(tide_window_id).or_default().push(url);
 }
 
 /// Global wake callback for triggering redraws from delegate callbacks.
@@ -109,33 +95,13 @@ pub fn wake_event_loop() {
 /// Drain bridge messages for one Tide Window. Call from that window's app event loop.
 pub fn drain_bridge_messages_for_window(tide_window_id: TideWindowId) -> Vec<String> {
     let mut queue = BRIDGE_MESSAGES.lock().unwrap_or_else(|e| e.into_inner());
-    let mut drained = Vec::new();
-    let mut retained = Vec::new();
-    for item in std::mem::take(&mut *queue) {
-        if item.tide_window_id == tide_window_id {
-            drained.push(item.message);
-        } else {
-            retained.push(item);
-        }
-    }
-    *queue = retained;
-    drained
+    queue.remove(&tide_window_id).unwrap_or_default()
 }
 
 /// Drain new-tab requests for one Tide Window. Call from that window's app event loop.
 pub fn drain_new_tab_urls_for_window(tide_window_id: TideWindowId) -> Vec<String> {
     let mut queue = NEW_TAB_URLS.lock().unwrap_or_else(|e| e.into_inner());
-    let mut drained = Vec::new();
-    let mut retained = Vec::new();
-    for item in std::mem::take(&mut *queue) {
-        if item.tide_window_id == tide_window_id {
-            drained.push(item.url);
-        } else {
-            retained.push(item);
-        }
-    }
-    *queue = retained;
-    drained
+    queue.remove(&tide_window_id).unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------

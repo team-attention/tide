@@ -139,14 +139,10 @@ unsafe extern "C" fn wake_main_queue(_context: *mut std::ffi::c_void) {
         post_application_defined_event(mtm);
     }
 
-    let views = live_window_views();
-    if views.is_empty() {
-        clear_wakeup_pending();
-        return;
-    }
-
-    for view in views {
+    if let Some(view) = first_live_window_view() {
         let _: () = msg_send![&*view, triggerRedraw];
+    } else {
+        clear_wakeup_pending();
     }
 }
 
@@ -236,12 +232,12 @@ fn refresh_global_window_handles() {
     });
 }
 
-fn live_window_views() -> Vec<Retained<TideView>> {
+fn first_live_window_view() -> Option<Retained<TideView>> {
     WINDOWS.with(|cell| {
         cell.borrow()
             .values()
+            .next()
             .map(|window| window.view.clone())
-            .collect()
     })
 }
 

@@ -176,30 +176,30 @@ Trigger: Multiple `Tide Window`s are live in one `Tide Instance`.
 Precondition: A `Tide Instance` has at least two live `Tide Window`s.
 
 Flow:
-1. Browser Pane native delegates enqueue bridge messages and new-tab requests with their owning `TideWindowId`.
-2. Each `App` drains only Browser Pane messages addressed to its own `TideWindowId`.
+1. Browser Pane native delegates enqueue bridge messages and new-tab requests into queues keyed by their owning `TideWindowId`.
+2. Each `App` drains only the Browser Pane queue addressed to its own `TideWindowId`.
 3. Browser Pane permission, certificate, and download native handler tables use both `TideWindowId` and `PaneId`.
 4. Notification authorization callbacks deliver process-wide status to every live `Tide Window`.
 5. Terminal creation receives the owning `App`'s active Workspace name directly.
 6. Settings changes are saved once and broadcast to every live `App`.
 7. Crash recovery restore is enabled only for the first `Tide Window` created at process startup.
 8. Periodic crash-recovery session auto-save runs only in the focused `Tide Window`.
-9. App-thread wakeups schedule redraw work onto the main dispatch queue.
+9. App-thread wakeups schedule redraw work onto the main dispatch queue and trigger only one live native view to drain main-thread commands.
 10. A newly initialized `App` runtime requests redraw before entering `app_thread_run`.
 11. Platform event dispatch clones the addressed native `Tide Window` handle before invoking the `EventCallback`.
 
 Postcondition: State that used to assume one native window cannot be consumed by or applied to the wrong `Tide Window`.
 
 Business Rules:
-- BR-1: Browser Pane bridge messages MUST be drained by `TideWindowId`.
-- BR-2: Browser Pane new-tab requests MUST be drained by `TideWindowId`.
+- BR-1: Browser Pane bridge messages MUST be queued and drained by `TideWindowId`.
+- BR-2: Browser Pane new-tab requests MUST be queued and drained by `TideWindowId`.
 - BR-3: Browser Pane pending permission, certificate, and download handlers MUST be keyed by both `TideWindowId` and `PaneId`.
 - BR-4: Notification authorization status updates MUST NOT target only `TideWindowId::MAIN`.
 - BR-5: `TIDE_WORKSPACE` MUST come from the owning `App`'s active Workspace, not a process-global active Workspace value.
 - BR-6: Settings changes MUST refresh in-memory settings in every live `App`.
 - BR-7: Crash recovery session restore MUST run only for the first `Tide Window` in a `Tide Instance`.
 - BR-8: Periodic session auto-save MUST NOT write from an unfocused `Tide Window`.
-- BR-9: The main thread waker MUST NOT send Objective-C messages to native views from an `App` thread.
+- BR-9: The main thread waker MUST NOT send Objective-C messages to native views from an `App` thread and MUST trigger at most one native view per wake.
 - BR-10: A newly initialized `App` runtime MUST request redraw before entering `app_thread_run`.
 - BR-11: Platform event dispatch MUST NOT hold a registry borrow while invoking `EventCallback`.
 

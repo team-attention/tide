@@ -346,11 +346,12 @@ fn retained_native_window_disables_appkit_release_on_close() {
 
 #[test]
 fn browser_bridge_queues_are_scoped_by_tide_window() {
-    // UC-6 BR-1, BR-2: Browser bridge messages and new-tab requests drain only for the addressed TideWindowId.
+    // UC-6 BR-1, BR-2: Browser bridge messages and new-tab requests are queued and drained by TideWindowId.
     use crate::tide_platform::macos::webview::{
         drain_bridge_messages_for_window, drain_new_tab_urls_for_window,
         queue_bridge_message_for_window, queue_new_tab_url_for_window,
     };
+    let webview_source = include_str!("../../adapter/outward/platform_adapter/macos/webview.rs");
 
     queue_bridge_message_for_window(TideWindowId::new(11), "first-window-message".to_string());
     queue_bridge_message_for_window(TideWindowId::new(12), "second-window-message".to_string());
@@ -373,6 +374,10 @@ fn browser_bridge_queues_are_scoped_by_tide_window() {
         drain_new_tab_urls_for_window(TideWindowId::new(11)),
         vec!["https://first.example".to_string()]
     );
+    assert!(webview_source.contains("HashMap<TideWindowId, Vec<String>>"));
+    assert!(webview_source.contains("queue.remove(&tide_window_id).unwrap_or_default()"));
+    assert!(!webview_source.contains("struct WindowBridgeMessage"));
+    assert!(!webview_source.contains("struct WindowNewTabRequest"));
 }
 
 #[test]
@@ -458,7 +463,7 @@ fn periodic_session_auto_save_is_limited_to_the_focused_tide_window() {
 
 #[test]
 fn main_thread_waker_does_not_message_native_views_from_app_threads() {
-    // UC-6 BR-9: cross-thread wakeups dispatch to the main queue before touching native views.
+    // UC-6 BR-9: cross-thread wakeups dispatch to the main queue and trigger at most one native view.
     let app_source = include_str!("../../adapter/outward/platform_adapter/macos/app.rs");
     let start = app_source
         .find("pub fn create_waker")
@@ -473,6 +478,19 @@ fn main_thread_waker_does_not_message_native_views_from_app_threads() {
     assert!(create_waker_source.contains("wake_main_queue"));
     assert!(!create_waker_source.contains("performSelectorOnMainThread"));
     assert!(!app_source.contains("GLOBAL_VIEW"));
+    assert!(app_source.contains("fn first_live_window_view"));
+
+    let wake_start = app_source
+        .find("unsafe extern \"C\" fn wake_main_queue")
+        .expect("wake main queue source");
+    let wake_end = app_source[wake_start..]
+        .find("fn post_application_defined_event")
+        .map(|offset| wake_start + offset)
+        .expect("post event source");
+    let wake_source = &app_source[wake_start..wake_end];
+    assert!(wake_source.contains("first_live_window_view()"));
+    assert!(!wake_source.contains("for view in views"));
+    assert!(!wake_source.contains("live_window_views()"));
 }
 
 #[test]
