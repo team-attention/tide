@@ -11,16 +11,16 @@
 
 ### To-Be
 
-- `GlobalAction::NewWindow` delegates to `ProcessPort` instead of spawning a process directly.
-- `SystemProcess` launches another Tide `Window` by opening the bundled `Tide.app` with `open -n` when the current executable lives inside a bundle, and falls back to spawning the current executable otherwise.
+- `GlobalAction::NewWindow` queues `WindowCommand::CreateWindow` so Tide creates another `Tide Window` inside the current `Tide Instance`.
+- The legacy `SystemProcess::launch_new_tide_window` bundle path is not part of the `Cmd+N` flow.
 - The bundled app path must allow multiple Tide instances, and the macOS startup path must create a new Tide `Window` instead of reusing an already-running Tide instance during ordinary launch.
-- Notification activation must continue to encode the owning `Tide Instance` PID and target `PaneId`, relay to the owning `Tide Instance` when needed, and reveal the owning Tide `Window`.
+- Notification activation must continue to encode the owning `Tide Instance` PID plus `TideWindowId` and target `PaneId`, relay to the owning `Tide Instance` when needed, and reveal the owning `Tide Window`.
 
 ### Approach
 
 1. Add the `Tide Window` term to the glossary so the contract uses one term for native app windows.
-2. Add behavior tests for `GlobalAction::NewWindow` delegation and the bundled multi-window launch contract.
-3. Extend `ProcessPort` with a dedicated Tide-window launch method and route `GlobalAction::NewWindow` through it.
+2. Add behavior tests for `GlobalAction::NewWindow` in-process `Tide Window` creation and the bundled launch contract.
+3. Route `GlobalAction::NewWindow` through addressed platform commands instead of through `ProcessPort`.
 4. Remove the Launch Services single-instance bundle metadata and the macOS startup reuse path so a new Tide launch can create another Tide `Window`.
 5. Keep the existing notification activation relay coverage so a notification still focuses the owning Tide `Window`.
 
@@ -29,8 +29,8 @@
 | Context | Role |
 |---------|------|
 | `input` | Maps `Cmd+N` to `GlobalAction::NewWindow` |
-| `action_service` | Dispatches `GlobalAction::NewWindow` through an outward port |
-| `process_adapter` | Launches another Tide `Window` through the bundle path or current executable |
+| `action_service` | Dispatches `GlobalAction::NewWindow` as `WindowCommand::CreateWindow` |
+| `platform` | Routes addressed platform commands and owns native `Tide Window` creation |
 | `platform` | Builds the app bundle and creates a Tide `Window` on launch |
 | `gateway` | Relays notification activation to the owning `Tide Instance` |
 
@@ -43,12 +43,12 @@
 - **Precondition**: A Tide `Window` is already running
 - **Flow**:
   1. Tide resolves `Cmd+N` to `GlobalAction::NewWindow`
-  2. `action_service` calls `ProcessPort` to launch another Tide `Window`
-  3. The new Tide launch continues through the normal startup path
-- **Postcondition**: Tide launches another Tide `Window` without bypassing the outward port boundary
+  2. `action_service` queues `WindowCommand::CreateWindow`
+  3. The main thread creates a new native `Tide Window` in the same `Tide Instance`
+- **Postcondition**: Tide creates another `Tide Window` without launching another process
 - **Business Rules**:
-  - BR-1: `GlobalAction::NewWindow` must delegate to `ProcessPort`
-  - BR-2: `SystemProcess` must prefer `open -n <Tide.app>` when the current executable belongs to a bundled Tide app, and otherwise fall back to spawning the current executable
+  - BR-1: `GlobalAction::NewWindow` must queue `WindowCommand::CreateWindow`
+  - BR-2: `GlobalAction::NewWindow` must not call `ProcessPort::launch_new_tide_window`
 
 ### UC-2: LaunchAnotherBundledTideWindow
 
@@ -76,23 +76,23 @@
   3. The owning Tide process focuses the target `Workspace` and `Pane`, then reveals the owning Tide `Window`
 - **Postcondition**: Notification activation focuses the owning Tide `Window`
 - **Business Rules**:
-  - BR-6: macOS system notifications must encode the owning `Tide Instance` PID and target `PaneId`
+  - BR-6: macOS system notifications must encode the owning `Tide Instance` PID, `TideWindowId`, and target `PaneId`
   - BR-7: A non-owning Tide process must relay notification activation to the owning `Tide Instance` and suppress its own Tide `Window`
   - BR-8: `activate-notification-target` must focus the target `Workspace` and `Pane`, then queue Tide `Window` reveal
 
 ## Invariants
 
-1. `GlobalAction::NewWindow` must cross the outward port boundary before any process launch.
+1. `GlobalAction::NewWindow` must request an in-process `Tide Window`.
 2. One Tide `Window` is owned by exactly one `Tide Instance`.
-3. Notification activation must target the owning `Tide Instance` PID and `PaneId`.
+3. Notification activation must target the owning `Tide Instance` PID, `TideWindowId`, and `PaneId`.
 4. Ordinary Tide launch must not collapse multiple requested Tide `Window`s into one reused instance.
 
 ## Tests
 
 | UC | BR | Test function |
 |----|----|---------------|
-| UC-1 | BR-1 | `new_window_global_action_uses_process_port` |
-| UC-1 | BR-2 | `system_process_prefers_open_n_for_bundled_tide_windows` |
+| UC-1 | BR-1, BR-2 | `new_window_global_action_queues_create_window_without_process_launch` |
+| UC-1 | BR-2 | `cmd_n_creates_new_tide_window_in_same_process` |
 | UC-2 | BR-3 | `source_tide_info_plist_does_not_prohibit_multiple_instances` |
 | UC-2 | BR-4 | `local_bundle_build_script_does_not_stamp_lsmultipleinstancesprohibited_before_signing` |
 | UC-2 | BR-5 | `macos_launch_path_does_not_reuse_an_existing_tide_instance_before_creating_a_window` |
@@ -107,7 +107,7 @@
 |--------|------|--------|
 | Glossary | `docs/glossary.md` | Add `Tide Window` |
 | Spec | `docs/specs/window-launch.md` | Record Tide multi-window launch and notification focus contract |
-| Action dispatch | `crates/tide-app/src/application/services/action_service/mod.rs` | Route `GlobalAction::NewWindow` through `ProcessPort` |
+| Action dispatch | `crates/tide-app/src/application/services/action_service/mod.rs` | Route `GlobalAction::NewWindow` through `WindowCommand::CreateWindow` |
 | Process adapter | `crates/tide-app/src/application/ports/outward/process_port/mod.rs`, `crates/tide-app/src/adapter/outward/process_adapter/mod.rs` | Add Tide-window launch method and bundle-aware implementation |
 | Bundle launch | `crates/tide-app/Info.plist`, `scripts/build-app.sh`, `crates/tide-app/src/adapter/outward/platform_adapter/macos/app.rs` | Remove single-instance launch behavior |
 | Behavior tests | `crates/tide-app/src/application/behavior_tests/{bundle_behavior.rs,window_launch_behavior.rs,wrapped_agent_release_integration.rs}` | Cover `NewWindow`, bundle launch, and notification focus |

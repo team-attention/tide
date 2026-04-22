@@ -6,7 +6,7 @@
 #[cfg(target_os = "macos")]
 pub mod macos;
 
-use crate::tide_core::{Key, Modifiers};
+use crate::tide_core::{Key, Modifiers, TideWindowId};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 // ──────────────────────────────────────────────
@@ -165,6 +165,9 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
     /// so the user never sees a blank window during GPU initialization.
     fn show_window(&self) {}
 
+    /// Close the native window after the owning `App` accepts the close request.
+    fn close_window(&self) {}
+
     /// Send a macOS system notification via UNUserNotificationCenter.
     /// Silent fail if permission is not granted.
     fn send_system_notification(&self, _title: &str, _body: &str, _pane_id: u64) {}
@@ -181,6 +184,7 @@ pub trait PlatformWindow: HasWindowHandle + HasDisplayHandle {
 // ──────────────────────────────────────────────
 
 /// Configuration for creating a platform window.
+#[derive(Clone)]
 pub struct WindowConfig {
     pub title: String,
     pub width: f64,
@@ -224,6 +228,8 @@ pub type WakeCallback = std::sync::Arc<dyn Fn() + Send + Sync + 'static>;
 #[derive(Debug)]
 pub enum WindowCommand {
     RequestRedraw,
+    CreateWindow,
+    CloseWindow,
     ShowWindow,
     SetFullscreen(bool),
     SetCursorIcon(CursorIcon),
@@ -244,6 +250,14 @@ pub enum WindowCommand {
     },
     RequestNotificationPermission,
     RequestUserAttention,
+    BroadcastSettingsChanged,
+}
+
+/// A `WindowCommand` addressed to one `Tide Window`.
+#[derive(Debug)]
+pub struct WindowCommandEnvelope {
+    pub tide_window_id: TideWindowId,
+    pub command: WindowCommand,
 }
 
 /// Show a native macOS confirm dialog for window close.
@@ -275,7 +289,7 @@ pub fn show_close_confirm() -> bool {
             let alert: Retained<AnyObject> = msg_send_id![alert_cls, new];
             let _: () =
                 msg_send![&alert, setMessageText: &*NSString::from_str("Close this window?")];
-            let _: () = msg_send![&alert, setInformativeText: &*NSString::from_str("All running processes will be terminated.")];
+            let _: () = msg_send![&alert, setInformativeText: &*NSString::from_str("Running processes in this Tide Window will be terminated.")];
             let _: () = msg_send![&alert, addButtonWithTitle: &*NSString::from_str("Close")];
             let _: () = msg_send![&alert, addButtonWithTitle: &*NSString::from_str("Cancel")];
             let _: () = msg_send![&alert, setAlertStyle: 0_isize];
@@ -299,6 +313,8 @@ pub fn show_close_confirm() -> bool {
 pub fn execute_window_command(window: &dyn PlatformWindow, cmd: WindowCommand) {
     match cmd {
         WindowCommand::RequestRedraw => window.request_redraw(),
+        WindowCommand::CreateWindow => {}
+        WindowCommand::CloseWindow => window.close_window(),
         WindowCommand::ShowWindow => window.show_window(),
         WindowCommand::SetFullscreen(fs) => window.set_fullscreen(fs),
         WindowCommand::SetCursorIcon(icon) => window.set_cursor_icon(icon),
@@ -327,6 +343,7 @@ pub fn execute_window_command(window: &dyn PlatformWindow, cmd: WindowCommand) {
         WindowCommand::RequestUserAttention => {
             window.request_user_attention();
         }
+        WindowCommand::BroadcastSettingsChanged => {}
     }
 }
 
@@ -338,17 +355,54 @@ pub fn execute_window_command(window: &dyn PlatformWindow, cmd: WindowCommand) {
 /// Commands are queued and executed on the main thread.
 #[derive(Clone)]
 pub struct WindowProxy {
-    cmd_tx: std::sync::mpsc::Sender<WindowCommand>,
+    sink: WindowCommandSink,
+    tide_window_id: TideWindowId,
     waker: WakeCallback,
+}
+
+#[derive(Clone)]
+enum WindowCommandSink {
+    Legacy(std::sync::mpsc::Sender<WindowCommand>),
+    Targeted(std::sync::mpsc::Sender<WindowCommandEnvelope>),
 }
 
 impl WindowProxy {
     pub fn new(cmd_tx: std::sync::mpsc::Sender<WindowCommand>, waker: WakeCallback) -> Self {
-        Self { cmd_tx, waker }
+        Self {
+            sink: WindowCommandSink::Legacy(cmd_tx),
+            tide_window_id: TideWindowId::default(),
+            waker,
+        }
+    }
+
+    pub fn new_for_window(
+        tide_window_id: TideWindowId,
+        cmd_tx: std::sync::mpsc::Sender<WindowCommandEnvelope>,
+        waker: WakeCallback,
+    ) -> Self {
+        Self {
+            sink: WindowCommandSink::Targeted(cmd_tx),
+            tide_window_id,
+            waker,
+        }
+    }
+
+    pub fn tide_window_id(&self) -> TideWindowId {
+        self.tide_window_id
     }
 
     fn send(&self, cmd: WindowCommand) {
-        let _ = self.cmd_tx.send(cmd);
+        match &self.sink {
+            WindowCommandSink::Legacy(cmd_tx) => {
+                let _ = cmd_tx.send(cmd);
+            }
+            WindowCommandSink::Targeted(cmd_tx) => {
+                let _ = cmd_tx.send(WindowCommandEnvelope {
+                    tide_window_id: self.tide_window_id,
+                    command: cmd,
+                });
+            }
+        }
     }
 
     /// Send commands and wake the main thread to execute them.
@@ -359,6 +413,14 @@ impl WindowProxy {
 
     pub fn request_redraw(&self) {
         self.send_and_wake(WindowCommand::RequestRedraw);
+    }
+
+    pub fn create_window(&self) {
+        self.send_and_wake(WindowCommand::CreateWindow);
+    }
+
+    pub fn close_window(&self) {
+        self.send_and_wake(WindowCommand::CloseWindow);
     }
 
     pub fn show_window(&self) {
@@ -409,6 +471,10 @@ impl WindowProxy {
 
     pub fn request_user_attention(&self) {
         self.send(WindowCommand::RequestUserAttention);
+    }
+
+    pub fn broadcast_settings_changed(&self) {
+        self.send_and_wake(WindowCommand::BroadcastSettingsChanged);
     }
 }
 

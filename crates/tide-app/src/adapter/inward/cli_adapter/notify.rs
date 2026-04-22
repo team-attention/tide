@@ -54,8 +54,18 @@ pub fn run_notify(args: &[String]) -> i32 {
         params["payload"] = payload;
     }
 
-    // Inject _caller_pane from TIDE_PANE env var so the gateway can route
-    // the command to the correct Workspace (see cli-workspace-routing spec UC-5).
+    // Inject caller identity so the gateway can route to the correct
+    // Tide Window first, then the App can route to the correct Workspace.
+    if let Ok(window_str) = std::env::var("TIDE_WINDOW") {
+        if let Ok(tide_window_id) = window_str.parse::<u64>() {
+            if let Some(obj) = params.as_object_mut() {
+                obj.insert(
+                    "_caller_window".to_string(),
+                    serde_json::Value::Number(tide_window_id.into()),
+                );
+            }
+        }
+    }
     if let Ok(pane_str) = std::env::var("TIDE_PANE") {
         if let Ok(pane_id) = pane_str.parse::<u64>() {
             if let Some(obj) = params.as_object_mut() {

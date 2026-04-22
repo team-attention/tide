@@ -1037,7 +1037,8 @@ impl crate::application::ports::inward::ActionPort for App {
                 self.apply_font_size(14.0);
             }
             GlobalAction::NewWindow => {
-                let _ = self.ports.process.launch_new_tide_window();
+                self.pending_platform_commands
+                    .push(crate::tide_platform::WindowCommand::CreateWindow);
             }
             GlobalAction::NewFile => {
                 self.new_editor_pane();

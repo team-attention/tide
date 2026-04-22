@@ -153,11 +153,16 @@ fn macos_launch_path_defers_activation_until_window_reveal() {
 
 #[test]
 fn macos_launch_path_schedules_initial_redraw_on_run_loop() {
-    // UC-1 BR-20: MacosApp::run must schedule initial redraw on the run loop instead of directly revealing a startup Tide Window before notification responses can be delivered.
+    // UC-1 BR-20: native Tide Window creation must schedule initial redraw on the run loop instead of directly revealing a startup Tide Window before notification responses can be delivered.
     let source = include_str!("../../adapter/outward/platform_adapter/macos/app.rs");
-    let run_start = source.find("pub fn run(").expect("expected MacosApp::run");
-    let app_run_start = source.find("app.run();").expect("expected NSApp.run");
-    let startup_body = &source[run_start..app_run_start];
+    let create_start = source
+        .find("pub fn create_window(")
+        .expect("expected MacosApp::create_window");
+    let create_end = source[create_start..]
+        .find("tide_window_id\n    }")
+        .map(|offset| create_start + offset)
+        .expect("expected create_window return");
+    let startup_body = &source[create_start..create_end];
 
     assert!(
         !startup_body.contains("super::emit_event("),

@@ -359,10 +359,6 @@ impl App {
         if self.ws.active < self.ws.workspace_extras.len() {
             self.ws.workspace_extras[self.ws.active].has_agent_notification = false;
         }
-        // Update TIDE_WORKSPACE for new terminals spawned in this workspace
-        let ws_name = self.ws.workspaces[idx].name.clone();
-        crate::tide_terminal::set_active_workspace_name(ws_name);
-
         if let Some(id) = self.focus.focused {
             self.router.set_focused(id);
             // Ensure stage_focused is set if focused pane is a terminal
@@ -438,7 +434,6 @@ impl App {
         self.context_artifacts = crate::ContextArtifactStore::new();
 
         let ws_name = format!("Workspace {}", self.ws.workspaces.len() + 1);
-        crate::tide_terminal::set_active_workspace_name(ws_name.clone());
         self.ws.workspaces.push(Workspace {
             name: ws_name,
             layout: SplitLayout::new(),

@@ -715,7 +715,11 @@ impl crate::application::ports::inward::LayoutPort for App {
             // Create webview if not yet initialized
             if bp.webview.is_none() {
                 let handle = unsafe {
-                    crate::tide_platform::macos::webview::WebViewHandle::new(content_view, id)
+                    crate::tide_platform::macos::webview::WebViewHandle::new(
+                        content_view,
+                        self.tide_window_id,
+                        id,
+                    )
                 };
                 if let Some(handle) = handle {
                     bp.webview = Some(handle);
@@ -738,7 +742,11 @@ impl crate::application::ports::inward::LayoutPort for App {
                         decision,
                         crate::pane::browser::BrowserPermissionDecision::Granted
                     );
-                    crate::tide_platform::macos::webview::resolve_permission_handler(id, granted);
+                    crate::tide_platform::macos::webview::resolve_permission_handler(
+                        self.tide_window_id,
+                        id,
+                        granted,
+                    );
                     bp.clear_permission_decision();
                 }
 
@@ -749,7 +757,11 @@ impl crate::application::ports::inward::LayoutPort for App {
                         decision,
                         crate::pane::browser::BrowserCertificateDecision::Proceed
                     );
-                    crate::tide_platform::macos::webview::resolve_cert_handler(id, proceed);
+                    crate::tide_platform::macos::webview::resolve_cert_handler(
+                        self.tide_window_id,
+                        id,
+                        proceed,
+                    );
                     bp.clear_certificate_decision();
                 }
 

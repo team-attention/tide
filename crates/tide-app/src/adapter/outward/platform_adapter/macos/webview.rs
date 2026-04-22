@@ -3,7 +3,7 @@
 //! Uses raw `objc2` message sends to interact with WebKit classes,
 //! avoiding a direct WebKit crate dependency.
 
-use crate::tide_core::PaneId;
+use crate::tide_core::{PaneId, TideWindowId};
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -13,9 +13,34 @@ use objc2::runtime::{AnyClass, AnyObject, Bool};
 use objc2::{declare_class, msg_send, msg_send_id, mutability, ClassType, DeclaredClass};
 use objc2_foundation::{CGFloat, MainThreadMarker, NSObject, NSPoint, NSRect, NSSize, NSString};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct WebViewTarget {
+    tide_window_id: TideWindowId,
+    pane_id: PaneId,
+}
+
+impl WebViewTarget {
+    fn new(tide_window_id: TideWindowId, pane_id: PaneId) -> Self {
+        Self {
+            tide_window_id,
+            pane_id,
+        }
+    }
+}
+
+struct WindowBridgeMessage {
+    tide_window_id: TideWindowId,
+    message: String,
+}
+
+struct WindowNewTabRequest {
+    tide_window_id: TideWindowId,
+    url: String,
+}
+
 /// Global queue for URLs that should open in a new browser tab.
 /// Populated by the WKUIDelegate when Cmd+click triggers a new window request.
-static NEW_TAB_URLS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static NEW_TAB_URLS: Mutex<Vec<WindowNewTabRequest>> = Mutex::new(Vec::new());
 
 /// Wrapper around a raw block pointer for the permission decision handler.
 /// SAFETY: These pointers are created by WebKit on the main thread and must be
@@ -23,14 +48,14 @@ static NEW_TAB_URLS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 struct BlockPtr(*mut std::ffi::c_void);
 unsafe impl Send for BlockPtr {}
 
-/// Pending WKUIDelegate permission completion handler blocks, keyed by pane_id raw value.
+/// Pending WKUIDelegate permission completion handler blocks, keyed by window and pane.
 /// BR-10: Stores the decisionHandler block pointer until the domain grants/denies the request.
-static PENDING_PERMISSION_HANDLERS: std::sync::LazyLock<Mutex<HashMap<u64, BlockPtr>>> =
+static PENDING_PERMISSION_HANDLERS: std::sync::LazyLock<Mutex<HashMap<WebViewTarget, BlockPtr>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
-/// Pending WKNavigationDelegate certificate challenge completion handler blocks, keyed by pane_id raw value.
+/// Pending WKNavigationDelegate certificate challenge completion handler blocks, keyed by window and pane.
 /// BR-13: Stores the completionHandler block pointer until the domain proceeds/cancels.
-static PENDING_CERT_HANDLERS: std::sync::LazyLock<Mutex<HashMap<u64, BlockPtr>>> =
+static PENDING_CERT_HANDLERS: std::sync::LazyLock<Mutex<HashMap<WebViewTarget, BlockPtr>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Wrapper around a raw pointer for retained download delegates.
@@ -39,18 +64,29 @@ static PENDING_CERT_HANDLERS: std::sync::LazyLock<Mutex<HashMap<u64, BlockPtr>>>
 struct DelegatePtr(*mut std::ffi::c_void);
 unsafe impl Send for DelegatePtr {}
 
-/// Retained TideDownloadDelegate instances, keyed by pane_id raw value.
+/// Retained TideDownloadDelegate instances, keyed by window and pane.
 /// Prevents deallocation while a WKDownload is active.
-static ACTIVE_DOWNLOAD_DELEGATES: std::sync::LazyLock<Mutex<HashMap<u64, DelegatePtr>>> =
+static ACTIVE_DOWNLOAD_DELEGATES: std::sync::LazyLock<Mutex<HashMap<WebViewTarget, DelegatePtr>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Global queue for messages received from render pane JS bridge.
 /// Populated by WKScriptMessageHandler when JS calls `window.tide.send(json)`.
-static BRIDGE_MESSAGES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static BRIDGE_MESSAGES: Mutex<Vec<WindowBridgeMessage>> = Mutex::new(Vec::new());
 
-fn queue_bridge_message(message: String) {
+pub(crate) fn queue_bridge_message_for_window(tide_window_id: TideWindowId, message: String) {
     let mut queue = BRIDGE_MESSAGES.lock().unwrap_or_else(|e| e.into_inner());
-    queue.push(message);
+    queue.push(WindowBridgeMessage {
+        tide_window_id,
+        message,
+    });
+}
+
+pub(crate) fn queue_new_tab_url_for_window(tide_window_id: TideWindowId, url: String) {
+    let mut queue = NEW_TAB_URLS.lock().unwrap_or_else(|e| e.into_inner());
+    queue.push(WindowNewTabRequest {
+        tide_window_id,
+        url,
+    });
 }
 
 /// Global wake callback for triggering redraws from delegate callbacks.
@@ -70,16 +106,36 @@ pub fn wake_event_loop() {
     }
 }
 
-/// Drain all pending bridge messages. Call from the app event loop.
-pub fn drain_bridge_messages() -> Vec<String> {
+/// Drain bridge messages for one Tide Window. Call from that window's app event loop.
+pub fn drain_bridge_messages_for_window(tide_window_id: TideWindowId) -> Vec<String> {
     let mut queue = BRIDGE_MESSAGES.lock().unwrap_or_else(|e| e.into_inner());
-    std::mem::take(&mut *queue)
+    let mut drained = Vec::new();
+    let mut retained = Vec::new();
+    for item in std::mem::take(&mut *queue) {
+        if item.tide_window_id == tide_window_id {
+            drained.push(item.message);
+        } else {
+            retained.push(item);
+        }
+    }
+    *queue = retained;
+    drained
 }
 
-/// Drain all pending new-tab URLs. Call from the app event loop.
-pub fn drain_new_tab_urls() -> Vec<String> {
+/// Drain new-tab requests for one Tide Window. Call from that window's app event loop.
+pub fn drain_new_tab_urls_for_window(tide_window_id: TideWindowId) -> Vec<String> {
     let mut queue = NEW_TAB_URLS.lock().unwrap_or_else(|e| e.into_inner());
-    std::mem::take(&mut *queue)
+    let mut drained = Vec::new();
+    let mut retained = Vec::new();
+    for item in std::mem::take(&mut *queue) {
+        if item.tide_window_id == tide_window_id {
+            drained.push(item.url);
+        } else {
+            retained.push(item);
+        }
+    }
+    *queue = retained;
+    drained
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +143,7 @@ pub fn drain_new_tab_urls() -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 struct TideUIDelegateIvars {
+    tide_window_id: TideWindowId,
     pane_id: PaneId,
 }
 
@@ -104,12 +161,14 @@ declare_class!(
     }
 
     unsafe impl TideUIDelegate {
-        #[method_id(initWithPaneId:)]
+        #[method_id(initWithTideWindowId:paneId:)]
         fn init_with_pane_id(
             this: objc2::rc::Allocated<Self>,
+            tide_window_id: usize,
             pane_id: usize,
         ) -> Option<Retained<Self>> {
             let this = this.set_ivars(TideUIDelegateIvars {
+                tide_window_id: TideWindowId::new(tide_window_id as u64),
                 pane_id: pane_id as PaneId,
             });
             unsafe { msg_send_id![super(this), init] }
@@ -152,9 +211,7 @@ declare_class!(
                                 let _: () = msg_send![webview, loadRequest: &*req];
                             } else {
                                 // window.open() or other JS-initiated → new tab (UC-7 BR-19)
-                                if let Ok(mut queue) = NEW_TAB_URLS.lock() {
-                                    queue.push(url_str);
-                                }
+                                queue_new_tab_url_for_window(self.ivars().tide_window_id, url_str);
                             }
                         }
                     }
@@ -260,6 +317,7 @@ declare_class!(
             decision_handler: &block2::Block<dyn Fn(isize)>,
         ) {
             let pane_id = self.ivars().pane_id;
+            let target = WebViewTarget::new(self.ivars().tide_window_id, pane_id);
 
             // Map WKMediaCaptureType to string
             let permission_type = match media_type {
@@ -296,11 +354,12 @@ declare_class!(
                 let mut handlers = PENDING_PERMISSION_HANDLERS
                     .lock()
                     .unwrap_or_else(|e| e.into_inner());
-                handlers.insert(pane_id, BlockPtr(copied));
+                handlers.insert(target, BlockPtr(copied));
             }
 
             // Queue a bridge message for the event loop to dispatch to the domain
-            queue_bridge_message(
+            queue_bridge_message_for_window(
+                self.ivars().tide_window_id,
                 serde_json::json!({
                     "kind": "browser-permission-request",
                     "pane_id": pane_id,
@@ -320,6 +379,7 @@ declare_class!(
 // ---------------------------------------------------------------------------
 
 struct TideNavigationDelegateIvars {
+    tide_window_id: TideWindowId,
     pane_id: PaneId,
 }
 
@@ -337,12 +397,14 @@ declare_class!(
     }
 
     unsafe impl TideNavigationDelegate {
-        #[method_id(initWithPaneId:)]
+        #[method_id(initWithTideWindowId:paneId:)]
         fn init_with_pane_id(
             this: objc2::rc::Allocated<Self>,
+            tide_window_id: usize,
             pane_id: usize,
         ) -> Option<Retained<Self>> {
             let this = this.set_ivars(TideNavigationDelegateIvars {
+                tide_window_id: TideWindowId::new(tide_window_id as u64),
                 pane_id: pane_id as PaneId,
             });
             unsafe { msg_send_id![super(this), init] }
@@ -376,9 +438,7 @@ declare_class!(
                             let utf8: *const std::ffi::c_char = msg_send![&s, UTF8String];
                             if !utf8.is_null() {
                                 let url_str = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
-                                if let Ok(mut queue) = NEW_TAB_URLS.lock() {
-                                    queue.push(url_str);
-                                }
+                                queue_new_tab_url_for_window(self.ivars().tide_window_id, url_str);
                             }
                         }
                     }
@@ -432,13 +492,16 @@ declare_class!(
                                 if !utf8.is_null() {
                                     let url_str =
                                         std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
-                                    queue_bridge_message(serde_json::json!({
-                                        "kind": "browser-external-handoff",
-                                        "pane_id": self.ivars().pane_id,
-                                        "reason": "download",
-                                        "url": url_str,
-                                    })
-                                    .to_string());
+                                    queue_bridge_message_for_window(
+                                        self.ivars().tide_window_id,
+                                        serde_json::json!({
+                                            "kind": "browser-external-handoff",
+                                            "pane_id": self.ivars().pane_id,
+                                            "reason": "download",
+                                            "url": url_str,
+                                        })
+                                        .to_string(),
+                                    );
                                 }
                             }
                             let workspace_cls = AnyClass::get("NSWorkspace").expect("NSWorkspace class");
@@ -461,10 +524,14 @@ declare_class!(
             download: &AnyObject,
         ) {
             let pane_id = self.ivars().pane_id;
+            let target = WebViewTarget::new(self.ivars().tide_window_id, pane_id);
             unsafe {
                 let mtm = MainThreadMarker::new().expect("delegate callbacks run on main thread");
                 let delegate: Retained<TideDownloadDelegate> =
-                    msg_send_id![mtm.alloc::<TideDownloadDelegate>(), initWithPaneId: pane_id as usize];
+                    msg_send_id![mtm.alloc::<TideDownloadDelegate>(),
+                        initWithTideWindowId: self.ivars().tide_window_id.get() as usize
+                        paneId: pane_id as usize
+                    ];
                 let _: () = msg_send![download, setDelegate: &*delegate];
 
                 // Retain delegate to prevent deallocation while download is active.
@@ -473,7 +540,7 @@ declare_class!(
                 let mut delegates = ACTIVE_DOWNLOAD_DELEGATES
                     .lock()
                     .unwrap_or_else(|e| e.into_inner());
-                delegates.insert(pane_id, DelegatePtr(raw));
+                delegates.insert(target, DelegatePtr(raw));
             }
         }
 
@@ -503,7 +570,8 @@ declare_class!(
                 })
             };
             if let Some(url) = url {
-                queue_bridge_message(
+                queue_bridge_message_for_window(
+                    self.ivars().tide_window_id,
                     serde_json::json!({
                         "kind": "browser-url-committed",
                         "pane_id": pane_id.to_string(),
@@ -555,7 +623,8 @@ declare_class!(
                     let host_str = host.to_string();
 
                     // Queue bridge message for domain to handle
-                    queue_bridge_message(
+                    queue_bridge_message_for_window(
+                        self.ivars().tide_window_id,
                         serde_json::json!({
                             "kind": "browser-certificate-error",
                             "pane_id": pane_id,
@@ -577,7 +646,10 @@ declare_class!(
                         let mut handlers = PENDING_CERT_HANDLERS
                             .lock()
                             .unwrap_or_else(|e| e.into_inner());
-                        handlers.insert(pane_id, BlockPtr(copied));
+                        handlers.insert(
+                            WebViewTarget::new(self.ivars().tide_window_id, pane_id),
+                            BlockPtr(copied),
+                        );
                     }
 
                     wake_event_loop();
@@ -597,6 +669,7 @@ declare_class!(
 // ---------------------------------------------------------------------------
 
 struct TideDownloadDelegateIvars {
+    tide_window_id: TideWindowId,
     pane_id: PaneId,
 }
 
@@ -614,12 +687,14 @@ declare_class!(
     }
 
     unsafe impl TideDownloadDelegate {
-        #[method_id(initWithPaneId:)]
+        #[method_id(initWithTideWindowId:paneId:)]
         fn init_with_pane_id(
             this: objc2::rc::Allocated<Self>,
+            tide_window_id: usize,
             pane_id: usize,
         ) -> Option<Retained<Self>> {
             let this = this.set_ivars(TideDownloadDelegateIvars {
+                tide_window_id: TideWindowId::new(tide_window_id as u64),
                 pane_id: pane_id as PaneId,
             });
             unsafe { msg_send_id![super(this), init] }
@@ -700,7 +775,8 @@ declare_class!(
             };
 
             // Queue bridge message for domain
-            queue_bridge_message(
+            queue_bridge_message_for_window(
+                self.ivars().tide_window_id,
                 serde_json::json!({
                     "kind": "browser-download-started",
                     "pane_id": pane_id,
@@ -740,7 +816,8 @@ declare_class!(
                 desc.to_string()
             };
 
-            queue_bridge_message(
+            queue_bridge_message_for_window(
+                self.ivars().tide_window_id,
                 serde_json::json!({
                     "kind": "browser-download-failed",
                     "pane_id": pane_id,
@@ -754,7 +831,10 @@ declare_class!(
                 let mut delegates = ACTIVE_DOWNLOAD_DELEGATES
                     .lock()
                     .unwrap_or_else(|e| e.into_inner());
-                if let Some(DelegatePtr(ptr)) = delegates.remove(&pane_id) {
+                if let Some(DelegatePtr(ptr)) = delegates.remove(&WebViewTarget::new(
+                    self.ivars().tide_window_id,
+                    pane_id,
+                )) {
                     // SAFETY: ptr was created via Retained::into_raw in navigation_response_did_become_download
                     unsafe { drop(Retained::from_raw(ptr as *mut TideDownloadDelegate)); }
                 }
@@ -772,7 +852,8 @@ declare_class!(
         ) {
             let pane_id = self.ivars().pane_id;
 
-            queue_bridge_message(
+            queue_bridge_message_for_window(
+                self.ivars().tide_window_id,
                 serde_json::json!({
                     "kind": "browser-download-completed",
                     "pane_id": pane_id,
@@ -785,7 +866,10 @@ declare_class!(
                 let mut delegates = ACTIVE_DOWNLOAD_DELEGATES
                     .lock()
                     .unwrap_or_else(|e| e.into_inner());
-                if let Some(DelegatePtr(ptr)) = delegates.remove(&pane_id) {
+                if let Some(DelegatePtr(ptr)) = delegates.remove(&WebViewTarget::new(
+                    self.ivars().tide_window_id,
+                    pane_id,
+                )) {
                     // SAFETY: ptr was created via Retained::into_raw in navigation_response_did_become_download
                     unsafe { drop(Retained::from_raw(ptr as *mut TideDownloadDelegate)); }
                 }
@@ -841,12 +925,12 @@ unsafe fn protection_space_server_trust_is_valid(protection_space: &AnyObject) -
 ///
 /// `granted`: true calls the block with WKPermissionDecision.grant (1),
 ///            false calls with WKPermissionDecision.deny (0).
-pub fn resolve_permission_handler(pane_id: u64, granted: bool) {
+pub fn resolve_permission_handler(tide_window_id: TideWindowId, pane_id: u64, granted: bool) {
     let block_ptr = {
         let mut handlers = PENDING_PERMISSION_HANDLERS
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        handlers.remove(&pane_id)
+        handlers.remove(&WebViewTarget::new(tide_window_id, pane_id))
     };
 
     if let Some(BlockPtr(ptr)) = block_ptr {
@@ -864,12 +948,12 @@ pub fn resolve_permission_handler(pane_id: u64, granted: bool) {
 ///
 /// `proceed`: true creates NSURLCredential from serverTrust and calls with useCredential (0),
 ///            false calls with cancelAuthenticationChallenge (2).
-pub fn resolve_cert_handler(pane_id: u64, proceed: bool) {
+pub fn resolve_cert_handler(tide_window_id: TideWindowId, pane_id: u64, proceed: bool) {
     let block_ptr = {
         let mut handlers = PENDING_CERT_HANDLERS
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        handlers.remove(&pane_id)
+        handlers.remove(&WebViewTarget::new(tide_window_id, pane_id))
     };
 
     if let Some(BlockPtr(ptr)) = block_ptr {
@@ -892,6 +976,11 @@ pub fn resolve_cert_handler(pane_id: u64, proceed: bool) {
 // ---------------------------------------------------------------------------
 // WKScriptMessageHandler — receives window.tide.send() messages from JS
 // ---------------------------------------------------------------------------
+struct TideScriptMessageHandlerIvars {
+    tide_window_id: TideWindowId,
+    pane_id: PaneId,
+}
+
 declare_class!(
     struct TideScriptMessageHandler;
 
@@ -902,13 +991,20 @@ declare_class!(
     }
 
     impl DeclaredClass for TideScriptMessageHandler {
-        type Ivars = ();
+        type Ivars = TideScriptMessageHandlerIvars;
     }
 
     unsafe impl TideScriptMessageHandler {
-        #[method_id(init)]
-        fn init(this: objc2::rc::Allocated<Self>) -> Option<Retained<Self>> {
-            let this = this.set_ivars(());
+        #[method_id(initWithTideWindowId:paneId:)]
+        fn init_with_pane_id(
+            this: objc2::rc::Allocated<Self>,
+            tide_window_id: usize,
+            pane_id: usize,
+        ) -> Option<Retained<Self>> {
+            let this = this.set_ivars(TideScriptMessageHandlerIvars {
+                tide_window_id: TideWindowId::new(tide_window_id as u64),
+                pane_id: pane_id as PaneId,
+            });
             unsafe { msg_send_id![super(this), init] }
         }
 
@@ -925,7 +1021,7 @@ declare_class!(
                 let utf8: *const std::ffi::c_char = msg_send![&body, UTF8String];
                 if !utf8.is_null() {
                     let msg_str = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
-                    queue_bridge_message(msg_str);
+                    queue_bridge_message_for_window(self.ivars().tide_window_id, msg_str);
                 }
             }
         }
@@ -935,6 +1031,7 @@ declare_class!(
 /// Handle to a WKWebView instance, added as a subview of the parent NSView.
 pub struct WebViewHandle {
     webview: Retained<AnyObject>,
+    tide_window_id: TideWindowId,
     pane_id: u64,
     /// Retained so the weak UIDelegate reference stays valid.
     _ui_delegate: Retained<TideUIDelegate>,
@@ -946,7 +1043,7 @@ pub struct WebViewHandle {
 
 impl Drop for WebViewHandle {
     fn drop(&mut self) {
-        cleanup_pending_handlers(self.pane_id);
+        cleanup_pending_handlers(self.tide_window_id, self.pane_id);
     }
 }
 
@@ -964,21 +1061,22 @@ unsafe extern "C" fn destroy_webview_on_main_thread(ctx_ptr: *mut std::ffi::c_vo
 /// Release any pending completion handler blocks and download delegates for a pane.
 /// Called on WebViewHandle drop to prevent leaks when a Browser Pane closes
 /// while permission/certificate prompts or downloads are in-flight.
-fn cleanup_pending_handlers(pane_id: u64) {
+fn cleanup_pending_handlers(tide_window_id: TideWindowId, pane_id: u64) {
     // WebKit aborts if these completion handlers are released without being
     // called, so Browser Pane teardown must resolve them explicitly first.
-    resolve_permission_handler(pane_id, false);
-    resolve_cert_handler(pane_id, false);
+    resolve_permission_handler(tide_window_id, pane_id, false);
+    resolve_cert_handler(tide_window_id, pane_id, false);
     // Release active download delegate
     ACTIVE_DOWNLOAD_DELEGATES
         .lock()
         .unwrap_or_else(|e| e.into_inner())
-        .remove(&pane_id);
+        .remove(&WebViewTarget::new(tide_window_id, pane_id));
 }
 
 /// Context passed through `dispatch_sync_f` to create a WKWebView on the main thread.
 struct WebViewCreateCtx {
     parent_view: *mut std::ffi::c_void,
+    tide_window_id: TideWindowId,
     pane_id: PaneId,
     result: Option<WebViewHandle>,
 }
@@ -986,7 +1084,8 @@ struct WebViewCreateCtx {
 /// Trampoline called on the main thread by `dispatch_sync_f`.
 unsafe extern "C" fn create_webview_on_main_thread(ctx: *mut std::ffi::c_void) {
     let ctx = &mut *(ctx as *mut WebViewCreateCtx);
-    ctx.result = WebViewHandle::new_on_main_thread(ctx.parent_view, ctx.pane_id);
+    ctx.result =
+        WebViewHandle::new_on_main_thread(ctx.parent_view, ctx.tide_window_id, ctx.pane_id);
 }
 
 /// Context passed through `dispatch_sync_f` to navigate on the main thread.
@@ -1399,14 +1498,19 @@ impl WebViewHandle {
     ///
     /// # Safety
     /// `parent_view` must be a valid pointer to an NSView that outlives this handle.
-    pub unsafe fn new(parent_view: *mut std::ffi::c_void, pane_id: PaneId) -> Option<Self> {
+    pub unsafe fn new(
+        parent_view: *mut std::ffi::c_void,
+        tide_window_id: TideWindowId,
+        pane_id: PaneId,
+    ) -> Option<Self> {
         if MainThreadMarker::new().is_some() {
             // Already on the main thread — create directly.
-            return Self::new_on_main_thread(parent_view, pane_id);
+            return Self::new_on_main_thread(parent_view, tide_window_id, pane_id);
         }
 
         let mut ctx = WebViewCreateCtx {
             parent_view,
+            tide_window_id,
             pane_id,
             result: None,
         };
@@ -1424,6 +1528,7 @@ impl WebViewHandle {
     /// `parent_view` must be a valid pointer to an NSView.
     unsafe fn new_on_main_thread(
         parent_view: *mut std::ffi::c_void,
+        tide_window_id: TideWindowId,
         pane_id: PaneId,
     ) -> Option<Self> {
         let parent: &AnyObject = &*(parent_view as *const AnyObject);
@@ -1475,19 +1580,29 @@ impl WebViewHandle {
         // Set up UI delegate for popup handling, JavaScript dialogs, and permissions
         let mtm = MainThreadMarker::new().expect("must be on main thread for WKWebView");
         let delegate: Retained<TideUIDelegate> = unsafe {
-            msg_send_id![mtm.alloc::<TideUIDelegate>(), initWithPaneId: pane_id as usize]
+            msg_send_id![mtm.alloc::<TideUIDelegate>(),
+                initWithTideWindowId: tide_window_id.get() as usize
+                paneId: pane_id as usize
+            ]
         };
         let _: () = msg_send![&webview, setUIDelegate: &*delegate];
 
         // Set up navigation delegate for download handling
         let nav_delegate: Retained<TideNavigationDelegate> = unsafe {
-            msg_send_id![mtm.alloc::<TideNavigationDelegate>(), initWithPaneId: pane_id as usize]
+            msg_send_id![mtm.alloc::<TideNavigationDelegate>(),
+                initWithTideWindowId: tide_window_id.get() as usize
+                paneId: pane_id as usize
+            ]
         };
         let _: () = msg_send![&webview, setNavigationDelegate: &*nav_delegate];
 
         // Set up WKScriptMessageHandler for window.tide.send() bridge (BR-29)
-        let script_handler: Retained<TideScriptMessageHandler> =
-            unsafe { msg_send_id![mtm.alloc::<TideScriptMessageHandler>(), init] };
+        let script_handler: Retained<TideScriptMessageHandler> = unsafe {
+            msg_send_id![mtm.alloc::<TideScriptMessageHandler>(),
+                initWithTideWindowId: tide_window_id.get() as usize
+                paneId: pane_id as usize
+            ]
+        };
         let user_content: Retained<AnyObject> = msg_send_id![&config, userContentController];
         let handler_name = NSString::from_str("tide");
         let _: () = msg_send![&user_content, addScriptMessageHandler: &*script_handler, name: &*handler_name];
@@ -1508,6 +1623,7 @@ impl WebViewHandle {
 
         Some(Self {
             webview,
+            tide_window_id,
             pane_id,
             _ui_delegate: delegate,
             _nav_delegate: nav_delegate,
@@ -1860,29 +1976,29 @@ mod tests {
     #[test]
     fn cleanup_pending_handlers_denies_permission_request_before_release() {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let pane_id = 42_001;
+        let target = WebViewTarget::new(TideWindowId::new(77), 42_001);
         PERMISSION_DECISION.store(-1, Ordering::SeqCst);
 
         {
             let mut handlers = PENDING_PERMISSION_HANDLERS
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
-            handlers.insert(pane_id, BlockPtr(copied_permission_block_ptr()));
+            handlers.insert(target, BlockPtr(copied_permission_block_ptr()));
         }
 
-        cleanup_pending_handlers(pane_id);
+        cleanup_pending_handlers(target.tide_window_id, target.pane_id);
 
         assert_eq!(PERMISSION_DECISION.load(Ordering::SeqCst), 0);
         assert!(!PENDING_PERMISSION_HANDLERS
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .contains_key(&pane_id));
+            .contains_key(&target));
     }
 
     #[test]
     fn cleanup_pending_handlers_cancels_certificate_request_before_release() {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let pane_id = 42_002;
+        let target = WebViewTarget::new(TideWindowId::new(78), 42_002);
         CERTIFICATE_DISPOSITION.store(-1, Ordering::SeqCst);
         CERTIFICATE_CREDENTIAL_WAS_NULL.store(false, Ordering::SeqCst);
 
@@ -1890,16 +2006,16 @@ mod tests {
             let mut handlers = PENDING_CERT_HANDLERS
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
-            handlers.insert(pane_id, BlockPtr(copied_certificate_block_ptr()));
+            handlers.insert(target, BlockPtr(copied_certificate_block_ptr()));
         }
 
-        cleanup_pending_handlers(pane_id);
+        cleanup_pending_handlers(target.tide_window_id, target.pane_id);
 
         assert_eq!(CERTIFICATE_DISPOSITION.load(Ordering::SeqCst), 2);
         assert!(CERTIFICATE_CREDENTIAL_WAS_NULL.load(Ordering::SeqCst));
         assert!(!PENDING_CERT_HANDLERS
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .contains_key(&pane_id));
+            .contains_key(&target));
     }
 }

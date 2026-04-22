@@ -39,6 +39,7 @@ mod preview_scroll;
 mod render_cache_behavior;
 mod search_behavior;
 mod session_behavior;
+mod single_process_multi_window;
 mod soft_wrap_behavior;
 mod stage_tab_group;
 mod terminal_context;

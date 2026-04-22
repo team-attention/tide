@@ -48,6 +48,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         let logical = self.logical_size();
         let cols = ((logical.width / 2.0 / cell_size.width).max(1.0).min(1000.0)) as u16;
         let rows = ((logical.height / cell_size.height).max(1.0).min(500.0)) as u16;
+        let workspace_name = self.active_workspace_name();
 
         match self.ports.terminal_factory.create_terminal(
             id,
@@ -55,6 +56,8 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
             rows,
             cwd.as_deref(),
             self.window.dark_mode,
+            self.tide_window_id,
+            Some(&workspace_name),
         ) {
             Ok(pane) => {
                 self.install_pty_waker(&pane);

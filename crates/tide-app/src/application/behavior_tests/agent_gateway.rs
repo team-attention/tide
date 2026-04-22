@@ -1984,14 +1984,17 @@ fn enabling_auto_integration_requests_notification_permission() {
 
     app.toggle_auto_integration();
     assert!(!app.settings.auto_integration);
-    assert!(app.pending_platform_commands.is_empty());
+    assert!(!app.pending_platform_commands.iter().any(|cmd| matches!(
+        cmd,
+        crate::tide_platform::WindowCommand::RequestNotificationPermission
+    )));
 
     app.toggle_auto_integration();
     assert!(app.settings.auto_integration);
-    assert!(matches!(
-        app.pending_platform_commands.first(),
-        Some(crate::tide_platform::WindowCommand::RequestNotificationPermission)
-    ));
+    assert!(app.pending_platform_commands.iter().any(|cmd| matches!(
+        cmd,
+        crate::tide_platform::WindowCommand::RequestNotificationPermission
+    )));
 }
 
 #[test]
@@ -2017,7 +2020,10 @@ fn disabling_auto_integration_does_not_request_notification_permission() {
     app.toggle_auto_integration();
 
     assert!(!app.settings.auto_integration);
-    assert!(app.pending_platform_commands.is_empty());
+    assert!(!app.pending_platform_commands.iter().any(|cmd| matches!(
+        cmd,
+        crate::tide_platform::WindowCommand::RequestNotificationPermission
+    )));
 }
 
 #[test]

@@ -4,6 +4,7 @@
 // reads line-delimited JSON-RPC 2.0, and enqueues CliCommands
 // into the app event loop.
 
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
@@ -17,6 +18,7 @@ use std::sync::{
 use super::protocol::{JsonRpcErrorResponse, JsonRpcRequest, JsonRpcResponse};
 use super::CliCommand;
 use crate::event_loop::AppEvent;
+use crate::tide_core::TideWindowId;
 use crate::tide_platform::WakeCallback;
 
 /// Thread-safe set of PIDs currently connected to the gateway socket.
@@ -63,9 +65,120 @@ pub(crate) struct GatewayServer {
     pub connected_clients: Arc<ConnectedClients>,
 }
 
+#[derive(Clone)]
+pub(crate) struct GatewayCommandTarget {
+    event_tx: mpsc::Sender<AppEvent>,
+    waker: WakeCallback,
+}
+
+impl GatewayCommandTarget {
+    pub fn new(event_tx: mpsc::Sender<AppEvent>, waker: WakeCallback) -> Self {
+        Self { event_tx, waker }
+    }
+}
+
+pub(crate) struct GatewayCommandRouter {
+    targets: Mutex<HashMap<TideWindowId, GatewayCommandTarget>>,
+    active_tide_window_id: Mutex<Option<TideWindowId>>,
+}
+
+impl GatewayCommandRouter {
+    pub fn new() -> Self {
+        Self {
+            targets: Mutex::new(HashMap::new()),
+            active_tide_window_id: Mutex::new(None),
+        }
+    }
+
+    pub fn register_window(
+        &self,
+        tide_window_id: TideWindowId,
+        event_tx: mpsc::Sender<AppEvent>,
+        waker: WakeCallback,
+    ) {
+        self.targets
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(tide_window_id, GatewayCommandTarget::new(event_tx, waker));
+        self.set_active_window(tide_window_id);
+    }
+
+    pub fn set_active_window(&self, tide_window_id: TideWindowId) {
+        *self
+            .active_tide_window_id
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(tide_window_id);
+    }
+
+    pub fn unregister_window(&self, tide_window_id: TideWindowId) {
+        let mut targets = self.targets.lock().unwrap_or_else(|e| e.into_inner());
+        targets.remove(&tide_window_id);
+
+        let mut active = self
+            .active_tide_window_id
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if *active == Some(tide_window_id) {
+            *active = targets.keys().next().copied();
+        }
+    }
+
+    fn target_for(&self, tide_window_id: Option<TideWindowId>) -> Option<GatewayCommandTarget> {
+        let targets = self.targets.lock().unwrap_or_else(|e| e.into_inner());
+        match tide_window_id {
+            Some(id) => targets.get(&id).cloned(),
+            None => self
+                .active_tide_window_id
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .and_then(|id| targets.get(&id).cloned())
+                .or_else(|| targets.values().next().cloned()),
+        }
+    }
+
+    pub fn dispatch(&self, tide_window_id: Option<TideWindowId>, cmd: CliCommand) -> bool {
+        let Some(target) = self.target_for(tide_window_id) else {
+            return false;
+        };
+        if target.event_tx.send(AppEvent::CliCommand(cmd)).is_err() {
+            return false;
+        }
+        (target.waker)();
+        true
+    }
+
+    pub fn broadcast_reload_settings(&self) {
+        let targets: Vec<_> = self
+            .targets
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .cloned()
+            .collect();
+        for target in targets {
+            if target.event_tx.send(AppEvent::ReloadSettings).is_ok() {
+                (target.waker)();
+            }
+        }
+    }
+
+    pub fn wake_all(&self) {
+        let targets: Vec<_> = self
+            .targets
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .cloned()
+            .collect();
+        for target in targets {
+            (target.waker)();
+        }
+    }
+}
+
 impl GatewayServer {
     /// Start the socket server on a background thread.
-    pub fn start(event_tx: mpsc::Sender<AppEvent>, waker: WakeCallback) -> std::io::Result<Self> {
+    pub fn start(router: Arc<GatewayCommandRouter>) -> std::io::Result<Self> {
         let pid = std::process::id();
         let tmpdir = std::env::temp_dir();
         let socket_path = tmpdir.join(format!("tide-{pid}.sock"));
@@ -110,15 +223,14 @@ impl GatewayServer {
                                 if let Some(pid) = peer_pid {
                                     connected_clients.add(pid);
                                 }
-                                let event_tx = event_tx.clone();
-                                let waker = waker.clone();
+                                let router = router.clone();
                                 let shutdown = shutdown.clone();
                                 let connected_clients = connected_clients.clone();
 
                                 std::thread::Builder::new()
                                     .name("gateway-client".into())
                                     .spawn(move || {
-                                        Self::handle_client(stream, event_tx, waker, shutdown);
+                                        Self::handle_client(stream, router, shutdown);
                                         if let Some(pid) = peer_pid {
                                             connected_clients.remove(pid);
                                         }
@@ -145,8 +257,7 @@ impl GatewayServer {
     /// Handle a single client connection.
     fn handle_client(
         stream: std::os::unix::net::UnixStream,
-        event_tx: mpsc::Sender<AppEvent>,
-        waker: WakeCallback,
+        router: Arc<GatewayCommandRouter>,
         shutdown: Arc<AtomicBool>,
     ) {
         let reader = BufReader::new(match stream.try_clone() {
@@ -198,18 +309,20 @@ impl GatewayServer {
                 (None, None)
             };
 
+            let mut params = request.params;
+            let caller_window = extract_caller_window(&mut params);
+
             let cmd = CliCommand {
                 method: request.method,
-                params: request.params,
+                params,
                 response_tx: resp_tx,
                 notification_tx: notif_tx,
             };
 
             // Enqueue into the app event loop
-            if event_tx.send(AppEvent::CliCommand(cmd)).is_err() {
+            if !router.dispatch(caller_window, cmd) {
                 break; // App has shut down
             }
-            waker();
 
             // Wait for the response from the app thread
             match resp_rx.recv() {
@@ -264,6 +377,14 @@ impl GatewayServer {
             }
         }
     }
+}
+
+fn extract_caller_window(params: &mut serde_json::Value) -> Option<TideWindowId> {
+    params
+        .as_object_mut()
+        .and_then(|m| m.remove("_caller_window"))
+        .and_then(|v| v.as_u64())
+        .map(TideWindowId::new)
 }
 
 /// Get the PID of the peer process on a Unix domain socket.
