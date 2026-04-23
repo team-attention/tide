@@ -46,7 +46,7 @@ When a new pane (editor, browser) is added to the Dock, it's always appended as 
 ### UC-2: ReplacePlaceholderOnOpen
 
 - **Actor**: User
-- **Trigger**: Open file from FileTree, FileFinder, Ctrl+Click URL, Cmd+E (NewFile)
+- **Trigger**: Open file from FileTree, FileFinder, Ctrl+Click URL, or GlobalAction::NewFile
 - **Precondition**: Dock has a placeholder Launcher as dock_focused
 - **Flow**:
   1. Detect dock_focused is a Launcher via `dock_launcher_id()`

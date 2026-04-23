@@ -44,8 +44,8 @@ Complete binding table (HJKL only, no arrow keys):
 | Navigate Down | Cmd+J | Cmd+Ctrl+J |
 | Navigate Left | Cmd+H | Cmd+Ctrl+H |
 | Navigate Right | Cmd+L | Cmd+Ctrl+L |
-| Split Vertical | Cmd+\ | Cmd+Ctrl+\ |
-| Split Horizontal | Cmd+Shift+\ | Cmd+Ctrl+Shift+\ |
+| Split Horizontal | Cmd+\ | Cmd+Ctrl+\ |
+| Split Vertical | Cmd+Shift+\ | Cmd+Ctrl+Shift+\ |
 | New Tab | Cmd+T | Cmd+Ctrl+T |
 | Tab Prev | Cmd+I | Cmd+Ctrl+I |
 | Tab Next | Cmd+O | Cmd+Ctrl+O |
@@ -62,7 +62,7 @@ Unchanged bindings:
 
 1. **Add new GlobalAction variants.** Add `DockNavigate(Direction)`, `DockSplitVertical`, `DockSplitHorizontal`, `DockNewTab`, `DockTabPrev`, `DockTabNext` to the `GlobalAction` enum, with corresponding `label()`, `action_key()`, `from_action_key()`, and `all_actions()` entries.
 2. **Remove old variants.** Remove `BrowserBack`, `BrowserForward`, `ToggleZoom`, `SplitHorizontalHere`, `SplitVerticalHere` from `GlobalAction`. Remove all references in `action_key()`, `from_action_key()`, `label()`, `all_actions()`, and `handle_global_action()`.
-3. **Update default_bindings().** Remove Cmd+Arrow bindings. Rebind Cmd+\ to `SplitVertical`, Cmd+Shift+\ to `SplitHorizontal`. Add Cmd+Ctrl bindings for all Dock-targeting actions. Map Cmd+Enter to `ToggleStacked`.
+3. **Update default_bindings().** Remove Cmd+Arrow bindings. Bind Cmd+\ to `SplitHorizontal`, Cmd+Shift+\ to `SplitVertical`. Add Cmd+Ctrl bindings for all Dock-targeting actions. Map Cmd+Enter to `ToggleStacked`.
 4. **Update match_hotkey().** Add Cmd+Ctrl modifier branches for HJKL, \, T, I, O. Remove BrowserBack/Forward branches.
 5. **Fix Navigate behavior.** In `handle_navigate()`, when FocusArea is Dock, navigate within Dock spatially (do not force focus back to Stage). When FocusArea is Stage, navigate within Stage only.
 6. **Fix cycle_tab behavior.** Make `cycle_tab()` FocusArea-aware: when Stage is focused, cycle Stage TabGroup tabs via `all_tabs_flat()` on the Stage layout. When Dock is focused, cycle Dock tabs (current behavior).

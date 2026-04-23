@@ -22,7 +22,7 @@ Stage keeps the current `LeafGroup(TabGroup)` behavior and closes the drag-and-d
 2. **Stage tabs can be extracted into splits**: dragging a Stage tab onto a directional self-drop zone removes it from its current `TabGroup` and creates a new Stage split next to the remaining sibling tab.
 3. **Stage tabs can move into another Stage `TabGroup`**: dropping a Stage tab onto another Stage `Pane` center zone merges it into that target `TabGroup`.
 4. **Cross-area movement stays blocked**: Dock-to-Stage blocking remains in place, and Stage-to-Dock drops are rejected so Stage and Dock stay separate drag regions.
-5. **Existing tab behavior remains**: click-to-switch, close tab, and zoomed flat Stage tab bars continue to work with the new drag rules.
+5. **Existing tab behavior remains**: click-to-switch, close tab, and stacked flat Stage tab bars continue to work with the new drag rules.
 6. **Stage close focus is deterministic**: closing a non-active Stage tab keeps the current active tab focused, while closing the active Stage tab prefers the tab to the right and falls back to the tab to the left when the active tab was already last.
 
 ### Approach
@@ -31,7 +31,7 @@ Stage keeps the current `LeafGroup(TabGroup)` behavior and closes the drag-and-d
 2. **Allow Stage self-extraction in drop targeting**: extend the self-drop allowance in `compute_tree_drop_target()` to multi-tab Stage `TabGroup`s so directional edge drops can split the source tab out.
 3. **Keep self-drop previews local to the source rect**: directional self-drop preview rectangles must be computed from the dragged Stage pane's current visual rect, not from the entire Stage pane area.
 4. **Keep Stage-only center merges and reject Stage-to-Dock drops**: preserve the existing Stage `DropZone::Center` merge path for Stage sources while adding the missing guard that keeps Stage panes out of Dock targets.
-5. **Leave close, cycle, and zoom behavior intact**: the change only expands drag initiation and drop routing around existing Stage `TabGroup` operations.
+5. **Leave close, cycle, and stacked behavior intact**: the change only expands drag initiation and drop routing around existing Stage `TabGroup` operations.
 6. **Route Stage close focus through `TabGroup` adjacency first**: when a focused Stage tab closes, resolve the next focus target from the containing `TabGroup` before falling back to the surrounding `SplitLayout`.
 
 ## Bounded Contexts
@@ -170,25 +170,25 @@ Stage keeps the current `LeafGroup(TabGroup)` behavior and closes the drag-and-d
 - **BR-3 (Self-drop with sibling extraction)**: If source and target are in the same TabGroup, and source drops onto itself with center, it is a no-op. If source drops onto a different tab in the same TabGroup, source stays (already in the group).
 - **BR-4 (Drop preview)**: `simulate_drop` should account for center zone producing a tab merge (no new split node), so the preview rect matches the target pane's rect.
 
-### UC-6: Zoomed Stage with TabGroups
+### UC-6: Stacked Stage with TabGroups
 
 **Actor**: User
-**Trigger**: User presses Cmd+Enter to toggle zoom while in Stage.
+**Trigger**: User presses Cmd+Enter (`ToggleStacked`) while in Stage.
 **Precondition**: Stage has 2+ panes, some of which may be in TabGroups.
 
 **Flow**:
-1. User presses Cmd+Enter. Stage enters zoomed/stacked mode.
+1. User presses Cmd+Enter. Stage enters stacked mode.
 2. The focused pane fills the entire Stage area.
 3. A flat tab bar is rendered at the top showing ALL Stage panes in traversal order (from `all_tabs_flat()`). Tabs within the same TabGroup are visually grouped (e.g., with a subtle separator or grouping indicator).
 4. User can click any tab to switch focus, or use Cmd+I/O to cycle.
-5. Pressing Cmd+Enter again exits zoom. Layout returns to split view with TabGroups intact.
+5. Pressing Cmd+Enter again exits stacked mode. Layout returns to split view with TabGroups intact.
 
-**Postcondition**: Zoom toggles between full-pane view and split view. TabGroup structure is preserved across zoom toggles.
+**Postcondition**: Stacked mode toggles between full-pane view and split view. TabGroup structure is preserved across toggles.
 
 **Business Rules**:
-- **BR-1 (Flat tab bar in zoom)**: Zoomed mode shows all Stage panes in a single flat tab bar, regardless of TabGroup membership. This matches the current `render_stage_tab_bar` behavior which uses `layout.pane_ids()`.
-- **BR-2 (TabGroup visual grouping)**: In the zoomed flat tab bar, tabs belonging to the same TabGroup are visually distinguished (grouped together, with a subtle divider between groups).
-- **BR-3 (TabGroup preservation)**: Entering and exiting zoom does not change the TabGroup structure. The same LeafGroup nodes persist in SplitLayout.
+- **BR-1 (Flat tab bar in stacked mode)**: Stacked mode shows all Stage panes in a single flat tab bar, regardless of TabGroup membership. This matches the current `render_stage_tab_bar` behavior which uses `layout.pane_ids()`.
+- **BR-2 (TabGroup visual grouping)**: In the stacked flat tab bar, tabs belonging to the same TabGroup are visually distinguished (grouped together, with a subtle divider between groups).
+- **BR-3 (TabGroup preservation)**: Entering and exiting stacked mode does not change the TabGroup structure. The same LeafGroup nodes persist in SplitLayout.
 
 ## Invariants
 
@@ -230,9 +230,9 @@ Stage keeps the current `LeafGroup(TabGroup)` behavior and closes the drag-and-d
 | UC-5 | BR-2 | `stage_pane_drop_target_never_enters_dock()` |
 | UC-5 | BR-3 | `self_drop_center_in_same_tab_group_is_noop()` |
 | UC-5 | BR-4 | `drop_preview_for_center_zone_matches_target_rect()` |
-| UC-6 | BR-1 | `zoomed_stage_shows_flat_tab_bar_of_all_panes()` |
-| UC-6 | BR-2 | `zoomed_tab_bar_groups_tabs_by_tab_group()` |
-| UC-6 | BR-3 | `tab_group_structure_preserved_after_zoom_toggle()` |
+| UC-6 | BR-1 | `stacked_stage_shows_flat_tab_bar_of_all_panes()` |
+| UC-6 | BR-2 | `stacked_tab_bar_groups_tabs_by_tab_group()` |
+| UC-6 | BR-3 | `tab_group_structure_preserved_after_stacked_toggle()` |
 
 ## Location
 

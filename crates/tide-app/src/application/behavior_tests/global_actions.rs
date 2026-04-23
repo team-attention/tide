@@ -90,7 +90,7 @@ fn new_tab_global_action_creates_terminal_pane_in_stage() {
 }
 
 #[test]
-fn toggle_file_tree_from_pane_area_sets_focus_area_to_file_tree() {
+fn toggle_file_tree_from_stage_sets_focus_area_to_file_tree() {
     // UC-4 BR-33: ToggleFileTree shows and sets FocusArea
     let (mut app, _) = app_with_editor();
     assert!(!app.ft.visible);
@@ -100,7 +100,7 @@ fn toggle_file_tree_from_pane_area_sets_focus_area_to_file_tree() {
 }
 
 #[test]
-fn toggle_file_tree_again_hides_and_restores_focus_area_to_pane_area() {
+fn toggle_file_tree_again_hides_and_restores_focus_area_to_stage() {
     // UC-4 BR-33: ToggleFileTree hides and restores FocusArea
     let (mut app, _) = app_with_editor();
     app.handle_global_action(GlobalAction::ToggleFileTree);

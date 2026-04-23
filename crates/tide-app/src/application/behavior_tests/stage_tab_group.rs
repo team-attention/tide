@@ -787,11 +787,11 @@ fn drop_preview_for_center_zone_matches_target_rect() {
     // may differ. This test documents the expected post-implementation behavior.
 }
 
-// --- UC-6: Zoomed Stage with TabGroups ---
+// --- UC-6: Stacked Stage with TabGroups ---
 
 #[test]
-fn zoomed_stage_shows_flat_tab_bar_of_all_panes() {
-    // UC-6 BR-1: Zoomed mode shows all Stage panes in a single flat tab bar,
+fn stacked_stage_shows_flat_tab_bar_of_all_panes() {
+    // UC-6 BR-1: Stacked mode shows all Stage panes in a single flat tab bar,
     // regardless of TabGroup membership.
     let (mut app, p1, p2) = app_with_two_panes();
 
@@ -800,7 +800,7 @@ fn zoomed_stage_shows_flat_tab_bar_of_all_panes() {
     app.panes.insert(p3, PaneKind::Launcher(p3));
     app.layout.add_tab(p1, p3);
 
-    // Enter zoom mode
+    // Enter stacked mode
     app.focus.focused = Some(p1);
     app.focus.focus_area = FocusArea::Stage;
     app.handle_toggle_stacked();
@@ -815,8 +815,8 @@ fn zoomed_stage_shows_flat_tab_bar_of_all_panes() {
 }
 
 #[test]
-fn zoomed_tab_bar_groups_tabs_by_tab_group() {
-    // UC-6 BR-2: In the zoomed flat tab bar, tabs belonging to the same TabGroup
+fn stacked_tab_bar_groups_tabs_by_tab_group() {
+    // UC-6 BR-2: In the stacked flat tab bar, tabs belonging to the same TabGroup
     // are visually distinguished (grouped together).
     // At the domain level, we verify that all_tabs_flat() preserves TabGroup ordering:
     // tabs within the same group appear consecutively.
@@ -844,8 +844,8 @@ fn zoomed_tab_bar_groups_tabs_by_tab_group() {
 }
 
 #[test]
-fn tab_group_structure_preserved_after_zoom_toggle() {
-    // UC-6 BR-3: Entering and exiting zoom does not change the TabGroup structure.
+fn tab_group_structure_preserved_after_stacked_toggle() {
+    // UC-6 BR-3: Entering and exiting stacked mode does not change the TabGroup structure.
     let (mut app, p1, _p2) = app_with_two_panes();
 
     // Create a TabGroup [p1, p3]
@@ -853,20 +853,20 @@ fn tab_group_structure_preserved_after_zoom_toggle() {
     app.panes.insert(p3, PaneKind::Launcher(p3));
     app.layout.add_tab(p1, p3);
 
-    // Snapshot before zoom
+    // Snapshot before stacked mode
     let all_ids_before = app.layout.all_pane_ids();
     let tg_before = app
         .layout
         .tab_group_containing(p1)
         .map(|tg| tg.tabs.clone());
 
-    // Enter zoom
+    // Enter stacked mode
     app.focus.focused = Some(p1);
     app.focus.focus_area = FocusArea::Stage;
     app.handle_toggle_stacked();
     assert_eq!(app.dock.terminal_view_mode, ViewMode::Stacked);
 
-    // Exit zoom
+    // Exit stacked mode
     app.handle_toggle_stacked();
     assert_eq!(app.dock.terminal_view_mode, ViewMode::Split);
 
@@ -874,7 +874,7 @@ fn tab_group_structure_preserved_after_zoom_toggle() {
     let all_ids_after = app.layout.all_pane_ids();
     assert_eq!(
         all_ids_before, all_ids_after,
-        "all pane IDs should be preserved after zoom toggle"
+        "all pane IDs should be preserved after stacked toggle"
     );
 
     let tg_after = app
@@ -883,6 +883,6 @@ fn tab_group_structure_preserved_after_zoom_toggle() {
         .map(|tg| tg.tabs.clone());
     assert_eq!(
         tg_before, tg_after,
-        "TabGroup structure should be preserved after zoom toggle"
+        "TabGroup structure should be preserved after stacked toggle"
     );
 }

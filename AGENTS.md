@@ -36,7 +36,7 @@ Key terms to always use precisely:
 - PaneKind - the 5 types: Terminal, Editor, Diff, Browser, Launcher
 - Workspace - an isolated set of panes + layout + focus (not "tab group", "session")
 - TabGroup - multiple panes stacked in one layout slot (not "workspace")
-- FocusArea - FileTree or PaneArea (not "focus mode", "focus zone")
+- FocusArea - FileTree, Stage, or Dock (not "focus mode", "focus zone")
 - SplitLayout - the binary tree of splits (not "grid", "tiling")
 - ModalStack - mutually-exclusive popups (not "dialog", "overlay")
 - GlobalAction - a user-intent command from keybinding (not "event", "message")

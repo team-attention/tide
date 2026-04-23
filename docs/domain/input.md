@@ -66,28 +66,34 @@ KeybindingMap {
 }
 ```
 
-- 31 default bindings hardcoded
+- 47 default bindings hardcoded
 - `with_overrides(user_bindings)` layers user customization on top
 - `lookup(key, modifiers)` → first match wins
 
-## Command: GlobalAction (35 variants)
+## Command: GlobalAction (40 enum variants)
 
 ### Pane Operations
 | Action | Default Binding | Description |
 |--------|----------------|-------------|
-| `SplitVertical` | Cmd+Shift+T | Split pane left/right |
-| `SplitHorizontal` | Cmd+\ | Split pane top/bottom |
+| `SplitHorizontal` | Cmd+\ | Split the current FocusArea into left/right panes |
+| `SplitVertical` | Cmd+Shift+\ | Split the current FocusArea into top/bottom panes |
 | `ClosePane` | Cmd+W | Close focused pane |
-| `ToggleZoom` | Cmd+Enter | Zoom/unzoom focused pane |
-| `Navigate(Direction)` | Cmd+HJKL | Move focus between panes |
-| `TabPrev` / `TabNext` | Cmd+I / Cmd+O | Cycle tabs in TabGroup |
+| `ToggleStacked` | Cmd+Enter | Toggle stacked mode for the current FocusArea |
+| `DockToggleStacked` | Cmd+Ctrl+Enter | Toggle Dock stacked mode without permanently changing FocusArea |
+| `Navigate(Direction)` | Cmd+HJKL | Move focus within the current FocusArea |
+| `DockNavigate(Direction)` | Cmd+Ctrl+HJKL | Move focus within Dock without changing FocusArea |
+| `TabPrev` / `TabNext` | Cmd+I / Cmd+O | Cycle tabs in the current FocusArea |
+| `DockTabPrev` / `DockTabNext` | Cmd+Ctrl+I / Cmd+Ctrl+O | Cycle Dock tabs without changing FocusArea |
 | `NewTab` | Cmd+T | New tab (Launcher) |
+| `DockNewTab` | Cmd+Ctrl+T | New Dock tab |
+| `DockSplitHorizontal` | Cmd+Ctrl+\ | Split Dock into left/right panes |
+| `DockSplitVertical` | Cmd+Ctrl+Shift+\ | Split Dock into top/bottom panes |
 | `NewFile` | — | New empty editor |
 
 ### Global UI
 | Action | Default Binding | Description |
 |--------|----------------|-------------|
-| `FocusArea(Slot)` | Cmd+1/2/3 | Toggle focus between areas |
+| `FocusArea(Slot)` | Cmd+1/2/3/4 | Focus FileTree, Stage, or Dock by AreaSlot |
 | `FileFinder` | Cmd+Shift+O | Open file finder modal |
 | `Find` | Cmd+F | Search in pane |
 | `Paste` / `Copy` | Cmd+V / Cmd+C | Clipboard |
@@ -97,8 +103,10 @@ KeybindingMap {
 | `ToggleFullscreen` | Cmd+Ctrl+F | Fullscreen |
 | `NewWindow` | Cmd+N | New window |
 | `OpenBrowser` | Cmd+Shift+B | Browser pane |
-| `BrowserBack/Forward` | Cmd+Shift+[/] | Browser navigation |
+| `BrowserReload` | Cmd+R | Reload Browser Pane |
 | `ScrollHalfPageUp/Down` | Cmd+U / Cmd+D | Half-page scroll |
+| `ToggleDockPin` | Cmd+Shift+P | Pin or unpin the focused Dock Pane |
+| `ToggleLivePreview` | Cmd+Shift+L | Toggle LivePreviewMode for Markdown Pane |
 
 ### Workspace
 | Action | Default Binding | Description |
@@ -110,8 +118,13 @@ KeybindingMap {
 ### Sidebar
 | Action | Default Binding | Description |
 |--------|----------------|-------------|
-| `ToggleFileTree` | Cmd+E | Show/hide file tree |
-| `ToggleWorkspaceSidebar` | Cmd+B | Show/hide workspace list |
+| `ToggleFileTree` | - | Show/hide file tree |
+| `ToggleWorkspaceSidebar` | - | Show/hide workspace list |
+
+### Retired Action Keys
+
+`BrowserBack`, `BrowserForward`, and `ToggleZoom` are no longer `GlobalAction`
+variants. Settings migration drops those keys with `from_action_key() -> None`.
 
 ## Command: Action (routing decision)
 

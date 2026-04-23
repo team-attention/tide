@@ -32,14 +32,14 @@ fn new_app_starts_with_no_focused_pane() {
 }
 
 #[test]
-fn new_app_starts_in_pane_area_focus() {
+fn new_app_starts_in_stage_focus() {
     // UC-3 BR-20: New App starts in Stage focus
     let app = test_app();
     assert_eq!(app.focus.focus_area, FocusArea::Stage);
 }
 
 #[test]
-fn focus_terminal_sets_focus_area_to_pane_area() {
+fn focus_terminal_sets_focus_area_to_stage() {
     // UC-3 BR-21: focus_terminal sets FocusArea to Stage
     let (mut app, id) = app_with_editor();
     app.focus.focus_area = FocusArea::FileTree;
@@ -97,7 +97,7 @@ fn toggling_file_tree_focus_cycles_through_three_states() {
 }
 
 #[test]
-fn switching_to_pane_area_from_file_tree_preserves_focused_pane() {
+fn switching_to_stage_from_file_tree_preserves_focused_pane() {
     // UC-3 BR-25: Switching to Stage from FileTree preserves focused Pane
     let (mut app, id) = app_with_editor();
     app.ft.visible = true;
@@ -109,7 +109,7 @@ fn switching_to_pane_area_from_file_tree_preserves_focused_pane() {
 }
 
 #[test]
-fn toggling_zoom_on_focused_pane_fills_entire_area() {
+fn toggling_stacked_mode_on_focused_pane_fills_entire_area() {
     // UC-3 BR-26: ToggleStacked sets zoomed_pane
     let mut app = test_app();
     let (layout, id1) = crate::tide_layout::SplitLayout::with_initial_pane();
@@ -133,7 +133,7 @@ fn toggling_zoom_on_focused_pane_fills_entire_area() {
 }
 
 #[test]
-fn toggling_zoom_again_restores_split_layout() {
+fn toggling_stacked_mode_again_restores_split_layout() {
     // UC-3 BR-26: ToggleStacked clears zoomed_pane
     let mut app = test_app();
     let (layout, id1) = crate::tide_layout::SplitLayout::with_initial_pane();
@@ -151,8 +151,8 @@ fn toggling_zoom_again_restores_split_layout() {
 }
 
 #[test]
-fn zoom_has_no_effect_when_focus_area_is_file_tree() {
-    // UC-3 BR-27: Zoom has no effect when FocusArea is FileTree
+fn stacked_mode_has_no_effect_when_focus_area_is_file_tree() {
+    // UC-3 BR-27: ToggleStacked has no effect when FocusArea is FileTree
     let (mut app, _) = app_with_editor();
     app.ft.visible = true;
     app.focus.focus_area = FocusArea::FileTree;

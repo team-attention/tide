@@ -24,7 +24,7 @@ text routing, focus management, and GlobalAction dispatch.
   2. If modal consumes event → RETURN immediately
   3. Check FocusArea:
      - FileTree → handle file tree keys (arrows, enter, etc.)
-     - PaneArea → continue to Router
+     - Stage or Dock → continue to Router
   4. Router.process(KeyPress { key, modifiers })
      - Hotkey match → Action::GlobalAction(action)
      - No match → Action::RouteToPane(focused_id)
@@ -74,23 +74,23 @@ text routing, focus management, and GlobalAction dispatch.
 ### UC-3: ManageFocus
 
 - **Actor**: User
-- **Trigger**: GlobalAction::Navigate, GlobalAction::ToggleFileTree, GlobalAction::ToggleZoom, click
+- **Trigger**: GlobalAction::Navigate, GlobalAction::ToggleFileTree, GlobalAction::ToggleStacked, click
 - **Precondition**: At least one Pane exists
 - **Flow**:
   1. Focus switch: update app.focused, set focus_area, invalidate_chrome
   2. File tree toggle: cycle hidden→shown+focused→hidden
-  3. Zoom toggle: set/clear zoomed_pane
-- **Postcondition**: Focus, zoom, or file tree state updated
+  3. Stacked toggle: set/clear zoomed_pane for Stage, or toggle Dock stacked state
+- **Postcondition**: Focus, stacked mode, or file tree state updated
 - **Business Rules**:
   - BR-19: New App starts with no focused Pane
-  - BR-20: New App starts in PaneArea focus
-  - BR-21: focus_terminal sets FocusArea to PaneArea
+  - BR-20: New App starts in Stage focus
+  - BR-21: focus_terminal sets FocusArea to Stage
   - BR-22: Changing focused Pane increments chrome_generation
   - BR-23: Focusing same Pane does not change chrome_generation
   - BR-24: File tree toggle cycles: hidden → shown+focused → hidden
-  - BR-25: Switching to PaneArea from FileTree preserves focused Pane
-  - BR-26: ToggleZoom sets/clears zoomed_pane
-  - BR-27: Zoom has no effect when FocusArea is FileTree
+  - BR-25: Switching to Stage from FileTree preserves focused Pane
+  - BR-26: ToggleStacked sets/clears zoomed_pane for Stage
+  - BR-27: ToggleStacked has no effect when FocusArea is FileTree
 
 ### UC-4: DispatchGlobalAction
 
@@ -142,23 +142,23 @@ text routing, focus management, and GlobalAction dispatch.
 | UC-2 | BR-17 | `text_input_routing` | `config_page_worktree_editing_receives_text` |
 | UC-2 | BR-18 | `text_input_routing` | `config_page_copy_files_editing_receives_text` |
 | UC-3 | BR-19 | `focus_management` | `new_app_starts_with_no_focused_pane` |
-| UC-3 | BR-20 | `focus_management` | `new_app_starts_in_pane_area_focus` |
-| UC-3 | BR-21 | `focus_management` | `focus_terminal_sets_focus_area_to_pane_area` |
+| UC-3 | BR-20 | `focus_management` | `new_app_starts_in_stage_focus` |
+| UC-3 | BR-21 | `focus_management` | `focus_terminal_sets_focus_area_to_stage` |
 | UC-3 | BR-22 | `focus_management` | `focus_terminal_updates_chrome_generation_when_changing_pane` |
 | UC-3 | BR-23 | `focus_management` | `focus_terminal_same_pane_does_not_change_chrome` |
 | UC-3 | BR-24 | `focus_management` | `toggling_file_tree_focus_cycles_through_three_states` |
-| UC-3 | BR-25 | `focus_management` | `switching_to_pane_area_from_file_tree_preserves_focused_pane` |
-| UC-3 | BR-26 | `focus_management` | `toggling_zoom_on_focused_pane_fills_entire_area` |
-| UC-3 | BR-26 | `focus_management` | `toggling_zoom_again_restores_split_layout` |
-| UC-3 | BR-27 | `focus_management` | `zoom_has_no_effect_when_focus_area_is_file_tree` |
+| UC-3 | BR-25 | `focus_management` | `switching_to_stage_from_file_tree_preserves_focused_pane` |
+| UC-3 | BR-26 | `focus_management` | `toggling_stacked_mode_on_focused_pane_fills_entire_area` |
+| UC-3 | BR-26 | `focus_management` | `toggling_stacked_mode_again_restores_split_layout` |
+| UC-3 | BR-27 | `focus_management` | `stacked_mode_has_no_effect_when_focus_area_is_file_tree` |
 | UC-4 | BR-28 | `global_actions` | `split_vertical_creates_new_pane_in_split_layout_and_focuses_it` |
 | UC-4 | BR-28 | `global_actions` | `split_horizontal_creates_new_pane_in_split_layout_and_focuses_it` |
 | UC-4 | BR-29 | `global_actions` | `new_tab_global_action_creates_launcher_pane` |
 | UC-4 | BR-30 | `global_actions` | `new_file_global_action_creates_editor_pane_in_tab_group` |
 | UC-4 | BR-31 | `global_actions` | `find_opens_search_bar_on_focused_pane` |
 | UC-4 | BR-32 | `global_actions` | `find_again_reuses_existing_search_bar` |
-| UC-4 | BR-33 | `global_actions` | `toggle_file_tree_from_pane_area_sets_focus_area_to_file_tree` |
-| UC-4 | BR-33 | `global_actions` | `toggle_file_tree_again_hides_and_restores_focus_area_to_pane_area` |
+| UC-4 | BR-33 | `global_actions` | `toggle_file_tree_from_stage_sets_focus_area_to_file_tree` |
+| UC-4 | BR-33 | `global_actions` | `toggle_file_tree_again_hides_and_restores_focus_area_to_stage` |
 | UC-4 | BR-34 | `global_actions` | `toggle_fullscreen_sets_pending_flag` |
 | UC-4 | BR-35 | `global_actions` | `file_finder_opens_via_global_action` |
 

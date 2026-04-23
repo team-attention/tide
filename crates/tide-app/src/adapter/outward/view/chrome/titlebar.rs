@@ -166,7 +166,7 @@ pub(super) fn render_titlebar_and_sidebar(
                 );
             }
 
-            // Titlebar toggle buttons: [Sidebar] [PaneArea] [Dock] [gap] [Theme] [Settings] [Swap icon]
+            // Titlebar toggle buttons: [Sidebar] [Stage] [Dock] [gap] [Theme] [Settings] [Swap icon]
             // Positioned right-to-left from the settings icon
             let settings_pad = 4.0_f32;
             let settings_w = cs.width + settings_pad * 2.0;

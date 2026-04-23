@@ -546,7 +546,7 @@ impl crate::application::ports::inward::LayoutPort for App {
         self.pane_rects = rects;
 
         // Compute visual rects: half-gap between panes, edge-inset at window boundaries.
-        // Each pane uses bounds from its own region (TerminalArea or ContextArea).
+        // Each pane uses bounds from its own region (Stage or Dock).
         let half = PANE_GAP / 2.0;
         let edge_inset = PANE_CORNER_RADIUS.max(half);
         let term_area_x = terminal_offset_x;

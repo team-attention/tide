@@ -136,7 +136,7 @@ In **Dock Stacked mode**: identical flat traversal, just visually shows one pane
 
 ### UC-1: OpenPaneInDock
 
-- **Trigger**: File click in FileTree, FileFinder, Ctrl+Click URL, Cmd+E (NewFile)
+- **Trigger**: File click in FileTree, FileFinder, Ctrl+Click URL, or GlobalAction::NewFile
 - **Flow**:
   1. `focused_terminal_id()` → owner Terminal
   2. Create Pane, insert into App.panes

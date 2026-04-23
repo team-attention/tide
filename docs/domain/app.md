@@ -14,7 +14,7 @@ App
 ├── panes: HashMap<PaneId, PaneKind>    ← all Pane entities
 ├── layout: SplitLayout                  ← arrangement Aggregate
 ├── focused: Option<PaneId>              ← current focus
-├── focus_area: FocusArea                ← FileTree | PaneArea
+├── focus_area: FocusArea                ← FileTree | Stage | Dock
 │
 ├── ime: ImeState                        ← IME composition state
 ├── modal: ModalStack                    ← popups (mutually exclusive)

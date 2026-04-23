@@ -60,7 +60,7 @@ All paths below are relative to `crates/tide-app/src/`.
 
 | Term | Type | Location | Description |
 |------|------|----------|-------------|
-| **GlobalAction** | `GlobalAction` | `domain/input/mod.rs` | A user-intent command: `SplitVertical`, `ClosePane`, `Navigate(Up)`, `DockNavigate(Right)`, etc. 38 variants. |
+| **GlobalAction** | `GlobalAction` | `domain/input/mod.rs` | A user-intent command: `SplitVertical`, `ClosePane`, `Navigate(Up)`, `DockNavigate(Right)`, etc. 40 enum variants. |
 | **HeaderHitAction** | `HeaderHitAction` | `adapter/outward/view/header.rs` | A click action exposed by Pane header or TabGroup chrome. Tide resolves it through header hit zones instead of raw coordinate checks. |
 | **HeaderActionStrip** | `HeaderActionSpec` + render helpers | `adapter/outward/view/header.rs` | The visible-header right-aligned control cluster that exposes mouse-first Pane creation and split actions. |
 | **Action** | `Action` | `domain/input/mod.rs` | Routing decision: `RouteToPane(id)`, `GlobalAction(...)`, `DragBorder(pos)`, or `None`. |
@@ -85,7 +85,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **FocusArea** | `FocusArea` | Which region has keyboard focus: `FileTree`, `Stage`, or `Dock`. |
 | **AreaSlot** | `AreaSlot` | Positional slot (`Slot1`/`Slot2`/`Slot3`/`Slot4`) for Cmd+1/2/3/4 focus cycling. |
 | **Direction** | `Direction` | `Up`/`Down`/`Left`/`Right` for pane navigation. |
-| **SplitDirection** | `SplitDirection` | `Horizontal` (top/bottom) or `Vertical` (left/right) split. |
+| **SplitDirection** | `SplitDirection` | `Horizontal` creates left/right panes; `Vertical` creates top/bottom panes. |
 | **DropZone** | `DropZone` | Which edge of a pane to drop on: `Top`/`Bottom`/`Left`/`Right`/`Center`. |
 | **PaneKind** | enum | The 5 content types: `Terminal`, `Editor`, `Diff`, `Browser`, `Launcher`. |
 | **CursorShape** | enum | Terminal cursor appearance: `Block`, `Beam`, `Underline`. |
