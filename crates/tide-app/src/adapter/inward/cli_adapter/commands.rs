@@ -1346,9 +1346,7 @@ fn cli_notify(
         "codex-stop" => {
             let status = match codex_stop_resolution.as_ref() {
                 Some(CodexStopResolution::IgnoreSubagent) => AgentStatus::Idle,
-                Some(CodexStopResolution::Resolved { assistant_message }) => {
-                    classify_codex_assistant_message(assistant_message.as_deref())
-                }
+                Some(CodexStopResolution::Resolved { .. }) => AgentStatus::Idle,
                 None => AgentStatus::Idle,
             };
             let normalized_event = match status {
@@ -1402,6 +1400,22 @@ fn cli_notify(
         return Ok(json!({"ok": true}));
     }
 
+    let current_status = {
+        let agents = ctx.detected_agents_mut();
+        agents.get(&pane_id).and_then(|agent| agent.status)
+    };
+    // A freshly attached or resumed Codex remote session may report an initial
+    // idle snapshot before Tide has observed any active turn in this Pane.
+    // Preserve connected-idle presence instead of synthesizing a completion alert.
+    let suppress_idle_snapshot = codex_app_server_resolution
+        .as_ref()
+        .is_some_and(|resolution| {
+            resolution.idle_is_snapshot
+                && matches!(resolution.status, AgentStatus::Idle)
+                && current_status.is_none()
+        });
+    let status = if suppress_idle_snapshot { None } else { status };
+
     if event == "agent-detached" {
         let agent_key = params
             .get("agent")
@@ -1452,14 +1466,16 @@ fn cli_notify(
 
     if let Some(name) = agent_name {
         ctx.invalidate_chrome();
-        ctx.gateway_notify(
-            "agent-status-changed",
-            json!({
-                "pane_id": pane_id,
-                "status": normalized_event,
-                "agent": name,
-            }),
-        );
+        if !suppress_idle_snapshot {
+            ctx.gateway_notify(
+                "agent-status-changed",
+                json!({
+                    "pane_id": pane_id,
+                    "status": normalized_event,
+                    "agent": name,
+                }),
+            );
+        }
         if let Some(status) = status {
             let mut notification_snippet =
                 if matches!(status, AgentStatus::Idle | AgentStatus::NeedsInput) {
@@ -1511,6 +1527,9 @@ fn wrapped_agent_notification_snippet_from_payload(
         "codex" if event == "codex-turn-complete" => payload
             .and_then(codex_completed_turn_notification_snippet)
             .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
+        "codex" if event == "agent-needs-input" => payload
+            .and_then(codex_permission_request_notification_snippet)
+            .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
         "claude" => payload
             .and_then(claude_notification_snippet)
             .and_then(|text| crate::state::gateway_status::normalize_notification_snippet(&text)),
@@ -1540,6 +1559,29 @@ fn codex_stop_notification_snippet(resolution: &CodexStopResolution) -> Option<S
             .as_deref()
             .and_then(crate::state::gateway_status::normalize_notification_snippet),
     }
+}
+
+fn codex_permission_request_notification_snippet(payload: &Value) -> Option<String> {
+    serde_json::from_value::<CodexPermissionRequestHookPayload>(payload.clone())
+        .ok()
+        .and_then(|payload| {
+            if payload
+                .hook_event_name
+                .as_deref()
+                .is_some_and(|event_name| {
+                    event_name != "PermissionRequest" && event_name != "permissionRequest"
+                })
+            {
+                return None;
+            }
+            payload.tool_input.and_then(|tool_input| {
+                tool_input.description.or_else(|| {
+                    tool_input
+                        .command
+                        .map(|command| format!("Approve command: {command}"))
+                })
+            })
+        })
 }
 
 fn claude_notification_snippet(payload: &Value) -> Option<String> {
@@ -1580,6 +1622,7 @@ fn resolve_codex_app_server_payload(payload: Option<&Value>) -> Option<CodexAppS
     Some(CodexAppServerResolution {
         status,
         notification_snippet,
+        idle_is_snapshot: method == "thread/status/changed",
     })
 }
 
@@ -1683,10 +1726,25 @@ struct CodexCompletedTurnPayload {
 
 #[derive(Debug, Default, Deserialize)]
 struct CodexStopHookPayload {
+    #[serde(alias = "hook-event-name")]
+    hook_event_name: Option<String>,
     #[serde(alias = "transcript-path")]
     transcript_path: Option<PathBuf>,
     #[serde(alias = "last-assistant-message")]
     last_assistant_message: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexPermissionRequestHookPayload {
+    #[serde(alias = "hook-event-name")]
+    hook_event_name: Option<String>,
+    tool_input: Option<CodexPermissionRequestToolInput>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexPermissionRequestToolInput {
+    command: Option<String>,
+    description: Option<String>,
 }
 
 #[derive(Debug)]
@@ -1705,6 +1763,7 @@ enum CodexTranscriptResolution {
 struct CodexAppServerResolution {
     status: crate::state::gateway_status::AgentStatus,
     notification_snippet: Option<String>,
+    idle_is_snapshot: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1718,26 +1777,6 @@ struct GeminiHookPayload {
     prompt_response: Option<String>,
 }
 
-const CODEX_NEEDS_INPUT_PHRASES: &[&str] = &[
-    "yes",
-    "allow",
-    "approve",
-    "confirm",
-    "please allow",
-    "please approve",
-    "grant permission",
-    "can i proceed",
-    "may i proceed",
-    "what would you like me to do next",
-    "what should i do next",
-    "how would you like me to proceed",
-    "please provide",
-    "please answer",
-    "can you clarify",
-    "do you want me to",
-    "would you like me to",
-];
-
 fn resolve_codex_stop_payload(payload: Option<&Value>) -> CodexStopResolution {
     let Some(payload) = payload else {
         return CodexStopResolution::Resolved {
@@ -1749,6 +1788,15 @@ fn resolve_codex_stop_payload(payload: Option<&Value>) -> CodexStopResolution {
             assistant_message: None,
         };
     };
+    if payload
+        .hook_event_name
+        .as_deref()
+        .is_some_and(|event_name| event_name != "Stop")
+    {
+        return CodexStopResolution::Resolved {
+            assistant_message: None,
+        };
+    }
 
     if let Some(transcript_path) = payload.transcript_path.as_deref() {
         match read_codex_transcript_resolution(transcript_path) {
@@ -1885,41 +1933,7 @@ fn classify_codex_completed_turn_payload(
         return crate::state::gateway_status::AgentStatus::Idle;
     }
 
-    classify_codex_assistant_message(payload.last_assistant_message.as_deref())
-}
-
-fn classify_codex_assistant_message(
-    assistant_message: Option<&str>,
-) -> crate::state::gateway_status::AgentStatus {
-    use crate::state::gateway_status::AgentStatus;
-
-    let Some(last_message) = assistant_message else {
-        return AgentStatus::Idle;
-    };
-    let normalized = last_message.trim().to_ascii_lowercase();
-    if normalized.is_empty() {
-        return AgentStatus::Idle;
-    }
-
-    if CODEX_NEEDS_INPUT_PHRASES
-        .iter()
-        .any(|phrase| normalized_matches_codex_prompt(&normalized, phrase))
-    {
-        return AgentStatus::NeedsInput;
-    }
-
-    AgentStatus::Idle
-}
-
-fn normalized_matches_codex_prompt(normalized_message: &str, phrase: &str) -> bool {
-    if normalized_message == phrase {
-        return true;
-    }
-
-    normalized_message
-        .strip_prefix(phrase)
-        .and_then(|suffix| suffix.chars().next())
-        .is_some_and(|ch| ch.is_ascii_whitespace() || matches!(ch, ':' | '?' | '!' | ','))
+    crate::state::gateway_status::AgentStatus::Idle
 }
 
 fn translate_key(key: &str) -> Vec<u8> {

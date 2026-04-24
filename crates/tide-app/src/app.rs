@@ -379,77 +379,10 @@ impl App {
 
     pub(crate) fn scan_visible_terminal_text_for_wrapped_agent_status(
         &mut self,
-        pane_id: PaneId,
+        _pane_id: PaneId,
     ) -> bool {
-        let Some(agent) = self.gateway.detected_agents.get(&pane_id) else {
-            return false;
-        };
-        if !agent.wrapper_managed || agent.name != "Codex" {
-            return false;
-        }
-        if matches!(
-            agent.status,
-            Some(crate::state::gateway_status::AgentStatus::NeedsInput)
-        ) {
-            return false;
-        }
-
-        let Some(lines) = self.visible_terminal_lines(pane_id) else {
-            return false;
-        };
-        let Some(prompt) = codex_visible_mcp_permission_prompt(&lines) else {
-            return false;
-        };
-
-        if let Some(agent) = self.gateway.detected_agents.get_mut(&pane_id) {
-            agent.status = Some(crate::state::gateway_status::AgentStatus::NeedsInput);
-            agent.wrapper_managed = true;
-            agent.gateway_connected = true;
-        }
-
-        self.cache.invalidate_chrome();
-        self.gateway.notify(
-            "agent-status-changed",
-            serde_json::json!({
-                "pane_id": pane_id,
-                "status": "agent-needs-input",
-                "agent": "Codex",
-            }),
-        );
-        self.set_agent_notification_snippet(pane_id, Some(prompt.clone()));
-        self.route_agent_notification(
-            pane_id,
-            crate::state::gateway_status::AgentStatus::NeedsInput,
-            Some(prompt),
-        );
-        true
-    }
-
-    fn visible_terminal_lines(&self, pane_id: PaneId) -> Option<Vec<String>> {
-        let pane = self.panes.get(&pane_id).or_else(|| {
-            self.ws
-                .workspaces
-                .iter()
-                .find_map(|workspace| workspace.panes.get(&pane_id))
-        })?;
-        let PaneKind::Terminal(terminal) = pane else {
-            return None;
-        };
-
-        let grid = terminal.backend.grid();
-        Some(
-            grid.cells
-                .iter()
-                .map(|row| {
-                    row.iter()
-                        .map(|cell| cell.character)
-                        .collect::<String>()
-                        .trim_end()
-                        .to_string()
-                })
-                .filter(|line| !line.trim().is_empty())
-                .collect(),
-        )
+        // Structured wrapper signals are the supported source of wrapped-agent attention.
+        false
     }
 
     /// Create the initial terminal pane.
@@ -1343,11 +1276,9 @@ impl crate::application::ports::inward::GatewayPort for App {
 
         let notification_snippet = match status {
             AgentStatus::NeedsInput => notification_snippet
-                .or_else(|| self.visible_wrapped_agent_notification_snippet(pane_id))
                 .or_else(|| self.agent_notification_snippets.get(&pane_id).cloned()),
             AgentStatus::Idle => notification_snippet
-                .or_else(|| self.agent_notification_snippets.get(&pane_id).cloned())
-                .or_else(|| self.visible_wrapped_agent_notification_snippet(pane_id)),
+                .or_else(|| self.agent_notification_snippets.get(&pane_id).cloned()),
             AgentStatus::Running => unreachable!(),
         };
 
@@ -1403,75 +1334,6 @@ impl App {
             })
         })
     }
-
-    fn visible_wrapped_agent_notification_snippet(&self, pane_id: PaneId) -> Option<String> {
-        let pane = self.panes.get(&pane_id).or_else(|| {
-            self.ws
-                .workspaces
-                .iter()
-                .find_map(|workspace| workspace.panes.get(&pane_id))
-        })?;
-        let PaneKind::Terminal(terminal) = pane else {
-            return None;
-        };
-
-        let lines: Vec<String> = terminal
-            .backend
-            .grid()
-            .cells
-            .iter()
-            .filter_map(|row| {
-                let raw = row.iter().map(|cell| cell.character).collect::<String>();
-                crate::state::gateway_status::normalize_notification_snippet(raw.trim_end())
-            })
-            .collect();
-
-        lines
-            .iter()
-            .rev()
-            .find(|line| line.starts_with('•') || line.starts_with("- ") || line.starts_with("* "))
-            .cloned()
-            .or_else(|| {
-                lines
-                    .iter()
-                    .rev()
-                    .find(|line| !looks_like_terminal_notification_noise(line))
-                    .cloned()
-            })
-            .or_else(|| lines.last().cloned())
-    }
-}
-
-fn looks_like_terminal_notification_noise(line: &str) -> bool {
-    line.starts_with("Tip:") || line.starts_with("model:") || line.starts_with("directory:")
-}
-
-fn codex_visible_mcp_permission_prompt(lines: &[String]) -> Option<String> {
-    let normalized_lines: Vec<String> = lines
-        .iter()
-        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
-        .collect();
-    let lower_lines: Vec<String> = normalized_lines
-        .iter()
-        .map(|line| line.to_ascii_lowercase())
-        .collect();
-
-    let has_line_containing = |needle: &str| lower_lines.iter().any(|line| line.contains(needle));
-
-    if !has_line_containing("allow for this session")
-        || !has_line_containing("always allow")
-        || !has_line_containing("cancel")
-        || !has_line_containing("enter to submit")
-    {
-        return None;
-    }
-
-    normalized_lines.into_iter().find(|line| {
-        let lower = line.to_ascii_lowercase();
-        lower.starts_with("allow the ")
-            && lower.contains(" mcp server ")
-            && lower.contains(" run tool ")
-    })
 }
 
 // ── PaneAccessPort ──

@@ -181,6 +181,9 @@ impl GatewayStatus {
     /// Re-check gateway_connected for all detected agents against current connected_pids.
     pub fn refresh_agent_connections(&mut self) {
         for agent in self.detected_agents.values_mut() {
+            if agent.wrapper_managed && agent.pid == 0 {
+                continue;
+            }
             agent.gateway_connected = is_agent_connected(agent.pid, &self.connected_pids);
         }
     }

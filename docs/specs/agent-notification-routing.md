@@ -28,7 +28,7 @@
 - `NeedsInput` macOS notifications attach the default system sound when the platform notification API supports it.
 - `Running` remains visible-only and never routes attention.
 - The supported wrapped-agent set stays fixed to `claude`, `codex`, and `gemini`.
-- Codex completed-turn payloads classify conservatively: return `NeedsInput` only when `last_assistant_message` clearly requests user input, including short confirmation or permission prompts, otherwise return `Idle`.
+- Codex completed-turn payloads always normalize to `Idle`; only structured Codex wait signals may produce `NeedsInput`.
 - Direct focus on the source wrapped-agent `Pane` in the active Tide window acknowledges unresolved `Idle` or `NeedsInput` attention immediately and clears duplicate suppression in the same step.
 - Notification routing, duplicate suppression, snippet reuse, and notification activation all consume the normalized common state after adapter-specific parsing.
 - Notification bodies prefer a `Notification Snippet`, and Codex snippet resolution must accept the checked-in transcript shapes `response_item`, `event_msg.agent_message`, and `event_msg.task_complete.last_agent_message`.
@@ -65,9 +65,9 @@
 ### UC-2: ClassifyCodexCompletedTurns
 
 - Trigger: the official Codex completed-turn `notify` payload arrives.
-- Preconditions: the payload contains `last_assistant_message`.
-- Flow: the Codex helper inspects the message text and classifies explicit user-input requests as `NeedsInput`; everything else fails closed to `Idle`.
-- Postconditions: Codex never infers alerting state from unsupported hook ordering or unrelated payload fields.
+- Preconditions: the payload contains `last_assistant_message` or a transcript-backed final assistant message.
+- Flow: the Codex helper resolves the final assistant text only to recover a trusted main-thread completion snippet, then normalizes the completed turn to `Idle`.
+- Postconditions: Codex never infers alerting state from unsupported hook ordering, raw visible terminal text, or unrelated payload fields.
 
 ### UC-3: ProjectIdleChrome
 
@@ -94,7 +94,7 @@
 
 - Trigger: Tide routes an `Idle` or `NeedsInput` alert.
 - Preconditions: a structured `Notification Snippet` may or may not be available.
-- Flow: Tide prefers structured payload text. For Codex, when no trusted payload snippet exists, Tide emits a generic lifecycle body instead of surfacing visible terminal transport text. For the other wrapped agents, Tide can still fall back to the visible `Terminal` grid when needed, and otherwise emits a generic lifecycle body.
+- Flow: Tide prefers structured payload text. When no trusted structured snippet exists for a wrapped agent, Tide emits a generic lifecycle body instead of surfacing visible `Terminal` transport text.
 - Postconditions: the body is stable across reroutes for the same unresolved alert.
 
 ### UC-7: PreservePaneIdIdentityAcrossWorkspaces
@@ -130,8 +130,8 @@
 | UC-1 | BR-1 | existing | `notify_agent_running_updates_status` |
 | UC-1 | BR-1 | existing | `notify_agent_idle_updates_status` |
 | UC-1 | BR-1 | existing | `notify_agent_needs_input_updates_status` |
-| UC-2 | BR-2 | new | `codex_completed_turn_payload_classifies_idle_or_needs_input` |
-| UC-2 | BR-2 | new | `codex_completed_turn_payload_falls_back_to_idle_when_unclassified` |
+| UC-2 | BR-2 | updated | `codex_stop_payload_always_classifies_idle` |
+| UC-2 | BR-3 | updated | `codex_turn_complete_payload_always_classifies_idle` |
 | UC-3 | BR-3 | existing | `connected_wrapped_agent_without_active_status_renders_idle_presence_dot` |
 | UC-3 | BR-3 | existing | `inactive_workspace_agent_status_sets_notification_dot` |
 | UC-4 | BR-4 | new | `idle_wrapped_agent_states_queue_notifications_without_user_attention` |
@@ -147,7 +147,7 @@
 | UC-6 | BR-7 | new | `codex_stop_notification_uses_event_msg_final_answer_snippet` |
 | UC-6 | BR-7 | new | `codex_stop_notification_uses_task_complete_last_agent_message_snippet` |
 | UC-6 | BR-7 | existing | `gemini_after_agent_notification_uses_prompt_response_snippet` |
-| UC-6 | BR-7 | existing | `wrapped_agent_notification_falls_back_to_visible_terminal_snippet` |
+| UC-6 | BR-7 | updated | `wrapped_agent_notification_uses_generic_body_without_structured_snippet` |
 | UC-6 | BR-7 | updated | `focused_idle_notification_uses_structured_snippet_and_suppresses_later_reroute` |
 | UC-7 | BR-7 | existing | `macos_notification_activation_switches_to_target_workspace_and_focuses_target_pane` |
 | UC-7 | BR-7 | new | `notification_activation_does_not_queue_a_duplicate_background_notification_before_window_focus` |
@@ -161,8 +161,8 @@
 
 ### UC-2: ClassifyCodexCompletedTurns
 
-- BR-2: The Codex helper must classify `NeedsInput` only when `last_assistant_message` clearly requests user input.
-- BR-3: Unrecognized or unclassified Codex completed-turn payloads fail closed to `Idle`.
+- BR-2: The Codex helper must normalize completed Codex turns to `Idle`; final assistant text must not upgrade a completed turn to `NeedsInput`.
+- BR-3: Unknown or unclassified Codex completed-turn payloads fail closed to `Idle`.
 
 ### UC-3: ProjectIdleChrome
 
@@ -173,7 +173,7 @@
 - BR-5: `Idle` and `NeedsInput` may queue a macOS notification for backgrounded wrapped-agent `Terminal`s, and `Idle` may queue a completion notification for the already-focused wrapped-agent `Terminal`; only `NeedsInput` may request user attention.
 - BR-5: The macOS notification content should attach the default system sound when available.
 - BR-6: Background rerouting, duplicate suppression, and frontmost presentation apply to unresolved `Idle` and `NeedsInput` attention. A focused `Idle` completion must set duplicate suppression before a later `Focused(false)` reroute, and a later `Running` signal from that same focused source may clear suppression for the next completion.
-- BR-7: Routed notification bodies prefer structured snippets for both `Idle` and `NeedsInput`, then fall back to visible `Terminal` text before generic lifecycle text.
+- BR-7: Routed notification bodies prefer structured snippets for both `Idle` and `NeedsInput`, then fall back to generic lifecycle text.
 
 ### UC-5: ResolveBackgroundAttention
 
@@ -184,7 +184,7 @@
 ### UC-6: ComposeWrappedAgentNotificationBody
 
 - BR-10: Codex notifications must prefer the trusted structured snippet resolved from the transcript or payload, including `response_item`, `event_msg.agent_message`, and `event_msg.task_complete.last_agent_message`, before falling back to generic lifecycle text.
-- BR-11: When no structured snippet is available, non-Codex wrapped agents must fall back to the owning `Terminal`'s visible grid before falling back to generic lifecycle text, and Codex must not surface raw transport text as the notification body. The macOS notification path should still attach the default system sound for routed alerts.
+- BR-11: When no structured snippet is available, wrapped-agent notifications must fall back to generic lifecycle text; raw visible `Terminal` transport text must not surface as the notification body. The macOS notification path should still attach the default system sound for routed alerts.
 
 ### UC-7: PreservePaneIdIdentityAcrossWorkspaces
 
@@ -203,7 +203,7 @@
 - Unmanaged wrapped-agent status messages do not synthesize attention sources.
 - Unmanaged notifications do not mark inactive Workspace attention.
 - Duplicate `Idle` or `NeedsInput` deliveries are suppressed until acknowledgment.
-- Codex completed-turn payloads that do not match a checked-in classifier rule fall back to `Idle`.
+- Codex completed-turn payloads fail closed to `Idle`.
 - Notification activation that cannot resolve a target `Pane` is a no-op.
 - `Idle` never becomes a `RequestUserAttention` trigger.
 
@@ -213,7 +213,7 @@
 |--------|------|--------|
 | Spec | `docs/specs/agent-notification-routing.md` | Define the contract that backgrounded `Idle` and `NeedsInput` route macOS notifications, while only `NeedsInput` requests user attention |
 | App routing | `crates/tide-app/src/app.rs` | Normalize wrapper-managed signals and drive shared background alert routing |
-| CLI notify | `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs` | Validate notify events, classify Codex completed turns, and preserve structured snippets for `Idle` and `NeedsInput` |
+| CLI notify | `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs` | Validate notify events, normalize Codex completed turns to `Idle`, and preserve structured snippets for `Idle` and `NeedsInput` |
 | Workspace infra | `crates/tide-app/src/application/services/workspace_infra_service/mod.rs` | Recompute inactive Workspace chrome from unresolved wrapped-agent projection state |
 | Chrome renderer | `crates/tide-app/src/adapter/outward/view/chrome/titlebar.rs` | Render inactive Workspace attention from normalized state |
 | Chrome renderer | `crates/tide-app/src/adapter/outward/view/header.rs` | Render pane chrome from normalized state |

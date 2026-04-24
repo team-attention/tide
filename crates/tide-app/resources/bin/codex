@@ -1,8 +1,8 @@
 #!/bin/sh
 # Tide auto-injected wrapper for Codex CLI.
 # Uses -c flag for additive config injection (deep table merge — new keys additive)
-# plus a temporary hooks.json overlay so Tide can observe UserPromptSubmit and
-# Stop without mutating the user's real CODEX_HOME.
+# plus a temporary hooks.json overlay so Tide can observe UserPromptSubmit,
+# PermissionRequest, and Stop without mutating the user's real CODEX_HOME.
 
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|${SELF_DIR}||g")" command -v codex 2>/dev/null)"
@@ -40,6 +40,7 @@ fi
 
 if [ -f "$REAL_CODEX_HOME/hooks.json" ] && command -v python3 >/dev/null 2>&1; then
   TIDE_RUNNING_HOOK_COMMAND="$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent codex" \
+  TIDE_PERMISSION_REQUEST_HOOK_COMMAND="$TIDE_BIN notify agent-needs-input --pane $TIDE_PANE --agent codex --payload-stdin" \
   TIDE_STOP_HOOK_COMMAND="$TIDE_BIN notify codex-stop --pane $TIDE_PANE --agent codex --payload-stdin" \
     python3 - "$REAL_CODEX_HOME/hooks.json" "$HOOKS_FILE" <<'PY'
 import json
@@ -52,20 +53,26 @@ with open(src, "r", encoding="utf-8") as f:
 
 hooks = data.setdefault("hooks", {})
 
-def append_command_hook(event_name: str, command: str) -> None:
+def append_command_hook(event_name: str, command: str, matcher: str | None = None) -> None:
     groups = hooks.setdefault(event_name, [])
-    groups.append(
-        {
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": command,
-                }
-            ]
-        }
-    )
+    group = {
+        "hooks": [
+            {
+                "type": "command",
+                "command": command,
+            }
+        ]
+    }
+    if matcher is not None:
+        group["matcher"] = matcher
+    groups.append(group)
 
 append_command_hook("UserPromptSubmit", os.environ["TIDE_RUNNING_HOOK_COMMAND"])
+append_command_hook(
+    "PermissionRequest",
+    os.environ["TIDE_PERMISSION_REQUEST_HOOK_COMMAND"],
+    matcher="Bash",
+)
 append_command_hook("Stop", os.environ["TIDE_STOP_HOOK_COMMAND"])
 
 with open(dst, "w", encoding="utf-8") as f:
@@ -81,6 +88,17 @@ else
           {
             "type": "command",
             "command": "$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent codex"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$TIDE_BIN notify agent-needs-input --pane $TIDE_PANE --agent codex --payload-stdin"
           }
         ]
       }
@@ -158,7 +176,7 @@ codex_app_server_cleanup() {
 codex_app_server_launch() {
   # codex app-server --listen ws://127.0.0.1:<port>
   # codex --remote ws://127.0.0.1:<port>
-  [ "${TIDE_CODEX_APP_SERVER:-0}" = "1" ] || return 125
+  [ "${TIDE_CODEX_APP_SERVER:-0}" = "0" ] && return 125
   [ -x "$SELF_DIR/codex-app-server-watch" ] || return 125
 
   CODEX_APP_SERVER_PORT="$(codex_find_app_server_port)" || return 125

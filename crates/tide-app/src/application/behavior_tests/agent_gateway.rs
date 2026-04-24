@@ -1394,8 +1394,10 @@ fn codex_wrapper_injects_tide_mcp_turn_stop_hook_and_prompt_submit_hook() {
     // Spec: docs/specs/codex-needs-input-attention.md
     // UC-1 BR-1: Codex agent-running is emitted on each UserPromptSubmit, not just on launch.
     // UC-1 BR-2: Codex prompt-submit integration uses the documented UserPromptSubmit hook path.
+    // UC-3 BR-9: Direct CLI permission waits use the documented PermissionRequest hook path.
+    // UC-3 BR-10: Codex PermissionRequest forwards hook stdin JSON through Tide notify.
     // UC-2 BR-3: The Codex wrapper forwards the Stop hook payload through tide notify.
-    // UC-3 BR-7: The Codex wrapper does not depend on a Notification hook.
+    // UC-4 BR-11: The Codex wrapper does not depend on a Notification hook.
     let wrapper_path = format!("{}/resources/bin/codex", env!("CARGO_MANIFEST_DIR"));
     let wrapper = std::fs::read_to_string(&wrapper_path)
         .unwrap_or_else(|err| panic!("failed to read {wrapper_path}: {err}"));
@@ -1405,15 +1407,78 @@ fn codex_wrapper_injects_tide_mcp_turn_stop_hook_and_prompt_submit_hook() {
     assert!(wrapper.contains("tide_notify \"agent-attached\""));
     assert!(wrapper.contains("features.codex_hooks=true"));
     assert!(wrapper.contains("\"UserPromptSubmit\""));
+    assert!(wrapper.contains("\"PermissionRequest\""));
     assert!(wrapper.contains("\"Stop\""));
     assert!(wrapper.contains("$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent codex"));
+    assert!(wrapper
+        .contains("notify agent-needs-input --pane $TIDE_PANE --agent codex --payload-stdin"));
+    assert!(wrapper.contains("\"matcher\": \"Bash\""));
     assert!(wrapper.contains("notify codex-stop --pane $TIDE_PANE --agent codex --payload-stdin"));
     assert!(wrapper.contains("tide_notify \"agent-detached\""));
     assert!(wrapper.contains("rm -rf \"$TIDE_CODEX_HOME\""));
     assert!(wrapper.contains("tide:wrapped-agent:codex:$1"));
     assert!(!wrapper.contains("\"Notification\""));
     assert!(!wrapper.contains("codex-turn-complete"));
-    assert!(!wrapper.contains("agent-needs-input"));
+}
+
+#[test]
+fn codex_permission_request_hook_marks_needs_input() {
+    // Spec: docs/specs/codex-needs-input-attention.md
+    // UC-3 BR-9: Direct CLI permission waits use the documented PermissionRequest hook path.
+    // UC-3 BR-10: PermissionRequest snippets prefer tool_input.description, then tool_input.command.
+    for (payload, expected_body) in [
+        (
+            json!({
+                "hook_event_name": "PermissionRequest",
+                "turn_id": "turn-1",
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": "git push origin main",
+                    "description": "Would you like to push to origin/main?"
+                }
+            }),
+            "Would you like to push to origin/main?",
+        ),
+        (
+            json!({
+                "hook_event_name": "permissionRequest",
+                "turn_id": "turn-2",
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": "git push origin main"
+                }
+            }),
+            "Approve command: git push origin main",
+        ),
+    ] {
+        let (mut app, pane_id) = app_with_terminal();
+        app.window.is_focused = false;
+
+        app.handle_cli_command(
+            "notify",
+            json!({
+                "event": "agent-needs-input",
+                "pane": pane_id,
+                "agent": "codex",
+                "payload": payload
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(
+            app.gateway.detected_agents.get(&pane_id).unwrap().status,
+            Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+        );
+        assert!(matches!(
+            app.pending_platform_commands.first(),
+            Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id: body_pane_id, body, .. })
+                if *body_pane_id == pane_id && body == expected_body
+        ));
+        assert!(app.pending_platform_commands.iter().any(|command| matches!(
+            command,
+            crate::tide_platform::WindowCommand::RequestUserAttention
+        )));
+    }
 }
 
 // --- UC-16: CodexAppServerNeedsInput (Spec: docs/specs/codex-app-server-needs-input.md) ---
@@ -1669,6 +1734,54 @@ fn codex_app_server_thread_status_updates_running_and_idle() {
 }
 
 #[test]
+fn codex_app_server_initial_idle_snapshot_preserves_connected_idle_presence() {
+    // UC-3 BR-11: An initial thread/status/changed idle snapshot keeps ConnectedIdle presence when the Pane only has Wrapped Agent Presence.
+    let (mut app, pane_id) = app_with_terminal();
+    app.window.is_focused = false;
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "agent-attached",
+            "pane": pane_id,
+            "agent": "codex",
+        }),
+    )
+    .unwrap();
+    app.pending_platform_commands.clear();
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "codex-app-server-event",
+            "pane": pane_id,
+            "agent": "codex",
+            "payload": {
+                "method": "thread/status/changed",
+                "params": {
+                    "threadId": "thread-resume",
+                    "status": {
+                        "type": "idle",
+                        "activeFlags": []
+                    }
+                }
+            }
+        }),
+    )
+    .unwrap();
+
+    let agent = app.gateway.detected_agents.get(&pane_id).unwrap();
+    assert_eq!(agent.status, None);
+    assert!(agent.gateway_connected);
+    assert!(app.pending_platform_commands.is_empty());
+    assert!(!app.notified_panes.contains(&pane_id));
+    assert_eq!(
+        app.workspace_stage_agent_flags(app.ws.active),
+        (false, false, true)
+    );
+}
+
+#[test]
 fn codex_app_server_unsupported_payload_does_not_change_status() {
     // UC-3 BR-12: Unsupported Codex App Server payload methods are ignored without changing status.
     let (mut app, pane_id) = app_with_detected_agent();
@@ -1699,16 +1812,16 @@ fn codex_app_server_unsupported_payload_does_not_change_status() {
 }
 
 #[test]
-fn codex_wrapper_launches_direct_cli_by_default_and_app_server_only_when_enabled() {
-    // UC-4 BR-13: The wrapper owns Codex App Server and watcher process lifecycle when explicitly enabled.
-    // UC-4 BR-14: The wrapper preserves existing MCP and hook injection for fallback.
+fn codex_wrapper_keeps_app_server_opt_in_and_direct_cli_default() {
+    // UC-4 BR-13: The wrapper owns Codex App Server and watcher process lifecycle only when the app-server path is explicitly enabled.
+    // UC-4 BR-14: The wrapper preserves existing MCP and hook injection for the direct launch path.
     // UC-4 BR-15: The wrapper still reports agent-detached and removes temporary wrapper-owned files on exit.
-    // UC-4 BR-16: The wrapper launches direct Codex by default when TIDE_CODEX_APP_SERVER is unset.
+    // UC-4 BR-16: The wrapper defaults to direct Codex launch unless TIDE_CODEX_APP_SERVER=1 explicitly enables App Server remote mode.
     let wrapper_path = format!("{}/resources/bin/codex", env!("CARGO_MANIFEST_DIR"));
     let wrapper = std::fs::read_to_string(&wrapper_path)
         .unwrap_or_else(|err| panic!("failed to read {wrapper_path}: {err}"));
 
-    assert!(wrapper.contains("[ \"${TIDE_CODEX_APP_SERVER:-0}\" = \"1\" ] || return 125"));
+    assert!(wrapper.contains("[ \"${TIDE_CODEX_APP_SERVER:-0}\" = \"0\" ] && return 125"));
     assert!(wrapper.contains("codex app-server"));
     assert!(wrapper.contains("--listen ws://127.0.0.1:"));
     assert!(wrapper.contains("codex-app-server-watch"));
@@ -1817,6 +1930,74 @@ fn agent_detached_clears_wrapped_agent_presence_and_attention() {
 }
 
 #[test]
+fn wrapper_managed_presence_with_unknown_pid_survives_gateway_connection_refresh() {
+    // Spec: docs/specs/agent-auto-integration.md
+    // UC-4 BR-14: A wrapper-managed Codex presence with unknown PID must keep gateway_connected through Gateway PID refresh.
+    let (mut app, pane_id) = app_with_terminal();
+
+    app.handle_cli_command(
+        "notify",
+        json!({"event": "agent-attached", "pane": pane_id, "agent": "codex"}),
+    )
+    .unwrap();
+
+    app.gateway.connected_pids.insert(4242);
+    app.gateway.refresh_agent_connections();
+
+    let agent = app
+        .gateway
+        .detected_agents
+        .get(&pane_id)
+        .expect("agent should remain registered");
+    assert!(agent.wrapper_managed);
+    assert_eq!(agent.pid, 0);
+    assert!(agent.gateway_connected);
+    assert_eq!(agent.status, None);
+    assert_eq!(
+        app.workspace_stage_agent_flags(app.ws.active),
+        (false, false, true)
+    );
+}
+
+#[test]
+fn wrapper_managed_presence_with_unknown_pid_survives_shell_idle_redetection_gap() {
+    // Spec: docs/specs/agent-auto-integration.md
+    // UC-4 BR-14: A wrapper-managed Codex presence with unknown PID must keep gateway_connected through shell-idle-driven re-detection gaps.
+    let (mut app, pane_id) = app_with_terminal();
+
+    app.handle_cli_command(
+        "notify",
+        json!({"event": "agent-attached", "pane": pane_id, "agent": "codex"}),
+    )
+    .unwrap();
+
+    let backend_idle = match app.panes.get(&pane_id) {
+        Some(PaneKind::Terminal(tp)) => tp.backend.is_shell_idle(),
+        _ => panic!("expected terminal pane"),
+    };
+    match app.panes.get_mut(&pane_id) {
+        Some(PaneKind::Terminal(tp)) => tp.context.shell_idle = !backend_idle,
+        _ => panic!("expected terminal pane"),
+    }
+
+    app.update_terminal_badges();
+
+    let agent = app
+        .gateway
+        .detected_agents
+        .get(&pane_id)
+        .expect("agent should remain registered");
+    assert!(agent.wrapper_managed);
+    assert_eq!(agent.pid, 0);
+    assert!(agent.gateway_connected);
+    assert_eq!(agent.status, None);
+    assert_eq!(
+        app.workspace_stage_agent_flags(app.ws.active),
+        (false, false, true)
+    );
+}
+
+#[test]
 fn codex_prompt_submit_hook_reports_running_for_each_new_turn() {
     // Spec: docs/specs/codex-needs-input-attention.md
     // UC-1 BR-1: Codex UserPromptSubmit returns the source Pane to Running for each new turn.
@@ -1867,68 +2048,94 @@ fn codex_prompt_submit_hook_reports_running_for_each_new_turn() {
     );
 }
 
-#[test]
-fn visible_codex_mcp_permission_prompt_marks_needs_input() {
-    // Spec: docs/specs/codex-needs-input-attention.md
-    // UC-4 BR-11, BR-12, BR-13: Visible Codex MCP tool permission prompts map to NeedsInput for wrapper-managed Codex Terminal Panes.
-    let (mut app, pane_id) = app_with_terminal();
-    app.window.is_focused = false;
-    app.handle_cli_command(
-        "notify",
-        json!({"event": "agent-running", "pane": pane_id, "agent": "codex"}),
-    )
-    .unwrap();
-    app.pending_platform_commands.clear();
-
-    if let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&pane_id) {
-        terminal.backend.load_mock_screen_for_test(
-            "Calling google_workspace.google_workspace_auth_status({})\n\
-             Allow the google_workspace MCP server to run tool \"google_workspace_auth_status\"?\n\
-             > 1. Allow  Run the tool and continue.\n\
-               2. Allow for this session  Run the tool and remember this choice for this session.\n\
-               3. Always allow  Run the tool and remember this choice for future tool calls.\n\
-               4. Cancel  Cancel this tool call\n\
-             enter to submit | esc to cancel",
-        );
-    }
-
-    assert!(app.scan_visible_terminal_text_for_wrapped_agent_status(pane_id));
-
-    assert_eq!(
-        app.gateway.detected_agents.get(&pane_id).unwrap().status,
-        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+fn register_wrapper_managed_codex(app: &mut App, pane_id: u64) {
+    app.gateway.detected_agents.insert(
+        pane_id,
+        crate::state::gateway_status::AgentInfo {
+            name: "Codex",
+            pid: 12345,
+            wrapper_managed: true,
+            gateway_connected: true,
+            status: Some(crate::state::gateway_status::AgentStatus::Running),
+        },
     );
-    assert!(matches!(
-        app.pending_platform_commands.first(),
-        Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id: body_pane_id, body, .. })
-            if *body_pane_id == pane_id
-                && body.starts_with("Allow the google_workspace MCP server to run tool")
-    ));
-    assert!(app.pending_platform_commands.iter().any(|command| matches!(
-        command,
-        crate::tide_platform::WindowCommand::RequestUserAttention
-    )));
+}
+
+fn codex_cli_tool_approval_wait_text() -> &'static str {
+    "Calling tide.tide_list_panes({})\n\
+     \n\
+     Field 1/1\n\
+     Tool call needs your approval. Reason: User requested the assistant to call an\n\
+     external tool (tide_list_panes). This ARC monitor payload shows a tool call in\n\
+     progress; the assistant should confirm intent/permission before proceeding.\n\
+     > 1. Allow  Run the tool and continue.\n\
+       2. Cancel  Cancel this tool call\n\
+     enter to submit | esc to cancel"
 }
 
 #[test]
-fn visible_codex_permission_prompt_is_ignored_for_unmanaged_terminal() {
+fn visible_codex_cli_tool_approval_wait_does_not_mark_needs_input_without_structured_signal() {
     // Spec: docs/specs/codex-needs-input-attention.md
-    // UC-4 BR-12: Visible prompt detection only runs for wrapper-managed Codex Terminal Panes.
+    // UC-4 BR-15: Raw visible Codex CLI prompt text must not map to AgentStatus::NeedsInput.
+    // UC-4 BR-17: Unknown or raw visible prompt text fails closed and must not map to AgentStatus::NeedsInput.
     let (mut app, pane_id) = app_with_terminal();
+    app.window.is_focused = false;
+    register_wrapper_managed_codex(&mut app, pane_id);
+    app.pending_platform_commands.clear();
+
     if let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&pane_id) {
-        terminal.backend.load_mock_screen_for_test(
-            "Allow the google_workspace MCP server to run tool \"google_workspace_auth_status\"?\n\
-             1. Allow\n\
-             2. Allow for this session\n\
-             3. Always allow\n\
-             4. Cancel\n\
-             enter to submit | esc to cancel",
-        );
+        terminal
+            .backend
+            .load_mock_screen_for_test(codex_cli_tool_approval_wait_text());
     }
 
     assert!(!app.scan_visible_terminal_text_for_wrapped_agent_status(pane_id));
-    assert!(!app.gateway.detected_agents.contains_key(&pane_id));
+    assert_eq!(
+        app.gateway.detected_agents.get(&pane_id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::Running)
+    );
+    assert!(app.agent_notification_snippets.get(&pane_id).is_none());
     assert!(app.pending_platform_commands.is_empty());
+}
+
+#[test]
+fn codex_integration_does_not_use_unsupported_hook_ordering_for_cli_waits() {
+    // Spec: docs/specs/codex-needs-input-attention.md
+    // UC-3 BR-12: Unsupported Codex hook ordering must not be used to infer permission waits or user-input waits.
+    let (mut app, pane_id) = app_with_terminal();
+    app.window.is_focused = false;
+
+    app.handle_cli_command(
+        "notify",
+        json!({
+            "event": "codex-stop",
+            "pane": pane_id,
+            "agent": "codex",
+            "payload": {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "permissionDecision": "ask",
+                "last_assistant_message": "allow"
+            }
+        }),
+    )
+    .unwrap();
+
+    assert_ne!(
+        app.gateway.detected_agents.get(&pane_id).unwrap().status,
+        Some(crate::state::gateway_status::AgentStatus::NeedsInput)
+    );
+    assert!(app
+        .pending_platform_commands
+        .iter()
+        .all(|command| !matches!(
+            command,
+            crate::tide_platform::WindowCommand::RequestUserAttention
+        )));
+    assert!(app
+        .agent_notification_snippets
+        .get(&pane_id)
+        .is_none_or(|snippet| snippet != "allow"));
 }
 
 // --- Unknown method ---
@@ -2931,8 +3138,8 @@ fn duplicate_system_notification_suppressed_until_acknowledged() {
 }
 
 #[test]
-fn wrapped_agent_notification_falls_back_to_visible_terminal_snippet() {
-    // UC-6 BR-11: When no structured payload snippet exists, wrapped-agent notifications fall back to the owning Terminal's visible text.
+fn wrapped_agent_notification_uses_generic_body_without_structured_snippet() {
+    // UC-6 BR-11: When no structured payload snippet exists, wrapped-agent notifications fall back to generic lifecycle text.
     let (mut app, target_terminal_id) = app_with_terminal();
     let focused_terminal_id = app
         .layout
@@ -2957,7 +3164,7 @@ fn wrapped_agent_notification_falls_back_to_visible_terminal_snippet() {
             crate::tide_platform::WindowCommand::SendSystemNotification { title, pane_id, body, .. }
                 if *pane_id == target_terminal_id
                     && title.starts_with("Tide - ")
-                    && body == "• Finalized the parser fix and verified the behavior tests."
+                    && body == "Claude Code finished"
         )
     }));
     assert!(
@@ -3036,8 +3243,8 @@ fn focused_idle_notification_uses_structured_snippet_and_suppresses_later_rerout
 }
 
 #[test]
-fn stale_idle_snippet_does_not_override_future_needs_input_visible_fallback() {
-    // UC-6 BR-10, BR-11: A stale Idle snippet must not outrank a later NeedsInput visible-text fallback.
+fn stale_idle_snippet_does_not_override_future_needs_input_generic_fallback() {
+    // UC-6 BR-10, BR-11: A stale Idle snippet must not outrank a later NeedsInput generic fallback.
     let (mut app, source_pane) = app_with_terminal();
     let focused_pane = app.layout.split(source_pane, SplitDirection::Horizontal);
     let focused_terminal = TerminalPane::with_cwd(focused_pane, 80, 24, None, true).unwrap();
@@ -3084,7 +3291,7 @@ fn stale_idle_snippet_does_not_override_future_needs_input_visible_fallback() {
         app.pending_platform_commands.first(),
         Some(crate::tide_platform::WindowCommand::SendSystemNotification { pane_id, body, .. })
             if *pane_id == source_pane
-                && body == "• Fresh visible fallback text from the terminal."
+                && body == "Gemini needs your input"
     ));
     assert!(
         app.pending_platform_commands
@@ -3101,8 +3308,8 @@ fn stale_idle_snippet_does_not_override_future_needs_input_visible_fallback() {
 // --- UC-2: ClassifyCodexCompletedTurns ---
 
 #[test]
-fn codex_stop_payload_classifies_idle_or_needs_input() {
-    // UC-2 BR-5: Codex Stop payloads normalize to shared Idle or NeedsInput states.
+fn codex_stop_payload_always_classifies_idle() {
+    // UC-2 BR-5, BR-6, BR-7: Codex Stop payloads normalize completed turns to Idle, even when the final assistant text asks a follow-up question.
     let (mut app, pane_id) = app_with_editor();
     let (tx, rx) = std::sync::mpsc::channel::<String>();
     app.gateway
@@ -3113,34 +3320,26 @@ fn codex_stop_payload_classifies_idle_or_needs_input() {
             owner_pane_id: None,
         });
 
-    for (turn_id, transcript_text, payload_message, expected_event, expected_status) in [
+    for (turn_id, transcript_text, payload_message) in [
         (
             "turn-1",
             "what should i do next?",
             "rename complete and verified cargo build succeeds.",
-            "agent-needs-input",
-            crate::state::gateway_status::AgentStatus::NeedsInput,
         ),
         (
             "turn-2",
-            "yes",
+            "please provide the target branch name.",
             "Implemented everything cleanly.",
-            "agent-needs-input",
-            crate::state::gateway_status::AgentStatus::NeedsInput,
         ),
         (
             "turn-3",
             "rename complete and verified cargo build succeeds.",
             "allow",
-            "agent-idle",
-            crate::state::gateway_status::AgentStatus::Idle,
         ),
         (
             "turn-4",
             "allow",
             "rename complete and verified cargo build succeeds.",
-            "agent-needs-input",
-            crate::state::gateway_status::AgentStatus::NeedsInput,
         ),
     ] {
         let transcript_path = write_codex_transcript(&format!(
@@ -3165,18 +3364,18 @@ fn codex_stop_payload_classifies_idle_or_needs_input() {
         let _ = std::fs::remove_file(&transcript_path);
 
         let event = rx.try_recv().unwrap();
-        assert!(event.contains(expected_event));
+        assert!(event.contains("agent-idle"));
         assert!(event.contains("Codex"));
         assert_eq!(
             app.gateway.detected_agents.get(&pane_id).unwrap().status,
-            Some(expected_status)
+            Some(crate::state::gateway_status::AgentStatus::Idle)
         );
     }
 }
 
 #[test]
-fn codex_stop_payload_falls_back_to_idle_when_unclassified() {
-    // UC-2 BR-6: Unclassified Codex Stop payloads fail closed to Idle.
+fn codex_turn_complete_payload_always_classifies_idle() {
+    // UC-2 BR-7: Legacy codex-turn-complete payloads also normalize completed turns to Idle.
     let (mut app, pane_id) = app_with_editor();
     let (tx, rx) = std::sync::mpsc::channel::<String>();
     app.gateway
@@ -3190,13 +3389,16 @@ fn codex_stop_payload_falls_back_to_idle_when_unclassified() {
     app.handle_cli_command(
         "notify",
         json!({
-            "event": "codex-stop",
+            "event": "codex-turn-complete",
             "pane": pane_id,
             "agent": "codex",
             "payload": {
-                "hook_event_name": "Stop",
-                "turn_id": "turn-3",
-                "last_assistant_message": "rename complete and verified cargo build succeeds."
+                "type": "agent-turn-complete",
+                "thread-id": "thread-3",
+                "turn-id": "turn-3",
+                "cwd": "/tmp/project",
+                "input-messages": ["Continue."],
+                "last-assistant-message": "what should i do next?"
             }
         }),
     )

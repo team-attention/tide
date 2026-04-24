@@ -350,6 +350,7 @@ impl App {
                             // Preserve existing status when re-detecting
                             if let Some(existing) = self.gateway.detected_agents.get(id) {
                                 agent.status = existing.status;
+                                agent.wrapper_managed = existing.wrapper_managed;
                             }
                             agent.gateway_connected =
                                 crate::state::gateway_status::is_agent_connected(
@@ -358,13 +359,13 @@ impl App {
                                 );
                             self.gateway.detected_agents.insert(*id, agent);
                         } else {
-                            // Don't remove agents with active status
-                            let has_status = self
-                                .gateway
-                                .detected_agents
-                                .get(id)
-                                .map_or(false, |a| a.status.is_some());
-                            if !has_status {
+                            // Preserve wrapper-managed connected-idle presence when shell-idle
+                            // polling temporarily outruns agent process re-detection.
+                            let keep_existing =
+                                self.gateway.detected_agents.get(id).map_or(false, |a| {
+                                    a.status.is_some() || (a.wrapper_managed && a.gateway_connected)
+                                });
+                            if !keep_existing {
                                 self.gateway.detected_agents.remove(id);
                             }
                         }

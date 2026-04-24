@@ -1061,21 +1061,6 @@ impl App {
         if had_pty_output {
             self.timing.badge_check_at =
                 Some(self.ports.clock.now() + terminal_badge_check_delay());
-
-            let terminal_ids: Vec<u64> = self
-                .panes
-                .iter()
-                .filter_map(|(&id, pane)| {
-                    if matches!(pane, PaneKind::Terminal(_)) {
-                        Some(id)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            for id in terminal_ids {
-                self.scan_visible_terminal_text_for_wrapped_agent_status(id);
-            }
         }
 
         // Drain OSC 9 notifications from terminals
