@@ -1,6 +1,8 @@
 // Spec: docs/specs/file-tree-focus-chrome.md
 
-use crate::adapter::outward::view::{file_tree_focus_chrome, file_tree_hover_shows_overlay};
+use crate::adapter::outward::view::{
+    file_tree_focus_chrome, file_tree_hover_shows_overlay, file_tree_name_style,
+};
 use crate::theme::{DARK, LIGHT};
 
 fn color_tuple(color: crate::tide_core::Color) -> (u32, u32, u32, u32) {
@@ -41,7 +43,6 @@ fn focused_file_tree_cursor_row_uses_stroke_and_fill_without_accent_bar() {
 
         assert!(focused.cursor_fill.a > 0.0);
         assert!(focused.cursor_stroke.a > 0.0);
-        assert_eq!(focused.cursor_left_accent_width.to_bits(), 0.0f32.to_bits());
         assert_ne!(
             color_tuple(focused.cursor_fill),
             color_tuple(palette.hover_file_tree)
@@ -66,11 +67,45 @@ fn focused_file_tree_header_separator_stays_subtle() {
     }
 }
 
+#[test]
+fn focused_file_tree_cursor_row_chrome_renders_behind_entry_text() {
+    // UC-1 BR-4: The focused FileTree Cursor Row chrome must render as a background layer so its fill never obscures row text.
+    let source = include_str!("../../adapter/outward/view/chrome/file_tree.rs");
+
+    let cursor_row_block = source
+        .find("renderer.draw_chrome_rounded_rect(\n                    row_rect,\n                    focus_chrome.cursor_stroke,")
+        .expect("cursor row stroke should be rendered");
+    let first_row_text = source
+        .find(
+            "renderer.draw_chrome_text(&icon_str, Vec2::new(x, text_y), icon_style, entries_clip);",
+        )
+        .expect("file tree row icon text should be rendered");
+
+    assert!(
+        cursor_row_block < first_row_text,
+        "cursor row chrome should render before row text"
+    );
+}
+
+#[test]
+fn expanded_directory_rows_keep_bold_text_when_selected() {
+    // UC-1 BR-5: Expanded directory rows keep their bold text styling even when the focused FileTree Cursor Row is on them.
+    for palette in [DARK, LIGHT] {
+        let style = file_tree_name_style(&palette, None, true, true, true);
+
+        assert!(style.bold);
+        assert_eq!(
+            color_tuple(style.foreground),
+            color_tuple(palette.tab_text_focused)
+        );
+    }
+}
+
 // --- UC-2: AvoidHoverStackOnFocusedFileTreeCursorRow ---
 
 #[test]
 fn hovered_focused_file_tree_cursor_row_does_not_stack_a_second_overlay() {
-    // UC-2 BR-4/BR-5: Hover overlay is suppressed only for the focused FileTree Cursor Row and still renders for other valid hover cases.
+    // UC-2 BR-6/BR-7: Hover overlay is suppressed only for the focused FileTree Cursor Row and still renders for other valid hover cases.
     assert!(!file_tree_hover_shows_overlay(true, 4, 4));
     assert!(file_tree_hover_shows_overlay(true, 5, 4));
     assert!(file_tree_hover_shows_overlay(false, 4, 4));

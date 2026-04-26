@@ -15,7 +15,6 @@ pub(crate) struct FileTreeFocusChrome {
     pub header_separator_color: Color,
     pub cursor_fill: Color,
     pub cursor_stroke: Color,
-    pub cursor_left_accent_width: f32,
 }
 
 pub(crate) fn file_tree_focus_chrome(p: &ThemePalette, tree_focused: bool) -> FileTreeFocusChrome {
@@ -36,7 +35,6 @@ pub(crate) fn file_tree_focus_chrome(p: &ThemePalette, tree_focused: bool) -> Fi
         } else {
             transparent
         },
-        cursor_left_accent_width: 0.0,
     }
 }
 
@@ -46,6 +44,33 @@ pub(crate) fn file_tree_hover_shows_overlay(
     cursor_index: usize,
 ) -> bool {
     !tree_focused || hovered_index != cursor_index
+}
+
+pub(crate) fn file_tree_name_style(
+    p: &ThemePalette,
+    status_color: Option<Color>,
+    is_directory: bool,
+    is_expanded_dir: bool,
+    is_cursor_row: bool,
+) -> TextStyle {
+    let text_color = if let Some(sc) = status_color {
+        sc
+    } else if is_cursor_row || is_expanded_dir {
+        p.tab_text_focused
+    } else if is_directory {
+        p.tree_dir
+    } else {
+        p.tree_text
+    };
+
+    TextStyle {
+        foreground: text_color,
+        background: None,
+        bold: is_expanded_dir,
+        dim: false,
+        italic: false,
+        underline: false,
+    }
 }
 
 /// Render the file tree panel (rounded border, header, entries, cursor highlight).
@@ -278,6 +303,32 @@ pub(super) fn render_file_tree(
                 );
             }
 
+            if is_cursor_row {
+                let row_rect = Rect::new(
+                    tree_visual_rect.x + left_padding / 2.0,
+                    y,
+                    tree_visual_rect.width - left_padding,
+                    line_height,
+                );
+                renderer.draw_chrome_rounded_rect(
+                    row_rect,
+                    focus_chrome.cursor_stroke,
+                    FILE_TREE_ROW_RADIUS,
+                );
+                let row_inset = 1.0;
+                let inner_row = Rect::new(
+                    row_rect.x + row_inset,
+                    row_rect.y + row_inset,
+                    (row_rect.width - row_inset * 2.0).max(0.0),
+                    (row_rect.height - row_inset * 2.0).max(0.0),
+                );
+                renderer.draw_chrome_rounded_rect(
+                    inner_row,
+                    focus_chrome.cursor_fill,
+                    (FILE_TREE_ROW_RADIUS - row_inset).max(0.0),
+                );
+            }
+
             // Look up git status for this entry (O(1) via pre-computed cache)
             let git_color =
                 app.effective_file_tree_git_status(&entry.entry.path, entry.entry.is_dir);
@@ -324,25 +375,13 @@ pub(super) fn render_file_tree(
             // Draw name after icon + space
             let name_x = x + cell_size.width * 2.0;
             let is_expanded_dir = entry.entry.is_dir && entry.is_expanded;
-            let text_color = if let Some(sc) = status_color {
-                sc
-            } else if is_cursor_row {
-                p.tab_text_focused
-            } else if is_expanded_dir {
-                p.tab_text_focused
-            } else if entry.entry.is_dir {
-                p.tree_dir
-            } else {
-                p.tree_text
-            };
-            let name_style = TextStyle {
-                foreground: text_color,
-                background: None,
-                bold: is_expanded_dir && !is_cursor_row,
-                dim: false,
-                italic: false,
-                underline: false,
-            };
+            let name_style = file_tree_name_style(
+                p,
+                status_color,
+                entry.entry.is_dir,
+                is_expanded_dir,
+                is_cursor_row,
+            );
             renderer.draw_chrome_text(
                 &entry.entry.name,
                 Vec2::new(name_x, text_y),
@@ -367,40 +406,6 @@ pub(super) fn render_file_tree(
                     Vec2::new(badge_x, text_y),
                     badge_style,
                     entries_clip,
-                );
-            }
-        }
-
-        // File tree keyboard cursor highlight (when focus_area == FileTree)
-        if app.focus.focus_area == FocusArea::FileTree && app.ft.cursor < entries.len() {
-            let cursor_y =
-                tree_visual_rect.y + FILE_TREE_HEADER_HEIGHT + app.ft.cursor as f32 * line_height
-                    - file_tree_scroll;
-            if cursor_y + line_height > tree_visual_rect.y
-                && cursor_y < tree_visual_rect.y + tree_visual_rect.height
-            {
-                let row_rect = Rect::new(
-                    tree_visual_rect.x + left_padding / 2.0,
-                    cursor_y,
-                    tree_visual_rect.width - left_padding,
-                    line_height,
-                );
-                renderer.draw_chrome_rounded_rect(
-                    row_rect,
-                    focus_chrome.cursor_stroke,
-                    FILE_TREE_ROW_RADIUS,
-                );
-                let row_inset = 1.0;
-                let inner_row = Rect::new(
-                    row_rect.x + row_inset,
-                    row_rect.y + row_inset,
-                    (row_rect.width - row_inset * 2.0).max(0.0),
-                    (row_rect.height - row_inset * 2.0).max(0.0),
-                );
-                renderer.draw_chrome_rounded_rect(
-                    inner_row,
-                    focus_chrome.cursor_fill,
-                    (FILE_TREE_ROW_RADIUS - row_inset).max(0.0),
                 );
             }
         }

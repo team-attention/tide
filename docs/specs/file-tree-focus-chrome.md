@@ -13,8 +13,9 @@ When `FocusArea` is `FileTree`, Tide keeps the FileTree container quiet and shif
 ### Approach
 1. Add dedicated FileTree focus tokens to the theme palette instead of reusing the Dock accent.
 2. Extract FileTree focus chrome decisions into pure helpers that behavior tests can call directly.
-3. Render the focused FileTree row with a stroke-and-fill selection treatment and remove the left accent bar.
+3. Render the focused FileTree row with a stroke-and-fill selection treatment behind the row text and remove the left accent bar.
 4. Suppress hover overlay stacking when the hovered row is already the focused `FileTree Cursor Row`.
+5. Keep expanded directory emphasis visible even when that row is also the focused `FileTree Cursor Row`.
 
 ## Bounded Contexts
 
@@ -41,6 +42,8 @@ When `FocusArea` is `FileTree`, Tide keeps the FileTree container quiet and shif
   - BR-1: Focused FileTree panel chrome keeps the same quiet border weight as the unfocused FileTree and adds no focus shadow.
   - BR-2: The focused `FileTree Cursor Row` uses dedicated selection fill and stroke colors instead of the Dock accent bar treatment.
   - BR-3: The focused FileTree header separator stays in the subtle FileTree border family rather than switching to the warm Dock accent.
+  - BR-4: The focused `FileTree Cursor Row` chrome must render as a background layer so its fill never obscures row text.
+  - BR-5: Expanded directory rows keep their bold text styling even when the focused `FileTree Cursor Row` is on them.
 
 ### UC-2: AvoidHoverStackOnFocusedFileTreeCursorRow
 
@@ -54,8 +57,8 @@ When `FocusArea` is `FileTree`, Tide keeps the FileTree container quiet and shif
   4. Otherwise Tide renders the normal FileTree hover overlay.
 - **Postcondition**: Keyboard focus remains visually stable and does not double-highlight one row.
 - **Business Rules**:
-  - BR-4: Hover overlay is suppressed when the hovered row is also the focused `FileTree Cursor Row`.
-  - BR-5: Hover overlay still renders for other FileTree rows, and for the cursor row when the FileTree itself is not focused.
+  - BR-6: Hover overlay is suppressed when the hovered row is also the focused `FileTree Cursor Row`.
+  - BR-7: Hover overlay still renders for other FileTree rows, and for the cursor row when the FileTree itself is not focused.
 
 ## Invariants
 
@@ -70,7 +73,9 @@ When `FocusArea` is `FileTree`, Tide keeps the FileTree container quiet and shif
 | UC-1 | BR-1 | `focused_file_tree_uses_selection_row_chrome_instead_of_panel_shadow` |
 | UC-1 | BR-2 | `focused_file_tree_cursor_row_uses_stroke_and_fill_without_accent_bar` |
 | UC-1 | BR-3 | `focused_file_tree_header_separator_stays_subtle` |
-| UC-2 | BR-4/BR-5 | `hovered_focused_file_tree_cursor_row_does_not_stack_a_second_overlay` |
+| UC-1 | BR-4 | `focused_file_tree_cursor_row_chrome_renders_behind_entry_text` |
+| UC-1 | BR-5 | `expanded_directory_rows_keep_bold_text_when_selected` |
+| UC-2 | BR-6/BR-7 | `hovered_focused_file_tree_cursor_row_does_not_stack_a_second_overlay` |
 
 ## Location
 

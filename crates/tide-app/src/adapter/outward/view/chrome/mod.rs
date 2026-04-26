@@ -12,6 +12,8 @@ use crate::App;
 pub(crate) use file_tree::file_tree_focus_chrome;
 pub(crate) use file_tree::file_tree_hover_shows_overlay;
 #[cfg(test)]
+pub(crate) use file_tree::file_tree_name_style;
+#[cfg(test)]
 pub(crate) use tab_bar::pane_surface_attention_status;
 #[cfg(test)]
 pub(crate) use titlebar::{
