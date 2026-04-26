@@ -18,6 +18,7 @@ mod editor_behavior;
 mod editor_file_watch_sync;
 mod editor_polish_behavior;
 mod file_tree_modified_highlight;
+mod file_tree_focus_chrome;
 mod file_tree_scroll;
 mod focus_management;
 mod git_switcher_behavior;

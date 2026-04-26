@@ -96,6 +96,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **EditorBadge** | `EditorBadge` | Shared editor-chrome label data computed in `adapter/outward/view/header.rs` and rendered in both Pane headers and TabGroup chrome. Carries visible badge text plus optional `HeaderHitAction` interactivity. |
 | **Editor Chrome** | concept | The non-document UI surrounding an Editor Pane, including the Pane header, TabGroup chrome, gutter, current-line emphasis, and related status or mode affordances. |
 | **FileTreeModel** | `FileTreeModel` | State for the FileTree chrome: root tree, scroll, cursor, and cached git status used to render FileTree rows. |
+| **FileTree Cursor Row** | concept | The FileTree row addressed by `FileTreeModel.cursor`. When `FocusArea` is `FileTree`, Tide renders keyboard-selection chrome on this row. |
 | **Ratio** | `f32` | Split position (0.0–1.0). Clamped to [0.1, 0.9] minimum. |
 | **Cell Size** | `Size` | Pixel dimensions of one terminal character cell (font-dependent). |
 | **Context Artifact** | concept | A Workspace-local record of an optional captured Pane selection plus an optional user comment. Bound to a source PaneId and its Associated Terminal. |

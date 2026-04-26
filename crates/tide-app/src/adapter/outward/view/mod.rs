@@ -9,6 +9,7 @@ pub(crate) mod ui;
 
 #[cfg(test)]
 pub(crate) use chrome::{
+    file_tree_focus_chrome, file_tree_hover_shows_overlay,
     integration_toggle_notification_indicator_color, pane_surface_attention_status,
     workspace_item_indicator_color, workspace_item_indicator_status,
 };

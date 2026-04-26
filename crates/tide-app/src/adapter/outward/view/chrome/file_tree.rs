@@ -1,9 +1,52 @@
-use crate::tide_core::{FileTreeSource, Rect, Renderer, TextStyle, Vec2};
+use crate::tide_core::{Color, FileTreeSource, Rect, Renderer, TextStyle, Vec2};
 
 use crate::state::FocusArea;
 use crate::theme::*;
 use crate::ui::file_icon;
 use crate::App;
+
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, Copy)]
+pub(crate) struct FileTreeFocusChrome {
+    pub panel_border_color: Color,
+    pub panel_top_border: f32,
+    pub panel_side_border: f32,
+    pub panel_shadow_alpha: f32,
+    pub header_separator_color: Color,
+    pub cursor_fill: Color,
+    pub cursor_stroke: Color,
+    pub cursor_left_accent_width: f32,
+}
+
+pub(crate) fn file_tree_focus_chrome(p: &ThemePalette, tree_focused: bool) -> FileTreeFocusChrome {
+    let transparent = Color::new(0.0, 0.0, 0.0, 0.0);
+    FileTreeFocusChrome {
+        panel_border_color: p.border_subtle,
+        panel_top_border: 1.0,
+        panel_side_border: 1.0,
+        panel_shadow_alpha: 0.0,
+        header_separator_color: p.border_subtle,
+        cursor_fill: if tree_focused {
+            p.file_tree_focus_fill
+        } else {
+            transparent
+        },
+        cursor_stroke: if tree_focused {
+            p.file_tree_focus_stroke
+        } else {
+            transparent
+        },
+        cursor_left_accent_width: 0.0,
+    }
+}
+
+pub(crate) fn file_tree_hover_shows_overlay(
+    tree_focused: bool,
+    hovered_index: usize,
+    cursor_index: usize,
+) -> bool {
+    !tree_focused || hovered_index != cursor_index
+}
 
 /// Render the file tree panel (rounded border, header, entries, cursor highlight).
 pub(super) fn render_file_tree(
@@ -21,13 +64,10 @@ pub(super) fn render_file_tree(
     ));
 
     let tree_focused = app.focus.focus_area == FocusArea::FileTree;
-    let border_color = if tree_focused {
-        p.border_focused
-    } else {
-        p.border_subtle
-    };
-    let top_border = if tree_focused { 2.0 } else { 1.0 };
-    let side_border = if tree_focused { 2.0_f32 } else { 1.0_f32 };
+    let focus_chrome = file_tree_focus_chrome(p, tree_focused);
+    let border_color = focus_chrome.panel_border_color;
+    let top_border = focus_chrome.panel_top_border;
+    let side_border = focus_chrome.panel_side_border;
     let edge_inset = PANE_CORNER_RADIUS;
 
     let r_border = Rect::new(
@@ -38,8 +78,13 @@ pub(super) fn render_file_tree(
     );
 
     // Shadow when focused (matches pane style)
-    if tree_focused {
-        let shadow_color = crate::tide_core::Color::new(0.769, 0.722, 0.651, 0.25);
+    if focus_chrome.panel_shadow_alpha > 0.0 {
+        let shadow_color = Color::new(
+            border_color.r,
+            border_color.g,
+            border_color.b,
+            focus_chrome.panel_shadow_alpha,
+        );
         renderer.draw_chrome_shadow(r_border, shadow_color, PANE_CORNER_RADIUS, 16.0, -4.0);
     }
 
@@ -216,6 +261,7 @@ pub(super) fn render_file_tree(
 
             let text_y = y + text_offset_y;
             let x = tree_visual_rect.x + left_padding + entry.depth as f32 * indent_width;
+            let is_cursor_row = tree_focused && app.ft.cursor == i;
 
             // Expanded directory: subtle row background
             if entry.entry.is_dir && entry.is_expanded {
@@ -280,6 +326,8 @@ pub(super) fn render_file_tree(
             let is_expanded_dir = entry.entry.is_dir && entry.is_expanded;
             let text_color = if let Some(sc) = status_color {
                 sc
+            } else if is_cursor_row {
+                p.tab_text_focused
             } else if is_expanded_dir {
                 p.tab_text_focused
             } else if entry.entry.is_dir {
@@ -290,7 +338,7 @@ pub(super) fn render_file_tree(
             let name_style = TextStyle {
                 foreground: text_color,
                 background: None,
-                bold: is_expanded_dir,
+                bold: is_expanded_dir && !is_cursor_row,
                 dim: false,
                 italic: false,
                 underline: false,
@@ -337,19 +385,22 @@ pub(super) fn render_file_tree(
                     tree_visual_rect.width - left_padding,
                     line_height,
                 );
-                // Warm accent row highlight (more visible than hover)
-                let accent = p.dock_tab_underline;
-                let row_bg = crate::tide_core::Color::new(accent.r, accent.g, accent.b, 0.12);
-                renderer.draw_chrome_rounded_rect(row_rect, row_bg, FILE_TREE_ROW_RADIUS);
-                // Left accent bar on cursor row
-                renderer.draw_chrome_rect(
-                    Rect::new(
-                        tree_visual_rect.x + 2.0,
-                        cursor_y + 2.0,
-                        2.0,
-                        line_height - 4.0,
-                    ),
-                    accent,
+                renderer.draw_chrome_rounded_rect(
+                    row_rect,
+                    focus_chrome.cursor_stroke,
+                    FILE_TREE_ROW_RADIUS,
+                );
+                let row_inset = 1.0;
+                let inner_row = Rect::new(
+                    row_rect.x + row_inset,
+                    row_rect.y + row_inset,
+                    (row_rect.width - row_inset * 2.0).max(0.0),
+                    (row_rect.height - row_inset * 2.0).max(0.0),
+                );
+                renderer.draw_chrome_rounded_rect(
+                    inner_row,
+                    focus_chrome.cursor_fill,
+                    (FILE_TREE_ROW_RADIUS - row_inset).max(0.0),
                 );
             }
         }
@@ -410,12 +461,6 @@ pub(super) fn render_file_tree(
             );
 
             // Bottom separator line (accent when focused)
-            let sep_color = if tree_focused {
-                let accent = p.dock_tab_underline;
-                crate::tide_core::Color::new(accent.r, accent.g, accent.b, 0.35)
-            } else {
-                p.border_subtle
-            };
             renderer.draw_chrome_rect(
                 Rect::new(
                     tree_visual_rect.x + PANE_PADDING,
@@ -423,7 +468,7 @@ pub(super) fn render_file_tree(
                     tree_visual_rect.width - PANE_PADDING * 2.0,
                     1.0,
                 ),
-                sep_color,
+                focus_chrome.header_separator_color,
             );
         }
     }
