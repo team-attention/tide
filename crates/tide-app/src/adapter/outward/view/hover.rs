@@ -1,5 +1,6 @@
 use crate::tide_core::{Rect, Renderer};
 
+use super::chrome::file_tree_hover_shows_overlay;
 use crate::state::drag_types::PaneDragState;
 use crate::theme::*;
 use crate::App;
@@ -36,15 +37,21 @@ pub(crate) fn render_hover(
                                 content_y + FILE_TREE_HEADER_HEIGHT + *index as f32 * line_height
                                     - file_tree_scroll;
                             if y + line_height > header_bottom && y < content_y + content_h {
-                                let row_rect = Rect::new(
-                                    ft_rect.x + PANE_PADDING / 2.0,
-                                    y,
-                                    ft_rect.width - PANE_PADDING,
-                                    line_height,
-                                );
-                                // Use draw_rect (overlay pipeline, updates every frame)
-                                // not draw_chrome_rounded_rect (chrome texture, only on chrome_dirty)
-                                renderer.draw_rect(row_rect, p.hover_file_tree);
+                                if file_tree_hover_shows_overlay(
+                                    app.focus.focus_area == crate::state::FocusArea::FileTree,
+                                    *index,
+                                    app.ft.cursor,
+                                ) {
+                                    let row_rect = Rect::new(
+                                        ft_rect.x + PANE_PADDING / 2.0,
+                                        y,
+                                        ft_rect.width - PANE_PADDING,
+                                        line_height,
+                                    );
+                                    // Use draw_rect (overlay pipeline, updates every frame)
+                                    // not draw_chrome_rounded_rect (chrome texture, only on chrome_dirty)
+                                    renderer.draw_rect(row_rect, p.hover_file_tree);
+                                }
                             }
                         }
                     }

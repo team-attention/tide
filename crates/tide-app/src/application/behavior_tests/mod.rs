@@ -20,6 +20,7 @@ mod editor_polish_behavior;
 mod file_finder_behavior;
 mod file_tree_bundle_behavior;
 mod file_tree_modified_highlight;
+mod file_tree_focus_chrome;
 mod file_tree_scroll;
 mod focus_management;
 mod fullscreen_menu_bar_behavior;

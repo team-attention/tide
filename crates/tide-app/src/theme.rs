@@ -23,6 +23,8 @@ pub struct ThemePalette {
     pub tree_dir_icon: Color,   // folder icon color (warm)
     pub tree_icon: Color,       // file icon color (dim)
     pub tree_row_active: Color, // expanded folder row background
+    pub file_tree_focus_fill: Color,
+    pub file_tree_focus_stroke: Color,
 
     // Tab bar
     pub tab_bar_bg: Color,
@@ -150,6 +152,8 @@ pub static DARK: ThemePalette = ThemePalette {
     tree_dir_icon: Color::new(0.831, 0.784, 0.714, 1.0), // folder icons #D4C8B6
     tree_icon: Color::new(0.290, 0.290, 0.306, 1.0), // file icons #4A4A4E
     tree_row_active: Color::new(0.102, 0.102, 0.114, 1.0), // expanded folder row bg #1A1A1D
+    file_tree_focus_fill: Color::new(0.165, 0.167, 0.184, 1.0), // restrained selected-row fill
+    file_tree_focus_stroke: Color::new(0.312, 0.316, 0.349, 1.0), // subtle list focus outline
 
     // Tab bar — VS Code inspired: clean minimal, bottom indicator
     tab_bar_bg: Color::new(0.088, 0.089, 0.100, 1.0), // deeper inactive chrome
@@ -275,6 +279,8 @@ pub static LIGHT: ThemePalette = ThemePalette {
     tree_dir_icon: Color::new(0.40, 0.30, 0.18, 1.0), // chestnut icon
     tree_icon: Color::new(0.48, 0.42, 0.34, 1.0), // muted warm
     tree_row_active: Color::new(0.88, 0.85, 0.80, 1.0), // warm active row
+    file_tree_focus_fill: Color::new(0.84, 0.84, 0.82, 1.0), // soft neutral selected-row fill
+    file_tree_focus_stroke: Color::new(0.58, 0.54, 0.47, 1.0), // light-mode list focus outline
 
     // Tab bar — VS Code inspired: clean minimal, bottom indicator
     tab_bar_bg: Color::new(0.90, 0.88, 0.85, 1.0), // quieter inactive chrome
