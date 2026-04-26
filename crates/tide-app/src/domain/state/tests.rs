@@ -174,20 +174,34 @@ fn file_finder_selected_path() {
 
 #[test]
 fn context_menu_items_file() {
-    let items = ContextMenuAction::items(false, true);
+    let items = ContextMenuAction::items(false, false, true);
     assert_eq!(items.len(), 2); // Rename, Delete
 }
 
 #[test]
 fn context_menu_items_dir_idle() {
-    let items = ContextMenuAction::items(true, true);
+    let items = ContextMenuAction::items(true, false, true);
     assert_eq!(items.len(), 5); // CdHere, OpenTerminalHere, RevealInFinder, Rename, Delete
 }
 
 #[test]
 fn context_menu_items_dir_busy() {
-    let items = ContextMenuAction::items(true, false);
+    let items = ContextMenuAction::items(true, false, false);
     assert_eq!(items.len(), 4); // no CdHere when busy
+}
+
+#[test]
+fn context_menu_items_app_bundle() {
+    let items = ContextMenuAction::items(true, true, true);
+    assert_eq!(
+        items,
+        &[
+            ContextMenuAction::OpenApp,
+            ContextMenuAction::RevealInFinder,
+            ContextMenuAction::Rename,
+            ContextMenuAction::Delete,
+        ]
+    );
 }
 
 // ── SaveAsInput ──

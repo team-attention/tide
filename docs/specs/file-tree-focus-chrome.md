@@ -8,7 +8,7 @@
 The result is visually louder than the rest of Tide chrome, especially when `Cmd+2` moves focus into the FileTree. The selection cue competes with the panel container instead of reading like a natural list selection.
 
 ### To-Be
-When `FocusArea` is `FileTree`, Tide keeps the FileTree container quiet and shifts emphasis to the `FileTree Cursor Row`. The panel border stays subtle, no focus shadow is added, and the header separator stays in the same quiet family as the unfocused FileTree. The `FileTree Cursor Row` uses a subdued fill plus a light stroke, without the left accent bar. Hover does not stack an extra overlay on that same focused row.
+When `FocusArea` is `FileTree`, Tide keeps the FileTree container quiet and shifts emphasis to the `FileTree Cursor Row`. The panel border stays subtle, no focus shadow is added, and the header separator stays in the same quiet family as the unfocused FileTree. The `FileTree Cursor Row` uses a subdued fill plus a light stroke, without the left accent bar. Hover does not stack an extra overlay on that same focused row. `Expanded Directory Row`s use the same rounded slab geometry family instead of the old flat band highlight, so open folders feel visually consistent with the selected row.
 
 ### Approach
 1. Add dedicated FileTree focus tokens to the theme palette instead of reusing the Dock accent.
@@ -16,6 +16,7 @@ When `FocusArea` is `FileTree`, Tide keeps the FileTree container quiet and shif
 3. Render the focused FileTree row with a stroke-and-fill selection treatment behind the row text and remove the left accent bar.
 4. Suppress hover overlay stacking when the hovered row is already the focused `FileTree Cursor Row`.
 5. Keep expanded directory emphasis visible even when that row is also the focused `FileTree Cursor Row`.
+6. Render `Expanded Directory Row`s with the same rounded slab geometry family as the `FileTree Cursor Row`, while avoiding duplicate slabs when one row is both expanded and focused.
 
 ## Bounded Contexts
 
@@ -60,6 +61,21 @@ When `FocusArea` is `FileTree`, Tide keeps the FileTree container quiet and shif
   - BR-6: Hover overlay is suppressed when the hovered row is also the focused `FileTree Cursor Row`.
   - BR-7: Hover overlay still renders for other FileTree rows, and for the cursor row when the FileTree itself is not focused.
 
+### UC-3: RenderExpandedDirectoryRowChrome
+
+- **Actor**: System
+- **Trigger**: Chrome rendering for a directory row whose `TreeEntry.is_expanded` is true
+- **Precondition**: The FileTree contains at least one expanded directory
+- **Flow**:
+  1. Tide resolves the row geometry for the `Expanded Directory Row`.
+  2. Tide applies the same rounded slab geometry family used by the `FileTree Cursor Row`.
+  3. Tide keeps the open-directory fill quieter than the focused-row fill so selection still reads as the stronger state.
+  4. If the same row is also the `FileTree Cursor Row`, Tide renders only the focused-row slab.
+- **Postcondition**: Open folders read as deliberate list items instead of flat background bands.
+- **Business Rules**:
+  - BR-8: `Expanded Directory Row`s use the same rounded slab geometry family as the `FileTree Cursor Row` instead of a fill-only band.
+  - BR-9: A row that is both an `Expanded Directory Row` and the `FileTree Cursor Row` must not render two stacked slab treatments.
+
 ## Invariants
 
 - FileTree focus chrome is row-first, not panel-first.
@@ -76,6 +92,8 @@ When `FocusArea` is `FileTree`, Tide keeps the FileTree container quiet and shif
 | UC-1 | BR-4 | `focused_file_tree_cursor_row_chrome_renders_behind_entry_text` |
 | UC-1 | BR-5 | `expanded_directory_rows_keep_bold_text_when_selected` |
 | UC-2 | BR-6/BR-7 | `hovered_focused_file_tree_cursor_row_does_not_stack_a_second_overlay` |
+| UC-3 | BR-8 | `expanded_directory_rows_use_the_cursor_row_slab_geometry_family` |
+| UC-3 | BR-9 | `expanded_directory_cursor_rows_do_not_stack_duplicate_slabs` |
 
 ## Location
 

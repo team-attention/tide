@@ -7,7 +7,7 @@ Tide already has the rendering hooks needed for an editor polish pass, but they 
 
 What is missing is a bounded contract that turns those hooks into verifiable editor UX rules. Without that, active-Pane prominence, mode clarity, badge priority, focus treatment, and narrow-width fallback all remain implementation details rather than protected behavior. The current shared badge order also lets the add-comment affordance displace the `plain` / `live` mode switch in a narrow active `Markdown Pane` tab, which makes the current authoring mode ambiguous in the chrome.
 
-The single-pane header path is also still more tab-shaped than editor-group-shaped. `render_pane_chrome()` in [`crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs`](../../crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs) already paints focused Pane chrome across the full header width, but `render_pane_header_inner()` in [`crates/tide-app/src/adapter/outward/view/header.rs`](../../crates/tide-app/src/adapter/outward/view/header.rs) narrows the visible active surface back down to a compact active-tab slab and reserves the close control inside that slab. That compresses title space and makes a focused single Editor Pane feel visually inconsistent with Stage `TabGroup` chrome. In the editor surface itself, [`crates/tide-app/src/domain/pane/editor_rendering.rs`](../../crates/tide-app/src/domain/pane/editor_rendering.rs) currently draws indent guides with one shared color on both the current line and surrounding lines, so the active line hierarchy still feels flatter than a mainstream desktop editor.
+The single-pane header path is also still more utility-lane-shaped than document-shaped. `render_pane_chrome()` in [`crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs`](../../crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs) already paints focused Pane chrome across the full header width, but `single_pane_header_layout()` and `render_pane_header_inner()` in [`crates/tide-app/src/adapter/outward/view/header.rs`](../../crates/tide-app/src/adapter/outward/view/header.rs) still reserve the close control against the far-right edge of the header lane. That leaves an awkward gap between the visible title cluster and the close affordance, especially when the title is short. In the editor surface itself, [`crates/tide-app/src/domain/pane/editor_rendering.rs`](../../crates/tide-app/src/domain/pane/editor_rendering.rs) currently draws indent guides with one shared color on both the current line and surrounding lines, so the active line hierarchy still feels flatter than a mainstream desktop editor.
 
 ### To-Be
 Editor polish becomes a bounded slice that applies `DESIGN.md` to Tide's existing `Editor Chrome` without changing `EditorState` semantics, preview routing, or the roadmap boundaries already defined in `docs/specs/editor-solidity.md`.
@@ -19,7 +19,7 @@ After this slice:
 - narrow headers preserve title legibility and critical state before optional chrome
 - interactive `EditorBadge` affordances are visible and keyboard-focusable
 - current-line, gutter, and prose readability hierarchy feel more deliberate without changing layout semantics
-- focused single-pane Editor headers read as full editor-group chrome instead of a compact tab-shaped slab
+- focused single-pane Editor headers read as full editor-group chrome, but their close affordance sits beside the visible title cluster instead of floating on the far-right edge
 - current-line structure is clearer because active indent guides step forward slightly from surrounding guides
 
 ### Approach
@@ -28,7 +28,7 @@ After this slice:
 3. Add behavior and renderer-level tests before implementation so the polish rules are protected as business rules.
 4. Implement the polish only through the existing Editor Pane chrome and render paths.
 5. Verify that hover and click affordances still match the rendered `Editor Chrome`.
-6. Keep the single-pane header layout aligned with Stage `TabGroup` chrome by using the full header width, a dedicated trailing utility lane, and a clearer active-line structural hierarchy.
+6. Keep the single-pane header layout aligned with Stage `TabGroup` chrome by using the full header width while anchoring the close affordance to the visible title cluster instead of the far-right edge.
 
 ## Bounded Contexts
 
@@ -72,7 +72,7 @@ After this slice:
   - BR-4: Title legibility outranks optional chrome when width is constrained.
   - BR-5: Attention state outranks secondary metadata when not all chrome can fit.
   - BR-6: A narrow active `Markdown Pane` must preserve its visible `plain` / `live` mode badge ahead of contextual secondary affordances such as add-comment.
-  - BR-7: A single-pane Editor header must reserve a trailing utility lane for close and header actions so title and mode chrome do not collide with utility affordances.
+  - BR-7: A single-pane Editor header must place the close affordance immediately after the visible title/badge cluster while keeping header actions in the trailing strip.
 
 ### UC-3: KeepEditorChromeInteractiveAndReliable
 - **Actor**: User
@@ -122,7 +122,7 @@ After this slice:
 | UC-2 | BR-4 | `header` | `narrow_editor_header_preserves_title_before_optional_badges` |
 | UC-2 | BR-5 | `header` | `attention_state_outranks_secondary_metadata_in_narrow_headers` |
 | UC-2 | BR-6 | `editor_polish_behavior` | `focused_markdown_pane_keeps_mode_badge_visible_ahead_of_add_comment_when_width_is_tight` |
-| UC-2 | BR-7 | `editor_polish_behavior` | `single_pane_editor_header_reserves_close_lane_before_header_actions` |
+| UC-2 | BR-7 | `editor_polish_behavior` | `single_pane_editor_header_places_close_next_to_visible_title_cluster` |
 | UC-3 | BR-7 | `editor_polish_behavior` | `keyboard_reachable_editor_chrome_shows_visible_focus_state` |
 | UC-3 | BR-8 | `editor_polish_behavior` | `interactive_editor_badges_differentiate_default_hover_and_focus_states` |
 | UC-3 | BR-9 | `editor_polish_behavior` | `editor_header_hit_zones_remain_aligned_with_visible_chrome` |

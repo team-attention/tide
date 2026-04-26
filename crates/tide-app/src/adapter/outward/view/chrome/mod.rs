@@ -9,6 +9,8 @@ use crate::theme::*;
 use crate::App;
 
 #[cfg(test)]
+pub(crate) use file_tree::file_tree_expanded_directory_chrome;
+#[cfg(test)]
 pub(crate) use file_tree::file_tree_focus_chrome;
 pub(crate) use file_tree::file_tree_hover_shows_overlay;
 #[cfg(test)]

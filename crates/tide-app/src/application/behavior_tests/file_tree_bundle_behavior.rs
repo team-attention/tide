@@ -50,11 +50,18 @@ impl ProcessPort for RecordingProcess {
     }
 }
 
-fn reveal_in_finder_action_index(is_dir: bool) -> usize {
-    ContextMenuAction::items(is_dir, true)
+fn reveal_in_finder_action_index(is_dir: bool, is_app_bundle: bool) -> usize {
+    ContextMenuAction::items(is_dir, is_app_bundle, true)
         .iter()
         .position(|action| *action == ContextMenuAction::RevealInFinder)
         .expect("RevealInFinder action should exist")
+}
+
+fn open_app_action_index() -> usize {
+    ContextMenuAction::items(true, true, true)
+        .iter()
+        .position(|action| *action == ContextMenuAction::OpenApp)
+        .expect("OpenApp action should exist")
 }
 
 fn setup_app_bundle_root() -> (TempDir, PathBuf) {
@@ -117,11 +124,27 @@ fn clicking_app_bundle_in_file_tree_launches_it_instead_of_toggling_directory_ex
     assert_eq!(visible_count_after_click, initial_visible_count);
 }
 
-// --- UC-2: RevealAppBundleInFinder ---
+// --- UC-2: OpenAppBundleFromContextMenu ---
 
 #[test]
-fn open_in_finder_reveals_app_bundles_without_launching_them() {
-    // UC-2 BR-2: Open in Finder on a .app directory must call Finder reveal instead of default-app launch.
+fn app_bundle_context_menu_uses_app_specific_actions_instead_of_directory_actions() {
+    // UC-2 BR-2: .app directories must expose an explicit Open App context-menu action instead of reusing the generic directory action set.
+    let items = ContextMenuAction::items(true, true, true);
+
+    assert_eq!(
+        items,
+        &[
+            ContextMenuAction::OpenApp,
+            ContextMenuAction::RevealInFinder,
+            ContextMenuAction::Rename,
+            ContextMenuAction::Delete,
+        ]
+    );
+}
+
+#[test]
+fn open_app_launches_app_bundles_from_the_file_tree_context_menu() {
+    // UC-2 BR-3: Open App on a .app directory must call ProcessPort::open_with_default_app().
     let mut app = test_app();
     let calls = Rc::new(RefCell::new(ProcessCalls::default()));
     app.ports.process = Box::new(RecordingProcess {
@@ -132,12 +155,50 @@ fn open_in_finder_reveals_app_bundles_without_launching_them() {
         entry_index: 0,
         path: bundle_path.clone(),
         is_dir: true,
+        is_app_bundle: true,
         shell_idle: true,
         position: crate::tide_core::Vec2::new(0.0, 0.0),
         selected: 0,
     });
 
-    app.execute_context_menu_action(reveal_in_finder_action_index(true));
+    app.execute_context_menu_action(open_app_action_index());
+
+    let calls = calls.borrow();
+    assert_eq!(calls.opened_paths.as_slice(), &[bundle_path]);
+    assert!(calls.revealed_paths.is_empty());
+}
+
+// --- UC-3: RevealAppBundleInFinder ---
+
+#[test]
+fn app_bundle_context_menu_keeps_a_finder_specific_reveal_label() {
+    // UC-3 BR-4: .app directories keep a separate Finder-reveal action that is labeled as Finder-specific.
+    assert_eq!(
+        ContextMenuAction::RevealInFinder.label(),
+        "Reveal in Finder"
+    );
+}
+
+#[test]
+fn finder_reveal_reveals_app_bundles_without_launching_them() {
+    // UC-3 BR-5: Finder reveal on a .app directory must call Finder reveal instead of default-app launch.
+    let mut app = test_app();
+    let calls = Rc::new(RefCell::new(ProcessCalls::default()));
+    app.ports.process = Box::new(RecordingProcess {
+        calls: Rc::clone(&calls),
+    });
+    let bundle_path = PathBuf::from("/tmp/Tide.app");
+    app.modal.context_menu = Some(ContextMenuState {
+        entry_index: 0,
+        path: bundle_path.clone(),
+        is_dir: true,
+        is_app_bundle: true,
+        shell_idle: true,
+        position: crate::tide_core::Vec2::new(0.0, 0.0),
+        selected: 0,
+    });
+
+    app.execute_context_menu_action(reveal_in_finder_action_index(true, true));
 
     let calls = calls.borrow();
     assert!(calls.opened_paths.is_empty());
@@ -145,23 +206,21 @@ fn open_in_finder_reveals_app_bundles_without_launching_them() {
 }
 
 #[test]
-fn system_process_routes_app_bundle_open_in_finder_through_finder_app() {
-    // UC-2 BR-3: App-bundle Open in Finder goes through Finder explicitly instead of opening the bundle path as an app.
+fn system_process_routes_app_bundle_reveal_through_standard_finder_reveal() {
+    // UC-3 BR-6: App-bundle Finder reveal uses the standard Finder reveal handoff instead of a Finder-specific parent-directory open path.
     let source = include_str!("../../adapter/outward/process_adapter/mod.rs");
 
     assert!(source.contains("fn reveal_in_finder(&self, path: &Path)"));
-    assert!(source.contains("is_app_bundle_path(path)"));
     assert!(source.contains("std::process::Command::new(\"open\")"));
-    assert!(source.contains(".arg(\"-a\")"));
-    assert!(source.contains(".arg(\"Finder\")"));
-    assert!(source.contains("path.parent().unwrap_or(path)"));
+    assert!(source.contains(".arg(\"-R\")"));
+    assert!(source.contains(".arg(path)"));
 }
 
-// --- UC-3: PreserveNormalFinderHandoff ---
+// --- UC-4: PreserveNormalFinderHandoff ---
 
 #[test]
 fn open_in_finder_keeps_default_directory_handoff_for_non_bundle_directories() {
-    // UC-3 BR-4: Non-bundle directories must preserve the existing default-app handoff.
+    // UC-4 BR-7: Non-bundle directories must preserve the existing default-app handoff.
     let mut app = test_app();
     let calls = Rc::new(RefCell::new(ProcessCalls::default()));
     app.ports.process = Box::new(RecordingProcess {
@@ -172,12 +231,13 @@ fn open_in_finder_keeps_default_directory_handoff_for_non_bundle_directories() {
         entry_index: 0,
         path: dir_path.clone(),
         is_dir: true,
+        is_app_bundle: false,
         shell_idle: true,
         position: crate::tide_core::Vec2::new(0.0, 0.0),
         selected: 0,
     });
 
-    app.execute_context_menu_action(reveal_in_finder_action_index(true));
+    app.execute_context_menu_action(reveal_in_finder_action_index(true, false));
 
     let calls = calls.borrow();
     assert_eq!(calls.opened_paths.as_slice(), &[dir_path]);

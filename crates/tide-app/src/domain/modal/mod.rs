@@ -840,6 +840,7 @@ impl GitSwitcherState {
 pub(crate) enum ContextMenuAction {
     CdHere,
     OpenTerminalHere,
+    OpenApp,
     RevealInFinder,
     Rename,
     Delete,
@@ -848,6 +849,12 @@ pub(crate) enum ContextMenuAction {
 impl ContextMenuAction {
     const FILE_ACTIONS: [ContextMenuAction; 2] =
         [ContextMenuAction::Rename, ContextMenuAction::Delete];
+    const APP_BUNDLE_ACTIONS: [ContextMenuAction; 4] = [
+        ContextMenuAction::OpenApp,
+        ContextMenuAction::RevealInFinder,
+        ContextMenuAction::Rename,
+        ContextMenuAction::Delete,
+    ];
     const DIR_ACTIONS: [ContextMenuAction; 5] = [
         ContextMenuAction::CdHere,
         ContextMenuAction::OpenTerminalHere,
@@ -862,7 +869,14 @@ impl ContextMenuAction {
         ContextMenuAction::Delete,
     ];
 
-    pub fn items(is_dir: bool, shell_idle: bool) -> &'static [ContextMenuAction] {
+    pub fn items(
+        is_dir: bool,
+        is_app_bundle: bool,
+        shell_idle: bool,
+    ) -> &'static [ContextMenuAction] {
+        if is_app_bundle {
+            return &Self::APP_BUNDLE_ACTIONS;
+        }
         if is_dir {
             if shell_idle {
                 &Self::DIR_ACTIONS
@@ -878,7 +892,8 @@ impl ContextMenuAction {
         match self {
             ContextMenuAction::CdHere => "cd",
             ContextMenuAction::OpenTerminalHere => "Open Terminal Here",
-            ContextMenuAction::RevealInFinder => "Open in Finder",
+            ContextMenuAction::OpenApp => "Open App",
+            ContextMenuAction::RevealInFinder => "Reveal in Finder",
             ContextMenuAction::Rename => "Rename",
             ContextMenuAction::Delete => "Delete",
         }
@@ -888,6 +903,7 @@ impl ContextMenuAction {
         match self {
             ContextMenuAction::CdHere => "\u{f07b}", // folder icon
             ContextMenuAction::OpenTerminalHere => "\u{f120}", // terminal icon
+            ContextMenuAction::OpenApp => "\u{f04b}", // play icon
             ContextMenuAction::RevealInFinder => "\u{f07c}", // folder-open icon
             ContextMenuAction::Rename => "\u{f044}", //
             ContextMenuAction::Delete => "\u{f1f8}", //
@@ -899,6 +915,7 @@ pub(crate) struct ContextMenuState {
     pub entry_index: usize,
     pub path: PathBuf,
     pub is_dir: bool,
+    pub is_app_bundle: bool,
     pub shell_idle: bool,
     pub position: Vec2,
     pub selected: usize,
@@ -906,7 +923,7 @@ pub(crate) struct ContextMenuState {
 
 impl ContextMenuState {
     pub fn items(&self) -> &'static [ContextMenuAction] {
-        ContextMenuAction::items(self.is_dir, self.shell_idle)
+        ContextMenuAction::items(self.is_dir, self.is_app_bundle, self.shell_idle)
     }
 
     /// Compute the popup rect, clamped to window bounds.

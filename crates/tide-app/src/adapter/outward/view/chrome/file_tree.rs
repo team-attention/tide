@@ -17,6 +17,13 @@ pub(crate) struct FileTreeFocusChrome {
     pub cursor_stroke: Color,
 }
 
+#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, Copy)]
+pub(crate) struct FileTreeRowChrome {
+    pub fill: Color,
+    pub stroke: Color,
+}
+
 pub(crate) fn file_tree_focus_chrome(p: &ThemePalette, tree_focused: bool) -> FileTreeFocusChrome {
     let transparent = Color::new(0.0, 0.0, 0.0, 0.0);
     FileTreeFocusChrome {
@@ -46,6 +53,13 @@ pub(crate) fn file_tree_hover_shows_overlay(
     !tree_focused || hovered_index != cursor_index
 }
 
+pub(crate) fn file_tree_expanded_directory_chrome(p: &ThemePalette) -> FileTreeRowChrome {
+    FileTreeRowChrome {
+        fill: p.tree_row_active,
+        stroke: p.file_tree_focus_stroke,
+    }
+}
+
 pub(crate) fn file_tree_name_style(
     p: &ThemePalette,
     status_color: Option<Color>,
@@ -71,6 +85,26 @@ pub(crate) fn file_tree_name_style(
         italic: false,
         underline: false,
     }
+}
+
+fn draw_file_tree_row_slab(
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    row_rect: Rect,
+    chrome: FileTreeRowChrome,
+) {
+    renderer.draw_chrome_rounded_rect(row_rect, chrome.stroke, FILE_TREE_ROW_RADIUS);
+    let row_inset = 1.0;
+    let inner_row = Rect::new(
+        row_rect.x + row_inset,
+        row_rect.y + row_inset,
+        (row_rect.width - row_inset * 2.0).max(0.0),
+        (row_rect.height - row_inset * 2.0).max(0.0),
+    );
+    renderer.draw_chrome_rounded_rect(
+        inner_row,
+        chrome.fill,
+        (FILE_TREE_ROW_RADIUS - row_inset).max(0.0),
+    );
 }
 
 /// Render the file tree panel (rounded border, header, entries, cursor highlight).
@@ -289,18 +323,14 @@ pub(super) fn render_file_tree(
             let is_cursor_row = tree_focused && app.ft.cursor == i;
 
             // Expanded directory: subtle row background
-            if entry.entry.is_dir && entry.is_expanded {
+            if entry.entry.is_dir && entry.is_expanded && !is_cursor_row {
                 let row_rect = Rect::new(
                     tree_visual_rect.x + left_padding / 2.0,
                     y,
                     tree_visual_rect.width - left_padding,
                     line_height,
                 );
-                renderer.draw_chrome_rounded_rect(
-                    row_rect,
-                    p.tree_row_active,
-                    FILE_TREE_ROW_RADIUS,
-                );
+                draw_file_tree_row_slab(renderer, row_rect, file_tree_expanded_directory_chrome(p));
             }
 
             if is_cursor_row {
@@ -310,22 +340,13 @@ pub(super) fn render_file_tree(
                     tree_visual_rect.width - left_padding,
                     line_height,
                 );
-                renderer.draw_chrome_rounded_rect(
+                draw_file_tree_row_slab(
+                    renderer,
                     row_rect,
-                    focus_chrome.cursor_stroke,
-                    FILE_TREE_ROW_RADIUS,
-                );
-                let row_inset = 1.0;
-                let inner_row = Rect::new(
-                    row_rect.x + row_inset,
-                    row_rect.y + row_inset,
-                    (row_rect.width - row_inset * 2.0).max(0.0),
-                    (row_rect.height - row_inset * 2.0).max(0.0),
-                );
-                renderer.draw_chrome_rounded_rect(
-                    inner_row,
-                    focus_chrome.cursor_fill,
-                    (FILE_TREE_ROW_RADIUS - row_inset).max(0.0),
+                    FileTreeRowChrome {
+                        fill: focus_chrome.cursor_fill,
+                        stroke: focus_chrome.cursor_stroke,
+                    },
                 );
             }
 

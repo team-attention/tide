@@ -570,7 +570,8 @@ impl App {
             None => return,
         };
 
-        let items = crate::ContextMenuAction::items(menu.is_dir, menu.shell_idle);
+        let items =
+            crate::ContextMenuAction::items(menu.is_dir, menu.is_app_bundle, menu.shell_idle);
         let action = match items.get(action_index) {
             Some(a) => *a,
             None => return,
@@ -592,6 +593,9 @@ impl App {
                     crate::tide_core::SplitDirection::Horizontal,
                     Some(menu.path),
                 );
+            }
+            crate::ContextMenuAction::OpenApp => {
+                let _ = self.ports.process.open_with_default_app(&menu.path);
             }
             crate::ContextMenuAction::Delete => {
                 let result = if menu.is_dir {

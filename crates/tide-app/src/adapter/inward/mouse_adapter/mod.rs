@@ -229,6 +229,12 @@ pub(crate) fn handle_mouse_down(
                     });
 
                     if let Some((path, is_dir)) = entry_info {
+                        let is_app_bundle = is_dir
+                            && path
+                                .extension()
+                                .and_then(std::ffi::OsStr::to_str)
+                                .map(|ext| ext.eq_ignore_ascii_case("app"))
+                                .unwrap_or(false);
                         ctx.modal_mut().context_menu = None;
                         ctx.modal_mut().file_tree_rename = None;
                         let shell_idle = ctx
@@ -246,6 +252,7 @@ pub(crate) fn handle_mouse_down(
                             entry_index: index,
                             path,
                             is_dir,
+                            is_app_bundle,
                             shell_idle,
                             position: pos,
                             selected: 0,

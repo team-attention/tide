@@ -164,14 +164,29 @@ pub(crate) fn single_pane_header_layout(
         available_w - TAB_H_PAD
     };
     let dot_w = tab_status_dot_width(has_status_dot);
-    let close_hit_x = (content_right - 16.0).max(TAB_H_PAD + dot_w);
+    let close_gap = BADGE_GAP;
+    let title_and_badges_budget = (content_right - TAB_H_PAD - dot_w - close_gap - 16.0).max(0.0);
     let title_layout = reserve_title_before_badges(
         title_w_raw,
         badge_widths,
-        (close_hit_x - TAB_H_PAD - dot_w).max(0.0),
+        title_and_badges_budget,
         TAB_MIN_TITLE_WIDTH,
         BADGE_GAP,
     );
+    let visible_badge_width = if title_layout.visible_badges > 0 {
+        BADGE_GAP
+            + badge_widths
+                .iter()
+                .take(title_layout.visible_badges)
+                .sum::<f32>()
+            + BADGE_GAP * title_layout.visible_badges.saturating_sub(1) as f32
+    } else {
+        0.0
+    };
+    let title_cluster_end = TAB_H_PAD + dot_w + title_layout.title_w + visible_badge_width;
+    let close_hit_x = (title_cluster_end + close_gap)
+        .min(content_right - 16.0)
+        .max(TAB_H_PAD + dot_w);
 
     SinglePaneHeaderLayout {
         surface_w: available_w.max(0.0),

@@ -9,7 +9,7 @@ use crate::header::{
 };
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
-use crate::theme::{BADGE_GAP, BADGE_PADDING_H, DARK, LIGHT, TAB_MIN_TITLE_WIDTH};
+use crate::theme::{BADGE_GAP, BADGE_PADDING_H, DARK, LIGHT, TAB_H_PAD, TAB_MIN_TITLE_WIDTH};
 
 fn color_brightness(color: crate::tide_core::Color) -> f32 {
     color.r + color.g + color.b
@@ -89,12 +89,25 @@ fn focused_markdown_pane_keeps_mode_badge_visible_ahead_of_add_comment_when_widt
 }
 
 #[test]
-fn single_pane_editor_header_reserves_close_lane_before_header_actions() {
-    // UC-2 BR-7: A single-pane Editor header reserves a trailing utility lane before header actions.
+fn single_pane_editor_header_places_close_next_to_visible_title_cluster() {
+    // UC-2 BR-7: A single-pane Editor header places the close affordance immediately after the visible title/badge cluster while keeping header actions in the trailing strip.
     let header_action_width = 3.0 * 18.0 + 2.0 * BADGE_GAP;
-    let layout = single_pane_header_layout(320.0, header_action_width, 120.0, &[48.0], false);
+    let badge_widths = [48.0];
+    let layout = single_pane_header_layout(320.0, header_action_width, 120.0, &badge_widths, false);
     let action_strip_start_x = header_action_strip_start_x(320.0, header_action_width);
+    let visible_badge_width = if layout.title_layout.visible_badges > 0 {
+        BADGE_GAP
+            + badge_widths
+                .iter()
+                .take(layout.title_layout.visible_badges)
+                .sum::<f32>()
+    } else {
+        0.0
+    };
+    let title_cluster_end = TAB_H_PAD + layout.title_layout.title_w + visible_badge_width;
 
+    assert!(layout.close_hit_x >= title_cluster_end);
+    assert!(layout.close_hit_x <= title_cluster_end + BADGE_GAP + 1.0);
     assert!(layout.close_hit_x + 16.0 <= action_strip_start_x - 8.0);
 }
 

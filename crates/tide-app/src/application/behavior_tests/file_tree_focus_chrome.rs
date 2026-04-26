@@ -1,7 +1,8 @@
 // Spec: docs/specs/file-tree-focus-chrome.md
 
 use crate::adapter::outward::view::{
-    file_tree_focus_chrome, file_tree_hover_shows_overlay, file_tree_name_style,
+    file_tree_expanded_directory_chrome, file_tree_focus_chrome, file_tree_hover_shows_overlay,
+    file_tree_name_style,
 };
 use crate::theme::{DARK, LIGHT};
 
@@ -73,13 +74,11 @@ fn focused_file_tree_cursor_row_chrome_renders_behind_entry_text() {
     let source = include_str!("../../adapter/outward/view/chrome/file_tree.rs");
 
     let cursor_row_block = source
-        .find("renderer.draw_chrome_rounded_rect(\n                    row_rect,\n                    focus_chrome.cursor_stroke,")
-        .expect("cursor row stroke should be rendered");
+        .find("if is_cursor_row {")
+        .expect("cursor row branch should be rendered");
     let first_row_text = source
-        .find(
-            "renderer.draw_chrome_text(&icon_str, Vec2::new(x, text_y), icon_style, entries_clip);",
-        )
-        .expect("file tree row icon text should be rendered");
+        .find("renderer.draw_chrome_text(\n                &entry.entry.name,")
+        .expect("file tree row name text should be rendered");
 
     assert!(
         cursor_row_block < first_row_text,
@@ -109,4 +108,33 @@ fn hovered_focused_file_tree_cursor_row_does_not_stack_a_second_overlay() {
     assert!(!file_tree_hover_shows_overlay(true, 4, 4));
     assert!(file_tree_hover_shows_overlay(true, 5, 4));
     assert!(file_tree_hover_shows_overlay(false, 4, 4));
+}
+
+// --- UC-3: RenderExpandedDirectoryRowChrome ---
+
+#[test]
+fn expanded_directory_rows_use_the_cursor_row_slab_geometry_family() {
+    // UC-3 BR-8: Expanded Directory Rows use the same rounded slab geometry family as the FileTree Cursor Row instead of a fill-only band.
+    for palette in [DARK, LIGHT] {
+        let chrome = file_tree_expanded_directory_chrome(&palette);
+
+        assert!(chrome.fill.a > 0.0);
+        assert!(chrome.stroke.a > 0.0);
+        assert_eq!(
+            color_tuple(chrome.stroke),
+            color_tuple(palette.file_tree_focus_stroke)
+        );
+        assert_ne!(
+            color_tuple(chrome.fill),
+            color_tuple(palette.hover_file_tree)
+        );
+    }
+}
+
+#[test]
+fn expanded_directory_cursor_rows_do_not_stack_duplicate_slabs() {
+    // UC-3 BR-9: A row that is both an Expanded Directory Row and the FileTree Cursor Row must not render two stacked slab treatments.
+    let source = include_str!("../../adapter/outward/view/chrome/file_tree.rs");
+
+    assert!(source.contains("if entry.entry.is_dir && entry.is_expanded && !is_cursor_row"));
 }

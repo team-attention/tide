@@ -482,6 +482,7 @@ mod tests {
             entry_index: 0,
             path: PathBuf::from("/tmp"),
             is_dir: false,
+            is_app_bundle: false,
             shell_idle: true,
             position: crate::tide_core::Vec2::new(0.0, 0.0),
             selected: 0,

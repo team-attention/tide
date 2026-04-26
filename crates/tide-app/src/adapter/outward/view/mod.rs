@@ -9,9 +9,9 @@ pub(crate) mod ui;
 
 #[cfg(test)]
 pub(crate) use chrome::{
-    file_tree_focus_chrome, file_tree_hover_shows_overlay, file_tree_name_style,
-    integration_toggle_notification_indicator_color, pane_surface_attention_status,
-    workspace_item_indicator_color, workspace_item_indicator_status,
+    file_tree_expanded_directory_chrome, file_tree_focus_chrome, file_tree_hover_shows_overlay,
+    file_tree_name_style, integration_toggle_notification_indicator_color,
+    pane_surface_attention_status, workspace_item_indicator_color, workspace_item_indicator_status,
 };
 #[cfg(test)]
 pub(crate) use cursor::editor_selection_rects;

@@ -6,28 +6,31 @@
 
 `FsTree::read_directory()` in [crates/tide-app/src/domain/tree/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/domain/tree/mod.rs:12) follows filesystem metadata and marks macOS `.app` bundles as directories because they are directories on disk. `handle_file_tree_click()` in [crates/tide-app/src/application/services/file_tree_service/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/application/services/file_tree_service/mod.rs:689) therefore toggles a `.app` row instead of opening an `Editor Pane`, so plain `FileTree` activation is not the external-launch path.
 
-The only `FileTree` path that hands a directory to the OS is `ContextMenuAction::RevealInFinder` in [crates/tide-app/src/application/services/file_tree_service/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/application/services/file_tree_service/mod.rs:602). That branch currently sends every directory through `ProcessPort::open_with_default_app()`. `SystemProcess::open_with_default_app()` in [crates/tide-app/src/adapter/outward/process_adapter/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/outward/process_adapter/mod.rs:29) shells out to `open <path>`, which launches a bundled macOS app when the directory path ends in `.app`.
+`ContextMenuAction::items()` in [crates/tide-app/src/domain/modal/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/domain/modal/mod.rs:843) still treats every directory alike. A `.app` bundle gets the same `Open in Finder` label as an ordinary directory even though plain activation already launches the app. In [crates/tide-app/src/application/services/file_tree_service/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/application/services/file_tree_service/mod.rs:602), that action routes app bundles to `ProcessPort::reveal_in_finder()`, so the context menu still exposes Finder reveal as the only explicit action on the bundle.
 
-For `Tide.app`, that means a `FileTree` "Open in Finder" action can relaunch Tide itself. In a Full-Screen Space this produces an extra Tide launch instead of revealing the bundle in Finder, matching the user's screenshot and report.
+For `Tide.app`, that means the `FileTree` context menu does not offer an app-specific launch action even though the row itself already launches on plain activation. The label/action mismatch makes the bundle feel like a directory operation instead of an app operation.
 
 ### To-Be
 
 `FileTree` must split app-bundle behavior by user intent instead of treating every `.app` directory like an ordinary folder.
 
-On plain activation, a `.app` row launches through the default macOS app handoff instead of expanding as a directory. On `Open in Finder`, the same `.app` row opens through Finder explicitly, so the user sees the bundle without relaunching it. Normal directories still use the current open-directory handoff, and ordinary files still use Finder reveal.
+On plain activation, a `.app` row launches through the default macOS app handoff instead of expanding as a directory. In the context menu, a `.app` row exposes an explicit `Open App` action for the same launch path and keeps a separate Finder-reveal action with a Finder-specific label. Normal directories still use the current open-directory handoff, and ordinary files still use Finder reveal.
 
 ### Approach
 
 1. Add a small helper in `file_tree_service` that recognizes `.app` bundle directories by directory status plus case-insensitive `.app` extension.
-2. Update `execute_context_menu_action()` so `ContextMenuAction::RevealInFinder` routes app-bundle directories to `ProcessPort::reveal_in_finder()` instead of `open_with_default_app()`.
-3. Preserve the existing behavior for ordinary directories and files.
-4. Add behavior tests that pin plain app-bundle activation, the Finder adapter path for app bundles, and the normal-directory fallback.
+2. Make `ContextMenuAction` and `ContextMenuState` app-bundle-aware so `.app` rows get a dedicated app-launch action set instead of the generic directory action set.
+3. Update `execute_context_menu_action()` so the app-launch action routes `.app` bundles to `ProcessPort::open_with_default_app()`, while the Finder-reveal action continues to route through `ProcessPort::reveal_in_finder()`.
+4. Preserve the existing behavior for ordinary directories and files.
+5. Route `.app` Finder reveal through the standard macOS reveal handoff now that app launch has its own explicit context-menu action.
+6. Add behavior tests that pin plain app-bundle activation, app-bundle context-menu launch, Finder reveal, and the normal-directory fallback.
 
 ## Bounded Contexts
 
 | Module | Path | Role |
 |--------|------|------|
 | tree | `crates/tide-app/src/domain/tree/mod.rs` | Produces `FileTree` entries and marks `.app` bundles as directories |
+| modal | `crates/tide-app/src/domain/modal/mod.rs` | Defines app-bundle-specific `FileTree` context menu actions and labels |
 | file tree service | `crates/tide-app/src/application/services/file_tree_service/mod.rs` | Executes `FileTree` context menu actions |
 | process adapter | `crates/tide-app/src/adapter/outward/process_adapter/mod.rs` | Maps process handoff requests to macOS `open` commands |
 
@@ -46,21 +49,36 @@ On plain activation, a `.app` row launches through the default macOS app handoff
 - **Business Rules**:
   - BR-1: Plain `FileTree` activation on a `.app` directory must launch the bundle instead of toggling directory expansion.
 
-### UC-2: RevealAppBundleInFinder
+### UC-2: OpenAppBundleFromContextMenu
 
 - **Actor**: User
-- **Trigger**: User runs `Open in Finder` on a `.app` directory from the `FileTree` context menu
+- **Trigger**: User runs `Open App` on a `.app` directory from the `FileTree` context menu
 - **Precondition**: The selected `FileTree` entry is a directory whose path ends with `.app`
 - **Flow**:
-  1. Tide resolves `ContextMenuAction::RevealInFinder`.
+  1. Tide resolves the app-bundle-specific context menu.
+  2. Tide detects that the selected directory is an app bundle.
+  3. Tide launches the bundle through `ProcessPort::open_with_default_app()`.
+- **Postcondition**: The context menu provides an explicit app-launch action that matches plain row activation.
+- **Business Rules**:
+  - BR-2: `.app` directories must expose an explicit `Open App` context-menu action instead of reusing the generic directory action set.
+  - BR-3: `Open App` on a `.app` directory must call `ProcessPort::open_with_default_app()`.
+
+### UC-3: RevealAppBundleInFinder
+
+- **Actor**: User
+- **Trigger**: User runs Finder reveal on a `.app` directory from the `FileTree` context menu
+- **Precondition**: The selected `FileTree` entry is a directory whose path ends with `.app`
+- **Flow**:
+  1. Tide resolves the Finder-reveal action from the app-bundle-specific context menu.
   2. Tide detects that the selected directory is an app bundle.
   3. Tide asks `ProcessPort::reveal_in_finder()` to show the bundle through Finder instead of opening it as a default app.
-- **Postcondition**: Finder opens to the bundle's containing folder and Tide does not relaunch the bundled app.
+- **Postcondition**: Finder reveals the bundle in place without relaunching the bundled app or opening extra Finder windows.
 - **Business Rules**:
-  - BR-2: `Open in Finder` on a `.app` directory must call Finder reveal instead of default-app launch.
-  - BR-3: The macOS process adapter must route `.app` bundle reveal requests through Finder explicitly instead of shelling out to `open <bundle>.app`.
+  - BR-4: `.app` directories must keep a separate Finder-reveal action that is labeled as Finder-specific instead of app-launch-specific.
+  - BR-5: Finder reveal on a `.app` directory must call Finder reveal instead of default-app launch.
+  - BR-6: The macOS process adapter must route `.app` bundle reveal requests through the standard Finder reveal handoff instead of a Finder-specific parent-directory open path.
 
-### UC-3: PreserveNormalFinderHandoff
+### UC-4: PreserveNormalFinderHandoff
 
 - **Actor**: User
 - **Trigger**: User runs `Open in Finder` on a non-bundle directory from the `FileTree` context menu
@@ -71,12 +89,12 @@ On plain activation, a `.app` row launches through the default macOS app handoff
   3. Tide preserves the current directory handoff and calls `ProcessPort::open_with_default_app()`.
 - **Postcondition**: Ordinary directories still open in Finder as before.
 - **Business Rules**:
-  - BR-4: Non-bundle directories must preserve the existing default-app handoff.
+  - BR-7: Non-bundle directories must preserve the existing default-app handoff.
 
 ## Invariants
 
 1. `FsTree` may still expose `.app` bundles as directories because they are directories on disk.
-2. Plain activation and `Open in Finder` may diverge for `.app` bundles without affecting ordinary directories.
+2. Plain activation and context-menu activation may both launch `.app` bundles without affecting ordinary directories.
 3. Files still use `ProcessPort::reveal_in_finder()` for Finder reveal.
 
 ## Tests
@@ -84,9 +102,12 @@ On plain activation, a `.app` row launches through the default macOS app handoff
 | UC | BR | Test |
 |----|----|------|
 | UC-1 | BR-1 | `clicking_app_bundle_in_file_tree_launches_it_instead_of_toggling_directory_expansion` |
-| UC-2 | BR-2 | `open_in_finder_reveals_app_bundles_without_launching_them` |
-| UC-2 | BR-3 | `system_process_routes_app_bundle_open_in_finder_through_finder_app` |
-| UC-3 | BR-4 | `open_in_finder_keeps_default_directory_handoff_for_non_bundle_directories` |
+| UC-2 | BR-2 | `app_bundle_context_menu_uses_app_specific_actions_instead_of_directory_actions` |
+| UC-2 | BR-3 | `open_app_launches_app_bundles_from_the_file_tree_context_menu` |
+| UC-3 | BR-4 | `app_bundle_context_menu_keeps_a_finder_specific_reveal_label` |
+| UC-3 | BR-5 | `finder_reveal_reveals_app_bundles_without_launching_them` |
+| UC-3 | BR-6 | `system_process_routes_app_bundle_reveal_through_standard_finder_reveal` |
+| UC-4 | BR-7 | `open_in_finder_keeps_default_directory_handoff_for_non_bundle_directories` |
 
 ## Location
 
