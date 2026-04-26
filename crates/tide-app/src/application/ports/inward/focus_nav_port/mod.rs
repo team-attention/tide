@@ -22,4 +22,5 @@ pub(crate) trait FocusNavPort {
     fn set_focus_area(&mut self, area: FocusArea);
     fn set_zoom(&mut self, pane_id: Option<PaneId>);
     fn set_search_focus(&mut self, pane_id: Option<PaneId>);
+    fn jump_to_editor_location(&mut self, pane_id: PaneId, line: usize, col: usize);
 }

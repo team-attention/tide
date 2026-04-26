@@ -114,6 +114,7 @@ pub struct ThemePalette {
     // Editor enhancements
     pub current_line_bg: Color,       // subtle bg on cursor line
     pub indent_guide: Color,          // vertical indent guide lines
+    pub active_indent_guide: Color,   // current-line indent guide emphasis
     pub git_gutter_added: Color,      // green bar in gutter
     pub git_gutter_modified: Color,   // yellow bar in gutter
     pub bracket_match_bg: Color,      // bracket highlight background
@@ -238,11 +239,12 @@ pub static DARK: ThemePalette = ThemePalette {
     // Editor enhancements
     current_line_bg: Color::new(1.0, 1.0, 1.0, 0.055), // visible without becoming a stripe
     indent_guide: Color::new(1.0, 1.0, 1.0, 0.095),    // quiet but easier structural read
+    active_indent_guide: Color::new(1.0, 1.0, 1.0, 0.18),
     git_gutter_added: Color::new(0.133, 0.773, 0.369, 0.80), // green bar
     git_gutter_modified: Color::new(0.831, 0.659, 0.263, 0.80), // yellow bar
-    bracket_match_bg: Color::new(1.0, 1.0, 1.0, 0.08), // subtle bracket bg
-    bracket_match_border: Color::new(1.0, 1.0, 1.0, 0.25), // bracket border
-    scrollbar_thumb_hover: Color::new(1.0, 1.0, 1.0, 0.22), // brighter thumb on hover
+    bracket_match_bg: Color::new(1.0, 1.0, 1.0, 0.08),       // subtle bracket bg
+    bracket_match_border: Color::new(1.0, 1.0, 1.0, 0.25),   // bracket border
+    scrollbar_thumb_hover: Color::new(1.0, 1.0, 1.0, 0.22),  // brighter thumb on hover
 
     // File tree git status
     git_modified: Color::new(0.831, 0.659, 0.263, 1.0), // warm yellow #D4A843
@@ -362,9 +364,10 @@ pub static LIGHT: ThemePalette = ThemePalette {
     // Editor enhancements
     current_line_bg: Color::new(0.0, 0.0, 0.0, 0.055), // visible without becoming muddy
     indent_guide: Color::new(0.0, 0.0, 0.0, 0.095),    // quiet but clearer structure
+    active_indent_guide: Color::new(0.0, 0.0, 0.0, 0.18),
     git_gutter_added: Color::new(0.15, 0.55, 0.15, 0.80), // green bar
     git_gutter_modified: Color::new(0.70, 0.58, 0.10, 0.80), // yellow bar
-    bracket_match_bg: Color::new(0.0, 0.0, 0.0, 0.06), // subtle bracket bg
+    bracket_match_bg: Color::new(0.0, 0.0, 0.0, 0.06),    // subtle bracket bg
     bracket_match_border: Color::new(0.0, 0.0, 0.0, 0.20), // bracket border
     scrollbar_thumb_hover: Color::new(0.45, 0.35, 0.20, 0.35), // darker thumb on hover
 

@@ -46,13 +46,6 @@ pub(crate) struct HeaderActionSpec {
     pub action: HeaderHitAction,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HeaderActionIconRole {
-    BrowserGlobe,
-    SplitColumns,
-    SplitRows,
-}
-
 const HEADER_ACTION_TILE_SIZE: f32 = 18.0;
 const HEADER_ACTION_TILE_RADIUS: f32 = 4.0;
 
@@ -118,6 +111,13 @@ pub(crate) struct TitleBadgeLayout {
     pub visible_badges: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SinglePaneHeaderLayout {
+    pub surface_w: f32,
+    pub close_hit_x: f32,
+    pub title_layout: TitleBadgeLayout,
+}
+
 pub(crate) fn reserve_title_before_badges(
     title_w_raw: f32,
     badge_widths: &[f32],
@@ -145,6 +145,41 @@ pub(crate) fn reserve_title_before_badges(
     }
 }
 
+pub(crate) fn single_pane_header_layout(
+    available_w: f32,
+    header_action_width: f32,
+    title_w_raw: f32,
+    badge_widths: &[f32],
+    has_status_dot: bool,
+) -> SinglePaneHeaderLayout {
+    let action_strip_start_x = header_action_strip_start_x(available_w, header_action_width);
+    let action_gap = if header_action_width > 0.0 {
+        TAB_H_PAD
+    } else {
+        0.0
+    };
+    let content_right = if header_action_width > 0.0 {
+        action_strip_start_x - action_gap
+    } else {
+        available_w - TAB_H_PAD
+    };
+    let dot_w = tab_status_dot_width(has_status_dot);
+    let close_hit_x = (content_right - 16.0).max(TAB_H_PAD + dot_w);
+    let title_layout = reserve_title_before_badges(
+        title_w_raw,
+        badge_widths,
+        (close_hit_x - TAB_H_PAD - dot_w).max(0.0),
+        TAB_MIN_TITLE_WIDTH,
+        BADGE_GAP,
+    );
+
+    SinglePaneHeaderLayout {
+        surface_w: available_w.max(0.0),
+        close_hit_x,
+        title_layout,
+    }
+}
+
 fn shared_header_action_specs() -> Vec<HeaderActionSpec> {
     vec![
         HeaderActionSpec {
@@ -165,6 +200,10 @@ pub(crate) fn single_pane_header_action_specs() -> Vec<HeaderActionSpec> {
 
 pub(crate) fn tab_group_header_action_specs() -> Vec<HeaderActionSpec> {
     shared_header_action_specs()
+}
+
+pub(crate) fn dock_tab_group_uses_shared_tab_bar(tab_group: &crate::tide_layout::TabGroup) -> bool {
+    tab_group.len() >= 2
 }
 
 pub(crate) fn header_action_strip_width(_cell_w: f32, specs: &[HeaderActionSpec]) -> f32 {
@@ -195,11 +234,11 @@ pub(crate) fn is_header_action_strip_action(action: &HeaderHitAction) -> bool {
     )
 }
 
-pub(crate) fn header_action_icon_role(action: &HeaderHitAction) -> Option<HeaderActionIconRole> {
+pub(crate) fn header_action_glyph(action: &HeaderHitAction) -> Option<&'static str> {
     match action {
-        HeaderHitAction::OpenBrowser => Some(HeaderActionIconRole::BrowserGlobe),
-        HeaderHitAction::SplitHorizontal => Some(HeaderActionIconRole::SplitColumns),
-        HeaderHitAction::SplitVertical => Some(HeaderActionIconRole::SplitRows),
+        HeaderHitAction::OpenBrowser => Some("\u{f268}"),
+        HeaderHitAction::SplitHorizontal => Some("\u{2194}"),
+        HeaderHitAction::SplitVertical => Some("\u{2195}"),
         _ => None,
     }
 }
@@ -368,156 +407,52 @@ fn selection_comment_badge(
     }
 }
 
-fn header_action_tile_colors(
-    is_emphasized: bool,
-    p: &ThemePalette,
-) -> (
-    crate::tide_core::Color,
-    crate::tide_core::Color,
-    crate::tide_core::Color,
-) {
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct HeaderActionTileStyle {
+    icon_color: crate::tide_core::Color,
+    bg_color: crate::tide_core::Color,
+    draw_outline: bool,
+}
+
+fn header_action_tile_style(is_emphasized: bool, p: &ThemePalette) -> HeaderActionTileStyle {
     if is_emphasized {
-        (p.tab_text_focused, p.badge_bg, p.border_subtle)
+        HeaderActionTileStyle {
+            icon_color: p.tab_text_focused,
+            bg_color: badge_tint(p.tab_text_focused, 0.08),
+            draw_outline: false,
+        }
     } else {
-        (p.tab_text, p.badge_bg_unfocused, p.border_subtle)
+        HeaderActionTileStyle {
+            icon_color: p.tab_text,
+            bg_color: badge_tint(p.tab_text, 0.05),
+            draw_outline: false,
+        }
     }
 }
 
-fn draw_header_action_icon_frame(
-    renderer: &mut WgpuRenderer,
-    rect: Rect,
-    color: crate::tide_core::Color,
-) {
-    renderer.draw_chrome_rect(Rect::new(rect.x, rect.y, rect.width, 1.0), color);
-    renderer.draw_chrome_rect(
-        Rect::new(rect.x, rect.y + rect.height - 1.0, rect.width, 1.0),
-        color,
-    );
-    renderer.draw_chrome_rect(Rect::new(rect.x, rect.y, 1.0, rect.height), color);
-    renderer.draw_chrome_rect(
-        Rect::new(rect.x + rect.width - 1.0, rect.y, 1.0, rect.height),
-        color,
-    );
-}
-
-fn render_browser_globe_icon(
-    renderer: &mut WgpuRenderer,
-    tile_rect: Rect,
-    stroke: crate::tide_core::Color,
-) {
-    let globe = Rect::new(tile_rect.x + 4.0, tile_rect.y + 4.0, 10.0, 10.0);
-
-    renderer.draw_chrome_rect(
-        Rect::new(globe.x + 2.0, globe.y, globe.width - 4.0, 1.0),
-        stroke,
-    );
-    renderer.draw_chrome_rect(
-        Rect::new(
-            globe.x + 2.0,
-            globe.y + globe.height - 1.0,
-            globe.width - 4.0,
-            1.0,
-        ),
-        stroke,
-    );
-    renderer.draw_chrome_rect(
-        Rect::new(globe.x, globe.y + 2.0, 1.0, globe.height - 4.0),
-        stroke,
-    );
-    renderer.draw_chrome_rect(
-        Rect::new(
-            globe.x + globe.width - 1.0,
-            globe.y + 2.0,
-            1.0,
-            globe.height - 4.0,
-        ),
-        stroke,
-    );
-
-    renderer.draw_chrome_rect(Rect::new(globe.x + 1.0, globe.y + 1.0, 1.0, 1.0), stroke);
-    renderer.draw_chrome_rect(
-        Rect::new(globe.x + globe.width - 2.0, globe.y + 1.0, 1.0, 1.0),
-        stroke,
-    );
-    renderer.draw_chrome_rect(
-        Rect::new(globe.x + 1.0, globe.y + globe.height - 2.0, 1.0, 1.0),
-        stroke,
-    );
-    renderer.draw_chrome_rect(
-        Rect::new(
-            globe.x + globe.width - 2.0,
-            globe.y + globe.height - 2.0,
-            1.0,
-            1.0,
-        ),
-        stroke,
-    );
-
-    renderer.draw_chrome_rect(
-        Rect::new(
-            globe.x + 2.0,
-            globe.y + globe.height / 2.0,
-            globe.width - 4.0,
-            1.0,
-        ),
-        stroke,
-    );
-    renderer.draw_chrome_rect(
-        Rect::new(
-            globe.x + globe.width / 2.0,
-            globe.y + 1.0,
-            1.0,
-            globe.height - 2.0,
-        ),
-        stroke,
-    );
-}
-
-fn render_split_columns_icon(
-    renderer: &mut WgpuRenderer,
-    tile_rect: Rect,
-    stroke: crate::tide_core::Color,
-) {
-    let body = Rect::new(tile_rect.x + 3.0, tile_rect.y + 4.0, 12.0, 10.0);
-    draw_header_action_icon_frame(renderer, body, stroke);
-    let divider_x = body.x + (body.width / 2.0).floor();
-    renderer.draw_chrome_rect(
-        Rect::new(divider_x, body.y + 1.0, 1.0, body.height - 2.0),
-        stroke,
-    );
-}
-
-fn render_split_rows_icon(
-    renderer: &mut WgpuRenderer,
-    tile_rect: Rect,
-    stroke: crate::tide_core::Color,
-) {
-    let body = Rect::new(tile_rect.x + 3.0, tile_rect.y + 4.0, 12.0, 10.0);
-    draw_header_action_icon_frame(renderer, body, stroke);
-    let divider_y = body.y + (body.height / 2.0).floor();
-    renderer.draw_chrome_rect(
-        Rect::new(body.x + 1.0, divider_y, body.width - 2.0, 1.0),
-        stroke,
-    );
-}
-
-fn render_header_action_icon(
+fn render_header_action_glyph(
     renderer: &mut WgpuRenderer,
     action: &HeaderHitAction,
     tile_rect: Rect,
-    stroke: crate::tide_core::Color,
+    color: crate::tide_core::Color,
 ) {
-    match header_action_icon_role(action) {
-        Some(HeaderActionIconRole::BrowserGlobe) => {
-            render_browser_globe_icon(renderer, tile_rect, stroke);
-        }
-        Some(HeaderActionIconRole::SplitColumns) => {
-            render_split_columns_icon(renderer, tile_rect, stroke);
-        }
-        Some(HeaderActionIconRole::SplitRows) => {
-            render_split_rows_icon(renderer, tile_rect, stroke);
-        }
-        None => {}
+    if let Some(glyph) = header_action_glyph(action) {
+        let cell_size = renderer.cell_size();
+        let glyph_x = tile_rect.x + ((tile_rect.width - cell_size.width).max(0.0) / 2.0);
+        let glyph_y = tile_rect.y + ((tile_rect.height - cell_size.height).max(0.0) / 2.0) - 1.0;
+        renderer.draw_chrome_text(
+            glyph,
+            Vec2::new(glyph_x, glyph_y),
+            TextStyle {
+                foreground: color,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            },
+            tile_rect,
+        );
     }
 }
 
@@ -540,10 +475,16 @@ fn render_header_action_strip(
             HEADER_ACTION_TILE_SIZE,
             HEADER_ACTION_TILE_SIZE,
         );
-        let (icon_color, bg_color, outline_color) = header_action_tile_colors(is_emphasized, p);
-        renderer.draw_chrome_rounded_rect(tile_rect, bg_color, HEADER_ACTION_TILE_RADIUS);
-        draw_header_action_icon_frame(renderer, tile_rect, outline_color);
-        render_header_action_icon(renderer, &spec.action, tile_rect, icon_color);
+        let style = header_action_tile_style(is_emphasized, p);
+        renderer.draw_chrome_rounded_rect(tile_rect, style.bg_color, HEADER_ACTION_TILE_RADIUS);
+        if style.draw_outline {
+            renderer.draw_chrome_rounded_rect(
+                tile_rect,
+                p.border_subtle,
+                HEADER_ACTION_TILE_RADIUS,
+            );
+        }
+        render_header_action_glyph(renderer, &spec.action, tile_rect, style.icon_color);
         zones.push(HeaderHitZone {
             pane_id,
             rect: Rect::new(x, rect.y, HEADER_ACTION_TILE_SIZE, TAB_BAR_HEIGHT),
@@ -1017,46 +958,39 @@ pub fn render_pane_header_inner(
         ("\u{f00d}", p.close_icon)
     };
 
-    // Compute badge total width
     let badge_gap = 4.0_f32;
-    let mut total_badge_w = 0.0_f32;
-    for (text, _, _, _) in &inline_badges {
-        total_badge_w += text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0 + badge_gap;
-    }
-
-    // Compute COMPACT tab width: [pad] [dot?] [title] [gap] [badges] [close 16] [pad]
-    let dot_w = tab_status_dot_width(visible_dot_state.is_some());
     let title_w_raw = title.chars().count() as f32 * cell_w;
-    let compact_tab_cap = active_tab_width_cap(available_w).min(available_w.max(TAB_MIN_WIDTH));
-    let compact_tab_w =
-        (TAB_H_PAD + dot_w + title_w_raw + badge_gap + total_badge_w + close_hit_size + TAB_H_PAD)
-            .clamp(TAB_MIN_WIDTH, compact_tab_cap);
+    let badge_widths: Vec<f32> = inline_badges
+        .iter()
+        .map(|(text, _, _, _)| text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0)
+        .collect();
+    let header_layout = single_pane_header_layout(
+        available_w,
+        header_action_width,
+        title_w_raw,
+        &badge_widths,
+        visible_dot_state.is_some(),
+    );
 
-    // Draw compact active tab bg + top accent line
+    // Draw full-width focused single-pane header surface.
     for step in single_pane_header_paint_steps(visible_dot_state.is_some()) {
         match step {
             SinglePaneHeaderPaintStep::Background => {
-                renderer.draw_chrome_rect(
-                    Rect::new(rect.x, rect.y, compact_tab_w, TAB_BAR_HEIGHT),
-                    p.active_tab_bg,
-                );
-                // Reset area beyond compact tab to unfocused tab bar bg
-                // (render_pane_chrome draws tab_bar_bg_focused across the full width)
-                if compact_tab_w < available_w {
+                if is_focused {
+                    renderer.draw_chrome_rect(
+                        Rect::new(rect.x, rect.y, header_layout.surface_w, TAB_BAR_HEIGHT),
+                        p.active_tab_bg,
+                    );
                     renderer.draw_chrome_rect(
                         Rect::new(
-                            rect.x + compact_tab_w,
+                            rect.x,
                             rect.y,
-                            available_w - compact_tab_w,
-                            TAB_BAR_HEIGHT,
+                            header_layout.surface_w,
+                            TAB_ACTIVE_INDICATOR_HEIGHT,
                         ),
-                        p.tab_bar_bg,
+                        p.border_focused,
                     );
                 }
-                renderer.draw_chrome_rect(
-                    Rect::new(rect.x, rect.y, compact_tab_w, TAB_ACTIVE_INDICATOR_HEIGHT),
-                    p.border_focused,
-                );
             }
             SinglePaneHeaderPaintStep::Dot => {
                 if let Some(state) = visible_dot_state {
@@ -1073,22 +1007,12 @@ pub fn render_pane_header_inner(
         }
     }
 
-    // Position close icon relative to compact tab width
-    let close_hit_x = rect.x + compact_tab_w - TAB_H_PAD - close_hit_size;
+    // Position close icon relative to the full-width header lane.
+    let close_hit_x = rect.x + header_layout.close_hit_x;
     let _close_icon_x = close_hit_x + (close_hit_size - close_icon_w) / 2.0;
     let _close_icon_y = rect.y + (TAB_BAR_HEIGHT - close_icon_w) / 2.0;
 
-    let badge_widths: Vec<f32> = inline_badges
-        .iter()
-        .map(|(text, _, _, _)| text.chars().count() as f32 * cell_w + BADGE_PADDING_H * 2.0)
-        .collect();
-    let title_layout = reserve_title_before_badges(
-        title_w_raw,
-        &badge_widths,
-        (close_hit_x - cx).max(0.0),
-        TAB_MIN_TITLE_WIDTH,
-        badge_gap,
-    );
+    let title_layout = header_layout.title_layout;
     let title_w = title_layout.title_w;
 
     // Draw title text
@@ -1969,20 +1893,51 @@ mod tests {
     }
 
     #[test]
-    fn header_action_icon_roles_match_browser_globe_and_split_rects() {
+    fn browser_header_action_reuses_launcher_browser_glyph() {
         assert_eq!(
-            header_action_icon_role(&HeaderHitAction::OpenBrowser),
-            Some(HeaderActionIconRole::BrowserGlobe)
+            header_action_glyph(&HeaderHitAction::OpenBrowser),
+            Some("\u{f268}")
+        );
+        assert_eq!(header_action_glyph(&HeaderHitAction::Close), None);
+    }
+
+    #[test]
+    fn split_header_action_glyphs_use_a_matched_horizontal_vertical_axis_arrow_pair() {
+        assert_eq!(
+            header_action_glyph(&HeaderHitAction::SplitHorizontal),
+            Some("\u{2194}")
         );
         assert_eq!(
-            header_action_icon_role(&HeaderHitAction::SplitHorizontal),
-            Some(HeaderActionIconRole::SplitColumns)
+            header_action_glyph(&HeaderHitAction::SplitVertical),
+            Some("\u{2195}")
         );
-        assert_eq!(
-            header_action_icon_role(&HeaderHitAction::SplitVertical),
-            Some(HeaderActionIconRole::SplitRows)
+        assert_ne!(
+            header_action_glyph(&HeaderHitAction::SplitHorizontal),
+            header_action_glyph(&HeaderHitAction::SplitVertical)
         );
-        assert_eq!(header_action_icon_role(&HeaderHitAction::Close), None);
+    }
+
+    #[test]
+    fn dock_shared_tab_bar_requires_multiple_tabs() {
+        let single = crate::tide_layout::TabGroup::single(1);
+        assert!(!dock_tab_group_uses_shared_tab_bar(&single));
+
+        let mut multi = crate::tide_layout::TabGroup::single(1);
+        multi.add_tab(2);
+        assert!(dock_tab_group_uses_shared_tab_bar(&multi));
+    }
+
+    #[test]
+    fn header_action_tile_style_uses_ghost_chrome_without_outline() {
+        let emphasized = header_action_tile_style(true, &crate::theme::DARK);
+        assert!(!emphasized.draw_outline);
+        assert!(emphasized.bg_color.a > 0.0);
+        assert!(emphasized.bg_color.a < 0.2);
+
+        let unfocused = header_action_tile_style(false, &crate::theme::DARK);
+        assert!(!unfocused.draw_outline);
+        assert!(unfocused.bg_color.a > 0.0);
+        assert!(unfocused.bg_color.a < emphasized.bg_color.a);
     }
 
     #[test]

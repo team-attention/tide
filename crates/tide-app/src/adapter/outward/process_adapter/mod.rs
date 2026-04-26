@@ -25,6 +25,10 @@ fn bundled_tide_app_path_for_executable(exe: &Path) -> Option<&Path> {
     Some(bundle_dir)
 }
 
+fn is_app_bundle_path(path: &Path) -> bool {
+    path.extension() == Some(OsStr::new("app"))
+}
+
 impl ProcessPort for SystemProcess {
     fn open_with_default_app(&self, path: &Path) -> io::Result<()> {
         std::process::Command::new("open")
@@ -34,11 +38,20 @@ impl ProcessPort for SystemProcess {
     }
 
     fn reveal_in_finder(&self, path: &Path) -> io::Result<()> {
-        std::process::Command::new("open")
-            .arg("-R")
-            .arg(path)
-            .spawn()
-            .map(|_| ())
+        if is_app_bundle_path(path) {
+            std::process::Command::new("open")
+                .arg("-a")
+                .arg("Finder")
+                .arg(path.parent().unwrap_or(path))
+                .spawn()
+                .map(|_| ())
+        } else {
+            std::process::Command::new("open")
+                .arg("-R")
+                .arg(path)
+                .spawn()
+                .map(|_| ())
+        }
     }
 
     fn open_url(&self, url: &str) -> io::Result<()> {

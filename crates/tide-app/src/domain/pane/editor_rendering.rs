@@ -29,6 +29,7 @@ impl EditorPane {
         ime_preedit: &str,
         current_line_bg: Color,
         indent_guide: Color,
+        active_indent_guide: Color,
     ) {
         if self.preview_mode {
             self.render_preview_grid(rect, renderer);
@@ -46,6 +47,7 @@ impl EditorPane {
                     ime_preedit,
                     current_line_bg,
                     indent_guide,
+                    active_indent_guide,
                 );
             } else {
                 self.render_live_preview_grid(
@@ -56,6 +58,7 @@ impl EditorPane {
                     ime_preedit,
                     current_line_bg,
                     indent_guide,
+                    active_indent_guide,
                 );
             }
             return;
@@ -75,6 +78,7 @@ impl EditorPane {
                 ime_preedit,
                 current_line_bg,
                 indent_guide,
+                active_indent_guide,
                 self.wrap_map(),
             );
             self.render_split_preview_grid(preview_rect, renderer);
@@ -98,6 +102,7 @@ impl EditorPane {
             ime_preedit,
             current_line_bg,
             indent_guide,
+            active_indent_guide,
             None,
         );
     }
@@ -115,6 +120,7 @@ impl EditorPane {
         ime_preedit: &str,
         current_line_bg: Color,
         indent_guide: Color,
+        active_indent_guide: Color,
         wrap_map_override: Option<&WrapMap>,
     ) {
         if let Some(wrap_map) = wrap_map_override {
@@ -125,6 +131,7 @@ impl EditorPane {
                 gutter_active_text,
                 ime_preedit,
                 current_line_bg,
+                active_indent_guide,
                 wrap_map,
             );
             return;
@@ -137,6 +144,7 @@ impl EditorPane {
                 gutter_active_text,
                 ime_preedit,
                 current_line_bg,
+                active_indent_guide,
             );
             return;
         }
@@ -319,9 +327,14 @@ impl EditorPane {
                 while col < indent_level {
                     let guide_x = content_x + col as f32 * cell_size.width;
                     if guide_x < content_x + content_width {
+                        let guide_color = if abs_line == cursor_line {
+                            active_indent_guide
+                        } else {
+                            indent_guide
+                        };
                         renderer.draw_grid_rect(
                             Rect::new(guide_x, y, 1.0, cell_size.height),
-                            indent_guide,
+                            guide_color,
                         );
                     }
                     col += tab_size;
@@ -343,6 +356,7 @@ impl EditorPane {
         ime_preedit: &str,
         current_line_bg: Color,
         indent_guide: Color,
+        active_indent_guide: Color,
     ) {
         let live_map = match &self.live_preview_map {
             Some(m) => m,
@@ -488,7 +502,7 @@ impl EditorPane {
                             if guide_x < content_x + content_width {
                                 renderer.draw_grid_rect(
                                     Rect::new(guide_x, y, 1.0, cell_size.height),
-                                    indent_guide,
+                                    active_indent_guide,
                                 );
                             }
                             col += tab_size;
@@ -633,6 +647,7 @@ impl EditorPane {
         ime_preedit: &str,
         current_line_bg: Color,
         _indent_guide: Color,
+        _active_indent_guide: Color,
     ) {
         let live_map = match &self.live_preview_map {
             Some(m) => m,
@@ -1048,6 +1063,7 @@ impl EditorPane {
         gutter_active_text: Color,
         ime_preedit: &str,
         current_line_bg: Color,
+        active_indent_guide: Color,
     ) {
         let wrap_map = match self.wrap_map() {
             Some(m) => m,
@@ -1060,6 +1076,7 @@ impl EditorPane {
             gutter_active_text,
             ime_preedit,
             current_line_bg,
+            active_indent_guide,
             wrap_map,
         );
     }
@@ -1072,6 +1089,7 @@ impl EditorPane {
         gutter_active_text: Color,
         ime_preedit: &str,
         current_line_bg: Color,
+        _active_indent_guide: Color,
         wrap_map: &WrapMap,
     ) {
         let cell_size = renderer.cell_size();

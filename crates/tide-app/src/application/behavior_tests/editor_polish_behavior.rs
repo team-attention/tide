@@ -3,7 +3,10 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::header::{active_tab_badges, reserve_title_before_badges, HeaderHitAction};
+use crate::header::{
+    active_tab_badges, header_action_strip_start_x, reserve_title_before_badges,
+    single_pane_header_layout, HeaderHitAction,
+};
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::theme::{BADGE_GAP, BADGE_PADDING_H, DARK, LIGHT, TAB_MIN_TITLE_WIDTH};
@@ -49,6 +52,14 @@ fn active_markdown_pane_shows_explicit_mode_badge() {
     );
 }
 
+#[test]
+fn focused_single_pane_editor_header_uses_full_width_active_surface() {
+    // UC-1 BR-4: A focused single-pane Editor header uses the full header width as the active surface.
+    let layout = single_pane_header_layout(320.0, 0.0, 96.0, &[48.0], false);
+
+    assert_eq!(layout.surface_w, 320.0);
+}
+
 // --- UC-2: PreserveCriticalChromeAtNarrowWidths ---
 
 #[test]
@@ -74,5 +85,30 @@ fn focused_markdown_pane_keeps_mode_badge_visible_ahead_of_add_comment_when_widt
         badges[0].action,
         Some(HeaderHitAction::ToggleLivePreview),
         "the first badge kept under tight width should remain the live/plain mode affordance"
+    );
+}
+
+#[test]
+fn single_pane_editor_header_reserves_close_lane_before_header_actions() {
+    // UC-2 BR-7: A single-pane Editor header reserves a trailing utility lane before header actions.
+    let header_action_width = 3.0 * 18.0 + 2.0 * BADGE_GAP;
+    let layout = single_pane_header_layout(320.0, header_action_width, 120.0, &[48.0], false);
+    let action_strip_start_x = header_action_strip_start_x(320.0, header_action_width);
+
+    assert!(layout.close_hit_x + 16.0 <= action_strip_start_x - 8.0);
+}
+
+// --- UC-4: ImproveReadabilityWithoutChangingEditorSemantics ---
+
+#[test]
+fn active_indent_guides_are_stronger_on_current_line_than_surrounding_guides() {
+    // UC-4 BR-13: Current-line indent guides step forward slightly from surrounding guides.
+    assert!(
+        DARK.active_indent_guide.a > DARK.indent_guide.a,
+        "dark active indent guides should be more visible than surrounding guides"
+    );
+    assert!(
+        LIGHT.active_indent_guide.a > LIGHT.indent_guide.a,
+        "light active indent guides should be more visible than surrounding guides"
     );
 }

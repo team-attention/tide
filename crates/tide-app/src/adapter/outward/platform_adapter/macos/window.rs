@@ -30,6 +30,9 @@ use super::super::{CursorIcon, EventCallback, PlatformWindow, WindowConfig};
 const INITIAL_BG_RED: f64 = 0.08;
 const INITIAL_BG_GREEN: f64 = 0.08;
 const INITIAL_BG_BLUE: f64 = 0.10;
+const NS_WINDOW_COLLECTION_BEHAVIOR_MANAGED: usize = 1 << 2;
+const NS_WINDOW_COLLECTION_BEHAVIOR_FULL_SCREEN_PRIMARY: usize = 1 << 7;
+const NS_WINDOW_COLLECTION_BEHAVIOR_PRIMARY: usize = 1 << 16;
 const NOTIFICATION_TARGET_PREFIX: &str = "tide-target:";
 static NOTIFICATION_DELIVERY_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 pub(crate) const NOTIFICATION_AUTHORIZATION_OPTIONS: usize = 0x07;
@@ -531,6 +534,16 @@ impl MacosWindow {
             ns_window
                 .setTitleVisibility(objc2_app_kit::NSWindowTitleVisibility::NSWindowTitleHidden);
         }
+        // Mark Tide windows as the system-managed primary full-screen document window.
+        // This keeps Spaces/Stage Manager behavior explicit instead of relying on defaults.
+        unsafe {
+            let behavior: usize = msg_send![&ns_window, collectionBehavior];
+            let behavior = behavior
+                | NS_WINDOW_COLLECTION_BEHAVIOR_MANAGED
+                | NS_WINDOW_COLLECTION_BEHAVIOR_FULL_SCREEN_PRIMARY
+                | NS_WINDOW_COLLECTION_BEHAVIOR_PRIMARY;
+            let _: () = msg_send![&ns_window, setCollectionBehavior: behavior];
+        }
 
         // Set minimum size
         ns_window.setMinSize(NSSize::new(
@@ -756,6 +769,7 @@ impl PlatformWindow for MacosWindow {
 
     fn show_window(&self) {
         let app = NSApplication::sharedApplication(self.mtm);
+        super::app::ensure_app_main_menu(self.mtm);
         app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
         unsafe {
             self.ns_window.deminiaturize(None);

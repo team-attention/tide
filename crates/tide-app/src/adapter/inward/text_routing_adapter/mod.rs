@@ -171,11 +171,18 @@ impl App {
                 }
             }
             TextInputTarget::FileFinder => {
+                let mut needs_workspace_symbols = false;
                 if let Some(ref mut finder) = self.modal.file_finder {
                     for ch in text.chars() {
                         finder.insert_char(ch);
                     }
+                    needs_workspace_symbols = finder.mode
+                        == crate::state::FileFinderMode::WorkspaceSymbols
+                        && !finder.workspace_symbols_loaded;
                     crate::AppCorePort::invalidate_chrome(self);
+                }
+                if needs_workspace_symbols {
+                    self.ensure_file_finder_workspace_symbols_loaded();
                 }
             }
             TextInputTarget::SaveAsInput => {

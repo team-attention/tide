@@ -6,9 +6,10 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use objc2::rc::Retained;
+use objc2::runtime::Sel;
 use objc2::{msg_send, msg_send_id};
-use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
-use objc2_foundation::{MainThreadMarker, NSPoint};
+use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSMenu, NSMenuItem};
+use objc2_foundation::{MainThreadMarker, NSPoint, NSString};
 
 use super::super::{EventCallback, PlatformWindow, WakeCallback, WindowConfig};
 use crate::tide_core::TideWindowId;
@@ -56,6 +57,7 @@ impl MacosApp {
             MainThreadMarker::new().expect("MacosApp::run must be called from the main thread");
 
         let app = NSApplication::sharedApplication(mtm);
+        ensure_app_main_menu(mtm);
         // Start without a Dock icon. show_window() promotes the app to Regular
         // only when this Tide Instance really needs to reveal its Tide Window.
         app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
@@ -131,6 +133,94 @@ impl MacosApp {
                 );
             }
         })
+    }
+}
+
+pub(crate) fn ensure_app_main_menu(mtm: MainThreadMarker) {
+    let app = NSApplication::sharedApplication(mtm);
+    if unsafe { app.mainMenu().is_some() } {
+        return;
+    }
+
+    let menu_bar = new_menu(mtm, "MainMenu");
+    let app_menu = add_menu_root(&menu_bar, mtm, "Tide");
+    populate_tide_app_menu(&app_menu, mtm);
+    add_menu_root(&menu_bar, mtm, "File");
+    add_menu_root(&menu_bar, mtm, "Edit");
+    add_menu_root(&menu_bar, mtm, "View");
+    let window_menu = add_menu_root(&menu_bar, mtm, "Window");
+    let help_menu = add_menu_root(&menu_bar, mtm, "Help");
+
+    unsafe {
+        app.setWindowsMenu(Some(&window_menu));
+        app.setHelpMenu(Some(&help_menu));
+    }
+    app.setMainMenu(Some(&menu_bar));
+}
+
+fn populate_tide_app_menu(app_menu: &NSMenu, mtm: MainThreadMarker) {
+    app_menu.addItem(&new_menu_item(
+        mtm,
+        "About Tide",
+        Some(objc2::sel!(orderFrontStandardAboutPanel:)),
+        "",
+    ));
+    app_menu.addItem(&NSMenuItem::separatorItem(mtm));
+    app_menu.addItem(&new_menu_item(
+        mtm,
+        "Hide Tide",
+        Some(objc2::sel!(hide:)),
+        "h",
+    ));
+    app_menu.addItem(&new_menu_item(
+        mtm,
+        "Hide Others",
+        Some(objc2::sel!(hideOtherApplications:)),
+        "",
+    ));
+    app_menu.addItem(&new_menu_item(
+        mtm,
+        "Show All",
+        Some(objc2::sel!(unhideAllApplications:)),
+        "",
+    ));
+    app_menu.addItem(&NSMenuItem::separatorItem(mtm));
+    app_menu.addItem(&new_menu_item(
+        mtm,
+        "Quit Tide",
+        Some(objc2::sel!(terminate:)),
+        "q",
+    ));
+}
+
+fn add_menu_root(menu_bar: &NSMenu, mtm: MainThreadMarker, title: &str) -> Retained<NSMenu> {
+    let root_item = new_menu_item(mtm, title, None, "");
+    let submenu = new_menu(mtm, title);
+    root_item.setSubmenu(Some(&submenu));
+    menu_bar.addItem(&root_item);
+    submenu
+}
+
+fn new_menu(mtm: MainThreadMarker, title: &str) -> Retained<NSMenu> {
+    let title = NSString::from_str(title);
+    unsafe { NSMenu::initWithTitle(mtm.alloc::<NSMenu>(), &title) }
+}
+
+fn new_menu_item(
+    mtm: MainThreadMarker,
+    title: &str,
+    action: Option<Sel>,
+    key_equivalent: &str,
+) -> Retained<NSMenuItem> {
+    let title = NSString::from_str(title);
+    let key_equivalent = NSString::from_str(key_equivalent);
+    unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+            mtm.alloc::<NSMenuItem>(),
+            &title,
+            action,
+            &key_equivalent,
+        )
     }
 }
 

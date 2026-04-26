@@ -111,17 +111,33 @@ pub(crate) fn handle_mouse_down(
 
         if ctx.modal().file_finder.is_some() {
             if let Some(idx) = ctx.file_finder_item_at(ctx.last_cursor_pos()) {
-                let path = {
+                let (destination, replace_id) = {
                     let finder = ctx.modal().file_finder.as_ref().unwrap();
-                    if let Some(&entry_idx) = finder.filtered.get(idx) {
-                        Some(finder.base_dir.join(&finder.entries[entry_idx]))
+                    let replace_id = if finder.mode == crate::state::FileFinderMode::Files {
+                        finder.replace_pane_id
                     } else {
                         None
-                    }
+                    };
+                    (finder.destination_at_filtered_index(idx), replace_id)
                 };
-                if let Some(path) = path {
+                if let Some(destination) = destination {
                     ctx.close_file_finder();
-                    ctx.open_editor_pane(path);
+                    match destination {
+                        crate::state::FileFinderDestination::OpenFile { path, line } => {
+                            if let Some(pane_id) = replace_id {
+                                ctx.replace_pane_with_editor(pane_id, path);
+                            } else {
+                                ctx.open_editor_pane_at_line(path, line);
+                            }
+                        }
+                        crate::state::FileFinderDestination::FocusedEditorSymbol {
+                            pane_id,
+                            line,
+                            col,
+                        } => {
+                            ctx.jump_to_editor_location(pane_id, line, col);
+                        }
+                    }
                     ctx.request_redraw();
                     return;
                 }

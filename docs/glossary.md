@@ -105,6 +105,10 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Browser Pane V2** | concept | A later capability track for Browser Pane work that goes beyond Browser Pane UX hardening, including in-app download management, stronger credential integration, and deeper browser session behavior. |
 | **GitSwitcher** | `GitSwitcherState` | Popup state that lists git worktrees for a Terminal Pane, tracks filtering and selection, and marks the current worktree row. |
 | **Search Bar** | concept | A Pane-scoped inline text input identified by `FocusState.search_focus`. When active it takes text-input priority over the underlying Pane. |
+| **FileFinder** | `FileFinderState` | Tide's modal navigation palette opened by `GlobalAction::FileFinder`. It can search files, current-file symbols, workspace symbols, or workspace text hits depending on `FileFinderMode`. |
+| **FileFinderMode** | `FileFinderMode` | The active search mode of `FileFinder`: `Files`, `Symbols`, `WorkspaceSymbols`, or `WorkspaceSearch`. |
+| **SymbolMatch** | `SymbolMatch` | A signature-style navigation result with label, relative path, and editor location. Used by `FileFinder` for current-file and workspace symbol search. |
+| **WorkspaceSearchHit** | `WorkspaceSearchHit` | A workspace text-search result with relative path, line, column, and preview text. Used by `FileFinder` workspace search mode. |
 | **Context Comment Composer** | `ContextCommentComposerState` | A `ModalStack` popup that previews the current captured Pane selection when available, accepts a user comment, and creates a `Context Artifact` for Artifact Delivery. |
 | **Wrapped Agent** | concept | A coding agent process launched through a Tide `Agent Wrapper`. Only a `Wrapped Agent` may drive wrapper-managed attention such as split-`Pane` highlight or inactive-`Workspace` highlight. |
 | **Wrapper-Managed Lifecycle Signal** | concept | A lifecycle update (`Running`, `Idle`, or `NeedsInput`) emitted through a Tide `Agent Wrapper` path, either by wrapper hooks or by wrapper-owned OSC 9 reporting. |
@@ -145,6 +149,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Agent Gateway** | Built-in subsystem for programmatic control via Unix socket. Always on, zero config. Comprises socket server, CLI client, and MCP bridge. |
 | **CliCommand** | A command received from an external process via the Agent Gateway socket. Enqueued as an `AppEvent` variant for single-threaded dispatch. |
 | **GatewayStatus** | Tracks Agent Gateway state: socket listening status, connected client count, active render streams. Displayed as a badge in the chrome. |
+| **App Main Menu** | The native macOS `NSMenu` installed on `NSApplication`. It drives the system menu bar, including top-edge reveal inside a `Full-Screen Space`. |
 | **Socket Server** | Background thread listening on a Unix domain socket (`$TMPDIR/tide-<pid>.sock`). Parses JSON-RPC 2.0 and enqueues `CliCommand` into the app event loop. |
 | **Render Pane** | A Browser pane in render mode (`render_mode: true`). Displays agent-provided HTML via `loadHTMLString` instead of URL navigation. No URL bar, title shown in tab. |
 | **Render Runtime** | Pre-injected HTML head (morphdom, Tailwind CSS, Tide theme CSS vars, JS bridge) loaded into every Render Pane before agent HTML. |

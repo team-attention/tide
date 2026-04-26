@@ -3,6 +3,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use crate::tide_core::{FileGitStatus, FileTreeSource, TerminalBackend, Vec2};
+use std::ffi::OsStr;
 
 use super::path_identity::normalize_path_for_identity;
 use crate::pane::PaneKind;
@@ -105,6 +106,15 @@ fn collect_git_poll_results_for_cwds(
 }
 
 impl App {
+    fn is_app_bundle_directory(path: &std::path::Path, is_dir: bool) -> bool {
+        is_dir
+            && path
+                .extension()
+                .and_then(OsStr::to_str)
+                .map(|ext| ext.eq_ignore_ascii_case("app"))
+                .unwrap_or(false)
+    }
+
     pub(crate) fn sync_file_tree_path_identity_cache(&mut self) {
         let mut normalized_entry_paths = HashMap::new();
         if let Some(tree) = self.ft.tree.as_ref() {
@@ -600,7 +610,9 @@ impl App {
                 self.cache.invalidate_chrome();
             }
             crate::ContextMenuAction::RevealInFinder => {
-                if menu.is_dir {
+                if Self::is_app_bundle_directory(&menu.path, menu.is_dir) {
+                    let _ = self.ports.process.reveal_in_finder(&menu.path);
+                } else if menu.is_dir {
                     let _ = self.ports.process.open_with_default_app(&menu.path);
                 } else {
                     let _ = self.ports.process.reveal_in_finder(&menu.path);
@@ -687,6 +699,11 @@ impl App {
     }
 
     pub(crate) fn handle_file_tree_click(&mut self, position: Vec2) {
+        enum FileTreeClickResult {
+            LaunchBundle(PathBuf),
+            OpenEditor(PathBuf),
+        }
+
         // Dismiss context menu and complete/cancel rename on any left click
         self.modal.context_menu = None;
         if self.modal.file_tree_rename.is_some() {
@@ -721,13 +738,15 @@ impl App {
             let entries = tree.visible_entries();
             if index < entries.len() {
                 let entry = entries[index].clone();
-                if entry.entry.is_dir {
+                if Self::is_app_bundle_directory(&entry.entry.path, entry.entry.is_dir) {
+                    Some(FileTreeClickResult::LaunchBundle(entry.entry.path.clone()))
+                } else if entry.entry.is_dir {
                     tree.toggle(&entry.entry.path);
                     self.sync_file_tree_path_identity_cache();
                     self.cache.invalidate_chrome();
                     None
                 } else {
-                    Some(entry.entry.path.clone())
+                    Some(FileTreeClickResult::OpenEditor(entry.entry.path.clone()))
                 }
             } else {
                 None
@@ -736,8 +755,13 @@ impl App {
             None
         };
 
-        if let Some(path) = click_result {
-            self.open_editor_pane(path);
+        if let Some(click_result) = click_result {
+            match click_result {
+                FileTreeClickResult::LaunchBundle(path) => {
+                    let _ = self.ports.process.open_with_default_app(&path);
+                }
+                FileTreeClickResult::OpenEditor(path) => self.open_editor_pane(path),
+            }
         }
     }
 }

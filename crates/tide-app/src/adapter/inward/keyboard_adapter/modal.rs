@@ -134,23 +134,36 @@ pub(super) fn handle_file_finder_key(
             ctx.close_file_finder();
         }
         Key::Enter => {
-            let path = ctx
+            let destination = ctx
                 .modal()
                 .file_finder
                 .as_ref()
-                .and_then(|f| f.selected_path());
-            let replace_id = ctx
-                .modal()
-                .file_finder
-                .as_ref()
-                .and_then(|f| f.replace_pane_id);
-            ctx.close_file_finder();
-            if let Some(path) = path {
-                if let Some(pane_id) = replace_id {
-                    // Replace the launcher pane with an editor for the selected file
-                    ctx.replace_pane_with_editor(pane_id, path);
+                .and_then(|f| f.selected_destination());
+            let replace_id = ctx.modal().file_finder.as_ref().and_then(|f| {
+                if f.mode == crate::state::FileFinderMode::Files {
+                    f.replace_pane_id
                 } else {
-                    ctx.open_editor_pane(path);
+                    None
+                }
+            });
+            ctx.close_file_finder();
+            if let Some(destination) = destination {
+                match destination {
+                    crate::state::FileFinderDestination::OpenFile { path, line } => {
+                        if let Some(pane_id) = replace_id {
+                            // Replace the launcher pane with an editor for the selected file
+                            ctx.replace_pane_with_editor(pane_id, path);
+                        } else {
+                            ctx.open_editor_pane_at_line(path, line);
+                        }
+                    }
+                    crate::state::FileFinderDestination::FocusedEditorSymbol {
+                        pane_id,
+                        line,
+                        col,
+                    } => {
+                        ctx.jump_to_editor_location(pane_id, line, col);
+                    }
                 }
             }
         }
@@ -167,14 +180,28 @@ pub(super) fn handle_file_finder_key(
             ctx.invalidate_chrome();
         }
         Key::Backspace => {
+            let mut needs_workspace_symbols = false;
             if let Some(ref mut finder) = ctx.modal_mut().file_finder {
                 finder.backspace();
+                needs_workspace_symbols = finder.mode
+                    == crate::state::FileFinderMode::WorkspaceSymbols
+                    && !finder.workspace_symbols_loaded;
+            }
+            if needs_workspace_symbols {
+                ctx.ensure_file_finder_workspace_symbols_loaded();
             }
             ctx.invalidate_chrome();
         }
         Key::Delete => {
+            let mut needs_workspace_symbols = false;
             if let Some(ref mut finder) = ctx.modal_mut().file_finder {
                 finder.delete_char();
+                needs_workspace_symbols = finder.mode
+                    == crate::state::FileFinderMode::WorkspaceSymbols
+                    && !finder.workspace_symbols_loaded;
+            }
+            if needs_workspace_symbols {
+                ctx.ensure_file_finder_workspace_symbols_loaded();
             }
             ctx.invalidate_chrome();
         }
@@ -190,8 +217,15 @@ pub(super) fn handle_file_finder_key(
         }
         Key::Char(ch) => {
             if !modifiers.ctrl && !modifiers.meta {
+                let mut needs_workspace_symbols = false;
                 if let Some(ref mut finder) = ctx.modal_mut().file_finder {
                     finder.insert_char(ch);
+                    needs_workspace_symbols = finder.mode
+                        == crate::state::FileFinderMode::WorkspaceSymbols
+                        && !finder.workspace_symbols_loaded;
+                }
+                if needs_workspace_symbols {
+                    ctx.ensure_file_finder_workspace_symbols_loaded();
                 }
                 ctx.invalidate_chrome();
             }

@@ -9,5 +9,6 @@ pub(crate) trait FileOpsPort {
     fn open_file_finder_with_replace(&mut self, replace_pane_id: Option<PaneId>);
     fn open_file_finder(&mut self);
     fn close_file_finder(&mut self);
+    fn ensure_file_finder_workspace_symbols_loaded(&mut self);
     fn open_diff_pane(&mut self, cwd: PathBuf);
 }

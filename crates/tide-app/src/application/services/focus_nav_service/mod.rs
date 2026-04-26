@@ -256,4 +256,23 @@ impl FocusNavPort for App {
         self.focus.search_focus = pane_id;
         self.cache.invalidate_chrome();
     }
+
+    fn jump_to_editor_location(&mut self, pane_id: PaneId, line: usize, col: usize) {
+        let (visible_rows, _visible_cols) =
+            crate::adapter::inward::text_routing_adapter::visible_editor_size(self, pane_id);
+
+        if let Some(PaneKind::Editor(pane)) = self.panes.get_mut(&pane_id) {
+            pane.handle_action(
+                EditorAction::SetCursor {
+                    line: line.saturating_sub(1),
+                    col,
+                },
+                visible_rows,
+            );
+            pane.editor.ensure_cursor_visible(visible_rows.max(30));
+            self.focus_pane(pane_id);
+            self.focus.focus_area = FocusArea::Stage;
+            self.cache.invalidate_pane(pane_id);
+        }
+    }
 }

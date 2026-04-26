@@ -84,7 +84,7 @@ pub(super) fn render_file_finder(
 
     if finder.input.is_empty() {
         renderer.draw_top_text(
-            "Search files...",
+            finder.placeholder_text(),
             Vec2::new(text_x, text_y),
             muted_style,
             text_clip,
@@ -94,13 +94,23 @@ pub(super) fn render_file_finder(
     }
 
     // Match count
-    let count_text = format!("{}/{}", finder.filtered.len(), finder.entries.len());
+    let count_text = format!("{}/{}", finder.filtered.len(), finder.total_candidates());
     let count_w = count_text.len() as f32 * cell_size.width;
     let count_x = popup_x + popup_w - count_w - item_pad;
     renderer.draw_top_text(
         &count_text,
         Vec2::new(count_x, text_y),
         muted_style,
+        input_clip,
+    );
+
+    let mode_text = finder.mode_label();
+    let mode_w = mode_text.len() as f32 * cell_size.width;
+    let mode_x = count_x - mode_w - item_pad;
+    renderer.draw_top_text(
+        mode_text,
+        Vec2::new(mode_x, text_y),
+        text_style(p.badge_text),
         input_clip,
     );
 
@@ -133,8 +143,6 @@ pub(super) fn render_file_finder(
         if fi >= finder.filtered.len() {
             break;
         }
-        let entry_idx = finder.filtered[fi];
-        let rel_path = &finder.entries[entry_idx];
         let y = list_top + vi as f32 * line_height;
 
         // Selected item highlight
@@ -143,16 +151,31 @@ pub(super) fn render_file_finder(
             renderer.draw_top_rect(sel_rect, p.popup_selected);
         }
 
-        // File icon
+        // Result icon
         let text_offset_y = (line_height - cell_height) / 2.0;
-        let file_name = rel_path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let icon = file_icon(&file_name, false, false);
-        let icon_style = text_style(p.tree_icon);
+        let (icon_str, icon_style) = match finder.mode {
+            crate::state::FileFinderMode::Files => {
+                let entry_idx = finder.filtered[fi];
+                let rel_path = &finder.entries[entry_idx];
+                let file_name = rel_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let icon = file_icon(&file_name, false, false);
+                (
+                    std::iter::once(icon).collect::<String>(),
+                    text_style(p.tree_icon),
+                )
+            }
+            crate::state::FileFinderMode::Symbols
+            | crate::state::FileFinderMode::WorkspaceSymbols => {
+                ("\u{f121}".to_string(), text_style(p.badge_text))
+            }
+            crate::state::FileFinderMode::WorkspaceSearch => {
+                ("\u{f002}".to_string(), text_style(p.badge_text))
+            }
+        };
         let icon_x = popup_x + item_pad + 4.0;
-        let icon_str: String = std::iter::once(icon).collect();
         renderer.draw_top_text(
             &icon_str,
             Vec2::new(icon_x, y + text_offset_y),
@@ -160,9 +183,9 @@ pub(super) fn render_file_finder(
             list_clip,
         );
 
-        // File path
+        // Result row text
         let path_x = icon_x + indent_width + 4.0;
-        let display_path = rel_path.to_string_lossy();
+        let display_path = finder.row_text(fi).unwrap_or_default();
         let path_color = if fi == finder.selected {
             p.tab_text_focused
         } else {

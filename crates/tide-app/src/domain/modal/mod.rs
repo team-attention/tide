@@ -98,6 +98,44 @@ pub(crate) struct SaveConfirmState {
 
 pub(crate) const FILE_FINDER_POPUP_W: f32 = 500.0;
 pub(crate) const FILE_FINDER_MAX_VISIBLE: usize = 12;
+const FILE_FINDER_MAX_WORKSPACE_SEARCH_HITS: usize = 200;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileFinderMode {
+    Files,
+    Symbols,
+    WorkspaceSymbols,
+    WorkspaceSearch,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SymbolMatch {
+    pub label: String,
+    pub path: PathBuf,
+    pub line: usize,
+    pub col: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WorkspaceSearchHit {
+    pub path: PathBuf,
+    pub line: usize,
+    pub col: usize,
+    pub preview: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FileFinderDestination {
+    OpenFile {
+        path: PathBuf,
+        line: Option<usize>,
+    },
+    FocusedEditorSymbol {
+        pane_id: PaneId,
+        line: usize,
+        col: usize,
+    },
+}
 
 /// Pre-computed popup geometry for the file finder, shared between rendering and hit-testing.
 pub(crate) struct FileFinderGeometry {
@@ -114,10 +152,16 @@ pub(crate) struct FileFinderGeometry {
 pub(crate) struct FileFinderState {
     pub input: InputLine,
     pub base_dir: PathBuf,
+    pub mode: FileFinderMode,
     pub entries: Vec<PathBuf>, // all files (relative to base_dir)
     pub filtered: Vec<usize>,  // indices into entries
     pub selected: usize,       // index into filtered
     pub scroll_offset: usize,  // scroll offset in filtered list
+    pub current_file_symbols: Vec<SymbolMatch>,
+    pub workspace_symbols: Vec<SymbolMatch>,
+    pub workspace_symbols_loaded: bool,
+    pub workspace_search_hits: Vec<WorkspaceSearchHit>,
+    pub symbol_source_pane_id: Option<PaneId>,
     /// When set, the selected file replaces this pane (e.g. a Launcher) instead of opening a new tab.
     pub replace_pane_id: Option<crate::tide_core::PaneId>,
 }
@@ -128,12 +172,43 @@ impl FileFinderState {
         Self {
             input: InputLine::new(),
             base_dir,
+            mode: FileFinderMode::Files,
             entries,
             filtered,
             selected: 0,
             scroll_offset: 0,
+            current_file_symbols: Vec::new(),
+            workspace_symbols: Vec::new(),
+            workspace_symbols_loaded: false,
+            workspace_search_hits: Vec::new(),
+            symbol_source_pane_id: None,
             replace_pane_id: None,
         }
+    }
+
+    pub fn with_symbol_sources(
+        mut self,
+        symbol_source_pane_id: Option<PaneId>,
+        current_file_symbols: Vec<SymbolMatch>,
+        workspace_symbols: Vec<SymbolMatch>,
+    ) -> Self {
+        self.symbol_source_pane_id = symbol_source_pane_id;
+        self.current_file_symbols = current_file_symbols;
+        self.workspace_symbols_loaded = !workspace_symbols.is_empty();
+        self.workspace_symbols = workspace_symbols;
+        self.filter();
+        self
+    }
+
+    pub fn set_workspace_symbols(&mut self, workspace_symbols: Vec<SymbolMatch>) {
+        self.workspace_symbols = workspace_symbols;
+        self.workspace_symbols_loaded = true;
+        self.filter();
+    }
+
+    pub fn set_query(&mut self, query: String) {
+        self.input = InputLine::with_text(query);
+        self.filter();
     }
 
     /// Compute popup geometry given cell size and logical window dimensions.
@@ -210,29 +285,326 @@ impl FileFinderState {
     }
 
     pub fn selected_path(&self) -> Option<PathBuf> {
+        if self.mode != FileFinderMode::Files {
+            return None;
+        }
         let idx = *self.filtered.get(self.selected)?;
         let rel = self.entries.get(idx)?;
         Some(self.base_dir.join(rel))
     }
 
-    fn filter(&mut self) {
-        if self.input.is_empty() {
-            self.filtered = (0..self.entries.len()).collect();
-        } else {
-            let query_lower = self.input.text.to_lowercase();
-            self.filtered = self
-                .entries
-                .iter()
-                .enumerate()
-                .filter(|(_, path)| {
-                    let name = path.to_string_lossy().to_lowercase();
-                    name.contains(&query_lower)
+    pub fn selected_destination(&self) -> Option<FileFinderDestination> {
+        self.destination_at_filtered_index(self.selected)
+    }
+
+    pub fn destination_at_filtered_index(
+        &self,
+        filtered_index: usize,
+    ) -> Option<FileFinderDestination> {
+        let idx = *self.filtered.get(filtered_index)?;
+        match self.mode {
+            FileFinderMode::Files => {
+                let rel = self.entries.get(idx)?;
+                Some(FileFinderDestination::OpenFile {
+                    path: self.base_dir.join(rel),
+                    line: None,
                 })
-                .map(|(i, _)| i)
-                .collect();
+            }
+            FileFinderMode::Symbols => {
+                let pane_id = self.symbol_source_pane_id?;
+                let symbol = self.current_file_symbols.get(idx)?;
+                Some(FileFinderDestination::FocusedEditorSymbol {
+                    pane_id,
+                    line: symbol.line,
+                    col: symbol.col,
+                })
+            }
+            FileFinderMode::WorkspaceSymbols => {
+                let symbol = self.workspace_symbols.get(idx)?;
+                Some(FileFinderDestination::OpenFile {
+                    path: self.base_dir.join(&symbol.path),
+                    line: Some(symbol.line),
+                })
+            }
+            FileFinderMode::WorkspaceSearch => {
+                let hit = self.workspace_search_hits.get(idx)?;
+                Some(FileFinderDestination::OpenFile {
+                    path: self.base_dir.join(&hit.path),
+                    line: Some(hit.line),
+                })
+            }
+        }
+    }
+
+    pub fn mode_label(&self) -> &'static str {
+        match self.mode {
+            FileFinderMode::Files => "FILES",
+            FileFinderMode::Symbols => "SYMS",
+            FileFinderMode::WorkspaceSymbols => "WSYM",
+            FileFinderMode::WorkspaceSearch => "TEXT",
+        }
+    }
+
+    pub fn placeholder_text(&self) -> &'static str {
+        match self.mode {
+            FileFinderMode::Files => "Search files...",
+            FileFinderMode::Symbols => "@ symbol in file",
+            FileFinderMode::WorkspaceSymbols => "# symbol in workspace",
+            FileFinderMode::WorkspaceSearch => "/ text in workspace",
+        }
+    }
+
+    pub fn total_candidates(&self) -> usize {
+        match self.mode {
+            FileFinderMode::Files => self.entries.len(),
+            FileFinderMode::Symbols => self.current_file_symbols.len(),
+            FileFinderMode::WorkspaceSymbols => self.workspace_symbols.len(),
+            FileFinderMode::WorkspaceSearch => self.workspace_search_hits.len(),
+        }
+    }
+
+    pub fn row_text(&self, filtered_index: usize) -> Option<String> {
+        let idx = *self.filtered.get(filtered_index)?;
+        match self.mode {
+            FileFinderMode::Files => Some(self.entries.get(idx)?.to_string_lossy().to_string()),
+            FileFinderMode::Symbols | FileFinderMode::WorkspaceSymbols => {
+                let symbol = if self.mode == FileFinderMode::Symbols {
+                    self.current_file_symbols.get(idx)?
+                } else {
+                    self.workspace_symbols.get(idx)?
+                };
+                Some(format!(
+                    "{}  {}:{}",
+                    symbol.label,
+                    symbol.path.display(),
+                    symbol.line
+                ))
+            }
+            FileFinderMode::WorkspaceSearch => {
+                let hit = self.workspace_search_hits.get(idx)?;
+                Some(format!(
+                    "{}  {}:{}",
+                    trim_preview(&hit.preview),
+                    hit.path.display(),
+                    hit.line
+                ))
+            }
+        }
+    }
+
+    fn filter(&mut self) {
+        let (mode, query) = self.mode_and_query();
+        self.mode = mode;
+
+        match mode {
+            FileFinderMode::Files => self.filter_files(&query),
+            FileFinderMode::Symbols => {
+                self.filtered = filter_symbol_indices(&self.current_file_symbols, &query);
+            }
+            FileFinderMode::WorkspaceSymbols => {
+                self.filtered = filter_symbol_indices(&self.workspace_symbols, &query);
+            }
+            FileFinderMode::WorkspaceSearch => self.filter_workspace_search(&query),
         }
         self.selected = 0;
         self.scroll_offset = 0;
+    }
+
+    fn mode_and_query(&self) -> (FileFinderMode, String) {
+        let text = self.input.text.as_str();
+        if let Some(rest) = text.strip_prefix('@') {
+            (FileFinderMode::Symbols, rest.to_string())
+        } else if let Some(rest) = text.strip_prefix('#') {
+            (FileFinderMode::WorkspaceSymbols, rest.to_string())
+        } else if let Some(rest) = text.strip_prefix('/') {
+            (FileFinderMode::WorkspaceSearch, rest.to_string())
+        } else {
+            (FileFinderMode::Files, text.to_string())
+        }
+    }
+
+    fn filter_files(&mut self, query: &str) {
+        if query.is_empty() {
+            self.filtered = (0..self.entries.len()).collect();
+            return;
+        }
+
+        let mut ranked: Vec<(usize, (usize, usize, usize, String))> = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, path)| {
+                file_match_score(path, query).map(|score| {
+                    (
+                        idx,
+                        (
+                            score.0,
+                            score.1,
+                            score.2,
+                            path.to_string_lossy().to_string(),
+                        ),
+                    )
+                })
+            })
+            .collect();
+        ranked.sort_by(|(_, left), (_, right)| left.cmp(right));
+        self.filtered = ranked.into_iter().map(|(idx, _)| idx).collect();
+    }
+
+    fn filter_workspace_search(&mut self, query: &str) {
+        self.workspace_search_hits.clear();
+        if query.chars().count() < 2 {
+            self.filtered.clear();
+            return;
+        }
+
+        let query_lower = query.to_lowercase();
+        'files: for rel_path in &self.entries {
+            let full_path = self.base_dir.join(rel_path);
+            let Ok(contents) = std::fs::read_to_string(&full_path) else {
+                continue;
+            };
+            if contents.len() > 256 * 1024 {
+                continue;
+            }
+            for (line_idx, line) in contents.lines().enumerate() {
+                let line_lower = line.to_lowercase();
+                if let Some(byte_col) = line_lower.find(&query_lower) {
+                    let col = line[..byte_col].chars().count() + 1;
+                    self.workspace_search_hits.push(WorkspaceSearchHit {
+                        path: rel_path.clone(),
+                        line: line_idx + 1,
+                        col,
+                        preview: line.trim().to_string(),
+                    });
+                    if self.workspace_search_hits.len() >= FILE_FINDER_MAX_WORKSPACE_SEARCH_HITS {
+                        break 'files;
+                    }
+                }
+            }
+        }
+        self.filtered = (0..self.workspace_search_hits.len()).collect();
+    }
+}
+
+pub(crate) fn collect_symbol_matches(path: &std::path::Path, lines: &[String]) -> Vec<SymbolMatch> {
+    let rel_path = path.to_path_buf();
+    lines
+        .iter()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            symbol_signature_label(line).map(|label| SymbolMatch {
+                label,
+                path: rel_path.clone(),
+                line: index + 1,
+                col: 0,
+            })
+        })
+        .collect()
+}
+
+fn file_match_score(path: &std::path::Path, query: &str) -> Option<(usize, usize, usize)> {
+    let query_lower = query.to_lowercase();
+    let full = path.to_string_lossy().to_lowercase();
+    let base = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+
+    if let Some(pos) = base.find(&query_lower) {
+        let tier = if pos == 0 { 0 } else { 1 };
+        return Some((tier, pos, full.len()));
+    }
+    full.find(&query_lower).map(|pos| (2, pos, full.len()))
+}
+
+fn filter_symbol_indices(symbols: &[SymbolMatch], query: &str) -> Vec<usize> {
+    if query.is_empty() {
+        return (0..symbols.len()).collect();
+    }
+
+    let query_lower = query.to_lowercase();
+    let mut ranked: Vec<(usize, (usize, usize, String))> = symbols
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, symbol)| {
+            let label_lower = symbol.label.to_lowercase();
+            if let Some(pos) = label_lower.find(&query_lower) {
+                let tier = if pos == 0 { 0 } else { 1 };
+                return Some((idx, (tier, pos, symbol.label.clone())));
+            }
+
+            let path_lower = symbol.path.to_string_lossy().to_lowercase();
+            path_lower
+                .find(&query_lower)
+                .map(|pos| (idx, (2, pos, symbol.label.clone())))
+        })
+        .collect();
+    ranked.sort_by(|(_, left), (_, right)| left.cmp(right));
+    ranked.into_iter().map(|(idx, _)| idx).collect()
+}
+
+fn symbol_signature_label(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with("//") {
+        return None;
+    }
+
+    let prefixes = [
+        "fn ",
+        "pub fn ",
+        "pub(crate) fn ",
+        "async fn ",
+        "pub async fn ",
+        "struct ",
+        "pub struct ",
+        "enum ",
+        "pub enum ",
+        "trait ",
+        "pub trait ",
+        "impl ",
+        "mod ",
+        "pub mod ",
+        "type ",
+        "pub type ",
+        "const ",
+        "pub const ",
+        "function ",
+        "export function ",
+        "class ",
+        "export class ",
+        "interface ",
+        "export interface ",
+        "export type ",
+        "def ",
+        "async def ",
+        "func ",
+    ];
+
+    if prefixes.iter().any(|prefix| trimmed.starts_with(prefix)) {
+        return Some(trimmed.to_string());
+    }
+
+    let arrow_prefixes = ["const ", "let ", "var ", "export const "];
+    if arrow_prefixes
+        .iter()
+        .any(|prefix| trimmed.starts_with(prefix))
+        && trimmed.contains("=>")
+    {
+        return Some(trimmed.to_string());
+    }
+
+    None
+}
+
+fn trim_preview(preview: &str) -> String {
+    const MAX_PREVIEW_CHARS: usize = 52;
+    let mut chars = preview.chars();
+    let trimmed: String = chars.by_ref().take(MAX_PREVIEW_CHARS).collect();
+    if chars.next().is_some() {
+        format!("{}...", trimmed)
+    } else {
+        trimmed
     }
 }
 

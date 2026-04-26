@@ -378,6 +378,145 @@ impl App {
     pub(crate) fn action_target_id(&self) -> Option<crate::tide_core::PaneId> {
         action_target_id(self.focus.focused)
     }
+
+    fn editor_click_target(
+        &self,
+        pane_id: crate::tide_core::PaneId,
+        position: Vec2,
+    ) -> Option<(usize, usize)> {
+        let pane = match self.panes.get(&pane_id) {
+            Some(PaneKind::Editor(pane)) if !pane.preview_mode => pane,
+            _ => return None,
+        };
+        let &(_, rect) = self
+            .visual_pane_rects
+            .iter()
+            .find(|(pid, _)| *pid == pane_id)?;
+        let cell_size = self.cell_size();
+        let mut click_rect = pane.content_rect(rect, TAB_BAR_HEIGHT, cell_size);
+        if let Some((editor_rect, preview_rect)) = pane.split_preview_rects(click_rect, cell_size) {
+            if position.x >= preview_rect.x {
+                return None;
+            }
+            click_rect = editor_rect;
+        }
+
+        let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+        let content_x = click_rect.x + gutter_width;
+        let rel_col = ((position.x - content_x) / cell_size.width).floor() as isize;
+        let rel_row = ((position.y - click_rect.y) / cell_size.height).floor() as isize;
+        if rel_row < 0 || rel_col < 0 {
+            return None;
+        }
+
+        if pane.effective_soft_wrap() {
+            let wrap_cols = pane.wrap_cols_for_rect(click_rect, cell_size).max(1);
+            let wrap_map = crate::tide_editor::wrap::WrapMap::build(
+                &pane.editor.buffer.lines,
+                wrap_cols,
+                pane.editor.content_generation(),
+            );
+            let abs_visual_row = pane.soft_wrap_visual_scroll() + rel_row as usize;
+            let info =
+                wrap_map.visual_row_to_line_info(abs_visual_row, &pane.editor.buffer.lines)?;
+            let mut col = (info.char_offset + rel_col as usize).min(info.char_end);
+            if pane.live_preview {
+                if let Some(ref lpm) = pane.live_preview_map {
+                    let cursor_line = pane.editor.cursor_position().line;
+                    let line_content = pane
+                        .editor
+                        .buffer
+                        .line(info.logical_line)
+                        .unwrap_or("")
+                        .to_string();
+                    col = lpm.visual_to_buffer_col(
+                        info.logical_line,
+                        col,
+                        cursor_line,
+                        &line_content,
+                        &pane.editor.buffer.lines,
+                    );
+                }
+            }
+            return Some((info.logical_line, col));
+        }
+
+        let line = pane.editor.scroll_offset() + rel_row as usize;
+        let visual_col = pane.editor.h_scroll_offset() + rel_col as usize;
+        let col = if pane.live_preview {
+            if let Some(ref lpm) = pane.live_preview_map {
+                let cursor_line = pane.editor.cursor_position().line;
+                let line_content = pane.editor.buffer.line(line).unwrap_or("").to_string();
+                lpm.visual_to_buffer_col(
+                    line,
+                    visual_col,
+                    cursor_line,
+                    &line_content,
+                    &pane.editor.buffer.lines,
+                )
+            } else {
+                visual_col
+            }
+        } else {
+            visual_col
+        };
+        Some((line, col))
+    }
+
+    fn editor_symbol_query_for_click(
+        &self,
+        pane_id: crate::tide_core::PaneId,
+        line: usize,
+        col: usize,
+    ) -> Option<String> {
+        let pane = match self.panes.get(&pane_id) {
+            Some(PaneKind::Editor(pane)) => pane,
+            _ => return None,
+        };
+        let line_text = pane.editor.buffer.line(line)?;
+        let chars: Vec<char> = line_text.chars().collect();
+        if chars.is_empty() {
+            return None;
+        }
+
+        let mut idx = col.min(chars.len().saturating_sub(1));
+        if !crate::tide_editor::buffer::is_word_char(chars[idx]) {
+            if idx > 0 && crate::tide_editor::buffer::is_word_char(chars[idx - 1]) {
+                idx -= 1;
+            } else {
+                return None;
+            }
+        }
+
+        let mut start = idx;
+        while start > 0 && crate::tide_editor::buffer::is_word_char(chars[start - 1]) {
+            start -= 1;
+        }
+        let mut end = idx + 1;
+        while end < chars.len() && crate::tide_editor::buffer::is_word_char(chars[end]) {
+            end += 1;
+        }
+        let identifier: String = chars[start..end].iter().collect();
+        if identifier.is_empty() {
+            return None;
+        }
+
+        let identifier_lower = identifier.to_lowercase();
+        let current_file_symbols = crate::state::collect_symbol_matches(
+            std::path::Path::new(""),
+            &pane.editor.buffer.lines,
+        );
+        let prefix = if current_file_symbols
+            .iter()
+            .any(|symbol| symbol.label.to_lowercase().contains(&identifier_lower))
+        {
+            '@'
+        } else {
+            '#'
+        };
+
+        Some(format!("{prefix}{identifier}"))
+    }
 }
 
 impl crate::application::ports::inward::ActionPort for App {
@@ -448,6 +587,12 @@ impl crate::application::ports::inward::ActionPort for App {
                         if let Some((path, line)) = self.extract_file_path_at(id, position) {
                             self.open_editor_pane_at_line(path, line);
                             return;
+                        }
+                        if let Some((line, col)) = self.editor_click_target(id, position) {
+                            if let Some(query) = self.editor_symbol_query_for_click(id, line, col) {
+                                self.open_file_finder_with_query(&query, None);
+                                return;
+                            }
                         }
                     }
 

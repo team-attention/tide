@@ -94,6 +94,7 @@ pub(crate) fn render_grid(
                         preedit,
                         p.current_line_bg,
                         p.indent_guide,
+                        p.active_indent_guide,
                     );
                     gen_updates.push((id, pane.generation()));
                 }

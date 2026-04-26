@@ -21,7 +21,13 @@ Stage and Dock headers gain a right-aligned icon-only header action strip built 
 2. `SplitHorizontal`
 3. `SplitVertical`
 
-The strip appears on every visible single-`Pane` header and on every visible `TabGroup` header surface, including stacked Stage and stacked Dock tab bars. The controls render as simple line-style icon tiles instead of text badges so the single-header and `TabGroup` surfaces share the same visual language. The strip is anchored to the far-right edge of the whole header bar rather than appended inside the active tab capsule. The icon set stays compact and monochrome, following the far-right outline-control feel visible in the reference header screenshot.
+The strip appears on every visible single-`Pane` header and on every visible `TabGroup` header surface, including stacked Stage and stacked Dock tab bars. The controls render as compact glyph-first ghost actions instead of text badges so the single-header and `TabGroup` surfaces share the same visual language without reading as outlined utility tiles. The strip is anchored to the far-right edge of the whole header bar rather than appended inside the active tab capsule.
+
+The current glyph language also becomes more legible at a glance:
+
+1. The Browser glyph reuses the same browser-family icon language already rendered in the Launcher Pane instead of a hand-drawn frame in header chrome.
+2. The split glyphs use a matched horizontal-versus-vertical axis-arrow pair rather than framed rectangles or resize bars, so left-right and top-bottom split actions read like the same control family with only the axis changed.
+3. The tile chrome stays soft and borderless in steady state; the icon remains the focus instead of a persistent outlined button frame.
 
 The click behavior is contextual:
 
@@ -33,7 +39,9 @@ The click behavior is contextual:
 6. On a `TabGroup` header, the strip remains visible even when that `TabGroup` is not focused.
 7. On a single-`Pane` header, the strip remains visible even when that `Pane` is not focused.
 8. `NewTerminal` and `NewFile` remain available through existing keyboard and `Launcher` flows, but they are no longer exposed in `HeaderActionStrip`.
-9. The Browser glyph uses an unfilled globe-style outline, and split glyphs use unfilled split-rect outlines that read closer to the reference screenshot than filled geometric marks.
+9. The Browser glyph stays monochrome, but it must reuse Tide's existing browser icon language instead of a custom-framed rectangle.
+10. Split glyphs stay monochrome, but they must use a matched axis-specific arrow pair instead of framed rectangle icons or resize-bar glyphs, with horizontal and vertical variants sharing the same visual language.
+11. Header action tiles must not render a persistent outline stroke in steady state; they use soft ghost chrome behind the glyph instead.
 
 ### Approach
 
@@ -42,6 +50,8 @@ The click behavior is contextual:
 3. Route header clicks through the existing port boundary in `check_header_click()`, using existing `GlobalAction` and `PaneLifecyclePort` methods where possible.
 4. For Dock split actions, reuse the current Dock Launcher flow but immediately call `resolve_launcher(..., LauncherChoice::Terminal)` on the newly focused `Launcher`, so the outcome is a concrete `Terminal`.
 5. Add behavior tests for the click outcomes before implementation, and add unit tests in `header.rs` for `TabGroup` visibility, action ordering, and width reservation helpers.
+6. Extract icon and tile-style helpers in `header.rs` so the Browser and split glyph choices stay testable without screenshot-only verification.
+7. Replace the current hand-drawn Browser and split geometry with glyph-based header actions rendered through the existing chrome text pipeline.
 
 ## Bounded Contexts
 
@@ -104,6 +114,21 @@ The click behavior is contextual:
   - BR-8: Unfocused single-`Pane` headers still render the header action strip.
   - BR-9: Unfocused `TabGroup` headers still render the header action strip.
 
+### UC-4: ClarifyHeaderActionIcons
+
+- **Actor**: User
+- **Trigger**: Tide renders Browser and split actions in the visible `HeaderActionStrip`
+- **Precondition**: A visible single-`Pane` header or `TabGroup` header includes the action strip
+- **Flow**:
+  1. Tide computes Browser and split icon glyphs plus tile chrome from shared helpers.
+  2. Tide renders those glyphs inside the standard 18x18 header-action tiles.
+  3. The user distinguishes Browser and split actions without relying on hover or tooltip text.
+- **Postcondition**: Header action icons feel deliberate and legible rather than generic utility glyphs.
+- **Business Rules**:
+  - BR-10: The Browser glyph must reuse Tide's existing browser glyph language so the header action reads like the Launcher Browser action instead of a custom box drawing.
+  - BR-11: Split glyphs must use a matched horizontal-versus-vertical axis-arrow pair for left-right and top-bottom split actions instead of framed rectangle icons or resize-bar glyphs.
+  - BR-12: Header action tiles must render as ghost chrome without a persistent outline stroke so the icons do not read like boxed utility buttons.
+
 ## Invariants
 
 1. `HeaderHitAction` remains the single click contract for header chrome; no inward adapter directly mutates layout from raw coordinates.
@@ -117,7 +142,6 @@ The click behavior is contextual:
 | UC | BR | Test |
 |----|----|------|
 | UC-1 | BR-1 | `pane_and_tab_group_header_action_specs_share_browser_and_split_icons` |
-| UC-1 | BR-1 | `header_action_icon_roles_match_browser_globe_and_split_rects` |
 | UC-1 | BR-2 | `clicking_open_browser_header_action_creates_a_browser_pane` |
 | UC-2 | BR-3 | `clicking_stage_split_horizontal_header_action_creates_a_width_split` |
 | UC-2 | BR-4 | `clicking_stage_split_vertical_header_action_creates_a_height_split` |
@@ -126,6 +150,9 @@ The click behavior is contextual:
 | UC-3 | BR-7 | `header_action_strip_start_x_anchors_to_the_header_edge` |
 | UC-3 | BR-8 | `single_pane_header_action_specs_remain_visible_without_focus` |
 | UC-3 | BR-9 | `unfocused_tab_group_header_action_specs_remain_visible` |
+| UC-4 | BR-10 | `browser_header_action_reuses_launcher_browser_glyph` |
+| UC-4 | BR-11 | `split_header_action_glyphs_use_a_matched_horizontal_vertical_axis_arrow_pair` |
+| UC-4 | BR-12 | `header_action_tile_style_uses_ghost_chrome_without_outline` |
 
 ## Location
 

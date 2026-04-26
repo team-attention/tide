@@ -10,11 +10,12 @@ use crate::adapter::inward::scroll_adapter::{
     shared_tab_scroll_is_new_gesture, shared_tab_scroll_step,
 };
 use crate::adapter::outward::view::header::{
-    active_tab_badges, active_tab_width_cap, overflowed_stage_alert_tab_edges,
-    reserve_title_before_badges, resolve_tab_scroll_offset, shared_tab_active_width_cap,
-    shared_tab_target_width, stage_terminal_dot_color, stage_terminal_dot_status,
-    stage_terminal_dot_visual_state, tab_status_dot_width, terminal_chrome_agent_status,
-    terminal_chrome_visual_state, terminal_header_title_color, AgentChromeState, HeaderHitAction,
+    active_tab_badges, active_tab_width_cap, dock_tab_group_uses_shared_tab_bar,
+    overflowed_stage_alert_tab_edges, reserve_title_before_badges, resolve_tab_scroll_offset,
+    shared_tab_active_width_cap, shared_tab_target_width, stage_terminal_dot_color,
+    stage_terminal_dot_status, stage_terminal_dot_visual_state, tab_status_dot_width,
+    terminal_chrome_agent_status, terminal_chrome_visual_state, terminal_header_title_color,
+    AgentChromeState, HeaderHitAction,
 };
 use crate::adapter::outward::view::{
     integration_toggle_notification_indicator_color, pane_surface_attention_status,
@@ -897,6 +898,25 @@ fn single_pane_header_scroll_falls_through_to_preview_content() {
     assert!(
         preview_scroll > 0,
         "scroll over a single-pane header should still reach the preview content when no shared tab bar can scroll"
+    );
+}
+
+// --- UC-9: CollapseSingleDockTabGroupChrome ---
+
+#[test]
+fn dock_single_tab_group_uses_single_pane_header_chrome() {
+    // UC-9 BR-35: A single-tab Dock TabGroup falls back to single-Pane header chrome instead of the shared Dock tab bar.
+    let single = crate::tide_layout::TabGroup::single(7);
+    assert!(
+        !dock_tab_group_uses_shared_tab_bar(&single),
+        "single-tab Dock TabGroups should not render the shared Dock tab bar"
+    );
+
+    let mut multi = crate::tide_layout::TabGroup::single(7);
+    multi.add_tab(8);
+    assert!(
+        dock_tab_group_uses_shared_tab_bar(&multi),
+        "multi-tab Dock TabGroups should keep the shared Dock tab bar"
     );
 }
 

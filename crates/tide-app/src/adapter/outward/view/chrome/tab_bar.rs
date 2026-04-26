@@ -187,13 +187,16 @@ pub(super) fn render_pane_chrome(
     // Render per-pane headers (title + badges + close, or tab bar for multi-tab groups)
     let mut all_hit_zones = Vec::new();
 
-    // Collect dock TabGroup info for ALL dock panes (always show tab bar in Dock)
+    // Collect Dock TabGroup info only when the group has multiple tabs.
     let mut dock_tab_groups: std::collections::HashMap<u64, crate::tide_layout::TabGroup> =
         std::collections::HashMap::new();
     for (_, pk) in &app.panes {
         if let crate::pane::PaneKind::Terminal(tp) = pk {
             for &(pid, _) in visual_pane_rects {
                 if let Some(tg) = tp.dock_layout.tab_group_containing(pid) {
+                    if !header::dock_tab_group_uses_shared_tab_bar(&tg) {
+                        continue;
+                    }
                     dock_tab_groups.insert(pid, tg.clone());
                 }
             }
@@ -202,6 +205,9 @@ pub(super) fn render_pane_chrome(
     // Add TabGroup info for pinned dock panes
     for &(pid, _) in visual_pane_rects {
         if let Some(tg) = app.dock.pinned_dock_layout.tab_group_containing(pid) {
+            if !header::dock_tab_group_uses_shared_tab_bar(&tg) {
+                continue;
+            }
             dock_tab_groups.insert(pid, tg.clone());
         }
     }

@@ -1,10 +1,12 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::tide_core::FileTreeSource;
 
 use crate::pane::PaneKind;
 use crate::App;
+use crate::AppCorePort;
 use crate::DockPort;
+use crate::FileOpsPort;
 use crate::LayoutPort;
 use crate::PaneLifecyclePort;
 
@@ -51,7 +53,14 @@ impl crate::FileOpsPort for App {
         Self::scan_dir(&base_dir, &base_dir, &mut entries, 0, 8);
         entries.sort();
 
-        let mut state = crate::FileFinderState::new(base_dir, entries);
+        let (symbol_source_pane_id, current_file_symbols) =
+            self.build_current_file_finder_symbols(&base_dir);
+
+        let mut state = crate::FileFinderState::new(base_dir, entries).with_symbol_sources(
+            symbol_source_pane_id,
+            current_file_symbols,
+            Vec::new(),
+        );
         state.replace_pane_id = replace_pane_id;
         self.modal.file_finder = Some(state);
         self.cache.invalidate_chrome();
@@ -71,6 +80,10 @@ impl crate::FileOpsPort for App {
             // Re-show browser webviews that were hidden for the popup
             self.sync_browser_webview_frames();
         }
+    }
+
+    fn ensure_file_finder_workspace_symbols_loaded(&mut self) {
+        App::ensure_file_finder_workspace_symbols_loaded(self);
     }
 
     /// Open or focus a DiffPane for the given CWD.
@@ -122,6 +135,98 @@ impl crate::FileOpsPort for App {
 }
 
 impl App {
+    pub(crate) fn open_file_finder_with_query(
+        &mut self,
+        query: &str,
+        replace_pane_id: Option<crate::tide_core::PaneId>,
+    ) {
+        self.open_file_finder_with_replace(replace_pane_id);
+        if let Some(ref mut finder) = self.modal.file_finder {
+            finder.set_query(query.to_string());
+        }
+        self.ensure_file_finder_workspace_symbols_loaded();
+    }
+
+    pub(crate) fn ensure_file_finder_workspace_symbols_loaded(&mut self) {
+        let needs_workspace_symbols = self
+            .modal
+            .file_finder
+            .as_ref()
+            .map(|finder| {
+                finder.mode == crate::state::FileFinderMode::WorkspaceSymbols
+                    && !finder.workspace_symbols_loaded
+            })
+            .unwrap_or(false);
+        if !needs_workspace_symbols {
+            return;
+        }
+
+        let (base_dir, entries) = {
+            let finder = self.modal.file_finder.as_ref().expect("file finder");
+            (finder.base_dir.clone(), finder.entries.clone())
+        };
+        let workspace_symbols = self.build_workspace_file_finder_symbols(&base_dir, &entries);
+
+        if let Some(ref mut finder) = self.modal.file_finder {
+            if !finder.workspace_symbols_loaded {
+                finder.set_workspace_symbols(workspace_symbols);
+            }
+        }
+        self.cache.invalidate_chrome();
+    }
+
+    fn build_current_file_finder_symbols(
+        &self,
+        base_dir: &Path,
+    ) -> (
+        Option<crate::tide_core::PaneId>,
+        Vec<crate::state::SymbolMatch>,
+    ) {
+        self.focus
+            .focused
+            .and_then(|pane_id| match self.panes.get(&pane_id) {
+                Some(PaneKind::Editor(pane)) => pane.editor.file_path().map(|path| {
+                    let rel_path = path
+                        .strip_prefix(base_dir)
+                        .map(|rel| rel.to_path_buf())
+                        .unwrap_or_else(|_| {
+                            path.file_name()
+                                .map(PathBuf::from)
+                                .unwrap_or_else(|| path.to_path_buf())
+                        });
+                    let symbols =
+                        crate::state::collect_symbol_matches(&rel_path, &pane.editor.buffer.lines);
+                    (pane_id, symbols)
+                }),
+                _ => None,
+            })
+            .map(|(pane_id, symbols)| (Some(pane_id), symbols))
+            .unwrap_or((None, Vec::new()))
+    }
+
+    fn build_workspace_file_finder_symbols(
+        &self,
+        base_dir: &Path,
+        entries: &[PathBuf],
+    ) -> Vec<crate::state::SymbolMatch> {
+        let mut workspace_symbols = Vec::new();
+        for rel_path in entries {
+            let full_path = base_dir.join(rel_path);
+            let Ok(contents) = self.read_file_to_string(&full_path) else {
+                continue;
+            };
+            if contents.len() > 256 * 1024 {
+                continue;
+            }
+            let lines: Vec<String> = contents.lines().map(|line| line.to_string()).collect();
+            workspace_symbols.extend(crate::state::collect_symbol_matches(rel_path, &lines));
+            if workspace_symbols.len() >= 3000 {
+                break;
+            }
+        }
+        workspace_symbols
+    }
+
     /// Recursively scan a directory, collecting file paths relative to base_dir.
     fn scan_dir(
         dir: &std::path::Path,
