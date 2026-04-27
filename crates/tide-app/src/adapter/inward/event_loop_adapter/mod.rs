@@ -858,6 +858,13 @@ impl App {
                 }
             }
 
+            // Side surface visibility animations are layout animations, so each
+            // frame recomputes geometry from the current animated width.
+            if self.surface_visibility_animation_active() {
+                self.compute_layout();
+                crate::AppCorePort::request_redraw(&mut self);
+            }
+
             // Render if needed
             if self.cache.needs_redraw && !self.window.is_occluded && self.input.batch_depth == 0 {
                 let now = self.ports.clock.now();
@@ -924,6 +931,12 @@ impl App {
             } else {
                 return Duration::ZERO;
             }
+        }
+
+        // Side surface visibility animations should tick even when no external
+        // input arrives.
+        if self.surface_visibility_animation_frame_due() {
+            timeout = timeout.min(Duration::from_millis(16));
         }
 
         // Frame pacing: if we need to render but are within 2ms coalescing window
@@ -1225,16 +1238,11 @@ impl App {
                     .find(|(id, _)| *id == target_id)
                 {
                     let cursor = pane.backend.cursor();
-                    let inner_w = rect.width - 2.0 * crate::theme::PANE_PADDING;
-                    let max_cols = (inner_w / cell_size.width).floor() as usize;
-                    let actual_w = max_cols as f32 * cell_size.width;
-                    let center_x = (inner_w - actual_w) / 2.0;
                     let top = crate::theme::terminal_content_top(cell_size.height);
-                    let cx = rect.x
-                        + crate::theme::PANE_PADDING
-                        + center_x
-                        + cursor.col as f32 * cell_size.width;
-                    let cy = rect.y + top + cursor.row as f32 * cell_size.height;
+                    let inner = crate::pane::pane_content_rect(*rect, top);
+                    let origin = crate::pane::terminal_grid_origin(inner);
+                    let cx = origin.x + cursor.col as f32 * cell_size.width;
+                    let cy = origin.y + cursor.row as f32 * cell_size.height;
                     window.set_ime_proxy_cursor_area(
                         target_id,
                         cx as f64,

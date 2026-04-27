@@ -39,6 +39,10 @@ text routing, focus management, and GlobalAction dispatch.
   - BR-6: Escape during pane drag cancels the drag
   - BR-7: FocusArea::FileTree consumes arrow keys
   - BR-8: GlobalAction keys work regardless of FocusArea
+  - BR-8a: `Cmd+B` resolves to `ToggleFileTree`, and `Cmd+Backslash` resolves to `ToggleDock`
+  - BR-8b: `Cmd+1/2/3/4` are not default FocusArea, FileTree View, or Dock visibility shortcuts
+  - BR-8c: `Cmd+I/O` are not default TabPrev/TabNext bindings
+  - BR-8d: `Cmd+Shift+H/J/K/L` resolves to `DockNavigate` without changing FocusArea
   - BR-9: Branch cleanup modal ESC cancels cleanup
 
 ### UC-2: RouteTextInput
@@ -74,7 +78,7 @@ text routing, focus management, and GlobalAction dispatch.
 ### UC-3: ManageFocus
 
 - **Actor**: User
-- **Trigger**: GlobalAction::Navigate, GlobalAction::ToggleFileTree, GlobalAction::ToggleStacked, click
+- **Trigger**: GlobalAction::Navigate, GlobalAction::ToggleFileTree, GlobalAction::ToggleDock, GlobalAction::ToggleStacked, click
 - **Precondition**: At least one Pane exists
 - **Flow**:
   1. Focus switch: update app.focused, set focus_area, invalidate_chrome
@@ -104,7 +108,8 @@ text routing, focus management, and GlobalAction dispatch.
      - NewFile → new_editor_pane()
      - ClosePane → close_specific_pane()
      - Find → open search bar
-     - ToggleFileTree → toggle file tree + focus
+     - ToggleFileTree → toggle FileTree View visibility without moving focus on open
+     - ToggleDock → toggle the Dock for the focused Stage Terminal
      - ToggleFullscreen → set pending flag
      - FileFinder → open file finder modal
      - etc.
@@ -112,12 +117,13 @@ text routing, focus management, and GlobalAction dispatch.
 - **Business Rules**:
   - BR-28: SplitVertical/Horizontal creates new Pane in SplitLayout
   - BR-29: NewTab creates Launcher Pane
-  - BR-30: NewFile creates Editor Pane in TabGroup
+  - BR-30: NewFile creates Editor Pane in the current target area; in Stage it creates a split leaf, and in Dock it creates a Terminal Context Surface split.
   - BR-31: Find opens search bar on focused Pane
   - BR-32: Find again reuses existing search bar
-  - BR-33: ToggleFileTree shows/hides and sets FocusArea
+  - BR-33: ToggleFileTree shows/hides FileTree View; opening preserves the current FocusArea, and closing falls back to Stage only when FileTree owns focus
   - BR-34: ToggleFullscreen sets pending flag
   - BR-35: FileFinder opens file finder modal
+  - BR-36: ToggleDock opens/focuses or closes Dock using the focused Stage Terminal
 
 ## Tests
 
@@ -131,6 +137,11 @@ text routing, focus management, and GlobalAction dispatch.
 | UC-1 | BR-6 | `keyboard_routing` | `escape_during_pane_drag_cancels_the_drag` |
 | UC-1 | BR-7 | `keyboard_routing` | `focus_area_file_tree_consumes_arrow_keys` |
 | UC-1 | BR-8 | `keyboard_routing` | `global_action_keys_work_when_focus_area_is_file_tree` |
+| UC-1 | BR-8a | `modifier_keybinding` | `cmd_b_maps_to_toggle_file_tree` |
+| UC-1 | BR-8a | `modifier_keybinding` | `cmd_backslash_maps_to_toggle_dock` |
+| UC-1 | BR-8b | `modifier_keybinding` | `cmd_1_2_3_4_are_not_default_visibility_or_focus_toggles` |
+| UC-1 | BR-8c | `modifier_keybinding` | `cmd_i_and_cmd_o_are_not_default_tab_group_navigation` |
+| UC-1 | BR-8d | `modifier_keybinding` | `cmd_shift_hjkl_maps_to_dock_navigate` |
 | UC-1 | BR-9 | `keyboard_routing` | `branch_cleanup_enter_means_keep_branch` |
 | UC-2 | BR-10 | `text_input_routing` | `text_goes_to_editor_when_nothing_else_is_open` |
 | UC-2 | BR-11 | `text_input_routing` | `text_goes_to_file_finder_when_open` |
@@ -154,13 +165,15 @@ text routing, focus management, and GlobalAction dispatch.
 | UC-4 | BR-28 | `global_actions` | `split_vertical_creates_new_pane_in_split_layout_and_focuses_it` |
 | UC-4 | BR-28 | `global_actions` | `split_horizontal_creates_new_pane_in_split_layout_and_focuses_it` |
 | UC-4 | BR-29 | `global_actions` | `new_tab_global_action_creates_launcher_pane` |
-| UC-4 | BR-30 | `global_actions` | `new_file_global_action_creates_editor_pane_in_tab_group` |
+| UC-4 | BR-30 | `global_actions` | `new_file_global_action_creates_editor_pane_in_stage_split` |
 | UC-4 | BR-31 | `global_actions` | `find_opens_search_bar_on_focused_pane` |
 | UC-4 | BR-32 | `global_actions` | `find_again_reuses_existing_search_bar` |
-| UC-4 | BR-33 | `global_actions` | `toggle_file_tree_from_stage_sets_focus_area_to_file_tree` |
+| UC-4 | BR-33 | `global_actions` | `toggle_file_tree_from_stage_opens_without_moving_focus` |
+| UC-4 | BR-33 | `global_actions` | `focus_slot_2_opens_file_tree_without_moving_focus` |
 | UC-4 | BR-33 | `global_actions` | `toggle_file_tree_again_hides_and_restores_focus_area_to_stage` |
 | UC-4 | BR-34 | `global_actions` | `toggle_fullscreen_sets_pending_flag` |
 | UC-4 | BR-35 | `global_actions` | `file_finder_opens_via_global_action` |
+| UC-4 | BR-36 | `global_actions` | `toggle_dock_global_action_opens_terminal_context_surface` |
 
 ## Location
 

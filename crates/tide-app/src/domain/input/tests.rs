@@ -150,7 +150,7 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_shift_t_triggers_dock_new_tab() {
+    fn ctrl_shift_t_routes_to_pane() {
         let mut router = Router::new();
         router.set_focused(1);
         let panes = two_panes_horizontal();
@@ -161,11 +161,11 @@ mod tests {
         };
         let action = router.process(event, &panes);
 
-        assert_eq!(action, Action::GlobalAction(GlobalAction::DockNewTab));
+        assert_eq!(action, Action::RouteToPane(1));
     }
 
     #[test]
-    fn meta_shift_t_triggers_new_tab() {
+    fn meta_shift_t_triggers_split_vertical() {
         let mut router = Router::new();
         router.set_focused(1);
         let panes = two_panes_horizontal();
@@ -176,7 +176,7 @@ mod tests {
         };
         let action = router.process(event, &panes);
 
-        assert_eq!(action, Action::GlobalAction(GlobalAction::NewTab));
+        assert_eq!(action, Action::GlobalAction(GlobalAction::SplitVertical));
     }
 
     #[test]
@@ -235,6 +235,75 @@ mod tests {
     }
 
     #[test]
+    fn meta_b_triggers_toggle_file_tree() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let event = InputEvent::KeyPress {
+            key: Key::Char('b'),
+            modifiers: meta(),
+        };
+        let action = router.process(event, &panes);
+
+        assert_eq!(action, Action::GlobalAction(GlobalAction::ToggleFileTree));
+    }
+
+    #[test]
+    fn meta_e_triggers_toggle_workspace_sidebar() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let event = InputEvent::KeyPress {
+            key: Key::Char('e'),
+            modifiers: meta(),
+        };
+        let action = router.process(event, &panes);
+
+        assert_eq!(
+            action,
+            Action::GlobalAction(GlobalAction::ToggleWorkspaceSidebar)
+        );
+    }
+
+    #[test]
+    fn meta_backslash_triggers_toggle_dock() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let event = InputEvent::KeyPress {
+            key: Key::Char('\\'),
+            modifiers: meta(),
+        };
+        let action = router.process(event, &panes);
+
+        assert_eq!(action, Action::GlobalAction(GlobalAction::ToggleDock));
+    }
+
+    #[test]
+    fn meta_numeric_slots_route_to_pane() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        for key in [
+            Key::Char('1'),
+            Key::Char('2'),
+            Key::Char('3'),
+            Key::Char('4'),
+        ] {
+            let event = InputEvent::KeyPress {
+                key,
+                modifiers: meta(),
+            };
+            let action = router.process(event, &panes);
+            assert_eq!(action, Action::RouteToPane(1));
+        }
+    }
+
+    #[test]
     fn meta_hjkl_triggers_navigate() {
         let mut router = Router::new();
         router.set_focused(1);
@@ -261,6 +330,32 @@ mod tests {
     }
 
     #[test]
+    fn meta_shift_hjkl_triggers_dock_navigate() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let cases = [
+            ('h', Direction::Left),
+            ('j', Direction::Down),
+            ('k', Direction::Up),
+            ('l', Direction::Right),
+        ];
+
+        for (ch, expected_dir) in cases {
+            let event = InputEvent::KeyPress {
+                key: Key::Char(ch),
+                modifiers: meta_shift(),
+            };
+            let action = router.process(event, &panes);
+            assert_eq!(
+                action,
+                Action::GlobalAction(GlobalAction::DockNavigate(expected_dir))
+            );
+        }
+    }
+
+    #[test]
     fn meta_enter_triggers_toggle_stacked() {
         let mut router = Router::new();
         router.set_focused(1);
@@ -276,7 +371,7 @@ mod tests {
     }
 
     #[test]
-    fn meta_i_triggers_dock_tab_prev() {
+    fn meta_i_routes_to_pane() {
         let mut router = Router::new();
         router.set_focused(1);
         let panes = two_panes_horizontal();
@@ -287,11 +382,11 @@ mod tests {
         };
         let action = router.process(event, &panes);
 
-        assert_eq!(action, Action::GlobalAction(GlobalAction::TabPrev));
+        assert_eq!(action, Action::RouteToPane(1));
     }
 
     #[test]
-    fn meta_o_triggers_dock_tab_next() {
+    fn meta_o_routes_to_pane() {
         let mut router = Router::new();
         router.set_focused(1);
         let panes = two_panes_horizontal();
@@ -302,7 +397,7 @@ mod tests {
         };
         let action = router.process(event, &panes);
 
-        assert_eq!(action, Action::GlobalAction(GlobalAction::TabNext));
+        assert_eq!(action, Action::RouteToPane(1));
     }
 
     #[test]

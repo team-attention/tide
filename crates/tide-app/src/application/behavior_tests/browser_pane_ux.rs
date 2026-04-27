@@ -117,6 +117,20 @@ fn empty_browser_pane_hides_the_native_webview_until_navigation() {
 }
 
 #[test]
+fn browser_webview_frame_uses_full_bleed_content_below_browser_chrome() {
+    // UC-8 BR-32: Browser Pane native content does not reuse Pane padding around the WKWebView frame.
+    let pane_rect = Rect::new(12.0, 24.0, 420.0, 260.0);
+    let content_top = 48.0;
+
+    let frame = crate::layout_compute::browser_webview_frame(pane_rect, content_top);
+
+    assert_eq!(frame.x, pane_rect.x);
+    assert_eq!(frame.y, pane_rect.y + content_top);
+    assert_eq!(frame.width, pane_rect.width);
+    assert_eq!(frame.height, pane_rect.height - content_top);
+}
+
+#[test]
 fn clicking_empty_browser_pane_content_preserves_url_bar_focus() {
     // UC-1 BR-4: Clicking Browser Pane content in an empty Browser Pane restores or preserves Browser URL-bar focus instead of switching to native content focus
     let (mut app, id) = app_with_browser();

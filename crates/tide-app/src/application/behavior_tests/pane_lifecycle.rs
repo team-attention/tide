@@ -2,8 +2,12 @@ use crate::pane::browser::BrowserPane;
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::{FocusArea, ViewMode};
-use crate::tide_core::LayoutEngine;
+use crate::theme::{
+    PANE_PADDING, TITLEBAR_BUTTON_GAP, TITLEBAR_ICON_BUTTON_PAD_H, TITLEBAR_ICON_SCALE,
+};
+use crate::tide_core::{LayoutEngine, MouseButton, SplitDirection, Vec2};
 use crate::App;
+use crate::AppCorePort;
 use crate::PaneLifecyclePort;
 use crate::WorkspaceNavPort;
 
@@ -12,6 +16,39 @@ fn test_app() -> App {
     app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
+}
+
+fn test_window_proxy() -> crate::tide_platform::WindowProxy {
+    let (tx, _rx) = std::sync::mpsc::channel();
+    crate::tide_platform::WindowProxy::new(tx, std::sync::Arc::new(|| {}))
+}
+
+enum TitlebarSurfaceButton {
+    Dock,
+    FileTree,
+    Workspace,
+}
+
+fn titlebar_surface_button_center(app: &App, button: TitlebarSurfaceButton) -> Vec2 {
+    let logical = app.logical_size();
+    let cs = app.window.cached_cell_size;
+    let swap_icon_w = (7.0_f32 * TITLEBAR_ICON_SCALE) * 2.0 + 3.0_f32 * TITLEBAR_ICON_SCALE;
+    let swap_x = logical.width - PANE_PADDING - swap_icon_w;
+    let btn_w = cs.width * TITLEBAR_ICON_SCALE + TITLEBAR_ICON_BUTTON_PAD_H * 2.0;
+    let gear_x = swap_x - btn_w - TITLEBAR_BUTTON_GAP;
+    let theme_x = gear_x - btn_w - TITLEBAR_BUTTON_GAP;
+    let integ_x = theme_x - btn_w - TITLEBAR_BUTTON_GAP;
+    let mut cur_right = integ_x - TITLEBAR_BUTTON_GAP;
+    let index = match button {
+        TitlebarSurfaceButton::FileTree => 0,
+        TitlebarSurfaceButton::Dock => 1,
+        TitlebarSurfaceButton::Workspace => 2,
+    };
+    for _ in 0..index {
+        cur_right -= btn_w + TITLEBAR_BUTTON_GAP;
+    }
+    let btn_x = cur_right - btn_w;
+    Vec2::new(btn_x + btn_w / 2.0, app.window.top_inset / 2.0)
 }
 
 fn app_with_editor() -> (App, u64) {
@@ -36,7 +73,7 @@ fn app_with_browser() -> (App, u64) {
     (app, id)
 }
 
-fn app_with_terminal_tab_group() -> (App, u64, u64) {
+fn app_with_two_terminal_stage_splits() -> (App, u64, u64) {
     let mut app = test_app();
     let (layout, first_id) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
@@ -52,15 +89,21 @@ fn app_with_terminal_tab_group() -> (App, u64, u64) {
         .focused
         .expect("new terminal tab should focus the new pane");
 
-    let tg = app
-        .layout
-        .tab_group_containing(first_id)
-        .expect("new terminal tab should create a Stage TabGroup");
-    assert!(tg.contains(first_id));
-    assert!(tg.contains(second_id));
-    assert_eq!(tg.active_pane(), second_id);
+    assert_eq!(app.layout.pane_ids().len(), 2);
+    assert!(app.layout.tab_group_containing(first_id).is_none());
+    assert!(app.layout.tab_group_containing(second_id).is_none());
 
     (app, first_id, second_id)
+}
+
+fn layout_snapshot_contains(snapshot: &crate::tide_layout::LayoutSnapshot, pane_id: u64) -> bool {
+    match snapshot {
+        crate::tide_layout::LayoutSnapshot::Leaf { tabs, .. }
+        | crate::tide_layout::LayoutSnapshot::LeafGroup { tabs, .. } => tabs.contains(&pane_id),
+        crate::tide_layout::LayoutSnapshot::Split { left, right, .. } => {
+            layout_snapshot_contains(left, pane_id) || layout_snapshot_contains(right, pane_id)
+        }
+    }
 }
 
 // Spec: docs/specs/pane-lifecycle.md
@@ -68,7 +111,7 @@ fn app_with_terminal_tab_group() -> (App, u64, u64) {
 // --- UC-1: CreateTab ---
 
 #[test]
-fn new_editor_pane_adds_to_focused_tab_group() {
+fn new_editor_pane_adds_stage_split_leaf() {
     // UC-1: CreateTab
     let (mut app, _first_id) = app_with_editor();
     let pane_count_before = app.panes.len();
@@ -102,7 +145,7 @@ fn new_editor_pane_does_nothing_without_focus() {
 
 #[test]
 fn new_terminal_tab_creates_terminal_pane_in_stage() {
-    // UC-1 BR-1: New tab in Stage creates a Terminal directly (added to TabGroup)
+    // UC-1 BR-1: New tab in Stage creates a Terminal split leaf.
     let (mut app, _) = app_with_editor();
     app.new_terminal_tab();
     let new_id = app.focus.focused.unwrap();
@@ -110,8 +153,9 @@ fn new_terminal_tab_creates_terminal_pane_in_stage() {
         app.panes.get(&new_id),
         Some(PaneKind::Terminal(_))
     ));
-    // Invariant: PaneId sync (all_pane_ids includes inactive TabGroup tabs)
-    assert_eq!(app.layout.all_pane_ids().len(), app.panes.len());
+    // Invariant: PaneId sync
+    assert_eq!(app.layout.pane_ids().len(), app.panes.len());
+    assert!(app.layout.tab_group_containing(new_id).is_none());
 }
 
 // --- UC-2: SplitPane ---
@@ -163,10 +207,10 @@ fn splitting_zoomed_stage_leaf_keeps_stacked_mode_and_focuses_the_new_pane() {
 }
 
 #[test]
-fn splitting_zoomed_stage_tab_group_keeps_stacked_mode_and_appends_a_new_tab() {
-    // UC-2 BR-7: If the focused Stage Pane is zoomed and belongs to a TabGroup,
-    // split keeps stacked mode and inserts the new Stage Pane into that TabGroup.
-    let (mut app, first_id, second_id) = app_with_terminal_tab_group();
+fn splitting_stacked_stage_creates_split_leaf_not_tab_group() {
+    // UC-2 BR-7: If the focused Stage Pane is zoomed, split keeps stacked mode
+    // and creates a new Stage split leaf instead of a Stage TabGroup tab.
+    let (mut app, first_id, second_id) = app_with_two_terminal_stage_splits();
     app.focus.focused = Some(second_id);
     app.focus.stage_focused = Some(second_id);
     app.router.set_focused(second_id);
@@ -175,30 +219,22 @@ fn splitting_zoomed_stage_tab_group_keeps_stacked_mode_and_appends_a_new_tab() {
     assert_eq!(app.dock.terminal_view_mode, ViewMode::Stacked);
     assert_eq!(app.focus.zoomed_pane, Some(second_id));
 
-    let tabs_before = app
-        .layout
-        .tab_group_containing(second_id)
-        .expect("source Stage TabGroup should exist before split")
-        .tabs
-        .clone();
     let visible_before = app.layout.pane_ids();
 
     app.split_with_launcher(crate::tide_core::SplitDirection::Vertical);
 
     let new_id = app.focus.focused.expect("split should focus the new pane");
-    let source_group = app
-        .layout
-        .tab_group_containing(first_id)
-        .expect("source Stage TabGroup should remain after split");
 
     assert_eq!(app.dock.terminal_view_mode, ViewMode::Stacked);
     assert_eq!(app.focus.zoomed_pane, Some(new_id));
     assert_eq!(app.focus.stage_focused, Some(new_id));
-    assert_eq!(app.layout.pane_ids().len(), visible_before.len());
-    assert_eq!(source_group.tabs.len(), tabs_before.len() + 1);
-    assert_eq!(&source_group.tabs[..tabs_before.len()], &tabs_before[..]);
-    assert!(source_group.contains(new_id));
-    assert_eq!(source_group.active_pane(), new_id);
+    assert_eq!(app.layout.pane_ids().len(), visible_before.len() + 1);
+    assert!(app.layout.pane_ids().contains(&first_id));
+    assert!(app.layout.pane_ids().contains(&second_id));
+    assert!(app.layout.pane_ids().contains(&new_id));
+    assert!(app.layout.tab_group_containing(first_id).is_none());
+    assert!(app.layout.tab_group_containing(second_id).is_none());
+    assert!(app.layout.tab_group_containing(new_id).is_none());
     assert_eq!(app.focus.stage_focused, Some(new_id));
     assert!(matches!(
         app.panes.get(&new_id),
@@ -248,6 +284,32 @@ fn opening_same_file_twice_activates_existing_tab_instead() {
     app.open_editor_pane(test_path.clone());
     // Should refocus the existing editor, not create a new one
     assert_eq!(app.focus.focused, Some(editor_id));
+    let _ = std::fs::remove_file(&test_path);
+}
+
+#[test]
+fn opening_file_defaults_to_right_split_when_focused_is_non_terminal() {
+    // UC-4 BR-9a: Opening a new file defaults to a right-side split in Stage fallback.
+    let (mut app, first_id) = app_with_editor();
+    let test_path = std::path::PathBuf::from("/tmp/behavior_test_right_split.txt");
+    let _ = std::fs::write(&test_path, "test content");
+
+    app.open_editor_pane(test_path.clone());
+    let new_id = app.focus.focused.unwrap();
+
+    match app.layout.snapshot().expect("layout should exist") {
+        crate::tide_layout::LayoutSnapshot::Split {
+            direction, right, ..
+        } => {
+            assert_eq!(direction, SplitDirection::Horizontal);
+            assert!(
+                layout_snapshot_contains(&right, new_id),
+                "new file should open to the right of the focused Pane"
+            );
+        }
+        other => panic!("expected right split after opening file, got {other:?}"),
+    }
+    assert!(app.layout.pane_ids().contains(&first_id));
     let _ = std::fs::remove_file(&test_path);
 }
 
@@ -390,6 +452,29 @@ fn closing_only_pane_in_split_focuses_neighbor() {
 }
 
 #[test]
+fn closing_focused_stacked_stage_pane_focuses_previous_flat_pane() {
+    // UC-5 BR-12b: Stage ViewMode::Stacked close uses the flat stacked order and prefers the Pane immediately to the left.
+    let (mut app, first_id) = app_with_editor();
+    app.new_editor_pane();
+    let second_id = app.focus.focused.unwrap();
+    app.new_editor_pane();
+    let third_id = app.focus.focused.unwrap();
+
+    assert_eq!(app.layout.pane_ids(), vec![first_id, second_id, third_id]);
+    app.focus.focus_area = FocusArea::Stage;
+    app.focus.focused = Some(third_id);
+    app.router.set_focused(third_id);
+    app.handle_toggle_stacked();
+    assert_eq!(app.focus.zoomed_pane, Some(third_id));
+
+    app.force_close_editor_panel_tab(third_id);
+
+    assert_eq!(app.focus.focused, Some(second_id));
+    assert_eq!(app.focus.zoomed_pane, Some(second_id));
+    assert_eq!(app.layout.pane_ids(), vec![first_id, second_id]);
+}
+
+#[test]
 fn cancel_save_confirm_clears_the_modal() {
     // UC-5 BR-14: Cancel on SaveConfirm clears the modal without closing
     let (mut app, id) = app_with_editor();
@@ -432,4 +517,36 @@ fn mouse_release_still_completes_border_drag_cleanup() {
     assert!(!app.ft.border_dragging);
     assert_eq!(app.focus.focused, Some(id));
     assert_eq!(app.focus.focus_area, FocusArea::Stage);
+}
+
+#[test]
+fn titlebar_surface_buttons_recompute_hover_target_on_mouse_down() {
+    // UC-6 BR-21: Mouse down recomputes titlebar hover target so surface buttons can be clicked repeatedly without mouse movement.
+    let mut app = test_app();
+    app.create_initial_pane(None);
+    let window = test_window_proxy();
+
+    app.ft.visible = false;
+    app.window.last_cursor_pos =
+        titlebar_surface_button_center(&app, TitlebarSurfaceButton::FileTree);
+    app.interaction.hover_target = None;
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(&mut app, MouseButton::Left, &window);
+    assert!(app.ft.visible);
+    crate::adapter::inward::mouse_adapter::handle_mouse_up(&mut app, MouseButton::Left);
+    assert!(app.interaction.hover_target.is_none());
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(&mut app, MouseButton::Left, &window);
+    assert!(!app.ft.visible);
+
+    app.ws.show_sidebar = false;
+    app.window.last_cursor_pos =
+        titlebar_surface_button_center(&app, TitlebarSurfaceButton::Workspace);
+    app.interaction.hover_target = None;
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(&mut app, MouseButton::Left, &window);
+    assert!(app.ws.show_sidebar);
+
+    app.dock.dock_open = false;
+    app.window.last_cursor_pos = titlebar_surface_button_center(&app, TitlebarSurfaceButton::Dock);
+    app.interaction.hover_target = None;
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(&mut app, MouseButton::Left, &window);
+    assert!(app.dock.dock_open);
 }

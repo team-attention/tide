@@ -2,7 +2,7 @@ use unicode_width::UnicodeWidthChar;
 
 use crate::tide_core::{Rect, Renderer, TerminalBackend};
 
-use crate::pane::PaneKind;
+use crate::pane::{terminal_grid_cols, terminal_grid_origin, PaneKind};
 use crate::theme::*;
 use crate::App;
 
@@ -109,7 +109,7 @@ pub(crate) fn render_cursor_and_highlights(
                         let sel_color = p.selection;
                         let grid = pane.backend.grid();
                         let max_rows = (inner.height / cell_size.height).ceil() as usize;
-                        let max_cols = (inner.width / cell_size.width).floor() as usize;
+                        let max_cols = terminal_grid_cols(inner, cell_size);
                         let visible_rows = (grid.rows as usize).min(max_rows);
                         let visible_cols = (grid.cols as usize).min(max_cols);
                         // Selection coords are absolute; convert to screen-relative
@@ -118,9 +118,7 @@ pub(crate) fn render_cursor_and_highlights(
                         let display_offset = pane.backend.display_offset();
                         let visible_start = history_size.saturating_sub(display_offset);
                         let visible_end = visible_start + visible_rows;
-                        // Center offset matching terminal grid
-                        let actual_w = max_cols as f32 * cell_size.width;
-                        let center_x = (inner.width - actual_w) / 2.0;
+                        let origin = terminal_grid_origin(inner);
                         // Clamp iteration to visible absolute row range
                         let row_lo = start.0.max(visible_start);
                         let row_hi = end.0.min(visible_end.saturating_sub(1));
@@ -131,7 +129,7 @@ pub(crate) fn render_cursor_and_highlights(
                                 continue;
                             }
                             let visual_row = row - visible_start;
-                            let rx = inner.x + center_x + col_start as f32 * cell_size.width;
+                            let rx = origin.x + col_start as f32 * cell_size.width;
                             let ry = inner.y + visual_row as f32 * cell_size.height;
                             let rw = (col_end - col_start) as f32 * cell_size.width;
                             renderer.draw_rect(Rect::new(rx, ry, rw, cell_size.height), sel_color);
@@ -146,10 +144,7 @@ pub(crate) fn render_cursor_and_highlights(
                         let display_offset = pane.backend.display_offset();
                         let grid = pane.backend.grid();
                         let screen_rows = grid.rows as usize;
-                        // Center offset matching terminal grid
-                        let max_cols = (inner.width / cell_size.width).floor() as usize;
-                        let actual_w = max_cols as f32 * cell_size.width;
-                        let center_x = (inner.width - actual_w) / 2.0;
+                        let origin = terminal_grid_origin(inner);
                         // Visible absolute line range
                         let visible_start = history_size.saturating_sub(display_offset);
                         let visible_end = visible_start + screen_rows;
@@ -158,7 +153,7 @@ pub(crate) fn render_cursor_and_highlights(
                                 continue;
                             }
                             let visual_row = m.line - visible_start;
-                            let rx = inner.x + center_x + m.col as f32 * cell_size.width;
+                            let rx = origin.x + m.col as f32 * cell_size.width;
                             let ry = inner.y + visual_row as f32 * cell_size.height;
                             let rw = m.len as f32 * cell_size.width;
                             let color = if search.current == Some(mi) {

@@ -57,10 +57,9 @@ pub(crate) fn check_header_click(
                     ctx.request_redraw();
                     return true;
                 }
-                HeaderHitAction::NewTerminal => {
+                HeaderHitAction::AddPane => {
                     focus_header_context(ctx, zone.pane_id);
                     ctx.new_terminal_tab();
-                    resolve_terminal_launcher_if_needed(ctx);
                     ctx.request_redraw();
                     return true;
                 }

@@ -10,7 +10,7 @@ Dock split chrome also still over-uses the shared tab bar. `render_pane_chrome()
 
 ### To-Be
 
-Focused `Pane`s stay easy to identify in both Stage and Dock through the current brighter active header/tab treatment, without adding a new full-pane outline around the terminal body. `Terminal-Owned Attention` is dot-only: it renders only on `Workspace` list items and on direct wrapped-agent owner `Terminal`s in Stage. A direct wrapped-agent Stage `Terminal` with `Running` shows a solid green dot. A direct wrapped-agent Stage `Terminal` with unresolved `Idle` or `NeedsInput` shows the same orange blinking dot family, and that blink must follow a stable clock that does not depend on frame-to-frame render cadence. A direct wrapped-agent Stage `Terminal` with `Wrapped Agent Presence` but no active `AgentStatus` shows a solid idle-presence dot in a muted cool color. Tide does not add wrapped-agent fill or underline to the entire Stage `Pane` surface. Non-terminal `Pane`s never inherit wrapped-agent dots through `Associated Terminal`, and Dock chrome never renders a wrapped-agent dot. If an alerting Stage `Terminal` lives in an active Stage `TabGroup`, its tab shows the orange blinking dot; if that tab is scrolled out of the visible tab strip, the tab-strip edge in the hidden direction shows the same orange blinking dot instead. Workspace items show the strongest direct Stage-terminal state for that `Workspace`, regardless of whether the `Workspace` is active or inactive: orange blinking alert takes precedence over green running, which takes precedence over idle-presence. Active headers, active Stage tabs, and busy `Terminal Pane` headers preserve readable labels before optional git badges consume the remaining width. A Dock `TabGroup` with one `Pane` uses the single-`Pane` header chrome instead of a shared tab bar, so the title and close affordance sit in the same layout family as the rest of Tide. The shared active-tab width budget continues to reserve space for the Stage-terminal dot, shared tab scrolling remains stable and directionally consistent, and git badges continue to refresh on a near-immediate frame-scale delay. When repo-to-repo navigation queues multiple git refreshes, the background poller must prefer the latest pending `cwd` request instead of spending extra time publishing obsolete repo results first.
+Focused `Pane`s stay easy to identify in both Stage and Dock through the current brighter active header/tab treatment, without adding a new full-pane outline around the terminal body. `Terminal-Owned Attention` is dot-only: it renders only on `Workspace` list items and on direct wrapped-agent owner `Terminal`s in Stage. A direct wrapped-agent Stage `Terminal` with `Running` shows a solid green dot. A direct wrapped-agent Stage `Terminal` with unresolved `Idle` or `NeedsInput` shows the same orange blinking dot family, and that blink must follow a stable clock that does not depend on frame-to-frame render cadence. A direct wrapped-agent Stage `Terminal` with `Wrapped Agent Presence` but no active `AgentStatus` shows a solid idle-presence dot in a muted cool color. Tide does not add wrapped-agent fill or underline to the entire Stage `Pane` surface. Non-terminal `Pane`s never inherit wrapped-agent dots through `Associated Terminal`, and Dock chrome never renders a wrapped-agent dot. If an alerting Stage `Terminal` is clipped out of the `ViewMode::Stacked` flat Stage tab strip, the tab-strip edge in the hidden direction shows the same orange blinking dot. Workspace items show the strongest direct Stage-terminal state for that `Workspace`, regardless of whether the `Workspace` is active or inactive: orange blinking alert takes precedence over green running, which takes precedence over idle-presence. Active headers, active stacked Stage tabs, and busy `Terminal Pane` headers preserve readable labels before optional git badges consume the remaining width. A Dock `TabGroup` with one `Pane` uses the single-`Pane` header chrome instead of a shared tab bar, so the title and close affordance sit in the same layout family as the rest of Tide. A Stacked Terminal Context Surface with one `Pane` follows the same rule so the active file or surface name remains visible. The shared active-tab width budget continues to reserve space for the Stage-terminal dot, shared tab scrolling remains stable and directionally consistent, and git badges continue to refresh on a near-immediate frame-scale delay. When repo-to-repo navigation queues multiple git refreshes, the background poller must prefer the latest pending `cwd` request instead of spending extra time publishing obsolete repo results first.
 
 ### Approach
 
@@ -25,7 +25,7 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 9. When an alerting Stage-terminal tab is scrolled outside the visible shared-tab range, render the orange blinking indicator on the corresponding tab-strip edge.
 9. Reserve a minimum title region in active headers and active tabs, eliding optional git badges before the title disappears.
 10. Use a readable shared label color path for busy `Terminal Pane` headers so terminal names do not fall back to a dimmed badge color.
-11. Apply the same title-preservation and shared sizing rules to the shared header and tab-bar rendering paths so Stage tabs, Dock tabs, and single-Pane headers stay consistent.
+11. Apply the same title-preservation and shared sizing rules to the shared header and tab-bar rendering paths so stacked Stage tabs, Dock tabs, and single-Pane headers stay consistent.
 12. Reserve shared-tab width for the Stage-terminal dot whenever a visible Stage `Terminal` has direct wrapper-managed lifecycle state.
 13. Keep explicit horizontal tab scrolling stable by auto-fitting the active tab only on active-tab changes, not on every render while the user is manually browsing overflowed tabs.
 14. Make shared tab bars treat horizontal precise delta as the primary gesture signal, leaving vertical fallback for wheel-style scrolling when no horizontal delta is present.
@@ -36,7 +36,7 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 19. Only consume header-area scroll for shared tab bars that actually have horizontal overflow; otherwise route the scroll to the pane content below.
 20. Clear stale terminal git and worktree badge state as soon as cached `cwd` changes, before the next background git poll result arrives.
 21. Collapse queued git-poll `cwd` refresh requests to the latest pending request before publishing results, so repo chrome repopulates promptly after repo-to-repo navigation.
-22. Render Dock shared tab bar chrome only when the Dock `TabGroup` actually has multiple tabs; a single Dock `Pane` falls back to the normal single-`Pane` header.
+22. Render Dock shared tab bar chrome only when the Dock `TabGroup` or Stacked Terminal Context Surface actually has multiple tabs; a single Dock `Pane` falls back to the normal single-`Pane` header.
 
 ## Bounded Contexts
 
@@ -114,7 +114,7 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 ### UC-5: RenderOverflowedAlertEdgeIndicator
 
 - **Actor**: System
-- **Trigger**: Shared-tab rendering for an active Stage `TabGroup` or zoomed Stage tab strip with alert tabs outside the visible scroll region
+- **Trigger**: Shared-tab rendering for a `ViewMode::Stacked` Stage tab strip with alert tabs outside the visible scroll region
 - **Precondition**: At least one direct wrapped-agent Stage `Terminal` tab with unresolved `Idle` or `NeedsInput` is clipped by shared-tab scrolling
 - **Flow**:
   1. Tide computes the visible shared-tab range after scroll offset and clipping
@@ -138,7 +138,7 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 - **Postcondition**: The active title remains readable beside optional git badges
 - **Business Rules**:
   - BR-16: Active single-pane headers keep a readable title when git branch or git status badges are present
-  - BR-17: Active Stage tabs keep a readable title when git branch or git status badges are present
+  - BR-17: Active stacked Stage tabs keep a readable title when git branch or git status badges are present
   - BR-18: Optional git badges yield space before the visible title disappears
 
 ### UC-7: RenderSharedTabSizingAndReadableTerminalLabels
@@ -153,7 +153,7 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
   4. Tide renders busy `Terminal Pane` labels with a readable text color instead of the dimmed badge color path
 - **Postcondition**: Tabs feel slightly larger, focused tabs feel more emphasized, and terminal labels remain readable
 - **Business Rules**:
-  - BR-19: Shared tab chrome uses a slightly larger height, padding, and row-aware active-tab width budget across Stage tabs, Dock tabs, and single-Pane headers
+  - BR-19: Shared tab chrome uses a slightly larger height, padding, and row-aware active-tab width budget across stacked Stage tabs, Dock tabs, and single-Pane headers
   - BR-20: Focused tabs use a brighter tint than unfocused tabs in the shared header and tab-bar rendering paths
   - BR-21: Busy `Terminal Pane` headers use a readable label color instead of the dimmed badge color path
   - BR-22: The shared active-tab width budget stretches with the available row width after sibling tabs reserve their minimum width, enough to keep both `plain` and `comment` badges visible for an active live-preview `Markdown Pane` while preserving the minimum title region
@@ -171,15 +171,17 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 ### UC-9: CollapseSingleDockTabGroupChrome
 
 - **Actor**: System
-- **Trigger**: Chrome rendering for a Dock `TabGroup`
-- **Precondition**: The Dock `TabGroup` contains one or more tabs
+- **Trigger**: Chrome rendering for a Dock `TabGroup` or Stacked Terminal Context Surface
+- **Precondition**: The Dock `TabGroup` or Stacked Terminal Context Surface contains one or more tabs
 - **Flow**:
   1. Tide resolves the Dock `TabGroup` size before choosing the chrome path.
   2. If the Dock `TabGroup` has two or more tabs, Tide renders the shared Dock tab bar.
   3. If the Dock `TabGroup` has exactly one tab, Tide renders the normal single-`Pane` header for that `Pane`.
+  4. If Stacked Terminal Context Surface has exactly one `Pane`, Tide renders the normal single-`Pane` header for that active `Pane`.
 - **Postcondition**: Single-tab Dock chrome no longer pretends to be a stretched shared tab bar.
 - **Business Rules**:
   - BR-35: A Dock `TabGroup` with exactly one tab must use single-`Pane` header chrome instead of the shared Dock tab bar.
+  - BR-36: A Stacked Terminal Context Surface with exactly one `Pane` must use single-`Pane` header chrome instead of the shared Dock stacked tab bar.
 
 ## Invariants
 
@@ -188,7 +190,7 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 3. Wrapped-agent dots appear only on Workspace items and direct wrapped-agent Stage `Terminal` chrome.
 4. Ordinary focus does not introduce a new full-pane outline around the terminal body.
 5. Header title preservation rules apply consistently to single-pane headers and active tabs.
-6. Shared tab sizing changes apply consistently to Stage tabs, Dock tabs, and single-pane headers.
+6. Shared tab sizing changes apply consistently to stacked Stage tabs, Dock tabs, and single-pane headers.
 7. Wrapped-agent alert blink uses a stable timebase instead of per-frame elapsed time.
 8. `Wrapped Agent Presence` may render an idle-presence dot, but it must not route macOS notifications by itself.
 9. Dock shared tab chrome appears only for Dock `TabGroup`s with two or more tabs.
@@ -237,6 +239,7 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 | UC-8 | BR-33 | `connected_wrapped_agent_without_active_status_renders_idle_presence_dot` |
 | UC-8 | BR-34 | `workspace_connected_idle_renders_an_idle_presence_dot` |
 | UC-9 | BR-35 | `dock_single_tab_group_uses_single_pane_header_chrome` |
+| UC-9 | BR-36 | `dock_stacked_single_pane_uses_single_pane_header_chrome` |
 
 ## Location
 

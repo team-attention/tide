@@ -141,7 +141,7 @@ pub static DARK: ThemePalette = ThemePalette {
     // Surface — #0A0A0B base, #0E0E10 pane, #111113 panels
     surface_bg: Color::new(0.039, 0.039, 0.043, 1.0),
     pane_bg: Color::new(0.055, 0.055, 0.063, 1.0),
-    file_tree_bg: Color::new(0.071, 0.069, 0.075, 1.0), // slightly warmer for area distinction
+    file_tree_bg: Color::new(0.061, 0.061, 0.067, 1.0), // close to Dock surface; edge line provides separation
     border_color: Color::new(0.039, 0.039, 0.043, 1.0),
     border_focused: Color::new(0.769, 0.722, 0.651, 0.65),
     border_subtle: Color::new(0.145, 0.140, 0.157, 1.0), // stronger for clearer panel edges
@@ -151,9 +151,9 @@ pub static DARK: ThemePalette = ThemePalette {
     tree_dir: Color::new(0.678, 0.678, 0.690, 1.0),  // folder names #ADADB0
     tree_dir_icon: Color::new(0.831, 0.784, 0.714, 1.0), // folder icons #D4C8B6
     tree_icon: Color::new(0.290, 0.290, 0.306, 1.0), // file icons #4A4A4E
-    tree_row_active: Color::new(0.102, 0.102, 0.114, 1.0), // expanded folder row bg #1A1A1D
-    file_tree_focus_fill: Color::new(0.165, 0.167, 0.184, 1.0), // restrained selected-row fill
-    file_tree_focus_stroke: Color::new(0.312, 0.316, 0.349, 1.0), // subtle list focus outline
+    tree_row_active: Color::new(1.0, 1.0, 1.0, 0.04), // quiet expanded-folder cue
+    file_tree_focus_fill: Color::new(1.0, 1.0, 1.0, 0.085), // restrained selected-row fill
+    file_tree_focus_stroke: Color::new(1.0, 1.0, 1.0, 0.14), // subtle list focus outline
 
     // Tab bar — VS Code inspired: clean minimal, bottom indicator
     tab_bar_bg: Color::new(0.088, 0.089, 0.100, 1.0), // deeper inactive chrome
@@ -173,8 +173,8 @@ pub static DARK: ThemePalette = ThemePalette {
 
     // Drop preview
     drop_fill: Color::new(1.0, 1.0, 1.0, 0.06),
-    drop_border: Color::new(1.0, 1.0, 1.0, 0.25),
-    swap_border: Color::new(1.0, 1.0, 1.0, 0.35),
+    drop_border: Color::new(1.0, 1.0, 1.0, 0.18),
+    swap_border: Color::new(1.0, 1.0, 1.0, 0.28),
     drag_source_dim: Color::new(0.0, 0.0, 0.0, 0.35),
 
     // Scrollbar
@@ -187,7 +187,7 @@ pub static DARK: ThemePalette = ThemePalette {
     hover_file_tree: Color::new(1.0, 1.0, 1.0, 0.04),
     hover_tab: Color::new(1.0, 1.0, 1.0, 0.05),
     hover_close: Color::new(1.0, 0.4, 0.4, 0.20),
-    hover_panel_border: Color::new(1.0, 1.0, 1.0, 0.12),
+    hover_panel_border: Color::new(1.0, 1.0, 1.0, 0.08),
 
     // Search
     search_match_bg: Color::new(0.65, 0.50, 0.10, 0.40),
@@ -268,29 +268,29 @@ pub static LIGHT: ThemePalette = ThemePalette {
     // Surface — warm beige tones
     surface_bg: Color::new(0.96, 0.94, 0.92, 1.0), // #F5F0EB warm off-white
     pane_bg: Color::new(0.94, 0.92, 0.89, 1.0),    // #F0EBE3 slightly warmer
-    file_tree_bg: Color::new(0.91, 0.88, 0.84, 1.0), // warmer tan for area distinction
-    border_color: Color::new(0.89, 0.86, 0.82, 1.0), // #E3DCD1 warm beige gap
-    border_focused: Color::new(0.55, 0.38, 0.18, 0.55), // chestnut brown accent
-    border_subtle: Color::new(0.40, 0.30, 0.15, 0.12), // stronger for clearer panel edges
+    file_tree_bg: Color::new(0.925, 0.905, 0.875, 1.0), // close to Dock surface; edge line provides separation
+    border_color: Color::new(0.915, 0.895, 0.865, 1.0), // quiet warm gap
+    border_focused: Color::new(0.48, 0.39, 0.28, 0.42), // restrained warm accent
+    border_subtle: Color::new(0.24, 0.22, 0.19, 0.08),  // low-alpha neutral separators
 
     // Text — warm dark brown (high contrast)
-    tree_text: Color::new(0.22, 0.18, 0.13, 1.0), // dark warm brown
-    tree_dir: Color::new(0.14, 0.11, 0.07, 1.0),  // near-black brown
-    tree_dir_icon: Color::new(0.40, 0.30, 0.18, 1.0), // chestnut icon
-    tree_icon: Color::new(0.48, 0.42, 0.34, 1.0), // muted warm
-    tree_row_active: Color::new(0.88, 0.85, 0.80, 1.0), // warm active row
-    file_tree_focus_fill: Color::new(0.84, 0.84, 0.82, 1.0), // soft neutral selected-row fill
-    file_tree_focus_stroke: Color::new(0.58, 0.54, 0.47, 1.0), // light-mode list focus outline
+    tree_text: Color::new(0.15, 0.14, 0.12, 1.0), // readable but not black
+    tree_dir: Color::new(0.10, 0.09, 0.075, 1.0),
+    tree_dir_icon: Color::new(0.36, 0.29, 0.20, 1.0),
+    tree_icon: Color::new(0.42, 0.38, 0.32, 1.0),
+    tree_row_active: Color::new(0.10, 0.08, 0.05, 0.045), // quiet expanded-folder cue
+    file_tree_focus_fill: Color::new(0.10, 0.08, 0.05, 0.085), // soft neutral selected-row fill
+    file_tree_focus_stroke: Color::new(0.10, 0.08, 0.05, 0.12), // light-mode list focus outline
 
     // Tab bar — VS Code inspired: clean minimal, bottom indicator
-    tab_bar_bg: Color::new(0.90, 0.88, 0.85, 1.0), // quieter inactive chrome
-    tab_bar_bg_focused: Color::new(0.96, 0.93, 0.89, 1.0), // stronger active-pane chrome
+    tab_bar_bg: Color::new(0.91, 0.895, 0.870, 1.0), // quieter inactive chrome
+    tab_bar_bg_focused: Color::new(0.955, 0.935, 0.905, 1.0), // stronger active-pane chrome
     active_tab_bg: Color::new(0.985, 0.972, 0.950, 1.0), // lifted active tab surface
-    tab_text: Color::new(0.50, 0.46, 0.40, 1.0),   // calmer inactive chrome text
-    tab_text_active: Color::new(0.26, 0.22, 0.17, 1.0), // stronger active tab text
-    tab_text_focused: Color::new(0.12, 0.10, 0.08, 1.0),
-    close_icon: Color::new(0.46, 0.42, 0.36, 1.0),
-    dock_tab_underline: Color::new(0.55, 0.38, 0.18, 1.0), // chestnut
+    tab_text: Color::new(0.45, 0.41, 0.35, 1.0),     // calmer inactive chrome text
+    tab_text_active: Color::new(0.24, 0.21, 0.17, 1.0), // stronger active tab text
+    tab_text_focused: Color::new(0.075, 0.065, 0.055, 1.0),
+    close_icon: Color::new(0.42, 0.38, 0.32, 1.0),
+    dock_tab_underline: Color::new(0.48, 0.36, 0.22, 1.0), // restrained warm accent
 
     // Editor
     gutter_text: Color::new(0.54, 0.50, 0.44, 1.0), // warm gutter (readable)
@@ -300,8 +300,8 @@ pub static LIGHT: ThemePalette = ThemePalette {
 
     // Drop preview — warm brown overlays
     drop_fill: Color::new(0.45, 0.35, 0.20, 0.08),
-    drop_border: Color::new(0.45, 0.35, 0.20, 0.25),
-    swap_border: Color::new(0.55, 0.38, 0.18, 0.45),
+    drop_border: Color::new(0.45, 0.35, 0.20, 0.18),
+    swap_border: Color::new(0.55, 0.38, 0.18, 0.32),
     drag_source_dim: Color::new(0.0, 0.0, 0.0, 0.15),
 
     // Scrollbar — warm brown
@@ -314,7 +314,7 @@ pub static LIGHT: ThemePalette = ThemePalette {
     hover_file_tree: Color::new(0.45, 0.35, 0.20, 0.06),
     hover_tab: Color::new(0.45, 0.35, 0.20, 0.07),
     hover_close: Color::new(1.0, 0.3, 0.3, 0.18),
-    hover_panel_border: Color::new(0.45, 0.35, 0.20, 0.14),
+    hover_panel_border: Color::new(0.45, 0.35, 0.20, 0.10),
 
     // Search — warm amber
     search_match_bg: Color::new(0.85, 0.72, 0.20, 0.25),
@@ -392,7 +392,7 @@ pub static LIGHT: ThemePalette = ThemePalette {
 // ──────────────────────────────────────────────
 
 pub const BORDER_WIDTH: f32 = 1.0;
-pub const PANE_GAP: f32 = 4.0;
+pub const PANE_GAP: f32 = 2.0;
 pub const PANE_PADDING: f32 = 12.0;
 pub const TERMINAL_TOP_PADDING_CELLS: f32 = 0.5;
 pub const EDITOR_LIVE_PREVIEW_VERTICAL_PADDING_CELLS: f32 = 0.5;
@@ -438,8 +438,8 @@ pub const AGENT_BLINK_FREQUENCY: f64 = 4.2;
 
 pub const PANE_CLOSE_SIZE: f32 = 14.0;
 
-pub const DROP_PREVIEW_BORDER_WIDTH: f32 = 2.0;
-pub const SWAP_PREVIEW_BORDER_WIDTH: f32 = 3.0;
+pub const DROP_PREVIEW_BORDER_WIDTH: f32 = 1.0;
+pub const SWAP_PREVIEW_BORDER_WIDTH: f32 = 2.0;
 pub const DRAG_THRESHOLD: f32 = 5.0;
 
 pub const SCROLLBAR_WIDTH: f32 = 6.0;
@@ -461,14 +461,15 @@ pub const BADGE_GAP: f32 = 6.0;
 pub const BADGE_RADIUS: f32 = 100.0;
 
 pub const FILE_TREE_HEADER_HEIGHT: f32 = 38.0;
+pub const TITLEBAR_ICON_BUTTON_PAD_H: f32 = 7.0;
+pub const TITLEBAR_ICON_BUTTON_PAD_V: f32 = 3.0;
+pub const TITLEBAR_ICON_SCALE: f32 = 1.18;
 pub const TITLEBAR_BUTTON_GAP: f32 = 8.0;
 pub const WORKSPACE_SIDEBAR_WIDTH: f32 = 180.0;
-pub const WS_SIDEBAR_PADDING: f32 = 10.0;
-pub const WS_SIDEBAR_ITEM_GAP: f32 = 6.0;
-pub const WS_SIDEBAR_ITEM_PAD_V: f32 = 8.0;
-pub const WS_SIDEBAR_ITEM_PAD_H: f32 = 10.0;
-pub const WS_SIDEBAR_LINE_GAP: f32 = 3.0;
-pub const WS_SIDEBAR_SUB_SCALE: f32 = 0.85;
+pub const WS_SIDEBAR_PADDING: f32 = 8.0;
+pub const WS_SIDEBAR_ITEM_GAP: f32 = 4.0;
+pub const WS_SIDEBAR_ITEM_PAD_V: f32 = 5.0;
+pub const WS_SIDEBAR_ITEM_PAD_H: f32 = 8.0;
 
 // ── Popup layout constants ──
 pub const POPUP_CORNER_RADIUS: f32 = 8.0; // 팝업 라운드 코너 반지름

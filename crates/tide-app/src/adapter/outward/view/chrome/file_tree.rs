@@ -2,7 +2,7 @@ use crate::tide_core::{Color, FileTreeSource, Rect, Renderer, TextStyle, Vec2};
 
 use crate::state::FocusArea;
 use crate::theme::*;
-use crate::ui::file_icon;
+use crate::ui::{file_icon, file_tree_disclosure};
 use crate::App;
 
 #[cfg_attr(test, derive(Debug))]
@@ -13,6 +13,7 @@ pub(crate) struct FileTreeFocusChrome {
     pub panel_side_border: f32,
     pub panel_shadow_alpha: f32,
     pub header_separator_color: Color,
+    pub edge_separator_color: Color,
     pub cursor_fill: Color,
     pub cursor_stroke: Color,
 }
@@ -27,11 +28,12 @@ pub(crate) struct FileTreeRowChrome {
 pub(crate) fn file_tree_focus_chrome(p: &ThemePalette, tree_focused: bool) -> FileTreeFocusChrome {
     let transparent = Color::new(0.0, 0.0, 0.0, 0.0);
     FileTreeFocusChrome {
-        panel_border_color: p.border_subtle,
-        panel_top_border: 1.0,
-        panel_side_border: 1.0,
+        panel_border_color: transparent,
+        panel_top_border: 0.0,
+        panel_side_border: 0.0,
         panel_shadow_alpha: 0.0,
         header_separator_color: p.border_subtle,
+        edge_separator_color: p.border_subtle,
         cursor_fill: if tree_focused {
             p.file_tree_focus_fill
         } else {
@@ -55,9 +57,15 @@ pub(crate) fn file_tree_hover_shows_overlay(
 
 pub(crate) fn file_tree_expanded_directory_chrome(p: &ThemePalette) -> FileTreeRowChrome {
     FileTreeRowChrome {
-        fill: p.tree_row_active,
-        stroke: p.file_tree_focus_stroke,
+        fill: p.hover_file_tree,
+        stroke: Color::new(0.0, 0.0, 0.0, 0.0),
     }
+}
+
+pub(crate) fn file_tree_disclosure_color(p: &ThemePalette) -> Color {
+    let bg_lum = 0.2126 * p.file_tree_bg.r + 0.7152 * p.file_tree_bg.g + 0.0722 * p.file_tree_bg.b;
+    let alpha = if bg_lum > 0.5 { 0.54 } else { 0.84 };
+    Color::new(p.tree_icon.r, p.tree_icon.g, p.tree_icon.b, alpha)
 }
 
 pub(crate) fn file_tree_name_style(
@@ -92,19 +100,80 @@ fn draw_file_tree_row_slab(
     row_rect: Rect,
     chrome: FileTreeRowChrome,
 ) {
-    renderer.draw_chrome_rounded_rect(row_rect, chrome.stroke, FILE_TREE_ROW_RADIUS);
-    let row_inset = 1.0;
-    let inner_row = Rect::new(
-        row_rect.x + row_inset,
-        row_rect.y + row_inset,
-        (row_rect.width - row_inset * 2.0).max(0.0),
-        (row_rect.height - row_inset * 2.0).max(0.0),
+    if chrome.stroke.a > 0.0 {
+        renderer.draw_chrome_rounded_rect(row_rect, chrome.stroke, FILE_TREE_ROW_RADIUS);
+        let row_inset = 1.0;
+        let inner_row = Rect::new(
+            row_rect.x + row_inset,
+            row_rect.y + row_inset,
+            (row_rect.width - row_inset * 2.0).max(0.0),
+            (row_rect.height - row_inset * 2.0).max(0.0),
+        );
+        renderer.draw_chrome_rounded_rect(
+            inner_row,
+            chrome.fill,
+            (FILE_TREE_ROW_RADIUS - row_inset).max(0.0),
+        );
+    } else {
+        renderer.draw_chrome_rounded_rect(row_rect, chrome.fill, FILE_TREE_ROW_RADIUS);
+    }
+}
+
+fn draw_file_tree_icon_columns(
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    p: &ThemePalette,
+    name: &str,
+    is_dir: bool,
+    is_expanded: bool,
+    status_color: Option<Color>,
+    x: f32,
+    text_y: f32,
+    cell_w: f32,
+    clip: Rect,
+) -> f32 {
+    if let Some(disclosure) = file_tree_disclosure(is_dir, is_expanded) {
+        let disclosure_str: String = std::iter::once(disclosure).collect();
+        let disclosure_color = file_tree_disclosure_color(p);
+        renderer.draw_chrome_text(
+            &disclosure_str,
+            Vec2::new(x, text_y),
+            TextStyle {
+                foreground: disclosure_color,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            },
+            clip,
+        );
+    }
+
+    let icon = file_icon(name, is_dir, is_expanded);
+    let icon_color = if is_dir {
+        p.tree_dir_icon
+    } else if let Some(sc) = status_color {
+        sc
+    } else {
+        p.tree_icon
+    };
+    let icon_str: String = std::iter::once(icon).collect();
+    let icon_x = x + cell_w * 1.5;
+    renderer.draw_chrome_text(
+        &icon_str,
+        Vec2::new(icon_x, text_y),
+        TextStyle {
+            foreground: icon_color,
+            background: None,
+            bold: false,
+            dim: false,
+            italic: false,
+            underline: false,
+        },
+        clip,
     );
-    renderer.draw_chrome_rounded_rect(
-        inner_row,
-        chrome.fill,
-        (FILE_TREE_ROW_RADIUS - row_inset).max(0.0),
-    );
+
+    x + cell_w * 3.25
 }
 
 /// Render the file tree panel (rounded border, header, entries, cursor highlight).
@@ -145,26 +214,6 @@ pub(super) fn render_file_tree(
             focus_chrome.panel_shadow_alpha,
         );
         renderer.draw_chrome_shadow(r_border, shadow_color, PANE_CORNER_RADIUS, 16.0, -4.0);
-    }
-
-    // Right-edge gradient shadow for depth separation from Stage area
-    {
-        let edge_x = r_border.x + r_border.width;
-        let h = r_border.height;
-        let y = r_border.y;
-        // 3-strip gradient: 4px total, fading from 0.12 → 0.04 → 0.0
-        renderer.draw_chrome_rect(
-            Rect::new(edge_x, y, 1.5, h),
-            crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.12),
-        );
-        renderer.draw_chrome_rect(
-            Rect::new(edge_x + 1.5, y, 1.5, h),
-            crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.06),
-        );
-        renderer.draw_chrome_rect(
-            Rect::new(edge_x + 3.0, y, 1.5, h),
-            crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.02),
-        );
     }
 
     // Outer rounded rect (border)
@@ -231,26 +280,19 @@ pub(super) fn render_file_tree(
                 let text_y = y + text_offset_y;
                 let x = tree_visual_rect.x + left_padding + entry.depth as f32 * indent_width;
 
-                // Draw icon normally
-                let icon = file_icon(&entry.entry.name, entry.entry.is_dir, entry.is_expanded);
-                let icon_style = TextStyle {
-                    foreground: p.tree_icon,
-                    background: None,
-                    bold: false,
-                    dim: false,
-                    italic: false,
-                    underline: false,
-                };
-                let icon_str: String = std::iter::once(icon).collect();
-                renderer.draw_chrome_text(
-                    &icon_str,
-                    Vec2::new(x, text_y),
-                    icon_style,
+                // Draw disclosure + icon columns before the inline rename input.
+                let name_x = draw_file_tree_icon_columns(
+                    renderer,
+                    p,
+                    &entry.entry.name,
+                    entry.entry.is_dir,
+                    entry.is_expanded,
+                    None,
+                    x,
+                    text_y,
+                    cell_size.width,
                     entries_clip,
                 );
-
-                // Draw inline rename input
-                let name_x = x + cell_size.width * 2.0;
                 let rename = app.modal.file_tree_rename.as_ref().unwrap();
                 let input_w = tree_visual_rect.x + tree_visual_rect.width - name_x - PANE_PADDING;
                 let input_rect = Rect::new(name_x - 2.0, y, input_w + 2.0, line_height);
@@ -371,30 +413,19 @@ pub(super) fn render_file_tree(
                 crate::tide_core::FileGitStatus::Deleted => None,
             });
 
-            // Icon -- directories always keep standard icon color (per Tide.pen)
-            let icon = file_icon(&entry.entry.name, entry.entry.is_dir, entry.is_expanded);
-            let icon_color = if entry.entry.is_dir {
-                p.tree_dir_icon
-            } else if let Some(sc) = status_color {
-                sc
-            } else {
-                p.tree_icon
-            };
-
-            // Draw icon
-            let icon_style = TextStyle {
-                foreground: icon_color,
-                background: None,
-                bold: false,
-                dim: false,
-                italic: false,
-                underline: false,
-            };
-            let icon_str: String = std::iter::once(icon).collect();
-            renderer.draw_chrome_text(&icon_str, Vec2::new(x, text_y), icon_style, entries_clip);
-
-            // Draw name after icon + space
-            let name_x = x + cell_size.width * 2.0;
+            // Draw disclosure + icon columns, then the entry name.
+            let name_x = draw_file_tree_icon_columns(
+                renderer,
+                p,
+                &entry.entry.name,
+                entry.entry.is_dir,
+                entry.is_expanded,
+                status_color,
+                x,
+                text_y,
+                cell_size.width,
+                entries_clip,
+            );
             let is_expanded_dir = entry.entry.is_dir && entry.is_expanded;
             let name_style = file_tree_name_style(
                 p,
@@ -497,5 +528,15 @@ pub(super) fn render_file_tree(
                 focus_chrome.header_separator_color,
             );
         }
+
+        renderer.draw_chrome_rect(
+            Rect::new(
+                tree_visual_rect.x,
+                tree_visual_rect.y,
+                1.0,
+                tree_visual_rect.height,
+            ),
+            focus_chrome.edge_separator_color,
+        );
     }
 }

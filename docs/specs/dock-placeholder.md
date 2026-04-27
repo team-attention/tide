@@ -4,15 +4,15 @@
 
 ### As-Is
 
-When Dock is open and user switches to a Terminal that has no dock panes, the Dock shows an empty area with just a "Cmd+4" hint. This is confusing — the Dock is visually open but has no content and no affordance.
+When Dock is open and user switches to a Terminal that has no dock panes, the Dock shows an empty area with just a "Cmd+Backslash" hint. This is confusing — the Dock is visually open but has no content and no affordance.
 
-When a new pane (editor, browser) is added to the Dock, it's always appended as a new tab via `add_pane_to_dock()`, even if the only thing in the Dock is a placeholder Launcher.
+When a new pane (editor, browser) is added to the Dock, it can be inserted as a context split via `add_pane_to_dock()`, even if the only thing in the Dock is a placeholder Launcher.
 
 ### To-Be
 
 **Placeholder Launcher**: When Dock is open and the focused Terminal's dock_layout is empty, a Launcher pane is automatically created as a placeholder. This Launcher is visually identical to a normal Launcher but acts as a slot to be replaced.
 
-**Replace on open**: When a pane is opened into the Dock (file open, browser open, new editor) and the current dock_focused is a Launcher, the Launcher is removed and the new pane takes its slot instead of being added as a sibling tab.
+**Replace on open**: When a pane is opened into the Dock (file open, browser open, new editor) and the current dock_focused is a Launcher, the Launcher is removed and the new pane takes its slot instead of being added as a sibling split.
 
 ### Approach
 
@@ -51,12 +51,12 @@ When a new pane (editor, browser) is added to the Dock, it's always appended as 
 - **Flow**:
   1. Detect dock_focused is a Launcher via `dock_launcher_id()`
   2. Create new pane (editor, browser, etc.)
-  3. Replace the Launcher's slot in dock_layout with the new pane (same TabGroup position)
+  3. Replace the Launcher's slot in dock_layout with the new pane (same context slot)
   4. Remove Launcher from App.panes, cleanup
   5. Set dock_focused to new pane
 - **Postcondition**: New pane occupies the Launcher's slot, Launcher is gone
 - **Business Rules**:
-  - BR-1: Only replace if dock_focused is a Launcher — if dock_focused is any other PaneKind, add as normal tab
+  - BR-1: Only replace if dock_focused is a Launcher — if dock_focused is any other PaneKind, add as a normal context split
   - BR-2: The replacement uses the same TabGroup slot (not a new split)
   - BR-3: If the Launcher is the only pane in dock_layout, after replacement the new pane is still the only pane
 
@@ -88,7 +88,7 @@ When a new pane (editor, browser) is added to the Dock, it's always appended as 
 | UC-1 | BR-2 | `dock_placeholder_not_created_when_dock_has_panes()` |
 | UC-2 | BR-1 | `open_file_replaces_dock_placeholder_launcher()` |
 | UC-2 | BR-1 | `open_browser_replaces_dock_placeholder_launcher()` |
-| UC-2 | BR-1 | `open_file_adds_tab_when_dock_focused_is_not_launcher()` |
+| UC-2 | BR-1 | `open_file_adds_split_when_dock_focused_is_not_launcher()` |
 | UC-2 | BR-2 | `replacement_keeps_same_tab_group_slot()` |
 | UC-3 | BR-1 | `switching_back_does_not_duplicate_placeholder()` |
 

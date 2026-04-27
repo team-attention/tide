@@ -20,16 +20,17 @@ Create, split, resolve, open, close, and drag Panes.
 - **Precondition**: A Pane is focused
 - **Flow**:
   1. Allocate PaneId via layout.alloc_id()
-  2. Create Launcher(new_id)
-  3. Insert into app.panes HashMap
-  4. layout.add_tab(focused_id, new_id) — same TabGroup
+  2. If FocusArea is Stage, create a `Terminal` and insert it as a split leaf next to the focused Stage Pane
+  3. If FocusArea is Dock, create a `Launcher` in a Terminal Context Surface split
+  4. Insert into app.panes HashMap
   5. Set focused = new_id
   6. invalidate_chrome()
-- **Postcondition**: New Launcher tab added to focused Pane's TabGroup, focused
+- **Postcondition**: New Pane is focused in the target area
 - **Business Rules**:
-  - BR-1: New tab is always a Launcher (not Terminal directly)
+  - BR-1: New tab in Stage creates a Terminal split leaf; new tab in Dock creates a Launcher split in the Terminal Context Surface
   - BR-2: If no Pane is focused, do nothing
   - BR-3: Focus moves to the newly created Pane
+  - BR-3a: A newly created Stage `Terminal` defaults its Terminal Context Surface to Stacked view.
 
 ### UC-2: SplitPane
 
@@ -38,20 +39,18 @@ Create, split, resolve, open, close, and drag Panes.
 - **Precondition**: A Pane is focused
 - **Flow**:
   1. If the focused Stage Pane is zoomed, keep stacked mode active while creating the new Stage Pane
-  2. In Stage:
-     - stacked `TabGroup` case: `layout.add_tab(focused_id, new_id)`
-     - bare leaf case: `new_id = layout.split(focused_id, direction)`
-  3. In Dock: split the focused Dock `TabGroup` into a new Dock `LeafGroup`
+  2. In Stage, create a split leaf with `new_id = layout.split(focused_id, direction)`
+  3. In Dock, create a context split in the owning Stage `Terminal`'s Terminal Context Surface
   4. Create the new Pane for the target area
   5. Insert into `app.panes`
   6. Set focused = new_id
   7. invalidate_chrome()
-- **Postcondition**: The new Pane is focused. Stage either appends it to the current `TabGroup` or creates a new `SplitLayout` leaf, depending on the focused Stage Pane state.
+- **Postcondition**: The new Pane is focused. Stage and Dock split actions create a new `SplitLayout` leaf in their target area.
 - **Business Rules**:
-  - BR-4: Split in Stage creates a Terminal directly
+  - BR-4: Split in Stage creates a Terminal directly; split in Dock creates a Launcher in a Terminal Context Surface split
   - BR-5: If the focused Stage Pane was zoomed, split preserves stacked mode and focuses the new Stage Pane so the stacked flat tab bar stays visible
   - BR-6: Focus moves to the newly created Pane
-  - BR-7: If the focused Stage Pane is zoomed and belongs to a `TabGroup`, split keeps stacked mode and inserts the new Stage Pane into that `TabGroup` instead of creating a visible split
+  - BR-7: If the focused Stage Pane is zoomed, split keeps stacked mode and creates a new Stage split leaf selected by `focus.zoomed_pane`
 
 ### UC-3: ResolveLauncher
 
@@ -78,13 +77,14 @@ Create, split, resolve, open, close, and drag Panes.
   2. If YES → set_active_tab(existing_id), focus it, return
   3. If NO → allocate PaneId, create EditorState::open(path)
   4. Insert into app.panes
-  5. layout.add_tab(focused_id, new_id)
+  5. Insert the new Editor Pane as a split to the right of the focused Pane or focused context Pane
   6. Set focused = new_id
   7. Start file watcher on path
 - **Postcondition**: File visible in an Editor Pane, focused
 - **Business Rules**:
   - BR-8: Opening an already-open file activates the existing tab (dedup)
   - BR-9: Focus moves to the opened file's Pane
+  - BR-9a: Opening a new file defaults to a right-side split when it creates a new split in Stage fallback or Terminal Context Surface
 
 ### UC-5: ClosePane
 
@@ -107,6 +107,7 @@ Create, split, resolve, open, close, and drag Panes.
   - BR-11: Dirty Editor without file_path (untitled) → close immediately (no prompt)
   - BR-12: After close, focus stays in the same TabGroup (next tab, or previous if last)
   - BR-12a: If the closed tab was the only tab in its TabGroup, focus moves to a layout neighbor
+  - BR-12b: In Stage `ViewMode::Stacked`, closing the focused `Pane` moves focus to the immediately previous `Pane` in the flat stacked tab order; if there is no previous `Pane`, focus moves to the immediately next `Pane`.
   - BR-13: App always has at least one Pane (create Launcher if last one closed)
   - BR-14: Cancel on SaveConfirm clears the modal without closing
   - BR-15: Browser Pane native teardown must complete on the main thread before Browser Pane state is dropped, so `MainThreadOnly` WebKit/AppKit objects are not released on `app-thread`
@@ -136,6 +137,7 @@ Create, split, resolve, open, close, and drag Panes.
   - BR-18: A Stage Pane may move within Stage or to another `Workspace`, but never into Dock targets
   - BR-19: Mouse release clears the current hover target immediately so hover visuals do not wait for the next mouse move
   - BR-20: Mouse release still completes border-drag and pane-drag cleanup before returning
+  - BR-21: Mouse down recomputes the current hover target from cursor position before dispatching titlebar surface buttons, so a button can be clicked again without an intervening mouse move
 
 ## Invariants
 
@@ -154,13 +156,16 @@ After ANY Pane lifecycle operation:
 | UC-1: CreateTab | BR-1 | `new_terminal_tab_creates_launcher_pane` |
 | UC-1: CreateTab | BR-2 | `new_editor_pane_does_nothing_without_focus` |
 | UC-1: CreateTab | BR-3 | `new_editor_pane_sets_focus_to_new_pane` |
-| UC-1: CreateTab | — | `new_editor_pane_adds_to_focused_tab_group` |
+| UC-1: CreateTab | BR-3a | `new_stage_terminal_defaults_terminal_context_surface_to_stacked_mode` |
+| UC-1: CreateTab | — | `new_editor_pane_adds_stage_split_leaf` |
 | UC-2: SplitPane | BR-4 | `split_focuses_new_terminal_pane_in_stage` |
 | UC-2: SplitPane | BR-5 | `splitting_zoomed_stage_leaf_keeps_stacked_mode_and_focuses_the_new_pane` |
-| UC-2: SplitPane | BR-7 | `splitting_zoomed_stage_tab_group_keeps_stacked_mode_and_appends_a_new_tab` |
+| UC-2: SplitPane | BR-7 | `splitting_stacked_stage_creates_split_leaf_not_tab_group` |
 | UC-2: SplitPane | — | `split_creates_new_pane_in_split_layout` |
 | UC-3: ResolveLauncher | BR-7 | `resolving_launcher_as_new_file_replaces_pane_kind_with_editor` |
 | UC-4: OpenFile | BR-8 | `opening_same_file_twice_activates_existing_tab_instead` |
+| UC-4: OpenFile | BR-9a | `opening_file_defaults_to_right_split_when_focused_is_non_terminal` |
+| UC-4: OpenFile | BR-9a | `opening_file_in_context_surface_defaults_to_right_split` |
 | UC-5: ClosePane | BR-10 | `closing_a_dirty_editor_with_file_shows_save_confirm` |
 | UC-5: ClosePane | BR-11 | `closing_a_dirty_untitled_editor_does_not_show_save_confirm` |
 | UC-5: ClosePane | BR-12 | `closing_editor_pane_moves_focus_to_another_pane` |
@@ -169,11 +174,12 @@ After ANY Pane lifecycle operation:
 | UC-5: ClosePane | BR-14 | `cancel_save_confirm_clears_the_modal` |
 | UC-5: ClosePane | BR-15 | `closing_browser_pane_moves_focus_to_another_pane` |
 | UC-5: ClosePane | BR-16 | `closing_browser_pane_with_pending_certificate_error_preserves_pane_lifecycle_invariants` |
-| UC-6: DragDropPane | BR-16 | `pressing_stage_tab_enters_pending_drag_after_focus_switch` |
-| UC-6: DragDropPane | BR-17 | `directional_self_drop_splits_stage_tab_out_of_its_group` |
+| UC-6: DragDropPane | BR-16 | `tab_prev_next_in_stacked_stage_cycles_split_panes` |
+| UC-6: DragDropPane | BR-17 | `stage_self_drop_has_no_drop_target_or_preview` |
 | UC-6: DragDropPane | BR-18 | `stage_pane_drop_target_never_enters_dock` |
 | UC-6: DragDropPane | BR-19 | `mouse_release_clears_hover_target_immediately` |
 | UC-6: DragDropPane | BR-20 | `mouse_release_still_completes_border_drag_cleanup` |
+| UC-6: DragDropPane | BR-21 | `titlebar_surface_buttons_recompute_hover_target_on_mouse_down` |
 
 ## Location
 
@@ -181,4 +187,4 @@ After ANY Pane lifecycle operation:
 |-------|-------|-----------|
 | Inward adapter | tide-app | `crates/tide-app/src/adapter/inward/click_adapter/header.rs`, `crates/tide-app/src/adapter/inward/click_adapter/pane.rs` |
 | Layout | tide-app | `crates/tide-app/src/domain/layout/mod.rs`, `crates/tide-app/src/domain/layout/node.rs`, `crates/tide-app/src/domain/layout/tab_group.rs` |
-| Tests | tide-app | `crates/tide-app/src/application/behavior_tests/pane_lifecycle.rs`, `crates/tide-app/src/application/behavior_tests/stage_tab_group.rs`, `crates/tide-app/src/application/behavior_tests/dock_behavior.rs` |
+| Tests | tide-app | `crates/tide-app/src/application/behavior_tests/pane_lifecycle.rs`, `crates/tide-app/src/application/behavior_tests/stage_split_only.rs`, `crates/tide-app/src/application/behavior_tests/dock_behavior.rs` |

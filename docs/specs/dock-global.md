@@ -1,206 +1,159 @@
-# Spec: Global Dock Size & Pinned Panes
+# Spec: Terminal Context Surface Compatibility
 
 ## Overview
 
 ### As-Is
 
-1. **Dock width is per-terminal**: Each `TerminalPane` stores its own `dock_width: f32`. When switching terminals, the dock width can change. `App.dock_width` exists as a fallback but both are updated together on resize (`mouse.rs:649,652`), making the per-terminal field redundant in practice.
+`docs/specs/open-terminal-codex-app.md` defines the product direction for the right region: the active Stage `Terminal` owns one Terminal Context Surface. Split view allows context splits, Stacked view shows one active context Pane with a flat tab bar, and pinned groups remain legacy-only state that cannot become a drop target.
 
-2. **Dock content is per-terminal**: Each `TerminalPane` owns a `dock_layout: SplitLayout` containing its dock panes. When switching terminals, the entire dock content swaps via `swap_dock_state()`. There is no way to keep a pane visible across terminal switches.
+The older Dock model still exists in code:
 
-3. **No pin concept**: All dock panes belong exclusively to one terminal. Switching terminals replaces the entire dock view.
+1. `DockState` still stores `pinned_dock_layout`, `pinned_dock_ratio`, and `pinned_border_dragging` for backward-compatible cold storage.
+2. `ToggleDockPin` can still be invoked by old keybindings.
+3. `layout_compute.rs`, `tab_bar.rs`, `workspace_service`, and click/drag adapters must ignore legacy pinned state and use only the owning Stage `Terminal`'s Terminal Context Surface.
+
+Those older paths conflict with the Terminal Context Surface model when they create a second global right-region hierarchy that is not owned by the focused Stage `Terminal`.
 
 ### To-Be
 
-1. **Global dock width**: A single `App.dock_width` controls the dock size. Split ratios within each terminal's `dock_layout` are already relative (0.0–1.0), so they adapt automatically. No per-terminal width needed.
+The only remaining global Dock behavior is width compatibility: `dock_width` stays global across Stage `Terminal` focus changes.
 
-2. **Pinned panes**: Individual panes (tabs) can be pinned. Pinned panes are visible in the dock regardless of which terminal is focused. They live in a dedicated pinned TabGroup positioned at the leftmost side of the dock.
+Terminal Context Surface behavior is split/stack, matching Stage:
 
-3. **Dual-existence for owning terminal**: When a pane is pinned and viewed from its owning terminal, it stays in its original position in that terminal's `dock_layout` (no disruption). When viewed from a non-owning terminal, pinned panes appear in the pinned TabGroup on the left.
+1. `ToggleDockPin` is a no-op for user-visible state.
+2. Legacy pinned layout fields may remain in state, but they must not render, receive drops, affect placeholders, or participate in tab navigation.
+3. Dock Stacked view renders one active context Pane and a flat tab bar over all context Panes.
+4. Dock Split view renders the owning Stage `Terminal`'s context `SplitLayout`; directional drops and split actions split that layout.
+5. Dock center drops swap context Panes instead of creating a legacy shared `TabGroup`.
+6. Each newly created Stage `Terminal` starts its Terminal Context Surface in Stacked view, while an existing Stage `Terminal` keeps its own Dock Split/Stacked choice.
 
 ### Approach
 
-#### Phase 1: Global Dock Width
-1. Remove `TerminalPane.dock_width` field
-2. Use only `App.dock_width` everywhere
-3. Remove `dock_width` from `WorkspaceExtras` (make it truly global, not per-workspace)
-4. Update `layout_compute.rs` to use `self.dock_width` directly
-5. Update mouse resize handler to only set `App.dock_width`
-6. Update session save/restore
-
-#### Phase 2: Pinned Panes
-1. Add `App.pinned_panes: Vec<PaneId>` — ordered list of pinned pane IDs
-2. Add `App.pinned_dock_ratio: f32` — split ratio between pinned group and terminal content (draggable)
-3. Modify dock layout computation to composite: pinned TabGroup (left) + terminal's dock_layout (right)
-4. Handle the dual-existence case: when owning terminal is focused, pinned panes stay in their original layout position
-5. Add pin/unpin action (GlobalAction::ToggleDockPin)
-6. Add drag-and-drop: drag into pinned group = pin, drag out = unpin
-7. Add visual indicator (pin icon on tab, separator between pinned and terminal groups)
-8. Handle placeholder logic: no placeholder when pinned panes exist
+1. Keep `dock_width` global and preserve the existing width behavior tests.
+2. Treat pinned Dock state as legacy internal state that is not reachable through user actions.
+3. Remove pinned layout from layout computation, tab-bar composition, placeholder logic, drag-preview routing, and Dock tab cycling.
+4. Route Dock split, center drop, and stacked commands to the owning Terminal Context Surface while keeping pinned Dock commands as compatibility no-ops.
+5. Keep `PaneId` sync by never moving a live Pane into `pinned_dock_layout` in V1.
 
 ## Bounded Contexts
 
-| Crate | Changes |
-|-------|---------|
-| `tide-app` | Pin state (`pinned_panes`, `pinned_dock_ratio`), composite dock layout computation, pin/unpin action, drag-and-drop pin toggling, visual indicator rendering, placeholder logic update |
-| `tide-input` | New `GlobalAction::ToggleDockPin` |
-| `tide-core` | (none expected) |
-| `tide-layout` | (none expected — composite layout is computed in tide-app) |
+| Context | Role |
+|---------|------|
+| `domain/state/dock.rs` | Retains legacy Dock fields while user-visible behavior ignores pinned Dock state. |
+| `application/services/dock_service/` | Owns global context width, Dock visibility, context Pane insertion, split mutation, stacked state, and pin no-op compatibility. |
+| `application/services/workspace_service/` | Keeps Dock navigation and tab cycling scoped to the focused Stage `Terminal`'s Terminal Context Surface. |
+| `domain/layout/` | Provides `SplitLayout` operations for split-first Terminal Context Surface behavior. |
+| `layout_compute.rs` | Computes Stage plus the focused Stage `Terminal`'s Terminal Context Surface in Split or Stacked view. |
+| `adapter/inward/click_adapter/` | Routes Dock center drops to swap and directional drops to context splits. |
+| `adapter/inward/drag_drop_adapter/` | Advertises only normal Stage, Dock, and Workspace drop destinations. |
+| `adapter/outward/view/chrome/tab_bar.rs` | Renders no pinned separator and renders Dock stacked tab chrome only when Dock is stacked. |
 
 ## Use Cases
 
 ### UC-1: GlobalDockWidth
 
-**Actor**: User
-**Trigger**: User resizes dock border or switches terminal focus
-**Precondition**: Dock is open
-**Flow**:
-1. User drags dock border to resize → `App.dock_width` updates
-2. User switches terminal focus → dock width remains the same
-3. Split ratios within the terminal's `dock_layout` are relative, so panes resize proportionally within the new/same width
+- **Actor**: User
+- **Trigger**: User resizes Dock border or switches Stage `Terminal` focus
+- **Precondition**: Dock is open
+- **Flow**:
+  1. User changes `dock_width`.
+  2. User focuses another Stage `Terminal`.
+  3. Tide keeps the same right-region width.
+- **Postcondition**: Terminal Context Surface width is stable across Stage `Terminal` focus changes.
+- **Business Rules**:
+  - BR-1: Dock width is global state on `DockState`, not per `Terminal`.
+  - BR-2: Switching Stage `Terminal`s does not change `dock_width`.
+  - BR-3: Split ratios inside Stage `SplitLayout` and Terminal Context Surface continue to be relative layout concerns.
 
-**Postcondition**: Dock width is consistent across all terminal switches within the session
+### UC-2: RejectPinnedDock
 
-**Business Rules**:
-- **BR-1**: Dock width is global — stored only in `App.dock_width`, not per-terminal
-- **BR-2**: Switching terminals does not change dock width
-- **BR-3**: Split ratios within `dock_layout` adapt proportionally (they are already relative 0.0–1.0)
+- **Actor**: User
+- **Trigger**: User invokes `ToggleDockPin` or drags a context Pane over the legacy pinned layout area
+- **Precondition**: The Pane is in a Terminal Context Surface
+- **Flow**:
+  1. Tide receives the legacy pin action.
+  2. Tide leaves the Pane in the owning Stage `Terminal`'s Terminal Context Surface.
+  3. Tide keeps `Associated Terminal`, focus, split order, and stacked tab order intact.
+- **Postcondition**: No pinned group exists and no Pane moves into legacy pinned state.
+- **Business Rules**:
+  - BR-1: `ToggleDockPin` must not move a Pane into `pinned_dock_layout`.
+  - BR-2: `is_pane_pinned` and `has_pinned_panes` return false for user-visible behavior.
+  - BR-3: Legacy pinned layout must not create a separate Dock drop target.
+  - BR-4: Legacy pinned layout contents must not make the Dock visible, suppress placeholders, or render tab chrome.
 
-### UC-2: PinPane
+### UC-3: ToggleDockStacked
 
-**Actor**: User
-**Trigger**: User pins a dock pane (keybinding or drag into pinned group)
-**Precondition**: Dock is open, a pane in the dock is focused or being dragged
-**Flow**:
-1. User triggers pin action on pane P in terminal T's dock
-2. P is added to `App.pinned_panes`
-3. P remains in T's `dock_layout` (no layout disruption for T)
-4. Visual: pin icon appears on P's tab
+- **Actor**: User
+- **Trigger**: User invokes `DockToggleStacked` or clicks maximize on a context Pane
+- **Precondition**: Dock is open and focus is in `FocusArea::Dock`
+- **Flow**:
+  1. Tide toggles Dock stacked state.
+  2. Tide keeps the owning Terminal's context `SplitLayout` intact.
+  3. Tide renders only the active context Pane when stacked and restores split rendering when unstacked.
+- **Postcondition**: Terminal Context Surface switches between Split and Stacked presentation without creating a pinned group.
+- **Business Rules**:
+  - BR-1: Dock stacked state must render exactly one active context Pane.
+  - BR-2: `DockToggleStacked` must not flatten the context `SplitLayout`.
+  - BR-3: Header maximize on a context Pane must toggle Dock stacked state.
+  - BR-4: A newly created Stage `Terminal` defaults its Terminal Context Surface to Stacked view without resetting another Stage `Terminal`'s Dock Split/Stacked choice.
+  - BR-5: In stacked Terminal Context Surface, closing the focused context Pane moves focus to the immediately previous Pane in the flat stacked tab order; if there is no previous Pane, focus moves to the immediately next Pane.
 
-**Postcondition**: P is marked as pinned
+### UC-4: RenderTerminalContextOnly
 
-**Business Rules**:
-- **BR-1**: Pinning does not move the pane out of the owning terminal's `dock_layout`
-- **BR-2**: `associated_terminal` remains unchanged (CWD context preserved)
-- **BR-3**: Pinned pane appears in `App.pinned_panes` in insertion order
-
-### UC-3: ViewPinnedFromOtherTerminal
-
-**Actor**: User
-**Trigger**: User switches focus to a different terminal
-**Precondition**: At least one pane is pinned
-**Flow**:
-1. User focuses terminal B (different from the pinning terminal T)
-2. Dock composites: pinned TabGroup (left) + terminal B's `dock_layout` (right)
-3. Pinned TabGroup contains all panes from `App.pinned_panes` that are NOT owned by terminal B
-4. If a pinned pane IS owned by terminal B, it appears in its original position in B's `dock_layout` (dual-existence rule)
-5. Split between pinned group and terminal content uses `pinned_dock_ratio`
-
-**Postcondition**: User sees pinned panes alongside terminal B's dock content
-
-**Business Rules**:
-- **BR-1**: Pinned panes owned by the focused terminal appear in their original `dock_layout` position, not in the pinned group
-- **BR-2**: Pinned panes NOT owned by the focused terminal appear in the pinned TabGroup on the left
-- **BR-3**: Pinned TabGroup order = insertion order in `App.pinned_panes`
-- **BR-4**: If no non-owner pinned panes exist for the focused terminal, the pinned group is hidden (no empty group)
-
-### UC-4: UnpinPane
-
-**Actor**: User
-**Trigger**: User unpins a pane (keybinding or drag out of pinned group)
-**Precondition**: Pane is pinned
-**Flow**:
-1. User triggers unpin on pane P
-2. P is removed from `App.pinned_panes`
-3. P remains in its owning terminal's `dock_layout`
-4. If user is viewing from a non-owning terminal, P disappears from the pinned group
-5. Pin icon removed from P's tab
-
-**Postcondition**: P is only visible from its owning terminal's dock
-
-**Business Rules**:
-- **BR-1**: Unpinned pane stays in owning terminal's `dock_layout`
-- **BR-2**: Unpinned pane is no longer visible from other terminals
-
-### UC-5: DragTogglePin
-
-**Actor**: User
-**Trigger**: User drags a tab between pinned group and terminal dock area
-**Precondition**: Dock is open with both pinned group and terminal content visible
-**Flow (pin via drag)**:
-1. User drags tab from terminal dock area into pinned group
-2. Pane is added to `App.pinned_panes`
-3. Pane stays in owning terminal's `dock_layout`
-
-**Flow (unpin via drag)**:
-1. User drags tab from pinned group into terminal dock area
-2. Pane is removed from `App.pinned_panes`
-3. If viewing from owning terminal: pane moves to the drop target position in `dock_layout`
-4. If viewing from non-owning terminal: pane moves to the current terminal's `dock_layout` (re-associated) and is unpinned
-
-**Postcondition**: Pin state toggled based on drag direction
-
-**Business Rules**:
-- **BR-1**: Drag into pinned group = pin
-- **BR-2**: Drag out of pinned group = unpin
-- **BR-3**: Drag out from non-owning terminal re-associates pane to current terminal
-- **BR-4**: Directional self-drop inside a pinned `TabGroup` extracts the dragged `Pinned Pane` into its own split while preserving pin state
-
-### UC-6: PlaceholderLogic
-
-**Actor**: System
-**Trigger**: Terminal focus change or pin/unpin action
-**Precondition**: Dock is open
-**Flow**:
-1. Check if focused terminal's dock has any content (own panes OR visible pinned panes)
-2. If yes: no placeholder needed
-3. If no dock panes AND no pinned panes: show placeholder Launcher
-
-**Postcondition**: Dock is never visually empty
-
-**Business Rules**:
-- **BR-1**: No placeholder when pinned panes exist (even if terminal has no own dock panes)
-- **BR-2**: Placeholder Launcher only when both terminal dock and pinned group are empty
+- **Actor**: System
+- **Trigger**: Layout recomputation, tab-bar rendering, or drag/drop preview
+- **Precondition**: Active Workspace has a focused Stage `Terminal`
+- **Flow**:
+  1. Tide computes Stage from the Workspace `SplitLayout`.
+  2. Tide computes the right region from only the focused Stage `Terminal`'s Terminal Context Surface.
+  3. Tide ignores legacy pinned layout fields.
+- **Postcondition**: The right region follows the active Stage `Terminal` and contains no global pinned surface.
+- **Business Rules**:
+  - BR-1: Layout computation must ignore `pinned_dock_layout`.
+  - BR-2: Tab-bar rendering must not include pinned tabs or a pinned separator.
+  - BR-3: Dock tab navigation must cycle only through the focused Stage `Terminal`'s Terminal Context Surface.
+  - BR-4: Drag/drop hit testing and file-open insertion must use Terminal Context Surface destinations; center drops swap, and newly opened files default to right-side context splits.
 
 ## Invariants
 
-1. **Global dock width**: `dock_width` exists only on `App`, never on `TerminalPane` or `WorkspaceExtras`
-2. **Pin ownership**: Every pane in `pinned_panes` MUST exist in exactly one terminal's `dock_layout` and in `App.panes`
-3. **Pinned pane CWD**: `associated_terminal` for pinned panes is never changed by pin/unpin (CWD context preserved)
-4. **No cross-workspace pin**: `pinned_panes` is per-workspace scope (cleared/swapped on workspace switch)
-5. **Dual-existence**: A pinned pane appears in its owning terminal's `dock_layout` position when that terminal is focused; in the pinned TabGroup otherwise
+1. **Global width**: `dock_width` is a shared right-region width.
+2. **Context SplitLayout**: Terminal Context Surface uses the owning Terminal's context `SplitLayout` in Split view and keeps that layout intact in Stacked view.
+3. **No pinned surface**: No user action creates or renders a pinned Dock group in V1.
+4. **Dock split/stack**: Dock Stacked view is presentation-only and preserves the underlying context `SplitLayout`.
+5. **PaneId sync**: A live context `PaneId` remains in exactly one owning Stage `Terminal` context `SplitLayout` and in `App.panes`.
+6. **Per-Terminal context presentation**: Dock Split/Stacked choice follows the focused Stage `Terminal`, not a global shared context presentation.
 
 ## Tests
 
 | UC | BR | Test Function |
-|----|-----|---------------|
+|----|----|---------------|
 | UC-1 | BR-1 | `dock_width_is_global_not_per_terminal()` |
 | UC-1 | BR-2 | `switching_terminals_preserves_dock_width()` |
-| UC-2 | BR-1 | `pinning_pane_does_not_disrupt_owning_terminal_layout()` |
-| UC-2 | BR-2 | `pinning_preserves_associated_terminal()` |
-| UC-2 | BR-3 | `pinned_panes_ordered_by_insertion()` |
-| UC-3 | BR-1 | `pinned_pane_in_original_position_when_owner_focused()` |
-| UC-3 | BR-2 | `pinned_pane_in_pinned_group_when_non_owner_focused()` |
-| UC-3 | BR-4 | `pinned_group_hidden_when_no_non_owner_pinned_panes()` |
-| UC-4 | BR-1 | `unpinned_pane_stays_in_owning_terminal_dock()` |
-| UC-4 | BR-2 | `unpinned_pane_not_visible_from_other_terminals()` |
-| UC-5 | BR-1 | `drag_into_pinned_group_pins_pane()` |
-| UC-5 | BR-2 | `drag_out_of_pinned_group_unpins_pane()` |
-| UC-5 | BR-3 | `drag_unpin_from_non_owner_reassociates_terminal()` |
-| UC-5 | BR-4 | `directional_self_drop_extracts_pinned_pane_from_pinned_tab_group()` |
-| UC-6 | BR-1 | `no_placeholder_when_pinned_panes_exist()` |
-| UC-6 | BR-2 | `placeholder_when_no_dock_panes_and_no_pinned()` |
+| UC-2 | BR-1 | `toggle_dock_pin_keeps_pane_in_terminal_context_surface()` |
+| UC-2 | BR-2 | `pin_queries_report_no_visible_pinned_panes()` |
+| UC-2 | BR-3 | `legacy_pinned_layout_does_not_intercept_context_drop_target()` |
+| UC-2 | BR-4 | `legacy_pinned_layout_does_not_keep_dock_open()` |
+| UC-3 | BR-1 | `dock_stacked_mode_renders_only_active_context_pane()` |
+| UC-3 | BR-2 | `dock_toggle_stacked_preserves_context_split_layout()` |
+| UC-3 | BR-3 | `context_pane_maximize_toggles_dock_stacked_mode()` |
+| UC-3 | BR-4 | `new_stage_terminal_defaults_terminal_context_surface_to_stacked_mode()` |
+| UC-4 | BR-1 | `layout_compute_ignores_legacy_pinned_layout()` |
+| UC-4 | BR-2 | `tab_bar_ignores_legacy_pinned_layout()` |
+| UC-4 | BR-3 | `dock_tab_cycle_uses_only_active_terminal_context_surface()` |
+| UC-4 | BR-4 | `drag_drop_uses_only_context_surface_destinations()` |
+| UC-4 | BR-4 | `center_drop_on_context_pane_swaps_without_merging_context_panes()` |
+| UC-4 | BR-4 | `opening_file_in_context_surface_defaults_to_right_split()` |
 
 ## Location
 
 | Item | Path |
 |------|------|
-| Pin state fields | `crates/tide-app/src/app.rs` (App struct) |
-| Pin/unpin actions | `crates/tide-app/src/application/services/dock_service/` |
-| Composite dock layout | `crates/tide-app/src/layout_compute.rs` |
-| Pin visual rendering | `crates/tide-app/src/adapter/outward/view/chrome/` |
-| GlobalAction variant | `crates/tide-app/src/domain/input/mod.rs` |
-| Drag-and-drop pin | `crates/tide-app/src/adapter/inward/mouse_adapter/` |
-| Session save/restore | `crates/tide-app/src/application/services/session_service/` |
-| Workspace swap | `crates/tide-app/src/application/services/workspace_service/` |
-| Behavior tests | `crates/tide-app/src/application/behavior_tests/` |
+| Compatibility spec | `docs/specs/dock-global.md` |
+| Main product spec | `docs/specs/open-terminal-codex-app.md` |
+| Dock state | `crates/tide-app/src/domain/state/dock.rs` |
+| Dock service | `crates/tide-app/src/application/services/dock_service/` |
+| Workspace navigation | `crates/tide-app/src/application/services/workspace_service/` |
+| Layout computation | `crates/tide-app/src/layout_compute.rs` |
+| Tab-bar rendering | `crates/tide-app/src/adapter/outward/view/chrome/tab_bar.rs` |
+| Click and drag adapters | `crates/tide-app/src/adapter/inward/click_adapter/`, `crates/tide-app/src/adapter/inward/drag_drop_adapter/` |
+| Behavior tests | `crates/tide-app/src/application/behavior_tests/dock_global_behavior.rs` |

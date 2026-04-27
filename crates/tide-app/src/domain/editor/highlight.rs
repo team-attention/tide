@@ -11,6 +11,9 @@ use syntect::parsing::{ParseState, ScopeStack, SyntaxDefinition, SyntaxReference
 
 use crate::tide_core::{Color, TextStyle};
 
+pub(crate) const DARK_SYNTAX_THEME_NAME: &str = "base16-eighties.dark";
+pub(crate) const LIGHT_SYNTAX_THEME_NAME: &str = "base16-ocean.light";
+
 /// A styled span of text produced by syntax highlighting.
 pub struct StyledSpan {
     pub text: String,
@@ -52,8 +55,8 @@ impl Highlighter {
 
         let syntax_set = builder.build();
         let theme_set = ThemeSet::load_defaults();
-        let dark_theme = theme_set.themes["base16-eighties.dark"].clone();
-        let light_theme = theme_set.themes["InspiredGitHub"].clone();
+        let dark_theme = theme_set.themes[DARK_SYNTAX_THEME_NAME].clone();
+        let light_theme = theme_set.themes[LIGHT_SYNTAX_THEME_NAME].clone();
         let theme = dark_theme.clone();
         Self {
             syntax_set,

@@ -19,6 +19,7 @@ mod input_latency;
 pub(crate) mod input_line;
 mod interaction;
 mod platform;
+mod surface_animation;
 mod timing;
 mod window;
 mod workspace_mgr;
@@ -36,6 +37,9 @@ pub(crate) use ime::ImeState;
 pub(crate) use input_latency::InputLatencyState;
 pub(crate) use input_line::{abbreviate_path, shell_escape, InputLine};
 pub(crate) use interaction::InteractionState;
+pub(crate) use surface_animation::SurfaceVisibilityAnimation;
+#[cfg(test)]
+pub(crate) use surface_animation::SURFACE_VISIBILITY_ANIMATION_DURATION;
 pub(crate) use timing::TimingState;
 pub(crate) use window::{NotificationAuthorizationStatus, WindowState};
 pub(crate) use workspace_mgr::WorkspaceManager;

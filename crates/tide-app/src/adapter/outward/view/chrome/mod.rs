@@ -9,18 +9,21 @@ use crate::theme::*;
 use crate::App;
 
 #[cfg(test)]
-pub(crate) use file_tree::file_tree_expanded_directory_chrome;
-#[cfg(test)]
 pub(crate) use file_tree::file_tree_focus_chrome;
 pub(crate) use file_tree::file_tree_hover_shows_overlay;
 #[cfg(test)]
 pub(crate) use file_tree::file_tree_name_style;
 #[cfg(test)]
+pub(crate) use file_tree::{file_tree_disclosure_color, file_tree_expanded_directory_chrome};
+#[cfg(test)]
 pub(crate) use tab_bar::pane_surface_attention_status;
 #[cfg(test)]
 pub(crate) use titlebar::{
-    integration_toggle_notification_indicator_color, workspace_item_indicator_color,
-    workspace_item_indicator_status,
+    integration_toggle_notification_indicator_color, titlebar_button_backdrop_level,
+    titlebar_surface_button_icon, titlebar_surface_icon_text_glyph,
+    titlebar_toggle_button_draws_hotkey_hint, titlebar_toggle_button_height,
+    titlebar_toggle_button_width, titlebar_workspace_title, workspace_item_indicator_color,
+    workspace_item_indicator_status, TitlebarSurfaceIcon,
 };
 
 /// Render the chrome layer: file tree panel, editor panel + tabs, pane backgrounds,

@@ -1,11 +1,27 @@
 //! Mouse drag handling — border resize, pane drag, scrollbar drag, sidebar.
 
-use crate::tide_core::{InputEvent, Vec2};
+use crate::tide_core::{InputEvent, Rect, Vec2};
 use crate::tide_platform::WindowProxy;
 
 use super::MousePorts;
 use crate::state::drag_types::PaneDragState;
 use crate::theme::*;
+
+pub(crate) fn dock_width_from_border_drag(
+    logical_width: f32,
+    dock_area_rect: Option<Rect>,
+    cursor_x: f32,
+    gap: f32,
+) -> f32 {
+    let dock_right = dock_area_rect
+        .map(|rect| rect.x + rect.width)
+        .unwrap_or(logical_width);
+    dock_right - cursor_x - gap
+}
+
+pub(crate) fn file_tree_width_from_border_drag(logical_width: f32, cursor_x: f32, gap: f32) -> f32 {
+    logical_width - cursor_x - gap
+}
 
 /// Main entry point for cursor-moved events. Dispatches to drag handlers,
 /// selection drag, or hover tracking depending on current state.
@@ -65,22 +81,12 @@ pub(crate) fn handle_cursor_moved_logical(
     if ctx.dock_border_dragging() {
         let logical = ctx.logical_size();
         let max_w = (logical.width - 200.0).max(100.0);
-        let new_width = (logical.width - pos.x - PANE_GAP).max(100.0).min(max_w);
+        let raw_width =
+            dock_width_from_border_drag(logical.width, ctx.dock_area_rect(), pos.x, PANE_GAP);
+        let new_width = raw_width.max(100.0).min(max_w);
         ctx.set_dock_width(new_width);
         ctx.compute_layout();
         ctx.invalidate_chrome();
-        return;
-    }
-
-    // Handle pinned group / terminal dock border resize
-    if ctx.dock_pinned_border_dragging() {
-        if let Some(dock_rect) = ctx.dock_area_rect() {
-            let local_x = pos.x - dock_rect.x;
-            let new_ratio = (local_x / dock_rect.width).clamp(0.1, 0.9);
-            ctx.set_dock_pinned_ratio(new_ratio);
-            ctx.compute_layout();
-            ctx.invalidate_chrome();
-        }
         return;
     }
 
@@ -99,13 +105,8 @@ pub(crate) fn handle_cursor_moved_logical(
     if ctx.ft().border_dragging {
         let logical = ctx.logical_size();
         let max_w = (logical.width - 100.0).max(120.0);
-        let new_width = match ctx.sidebar_side() {
-            crate::LayoutSide::Left => {
-                let ft_x = ctx.ft().rect.map(|r| r.x).unwrap_or(0.0);
-                (pos.x - ft_x).max(120.0).min(max_w)
-            }
-            crate::LayoutSide::Right => (logical.width - pos.x).max(120.0).min(max_w),
-        };
+        let raw_width = file_tree_width_from_border_drag(logical.width, pos.x, PANE_GAP);
+        let new_width = raw_width.max(120.0).min(max_w);
         ctx.ft_mut().width = new_width;
         ctx.compute_layout();
         ctx.invalidate_chrome();

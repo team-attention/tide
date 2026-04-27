@@ -9,9 +9,13 @@ pub(crate) mod ui;
 
 #[cfg(test)]
 pub(crate) use chrome::{
-    file_tree_expanded_directory_chrome, file_tree_focus_chrome, file_tree_hover_shows_overlay,
-    file_tree_name_style, integration_toggle_notification_indicator_color,
-    pane_surface_attention_status, workspace_item_indicator_color, workspace_item_indicator_status,
+    file_tree_disclosure_color, file_tree_expanded_directory_chrome, file_tree_focus_chrome,
+    file_tree_hover_shows_overlay, file_tree_name_style,
+    integration_toggle_notification_indicator_color, pane_surface_attention_status,
+    titlebar_button_backdrop_level, titlebar_surface_button_icon, titlebar_surface_icon_text_glyph,
+    titlebar_toggle_button_draws_hotkey_hint, titlebar_toggle_button_height,
+    titlebar_toggle_button_width, titlebar_workspace_title, workspace_item_indicator_color,
+    workspace_item_indicator_status, TitlebarSurfaceIcon,
 };
 #[cfg(test)]
 pub(crate) use cursor::editor_selection_rects;
@@ -119,7 +123,7 @@ impl App {
         let logical = self.logical_size();
         let focused = self.focus.focused;
         let search_focus = self.focus.search_focus;
-        let show_file_tree = self.ft.visible;
+        let show_file_tree = self.ft.visible_for_layout();
         let file_tree_scroll = self.ft.scroll;
         let visual_pane_rects = self.visual_pane_rects.clone();
         let alive_pane_ids: Vec<u64> = self.panes.keys().copied().collect();

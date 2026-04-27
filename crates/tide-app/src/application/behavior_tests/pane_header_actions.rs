@@ -77,6 +77,29 @@ fn clicking_open_browser_header_action_creates_a_browser_pane() {
     assert!(app.is_pane_in_dock(new_id));
 }
 
+#[test]
+fn clicking_dock_add_pane_header_action_creates_launcher_pane() {
+    // UC-1 BR-1b: Clicking AddPane in a Terminal Context Surface creates a focused Launcher Pane instead of an immediate Terminal Pane.
+    let (mut app, terminal_id, dock_pane_id) = app_with_dock_editor();
+    let pane_count_before = app.panes.len();
+
+    click_header_action(&mut app, dock_pane_id, HeaderHitAction::AddPane);
+
+    let new_id = app
+        .focus
+        .focused
+        .expect("new Launcher Pane should be focused");
+    assert_ne!(new_id, dock_pane_id);
+    assert_eq!(app.panes.len(), pane_count_before + 1);
+    assert!(matches!(
+        app.panes.get(&new_id),
+        Some(PaneKind::Launcher(_))
+    ));
+    assert_eq!(app.focus.focus_area, FocusArea::Dock);
+    assert_eq!(app.terminal_owning(new_id), Some(terminal_id));
+    assert!(app.is_pane_in_dock(new_id));
+}
+
 // --- UC-2: TriggerHeaderSplitActions ---
 
 #[test]
@@ -140,23 +163,16 @@ fn clicking_stage_split_vertical_header_action_creates_a_height_split() {
 }
 
 #[test]
-fn clicking_dock_split_header_action_creates_a_terminal_in_the_dock() {
-    // UC-2 BR-5: Clicking a split action from a focused Dock header keeps the new split inside the current Dock layout and resolves any intermediate Launcher to a concrete Terminal.
+fn clicking_dock_split_header_action_creates_context_split() {
+    // Spec: docs/specs/pane-header-actions.md
+    // UC-2 BR-5: Clicking a split action from a focused Dock header must create a context split.
     let (mut app, terminal_id, dock_pane_id) = app_with_dock_editor();
+    let pane_count_before = app.panes.len();
 
     click_header_action(&mut app, dock_pane_id, HeaderHitAction::SplitHorizontal);
 
-    let new_id = app
-        .focus
-        .focused
-        .expect("new dock split terminal should be focused");
-    assert_ne!(new_id, dock_pane_id);
-    assert!(matches!(
-        app.panes.get(&new_id),
-        Some(PaneKind::Terminal(_))
-    ));
+    assert_eq!(app.panes.len(), pane_count_before + 1);
     assert_eq!(app.focus.focus_area, FocusArea::Dock);
-    assert_eq!(app.terminal_owning(new_id), Some(terminal_id));
     let owner = app
         .panes
         .get(&terminal_id)
@@ -165,14 +181,7 @@ fn clicking_dock_split_header_action_creates_a_terminal_in_the_dock() {
             _ => None,
         })
         .expect("owner terminal should exist");
-    match owner
-        .dock_layout
-        .snapshot()
-        .expect("dock split snapshot should exist")
-    {
-        crate::tide_layout::LayoutSnapshot::Split { direction, .. } => {
-            assert_eq!(direction, SplitDirection::Horizontal);
-        }
-        other => panic!("expected dock split layout after header action, got {other:?}"),
-    }
+    assert!(owner.dock_layout.all_pane_ids().contains(&dock_pane_id));
+    assert_eq!(owner.dock_layout.all_pane_ids().len(), 2);
+    assert_eq!(owner.dock_layout.pane_ids().len(), 2);
 }

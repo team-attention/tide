@@ -16,6 +16,7 @@ use crate::tide_terminal::git::GitInfo;
 use crate::tide_terminal::Terminal;
 
 use crate::state::search::SearchState;
+use crate::state::ViewMode;
 use crate::theme::PANE_PADDING;
 use browser::BrowserPane;
 use diff::DiffPane;
@@ -30,6 +31,14 @@ pub(crate) fn pane_content_rect(pane_rect: Rect, content_top_offset: f32) -> Rec
         pane_rect.width - 2.0 * PANE_PADDING,
         (pane_rect.height - content_top_offset - PANE_PADDING).max(1.0),
     )
+}
+
+pub(crate) fn terminal_grid_origin(content_rect: Rect) -> Vec2 {
+    Vec2::new(content_rect.x, content_rect.y)
+}
+
+pub(crate) fn terminal_grid_cols(content_rect: Rect, cell_size: Size) -> usize {
+    (content_rect.width / cell_size.width).floor().max(0.0) as usize
 }
 
 /// Polymorphic pane: terminal, editor, diff viewer, embedded browser, or launcher.
@@ -119,9 +128,11 @@ pub struct TerminalPane {
     pub cursor_suppress: u8,
     /// Cached terminal context (cwd, git info, shell state).
     pub context: TerminalContext,
-    /// Panes bound to this terminal, displayed in the Dock.
-    /// SplitLayout with LeafGroup (TabGroup) leaves.
+    /// Panes bound to this terminal, displayed in the Terminal Context Surface.
+    /// Split view renders this SplitLayout; Stacked view renders one active pane.
     pub dock_layout: crate::tide_layout::SplitLayout,
+    /// Presentation mode for this Terminal's Terminal Context Surface.
+    pub dock_view_mode: ViewMode,
     /// Last focused pane in this terminal's Dock.
     pub dock_focused: Option<PaneId>,
 }
@@ -171,6 +182,7 @@ impl TerminalPane {
             cursor_suppress: 3,
             context: TerminalContext::default(),
             dock_layout: crate::tide_layout::SplitLayout::new(),
+            dock_view_mode: ViewMode::Stacked,
             dock_focused: None,
         })
     }
@@ -187,6 +199,7 @@ impl TerminalPane {
             cursor_suppress: 3,
             context: TerminalContext::default(),
             dock_layout: crate::tide_layout::SplitLayout::new(),
+            dock_view_mode: ViewMode::Stacked,
             dock_focused: None,
         }
     }
@@ -321,11 +334,8 @@ impl TerminalPane {
         let cell_size = renderer.cell_size();
         let grid = self.backend.grid();
 
-        // Center the grid horizontally within the rect to equalize left/right padding
-        let max_cols = (rect.width / cell_size.width).floor() as usize;
-        let actual_width = max_cols as f32 * cell_size.width;
-        let extra_x = (rect.width - actual_width) / 2.0;
-        let offset = Vec2::new(rect.x + extra_x, rect.y);
+        let max_cols = terminal_grid_cols(rect, cell_size);
+        let offset = terminal_grid_origin(rect);
 
         // Clamp to the number of rows/cols that fit within the pane rect
         let max_rows = (rect.height / cell_size.height).ceil() as usize;
@@ -358,12 +368,8 @@ impl TerminalPane {
         let cell_size = renderer.cell_size();
         let url_ranges = self.backend.url_ranges();
 
-        // Center offset matching render_grid
-        let max_cols = (rect.width / cell_size.width).floor() as usize;
-        let actual_width = max_cols as f32 * cell_size.width;
-        let extra_x = (rect.width - actual_width) / 2.0;
-        let offset_x = rect.x + extra_x;
-        let offset_y = rect.y;
+        let max_cols = terminal_grid_cols(rect, cell_size);
+        let offset = terminal_grid_origin(rect);
 
         let max_rows = (rect.height / cell_size.height).ceil() as usize;
 
@@ -376,8 +382,8 @@ impl TerminalPane {
                 if start_col >= max_cols {
                     continue;
                 }
-                let x = offset_x + start_col as f32 * cell_size.width;
-                let y = offset_y + (row as f32 + 1.0) * cell_size.height - 1.0;
+                let x = offset.x + start_col as f32 * cell_size.width;
+                let y = offset.y + (row as f32 + 1.0) * cell_size.height - 1.0;
                 let w = (clamped_end - start_col) as f32 * cell_size.width;
                 renderer.draw_rect(Rect::new(x, y, w, 1.0), link_color);
             }
@@ -396,18 +402,14 @@ impl TerminalPane {
             return;
         }
 
-        // Center offset matching render_grid
-        let max_cols = (rect.width / cell_size.width).floor() as usize;
-        let actual_width = max_cols as f32 * cell_size.width;
-        let extra_x = (rect.width - actual_width) / 2.0;
-
-        let cx = rect.x + extra_x + cursor.col as f32 * cell_size.width;
+        let offset = terminal_grid_origin(rect);
+        let cx = offset.x + cursor.col as f32 * cell_size.width;
         let cy = rect.y + cursor.row as f32 * cell_size.height;
 
         // Skip rendering if cursor is outside the visible pane rect
         if cy + cell_size.height > rect.y + rect.height
             || cy < rect.y
-            || cx + cell_size.width > rect.x + rect.width + extra_x
+            || cx + cell_size.width > rect.x + rect.width
             || cx < rect.x
         {
             return;

@@ -68,6 +68,258 @@ pub(crate) fn integration_toggle_notification_indicator_color(
     })
 }
 
+pub(crate) fn titlebar_workspace_title(app: &App) -> String {
+    let fallback = "Workspace".to_string();
+    let name = app
+        .ws
+        .workspaces
+        .get(app.ws.active)
+        .map(|workspace| workspace.name.clone())
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or(fallback);
+
+    if app.ws.workspaces.len() > 1 {
+        format!(
+            "{} · {}/{}",
+            name,
+            app.ws.active + 1,
+            app.ws.workspaces.len()
+        )
+    } else {
+        name
+    }
+}
+
+pub(crate) fn titlebar_toggle_button_width(cell_width: f32) -> f32 {
+    cell_width * TITLEBAR_ICON_SCALE + TITLEBAR_ICON_BUTTON_PAD_H * 2.0
+}
+
+pub(crate) fn titlebar_toggle_button_height(cell_height: f32) -> f32 {
+    cell_height * TITLEBAR_ICON_SCALE + TITLEBAR_ICON_BUTTON_PAD_V * 2.0
+}
+
+pub(crate) fn titlebar_toggle_button_draws_hotkey_hint() -> bool {
+    false
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TitlebarSurfaceIcon {
+    WorkspaceRail,
+    DockContext,
+    FileTree,
+}
+
+pub(crate) fn titlebar_surface_button_icon(target: &HoverTarget) -> Option<TitlebarSurfaceIcon> {
+    match target {
+        HoverTarget::TitlebarWorkspace => Some(TitlebarSurfaceIcon::WorkspaceRail),
+        HoverTarget::TitlebarDock => Some(TitlebarSurfaceIcon::DockContext),
+        HoverTarget::TitlebarFileTree => Some(TitlebarSurfaceIcon::FileTree),
+        _ => None,
+    }
+}
+
+pub(crate) fn titlebar_surface_icon_text_glyph(icon: TitlebarSurfaceIcon) -> Option<&'static str> {
+    match icon {
+        TitlebarSurfaceIcon::FileTree => Some("\u{f07b}"),
+        _ => None,
+    }
+}
+
+pub(crate) fn titlebar_button_backdrop_level(is_active: bool, is_hovered: bool) -> u8 {
+    match (is_active, is_hovered) {
+        (false, false) => 0,
+        (false, true) => 1,
+        (true, false) => 2,
+        (true, true) => 3,
+    }
+}
+
+fn with_alpha(color: crate::tide_core::Color, alpha: f32) -> crate::tide_core::Color {
+    crate::tide_core::Color::new(color.r, color.g, color.b, alpha)
+}
+
+fn draw_titlebar_button_backdrop(
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    rect: Rect,
+    p: &ThemePalette,
+    is_active: bool,
+    is_hovered: bool,
+) {
+    let level = titlebar_button_backdrop_level(is_active, is_hovered);
+    if level == 0 {
+        return;
+    }
+
+    let (fill, stroke) = match level {
+        1 => (p.badge_bg, with_alpha(p.tab_text, 0.08)),
+        2 => (
+            with_alpha(p.dock_tab_underline, 0.16),
+            with_alpha(p.dock_tab_underline, 0.36),
+        ),
+        _ => (
+            with_alpha(p.dock_tab_underline, 0.24),
+            with_alpha(p.dock_tab_underline, 0.52),
+        ),
+    };
+    let radius = 7.0;
+    renderer.draw_chrome_rounded_rect(rect, stroke, radius);
+    renderer.draw_chrome_rounded_rect(
+        Rect::new(
+            rect.x + 1.0,
+            rect.y + 1.0,
+            (rect.width - 2.0).max(0.0),
+            (rect.height - 2.0).max(0.0),
+        ),
+        fill,
+        (radius - 1.0).max(0.0),
+    );
+}
+
+fn draw_icon_stroke(
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    rect: Rect,
+    color: crate::tide_core::Color,
+) {
+    let radius = (rect.width.min(rect.height) / 2.0).min(1.2);
+    renderer.draw_chrome_rounded_rect(rect, color, radius);
+}
+
+fn draw_icon_outline(
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    rect: Rect,
+    color: crate::tide_core::Color,
+    stroke: f32,
+) {
+    draw_icon_stroke(
+        renderer,
+        Rect::new(rect.x, rect.y, rect.width, stroke),
+        color,
+    );
+    draw_icon_stroke(
+        renderer,
+        Rect::new(rect.x, rect.y + rect.height - stroke, rect.width, stroke),
+        color,
+    );
+    draw_icon_stroke(
+        renderer,
+        Rect::new(rect.x, rect.y, stroke, rect.height),
+        color,
+    );
+    draw_icon_stroke(
+        renderer,
+        Rect::new(rect.x + rect.width - stroke, rect.y, stroke, rect.height),
+        color,
+    );
+}
+
+fn draw_titlebar_surface_icon(
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    icon: TitlebarSurfaceIcon,
+    button_rect: Rect,
+    color: crate::tide_core::Color,
+) {
+    if let Some(glyph) = titlebar_surface_icon_text_glyph(icon) {
+        let cell = renderer.cell_size();
+        let icon_w = cell.width * TITLEBAR_ICON_SCALE;
+        let icon_h = cell.height * TITLEBAR_ICON_SCALE;
+        renderer.draw_chrome_text_scaled(
+            glyph,
+            Vec2::new(
+                button_rect.x + (button_rect.width - icon_w) / 2.0,
+                button_rect.y + (button_rect.height - icon_h) / 2.0,
+            ),
+            TextStyle {
+                foreground: color,
+                background: None,
+                bold: false,
+                dim: false,
+                italic: false,
+                underline: false,
+            },
+            button_rect,
+            TITLEBAR_ICON_SCALE,
+        );
+        return;
+    }
+
+    let stroke = 1.35_f32;
+    let icon_w = 16.0_f32;
+    let icon_h = 13.0_f32;
+    let x = (button_rect.x + (button_rect.width - icon_w) / 2.0).round();
+    let y = (button_rect.y + (button_rect.height - icon_h) / 2.0).round();
+    let body = Rect::new(x, y, icon_w, icon_h);
+    let secondary = with_alpha(color, color.a * 0.52);
+
+    match icon {
+        TitlebarSurfaceIcon::WorkspaceRail => {
+            draw_icon_outline(renderer, body, secondary, stroke);
+            draw_icon_stroke(
+                renderer,
+                Rect::new(x + 2.4, y + 2.4, 3.0, icon_h - 4.8),
+                secondary,
+            );
+            draw_icon_stroke(
+                renderer,
+                Rect::new(x + 6.4, y + 1.0, stroke, icon_h - 2.0),
+                color,
+            );
+            draw_icon_stroke(renderer, Rect::new(x + 9.0, y + 4.0, 4.6, stroke), color);
+            draw_icon_stroke(
+                renderer,
+                Rect::new(x + 9.0, y + 7.6, 3.4, stroke),
+                secondary,
+            );
+        }
+        TitlebarSurfaceIcon::DockContext => {
+            draw_icon_outline(renderer, body, secondary, stroke);
+            draw_icon_stroke(
+                renderer,
+                Rect::new(x + icon_w - 5.2, y + 1.0, stroke, icon_h - 2.0),
+                color,
+            );
+            draw_icon_stroke(
+                renderer,
+                Rect::new(x + icon_w - 4.0, y + 2.4, 2.6, icon_h - 4.8),
+                secondary,
+            );
+            draw_icon_stroke(renderer, Rect::new(x + 3.0, y + 4.0, 5.2, stroke), color);
+            draw_icon_stroke(
+                renderer,
+                Rect::new(x + 3.0, y + 7.6, 4.0, stroke),
+                secondary,
+            );
+        }
+        TitlebarSurfaceIcon::FileTree => {
+            draw_icon_stroke(renderer, Rect::new(x + 1.5, y + 1.8, 4.2, stroke), color);
+            draw_icon_stroke(renderer, Rect::new(x + 1.5, y + 1.8, stroke, 3.0), color);
+            draw_icon_stroke(renderer, Rect::new(x + 5.0, y + 3.2, 4.4, stroke), color);
+            draw_icon_stroke(renderer, Rect::new(x + 1.5, y + 4.6, 8.0, stroke), color);
+            draw_icon_stroke(
+                renderer,
+                Rect::new(x + 1.5, y + 4.6, stroke, 3.8),
+                secondary,
+            );
+            draw_icon_stroke(
+                renderer,
+                Rect::new(x + 1.5, y + 7.2, 8.0, stroke),
+                secondary,
+            );
+
+            draw_icon_stroke(
+                renderer,
+                Rect::new(x + 4.0, y + 8.4, stroke, 3.0),
+                secondary,
+            );
+            draw_icon_stroke(renderer, Rect::new(x + 5.8, y + 9.0, 7.4, stroke), color);
+            draw_icon_stroke(
+                renderer,
+                Rect::new(x + 5.8, y + 11.2, 5.2, stroke),
+                secondary,
+            );
+        }
+    }
+}
+
 /// Render the titlebar background, title text, icons, and toggle buttons.
 /// Also renders the workspace sidebar if visible.
 pub(super) fn render_titlebar_and_sidebar(
@@ -96,14 +348,10 @@ pub(super) fn render_titlebar_and_sidebar(
             ),
             p.border_subtle,
         );
-        // Centered title: show "Tide" or "Tide · N" when multiple workspaces
+        // Centered title keeps active Workspace identity visible when the rail is collapsed.
         let cs = renderer.cell_size();
         {
-            let title_text = if app.ws.workspaces.len() > 1 {
-                format!("Tide · {}", app.ws.active + 1)
-            } else {
-                "Tide".to_string()
-            };
+            let title_text = titlebar_workspace_title(app);
             let title_w = title_text.chars().count() as f32 * cs.width;
             let title_x = (logical.width - title_w) / 2.0;
             let title_y = (app.window.top_inset - cs.height) / 2.0;
@@ -123,135 +371,106 @@ pub(super) fn render_titlebar_and_sidebar(
         }
         // Right: titlebar icons
         {
-            let _icon_h = 16.0_f32;
-            let rect_w = 7.0_f32;
-            let gap = 3.0_f32;
+            let rect_w = 7.0_f32 * TITLEBAR_ICON_SCALE;
+            let gap = 3.0_f32 * TITLEBAR_ICON_SCALE;
             let icon_w = rect_w * 2.0 + gap;
             let icon_x = logical.width - PANE_PADDING - icon_w;
-
-            // Settings gear icon
-            {
-                let gear_pad = 4.0_f32;
-                let gear_icon = "\u{f013}"; // FontAwesome gear
-                let gear_w = cs.width + gear_pad * 2.0;
-                let gear_h = cs.height + 6.0;
-                let gear_x = icon_x - gear_w - 8.0;
-                let gear_y = (app.window.top_inset - gear_h) / 2.0;
-                let gear_hovered = matches!(
-                    app.interaction.hover_target,
-                    Some(HoverTarget::TitlebarSettings)
-                );
-                if gear_hovered {
-                    let bg_rect = Rect::new(gear_x, gear_y, gear_w, gear_h);
-                    renderer.draw_chrome_rounded_rect(bg_rect, p.badge_bg, 4.0);
-                }
-                let gear_text_y = gear_y + (gear_h - cs.height) / 2.0;
-                let gear_color = if app.modal.config_page.is_some() {
-                    p.dock_tab_underline
-                } else {
-                    p.tab_text
-                };
-                renderer.draw_chrome_text(
-                    gear_icon,
-                    Vec2::new(gear_x + gear_pad, gear_text_y),
+            let icon_logical_w = cs.width * TITLEBAR_ICON_SCALE;
+            let icon_logical_h = cs.height * TITLEBAR_ICON_SCALE;
+            let draw_titlebar_icon = |renderer: &mut crate::tide_renderer::WgpuRenderer,
+                                      icon: &str,
+                                      rect: Rect,
+                                      foreground: crate::tide_core::Color,
+                                      clip: Rect| {
+                renderer.draw_chrome_text_scaled(
+                    icon,
+                    Vec2::new(
+                        rect.x + (rect.width - icon_logical_w) / 2.0,
+                        rect.y + (rect.height - icon_logical_h) / 2.0,
+                    ),
                     TextStyle {
-                        foreground: gear_color,
+                        foreground,
                         background: None,
                         bold: false,
                         dim: false,
                         italic: false,
                         underline: false,
                     },
-                    tb,
+                    clip,
+                    TITLEBAR_ICON_SCALE,
                 );
+            };
+
+            // Settings gear icon
+            {
+                let gear_icon = "\u{f013}"; // FontAwesome gear
+                let gear_w = titlebar_toggle_button_width(cs.width);
+                let gear_h = titlebar_toggle_button_height(cs.height);
+                let gear_x = icon_x - gear_w - TITLEBAR_BUTTON_GAP;
+                let gear_y = (app.window.top_inset - gear_h) / 2.0;
+                let gear_rect = Rect::new(gear_x, gear_y, gear_w, gear_h);
+                let gear_hovered = matches!(
+                    app.interaction.hover_target,
+                    Some(HoverTarget::TitlebarSettings)
+                );
+                let gear_color = if app.modal.config_page.is_some() {
+                    p.dock_tab_underline
+                } else {
+                    p.tab_text
+                };
+                draw_titlebar_button_backdrop(
+                    renderer,
+                    gear_rect,
+                    p,
+                    app.modal.config_page.is_some(),
+                    gear_hovered,
+                );
+                draw_titlebar_icon(renderer, gear_icon, gear_rect, gear_color, tb);
             }
 
             // Titlebar toggle buttons: [Sidebar] [Stage] [Dock] [gap] [Theme] [Settings] [Swap icon]
             // Positioned right-to-left from the settings icon
-            let settings_pad = 4.0_f32;
-            let settings_w = cs.width + settings_pad * 2.0;
-            let settings_x = icon_x - settings_w - 8.0;
+            let settings_w = titlebar_toggle_button_width(cs.width);
+            let settings_x = icon_x - settings_w - TITLEBAR_BUTTON_GAP;
 
             // Theme toggle icon (between settings and toggle buttons)
-            let theme_pad = 4.0_f32;
-            let theme_w = cs.width + theme_pad * 2.0;
-            let theme_h = cs.height + 6.0;
-            let theme_x = settings_x - theme_w - 8.0;
+            let theme_w = titlebar_toggle_button_width(cs.width);
+            let theme_h = titlebar_toggle_button_height(cs.height);
+            let theme_x = settings_x - theme_w - TITLEBAR_BUTTON_GAP;
             let theme_y = (app.window.top_inset - theme_h) / 2.0;
+            let theme_rect = Rect::new(theme_x, theme_y, theme_w, theme_h);
             let theme_hovered = matches!(
                 app.interaction.hover_target,
                 Some(HoverTarget::TitlebarTheme)
             );
-            if theme_hovered {
-                let bg_rect = Rect::new(theme_x, theme_y, theme_w, theme_h);
-                renderer.draw_chrome_rounded_rect(bg_rect, p.badge_bg, 4.0);
-            }
             let theme_icon = if app.window.dark_mode {
                 "\u{f186}"
             } else {
                 "\u{f185}"
             }; // moon / sun
-            let theme_text_y = theme_y + (theme_h - cs.height) / 2.0;
-            renderer.draw_chrome_text(
-                theme_icon,
-                Vec2::new(theme_x + theme_pad, theme_text_y),
-                TextStyle {
-                    foreground: p.tab_text,
-                    background: None,
-                    bold: false,
-                    dim: false,
-                    italic: false,
-                    underline: false,
-                },
-                tb,
-            );
+            draw_titlebar_button_backdrop(renderer, theme_rect, p, false, theme_hovered);
+            draw_titlebar_icon(renderer, theme_icon, theme_rect, p.tab_text, tb);
 
             // Integration toggle button (left of theme icon)
-            let integ_pad = 4.0_f32;
-            let integ_w = cs.width + integ_pad * 2.0;
-            let integ_h = cs.height + 6.0;
-            let integ_x = theme_x - integ_w - 8.0;
+            let integ_w = titlebar_toggle_button_width(cs.width);
+            let integ_h = titlebar_toggle_button_height(cs.height);
+            let integ_x = theme_x - integ_w - TITLEBAR_BUTTON_GAP;
             let integ_y = (app.window.top_inset - integ_h) / 2.0;
+            let integ_rect = Rect::new(integ_x, integ_y, integ_w, integ_h);
             {
                 let is_active = app.settings.auto_integration;
                 let is_hovered = matches!(
                     app.interaction.hover_target,
                     Some(HoverTarget::TitlebarIntegration)
                 );
-                let bg_color = if is_hovered {
-                    p.badge_bg
-                } else if is_active {
-                    p.badge_bg_unfocused
-                } else {
-                    crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.0)
-                };
-                if bg_color.a > 0.0 {
-                    renderer.draw_chrome_rounded_rect(
-                        Rect::new(integ_x, integ_y, integ_w, integ_h),
-                        bg_color,
-                        4.0,
-                    );
-                }
                 let icon = "\u{f1e6}"; // FontAwesome plug icon
                 let icon_color = if is_active {
                     p.dock_tab_underline
                 } else {
                     p.tab_text
                 };
-                let text_y = integ_y + (integ_h - cs.height) / 2.0;
-                renderer.draw_chrome_text(
-                    icon,
-                    Vec2::new(integ_x + integ_pad, text_y),
-                    TextStyle {
-                        foreground: icon_color,
-                        background: None,
-                        bold: false,
-                        dim: false,
-                        italic: false,
-                        underline: false,
-                    },
-                    tb,
-                );
+                draw_titlebar_button_backdrop(renderer, integ_rect, p, is_active, is_hovered);
+                draw_titlebar_icon(renderer, icon, integ_rect, icon_color, tb);
                 if let Some(indicator_color) = integration_toggle_notification_indicator_color(
                     is_active,
                     app.window.notification_authorization_status,
@@ -268,118 +487,60 @@ pub(super) fn render_titlebar_and_sidebar(
             }
 
             let btn_right = integ_x - TITLEBAR_BUTTON_GAP;
-            let tb_clip = Rect::new(0.0, 0.0, logical.width, app.window.top_inset);
-
-            // Helper: render a titlebar toggle button (icon + ⌘N hint, badge style)
+            // Helper: render a larger icon-only titlebar toggle button.
             // Returns the total width consumed
             let render_titlebar_btn = |renderer: &mut crate::tide_renderer::WgpuRenderer,
-                                       icon_char: &str,
-                                       hint: &str,
-                                       hint_char_count: usize,
+                                       icon: TitlebarSurfaceIcon,
                                        right_edge: f32,
                                        is_active: bool,
                                        is_hovered: bool|
              -> f32 {
-                let btn_pad_h = 6.0_f32;
-                let icon_w_chars = 1;
-                let gap_chars = 1; // space between icon and hint
-                let total_chars = (icon_w_chars + gap_chars + hint_char_count) as f32;
-                let btn_w = total_chars * cs.width + btn_pad_h * 2.0;
-                let btn_h = cs.height + 6.0;
+                let btn_w = titlebar_toggle_button_width(cs.width);
+                let btn_h = titlebar_toggle_button_height(cs.height);
                 let btn_x = right_edge - btn_w;
                 let btn_y = (app.window.top_inset - btn_h) / 2.0;
                 let btn_rect = Rect::new(btn_x, btn_y, btn_w, btn_h);
 
-                // Background
-                let bg_color = if is_hovered {
-                    p.badge_bg
-                } else if is_active {
-                    p.badge_bg_unfocused
-                } else {
-                    crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.0)
-                };
-                if bg_color.a > 0.0 {
-                    renderer.draw_chrome_rounded_rect(btn_rect, bg_color, 4.0);
-                }
+                draw_titlebar_button_backdrop(renderer, btn_rect, p, is_active, is_hovered);
 
                 // Icon
-                let text_y = btn_y + (btn_h - cs.height) / 2.0;
                 let icon_color = if is_active {
                     p.dock_tab_underline
                 } else {
                     p.tab_text
                 };
-                renderer.draw_chrome_text(
-                    icon_char,
-                    Vec2::new(btn_x + btn_pad_h, text_y),
-                    TextStyle {
-                        foreground: icon_color,
-                        background: None,
-                        bold: false,
-                        dim: false,
-                        italic: false,
-                        underline: false,
-                    },
-                    tb_clip,
-                );
-
-                // Hint text
-                let hint_x = btn_x + btn_pad_h + (icon_w_chars + gap_chars) as f32 * cs.width;
-                let hint_color = if is_active {
-                    p.badge_text
-                } else {
-                    p.badge_text_dimmed
-                };
-                renderer.draw_chrome_text(
-                    hint,
-                    Vec2::new(hint_x, text_y),
-                    TextStyle {
-                        foreground: hint_color,
-                        background: None,
-                        bold: false,
-                        dim: false,
-                        italic: false,
-                        underline: false,
-                    },
-                    tb_clip,
-                );
+                draw_titlebar_surface_icon(renderer, icon, btn_rect, icon_color);
 
                 btn_w
             };
 
-            // Render buttons right-to-left: [Dock ⌘4] [FileTree ⌘2] [Workspace ⌘1]
+            // Render buttons right-to-left: [FileTree] [Dock] [Workspace]
             let mut cur_right = btn_right;
-
-            // Dock button
-            let w = render_titlebar_btn(
-                renderer,
-                "\u{f009}",
-                "\u{2318}4",
-                2,
-                cur_right,
-                app.dock.dock_open,
-                app.interaction.hover_target.as_ref() == Some(&HoverTarget::TitlebarDock),
-            );
-            cur_right -= w + TITLEBAR_BUTTON_GAP;
 
             // FileTree button
             let w = render_titlebar_btn(
                 renderer,
-                "\u{f07b}",
-                "\u{2318}2",
-                2,
+                titlebar_surface_button_icon(&HoverTarget::TitlebarFileTree).unwrap(),
                 cur_right,
                 app.ft.visible,
                 app.interaction.hover_target.as_ref() == Some(&HoverTarget::TitlebarFileTree),
             );
             cur_right -= w + TITLEBAR_BUTTON_GAP;
 
+            // Dock button
+            let w = render_titlebar_btn(
+                renderer,
+                titlebar_surface_button_icon(&HoverTarget::TitlebarDock).unwrap(),
+                cur_right,
+                app.dock.dock_open,
+                app.interaction.hover_target.as_ref() == Some(&HoverTarget::TitlebarDock),
+            );
+            cur_right -= w + TITLEBAR_BUTTON_GAP;
+
             // Workspace sidebar button
             let _w = render_titlebar_btn(
                 renderer,
-                "\u{f24d}",
-                "\u{2318}1",
-                2,
+                titlebar_surface_button_icon(&HoverTarget::TitlebarWorkspace).unwrap(),
                 cur_right,
                 app.ws.show_sidebar,
                 app.interaction.hover_target.as_ref() == Some(&HoverTarget::TitlebarWorkspace),
@@ -394,12 +555,8 @@ pub(super) fn render_titlebar_and_sidebar(
 
         // Focus-dependent styling (matches file_tree.rs pattern)
         let sidebar_focused = app.focus.focus_area == crate::state::FocusArea::FileTree && false; // sidebar has no FocusArea yet
-        let border_color = if sidebar_focused {
-            p.border_focused
-        } else {
-            p.border_subtle
-        };
-        let border_w = if sidebar_focused { 2.0_f32 } else { 1.0_f32 };
+        let border_color = crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.0);
+        let border_w = 0.0_f32;
 
         // Sidebar visual rect: inset from top/bottom for corner radius visibility
         let sb_border = Rect::new(
@@ -413,25 +570,6 @@ pub(super) fn render_titlebar_and_sidebar(
         if sidebar_focused {
             let shadow_color = crate::tide_core::Color::new(0.769, 0.722, 0.651, 0.25);
             renderer.draw_chrome_shadow(sb_border, shadow_color, PANE_CORNER_RADIUS, 16.0, -4.0);
-        }
-
-        // Right-edge gradient shadow for depth separation
-        {
-            let edge_x = sb_border.x + sb_border.width;
-            let h = sb_border.height;
-            let y = sb_border.y;
-            renderer.draw_chrome_rect(
-                Rect::new(edge_x, y, 1.5, h),
-                crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.12),
-            );
-            renderer.draw_chrome_rect(
-                Rect::new(edge_x + 1.5, y, 1.5, h),
-                crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.06),
-            );
-            renderer.draw_chrome_rect(
-                Rect::new(edge_x + 3.0, y, 1.5, h),
-                crate::tide_core::Color::new(0.0, 0.0, 0.0, 0.02),
-            );
         }
 
         // Outer rounded rect (border)
@@ -454,7 +592,6 @@ pub(super) fn render_titlebar_and_sidebar(
         let content_x = geo.content_x;
         let content_w = geo.content_w;
         let item_gap = geo.item_gap;
-        let name_h = cs.height;
 
         // Determine available text width for compact mode detection
         let text_avail_w = content_w - WS_SIDEBAR_ITEM_PAD_H * 2.0;
@@ -503,12 +640,31 @@ pub(super) fn render_titlebar_and_sidebar(
                 }
             }
 
-            // Name text -- use "W{n}" when sidebar is too narrow
+            // Name text -- one-line rows keep the rail useful as a dense task monitor.
+            let indicator_reserved_w = if indicator_color.is_some() {
+                WS_SIDEBAR_ITEM_PAD_H + 10.0
+            } else {
+                0.0
+            };
+            let meta_text = if is_active && !compact {
+                app.focused_terminal_cwd()
+                    .map(|p| crate::state::abbreviate_path(&p))
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            let meta_w = if meta_text.is_empty() {
+                0.0
+            } else {
+                (meta_text.chars().count() as f32 * cs.width).min(text_avail_w * 0.45)
+            };
+            let meta_gap = if meta_w > 0.0 { cs.width } else { 0.0 };
+            let name_avail_w =
+                (text_avail_w - indicator_reserved_w - meta_w - meta_gap).max(cs.width * 2.0);
             let display_name = if compact {
                 format!("W{}", i + 1)
             } else {
-                // Truncate name to fit available width
-                let max_chars = (text_avail_w / cs.width).floor() as usize;
+                let max_chars = (name_avail_w / cs.width).floor() as usize;
                 if ws_name.chars().count() > max_chars && max_chars > 1 {
                     let truncated: String =
                         ws_name.chars().take(max_chars.saturating_sub(1)).collect();
@@ -522,7 +678,7 @@ pub(super) fn render_titlebar_and_sidebar(
             } else {
                 p.ws_sidebar_text_inactive
             };
-            // Center text horizontally and vertically in compact mode
+            // Center text vertically; compact mode also centers horizontally.
             let (name_text_x, name_text_y) = if compact {
                 let name_w = display_name.len() as f32 * cs.width;
                 (
@@ -532,7 +688,7 @@ pub(super) fn render_titlebar_and_sidebar(
             } else {
                 (
                     content_x + WS_SIDEBAR_ITEM_PAD_H,
-                    item_rect.y + WS_SIDEBAR_ITEM_PAD_V,
+                    item_rect.y + (item_rect.height - cs.height) / 2.0,
                 )
             };
             renderer.draw_chrome_text(
@@ -549,43 +705,35 @@ pub(super) fn render_titlebar_and_sidebar(
                 inset,
             );
 
-            // CWD text (second line) -- hide in compact mode
-            if !compact {
-                let cwd_text = if is_active {
-                    // Use live cwd from the focused terminal
-                    app.focused_terminal_cwd()
-                        .map(|p| crate::state::abbreviate_path(&p))
-                        .unwrap_or_default()
+            if !meta_text.is_empty() && meta_w > 0.0 {
+                let max_chars = (meta_w / cs.width).floor() as usize;
+                let display_meta = if meta_text.chars().count() > max_chars && max_chars > 1 {
+                    let truncated: String = meta_text
+                        .chars()
+                        .take(max_chars.saturating_sub(1))
+                        .collect();
+                    format!("{}…", truncated)
                 } else {
-                    String::new()
+                    meta_text
                 };
-                if !cwd_text.is_empty() {
-                    // Truncate cwd to fit
-                    let max_chars = (text_avail_w / cs.width).floor() as usize;
-                    let display_cwd = if cwd_text.chars().count() > max_chars && max_chars > 1 {
-                        let truncated: String =
-                            cwd_text.chars().take(max_chars.saturating_sub(1)).collect();
-                        format!("{}…", truncated)
-                    } else {
-                        cwd_text
-                    };
-                    renderer.draw_chrome_text(
-                        &display_cwd,
-                        Vec2::new(
-                            content_x + WS_SIDEBAR_ITEM_PAD_H,
-                            item_rect.y + WS_SIDEBAR_ITEM_PAD_V + name_h + WS_SIDEBAR_LINE_GAP,
-                        ),
-                        TextStyle {
-                            foreground: p.tab_text,
-                            background: None,
-                            bold: false,
-                            dim: false,
-                            italic: false,
-                            underline: false,
-                        },
-                        inset,
-                    );
-                }
+                let display_meta_w = display_meta.chars().count() as f32 * cs.width;
+                let meta_x = item_rect.x + item_rect.width
+                    - WS_SIDEBAR_ITEM_PAD_H
+                    - indicator_reserved_w
+                    - display_meta_w;
+                renderer.draw_chrome_text(
+                    &display_meta,
+                    Vec2::new(meta_x, item_rect.y + (item_rect.height - cs.height) / 2.0),
+                    TextStyle {
+                        foreground: p.tab_text,
+                        background: None,
+                        bold: false,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    },
+                    inset,
+                );
             }
 
             if let Some(color) = indicator_color {

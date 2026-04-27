@@ -12,7 +12,7 @@ TerminalArea + ContextArea with DrawerState HashMap. DrawerState uses SplitLayou
 
 ```
 (WorkspaceSidebar) | (FileTree) | Stage | (Dock)
-     Cmd+1            Cmd+2       Cmd+3    Cmd+4
+     Cmd+E            Cmd+B              Cmd+Backslash
 ```
 
 ### Key Design Decisions
@@ -30,10 +30,10 @@ TerminalArea + ContextArea with DrawerState HashMap. DrawerState uses SplitLayou
 
 | Region | Visibility | Content | Internal Layout |
 |--------|-----------|---------|-----------------|
-| WorkspaceSidebar | Toggleable (Cmd+1) | Workspace list | Fixed list |
-| FileTree | Toggleable (Cmd+2) | File browser | Fixed tree |
+| WorkspaceSidebar | Toggleable (Cmd+E) | Workspace list | Fixed list |
+| FileTree | Toggleable (Cmd+B) | File browser | Fixed tree |
 | Stage | Always visible | Terminal Panes only | SplitLayout, Leaf(PaneId) |
-| Dock | Toggleable (Cmd+4) | Any PaneKind, bound to focused Terminal | SplitLayout, Leaf(TabGroup) |
+| Dock | Toggleable (Cmd+Backslash) | Any PaneKind, bound to focused Terminal | SplitLayout, Leaf(TabGroup) |
 
 ### FileTree Root
 
@@ -118,15 +118,17 @@ enum ViewMode {
 - **Stage**: Split (default) ↔ Stacked. Cmd+Enter toggles.
 - **Dock**: Split (TabGroups visible) ↔ Stacked (flatten all TabGroups' tabs, linear navigation). Cmd+Enter toggles.
 
-### Cmd+I/O Navigation (Tab Cycling)
+### Internal TabPrev/TabNext Navigation
 
-Builds a **flat traversal order** from the Dock's SplitLayout:
+When `TabPrev` or `TabNext` is invoked programmatically, Tide builds a **flat traversal order** from the Dock's SplitLayout:
 - Visit each TabGroup in layout order (left-to-right, top-to-bottom)
 - Within each TabGroup, visit tabs in order
-- Cmd+I = prev in this flat list, Cmd+O = next
+- `TabPrev` = prev in this flat list, `TabNext` = next
 - Wraps around at boundaries
 
-In **Stage**: cycles through Terminals in layout leaf order.
+`Cmd+I/O` are not default TabGroup navigation bindings.
+
+In **Stage Stacked mode**: cycles through Terminals in layout leaf order.
 
 In **Dock Split mode**: moves within current TabGroup. At edge, jumps to next/prev TabGroup.
 
@@ -147,7 +149,7 @@ In **Dock Stacked mode**: identical flat traversal, just visually shows one pane
 
 ### UC-2: SwitchTerminalFocus
 
-- **Trigger**: Click Terminal in Stage, Cmd+H/J/K/L in Stage, Cmd+I/O in Stage
+- **Trigger**: Click Terminal in Stage or Cmd+H/J/K/L in Stage
 - **Flow**:
   1. Set focused = new Terminal
   2. Dock content swaps (new Terminal's dock_layout is now displayed)
@@ -159,7 +161,7 @@ In **Dock Stacked mode**: identical flat traversal, just visually shows one pane
 - **Stage**: Toggle `terminal_view_mode` between Split and Stacked(focused)
 - **Dock**: Toggle between Split (all TabGroups visible) and Stacked (one pane fills Dock)
 
-### UC-4: ToggleDock (Cmd+4)
+### UC-4: ToggleDock (Cmd+Backslash)
 
 | State | Action |
 |-------|--------|

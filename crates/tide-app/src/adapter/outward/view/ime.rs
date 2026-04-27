@@ -2,7 +2,7 @@ use unicode_width::UnicodeWidthChar;
 
 use crate::tide_core::{Rect, Renderer, TerminalBackend, TextStyle, Vec2};
 
-use crate::pane::PaneKind;
+use crate::pane::{pane_content_rect, terminal_grid_origin, PaneKind};
 use crate::state::drag_types::{DropDestination, PaneDragState};
 use crate::theme::*;
 use crate::App;
@@ -38,13 +38,9 @@ pub(crate) fn render_ime_and_drop_preview(
                 if let Some(PaneKind::Terminal(pane)) = app.panes.get(&target_id) {
                     let cursor = pane.backend.cursor();
                     let cell_size = renderer.cell_size();
-                    let inner_w = rect.width - 2.0 * PANE_PADDING;
-                    let max_cols = (inner_w / cell_size.width).floor() as usize;
-                    let actual_w = max_cols as f32 * cell_size.width;
-                    let center_x = (inner_w - actual_w) / 2.0;
                     let ime_top = terminal_content_top(cell_size.height);
-                    let inner_offset =
-                        Vec2::new(rect.x + PANE_PADDING + center_x, rect.y + ime_top);
+                    let inner = pane_content_rect(*rect, ime_top);
+                    let inner_offset = terminal_grid_origin(inner);
                     let cx = inner_offset.x + cursor.col as f32 * cell_size.width;
                     let cy = inner_offset.y + cursor.row as f32 * cell_size.height;
 
@@ -164,17 +160,6 @@ pub(crate) fn render_ime_and_drop_preview(
                         )
                     {
                         App::draw_insert_preview(renderer, item_rect, p, alpha_factor);
-                    }
-                }
-                DropDestination::PinnedGroup => {
-                    // Highlight the pinned group area
-                    if let Some(dock_rect) = app.dock_area_rect {
-                        let pinned_w = (dock_rect.width * app.dock.pinned_dock_ratio)
-                            .max(60.0)
-                            .min(dock_rect.width - 60.0);
-                        let pinned_rect =
-                            Rect::new(dock_rect.x, dock_rect.y, pinned_w, dock_rect.height);
-                        App::draw_insert_preview(renderer, pinned_rect, p, alpha_factor);
                     }
                 }
             }

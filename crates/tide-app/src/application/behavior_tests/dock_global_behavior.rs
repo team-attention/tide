@@ -1,10 +1,20 @@
 // Spec: docs/specs/dock-global.md
+use crate::adapter::inward::click_adapter::header::check_header_click;
+use crate::adapter::inward::click_adapter::pane::handle_drop;
+use crate::adapter::inward::drag_drop_adapter::compute_drop_destination;
+use crate::header::{HeaderHitAction, HeaderHitZone};
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
+use crate::state::drag_types::DropDestination;
 use crate::state::FocusArea;
-use crate::tide_core::LayoutEngine;
+use crate::tide_core::{DropZone, LayoutEngine, Rect, SplitDirection, Vec2};
+use crate::tide_input::GlobalAction;
+use crate::ActionPort;
 use crate::App;
+use crate::AppCorePort;
 use crate::DockPort;
+use crate::LayoutPort;
+use crate::PaneLifecyclePort;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -17,8 +27,8 @@ fn app_with_real_terminal() -> (App, u64) {
     let mut app = test_app();
     let (layout, tid) = crate::tide_layout::SplitLayout::with_initial_pane();
     app.layout = layout;
-    let tp = TerminalPane::with_cwd(tid, 80, 24, None, true).unwrap();
-    app.panes.insert(tid, PaneKind::Terminal(tp));
+    let terminal = TerminalPane::with_cwd(tid, 80, 24, None, true).unwrap();
+    app.panes.insert(tid, PaneKind::Terminal(terminal));
     app.focus.focused = Some(tid);
     app.focus.stage_focused = Some(tid);
     app.focus.focus_area = FocusArea::Stage;
@@ -30,452 +40,443 @@ fn app_with_two_real_terminals() -> (App, u64, u64) {
     let t2 = app
         .layout
         .split(t1, crate::tide_core::SplitDirection::Vertical);
-    let tp2 = TerminalPane::with_cwd(t2, 80, 24, None, true).unwrap();
-    app.panes.insert(t2, PaneKind::Terminal(tp2));
+    let terminal = TerminalPane::with_cwd(t2, 80, 24, None, true).unwrap();
+    app.panes.insert(t2, PaneKind::Terminal(terminal));
     (app, t1, t2)
+}
+
+fn add_context_editor(app: &mut App, terminal_id: u64) -> u64 {
+    let pane_id = app.layout.alloc_id();
+    app.panes
+        .insert(pane_id, PaneKind::Editor(EditorPane::new_empty(pane_id)));
+    app.add_pane_to_dock(pane_id, Some(terminal_id));
+    pane_id
+}
+
+fn terminal_context_ids(app: &App, terminal_id: u64) -> Vec<u64> {
+    match app.panes.get(&terminal_id) {
+        Some(PaneKind::Terminal(terminal)) => terminal.dock_layout.all_pane_ids(),
+        _ => Vec::new(),
+    }
+}
+
+fn layout_snapshot_contains(snapshot: &crate::tide_layout::LayoutSnapshot, pane_id: u64) -> bool {
+    match snapshot {
+        crate::tide_layout::LayoutSnapshot::Leaf { tabs, .. }
+        | crate::tide_layout::LayoutSnapshot::LeafGroup { tabs, .. } => tabs.contains(&pane_id),
+        crate::tide_layout::LayoutSnapshot::Split { left, right, .. } => {
+            layout_snapshot_contains(left, pane_id) || layout_snapshot_contains(right, pane_id)
+        }
+    }
+}
+
+fn click_header_action(app: &mut App, pane_id: u64, action: HeaderHitAction) {
+    app.window.last_cursor_pos = Vec2::new(12.0, 10.0);
+    app.header_hit_zones = vec![HeaderHitZone {
+        pane_id,
+        rect: Rect::new(0.0, 0.0, 48.0, 20.0),
+        action,
+    }];
+    assert!(
+        check_header_click(app),
+        "expected header click to be consumed"
+    );
 }
 
 // --- UC-1: GlobalDockWidth ---
 
 #[test]
 fn dock_width_is_global_not_per_terminal() {
-    // UC-1 BR-1: Dock width is stored only in App.dock_width
+    // UC-1 BR-1: Dock width is global state on DockState, not per Terminal.
     let (mut app, t1, t2) = app_with_two_real_terminals();
     app.dock.dock_width = 500.0;
     app.dock.dock_open = true;
 
-    // Focus t2 — dock_width should still be 500
     app.focus.focused = Some(t2);
+    app.focus.stage_focused = Some(t2);
     app.swap_dock_state(t2);
     assert_eq!(app.dock.dock_width, 500.0);
 
-    // Focus t1 — still 500
     app.focus.focused = Some(t1);
+    app.focus.stage_focused = Some(t1);
     app.swap_dock_state(t1);
     assert_eq!(app.dock.dock_width, 500.0);
 }
 
 #[test]
 fn switching_terminals_preserves_dock_width() {
-    // UC-1 BR-2: Switching terminals does not change dock width
+    // UC-1 BR-2: Switching Stage Terminals does not change dock_width.
     let (mut app, t1, t2) = app_with_two_real_terminals();
-
-    // Add editor to t1's dock so dock stays open
-    let e1 = app.layout.alloc_id();
-    app.panes
-        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
     app.focus.focused = Some(t1);
-    app.add_pane_to_dock(e1, None);
-
+    app.focus.stage_focused = Some(t1);
+    add_context_editor(&mut app, t1);
     app.dock.dock_width = 600.0;
 
-    // Switch to t2
     app.focus.focused = Some(t2);
+    app.focus.stage_focused = Some(t2);
     app.swap_dock_state(t2);
 
     assert_eq!(
         app.dock.dock_width, 600.0,
-        "dock width must persist across terminal switch"
+        "dock width must persist across Stage Terminal switch"
     );
 }
 
-// --- UC-2: PinPane ---
+// --- UC-2: RejectPinnedDock ---
 
 #[test]
-fn pinning_moves_pane_to_pinned_dock_layout() {
-    // UC-2 BR-1: Pin moves pane from terminal dock_layout to pinned_dock_layout
-    let (mut app, t1, _t2) = app_with_two_real_terminals();
-    app.focus.focused = Some(t1);
+fn toggle_dock_pin_keeps_pane_in_terminal_context_surface() {
+    // UC-2 BR-1: ToggleDockPin must not move a Pane into pinned_dock_layout.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    let context_pane = add_context_editor(&mut app, terminal_id);
+    app.focus.focus_area = FocusArea::Dock;
+    app.focus.focused = Some(context_pane);
 
-    let e1 = app.layout.alloc_id();
-    app.panes
-        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1, None);
-
-    app.focus.focused = Some(e1);
     app.toggle_dock_pin();
 
-    // e1 should be in pinned_dock_layout
-    assert!(app.is_pane_pinned(e1));
-    // e1 should NOT be in t1's dock_layout (single existence)
-    if let Some(PaneKind::Terminal(tp)) = app.panes.get(&t1) {
-        assert!(!tp.dock_layout.all_pane_ids().contains(&e1));
-    }
-}
-
-#[test]
-fn pinning_preserves_associated_terminal() {
-    // UC-2 BR-2: associated_terminal preserved for unpin routing
-    let (mut app, t1, _t2) = app_with_two_real_terminals();
-    app.focus.focused = Some(t1);
-
-    let e1 = app.layout.alloc_id();
-    app.panes
-        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1, None);
-
-    assert_eq!(app.assoc.associated_terminal.get(&e1), Some(&t1));
-
-    app.focus.focused = Some(e1);
-    app.toggle_dock_pin();
-
+    assert!(!app.is_pane_pinned(context_pane));
+    assert!(app.dock.pinned_dock_layout.all_pane_ids().is_empty());
+    assert_eq!(terminal_context_ids(&app, terminal_id), vec![context_pane]);
     assert_eq!(
-        app.assoc.associated_terminal.get(&e1),
-        Some(&t1),
-        "pinning must preserve associated_terminal for unpin"
+        app.assoc.associated_terminal.get(&context_pane),
+        Some(&terminal_id)
     );
+    assert_eq!(app.focus.focused, Some(context_pane));
 }
 
 #[test]
-fn pinned_panes_in_pinned_dock_layout() {
-    // UC-2 BR-3: Multiple pinned panes coexist in pinned_dock_layout
-    let (mut app, t1, _t2) = app_with_two_real_terminals();
-    app.focus.focused = Some(t1);
-
-    let e1 = app.layout.alloc_id();
-    app.panes
-        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1, None);
-
-    let e2 = app.layout.alloc_id();
-    app.panes
-        .insert(e2, PaneKind::Editor(EditorPane::new_empty(e2)));
-    app.add_pane_to_dock(e2, None);
-
-    app.focus.focused = Some(e1);
-    app.toggle_dock_pin();
-    app.focus.focused = Some(e2);
-    app.toggle_dock_pin();
-
-    let pinned = app.dock.pinned_dock_layout.all_pane_ids();
-    assert!(pinned.contains(&e1));
-    assert!(pinned.contains(&e2));
-}
-
-// --- UC-3: ViewPinnedFromOtherTerminal ---
-
-#[test]
-fn pinned_pane_visible_from_any_terminal() {
-    // UC-3: Pinned panes are always visible (they're in pinned_dock_layout)
-    let (mut app, t1, t2) = app_with_two_real_terminals();
-    app.focus.focused = Some(t1);
-
-    let e1 = app.layout.alloc_id();
-    app.panes
-        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1, None);
-
-    app.focus.focused = Some(e1);
-    app.toggle_dock_pin();
-
-    // Switch to t2 — e1 is still in pinned_dock_layout
-    app.focus.focused = Some(t2);
-    app.swap_dock_state(t2);
-
-    assert!(
-        app.is_pane_pinned(e1),
-        "pinned pane should be visible from any terminal"
+fn pin_queries_report_no_visible_pinned_panes() {
+    // UC-2 BR-2: is_pane_pinned and has_pinned_panes return false for user-visible behavior.
+    let (mut app, _terminal_id) = app_with_real_terminal();
+    let legacy_pane = app.layout.alloc_id();
+    app.panes.insert(
+        legacy_pane,
+        PaneKind::Editor(EditorPane::new_empty(legacy_pane)),
     );
-    assert!(app.has_pinned_panes());
-}
+    app.dock.pinned_dock_layout.insert_leaf_group(legacy_pane);
 
-#[test]
-fn focused_terminal_not_changed_by_pinned_pane_focus() {
-    // Focusing a pinned pane should not change focused_terminal_id
-    let (mut app, t1, t2) = app_with_two_real_terminals();
-    app.focus.focused = Some(t1);
-
-    let e1 = app.layout.alloc_id();
-    app.panes
-        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1, None);
-
-    app.focus.focused = Some(e1);
-    app.toggle_dock_pin();
-
-    // Focus t2 in Stage
-    app.focus.focused = Some(t2);
-    app.focus.stage_focused = Some(t2);
-    assert_eq!(app.focused_terminal_id(), Some(t2));
-
-    // Now focus the pinned pane — stage_focused should still be t2
-    app.focus.focused = Some(e1);
-    assert_eq!(
-        app.focused_terminal_id(),
-        Some(t2),
-        "focusing pinned pane must not change stage_focused"
-    );
-}
-
-// --- UC-4: UnpinPane ---
-
-#[test]
-fn unpinned_pane_returns_to_owning_terminal_dock() {
-    // UC-4 BR-1: Unpin moves pane from pinned_dock_layout back to associated terminal
-    let (mut app, t1, _t2) = app_with_two_real_terminals();
-    app.focus.focused = Some(t1);
-
-    let e1 = app.layout.alloc_id();
-    app.panes
-        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1, None);
-
-    // Pin
-    app.focus.focused = Some(e1);
-    app.toggle_dock_pin();
-    assert!(app.is_pane_pinned(e1));
-
-    // Re-focus pinned pane then unpin
-    app.focus.focused = Some(e1);
-    app.toggle_dock_pin();
-    assert!(!app.is_pane_pinned(e1));
-
-    // Should be back in t1's dock_layout
-    if let Some(PaneKind::Terminal(tp)) = app.panes.get(&t1) {
-        assert!(tp.dock_layout.all_pane_ids().contains(&e1));
-    }
-}
-
-#[test]
-fn unpinned_pane_not_in_pinned_dock_layout() {
-    // UC-4 BR-2: After unpin, pane is not in pinned_dock_layout
-    let (mut app, t1, _t2) = app_with_two_real_terminals();
-    app.focus.focused = Some(t1);
-
-    let e1 = app.layout.alloc_id();
-    app.panes
-        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1, None);
-
-    app.focus.focused = Some(e1);
-    app.toggle_dock_pin();
-    // Re-focus pinned pane then unpin
-    app.focus.focused = Some(e1);
-    app.toggle_dock_pin();
-
-    assert!(!app.is_pane_pinned(e1));
+    assert!(!app.is_pane_pinned(legacy_pane));
     assert!(!app.has_pinned_panes());
 }
 
-// --- UC-6: PlaceholderLogic ---
+#[test]
+fn legacy_pinned_layout_does_not_intercept_context_drop_target() {
+    // UC-2 BR-3: Legacy pinned layout must not create a separate Dock drop target.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    app.set_dock_zoomed(false);
+    let first = add_context_editor(&mut app, terminal_id);
+    let second = add_context_editor(&mut app, terminal_id);
+    let legacy_pane = app.layout.alloc_id();
+    app.panes.insert(
+        legacy_pane,
+        PaneKind::Editor(EditorPane::new_empty(legacy_pane)),
+    );
+    app.dock.pinned_dock_layout.insert_leaf_group(legacy_pane);
+    app.dock.dock_open = true;
+    app.dock.visibility_animation = None;
+    app.focus.focus_area = FocusArea::Dock;
+    app.focus.focused = Some(second);
+    app.compute_layout();
+    let dock_rect = app.dock_area_rect.expect("Dock area should be computed");
+
+    let destination = compute_drop_destination(
+        &app,
+        Vec2::new(dock_rect.x + 4.0, dock_rect.y + 4.0),
+        second,
+    );
+
+    assert!(
+        matches!(
+            destination,
+            Some(DropDestination::DockRoot(_)) | Some(DropDestination::TreePane(_, _))
+        ),
+        "legacy pinned layout should leave ordinary context drop zones available, got {destination:?}"
+    );
+    assert_eq!(terminal_context_ids(&app, terminal_id), vec![first, second]);
+}
 
 #[test]
-fn no_placeholder_when_pinned_panes_exist() {
-    // UC-6 BR-1: Pinned panes prevent placeholder creation
-    let (mut app, t1, t2) = app_with_two_real_terminals();
-    app.focus.focused = Some(t1);
-
-    let e1 = app.layout.alloc_id();
-    app.panes
-        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1, None);
-
-    // Pin e1
-    app.focus.focused = Some(e1);
-    app.toggle_dock_pin();
-
-    // Switch to t2 (which has no dock panes)
-    app.focus.focused = Some(t2);
+fn legacy_pinned_layout_does_not_keep_dock_open() {
+    // UC-2 BR-4: Legacy pinned layout contents must not make the Dock visible or suppress placeholders.
+    let (mut app, _terminal_id) = app_with_real_terminal();
+    let legacy_pane = app.layout.alloc_id();
+    app.panes.insert(
+        legacy_pane,
+        PaneKind::Editor(EditorPane::new_empty(legacy_pane)),
+    );
+    app.dock.pinned_dock_layout.insert_leaf_group(legacy_pane);
     app.dock.dock_open = true;
-    app.swap_dock_state(t2);
 
-    // Dock should remain open (pinned content exists)
+    app.compute_layout();
+
     assert!(
-        app.dock.dock_open,
-        "dock should stay open when pinned panes exist"
+        !app.dock.dock_open,
+        "legacy pinned layout must not keep the right region open"
+    );
+}
+
+// --- UC-3: ToggleDockStacked ---
+
+#[test]
+fn dock_stacked_mode_renders_only_active_context_pane() {
+    // UC-3 BR-1: Dock stacked state must render exactly one active context Pane.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    let first = add_context_editor(&mut app, terminal_id);
+    let second = add_context_editor(&mut app, terminal_id);
+    app.focus.focus_area = FocusArea::Dock;
+    app.focus.focused = Some(second);
+    app.set_dock_zoomed(true);
+    app.compute_layout();
+
+    let visible_ids: Vec<u64> = app.pane_rects.iter().map(|(id, _)| *id).collect();
+    assert_eq!(app.dock_zoomed_pane(), Some(second));
+    assert!(visible_ids.contains(&second));
+    assert!(!visible_ids.contains(&first));
+}
+
+#[test]
+fn dock_toggle_stacked_preserves_context_split_layout() {
+    // UC-3 BR-2: DockToggleStacked must not flatten the context SplitLayout.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    app.set_dock_zoomed(false);
+    let first = add_context_editor(&mut app, terminal_id);
+    let second = add_context_editor(&mut app, terminal_id);
+    app.focus.focus_area = FocusArea::Dock;
+    app.focus.focused = Some(second);
+
+    app.handle_global_action(GlobalAction::DockToggleStacked);
+
+    assert!(app.dock_zoomed());
+    assert_eq!(app.dock_zoomed_pane(), Some(second));
+    assert_eq!(terminal_context_ids(&app, terminal_id), vec![first, second]);
+    let terminal = match app.panes.get(&terminal_id) {
+        Some(PaneKind::Terminal(terminal)) => terminal,
+        _ => panic!("expected Terminal"),
+    };
+    assert_eq!(
+        terminal.dock_layout.pane_ids().len(),
+        2,
+        "stored context SplitLayout should keep both visible leaves while stacked presentation is active"
     );
 }
 
 #[test]
-fn placeholder_when_no_dock_panes_and_no_pinned() {
-    // UC-6 BR-2: Placeholder only when both terminal dock and pinned group empty
-    let (mut app, t1, _t2) = app_with_two_real_terminals();
-    app.focus.focused = Some(t1);
+fn closing_focused_stacked_context_pane_focuses_previous_flat_pane() {
+    // UC-3 BR-5: Stacked Terminal Context Surface close uses the flat stacked order and prefers the Pane immediately to the left.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    let first = add_context_editor(&mut app, terminal_id);
+    let second = add_context_editor(&mut app, terminal_id);
+    let third = add_context_editor(&mut app, terminal_id);
+
+    assert_eq!(
+        terminal_context_ids(&app, terminal_id),
+        vec![first, second, third]
+    );
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Dock;
+    app.focus.focused = Some(third);
+    app.set_dock_zoomed(true);
+
+    app.close_specific_pane(third);
+
+    assert_eq!(app.focus.focus_area, FocusArea::Dock);
+    assert_eq!(app.focus.focused, Some(second));
+    let terminal = match app.panes.get(&terminal_id) {
+        Some(PaneKind::Terminal(terminal)) => terminal,
+        _ => panic!("expected Terminal"),
+    };
+    assert_eq!(terminal.dock_focused, Some(second));
+    assert_eq!(terminal_context_ids(&app, terminal_id), vec![first, second]);
+}
+
+#[test]
+fn context_pane_maximize_toggles_dock_stacked_mode() {
+    // UC-3 BR-3: Header maximize on a context Pane must toggle Dock stacked state.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    app.set_dock_zoomed(false);
+    let context_pane = add_context_editor(&mut app, terminal_id);
+    app.focus.focus_area = FocusArea::Dock;
+    app.focus.focused = Some(context_pane);
+
+    click_header_action(&mut app, context_pane, HeaderHitAction::Maximize);
+
+    assert!(app.dock_zoomed());
+    assert_eq!(app.dock_zoomed_pane(), Some(context_pane));
+    assert_eq!(terminal_context_ids(&app, terminal_id), vec![context_pane]);
+}
+
+// --- UC-4: RenderTerminalContextOnly ---
+
+#[test]
+fn layout_compute_ignores_legacy_pinned_layout() {
+    // UC-4 BR-1: Layout computation must ignore pinned_dock_layout.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    let context_pane = add_context_editor(&mut app, terminal_id);
+    let legacy_pane = app.layout.alloc_id();
+    app.panes.insert(
+        legacy_pane,
+        PaneKind::Editor(EditorPane::new_empty(legacy_pane)),
+    );
+    app.dock.pinned_dock_layout.insert_leaf_group(legacy_pane);
     app.dock.dock_open = true;
-    assert!(!app.has_pinned_panes());
 
-    app.ensure_dock_placeholder();
+    app.compute_layout();
 
-    // Should have created a placeholder
-    if let Some(PaneKind::Terminal(tp)) = app.panes.get(&t1) {
-        let dock_panes = tp.dock_layout.all_pane_ids();
-        assert!(
-            !dock_panes.is_empty(),
-            "placeholder should exist when no pinned panes"
-        );
-        let has_launcher = dock_panes
-            .iter()
-            .any(|&id| matches!(app.panes.get(&id), Some(PaneKind::Launcher(_))));
-        assert!(has_launcher, "placeholder should be a Launcher");
+    let visible_ids: Vec<u64> = app.pane_rects.iter().map(|(id, _)| *id).collect();
+    assert!(visible_ids.contains(&terminal_id));
+    assert!(visible_ids.contains(&context_pane));
+    assert!(
+        !visible_ids.contains(&legacy_pane),
+        "legacy pinned Pane must not receive a layout rect"
+    );
+}
+
+#[test]
+fn tab_bar_ignores_legacy_pinned_layout() {
+    // UC-4 BR-2: Tab-bar rendering must not include pinned tabs or a pinned separator.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    let context_pane = add_context_editor(&mut app, terminal_id);
+    let legacy_pane = app.layout.alloc_id();
+    app.panes.insert(
+        legacy_pane,
+        PaneKind::Editor(EditorPane::new_empty(legacy_pane)),
+    );
+    app.dock.pinned_dock_layout.insert_leaf_group(legacy_pane);
+
+    assert_eq!(
+        app.shared_tab_max_scroll(context_pane),
+        None,
+        "single visible context tab should not inherit legacy pinned tabs"
+    );
+    assert_eq!(
+        app.shared_tab_max_scroll(legacy_pane),
+        None,
+        "legacy pinned Pane should not expose shared tab-bar state"
+    );
+}
+
+#[test]
+fn dock_tab_cycle_uses_only_active_terminal_context_surface() {
+    // UC-4 BR-3: Dock tab navigation must cycle only through the focused Stage Terminal's context TabGroup.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    let first = add_context_editor(&mut app, terminal_id);
+    let second = add_context_editor(&mut app, terminal_id);
+    let legacy_pane = app.layout.alloc_id();
+    app.panes.insert(
+        legacy_pane,
+        PaneKind::Editor(EditorPane::new_empty(legacy_pane)),
+    );
+    app.dock.pinned_dock_layout.insert_leaf_group(legacy_pane);
+    app.focus.focus_area = FocusArea::Dock;
+    app.focus.focused = Some(first);
+    if let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&terminal_id) {
+        terminal.dock_focused = Some(first);
+        terminal.dock_layout.set_active_tab(first);
     }
-}
 
-// --- UC-5: DragTogglePin ---
+    app.handle_global_action(GlobalAction::DockTabNext);
 
-#[test]
-fn drag_into_pinned_group_pins_pane() {
-    // UC-5 BR-1: Dropping a pane onto pinned group pins it
-    use crate::state::drag_types::DropDestination;
-
-    let (mut app, t1, _t2) = app_with_two_real_terminals();
-    app.focus.focused = Some(t1);
-
-    let e1 = app.layout.alloc_id();
-    app.panes
-        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1, None);
-
-    assert!(!app.is_pane_pinned(e1));
-
-    crate::adapter::inward::click_adapter::pane::handle_drop(
-        &mut app,
-        e1,
-        DropDestination::PinnedGroup,
-    );
-
-    assert!(app.is_pane_pinned(e1), "pane should be pinned after drop");
+    assert_eq!(app.focus.focused, Some(second));
+    assert_ne!(app.focus.focused, Some(legacy_pane));
 }
 
 #[test]
-fn drag_out_of_pinned_group_unpins_pane() {
-    // UC-5 BR-2: Dropping a pinned pane onto dock root unpins it
-    use crate::state::drag_types::DropDestination;
+fn drag_drop_uses_only_context_surface_destinations() {
+    // UC-4 BR-4: Drag/drop hit testing must use only Terminal Context Surface destinations.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    let context_pane = add_context_editor(&mut app, terminal_id);
+    let legacy_pane = app.layout.alloc_id();
+    app.panes.insert(
+        legacy_pane,
+        PaneKind::Editor(EditorPane::new_empty(legacy_pane)),
+    );
+    app.dock.pinned_dock_layout.insert_leaf_group(legacy_pane);
+    app.dock.dock_open = true;
+    app.compute_layout();
+    let dock_rect = app.dock_area_rect.expect("Dock area should be computed");
 
-    let (mut app, t1, _t2) = app_with_two_real_terminals();
-    app.focus.focused = Some(t1);
-
-    let e1 = app.layout.alloc_id();
-    app.panes
-        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1, None);
-
-    // Pin
-    app.focus.focused = Some(e1);
-    app.toggle_dock_pin();
-    assert!(app.is_pane_pinned(e1));
-
-    // Drop onto dock root = unpin
-    crate::adapter::inward::click_adapter::pane::handle_drop(
-        &mut app,
-        e1,
-        DropDestination::DockRoot(crate::tide_core::DropZone::Right),
+    let destination = compute_drop_destination(
+        &app,
+        Vec2::new(dock_rect.x + 4.0, dock_rect.y + 4.0),
+        context_pane,
     );
 
-    assert!(
-        !app.is_pane_pinned(e1),
-        "pane should be unpinned after drop out"
-    );
-}
-
-#[test]
-fn directional_self_drop_extracts_pinned_pane_from_pinned_tab_group() {
-    // UC-5 BR-4: Directional self-drop inside a pinned TabGroup extracts the dragged Pinned Pane into its own split while preserving pin state.
-    use crate::state::drag_types::DropDestination;
-    use crate::tide_core::{DropZone, Vec2};
-
-    let (mut app, t1, _t2) = app_with_two_real_terminals();
-    app.focus.focused = Some(t1);
-    app.focus.stage_focused = Some(t1);
-
-    let e1 = app.layout.alloc_id();
-    app.panes
-        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1, None);
-    app.focus.focused = Some(e1);
-    app.toggle_dock_pin();
-
-    let e2 = app.layout.alloc_id();
-    app.panes
-        .insert(e2, PaneKind::Editor(EditorPane::new_empty(e2)));
-    app.add_pane_to_dock(e2, None);
-    app.focus.focused = Some(e2);
-    app.toggle_dock_pin();
-
-    assert!(app.is_pane_pinned(e1));
-    assert!(app.is_pane_pinned(e2));
     assert_eq!(
-        app.dock
-            .pinned_dock_layout
-            .tab_group_containing(e1)
-            .expect("pinned panes should start in one TabGroup")
-            .len(),
-        2
+        destination, None,
+        "single context Pane self-drop should not expose any legacy Dock target"
     );
-
-    crate::LayoutPort::compute_layout(&mut app);
-    let source_rect = app
-        .visual_pane_rects
-        .iter()
-        .find(|(id, _)| *id == e2)
-        .map(|(_, rect)| *rect)
-        .expect("pinned pane should have a visual rect");
-    let mouse = Vec2::new(
-        source_rect.x + source_rect.width * 0.1,
-        source_rect.y + source_rect.height * 0.5,
-    );
-
-    let dest = crate::adapter::inward::drag_drop_adapter::compute_drop_destination(&app, mouse, e2);
-    assert_eq!(
-        dest,
-        Some(DropDestination::TreePane(e2, DropZone::Left)),
-        "directional self-drop should target the pinned pane itself when it is in a multi-tab pinned TabGroup"
-    );
-
-    crate::adapter::inward::click_adapter::pane::handle_drop(
-        &mut app,
-        e2,
-        dest.expect("expected a directional self-drop destination"),
-    );
-
-    assert!(app.is_pane_pinned(e1));
-    assert!(app.is_pane_pinned(e2));
-    let remaining_group_len = app
-        .dock
-        .pinned_dock_layout
-        .tab_group_containing(e1)
-        .map(|tg| tg.len())
-        .unwrap_or(1);
-    let extracted_group_len = app
-        .dock
-        .pinned_dock_layout
-        .tab_group_containing(e2)
-        .map(|tg| tg.len())
-        .unwrap_or(1);
-    assert!(
-        remaining_group_len == 1,
-        "remaining pinned sibling should no longer be in a multi-tab pinned TabGroup after extraction"
-    );
-    assert!(
-        extracted_group_len == 1,
-        "extracted pinned pane should occupy its own split inside the pinned dock layout"
-    );
-    let visible_pinned = app.dock.pinned_dock_layout.pane_ids();
-    assert_eq!(visible_pinned.len(), 2);
-    assert!(visible_pinned.contains(&e1));
-    assert!(visible_pinned.contains(&e2));
-    assert_eq!(app.focus.focused, Some(e2));
 }
 
-// --- Pin keeps focused on the pane ---
+#[test]
+fn center_drop_on_context_pane_swaps_without_merging_context_panes() {
+    // UC-4 BR-4: Drag/drop hit testing must use Dock split/stack behavior, not legacy center-tab insertion.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    let first = add_context_editor(&mut app, terminal_id);
+    let second = add_context_editor(&mut app, terminal_id);
+
+    handle_drop(
+        &mut app,
+        first,
+        DropDestination::TreePane(second, DropZone::Center),
+    );
+
+    let terminal = match app.panes.get(&terminal_id) {
+        Some(PaneKind::Terminal(terminal)) => terminal,
+        _ => panic!("expected Terminal"),
+    };
+    assert_eq!(terminal.dock_layout.all_pane_ids().len(), 2);
+    assert_eq!(
+        terminal.dock_layout.pane_ids().len(),
+        2,
+        "center drop should keep both context Panes visible in Split view"
+    );
+    assert!(
+        terminal
+            .dock_layout
+            .tab_group_containing(first)
+            .is_none_or(|group| !group.contains(second)),
+        "center drop should swap positions instead of creating a shared TabGroup"
+    );
+}
 
 #[test]
-fn pin_keeps_focused_on_pane() {
-    // After pinning, self.focus.focused stays on the pane (it moved to pinned_dock_layout)
-    let (mut app, t1, _t2) = app_with_two_real_terminals();
-    app.focus.stage_focused = Some(t1);
-    app.focus.focused = Some(t1);
+fn opening_file_in_context_surface_defaults_to_right_split() {
+    // UC-4 BR-4: File opens in Terminal Context Surface default to a right-side split.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    let first_path = std::path::PathBuf::from("/tmp/dock_context_right_split_first.txt");
+    let second_path = std::path::PathBuf::from("/tmp/dock_context_right_split_second.txt");
+    let _ = std::fs::write(&first_path, "first");
+    let _ = std::fs::write(&second_path, "second");
 
-    let e1 = app.layout.alloc_id();
-    app.panes
-        .insert(e1, PaneKind::Editor(EditorPane::new_empty(e1)));
-    app.add_pane_to_dock(e1, None);
+    app.open_editor_pane(first_path.clone());
+    let first = app.focus.focused.expect("first file should focus");
+    app.open_editor_pane(second_path.clone());
+    let second = app.focus.focused.expect("second file should focus");
 
-    app.focus.focused = Some(e1);
-    app.toggle_dock_pin();
+    let terminal = match app.panes.get(&terminal_id) {
+        Some(PaneKind::Terminal(terminal)) => terminal,
+        _ => panic!("expected Terminal"),
+    };
 
-    // focused stays on e1 (now in pinned_dock_layout)
-    assert_eq!(app.focus.focused, Some(e1));
-    assert!(app.is_pane_pinned(e1));
-    // stage_focused unchanged
-    assert_eq!(app.focus.stage_focused, Some(t1));
+    match terminal
+        .dock_layout
+        .snapshot()
+        .expect("context SplitLayout should exist")
+    {
+        crate::tide_layout::LayoutSnapshot::Split {
+            direction, right, ..
+        } => {
+            assert_eq!(direction, SplitDirection::Horizontal);
+            assert!(
+                layout_snapshot_contains(&right, second),
+                "second file should open to the right of the focused context Pane"
+            );
+        }
+        other => panic!("expected right context split after opening file, got {other:?}"),
+    }
+    assert!(terminal.dock_layout.all_pane_ids().contains(&first));
+    assert!(terminal.dock_layout.all_pane_ids().contains(&second));
+
+    let _ = std::fs::remove_file(&first_path);
+    let _ = std::fs::remove_file(&second_path);
 }

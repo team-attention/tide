@@ -6,10 +6,29 @@ use crate::App;
 use crate::LayoutPort;
 
 impl App {
+    pub(crate) fn focus_before_or_after_in_order(
+        pane_id: crate::tide_core::PaneId,
+        ordered_panes: &[crate::tide_core::PaneId],
+    ) -> Option<crate::tide_core::PaneId> {
+        let index = ordered_panes.iter().position(|&id| id == pane_id)?;
+        ordered_panes[..index]
+            .last()
+            .copied()
+            .or_else(|| ordered_panes.get(index + 1).copied())
+    }
+
     pub(super) fn next_stage_focus_after_close(
         &self,
         pane_id: crate::tide_core::PaneId,
     ) -> Option<crate::tide_core::PaneId> {
+        if self.focus.zoomed_pane.is_some() {
+            if let Some(next) =
+                Self::focus_before_or_after_in_order(pane_id, &self.layout.pane_ids())
+            {
+                return Some(next);
+            }
+        }
+
         if let Some(tg) = self.layout.tab_group_containing(pane_id) {
             if let Some(idx) = tg.tabs.iter().position(|&id| id == pane_id) {
                 if idx + 1 < tg.tabs.len() {

@@ -44,7 +44,7 @@ impl FocusNavPort for App {
     }
 
     /// Handle MoveFocus direction navigation between Stage panes only.
-    /// HJKL never crosses into the Dock — use Cmd+I/O for Dock navigation.
+    /// HJKL never crosses into the Dock; DockNavigate handles cross-area Dock movement.
     fn handle_move_focus(&mut self, direction: Direction) {
         self.focus.focus_area = FocusArea::Stage;
         self.modal.save_as_input = None;
@@ -68,8 +68,8 @@ impl FocusNavPort for App {
             return;
         }
 
-        // HJKL navigates between TabGroups/splits spatially, not within TabGroups.
-        // Use Cmd+I/O (TabPrev/TabNext) to cycle within a TabGroup.
+        // HJKL navigates between splits spatially. Stacked cycling is handled
+        // by TabPrev/TabNext when invoked programmatically.
 
         // Only consider Stage pane rects (exclude dock panes)
         let stage_ids: std::collections::HashSet<crate::tide_core::PaneId> =

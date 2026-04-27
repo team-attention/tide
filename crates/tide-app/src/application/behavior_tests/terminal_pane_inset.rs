@@ -1,11 +1,14 @@
 // Spec: docs/specs/terminal-pane-inset.md
 
-use crate::pane::{PaneKind, TerminalPane};
-use crate::state::FocusArea;
+use std::time::Duration;
+
+use crate::adapter::outward::clock_adapter::FixedClock;
+use crate::pane::{terminal_grid_origin, PaneKind, TerminalPane};
+use crate::state::{FocusArea, SURFACE_VISIBILITY_ANIMATION_DURATION};
 use crate::theme::{terminal_content_top, terminal_top_padding, PANE_PADDING, TAB_BAR_HEIGHT};
 use crate::tide_core::{Rect, Vec2};
 use crate::tide_platform::{WindowCommand, WindowProxy};
-use crate::App;
+use crate::{ActionPort, App, AppCorePort, DockPort, LayoutPort};
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -27,6 +30,27 @@ fn app_with_terminal(cols: u16, rows: u16) -> (App, u64) {
     (app, terminal_id)
 }
 
+fn app_with_terminal_context_pane(cols: u16, rows: u16) -> (App, u64) {
+    let (mut app, terminal_id) = app_with_terminal(cols, rows);
+    let context_id = app.layout.alloc_id();
+    app.panes.insert(
+        context_id,
+        PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(context_id)),
+    );
+    app.add_pane_to_dock(context_id, Some(terminal_id));
+    (app, terminal_id)
+}
+
+fn terminal_size(app: &App, terminal_id: u64) -> (u16, u16) {
+    let Some(PaneKind::Terminal(terminal)) = app.panes.get(&terminal_id) else {
+        panic!("expected terminal pane");
+    };
+    (
+        terminal.backend.current_cols(),
+        terminal.backend.current_rows(),
+    )
+}
+
 fn test_window_proxy() -> (WindowProxy, std::sync::mpsc::Receiver<WindowCommand>) {
     let (tx, rx) = std::sync::mpsc::channel();
     (WindowProxy::new(tx, std::sync::Arc::new(|| {})), rx)
@@ -35,12 +59,9 @@ fn test_window_proxy() -> (WindowProxy, std::sync::mpsc::Receiver<WindowCommand>
 fn terminal_first_row_click(rect: Rect, cell_size: crate::tide_core::Size, col: usize) -> Vec2 {
     let inner_x = rect.x + PANE_PADDING;
     let inner_y = rect.y + terminal_content_top(cell_size.height);
-    let max_cols = ((rect.width - 2.0 * PANE_PADDING) / cell_size.width).floor() as usize;
-    let actual_width = max_cols as f32 * cell_size.width;
-    let extra_x = ((rect.width - 2.0 * PANE_PADDING) - actual_width) / 2.0;
 
     Vec2::new(
-        inner_x + extra_x + (col as f32 + 0.5) * cell_size.width,
+        inner_x + (col as f32 + 0.5) * cell_size.width,
         inner_y + 0.5 * cell_size.height,
     )
 }
@@ -97,6 +118,17 @@ fn terminal_ime_cursor_area_uses_the_terminal_top_inset() {
     assert_eq!(h, cell_size.height as f64);
 }
 
+#[test]
+fn terminal_grid_origin_stays_left_anchored_when_width_changes() {
+    // UC-1 BR-9: Terminal Pane grid origin stays left-anchored inside the padded content rect when the rect width changes.
+    let narrow = Rect::new(32.0, 48.0, 501.0, 320.0);
+    let wide = Rect::new(32.0, 48.0, 537.0, 320.0);
+
+    assert_eq!(terminal_grid_origin(narrow).x, narrow.x);
+    assert_eq!(terminal_grid_origin(wide).x, narrow.x);
+    assert_eq!(terminal_grid_origin(wide).y, narrow.y);
+}
+
 // --- UC-2: MapTerminalCoordinates ---
 
 #[test]
@@ -132,4 +164,86 @@ fn terminal_click_mapping_respects_the_terminal_top_inset() {
         crate::TextExtractPort::extract_url_at(&app, terminal_id, first_row_click),
         Some(url.to_string())
     );
+}
+
+#[test]
+fn terminal_click_mapping_uses_left_anchored_grid_origin() {
+    // UC-2 BR-10: Terminal pointer mapping uses the same left-anchored grid origin as terminal rendering.
+    let url = "https://example.com";
+    let (mut app, terminal_id) = app_with_terminal(40, 6);
+    let cell_size = app.window.cached_cell_size;
+    let pane_rect = Rect::new(
+        24.0,
+        12.0,
+        40.0 * cell_size.width + 2.0 * PANE_PADDING + cell_size.width - 2.0,
+        terminal_content_top(cell_size.height) + 6.0 * cell_size.height + PANE_PADDING,
+    );
+    app.pane_rects = vec![(terminal_id, pane_rect)];
+    app.visual_pane_rects = vec![(terminal_id, pane_rect)];
+
+    if let Some(PaneKind::Terminal(pane)) = app.panes.get_mut(&terminal_id) {
+        pane.backend.load_mock_screen_for_test(url);
+    }
+
+    let left_anchored_click = Vec2::new(
+        pane_rect.x + PANE_PADDING + 2.5 * cell_size.width,
+        pane_rect.y + terminal_content_top(cell_size.height) + 0.5 * cell_size.height,
+    );
+
+    assert_eq!(
+        crate::TextExtractPort::extract_url_at(&app, terminal_id, left_anchored_click),
+        Some(url.to_string())
+    );
+}
+
+// --- UC-3: StabilizeTerminalResize ---
+
+#[test]
+fn terminal_backend_resize_waits_for_deferred_window_resize_to_settle() {
+    // UC-3 BR-5/BR-7: deferred window resize coalesces Terminal backend resize until the final layout.
+    let (mut app, terminal_id) = app_with_terminal(80, 24);
+    app.compute_layout();
+    let initial_size = terminal_size(&app, terminal_id);
+
+    app.window.window_size = (1280, 640);
+    app.set_resize_deferred(50);
+    app.compute_layout();
+    assert_eq!(terminal_size(&app, terminal_id), initial_size);
+
+    app.timing.resize_deferred_at = None;
+    app.compute_layout();
+    let settled_size = terminal_size(&app, terminal_id);
+
+    assert!(settled_size.0 > initial_size.0);
+    assert_eq!(settled_size.1, initial_size.1);
+}
+
+#[test]
+fn terminal_backend_resize_waits_for_side_surface_animation_to_settle() {
+    // UC-3 BR-6/BR-7: side-surface animation coalesces Terminal backend resize until animation completion.
+    let (mut app, terminal_id) = app_with_terminal_context_pane(80, 24);
+    app.dock.dock_open = false;
+    app.dock.visibility_animation = None;
+    app.focus.focus_area = FocusArea::Stage;
+    app.focus.focused = Some(terminal_id);
+    app.router.set_focused(terminal_id);
+    app.compute_layout();
+    let initial_size = terminal_size(&app, terminal_id);
+
+    app.handle_global_action(crate::tide_input::GlobalAction::ToggleDock);
+
+    assert!(app.surface_visibility_animation_active());
+    assert_eq!(terminal_size(&app, terminal_id), initial_size);
+
+    let settled_at =
+        app.ports.clock.now() + SURFACE_VISIBILITY_ANIMATION_DURATION + Duration::from_millis(1);
+    app.ports.clock = Box::new(FixedClock {
+        instant: settled_at,
+    });
+    app.compute_layout();
+    let settled_size = terminal_size(&app, terminal_id);
+
+    assert!(!app.surface_visibility_animation_active());
+    assert!(settled_size.0 < initial_size.0);
+    assert_eq!(settled_size.1, initial_size.1);
 }

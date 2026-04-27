@@ -21,7 +21,7 @@ pub enum Action {
     None,
 }
 
-/// Which screen slot the user pressed (Cmd+1/2/3).
+/// Which screen slot the user pressed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AreaSlot {
     Slot1,
@@ -68,6 +68,7 @@ pub enum GlobalAction {
     NewWorkspace,
     CloseWorkspace,
     ToggleFileTree,
+    ToggleDock,
     ToggleWorkspaceSidebar,
     ToggleStacked,
     DockToggleStacked,
@@ -123,6 +124,7 @@ impl GlobalAction {
             GlobalAction::NewWorkspace => "New Workspace",
             GlobalAction::CloseWorkspace => "Close Workspace",
             GlobalAction::ToggleFileTree => "Toggle File Tree",
+            GlobalAction::ToggleDock => "Toggle Dock",
             GlobalAction::ToggleWorkspaceSidebar => "Toggle Workspace Sidebar",
             GlobalAction::ToggleStacked => "Toggle Stacked",
             GlobalAction::DockToggleStacked => "Dock Toggle Stacked",
@@ -178,6 +180,7 @@ impl GlobalAction {
             GlobalAction::NewWorkspace => "NewWorkspace",
             GlobalAction::CloseWorkspace => "CloseWorkspace",
             GlobalAction::ToggleFileTree => "ToggleFileTree",
+            GlobalAction::ToggleDock => "ToggleDock",
             GlobalAction::ToggleWorkspaceSidebar => "ToggleWorkspaceSidebar",
             GlobalAction::ToggleStacked => "ToggleStacked",
             GlobalAction::DockToggleStacked => "DockToggleStacked",
@@ -233,6 +236,7 @@ impl GlobalAction {
             "NewWorkspace" => Some(GlobalAction::NewWorkspace),
             "CloseWorkspace" => Some(GlobalAction::CloseWorkspace),
             "ToggleFileTree" => Some(GlobalAction::ToggleFileTree),
+            "ToggleDock" => Some(GlobalAction::ToggleDock),
             "ToggleWorkspaceSidebar" => Some(GlobalAction::ToggleWorkspaceSidebar),
             "ToggleStacked" => Some(GlobalAction::ToggleStacked),
             "DockToggleStacked" => Some(GlobalAction::DockToggleStacked),
@@ -251,7 +255,6 @@ impl GlobalAction {
     /// All bindable actions for display in the config page.
     pub fn all_actions() -> Vec<GlobalAction> {
         vec![
-            GlobalAction::SplitHorizontal,
             GlobalAction::SplitVertical,
             GlobalAction::ClosePane,
             GlobalAction::Navigate(Direction::Up),
@@ -262,15 +265,8 @@ impl GlobalAction {
             GlobalAction::DockNavigate(Direction::Down),
             GlobalAction::DockNavigate(Direction::Left),
             GlobalAction::DockNavigate(Direction::Right),
-            GlobalAction::DockSplitVertical,
-            GlobalAction::DockSplitHorizontal,
-            GlobalAction::DockNewTab,
-            GlobalAction::DockTabPrev,
-            GlobalAction::DockTabNext,
             GlobalAction::ToggleStacked,
             GlobalAction::DockToggleStacked,
-            GlobalAction::TabPrev,
-            GlobalAction::TabNext,
             GlobalAction::NewTab,
             GlobalAction::FileFinder,
             GlobalAction::Paste,
@@ -282,7 +278,6 @@ impl GlobalAction {
             GlobalAction::FontSizeDown,
             GlobalAction::FontSizeReset,
             GlobalAction::NewWindow,
-            GlobalAction::NewFile,
             GlobalAction::NewWorkspace,
             GlobalAction::CloseWorkspace,
             GlobalAction::WorkspacePrev,
@@ -292,8 +287,9 @@ impl GlobalAction {
             GlobalAction::BrowserReload,
             GlobalAction::ScrollHalfPageUp,
             GlobalAction::ScrollHalfPageDown,
+            GlobalAction::ToggleFileTree,
+            GlobalAction::ToggleDock,
             GlobalAction::ToggleDockPin,
-            GlobalAction::ToggleLivePreview,
         ]
     }
 }
@@ -460,8 +456,12 @@ impl KeybindingMap {
                 GlobalAction::NewTab,
             ),
             (
+                Hotkey::new(Key::Char('t'), true, false, true, false),
+                GlobalAction::SplitVertical,
+            ),
+            (
                 Hotkey::new(Key::Char('\\'), false, false, true, false),
-                GlobalAction::SplitHorizontal,
+                GlobalAction::ToggleDock,
             ),
             (
                 Hotkey::new(Key::Char('\\'), true, false, true, false),
@@ -504,22 +504,6 @@ impl KeybindingMap {
                 GlobalAction::ToggleTheme,
             ),
             (
-                Hotkey::new(Key::Char('1'), false, false, true, false),
-                GlobalAction::FocusArea(AreaSlot::Slot1),
-            ),
-            (
-                Hotkey::new(Key::Char('2'), false, false, true, false),
-                GlobalAction::FocusArea(AreaSlot::Slot2),
-            ),
-            (
-                Hotkey::new(Key::Char('3'), false, false, true, false),
-                GlobalAction::FocusArea(AreaSlot::Slot3),
-            ),
-            (
-                Hotkey::new(Key::Char('4'), false, false, true, false),
-                GlobalAction::FocusArea(AreaSlot::Slot4),
-            ),
-            (
                 Hotkey::new(Key::Char('['), false, false, true, false),
                 GlobalAction::WorkspacePrev,
             ),
@@ -544,13 +528,22 @@ impl KeybindingMap {
                 Hotkey::new(Key::Char('l'), false, false, true, false),
                 GlobalAction::Navigate(Direction::Right),
             ),
+            // Cross-area Dock navigation keeps the current FocusArea.
             (
-                Hotkey::new(Key::Char('i'), false, false, true, false),
-                GlobalAction::TabPrev,
+                Hotkey::new(Key::Char('h'), true, false, true, false),
+                GlobalAction::DockNavigate(Direction::Left),
             ),
             (
-                Hotkey::new(Key::Char('o'), false, false, true, false),
-                GlobalAction::TabNext,
+                Hotkey::new(Key::Char('j'), true, false, true, false),
+                GlobalAction::DockNavigate(Direction::Down),
+            ),
+            (
+                Hotkey::new(Key::Char('k'), true, false, true, false),
+                GlobalAction::DockNavigate(Direction::Up),
+            ),
+            (
+                Hotkey::new(Key::Char('l'), true, false, true, false),
+                GlobalAction::DockNavigate(Direction::Right),
             ),
             (
                 Hotkey::new(Key::Char('o'), true, false, true, false),
@@ -585,6 +578,14 @@ impl KeybindingMap {
                 GlobalAction::OpenConfig,
             ),
             (
+                Hotkey::new(Key::Char('b'), false, false, true, false),
+                GlobalAction::ToggleFileTree,
+            ),
+            (
+                Hotkey::new(Key::Char('e'), false, false, true, false),
+                GlobalAction::ToggleWorkspaceSidebar,
+            ),
+            (
                 Hotkey::new(Key::Char('b'), true, false, true, false),
                 GlobalAction::OpenBrowser,
             ),
@@ -603,47 +604,6 @@ impl KeybindingMap {
             (
                 Hotkey::new(Key::Char('p'), true, false, true, false),
                 GlobalAction::ToggleDockPin,
-            ),
-            (
-                Hotkey::new(Key::Char('l'), true, false, true, false),
-                GlobalAction::ToggleLivePreview,
-            ),
-            // ── Cross-area Dock operations (Cmd+Ctrl) ──
-            (
-                Hotkey::new(Key::Char('h'), false, true, true, false),
-                GlobalAction::DockNavigate(Direction::Left),
-            ),
-            (
-                Hotkey::new(Key::Char('j'), false, true, true, false),
-                GlobalAction::DockNavigate(Direction::Down),
-            ),
-            (
-                Hotkey::new(Key::Char('k'), false, true, true, false),
-                GlobalAction::DockNavigate(Direction::Up),
-            ),
-            (
-                Hotkey::new(Key::Char('l'), false, true, true, false),
-                GlobalAction::DockNavigate(Direction::Right),
-            ),
-            (
-                Hotkey::new(Key::Char('\\'), false, true, true, false),
-                GlobalAction::DockSplitHorizontal,
-            ),
-            (
-                Hotkey::new(Key::Char('\\'), true, true, true, false),
-                GlobalAction::DockSplitVertical,
-            ),
-            (
-                Hotkey::new(Key::Char('t'), false, true, true, false),
-                GlobalAction::DockNewTab,
-            ),
-            (
-                Hotkey::new(Key::Char('i'), false, true, true, false),
-                GlobalAction::DockTabPrev,
-            ),
-            (
-                Hotkey::new(Key::Char('o'), false, true, true, false),
-                GlobalAction::DockTabNext,
             ),
         ]
     }
@@ -812,21 +772,21 @@ impl Router {
         }
 
         match key {
-            // Cmd+T -> new tab, Cmd+Ctrl+T -> dock new tab
+            // Cmd+T -> new tab, Cmd+Shift+T -> split vertical
             Key::Char('t') | Key::Char('T') => {
                 if modifiers.ctrl {
-                    Some(GlobalAction::DockNewTab)
+                    None
+                } else if modifiers.shift {
+                    Some(GlobalAction::SplitVertical)
                 } else {
                     Some(GlobalAction::NewTab)
                 }
             }
-            // Cmd+\ -> split vertical, Cmd+Shift+\ -> split horizontal
-            // Cmd+Ctrl+\ -> dock split vertical, Cmd+Ctrl+Shift+\ -> dock split horizontal
+            // Cmd+\ -> toggle Dock, Cmd+Shift+\ -> split current area
             Key::Char('\\') | Key::Char('|') => match (modifiers.ctrl, modifiers.shift) {
-                (true, true) => Some(GlobalAction::DockSplitVertical),
-                (true, false) => Some(GlobalAction::DockSplitHorizontal),
+                (true, _) => None,
                 (false, true) => Some(GlobalAction::SplitVertical),
-                (false, false) => Some(GlobalAction::SplitHorizontal),
+                (false, false) => Some(GlobalAction::ToggleDock),
             },
             // Cmd+W -> close pane, Cmd+Shift+W -> close workspace
             Key::Char('w') | Key::Char('W') => {
@@ -877,66 +837,61 @@ impl Router {
                     Some(GlobalAction::ScrollHalfPageDown)
                 }
             }
-            // Cmd+Shift+B -> open browser, Cmd+B -> none
+            // Cmd+Shift+B -> open browser, Cmd+B -> toggle FileTree View
             Key::Char('b') | Key::Char('B') => {
                 if modifiers.shift {
                     Some(GlobalAction::OpenBrowser)
                 } else {
-                    None
+                    Some(GlobalAction::ToggleFileTree)
                 }
             }
-            // Cmd+1/2/3/4 -> FocusArea slots
-            Key::Char('1') | Key::Char('!') => Some(GlobalAction::FocusArea(AreaSlot::Slot1)),
-            Key::Char('2') | Key::Char('@') => Some(GlobalAction::FocusArea(AreaSlot::Slot2)),
-            Key::Char('3') | Key::Char('#') => Some(GlobalAction::FocusArea(AreaSlot::Slot3)),
-            Key::Char('4') | Key::Char('$') => Some(GlobalAction::FocusArea(AreaSlot::Slot4)),
-            // Cmd+HJKL -> Navigate, Cmd+Ctrl+HJKL -> DockNavigate
+            // Cmd+E -> toggle Workspace rail
+            Key::Char('e') | Key::Char('E') => Some(GlobalAction::ToggleWorkspaceSidebar),
+            // Cmd+HJKL -> Navigate, Cmd+Shift+HJKL -> DockNavigate
             Key::Char('h') | Key::Char('H') => {
-                if modifiers.ctrl {
+                if modifiers.shift && !modifiers.ctrl {
                     Some(GlobalAction::DockNavigate(Direction::Left))
+                } else if modifiers.ctrl {
+                    None
                 } else {
                     Some(GlobalAction::Navigate(Direction::Left))
                 }
             }
             Key::Char('j') | Key::Char('J') => {
-                if modifiers.ctrl {
+                if modifiers.shift && !modifiers.ctrl {
                     Some(GlobalAction::DockNavigate(Direction::Down))
+                } else if modifiers.ctrl {
+                    None
                 } else {
                     Some(GlobalAction::Navigate(Direction::Down))
                 }
             }
             Key::Char('k') | Key::Char('K') => {
-                if modifiers.ctrl {
+                if modifiers.shift && !modifiers.ctrl {
                     Some(GlobalAction::DockNavigate(Direction::Up))
+                } else if modifiers.ctrl {
+                    None
                 } else {
                     Some(GlobalAction::Navigate(Direction::Up))
                 }
             }
             Key::Char('l') | Key::Char('L') => {
-                if modifiers.ctrl {
+                if modifiers.shift && !modifiers.ctrl {
                     Some(GlobalAction::DockNavigate(Direction::Right))
-                } else if modifiers.shift {
-                    Some(GlobalAction::ToggleLivePreview)
+                } else if modifiers.ctrl {
+                    None
                 } else {
                     Some(GlobalAction::Navigate(Direction::Right))
                 }
             }
-            // Cmd+I -> tab prev, Cmd+Ctrl+I -> dock tab prev
-            Key::Char('i') | Key::Char('I') => {
-                if modifiers.ctrl {
-                    Some(GlobalAction::DockTabPrev)
-                } else {
-                    Some(GlobalAction::TabPrev)
-                }
-            }
-            // Cmd+O -> tab next, Cmd+Shift+O -> file finder, Cmd+Ctrl+O -> dock tab next
+            // Cmd+O -> route to Pane, Cmd+Shift+O -> file finder
             Key::Char('o') | Key::Char('O') => {
                 if modifiers.ctrl {
-                    Some(GlobalAction::DockTabNext)
+                    None
                 } else if modifiers.shift {
                     Some(GlobalAction::FileFinder)
                 } else {
-                    Some(GlobalAction::TabNext)
+                    None
                 }
             }
             // Cmd+N -> new window, Cmd+Shift+N -> new workspace

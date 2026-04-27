@@ -95,6 +95,7 @@ pub(crate) fn render_grid(
                         p.current_line_bg,
                         p.indent_guide,
                         p.active_indent_guide,
+                        app.window.dark_mode,
                     );
                     gen_updates.push((id, pane.generation()));
                 }

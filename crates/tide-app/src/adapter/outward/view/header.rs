@@ -30,12 +30,12 @@ pub enum HeaderHitAction {
     ToggleLivePreview,
     DiffRefresh,
     Maximize,
-    NewTerminal,
+    AddPane,
     NewFile,
     OpenBrowser,
     SplitHorizontal,
     SplitVertical,
-    /// Click on a Dock TabGroup tab — switch to this pane.
+    /// Click on a Dock tab-bar item — switch to this pane.
     DockTab(crate::tide_core::PaneId),
     /// Click on a Stage tab in stacked mode — switch zoomed pane.
     StageTab(crate::tide_core::PaneId),
@@ -44,6 +44,19 @@ pub enum HeaderHitAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HeaderActionSpec {
     pub action: HeaderHitAction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HeaderSurfaceKind {
+    Stage,
+    TerminalContextSurface,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SinglePaneHeaderChrome {
+    pub draw_active_background: bool,
+    pub draw_active_indicator: bool,
+    pub show_header_action_strip: bool,
 }
 
 const HEADER_ACTION_TILE_SIZE: f32 = 18.0;
@@ -213,12 +226,50 @@ pub(crate) fn single_pane_header_action_specs() -> Vec<HeaderActionSpec> {
     shared_header_action_specs()
 }
 
-pub(crate) fn tab_group_header_action_specs() -> Vec<HeaderActionSpec> {
-    shared_header_action_specs()
+pub(crate) fn single_pane_header_action_specs_for_surface(
+    surface: HeaderSurfaceKind,
+) -> Vec<HeaderActionSpec> {
+    match surface {
+        HeaderSurfaceKind::Stage => single_pane_header_action_specs(),
+        HeaderSurfaceKind::TerminalContextSurface => single_pane_header_action_specs(),
+    }
+}
+
+pub(crate) fn single_pane_header_chrome(
+    surface: HeaderSurfaceKind,
+    is_focused: bool,
+) -> SinglePaneHeaderChrome {
+    match surface {
+        HeaderSurfaceKind::Stage => SinglePaneHeaderChrome {
+            draw_active_background: false,
+            draw_active_indicator: false,
+            show_header_action_strip: true,
+        },
+        HeaderSurfaceKind::TerminalContextSurface => SinglePaneHeaderChrome {
+            draw_active_background: is_focused,
+            draw_active_indicator: is_focused,
+            show_header_action_strip: true,
+        },
+    }
+}
+
+pub(crate) fn stacked_tab_bar_header_action_specs() -> Vec<HeaderActionSpec> {
+    vec![
+        HeaderActionSpec {
+            action: HeaderHitAction::OpenBrowser,
+        },
+        HeaderActionSpec {
+            action: HeaderHitAction::AddPane,
+        },
+    ]
 }
 
 pub(crate) fn dock_tab_group_uses_shared_tab_bar(tab_group: &crate::tide_layout::TabGroup) -> bool {
     tab_group.len() >= 2
+}
+
+pub(crate) fn dock_stacked_uses_shared_tab_bar(dock_pane_ids: &[PaneId]) -> bool {
+    dock_pane_ids.len() >= 2
 }
 
 pub(crate) fn header_action_strip_width(_cell_w: f32, specs: &[HeaderActionSpec]) -> f32 {
@@ -241,7 +292,7 @@ pub(crate) fn header_action_strip_start_x(right_edge: f32, strip_width: f32) -> 
 pub(crate) fn is_header_action_strip_action(action: &HeaderHitAction) -> bool {
     matches!(
         action,
-        HeaderHitAction::NewTerminal
+        HeaderHitAction::AddPane
             | HeaderHitAction::NewFile
             | HeaderHitAction::OpenBrowser
             | HeaderHitAction::SplitHorizontal
@@ -251,6 +302,7 @@ pub(crate) fn is_header_action_strip_action(action: &HeaderHitAction) -> bool {
 
 pub(crate) fn header_action_glyph(action: &HeaderHitAction) -> Option<&'static str> {
     match action {
+        HeaderHitAction::AddPane => Some("\u{f067}"),
         HeaderHitAction::OpenBrowser => Some("\u{f268}"),
         HeaderHitAction::SplitHorizontal => Some("\u{2194}"),
         HeaderHitAction::SplitVertical => Some("\u{2195}"),
@@ -781,6 +833,7 @@ pub fn render_pane_header(
         None,
         None,
         false,
+        HeaderSurfaceKind::TerminalContextSurface,
     )
 }
 
@@ -797,13 +850,15 @@ pub fn render_pane_header_inner(
     agent_chrome_state: Option<AgentChromeState>,
     blink_time: Option<f64>,
     show_stage_terminal_dot: bool,
+    surface_kind: HeaderSurfaceKind,
 ) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
     let cell_size = renderer.cell_size();
     let cell_height = cell_size.height;
     let cell_w = cell_size.width;
     let is_focused = focused == Some(id);
-    let header_actions = single_pane_header_action_specs();
+    let header_chrome = single_pane_header_chrome(surface_kind, is_focused);
+    let header_actions = single_pane_header_action_specs_for_surface(surface_kind);
     let header_action_width = header_action_strip_width(cell_w, &header_actions);
     let text_y = rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
     let action_strip_start_x =
@@ -991,11 +1046,13 @@ pub fn render_pane_header_inner(
     for step in single_pane_header_paint_steps(visible_dot_state.is_some()) {
         match step {
             SinglePaneHeaderPaintStep::Background => {
-                if is_focused {
+                if header_chrome.draw_active_background {
                     renderer.draw_chrome_rect(
                         Rect::new(rect.x, rect.y, header_layout.surface_w, TAB_BAR_HEIGHT),
                         p.active_tab_bg,
                     );
+                }
+                if header_chrome.draw_active_indicator {
                     renderer.draw_chrome_rect(
                         Rect::new(
                             rect.x,
@@ -1080,16 +1137,18 @@ pub fn render_pane_header_inner(
     }
 
     if !header_actions.is_empty() {
-        render_header_action_strip(
-            renderer,
-            action_strip_start_x,
-            rect,
-            is_focused,
-            id,
-            &header_actions,
-            p,
-            &mut zones,
-        );
+        if header_chrome.show_header_action_strip {
+            render_header_action_strip(
+                renderer,
+                action_strip_start_x,
+                rect,
+                is_focused,
+                id,
+                &header_actions,
+                p,
+                &mut zones,
+            );
+        }
     }
 
     // Draw close icon centered in hit area
@@ -1184,7 +1243,7 @@ fn render_tab_bar_impl(
     let cell_height = cell_size.height;
     let cell_w = cell_size.width;
     let is_focused = focused == Some(pane_id);
-    let header_actions = tab_group_header_action_specs();
+    let header_actions = stacked_tab_bar_header_action_specs();
     let header_action_width = header_action_strip_width(cell_w, &header_actions);
     let header_action_gap = if header_action_width > 0.0 {
         TAB_H_PAD
@@ -1545,43 +1604,6 @@ fn render_tab_bar_impl(
     zones
 }
 
-/// Render a tab bar for a Stage LeafGroup (per-TabGroup tab bar).
-/// Shows tabs for all panes in the group; the active tab is highlighted.
-/// Uses `is_dock=false` so hit actions are `StageTab`.
-pub fn render_stage_tab_group_bar(
-    pane_id: PaneId,
-    rect: Rect,
-    tab_group: &crate::tide_layout::TabGroup,
-    panes: &HashMap<PaneId, PaneKind>,
-    focused: Option<PaneId>,
-    p: &ThemePalette,
-    renderer: &mut WgpuRenderer,
-    show_comment_badge: bool,
-    detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
-    blink_time: Option<f64>,
-    tab_scroll_offset: f32,
-    auto_fit_active_tab: bool,
-) -> Vec<HeaderHitZone> {
-    render_tab_bar_impl(
-        pane_id,
-        rect,
-        &tab_group.tabs,
-        tab_group.active_pane(),
-        panes,
-        focused,
-        &[],
-        p,
-        renderer,
-        false,
-        false,
-        show_comment_badge,
-        detected_agents,
-        blink_time,
-        tab_scroll_offset,
-        auto_fit_active_tab,
-    )
-}
-
 /// Render a Stage stacked-mode tab bar showing all Stage terminals.
 pub fn render_stage_tab_bar(
     zoomed_pane: PaneId,
@@ -1611,6 +1633,44 @@ pub fn render_stage_tab_bar(
         p,
         renderer,
         false,
+        true,
+        show_comment_badge,
+        detected_agents,
+        blink_time,
+        tab_scroll_offset,
+        auto_fit_active_tab,
+    )
+}
+
+/// Render a Dock stacked-mode tab bar showing all Terminal Context Surface panes.
+pub fn render_dock_stacked_tab_bar(
+    active_pane: PaneId,
+    rect: Rect,
+    dock_pane_ids: &[PaneId],
+    panes: &HashMap<PaneId, PaneKind>,
+    focused: Option<PaneId>,
+    p: &ThemePalette,
+    renderer: &mut WgpuRenderer,
+    show_comment_badge: bool,
+    detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
+    blink_time: Option<f64>,
+    tab_scroll_offset: f32,
+    auto_fit_active_tab: bool,
+) -> Vec<HeaderHitZone> {
+    if dock_pane_ids.len() < 2 {
+        return Vec::new();
+    }
+    render_tab_bar_impl(
+        active_pane,
+        rect,
+        dock_pane_ids,
+        active_pane,
+        panes,
+        focused,
+        &[],
+        p,
+        renderer,
+        true,
         true,
         show_comment_badge,
         detected_agents,
@@ -1893,7 +1953,7 @@ mod tests {
     }
 
     #[test]
-    fn pane_and_tab_group_header_action_specs_share_browser_and_split_icons() {
+    fn single_pane_header_action_specs_keep_browser_and_split_icons() {
         let specs = single_pane_header_action_specs();
         let actions: Vec<HeaderHitAction> = specs.iter().map(|spec| spec.action.clone()).collect();
 
@@ -1914,6 +1974,14 @@ mod tests {
             Some("\u{f268}")
         );
         assert_eq!(header_action_glyph(&HeaderHitAction::Close), None);
+    }
+
+    #[test]
+    fn add_pane_header_action_uses_plus_glyph() {
+        assert_eq!(
+            header_action_glyph(&HeaderHitAction::AddPane),
+            Some("\u{f067}")
+        );
     }
 
     #[test]
@@ -1956,27 +2024,28 @@ mod tests {
     }
 
     #[test]
-    fn single_pane_header_action_specs_remain_visible_without_focus() {
-        assert_eq!(
-            single_pane_header_action_specs(),
-            tab_group_header_action_specs()
-        );
-    }
-
-    #[test]
-    fn unfocused_tab_group_header_action_specs_remain_visible() {
-        let actions: Vec<HeaderHitAction> = tab_group_header_action_specs()
+    fn stacked_tab_bar_header_action_specs_use_plus_instead_of_split_icons() {
+        let actions: Vec<HeaderHitAction> = stacked_tab_bar_header_action_specs()
             .iter()
             .map(|spec| spec.action.clone())
             .collect();
 
         assert_eq!(
             actions,
-            vec![
-                HeaderHitAction::OpenBrowser,
-                HeaderHitAction::SplitHorizontal,
-                HeaderHitAction::SplitVertical,
-            ]
+            vec![HeaderHitAction::OpenBrowser, HeaderHitAction::AddPane]
+        );
+    }
+
+    #[test]
+    fn unfocused_stacked_tab_bar_header_action_specs_remain_visible() {
+        let actions: Vec<HeaderHitAction> = stacked_tab_bar_header_action_specs()
+            .iter()
+            .map(|spec| spec.action.clone())
+            .collect();
+
+        assert_eq!(
+            actions,
+            vec![HeaderHitAction::OpenBrowser, HeaderHitAction::AddPane]
         );
     }
 

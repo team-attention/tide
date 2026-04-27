@@ -30,6 +30,7 @@ impl EditorPane {
         current_line_bg: Color,
         indent_guide: Color,
         active_indent_guide: Color,
+        dark_mode: bool,
     ) {
         if self.preview_mode {
             self.render_preview_grid(rect, renderer);
@@ -48,6 +49,7 @@ impl EditorPane {
                     current_line_bg,
                     indent_guide,
                     active_indent_guide,
+                    dark_mode,
                 );
             } else {
                 self.render_live_preview_grid(
@@ -59,6 +61,7 @@ impl EditorPane {
                     current_line_bg,
                     indent_guide,
                     active_indent_guide,
+                    dark_mode,
                 );
             }
             return;
@@ -357,6 +360,7 @@ impl EditorPane {
         current_line_bg: Color,
         indent_guide: Color,
         active_indent_guide: Color,
+        dark_mode: bool,
     ) {
         let live_map = match &self.live_preview_map {
             Some(m) => m,
@@ -404,8 +408,7 @@ impl EditorPane {
         // Precompute cumulative byte offsets for each line so we can convert
         // a (line, char_index) into a global byte offset for element_style lookups.
         // We only need lines in the visible range.
-        // Build a theme for styling (use dark — matches typical editor bg)
-        let theme = MarkdownTheme::dark();
+        let theme = MarkdownTheme::for_dark_mode(dark_mode);
 
         for (vi, spans) in highlighted.iter().enumerate() {
             let abs_line = scroll + vi;
@@ -648,6 +651,7 @@ impl EditorPane {
         current_line_bg: Color,
         _indent_guide: Color,
         _active_indent_guide: Color,
+        dark_mode: bool,
     ) {
         let live_map = match &self.live_preview_map {
             Some(m) => m,
@@ -695,7 +699,7 @@ impl EditorPane {
             0
         };
 
-        let theme = MarkdownTheme::dark();
+        let theme = MarkdownTheme::for_dark_mode(dark_mode);
 
         // Fetch enough logical lines to fill visible_rows visual rows.
         let line_count = self.editor.buffer.line_count();

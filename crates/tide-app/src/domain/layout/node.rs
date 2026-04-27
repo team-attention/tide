@@ -19,6 +19,44 @@ pub(crate) enum Node {
 }
 
 impl Node {
+    pub(crate) fn split_chain_from_panes(
+        panes: &[PaneId],
+        direction: SplitDirection,
+    ) -> Option<Node> {
+        match panes {
+            [] => None,
+            [pane] => Some(Node::Leaf(*pane)),
+            [pane, rest @ ..] => {
+                let right = Self::split_chain_from_panes(rest, direction)?;
+                Some(Node::Split {
+                    direction,
+                    ratio: 1.0 / panes.len() as f32,
+                    left: Box::new(Node::Leaf(*pane)),
+                    right: Box::new(right),
+                })
+            }
+        }
+    }
+
+    pub(crate) fn expand_leaf_groups_to_splits(&mut self, direction: SplitDirection) -> bool {
+        match self {
+            Node::Leaf(_) => false,
+            Node::LeafGroup(tg) => {
+                if let Some(node) = Self::split_chain_from_panes(&tg.tabs, direction) {
+                    *self = node;
+                    true
+                } else {
+                    false
+                }
+            }
+            Node::Split { left, right, .. } => {
+                let left_changed = left.expand_leaf_groups_to_splits(direction);
+                let right_changed = right.expand_leaf_groups_to_splits(direction);
+                left_changed || right_changed
+            }
+        }
+    }
+
     /// Find the TabGroup containing the given pane, if any.
     pub(crate) fn find_tab_group(&self, pane: PaneId) -> Option<&TabGroup> {
         match self {

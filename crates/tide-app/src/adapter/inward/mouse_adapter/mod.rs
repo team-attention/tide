@@ -329,6 +329,14 @@ pub(crate) fn handle_mouse_down(
 
 fn handle_mouse_input_core(ctx: &mut impl MousePorts, button: MouseButton, _window: &WindowProxy) {
     if button == MouseButton::Left {
+        let pos = ctx.last_cursor_pos();
+        let new_hover =
+            crate::adapter::inward::click_adapter::hit_test::compute_hover_target(ctx, pos);
+        if ctx.interaction().hover_target != new_hover {
+            ctx.interaction_mut().hover_target = new_hover;
+            ctx.invalidate_chrome();
+        }
+
         // Workspace sidebar (always clickable, including fullscreen)
         let hover = ctx.interaction().hover_target.clone();
         match &hover {
@@ -432,7 +440,7 @@ fn handle_mouse_input_core(ctx: &mut impl MousePorts, button: MouseButton, _wind
 
         // Workspace sidebar border
         if let Some(ws_rect) = ctx.ws_sidebar_rect() {
-            let border_x = ws_rect.x + ws_rect.width + PANE_GAP;
+            let border_x = ws_rect.x + ws_rect.width;
             if (ctx.last_cursor_pos().x - border_x).abs() < 5.0 {
                 ctx.set_ws_border_dragging(true);
                 return;
@@ -446,30 +454,6 @@ fn handle_mouse_input_core(ctx: &mut impl MousePorts, button: MouseButton, _wind
                 if (ctx.last_cursor_pos().x - border_x).abs() < 5.0 {
                     ctx.set_dock_border_dragging(true);
                     return;
-                }
-            }
-
-            // Pinned group / terminal dock border drag
-            if let Some(dock_rect) = ctx.dock_area_rect() {
-                let has_term_dock = ctx
-                    .focused_terminal_id()
-                    .map(|tid| {
-                        if let Some(crate::pane::PaneKind::Terminal(tp)) = ctx.pane(tid) {
-                            !tp.dock_layout.pane_ids().is_empty()
-                        } else {
-                            false
-                        }
-                    })
-                    .unwrap_or(false);
-                if ctx.has_pinned_panes() && has_term_dock {
-                    let pinned_w = (dock_rect.width * ctx.dock_pinned_ratio())
-                        .max(60.0)
-                        .min(dock_rect.width - 60.0);
-                    let border_x = dock_rect.x + pinned_w;
-                    if (ctx.last_cursor_pos().x - border_x).abs() < 5.0 {
-                        ctx.set_dock_pinned_border_dragging(true);
-                        return;
-                    }
                 }
             }
 
@@ -489,13 +473,9 @@ fn handle_mouse_input_core(ctx: &mut impl MousePorts, button: MouseButton, _wind
             }
         }
 
-        // Sidebar border
+        // FileTree View border; FileTree is always the outer-right view.
         if let Some(ft_rect) = ctx.ft().rect {
-            let border_x = if ctx.sidebar_side() == crate::LayoutSide::Left {
-                ft_rect.x + ft_rect.width + PANE_GAP
-            } else {
-                ft_rect.x - PANE_GAP
-            };
+            let border_x = ft_rect.x;
             if (ctx.last_cursor_pos().x - border_x).abs() < 5.0 {
                 ctx.ft_mut().border_dragging = true;
                 return;
@@ -586,13 +566,6 @@ pub(crate) fn handle_mouse_up(ctx: &mut impl MousePorts, button: MouseButton) {
 
     if ctx.dock_border_dragging() {
         ctx.set_dock_border_dragging(false);
-        ctx.compute_layout();
-        ctx.invalidate_chrome();
-        return;
-    }
-
-    if ctx.dock_pinned_border_dragging() {
-        ctx.set_dock_pinned_border_dragging(false);
         ctx.compute_layout();
         ctx.invalidate_chrome();
         return;

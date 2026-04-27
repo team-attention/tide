@@ -68,6 +68,19 @@ mod tests {
     }
 
     #[test]
+    fn terminal_resize_applies_without_internal_debounce() {
+        // Spec: docs/specs/terminal-pane-inset.md
+        // UC-3 BR-8: Terminal::resize applies immediately after layout-level coalescing.
+        let mut terminal = Terminal::new(80, 24).unwrap();
+
+        terminal.resize(100, 30);
+
+        assert_eq!(terminal.current_cols(), 100);
+        assert_eq!(terminal.current_rows(), 30);
+        assert!(terminal.pending_pty_resize.is_none());
+    }
+
+    #[test]
     fn test_trim_url_trailing_paren() {
         // Unbalanced closing paren should be trimmed
         assert_eq!(

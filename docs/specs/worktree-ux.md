@@ -6,7 +6,7 @@ Synthesize research findings from VS Code, Codex CLI, Zellij, tmux-sessionizer, 
 
 ### As-Is
 
-Tide's Workspace system provides create (Cmd+Shift+N), switch (Cmd+[/]), close (Cmd+Shift+W), and sidebar toggle (Cmd+1). The underlying machinery is sound: WorkspaceManager hot/cold swaps layout, panes, focus, and extras via `save_active_workspace`/`load_active_workspace` (see `application/services/workspace_infra_service/mod.rs`).
+Tide's Workspace system provides create (Cmd+Shift+N), switch (Cmd+[/]), close (Cmd+Shift+W), and sidebar toggle (Cmd+E). The underlying machinery is sound: WorkspaceManager hot/cold swaps layout, panes, focus, and extras via `save_active_workspace`/`load_active_workspace` (see `application/services/workspace_infra_service/mod.rs`).
 
 **Problems:**
 

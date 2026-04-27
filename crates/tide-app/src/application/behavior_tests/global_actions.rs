@@ -1,8 +1,8 @@
 // Spec: docs/specs/input-routing.md — UC-4: DispatchGlobalAction
 use crate::pane::editor::EditorPane;
-use crate::pane::PaneKind;
+use crate::pane::{PaneKind, TerminalPane};
 use crate::state::FocusArea;
-use crate::tide_input::GlobalAction;
+use crate::tide_input::{AreaSlot, GlobalAction};
 use crate::ActionPort;
 use crate::App;
 
@@ -20,6 +20,18 @@ fn app_with_editor() -> (App, u64) {
     app.panes
         .insert(id, PaneKind::Editor(EditorPane::new_empty(id)));
     app.focus.focused = Some(id);
+    app.focus.focus_area = FocusArea::Stage;
+    (app, id)
+}
+
+fn app_with_terminal() -> (App, u64) {
+    let mut app = test_app();
+    let (layout, id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let terminal = TerminalPane::with_cwd(id, 80, 24, None, true).unwrap();
+    app.panes.insert(id, PaneKind::Terminal(terminal));
+    app.focus.focused = Some(id);
+    app.focus.stage_focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;
     (app, id)
 }
@@ -66,19 +78,20 @@ fn find_again_reuses_existing_search_bar() {
 }
 
 #[test]
-fn new_file_global_action_creates_editor_pane_in_tab_group() {
-    // UC-4 BR-30: NewFile creates Editor Pane in TabGroup
+fn new_file_global_action_creates_editor_pane_in_stage_split() {
+    // UC-4 BR-30: NewFile creates Editor Pane as a Stage split leaf
     let (mut app, first_id) = app_with_editor();
     app.handle_global_action(GlobalAction::NewFile);
     assert_ne!(app.focus.focused, Some(first_id));
     let new_id = app.focus.focused.unwrap();
     assert!(matches!(app.panes.get(&new_id), Some(PaneKind::Editor(_))));
     assert_eq!(app.layout.pane_ids().len(), app.panes.len());
+    assert!(app.layout.tab_group_containing(new_id).is_none());
 }
 
 #[test]
 fn new_tab_global_action_creates_terminal_pane_in_stage() {
-    // UC-4 BR-29: NewTab in Stage creates Terminal (added to TabGroup)
+    // UC-4 BR-29: NewTab in Stage creates Terminal split leaf
     let (mut app, _) = app_with_editor();
     app.handle_global_action(GlobalAction::NewTab);
     let new_id = app.focus.focused.unwrap();
@@ -86,28 +99,56 @@ fn new_tab_global_action_creates_terminal_pane_in_stage() {
         app.panes.get(&new_id),
         Some(PaneKind::Terminal(_))
     ));
-    assert_eq!(app.layout.all_pane_ids().len(), app.panes.len());
+    assert_eq!(app.layout.pane_ids().len(), app.panes.len());
+    assert!(app.layout.tab_group_containing(new_id).is_none());
 }
 
 #[test]
-fn toggle_file_tree_from_stage_sets_focus_area_to_file_tree() {
-    // UC-4 BR-33: ToggleFileTree shows and sets FocusArea
-    let (mut app, _) = app_with_editor();
+fn toggle_file_tree_from_stage_opens_without_moving_focus() {
+    // UC-4 BR-33: ToggleFileTree shows FileTree View without moving focus on open.
+    let (mut app, id) = app_with_editor();
     assert!(!app.ft.visible);
     app.handle_global_action(GlobalAction::ToggleFileTree);
     assert!(app.ft.visible);
-    assert_eq!(app.focus.focus_area, FocusArea::FileTree);
+    assert_eq!(app.focus.focus_area, FocusArea::Stage);
+    assert_eq!(app.focus.focused, Some(id));
+}
+
+#[test]
+fn focus_slot_2_opens_file_tree_without_moving_focus() {
+    // UC-4 BR-33: The legacy FocusArea slot opens FileTree View without creating FileTree Cursor Row chrome.
+    let (mut app, id) = app_with_editor();
+    assert!(!app.ft.visible);
+
+    app.handle_global_action(GlobalAction::FocusArea(AreaSlot::Slot2));
+
+    assert!(app.ft.visible);
+    assert_eq!(app.focus.focus_area, FocusArea::Stage);
+    assert_eq!(app.focus.focused, Some(id));
 }
 
 #[test]
 fn toggle_file_tree_again_hides_and_restores_focus_area_to_stage() {
-    // UC-4 BR-33: ToggleFileTree hides and restores FocusArea
+    // UC-4 BR-33: ToggleFileTree hides FileTree View and keeps Stage focus.
     let (mut app, _) = app_with_editor();
     app.handle_global_action(GlobalAction::ToggleFileTree);
     assert!(app.ft.visible);
     app.handle_global_action(GlobalAction::ToggleFileTree);
     assert!(!app.ft.visible);
     assert_eq!(app.focus.focus_area, FocusArea::Stage);
+}
+
+#[test]
+fn toggle_dock_global_action_opens_terminal_context_surface() {
+    // UC-4 BR-36: ToggleDock opens/focuses Dock using the focused Stage Terminal.
+    let (mut app, terminal_id) = app_with_terminal();
+    assert!(!app.dock.dock_open);
+
+    app.handle_global_action(GlobalAction::ToggleDock);
+
+    assert!(app.dock.dock_open);
+    assert_eq!(app.focus.focus_area, FocusArea::Dock);
+    assert_ne!(app.focus.focused, Some(terminal_id));
 }
 
 #[test]

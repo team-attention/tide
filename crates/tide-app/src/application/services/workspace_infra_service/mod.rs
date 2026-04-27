@@ -41,7 +41,7 @@ impl WorkspaceExtras {
     pub fn new() -> Self {
         Self {
             dock_open: false,
-            dock_zoomed: false,
+            dock_zoomed: true,
             terminal_view_mode: ViewMode::Split,
             zoomed_pane: None,
             focus_area: FocusArea::Stage,
@@ -300,7 +300,7 @@ impl App {
         self.rebase_active_workspace_layout_pane_allocator();
 
         // Ensure stage_focused is set — older sessions don't persist it,
-        // and without it dock operations (Cmd+4) silently fail.
+        // and without it dock operations silently fail.
         if self.focus.stage_focused.is_none() {
             if let Some(id) = self.focus.focused {
                 if matches!(self.panes.get(&id), Some(PaneKind::Terminal(_))) {
@@ -316,6 +316,9 @@ impl App {
                     .find(|id| matches!(self.panes.get(id), Some(PaneKind::Terminal(_))));
                 self.focus.stage_focused = first_terminal;
             }
+        }
+        if let Some(tid) = self.focus.stage_focused {
+            self.sync_terminal_context_mode_from_terminal(tid);
         }
         // Re-create IME proxies for the loaded workspace's panes so that
         // sync_ime_proxies() can focus the correct proxy and keyboard input
@@ -450,6 +453,7 @@ impl App {
         self.router.set_focused(pane_id);
         self.focus.focus_area = FocusArea::Stage;
         self.focus.stage_focused = Some(pane_id);
+        self.sync_terminal_context_mode_from_terminal(pane_id);
         self.pane_rects.clear();
         self.visual_pane_rects.clear();
         self.cache.pane_generations.clear();

@@ -28,7 +28,7 @@ pub(crate) trait LayoutPort {
         direction: crate::tide_core::SplitDirection,
         insert_first: bool,
     );
-    fn layout_add_tab(&mut self, target: PaneId, source: PaneId) -> bool;
+    fn layout_swap_panes(&mut self, a: PaneId, b: PaneId) -> bool;
 
     // ── Hit-test helpers (from drag_drop_adapter, used by click_adapter) ──
     fn pane_at_tab_bar(&self, pos: Vec2) -> Option<PaneId>;

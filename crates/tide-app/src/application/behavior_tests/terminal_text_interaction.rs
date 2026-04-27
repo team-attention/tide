@@ -40,12 +40,9 @@ fn terminal_click_position(
 ) -> Vec2 {
     let inner_x = rect.x + PANE_PADDING;
     let inner_y = rect.y + terminal_content_top(cell_size.height);
-    let max_cols = ((rect.width - 2.0 * PANE_PADDING) / cell_size.width).floor() as usize;
-    let actual_width = max_cols as f32 * cell_size.width;
-    let extra_x = ((rect.width - 2.0 * PANE_PADDING) - actual_width) / 2.0;
 
     Vec2::new(
-        inner_x + extra_x + (col as f32 + 0.5) * cell_size.width,
+        inner_x + (col as f32 + 0.5) * cell_size.width,
         inner_y + (row as f32 + 0.5) * cell_size.height,
     )
 }

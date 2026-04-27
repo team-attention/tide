@@ -142,6 +142,22 @@ impl SplitLayout {
         }
     }
 
+    /// Expand any LeafGroup nodes in this layout into ordinary split leaves.
+    ///
+    /// Stage and Terminal Context Surface Split view call this to normalize
+    /// legacy TabGroup storage into the current split-first product model.
+    pub fn expand_leaf_groups_to_splits(&mut self, direction: SplitDirection) -> bool {
+        let changed = self
+            .root
+            .as_mut()
+            .map(|root| root.expand_leaf_groups_to_splits(direction))
+            .unwrap_or(false);
+        if changed {
+            self.equalize_root_chain();
+        }
+        changed
+    }
+
     /// Set the ratio of the split that directly contains the given pane.
     /// Returns true if the ratio was updated.
     pub fn set_split_ratio(&mut self, pane: PaneId, ratio: f32) -> bool {
@@ -651,7 +667,7 @@ impl SplitLayout {
         }
     }
 
-    /// Flatten all TabGroups' tabs in traversal order (for Cmd+I/O navigation).
+    /// Flatten all TabGroups' tabs in traversal order for TabPrev/TabNext.
     pub fn all_tabs_flat(&self) -> Vec<PaneId> {
         let mut out = Vec::new();
         if let Some(ref root) = self.root {
