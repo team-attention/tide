@@ -109,7 +109,7 @@ Terminal backend resize should avoid every intermediate transient layout frame. 
 | UC-3 | BR-5, BR-7 | `terminal_backend_resize_waits_for_deferred_window_resize_to_settle` |
 | UC-3 | BR-6, BR-7, BR-13 | `terminal_backend_resize_throttles_live_updates_during_side_surface_animation` |
 | UC-3 | BR-8 | `terminal_resize_applies_without_internal_debounce` |
-| UC-3 | BR-11 | `terminal_primary_screen_resize_reflows_existing_wrap_boundaries` |
+| UC-3 | BR-11 | `resize_reflows_primary_screen` in `crates/alacritty_terminal/src/term/mod.rs` |
 | UC-3 | BR-12 | `terminal_backend_resize_skips_pathologically_narrow_widths` |
 | UC-3 | BR-13 | `terminal_backend_resize_throttles_live_updates_during_border_drag` |
 

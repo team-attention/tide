@@ -2,10 +2,6 @@
 
 use std::time::Duration;
 
-use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::index::{Column, Line};
-use alacritty_terminal::term::test::{mock_term, TermSize};
-
 use crate::adapter::outward::clock_adapter::FixedClock;
 use crate::pane::{terminal_grid_origin, PaneKind, TerminalPane};
 use crate::state::{FocusArea, SURFACE_VISIBILITY_ANIMATION_DURATION};
@@ -291,21 +287,6 @@ fn terminal_backend_resize_throttles_live_updates_during_border_drag() {
     assert!(first_drag_size.0 < initial_size.0);
     assert_eq!(throttled_size, first_drag_size);
     assert!(updated_size.0 < first_drag_size.0);
-}
-
-#[test]
-fn terminal_primary_screen_resize_reflows_existing_wrap_boundaries() {
-    // UC-3 BR-11: A layout-driven primary-screen width resize uses normal terminal reflow instead of truncating visible output.
-    let mut term = mock_term("12345");
-
-    term.resize(TermSize::new(2, 1));
-
-    assert_eq!(term.grid().total_lines(), 3);
-    assert_eq!(term.grid()[Line(-2)][Column(0)].c, '1');
-    assert_eq!(term.grid()[Line(-2)][Column(1)].c, '2');
-    assert_eq!(term.grid()[Line(-1)][Column(0)].c, '3');
-    assert_eq!(term.grid()[Line(-1)][Column(1)].c, '4');
-    assert_eq!(term.grid()[Line(0)][Column(0)].c, '5');
 }
 
 #[test]

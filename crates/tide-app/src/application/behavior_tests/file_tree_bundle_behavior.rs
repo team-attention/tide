@@ -51,6 +51,15 @@ impl ProcessPort for RecordingProcess {
     }
 }
 
+fn app_with_recording_process() -> (App, Rc<RefCell<ProcessCalls>>) {
+    let mut app = test_app();
+    let calls = Rc::new(RefCell::new(ProcessCalls::default()));
+    app.ports.process = Box::new(RecordingProcess {
+        calls: Rc::clone(&calls),
+    });
+    (app, calls)
+}
+
 fn reveal_in_finder_action_index(is_dir: bool, is_app_bundle: bool) -> usize {
     ContextMenuAction::items(is_dir, is_app_bundle, true)
         .iter()
@@ -86,11 +95,7 @@ fn first_file_tree_row_click_position() -> Vec2 {
 #[test]
 fn clicking_app_bundle_in_file_tree_launches_it_instead_of_toggling_directory_expansion() {
     // UC-1 BR-1: Plain FileTree activation on a .app directory must launch the bundle instead of toggling directory expansion.
-    let mut app = test_app();
-    let calls = Rc::new(RefCell::new(ProcessCalls::default()));
-    app.ports.process = Box::new(RecordingProcess {
-        calls: Rc::clone(&calls),
-    });
+    let (mut app, calls) = app_with_recording_process();
     app.ft.visible = true;
     app.ft.rect = Some(Rect::new(0.0, 0.0, 320.0, 420.0));
 
@@ -128,11 +133,7 @@ fn clicking_app_bundle_in_file_tree_launches_it_instead_of_toggling_directory_ex
 #[test]
 fn clicking_app_bundle_in_file_tree_leaves_the_current_tide_window_open_after_launch() {
     // UC-1 BR-2: Successful plain FileTree activation on a .app directory must not queue WindowCommand::CloseWindow for the current Tide Window.
-    let mut app = test_app();
-    let calls = Rc::new(RefCell::new(ProcessCalls::default()));
-    app.ports.process = Box::new(RecordingProcess {
-        calls: Rc::clone(&calls),
-    });
+    let (mut app, _calls) = app_with_recording_process();
     app.ft.visible = true;
     app.ft.rect = Some(Rect::new(0.0, 0.0, 320.0, 420.0));
 
@@ -173,11 +174,7 @@ fn app_bundle_context_menu_uses_app_specific_actions_instead_of_directory_action
 #[test]
 fn open_app_launches_app_bundles_from_the_file_tree_context_menu() {
     // UC-2 BR-4: Open App on a .app directory must call ProcessPort::open_with_default_app().
-    let mut app = test_app();
-    let calls = Rc::new(RefCell::new(ProcessCalls::default()));
-    app.ports.process = Box::new(RecordingProcess {
-        calls: Rc::clone(&calls),
-    });
+    let (mut app, calls) = app_with_recording_process();
     let bundle_path = PathBuf::from("/tmp/Tide.app");
     app.modal.context_menu = Some(ContextMenuState {
         entry_index: 0,
@@ -199,11 +196,7 @@ fn open_app_launches_app_bundles_from_the_file_tree_context_menu() {
 #[test]
 fn open_app_leaves_the_current_tide_window_open_after_launch() {
     // UC-2 BR-5: Successful Open App on a .app directory must not queue WindowCommand::CloseWindow for the current Tide Window.
-    let mut app = test_app();
-    let calls = Rc::new(RefCell::new(ProcessCalls::default()));
-    app.ports.process = Box::new(RecordingProcess {
-        calls: Rc::clone(&calls),
-    });
+    let (mut app, _calls) = app_with_recording_process();
     let bundle_path = PathBuf::from("/tmp/Tide.app");
     app.modal.context_menu = Some(ContextMenuState {
         entry_index: 0,
@@ -237,11 +230,7 @@ fn app_bundle_context_menu_keeps_a_finder_specific_reveal_label() {
 #[test]
 fn finder_reveal_reveals_app_bundles_without_launching_them() {
     // UC-3 BR-7: Finder reveal on a .app directory must call Finder reveal instead of default-app launch.
-    let mut app = test_app();
-    let calls = Rc::new(RefCell::new(ProcessCalls::default()));
-    app.ports.process = Box::new(RecordingProcess {
-        calls: Rc::clone(&calls),
-    });
+    let (mut app, calls) = app_with_recording_process();
     let bundle_path = PathBuf::from("/tmp/Tide.app");
     app.modal.context_menu = Some(ContextMenuState {
         entry_index: 0,
@@ -276,11 +265,7 @@ fn system_process_routes_app_bundle_reveal_through_standard_finder_reveal() {
 #[test]
 fn open_in_finder_keeps_default_directory_handoff_for_non_bundle_directories() {
     // UC-4 BR-9: Non-bundle directories must preserve the existing default-app handoff.
-    let mut app = test_app();
-    let calls = Rc::new(RefCell::new(ProcessCalls::default()));
-    app.ports.process = Box::new(RecordingProcess {
-        calls: Rc::clone(&calls),
-    });
+    let (mut app, calls) = app_with_recording_process();
     let dir_path = PathBuf::from("/tmp/workspace");
     app.modal.context_menu = Some(ContextMenuState {
         entry_index: 0,
