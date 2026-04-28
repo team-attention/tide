@@ -4,7 +4,6 @@ use crate::tide_core::{LayoutEngine, PaneDecorations, Rect, Size, SplitDirection
 
 use crate::pane::PaneKind;
 use crate::state::drag_types::HoverTarget;
-use crate::state::LayoutSide;
 use crate::theme::*;
 use crate::App;
 use crate::AppCorePort;
@@ -18,6 +17,25 @@ impl App {
                 crate::state::drag_types::PaneDragState::Dragging { .. }
             )
     }
+
+    pub(crate) fn terminal_backend_resize_deferred_for_layout(&self) -> bool {
+        self.timing.resize_deferred_at.is_some()
+            || self.router.is_dragging_border()
+            || self.ft.border_dragging
+            || self.ws.border_dragging
+            || self.dock.dock_border_dragging
+            || self.dock.dock_split_dragging
+            || self.surface_visibility_animation_active()
+    }
+}
+
+pub(crate) fn browser_webview_frame(visual_rect: Rect, content_top: f32) -> Rect {
+    Rect::new(
+        visual_rect.x,
+        visual_rect.y + content_top,
+        visual_rect.width.max(1.0),
+        (visual_rect.height - content_top).max(1.0),
+    )
 }
 
 impl crate::application::ports::inward::LayoutPort for App {
@@ -52,8 +70,8 @@ impl crate::application::ports::inward::LayoutPort for App {
             Some(HoverTarget::FileTreeBorder)
             | Some(HoverTarget::WsSidebarBorder)
             | Some(HoverTarget::DockBorder) => CursorIcon::ColResize,
-            Some(HoverTarget::SplitBorder(SplitDirection::Horizontal)) => CursorIcon::ColResize,
-            Some(HoverTarget::SplitBorder(SplitDirection::Vertical)) => CursorIcon::RowResize,
+            Some(HoverTarget::SplitBorder(SplitDirection::Vertical)) => CursorIcon::ColResize,
+            Some(HoverTarget::SplitBorder(SplitDirection::Horizontal)) => CursorIcon::RowResize,
             None => CursorIcon::Default,
         };
         window.set_cursor_icon(icon);
@@ -273,28 +291,46 @@ impl crate::application::ports::inward::LayoutPort for App {
         }
     }
 
-    /// Compute the full layout: sidebar (optional file tree) + pane area (split tree fills remaining space).
+    /// Compute the full layout: Workspace rail + Stage + Terminal Context Surface + FileTree View.
     fn compute_layout(&mut self) {
         let logical = self.logical_size();
         let top = self.window.top_inset;
+        let now = self.ports.clock.now();
+        self.ws.finish_visibility_animation_if_complete(now);
+        self.ft.finish_visibility_animation_if_complete(now);
+        self.dock.finish_visibility_animation_if_complete(now);
+        if self
+            .layout
+            .expand_leaf_groups_to_splits(SplitDirection::Vertical)
+        {
+            self.cache.invalidate_chrome();
+        }
         let pane_ids = self.layout.pane_ids();
 
-        let show_file_tree = self.ft.visible;
-        let show_ws_sidebar = self.ws.show_sidebar;
+        let show_file_tree = self.ft.visible_for_layout();
+        let show_ws_sidebar = self.ws.visible_for_layout();
 
         // Clamp workspace sidebar width
         let max_ws = (logical.width - 200.0).max(80.0);
         if show_ws_sidebar && self.ws.width > max_ws {
             self.ws.width = max_ws;
         }
-        let ws_sidebar_width = if show_ws_sidebar { self.ws.width } else { 0.0 };
+        let ws_sidebar_width = if show_ws_sidebar {
+            self.ws.rendered_width(now).min(max_ws)
+        } else {
+            0.0
+        };
 
-        // Clamp file tree width so it never exceeds the window (leave at least 100px for panes).
+        // Clamp FileTree View width so it never exceeds the window (leave at least 100px for Stage).
         let max_sidebar = (logical.width - ws_sidebar_width - 100.0).max(0.0);
         if show_file_tree && self.ft.width > max_sidebar {
             self.ft.width = max_sidebar;
         }
-        let sidebar_width = if show_file_tree { self.ft.width } else { 0.0 };
+        let sidebar_width = if show_file_tree {
+            self.ft.rendered_width(now).min(max_sidebar)
+        } else {
+            0.0
+        };
 
         let mut left_reserved = 0.0_f32;
         let mut right_reserved = 0.0_f32;
@@ -304,18 +340,7 @@ impl crate::application::ports::inward::LayoutPort for App {
             left_reserved += PANE_GAP + ws_sidebar_width;
         }
 
-        if show_file_tree {
-            match self.window.sidebar_side {
-                LayoutSide::Left => {
-                    left_reserved += PANE_GAP + sidebar_width;
-                }
-                LayoutSide::Right => {
-                    right_reserved += PANE_GAP + sidebar_width;
-                }
-            }
-        }
-
-        // Safety: close dock if no terminal has dock panes and no pinned panes
+        // Safety: close Dock if no Terminal has context panes.
         if self.dock.dock_open {
             let any_has_dock = self.panes.values().any(|pk| {
                 if let PaneKind::Terminal(tp) = pk {
@@ -324,15 +349,21 @@ impl crate::application::ports::inward::LayoutPort for App {
                     false
                 }
             });
-            if !any_has_dock && !self.has_pinned_panes() {
+            if !any_has_dock {
                 self.dock.dock_open = false;
+                self.dock.visibility_animation = None;
             }
         }
 
-        // Reserve Dock space on the right (when open)
-        let show_dock = self.dock.dock_open;
+        // FileTree View is an outer-right sibling view, independent from Terminal Context Surface.
+        if show_file_tree {
+            right_reserved += PANE_GAP + sidebar_width;
+        }
+
+        // Reserve Terminal Context Surface space on the right (when open).
+        let show_dock = self.dock.visible_for_layout();
         // Dock width is global (not per-terminal)
-        let effective_dock_width = self.dock.dock_width;
+        let effective_dock_width = self.dock.rendered_width(now);
         let dock_width = if show_dock {
             let max_ctx = (logical.width - left_reserved - right_reserved - 200.0).max(100.0);
             effective_dock_width.min(max_ctx)
@@ -362,12 +393,9 @@ impl crate::application::ports::inward::LayoutPort for App {
             self.ws.sidebar_rect = None;
         }
 
-        // Compute file_tree_rect
+        // Compute FileTree View rect on the outer-right side.
         if show_file_tree {
-            let sidebar_x = match self.window.sidebar_side {
-                LayoutSide::Left => left_reserved - sidebar_width,
-                LayoutSide::Right => logical.width - sidebar_width - PANE_GAP,
-            };
+            let sidebar_x = logical.width - sidebar_width - PANE_GAP;
             self.ft.rect = Some(Rect::new(
                 sidebar_x,
                 top,
@@ -405,8 +433,7 @@ impl crate::application::ports::inward::LayoutPort for App {
             || self.ft.border_dragging
             || self.ws.border_dragging
             || self.dock.dock_border_dragging
-            || self.dock.dock_split_dragging
-            || self.dock.pinned_border_dragging;
+            || self.dock.dock_split_dragging;
         if !is_dragging {
             let cell_size = self.cell_size();
             if cell_size.width > 0.0 {
@@ -460,81 +487,45 @@ impl crate::application::ports::inward::LayoutPort for App {
             }
         }
 
-        // Dock: compute rects from pinned_dock_layout + focused terminal's dock_layout
+        // Dock: compute rects from the focused Stage Terminal's Terminal Context Surface.
         if show_dock {
             let ctx_offset_x = terminal_offset_x + terminal_area.width + PANE_GAP;
             let dock_height = logical.height - top;
+            let dock_stacked = self.active_terminal_context_is_stacked();
 
-            let is_dock_zoomed = self.dock.dock_zoomed;
-
-            if is_dock_zoomed {
-                if let Some(zp) = self.dock_zoomed_pane() {
-                    rects.push((zp, Rect::new(ctx_offset_x, top, dock_width, dock_height)));
-                }
-            } else {
-                // Normal: split between pinned and terminal dock
-                let has_pinned = self.has_pinned_panes();
-                let owner_terminal = self.focused_terminal_id();
-                let has_terminal_dock_panes = owner_terminal
-                    .map(|tid| {
-                        if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
-                            !tp.dock_layout.pane_ids().is_empty()
-                        } else {
-                            false
-                        }
-                    })
-                    .unwrap_or(false);
-
-                let (pinned_width, terminal_dock_offset_x, terminal_dock_width) = if !has_pinned {
-                    (0.0, ctx_offset_x, dock_width)
-                } else if !has_terminal_dock_panes {
-                    (dock_width, ctx_offset_x, 0.0)
-                } else {
-                    let pw = (dock_width * self.dock.pinned_dock_ratio)
-                        .max(60.0)
-                        .min(dock_width - 60.0);
-                    let tw = dock_width - pw - PANE_GAP;
-                    (pw, ctx_offset_x + pw + PANE_GAP, tw.max(0.0))
-                };
-
-                // Render pinned dock layout
-                if has_pinned && pinned_width > 0.0 {
-                    let pinned_pane_ids = self.dock.pinned_dock_layout.pane_ids();
-                    if !pinned_pane_ids.is_empty() {
-                        let pinned_size = Size::new(pinned_width, dock_height);
-                        let pinned_focused =
-                            self.focus.focused.filter(|id| self.is_pane_pinned(*id));
-                        let mut pr = self.dock.pinned_dock_layout.compute(
-                            pinned_size,
-                            &pinned_pane_ids,
-                            pinned_focused,
-                        );
-                        for (_, rect) in &mut pr {
-                            rect.x += ctx_offset_x;
-                            rect.y += top;
-                        }
-                        rects.extend(pr);
+            if let Some(tid) = self.focused_terminal_id() {
+                if !dock_stacked {
+                    if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                        tp.dock_layout
+                            .expand_leaf_groups_to_splits(SplitDirection::Vertical);
                     }
                 }
-
-                // Render terminal's dock_layout
-                if terminal_dock_width > 0.0 {
-                    if let Some(tid) = owner_terminal {
-                        if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
-                            let dock_pane_ids = tp.dock_layout.pane_ids();
-                            if !dock_pane_ids.is_empty() {
-                                let ctx_size = Size::new(terminal_dock_width, dock_height);
-                                let mut cr = tp.dock_layout.compute(
-                                    ctx_size,
-                                    &dock_pane_ids,
-                                    tp.dock_focused,
-                                );
-                                for (_, rect) in &mut cr {
-                                    rect.x += terminal_dock_offset_x;
-                                    rect.y += top;
-                                }
-                                rects.extend(cr);
+                if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                    let ctx_size = Size::new(dock_width, dock_height);
+                    if dock_stacked {
+                        let all_ids = tp.dock_layout.all_pane_ids();
+                        if let Some(active) = tp
+                            .dock_focused
+                            .filter(|pane_id| all_ids.contains(pane_id))
+                            .or_else(|| tp.dock_layout.pane_ids().first().copied())
+                            .or_else(|| all_ids.first().copied())
+                        {
+                            rects.push((
+                                active,
+                                Rect::new(ctx_offset_x, top, dock_width, dock_height),
+                            ));
+                        }
+                    } else {
+                        let dock_pane_ids = tp.dock_layout.pane_ids();
+                        if !dock_pane_ids.is_empty() {
+                            let mut cr =
+                                tp.dock_layout
+                                    .compute(ctx_size, &dock_pane_ids, tp.dock_focused);
+                            for (_, rect) in &mut cr {
+                                rect.x += ctx_offset_x;
+                                rect.y += top;
                             }
+                            rects.extend(cr);
                         }
                     }
                 }
@@ -565,8 +556,8 @@ impl crate::application::ports::inward::LayoutPort for App {
             0.0
         };
 
-        // Collect all dock pane IDs across all terminals + pinned dock
-        let mut dock_pane_ids: std::collections::HashSet<u64> = self
+        // Collect all Terminal Context Surface pane IDs across all terminals.
+        let dock_pane_ids: std::collections::HashSet<u64> = self
             .panes
             .iter()
             .filter_map(|(_, pk)| {
@@ -578,14 +569,11 @@ impl crate::application::ports::inward::LayoutPort for App {
             })
             .flatten()
             .collect();
-        for pid in self.dock.pinned_dock_layout.all_pane_ids() {
-            dock_pane_ids.insert(pid);
-        }
 
         self.visual_pane_rects = self
             .pane_rects
             .iter()
-            .map(|&(id, r)| {
+            .filter_map(|&(id, r)| {
                 let is_dock = dock_pane_ids.contains(&id);
                 let (area_x, area_right) = if is_dock {
                     (ctx_area_x, ctx_area_right)
@@ -627,24 +615,20 @@ impl crate::application::ports::inward::LayoutPort for App {
                 } else {
                     half
                 };
-                let vr = Rect::new(
-                    r.x + l,
-                    r.y + t,
-                    (r.width - l - ri).max(1.0),
-                    (r.height - t - b).max(1.0),
-                );
-                (id, vr)
+                let visual_width = r.width - l - ri;
+                let visual_height = r.height - t - b;
+                if visual_width <= 0.0 || visual_height <= 0.0 {
+                    return None;
+                }
+                let vr = Rect::new(r.x + l, r.y + t, visual_width, visual_height);
+                Some((id, vr))
             })
             .collect();
 
-        // Resize terminal backends to match the actual visible content area.
-        // Uses visual rects + PANE_PADDING to match the render inner rect exactly.
-        // During border drag, skip PTY resize to avoid SIGWINCH spam and drift.
-        // During window resize, always apply PTY resize so content reflows
-        // incrementally instead of jumping all at once when the drag ends.
-        let skip_pty_resize =
-            self.router.is_dragging_border() || self.ft.border_dragging || self.ws.border_dragging;
-        if !skip_pty_resize {
+        // Resize terminal backends only after transient layout motion settles.
+        // Prompt renderers are sensitive to repeated intermediate SIGWINCH
+        // sizes; coalescing here keeps the terminal grid stable.
+        if !self.terminal_backend_resize_deferred_for_layout() {
             let cell_size = self.cell_size();
             if cell_size.width > 0.0 {
                 let content_top = terminal_content_top(cell_size.height);
@@ -777,10 +761,11 @@ impl crate::application::ports::inward::LayoutPort for App {
                         TAB_BAR_HEIGHT + nav_bar_h
                     };
 
-                    let x = (vr.x + PANE_PADDING) as f64;
-                    let y = (vr.y + content_top) as f64;
-                    let w = ((vr.width - PANE_PADDING * 2.0).max(1.0)) as f64;
-                    let h = ((vr.height - content_top - PANE_PADDING).max(1.0)) as f64;
+                    let frame = browser_webview_frame(vr, content_top);
+                    let x = frame.x as f64;
+                    let y = frame.y as f64;
+                    let w = frame.width as f64;
+                    let h = frame.height as f64;
 
                     bp.set_frame(x, y, w, h);
                     bp.set_visible(true);
@@ -890,12 +875,12 @@ impl crate::application::ports::inward::LayoutPort for App {
             .insert_pane(target, source, direction, insert_first);
     }
 
-    fn layout_add_tab(
+    fn layout_swap_panes(
         &mut self,
-        target: crate::tide_core::PaneId,
-        source: crate::tide_core::PaneId,
+        a: crate::tide_core::PaneId,
+        b: crate::tide_core::PaneId,
     ) -> bool {
-        self.layout.add_tab(target, source)
+        self.layout.swap_panes(a, b)
     }
 
     // ── Hit-test helpers (delegated from drag_drop_adapter) ──

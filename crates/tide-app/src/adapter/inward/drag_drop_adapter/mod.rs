@@ -57,49 +57,7 @@ pub(crate) fn compute_drop_destination(
         }
     }
 
-    // Check pinned group area — detect drops onto the pinned group region
-    if ctx.dock_open() && ctx.has_pinned_panes() {
-        if let Some(dock_rect) = ctx.dock_area_rect() {
-            let has_term_dock = ctx
-                .focused_terminal_id()
-                .map(|tid| {
-                    if let Some(crate::pane::PaneKind::Terminal(tp)) = ctx.pane(tid) {
-                        !tp.dock_layout.pane_ids().is_empty()
-                    } else {
-                        false
-                    }
-                })
-                .unwrap_or(false);
-
-            if has_term_dock {
-                let pinned_w = (dock_rect.width * ctx.dock_pinned_ratio())
-                    .max(60.0)
-                    .min(dock_rect.width - 60.0);
-                let pinned_rect = Rect::new(dock_rect.x, dock_rect.y, pinned_w, dock_rect.height);
-                if pinned_rect.contains(mouse) && !ctx.is_pane_pinned(source) {
-                    return Some(DropDestination::PinnedGroup);
-                }
-            }
-        }
-    }
-
     compute_tree_drop_target(ctx, mouse, source)
-}
-
-fn snapshot_contains_multi_tab_group(
-    snapshot: &crate::tide_layout::LayoutSnapshot,
-    pane_id: PaneId,
-) -> bool {
-    match snapshot {
-        crate::tide_layout::LayoutSnapshot::Leaf { .. } => false,
-        crate::tide_layout::LayoutSnapshot::LeafGroup { tabs, .. } => {
-            tabs.len() > 1 && tabs.contains(&pane_id)
-        }
-        crate::tide_layout::LayoutSnapshot::Split { left, right, .. } => {
-            snapshot_contains_multi_tab_group(left, pane_id)
-                || snapshot_contains_multi_tab_group(right, pane_id)
-        }
-    }
 }
 
 fn source_in_multi_tab_group(
@@ -107,13 +65,10 @@ fn source_in_multi_tab_group(
     source: PaneId,
 ) -> bool {
     if ctx.is_pane_in_dock(source) {
-        return ctx.dock_tab_group_contains_multiple(source);
+        ctx.dock_tab_group_contains_multiple(source)
+    } else {
+        false
     }
-
-    ctx.layout_snapshot()
-        .as_ref()
-        .map(|snapshot| snapshot_contains_multi_tab_group(snapshot, source))
-        .unwrap_or(false)
 }
 
 /// Pre-compute the simulate_drop preview rect for a given drop destination.
@@ -140,19 +95,15 @@ pub(crate) fn compute_drop_preview_rect(
             let use_dock = matches!(dest, DropDestination::DockRoot(_))
                 || target_id.map(|t| ctx.is_pane_in_dock(t)).unwrap_or(false);
 
-            // Pinned pane dropping on non-owning terminal: no preview
-            if use_dock && ctx.is_pane_pinned(source) {
-                let assoc_tid = ctx.associated_terminal(source);
-                if assoc_tid != ctx.focused_terminal_id() {
-                    return None;
-                }
+            if target_id == Some(source) && !source_in_multi_tab_group(ctx, source) {
+                return None;
             }
 
             if use_dock {
                 let dock_area = ctx.dock_area_rect()?;
                 let dock_size = crate::tide_core::Size::new(dock_area.width, dock_area.height);
 
-                // Self-drop from tab group: compute preview rect directly
+                // Dock self-drop from TabGroup: compute preview rect directly
                 // (simulate_drop fails because active tab's rect gets filtered out)
                 if target_id == Some(source) {
                     let (w, h) = (dock_size.width, dock_size.height);
@@ -176,67 +127,10 @@ pub(crate) fn compute_drop_preview_rect(
             }
 
             let pane_area = ctx.pane_area_rect()?;
-            if target_id == Some(source) {
-                let source_rect = ctx
-                    .visual_pane_rects()
-                    .iter()
-                    .find(|(id, _)| *id == source)
-                    .map(|(_, rect)| *rect)
-                    .or_else(|| {
-                        ctx.pane_rects()
-                            .iter()
-                            .find(|(id, _)| *id == source)
-                            .map(|(_, rect)| *rect)
-                    })?;
-                let local_rect = Rect::new(
-                    source_rect.x - pane_area.x,
-                    source_rect.y - pane_area.y,
-                    source_rect.width,
-                    source_rect.height,
-                );
-                return Some(match *zone {
-                    crate::tide_core::DropZone::Top => Rect::new(
-                        local_rect.x,
-                        local_rect.y,
-                        local_rect.width,
-                        local_rect.height * 0.5,
-                    ),
-                    crate::tide_core::DropZone::Bottom => Rect::new(
-                        local_rect.x,
-                        local_rect.y + local_rect.height * 0.5,
-                        local_rect.width,
-                        local_rect.height * 0.5,
-                    ),
-                    crate::tide_core::DropZone::Left => Rect::new(
-                        local_rect.x,
-                        local_rect.y,
-                        local_rect.width * 0.5,
-                        local_rect.height,
-                    ),
-                    crate::tide_core::DropZone::Right => Rect::new(
-                        local_rect.x + local_rect.width * 0.5,
-                        local_rect.y,
-                        local_rect.width * 0.5,
-                        local_rect.height,
-                    ),
-                    _ => return None,
-                });
-            }
             let pane_area_size = crate::tide_core::Size::new(pane_area.width, pane_area.height);
             ctx.layout_simulate_drop(source, target_id, *zone, true, pane_area_size)
         }
         DropDestination::Workspace(_) => None,
-        DropDestination::PinnedGroup => {
-            // Show preview covering the pinned group area
-            if let Some(dock_rect) = ctx.dock_area_rect() {
-                let pinned_w = (dock_rect.width * ctx.dock_pinned_ratio())
-                    .max(60.0)
-                    .min(dock_rect.width - 60.0);
-                Some(Rect::new(0.0, 0.0, pinned_w, dock_rect.height))
-            } else {
-                None
-            }
-        }
     }
 }
 
@@ -248,8 +142,7 @@ pub(crate) fn ws_sidebar_geometry(
     let cs = ctx.cell_size();
     let name_h = cs.height;
     let content_w = ws_rect.width - WS_SIDEBAR_PADDING * 2.0;
-    let sub_h = cs.height * WS_SIDEBAR_SUB_SCALE;
-    let item_h = WS_SIDEBAR_ITEM_PAD_V * 2.0 + name_h + WS_SIDEBAR_LINE_GAP + sub_h;
+    let item_h = WS_SIDEBAR_ITEM_PAD_V * 2.0 + name_h;
     Some(WsSidebarGeometry {
         content_x: ws_rect.x + WS_SIDEBAR_PADDING,
         content_w,
@@ -320,8 +213,7 @@ fn compute_tree_drop_target(
             continue;
         }
 
-        // Skip if dragging onto self — UNLESS source is in a multi-tab TabGroup
-        // (allows splitting a tab out of its group by dropping on directional zones)
+        // Skip if dragging onto self, except for Dock TabGroup extraction.
         if id == source {
             if !source_in_multi_tab_group(ctx, source) {
                 continue;

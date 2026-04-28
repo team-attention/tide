@@ -25,16 +25,11 @@ impl crate::TextExtractPort for App {
                 let cell_size = self.cell_size();
 
                 let content_top = terminal_content_top(cell_size.height);
-                let inner_x = visual_rect.x + PANE_PADDING;
-                let inner_y = visual_rect.y + content_top;
+                let inner = crate::pane::pane_content_rect(*visual_rect, content_top);
+                let origin = crate::pane::terminal_grid_origin(inner);
 
-                let max_cols =
-                    ((visual_rect.width - 2.0 * PANE_PADDING) / cell_size.width).floor() as usize;
-                let actual_width = max_cols as f32 * cell_size.width;
-                let extra_x = ((visual_rect.width - 2.0 * PANE_PADDING) - actual_width) / 2.0;
-
-                let col = ((position.x - inner_x - extra_x) / cell_size.width).floor() as isize;
-                let row = ((position.y - inner_y) / cell_size.height).floor() as isize;
+                let col = ((position.x - origin.x) / cell_size.width).floor() as isize;
+                let row = ((position.y - origin.y) / cell_size.height).floor() as isize;
                 if row < 0 || col < 0 {
                     return None;
                 }
@@ -68,17 +63,11 @@ impl crate::TextExtractPort for App {
         let cell_size = self.cell_size();
 
         let content_top = terminal_content_top(cell_size.height);
-        let inner_x = visual_rect.x + PANE_PADDING;
-        let inner_y = visual_rect.y + content_top;
+        let inner = crate::pane::pane_content_rect(*visual_rect, content_top);
+        let origin = crate::pane::terminal_grid_origin(inner);
 
-        // Center offset matching render_grid
-        let max_cols =
-            ((visual_rect.width - 2.0 * PANE_PADDING) / cell_size.width).floor() as usize;
-        let actual_width = max_cols as f32 * cell_size.width;
-        let extra_x = ((visual_rect.width - 2.0 * PANE_PADDING) - actual_width) / 2.0;
-
-        let col = ((position.x - inner_x - extra_x) / cell_size.width).floor() as isize;
-        let row = ((position.y - inner_y) / cell_size.height).floor() as isize;
+        let col = ((position.x - origin.x) / cell_size.width).floor() as isize;
+        let row = ((position.y - origin.y) / cell_size.height).floor() as isize;
         if row < 0 || col < 0 {
             return None;
         }

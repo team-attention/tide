@@ -60,7 +60,7 @@ All paths below are relative to `crates/tide-app/src/`.
 
 | Term | Type | Location | Description |
 |------|------|----------|-------------|
-| **GlobalAction** | `GlobalAction` | `domain/input/mod.rs` | A user-intent command: `SplitVertical`, `ClosePane`, `Navigate(Up)`, `DockNavigate(Right)`, etc. 40 enum variants. |
+| **GlobalAction** | `GlobalAction` | `domain/input/mod.rs` | A user-intent command: `SplitVertical`, `ClosePane`, `Navigate(Up)`, `DockNavigate(Right)`, etc. 41 enum variants. |
 | **HeaderHitAction** | `HeaderHitAction` | `adapter/outward/view/header.rs` | A click action exposed by Pane header or TabGroup chrome. Tide resolves it through header hit zones instead of raw coordinate checks. |
 | **HeaderActionStrip** | `HeaderActionSpec` + render helpers | `adapter/outward/view/header.rs` | The visible-header right-aligned control cluster that exposes mouse-first Pane creation and split actions. |
 | **Action** | `Action` | `domain/input/mod.rs` | Routing decision: `RouteToPane(id)`, `GlobalAction(...)`, `DragBorder(pos)`, or `None`. |
@@ -83,9 +83,9 @@ All paths below are relative to `crates/tide-app/src/`.
 | Term | Type | Description |
 |------|------|-------------|
 | **FocusArea** | `FocusArea` | Which region has keyboard focus: `FileTree`, `Stage`, or `Dock`. |
-| **AreaSlot** | `AreaSlot` | Positional slot (`Slot1`/`Slot2`/`Slot3`/`Slot4`) for Cmd+1/2/3/4 focus cycling. |
+| **AreaSlot** | `AreaSlot` | Positional FocusArea slot (`Slot1`/`Slot2`/`Slot3`/`Slot4`). Default visibility shortcuts use named GlobalActions instead of relying on every slot having a numeric key. |
 | **Direction** | `Direction` | `Up`/`Down`/`Left`/`Right` for pane navigation. |
-| **SplitDirection** | `SplitDirection` | `Horizontal` creates left/right panes; `Vertical` creates top/bottom panes. |
+| **SplitDirection** | `SplitDirection` | `Horizontal` creates top/bottom panes; `Vertical` creates left/right panes. |
 | **DropZone** | `DropZone` | Which edge of a pane to drop on: `Top`/`Bottom`/`Left`/`Right`/`Center`. |
 | **PaneKind** | enum | The 5 content types: `Terminal`, `Editor`, `Diff`, `Browser`, `Launcher`. |
 | **CursorShape** | enum | Terminal cursor appearance: `Block`, `Beam`, `Underline`. |
@@ -96,13 +96,17 @@ All paths below are relative to `crates/tide-app/src/`.
 | **EditorBadge** | `EditorBadge` | Shared editor-chrome label data computed in `adapter/outward/view/header.rs` and rendered in both Pane headers and TabGroup chrome. Carries visible badge text plus optional `HeaderHitAction` interactivity. |
 | **Editor Chrome** | concept | The non-document UI surrounding an Editor Pane, including the Pane header, TabGroup chrome, gutter, current-line emphasis, and related status or mode affordances. |
 | **FileTreeModel** | `FileTreeModel` | State for the FileTree chrome: root tree, scroll, cursor, and cached git status used to render FileTree rows. |
-| **FileTree Cursor Row** | concept | The FileTree row addressed by `FileTreeModel.cursor`. When `FocusArea` is `FileTree`, Tide renders keyboard-selection chrome on this row. |
+| **FileTree Cursor Row** | concept | The FileTree row addressed by `FileTreeModel.cursor`. Tide renders keyboard-selection chrome on this row only when the FileTree has explicit keyboard focus, not merely when FileTree View is visible. |
 | **Expanded Directory Row** | concept | A FileTree row for a directory whose `TreeEntry.is_expanded` is true. Tide renders open-directory chrome on this row even when it is not the `FileTree Cursor Row`. |
+| **TitlebarSurfaceIcon** | `TitlebarSurfaceIcon` | `adapter/outward/view/chrome/titlebar.rs` | A vector icon drawn for the titlebar surface toggles. It avoids font-dependent private glyphs for Workspace rail, Dock, and FileTree View controls. |
+| **Terminal Context Surface** | concept | The Dock region attached to one Stage Terminal. In Split view it is backed by that Terminal's context `SplitLayout`; in Stacked view it renders one active context Pane with a flat tab bar over all context Panes. It can show Browser Pane, Diff, Editor, Launcher, secondary Terminal, or Render Pane. It does not contain a pinned group or FileTree View. |
+| **Terminal Context TabGroup** | legacy concept | The old flat-only name for Terminal Context Surface. Use Terminal Context Surface for new behavior and specs. |
+| **FileTree View** | concept | A `FileTreeModel`-backed right-side chrome view toggled by `ToggleFileTree`. It is independent from Terminal Context Surface, can use `FocusArea::FileTree` only when explicitly focused for keyboard routing, and follows the focused Stage Terminal's working directory through the existing FileTree root update path. It is not a `PaneKind` in V1. |
 | **Ratio** | `f32` | Split position (0.0–1.0). Clamped to [0.1, 0.9] minimum. |
 | **Cell Size** | `Size` | Pixel dimensions of one terminal character cell (font-dependent). |
 | **Context Artifact** | concept | A Workspace-local record of an optional captured Pane selection plus an optional user comment. Bound to a source PaneId and its Associated Terminal. |
 | **Source Label** | `String` | A human-readable origin label stored on a `Context Artifact` and used in paired-agent delivery text. `Editor` Panes prefer file paths; other Pane kinds use their most useful user-facing location label. |
-| **Pinned Pane** | concept | A dock pane marked as pinned. Visible from all terminals within the workspace, displayed in a dedicated pinned TabGroup on the left side of the dock when viewed from a non-owning terminal. |
+| **Pinned Pane** | legacy concept | A removed Dock model where a context Pane could appear in a global pinned group. Terminal Context Surface does not expose pinned Pane behavior; legacy pin actions are compatibility no-ops. |
 | **Browser Pane** | `PaneKind::Browser` | A Pane backed by a native `WKWebView`. Can run in navigation mode with a URL bar or in render mode for agent-provided HTML. |
 | **Browser Pane V2** | concept | A later capability track for Browser Pane work that goes beyond Browser Pane UX hardening, including in-app download management, stronger credential integration, and deeper browser session behavior. |
 | **GitSwitcher** | `GitSwitcherState` | Popup state that lists git worktrees for a Terminal Pane, tracks filtering and selection, and marks the current worktree row. |
@@ -111,6 +115,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **FileFinderMode** | `FileFinderMode` | The active search mode of `FileFinder`: `Files`, `Symbols`, `WorkspaceSymbols`, or `WorkspaceSearch`. |
 | **SymbolMatch** | `SymbolMatch` | A signature-style navigation result with label, relative path, and editor location. Used by `FileFinder` for current-file and workspace symbol search. |
 | **WorkspaceSearchHit** | `WorkspaceSearchHit` | A workspace text-search result with relative path, line, column, and preview text. Used by `FileFinder` workspace search mode. |
+| **ViewMode** | `ViewMode` | Stage presentation state: `Split` shows the `SplitLayout`; `Stacked` shows one focused Stage `Pane` full-size with a flat tab bar over all Stage split panes. |
 | **Context Comment Composer** | `ContextCommentComposerState` | A `ModalStack` popup that previews the current captured Pane selection when available, accepts a user comment, and creates a `Context Artifact` for Artifact Delivery. |
 | **Wrapped Agent** | concept | A coding agent process launched through a Tide `Agent Wrapper`. Only a `Wrapped Agent` may drive wrapper-managed attention such as split-`Pane` highlight or inactive-`Workspace` highlight. |
 | **Wrapper-Managed Lifecycle Signal** | concept | A lifecycle update (`Running`, `Idle`, or `NeedsInput`) emitted through a Tide `Agent Wrapper` path, either by wrapper hooks or by wrapper-owned OSC 9 reporting. |
@@ -121,6 +126,9 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Full-Screen Space** | concept | A macOS Space occupied by a full-screen `Tide Window`. Notification activation must reveal that `Tide Window` instead of leaving focus on the desktop Space. |
 | **Terminal-Owned Attention** | concept | The wrapped-agent attention projection owned only by the direct wrapped-agent `Terminal` in Stage. It renders on the owning `Terminal` chrome and on the owning `Workspace` item, but never through an `Associated Terminal` onto a non-terminal `Pane`. |
 | **AgentChromeState** | `AgentChromeState` | Renderer-facing visual state for a wrapped-agent dot: `ConnectedIdle`, `Running`, or `Attention`. It is derived from `AgentStatus` plus `Wrapped Agent Presence`; it is not itself a routing state. |
+| **HeaderSurfaceKind** | `HeaderSurfaceKind` | Renderer-facing classification for Pane header chrome: `Stage` for quiet primary-session chrome, or `TerminalContextSurface` for tabbed supporting-context chrome. |
+| **FileIconKind** | `FileIconKind` | Renderer-facing classification for FileTree and file-finder glyphs before choosing a concrete icon character. Keeps special project files, folders, and extension families stable across views. |
+| **SurfaceVisibilityAnimation** | `SurfaceVisibilityAnimation` | Pure width animation state for side surfaces such as Dock, FileTree View, and Workspace rail. It interpolates the rendered width between current and target widths without changing Pane identity. |
 | **Notification Snippet** | concept | The single-line wrapped-agent response text Tide prefers for a macOS notification body. Tide derives it from structured wrapper payloads when available and otherwise falls back to the owning `Terminal`'s visible grid. |
 | **NotificationAuthorizationStatus** | enum | Tide's normalized view of the OS notification-permission state for the bundled macOS app: `Unknown`, `NotDetermined`, `Denied`, `Authorized`, `Provisional`, or `Ephemeral`. Stored in `WindowState` and used only as a runtime diagnostic and chrome signal. |
 | **Cascaded Tide Window Position** | concept | The native macOS placement used for newly created `Tide Window`s in one `Tide Instance`. Each new `Tide Window` is offset from the prior placement so the new title bar remains visible. |

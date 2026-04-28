@@ -160,8 +160,8 @@ fn open_file_adds_split_when_focused_is_non_terminal() {
 }
 
 #[test]
-fn opening_file_from_retained_terminal_context_reuses_the_visible_non_terminal_group() {
-    // UC-3 BR-10: Retained terminal context keeps association metadata, but file open must reuse the visible non-terminal group instead of targeting a nonexistent Dock.
+fn opening_file_from_retained_terminal_context_uses_stage_fallback_split() {
+    // UC-3 BR-10: Retained terminal context keeps association metadata, but file open must use a Stage fallback split instead of targeting a nonexistent Dock.
     let (mut app, terminal_id, editor_id) = app_with_terminal_and_editor();
 
     let mut ctx = TerminalContext::default();

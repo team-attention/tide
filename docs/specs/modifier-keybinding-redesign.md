@@ -8,7 +8,7 @@ The current keybinding system in `domain/input/mod.rs` has several problems:
 
 1. **Inconsistent modifier mental model.** Navigate (Cmd+HJKL) targets Stage when FocusArea is Stage but forces a jump to Stage when FocusArea is Dock (`handle_navigate` in `workspace_service/mod.rs:189-194` sets `focused` to the stage terminal, pulling focus out of Dock). There is no way to navigate within Dock spatially.
 
-2. **TabPrev/TabNext are Dock-only.** `cycle_tab()` (`workspace_service/mod.rs:245-280`) always operates on dock pane lists (pinned + terminal dock tabs) and forces `focus_area = FocusArea::Dock`. There is no way to cycle Stage TabGroup tabs via keyboard, despite Stage now supporting TabGroups (per `stage-tab-groups.md`).
+2. **TabPrev/TabNext are Dock-only in split layouts.** `cycle_tab()` (`workspace_service/mod.rs`) originally operated on Dock tab lists. Stage now uses split-only normal layout, so Stage TabPrev/TabNext should be reserved for `ViewMode::Stacked`.
 
 3. **Redundant/conflicting GlobalAction variants.** `SplitHorizontalHere` and `SplitVerticalHere` both call `dock_split_new_tab_group()` (`action_service/mod.rs:438-445`), which always targets Dock. The "Here" suffix is misleading — they do not split at the current pane's location. Meanwhile `SplitVertical`/`SplitHorizontal` call `split_with_launcher()`, which targets Stage. The naming conflates split direction with split target area.
 
@@ -24,35 +24,42 @@ The current keybinding system in `domain/input/mod.rs` has several problems:
 
 A consistent modifier-based keybinding system built on one mental model:
 
-**"Cmd = current FocusArea, +Ctrl = Dock cross-area, +Shift = flip orientation"**
+**"Cmd = current FocusArea, Cmd+Shift+H/J/K/L = Dock navigation, +Shift = split orientation"**
+
+Visibility toggles are explicit exceptions to the split/navigation model:
+`Cmd+E` toggles Workspace rail, `Cmd+B` toggles FileTree View, and
+`Cmd+Backslash` toggles Dock.
 
 Key changes:
 1. **Navigate stays in current FocusArea.** Cmd+HJKL navigates within the focused area (Stage or Dock). No forced area switching.
-2. **Cross-area Dock operations via Cmd+Ctrl.** Cmd+Ctrl+HJKL navigates Dock, Cmd+Ctrl+T creates a Dock tab, Cmd+Ctrl+I/O cycles Dock tabs — all without changing FocusArea.
-3. **TabPrev/TabNext work in both areas.** When Stage is focused, Cmd+I/O cycles Stage TabGroup tabs. When Dock is focused, they cycle Dock tabs. Cmd+Ctrl+I/O always targets Dock regardless of focus.
-4. **Split semantics cleaned up.** Cmd+\ = SplitVertical (current area), Cmd+Shift+\ = SplitHorizontal (current area). Cmd+Ctrl+\ and Cmd+Ctrl+Shift+\ target Dock.
+2. **Cross-area Dock navigation via Cmd+Shift.** Cmd+Shift+HJKL navigates Dock without changing FocusArea.
+3. **TabPrev/TabNext remain internal actions, not default bindings.** Stage `ViewMode::Stacked` and Dock can still cycle through `GlobalAction::TabPrev` / `GlobalAction::TabNext`, but Cmd+I/O is not reserved for tab-group navigation by default.
+4. **Split semantics cleaned up.** Cmd+Shift+T is the current-area SplitHorizontal shortcut, Cmd+Shift+Backslash is the current-area SplitVertical shortcut, and Cmd+Backslash is reserved for Dock visibility.
 5. **Removed variants.** `BrowserBack`, `BrowserForward`, `ToggleZoom`, `SplitHorizontalHere`, `SplitVerticalHere` removed from GlobalAction.
 6. **Removed bindings.** Cmd+Arrow navigate bindings removed from `default_bindings()`.
-7. **New Dock-targeting variants.** `DockNavigate(Direction)`, `DockSplitVertical`, `DockSplitHorizontal`, `DockNewTab`, `DockTabPrev`, `DockTabNext` added.
+7. **Dock-targeting variants.** `DockNavigate(Direction)`, `DockSplitVertical`, `DockSplitHorizontal`, `DockNewTab`, `DockTabPrev`, and `DockTabNext` remain valid internal actions, but only `DockNavigate(Direction)` has a default cross-area keyboard binding.
 8. **ToggleZoom renamed to ToggleStacked** in binding (Cmd+Enter maps to `ToggleStacked`). The `ToggleZoom` variant is removed.
 
 Complete binding table (HJKL only, no arrow keys):
 
-| Operation | Current Area (Cmd) | Dock Cross-Area (Cmd+Ctrl) |
+| Operation | Current Area (Cmd) | Dock Cross-Area (Cmd+Shift) |
 |-----------|-------------------|---------------------------|
-| Navigate Up | Cmd+K | Cmd+Ctrl+K |
-| Navigate Down | Cmd+J | Cmd+Ctrl+J |
-| Navigate Left | Cmd+H | Cmd+Ctrl+H |
-| Navigate Right | Cmd+L | Cmd+Ctrl+L |
-| Split Horizontal | Cmd+\ | Cmd+Ctrl+\ |
-| Split Vertical | Cmd+Shift+\ | Cmd+Ctrl+Shift+\ |
-| New Tab | Cmd+T | Cmd+Ctrl+T |
-| Tab Prev | Cmd+I | Cmd+Ctrl+I |
-| Tab Next | Cmd+O | Cmd+Ctrl+O |
+| Navigate Up | Cmd+K | Cmd+Shift+K |
+| Navigate Down | Cmd+J | Cmd+Shift+J |
+| Navigate Left | Cmd+H | Cmd+Shift+H |
+| Navigate Right | Cmd+L | Cmd+Shift+L |
+| Split Horizontal | Cmd+Shift+T | None by default |
+| Split Vertical | Cmd+Shift+Backslash | None by default |
+| New Tab | Cmd+T | None by default |
+| Tab Prev | None by default | None by default |
+| Tab Next | None by default | None by default |
 
 Unchanged bindings:
 - Cmd+[/] = WorkspacePrev/Next
-- Cmd+1/2/3/4 = FocusArea slots
+- Cmd+E = ToggleWorkspaceSidebar
+- Cmd+B = ToggleFileTree
+- Cmd+Backslash = ToggleDock
+- Cmd+1/2/3/4 = no default FocusArea or visibility binding
 - Cmd+Shift+N/W = NewWorkspace/CloseWorkspace
 - Cmd+W = ClosePane
 - Cmd+Enter = ToggleStacked (was ToggleZoom, same dispatch)
@@ -60,14 +67,14 @@ Unchanged bindings:
 
 ### Approach
 
-1. **Add new GlobalAction variants.** Add `DockNavigate(Direction)`, `DockSplitVertical`, `DockSplitHorizontal`, `DockNewTab`, `DockTabPrev`, `DockTabNext` to the `GlobalAction` enum, with corresponding `label()`, `action_key()`, `from_action_key()`, and `all_actions()` entries.
+1. **Add new GlobalAction variants.** Add `DockNavigate(Direction)`, `DockSplitVertical`, `DockSplitHorizontal`, `DockNewTab`, `DockTabPrev`, `DockTabNext` to the `GlobalAction` enum, with corresponding `label()`, `action_key()`, and `from_action_key()` entries. Only default-bound actions appear in `all_actions()`.
 2. **Remove old variants.** Remove `BrowserBack`, `BrowserForward`, `ToggleZoom`, `SplitHorizontalHere`, `SplitVerticalHere` from `GlobalAction`. Remove all references in `action_key()`, `from_action_key()`, `label()`, `all_actions()`, and `handle_global_action()`.
-3. **Update default_bindings().** Remove Cmd+Arrow bindings. Bind Cmd+\ to `SplitHorizontal`, Cmd+Shift+\ to `SplitVertical`. Add Cmd+Ctrl bindings for all Dock-targeting actions. Map Cmd+Enter to `ToggleStacked`.
-4. **Update match_hotkey().** Add Cmd+Ctrl modifier branches for HJKL, \, T, I, O. Remove BrowserBack/Forward branches.
+3. **Update default_bindings().** Remove Cmd+Arrow bindings, Cmd+1/2/3/4 numeric slots, and Cmd+I/O tab-group bindings. Bind Cmd+E to `ToggleWorkspaceSidebar`, Cmd+B to `ToggleFileTree`, Cmd+Backslash to `ToggleDock`, Cmd+Shift+T to `SplitHorizontal`, Cmd+Shift+Backslash to `SplitVertical`, and Cmd+Shift+H/J/K/L to `DockNavigate`. Map Cmd+Enter to `ToggleStacked`.
+4. **Update match_hotkey().** Add Cmd+E for `ToggleWorkspaceSidebar`, make Cmd+Shift+T resolve to `SplitHorizontal`, add Cmd+Shift modifier branches for HJKL, and remove BrowserBack/Forward plus Cmd+I/O tab-group branches.
 5. **Fix Navigate behavior.** In `handle_navigate()`, when FocusArea is Dock, navigate within Dock spatially (do not force focus back to Stage). When FocusArea is Stage, navigate within Stage only.
-6. **Fix cycle_tab behavior.** Make `cycle_tab()` FocusArea-aware: when Stage is focused, cycle Stage TabGroup tabs via `all_tabs_flat()` on the Stage layout. When Dock is focused, cycle Dock tabs (current behavior).
+6. **Fix cycle_tab behavior.** Make `cycle_tab()` FocusArea-aware: when Stage is focused in `ViewMode::Split`, do nothing; when Stage is focused in `ViewMode::Stacked`, cycle Stage split panes; when Dock is focused, cycle Dock tabs.
 7. **Add DockNavigate handler.** New handler that always targets Dock navigation without changing FocusArea. When FocusArea is already Dock, behaves identically to Navigate.
-8. **Add Dock split/tab handlers.** `DockSplitVertical`/`DockSplitHorizontal` call existing `dock_split_new_tab_group()`. `DockNewTab` creates a new tab in Dock. `DockTabPrev`/`DockTabNext` call `cycle_tab` targeting Dock.
+8. **Keep Dock split/tab handlers as internal actions.** `DockSplitVertical`/`DockSplitHorizontal` call existing `dock_split_new_tab_group()`. `DockNewTab` creates a new tab in Dock. `DockTabPrev`/`DockTabNext` call `cycle_tab` targeting Dock. They have no default keyboard binding.
 9. **Settings migration.** `from_action_key()` maps old action keys (`"BrowserBack"`, `"BrowserForward"`, `"ToggleZoom"`, `"SplitHorizontalHere"`, `"SplitVerticalHere"`) to `None`, so stale user overrides are silently dropped.
 10. **Update `BrowserReload` binding.** `BrowserReload` (Cmd+R) remains unchanged — it is pane-contextual (only acts when a Browser pane is focused).
 
@@ -108,11 +115,11 @@ Unchanged bindings:
 ### UC-2: Cross-Area Dock Navigation
 
 **Actor**: User
-**Trigger**: User presses Cmd+Ctrl+H/J/K/L from any FocusArea.
+**Trigger**: User presses Cmd+Shift+H/J/K/L from any FocusArea.
 **Precondition**: Dock has at least 2 panes in its layout.
 
 **Flow**:
-1. User presses Cmd+Ctrl+L (DockNavigate Right) while focused in Stage.
+1. User presses Cmd+Shift+L (DockNavigate Right) while focused in Stage.
 2. Router matches hotkey to `GlobalAction::DockNavigate(Direction::Right)`.
 3. `handle_global_action()` dispatches to `dock_navigate(direction)`.
 4. `dock_navigate()` performs spatial navigation within the dock's SplitLayout, updating `dock_focused` and the active tab.
@@ -128,38 +135,36 @@ Unchanged bindings:
 ### UC-3: Tab Cycling in Stage
 
 **Actor**: User
-**Trigger**: User presses Cmd+I or Cmd+O while FocusArea is Stage.
-**Precondition**: Stage has at least 2 panes (across leaves and TabGroups).
+**Trigger**: System or user override invokes `TabPrev` or `TabNext` while FocusArea is Stage.
+**Precondition**: Stage has at least 2 split panes.
 
 **Flow**:
-1. User presses Cmd+O (TabNext) while in Stage.
-2. Router matches to `GlobalAction::TabNext`.
-3. `cycle_tab(1)` checks `self.focus.focus_area`.
-4. FocusArea is Stage: builds flat tab list from `self.layout.all_tabs_flat()` (Stage layout).
+1. `GlobalAction::TabNext` is dispatched while in Stage.
+2. `cycle_tab(1)` checks `self.focus.focus_area`.
+3. FocusArea is Stage and `ViewMode::Split`: return without changing focus.
+4. FocusArea is Stage and `ViewMode::Stacked`: build a flat pane list from the Stage layout.
 5. Finds current pane's position, advances to next.
-6. If next pane is in a different TabGroup, `set_active_tab` is called on that group.
-7. Focus moves to the next pane. FocusArea remains Stage.
+6. Focus moves to the next pane and `focus.zoomed_pane` follows it. FocusArea remains Stage.
 
-**Postcondition**: Focus advances to the next Stage pane in traversal order. TabGroup active tabs are updated as needed.
+**Postcondition**: Focus advances only when Stage is in `ViewMode::Stacked`.
 
 **Business Rules**:
-- **BR-1 (Stage tab cycling)**: When FocusArea is Stage, TabPrev/TabNext cycle through Stage panes in layout traversal order (from `all_tabs_flat()`).
-- **BR-2 (Dock tab cycling)**: When FocusArea is Dock, TabPrev/TabNext cycle through Dock tabs (pinned + terminal dock tabs) — the current `cycle_tab()` behavior.
+- **BR-1 (Stage split-mode no-op)**: When FocusArea is Stage and `ViewMode::Split` is active, TabPrev/TabNext are no-ops.
+- **BR-2 (Dock tab cycling)**: When FocusArea is Dock, TabPrev/TabNext cycle through the focused Stage `Terminal`'s Terminal Context Surface panes.
 - **BR-3 (Wrap around)**: Cycling past the last pane wraps to the first, and vice versa.
-- **BR-4 (TabGroup active sync)**: When cycling into a TabGroup, the target pane becomes the active tab of that group.
+- **BR-4 (Stage stacked cycling)**: When FocusArea is Stage and `ViewMode::Stacked` is active, TabPrev/TabNext cycle Stage split panes and update `focus.zoomed_pane`.
 
 ### UC-4: Cross-Area Dock Tab Cycling
 
 **Actor**: User
-**Trigger**: User presses Cmd+Ctrl+I or Cmd+Ctrl+O from any FocusArea.
+**Trigger**: System or user override invokes `DockTabPrev` or `DockTabNext` from any FocusArea.
 **Precondition**: Dock has at least 2 tabs.
 
 **Flow**:
-1. User presses Cmd+Ctrl+O (DockTabNext) while in Stage.
-2. Router matches to `GlobalAction::DockTabNext`.
-3. `dock_cycle_tab(1)` cycles through Dock tab list (pinned + terminal dock).
-4. Dock's focused pane updates.
-5. FocusArea remains Stage.
+1. `GlobalAction::DockTabNext` is dispatched while in Stage.
+2. `dock_cycle_tab(1)` cycles through the focused Stage `Terminal`'s Terminal Context Surface panes.
+3. Dock's focused pane updates.
+4. FocusArea remains Stage.
 
 **Postcondition**: Dock's active tab advances. FocusArea unchanged.
 
@@ -170,33 +175,32 @@ Unchanged bindings:
 ### UC-5: Split in Current Area
 
 **Actor**: User
-**Trigger**: User presses Cmd+\ (SplitVertical) or Cmd+Shift+\ (SplitHorizontal).
+**Trigger**: User invokes SplitVertical or SplitHorizontal through a binding or header action.
 **Precondition**: A pane is focused.
 
 **Flow**:
-1. User presses Cmd+\ while in Stage.
-2. Router matches to `GlobalAction::SplitVertical`.
+1. User invokes SplitHorizontal while in Stage.
+2. Router matches to `GlobalAction::SplitHorizontal`.
 3. `handle_global_action()` checks FocusArea.
-4. If Stage: calls `split_with_launcher(SplitDirection::Vertical)` — splits the focused Stage pane vertically.
-5. If Dock: calls `dock_split_new_tab_group(SplitDirection::Vertical)` — splits the dock area vertically.
+4. If Stage: calls `split_with_launcher(SplitDirection::Horizontal)` — splits the focused Stage pane top/bottom.
+5. If Dock: calls `dock_split_new_tab_group(SplitDirection::Horizontal)` — splits the Dock top/bottom.
 
 **Postcondition**: A new pane is created via split in the current FocusArea.
 
 **Business Rules**:
 - **BR-1 (Area-aware split)**: SplitVertical/SplitHorizontal target the current FocusArea. When in Stage they split Stage layout; when in Dock they split Dock layout.
-- **BR-2 (Direction semantics)**: SplitVertical creates a left/right split (vertical divider). SplitHorizontal creates a top/bottom split (horizontal divider). Cmd+\ = vertical, Cmd+Shift+\ = horizontal (Shift flips orientation).
+- **BR-2 (Direction semantics)**: SplitVertical creates a left/right split. SplitHorizontal creates a top/bottom split. Cmd+Shift+T maps to SplitHorizontal; Cmd+Shift+Backslash maps to SplitVertical; Cmd+Backslash is reserved for ToggleDock.
 
-### UC-6: Cross-Area Dock Split
+### UC-6: Internal Dock Split
 
 **Actor**: User
-**Trigger**: User presses Cmd+Ctrl+\ (DockSplitVertical) or Cmd+Ctrl+Shift+\ (DockSplitHorizontal).
+**Trigger**: Header action, command dispatch, or user override invokes `DockSplitHorizontal` or `DockSplitVertical`.
 **Precondition**: Dock is open or will be opened by the action.
 
 **Flow**:
-1. User presses Cmd+Ctrl+\ while in Stage.
-2. Router matches to `GlobalAction::DockSplitVertical`.
-3. `handle_global_action()` dispatches to `dock_split_new_tab_group(SplitDirection::Vertical)`.
-4. A new dock pane is created. FocusArea remains Stage.
+1. A command dispatch invokes `GlobalAction::DockSplitHorizontal` while in Stage.
+2. `handle_global_action()` dispatches to `dock_split_new_tab_group(SplitDirection::Horizontal)`.
+3. A new dock pane is created. FocusArea remains Stage.
 
 **Postcondition**: Dock gains a new split pane. FocusArea unchanged.
 
@@ -204,17 +208,16 @@ Unchanged bindings:
 - **BR-1 (Always targets Dock)**: DockSplit variants always target Dock layout regardless of current FocusArea.
 - **BR-2 (No focus area change)**: FocusArea is not changed by DockSplit actions.
 
-### UC-7: Cross-Area Dock New Tab
+### UC-7: Internal Dock New Tab
 
 **Actor**: User
-**Trigger**: User presses Cmd+Ctrl+T from any FocusArea.
+**Trigger**: Header action, command dispatch, or user override invokes `DockNewTab`.
 **Precondition**: A terminal is focused in Stage (provides dock context).
 
 **Flow**:
-1. User presses Cmd+Ctrl+T while in Stage.
-2. Router matches to `GlobalAction::DockNewTab`.
-3. A new tab is created in the Dock area of the currently focused terminal.
-4. FocusArea remains unchanged.
+1. A command dispatch invokes `GlobalAction::DockNewTab` while in Stage.
+2. A new tab is created in the Dock area of the currently focused terminal.
+3. FocusArea remains unchanged.
 
 **Postcondition**: Dock gains a new tab. FocusArea unchanged.
 
@@ -222,7 +225,49 @@ Unchanged bindings:
 - **BR-1 (Always targets Dock)**: DockNewTab creates a tab in the Dock, not in Stage.
 - **BR-2 (No focus area change)**: FocusArea is not changed.
 
-### UC-8: Settings Migration for Removed Actions
+### UC-8: Visibility Hotkeys
+
+**Actor**: User
+**Trigger**: User presses Cmd+E, Cmd+B, Cmd+Backslash, or Cmd+1/2/3/4.
+**Precondition**: App is running.
+
+**Flow**:
+1. User presses Cmd+E.
+2. Router matches to `GlobalAction::ToggleWorkspaceSidebar`.
+3. User presses Cmd+B.
+4. Router matches to `GlobalAction::ToggleFileTree`.
+5. User presses Cmd+Backslash.
+6. Router matches to `GlobalAction::ToggleDock`.
+7. User presses Cmd+1/2/3/4.
+8. Router does not treat numeric slots as default FocusArea or visibility shortcuts.
+
+**Postcondition**: Visibility hotkeys map to named visibility actions, not positional FocusArea slots.
+
+**Business Rules**:
+- **BR-1 (Named toggles)**: Cmd+E maps to ToggleWorkspaceSidebar, Cmd+B maps to ToggleFileTree, and Cmd+Backslash maps to ToggleDock.
+- **BR-2 (No numeric shortcuts)**: Cmd+1/2/3/4 are not default FocusArea or visibility bindings.
+- **BR-3 (No default tab-group navigation shortcuts)**: Cmd+I/O are not default TabPrev/TabNext bindings.
+
+### UC-10: Keybinding Settings Surface
+
+**Actor**: User
+**Trigger**: User opens the config page Keybindings section.
+**Precondition**: App is running.
+
+**Flow**:
+1. Tide builds the settings action list from `GlobalAction::all_actions()`.
+2. Tide omits internal or no-default actions that no longer belong in the default keyboard shortcut surface.
+3. Tide shows only actions that have an intentional default shortcut.
+
+**Postcondition**: The Keybindings section does not show obsolete tab-group navigation entries or unbound split entries as `?`.
+
+**Business Rules**:
+- **BR-1 (Hide retired tab-group shortcuts)**: `TabPrev`, `TabNext`, `DockTabPrev`, and `DockTabNext` are omitted from the default Keybindings action list.
+- **BR-2 (Hide unbound Dock split/tab internals)**: `DockSplitHorizontal`, `DockSplitVertical`, and `DockNewTab` are omitted from the default Keybindings action list.
+- **BR-3 (No placeholder hotkeys)**: Every action shown by `GlobalAction::all_actions()` must resolve to a default hotkey.
+- **BR-4 (Retire Dock pin hotkey)**: `ToggleDockPin` remains accepted as a legacy action key but has no default hotkey and is omitted from the default Keybindings action list.
+
+### UC-9: Settings Migration for Removed Actions
 
 **Actor**: System
 **Trigger**: User launches Tide with a settings file containing old action keys.
@@ -243,9 +288,9 @@ Unchanged bindings:
 
 ## Invariants
 
-1. **FocusArea stability**: Cross-area (Cmd+Ctrl) operations MUST NOT change `self.focus.focus_area`. Only explicit FocusArea actions (Cmd+1/2/3/4, clicking in a different area) change FocusArea.
-2. **Modifier orthogonality**: Every Cmd+{key} binding that has a Cmd+Ctrl+{key} counterpart must follow the pattern: Cmd = current area, Cmd+Ctrl = Dock. No exceptions.
-3. **Shift = flip orientation**: For split operations, Cmd+\ = vertical, Cmd+Shift+\ = horizontal. This applies in both the current-area and cross-area (Cmd+Ctrl) variants.
+1. **FocusArea stability**: Cross-area Dock navigation MUST NOT change `self.focus.focus_area`. Only explicit FocusArea actions, visibility toggles, and clicking in a different area change FocusArea.
+2. **Modifier orthogonality**: Cmd+H/J/K/L navigates the current FocusArea; Cmd+Shift+H/J/K/L navigates Dock as the supporting context surface without moving FocusArea.
+3. **Shift = flip orientation**: Split actions preserve direction semantics. Cmd+Backslash is not a split shortcut; it is reserved for ToggleDock.
 4. **Input routing priority (Architecture Invariant #4)**: Modal -> FocusArea -> Router -> TextInput. This redesign does not change the priority chain.
 5. **No arrow key navigate bindings**: Cmd+Arrow bindings are removed. Only HJKL is supported for directional navigation.
 6. **Backward compatibility**: Old action keys in `from_action_key()` return `None` rather than causing parse failures.
@@ -269,14 +314,22 @@ Unchanged bindings:
 | UC-4 | BR-2 | `dock_tab_next_opens_dock_if_closed()` |
 | UC-5 | BR-1 | `split_vertical_in_stage_splits_stage_layout()` |
 | UC-5 | BR-1 | `split_vertical_in_dock_splits_dock_layout()` |
-| UC-5 | BR-2 | `cmd_backslash_maps_to_split_vertical()` |
-| UC-5 | BR-2 | `cmd_shift_backslash_maps_to_split_horizontal()` |
+| UC-5 | BR-2 | `cmd_shift_t_maps_to_split_horizontal()` |
+| UC-8 | BR-1 | `cmd_backslash_maps_to_toggle_dock()` |
+| UC-8 | BR-1 | `cmd_e_maps_to_toggle_workspace_rail()` |
+| UC-8 | BR-1 | `cmd_b_maps_to_toggle_file_tree()` |
+| UC-8 | BR-2 | `cmd_1_2_3_4_are_not_default_visibility_or_focus_toggles()` |
+| UC-8 | BR-3 | `cmd_i_and_cmd_o_are_not_default_tab_group_navigation()` |
+| UC-2 | BR-1 | `cmd_shift_hjkl_maps_to_dock_navigate()` |
+| UC-5 | BR-2 | `cmd_shift_backslash_maps_to_split_vertical()` |
 | UC-6 | BR-1 | `dock_split_vertical_always_targets_dock()` |
 | UC-6 | BR-2 | `dock_split_does_not_change_focus_area()` |
 | UC-7 | BR-1 | `dock_new_tab_always_targets_dock()` |
 | UC-7 | BR-2 | `dock_new_tab_does_not_change_focus_area()` |
-| UC-8 | BR-1 | `removed_action_keys_return_none_from_parse()` |
-| UC-8 | BR-2 | `toggle_zoom_in_settings_is_silently_dropped()` |
+| UC-9 | BR-1 | `removed_action_keys_return_none_from_parse()` |
+| UC-9 | BR-2 | `toggle_zoom_in_settings_is_silently_dropped()` |
+| UC-10 | BR-1/BR-2/BR-3 | `keybinding_settings_omit_retired_tab_group_and_unbound_split_actions()` |
+| UC-10 | BR-4 | `cmd_shift_p_is_not_bound_to_retired_dock_pin()` |
 
 ## Location
 

@@ -23,14 +23,10 @@ pub(crate) fn pixel_to_cell(
         .find(|(id, _)| *id == pane_id)?;
     let cell_size = ctx.cell_size();
     let content_top = terminal_content_top(cell_size.height);
-    let inner_x = visual_rect.x + PANE_PADDING;
-    let inner_y = visual_rect.y + content_top;
-    // Center offset matching render_grid: grid is centered within the content area
-    let inner_w = visual_rect.width - 2.0 * PANE_PADDING;
-    let max_cols = (inner_w / cell_size.width).floor();
-    let extra_x = (inner_w - max_cols * cell_size.width) / 2.0;
-    let col = ((pos.x - inner_x - extra_x) / cell_size.width).floor() as isize;
-    let row = ((pos.y - inner_y) / cell_size.height).floor() as isize;
+    let inner = crate::pane::pane_content_rect(*visual_rect, content_top);
+    let origin = crate::pane::terminal_grid_origin(inner);
+    let col = ((pos.x - origin.x) / cell_size.width).floor() as isize;
+    let row = ((pos.y - origin.y) / cell_size.height).floor() as isize;
     if row >= 0 && col >= 0 {
         Some((row as usize, col as usize))
     } else {
@@ -50,9 +46,9 @@ pub(crate) fn compute_hover_target(
         let cs = ctx.cell_size();
 
         // Swap icon dimensions (enlarged)
-        let swap_icon_h = 16.0_f32;
-        let swap_rect_w = 7.0_f32;
-        let swap_gap = 3.0_f32;
+        let swap_icon_h = 16.0_f32 * TITLEBAR_ICON_SCALE;
+        let swap_rect_w = 7.0_f32 * TITLEBAR_ICON_SCALE;
+        let swap_gap = 3.0_f32 * TITLEBAR_ICON_SCALE;
         let swap_icon_w = swap_rect_w * 2.0 + swap_gap;
         let swap_x = logical.width - PANE_PADDING - swap_icon_w;
         let swap_y = (ctx.top_inset() - swap_icon_h) / 2.0;
@@ -66,10 +62,11 @@ pub(crate) fn compute_hover_target(
         }
 
         // Settings gear icon
-        let gear_pad = 4.0_f32;
-        let gear_w = cs.width + gear_pad * 2.0;
-        let gear_h = cs.height + 6.0;
-        let gear_x = swap_x - gear_w - 8.0;
+        let btn_w = cs.width * TITLEBAR_ICON_SCALE + TITLEBAR_ICON_BUTTON_PAD_H * 2.0;
+        let btn_h = cs.height * TITLEBAR_ICON_SCALE + TITLEBAR_ICON_BUTTON_PAD_V * 2.0;
+        let gear_w = btn_w;
+        let gear_h = btn_h;
+        let gear_x = swap_x - gear_w - TITLEBAR_BUTTON_GAP;
         let gear_y = (ctx.top_inset() - gear_h) / 2.0;
         if pos.x >= gear_x
             && pos.x <= gear_x + gear_w
@@ -80,10 +77,9 @@ pub(crate) fn compute_hover_target(
         }
 
         // Theme toggle icon
-        let theme_pad = 4.0_f32;
-        let theme_w = cs.width + theme_pad * 2.0;
-        let theme_h = cs.height + 6.0;
-        let theme_x = gear_x - theme_w - 8.0;
+        let theme_w = btn_w;
+        let theme_h = btn_h;
+        let theme_x = gear_x - theme_w - TITLEBAR_BUTTON_GAP;
         let theme_y = (ctx.top_inset() - theme_h) / 2.0;
         if pos.x >= theme_x
             && pos.x <= theme_x + theme_w
@@ -94,10 +90,9 @@ pub(crate) fn compute_hover_target(
         }
 
         // Integration toggle button (left of theme icon)
-        let integ_pad = 4.0_f32;
-        let integ_w = cs.width + integ_pad * 2.0;
-        let integ_h = cs.height + 6.0;
-        let integ_x = theme_x - integ_w - 8.0;
+        let integ_w = btn_w;
+        let integ_h = btn_h;
+        let integ_x = theme_x - integ_w - TITLEBAR_BUTTON_GAP;
         let integ_y = (ctx.top_inset() - integ_h) / 2.0;
 
         if pos.x >= integ_x
@@ -108,17 +103,13 @@ pub(crate) fn compute_hover_target(
             return Some(HoverTarget::TitlebarIntegration);
         }
 
-        // Titlebar toggle buttons (right-to-left: Dock, FileTree, Workspace)
-        let btn_pad_h = 6.0_f32;
-        let btn_chars = 4.0_f32;
-        let btn_w = btn_chars * cs.width + btn_pad_h * 2.0;
-        let btn_h = cs.height + 6.0;
+        // Titlebar toggle buttons (right-to-left: FileTree, Dock, Workspace)
         let btn_y = (ctx.top_inset() - btn_h) / 2.0;
 
         let mut cur_right = integ_x - TITLEBAR_BUTTON_GAP;
         let buttons = [
-            HoverTarget::TitlebarDock,
             HoverTarget::TitlebarFileTree,
+            HoverTarget::TitlebarDock,
             HoverTarget::TitlebarWorkspace,
         ];
         for hover in &buttons {
@@ -216,20 +207,16 @@ pub(crate) fn compute_hover_target(
 
     // Workspace sidebar border (resize handle)
     if let Some(ws_rect) = ctx.ws_sidebar_rect() {
-        let border_x = ws_rect.x + ws_rect.width + PANE_GAP;
+        let border_x = ws_rect.x + ws_rect.width;
         if (pos.x - border_x).abs() < 5.0 {
             return Some(HoverTarget::WsSidebarBorder);
         }
     }
 
-    // File tree border (resize handle) — position depends on sidebar side
+    // FileTree View border (resize handle) — FileTree is always the outer-right view.
     let ft = ctx.ft();
     if let Some(ft_rect) = ft.rect {
-        let border_x = if ctx.sidebar_side() == crate::LayoutSide::Left {
-            ft_rect.x + ft_rect.width + PANE_GAP
-        } else {
-            ft_rect.x - PANE_GAP
-        };
+        let border_x = ft_rect.x;
         if (pos.x - border_x).abs() < 5.0 {
             return Some(HoverTarget::FileTreeBorder);
         }
@@ -368,7 +355,7 @@ pub(crate) fn compute_hover_target(
 }
 
 /// Check if cursor is near an internal border between split panes.
-/// Returns the split direction (Horizontal for vertical line, Vertical for horizontal line).
+/// Returns the split direction (Vertical for vertical line, Horizontal for horizontal line).
 fn split_border_at(ctx: &impl AppCorePort, pos: Vec2) -> Option<SplitDirection> {
     let t = 5.0_f32;
     let rects = ctx.pane_rects();
@@ -376,7 +363,7 @@ fn split_border_at(ctx: &impl AppCorePort, pos: Vec2) -> Option<SplitDirection> 
         return None;
     }
     for &(id_a, rect_a) in rects {
-        // Check right edge → adjacent left edge = Horizontal split (side by side)
+        // Check right edge → adjacent left edge = Vertical split (side by side)
         let right_edge = rect_a.x + rect_a.width;
         if (pos.x - right_edge).abs() <= t && pos.y >= rect_a.y && pos.y <= rect_a.y + rect_a.height
         {
@@ -386,11 +373,11 @@ fn split_border_at(ctx: &impl AppCorePort, pos: Vec2) -> Option<SplitDirection> 
                     && pos.y >= rect_b.y
                     && pos.y <= rect_b.y + rect_b.height
                 {
-                    return Some(SplitDirection::Horizontal);
+                    return Some(SplitDirection::Vertical);
                 }
             }
         }
-        // Check bottom edge → adjacent top edge = Vertical split (stacked)
+        // Check bottom edge → adjacent top edge = Horizontal split (stacked)
         let bottom_edge = rect_a.y + rect_a.height;
         if (pos.y - bottom_edge).abs() <= t && pos.x >= rect_a.x && pos.x <= rect_a.x + rect_a.width
         {
@@ -400,7 +387,7 @@ fn split_border_at(ctx: &impl AppCorePort, pos: Vec2) -> Option<SplitDirection> 
                     && pos.x >= rect_b.x
                     && pos.x <= rect_b.x + rect_b.width
                 {
-                    return Some(SplitDirection::Vertical);
+                    return Some(SplitDirection::Horizontal);
                 }
             }
         }

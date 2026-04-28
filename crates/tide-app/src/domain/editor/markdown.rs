@@ -26,6 +26,14 @@ pub struct MarkdownTheme {
 }
 
 impl MarkdownTheme {
+    pub fn for_dark_mode(dark: bool) -> Self {
+        if dark {
+            Self::dark()
+        } else {
+            Self::light()
+        }
+    }
+
     pub fn dark() -> Self {
         Self {
             body: Color::new(0.85, 0.85, 0.85, 1.0),
@@ -47,20 +55,20 @@ impl MarkdownTheme {
 
     pub fn light() -> Self {
         Self {
-            body: Color::new(0.15, 0.15, 0.15, 1.0),
-            h1: Color::new(0.10, 0.35, 0.70, 1.0),
-            h2: Color::new(0.10, 0.50, 0.25, 1.0),
-            h3: Color::new(0.60, 0.40, 0.10, 1.0),
-            h4: Color::new(0.45, 0.25, 0.60, 1.0),
-            bold: Color::new(0.05, 0.05, 0.05, 1.0),
-            italic: Color::new(0.25, 0.25, 0.25, 1.0),
-            code_fg: Color::new(0.60, 0.30, 0.10, 1.0),
+            body: Color::new(0.08, 0.075, 0.065, 1.0),
+            h1: Color::new(0.07, 0.17, 0.28, 1.0),
+            h2: Color::new(0.08, 0.19, 0.12, 1.0),
+            h3: Color::new(0.23, 0.145, 0.060, 1.0),
+            h4: Color::new(0.20, 0.13, 0.25, 1.0),
+            bold: Color::new(0.055, 0.050, 0.045, 1.0),
+            italic: Color::new(0.24, 0.22, 0.19, 1.0),
+            code_fg: Color::new(0.26, 0.14, 0.08, 1.0),
             code_bg: Color::new(0.0, 0.0, 0.0, 0.06),
             code_block_bg: Color::new(0.0, 0.0, 0.0, 0.04),
-            link: Color::new(0.15, 0.35, 0.80, 1.0),
-            blockquote: Color::new(0.45, 0.45, 0.45, 1.0),
-            rule: Color::new(0.70, 0.70, 0.70, 1.0),
-            list_marker: Color::new(0.10, 0.35, 0.70, 1.0),
+            link: Color::new(0.08, 0.20, 0.38, 1.0),
+            blockquote: Color::new(0.30, 0.28, 0.24, 1.0),
+            rule: Color::new(0.58, 0.55, 0.50, 1.0),
+            list_marker: Color::new(0.07, 0.17, 0.28, 1.0),
         }
     }
 }

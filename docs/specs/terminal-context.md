@@ -6,10 +6,10 @@
 
 - Every Pane determines its own context independently
 - File tree root is determined by `focused_terminal_cwd()`, which falls back to the first terminal in layout order when a non-terminal Pane is focused
-- Opening a file from the file tree always calls `layout.add_tab(focused_id, new_id)`, adding to the focused Pane's TabGroup regardless of its PaneKind
+- Opening a file from the file tree can create a new split without consistently using the owning Terminal context and right-side placement
 - This causes two bugs:
   1. Focusing an Editor opened from a different directory resets the file tree to the first terminal's cwd
-  2. Opening a file while an Editor is focused creates a new split instead of adding to the existing non-terminal TabGroup
+  2. Opening a file while an Editor is focused can choose an inconsistent split direction
   3. Opening a file from a non-terminal Pane whose `Associated Terminal` only exists in `retained_contexts` can still try to target that closed Terminal's Dock, leaving the new Pane outside both `SplitLayout` and any live dock_layout
 
 ### To-Be
@@ -18,7 +18,7 @@
 - Each non-terminal Pane has an `associated_terminal: Option<PaneId>` pointing to its context terminal
 - TabGroups are **kind-constrained**: a terminal TabGroup only holds terminals; non-terminal TabGroups hold Editor/Browser/Diff/Launcher
 - File tree root follows the focused Pane's associated terminal cwd
-- Opening a file routes to the correct non-terminal TabGroup, not the focused terminal's TabGroup
+- Opening a file routes to the owning Terminal's Terminal Context Surface, or to a Stage fallback split when no live owning Terminal exists
 - Opening a file only targets Dock when the chosen `Associated Terminal` is a live `Terminal` Pane; retained context still provides cwd and association, but not a Dock target
 - When a terminal is closed (soft delete), its cwd data is retained so associated Panes keep their context
 - When a terminal moves to another Workspace, its associated Panes move together
@@ -29,7 +29,7 @@
 2. Add `retained_contexts: HashMap<PaneId, PathBuf>` to App for soft-deleted terminal cwd retention
 3. Enforce TabGroup kind constraint: reject adding a terminal to a non-terminal TabGroup and vice versa
 4. Update `focused_terminal_cwd()` to resolve via `associated_terminal` chain
-5. Update `open_editor_pane()` to find the correct non-terminal TabGroup
+5. Update `open_editor_pane()` to target the owning Terminal Context Surface or a right-side Stage fallback split
 6. Validate Dock targets before adding a new non-terminal Pane: only live `Terminal` PaneIds may receive Dock inserts
 7. Update `close_pane()` to soft-delete terminals into `retained_contexts`
 8. Update `move_pane_to_workspace()` to move associated Panes together
@@ -81,17 +81,16 @@
 - **Trigger**: Select file in FileTree or FileFinder
 - **Precondition**: File path is valid, not already open
 - **Flow**:
-  1. Find a non-terminal TabGroup:
-     a. If a non-terminal TabGroup exists → use the most recently focused one
-     b. If none exists → create a new split next to the focused terminal
-  2. Add new Editor Pane as a tab in the target TabGroup
-  3. Set `associated_terminal` from creation context (UC-1)
-- **Postcondition**: File opened in a non-terminal TabGroup
+  1. Resolve the owning Terminal context.
+  2. If a live owning Terminal exists, open the file in that Terminal's Terminal Context Surface.
+  3. If no live owning Terminal exists, open the file as a Stage fallback split next to the focused non-terminal Pane.
+  4. Set `associated_terminal` from creation context (UC-1)
+- **Postcondition**: File opened in a Terminal Context Surface or Stage fallback split
 - **Business Rules**:
   - BR-7: Files never open in a terminal TabGroup
-  - BR-8: If a non-terminal TabGroup exists, reuse it (no new split)
-  - BR-9: If multiple non-terminal TabGroups exist, use the most recently focused one
-  - BR-10: If the creation context resolves to retained terminal context instead of a live `Terminal` Pane, the new non-terminal Pane still inherits that `Associated Terminal` but opens in the current non-terminal group instead of a nonexistent Dock
+  - BR-8: New file splits default to the right of the focused context Pane or focused Stage fallback Pane.
+  - BR-9: If multiple context Panes exist, use the most recently focused context Pane as the split anchor.
+  - BR-10: If the creation context resolves to retained terminal context instead of a live `Terminal` Pane, the new non-terminal Pane still inherits that `Associated Terminal` but opens as a Stage fallback split instead of a nonexistent Dock target
 
 ### UC-4: TabGroupKindConstraint
 
@@ -154,9 +153,9 @@
 | UC-2 | BR-5 | `focusing_editor_with_retained context_terminal_uses_retained context_cwd` |
 | UC-2 | BR-6 | `focusing_pane_without_association_keeps_file_tree_unchanged` |
 | UC-3 | BR-7 | `open_file_never_adds_to_terminal_tab_group` |
-| UC-3 | BR-8 | `open_file_reuses_existing_non_terminal_tab_group` |
-| UC-3 | BR-9 | `open_file_uses_most_recently_focused_non_terminal_tab_group` |
-| UC-3 | BR-10 | `opening_file_from_retained_terminal_context_reuses_the_visible_non_terminal_group` |
+| UC-3 | BR-8 | `opening_file_defaults_to_right_split_when_focused_is_non_terminal` |
+| UC-3 | BR-9 | `opening_file_in_context_surface_defaults_to_right_split` |
+| UC-3 | BR-10 | `opening_file_from_retained_terminal_context_uses_stage_fallback_split` |
 | UC-4 | BR-10 | `adding_editor_to_terminal_tab_group_is_rejected` |
 | UC-4 | BR-11 | `adding_terminal_to_editor_tab_group_is_rejected` |
 | UC-5 | BR-13 | `closing_terminal_preserves_cwd_in_retained_contexts` |

@@ -2,6 +2,13 @@
 use crate::application::ports::outward::persistence_port::{Session, SessionLayout};
 use crate::pane::PaneKind;
 
+fn terminal_pane_count(app: &crate::App) -> usize {
+    app.panes
+        .values()
+        .filter(|pane| matches!(pane, PaneKind::Terminal(_)))
+        .count()
+}
+
 // --- UC-1: SaveLoadSession ---
 
 #[test]
@@ -117,4 +124,93 @@ fn fresh_workspace_uses_startup_geometry_when_creating_initial_terminal_before_l
         .expect("fresh workspace should contain an initial Terminal Pane");
     assert_eq!(terminal.backend.current_cols(), 80);
     assert_eq!(terminal.backend.current_rows(), 24);
+}
+
+// --- UC-3: CreateDefaultLaunchSurface ---
+
+#[test]
+fn fresh_workspace_default_surface_shows_workspace_rail_and_terminal_only() {
+    // UC-3 BR-6/BR-7: A fresh initial Workspace shows Workspace rail, one Stage Terminal Pane, and no side context.
+    let mut app = crate::App::new();
+
+    app.create_initial_pane(None);
+
+    assert!(app.ws.show_sidebar);
+    assert!(!app.ft.visible);
+    assert!(!app.dock.dock_open);
+    assert_eq!(terminal_pane_count(&app), 1);
+}
+
+#[test]
+fn restore_preferences_starts_from_workspace_rail_and_terminal_only() {
+    // UC-3 BR-8: restore_preferences preserves dimensions and theme but resets launch surface visibility.
+    let session = Session {
+        layout: SessionLayout::Leaf {
+            pane_id: 1,
+            cwd: None,
+        },
+        focused_pane_id: Some(1),
+        show_file_tree: true,
+        file_tree_width: 312.0,
+        dark_mode: false,
+        window_width: 1200.0,
+        window_height: 800.0,
+        sidebar_side: "right".to_string(),
+        sidebar_outer: true,
+        ws_sidebar_width: 96.0,
+        show_workspace_sidebar: false,
+        dock_open: true,
+    };
+    let mut app = crate::App::new();
+
+    app.restore_preferences(&session, None);
+
+    assert!(app.ws.show_sidebar);
+    assert!(!app.ft.visible);
+    assert!(!app.dock.dock_open);
+    assert_eq!(terminal_pane_count(&app), 1);
+    assert_eq!(app.ft.width.to_bits(), 312.0_f32.to_bits());
+    assert_eq!(app.ws.width.to_bits(), 96.0_f32.to_bits());
+    assert!(!app.window.dark_mode);
+    assert_eq!(app.window.sidebar_side, crate::LayoutSide::Right);
+}
+
+#[test]
+fn restore_preferences_applies_light_mode_to_prespawned_terminal() {
+    // UC-3 BR-9: restore_preferences syncs restored dark_mode into a pre-spawned Terminal.
+    let session = Session {
+        layout: SessionLayout::Leaf {
+            pane_id: 1,
+            cwd: None,
+        },
+        focused_pane_id: Some(1),
+        show_file_tree: false,
+        file_tree_width: 240.0,
+        dark_mode: false,
+        window_width: 1200.0,
+        window_height: 800.0,
+        sidebar_side: "left".to_string(),
+        sidebar_outer: true,
+        ws_sidebar_width: 88.0,
+        show_workspace_sidebar: true,
+        dock_open: false,
+    };
+    let mut app = crate::App::new();
+    let early_terminal =
+        crate::tide_terminal::Terminal::with_cwd(80, 24, None, true, Some(1)).unwrap();
+
+    app.restore_preferences(&session, Some(early_terminal));
+
+    let terminal = app
+        .panes
+        .values()
+        .find_map(|pane| match pane {
+            PaneKind::Terminal(terminal) => Some(terminal),
+            _ => None,
+        })
+        .expect("restore_preferences should install the pre-spawned Terminal Pane");
+    assert!(
+        !terminal.backend.dark_mode_for_test(),
+        "pre-spawned Terminal backend should match restored light mode"
+    );
 }

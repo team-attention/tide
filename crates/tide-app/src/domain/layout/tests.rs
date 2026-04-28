@@ -57,13 +57,13 @@ mod tests {
     }
 
     // ──────────────────────────────────────────
-    // Horizontal split divides width
+    // Vertical split divides width
     // ──────────────────────────────────────────
 
     #[test]
-    fn test_horizontal_split_divides_width() {
+    fn test_vertical_split_divides_width() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
 
         let rects = layout.compute(WINDOW, &[pane1, pane2], None);
         assert_eq!(rects.len(), 2);
@@ -81,13 +81,13 @@ mod tests {
     }
 
     // ──────────────────────────────────────────
-    // Vertical split divides height
+    // Horizontal split divides height
     // ──────────────────────────────────────────
 
     #[test]
-    fn test_vertical_split_divides_height() {
+    fn test_horizontal_split_divides_height() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Vertical);
+        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
 
         let rects = layout.compute(WINDOW, &[pane1, pane2], None);
         assert_eq!(rects.len(), 2);
@@ -111,8 +111,8 @@ mod tests {
     #[test]
     fn test_nested_splits() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
-        let pane3 = layout.split(pane2, SplitDirection::Vertical);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
+        let pane3 = layout.split(pane2, SplitDirection::Horizontal);
 
         let rects = layout.compute(WINDOW, &[pane1, pane2, pane3], None);
         assert_eq!(rects.len(), 3);
@@ -133,9 +133,9 @@ mod tests {
     #[test]
     fn test_deeply_nested_splits() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
-        let pane3 = layout.split(pane1, SplitDirection::Vertical);
-        let pane4 = layout.split(pane2, SplitDirection::Vertical);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
+        let pane3 = layout.split(pane1, SplitDirection::Horizontal);
+        let pane4 = layout.split(pane2, SplitDirection::Horizontal);
 
         let rects = layout.compute(WINDOW, &[], None);
         assert_eq!(rects.len(), 4);
@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn test_remove_pane_collapses_split() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
 
         layout.remove(pane2);
         let rects = layout.compute(WINDOW, &[pane1], None);
@@ -176,7 +176,7 @@ mod tests {
     #[test]
     fn test_remove_left_pane_collapses_to_right() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
 
         layout.remove(pane1);
         let rects = layout.compute(WINDOW, &[pane2], None);
@@ -191,8 +191,8 @@ mod tests {
     #[test]
     fn test_remove_from_nested() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
-        let pane3 = layout.split(pane2, SplitDirection::Vertical);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
+        let pane3 = layout.split(pane2, SplitDirection::Horizontal);
 
         layout.remove(pane3);
         let rects = layout.compute(WINDOW, &[pane1, pane2], None);
@@ -228,7 +228,7 @@ mod tests {
     #[test]
     fn test_no_gaps_no_overlaps_two_panes() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
         let rects = layout.compute(WINDOW, &[pane1, pane2], None);
 
         assert_no_gaps_no_overlaps(&rects, WINDOW);
@@ -237,9 +237,9 @@ mod tests {
     #[test]
     fn test_no_gaps_no_overlaps_four_panes() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
-        let _pane3 = layout.split(pane1, SplitDirection::Vertical);
-        let _pane4 = layout.split(pane2, SplitDirection::Vertical);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
+        let _pane3 = layout.split(pane1, SplitDirection::Horizontal);
+        let _pane4 = layout.split(pane2, SplitDirection::Horizontal);
 
         let rects = layout.compute(WINDOW, &[], None);
         assert_eq!(rects.len(), 4);
@@ -249,10 +249,10 @@ mod tests {
     #[test]
     fn test_no_gaps_no_overlaps_many_splits() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
-        let pane3 = layout.split(pane2, SplitDirection::Vertical);
-        let _pane4 = layout.split(pane3, SplitDirection::Horizontal);
-        let _pane5 = layout.split(pane1, SplitDirection::Vertical);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
+        let pane3 = layout.split(pane2, SplitDirection::Horizontal);
+        let _pane4 = layout.split(pane3, SplitDirection::Vertical);
+        let _pane5 = layout.split(pane1, SplitDirection::Horizontal);
 
         let rects = layout.compute(WINDOW, &[], None);
         assert_eq!(rects.len(), 5);
@@ -305,7 +305,7 @@ mod tests {
     #[test]
     fn test_border_drag_changes_ratio_horizontal() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
 
         layout.begin_drag(Vec2::new(400.0, 300.0), WINDOW);
         assert!(layout.drag_start.is_some());
@@ -335,7 +335,7 @@ mod tests {
     #[test]
     fn test_border_drag_changes_ratio_vertical() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Vertical);
+        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
 
         layout.begin_drag(Vec2::new(400.0, 300.0), WINDOW);
         assert!(layout.drag_start.is_some());
@@ -364,7 +364,7 @@ mod tests {
     #[test]
     fn test_border_drag_clamps_min_ratio() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
 
         layout.begin_drag(Vec2::new(400.0, 300.0), WINDOW);
         layout.drag_border(Vec2::new(0.0, 300.0));
@@ -384,7 +384,7 @@ mod tests {
     #[test]
     fn test_border_drag_clamps_max_ratio() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
 
         layout.begin_drag(Vec2::new(400.0, 300.0), WINDOW);
         layout.drag_border(Vec2::new(800.0, 300.0));
@@ -404,7 +404,7 @@ mod tests {
     #[test]
     fn test_begin_drag_miss() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let _pane2 = layout.split(pane1, SplitDirection::Horizontal);
+        let _pane2 = layout.split(pane1, SplitDirection::Vertical);
 
         layout.begin_drag(Vec2::new(100.0, 300.0), WINDOW);
         assert!(layout.active_drag.is_none());
@@ -418,8 +418,8 @@ mod tests {
     #[test]
     fn test_border_drag_nested() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
-        let pane3 = layout.split(pane2, SplitDirection::Vertical);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
+        let pane3 = layout.split(pane2, SplitDirection::Horizontal);
 
         layout.begin_drag(Vec2::new(600.0, 300.0), WINDOW);
         assert!(layout.drag_start.is_some());
@@ -446,11 +446,11 @@ mod tests {
     // ──────────────────────────────────────────
 
     #[test]
-    fn t_junction_horizontal_drag_selects_horizontal_border() {
-        // Layout: Root H-split at x=400, right child V-split at y=300
+    fn t_junction_horizontal_drag_selects_vertical_border() {
+        // Layout: Root vertical split at x=400, right child horizontal split at y=300
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal); // left/right
-        let _pane3 = layout.split(pane2, SplitDirection::Vertical); // top-right/bottom-right
+        let pane2 = layout.split(pane1, SplitDirection::Vertical); // left/right
+        let _pane3 = layout.split(pane2, SplitDirection::Horizontal); // top-right/bottom-right
 
         // Click at T-junction (400, 300), then drag right to (450, 300)
         layout.begin_drag(Vec2::new(400.0, 300.0), WINDOW);
@@ -460,7 +460,7 @@ mod tests {
         let rects = layout.compute(WINDOW, &[], None);
         let r1 = rects.iter().find(|(id, _)| *id == pane1).unwrap();
 
-        // The horizontal split should have moved: pane1 width should be ~450 (was 400)
+        // The vertical split should have moved: pane1 width should be ~450 (was 400)
         assert!(
             approx_eq(r1.1.width, 450.0),
             "Expected left pane width ~450 after H-drag, got {}",
@@ -469,11 +469,11 @@ mod tests {
     }
 
     #[test]
-    fn t_junction_vertical_drag_selects_vertical_border() {
-        // Layout: Root H-split at x=400, right child V-split at y=300
+    fn t_junction_vertical_drag_selects_horizontal_border() {
+        // Layout: Root vertical split at x=400, right child horizontal split at y=300
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal); // left/right
-        let _pane3 = layout.split(pane2, SplitDirection::Vertical); // top-right/bottom-right
+        let pane2 = layout.split(pane1, SplitDirection::Vertical); // left/right
+        let _pane3 = layout.split(pane2, SplitDirection::Horizontal); // top-right/bottom-right
 
         // Click at T-junction (400, 300), then drag down to (400, 450)
         layout.begin_drag(Vec2::new(400.0, 300.0), WINDOW);
@@ -483,35 +483,35 @@ mod tests {
         let rects = layout.compute(WINDOW, &[], None);
         let r2 = rects.iter().find(|(id, _)| *id == pane2).unwrap();
 
-        // The vertical split should have moved: pane2 height should be ~450 (was 300)
+        // The horizontal split should have moved: pane2 height should be ~450 (was 300)
         assert!(
             approx_eq(r2.1.height, 450.0),
             "Expected top-right pane height ~450 after V-drag, got {}",
             r2.1.height
         );
 
-        // And the horizontal split should NOT have moved: pane1 should still be 400 wide
+        // And the vertical split should NOT have moved: pane1 should still be 400 wide
         let r1 = rects.iter().find(|(id, _)| *id == pane1).unwrap();
         assert!(
             approx_eq(r1.1.width, 400.0),
-            "H-split should not have moved, got left width {}",
+            "Vertical split should not have moved, got left width {}",
             r1.1.width
         );
     }
 
     #[test]
-    fn drag_at_t_junction_horizontal_movement_selects_horizontal_split() {
+    fn drag_at_t_junction_horizontal_movement_selects_vertical_split() {
         // Layout:
-        //   Split(Horizontal, 0.5) [root — border at x=400]
+        //   Split(Vertical, 0.5) [root — border at x=400]
         //     ├── Pane A (left half: 0,0,400,600)
-        //     └── Split(Vertical, 0.5) [border at y=300, within right half only]
+        //     └── Split(Horizontal, 0.5) [border at y=300, within right half only]
         //         ├── Pane B (top-right: 400,0,400,300)
         //         └── Pane C (bottom-right: 400,300,400,300)
         //
-        // T-junction at ~(400, 300). Drag horizontally to select the H-split border.
+        // T-junction at ~(400, 300). Drag horizontally to select the vertical split border.
         let (mut layout, pane_a) = SplitLayout::with_initial_pane();
-        let pane_b = layout.split(pane_a, SplitDirection::Horizontal);
-        let pane_c = layout.split(pane_b, SplitDirection::Vertical);
+        let pane_b = layout.split(pane_a, SplitDirection::Vertical);
+        let pane_c = layout.split(pane_b, SplitDirection::Horizontal);
 
         layout.begin_drag(Vec2::new(400.0, 300.0), WINDOW);
         layout.drag_border(Vec2::new(500.0, 300.0)); // dx=100, dy=0 → horizontal
@@ -519,7 +519,7 @@ mod tests {
 
         let rects = layout.compute(WINDOW, &[], None);
 
-        // Horizontal split moved: pane A should now be ~500px wide
+        // Vertical split moved: pane A should now be ~500px wide
         let ra = rects.iter().find(|(id, _)| *id == pane_a).unwrap();
         assert!(
             approx_eq(ra.1.width, 500.0),
@@ -527,7 +527,7 @@ mod tests {
             ra.1.width
         );
 
-        // Vertical split unchanged: panes B and C should still be ~300 each
+        // Horizontal split unchanged: panes B and C should still be ~300 each
         let rb = rects.iter().find(|(id, _)| *id == pane_b).unwrap();
         assert!(
             approx_eq(rb.1.height, 300.0),
@@ -545,12 +545,12 @@ mod tests {
     }
 
     #[test]
-    fn drag_at_t_junction_vertical_movement_selects_vertical_split() {
+    fn drag_at_t_junction_vertical_movement_selects_horizontal_split() {
         // Same T-junction layout as above.
         // Begin drag slightly into the right half (401, 300), drag vertically upward.
         let (mut layout, pane_a) = SplitLayout::with_initial_pane();
-        let pane_b = layout.split(pane_a, SplitDirection::Horizontal);
-        let pane_c = layout.split(pane_b, SplitDirection::Vertical);
+        let pane_b = layout.split(pane_a, SplitDirection::Vertical);
+        let pane_c = layout.split(pane_b, SplitDirection::Horizontal);
 
         layout.begin_drag(Vec2::new(401.0, 300.0), WINDOW);
         layout.drag_border(Vec2::new(401.0, 200.0)); // dx=0, dy=100 → vertical
@@ -558,7 +558,7 @@ mod tests {
 
         let rects = layout.compute(WINDOW, &[], None);
 
-        // Vertical split moved: pane B should be shorter (~200px), pane C taller (~400px)
+        // Horizontal split moved: pane B should be shorter (~200px), pane C taller (~400px)
         let rb = rects.iter().find(|(id, _)| *id == pane_b).unwrap();
         assert!(
             approx_eq(rb.1.height, 200.0),
@@ -572,11 +572,11 @@ mod tests {
             rc.1.height
         );
 
-        // Horizontal split unchanged: pane A width should still be ~400
+        // Vertical split unchanged: pane A width should still be ~400
         let ra = rects.iter().find(|(id, _)| *id == pane_a).unwrap();
         assert!(
             approx_eq(ra.1.width, 400.0),
-            "H-split should not have moved, got left width {}",
+            "Vertical split should not have moved, got left width {}",
             ra.1.width
         );
 
@@ -590,9 +590,9 @@ mod tests {
     #[test]
     fn test_pane_ids_are_unique() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
-        let pane3 = layout.split(pane2, SplitDirection::Vertical);
-        let pane4 = layout.split(pane1, SplitDirection::Vertical);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
+        let pane3 = layout.split(pane2, SplitDirection::Horizontal);
+        let pane4 = layout.split(pane1, SplitDirection::Horizontal);
 
         let mut ids = vec![pane1, pane2, pane3, pane4];
         ids.sort();
@@ -603,8 +603,8 @@ mod tests {
     #[test]
     fn test_pane_ids_list() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
-        let pane3 = layout.split(pane2, SplitDirection::Vertical);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
+        let pane3 = layout.split(pane2, SplitDirection::Horizontal);
 
         let mut ids = layout.pane_ids();
         ids.sort();
@@ -620,7 +620,7 @@ mod tests {
     #[test]
     fn test_split_nonexistent_pane() {
         let (mut layout, _pane1) = SplitLayout::with_initial_pane();
-        let new_id = layout.split(999, SplitDirection::Horizontal);
+        let new_id = layout.split(999, SplitDirection::Vertical);
         assert!(new_id > 0);
         let rects = layout.compute(WINDOW, &[], None);
         assert_eq!(rects.len(), 1);
@@ -629,12 +629,12 @@ mod tests {
     #[test]
     fn test_remove_and_resplit() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
 
         layout.remove(pane2);
         assert_eq!(layout.pane_ids().len(), 1);
 
-        let pane3 = layout.split(pane1, SplitDirection::Vertical);
+        let pane3 = layout.split(pane1, SplitDirection::Horizontal);
         let rects = layout.compute(WINDOW, &[], None);
         assert_eq!(rects.len(), 2);
 
@@ -668,7 +668,7 @@ mod tests {
     fn test_drag_border_without_begin_requires_drag_start() {
         // drag_border without begin_drag (no drag_start) should be a no-op
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
 
         layout.last_window_size = Some(WINDOW);
 
@@ -692,7 +692,7 @@ mod tests {
     #[test]
     fn test_node_contains() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
 
         if let Some(ref root) = layout.root {
             assert!(root.contains(pane1));
@@ -718,11 +718,11 @@ mod tests {
     // ──────────────────────────────────────────
 
     #[test]
-    fn test_move_pane_to_root_left_creates_horizontal_split() {
-        // V(A, V(B, C)) → move A to root-left → H(A, V(B, C))
+    fn test_move_pane_to_root_left_creates_vertical_split() {
+        // Horizontal(A, Horizontal(B, C)) → move A to root-left → Vertical(A, Horizontal(B, C))
         let (mut layout, pane_a) = SplitLayout::with_initial_pane();
-        let pane_b = layout.split(pane_a, SplitDirection::Vertical);
-        let pane_c = layout.split(pane_b, SplitDirection::Vertical);
+        let pane_b = layout.split(pane_a, SplitDirection::Horizontal);
+        let pane_c = layout.split(pane_b, SplitDirection::Horizontal);
 
         assert!(layout.move_pane_to_root(pane_a, crate::tide_core::DropZone::Left));
 
@@ -750,8 +750,8 @@ mod tests {
     fn test_move_pane_to_root_integrity() {
         // V(A, V(B, C)) → move A to root-right → H(V(B,C), A)
         let (mut layout, pane_a) = SplitLayout::with_initial_pane();
-        let pane_b = layout.split(pane_a, SplitDirection::Vertical);
-        let _pane_c = layout.split(pane_b, SplitDirection::Vertical);
+        let pane_b = layout.split(pane_a, SplitDirection::Horizontal);
+        let _pane_c = layout.split(pane_b, SplitDirection::Horizontal);
 
         assert!(layout.move_pane_to_root(pane_a, crate::tide_core::DropZone::Right));
 
@@ -784,7 +784,7 @@ mod tests {
     fn test_move_pane_to_root_two_panes() {
         // H(A, B) → move B to root-top → V(B, A)
         let (mut layout, pane_a) = SplitLayout::with_initial_pane();
-        let pane_b = layout.split(pane_a, SplitDirection::Horizontal);
+        let pane_b = layout.split(pane_a, SplitDirection::Vertical);
 
         assert!(layout.move_pane_to_root(pane_b, crate::tide_core::DropZone::Top));
 
@@ -810,7 +810,7 @@ mod tests {
     fn test_move_pane_to_root_bottom() {
         // V(A, B) → move A to root-bottom → V(B, A)
         let (mut layout, pane_a) = SplitLayout::with_initial_pane();
-        let pane_b = layout.split(pane_a, SplitDirection::Vertical);
+        let pane_b = layout.split(pane_a, SplitDirection::Horizontal);
 
         assert!(layout.move_pane_to_root(pane_a, crate::tide_core::DropZone::Bottom));
 
@@ -829,7 +829,7 @@ mod tests {
     #[test]
     fn test_move_pane_to_root_center_returns_false() {
         let (mut layout, pane_a) = SplitLayout::with_initial_pane();
-        let _pane_b = layout.split(pane_a, SplitDirection::Horizontal);
+        let _pane_b = layout.split(pane_a, SplitDirection::Vertical);
 
         assert!(!layout.move_pane_to_root(pane_a, crate::tide_core::DropZone::Center));
     }
@@ -862,7 +862,7 @@ mod tests {
     #[test]
     fn test_snap_horizontal_split_aligns_to_cells() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
 
         // Snap ratios
         layout.snap_ratios_to_cells(WINDOW, CELL, &DECORATIONS);
@@ -883,7 +883,7 @@ mod tests {
     #[test]
     fn test_snap_vertical_split_aligns_to_cells() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Vertical);
+        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
 
         layout.snap_ratios_to_cells(WINDOW, CELL, &DECORATIONS);
         let rects = layout.compute(WINDOW, &[pane1, pane2], None);
@@ -903,7 +903,7 @@ mod tests {
     #[test]
     fn test_snap_50_50_split_equal_cols() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
 
         layout.snap_ratios_to_cells(WINDOW, CELL, &DECORATIONS);
         let rects = layout.compute(WINDOW, &[pane1, pane2], None);
@@ -925,7 +925,7 @@ mod tests {
     #[test]
     fn test_snap_preserves_tiling() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
 
         layout.snap_ratios_to_cells(WINDOW, CELL, &DECORATIONS);
         let rects = layout.compute(WINDOW, &[pane1, pane2], None);
@@ -937,8 +937,8 @@ mod tests {
     #[test]
     fn test_snap_nested_splits() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
-        let pane3 = layout.split(pane2, SplitDirection::Vertical);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
+        let pane3 = layout.split(pane2, SplitDirection::Horizontal);
 
         layout.snap_ratios_to_cells(WINDOW, CELL, &DECORATIONS);
         let rects = layout.compute(WINDOW, &[pane1, pane2, pane3], None);
@@ -974,7 +974,7 @@ mod tests {
     #[test]
     fn test_snap_respects_min_pane_size() {
         let (mut layout, pane1) = SplitLayout::with_initial_pane();
-        let pane2 = layout.split(pane1, SplitDirection::Horizontal);
+        let pane2 = layout.split(pane1, SplitDirection::Vertical);
 
         // Drag border to extreme left
         layout.last_window_size = Some(WINDOW);
@@ -1010,16 +1010,16 @@ mod tests {
         use super::super::node::Node;
 
         let root = Node::Split {
-            direction: SplitDirection::Horizontal,
+            direction: SplitDirection::Vertical,
             ratio: 0.5,
             left: Box::new(Node::Split {
-                direction: SplitDirection::Vertical,
+                direction: SplitDirection::Horizontal,
                 ratio: 0.5,
                 left: Box::new(Node::Leaf(2)),
                 right: Box::new(Node::Leaf(3)),
             }),
             right: Box::new(Node::Split {
-                direction: SplitDirection::Vertical,
+                direction: SplitDirection::Horizontal,
                 ratio: 0.5,
                 left: Box::new(Node::Leaf(1)),
                 right: Box::new(Node::Leaf(4)),
@@ -1278,7 +1278,7 @@ mod tests {
     fn test_restructure_two_pane_move() {
         // H(A, B) → restructure move B to root-left → H(B, A)
         let (mut layout, pane_a) = SplitLayout::with_initial_pane();
-        let pane_b = layout.split(pane_a, SplitDirection::Horizontal);
+        let pane_b = layout.split(pane_a, SplitDirection::Vertical);
 
         assert!(layout.restructure_move_to_root(pane_b, crate::tide_core::DropZone::Left, WINDOW));
 
@@ -1349,7 +1349,7 @@ mod tests {
     #[test]
     fn test_remove_leaf_from_split() {
         let (mut layout, p1) = SplitLayout::with_initial_pane();
-        let p2 = layout.split(p1, SplitDirection::Horizontal);
+        let p2 = layout.split(p1, SplitDirection::Vertical);
 
         // Remove p1 — p2 should remain
         layout.remove(p1);
@@ -1363,7 +1363,7 @@ mod tests {
         let (mut layout, p1) = SplitLayout::with_initial_pane();
 
         // Split the pane
-        let p2 = layout.split(p1, SplitDirection::Horizontal);
+        let p2 = layout.split(p1, SplitDirection::Vertical);
 
         // After split, both panes should exist
         let ids = layout.pane_ids();
@@ -1381,8 +1381,8 @@ mod tests {
         let (mut layout, p1) = SplitLayout::with_initial_pane();
 
         // Split to create a more complex tree
-        let p2 = layout.split(p1, SplitDirection::Horizontal);
-        let _p3 = layout.split(p2, SplitDirection::Vertical);
+        let p2 = layout.split(p1, SplitDirection::Vertical);
+        let _p3 = layout.split(p2, SplitDirection::Horizontal);
 
         let snap = layout.snapshot().unwrap();
         let restored = SplitLayout::from_snapshot(snap);
@@ -1398,7 +1398,7 @@ mod tests {
     fn test_snapshot_roundtrip_with_leaf_group() {
         // Create a layout: LeafGroup([p1, p3]) | p2 (horizontal split)
         let (mut layout, p1) = SplitLayout::with_initial_pane();
-        let p2 = layout.split(p1, SplitDirection::Horizontal);
+        let p2 = layout.split(p1, SplitDirection::Vertical);
         let p3 = layout.alloc_id();
         layout.add_tab(p1, p3);
 
@@ -1448,20 +1448,20 @@ mod tests {
     }
 
     #[test]
-    fn test_right_neighbor_horizontal_split() {
+    fn test_right_neighbor_vertical_split() {
         // p1 | p2  →  right neighbor of p1 is p2
         let (mut layout, p1) = SplitLayout::with_initial_pane();
-        let p2 = layout.split(p1, SplitDirection::Horizontal);
+        let p2 = layout.split(p1, SplitDirection::Vertical);
         assert_eq!(layout.right_neighbor_pane(p1), Some(p2));
         // p2 has no right neighbor
         assert_eq!(layout.right_neighbor_pane(p2), None);
     }
 
     #[test]
-    fn test_right_neighbor_vertical_split_returns_none() {
+    fn test_right_neighbor_horizontal_split_returns_none() {
         // p1 / p2 (top/bottom) → no horizontal right neighbor
         let (mut layout, p1) = SplitLayout::with_initial_pane();
-        let p2 = layout.split(p1, SplitDirection::Vertical);
+        let p2 = layout.split(p1, SplitDirection::Horizontal);
         assert_eq!(layout.right_neighbor_pane(p1), None);
         assert_eq!(layout.right_neighbor_pane(p2), None);
     }
@@ -1470,29 +1470,29 @@ mod tests {
     fn test_right_neighbor_nested_splits() {
         // (p1 / p2) | p3  →  right neighbor of p1 is p3, p2 is p3
         let (mut layout, p1) = SplitLayout::with_initial_pane();
-        let p3 = layout.split(p1, SplitDirection::Horizontal);
-        let p2 = layout.split(p1, SplitDirection::Vertical);
+        let p3 = layout.split(p1, SplitDirection::Vertical);
+        let p2 = layout.split(p1, SplitDirection::Horizontal);
         assert_eq!(layout.right_neighbor_pane(p1), Some(p3));
         assert_eq!(layout.right_neighbor_pane(p2), Some(p3));
         assert_eq!(layout.right_neighbor_pane(p3), None);
     }
 
     #[test]
-    fn test_right_neighbor_with_vertical_then_horizontal() {
+    fn test_right_neighbor_with_vertical_root_and_horizontal_child() {
         // (p1 / p3) | p2  →  right neighbor of p1 and p3 is p2
         let (mut layout, p1) = SplitLayout::with_initial_pane();
-        let p2 = layout.split(p1, SplitDirection::Horizontal);
-        let p3 = layout.split(p1, SplitDirection::Vertical);
+        let p2 = layout.split(p1, SplitDirection::Vertical);
+        let p3 = layout.split(p1, SplitDirection::Horizontal);
         assert_eq!(layout.right_neighbor_pane(p1), Some(p2));
         assert_eq!(layout.right_neighbor_pane(p3), Some(p2));
     }
 
     #[test]
-    fn test_right_neighbor_three_way_horizontal() {
+    fn test_right_neighbor_three_way_vertical() {
         // p1 | p2 | p3  →  right of p1 is p2, right of p2 is p3
         let (mut layout, p1) = SplitLayout::with_initial_pane();
-        let p2 = layout.split(p1, SplitDirection::Horizontal);
-        let p3 = layout.split(p2, SplitDirection::Horizontal);
+        let p2 = layout.split(p1, SplitDirection::Vertical);
+        let p3 = layout.split(p2, SplitDirection::Vertical);
         assert_eq!(layout.right_neighbor_pane(p1), Some(p2));
         assert_eq!(layout.right_neighbor_pane(p2), Some(p3));
         assert_eq!(layout.right_neighbor_pane(p3), None);

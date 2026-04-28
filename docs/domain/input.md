@@ -70,30 +70,30 @@ KeybindingMap {
 - `with_overrides(user_bindings)` layers user customization on top
 - `lookup(key, modifiers)` → first match wins
 
-## Command: GlobalAction (40 enum variants)
+## Command: GlobalAction (41 enum variants)
 
 ### Pane Operations
 | Action | Default Binding | Description |
 |--------|----------------|-------------|
-| `SplitHorizontal` | Cmd+\ | Split the current FocusArea into left/right panes |
-| `SplitVertical` | Cmd+Shift+\ | Split the current FocusArea into top/bottom panes |
+| `SplitHorizontal` | Cmd+Shift+T | Split the current FocusArea into top/bottom panes |
+| `SplitVertical` | Cmd+Shift+Backslash | Split the current FocusArea into left/right panes |
 | `ClosePane` | Cmd+W | Close focused pane |
 | `ToggleStacked` | Cmd+Enter | Toggle stacked mode for the current FocusArea |
 | `DockToggleStacked` | Cmd+Ctrl+Enter | Toggle Dock stacked mode without permanently changing FocusArea |
 | `Navigate(Direction)` | Cmd+HJKL | Move focus within the current FocusArea |
-| `DockNavigate(Direction)` | Cmd+Ctrl+HJKL | Move focus within Dock without changing FocusArea |
-| `TabPrev` / `TabNext` | Cmd+I / Cmd+O | Cycle tabs in the current FocusArea |
-| `DockTabPrev` / `DockTabNext` | Cmd+Ctrl+I / Cmd+Ctrl+O | Cycle Dock tabs without changing FocusArea |
-| `NewTab` | Cmd+T | New tab (Launcher) |
-| `DockNewTab` | Cmd+Ctrl+T | New Dock tab |
-| `DockSplitHorizontal` | Cmd+Ctrl+\ | Split Dock into left/right panes |
-| `DockSplitVertical` | Cmd+Ctrl+Shift+\ | Split Dock into top/bottom panes |
+| `DockNavigate(Direction)` | Cmd+Shift+HJKL | Move focus within Dock without changing FocusArea |
+| `TabPrev` / `TabNext` | None by default | Cycle stacked panes in the current FocusArea |
+| `DockTabPrev` / `DockTabNext` | None by default | Cycle Dock tabs without changing FocusArea |
+| `NewTab` | Cmd+T | New Stage Terminal split to the right |
+| `DockNewTab` | None by default | New Dock tab |
+| `DockSplitHorizontal` | None by default | Split Dock into top/bottom panes |
+| `DockSplitVertical` | None by default | Split Dock into left/right panes |
 | `NewFile` | — | New empty editor |
 
 ### Global UI
 | Action | Default Binding | Description |
 |--------|----------------|-------------|
-| `FocusArea(Slot)` | Cmd+1/2/3/4 | Focus FileTree, Stage, or Dock by AreaSlot |
+| `FocusArea(Slot)` | None by default | Positional FocusArea action for user overrides |
 | `FileFinder` | Cmd+Shift+O | Open file finder modal |
 | `Find` | Cmd+F | Search in pane |
 | `Paste` / `Copy` | Cmd+V / Cmd+C | Clipboard |
@@ -105,8 +105,9 @@ KeybindingMap {
 | `OpenBrowser` | Cmd+Shift+B | Browser pane |
 | `BrowserReload` | Cmd+R | Reload Browser Pane |
 | `ScrollHalfPageUp/Down` | Cmd+U / Cmd+D | Half-page scroll |
-| `ToggleDockPin` | Cmd+Shift+P | Pin or unpin the focused Dock Pane |
-| `ToggleLivePreview` | Cmd+Shift+L | Toggle LivePreviewMode for Markdown Pane |
+| `ToggleDock` | Cmd+Backslash | Show/hide or focus Dock |
+| `ToggleDockPin` | None by default | Legacy no-op retained for settings compatibility |
+| `ToggleLivePreview` | None by default | Toggle LivePreviewMode for Markdown Pane |
 
 ### Workspace
 | Action | Default Binding | Description |
@@ -118,8 +119,8 @@ KeybindingMap {
 ### Sidebar
 | Action | Default Binding | Description |
 |--------|----------------|-------------|
-| `ToggleFileTree` | - | Show/hide file tree |
-| `ToggleWorkspaceSidebar` | - | Show/hide workspace list |
+| `ToggleFileTree` | Cmd+B | Show/hide FileTree View |
+| `ToggleWorkspaceSidebar` | Cmd+E | Show/hide workspace list |
 
 ### Retired Action Keys
 

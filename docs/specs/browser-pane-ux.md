@@ -39,6 +39,7 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 9. Browser Pane keeps separate committed-URL and editable-URL state, but the visible Browser URL bar must stay truthful: content-driven navigation updates the committed Browser URL immediately, and the visible Browser URL bar updates whenever the user is not actively editing a distinct Browser URL draft.
 10. Unsupported Browser Pane capability gaps are explicit in this pass. Non-renderable responses use an explicit external handoff path routed to the originating Browser Pane by `PaneId`, and passkey or AuthenticationServices-sensitive flows are treated as Browser Pane V2 capability work rather than silently implied Browser Pane guarantees.
 11. Browser Pane dirty tracking stays centralized: `sync_webview_state()` owns the `generation` bump for Browser Pane state it polls from the native `WKWebView`, including committed-URL, loading, and navigation-availability changes.
+12. Browser Pane native content is full-bleed below Browser Pane chrome. The Browser URL bar may keep its inset chrome, but the `WKWebView` frame should not add extra Pane padding around page content.
 
 ### Approach
 
@@ -52,6 +53,7 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 8. Preserve Browser Pane loading feedback when the native `WKWebView` is hidden or still waiting for its first frame.
 9. Keep empty Browser Pane native-view visibility explicit so Tide keeps its own dark `Pane` background until first navigation.
 10. Keep unsupported download and passkey flows explicit: this pass hardens Browser Pane fallback behavior, while in-app download management and AuthenticationServices integration remain Browser Pane V2 work.
+11. Compute the native `WKWebView` frame from the Pane rect and Browser Pane chrome height without reusing editor/terminal content padding.
 
 ## Bounded Contexts
 
@@ -190,6 +192,19 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
   - BR-29: Browser Pane does not promise in-app passkey or AuthenticationServices behavior in this pass; unsupported auth flows rely on explicit external handoff
   - BR-30: External handoff preserves coherent Browser Pane chrome state, FocusArea, and committed Browser URL state after the handoff
 
+### UC-8: LayoutBrowserNativeContent
+
+- **Actor**: System
+- **Trigger**: Layout recomputes a visible Browser Pane native frame
+- **Precondition**: A Browser Pane has a visible native `WKWebView`
+- **Flow**:
+  1. Tide computes the top offset from the Pane header and Browser Pane chrome.
+  2. Tide positions the native `WKWebView` at the Pane left edge below that chrome.
+  3. Tide gives the native `WKWebView` the full remaining Pane width and height.
+- **Postcondition**: Browser Pane page content reads as the Pane content, not as an inset card.
+- **Business Rules**:
+  - BR-32: Browser Pane native content must not add `PANE_PADDING` to the left, right, or bottom of the `WKWebView` frame.
+
 ## Invariants
 
 1. **Search precedence**: `search_focus` remains the highest-priority Browser Pane text target.
@@ -200,6 +215,7 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 6. **Committed URL truthfulness**: `BrowserPane.url` remains the source of truth for committed Browser URL state even when Browser URL-bar draft text is temporarily different.
 7. **Explicit capability boundary**: This pass can improve Browser Pane fallback behavior, but it does not imply full in-app download-manager or passkey capability.
 8. **Empty-state background consistency**: An empty navigation-mode Browser Pane must not reveal the default native `WKWebView` background before first navigation.
+9. **Content-frame consistency**: Browser Pane native content uses the same Pane bounds that the user visually reads as Browser Pane content.
 
 ## Tests
 
@@ -239,6 +255,7 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 | UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-28 | `browser_pane_fallbacks` | `download_external_handoff_updates_originating_background_browser_pane` |
 | UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-29 | `browser_pane_fallbacks` | `external_handoff_prefers_url_bar_draft_when_browser_is_editing` |
 | UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-30 | `browser_pane_fallbacks` | `external_handoff_prefers_committed_browser_url_when_browser_is_not_editing` |
+| UC-8: LayoutBrowserNativeContent | BR-32 | `browser_pane_ux` | `browser_webview_frame_uses_full_bleed_content_below_browser_chrome` |
 
 ## Location
 

@@ -64,9 +64,12 @@ Switching = **save current → update index → load target**.
 - **Trigger**: GlobalAction::ToggleWorkspaceSidebar
 - **Flow**:
   1. Toggle ws.show_sidebar boolean
-- **Postcondition**: Sidebar visibility toggled
+  2. Start a `SurfaceVisibilityAnimation` from the current rendered Workspace rail width to the target width
+  3. Compute layout from the animated width until the transition settles
+- **Postcondition**: Sidebar visibility toggled and the Workspace rail opens/closes as an attached side surface
 - **Business Rules**:
   - BR-9: Toggle flips visibility state
+  - BR-13: Toggle starts Workspace rail width animation
 
 ### UC-4: MovePaneToWorkspace
 
@@ -103,6 +106,7 @@ Switching = **save current → update index → load target**.
 | UC-2: CloseWorkspace | BR-7 | `closing_only_workspace_in_workspace_manager_is_a_no_op` |
 | UC-2: CloseWorkspace | BR-8 | `closing_workspace_removes_from_workspace_manager_and_switches` |
 | UC-3: ToggleSidebar | BR-9 | `toggling_workspace_sidebar_toggles_visibility` |
+| UC-3: ToggleSidebar | BR-13 | `toggle_workspace_rail_starts_surface_visibility_animation` |
 | UC-1: SwitchWorkspace | BR-10 | `switching_workspace_preserves_view_mode` |
 | UC-1: SwitchWorkspace | BR-11 | `switching_workspace_preserves_zoomed_pane` |
 | UC-1: SwitchWorkspace | BR-12 | `switching_workspace_preserves_focus_area` |

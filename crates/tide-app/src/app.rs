@@ -390,11 +390,19 @@ impl App {
         &mut self,
         early_terminal: Option<crate::tide_terminal::Terminal>,
     ) {
+        self.ws.show_sidebar = true;
+        self.ws.visibility_animation = None;
+        self.ft.visible = false;
+        self.ft.visibility_animation = None;
+        self.dock.dock_open = false;
+        self.dock.visibility_animation = None;
+
         let pane_id = self.next_workspace_pane_id();
         let (layout, pane_id) = SplitLayout::with_initial_pane_id(pane_id);
         self.layout = layout;
 
         let result = if let Some(mut terminal) = early_terminal {
+            terminal.set_dark_mode(self.window.dark_mode);
             terminal.resize(INITIAL_TERMINAL_COLS, INITIAL_TERMINAL_ROWS);
             Ok(TerminalPane::with_terminal(pane_id, terminal))
         } else {
@@ -417,6 +425,7 @@ impl App {
                 self.ime.pending_creates.push(pane_id);
                 self.focus.focused = Some(pane_id);
                 self.focus.stage_focused = Some(pane_id);
+                self.sync_terminal_context_mode_from_terminal(pane_id);
                 self.router.set_focused(pane_id);
             }
             Err(e) => {
@@ -451,22 +460,20 @@ impl App {
 
 impl crate::application::ports::inward::AppCorePort for App {
     fn dock_zoomed_pane(&self) -> Option<PaneId> {
-        if !self.dock.dock_zoomed {
+        if !self.active_terminal_context_is_stacked() {
             return None;
         }
-        self.focus
-            .focused
-            .filter(|id| self.is_pane_in_dock(*id))
-            .or_else(|| {
-                self.focused_terminal_id().and_then(|tid| {
-                    if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
-                        tp.dock_focused.filter(|id| self.panes.contains_key(id))
-                    } else {
-                        None
-                    }
-                })
-            })
-            .or_else(|| self.dock.pinned_dock_layout.pane_ids().into_iter().next())
+        let tid = self.focused_terminal_id()?;
+        match self.panes.get(&tid) {
+            Some(PaneKind::Terminal(tp)) => {
+                let all_ids = tp.dock_layout.all_pane_ids();
+                tp.dock_focused
+                    .filter(|pane_id| all_ids.contains(pane_id))
+                    .or_else(|| tp.dock_layout.pane_ids().first().copied())
+                    .or_else(|| all_ids.first().copied())
+            }
+            _ => None,
+        }
     }
 
     fn logical_size(&self) -> Size {
@@ -654,63 +661,42 @@ impl crate::application::ports::inward::AppCorePort for App {
             .map(|(_, rect)| *rect)?;
 
         let (tab_ids, active_pane, pinned_ids, is_stacked, show_comment_badge, is_stage_surface) =
-            if self.dock_zoomed_pane() == Some(pane_id) {
-                let mut tabs = self.dock.pinned_dock_layout.all_tabs_flat();
-                if let Some(tid) = self.focused_terminal_id() {
-                    if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
-                        tabs.extend(tp.dock_layout.all_tabs_flat());
-                    }
-                }
-                if tabs.len() < 2 {
-                    return None;
-                }
+            if self.active_terminal_context_is_stacked() && self.dock_zoomed_pane() == Some(pane_id)
+            {
+                let tid = self.terminal_owning(pane_id)?;
+                let tab_ids = match self.panes.get(&tid) {
+                    Some(PaneKind::Terminal(tp)) => tp.dock_layout.all_tabs_flat(),
+                    _ => Vec::new(),
+                };
                 (
-                    tabs,
+                    tab_ids,
                     pane_id,
                     Vec::new(),
                     true,
                     self.can_show_context_comment_badge(pane_id),
                     false,
                 )
-            } else if let Some(tg) = self
-                .dock
-                .pinned_dock_layout
-                .tab_group_containing(pane_id)
-                .or_else(|| {
-                    self.terminal_owning(pane_id)
-                        .and_then(|tid| match self.panes.get(&tid) {
-                            Some(PaneKind::Terminal(tp)) => {
-                                tp.dock_layout.tab_group_containing(pane_id)
-                            }
-                            _ => None,
-                        })
-                })
+            } else if let Some(tg) =
+                self.terminal_owning(pane_id)
+                    .and_then(|tid| match self.panes.get(&tid) {
+                        Some(PaneKind::Terminal(tp)) => {
+                            tp.dock_layout.tab_group_containing(pane_id)
+                        }
+                        _ => None,
+                    })
             {
                 (
                     tg.tabs.clone(),
                     tg.active_pane(),
-                    self.dock.pinned_dock_layout.all_pane_ids(),
+                    Vec::new(),
                     false,
                     self.can_show_context_comment_badge(tg.active_pane()),
                     false,
                 )
             } else {
-                let stage_pane_ids = self.layout.all_tabs_flat();
+                let stage_pane_ids = self.layout.pane_ids();
                 if self.focus.zoomed_pane == Some(pane_id) && stage_pane_ids.len() > 1 {
                     (stage_pane_ids, pane_id, Vec::new(), true, false, true)
-                } else if let Some(tg) = self
-                    .layout
-                    .tab_group_containing(pane_id)
-                    .filter(|tg| tg.tabs.len() >= 2)
-                {
-                    (
-                        tg.tabs.clone(),
-                        tg.active_pane(),
-                        Vec::new(),
-                        false,
-                        false,
-                        true,
-                    )
                 } else {
                     return None;
                 }

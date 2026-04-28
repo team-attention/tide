@@ -107,8 +107,6 @@ pub(crate) enum DropDestination {
     TreeRoot(DropZone),
     DockRoot(DropZone),
     Workspace(usize),
-    /// Drop onto the pinned group — pins the source pane.
-    PinnedGroup,
 }
 
 // ──────────────────────────────────────────────

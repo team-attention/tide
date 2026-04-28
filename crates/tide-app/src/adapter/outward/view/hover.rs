@@ -90,7 +90,7 @@ pub(crate) fn render_hover(
                     // Highlight the border line between adjacent panes
                     for &(id_a, rect_a) in visual_pane_rects {
                         match dir {
-                            crate::tide_core::SplitDirection::Horizontal => {
+                            crate::tide_core::SplitDirection::Vertical => {
                                 let right_edge = rect_a.x + rect_a.width;
                                 for &(id_b, rect_b) in visual_pane_rects {
                                     if id_b != id_a
@@ -101,18 +101,14 @@ pub(crate) fn render_hover(
                                             .min(rect_b.y + rect_b.height)
                                             - y;
                                         if h > 0.0 {
-                                            let border_rect = Rect::new(
-                                                right_edge - 1.0,
-                                                y,
-                                                rect_b.x - right_edge + 2.0,
-                                                h,
-                                            );
+                                            let seam_w = (rect_b.x - right_edge).max(1.0);
+                                            let border_rect = Rect::new(right_edge, y, seam_w, h);
                                             renderer.draw_rect(border_rect, p.hover_panel_border);
                                         }
                                     }
                                 }
                             }
-                            crate::tide_core::SplitDirection::Vertical => {
+                            crate::tide_core::SplitDirection::Horizontal => {
                                 let bottom_edge = rect_a.y + rect_a.height;
                                 for &(id_b, rect_b) in visual_pane_rects {
                                     if id_b != id_a
@@ -123,12 +119,8 @@ pub(crate) fn render_hover(
                                             .min(rect_b.x + rect_b.width)
                                             - x;
                                         if w > 0.0 {
-                                            let border_rect = Rect::new(
-                                                x,
-                                                bottom_edge - 1.0,
-                                                w,
-                                                rect_b.y - bottom_edge + 2.0,
-                                            );
+                                            let seam_h = (rect_b.y - bottom_edge).max(1.0);
+                                            let border_rect = Rect::new(x, bottom_edge, w, seam_h);
                                             renderer.draw_rect(border_rect, p.hover_panel_border);
                                         }
                                     }
@@ -140,25 +132,24 @@ pub(crate) fn render_hover(
                 crate::state::drag_types::HoverTarget::WsSidebarBorder => {
                     if let Some(ws_rect) = app.ws.sidebar_rect {
                         let border_x = ws_rect.x + ws_rect.width;
-                        let border_rect = Rect::new(border_x, ws_rect.y, 4.0, ws_rect.height);
+                        let border_rect =
+                            Rect::new(border_x, ws_rect.y, PANE_GAP.max(1.0), ws_rect.height);
                         renderer.draw_rect(border_rect, p.hover_panel_border);
                     }
                 }
                 crate::state::drag_types::HoverTarget::FileTreeBorder => {
                     if let Some(ft_rect) = app.ft.rect {
-                        let border_x = if app.window.sidebar_side == crate::LayoutSide::Left {
-                            ft_rect.x + ft_rect.width
-                        } else {
-                            ft_rect.x - PANE_GAP
-                        };
-                        let border_rect = Rect::new(border_x, ft_rect.y, 4.0, ft_rect.height);
+                        let border_x = ft_rect.x;
+                        let border_rect =
+                            Rect::new(border_x, ft_rect.y, PANE_GAP.max(1.0), ft_rect.height);
                         renderer.draw_rect(border_rect, p.hover_panel_border);
                     }
                 }
                 crate::state::drag_types::HoverTarget::DockBorder => {
                     if let Some(pa_rect) = app.pane_area_rect {
                         let border_x = pa_rect.x + pa_rect.width;
-                        let border_rect = Rect::new(border_x, pa_rect.y, 4.0, pa_rect.height);
+                        let border_rect =
+                            Rect::new(border_x, pa_rect.y, PANE_GAP.max(1.0), pa_rect.height);
                         renderer.draw_rect(border_rect, p.hover_panel_border);
                     }
                 }

@@ -113,22 +113,32 @@ fn hovered_focused_file_tree_cursor_row_does_not_stack_a_second_overlay() {
 // --- UC-3: RenderExpandedDirectoryRowChrome ---
 
 #[test]
-fn expanded_directory_rows_use_the_cursor_row_slab_geometry_family() {
-    // UC-3 BR-8: Expanded Directory Rows use the same rounded slab geometry family as the FileTree Cursor Row instead of a fill-only band.
+fn expanded_directory_rows_use_quiet_open_folder_chrome() {
+    // UC-3 BR-8: Expanded Directory Rows use a no-stroke rounded fill that is weaker than the focused FileTree Cursor Row.
     for palette in [DARK, LIGHT] {
         let chrome = file_tree_expanded_directory_chrome(&palette);
+        let focused = file_tree_focus_chrome(&palette, true);
 
         assert!(chrome.fill.a > 0.0);
-        assert!(chrome.stroke.a > 0.0);
+        assert_eq!(chrome.stroke.a.to_bits(), 0.0f32.to_bits());
         assert_eq!(
-            color_tuple(chrome.stroke),
-            color_tuple(palette.file_tree_focus_stroke)
-        );
-        assert_ne!(
             color_tuple(chrome.fill),
             color_tuple(palette.hover_file_tree)
         );
+        assert!(
+            chrome.fill.a < focused.cursor_fill.a,
+            "open folder chrome should be quieter than focused selection chrome"
+        );
     }
+}
+
+#[test]
+fn borderless_file_tree_row_slabs_do_not_spend_geometry_on_hidden_strokes() {
+    // UC-3 BR-8: No-stroke Expanded Directory Row slabs use the full row rect instead of an inset border geometry.
+    let source = include_str!("../../adapter/outward/view/chrome/file_tree.rs");
+
+    assert!(source.contains("if chrome.stroke.a > 0.0"));
+    assert!(source.contains("renderer.draw_chrome_rounded_rect(row_rect, chrome.fill"));
 }
 
 #[test]
@@ -137,4 +147,52 @@ fn expanded_directory_cursor_rows_do_not_stack_duplicate_slabs() {
     let source = include_str!("../../adapter/outward/view/chrome/file_tree.rs");
 
     assert!(source.contains("if entry.entry.is_dir && entry.is_expanded && !is_cursor_row"));
+}
+
+// --- UC-4: RenderIntegratedFileTreeContainer ---
+
+#[test]
+fn file_tree_container_uses_integrated_edge_chrome() {
+    // UC-4 BR-10: FileTree panel border widths are zero in both focused and unfocused states.
+    for palette in [DARK, LIGHT] {
+        for tree_focused in [false, true] {
+            let chrome = file_tree_focus_chrome(&palette, tree_focused);
+
+            assert_eq!(chrome.panel_top_border.to_bits(), 0.0f32.to_bits());
+            assert_eq!(chrome.panel_side_border.to_bits(), 0.0f32.to_bits());
+            assert_eq!(chrome.panel_shadow_alpha.to_bits(), 0.0f32.to_bits());
+        }
+    }
+}
+
+#[test]
+fn file_tree_container_does_not_draw_edge_gradient_seam() {
+    // UC-4 BR-11: FileTree chrome source must not draw the old edge-gradient seam.
+    let source = include_str!("../../adapter/outward/view/chrome/file_tree.rs");
+
+    assert!(!source.contains("Edge gradient for depth separation"));
+    assert!(!source.contains("strip_x("));
+}
+
+#[test]
+fn file_tree_container_uses_subtle_edge_separator_not_dock_accent() {
+    // UC-4 BR-12: FileTree View uses a subtle left edge separator from the same color family as the header separator, not the Dock accent.
+    for palette in [DARK, LIGHT] {
+        for tree_focused in [false, true] {
+            let chrome = file_tree_focus_chrome(&palette, tree_focused);
+
+            assert_eq!(
+                color_tuple(chrome.edge_separator_color),
+                color_tuple(palette.border_subtle)
+            );
+            assert_eq!(
+                color_tuple(chrome.edge_separator_color),
+                color_tuple(chrome.header_separator_color)
+            );
+            assert_ne!(
+                color_tuple(chrome.edge_separator_color),
+                color_tuple(palette.dock_tab_underline)
+            );
+        }
+    }
 }

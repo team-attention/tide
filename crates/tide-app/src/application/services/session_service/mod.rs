@@ -163,7 +163,10 @@ impl SessionContextArea {
                             pane_ids: dock_pane_ids,
                             focused: tp.dock_focused,
                             layout: snap_layout,
-                            view_mode: "split".to_string(),
+                            view_mode: match tp.dock_view_mode {
+                                crate::state::ViewMode::Split => "split".to_string(),
+                                crate::state::ViewMode::Stacked => "stacked".to_string(),
+                            },
                         },
                     );
                 }
@@ -301,6 +304,10 @@ impl App {
                         if let Some(crate::pane::PaneKind::Terminal(tp)) = self.panes.get_mut(tid) {
                             tp.dock_layout = SplitLayout::from_snapshot(layout_snap);
                             tp.dock_focused = snap.focused;
+                            tp.dock_view_mode = match snap.view_mode.as_str() {
+                                "split" => crate::state::ViewMode::Split,
+                                _ => crate::state::ViewMode::Stacked,
+                            };
                         }
                     }
                 }
@@ -350,18 +357,15 @@ impl App {
         true
     }
 
-    /// Restore only preferences (window size, theme, panel widths) from a session,
+    /// Restore only preferences (window size, theme, side-surface widths) from a session,
     /// then create a fresh initial pane. Used after intentional quit.
     pub(crate) fn restore_preferences(
         &mut self,
         session: &Session,
         early_terminal: Option<crate::tide_terminal::Terminal>,
     ) {
-        self.ft.visible = session.show_file_tree;
         self.ft.width = session.file_tree_width;
         self.ws.width = session.ws_sidebar_width;
-        self.ws.show_sidebar = session.show_workspace_sidebar;
-        self.dock.dock_open = session.dock_open;
         self.window.dark_mode = session.dark_mode;
         self.window.sidebar_side = match session.sidebar_side.as_str() {
             "right" => crate::LayoutSide::Right,

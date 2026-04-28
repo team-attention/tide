@@ -27,7 +27,7 @@ Terminal {
     stay_at_bottom: Arc<AtomicBool>,    // Auto-scroll mode
     url_ranges: Vec<Vec<(usize, usize)>>, // Detected URLs per row
     inverse_cursor: Option<(u16, u16)>,   // TUI cursor fallback
-    pending_pty_resize: Option<(WindowSize, Instant)>, // Debounced resize (50ms)
+    pending_pty_resize: Option<(WindowSize, Instant)>, // Compatibility drain for older queued resize paths
 }
 ```
 
@@ -75,24 +75,24 @@ Two-phase algorithm:
 
 ### Main Thread (App)
 - `Terminal::process()`:
-  1. Flush debounced PTY resize if 50ms elapsed
+  1. Drain any compatibility pending PTY resize
   2. Call `consume_snapshot()` — swap in latest data (cheap pointer swap)
 
 ## Key Methods
 
 | Method | Purpose |
 |--------|---------|
-| `process()` | Consume PTY output + flush pending resize |
+| `process()` | Consume PTY output + drain compatibility pending resize |
 | `grid()` | Access the cached TerminalGrid |
 | `cursor()` | Access the cached CursorState |
 | `write(data)` | Send bytes to PTY (keyboard input) |
-| `resize(cols, rows)` | Queue debounced PTY resize |
+| `resize(cols, rows)` | Resize the emulator grid and send the final PTY resize |
 | `cwd()` | Get detected working directory |
 
 ## Performance Optimizations
 
 1. **Diff-based sync**: Only convert cells that actually changed between frames
-2. **Debounced resize**: PTY resize throttled to 50ms to prevent SIGWINCH storms
+2. **Layout-level resize coalescing**: transient layout motion defers Terminal resize until the final layout, then sends one immediate PTY resize
 3. **Snapshot swap**: Main thread never blocks on sync — just swaps a pointer
 4. **Parked sync thread**: Sleeps when no PTY output, woken by dirty flag
 5. **Generation tracking**: Renderer skips unchanged panes via `grid_generation`

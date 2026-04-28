@@ -1,13 +1,7 @@
 // Spec: docs/specs/modifier-keybinding-redesign.md
 //
-// These tests are written ahead of implementation (spec-first, test-first).
-// They reference NEW GlobalAction variants that do not yet exist:
-//   DockNavigate(Direction), DockSplitVertical, DockSplitHorizontal,
-//   DockNewTab, DockTabPrev, DockTabNext
-// They also reference REMOVED variants that still exist in the current code:
-//   BrowserBack, BrowserForward, ToggleZoom, SplitHorizontalHere, SplitVerticalHere
-//
-// Expected: these tests will NOT compile until the implementation is done.
+// These tests cover the current modifier keybinding contract and the legacy
+// action-key migration behavior for removed bindings.
 
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
@@ -249,24 +243,24 @@ fn dock_navigate_when_dock_closed_is_noop() {
 // ─────────────────────────────────────────────────
 
 #[test]
-fn tab_prev_next_in_stage_cycles_within_tab_group() {
-    // UC-3 BR-1: TabPrev/TabNext cycle within the current TabGroup only.
-    let (mut app, p1) = app_with_editor();
-    // Add a second tab to the same TabGroup
-    let p2 = app.layout.alloc_id();
-    app.layout.add_tab(p1, p2);
-    app.panes
-        .insert(p2, PaneKind::Editor(EditorPane::new_empty(p2)));
-
+fn tab_prev_next_in_stage_split_mode_is_noop() {
+    // UC-3 BR-1: TabPrev/TabNext are no-ops in Stage ViewMode::Split.
+    let (mut app, p1, _p2) = app_with_two_stage_panes();
     app.focus.focus_area = FocusArea::Stage;
     app.focus.focused = Some(p1);
 
     app.handle_global_action(GlobalAction::TabNext);
-
     assert_eq!(
         app.focus.focused,
-        Some(p2),
-        "TabNext should cycle to next tab in the same TabGroup"
+        Some(p1),
+        "TabNext should not move focus in Stage split mode"
+    );
+
+    app.handle_global_action(GlobalAction::TabPrev);
+    assert_eq!(
+        app.focus.focused,
+        Some(p1),
+        "TabPrev should not move focus in Stage split mode"
     );
     assert_eq!(app.focus.focus_area, FocusArea::Stage);
 }
@@ -274,7 +268,7 @@ fn tab_prev_next_in_stage_cycles_within_tab_group() {
 #[test]
 fn tab_prev_next_in_dock_cycles_dock_tabs() {
     // UC-3 BR-2: When FocusArea is Dock, TabPrev/TabNext cycle through Dock tabs
-    // (pinned + terminal dock tabs) — the current cycle_tab() behavior.
+    // in the focused Stage Terminal's Terminal Context Surface.
     let (mut app, p1, _p2) = app_with_two_stage_panes();
 
     let dock_p1 = app.layout.alloc_id();
@@ -306,64 +300,45 @@ fn tab_prev_next_in_dock_cycles_dock_tabs() {
 }
 
 #[test]
-fn tab_cycling_wraps_around_within_tab_group() {
-    // UC-3 BR-3: Cycling past the last tab wraps to the first within the TabGroup.
-    let (mut app, p1) = app_with_editor();
-    let p2 = app.layout.alloc_id();
-    app.layout.add_tab(p1, p2);
-    app.panes
-        .insert(p2, PaneKind::Editor(EditorPane::new_empty(p2)));
-
+fn tab_cycling_wraps_around_in_stacked_stage() {
+    // UC-3 BR-3: Stage ViewMode::Stacked cycling wraps at both ends.
+    let (mut app, p1, p2) = app_with_two_stage_panes();
     app.focus.focus_area = FocusArea::Stage;
     app.focus.focused = Some(p2);
+    app.handle_toggle_stacked();
 
-    // TabNext from last tab wraps to first
+    // TabNext from last pane wraps to first.
     app.handle_global_action(GlobalAction::TabNext);
     assert_eq!(
         app.focus.focused,
         Some(p1),
-        "TabNext from last tab should wrap to first"
+        "TabNext from last stacked pane should wrap to first"
     );
+    assert_eq!(app.focus.zoomed_pane, Some(p1));
 
-    // TabPrev from first tab wraps to last
+    // TabPrev from first pane wraps to last.
     app.handle_global_action(GlobalAction::TabPrev);
     assert_eq!(
         app.focus.focused,
         Some(p2),
-        "TabPrev from first tab should wrap to last"
+        "TabPrev from first stacked pane should wrap to last"
     );
+    assert_eq!(app.focus.zoomed_pane, Some(p2));
 }
 
 #[test]
-fn tab_cycling_into_tab_group_sets_active_tab() {
-    // UC-3 BR-4: When cycling into a TabGroup, the target pane becomes the active tab
-    // of that group.
+fn tab_prev_next_in_stacked_stage_cycles_split_panes() {
+    // UC-3 BR-4: Stage ViewMode::Stacked cycling updates focus and zoomed pane.
     let (mut app, p1, p2) = app_with_two_stage_panes();
-
-    // Create a TabGroup [p1, p3] where p3 is active
-    let p3 = app.layout.alloc_id();
-    app.panes
-        .insert(p3, PaneKind::Editor(EditorPane::new_empty(p3)));
-    app.layout.add_tab(p1, p3);
-
-    // Focus is on p2 (separate leaf). Cycle into the TabGroup.
     app.focus.focus_area = FocusArea::Stage;
-    app.focus.focused = Some(p2);
+    app.focus.focused = Some(p1);
+    app.handle_toggle_stacked();
 
     app.handle_global_action(GlobalAction::TabNext);
 
-    let focused = app.focus.focused.unwrap();
-    // Focused pane should be in the TabGroup
-    let tg = app.layout.tab_group_containing(p1);
-    if let Some(tg) = tg {
-        if tg.contains(focused) {
-            assert_eq!(
-                tg.active_pane(),
-                focused,
-                "Cycling into a TabGroup must set the target as active tab"
-            );
-        }
-    }
+    assert_eq!(app.focus.focused, Some(p2));
+    assert_eq!(app.focus.zoomed_pane, Some(p2));
+    assert_eq!(app.focus.focus_area, FocusArea::Stage);
 }
 
 // ────────────────────────────────────────────────────
@@ -448,8 +423,9 @@ fn split_vertical_in_stage_splits_stage_layout() {
 }
 
 #[test]
-fn split_vertical_in_dock_splits_dock_layout() {
-    // UC-5 BR-1: When in Dock, SplitVertical splits Dock layout.
+fn split_vertical_in_dock_targets_terminal_context_surface() {
+    // Spec: docs/specs/open-terminal-codex-app.md
+    // UC-4 BR-7: Split actions invoked while focus is inside Dock must target Terminal Context Surface.
     let (mut app, p1, _p2) = app_with_two_stage_panes();
 
     let dock_p1 = app.layout.alloc_id();
@@ -462,17 +438,20 @@ fn split_vertical_in_dock_splits_dock_layout() {
 
     app.handle_global_action(GlobalAction::SplitVertical);
 
-    // FocusArea should remain Dock
     assert_eq!(
         app.focus.focus_area,
         FocusArea::Dock,
         "SplitVertical in Dock should keep FocusArea as Dock"
     );
+    assert!(
+        !app.layout.all_pane_ids().contains(&dock_p1),
+        "SplitVertical in Dock should not move the context Pane into Stage"
+    );
 }
 
 #[test]
-fn cmd_backslash_maps_to_split_horizontal() {
-    // Cmd+\ = SplitHorizontal in current area (below).
+fn cmd_backslash_maps_to_toggle_dock() {
+    // UC-8 BR-1: Cmd+\ = ToggleDock.
     let map = KeybindingMap::new();
     let mods = Modifiers {
         shift: false,
@@ -483,9 +462,149 @@ fn cmd_backslash_maps_to_split_horizontal() {
     let action = map.lookup(&Key::Char('\\'), &mods);
     assert_eq!(
         action,
-        Some(GlobalAction::SplitHorizontal),
-        "Cmd+\\ should map to SplitHorizontal"
+        Some(GlobalAction::ToggleDock),
+        "Cmd+\\ should map to ToggleDock"
     );
+}
+
+#[test]
+fn cmd_b_maps_to_toggle_file_tree() {
+    // UC-8 BR-1: Cmd+B = ToggleFileTree.
+    let map = KeybindingMap::new();
+    let mods = Modifiers {
+        shift: false,
+        ctrl: false,
+        meta: true,
+        alt: false,
+    };
+    let action = map.lookup(&Key::Char('b'), &mods);
+    assert_eq!(
+        action,
+        Some(GlobalAction::ToggleFileTree),
+        "Cmd+B should map to ToggleFileTree"
+    );
+}
+
+#[test]
+fn cmd_e_maps_to_toggle_workspace_rail() {
+    // UC-8 BR-1: Cmd+E = ToggleWorkspaceSidebar.
+    let map = KeybindingMap::new();
+    let mods = Modifiers {
+        shift: false,
+        ctrl: false,
+        meta: true,
+        alt: false,
+    };
+    let action = map.lookup(&Key::Char('e'), &mods);
+    assert_eq!(
+        action,
+        Some(GlobalAction::ToggleWorkspaceSidebar),
+        "Cmd+E should map to ToggleWorkspaceSidebar"
+    );
+}
+
+#[test]
+fn cmd_1_2_3_4_are_not_default_visibility_or_focus_toggles() {
+    // UC-8 BR-2: Visibility and FocusArea changes use named shortcuts, not numeric slots.
+    let map = KeybindingMap::new();
+    let mods = Modifiers {
+        shift: false,
+        ctrl: false,
+        meta: true,
+        alt: false,
+    };
+
+    assert_eq!(map.lookup(&Key::Char('1'), &mods), None);
+    assert_eq!(map.lookup(&Key::Char('2'), &mods), None);
+    assert_eq!(map.lookup(&Key::Char('3'), &mods), None);
+    assert_eq!(map.lookup(&Key::Char('4'), &mods), None);
+}
+
+#[test]
+fn cmd_i_and_cmd_o_are_not_default_tab_group_navigation() {
+    // UC-8 BR-3: Cmd+I/O are no longer reserved for TabPrev/TabNext.
+    let map = KeybindingMap::new();
+    let mods = Modifiers {
+        shift: false,
+        ctrl: false,
+        meta: true,
+        alt: false,
+    };
+
+    assert_eq!(map.lookup(&Key::Char('i'), &mods), None);
+    assert_eq!(map.lookup(&Key::Char('o'), &mods), None);
+}
+
+#[test]
+fn cmd_shift_hjkl_maps_to_dock_navigate() {
+    // UC-2 BR-1: Cmd+Shift+H/J/K/L navigates Dock without moving FocusArea.
+    let map = KeybindingMap::new();
+    let mods = Modifiers {
+        shift: true,
+        ctrl: false,
+        meta: true,
+        alt: false,
+    };
+
+    let cases = [
+        ('h', Direction::Left),
+        ('j', Direction::Down),
+        ('k', Direction::Up),
+        ('l', Direction::Right),
+    ];
+
+    for (ch, direction) in cases {
+        assert_eq!(
+            map.lookup(&Key::Char(ch), &mods),
+            Some(GlobalAction::DockNavigate(direction))
+        );
+    }
+}
+
+#[test]
+fn keybinding_settings_omit_retired_tab_group_and_unbound_dock_split_actions() {
+    // UC-10 BR-1/BR-2: Settings hides retired tab-group shortcuts and no-default Dock split internals.
+    let actions = GlobalAction::all_actions();
+    let defaults = KeybindingMap::new();
+
+    for retired in [
+        GlobalAction::TabPrev,
+        GlobalAction::TabNext,
+        GlobalAction::DockTabPrev,
+        GlobalAction::DockTabNext,
+        GlobalAction::DockSplitHorizontal,
+        GlobalAction::DockSplitVertical,
+        GlobalAction::DockNewTab,
+        GlobalAction::ToggleDockPin,
+    ] {
+        assert!(
+            !actions.iter().any(|action| action == &retired),
+            "{} should not be shown in keybinding settings",
+            retired.action_key()
+        );
+    }
+
+    for action in actions {
+        assert!(
+            defaults.hotkey_for(&action).is_some(),
+            "{} should not be shown without a default hotkey",
+            action.action_key()
+        );
+    }
+}
+
+#[test]
+fn cmd_shift_p_is_not_bound_to_retired_dock_pin() {
+    // UC-10 BR-4: ToggleDockPin is retained for compatibility but has no default hotkey.
+    let map = KeybindingMap::new();
+    let mods = Modifiers {
+        shift: true,
+        ctrl: false,
+        meta: true,
+        alt: false,
+    };
+
+    assert_eq!(map.lookup(&Key::Char('p'), &mods), None);
 }
 
 #[test]
@@ -506,13 +625,32 @@ fn cmd_shift_backslash_maps_to_split_vertical() {
     );
 }
 
+#[test]
+fn cmd_shift_t_maps_to_split_horizontal() {
+    // UC-5 BR-2: Cmd+Shift+T = SplitHorizontal in the current FocusArea.
+    let map = KeybindingMap::new();
+    let mods = Modifiers {
+        shift: true,
+        ctrl: false,
+        meta: true,
+        alt: false,
+    };
+    let action = map.lookup(&Key::Char('t'), &mods);
+    assert_eq!(
+        action,
+        Some(GlobalAction::SplitHorizontal),
+        "Cmd+Shift+T should map to SplitHorizontal"
+    );
+}
+
 // ──────────────────────────────────────────────────
 // --- UC-6: Cross-Area Dock Split ---
 // ──────────────────────────────────────────────────
 
 #[test]
 fn dock_split_vertical_always_targets_dock() {
-    // UC-6 BR-1: DockSplit variants always target Dock layout regardless of current FocusArea.
+    // Spec: docs/specs/open-terminal-codex-app.md
+    // UC-4 BR-7: DockSplit variants must split Terminal Context Surface, not Stage.
     let (mut app, p1, _p2) = app_with_two_stage_panes();
 
     let dock_p1 = app.layout.alloc_id();
@@ -535,8 +673,9 @@ fn dock_split_vertical_always_targets_dock() {
 }
 
 #[test]
-fn dock_split_moves_focus_to_dock() {
-    // DockSplit creates a Launcher that needs interaction, so focus moves to Dock.
+fn dock_split_focuses_terminal_context_surface() {
+    // Spec: docs/specs/open-terminal-codex-app.md
+    // UC-4 BR-7: DockSplit must split the Terminal Context Surface.
     let (mut app, p1, _p2) = app_with_two_stage_panes();
 
     let dock_p1 = app.layout.alloc_id();
@@ -551,7 +690,7 @@ fn dock_split_moves_focus_to_dock() {
     assert_eq!(
         app.focus.focus_area,
         FocusArea::Dock,
-        "DockSplitVertical should move focus to Dock"
+        "DockSplitVertical should focus the new context Pane"
     );
 }
 

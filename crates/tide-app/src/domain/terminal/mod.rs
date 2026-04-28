@@ -728,7 +728,7 @@ pub struct Terminal {
     dirty: Arc<AtomicBool>,
     /// Shared waker callback — installed by main thread, called by sync thread
     waker: Arc<Mutex<Option<Box<dyn Fn() + Send>>>>,
-    /// Pending PTY resize notification (debounced to avoid SIGWINCH storms)
+    /// Pending PTY resize notification retained for compatibility with older queued paths.
     pending_pty_resize: Option<(WindowSize, Instant)>,
     /// Handle to sync thread for unparking
     sync_thread_handle: Arc<Mutex<Option<std::thread::Thread>>>,
@@ -1335,6 +1335,11 @@ impl Terminal {
         }
     }
 
+    #[cfg(test)]
+    pub fn dark_mode_for_test(&self) -> bool {
+        self.dark_mode.load(Ordering::Relaxed)
+    }
+
     /// Enter stay-at-bottom mode: every sync_grid will scroll to bottom until
     /// the user explicitly scrolls away via scroll_display().
     pub fn request_scroll_to_bottom(&mut self) {
@@ -1367,7 +1372,8 @@ impl TerminalBackend for Terminal {
     }
 
     fn process(&mut self) {
-        // Flush debounced PTY resize if 50ms have elapsed
+        // Compatibility drain for any resize that was queued by an older path.
+        // Normal resize coalescing happens at the layout layer before resize().
         if let Some((window_size, stamp)) = self.pending_pty_resize {
             if stamp.elapsed().as_millis() >= 50 {
                 self.pending_pty_resize = None;
@@ -1411,8 +1417,11 @@ impl TerminalBackend for Terminal {
             term.resize(term_size);
         }
 
-        // Debounce PTY resize notification (SIGWINCH) to avoid prompt artifacts
-        self.pending_pty_resize = Some((window_size, Instant::now()));
+        // Layout code already coalesces transient geometry changes. Once
+        // resize() is called, send the final PTY size immediately so shell
+        // prompt redraw happens at the same size as the emulator grid.
+        self.pending_pty_resize = None;
+        let _ = self.notifier.0.send(Msg::Resize(window_size));
 
         // Trigger a sync so the grid reflects the new dimensions promptly
         self.dirty.store(true, Ordering::Relaxed);

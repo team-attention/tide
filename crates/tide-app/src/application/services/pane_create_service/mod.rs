@@ -169,7 +169,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
 
     /// Create a new pane. Routes by FocusArea:
     /// - Stage → create Terminal directly (no Launcher)
-    /// - Dock → add Launcher tab to current TabGroup in Dock
+    /// - Dock → add Launcher split to the Terminal Context Surface
     fn new_terminal_tab(&mut self) {
         let focused = match self.focus.focused {
             Some(id) => id,
@@ -186,24 +186,32 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                     self.assoc.associated_terminal.insert(new_id, tid);
                     if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                         if let Some(dock_focused) = tp.dock_focused {
-                            tp.dock_layout.add_tab(dock_focused, new_id);
+                            tp.dock_layout.insert_pane(
+                                dock_focused,
+                                new_id,
+                                crate::tide_core::SplitDirection::Vertical,
+                                false,
+                            );
                         } else {
-                            tp.dock_layout.insert_leaf_group(new_id);
+                            tp.dock_layout
+                                .insert_at_root(new_id, crate::tide_core::DropZone::Bottom);
                         }
                         tp.dock_focused = Some(new_id);
                         tp.dock_layout.set_active_tab(new_id);
                     }
-                    self.dock.dock_open = true;
+                    self.set_dock_visible_with_animation(true);
                     self.focus.focus_area = crate::state::FocusArea::Dock;
                 }
                 self.focus.focused = Some(new_id);
                 self.router.set_focused(new_id);
             }
             _ => {
-                // Stage: always add a new Terminal as a tab in the focused TabGroup.
-                // If focused pane is a bare Leaf, add_tab converts it to a LeafGroup.
-                let new_id = self.layout.alloc_id();
-                self.layout.add_tab(focused, new_id);
+                // Stage: create a new Terminal as a split leaf.
+                self.layout
+                    .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
+                let new_id = self
+                    .layout
+                    .split(focused, crate::tide_core::SplitDirection::Vertical);
                 if self.focus.zoomed_pane.is_some() {
                     self.focus.zoomed_pane = Some(new_id);
                 }
@@ -279,7 +287,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
     /// Split the focused pane.
     /// Routes to the correct layout based on focus_area:
     /// - Stage → create Terminal directly in main layout
-    /// - Dock → split in dock layout (new LeafGroup with Launcher)
+    /// - Dock → create a Launcher in a new Terminal Context Surface split
     fn split_with_launcher(&mut self, direction: crate::tide_core::SplitDirection) {
         let focused = match self.focus.focused {
             Some(id) => id,
@@ -287,45 +295,14 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         };
         match self.focus.focus_area {
             crate::state::FocusArea::Dock => {
-                // Split in the dock layout (Launcher for multi-type selection)
-                if let Some(tid) = self.focused_terminal_id() {
-                    let new_id = self.layout.alloc_id();
-                    self.panes.insert(new_id, PaneKind::Launcher(new_id));
-                    self.ime.pending_creates.push(new_id);
-                    self.assoc.associated_terminal.insert(new_id, tid);
-                    if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                        if let Some(dock_focused) = tp.dock_focused {
-                            tp.dock_layout.split_with_leaf_group(
-                                dock_focused,
-                                new_id,
-                                direction,
-                                false,
-                            );
-                        } else {
-                            tp.dock_layout.insert_leaf_group(new_id);
-                        }
-                        tp.dock_focused = Some(new_id);
-                    }
-                    self.focus.focused = Some(new_id);
-                    self.router.set_focused(new_id);
-                }
+                self.dock_split_new_tab_group(direction);
+                return;
             }
             _ => {
-                let keep_stacked_tab_group = self.focus.zoomed_pane.is_some()
-                    && self.layout.tab_group_containing(focused).is_some();
-
-                if keep_stacked_tab_group {
-                    let cwd = self.focused_terminal_cwd();
-                    let new_id = self.layout.alloc_id();
-                    if self.layout.add_tab(focused, new_id) {
-                        self.create_terminal_pane(new_id, cwd);
-                        self.focus_terminal(new_id);
-                        return;
-                    }
-                }
-
                 // Stage: create Terminal directly. If Stage is stacked, keep zoom active so
                 // the new pane appears in the stacked flat tab bar instead of unstacking.
+                self.layout
+                    .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
                 let cwd = self.focused_terminal_cwd();
                 let new_id = self.layout.split(focused, direction);
                 self.create_terminal_pane(new_id, cwd);
@@ -333,8 +310,6 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                 return;
             }
         }
-        self.cache.invalidate_chrome();
-        self.compute_layout();
     }
 
     /// Open a browser pane next to the focused pane.
@@ -356,11 +331,9 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
             self.assoc.associated_terminal.insert(new_id, tid);
             self.focus.focus_area = crate::state::FocusArea::Dock;
         } else {
-            // Add to the same TabGroup as the focused pane (not a split)
-            if !self.layout.add_tab(focused, new_id) {
-                // Fallback: create a split if no TabGroup exists
-                self.add_to_non_terminal_group(focused, new_id);
-            }
+            self.layout
+                .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
+            self.add_to_non_terminal_group(focused, new_id);
             if self.focus.zoomed_pane.is_some() {
                 self.focus.zoomed_pane = Some(new_id);
             }
@@ -388,9 +361,9 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
             self.focus.focus_area = crate::state::FocusArea::Dock;
         } else {
             let focused = self.focus.focused.unwrap_or(0);
-            if !self.layout.add_tab(focused, new_id) {
-                self.add_to_non_terminal_group(focused, new_id);
-            }
+            self.layout
+                .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
+            self.add_to_non_terminal_group(focused, new_id);
             self.focus.focus_area = crate::state::FocusArea::Stage;
         }
         self.focus.focused = Some(new_id);
@@ -417,9 +390,9 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
             self.focus.focus_area = crate::state::FocusArea::Dock;
         } else {
             let focused = self.focus.focused.unwrap_or(0);
-            if !self.layout.add_tab(focused, new_id) {
-                self.add_to_non_terminal_group(focused, new_id);
-            }
+            self.layout
+                .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
+            self.add_to_non_terminal_group(focused, new_id);
             self.focus.focus_area = crate::state::FocusArea::Stage;
         }
         self.focus.focused = Some(new_id);
@@ -535,7 +508,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                     self.router.set_focused(id);
                     // If the pane is in a dock, open Dock and focus there
                     if self.is_pane_in_dock(id) {
-                        self.dock.dock_open = true;
+                        self.set_dock_visible_with_animation(true);
                         self.focus.focus_area = crate::state::FocusArea::Dock;
                         // Update dock_focused on the owning terminal
                         if let Some(tid) = self.terminal_owning(id) {

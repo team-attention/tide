@@ -282,7 +282,9 @@ pub struct PaneDecorations {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SplitDirection {
+    /// A horizontal divider that creates top and bottom panes.
     Horizontal,
+    /// A vertical divider that creates left and right panes.
     Vertical,
 }
 

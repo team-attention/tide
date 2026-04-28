@@ -589,10 +589,7 @@ impl App {
                 }
             }
             crate::ContextMenuAction::OpenTerminalHere => {
-                self.split_pane(
-                    crate::tide_core::SplitDirection::Horizontal,
-                    Some(menu.path),
-                );
+                self.split_pane(crate::tide_core::SplitDirection::Vertical, Some(menu.path));
             }
             crate::ContextMenuAction::OpenApp => {
                 let _ = self.ports.process.open_with_default_app(&menu.path);

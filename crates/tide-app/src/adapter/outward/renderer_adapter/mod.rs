@@ -161,14 +161,22 @@ pub struct WgpuRenderer {
 impl WgpuRenderer {
     /// Scale factor for converting em-relative glyph metrics to physical pixels.
     fn em_scale(&self) -> f32 {
-        self.base_font_size * self.scale_factor
+        self.em_scale_for_font(1.0)
+    }
+
+    fn em_scale_for_font(&self, font_scale: f32) -> f32 {
+        self.base_font_size * self.scale_factor * font_scale
     }
 
     /// Compute the baseline Y offset (in physical pixels) within a cell of
     /// the given physical-pixel height. Centers the font vertically using
     /// the actual ascender/descender metrics from the monospace font.
     fn baseline_y(&self, cell_height_px: f32) -> f32 {
-        let font_size_px = self.base_font_size * self.scale_factor;
+        self.baseline_y_for_font_scale(cell_height_px, 1.0)
+    }
+
+    fn baseline_y_for_font_scale(&self, cell_height_px: f32, font_scale: f32) -> f32 {
+        let font_size_px = self.base_font_size * self.scale_factor * font_scale;
         let ascender_px = self.mono_em_ascender * font_size_px;
         let descender_px = self.mono_em_descender * font_size_px;
         let font_height_px = ascender_px + descender_px;

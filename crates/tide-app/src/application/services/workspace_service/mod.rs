@@ -11,9 +11,66 @@ use crate::DockPort;
 use crate::FocusNavPort;
 use crate::LayoutPort;
 
+impl App {
+    pub(crate) fn set_workspace_sidebar_visible_with_animation(&mut self, visible: bool) {
+        let now = self.ports.clock.now();
+        let current_width = self.ws.rendered_width(now);
+        let target_width = if visible { self.ws.width } else { 0.0 };
+        let already_at_target = self.ws.show_sidebar == visible
+            && (current_width - target_width).abs() < 0.5
+            && self.ws.visibility_animation.is_none();
+        self.ws.show_sidebar = visible;
+        if already_at_target {
+            return;
+        }
+        self.ws
+            .begin_visibility_animation(current_width, target_width, now);
+    }
+
+    pub(crate) fn set_file_tree_visible_with_animation(&mut self, visible: bool) {
+        let now = self.ports.clock.now();
+        let current_width = self.ft.rendered_width(now);
+        let target_width = if visible { self.ft.width } else { 0.0 };
+        let already_at_target = self.ft.visible == visible
+            && (current_width - target_width).abs() < 0.5
+            && self.ft.visibility_animation.is_none();
+        self.ft.visible = visible;
+        if already_at_target {
+            return;
+        }
+        self.ft
+            .begin_visibility_animation(current_width, target_width, now);
+    }
+
+    pub(crate) fn set_dock_visible_with_animation(&mut self, visible: bool) {
+        let now = self.ports.clock.now();
+        let current_width = self.dock.rendered_width(now);
+        let target_width = if visible { self.dock.dock_width } else { 0.0 };
+        let already_at_target = self.dock.dock_open == visible
+            && (current_width - target_width).abs() < 0.5
+            && self.dock.visibility_animation.is_none();
+        self.dock.dock_open = visible;
+        if already_at_target {
+            return;
+        }
+        self.dock
+            .begin_visibility_animation(current_width, target_width, now);
+    }
+
+    pub(crate) fn surface_visibility_animation_active(&self) -> bool {
+        self.ws.visibility_animation.is_some()
+            || self.ft.visibility_animation.is_some()
+            || self.dock.visibility_animation.is_some()
+    }
+
+    pub(crate) fn surface_visibility_animation_frame_due(&self) -> bool {
+        self.surface_visibility_animation_active()
+    }
+}
+
 impl crate::application::ports::inward::WorkspaceNavPort for App {
     fn focus_terminal(&mut self, id: PaneId) {
-        // Dock pane (pinned or terminal-owned): focus it, don't change stage_focused
+        // Dock pane: focus the active Terminal Context Surface, don't change stage_focused.
         if self.is_pane_in_dock(id) {
             self.focus.focus_area = FocusArea::Dock;
             self.focus.focused = Some(id);
@@ -21,16 +78,12 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
             self.interaction.tab_scroll_last_at.remove(&id);
             self.interaction.tab_scroll_last_direction.remove(&id);
             self.interaction.tab_manual_scroll.remove(&id);
-            // Update dock_focused on the owning terminal (if not pinned)
+            // Update dock_focused on the owning terminal.
             if let Some(tid) = self.terminal_owning(id) {
                 if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                     tp.dock_focused = Some(id);
                     tp.dock_layout.set_active_tab(id);
                 }
-            }
-            // If pinned, set active tab in pinned layout
-            if self.is_pane_pinned(id) {
-                self.dock.pinned_dock_layout.set_active_tab(id);
             }
             if self.window.is_focused && self.pane_has_unresolved_wrapped_agent_attention(id) {
                 self.acknowledge_agent_attention(id);
@@ -70,11 +123,14 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         self.interaction.tab_scroll_last_at.remove(&id);
         self.interaction.tab_scroll_last_direction.remove(&id);
         self.interaction.tab_manual_scroll.remove(&id);
-        // Update TabGroup active tab when focusing a Stage pane in a LeafGroup
+        // Compatibility no-op for normalized Stage layouts; Dock still owns active TabGroup state.
         self.layout.set_active_tab(id);
         // Stacked mode: keep zoom on the newly focused Stage terminal
         if self.focus.zoomed_pane.is_some() && !self.is_pane_in_dock(id) {
             self.focus.zoomed_pane = Some(id);
+        }
+        if matches!(self.panes.get(&id), Some(PaneKind::Terminal(_))) {
+            self.sync_terminal_context_mode_from_terminal(id);
         }
         // Swap dock state when switching between terminals
         if prev_stage != self.focus.stage_focused {
@@ -106,7 +162,7 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         match target {
             FocusArea::FileTree => {
                 if self.focus.focus_area == FocusArea::FileTree {
-                    self.ft.visible = false;
+                    self.set_file_tree_visible_with_animation(false);
                     if self
                         .focus
                         .focused
@@ -122,7 +178,7 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                 } else if self.ft.visible {
                     self.focus.focus_area = FocusArea::FileTree;
                 } else {
-                    self.ft.visible = true;
+                    self.set_file_tree_visible_with_animation(true);
                     self.focus.focus_area = FocusArea::FileTree;
                     self.update_file_tree_cwd();
                     self.compute_layout();
@@ -148,7 +204,7 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
 
     fn toggle_file_tree_visibility(&mut self) {
         if self.ft.visible {
-            self.ft.visible = false;
+            self.set_file_tree_visible_with_animation(false);
             if self.focus.focus_area == FocusArea::FileTree {
                 if self
                     .focus
@@ -162,7 +218,7 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                 }
             }
         } else {
-            self.ft.visible = true;
+            self.set_file_tree_visible_with_animation(true);
             self.update_file_tree_cwd();
         }
         self.cache.invalidate_chrome();
@@ -172,7 +228,7 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
 
     fn toggle_dock_visibility(&mut self) {
         if self.dock.dock_open {
-            self.dock.dock_open = false;
+            self.set_dock_visible_with_animation(false);
             if self.focus.focus_area == FocusArea::Dock {
                 let owner = self.focused_terminal_id();
                 self.focus.focus_area = FocusArea::Stage;
@@ -182,7 +238,7 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                 }
             }
         } else {
-            self.dock.dock_open = true;
+            self.set_dock_visible_with_animation(true);
             if let Some(tid) = self.focused_terminal_id() {
                 let has_panes = if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
                     !tp.dock_layout.all_pane_ids().is_empty()
@@ -211,7 +267,7 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                         crate::tide_input::Direction::Right
                         | crate::tide_input::Direction::Down => 1,
                     };
-                    let ids = self.layout.all_tabs_flat();
+                    let ids = self.layout.pane_ids();
                     if ids.len() < 2 {
                         return;
                     }
@@ -232,61 +288,13 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                 }
             }
             FocusArea::Dock => {
-                // Dock stacked mode: cycle through all dock tabs
-                if self.dock.dock_zoomed {
+                if self.active_terminal_context_is_stacked() {
                     let dir = match direction {
                         crate::tide_input::Direction::Left | crate::tide_input::Direction::Up => -1,
                         crate::tide_input::Direction::Right
                         | crate::tide_input::Direction::Down => 1,
                     };
-                    let tid = match self.focus.stage_focused {
-                        Some(id) => id,
-                        None => return,
-                    };
-                    let mut pane_ids: Vec<PaneId> = self.dock.pinned_dock_layout.all_tabs_flat();
-                    if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
-                        pane_ids.extend(tp.dock_layout.all_tabs_flat());
-                    }
-                    if pane_ids.len() < 2 {
-                        return;
-                    }
-                    // Use dock_focused (not self.focus.focused which may be a Stage pane)
-                    let current = self
-                        .panes
-                        .get(&tid)
-                        .and_then(|pk| {
-                            if let PaneKind::Terminal(tp) = pk {
-                                tp.dock_focused
-                            } else {
-                                None
-                            }
-                        })
-                        .or_else(|| {
-                            self.dock
-                                .pinned_dock_layout
-                                .all_tabs_flat()
-                                .into_iter()
-                                .next()
-                        })
-                        .unwrap_or(0);
-                    if let Some(pos) = pane_ids.iter().position(|&id| id == current) {
-                        let next_pos = if dir > 0 {
-                            (pos + 1) % pane_ids.len()
-                        } else {
-                            (pos + pane_ids.len() - 1) % pane_ids.len()
-                        };
-                        let next_id = pane_ids[next_pos];
-                        self.focus.focused = Some(next_id);
-                        self.router.set_focused(next_id);
-                        if self.is_pane_pinned(next_id) {
-                            self.dock.pinned_dock_layout.set_active_tab(next_id);
-                        } else if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                            tp.dock_focused = Some(next_id);
-                            tp.dock_layout.set_active_tab(next_id);
-                        }
-                        self.cache.invalidate_chrome();
-                        self.compute_layout();
-                    }
+                    self.cycle_tab(dir);
                     return;
                 }
                 // Spatial navigation within Dock panes only
@@ -370,7 +378,21 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
     fn handle_toggle_stacked(&mut self) {
         match self.focus.focus_area {
             FocusArea::Dock => {
-                self.dock.dock_zoomed = !self.dock.dock_zoomed;
+                let next_stacked = !self.active_terminal_context_is_stacked();
+                self.set_active_terminal_context_stacked(next_stacked);
+                if next_stacked {
+                    if let Some(tid) = self.focused_terminal_id() {
+                        if let Some(PaneKind::Terminal(tp)) = self.panes.get(&tid) {
+                            if let Some(active) = tp
+                                .dock_focused
+                                .or_else(|| tp.dock_layout.pane_ids().first().copied())
+                            {
+                                self.focus.focused = Some(active);
+                                self.router.set_focused(active);
+                            }
+                        }
+                    }
+                }
                 self.cache.pane_generations.clear();
                 self.cache.invalidate_chrome();
                 self.compute_layout();
@@ -414,40 +436,39 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
     fn cycle_tab(&mut self, direction: i32) {
         match self.focus.focus_area {
             FocusArea::Stage => {
-                // Cycle within the current TabGroup only (not across TabGroups).
+                if self.focus.zoomed_pane.is_none() {
+                    return;
+                }
                 let current = match self.focus.focused {
                     Some(id) => id,
                     None => return,
                 };
-                let tg = match self.layout.tab_group_containing(current) {
-                    Some(tg) => tg.clone(),
-                    None => return, // bare Leaf, no tabs to cycle
-                };
-                if tg.tabs.len() <= 1 {
+                let pane_ids = self.layout.pane_ids();
+                if pane_ids.len() <= 1 {
                     return;
                 }
-                let pos = tg.tabs.iter().position(|&id| id == current).unwrap_or(0);
+                let pos = pane_ids.iter().position(|&id| id == current).unwrap_or(0);
                 let next_pos = if direction > 0 {
-                    (pos + 1) % tg.tabs.len()
+                    (pos + 1) % pane_ids.len()
                 } else {
-                    (pos + tg.tabs.len() - 1) % tg.tabs.len()
+                    (pos + pane_ids.len() - 1) % pane_ids.len()
                 };
-                let next_id = tg.tabs[next_pos];
+                let next_id = pane_ids[next_pos];
+                self.focus.zoomed_pane = Some(next_id);
                 self.focus_terminal(next_id);
+                self.compute_layout();
             }
             FocusArea::Dock => {
-                // Cycle through Dock tabs (pinned + terminal dock)
+                // Cycle through the focused Stage Terminal's Terminal Context Surface.
                 let tid = match self.focus.stage_focused {
                     Some(id) => id,
                     None => return,
                 };
 
-                let mut pane_ids: Vec<PaneId> = self.dock.pinned_dock_layout.all_tabs_flat();
-                let terminal_tabs = match self.panes.get(&tid) {
+                let pane_ids: Vec<PaneId> = match self.panes.get(&tid) {
                     Some(PaneKind::Terminal(tp)) => tp.dock_layout.all_tabs_flat(),
                     _ => Vec::new(),
                 };
-                pane_ids.extend(terminal_tabs);
                 if pane_ids.len() <= 1 {
                     return;
                 }
@@ -469,13 +490,11 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
                 self.interaction.tab_scroll_last_at.remove(&next_id);
                 self.interaction.tab_scroll_last_direction.remove(&next_id);
                 self.interaction.tab_manual_scroll.remove(&next_id);
-                if self.is_pane_pinned(next_id) {
-                    self.dock.pinned_dock_layout.set_active_tab(next_id);
-                } else if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                     tp.dock_focused = Some(next_id);
                     tp.dock_layout.set_active_tab(next_id);
                 }
-                self.dock.dock_open = true;
+                self.set_dock_visible_with_animation(true);
                 self.cache.invalidate_chrome();
                 self.compute_layout();
             }
@@ -646,7 +665,7 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
     }
 
     fn set_ws_show_sidebar(&mut self, v: bool) {
-        self.ws.show_sidebar = v;
+        self.set_workspace_sidebar_visible_with_animation(v);
     }
 
     fn new_workspace(&mut self) {
@@ -711,9 +730,6 @@ impl App {
                     tp.dock_focused = Some(id);
                     tp.dock_layout.set_active_tab(id);
                 }
-            }
-            if self.is_pane_pinned(id) {
-                self.dock.pinned_dock_layout.set_active_tab(id);
             }
             self.cache.invalidate_chrome();
             self.sync_browser_webview_frames();

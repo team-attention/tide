@@ -10,12 +10,12 @@ use crate::adapter::inward::scroll_adapter::{
     shared_tab_scroll_is_new_gesture, shared_tab_scroll_step,
 };
 use crate::adapter::outward::view::header::{
-    active_tab_badges, active_tab_width_cap, dock_tab_group_uses_shared_tab_bar,
-    overflowed_stage_alert_tab_edges, reserve_title_before_badges, resolve_tab_scroll_offset,
-    shared_tab_active_width_cap, shared_tab_target_width, stage_terminal_dot_color,
-    stage_terminal_dot_status, stage_terminal_dot_visual_state, tab_status_dot_width,
-    terminal_chrome_agent_status, terminal_chrome_visual_state, terminal_header_title_color,
-    AgentChromeState, HeaderHitAction,
+    active_tab_badges, active_tab_width_cap, dock_stacked_uses_shared_tab_bar,
+    dock_tab_group_uses_shared_tab_bar, overflowed_stage_alert_tab_edges,
+    reserve_title_before_badges, resolve_tab_scroll_offset, shared_tab_active_width_cap,
+    shared_tab_target_width, stage_terminal_dot_color, stage_terminal_dot_status,
+    stage_terminal_dot_visual_state, tab_status_dot_width, terminal_chrome_agent_status,
+    terminal_chrome_visual_state, terminal_header_title_color, AgentChromeState, HeaderHitAction,
 };
 use crate::adapter::outward::view::{
     integration_toggle_notification_indicator_color, pane_surface_attention_status,
@@ -593,7 +593,7 @@ fn active_terminal_header_preserves_title_when_git_badges_are_present() {
 
 #[test]
 fn active_stage_tab_preserves_title_when_git_badges_are_present() {
-    // UC-6 BR-17: Active Stage tabs keep a readable title when git badges are present.
+    // UC-6 BR-17: Active stacked Stage tabs keep a readable title when git badges are present.
     let (panes, expected_title) = terminal_with_git_info(2);
     let title_w = expected_title.chars().count() as f32 * 8.0;
     let branch_badge_w =
@@ -610,7 +610,7 @@ fn active_stage_tab_preserves_title_when_git_badges_are_present() {
     assert_eq!(pane_title(&panes, 2), expected_title);
     assert!(
         layout.title_w >= title_w.min(TAB_MIN_TITLE_WIDTH),
-        "active Stage tabs should reserve title width before optional badges consume the row"
+        "active stacked Stage tabs should reserve title width before optional badges consume the row"
     );
 }
 
@@ -646,7 +646,7 @@ fn focused_tabs_use_a_brighter_tint_than_unfocused_tabs() {
 
 #[test]
 fn shared_tab_chrome_is_slightly_larger_across_all_surfaces() {
-    // UC-7 BR-19: Shared tab chrome uses a slightly larger height and padding budget across Stage tabs, Dock tabs, and single-Pane headers.
+    // UC-7 BR-19: Shared tab chrome uses a slightly larger height and padding budget across stacked Stage tabs, Dock tabs, and single-Pane headers.
     assert!(
         TAB_BAR_HEIGHT >= 35.0,
         "shared tab chrome should gain at least one pixel of height"
@@ -917,6 +917,19 @@ fn dock_single_tab_group_uses_single_pane_header_chrome() {
     assert!(
         dock_tab_group_uses_shared_tab_bar(&multi),
         "multi-tab Dock TabGroups should keep the shared Dock tab bar"
+    );
+}
+
+#[test]
+fn dock_stacked_single_pane_uses_single_pane_header_chrome() {
+    // UC-9 BR-36: A Stacked Terminal Context Surface with one Pane falls back to single-Pane header chrome.
+    assert!(
+        !dock_stacked_uses_shared_tab_bar(&[7]),
+        "single-pane stacked Terminal Context Surface should not render the shared Dock stacked tab bar"
+    );
+    assert!(
+        dock_stacked_uses_shared_tab_bar(&[7, 8]),
+        "multi-pane stacked Terminal Context Surface should keep the shared Dock stacked tab bar"
     );
 }
 

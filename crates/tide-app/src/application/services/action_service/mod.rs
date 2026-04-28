@@ -1069,10 +1069,13 @@ impl crate::application::ports::inward::ActionPort for App {
             }
             GlobalAction::FocusArea(slot) => {
                 if matches!(slot, AreaSlot::Slot1) {
-                    // Cmd+1: toggle workspace sidebar
-                    self.ws.show_sidebar = !self.ws.show_sidebar;
+                    // Legacy slot action kept for saved settings compatibility.
+                    self.set_workspace_sidebar_visible_with_animation(!self.ws.show_sidebar);
                     self.cache.invalidate_chrome();
                     self.compute_layout();
+                } else if matches!(slot, AreaSlot::Slot2) {
+                    // Legacy FocusArea slot mirrors the titlebar FileTree button: visibility, not focus.
+                    self.toggle_file_tree_visibility();
                 } else {
                     let target = self.resolve_slot(slot);
                     self.handle_focus_area(target);
@@ -1107,10 +1110,13 @@ impl crate::application::ports::inward::ActionPort for App {
                 self.close_workspace();
             }
             GlobalAction::ToggleFileTree => {
-                self.handle_focus_area(FocusArea::FileTree);
+                self.toggle_file_tree_visibility();
+            }
+            GlobalAction::ToggleDock => {
+                self.toggle_dock();
             }
             GlobalAction::ToggleWorkspaceSidebar => {
-                self.ws.show_sidebar = !self.ws.show_sidebar;
+                self.set_workspace_sidebar_visible_with_animation(!self.ws.show_sidebar);
                 self.cache.invalidate_chrome();
                 self.compute_layout();
             }
@@ -1119,7 +1125,7 @@ impl crate::application::ports::inward::ActionPort for App {
             }
             GlobalAction::DockNavigate(direction) => {
                 // Navigate within Dock without changing FocusArea (auto-opens dock)
-                self.dock.dock_open = true;
+                self.set_dock_visible_with_animation(true);
                 let saved_area = self.focus.focus_area;
                 self.focus.focus_area = FocusArea::Dock;
                 self.handle_navigate(direction);
@@ -1133,7 +1139,7 @@ impl crate::application::ports::inward::ActionPort for App {
             }
             GlobalAction::DockTabPrev => {
                 // Cycle dock tab without changing FocusArea (UC-4 BR-2: opens dock if closed)
-                self.dock.dock_open = true;
+                self.set_dock_visible_with_animation(true);
                 let saved_area = self.focus.focus_area;
                 self.focus.focus_area = FocusArea::Dock;
                 self.cycle_tab(-1);
@@ -1141,7 +1147,7 @@ impl crate::application::ports::inward::ActionPort for App {
             }
             GlobalAction::DockTabNext => {
                 // Cycle dock tab without changing FocusArea (UC-4 BR-2: opens dock if closed)
-                self.dock.dock_open = true;
+                self.set_dock_visible_with_animation(true);
                 let saved_area = self.focus.focus_area;
                 self.focus.focus_area = FocusArea::Dock;
                 self.cycle_tab(1);
@@ -1153,7 +1159,7 @@ impl crate::application::ports::inward::ActionPort for App {
             }
             GlobalAction::DockNewTab => {
                 // Create a new tab in Dock and move focus there (Launcher needs interaction)
-                self.dock.dock_open = true;
+                self.set_dock_visible_with_animation(true);
                 self.focus.focus_area = FocusArea::Dock;
                 self.new_terminal_tab();
             }
@@ -1239,7 +1245,7 @@ impl crate::application::ports::inward::ActionPort for App {
             }
             GlobalAction::DockToggleStacked => {
                 // Toggle dock stacked mode (auto-opens dock)
-                self.dock.dock_open = true;
+                self.set_dock_visible_with_animation(true);
                 let saved_area = self.focus.focus_area;
                 self.focus.focus_area = FocusArea::Dock;
                 self.handle_toggle_stacked();
@@ -1283,14 +1289,14 @@ impl App {
         self.layout.insert_pane(
             focused,
             new_id,
-            crate::tide_core::SplitDirection::Horizontal,
+            crate::tide_core::SplitDirection::Vertical,
             false,
         );
     }
 
     /// Route a non-terminal pane next to the correct pane.
     /// If focused is a terminal → add to right (split horizontally).
-    /// If focused is non-terminal → add as vertical split next to the same pane.
+    /// If focused is non-terminal → add to right of the same pane.
     pub(crate) fn add_to_non_terminal_group(
         &mut self,
         focused: crate::tide_core::PaneId,

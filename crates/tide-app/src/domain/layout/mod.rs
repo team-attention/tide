@@ -142,6 +142,22 @@ impl SplitLayout {
         }
     }
 
+    /// Expand any LeafGroup nodes in this layout into ordinary split leaves.
+    ///
+    /// Stage and Terminal Context Surface Split view call this to normalize
+    /// legacy TabGroup storage into the current split-first product model.
+    pub fn expand_leaf_groups_to_splits(&mut self, direction: SplitDirection) -> bool {
+        let changed = self
+            .root
+            .as_mut()
+            .map(|root| root.expand_leaf_groups_to_splits(direction))
+            .unwrap_or(false);
+        if changed {
+            self.equalize_root_chain();
+        }
+        changed
+    }
+
     /// Set the ratio of the split that directly contains the given pane.
     /// Returns true if the ratio was updated.
     pub fn set_split_ratio(&mut self, pane: PaneId, ratio: f32) -> bool {
@@ -193,10 +209,10 @@ impl SplitLayout {
         }
 
         let (direction, insert_first) = match zone {
-            DropZone::Top => (SplitDirection::Vertical, true),
-            DropZone::Bottom => (SplitDirection::Vertical, false),
-            DropZone::Left => (SplitDirection::Horizontal, true),
-            DropZone::Right => (SplitDirection::Horizontal, false),
+            DropZone::Top => (SplitDirection::Horizontal, true),
+            DropZone::Bottom => (SplitDirection::Horizontal, false),
+            DropZone::Left => (SplitDirection::Vertical, true),
+            DropZone::Right => (SplitDirection::Vertical, false),
             DropZone::Center => unreachable!(),
         };
 
@@ -254,10 +270,10 @@ impl SplitLayout {
         // Wrap remaining root with source at the specified edge
         let remaining = self.root.take().unwrap();
         let (direction, insert_first) = match zone {
-            DropZone::Top => (SplitDirection::Vertical, true),
-            DropZone::Bottom => (SplitDirection::Vertical, false),
-            DropZone::Left => (SplitDirection::Horizontal, true),
-            DropZone::Right => (SplitDirection::Horizontal, false),
+            DropZone::Top => (SplitDirection::Horizontal, true),
+            DropZone::Bottom => (SplitDirection::Horizontal, false),
+            DropZone::Left => (SplitDirection::Vertical, true),
+            DropZone::Right => (SplitDirection::Vertical, false),
             DropZone::Center => unreachable!(),
         };
 
@@ -311,10 +327,10 @@ impl SplitLayout {
 
         let root = self.root.as_mut().unwrap();
         let (direction, insert_first) = match zone {
-            DropZone::Top => (SplitDirection::Vertical, true),
-            DropZone::Bottom => (SplitDirection::Vertical, false),
-            DropZone::Left => (SplitDirection::Horizontal, true),
-            DropZone::Right => (SplitDirection::Horizontal, false),
+            DropZone::Top => (SplitDirection::Horizontal, true),
+            DropZone::Bottom => (SplitDirection::Horizontal, false),
+            DropZone::Left => (SplitDirection::Vertical, true),
+            DropZone::Right => (SplitDirection::Vertical, false),
             DropZone::Center => unreachable!(),
         };
 
@@ -351,8 +367,8 @@ impl SplitLayout {
 
         // 2. Determine primary direction from drop zone
         let primary = match zone {
-            DropZone::Left | DropZone::Right => SplitDirection::Horizontal,
-            DropZone::Top | DropZone::Bottom => SplitDirection::Vertical,
+            DropZone::Left | DropZone::Right => SplitDirection::Vertical,
+            DropZone::Top | DropZone::Bottom => SplitDirection::Horizontal,
             DropZone::Center => unreachable!(),
         };
 
@@ -406,8 +422,8 @@ impl SplitLayout {
 
         // 2. Determine primary direction from drop zone
         let primary = match zone {
-            DropZone::Left | DropZone::Right => SplitDirection::Horizontal,
-            DropZone::Top | DropZone::Bottom => SplitDirection::Vertical,
+            DropZone::Left | DropZone::Right => SplitDirection::Vertical,
+            DropZone::Top | DropZone::Bottom => SplitDirection::Horizontal,
             DropZone::Center => unreachable!(),
         };
 
@@ -420,10 +436,10 @@ impl SplitLayout {
 
         // 4. Insert source next to target (handles equalization)
         let (direction, insert_first) = match zone {
-            DropZone::Top => (SplitDirection::Vertical, true),
-            DropZone::Bottom => (SplitDirection::Vertical, false),
-            DropZone::Left => (SplitDirection::Horizontal, true),
-            DropZone::Right => (SplitDirection::Horizontal, false),
+            DropZone::Top => (SplitDirection::Horizontal, true),
+            DropZone::Bottom => (SplitDirection::Horizontal, false),
+            DropZone::Left => (SplitDirection::Vertical, true),
+            DropZone::Right => (SplitDirection::Vertical, false),
             DropZone::Center => unreachable!(),
         };
 
@@ -470,11 +486,11 @@ impl SplitLayout {
                     }
                 } else {
                     let (direction, insert_first) = match zone {
-                        DropZone::Top => (SplitDirection::Vertical, true),
-                        DropZone::Bottom => (SplitDirection::Vertical, false),
-                        DropZone::Left => (SplitDirection::Horizontal, true),
-                        DropZone::Right => (SplitDirection::Horizontal, false),
-                        DropZone::Center => (SplitDirection::Horizontal, false),
+                        DropZone::Top => (SplitDirection::Horizontal, true),
+                        DropZone::Bottom => (SplitDirection::Horizontal, false),
+                        DropZone::Left => (SplitDirection::Vertical, true),
+                        DropZone::Right => (SplitDirection::Vertical, false),
+                        DropZone::Center => (SplitDirection::Vertical, false),
                     };
                     sim.insert_pane(target_id, source, direction, insert_first);
                 }
@@ -651,7 +667,7 @@ impl SplitLayout {
         }
     }
 
-    /// Flatten all TabGroups' tabs in traversal order (for Cmd+I/O navigation).
+    /// Flatten all TabGroups' tabs in traversal order for TabPrev/TabNext.
     pub fn all_tabs_flat(&self) -> Vec<PaneId> {
         let mut out = Vec::new();
         if let Some(ref root) = self.root {
@@ -822,9 +838,9 @@ impl LayoutEngine for SplitLayout {
                     let preferred =
                         if dx >= DRAG_INTENT_THRESHOLD_PX || dy >= DRAG_INTENT_THRESHOLD_PX {
                             if dx >= dy {
-                                Some(SplitDirection::Horizontal) // horizontal movement → want H split border
+                                Some(SplitDirection::Vertical) // horizontal movement → want vertical split border
                             } else {
-                                Some(SplitDirection::Vertical) // vertical movement → want V split border
+                                Some(SplitDirection::Horizontal) // vertical movement → want horizontal split border
                             }
                         } else {
                             None // too little movement, no preference yet

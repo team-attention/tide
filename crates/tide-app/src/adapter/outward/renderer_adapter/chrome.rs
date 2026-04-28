@@ -109,9 +109,23 @@ impl WgpuRenderer {
 
     /// Draw text into the cached chrome layer.
     pub fn draw_chrome_text(&mut self, text: &str, position: Vec2, style: TextStyle, clip: Rect) {
+        self.draw_chrome_text_scaled(text, position, style, clip, 1.0);
+    }
+
+    /// Draw text into the cached chrome layer with a logical font scale.
+    pub fn draw_chrome_text_scaled(
+        &mut self,
+        text: &str,
+        position: Vec2,
+        style: TextStyle,
+        clip: Rect,
+        font_scale: f32,
+    ) {
+        let font_scale = font_scale.max(0.1);
         let scale = self.scale_factor;
-        let cell_w = self.cached_cell_size.width * scale;
-        let baseline_y = self.baseline_y(self.cached_cell_size.height * scale);
+        let cell_w = self.cached_cell_size.width * scale * font_scale;
+        let cell_h = self.cached_cell_size.height * scale * font_scale;
+        let baseline_y = self.baseline_y_for_font_scale(cell_h, font_scale);
 
         let mut cursor_x = position.x * scale;
         let start_y = position.y * scale;
@@ -134,7 +148,7 @@ impl WgpuRenderer {
                 let qx = cursor_x;
                 let qy = start_y;
                 let qw = cell_w * char_cells;
-                let qh = self.cached_cell_size.height * scale;
+                let qh = cell_h;
                 if qx + qw > clip_left && qx < clip_right && qy + qh > clip_top && qy < clip_bottom
                 {
                     // Clip to clip rect
@@ -174,7 +188,7 @@ impl WgpuRenderer {
             let region = self.ensure_glyph_cached(ch, style.bold, style.italic);
 
             if !region.is_empty() {
-                let em_scale = self.em_scale();
+                let em_scale = self.em_scale_for_font(font_scale);
                 let gx = cursor_x + region.em_left * em_scale;
                 let gy = start_y + baseline_y - region.em_top * em_scale;
                 let gw = region.em_width * em_scale;

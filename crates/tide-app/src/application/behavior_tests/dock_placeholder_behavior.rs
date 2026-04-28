@@ -154,8 +154,8 @@ fn open_file_replaces_dock_placeholder_launcher() {
 }
 
 #[test]
-// UC-2 BR-1: When dock_focused is NOT a Launcher, add as normal tab
-fn open_file_adds_tab_when_dock_focused_is_not_launcher() {
+// UC-2 BR-1: When dock_focused is NOT a Launcher, add as a normal context split.
+fn open_file_adds_split_when_dock_focused_is_not_launcher() {
     let (mut app, t1) = app_with_real_terminal();
 
     // t1 has an editor in dock
@@ -165,7 +165,7 @@ fn open_file_adds_tab_when_dock_focused_is_not_launcher() {
     app.focus.focused = Some(t1);
     app.add_pane_to_dock(e1, None);
 
-    // Open another editor — should add as tab, not replace
+    // Open another editor — should add as a split, not replace
     let e2 = app.layout.alloc_id();
     let editor = EditorPane::new_empty(e2);
     app.panes.insert(e2, PaneKind::Editor(editor));
@@ -222,7 +222,7 @@ fn switching_back_does_not_duplicate_placeholder() {
 }
 
 #[test]
-// Cmd+4 close then reopen does not create extra placeholder
+// ToggleDock close then reopen does not create extra placeholder
 fn toggle_dock_close_reopen_no_duplicate_placeholder() {
     let (mut app, t1, t2) = app_with_two_real_terminals();
 
@@ -237,17 +237,17 @@ fn toggle_dock_close_reopen_no_duplicate_placeholder() {
     app.focus_terminal(t2);
     assert!(app.dock.dock_open);
 
-    // Cmd+4 while Stage focused → focuses Dock (placeholder Launcher)
+    // ToggleDock while Stage focused → focuses Dock (placeholder Launcher)
     app.toggle_dock();
     assert!(app.dock.dock_open);
     assert_eq!(app.focus.focus_area, FocusArea::Dock);
 
-    // Cmd+4 again while Dock focused → closes Dock
+    // ToggleDock again while Dock focused → closes Dock
     app.toggle_dock();
     assert!(!app.dock.dock_open);
     assert_eq!(app.focus.focus_area, FocusArea::Stage);
 
-    // Cmd+4 to reopen — placeholder still there, no new one
+    // ToggleDock to reopen — placeholder still there, no new one
     app.toggle_dock();
     assert!(app.dock.dock_open);
 
