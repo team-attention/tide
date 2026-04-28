@@ -1331,18 +1331,12 @@ fn cli_notify(
     } else {
         None
     };
-    let codex_app_server_resolution = if event == "codex-app-server-event" {
-        resolve_codex_app_server_payload(params.get("payload"))
-    } else {
-        None
-    };
-
-    let (normalized_event, status, ignore_event) = match event {
-        "agent-attached" => ("agent-attached", None, false),
-        "agent-detached" => ("agent-detached", None, false),
-        "agent-running" => ("agent-running", Some(AgentStatus::Running), false),
-        "agent-idle" => ("agent-idle", Some(AgentStatus::Idle), false),
-        "agent-needs-input" => ("agent-needs-input", Some(AgentStatus::NeedsInput), false),
+    let (normalized_event, status) = match event {
+        "agent-attached" => ("agent-attached", None),
+        "agent-detached" => ("agent-detached", None),
+        "agent-running" => ("agent-running", Some(AgentStatus::Running)),
+        "agent-idle" => ("agent-idle", Some(AgentStatus::Idle)),
+        "agent-needs-input" => ("agent-needs-input", Some(AgentStatus::NeedsInput)),
         "codex-stop" => {
             let status = match codex_stop_resolution.as_ref() {
                 Some(CodexStopResolution::IgnoreSubagent) => AgentStatus::Idle,
@@ -1354,7 +1348,7 @@ fn cli_notify(
                 AgentStatus::Idle => "agent-idle",
                 AgentStatus::NeedsInput => "agent-needs-input",
             };
-            (normalized_event, Some(status), false)
+            (normalized_event, Some(status))
         }
         "codex-turn-complete" => {
             let status = classify_codex_completed_turn_payload(params.get("payload"));
@@ -1363,19 +1357,7 @@ fn cli_notify(
                 AgentStatus::Idle => "agent-idle",
                 AgentStatus::NeedsInput => "agent-needs-input",
             };
-            (normalized_event, Some(status), false)
-        }
-        "codex-app-server-event" => {
-            if let Some(resolution) = codex_app_server_resolution.as_ref() {
-                let normalized_event = match resolution.status {
-                    AgentStatus::Running => "agent-running",
-                    AgentStatus::Idle => "agent-idle",
-                    AgentStatus::NeedsInput => "agent-needs-input",
-                };
-                (normalized_event, Some(resolution.status), false)
-            } else {
-                ("codex-app-server-event", None, true)
-            }
+            (normalized_event, Some(status))
         }
         _ => return Err(CliError::InvalidParams(format!("unknown event: {event}"))),
     };
@@ -1389,32 +1371,12 @@ fn cli_notify(
         return Ok(json!({"ok": true}));
     }
 
-    if ignore_event {
-        return Ok(json!({"ok": true}));
-    }
-
     if matches!(
         codex_stop_resolution,
         Some(CodexStopResolution::IgnoreSubagent)
     ) {
         return Ok(json!({"ok": true}));
     }
-
-    let current_status = {
-        let agents = ctx.detected_agents_mut();
-        agents.get(&pane_id).and_then(|agent| agent.status)
-    };
-    // A freshly attached or resumed Codex remote session may report an initial
-    // idle snapshot before Tide has observed any active turn in this Pane.
-    // Preserve connected-idle presence instead of synthesizing a completion alert.
-    let suppress_idle_snapshot = codex_app_server_resolution
-        .as_ref()
-        .is_some_and(|resolution| {
-            resolution.idle_is_snapshot
-                && matches!(resolution.status, AgentStatus::Idle)
-                && current_status.is_none()
-        });
-    let status = if suppress_idle_snapshot { None } else { status };
 
     if event == "agent-detached" {
         let agent_key = params
@@ -1466,27 +1428,20 @@ fn cli_notify(
 
     if let Some(name) = agent_name {
         ctx.invalidate_chrome();
-        if !suppress_idle_snapshot {
-            ctx.gateway_notify(
-                "agent-status-changed",
-                json!({
-                    "pane_id": pane_id,
-                    "status": normalized_event,
-                    "agent": name,
-                }),
-            );
-        }
+        ctx.gateway_notify(
+            "agent-status-changed",
+            json!({
+                "pane_id": pane_id,
+                "status": normalized_event,
+                "agent": name,
+            }),
+        );
         if let Some(status) = status {
             let mut notification_snippet =
                 if matches!(status, AgentStatus::Idle | AgentStatus::NeedsInput) {
                     codex_stop_resolution
                         .as_ref()
                         .and_then(codex_stop_notification_snippet)
-                        .or_else(|| {
-                            codex_app_server_resolution
-                                .as_ref()
-                                .and_then(codex_app_server_notification_snippet)
-                        })
                         .or_else(|| {
                             wrapped_agent_notification_snippet_from_payload(
                                 event,
@@ -1600,120 +1555,6 @@ fn gemini_notification_snippet(event: &str, payload: &Value) -> Option<String> {
         })
 }
 
-fn resolve_codex_app_server_payload(payload: Option<&Value>) -> Option<CodexAppServerResolution> {
-    use crate::state::gateway_status::AgentStatus;
-
-    let payload = payload?;
-    let method = payload.get("method").and_then(Value::as_str)?;
-    let params = payload.get("params").unwrap_or(&Value::Null);
-    let notification_snippet = codex_app_server_payload_snippet(method, params);
-    let status = match method {
-        "item/commandExecution/requestApproval"
-        | "item/fileChange/requestApproval"
-        | "item/permissions/requestApproval"
-        | "item/tool/requestUserInput"
-        | "mcpServer/elicitation/request" => AgentStatus::NeedsInput,
-        "turn/started" => AgentStatus::Running,
-        "turn/completed" => AgentStatus::Idle,
-        "thread/status/changed" => resolve_codex_app_server_thread_status(params)?,
-        _ => return None,
-    };
-
-    Some(CodexAppServerResolution {
-        status,
-        notification_snippet,
-        idle_is_snapshot: method == "thread/status/changed",
-    })
-}
-
-fn resolve_codex_app_server_thread_status(
-    params: &Value,
-) -> Option<crate::state::gateway_status::AgentStatus> {
-    use crate::state::gateway_status::AgentStatus;
-
-    if codex_app_server_status_has_active_flag(params, "waitingOnApproval") {
-        return Some(AgentStatus::NeedsInput);
-    }
-
-    match codex_app_server_status_state(params).as_deref() {
-        Some("active") => Some(AgentStatus::Running),
-        Some("idle") => Some(AgentStatus::Idle),
-        Some("waitingOnApproval") => Some(AgentStatus::NeedsInput),
-        _ => None,
-    }
-}
-
-fn codex_app_server_status_has_active_flag(params: &Value, expected_flag: &str) -> bool {
-    let active_flags = params
-        .get("status")
-        .and_then(|status| status.get("activeFlags"))
-        .or_else(|| params.get("activeFlags"));
-
-    active_flags.and_then(Value::as_array).is_some_and(|flags| {
-        flags
-            .iter()
-            .filter_map(Value::as_str)
-            .any(|flag| flag == expected_flag)
-    })
-}
-
-fn codex_app_server_status_state(params: &Value) -> Option<String> {
-    let status = params.get("status").unwrap_or(params);
-
-    status.as_str().map(str::to_string).or_else(|| {
-        status
-            .get("state")
-            .or_else(|| status.get("status"))
-            .or_else(|| status.get("kind"))
-            .or_else(|| status.get("type"))
-            .and_then(Value::as_str)
-            .map(str::to_string)
-    })
-}
-
-fn codex_app_server_payload_snippet(method: &str, params: &Value) -> Option<String> {
-    match method {
-        "item/commandExecution/requestApproval" => params
-            .get("reason")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .or_else(|| {
-                params
-                    .get("command")
-                    .and_then(Value::as_str)
-                    .map(|command| format!("Approve command: {command}"))
-            }),
-        "item/fileChange/requestApproval" | "item/permissions/requestApproval" => params
-            .get("reason")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        "item/tool/requestUserInput" => params
-            .get("questions")
-            .and_then(Value::as_array)
-            .and_then(|questions| questions.first())
-            .and_then(|question| question.get("question"))
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        "mcpServer/elicitation/request" => params
-            .get("message")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        "thread/status/changed"
-            if codex_app_server_status_has_active_flag(params, "waitingOnApproval") =>
-        {
-            Some("Codex is waiting for approval".to_string())
-        }
-        _ => None,
-    }
-}
-
-fn codex_app_server_notification_snippet(resolution: &CodexAppServerResolution) -> Option<String> {
-    resolution
-        .notification_snippet
-        .as_deref()
-        .and_then(crate::state::gateway_status::normalize_notification_snippet)
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 struct CodexCompletedTurnPayload {
@@ -1757,13 +1598,6 @@ enum CodexStopResolution {
 enum CodexTranscriptResolution {
     IgnoreSubagent,
     MainThreadMessage(Option<String>),
-}
-
-#[derive(Debug)]
-struct CodexAppServerResolution {
-    status: crate::state::gateway_status::AgentStatus,
-    notification_snippet: Option<String>,
-    idle_is_snapshot: bool,
 }
 
 #[derive(Debug, Deserialize)]

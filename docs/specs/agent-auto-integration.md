@@ -10,7 +10,7 @@
 - The checked-in Claude and Gemini wrappers currently map their documented hook names into `tide notify` lifecycle events, but they do not yet forward the hook `stdin` JSON that already contains response text for `Notification` and `AfterAgent`.
 - The checked-in Codex wrapper still uses the official `UserPromptSubmit` hook, but its completed-turn path has to move off top-level `notify` and onto the documented `Stop` hook plus `transcript_path` so Tide can wait for main-thread completion.
 - The checked-in Codex-specific spec already requires a documented `UserPromptSubmit` hook so each new Codex turn can return the source `Pane` to `Running`, while wrapper launch only marks `Wrapped Agent Presence`.
-- The checked-in Codex wrapper already has a structured App Server path for approval and user-input requests, but it still sits behind an opt-in launch mode instead of the default path.
+- The checked-in Codex wrapper must stay aligned with documented direct CLI hooks only; experimental remote launch paths are not part of the supported Wrapped Agent contract.
 
 ### To-Be
 
@@ -19,7 +19,6 @@
 - Let wrapper launch mark `Wrapped Agent Presence` without forcing `Running`, so Tide chrome can distinguish connected-idle from an active turn.
 - Preserve wrapper-managed connected-idle presence across Gateway PID refreshes and shell-idle-driven re-detection gaps when the wrapper has reported `agent-attached` but Tide has not rebound a concrete agent PID yet.
 - Forward documented hook `stdin` JSON from the checked-in Claude and Gemini wrappers so Tide can derive a `Notification Snippet` from official hook payload fields instead of guessing from shell output alone.
-- Keep the checked-in structured Codex App Server path opt-in until Tide has a protocol-complete watcher for the current Codex CLI schema.
 - Continue to treat wrapper-managed lifecycle signals as the only source of Wrapped Agent attention.
 
 ### Approach
@@ -38,7 +37,7 @@ The wrapper scripts are the agent-specific translation layer. They own the hook,
 | Agent | Checked-in wrapper inputs | Shared state mapping | Tide entrypoints that own translation |
 |-------|--------------------------|----------------------|---------------------------------------|
 | `claude` | launch-time `agent-attached`, `Notification` -> `agent-needs-input` with forwarded hook `stdin` JSON, `Stop` -> `agent-idle` with forwarded hook `stdin` JSON, `UserPromptSubmit` -> `agent-running`, `EXIT` -> `agent-detached`, plus OSC 9 fallback `tide:wrapped-agent:claude:<event>` | launch -> presence only, `Notification` -> `NeedsInput`, `Stop` -> `Idle`, `UserPromptSubmit` -> `Running`, `EXIT` -> clear presence | `crates/tide-app/resources/bin/claude`, `crates/tide-app/src/adapter/inward/cli_adapter/notify.rs::run_notify`, `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs::cli_notify`, `crates/tide-app/src/app.rs::handle_terminal_notification`, `crates/tide-app/src/app.rs::route_agent_notification`, `crates/tide-app/src/application/services/workspace_infra_service/mod.rs::refresh_workspace_agent_notification`, `crates/tide-app/src/application/services/workspace_service/mod.rs::activate_notification_target` |
-| `codex` | launch-time `agent-attached`, `PermissionRequest` -> `agent-needs-input` with forwarded hook `stdin` JSON, opt-in App Server remote mode with `codex-app-server-event` payload forwarding when `TIDE_CODEX_APP_SERVER=1`, `UserPromptSubmit` -> `agent-running`, `Stop` -> `codex-stop` with forwarded hook stdin JSON including `transcript_path`, `EXIT` -> `agent-detached`, plus OSC 9 fallback `tide:wrapped-agent:codex:<event>` | launch -> presence only, `PermissionRequest` -> `NeedsInput`, opt-in App Server approval or user-input request -> `NeedsInput`, `agent-running` -> `Running`, `Stop` payload -> `Idle`, `EXIT` -> clear presence | `crates/tide-app/resources/bin/codex`, `crates/tide-app/resources/bin/codex-app-server-watch`, `crates/tide-app/src/adapter/inward/cli_adapter/notify.rs::run_notify`, `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs::cli_notify`, `crates/tide-app/src/app.rs::handle_terminal_notification`, `crates/tide-app/src/app.rs::route_agent_notification` |
+| `codex` | launch-time `agent-attached`, `PermissionRequest` -> `agent-needs-input` with forwarded hook `stdin` JSON, `UserPromptSubmit` -> `agent-running`, `Stop` -> `codex-stop` with forwarded hook stdin JSON including `transcript_path`, `EXIT` -> `agent-detached`, plus OSC 9 fallback `tide:wrapped-agent:codex:<event>` | launch -> presence only, `PermissionRequest` -> `NeedsInput`, `agent-running` -> `Running`, `Stop` payload -> `Idle`, `EXIT` -> clear presence | `crates/tide-app/resources/bin/codex`, `crates/tide-app/src/adapter/inward/cli_adapter/notify.rs::run_notify`, `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs::cli_notify`, `crates/tide-app/src/app.rs::handle_terminal_notification`, `crates/tide-app/src/app.rs::route_agent_notification` |
 | `gemini` | launch-time `agent-attached`, `BeforeAgent` -> `agent-running`, `AfterAgent` -> `agent-idle` with forwarded hook `stdin` JSON, `Notification` -> `agent-needs-input` with forwarded hook `stdin` JSON, `EXIT` -> `agent-detached`, plus OSC 9 fallback `tide:wrapped-agent:gemini:<event>` | launch -> presence only, `BeforeAgent` -> `Running`, `AfterAgent` -> `Idle`, `Notification` -> `NeedsInput`, `EXIT` -> clear presence | `crates/tide-app/resources/bin/gemini`, `crates/tide-app/src/adapter/inward/cli_adapter/notify.rs::run_notify`, `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs::cli_notify`, `crates/tide-app/src/app.rs::handle_terminal_notification`, `crates/tide-app/src/app.rs::route_agent_notification`, `crates/tide-app/src/application/services/workspace_infra_service/mod.rs::refresh_workspace_agent_notification`, `crates/tide-app/src/application/services/workspace_service/mod.rs::activate_notification_target` |
 
 The common routing rule is the same for all three agents: macOS notification routing consumes only the normalized `AgentStatus`, while chrome derives `AgentChromeState` from `AgentStatus` plus `Wrapped Agent Presence`.
@@ -104,22 +103,20 @@ The common routing rule is the same for all three agents: macOS notification rou
   1. The Codex wrapper injects Tide MCP server config into the real `codex` command
   2. The Codex wrapper reports `agent-attached` before exec
   3. The Codex wrapper configures a `PermissionRequest` hook to forward hook stdin JSON into Tide's shared `agent-needs-input` path for direct CLI approval waits
-  4. The Codex wrapper launches Codex App Server remote mode only when `TIDE_CODEX_APP_SERVER=1` explicitly enables it, and forwards structured App Server requests into Tide
-  5. The Codex wrapper configures a `Stop` hook to forward hook stdin JSON into Tide's Codex-specific classifier
-  6. The Codex wrapper keeps an `EXIT` fallback for `agent-detached`
-  7. Tide preserves wrapper-managed connected-idle presence while the agent PID is still unknown, across Gateway refresh and shell-idle polling gaps, until process detection rebinds the real PID or `agent-detached` arrives
-  8. Tide does not assume an unsupported Codex `NeedsInput` signal beyond the checked-in script
+  4. The Codex wrapper configures a `Stop` hook to forward hook stdin JSON into Tide's Codex-specific classifier
+  5. The Codex wrapper keeps an `EXIT` fallback for `agent-detached`
+  6. Tide preserves wrapper-managed connected-idle presence while the agent PID is still unknown, across Gateway refresh and shell-idle polling gaps, until process detection rebinds the real PID or `agent-detached` arrives
+  7. Tide does not assume an unsupported Codex `NeedsInput` signal beyond the checked-in script
 - **Postcondition**: Codex integration remains evidence-backed and stable
 - **Business Rules**:
   - BR-7: The Codex wrapper injects Tide MCP server config and nothing broader than the checked-in `mcp_servers.tide.*` overrides
   - BR-8: The Codex wrapper reports `agent-attached` on launch
   - BR-9: The Codex wrapper forwards the documented Codex `PermissionRequest` hook payload through `tide notify --payload-stdin`
-  - BR-10: The Codex wrapper launches App Server remote mode only when `TIDE_CODEX_APP_SERVER=1` explicitly enables it and keeps the Codex App Server Watcher attached to the source `Pane`
-  - BR-11: The Codex wrapper forwards the documented Codex `Stop` hook payload through the checked-in hook config
-  - BR-12: The Codex wrapper keeps an `EXIT` fallback for `agent-detached`
-  - BR-13: The Codex wrapper does not claim a Codex `NeedsInput` signal without checked-in Tide integration
-  - BR-14: The Codex `NeedsInput` decision belongs to the Tide-side helper documented in `docs/specs/codex-needs-input-attention.md` and `docs/specs/codex-app-server-needs-input.md`, not to ad hoc wrapper-side string matching
-  - BR-15: A wrapper-managed Codex presence with unknown PID must not lose `gateway_connected` during Gateway PID refresh or shell-idle-driven re-detection gaps before Tide rebinds the real agent PID
+  - BR-10: The Codex wrapper forwards the documented Codex `Stop` hook payload through the checked-in hook config
+  - BR-11: The Codex wrapper keeps an `EXIT` fallback for `agent-detached`
+  - BR-12: The Codex wrapper does not claim a Codex `NeedsInput` signal without checked-in Tide integration
+  - BR-13: The Codex `NeedsInput` decision belongs to the Tide-side helper documented in `docs/specs/codex-needs-input-attention.md`, not to ad hoc wrapper-side string matching
+  - BR-14: A wrapper-managed Codex presence with unknown PID must not lose `gateway_connected` during Gateway PID refresh or shell-idle-driven re-detection gaps before Tide rebinds the real agent PID
 
 ### UC-5: ForwardStructuredHookPayloads
 
@@ -150,13 +147,12 @@ The common routing rule is the same for all three agents: macOS notification rou
 | UC-4 | BR-7 | `codex_wrapper_injects_tide_mcp_turn_stop_hook_and_prompt_submit_hook` |
 | UC-4 | BR-8 | `codex_wrapper_injects_tide_mcp_turn_stop_hook_and_prompt_submit_hook` |
 | UC-4 | BR-9 | `codex_wrapper_injects_tide_mcp_turn_stop_hook_and_prompt_submit_hook` |
-| UC-4 | BR-10 | `codex_wrapper_keeps_app_server_opt_in_and_direct_cli_default` |
-| UC-4 | BR-11 | `codex_wrapper_injects_tide_mcp_turn_stop_hook_and_prompt_submit_hook` |
-| UC-4 | BR-12 | `codex_wrapper_keeps_app_server_opt_in_and_direct_cli_default` |
-| UC-4 | BR-13 | `codex_app_server_command_approval_marks_needs_input` |
-| UC-4 | BR-14 | `codex_stop_payload_always_classifies_idle` |
-| UC-4 | BR-15 | `wrapper_managed_presence_with_unknown_pid_survives_gateway_connection_refresh` |
-| UC-4 | BR-15 | `wrapper_managed_presence_with_unknown_pid_survives_shell_idle_redetection_gap` |
+| UC-4 | BR-10 | `codex_wrapper_injects_tide_mcp_turn_stop_hook_and_prompt_submit_hook` |
+| UC-4 | BR-11 | `codex_wrapper_omits_app_server_and_launches_direct_cli_only` |
+| UC-4 | BR-12 | `codex_permission_request_hook_marks_needs_input` |
+| UC-4 | BR-13 | `codex_stop_payload_always_classifies_idle` |
+| UC-4 | BR-14 | `wrapper_managed_presence_with_unknown_pid_survives_gateway_connection_refresh` |
+| UC-4 | BR-14 | `wrapper_managed_presence_with_unknown_pid_survives_shell_idle_redetection_gap` |
 | UC-1 | BR-1 | `wrapper_scripts_are_generated_at_known_path` |
 | UC-5 | BR-13 | `claude_wrapper_forwards_hook_stdin_payloads_for_notification_and_stop` |
 | UC-5 | BR-14 | `gemini_wrapper_forwards_hook_stdin_payloads_for_notification_and_after_agent` |

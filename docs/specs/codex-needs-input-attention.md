@@ -13,8 +13,7 @@
 - OpenAI's official Codex hooks docs document `PreToolUse` only for `Bash`, and explicitly say unsupported output forms such as `permissionDecision: "ask"` fail open today.
 - The checked-in `read_codex_transcript_resolution()` helper only inspects `response_item` assistant messages, while current local Codex transcripts also emit final-answer text through `event_msg.agent_message` and `event_msg.task_complete.last_agent_message`.
 - A real locally captured Codex `Stop` hook stdin payload uses `snake_case` keys such as `transcript_path`, `hook_event_name`, and `last_assistant_message`, but the checked-in `CodexStopHookPayload` parser still expects `kebab-case`, so Tide drops the transcript path and fallback assistant message before notification routing.
-- The checked-in Codex App Server path can map structured approval requests into `AgentStatus::NeedsInput`, but it still sits behind an opt-in wrapper launch path, so the default Codex launch path can still rely on visible `Terminal` prompt text instead of structured wait signals.
-- The checked-in Codex completed-turn classifier still lets a finished main-thread turn become `NeedsInput` from final assistant text, even though Claude and Gemini already treat completed turns as `Idle` and Codex App Server already exposes the structured approval and user-input waits Tide needs.
+- The checked-in Codex completed-turn classifier still lets a finished main-thread turn become `NeedsInput` from final assistant text unless Tide relies only on documented direct CLI hooks and transcript-backed completion classification.
 
 ### To-Be
 
@@ -23,10 +22,10 @@
 - Transcript resolution should accept the checked-in Codex transcript shapes in priority order: `response_item` final-answer assistant messages, `event_msg.agent_message` with `phase = final_answer`, then `event_msg.task_complete.last_agent_message`, before falling back to payload text.
 - Tide should use Codex `UserPromptSubmit` to return the source `Pane` to `Running` at the beginning of each new turn, while launch only marks `Wrapped Agent Presence`.
 - Tide should use the documented Codex `PermissionRequest` hook to mark `NeedsInput` for direct CLI approval waits without depending on raw terminal text.
-- Codex App Server remote mode should remain opt-in until Tide has a protocol-complete watcher for the current Codex CLI schema.
 - Visible Codex CLI prompt text alone must not upgrade a source `Pane` to `AgentStatus::NeedsInput`.
 - Tide must not infer Codex `NeedsInput` from unverified hook ordering or unsupported hook outputs.
 - Tide must fail closed for Codex completed turns: final assistant text must not become `AgentStatus::NeedsInput` and must not project `AgentChromeState::Attention`.
+- Tide must remove the checked-in Codex App Server remote-mode path so the wrapped Codex contract stays direct-CLI-only.
 
 ### Approach
 
@@ -35,10 +34,9 @@
 3. Resolve the transcript by accepting the checked-in Codex record shapes in order: `response_item` final answer, `event_msg.agent_message` final answer, then `event_msg.task_complete.last_agent_message`.
 4. Enable Codex hooks for `UserPromptSubmit`, `PermissionRequest`, and `Stop` so Tide can emit `agent-running` at turn start, `NeedsInput` for direct CLI approval waits, and only finalize completion after Codex declares the turn stopped.
 5. Normalize every recognized completed Codex turn to `Idle` after Tide resolves the main-thread final assistant message for snippet and transcript safety.
-6. Fail closed for `NeedsInput`: unknown payloads, subagent transcripts, or completed-turn text must not be upgraded to `NeedsInput`; structured Codex App Server waits remain the only checked-in path.
+6. Fail closed for `NeedsInput`: unknown payloads, subagent transcripts, or completed-turn text must not be upgraded to `NeedsInput`.
 7. Do not use `PreToolUse` or unsupported `permissionDecision: "ask"` semantics to infer permission waits until Tide has repo-backed evidence for Codex approval ordering.
-8. Prefer the checked-in Codex App Server request methods and thread-status notifications for permission waits and user-input waits instead of visible `Terminal` prompt text.
-9. Keep Codex App Server remote mode behind an explicit opt-in until Tide has a protocol-complete watcher, and preserve the direct Codex CLI launch as the default path.
+8. Preserve the direct Codex CLI launch as the only checked-in Codex launch path.
 
 ## Adapter Contract
 
@@ -48,7 +46,6 @@
 - The helper must parse the real official `Stop` hook field names in `snake_case`, while tolerating the older internal `kebab-case` spellings where manual notify calls or legacy tests still use them.
 - The helper must accept current checked-in Codex transcript record shapes from both `response_item` and `event_msg` records so notification routing can recover the final main-thread assistant response even when only the `event_msg` forms are present at hook time.
 - The helper returns `Running` for `UserPromptSubmit`, `NeedsInput` for the documented `PermissionRequest` payload, ignores subagent `Stop` transcripts, and returns `Idle` for every completed main-thread turn.
-- Structured Codex App Server request methods and `thread/status/changed` notifications remain the preferred future wait-signal path, but the checked-in wrapper keeps that path opt-in until the watcher is protocol-complete.
 - Raw visible `Terminal` prompt text must not update a source `Pane` to `AgentStatus::NeedsInput`.
 - The shared routing, inactive-Workspace projection, and notification activation rules live in `docs/specs/agent-notification-routing.md`; this spec only defines the Codex-specific classifier boundary.
 
@@ -123,14 +120,14 @@
 - **Flow**:
   1. Tide reads the visible `Terminal` grid text
   2. Tide keeps the visible prompt text as transport text only
-  3. Tide waits for a structured Codex App Server wait signal or a later completed-turn `Idle` signal
+  3. Tide waits for a documented direct CLI hook signal or a later completed-turn `Idle` signal
 - **Postcondition**: Visible Codex CLI prompt text alone does not produce `NeedsInput` chrome or routed attention
 - **Business Rules**:
   - BR-15: Raw visible Codex CLI prompt text must not map to `AgentStatus::NeedsInput`
-  - BR-16: Codex permission waits and user-input waits should prefer the documented `PermissionRequest` hook plus structured Codex App Server request methods and thread-status notifications
+  - BR-16: Codex permission waits should prefer the documented `PermissionRequest` hook instead of visible `Terminal` prompt text
   - BR-17: Unknown visible Codex prompt text fails closed and must not map to `AgentStatus::NeedsInput`
 
-### UC-5: LaunchCodexAppServerByOptIn
+### UC-5: LaunchCodexDirectCliOnly
 
 - **Actor**: User
 - **Trigger**: The user runs `codex` from a Tide-managed `Terminal`
@@ -138,18 +135,16 @@
 - **Flow**:
   1. The wrapper reports `agent-attached`
   2. The wrapper creates the temporary `CODEX_HOME` overlay and hook config
-  3. Only when `TIDE_CODEX_APP_SERVER=1` explicitly enables it, the wrapper launches Codex App Server and the Codex App Server Watcher for the current `Terminal` working directory
-  4. When App Server remote mode is enabled, the wrapper launches the real Codex CLI in remote mode against the local App Server endpoint
-  5. Otherwise, or when App Server remote mode launch fails, the wrapper falls back to the direct Codex CLI launch
-- **Postcondition**: The default Codex launch path remains the direct CLI path until Tide's App Server watcher is protocol-complete
+  3. The wrapper launches the real Codex CLI directly with hook and MCP injection
+- **Postcondition**: The checked-in Codex launch path remains the direct CLI path only
 - **Business Rules**:
-  - BR-18: Codex App Server remote mode is opt-in behind `TIDE_CODEX_APP_SERVER=1` until the watcher is protocol-complete
-  - BR-19: Direct Codex launch remains the default path and keeps the existing hook and MCP injection
+  - BR-18: The Codex wrapper must not launch App Server remote mode
+  - BR-19: Direct Codex launch keeps the existing hook and MCP injection
 
 ## Invariants
 
 1. Claude and Codex do not share the same attention source model.
-2. Codex `NeedsInput` is derived from documented Codex events and structured Codex App Server wait signals only.
+2. Codex `NeedsInput` is derived from documented Codex direct CLI events only.
 3. Raw visible Codex CLI prompt text alone must not produce `NeedsInput`.
 4. Codex completed-turn text, unknown Codex final assistant text, and unknown or subagent Codex stop payloads fail closed for routed attention.
 5. Existing wrapper-managed attention rendering stays generic; only the Codex event adapter is agent-specific.
@@ -175,7 +170,7 @@
 | UC-3 | BR-13 | `codex_stop_payload_always_classifies_idle` |
 | UC-3 | BR-14 | `codex_integration_does_not_use_unsupported_hook_ordering_for_cli_waits` |
 | UC-4 | BR-15, BR-17 | `visible_codex_cli_tool_approval_wait_does_not_mark_needs_input_without_structured_signal` |
-| UC-5 | BR-18, BR-19 | `codex_wrapper_keeps_app_server_opt_in_and_direct_cli_default` |
+| UC-5 | BR-18, BR-19 | `codex_wrapper_omits_app_server_and_launches_direct_cli_only` |
 
 ## Location
 
@@ -183,7 +178,7 @@
 |--------|------|--------|
 | Wrapper | `crates/tide-app/resources/bin/codex` | Inject Codex `UserPromptSubmit` and `Stop` hooks and point Codex to Tide-managed helper commands |
 | CLI adapter | `crates/tide-app/src/adapter/inward/cli_adapter/` | Add a Codex-specific helper that parses the official `Stop` hook payload and transcript file and maps it to Tide lifecycle events |
-| Gateway | `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs` | Reuse existing `notify` handling once the Codex helper resolves the main-thread final answer into `Idle` while structured Codex waits remain the only `NeedsInput` source |
+| Gateway | `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs` | Reuse existing `notify` handling once the Codex helper resolves the main-thread final answer into `Idle` while direct CLI hooks remain the only `NeedsInput` source |
 | App | `crates/tide-app/src/app.rs` | Keep raw visible Codex CLI prompt text from directly routing `NeedsInput` |
 | Shared routing | `docs/specs/agent-notification-routing.md` | Defines the common `AgentStatus` routing, inactive-Workspace projection, and notification activation behavior |
 | Specs | `docs/specs/agent-auto-integration.md`, `docs/specs/agent-notification-routing.md`, `docs/specs/codex-needs-input-attention.md` | Record the Codex-specific event model |
