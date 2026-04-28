@@ -402,6 +402,7 @@ pub const FILE_TREE_ROW_RADIUS: f32 = 6.0;
 pub const FILE_TREE_WIDTH: f32 = 240.0;
 
 pub const TAB_BAR_HEIGHT: f32 = 35.0;
+pub const SIDE_SURFACE_BORDER_HIT_SLOP: f32 = 8.0;
 pub const TAB_CLOSE_ICON_SIZE: f32 = 9.0;
 pub const TAB_H_PAD: f32 = 11.0;
 pub const TAB_CONTENT_SPACING: f32 = 6.0;

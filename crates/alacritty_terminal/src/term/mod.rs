@@ -2579,6 +2579,20 @@ mod tests {
     }
 
     #[test]
+    fn resize_reflows_primary_screen() {
+        let mut term = test::mock_term("12345");
+
+        term.resize(TermSize::new(2, 1));
+
+        assert_eq!(term.grid.total_lines(), 3);
+        assert_eq!(term.grid[Line(-2)][Column(0)].c, '1');
+        assert_eq!(term.grid[Line(-2)][Column(1)].c, '2');
+        assert_eq!(term.grid[Line(-1)][Column(0)].c, '3');
+        assert_eq!(term.grid[Line(-1)][Column(1)].c, '4');
+        assert_eq!(term.grid[Line(0)][Column(0)].c, '5');
+    }
+
+    #[test]
     fn simple_selection_works() {
         let size = TermSize::new(5, 5);
         let mut term = Term::new(Config::default(), &size, VoidListener);

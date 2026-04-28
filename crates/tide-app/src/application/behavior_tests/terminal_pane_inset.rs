@@ -219,8 +219,8 @@ fn terminal_backend_resize_waits_for_deferred_window_resize_to_settle() {
 }
 
 #[test]
-fn terminal_backend_resize_waits_for_side_surface_animation_to_settle() {
-    // UC-3 BR-6/BR-7: side-surface animation coalesces Terminal backend resize until animation completion.
+fn terminal_backend_resize_throttles_live_updates_during_side_surface_animation() {
+    // UC-3 BR-6/BR-7/BR-13: side-surface animation throttles live Terminal backend resize instead of resizing on every intermediate frame.
     let (mut app, terminal_id) = app_with_terminal_context_pane(80, 24);
     app.dock.dock_open = false;
     app.dock.visibility_animation = None;
@@ -235,6 +235,15 @@ fn terminal_backend_resize_waits_for_side_surface_animation_to_settle() {
     assert!(app.surface_visibility_animation_active());
     assert_eq!(terminal_size(&app, terminal_id), initial_size);
 
+    app.ports.clock = Box::new(FixedClock {
+        instant: app.ports.clock.now() + Duration::from_millis(121),
+    });
+    app.compute_layout();
+    let mid_animation_size = terminal_size(&app, terminal_id);
+
+    assert!(mid_animation_size.0 < initial_size.0);
+    assert_eq!(mid_animation_size.1, initial_size.1);
+
     let settled_at =
         app.ports.clock.now() + SURFACE_VISIBILITY_ANIMATION_DURATION + Duration::from_millis(1);
     app.ports.clock = Box::new(FixedClock {
@@ -246,4 +255,58 @@ fn terminal_backend_resize_waits_for_side_surface_animation_to_settle() {
     assert!(!app.surface_visibility_animation_active());
     assert!(settled_size.0 < initial_size.0);
     assert_eq!(settled_size.1, initial_size.1);
+}
+
+#[test]
+fn terminal_backend_resize_throttles_live_updates_during_border_drag() {
+    // UC-3 BR-13: border dragging may deliver throttled live PTY resizes while motion is active, but never on every frame.
+    let (mut app, terminal_id) = app_with_terminal(80, 24);
+    app.ft.visible = true;
+    app.ft.width = 240.0;
+    app.compute_layout();
+    let initial_size = terminal_size(&app, terminal_id);
+
+    app.ft.border_dragging = true;
+    app.ft.width = 320.0;
+    app.compute_layout();
+    let first_drag_size = terminal_size(&app, terminal_id);
+
+    app.ft.width = 360.0;
+    app.ports.clock = Box::new(FixedClock {
+        instant: app.ports.clock.now() + Duration::from_millis(40),
+    });
+    app.compute_layout();
+    let throttled_size = terminal_size(&app, terminal_id);
+
+    app.ports.clock = Box::new(FixedClock {
+        instant: app.ports.clock.now() + Duration::from_millis(90),
+    });
+    app.compute_layout();
+    let updated_size = terminal_size(&app, terminal_id);
+
+    assert!(first_drag_size.0 < initial_size.0);
+    assert_eq!(throttled_size, first_drag_size);
+    assert!(updated_size.0 < first_drag_size.0);
+}
+
+#[test]
+fn terminal_backend_resize_skips_pathologically_narrow_widths() {
+    // UC-3 BR-12: A layout-driven Terminal Pane width shrink below the minimum readable backend width clamps the PTY to the minimum readable backend column count.
+    let (mut app, terminal_id) = app_with_terminal(80, 24);
+    let cell_size = app.window.cached_cell_size;
+    let Some(PaneKind::Terminal(pane)) = app.panes.get_mut(&terminal_id) else {
+        panic!("expected terminal pane");
+    };
+
+    pane.resize_to_rect(
+        Rect::new(0.0, 0.0, 3.0 * cell_size.width, 10.0 * cell_size.height),
+        cell_size,
+    );
+    assert_eq!(pane.backend.current_cols(), 4);
+
+    pane.resize_to_rect(
+        Rect::new(0.0, 0.0, 12.0 * cell_size.width, 10.0 * cell_size.height),
+        cell_size,
+    );
+    assert_eq!(pane.backend.current_cols(), 12);
 }

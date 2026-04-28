@@ -1,13 +1,16 @@
 use crate::pane::browser::BrowserPane;
 use crate::pane::editor::EditorPane;
-use crate::pane::PaneKind;
+use crate::pane::{PaneKind, TerminalPane};
 use crate::state::{FocusArea, ViewMode};
 use crate::theme::{
-    PANE_PADDING, TITLEBAR_BUTTON_GAP, TITLEBAR_ICON_BUTTON_PAD_H, TITLEBAR_ICON_SCALE,
+    PANE_PADDING, SIDE_SURFACE_BORDER_HIT_SLOP, TITLEBAR_BUTTON_GAP, TITLEBAR_ICON_BUTTON_PAD_H,
+    TITLEBAR_ICON_SCALE,
 };
 use crate::tide_core::{LayoutEngine, MouseButton, SplitDirection, Vec2};
 use crate::App;
 use crate::AppCorePort;
+use crate::DockPort;
+use crate::LayoutPort;
 use crate::PaneLifecyclePort;
 use crate::WorkspaceNavPort;
 
@@ -71,6 +74,40 @@ fn app_with_browser() -> (App, u64) {
     app.focus.focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;
     (app, id)
+}
+
+fn app_with_file_tree_view() -> App {
+    let (mut app, id) = app_with_editor();
+    app.focus.stage_focused = Some(id);
+    app.ft.visible = true;
+    app.ft.width = 220.0;
+    app.ft.visibility_animation = None;
+    app.compute_layout();
+    app
+}
+
+fn app_with_terminal_context_surface() -> App {
+    let mut app = test_app();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes.insert(
+        terminal_id,
+        PaneKind::Terminal(TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap()),
+    );
+    app.focus.focused = Some(terminal_id);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.router.set_focused(terminal_id);
+
+    let context_id = app.layout.alloc_id();
+    app.panes.insert(
+        context_id,
+        PaneKind::Editor(EditorPane::new_empty(context_id)),
+    );
+    app.add_pane_to_dock(context_id, Some(terminal_id));
+    app.dock.visibility_animation = None;
+    app.compute_layout();
+    app
 }
 
 fn app_with_two_terminal_stage_splits() -> (App, u64, u64) {
@@ -549,4 +586,49 @@ fn titlebar_surface_buttons_recompute_hover_target_on_mouse_down() {
     app.interaction.hover_target = None;
     crate::adapter::inward::mouse_adapter::handle_mouse_down(&mut app, MouseButton::Left, &window);
     assert!(app.dock.dock_open);
+}
+
+#[test]
+fn file_tree_border_drag_uses_widened_hit_slop() {
+    // UC-6 BR-22: FileTree View border drag uses the widened side-surface border hit slop for hover and mouse-down acquisition.
+    let mut app = app_with_file_tree_view();
+    let window = test_window_proxy();
+    let file_tree_rect = app.ft.rect.expect("FileTree View rect should exist");
+    let pos = Vec2::new(
+        file_tree_rect.x + SIDE_SURFACE_BORDER_HIT_SLOP - 1.0,
+        file_tree_rect.y + file_tree_rect.height / 2.0,
+    );
+
+    assert_eq!(
+        crate::adapter::inward::click_adapter::hit_test::compute_hover_target(&app, pos),
+        Some(crate::state::drag_types::HoverTarget::FileTreeBorder)
+    );
+
+    app.window.last_cursor_pos = pos;
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(&mut app, MouseButton::Left, &window);
+
+    assert!(app.ft.border_dragging);
+}
+
+#[test]
+fn dock_border_drag_uses_widened_hit_slop() {
+    // UC-6 BR-22: Terminal Context Surface border drag uses the widened side-surface border hit slop for hover and mouse-down acquisition.
+    let mut app = app_with_terminal_context_surface();
+    let window = test_window_proxy();
+    let pane_area_rect = app.pane_area_rect.expect("Stage rect should exist");
+    let border_x = pane_area_rect.x + pane_area_rect.width;
+    let pos = Vec2::new(
+        border_x - (SIDE_SURFACE_BORDER_HIT_SLOP - 1.0),
+        pane_area_rect.y + pane_area_rect.height / 2.0,
+    );
+
+    assert_eq!(
+        crate::adapter::inward::click_adapter::hit_test::compute_hover_target(&app, pos),
+        Some(crate::state::drag_types::HoverTarget::DockBorder)
+    );
+
+    app.window.last_cursor_pos = pos;
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(&mut app, MouseButton::Left, &window);
+
+    assert!(app.dock.dock_border_dragging);
 }

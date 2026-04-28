@@ -115,6 +115,12 @@ impl App {
                 .unwrap_or(false)
     }
 
+    fn log_app_handoff_failure(result: std::io::Result<()>, path: &Path) {
+        if let Err(error) = result {
+            log::error!("Failed to hand off app bundle {:?}: {}", path, error);
+        }
+    }
+
     pub(crate) fn sync_file_tree_path_identity_cache(&mut self) {
         let mut normalized_entry_paths = HashMap::new();
         if let Some(tree) = self.ft.tree.as_ref() {
@@ -592,7 +598,8 @@ impl App {
                 self.split_pane(crate::tide_core::SplitDirection::Vertical, Some(menu.path));
             }
             crate::ContextMenuAction::OpenApp => {
-                let _ = self.ports.process.open_with_default_app(&menu.path);
+                let result = self.ports.process.open_with_default_app(&menu.path);
+                Self::log_app_handoff_failure(result, &menu.path);
             }
             crate::ContextMenuAction::Delete => {
                 let result = if menu.is_dir {
@@ -759,7 +766,8 @@ impl App {
         if let Some(click_result) = click_result {
             match click_result {
                 FileTreeClickResult::LaunchBundle(path) => {
-                    let _ = self.ports.process.open_with_default_app(&path);
+                    let result = self.ports.process.open_with_default_app(&path);
+                    Self::log_app_handoff_failure(result, &path);
                 }
                 FileTreeClickResult::OpenEditor(path) => self.open_editor_pane(path),
             }

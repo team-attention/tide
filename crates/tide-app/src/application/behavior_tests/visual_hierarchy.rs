@@ -18,6 +18,7 @@ use crate::state::{
     drag_types::HoverTarget, SurfaceVisibilityAnimation, SURFACE_VISIBILITY_ANIMATION_DURATION,
 };
 use crate::theme::{TITLEBAR_ICON_BUTTON_PAD_H, TITLEBAR_ICON_BUTTON_PAD_V, TITLEBAR_ICON_SCALE};
+use crate::tide_core::LayoutEngine;
 use crate::tide_input::GlobalAction;
 use crate::ui::{file_icon, file_icon_kind, file_tree_disclosure, FileIconKind};
 use crate::ActionPort;
@@ -60,6 +61,37 @@ fn app_with_stage_terminal_only() -> (App, u64) {
     app.focus.focused = Some(terminal_id);
     app.focus.stage_focused = Some(terminal_id);
     (app, terminal_id)
+}
+
+fn app_with_two_stage_terminals() -> (App, u64, u64) {
+    let mut app = test_app();
+    let (layout, first_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let second_id = app
+        .layout
+        .split(first_id, crate::tide_core::SplitDirection::Vertical);
+    app.panes.insert(
+        first_id,
+        PaneKind::Terminal(TerminalPane::with_cwd(first_id, 80, 24, None, true).unwrap()),
+    );
+    app.panes.insert(
+        second_id,
+        PaneKind::Terminal(TerminalPane::with_cwd(second_id, 80, 24, None, true).unwrap()),
+    );
+    app.focus.focused = Some(first_id);
+    app.focus.stage_focused = Some(first_id);
+    app.layout.set_split_ratio(first_id, 0.35);
+    (app, first_id, second_id)
+}
+
+fn root_split_ratio(app: &App) -> f32 {
+    match app
+        .layout_snapshot()
+        .expect("Stage SplitLayout should exist")
+    {
+        crate::tide_layout::LayoutSnapshot::Split { ratio, .. } => ratio,
+        other => panic!("expected Stage root split, got {other:?}"),
+    }
 }
 
 // --- UC-1: RenderQuietStageHeader ---
@@ -303,6 +335,60 @@ fn closing_dock_animation_does_not_overlap_file_tree_view() {
             "Terminal Context Surface visual rect should stay left of FileTree View while closing"
         );
     }
+}
+
+#[test]
+fn stage_split_ratio_stays_stable_during_side_surface_visibility_animation() {
+    // UC-4 BR-26: Active side-surface visibility animation must not mutate Stage SplitLayout ratios from their pre-animation values.
+    let (mut app, first_id, second_id) = app_with_two_stage_terminals();
+    app.compute_layout();
+    let initial_ratio = root_split_ratio(&app);
+    let initial_first_rect = app
+        .pane_rects
+        .iter()
+        .find(|(pane_id, _)| *pane_id == first_id)
+        .expect("first Stage Pane rect should exist")
+        .1;
+    let initial_second_rect = app
+        .pane_rects
+        .iter()
+        .find(|(pane_id, _)| *pane_id == second_id)
+        .expect("second Stage Pane rect should exist")
+        .1;
+
+    app.handle_global_action(GlobalAction::ToggleFileTree);
+    let started_at = app.ports.clock.now();
+    app.ports.clock = Box::new(FixedClock {
+        instant: started_at + SURFACE_VISIBILITY_ANIMATION_DURATION / 2,
+    });
+    app.compute_layout();
+
+    let mid_ratio = root_split_ratio(&app);
+    let mid_first_rect = app
+        .pane_rects
+        .iter()
+        .find(|(pane_id, _)| *pane_id == first_id)
+        .expect("first Stage Pane rect should exist during animation")
+        .1;
+    let mid_second_rect = app
+        .pane_rects
+        .iter()
+        .find(|(pane_id, _)| *pane_id == second_id)
+        .expect("second Stage Pane rect should exist during animation")
+        .1;
+
+    assert!(
+        (mid_ratio - initial_ratio).abs() < f32::EPSILON,
+        "side-surface animation should preserve the Stage root split ratio"
+    );
+    assert!(
+        mid_first_rect.width < initial_first_rect.width,
+        "first Stage Pane should visually shrink during FileTree View animation"
+    );
+    assert!(
+        mid_second_rect.width < initial_second_rect.width,
+        "second Stage Pane should visually shrink during FileTree View animation"
+    );
 }
 
 #[test]

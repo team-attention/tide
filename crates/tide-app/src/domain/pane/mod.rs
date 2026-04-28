@@ -41,6 +41,8 @@ pub(crate) fn terminal_grid_cols(content_rect: Rect, cell_size: Size) -> usize {
     (content_rect.width / cell_size.width).floor().max(0.0) as usize
 }
 
+const MIN_READABLE_TERMINAL_BACKEND_COLS: u16 = 4;
+
 /// Polymorphic pane: terminal, editor, diff viewer, embedded browser, or launcher.
 pub enum PaneKind {
     Terminal(TerminalPane),
@@ -493,6 +495,7 @@ impl TerminalPane {
     pub fn resize_to_rect(&mut self, rect: Rect, cell_size: Size) {
         let cols = ((rect.width / cell_size.width).max(1.0).min(1000.0)) as u16;
         let rows = ((rect.height / cell_size.height).max(1.0).min(500.0)) as u16;
+        let cols = cols.max(MIN_READABLE_TERMINAL_BACKEND_COLS);
         self.backend.resize(cols, rows);
     }
 }
