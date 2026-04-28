@@ -22,8 +22,8 @@ pub(crate) use titlebar::{
     integration_toggle_notification_indicator_color, titlebar_button_backdrop_level,
     titlebar_surface_button_icon, titlebar_surface_icon_text_glyph,
     titlebar_toggle_button_draws_hotkey_hint, titlebar_toggle_button_height,
-    titlebar_toggle_button_width, titlebar_workspace_title, workspace_item_indicator_color,
-    workspace_item_indicator_status, TitlebarSurfaceIcon,
+    titlebar_toggle_button_width, titlebar_workspace_meta_text, titlebar_workspace_title,
+    workspace_item_indicator_color, workspace_item_indicator_status, TitlebarSurfaceIcon,
 };
 
 /// Render the chrome layer: file tree panel, editor panel + tabs, pane backgrounds,

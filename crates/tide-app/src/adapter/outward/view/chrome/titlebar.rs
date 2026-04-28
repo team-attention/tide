@@ -118,9 +118,63 @@ pub(crate) fn titlebar_surface_button_icon(target: &HoverTarget) -> Option<Title
     }
 }
 
-pub(crate) fn titlebar_surface_icon_text_glyph(icon: TitlebarSurfaceIcon) -> Option<&'static str> {
-    match icon {
-        TitlebarSurfaceIcon::FileTree => Some("\u{f07b}"),
+pub(crate) fn titlebar_surface_icon_text_glyph(_icon: TitlebarSurfaceIcon) -> Option<&'static str> {
+    None
+}
+
+pub(crate) fn titlebar_workspace_meta_text(app: &App, workspace_index: usize) -> String {
+    workspace_terminal_cwd(app, workspace_index)
+        .map(|path| crate::state::abbreviate_path(&path))
+        .unwrap_or_default()
+}
+
+fn workspace_terminal_cwd(app: &App, workspace_index: usize) -> Option<std::path::PathBuf> {
+    if workspace_index == app.ws.active {
+        return app.focused_terminal_cwd();
+    }
+
+    let workspace = app.ws.workspaces.get(workspace_index)?;
+    let preferred_terminal = app
+        .ws
+        .workspace_extras
+        .get(workspace_index)
+        .and_then(|extras| extras.stage_focused)
+        .or(workspace.focused);
+
+    preferred_terminal
+        .and_then(|pane_id| terminal_cwd_from_workspace(workspace, pane_id))
+        .or_else(|| {
+            workspace
+                .layout
+                .pane_ids()
+                .into_iter()
+                .find_map(|pane_id| terminal_cwd_from_workspace(workspace, pane_id))
+        })
+        .or_else(|| {
+            workspace
+                .panes
+                .values()
+                .find_map(|pane| terminal_cwd_from_pane(pane))
+        })
+}
+
+fn terminal_cwd_from_workspace(
+    workspace: &crate::Workspace,
+    pane_id: crate::tide_core::PaneId,
+) -> Option<std::path::PathBuf> {
+    workspace
+        .panes
+        .get(&pane_id)
+        .and_then(terminal_cwd_from_pane)
+}
+
+fn terminal_cwd_from_pane(pane: &crate::pane::PaneKind) -> Option<std::path::PathBuf> {
+    match pane {
+        crate::pane::PaneKind::Terminal(terminal) => terminal
+            .context
+            .cwd
+            .clone()
+            .or_else(|| terminal.backend.detect_cwd_fallback()),
         _ => None,
     }
 }
@@ -646,10 +700,8 @@ pub(super) fn render_titlebar_and_sidebar(
             } else {
                 0.0
             };
-            let meta_text = if is_active && !compact {
-                app.focused_terminal_cwd()
-                    .map(|p| crate::state::abbreviate_path(&p))
-                    .unwrap_or_default()
+            let meta_text = if !compact {
+                titlebar_workspace_meta_text(app, i)
             } else {
                 String::new()
             };

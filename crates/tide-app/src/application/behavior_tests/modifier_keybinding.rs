@@ -576,6 +576,7 @@ fn keybinding_settings_omit_retired_tab_group_and_unbound_split_actions() {
         GlobalAction::DockSplitHorizontal,
         GlobalAction::DockSplitVertical,
         GlobalAction::DockNewTab,
+        GlobalAction::ToggleDockPin,
     ] {
         assert!(
             !actions.iter().any(|action| action == &retired),
@@ -591,6 +592,20 @@ fn keybinding_settings_omit_retired_tab_group_and_unbound_split_actions() {
             action.action_key()
         );
     }
+}
+
+#[test]
+fn cmd_shift_p_is_not_bound_to_retired_dock_pin() {
+    // UC-10 BR-4: ToggleDockPin is retained for compatibility but has no default hotkey.
+    let map = KeybindingMap::new();
+    let mods = Modifiers {
+        shift: true,
+        ctrl: false,
+        meta: true,
+        alt: false,
+    };
+
+    assert_eq!(map.lookup(&Key::Char('p'), &mods), None);
 }
 
 #[test]

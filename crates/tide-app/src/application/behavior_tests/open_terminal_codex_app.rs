@@ -3,7 +3,7 @@ use crate::adapter::inward::drag_drop_adapter::ws_sidebar_geometry;
 use crate::adapter::inward::mouse_adapter::drag::{
     dock_width_from_border_drag, file_tree_width_from_border_drag,
 };
-use crate::adapter::outward::view::titlebar_workspace_title;
+use crate::adapter::outward::view::{titlebar_workspace_meta_text, titlebar_workspace_title};
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
 use crate::state::{FocusArea, ViewMode};
@@ -347,6 +347,40 @@ fn workspace_rows_do_not_render_large_terminal_previews() {
         geometry.item_h < app.window.cached_cell_size.height * 2.0,
         "Workspace row height should leave no room for terminal preview cards"
     );
+}
+
+#[test]
+fn inactive_workspace_rows_show_terminal_cwd_metadata() {
+    // UC-1 BR-7: Inactive Workspace rows show stored Terminal CWD metadata when the rail has room.
+    let mut app = test_app();
+    let active_workspace = crate::Workspace {
+        name: "Active".to_string(),
+        layout: crate::tide_layout::SplitLayout::new(),
+        focused: None,
+        panes: std::collections::HashMap::new(),
+    };
+
+    let (inactive_layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    let mut inactive_terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    inactive_terminal.context.cwd = Some(std::path::PathBuf::from("/tmp/tide-inactive"));
+    let mut inactive_panes = std::collections::HashMap::new();
+    inactive_panes.insert(terminal_id, PaneKind::Terminal(inactive_terminal));
+    let inactive_workspace = crate::Workspace {
+        name: "Review".to_string(),
+        layout: inactive_layout,
+        focused: Some(terminal_id),
+        panes: inactive_panes,
+    };
+
+    app.ws.workspaces = vec![active_workspace, inactive_workspace];
+    app.ws.workspace_extras = vec![crate::WorkspaceExtras::new(), {
+        let mut extras = crate::WorkspaceExtras::new();
+        extras.stage_focused = Some(terminal_id);
+        extras
+    }];
+    app.ws.active = 0;
+
+    assert_eq!(titlebar_workspace_meta_text(&app, 1), "/tmp/tide-inactive");
 }
 
 // --- UC-9: PreserveVisualHierarchy ---

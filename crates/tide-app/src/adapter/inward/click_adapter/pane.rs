@@ -446,11 +446,11 @@ pub(crate) fn handle_drop(
                 return; // Can't drop on self
             }
             let (direction, insert_first) = match zone {
-                DropZone::Top => (SplitDirection::Vertical, true),
-                DropZone::Bottom => (SplitDirection::Vertical, false),
-                DropZone::Left => (SplitDirection::Horizontal, true),
-                DropZone::Right => (SplitDirection::Horizontal, false),
-                DropZone::Center => (SplitDirection::Vertical, false), // Center = add below
+                DropZone::Top => (SplitDirection::Horizontal, true),
+                DropZone::Bottom => (SplitDirection::Horizontal, false),
+                DropZone::Left => (SplitDirection::Vertical, true),
+                DropZone::Right => (SplitDirection::Vertical, false),
+                DropZone::Center => (SplitDirection::Horizontal, false), // Center = add below
             };
 
             let source_in_dock = ctx.is_pane_in_dock(source);

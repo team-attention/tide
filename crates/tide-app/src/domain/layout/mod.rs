@@ -209,10 +209,10 @@ impl SplitLayout {
         }
 
         let (direction, insert_first) = match zone {
-            DropZone::Top => (SplitDirection::Vertical, true),
-            DropZone::Bottom => (SplitDirection::Vertical, false),
-            DropZone::Left => (SplitDirection::Horizontal, true),
-            DropZone::Right => (SplitDirection::Horizontal, false),
+            DropZone::Top => (SplitDirection::Horizontal, true),
+            DropZone::Bottom => (SplitDirection::Horizontal, false),
+            DropZone::Left => (SplitDirection::Vertical, true),
+            DropZone::Right => (SplitDirection::Vertical, false),
             DropZone::Center => unreachable!(),
         };
 
@@ -270,10 +270,10 @@ impl SplitLayout {
         // Wrap remaining root with source at the specified edge
         let remaining = self.root.take().unwrap();
         let (direction, insert_first) = match zone {
-            DropZone::Top => (SplitDirection::Vertical, true),
-            DropZone::Bottom => (SplitDirection::Vertical, false),
-            DropZone::Left => (SplitDirection::Horizontal, true),
-            DropZone::Right => (SplitDirection::Horizontal, false),
+            DropZone::Top => (SplitDirection::Horizontal, true),
+            DropZone::Bottom => (SplitDirection::Horizontal, false),
+            DropZone::Left => (SplitDirection::Vertical, true),
+            DropZone::Right => (SplitDirection::Vertical, false),
             DropZone::Center => unreachable!(),
         };
 
@@ -327,10 +327,10 @@ impl SplitLayout {
 
         let root = self.root.as_mut().unwrap();
         let (direction, insert_first) = match zone {
-            DropZone::Top => (SplitDirection::Vertical, true),
-            DropZone::Bottom => (SplitDirection::Vertical, false),
-            DropZone::Left => (SplitDirection::Horizontal, true),
-            DropZone::Right => (SplitDirection::Horizontal, false),
+            DropZone::Top => (SplitDirection::Horizontal, true),
+            DropZone::Bottom => (SplitDirection::Horizontal, false),
+            DropZone::Left => (SplitDirection::Vertical, true),
+            DropZone::Right => (SplitDirection::Vertical, false),
             DropZone::Center => unreachable!(),
         };
 
@@ -367,8 +367,8 @@ impl SplitLayout {
 
         // 2. Determine primary direction from drop zone
         let primary = match zone {
-            DropZone::Left | DropZone::Right => SplitDirection::Horizontal,
-            DropZone::Top | DropZone::Bottom => SplitDirection::Vertical,
+            DropZone::Left | DropZone::Right => SplitDirection::Vertical,
+            DropZone::Top | DropZone::Bottom => SplitDirection::Horizontal,
             DropZone::Center => unreachable!(),
         };
 
@@ -422,8 +422,8 @@ impl SplitLayout {
 
         // 2. Determine primary direction from drop zone
         let primary = match zone {
-            DropZone::Left | DropZone::Right => SplitDirection::Horizontal,
-            DropZone::Top | DropZone::Bottom => SplitDirection::Vertical,
+            DropZone::Left | DropZone::Right => SplitDirection::Vertical,
+            DropZone::Top | DropZone::Bottom => SplitDirection::Horizontal,
             DropZone::Center => unreachable!(),
         };
 
@@ -436,10 +436,10 @@ impl SplitLayout {
 
         // 4. Insert source next to target (handles equalization)
         let (direction, insert_first) = match zone {
-            DropZone::Top => (SplitDirection::Vertical, true),
-            DropZone::Bottom => (SplitDirection::Vertical, false),
-            DropZone::Left => (SplitDirection::Horizontal, true),
-            DropZone::Right => (SplitDirection::Horizontal, false),
+            DropZone::Top => (SplitDirection::Horizontal, true),
+            DropZone::Bottom => (SplitDirection::Horizontal, false),
+            DropZone::Left => (SplitDirection::Vertical, true),
+            DropZone::Right => (SplitDirection::Vertical, false),
             DropZone::Center => unreachable!(),
         };
 
@@ -486,11 +486,11 @@ impl SplitLayout {
                     }
                 } else {
                     let (direction, insert_first) = match zone {
-                        DropZone::Top => (SplitDirection::Vertical, true),
-                        DropZone::Bottom => (SplitDirection::Vertical, false),
-                        DropZone::Left => (SplitDirection::Horizontal, true),
-                        DropZone::Right => (SplitDirection::Horizontal, false),
-                        DropZone::Center => (SplitDirection::Horizontal, false),
+                        DropZone::Top => (SplitDirection::Horizontal, true),
+                        DropZone::Bottom => (SplitDirection::Horizontal, false),
+                        DropZone::Left => (SplitDirection::Vertical, true),
+                        DropZone::Right => (SplitDirection::Vertical, false),
+                        DropZone::Center => (SplitDirection::Vertical, false),
                     };
                     sim.insert_pane(target_id, source, direction, insert_first);
                 }
@@ -838,9 +838,9 @@ impl LayoutEngine for SplitLayout {
                     let preferred =
                         if dx >= DRAG_INTENT_THRESHOLD_PX || dy >= DRAG_INTENT_THRESHOLD_PX {
                             if dx >= dy {
-                                Some(SplitDirection::Horizontal) // horizontal movement → want H split border
+                                Some(SplitDirection::Vertical) // horizontal movement → want vertical split border
                             } else {
-                                Some(SplitDirection::Vertical) // vertical movement → want V split border
+                                Some(SplitDirection::Horizontal) // vertical movement → want horizontal split border
                             }
                         } else {
                             None // too little movement, no preference yet

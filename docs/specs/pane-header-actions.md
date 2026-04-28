@@ -97,8 +97,8 @@ The click behavior is contextual:
   5. Tide recomputes layout with the new split in the clicked header's context.
 - **Postcondition**: Stage split actions create a new Stage split; Dock split actions create a new Terminal Context Surface split.
 - **Business Rules**:
-  - BR-3: Clicking `SplitHorizontal` from a focused Stage header creates a new Stage split that divides width and focuses the new `Terminal`.
-  - BR-4: Clicking `SplitVertical` from a focused Stage header creates a new Stage split that divides height and focuses the new `Terminal`.
+  - BR-3: Clicking `SplitHorizontal` from a focused Stage header creates a new Stage split that divides height and focuses the new `Terminal`.
+  - BR-4: Clicking `SplitVertical` from a focused Stage header creates a new Stage split that divides width and focuses the new `Terminal`.
   - BR-5: Clicking a split action from a focused Dock header must create a new context split in the owning Stage `Terminal`'s Terminal Context Surface.
 
 ### UC-3: ReserveHeaderActionWidth

@@ -1289,7 +1289,7 @@ impl App {
         self.layout.insert_pane(
             focused,
             new_id,
-            crate::tide_core::SplitDirection::Horizontal,
+            crate::tide_core::SplitDirection::Vertical,
             false,
         );
     }
@@ -1311,7 +1311,7 @@ impl App {
             self.layout.insert_pane(
                 focused,
                 new_id,
-                crate::tide_core::SplitDirection::Horizontal,
+                crate::tide_core::SplitDirection::Vertical,
                 false,
             );
         }

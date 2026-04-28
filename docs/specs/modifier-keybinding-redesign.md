@@ -182,14 +182,14 @@ Unchanged bindings:
 1. User invokes SplitVertical while in Stage.
 2. Router matches to `GlobalAction::SplitVertical`.
 3. `handle_global_action()` checks FocusArea.
-4. If Stage: calls `split_with_launcher(SplitDirection::Vertical)` — splits the focused Stage pane top/bottom.
-5. If Dock: calls `dock_split_new_tab_group(SplitDirection::Vertical)` — splits the Dock top/bottom.
+4. If Stage: calls `split_with_launcher(SplitDirection::Vertical)` — splits the focused Stage pane left/right.
+5. If Dock: calls `dock_split_new_tab_group(SplitDirection::Vertical)` — splits the Dock left/right.
 
 **Postcondition**: A new pane is created via split in the current FocusArea.
 
 **Business Rules**:
 - **BR-1 (Area-aware split)**: SplitVertical/SplitHorizontal target the current FocusArea. When in Stage they split Stage layout; when in Dock they split Dock layout.
-- **BR-2 (Direction semantics)**: SplitHorizontal creates a left/right split. SplitVertical creates a top/bottom split. Cmd+Shift+T and Cmd+Shift+Backslash map to SplitVertical; Cmd+Backslash is reserved for ToggleDock.
+- **BR-2 (Direction semantics)**: SplitVertical creates a left/right split. SplitHorizontal creates a top/bottom split. Cmd+Shift+T and Cmd+Shift+Backslash map to SplitVertical; Cmd+Backslash is reserved for ToggleDock.
 
 ### UC-6: Internal Dock Split
 
@@ -265,6 +265,7 @@ Unchanged bindings:
 - **BR-1 (Hide retired tab-group shortcuts)**: `TabPrev`, `TabNext`, `DockTabPrev`, and `DockTabNext` are omitted from the default Keybindings action list.
 - **BR-2 (Hide unbound split/tab internals)**: `SplitHorizontal`, `DockSplitHorizontal`, `DockSplitVertical`, and `DockNewTab` are omitted from the default Keybindings action list.
 - **BR-3 (No placeholder hotkeys)**: Every action shown by `GlobalAction::all_actions()` must resolve to a default hotkey.
+- **BR-4 (Retire Dock pin hotkey)**: `ToggleDockPin` remains accepted as a legacy action key but has no default hotkey and is omitted from the default Keybindings action list.
 
 ### UC-9: Settings Migration for Removed Actions
 
@@ -328,6 +329,7 @@ Unchanged bindings:
 | UC-9 | BR-1 | `removed_action_keys_return_none_from_parse()` |
 | UC-9 | BR-2 | `toggle_zoom_in_settings_is_silently_dropped()` |
 | UC-10 | BR-1/BR-2/BR-3 | `keybinding_settings_omit_retired_tab_group_and_unbound_split_actions()` |
+| UC-10 | BR-4 | `cmd_shift_p_is_not_bound_to_retired_dock_pin()` |
 
 ## Location
 

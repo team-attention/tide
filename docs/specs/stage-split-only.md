@@ -55,7 +55,7 @@ Dock uses Terminal Context Surface split/stack behavior. This spec only removes 
 **Postcondition**: The new Stage `Pane` is visible through a split leaf or selected in stacked mode. No ordinary Stage `TabGroup` is created.
 
 **Business Rules**:
-- BR-1: `NewTab` in Stage creates a `Terminal` split leaf, not a Stage `TabGroup` tab.
+- BR-1: `NewTab` in Stage creates a right-side `Terminal` split leaf through `SplitDirection::Vertical`, not a Stage `TabGroup` tab.
 - BR-2: `NewFile`, Browser Pane, and Render Pane fallbacks in Stage create split leaves, not Stage `TabGroup` tabs.
 - BR-3: A Stage split performed while `ViewMode::Stacked` is active preserves `ViewMode::Stacked` and focuses the new Stage `Pane`.
 - BR-4: Creating a new `Workspace` starts Stage in `ViewMode::Split` with no `zoomed_pane`, even if the previous `Workspace` was Stacked.

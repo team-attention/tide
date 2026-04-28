@@ -70,8 +70,8 @@ impl crate::application::ports::inward::LayoutPort for App {
             Some(HoverTarget::FileTreeBorder)
             | Some(HoverTarget::WsSidebarBorder)
             | Some(HoverTarget::DockBorder) => CursorIcon::ColResize,
-            Some(HoverTarget::SplitBorder(SplitDirection::Horizontal)) => CursorIcon::ColResize,
-            Some(HoverTarget::SplitBorder(SplitDirection::Vertical)) => CursorIcon::RowResize,
+            Some(HoverTarget::SplitBorder(SplitDirection::Vertical)) => CursorIcon::ColResize,
+            Some(HoverTarget::SplitBorder(SplitDirection::Horizontal)) => CursorIcon::RowResize,
             None => CursorIcon::Default,
         };
         window.set_cursor_icon(icon);
@@ -301,7 +301,7 @@ impl crate::application::ports::inward::LayoutPort for App {
         self.dock.finish_visibility_animation_if_complete(now);
         if self
             .layout
-            .expand_leaf_groups_to_splits(SplitDirection::Horizontal)
+            .expand_leaf_groups_to_splits(SplitDirection::Vertical)
         {
             self.cache.invalidate_chrome();
         }

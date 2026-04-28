@@ -5,6 +5,7 @@ use crate::state::FocusArea;
 use crate::tide_input::{AreaSlot, GlobalAction};
 use crate::ActionPort;
 use crate::App;
+use crate::LayoutPort;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -91,8 +92,8 @@ fn new_file_global_action_creates_editor_pane_in_stage_split() {
 
 #[test]
 fn new_tab_global_action_creates_terminal_pane_in_stage() {
-    // UC-4 BR-29: NewTab in Stage creates Terminal split leaf
-    let (mut app, _) = app_with_editor();
+    // UC-4 BR-29: Cmd+T/NewTab in Stage creates a right-side Terminal split leaf.
+    let (mut app, first_id) = app_with_editor();
     app.handle_global_action(GlobalAction::NewTab);
     let new_id = app.focus.focused.unwrap();
     assert!(matches!(
@@ -101,6 +102,28 @@ fn new_tab_global_action_creates_terminal_pane_in_stage() {
     ));
     assert_eq!(app.layout.pane_ids().len(), app.panes.len());
     assert!(app.layout.tab_group_containing(new_id).is_none());
+    match app.layout_snapshot().expect("Stage split should exist") {
+        crate::tide_layout::LayoutSnapshot::Split { direction, .. } => {
+            assert_eq!(direction, crate::tide_core::SplitDirection::Vertical);
+        }
+        other => panic!("expected vertical split after NewTab, got {other:?}"),
+    }
+    let first_rect = app
+        .pane_rects
+        .iter()
+        .find(|(id, _)| *id == first_id)
+        .expect("first Pane rect should exist")
+        .1;
+    let new_rect = app
+        .pane_rects
+        .iter()
+        .find(|(id, _)| *id == new_id)
+        .expect("new Pane rect should exist")
+        .1;
+    assert!(
+        new_rect.x > first_rect.x,
+        "Cmd+T should place the new Pane on the right"
+    );
 }
 
 #[test]

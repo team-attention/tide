@@ -411,11 +411,15 @@ fn titlebar_surface_toggles_use_dock_filetree_workspace_order_and_icons() {
 }
 
 #[test]
-fn titlebar_file_tree_toggle_uses_restored_folder_glyph() {
-    // UC-5 BR-24: The FileTree View titlebar toggle uses the restored folder glyph.
+fn titlebar_file_tree_toggle_uses_vector_icon_without_text_glyph() {
+    // UC-5 BR-24: The FileTree View titlebar toggle uses a vector icon with no font-dependent text glyph fallback.
+    assert_eq!(
+        titlebar_surface_button_icon(&HoverTarget::TitlebarFileTree),
+        Some(TitlebarSurfaceIcon::FileTree)
+    );
     assert_eq!(
         titlebar_surface_icon_text_glyph(TitlebarSurfaceIcon::FileTree),
-        Some("\u{f07b}")
+        None
     );
     assert_eq!(
         titlebar_surface_icon_text_glyph(TitlebarSurfaceIcon::DockContext),

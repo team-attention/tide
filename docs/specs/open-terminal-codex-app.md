@@ -139,6 +139,7 @@ The change should land as a sequence of product layers. Each layer is useful alo
   - BR-4: Workspace visual identity must not create a second state boundary beyond `WorkspaceManager`.
   - BR-5: Workspace rows must remain compact enough to monitor many tasks at once.
   - BR-6: Workspace rows may summarize live task state, but must not become large embedded terminal previews.
+  - BR-7: Inactive Workspace rows must derive cwd metadata from their cold-stored Stage `Terminal`.
 
 ### UC-2: UseTerminalAsMainSession
 
@@ -318,6 +319,7 @@ The change should land as a sequence of product layers. Each layer is useful alo
 | UC-1: NavigateWorkspaceTasks | BR-3 | `open_terminal_codex_app` | `inactive_workspace_row_shows_identity_metadata` |
 | UC-1: NavigateWorkspaceTasks | BR-5 | `open_terminal_codex_app` | `workspace_rows_stay_compact_for_many_concurrent_tasks` |
 | UC-1: NavigateWorkspaceTasks | BR-6 | `open_terminal_codex_app` | `workspace_rows_do_not_render_large_terminal_previews` |
+| UC-1: NavigateWorkspaceTasks | BR-7 | `open_terminal_codex_app` | `inactive_workspace_rows_show_terminal_cwd_metadata` |
 | UC-2: UseTerminalAsMainSession | BR-1 | `open_terminal_codex_app` | `stage_terminal_is_primary_execution_surface` |
 | UC-2: UseTerminalAsMainSession | BR-2 | `open_terminal_codex_app` | `unwrapped_terminal_does_not_show_wrapper_lifecycle_status` |
 | UC-2: UseTerminalAsMainSession | BR-4 | `open_terminal_codex_app` | `context_pane_created_from_terminal_records_associated_terminal` |

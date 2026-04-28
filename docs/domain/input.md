@@ -75,8 +75,8 @@ KeybindingMap {
 ### Pane Operations
 | Action | Default Binding | Description |
 |--------|----------------|-------------|
-| `SplitHorizontal` | None by default | Split the current FocusArea into left/right panes |
-| `SplitVertical` | Cmd+Shift+T, Cmd+Shift+Backslash | Split the current FocusArea into top/bottom panes |
+| `SplitHorizontal` | None by default | Split the current FocusArea into top/bottom panes |
+| `SplitVertical` | Cmd+Shift+T, Cmd+Shift+Backslash | Split the current FocusArea into left/right panes |
 | `ClosePane` | Cmd+W | Close focused pane |
 | `ToggleStacked` | Cmd+Enter | Toggle stacked mode for the current FocusArea |
 | `DockToggleStacked` | Cmd+Ctrl+Enter | Toggle Dock stacked mode without permanently changing FocusArea |
@@ -84,10 +84,10 @@ KeybindingMap {
 | `DockNavigate(Direction)` | Cmd+Shift+HJKL | Move focus within Dock without changing FocusArea |
 | `TabPrev` / `TabNext` | None by default | Cycle stacked panes in the current FocusArea |
 | `DockTabPrev` / `DockTabNext` | None by default | Cycle Dock tabs without changing FocusArea |
-| `NewTab` | Cmd+T | New tab (Launcher) |
+| `NewTab` | Cmd+T | New Stage Terminal split to the right |
 | `DockNewTab` | None by default | New Dock tab |
-| `DockSplitHorizontal` | None by default | Split Dock into left/right panes |
-| `DockSplitVertical` | None by default | Split Dock into top/bottom panes |
+| `DockSplitHorizontal` | None by default | Split Dock into top/bottom panes |
+| `DockSplitVertical` | None by default | Split Dock into left/right panes |
 | `NewFile` | — | New empty editor |
 
 ### Global UI
@@ -106,7 +106,7 @@ KeybindingMap {
 | `BrowserReload` | Cmd+R | Reload Browser Pane |
 | `ScrollHalfPageUp/Down` | Cmd+U / Cmd+D | Half-page scroll |
 | `ToggleDock` | Cmd+Backslash | Show/hide or focus Dock |
-| `ToggleDockPin` | Cmd+Shift+P | Pin or unpin the focused Dock Pane |
+| `ToggleDockPin` | None by default | Legacy no-op retained for settings compatibility |
 | `ToggleLivePreview` | None by default | Toggle LivePreviewMode for Markdown Pane |
 
 ### Workspace

@@ -289,7 +289,6 @@ impl GlobalAction {
             GlobalAction::ScrollHalfPageDown,
             GlobalAction::ToggleFileTree,
             GlobalAction::ToggleDock,
-            GlobalAction::ToggleDockPin,
         ]
     }
 }
@@ -601,10 +600,6 @@ impl KeybindingMap {
                 Hotkey::new(Key::Char('d'), false, false, true, false),
                 GlobalAction::ScrollHalfPageDown,
             ),
-            (
-                Hotkey::new(Key::Char('p'), true, false, true, false),
-                GlobalAction::ToggleDockPin,
-            ),
         ]
     }
 
@@ -772,7 +767,7 @@ impl Router {
         }
 
         match key {
-            // Cmd+T -> new tab, Cmd+Shift+T -> split vertical
+            // Cmd+T -> new Stage Terminal, Cmd+Shift+T -> vertical split
             Key::Char('t') | Key::Char('T') => {
                 if modifiers.ctrl {
                     None
@@ -916,14 +911,7 @@ impl Router {
             Key::Char(']') => Some(GlobalAction::WorkspaceNext),
             // Cmd+R -> browser reload
             Key::Char('r') | Key::Char('R') => Some(GlobalAction::BrowserReload),
-            // Cmd+Shift+P -> toggle dock pin
-            Key::Char('p') | Key::Char('P') => {
-                if modifiers.shift {
-                    Some(GlobalAction::ToggleDockPin)
-                } else {
-                    None
-                }
-            }
+            Key::Char('p') | Key::Char('P') => None,
             _ => None,
         }
     }

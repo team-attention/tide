@@ -301,7 +301,7 @@ fn opening_file_defaults_to_right_split_when_focused_is_non_terminal() {
         crate::tide_layout::LayoutSnapshot::Split {
             direction, right, ..
         } => {
-            assert_eq!(direction, SplitDirection::Horizontal);
+            assert_eq!(direction, SplitDirection::Vertical);
             assert!(
                 layout_snapshot_contains(&right, new_id),
                 "new file should open to the right of the focused Pane"
@@ -412,13 +412,13 @@ fn closing_editor_pane_moves_focus_to_another_pane() {
 }
 
 #[test]
-fn closing_pane_in_horizontal_split_focuses_right_neighbor() {
+fn closing_pane_in_vertical_split_focuses_right_neighbor() {
     // UC-5 BR-12: After closing a pane, focus moves to right neighbor
-    // Layout: H(A, B(focused)) — closing B focuses A
+    // Layout: Vertical(A, B) — closing A focuses B
     let (mut app, left_id) = app_with_editor();
     let right_id = app
         .layout
-        .split(left_id, crate::tide_core::SplitDirection::Horizontal);
+        .split(left_id, crate::tide_core::SplitDirection::Vertical);
     app.panes.insert(
         right_id,
         PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(right_id)),

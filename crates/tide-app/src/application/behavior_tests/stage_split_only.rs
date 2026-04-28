@@ -61,7 +61,7 @@ fn app_with_legacy_stage_leaf_group() -> (App, u64, u64) {
 
 #[test]
 fn new_terminal_tab_creates_stage_split_not_tab_group() {
-    // UC-1 BR-1: NewTab in Stage creates a Terminal split leaf, not a Stage TabGroup tab.
+    // UC-1 BR-1: NewTab in Stage creates a right-side Terminal split leaf, not a Stage TabGroup tab.
     let (mut app, first_id) = app_with_editor();
 
     app.new_terminal_tab();
@@ -76,6 +76,28 @@ fn new_terminal_tab_creates_stage_split_not_tab_group() {
     assert_eq!(app.layout.pane_ids().len(), app.panes.len());
     assert!(app.layout.tab_group_containing(first_id).is_none());
     assert!(app.layout.tab_group_containing(new_id).is_none());
+    match app.layout_snapshot().expect("Stage split should exist") {
+        crate::tide_layout::LayoutSnapshot::Split { direction, .. } => {
+            assert_eq!(direction, SplitDirection::Vertical);
+        }
+        other => panic!("expected vertical split after NewTab, got {other:?}"),
+    }
+    let first_rect = app
+        .pane_rects
+        .iter()
+        .find(|(id, _)| *id == first_id)
+        .expect("first Pane rect should exist")
+        .1;
+    let new_rect = app
+        .pane_rects
+        .iter()
+        .find(|(id, _)| *id == new_id)
+        .expect("new Pane rect should exist")
+        .1;
+    assert!(
+        new_rect.x > first_rect.x,
+        "NewTab should place the new Pane on the right"
+    );
 }
 
 #[test]

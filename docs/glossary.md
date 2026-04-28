@@ -85,7 +85,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **FocusArea** | `FocusArea` | Which region has keyboard focus: `FileTree`, `Stage`, or `Dock`. |
 | **AreaSlot** | `AreaSlot` | Positional FocusArea slot (`Slot1`/`Slot2`/`Slot3`/`Slot4`). Default visibility shortcuts use named GlobalActions instead of relying on every slot having a numeric key. |
 | **Direction** | `Direction` | `Up`/`Down`/`Left`/`Right` for pane navigation. |
-| **SplitDirection** | `SplitDirection` | `Horizontal` creates left/right panes; `Vertical` creates top/bottom panes. |
+| **SplitDirection** | `SplitDirection` | `Horizontal` creates top/bottom panes; `Vertical` creates left/right panes. |
 | **DropZone** | `DropZone` | Which edge of a pane to drop on: `Top`/`Bottom`/`Left`/`Right`/`Center`. |
 | **PaneKind** | enum | The 5 content types: `Terminal`, `Editor`, `Diff`, `Browser`, `Launcher`. |
 | **CursorShape** | enum | Terminal cursor appearance: `Block`, `Beam`, `Underline`. |

@@ -47,6 +47,14 @@ impl DockPort for App {
 
     /// Which Terminal owns this pane via dock_layout?
     fn terminal_owning(&self, pane_id: PaneId) -> Option<PaneId> {
+        if let Some(&terminal_id) = self.assoc.associated_terminal.get(&pane_id) {
+            if let Some(PaneKind::Terminal(tp)) = self.panes.get(&terminal_id) {
+                if tp.dock_layout.all_pane_ids().contains(&pane_id) {
+                    return Some(terminal_id);
+                }
+            }
+        }
+
         for (&id, pane) in &self.panes {
             if let PaneKind::Terminal(tp) = pane {
                 if tp.dock_layout.all_pane_ids().contains(&pane_id) {
@@ -102,7 +110,7 @@ impl DockPort for App {
                     if !tp.dock_layout.insert_pane(
                         focused,
                         new_pane_id,
-                        SplitDirection::Horizontal,
+                        SplitDirection::Vertical,
                         false,
                     ) {
                         tp.dock_layout.insert_at_root(new_pane_id, DropZone::Right);

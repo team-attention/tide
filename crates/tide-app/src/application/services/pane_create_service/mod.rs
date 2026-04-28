@@ -208,10 +208,10 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
             _ => {
                 // Stage: create a new Terminal as a split leaf.
                 self.layout
-                    .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Horizontal);
+                    .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
                 let new_id = self
                     .layout
-                    .split(focused, crate::tide_core::SplitDirection::Horizontal);
+                    .split(focused, crate::tide_core::SplitDirection::Vertical);
                 if self.focus.zoomed_pane.is_some() {
                     self.focus.zoomed_pane = Some(new_id);
                 }
@@ -302,7 +302,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                 // Stage: create Terminal directly. If Stage is stacked, keep zoom active so
                 // the new pane appears in the stacked flat tab bar instead of unstacking.
                 self.layout
-                    .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Horizontal);
+                    .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
                 let cwd = self.focused_terminal_cwd();
                 let new_id = self.layout.split(focused, direction);
                 self.create_terminal_pane(new_id, cwd);
@@ -332,7 +332,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
             self.focus.focus_area = crate::state::FocusArea::Dock;
         } else {
             self.layout
-                .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Horizontal);
+                .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
             self.add_to_non_terminal_group(focused, new_id);
             if self.focus.zoomed_pane.is_some() {
                 self.focus.zoomed_pane = Some(new_id);
@@ -362,7 +362,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         } else {
             let focused = self.focus.focused.unwrap_or(0);
             self.layout
-                .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Horizontal);
+                .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
             self.add_to_non_terminal_group(focused, new_id);
             self.focus.focus_area = crate::state::FocusArea::Stage;
         }
@@ -391,7 +391,7 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         } else {
             let focused = self.focus.focused.unwrap_or(0);
             self.layout
-                .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Horizontal);
+                .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
             self.add_to_non_terminal_group(focused, new_id);
             self.focus.focus_area = crate::state::FocusArea::Stage;
         }

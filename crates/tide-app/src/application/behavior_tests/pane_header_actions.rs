@@ -103,8 +103,8 @@ fn clicking_dock_add_pane_header_action_creates_launcher_pane() {
 // --- UC-2: TriggerHeaderSplitActions ---
 
 #[test]
-fn clicking_stage_split_horizontal_header_action_creates_a_width_split() {
-    // UC-2 BR-3: Clicking SplitHorizontal from a focused Stage header creates a new Stage split that divides width and focuses the new Terminal.
+fn clicking_stage_split_horizontal_header_action_creates_a_height_split() {
+    // UC-2 BR-3: Clicking SplitHorizontal from a focused Stage header creates a new Stage split that divides height and focuses the new Terminal.
     let (mut app, terminal_id) = app_with_stage_terminal();
 
     click_header_action(&mut app, terminal_id, HeaderHitAction::SplitHorizontal);
@@ -133,8 +133,8 @@ fn clicking_stage_split_horizontal_header_action_creates_a_width_split() {
 }
 
 #[test]
-fn clicking_stage_split_vertical_header_action_creates_a_height_split() {
-    // UC-2 BR-4: Clicking SplitVertical from a focused Stage header creates a new Stage split that divides height and focuses the new Terminal.
+fn clicking_stage_split_vertical_header_action_creates_a_width_split() {
+    // UC-2 BR-4: Clicking SplitVertical from a focused Stage header creates a new Stage split that divides width and focuses the new Terminal.
     let (mut app, terminal_id) = app_with_stage_terminal();
 
     click_header_action(&mut app, terminal_id, HeaderHitAction::SplitVertical);

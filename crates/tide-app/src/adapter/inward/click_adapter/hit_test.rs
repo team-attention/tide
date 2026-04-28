@@ -355,7 +355,7 @@ pub(crate) fn compute_hover_target(
 }
 
 /// Check if cursor is near an internal border between split panes.
-/// Returns the split direction (Horizontal for vertical line, Vertical for horizontal line).
+/// Returns the split direction (Vertical for vertical line, Horizontal for horizontal line).
 fn split_border_at(ctx: &impl AppCorePort, pos: Vec2) -> Option<SplitDirection> {
     let t = 5.0_f32;
     let rects = ctx.pane_rects();
@@ -363,7 +363,7 @@ fn split_border_at(ctx: &impl AppCorePort, pos: Vec2) -> Option<SplitDirection> 
         return None;
     }
     for &(id_a, rect_a) in rects {
-        // Check right edge → adjacent left edge = Horizontal split (side by side)
+        // Check right edge → adjacent left edge = Vertical split (side by side)
         let right_edge = rect_a.x + rect_a.width;
         if (pos.x - right_edge).abs() <= t && pos.y >= rect_a.y && pos.y <= rect_a.y + rect_a.height
         {
@@ -373,11 +373,11 @@ fn split_border_at(ctx: &impl AppCorePort, pos: Vec2) -> Option<SplitDirection> 
                     && pos.y >= rect_b.y
                     && pos.y <= rect_b.y + rect_b.height
                 {
-                    return Some(SplitDirection::Horizontal);
+                    return Some(SplitDirection::Vertical);
                 }
             }
         }
-        // Check bottom edge → adjacent top edge = Vertical split (stacked)
+        // Check bottom edge → adjacent top edge = Horizontal split (stacked)
         let bottom_edge = rect_a.y + rect_a.height;
         if (pos.y - bottom_edge).abs() <= t && pos.x >= rect_a.x && pos.x <= rect_a.x + rect_a.width
         {
@@ -387,7 +387,7 @@ fn split_border_at(ctx: &impl AppCorePort, pos: Vec2) -> Option<SplitDirection> 
                     && pos.x >= rect_b.x
                     && pos.x <= rect_b.x + rect_b.width
                 {
-                    return Some(SplitDirection::Vertical);
+                    return Some(SplitDirection::Horizontal);
                 }
             }
         }

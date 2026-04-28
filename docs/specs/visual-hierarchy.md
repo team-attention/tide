@@ -120,7 +120,7 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
   3. Tide renders titlebar surface toggles as larger icon-only controls.
   4. Tide keeps titlebar hit-testing aligned to the rendered icon-only control width.
   5. Tide renders titlebar buttons with separate rest, hover, active, and active-hover backdrop states.
-  6. Tide renders the FileTree View titlebar toggle with the restored folder glyph while keeping the newer icon-only button chrome.
+  6. Tide renders the FileTree View titlebar toggle with the `TitlebarSurfaceIcon::FileTree` vector icon and no text glyph fallback.
 - **Postcondition**: Persistent chrome reads as a quiet control layer instead of a noisy icon sample sheet.
 - **Business Rules**:
   - BR-13: FileTree disclosure glyphs must be lightweight chevrons, not filled triangle glyphs.
@@ -129,7 +129,7 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
   - BR-16: Titlebar surface toggle hit targets must use the same larger width as the rendered icon-only controls.
   - BR-19: Titlebar surface toggle glyphs must render above the base terminal cell size.
   - BR-20: Titlebar surface toggles must expose distinct backdrop levels for rest, hover, active, and active-hover states.
-  - BR-24: The FileTree View titlebar toggle must use the restored folder glyph.
+  - BR-24: The FileTree View titlebar toggle must use the `TitlebarSurfaceIcon::FileTree` vector icon with no font-dependent text glyph fallback.
 
 ## Invariants
 
@@ -164,7 +164,7 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
 | UC-5 | BR-15/BR-16/BR-19 | `titlebar_surface_toggles_are_icon_only_larger_controls` |
 | UC-5 | BR-20 | `titlebar_surface_toggles_have_distinct_backdrop_levels` |
 | UC-5 | BR-23 | `titlebar_surface_toggles_use_dock_filetree_workspace_order_and_icons` |
-| UC-5 | BR-24 | `titlebar_file_tree_toggle_uses_restored_folder_glyph` |
+| UC-5 | BR-24 | `titlebar_file_tree_toggle_uses_vector_icon_without_text_glyph` |
 
 ## Location
 

@@ -443,7 +443,7 @@ pub(crate) fn handle_git_switcher_button(
                     match ctx.git_add_worktree(&cwd, &wt_path, &query, new_branch) {
                         Ok(()) => {
                             settings.worktree.copy_files_to_worktree(&root, &wt_path);
-                            ctx.split_pane_from(pane_id, SplitDirection::Horizontal, Some(wt_path));
+                            ctx.split_pane_from(pane_id, SplitDirection::Vertical, Some(wt_path));
                         }
                         Err(e) => {
                             log::error!("Failed to create worktree: {}", e);
@@ -458,7 +458,7 @@ pub(crate) fn handle_git_switcher_button(
                 });
                 ctx.modal_mut().git_switcher = None;
                 if let Some(wt_path) = wt_path {
-                    ctx.split_pane_from(pane_id, SplitDirection::Horizontal, Some(wt_path));
+                    ctx.split_pane_from(pane_id, SplitDirection::Vertical, Some(wt_path));
                 }
             }
         }

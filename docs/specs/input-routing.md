@@ -116,7 +116,7 @@ text routing, focus management, and GlobalAction dispatch.
 - **Postcondition**: Action executed
 - **Business Rules**:
   - BR-28: SplitVertical/Horizontal creates new Pane in SplitLayout
-  - BR-29: NewTab creates Launcher Pane
+  - BR-29: NewTab creates a right-side Stage Terminal Pane through a vertical split
   - BR-30: NewFile creates Editor Pane in the current target area; in Stage it creates a split leaf, and in Dock it creates a Terminal Context Surface split.
   - BR-31: Find opens search bar on focused Pane
   - BR-32: Find again reuses existing search bar

@@ -304,8 +304,8 @@ pub(crate) fn header_action_glyph(action: &HeaderHitAction) -> Option<&'static s
     match action {
         HeaderHitAction::AddPane => Some("\u{f067}"),
         HeaderHitAction::OpenBrowser => Some("\u{f268}"),
-        HeaderHitAction::SplitHorizontal => Some("\u{2194}"),
-        HeaderHitAction::SplitVertical => Some("\u{2195}"),
+        HeaderHitAction::SplitHorizontal => Some("\u{2195}"),
+        HeaderHitAction::SplitVertical => Some("\u{2194}"),
         _ => None,
     }
 }
@@ -1988,11 +1988,11 @@ mod tests {
     fn split_header_action_glyphs_use_a_matched_horizontal_vertical_axis_arrow_pair() {
         assert_eq!(
             header_action_glyph(&HeaderHitAction::SplitHorizontal),
-            Some("\u{2194}")
+            Some("\u{2195}")
         );
         assert_eq!(
             header_action_glyph(&HeaderHitAction::SplitVertical),
-            Some("\u{2195}")
+            Some("\u{2194}")
         );
         assert_ne!(
             header_action_glyph(&HeaderHitAction::SplitHorizontal),

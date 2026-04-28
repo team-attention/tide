@@ -614,8 +614,8 @@ fn cli_open_terminal(
         .ok_or_else(|| CliError::InvalidParams("no focused pane for split target".into()))?;
 
     let direction = match params.get("position").and_then(|v| v.as_str()) {
-        Some("split-below") => SplitDirection::Vertical,
-        _ => SplitDirection::Horizontal,
+        Some("split-below") => SplitDirection::Horizontal,
+        _ => SplitDirection::Vertical,
     };
 
     match ctx.split_pane_from(source, direction, cwd) {

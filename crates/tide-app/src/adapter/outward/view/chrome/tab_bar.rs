@@ -139,16 +139,18 @@ pub(super) fn render_pane_chrome(
         std::collections::HashMap::new();
     let dock_stacked = app.active_terminal_context_is_stacked();
     if !dock_stacked {
-        for (_, pk) in &app.panes {
-            if let crate::pane::PaneKind::Terminal(tp) = pk {
-                for &(pid, _) in visual_pane_rects {
-                    if let Some(tg) = tp.dock_layout.tab_group_containing(pid) {
-                        if !header::dock_tab_group_uses_shared_tab_bar(&tg) {
-                            continue;
-                        }
-                        dock_tab_groups.insert(pid, tg.clone());
-                    }
+        for &(pid, _) in visual_pane_rects {
+            let Some(terminal_id) = app.terminal_owning(pid) else {
+                continue;
+            };
+            let Some(crate::pane::PaneKind::Terminal(tp)) = app.panes.get(&terminal_id) else {
+                continue;
+            };
+            if let Some(tg) = tp.dock_layout.tab_group_containing(pid) {
+                if !header::dock_tab_group_uses_shared_tab_bar(&tg) {
+                    continue;
                 }
+                dock_tab_groups.insert(pid, tg.clone());
             }
         }
     }

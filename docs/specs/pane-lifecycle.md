@@ -20,14 +20,14 @@ Create, split, resolve, open, close, and drag Panes.
 - **Precondition**: A Pane is focused
 - **Flow**:
   1. Allocate PaneId via layout.alloc_id()
-  2. If FocusArea is Stage, create a `Terminal` and insert it as a split leaf next to the focused Stage Pane
+  2. If FocusArea is Stage, create a `Terminal` and insert it as a right-side split leaf next to the focused Stage Pane
   3. If FocusArea is Dock, create a `Launcher` in a Terminal Context Surface split
   4. Insert into app.panes HashMap
   5. Set focused = new_id
   6. invalidate_chrome()
 - **Postcondition**: New Pane is focused in the target area
 - **Business Rules**:
-  - BR-1: New tab in Stage creates a Terminal split leaf; new tab in Dock creates a Launcher split in the Terminal Context Surface
+  - BR-1: New tab in Stage creates a right-side Terminal split leaf through `SplitDirection::Vertical`; new tab in Dock creates a Launcher split in the Terminal Context Surface
   - BR-2: If no Pane is focused, do nothing
   - BR-3: Focus moves to the newly created Pane
   - BR-3a: A newly created Stage `Terminal` defaults its Terminal Context Surface to Stacked view.
@@ -48,6 +48,7 @@ Create, split, resolve, open, close, and drag Panes.
 - **Postcondition**: The new Pane is focused. Stage and Dock split actions create a new `SplitLayout` leaf in their target area.
 - **Business Rules**:
   - BR-4: Split in Stage creates a Terminal directly; split in Dock creates a Launcher in a Terminal Context Surface split
+  - BR-4a: `SplitVertical` creates a left/right split; `SplitHorizontal` creates a top/bottom split.
   - BR-5: If the focused Stage Pane was zoomed, split preserves stacked mode and focuses the new Stage Pane so the stacked flat tab bar stays visible
   - BR-6: Focus moves to the newly created Pane
   - BR-7: If the focused Stage Pane is zoomed, split keeps stacked mode and creates a new Stage split leaf selected by `focus.zoomed_pane`

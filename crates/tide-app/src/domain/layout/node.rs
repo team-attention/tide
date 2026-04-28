@@ -400,14 +400,14 @@ impl Node {
         } = self
         {
             let border_pos = match direction {
-                SplitDirection::Horizontal => rect.x + rect.width * ratio,
-                SplitDirection::Vertical => rect.y + rect.height * ratio,
+                SplitDirection::Vertical => rect.x + rect.width * ratio,
+                SplitDirection::Horizontal => rect.y + rect.height * ratio,
             };
 
             // Compute distance from position to border line
             let dist = match direction {
-                SplitDirection::Horizontal => (position.x - border_pos).abs(),
-                SplitDirection::Vertical => (position.y - border_pos).abs(),
+                SplitDirection::Vertical => (position.x - border_pos).abs(),
+                SplitDirection::Horizontal => (position.y - border_pos).abs(),
             };
 
             // Apply penalty when direction does not match the preferred one
@@ -418,10 +418,10 @@ impl Node {
 
             // Check that the position is within the perpendicular extent of the border
             let in_range = match direction {
-                SplitDirection::Horizontal => {
+                SplitDirection::Vertical => {
                     position.y >= rect.y && position.y <= rect.y + rect.height
                 }
-                SplitDirection::Vertical => {
+                SplitDirection::Horizontal => {
                     position.x >= rect.x && position.x <= rect.x + rect.width
                 }
             };
@@ -461,8 +461,8 @@ impl Node {
             if path.is_empty() {
                 // This is the target split node. Update its ratio.
                 let new_ratio = match direction {
-                    SplitDirection::Horizontal => (position.x - rect.x) / rect.width,
-                    SplitDirection::Vertical => (position.y - rect.y) / rect.height,
+                    SplitDirection::Vertical => (position.x - rect.x) / rect.width,
+                    SplitDirection::Horizontal => (position.y - rect.y) / rect.height,
                 };
                 *ratio = new_ratio.clamp(min_ratio, 1.0 - min_ratio);
             } else {
@@ -560,7 +560,7 @@ impl Node {
             let half_gap = decorations.gap / 2.0;
 
             match direction {
-                SplitDirection::Horizontal => {
+                SplitDirection::Vertical => {
                     let total = rect.width;
                     if total < 1.0 || cell_size.width < 1.0 {
                         return;
@@ -577,12 +577,12 @@ impl Node {
                             rect,
                             cell_size,
                             decorations,
-                            SplitDirection::Horizontal,
+                            SplitDirection::Vertical,
                         );
                         *ratio = new_ratio.clamp(min_r, 1.0 - min_r);
                     }
                 }
-                SplitDirection::Vertical => {
+                SplitDirection::Horizontal => {
                     let total = rect.height;
                     if total < 1.0 || cell_size.height < 1.0 {
                         return;
@@ -600,7 +600,7 @@ impl Node {
                             rect,
                             cell_size,
                             decorations,
-                            SplitDirection::Vertical,
+                            SplitDirection::Horizontal,
                         );
                         *ratio = new_ratio.clamp(min_r, 1.0 - min_r);
                     }
@@ -689,7 +689,7 @@ impl Node {
 
     /// Find the pane immediately to the right of the given pane.
     /// Traverses the tree upward from the pane's leaf, looking for the first
-    /// Horizontal split where the pane is in the left subtree, then returns
+    /// Vertical split where the pane is in the left subtree, then returns
     /// the leftmost leaf from the right subtree.
     pub(crate) fn find_right_neighbor(&self, pane: PaneId) -> Option<PaneId> {
         self.find_right_neighbor_impl(pane).1
@@ -712,7 +712,7 @@ impl Node {
                     if neighbor.is_some() {
                         return (true, neighbor);
                     }
-                    if *direction == SplitDirection::Horizontal {
+                    if *direction == SplitDirection::Vertical {
                         return (true, Some(right.leftmost_pane()));
                     }
                     return (true, None);
@@ -765,7 +765,7 @@ fn try_split(
     let eps = 0.5;
 
     match direction {
-        SplitDirection::Horizontal => {
+        SplitDirection::Vertical => {
             for (_, r) in pane_rects {
                 let edge = r.x + r.width;
                 if (edge - max_x).abs() > eps {
@@ -776,7 +776,7 @@ fn try_split(
                 }
             }
         }
-        SplitDirection::Vertical => {
+        SplitDirection::Horizontal => {
             for (_, r) in pane_rects {
                 let edge = r.y + r.height;
                 if (edge - max_y).abs() > eps {
@@ -796,7 +796,7 @@ fn try_split(
 
         for &(id, r) in pane_rects {
             match direction {
-                SplitDirection::Horizontal => {
+                SplitDirection::Vertical => {
                     let pane_left = r.x;
                     let pane_right = r.x + r.width;
                     if pane_right <= split_pos + eps {
@@ -809,7 +809,7 @@ fn try_split(
                         break;
                     }
                 }
-                SplitDirection::Vertical => {
+                SplitDirection::Horizontal => {
                     let pane_top = r.y;
                     let pane_bottom = r.y + r.height;
                     if pane_bottom <= split_pos + eps {
@@ -827,8 +827,8 @@ fn try_split(
         if clean && !left_group.is_empty() && !right_group.is_empty() {
             // Compute ratio from original bounding box sizes
             let ratio = match direction {
-                SplitDirection::Horizontal => (split_pos - min_x) / (max_x - min_x),
-                SplitDirection::Vertical => (split_pos - min_y) / (max_y - min_y),
+                SplitDirection::Vertical => (split_pos - min_x) / (max_x - min_x),
+                SplitDirection::Horizontal => (split_pos - min_y) / (max_y - min_y),
             };
             return Some((left_group, right_group, ratio));
         }
@@ -904,14 +904,14 @@ pub(crate) fn min_ratio_for_direction(
 ) -> f32 {
     let half_gap = decorations.gap / 2.0;
     match direction {
-        SplitDirection::Horizontal => {
+        SplitDirection::Vertical => {
             if rect.width < 1.0 {
                 return 0.1;
             }
             let min_tiling_w = MIN_COLS * cell_size.width + half_gap + 2.0 * decorations.padding;
             (min_tiling_w / rect.width).clamp(0.05, 0.45)
         }
-        SplitDirection::Vertical => {
+        SplitDirection::Horizontal => {
             if rect.height < 1.0 {
                 return 0.1;
             }
@@ -927,7 +927,7 @@ pub(crate) fn min_ratio_for_direction(
 /// Split a rect into two sub-rects based on direction and ratio.
 pub(crate) fn split_rect(rect: Rect, direction: SplitDirection, ratio: f32) -> (Rect, Rect) {
     match direction {
-        SplitDirection::Horizontal => {
+        SplitDirection::Vertical => {
             let left_width = rect.width * ratio;
             let right_width = rect.width - left_width;
             (
@@ -935,7 +935,7 @@ pub(crate) fn split_rect(rect: Rect, direction: SplitDirection, ratio: f32) -> (
                 Rect::new(rect.x + left_width, rect.y, right_width, rect.height),
             )
         }
-        SplitDirection::Vertical => {
+        SplitDirection::Horizontal => {
             let top_height = rect.height * ratio;
             let bottom_height = rect.height - top_height;
             (

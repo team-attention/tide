@@ -466,7 +466,7 @@ fn opening_file_in_context_surface_defaults_to_right_split() {
         crate::tide_layout::LayoutSnapshot::Split {
             direction, right, ..
         } => {
-            assert_eq!(direction, SplitDirection::Horizontal);
+            assert_eq!(direction, SplitDirection::Vertical);
             assert!(
                 layout_snapshot_contains(&right, second),
                 "second file should open to the right of the focused context Pane"
