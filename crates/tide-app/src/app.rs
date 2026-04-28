@@ -402,6 +402,7 @@ impl App {
         self.layout = layout;
 
         let result = if let Some(mut terminal) = early_terminal {
+            terminal.set_dark_mode(self.window.dark_mode);
             terminal.resize(INITIAL_TERMINAL_COLS, INITIAL_TERMINAL_ROWS);
             Ok(TerminalPane::with_terminal(pane_id, terminal))
         } else {

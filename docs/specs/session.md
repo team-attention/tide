@@ -23,6 +23,10 @@ plus the first `Terminal Pane` only. FileTree View and Terminal Context Surface
 start closed even if a previous intentional quit saved them as open; width,
 theme, and window preferences still restore.
 
+If the saved preference is light mode, the first `Terminal Pane` must use the
+light terminal palette from the first frame, including when Tide installs a
+pre-spawned `Terminal`.
+
 ### Approach
 
 1. Preserve the existing `Session` serialization contract.
@@ -31,6 +35,8 @@ theme, and window preferences still restore.
    from its startup geometry to the Stage content rect.
 4. Reset side-surface visibility during fresh/preference launches while keeping
    full `restore_from_session` behavior for crash recovery.
+5. When restoring preferences, apply the restored theme to any pre-spawned
+   `Terminal` before installing it as the first `Terminal Pane`.
 
 ## Bounded Contexts
 
@@ -81,12 +87,14 @@ theme, and window preferences still restore.
   2. Tide shows the Workspace rail
   3. Tide keeps FileTree View closed
   4. Tide keeps Terminal Context Surface closed
+  5. Tide applies restored theme preference to the first `Terminal Pane`
 - **Postcondition**: The first visible UI contains Workspace rail and Stage
   terminal only
 - **Business Rules**:
   - BR-6: A fresh initial Workspace must show Workspace rail and exactly one Stage `Terminal Pane`
   - BR-7: A fresh initial Workspace must keep FileTree View and Terminal Context Surface closed
   - BR-8: `restore_preferences` restores dimensions and theme, but must not reopen FileTree View, Workspace rail hidden state, or Terminal Context Surface visibility from a previous intentional quit
+  - BR-9: `restore_preferences` must sync the restored `dark_mode` preference into a pre-spawned `Terminal` before the first `Terminal Pane` renders
 
 ## Tests
 
@@ -99,6 +107,7 @@ theme, and window preferences still restore.
 | UC-2 | BR-5 | `fresh_workspace_uses_startup_geometry_when_creating_initial_terminal_before_layout` |
 | UC-3 | BR-6/BR-7 | `fresh_workspace_default_surface_shows_workspace_rail_and_terminal_only` |
 | UC-3 | BR-8 | `restore_preferences_starts_from_workspace_rail_and_terminal_only` |
+| UC-3 | BR-9 | `restore_preferences_applies_light_mode_to_prespawned_terminal` |
 
 ## Location
 

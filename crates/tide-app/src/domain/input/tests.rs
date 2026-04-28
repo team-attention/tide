@@ -165,7 +165,7 @@ mod tests {
     }
 
     #[test]
-    fn meta_shift_t_triggers_split_vertical() {
+    fn meta_shift_t_triggers_split_horizontal() {
         let mut router = Router::new();
         router.set_focused(1);
         let panes = two_panes_horizontal();
@@ -176,7 +176,7 @@ mod tests {
         };
         let action = router.process(event, &panes);
 
-        assert_eq!(action, Action::GlobalAction(GlobalAction::SplitVertical));
+        assert_eq!(action, Action::GlobalAction(GlobalAction::SplitHorizontal));
     }
 
     #[test]

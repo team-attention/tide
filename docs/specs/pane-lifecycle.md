@@ -35,7 +35,7 @@ Create, split, resolve, open, close, and drag Panes.
 ### UC-2: SplitPane
 
 - **Actor**: User
-- **Trigger**: GlobalAction::SplitVertical (Cmd+Shift+T) or GlobalAction::SplitHorizontal
+- **Trigger**: GlobalAction::SplitHorizontal (Cmd+Shift+T) or GlobalAction::SplitVertical
 - **Precondition**: A Pane is focused
 - **Flow**:
   1. If the focused Stage Pane is zoomed, keep stacked mode active while creating the new Stage Pane

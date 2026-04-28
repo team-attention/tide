@@ -562,8 +562,8 @@ fn cmd_shift_hjkl_maps_to_dock_navigate() {
 }
 
 #[test]
-fn keybinding_settings_omit_retired_tab_group_and_unbound_split_actions() {
-    // UC-10 BR-1/BR-2: Settings hides retired tab-group shortcuts and no-default split internals.
+fn keybinding_settings_omit_retired_tab_group_and_unbound_dock_split_actions() {
+    // UC-10 BR-1/BR-2: Settings hides retired tab-group shortcuts and no-default Dock split internals.
     let actions = GlobalAction::all_actions();
     let defaults = KeybindingMap::new();
 
@@ -572,7 +572,6 @@ fn keybinding_settings_omit_retired_tab_group_and_unbound_split_actions() {
         GlobalAction::TabNext,
         GlobalAction::DockTabPrev,
         GlobalAction::DockTabNext,
-        GlobalAction::SplitHorizontal,
         GlobalAction::DockSplitHorizontal,
         GlobalAction::DockSplitVertical,
         GlobalAction::DockNewTab,
@@ -627,8 +626,8 @@ fn cmd_shift_backslash_maps_to_split_vertical() {
 }
 
 #[test]
-fn cmd_shift_t_maps_to_split_vertical() {
-    // UC-5 BR-2: Cmd+Shift+T = SplitVertical in the current FocusArea.
+fn cmd_shift_t_maps_to_split_horizontal() {
+    // UC-5 BR-2: Cmd+Shift+T = SplitHorizontal in the current FocusArea.
     let map = KeybindingMap::new();
     let mods = Modifiers {
         shift: true,
@@ -639,8 +638,8 @@ fn cmd_shift_t_maps_to_split_vertical() {
     let action = map.lookup(&Key::Char('t'), &mods);
     assert_eq!(
         action,
-        Some(GlobalAction::SplitVertical),
-        "Cmd+Shift+T should map to SplitVertical"
+        Some(GlobalAction::SplitHorizontal),
+        "Cmd+Shift+T should map to SplitHorizontal"
     );
 }
 

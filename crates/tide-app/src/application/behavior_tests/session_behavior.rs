@@ -174,3 +174,43 @@ fn restore_preferences_starts_from_workspace_rail_and_terminal_only() {
     assert!(!app.window.dark_mode);
     assert_eq!(app.window.sidebar_side, crate::LayoutSide::Right);
 }
+
+#[test]
+fn restore_preferences_applies_light_mode_to_prespawned_terminal() {
+    // UC-3 BR-9: restore_preferences syncs restored dark_mode into a pre-spawned Terminal.
+    let session = Session {
+        layout: SessionLayout::Leaf {
+            pane_id: 1,
+            cwd: None,
+        },
+        focused_pane_id: Some(1),
+        show_file_tree: false,
+        file_tree_width: 240.0,
+        dark_mode: false,
+        window_width: 1200.0,
+        window_height: 800.0,
+        sidebar_side: "left".to_string(),
+        sidebar_outer: true,
+        ws_sidebar_width: 88.0,
+        show_workspace_sidebar: true,
+        dock_open: false,
+    };
+    let mut app = crate::App::new();
+    let early_terminal =
+        crate::tide_terminal::Terminal::with_cwd(80, 24, None, true, Some(1)).unwrap();
+
+    app.restore_preferences(&session, Some(early_terminal));
+
+    let terminal = app
+        .panes
+        .values()
+        .find_map(|pane| match pane {
+            PaneKind::Terminal(terminal) => Some(terminal),
+            _ => None,
+        })
+        .expect("restore_preferences should install the pre-spawned Terminal Pane");
+    assert!(
+        !terminal.backend.dark_mode_for_test(),
+        "pre-spawned Terminal backend should match restored light mode"
+    );
+}

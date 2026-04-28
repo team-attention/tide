@@ -256,6 +256,7 @@ impl GlobalAction {
     pub fn all_actions() -> Vec<GlobalAction> {
         vec![
             GlobalAction::SplitVertical,
+            GlobalAction::SplitHorizontal,
             GlobalAction::ClosePane,
             GlobalAction::Navigate(Direction::Up),
             GlobalAction::Navigate(Direction::Down),
@@ -456,7 +457,7 @@ impl KeybindingMap {
             ),
             (
                 Hotkey::new(Key::Char('t'), true, false, true, false),
-                GlobalAction::SplitVertical,
+                GlobalAction::SplitHorizontal,
             ),
             (
                 Hotkey::new(Key::Char('\\'), false, false, true, false),
@@ -767,12 +768,12 @@ impl Router {
         }
 
         match key {
-            // Cmd+T -> new Stage Terminal, Cmd+Shift+T -> vertical split
+            // Cmd+T -> new Stage Terminal, Cmd+Shift+T -> horizontal split
             Key::Char('t') | Key::Char('T') => {
                 if modifiers.ctrl {
                     None
                 } else if modifiers.shift {
-                    Some(GlobalAction::SplitVertical)
+                    Some(GlobalAction::SplitHorizontal)
                 } else {
                     Some(GlobalAction::NewTab)
                 }

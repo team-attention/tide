@@ -1335,6 +1335,11 @@ impl Terminal {
         }
     }
 
+    #[cfg(test)]
+    pub fn dark_mode_for_test(&self) -> bool {
+        self.dark_mode.load(Ordering::Relaxed)
+    }
+
     /// Enter stay-at-bottom mode: every sync_grid will scroll to bottom until
     /// the user explicitly scrolls away via scroll_display().
     pub fn request_scroll_to_bottom(&mut self) {

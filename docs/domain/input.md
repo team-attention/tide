@@ -75,8 +75,8 @@ KeybindingMap {
 ### Pane Operations
 | Action | Default Binding | Description |
 |--------|----------------|-------------|
-| `SplitHorizontal` | None by default | Split the current FocusArea into top/bottom panes |
-| `SplitVertical` | Cmd+Shift+T, Cmd+Shift+Backslash | Split the current FocusArea into left/right panes |
+| `SplitHorizontal` | Cmd+Shift+T | Split the current FocusArea into top/bottom panes |
+| `SplitVertical` | Cmd+Shift+Backslash | Split the current FocusArea into left/right panes |
 | `ClosePane` | Cmd+W | Close focused pane |
 | `ToggleStacked` | Cmd+Enter | Toggle stacked mode for the current FocusArea |
 | `DockToggleStacked` | Cmd+Ctrl+Enter | Toggle Dock stacked mode without permanently changing FocusArea |
