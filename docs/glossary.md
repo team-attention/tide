@@ -110,6 +110,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Pinned Pane** | legacy concept | A removed Dock model where a context Pane could appear in a global pinned group. Terminal Context Surface does not expose pinned Pane behavior; legacy pin actions are compatibility no-ops. |
 | **Browser Pane** | `PaneKind::Browser` | A Pane backed by a native `WKWebView`. Can run in navigation mode with a URL bar or in render mode for agent-provided HTML. |
 | **Browser Pane V2** | concept | A later capability track for Browser Pane work that goes beyond Browser Pane UX hardening, including in-app download management, stronger credential integration, and deeper browser session behavior. |
+| **Agent Browser Control Mode** | concept | Wrapper-managed visual control state for a Browser Pane while a `Wrapped Agent` is actively driving it. Entered only through an authorized wrapper-managed `Caller Pane`; ordinary Gateway/MCP callers never gain wrapper-managed privileges. |
 | **GitSwitcher** | `GitSwitcherState` | Popup state that lists git worktrees for a Terminal Pane, tracks filtering and selection, and marks the current worktree row. |
 | **Search Bar** | concept | A Pane-scoped inline text input identified by `FocusState.search_focus`. When active it takes text-input priority over the underlying Pane. |
 | **FileFinder** | `FileFinderState` | Tide's modal navigation palette opened by `GlobalAction::FileFinder`. It can search files, current-file symbols, workspace symbols, or workspace text hits depending on `FileFinderMode`. |

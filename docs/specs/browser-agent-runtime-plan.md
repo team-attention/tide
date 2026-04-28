@@ -28,8 +28,12 @@ Repo evidence:
 | Agent Gateway commands | CLI dispatch currently exposes `capture-selection`, `browser-observe`, `browser-eval`, `browser-action`, `open-browser`, and Context Artifact create/list/read/pin/remove/send commands. See [commands.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/commands.rs:105). |
 | Structured Browser observe | `cli_browser_observe` returns Browser Pane `pane_id`, title, URL, loading/progress, back/forward availability, snapshot, selection, and automation cursor. See [commands.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/commands.rs:406). |
 | Structured Browser action | `cli_browser_action` supports `navigate`, `move`, `click`, `type`, `press`, and `clear-cursor`, returns dispatch status and automation cursor, and refreshes BrowserSnapshot after live click/type/press dispatch. See [commands.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/commands.rs:487). |
+| BrowserSnapshot transient state | `BrowserPane` owns `page_snapshot`, `page_selection`, `automation_cursor`, `agent_observed_generation`, and `agent_reobserve_required`; `clear_transient_state()` drops snapshot/selection/observation state. See [browser.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/domain/pane/browser.rs:136) and [browser.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/domain/pane/browser.rs:551). |
+| Workspace cold storage | `save_active_workspace()` calls `clear_transient_state()` on Browser Pane state before cold-storing a Workspace. See [workspace_infra_service/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/application/services/workspace_infra_service/mod.rs:212). |
 | Selection capture | `capture_selection` supports Browser Pane URL selection, page selection, render HTML fallback, and Browser/render kind labels. See [commands.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/commands.rs:692). |
 | MCP instructions and tools | MCP initialization tells agents to use `tide_open_browser` / `tide_open_editor`, prefer `tide_browser_observe` and `tide_browser_action` over raw browser eval, and avoid opening new Stage terminals for side tasks. MCP tools expose browser, selection, and Context Artifact commands. See [mcp.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs:147), [mcp.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs:255), and [mcp.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs:427). |
+| Caller Pane injection | MCP injects `_caller_pane` from `TIDE_PANE` before mapping `tide_browser_action` to `browser-action`; command handlers receive the routed command after the caller fields are stripped. See [mcp.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs:427) and [commands.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/commands.rs:487). |
+| Wrapped Agent identity | `AgentInfo` stores `wrapper_managed`, `gateway_connected`, and `status`; `GatewayStatus::notify` is the lifecycle event path used by wrapper-managed agent reporting. See [gateway_status.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/domain/state/gateway_status.rs:28), [gateway_status.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/domain/state/gateway_status.rs:117), and [docs/glossary.md](/Users/eatnug/Workspace/tide/docs/glossary.md:121). |
 | Context Artifact capture and delivery | Action service computes human-readable source labels, captures Browser Pane URL/page selection into the Context Comment Composer, shows the comment badge only when a paired gateway-connected agent exists, injects artifact text into the paired Terminal with paste wrapping, and emits owner-scoped delivery events. See [action_service/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/application/services/action_service/mod.rs:45), [action_service/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/application/services/action_service/mod.rs:103), and [action_service/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/application/services/action_service/mod.rs:265). |
 | Coworking spec | Existing coworking spec targets Workspace-local/session-local Context Artifacts, explicit list/read, immediate paired-agent delivery, Associated Terminal authorization, and Browser selection capture. See [docs/specs/agent-coworking-context.md](/Users/eatnug/Workspace/tide/docs/specs/agent-coworking-context.md:23), [docs/specs/agent-coworking-context.md](/Users/eatnug/Workspace/tide/docs/specs/agent-coworking-context.md:83), [docs/specs/agent-coworking-context.md](/Users/eatnug/Workspace/tide/docs/specs/agent-coworking-context.md:134), and [docs/specs/agent-coworking-context.md](/Users/eatnug/Workspace/tide/docs/specs/agent-coworking-context.md:196). |
 | Codex Browser Use plugin | Local Browser Use plugin is for Codex in-app browser automation, local targets, current in-app browser tab, and read/write/interactive capabilities. See [/Users/eatnug/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/.codex-plugin/plugin.json](/Users/eatnug/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/.codex-plugin/plugin.json:2) and [/Users/eatnug/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/.codex-plugin/plugin.json](/Users/eatnug/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/.codex-plugin/plugin.json:20). |
@@ -59,6 +63,39 @@ The target model is:
 4. Implement only the testable V1 behavior in this unit: MCP/Gateway guidance, structured observe/action discipline, Browser Automation Cursor limits, Browser selection capture, Context Artifact delivery, sensitive-flow gating where callers explicitly mark the action, and external-runtime fallback policy.
 5. Leave element identity, screenshot crop, full region capture, persistent profiles, cookies, saved passwords, passkeys, extensions, regular-browser tab access, and automatic external runtime bridges to future Browser Pane V2 or external-runtime work.
 6. Add behavior tests before implementation for every runtime change, using `crates/tide-app/src/application/behavior_tests/` and the test names listed in this spec.
+
+### Planning Addendum: BrowserSnapshot Tools And Agent Browser Control Mode
+
+This phase is documentation-only. It defines the future implementation contract, proposed behavior tests, and acceptance criteria for Browser Pane Agent Runtime improvements. It must not implement code or tests yet.
+
+Future implementation must preserve the existing Spec -> behavior tests -> code order:
+
+1. Update this spec and any narrower implementation spec with the final Business Rules.
+2. Add behavior tests under `crates/tide-app/src/application/behavior_tests/` for each Business Rule.
+3. Implement the application, domain, Gateway, MCP, and view changes only after those tests exist.
+
+The future BrowserSnapshot tools are bounded in-memory tools over cached Browser Pane state:
+
+| Tool | Contract |
+|------|----------|
+| `read_snapshot` | Reads the current cached `BrowserSnapshot` for one Browser Pane without forcing a page refresh. Returns `pane_id`, `generation`, `page_title`, `page_url`, bounded `text`, truncation metadata, and stale/missing snapshot status. |
+| `find_in_snapshot` | Searches the cached `BrowserSnapshot` for a literal or future-approved query mode without refreshing the page. Returns bounded matches with offsets or line numbers, truncation metadata, `pane_id`, and `generation`. |
+| `diff_since` | Compares the current cached `BrowserSnapshot` for one Browser Pane against a caller-supplied `Generation` anchor for the same `PaneId` and Workspace. Rejects missing, stale, cross-Pane, or cross-Workspace anchors instead of silently diffing unrelated state. |
+
+The BrowserSnapshot tool state must be per-PaneId, per-Workspace, bounded, and memory-safe:
+
+1. Store only bounded in-memory BrowserSnapshot history. Proposed V1 limits are: at most 128 KiB of snapshot text per BrowserSnapshot returned to a caller, at most two retained BrowserSnapshot Generations per Browser Pane for `diff_since`, at most 50 `find_in_snapshot` matches per call, at most 2 KiB of context per match, and at most 64 KiB of diff output per call. Overflow must be represented as truncation metadata.
+2. Do not persist BrowserSnapshot history to disk, do not include it in cold Workspace storage, and do not expose it as ambient agent prompt context.
+3. Treat each BrowserSnapshot anchor as owned by exactly one Browser Pane and one Workspace. A stale PaneId, missing Caller Pane, wrong Associated Terminal, wrong Workspace, or stale Generation must return an explicit error or stale status.
+4. Preserve current transient cleanup: closing a Browser Pane, clearing transient Browser Pane state, or cold-storing a Workspace drops BrowserSnapshot history and invalidates anchors.
+5. Missing snapshot behavior is explicit: `read_snapshot` reports missing, `find_in_snapshot` returns no matches with missing status, and `diff_since` rejects missing baseline or missing current BrowserSnapshot.
+
+Agent Browser Control Mode is separate from ordinary Gateway/MCP behavior. It is a visual mode for natural Browser Automation Cursor mimic behavior, not an authorization shortcut:
+
+1. Agent Browser Control Mode may be enabled only when the Caller Pane resolves to a direct Wrapped Agent whose `AgentInfo.wrapper_managed` and `gateway_connected` are true, whose `AgentStatus` is compatible with active agent work, and whose Associated Terminal owns the target Browser Pane in the same Workspace.
+2. Wrapper-managed caller gating must be explicit in the wrapper-managed caller path. A non-wrapper Gateway/MCP caller may still use ordinary `browser-observe` and `browser-action` if otherwise allowed, but it must not enter Agent Browser Control Mode and must not receive wrapper-managed privileges.
+3. Browser Automation Cursor mimic behavior should feel natural: move/click/type actions update a visible marker, preserve optional labels, clear when requested, require fresh observe when the Browser Pane Generation changes, and never imply OS pointer ownership, element identity, human consent, or permission to bypass ModalStack or sensitive-action checks.
+4. Agent Browser Control Mode state must be scoped to the target Browser Pane and Workspace. Multiple Browser Panes and inactive Workspaces must not read, diff, or visually project each other's BrowserSnapshot or Browser Automation Cursor state through stale identifiers.
 
 ## Ambiguity Resolution
 
@@ -257,6 +294,43 @@ Resolution: Tide Browser Pane is the first browser surface for Tide task verific
   - BR-32: Browser profile/cookie persistence is Browser Pane V2 or external-runtime work, not this plan's default.
   - BR-33: Computer Use is appropriate only when a GUI or regular browser capability is required and structured Tide Browser Pane tools are insufficient.
 
+### UC-9: ReadAndDiffBrowserSnapshot
+
+- **Actor**: Coding agent
+- **Trigger**: Agent needs cached page text, search results, or a Generation-anchored diff without refreshing the Browser Pane
+- **Precondition**: Caller Pane resolves to a Terminal authorized for the target Browser Pane through Workspace and Associated Terminal
+- **Flow**:
+  1. Agent calls `read_snapshot`, `find_in_snapshot`, or `diff_since` with a target Browser Pane `PaneId`.
+  2. Tide resolves Caller Pane, Workspace, Associated Terminal, target Browser Pane, and BrowserSnapshot ownership.
+  3. Tide reads bounded in-memory BrowserSnapshot state without forcing a live page refresh.
+  4. Tide returns bounded output with Generation, truncation, and missing/stale status.
+  5. Agent uses the result only as cached Browser Pane state, then calls `browser-observe` before content-changing actions when required.
+- **Postcondition**: BrowserSnapshot access is explicit, bounded, and scoped to one Browser Pane in one Workspace.
+- **Business Rules**:
+  - BR-34: `read_snapshot` returns only the bounded current BrowserSnapshot for the target Browser Pane and reports missing snapshot state explicitly.
+  - BR-35: `find_in_snapshot` searches only the cached BrowserSnapshot without refreshing the Browser Pane and returns bounded match results.
+  - BR-36: `diff_since` requires a Generation anchor owned by the same Browser Pane and Workspace and rejects stale, missing, or mismatched anchors.
+  - BR-37: BrowserSnapshot tools must enforce per-PaneId ownership, Associated Terminal authorization, Caller Pane presence, and Workspace locality.
+  - BR-38: Closing a Browser Pane, clearing transient Browser Pane state, or cold-storing a Workspace must drop BrowserSnapshot history and invalidate snapshot anchors.
+
+### UC-10: GateAgentBrowserControlMode
+
+- **Actor**: Wrapped Agent or ordinary Gateway/MCP caller
+- **Trigger**: Caller issues a Browser Pane action that could visually mimic direct browser control
+- **Precondition**: Target Pane is a Browser Pane and the command includes or lacks Caller Pane identity
+- **Flow**:
+  1. Tide resolves Caller Pane to the active or routed Workspace.
+  2. Tide checks whether the Caller Pane is a direct Wrapped Agent with `AgentInfo.wrapper_managed`, `gateway_connected`, and compatible `AgentStatus`.
+  3. Tide checks that the target Browser Pane belongs to the same Workspace and Associated Terminal boundary.
+  4. If all wrapper-managed checks pass, Tide may enter Agent Browser Control Mode and render natural Browser Automation Cursor mimic behavior.
+  5. If the caller is non-wrapper, missing, stale, associated with the wrong terminal, or routed to the wrong Workspace, Tide executes only ordinary allowed Gateway/MCP behavior and never grants wrapper-managed visual privileges.
+- **Postcondition**: Agent Browser Control Mode is available only to authorized wrapper-managed callers and remains separate from ordinary Gateway/MCP behavior.
+- **Business Rules**:
+  - BR-39: Non-wrapper `browser-action` callers must not enter Agent Browser Control Mode or gain wrapper-managed privileges.
+  - BR-40: Wrapper-managed `browser-action` callers may enter Agent Browser Control Mode only when Caller Pane, Wrapped Agent, AgentStatus, Associated Terminal, and Workspace checks all pass.
+  - BR-41: Agent Browser Control Mode must preserve ModalStack, sensitive-action approval, observe-before-action, and Generation freshness rules.
+  - BR-42: Multiple Browser Panes and inactive Workspaces must not expose or project each other's BrowserSnapshot, Browser Automation Cursor, or Agent Browser Control Mode state through stale PaneId, missing Caller Pane, wrong Associated Terminal, or wrong Workspace.
+
 ## Invariants
 
 1. **Single Browser Pane runtime by default**: Agent Browser Pane work acts on Tide's existing in-app `WKWebView`; no second browser runtime is created unless explicitly approved.
@@ -269,6 +343,8 @@ Resolution: Tide Browser Pane is the first browser surface for Tide task verific
 8. **Cursor limits**: Browser Automation Cursor is visible targeting state, not element identity, pointer ownership, or authorization.
 9. **Browser Pane UX preservation**: Browser Pane runtime work must preserve Browser Pane UX invariants for URL truthfulness, search precedence, ModalStack visibility, explicit external handoff, and content-frame consistency.
 10. **Browser Pane V2 boundary**: Auth profiles, persistent cookies, downloads, passkeys, permissions, popups, storage management, and standalone browser parity remain Browser Pane V2 or explicit fallback work.
+11. **Bounded BrowserSnapshot memory**: BrowserSnapshot read/search/diff tools must use bounded in-memory state scoped by Workspace, PaneId, Associated Terminal, Caller Pane, and Generation.
+12. **Wrapper-managed mode separation**: Agent Browser Control Mode is available only to authorized Wrapped Agent callers; ordinary Gateway/MCP callers keep ordinary Browser Pane privileges and never inherit wrapper-managed visual control privileges.
 
 ## Roadmap
 
@@ -283,6 +359,13 @@ Resolution: Tide Browser Pane is the first browser surface for Tide task verific
 1. Add behavior tests for observe-before-action and observe-after-action expectations where testable.
 2. Ensure Browser Automation Cursor state is consistently visible after bridge install, navigation, and reload.
 3. Add agent/user ownership state if needed to detect human interruption and force re-observe.
+
+### Phase 1A: BrowserSnapshot Tools And Agent Browser Control Mode
+
+1. Specify exact size and history limits for bounded in-memory BrowserSnapshot history.
+2. Add behavior tests for `read_snapshot`, `find_in_snapshot`, `diff_since`, stale Generation handling, per-PaneId ownership, Workspace locality, Caller Pane presence, Associated Terminal authorization, and transient cleanup.
+3. Add behavior tests for wrapper-managed Agent Browser Control Mode gating separately from ordinary Gateway/MCP behavior.
+4. Implement the new tools and visual mode only after the tests exist.
 
 ### Phase 2: Browser Pane Selection And Comments
 
@@ -316,6 +399,9 @@ Resolution: Tide Browser Pane is the first browser surface for Tide task verific
 4. This V1 implementation does not allow hidden prompt injection from Browser Pane state into agent turns.
 5. This V1 implementation does not make Browser Automation Cursor a full remote-control pointer, pointer ownership model, consent signal, or element selector.
 6. This V1 implementation does not implement screenshot crop, full visual region capture, Browser Pane V2 session parity, or full external-runtime bridges.
+7. This planning phase does not implement code, tests, MCP tool definitions, Gateway command handlers, renderer state, or BrowserSnapshot history storage.
+8. `read_snapshot`, `find_in_snapshot`, and `diff_since` do not refresh the live page, do not persist BrowserSnapshot state to disk, and do not bypass Associated Terminal or Workspace boundaries.
+9. Agent Browser Control Mode does not give non-wrapper callers wrapper-managed privileges and does not bypass ModalStack, sensitive-action approval, observe-before-action, or Generation freshness checks.
 
 ## Risks
 
@@ -326,6 +412,8 @@ Resolution: Tide Browser Pane is the first browser surface for Tide task verific
 5. **Auth pressure**: Users and agents may expect signed-in browser behavior because external browser runtimes support profiles. Tide must keep Browser Pane V2 boundaries explicit.
 6. **Safety pressure**: Browser automation can transmit data. Tide should preserve action-time confirmation for sensitive submissions, uploads, permissions, and account changes.
 7. **Workspace leakage**: Context Artifact list/read/send must remain Workspace-local and Associated Terminal-authorized.
+8. **Snapshot leakage**: BrowserSnapshot history could leak page text across Browser Panes or Workspaces unless every tool validates Caller Pane, Associated Terminal, PaneId, Workspace, and Generation ownership.
+9. **Privilege confusion**: Wrapper-managed visual control could be mistaken for ordinary MCP privilege unless Agent Browser Control Mode gating is tested separately for wrapper-managed and non-wrapper caller paths.
 
 ## Tests
 
@@ -354,6 +442,26 @@ V1 implementation must add or update behavior tests before code changes. Require
 | UC-7: UseRawBrowserEvalEscapeHatch | BR-29 | `browser_agent_runtime` | `browser_eval_requires_approval_for_marked_sensitive_flow` |
 | UC-8: EscalateToExternalBrowserRuntime | BR-31, BR-33 | `browser_agent_runtime` | `external_browser_runtime_requires_explicit_fallback_reason` |
 | UC-8: EscalateToExternalBrowserRuntime | BR-32 | `browser_agent_runtime` | `browser_pane_v2_profile_cookie_persistence_is_not_v1_default` |
+| UC-9: ReadAndDiffBrowserSnapshot | BR-34 | `browser_agent_runtime` | `browser_snapshot_read_returns_bounded_current_snapshot` |
+| UC-9: ReadAndDiffBrowserSnapshot | BR-35 | `browser_agent_runtime` | `browser_snapshot_find_searches_cached_snapshot_without_refresh` |
+| UC-9: ReadAndDiffBrowserSnapshot | BR-36 | `browser_agent_runtime` | `browser_snapshot_diff_rejects_stale_generation` |
+| UC-9: ReadAndDiffBrowserSnapshot | BR-37, BR-42 | `browser_agent_runtime` | `browser_snapshot_cache_is_pane_and_workspace_scoped` |
+| UC-9: ReadAndDiffBrowserSnapshot | BR-38 | `browser_agent_runtime` | `closing_or_cold_storing_browser_pane_drops_snapshot_history` |
+| UC-10: GateAgentBrowserControlMode | BR-39 | `browser_agent_runtime` | `non_wrapper_browser_action_does_not_enter_agent_browser_control_mode` |
+| UC-10: GateAgentBrowserControlMode | BR-40 | `browser_agent_runtime` | `wrapper_managed_browser_action_enters_agent_browser_control_mode` |
+| UC-10: GateAgentBrowserControlMode | BR-41 | `browser_agent_runtime` | `agent_browser_control_mode_preserves_modal_sensitive_and_generation_gates` |
+| UC-10: GateAgentBrowserControlMode | BR-42 | `browser_agent_runtime` | `browser_snapshot_tools_reject_missing_caller_wrong_terminal_and_wrong_workspace` |
+
+## Acceptance Criteria
+
+This planning phase is accepted when:
+
+1. `docs/specs/browser-agent-runtime-plan.md` describes the Browser Pane Agent Runtime improvement plan without implementing code.
+2. The plan defines `read_snapshot`, `find_in_snapshot`, and `diff_since` as bounded in-memory BrowserSnapshot tools with size limits, per-PaneId ownership, Generation anchors, stale/missing snapshot behavior, Associated Terminal authorization, Caller Pane validation, and Workspace locality.
+3. The plan separates Agent Browser Control Mode from ordinary Gateway/MCP behavior: wrapper-managed caller gating may enable visual Browser Automation Cursor mimic behavior, while non-wrapper caller behavior does not gain wrapper-managed privileges.
+4. The proposed tests under `crates/tide-app/src/application/behavior_tests/` prove multiple Browser Panes and inactive Workspaces cannot read or diff each other's BrowserSnapshot state through stale PaneId, missing Caller Pane, wrong Associated Terminal, wrong Workspace, or stale Generation.
+5. The plan preserves the required Spec -> behavior tests -> code order and maps each new Business Rule to proposed behavior tests.
+6. Glossary and krow language dual-write stays aligned for Agent Browser Control Mode.
 
 ## Location
 
@@ -366,3 +474,7 @@ V1 implementation must add or update behavior tests before code changes. Require
 | MCP surface | `crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs` | Current `tide_*` tool definitions and MCP instructions. |
 | Context Artifact service | `crates/tide-app/src/application/services/action_service/mod.rs` | Current comment snapshot, source label, badge eligibility, paired-terminal injection, and delivery notification behavior. |
 | Behavior tests | `crates/tide-app/src/application/behavior_tests/` | Future acceptance tests before implementation. |
+| Future BrowserSnapshot domain work | `crates/tide-app/src/domain/pane/browser.rs` | Add bounded BrowserSnapshot history, Generation anchors, and transient cleanup hooks after behavior tests. |
+| Future Gateway command work | `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs` | Add `read_snapshot`, `find_in_snapshot`, `diff_since`, and wrapper-managed Agent Browser Control Mode gating after behavior tests. |
+| Future MCP tool work | `crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs` | Publish the new BrowserSnapshot tools and preserve `_caller_pane` caller identity semantics after behavior tests. |
+| Future view work | `crates/tide-app/src/adapter/outward/view/` | Render Agent Browser Control Mode as Browser Automation Cursor mimic state after behavior tests. |
