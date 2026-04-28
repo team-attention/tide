@@ -139,6 +139,7 @@ Create, split, resolve, open, close, and drag Panes.
   - BR-19: Mouse release clears the current hover target immediately so hover visuals do not wait for the next mouse move
   - BR-20: Mouse release still completes border-drag and pane-drag cleanup before returning
   - BR-21: Mouse down recomputes the current hover target from cursor position before dispatching titlebar surface buttons, so a button can be clicked again without an intervening mouse move
+  - BR-22: FileTree View and Terminal Context Surface border drags must use the same widened border hit slop for hover and mouse-down acquisition.
 
 ## Invariants
 
@@ -181,6 +182,8 @@ After ANY Pane lifecycle operation:
 | UC-6: DragDropPane | BR-19 | `mouse_release_clears_hover_target_immediately` |
 | UC-6: DragDropPane | BR-20 | `mouse_release_still_completes_border_drag_cleanup` |
 | UC-6: DragDropPane | BR-21 | `titlebar_surface_buttons_recompute_hover_target_on_mouse_down` |
+| UC-6: DragDropPane | BR-22 | `file_tree_border_drag_uses_widened_hit_slop` |
+| UC-6: DragDropPane | BR-22 | `dock_border_drag_uses_widened_hit_slop` |
 
 ## Location
 

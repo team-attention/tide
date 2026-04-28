@@ -272,6 +272,7 @@ pub(crate) fn handle_mouse_down(
                 let pos = ctx.last_cursor_pos();
                 if pos.x >= ft_rect.x
                     && pos.x < ft_rect.x + ft_rect.width
+                    && pos.x >= ft_rect.x + SIDE_SURFACE_BORDER_HIT_SLOP
                     && pos.y >= ft_rect.y + PANE_CORNER_RADIUS + FILE_TREE_HEADER_HEIGHT
                 {
                     ctx.handle_file_tree_click(pos);
@@ -441,7 +442,7 @@ fn handle_mouse_input_core(ctx: &mut impl MousePorts, button: MouseButton, _wind
         // Workspace sidebar border
         if let Some(ws_rect) = ctx.ws_sidebar_rect() {
             let border_x = ws_rect.x + ws_rect.width;
-            if (ctx.last_cursor_pos().x - border_x).abs() < 5.0 {
+            if (ctx.last_cursor_pos().x - border_x).abs() < SIDE_SURFACE_BORDER_HIT_SLOP {
                 ctx.set_ws_border_dragging(true);
                 return;
             }
@@ -451,7 +452,7 @@ fn handle_mouse_input_core(ctx: &mut impl MousePorts, button: MouseButton, _wind
         if ctx.dock_open() {
             if let Some(pa_rect) = ctx.pane_area_rect() {
                 let border_x = pa_rect.x + pa_rect.width;
-                if (ctx.last_cursor_pos().x - border_x).abs() < 5.0 {
+                if (ctx.last_cursor_pos().x - border_x).abs() < SIDE_SURFACE_BORDER_HIT_SLOP {
                     ctx.set_dock_border_dragging(true);
                     return;
                 }
@@ -476,7 +477,7 @@ fn handle_mouse_input_core(ctx: &mut impl MousePorts, button: MouseButton, _wind
         // FileTree View border; FileTree is always the outer-right view.
         if let Some(ft_rect) = ctx.ft().rect {
             let border_x = ft_rect.x;
-            if (ctx.last_cursor_pos().x - border_x).abs() < 5.0 {
+            if (ctx.last_cursor_pos().x - border_x).abs() < SIDE_SURFACE_BORDER_HIT_SLOP {
                 ctx.ft_mut().border_dragging = true;
                 return;
             }

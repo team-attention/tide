@@ -9,6 +9,8 @@ FileTree View also uses a single `file_icon()` glyph path in `crates/tide-app/sr
 
 Dock, FileTree View, and Workspace rail visibility is currently boolean-first. `DockState.dock_open`, `FileTreeModel.visible`, and `WorkspaceManager.show_sidebar` can immediately change layout width, so opening and closing side surfaces may snap instead of reading as a native attached surface transition. The first Dock open path is especially brittle because creating the initial Launcher context `Pane` clears `DockState.visibility_animation`.
 
+While a side-surface visibility animation is active, `crates/tide-app/src/layout_compute.rs` still runs `snap_ratios_to_cells()` for the Stage `SplitLayout`. That mutates split ratios against the intermediate animated width, so keyboard or titlebar toggles can make Stage panes resize in uneven cell-sized jumps instead of preserving their existing proportion throughout the motion.
+
 ### To-Be
 Stage, Terminal Context Surface, and FileTree View use different visual grammars:
 
@@ -17,6 +19,7 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
 3. FileTree View uses layered icon grammar: disclosure chevrons are separate from folder/file glyphs, and special project files classify to stable icon kinds before rendering.
 4. Dock, FileTree View, and Workspace rail toggles animate width over a short ease-out transition while keeping layout and hit-test state coherent.
 5. Titlebar surface toggles use larger icon-only controls with distinct hover and active backdrops. Keyboard shortcuts stay in input behavior and are not rendered as persistent hotkey hints in the titlebar.
+6. While a side surface is animating, Stage `SplitLayout` proportions remain stable until the surface reaches its settled width.
 
 ### Approach
 1. Add a `HeaderSurfaceKind` decision to header chrome so Stage and Terminal Context Surface can share layout primitives without sharing visual weight.
@@ -26,6 +29,7 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
 5. Add `SurfaceVisibilityAnimation` as pure state used by Dock, FileTree View, and Workspace rail.
 6. Drive visibility animations from the event loop by keeping redraws alive while an animation is active.
 7. Normalize chrome icon glyphs around a small quiet set: lightweight FileTree chevrons, restrained document glyphs for project-special files, and icon-only titlebar toggles.
+8. Treat side-surface visibility animation like an active border drag for Stage ratio snapping so intermediate animated widths do not rewrite `SplitLayout` ratios.
 
 ## Bounded Contexts
 
@@ -108,6 +112,7 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
   - BR-18: Toggling Workspace rail starts a width animation.
   - BR-22: Adding a Pane to a closed Terminal Context Surface through `add_pane_to_dock()` starts the same width animation as an explicit Dock toggle.
   - BR-25: Closing Terminal Context Surface animation must not keep a minimum-width `Pane` visual rect alive past the Terminal Context Surface bounds into FileTree View.
+  - BR-26: Active side-surface visibility animation must not mutate Stage `SplitLayout` ratios from their pre-animation values.
 
 ### UC-5: NormalizeChromeIcons
 
@@ -159,6 +164,7 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
 | UC-4 | BR-18 | `toggle_workspace_rail_starts_surface_visibility_animation` |
 | UC-4 | BR-22 | `adding_pane_to_closed_dock_starts_surface_visibility_animation` |
 | UC-4 | BR-25 | `closing_dock_animation_does_not_overlap_file_tree_view` |
+| UC-4 | BR-26 | `stage_split_ratio_stays_stable_during_side_surface_visibility_animation` |
 | UC-5 | BR-13 | `directory_file_tree_rows_use_lightweight_disclosure_chevrons` |
 | UC-5 | BR-14 | `project_special_file_icons_share_restrained_document_glyphs` |
 | UC-5 | BR-15/BR-16/BR-19 | `titlebar_surface_toggles_are_icon_only_larger_controls` |

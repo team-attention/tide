@@ -10,6 +10,24 @@ use crate::AppCorePort;
 use crate::DockPort;
 
 impl App {
+    fn terminal_backend_resize_motion_active(&self) -> bool {
+        self.router.is_dragging_border()
+            || self.ft.border_dragging
+            || self.ws.border_dragging
+            || self.dock.dock_border_dragging
+            || self.dock.dock_split_dragging
+            || self.surface_visibility_animation_active()
+    }
+
+    fn terminal_backend_resize_due_during_motion(&self, now: std::time::Instant) -> bool {
+        const LIVE_TERMINAL_RESIZE_INTERVAL: std::time::Duration =
+            std::time::Duration::from_millis(120);
+
+        self.timing
+            .last_live_terminal_resize_at
+            .is_none_or(|last| now.duration_since(last) >= LIVE_TERMINAL_RESIZE_INTERVAL)
+    }
+
     pub(crate) fn browser_native_views_obscured_by_overlays(&self) -> bool {
         self.modal.is_any_open()
             || matches!(
@@ -20,12 +38,6 @@ impl App {
 
     pub(crate) fn terminal_backend_resize_deferred_for_layout(&self) -> bool {
         self.timing.resize_deferred_at.is_some()
-            || self.router.is_dragging_border()
-            || self.ft.border_dragging
-            || self.ws.border_dragging
-            || self.dock.dock_border_dragging
-            || self.dock.dock_split_dragging
-            || self.surface_visibility_animation_active()
     }
 }
 
@@ -433,7 +445,8 @@ impl crate::application::ports::inward::LayoutPort for App {
             || self.ft.border_dragging
             || self.ws.border_dragging
             || self.dock.dock_border_dragging
-            || self.dock.dock_split_dragging;
+            || self.dock.dock_split_dragging
+            || self.surface_visibility_animation_active();
         if !is_dragging {
             let cell_size = self.cell_size();
             if cell_size.width > 0.0 {
@@ -628,7 +641,16 @@ impl crate::application::ports::inward::LayoutPort for App {
         // Resize terminal backends only after transient layout motion settles.
         // Prompt renderers are sensitive to repeated intermediate SIGWINCH
         // sizes; coalescing here keeps the terminal grid stable.
-        if !self.terminal_backend_resize_deferred_for_layout() {
+        let transient_terminal_motion = self.terminal_backend_resize_motion_active();
+        let allow_terminal_backend_resize = if self.terminal_backend_resize_deferred_for_layout() {
+            false
+        } else if transient_terminal_motion {
+            self.terminal_backend_resize_due_during_motion(now)
+        } else {
+            true
+        };
+
+        if allow_terminal_backend_resize {
             let cell_size = self.cell_size();
             if cell_size.width > 0.0 {
                 let content_top = terminal_content_top(cell_size.height);
@@ -644,6 +666,13 @@ impl crate::application::ports::inward::LayoutPort for App {
                     }
                 }
             }
+            self.timing.last_live_terminal_resize_at = if transient_terminal_motion {
+                Some(now)
+            } else {
+                None
+            };
+        } else if !transient_terminal_motion {
+            self.timing.last_live_terminal_resize_at = None;
         }
 
         if rects_changed {

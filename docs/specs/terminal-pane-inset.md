@@ -5,10 +5,14 @@
 ### As-Is
 `crates/tide-app/src/layout_compute.rs`, `crates/tide-app/src/adapter/outward/view/grid.rs`, and `crates/tide-app/src/adapter/outward/view/cursor.rs` all start `Terminal Pane` content at `TAB_BAR_HEIGHT` with no extra top inset. `crates/tide-app/src/application/services/text_extract_service/mod.rs`, `crates/tide-app/src/adapter/inward/click_adapter/hit_test.rs`, and `crates/tide-app/src/adapter/inward/event_loop_adapter/mod.rs` mirror that same origin for pointer and IME cursor-area mapping. `crates/tide-app/src/adapter/outward/view/ime.rs` also paints terminal IME preedit text from that same tab-bar edge. The result is that the first terminal row visually sits against the tab bar, with no breathing room above it.
 
+`Terminal::resize()` forwards layout-settled width changes into the underlying `alacritty_terminal::Term::resize()` primary screen path. Tide briefly disabled primary-screen reflow to keep existing wrap boundaries stable, but that caused a worse failure mode: shrinking a `Terminal Pane` could truncate visible output because old rows were no longer reflowed into the narrower column count.
+
+Another remaining issue is that Tide currently defers every PTY resize during border dragging and side-surface visibility animation. That keeps prompts stable, but it also means wrapped-agent `Terminal Pane` content only re-lays out at mouse-up or animation settle, so the `Pane` frame moves in real time while the terminal content lags behind.
+
 ### To-Be
 `Terminal Pane` content should start below the tab bar with a small, cell-relative top inset that matches typical terminal presentation. Tide must use that same inset consistently for rendering, row sizing, pointer mapping, and IME cursor positioning so the first visible row remains visually padded and interaction coordinates stay truthful.
 
-Terminal backend resize should also happen only after transient layout motion settles. Window resizing, side-surface visibility animation, and border dragging may change the rendered `Terminal Pane` rect repeatedly, but Tide should not resize the PTY on every intermediate frame because prompt renderers can leave stale right-prompt fragments in the grid.
+Terminal backend resize should avoid every intermediate transient layout frame. Window resizing, side-surface visibility animation, and border dragging may change the rendered `Terminal Pane` rect repeatedly, but Tide should coalesce or throttle PTY resize because prompt renderers can leave stale right-prompt fragments in the grid.
 
 `Terminal Pane` glyphs should also stay left-anchored inside the padded content rect. Centering the grid inside the remaining sub-cell width makes the glyph origin change whenever a right-side surface drag changes `rect.width`, which reads as text jitter even when the PTY size is correctly deferred.
 
@@ -19,7 +23,10 @@ Terminal backend resize should also happen only after transient layout motion se
 4. Defer Terminal backend resize while the app is inside a transient layout transition.
 5. Send the final PTY resize immediately once the layout transition has settled.
 6. Keep terminal grid glyphs left-anchored inside the padded content rect so transient right-edge width changes do not move already-rendered text.
-7. Cover the behavior with behavior tests for the inset value, first-row click mapping, terminal IME cursor positioning, grid-origin stability, and resize stability.
+7. Preserve normal primary-screen reflow during layout-driven `Terminal Pane` resize so shrinking a `Terminal Pane` wraps old output instead of truncating it.
+8. Clamp layout-driven PTY width to a minimum readable backend column count instead of allowing pathological one-column terminal layouts.
+9. Allow throttled live PTY resize during border dragging and side-surface visibility animation so terminal content can follow long-running motion without resizing on every frame.
+10. Cover the behavior with behavior tests for the inset value, first-row click mapping, terminal IME cursor positioning, grid-origin stability, and resize stability.
 
 ## Bounded Contexts
 
@@ -75,9 +82,12 @@ Terminal backend resize should also happen only after transient layout motion se
 - **Postcondition**: Prompt redraw happens at the stable final size instead of accumulating resize artifacts across intermediate widths.
 - **Business Rules**:
   - BR-5: Deferred window resize must not resize the Terminal backend before the deferred layout settles.
-  - BR-6: Side-surface visibility animation must not resize the Terminal backend on intermediate animation frames.
+  - BR-6: Side-surface visibility animation must not resize the Terminal backend on every intermediate animation frame.
   - BR-7: The final settled layout must resize the Terminal backend to the final visible content size.
   - BR-8: `Terminal::resize()` must not add a second internal debounce after layout-level coalescing.
+  - BR-11: A layout-driven primary-screen width resize must use normal terminal reflow instead of truncating visible output.
+  - BR-12: A layout-driven `Terminal Pane` width shrink below the minimum readable backend width must clamp the PTY to the minimum readable backend column count.
+  - BR-13: Border dragging and side-surface visibility animation may deliver throttled live PTY resizes while the motion is active, but never on every frame.
 
 ## Invariants
 
@@ -97,8 +107,11 @@ Terminal backend resize should also happen only after transient layout motion se
 | UC-2 | BR-2, BR-3 | `terminal_click_mapping_respects_the_terminal_top_inset` |
 | UC-2 | BR-10 | `terminal_click_mapping_uses_left_anchored_grid_origin` |
 | UC-3 | BR-5, BR-7 | `terminal_backend_resize_waits_for_deferred_window_resize_to_settle` |
-| UC-3 | BR-6, BR-7 | `terminal_backend_resize_waits_for_side_surface_animation_to_settle` |
+| UC-3 | BR-6, BR-7, BR-13 | `terminal_backend_resize_throttles_live_updates_during_side_surface_animation` |
 | UC-3 | BR-8 | `terminal_resize_applies_without_internal_debounce` |
+| UC-3 | BR-11 | `terminal_primary_screen_resize_reflows_existing_wrap_boundaries` |
+| UC-3 | BR-12 | `terminal_backend_resize_skips_pathologically_narrow_widths` |
+| UC-3 | BR-13 | `terminal_backend_resize_throttles_live_updates_during_border_drag` |
 
 ## Location
 

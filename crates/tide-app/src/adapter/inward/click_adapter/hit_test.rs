@@ -172,7 +172,7 @@ pub(crate) fn compute_hover_target(
     if ctx.dock_open() {
         if let Some(pa_rect) = ctx.pane_area_rect() {
             let border_x = pa_rect.x + pa_rect.width;
-            if (pos.x - border_x).abs() < 5.0 {
+            if (pos.x - border_x).abs() < SIDE_SURFACE_BORDER_HIT_SLOP {
                 return Some(HoverTarget::DockBorder);
             }
         }
@@ -208,7 +208,7 @@ pub(crate) fn compute_hover_target(
     // Workspace sidebar border (resize handle)
     if let Some(ws_rect) = ctx.ws_sidebar_rect() {
         let border_x = ws_rect.x + ws_rect.width;
-        if (pos.x - border_x).abs() < 5.0 {
+        if (pos.x - border_x).abs() < SIDE_SURFACE_BORDER_HIT_SLOP {
             return Some(HoverTarget::WsSidebarBorder);
         }
     }
@@ -217,7 +217,7 @@ pub(crate) fn compute_hover_target(
     let ft = ctx.ft();
     if let Some(ft_rect) = ft.rect {
         let border_x = ft_rect.x;
-        if (pos.x - border_x).abs() < 5.0 {
+        if (pos.x - border_x).abs() < SIDE_SURFACE_BORDER_HIT_SLOP {
             return Some(HoverTarget::FileTreeBorder);
         }
     }

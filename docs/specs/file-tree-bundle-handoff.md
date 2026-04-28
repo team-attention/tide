@@ -45,9 +45,10 @@ On plain activation, a `.app` row launches through the default macOS app handoff
   1. Tide resolves the clicked `FileTree` entry.
   2. Tide detects that the selected directory is an app bundle.
   3. Tide launches the bundle through `ProcessPort::open_with_default_app()` instead of toggling tree expansion.
-- **Postcondition**: The bundled app launches and the `.app` row does not behave like a regular expandable directory.
+- **Postcondition**: The bundled app launches, the current `Tide Window` stays open, and the `.app` row does not behave like a regular expandable directory.
 - **Business Rules**:
   - BR-1: Plain `FileTree` activation on a `.app` directory must launch the bundle instead of toggling directory expansion.
+  - BR-2: Successful plain `FileTree` activation on a `.app` directory must not queue `WindowCommand::CloseWindow` for the current `Tide Window`.
 
 ### UC-2: OpenAppBundleFromContextMenu
 
@@ -58,10 +59,11 @@ On plain activation, a `.app` row launches through the default macOS app handoff
   1. Tide resolves the app-bundle-specific context menu.
   2. Tide detects that the selected directory is an app bundle.
   3. Tide launches the bundle through `ProcessPort::open_with_default_app()`.
-- **Postcondition**: The context menu provides an explicit app-launch action that matches plain row activation.
+- **Postcondition**: The context menu provides an explicit app-launch action that matches plain row activation, and successful launch leaves the current `Tide Window` open.
 - **Business Rules**:
-  - BR-2: `.app` directories must expose an explicit `Open App` context-menu action instead of reusing the generic directory action set.
-  - BR-3: `Open App` on a `.app` directory must call `ProcessPort::open_with_default_app()`.
+  - BR-3: `.app` directories must expose an explicit `Open App` context-menu action instead of reusing the generic directory action set.
+  - BR-4: `Open App` on a `.app` directory must call `ProcessPort::open_with_default_app()`.
+  - BR-5: Successful `Open App` on a `.app` directory must not queue `WindowCommand::CloseWindow` for the current `Tide Window`.
 
 ### UC-3: RevealAppBundleInFinder
 
@@ -74,9 +76,9 @@ On plain activation, a `.app` row launches through the default macOS app handoff
   3. Tide asks `ProcessPort::reveal_in_finder()` to show the bundle through Finder instead of opening it as a default app.
 - **Postcondition**: Finder reveals the bundle in place without relaunching the bundled app or opening extra Finder windows.
 - **Business Rules**:
-  - BR-4: `.app` directories must keep a separate Finder-reveal action that is labeled as Finder-specific instead of app-launch-specific.
-  - BR-5: Finder reveal on a `.app` directory must call Finder reveal instead of default-app launch.
-  - BR-6: The macOS process adapter must route `.app` bundle reveal requests through the standard Finder reveal handoff instead of a Finder-specific parent-directory open path.
+  - BR-6: `.app` directories must keep a separate Finder-reveal action that is labeled as Finder-specific instead of app-launch-specific.
+  - BR-7: Finder reveal on a `.app` directory must call Finder reveal instead of default-app launch.
+  - BR-8: The macOS process adapter must route `.app` bundle reveal requests through the standard Finder reveal handoff instead of a Finder-specific parent-directory open path.
 
 ### UC-4: PreserveNormalFinderHandoff
 
@@ -89,7 +91,7 @@ On plain activation, a `.app` row launches through the default macOS app handoff
   3. Tide preserves the current directory handoff and calls `ProcessPort::open_with_default_app()`.
 - **Postcondition**: Ordinary directories still open in Finder as before.
 - **Business Rules**:
-  - BR-7: Non-bundle directories must preserve the existing default-app handoff.
+  - BR-9: Non-bundle directories must preserve the existing default-app handoff.
 
 ## Invariants
 
@@ -102,12 +104,14 @@ On plain activation, a `.app` row launches through the default macOS app handoff
 | UC | BR | Test |
 |----|----|------|
 | UC-1 | BR-1 | `clicking_app_bundle_in_file_tree_launches_it_instead_of_toggling_directory_expansion` |
-| UC-2 | BR-2 | `app_bundle_context_menu_uses_app_specific_actions_instead_of_directory_actions` |
-| UC-2 | BR-3 | `open_app_launches_app_bundles_from_the_file_tree_context_menu` |
-| UC-3 | BR-4 | `app_bundle_context_menu_keeps_a_finder_specific_reveal_label` |
-| UC-3 | BR-5 | `finder_reveal_reveals_app_bundles_without_launching_them` |
-| UC-3 | BR-6 | `system_process_routes_app_bundle_reveal_through_standard_finder_reveal` |
-| UC-4 | BR-7 | `open_in_finder_keeps_default_directory_handoff_for_non_bundle_directories` |
+| UC-1 | BR-2 | `clicking_app_bundle_in_file_tree_leaves_the_current_tide_window_open_after_launch` |
+| UC-2 | BR-3 | `app_bundle_context_menu_uses_app_specific_actions_instead_of_directory_actions` |
+| UC-2 | BR-4 | `open_app_launches_app_bundles_from_the_file_tree_context_menu` |
+| UC-2 | BR-5 | `open_app_leaves_the_current_tide_window_open_after_launch` |
+| UC-3 | BR-6 | `app_bundle_context_menu_keeps_a_finder_specific_reveal_label` |
+| UC-3 | BR-7 | `finder_reveal_reveals_app_bundles_without_launching_them` |
+| UC-3 | BR-8 | `system_process_routes_app_bundle_reveal_through_standard_finder_reveal` |
+| UC-4 | BR-9 | `open_in_finder_keeps_default_directory_handoff_for_non_bundle_directories` |
 
 ## Location
 
