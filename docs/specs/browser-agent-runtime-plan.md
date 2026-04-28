@@ -1,0 +1,368 @@
+# Spec: Browser Agent Runtime Plan
+
+## Overview
+
+### As-Is
+
+Tide already has the core Browser Pane, Context Artifact, and Agent Gateway pieces needed for a first-class coding-agent browser loop, but those pieces need one durable operating contract.
+
+Repo evidence:
+
+| Area | Evidence |
+|------|----------|
+| Product model | `Pane` is the content container, `Workspace` is the isolated task boundary, and `Browser Pane` is a `PaneKind::Browser` backed by native `WKWebView`. See [docs/glossary.md](/Users/eatnug/Workspace/tide/docs/glossary.md:11), [docs/glossary.md](/Users/eatnug/Workspace/tide/docs/glossary.md:15), and [docs/glossary.md](/Users/eatnug/Workspace/tide/docs/glossary.md:111). |
+| Browser state | `BrowserSnapshot` is cached page text and metadata from the Browser Pane `WKWebView` bridge, and `Browser Automation Cursor` is the Browser Pane automation marker state. See [docs/glossary.md](/Users/eatnug/Workspace/tide/docs/glossary.md:23) and [docs/glossary.md](/Users/eatnug/Workspace/tide/docs/glossary.md:41). |
+| Terminal attachment | `Terminal Context`, `Associated Terminal`, `Paired Agent`, `Pinned Context`, and `Artifact Delivery` already define the one-terminal context boundary. See [docs/glossary.md](/Users/eatnug/Workspace/tide/docs/glossary.md:75). |
+| Context surface | Terminal Context Surface is the Dock region attached to one Stage Terminal and can show Browser Pane, Diff, Editor, Launcher, secondary Terminal, or Render Pane. See [docs/glossary.md](/Users/eatnug/Workspace/tide/docs/glossary.md:103). |
+| Context Artifact | A `Context Artifact` is Workspace-local, stores optional captured Pane selection plus optional user comment, and is bound to source `PaneId` plus `Associated Terminal`. `Source Label` provides a human-readable origin. See [docs/glossary.md](/Users/eatnug/Workspace/tide/docs/glossary.md:108) and [docs/glossary.md](/Users/eatnug/Workspace/tide/docs/glossary.md:109). |
+| Open-terminal Codex app model | Existing product spec says Browser review and browser use should translate to Browser Pane in the active Terminal's Terminal Context Surface, with comments delivered as `Context Artifact`s to the `Associated Terminal`. See [docs/specs/open-terminal-codex-app.md](/Users/eatnug/Workspace/tide/docs/specs/open-terminal-codex-app.md:15). |
+| Task surface model | Existing product spec says `Workspace` is the task boundary, `Terminal` is the main session, active Stage Terminal owns one Terminal Context Surface, and Browser Pane is the verification surface. See [docs/specs/open-terminal-codex-app.md](/Users/eatnug/Workspace/tide/docs/specs/open-terminal-codex-app.md:35), [docs/specs/open-terminal-codex-app.md](/Users/eatnug/Workspace/tide/docs/specs/open-terminal-codex-app.md:43), and [docs/specs/open-terminal-codex-app.md](/Users/eatnug/Workspace/tide/docs/specs/open-terminal-codex-app.md:46). |
+| Browser verification loop | Existing product spec says browser verification should preserve Browser Pane UX hardening, create `Context Artifact`s from page selections or screen areas, and avoid a second browser automation stack. See [docs/specs/open-terminal-codex-app.md](/Users/eatnug/Workspace/tide/docs/specs/open-terminal-codex-app.md:82). |
+| Browser use case | Existing product spec says users or Browser-capable agents open pages in Browser Pane, review rendered state, leave comments, and Browser-use may operate the Browser Pane when explicitly requested and allowed. See [docs/specs/open-terminal-codex-app.md](/Users/eatnug/Workspace/tide/docs/specs/open-terminal-codex-app.md:237). |
+| Browser Pane UX | Browser Pane UX already requires state-driven focus, truthful URL state, manual external handoff, ModalStack overlay behavior, unsupported capability boundaries, and full-bleed native content. See [docs/specs/browser-pane-ux.md](/Users/eatnug/Workspace/tide/docs/specs/browser-pane-ux.md:29) and [docs/specs/browser-pane-ux.md](/Users/eatnug/Workspace/tide/docs/specs/browser-pane-ux.md:208). |
+| Browser Pane V2 boundary | Browser Pane V2 is the later track for downloads, auth/session behavior, permissions, context menus, popup windows, storage management, progress, and dev tools. See [docs/specs/browser-pane-v2.md](/Users/eatnug/Workspace/tide/docs/specs/browser-pane-v2.md:21) and [docs/specs/browser-pane-v2.md](/Users/eatnug/Workspace/tide/docs/specs/browser-pane-v2.md:187). |
+| Current Browser Pane domain | `BrowserPane` stores URL state, loading/progress, back/forward availability, native `WKWebView`, `BrowserSnapshot`, page selection, Browser Automation Cursor, context menu, permission/certificate state, render mode, data clearing, and download state. See [browser.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/domain/pane/browser.rs:97). |
+| Navigation | `BrowserPane::navigate()` normalizes bare URLs, defaults localhost to `http://`, updates URL state, resets progress, clears pending permission/certificate and page snapshot/selection state, dispatches to the live webview when present, and records pending initial navigation otherwise. See [browser.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/domain/pane/browser.rs:374). |
+| Automation cursor and action dispatch | Browser Pane can read/set/clear Browser Automation Cursor, sync it through page JavaScript, and dispatch automation click/type/press JavaScript helpers. See [browser.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/domain/pane/browser.rs:830) and [browser.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/domain/pane/browser.rs:879). |
+| Bridge and selection | Browser Pane installs the selection bridge, re-syncs the automation cursor overlay after bridge install, requests page snapshot refresh, updates `BrowserSnapshot`, updates page selection, and normalizes page selection content. See [browser.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/domain/pane/browser.rs:1002). |
+| Agent Gateway commands | CLI dispatch currently exposes `capture-selection`, `browser-observe`, `browser-eval`, `browser-action`, `open-browser`, and Context Artifact create/list/read/pin/remove/send commands. See [commands.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/commands.rs:105). |
+| Structured Browser observe | `cli_browser_observe` returns Browser Pane `pane_id`, title, URL, loading/progress, back/forward availability, snapshot, selection, and automation cursor. See [commands.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/commands.rs:406). |
+| Structured Browser action | `cli_browser_action` supports `navigate`, `move`, `click`, `type`, `press`, and `clear-cursor`, returns dispatch status and automation cursor, and refreshes BrowserSnapshot after live click/type/press dispatch. See [commands.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/commands.rs:487). |
+| Selection capture | `capture_selection` supports Browser Pane URL selection, page selection, render HTML fallback, and Browser/render kind labels. See [commands.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/commands.rs:692). |
+| MCP instructions and tools | MCP initialization tells agents to use `tide_open_browser` / `tide_open_editor`, prefer `tide_browser_observe` and `tide_browser_action` over raw browser eval, and avoid opening new Stage terminals for side tasks. MCP tools expose browser, selection, and Context Artifact commands. See [mcp.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs:147), [mcp.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs:255), and [mcp.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs:427). |
+| Context Artifact capture and delivery | Action service computes human-readable source labels, captures Browser Pane URL/page selection into the Context Comment Composer, shows the comment badge only when a paired gateway-connected agent exists, injects artifact text into the paired Terminal with paste wrapping, and emits owner-scoped delivery events. See [action_service/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/application/services/action_service/mod.rs:45), [action_service/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/application/services/action_service/mod.rs:103), and [action_service/mod.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/application/services/action_service/mod.rs:265). |
+| Coworking spec | Existing coworking spec targets Workspace-local/session-local Context Artifacts, explicit list/read, immediate paired-agent delivery, Associated Terminal authorization, and Browser selection capture. See [docs/specs/agent-coworking-context.md](/Users/eatnug/Workspace/tide/docs/specs/agent-coworking-context.md:23), [docs/specs/agent-coworking-context.md](/Users/eatnug/Workspace/tide/docs/specs/agent-coworking-context.md:83), [docs/specs/agent-coworking-context.md](/Users/eatnug/Workspace/tide/docs/specs/agent-coworking-context.md:134), and [docs/specs/agent-coworking-context.md](/Users/eatnug/Workspace/tide/docs/specs/agent-coworking-context.md:196). |
+| Codex Browser Use plugin | Local Browser Use plugin is for Codex in-app browser automation, local targets, current in-app browser tab, and read/write/interactive capabilities. See [/Users/eatnug/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/.codex-plugin/plugin.json](/Users/eatnug/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/.codex-plugin/plugin.json:2) and [/Users/eatnug/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/.codex-plugin/plugin.json](/Users/eatnug/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/.codex-plugin/plugin.json:20). |
+| Codex Browser Use skill | Local skill requires the Browser `browser-client` runtime with `iab` backend, says Browser is preferred over Computer Use when present, exposes `agent.browser.*`, requires observe-after-action discipline, and documents CUA coordinate actions plus Playwright DOM snapshots. See [SKILL.md](/Users/eatnug/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/skills/browser/SKILL.md:8), [SKILL.md](/Users/eatnug/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/skills/browser/SKILL.md:183), [SKILL.md](/Users/eatnug/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/skills/browser/SKILL.md:217), [SKILL.md](/Users/eatnug/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/skills/browser/SKILL.md:338), and [SKILL.md](/Users/eatnug/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/skills/browser/SKILL.md:347). |
+
+### To-Be
+
+Coding agents should use Tide's `Browser Pane` as the shared browser surface whenever the target is local preview, file-backed preview, unauthenticated public page review, visual verification, or page-comment feedback for the active coding task.
+
+The target model is:
+
+1. Human and coding agent share the same `Browser Pane` `WKWebView` when possible.
+2. The Browser Pane remains visible state: agent clicks, typing, navigation, Browser Automation Cursor, page selection, comments, loading state, and URL state must be inspectable by the human.
+3. Tide does not create a second browser runtime by default. External browser runtimes, Codex Browser Use, Browser Use Cloud, Playwright, or Computer Use are fallbacks or research references, not the default Tide Browser Pane runtime.
+4. Browser Pane ownership is explicit. Human interruption, modal comment entry, auth/payment/sensitive flows, and permission prompts can pause or supersede agent control.
+5. Coding agents operate through Tide MCP/Gateway tools first: `tide_open_browser`, `tide_browser_observe`, `tide_browser_action`, `tide_capture_selection`, Context Artifact tools, then raw `tide_browser_eval` only as an escape hatch.
+6. Browser Automation Cursor is a visible hint, not a full remote mouse model. It marks the last agent-targeted viewport point with optional label, survives bridge reinstall inside the same Browser Pane session, and clears only by explicit action or Pane/session lifecycle.
+7. Human Browser Pane comments and selections produce Workspace-local `Context Artifact`s bound to the source `PaneId` and `Associated Terminal`, delivered only to the paired agent, and available through explicit list/read/pull behavior.
+8. Browser Pane element and region comments are product requirements even where current source only supports page text/URL selection and comment composer capture; element identity and region geometry remain future gaps.
+9. Browser Pane V2 remains the boundary for stronger browser profile/session behavior, in-app downloads, auth state, passkeys, permissions, popups, cookie/storage management, and deeper standalone-browser parity.
+
+### Approach
+
+1. Use this file as the V1 implementation contract for the shared coding-agent `Browser Pane` runtime.
+2. Keep `docs/specs/browser-pane-automation.md` as the implementation slice for current structured observe/action, and keep it current with source behavior.
+3. Keep Browser Pane UX and Browser Pane V2 specs as capability boundaries: this plan composes them, it does not replace them.
+4. Implement only the testable V1 behavior in this unit: MCP/Gateway guidance, structured observe/action discipline, Browser Automation Cursor limits, Browser selection capture, Context Artifact delivery, sensitive-flow gating where callers explicitly mark the action, and external-runtime fallback policy.
+5. Leave element identity, screenshot crop, full region capture, persistent profiles, cookies, saved passwords, passkeys, extensions, regular-browser tab access, and automatic external runtime bridges to future Browser Pane V2 or external-runtime work.
+6. Add behavior tests before implementation for every runtime change, using `crates/tide-app/src/application/behavior_tests/` and the test names listed in this spec.
+
+## Ambiguity Resolution
+
+### Stale Browser Pane Automation As-Is
+
+`docs/specs/browser-pane-automation.md` contains an older As-Is statement that `docs/specs/cli-server.md` exposed only `open-browser`, `capture-pane`, and `browser-eval`, so there was no structured Browser Pane automation contract. See [docs/specs/browser-pane-automation.md](/Users/eatnug/Workspace/tide/docs/specs/browser-pane-automation.md:7). That statement is stale relative to current source.
+
+Current source evidence resolves the ambiguity:
+
+1. CLI dispatch exposes `browser-observe` and `browser-action` today. See [commands.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/commands.rs:112) and [commands.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/commands.rs:115).
+2. `cli_browser_observe` returns structured Browser Pane state with snapshot, selection, and Browser Automation Cursor. See [commands.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/commands.rs:406).
+3. `cli_browser_action` implements the bounded action set `navigate`, `move`, `click`, `type`, `press`, and `clear-cursor`. See [commands.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/commands.rs:487).
+4. MCP publishes `tide_browser_observe` and `tide_browser_action` and maps those tool names to Gateway methods. See [mcp.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs:272), [mcp.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs:282), [mcp.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs:442), and [mcp.rs](/Users/eatnug/Workspace/tide/crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs:443).
+5. The correct current As-Is is: structured Browser Pane observe/action exists in source, but this repo still lacks a durable runtime plan that tells coding agents when to use Tide Browser Pane, how to share ownership with humans, and when not to fall back to another browser runtime.
+
+### Browser Use Name Collision
+
+This spec uses `Browser Pane` for Tide's `PaneKind::Browser` backed by native `WKWebView`. It uses `Browser Use` for the Codex/OpenAI plugin or the browser-use project/runtime.
+
+The local Browser Use plugin controls Codex's in-app browser through `browser-client` with `iab` backend. See [SKILL.md](/Users/eatnug/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/skills/browser/SKILL.md:8). That is not automatically the same runtime as Tide's Browser Pane. Tide agents should prefer Tide MCP/Gateway tools when the target is a Tide Browser Pane, because those tools operate Tide's in-app `WKWebView` and preserve `PaneId`, `Workspace`, and `Associated Terminal` context.
+
+### Browser Pane vs Computer Use
+
+Official Codex docs say the in-app browser is for shared rendered web pages inside a thread, local development servers, file-backed previews, public pages without sign-in, and visual comments. They also say Browser use lets Codex operate the in-app browser directly, while Computer Use is for GUI tasks and local web apps should use the in-app browser first. Sources: <https://developers.openai.com/codex/app/browser> lines 572-593 and 596-629; <https://developers.openai.com/codex/app/computer-use> lines 572-605 and 606-631.
+
+Resolution: Tide Browser Pane is the first browser surface for Tide task verification. Computer Use is a fallback when the task requires a desktop app, system UI, a regular browser profile, extensions, login state unavailable in Browser Pane, or a GUI not reachable through Tide MCP/Gateway.
+
+## Research Synthesis
+
+| Source | Relevant finding | Plan implication |
+|--------|------------------|------------------|
+| OpenAI Codex in-app browser, <https://developers.openai.com/codex/app/browser> lines 572-593 | Codex browser docs describe a shared human/Codex rendered page view, local/file/public pages without sign-in, Browser use operating the in-app browser, and allowed/blocked site controls. | Tide should expose one shared Browser Pane view, avoid silent second runtimes, and keep agent browser operation explicit and permissioned. |
+| OpenAI Codex browser comments, <https://developers.openai.com/codex/app/browser> lines 596-629 | Codex preview flow starts the dev server, opens an unauthenticated page, reviews rendered state with the diff, leaves comments on elements or areas, and asks Codex to address them. | Tide needs Browser Pane comments/selections that become Context Artifacts and can be delivered to the paired agent. |
+| OpenAI Computer Use, <https://developers.openai.com/codex/app/computer-use> lines 572-605 | Computer Use controls macOS GUI apps and is for GUI tasks where command-line tools or structured integrations are not enough; local web apps should use the in-app browser first. | Tide should prefer Browser Pane MCP/Gateway before Computer Use for browser verification. |
+| OpenAI Computer Use safety, <https://developers.openai.com/codex/app/computer-use> lines 606-631 | Computer Use has separate macOS permissions, app approvals, and sensitive/disruptive action prompts. | Browser Pane should keep a narrower permission scope than Computer Use and escalate to explicit human approval for sensitive flows. |
+| Browser Use Actor basics, <https://docs.browser-use.com/open-source/legacy/actor/basics> lines 71-114 | Browser Use offers low-level Playwright-like automation with Browser/BrowserSession, Page, Element, and Mouse classes. | This is evidence of an external full browser runtime model; Tide should not adopt it by default because Tide already has a Browser Pane tied to PaneId/Workspace/Associated Terminal. |
+| Browser Use custom tools, <https://docs.browser-use.com/open-source/customize/tools/add> lines 68-147 and 187-218 | Browser Use agents can be extended with custom tools, domain restrictions, human-in-the-loop actions, and injectable browser_session parameters. | Tide can borrow the idea of domain-scoped and human-in-the-loop tools for future Browser Pane actions, but must expose them through Tide MCP/Gateway naming and authorization. |
+| Browser Use live preview, <https://docs.browser-use.com/cloud/browser/live-preview> lines 62-103 | Browser Use Cloud exposes a live URL and iframe for watching the agent browser in real time. | Tide already has the visible Browser Pane; the Browser Pane itself should be the live preview rather than a separate embedded remote session. |
+| Browser Use profiles, <https://docs.browser-use.com/cloud/guides/authentication> lines 64-83 | Browser Use Cloud profiles persist browser state such as cookies, localStorage, and saved passwords. | Persistent browser profiles are a separate capability track and align with Browser Pane V2, not this Browser Pane runtime plan. |
+| browser-use GitHub, <https://github.com/browser-use/browser-use> lines 291-293, 404-414, 462-468, and 547-549 | The repository presents Browser Use as an MIT-licensed browser automation project, includes browser infrastructure capabilities, and shows active releases. | Browser Use is useful ecosystem research, but integrating it directly would create a separate browser runtime unless Tide explicitly bridges it to Browser Pane in a future phase. |
+| Local Browser Use plugin, [plugin.json](/Users/eatnug/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/.codex-plugin/plugin.json:2) and [SKILL.md](/Users/eatnug/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/skills/browser/SKILL.md:183) | The local plugin is explicitly for Codex in-app browser automation and only the Node REPL `js` tool controls that surface. | Codex Browser Use is not a Tide Browser Pane MCP tool. Tide should define its own MCP/Gateway Browser Pane contract and only bridge to Codex Browser Use if a future integration makes the runtime identity explicit. |
+
+## Bounded Contexts
+
+| Context | Role |
+|---------|------|
+| `domain/pane/browser.rs` | Owns Browser Pane state, native `WKWebView` handle, BrowserSnapshot, Browser page selection, Browser Automation Cursor, render mode state, and Browser Pane V2 capability state. |
+| `adapter/inward/cli_adapter/commands.rs` | Owns Agent Gateway command dispatch for Browser Pane observe/action/eval, selection capture, and Context Artifact operations. |
+| `adapter/inward/cli_adapter/mcp.rs` | Publishes stable MCP tool names and instructions for agent use of Tide Browser Pane. |
+| `application/services/action_service/` | Owns Context Comment Composer snapshots, `Source Label`, comment badge eligibility, Context Artifact terminal injection, and delivery notifications. |
+| `domain/state/context_artifact.rs` | Owns the Context Artifact record shape, formatting, and explicit list/read/send semantics. |
+| `domain/state/associations.rs` | Resolves `Associated Terminal` authorization and paired-agent delivery boundaries. |
+| `adapter/outward/platform_adapter/macos/webview.rs` | Owns native `WKWebView` integration and any future Browser Pane V2 native capability behavior. |
+| `adapter/outward/view/` | Renders Browser Pane chrome, Browser Automation Cursor visibility when domain rendering is possible, Context Comment Composer, and future element/region comment affordances. |
+| `application/services/workspace_infra_service/` | Preserves Workspace-local Browser Pane and Context Artifact behavior across active/cold Workspace switching. |
+
+## Use Cases
+
+### UC-1: OpenBrowserPaneForAgentVerification
+
+- **Actor**: Coding agent
+- **Trigger**: Agent needs to inspect or verify a local route, file-backed preview, unauthenticated public page, or rendered UI bug
+- **Precondition**: Agent is operating in a Tide `Workspace` with a paired `Terminal`
+- **Flow**:
+  1. Agent calls `tide_open_browser` with the target URL or opens an empty Browser Pane when URL discovery is still needed.
+  2. Tide opens Browser Pane in the active Terminal's Terminal Context Surface.
+  3. Tide records or preserves the Browser Pane's `Associated Terminal`.
+  4. Agent calls `tide_browser_observe` before acting.
+  5. Human can see the same Browser Pane state the agent is using.
+- **Postcondition**: The Browser Pane is the task-local verification surface.
+- **Business Rules**:
+  - BR-1: Agents must prefer `tide_open_browser` over launching an external browser for task-local web verification.
+  - BR-2: Browser Pane must remain attached to the active task through `Workspace` and `Associated Terminal`.
+  - BR-3: Agent must observe the Browser Pane before issuing click/type/press actions.
+  - BR-4: If the URL is already loaded in the target Browser Pane, the agent must not navigate to the same URL unless a reload is intentional.
+
+### UC-2: OperateSharedBrowserPane
+
+- **Actor**: Coding agent
+- **Trigger**: Agent needs to click, type, press a key, navigate, or move its Browser Automation Cursor
+- **Precondition**: Target Pane is a navigation-mode `Browser Pane`
+- **Flow**:
+  1. Agent calls `tide_browser_observe` to get URL, title, loading/progress, snapshot, selection, and Browser Automation Cursor.
+  2. Agent chooses a bounded `tide_browser_action`: `navigate`, `move`, `click`, `type`, `press`, or `clear-cursor`.
+  3. Tide applies the action to the existing Browser Pane `WKWebView` and returns dispatch status.
+  4. Agent observes again after actions that can change page state.
+- **Postcondition**: Agent operation is visible and bounded to the shared Browser Pane.
+- **Business Rules**:
+  - BR-5: Agents must prefer `tide_browser_action` over `tide_browser_eval` for supported actions.
+  - BR-6: `tide_browser_action` must not create a second browser runtime.
+  - BR-7: Agent actions must update or preserve Browser Automation Cursor according to the action.
+  - BR-8: After `click`, `type`, `press`, or intentional `navigate`, the next agent decision must be grounded in a fresh observe result or a clear reason the existing observation is still valid.
+
+### UC-3: UseBrowserAutomationCursor
+
+- **Actor**: Coding agent and human
+- **Trigger**: Agent targets a viewport coordinate
+- **Precondition**: Target Browser Pane has a live page bridge or can store cursor state for later sync
+- **Flow**:
+  1. Agent sends `move` or `click` with viewport `x`, `y`, and optional `label`.
+  2. Tide stores Browser Automation Cursor in Browser Pane state.
+  3. Tide mirrors the cursor into the page DOM when the bridge is installed.
+  4. Human sees where the agent is targeting.
+  5. Agent calls `clear-cursor` when the marker is no longer useful.
+- **Postcondition**: The Browser Automation Cursor communicates targeting without implying full mouse ownership.
+- **Business Rules**:
+  - BR-9: Browser Automation Cursor is a marker for last agent-targeted viewport point, not a guarantee of current OS pointer position.
+  - BR-10: Browser Automation Cursor must not be treated as element identity.
+  - BR-11: Browser Automation Cursor must not be used to infer human consent for sensitive actions.
+  - BR-12: Browser Automation Cursor must be explicitly clearable.
+  - BR-13: Cursor state can be stale after scroll, layout shift, navigation, or responsive resize; the agent must re-observe before relying on it.
+
+### UC-4: CaptureHumanBrowserSelection
+
+- **Actor**: Human or agent
+- **Trigger**: Human selects text in Browser Pane page content or URL bar, then requests comment/capture
+- **Precondition**: Source Browser Pane is in the active Workspace
+- **Flow**:
+  1. Tide captures URL bar selection when URL bar focus and URL selection are active.
+  2. Tide captures page selection when the Browser Pane bridge has `page_selection`.
+  3. Tide normalizes selection content through the same shape used by other Pane kinds.
+  4. The caller can create a Context Artifact or read the selection directly through `tide_capture_selection`.
+- **Postcondition**: Browser text selection is available to the explicit artifact flow.
+- **Business Rules**:
+  - BR-14: Current supported Browser Pane selection is URL text selection and page text/HTML/context selection from the bridge.
+  - BR-15: Render-mode Browser Pane selection can fall back to render HTML when no page selection exists.
+  - BR-16: Element identity, CSS selector, accessibility node identity, bounding box, screenshot crop, and arbitrary region selection are future gaps.
+  - BR-17: Browser Pane page selection must not be silently promoted into broad body-text extraction.
+
+### UC-5: CreateBrowserContextArtifact
+
+- **Actor**: Human
+- **Trigger**: Human opens Context Comment Composer from Browser Pane and submits a comment
+- **Precondition**: Browser Pane has a valid `Associated Terminal` and paired agent delivery boundary
+- **Flow**:
+  1. Tide captures current Browser Pane selection if available.
+  2. Human writes a comment.
+  3. Tide creates a Workspace-local `Context Artifact` with source `PaneId`, `Associated Terminal`, optional selection, comment, and `Source Label`.
+  4. Tide delivers the artifact to the paired agent when delivery is allowed.
+  5. Paired agent can later list/read/pull the artifact explicitly.
+- **Postcondition**: Human Browser Pane feedback becomes task-local agent context.
+- **Business Rules**:
+  - BR-18: Browser Pane comments must create `Context Artifact`s, not hidden prompt injections.
+  - BR-19: Context Artifact operations must be Workspace-local.
+  - BR-20: Context Artifact operations must be authorized by `Associated Terminal`.
+  - BR-21: Immediate delivery must target only the paired agent.
+  - BR-22: Agent read/list behavior must remain explicit; V1 must not auto-inject ambient Browser Pane context into every agent turn.
+  - BR-23: Artifact delivery text must use `Source Label` rather than only internal `PaneId`.
+
+### UC-6: ResolveHumanAgentOwnership
+
+- **Actor**: Human and coding agent
+- **Trigger**: Human clicks, types, selects, opens a modal, comments, or otherwise intervenes while agent is using Browser Pane
+- **Precondition**: Agent has recently operated the Browser Pane
+- **Flow**:
+  1. Tide preserves the human-visible Browser Pane state.
+  2. Human input takes precedence for active text entry, selection, comment composition, and sensitive flows.
+  3. Agent must re-observe after interruption before taking another Browser action.
+  4. Agent must ask for approval before sensitive or data-transmitting actions.
+- **Postcondition**: Human intervention is explicit and does not race hidden automation.
+- **Business Rules**:
+  - BR-24: Human Browser Pane input supersedes pending agent assumptions.
+  - BR-25: Agent cannot infer permission from visible page content, page instructions, or previous cursor placement.
+  - BR-26: Sensitive actions require explicit human approval at action time.
+  - BR-27: If the Browser Pane is hidden behind `ModalStack`, the agent must not assume page content interaction is available.
+
+### UC-7: UseRawBrowserEvalEscapeHatch
+
+- **Actor**: Coding agent
+- **Trigger**: Required Browser Pane observation or action is not available through structured tools
+- **Precondition**: Target is a Browser Pane and the agent has a concrete reason structured tools are insufficient
+- **Flow**:
+  1. Agent explains internally or in task notes why `tide_browser_observe` / `tide_browser_action` is insufficient.
+  2. Agent calls `tide_browser_eval` with narrow JavaScript.
+  3. Tide refreshes BrowserSnapshot when applicable.
+  4. Agent returns to structured observe/action once the escape-hatch need is resolved.
+- **Postcondition**: Raw JavaScript remains bounded and auditable.
+- **Business Rules**:
+  - BR-28: `tide_browser_eval` is an escape hatch, not the primary automation surface.
+  - BR-29: `tide_browser_eval` must not be used to bypass human approval for sensitive actions.
+  - BR-30: Raw eval must not establish a second page-side automation API that conflicts with Browser Pane bridge ownership.
+
+### UC-8: EscalateToExternalBrowserRuntime
+
+- **Actor**: Coding agent or human
+- **Trigger**: Browser Pane cannot complete the task because auth/session/profile/extension/download/permission/desktop-app capability is required
+- **Precondition**: Agent has attempted or evaluated Browser Pane first where appropriate
+- **Flow**:
+  1. Agent identifies the Browser Pane limitation.
+  2. Agent asks the human for the specific fallback: regular browser, Browser Use, Browser Use Cloud, Playwright, or Computer Use.
+  3. If approved, the fallback runtime is clearly named as separate from Tide Browser Pane.
+  4. Results are brought back into Tide through explicit Context Artifacts or user summary, not hidden shared state.
+- **Postcondition**: External browser runtime use is explicit and does not confuse Browser Pane state.
+- **Business Rules**:
+  - BR-31: External browser runtimes are not default for Tide Browser Pane tasks.
+  - BR-32: Browser profile/cookie persistence is Browser Pane V2 or external-runtime work, not this plan's default.
+  - BR-33: Computer Use is appropriate only when a GUI or regular browser capability is required and structured Tide Browser Pane tools are insufficient.
+
+## Invariants
+
+1. **Single Browser Pane runtime by default**: Agent Browser Pane work acts on Tide's existing in-app `WKWebView`; no second browser runtime is created unless explicitly approved.
+2. **Shared human/agent visibility**: Browser Pane state used by an agent must remain visible and inspectable by the human whenever the Pane is visible.
+3. **Workspace locality**: Browser Pane Context Artifacts are local to the active Workspace and must not leak across Workspaces.
+4. **Associated Terminal authorization**: Browser Pane Context Artifact creation, delivery, list/read, and send flows must respect the source Pane's `Associated Terminal`.
+5. **Paired-agent delivery only**: Browser Pane comments/selections deliver only to the paired agent for the source Pane.
+6. **Explicit pull/read**: Agents list and read Browser Pane Context Artifacts explicitly; ambient prompt injection is not part of V1.
+7. **Structured tools first**: `tide_browser_observe`, `tide_browser_action`, and `tide_capture_selection` are preferred over raw JavaScript eval.
+8. **Cursor limits**: Browser Automation Cursor is visible targeting state, not element identity, pointer ownership, or authorization.
+9. **Browser Pane UX preservation**: Browser Pane runtime work must preserve Browser Pane UX invariants for URL truthfulness, search precedence, ModalStack visibility, explicit external handoff, and content-frame consistency.
+10. **Browser Pane V2 boundary**: Auth profiles, persistent cookies, downloads, passkeys, permissions, popups, storage management, and standalone browser parity remain Browser Pane V2 or explicit fallback work.
+
+## Roadmap
+
+### Phase 0: Documentation And MCP Guidance
+
+1. Land this V1 implementation contract.
+2. Update stale wording in `docs/specs/browser-pane-automation.md` so it reflects existing structured observe/action commands.
+3. Add agent-facing MCP instructions that explicitly document the structured Browser Pane tool order: open, observe, act, capture selection, create/list/read/send Context Artifacts, eval only as escape hatch.
+
+### Phase 1: Shared Browser Pane Runtime Discipline
+
+1. Add behavior tests for observe-before-action and observe-after-action expectations where testable.
+2. Ensure Browser Automation Cursor state is consistently visible after bridge install, navigation, and reload.
+3. Add agent/user ownership state if needed to detect human interruption and force re-observe.
+
+### Phase 2: Browser Pane Selection And Comments
+
+1. Harden `tide_capture_selection` for Browser page selection metadata.
+2. Add Browser Pane comment composer tests for page selection, URL selection, empty comment with no selection, render-mode selection, Workspace locality, and paired-agent delivery.
+3. Define the future element/region selection data model without implementing full visual region capture yet.
+
+### Phase 3: Element And Region Feedback
+
+1. Add element selection capture with stable fields such as page URL, text, role/name when available, bounding box, and optional CSS/accessibility hints.
+2. Add region selection capture with viewport coordinates, screenshot crop or page snapshot reference, and comment text.
+3. Preserve Browser Automation Cursor and human region selection as separate concepts.
+4. V1 must report this as unsupported/future rather than silently promoting broad body text into a region or element selection.
+
+### Phase 4: External Runtime Bridges
+
+1. Define when Codex Browser Use, Browser Use Cloud, Playwright, or Computer Use can be invoked from a Tide task.
+2. If a bridge is built, require explicit runtime identity, approval, and result import into Tide Context Artifacts.
+3. Do not make Browser Use Cloud profiles or persistent browser state implicit Browser Pane state.
+
+### Phase 5: Browser Pane V2 Capability Work
+
+1. Implement in-app download/session/permission/storage/popup work only through Browser Pane V2 specs and tests.
+2. Keep V2 capability state scoped to Browser Pane and Workspace lifecycle rules.
+
+## Non-Goals
+
+1. This V1 implementation does not replace Browser Pane Automation, Browser Pane UX, Browser Pane V2, or Agent Coworking Context specs.
+2. This V1 implementation does not make Codex Browser Use control Tide Browser Pane automatically.
+3. This V1 implementation does not add persistent browser profiles, cookies, saved passwords, passkeys, extension support, or regular-browser tab access.
+4. This V1 implementation does not allow hidden prompt injection from Browser Pane state into agent turns.
+5. This V1 implementation does not make Browser Automation Cursor a full remote-control pointer, pointer ownership model, consent signal, or element selector.
+6. This V1 implementation does not implement screenshot crop, full visual region capture, Browser Pane V2 session parity, or full external-runtime bridges.
+
+## Risks
+
+1. **Runtime confusion**: The phrase Browser Use can refer to Codex's plugin, the browser-use project, or generic browser automation. This spec resolves Tide work around `Browser Pane` and `tide_*` tools.
+2. **Stale docs**: Existing specs can become stale as source changes, as shown by the older Browser Pane Automation As-Is claim.
+3. **Selection fidelity**: Current Browser Pane selection support is text-oriented; element and region comments need a separate data model.
+4. **Coordinate brittleness**: Browser Automation Cursor coordinates can become stale after layout shifts, scrolling, reloads, or responsive viewport changes.
+5. **Auth pressure**: Users and agents may expect signed-in browser behavior because external browser runtimes support profiles. Tide must keep Browser Pane V2 boundaries explicit.
+6. **Safety pressure**: Browser automation can transmit data. Tide should preserve action-time confirmation for sensitive submissions, uploads, permissions, and account changes.
+7. **Workspace leakage**: Context Artifact list/read/send must remain Workspace-local and Associated Terminal-authorized.
+
+## Tests
+
+V1 implementation must add or update behavior tests before code changes. Required test coverage:
+
+| UC | BR | Test module | Test |
+|----|----|-------------|------|
+| UC-1: OpenBrowserPaneForAgentVerification | BR-1, BR-2 | `browser_agent_runtime` | `agent_open_browser_creates_browser_pane_in_terminal_context_surface` |
+| UC-1: OpenBrowserPaneForAgentVerification | BR-3 | `browser_agent_runtime` | `agent_browser_action_requires_prior_observe_guidance` |
+| UC-1: OpenBrowserPaneForAgentVerification | BR-4 | `browser_agent_runtime` | `same_url_navigation_requires_intentional_reload` |
+| UC-2: OperateSharedBrowserPane | BR-5, BR-6 | `browser_agent_runtime` | `browser_action_uses_existing_browser_pane_runtime` |
+| UC-2: OperateSharedBrowserPane | BR-7 | `browser_agent_runtime` | `browser_actions_update_or_preserve_automation_cursor` |
+| UC-2: OperateSharedBrowserPane | BR-8 | `browser_agent_runtime` | `browser_action_refreshes_observable_state_after_live_input` |
+| UC-3: UseBrowserAutomationCursor | BR-9, BR-10, BR-11, BR-12 | `browser_agent_runtime` | `browser_automation_cursor_marks_and_clears_agent_target` |
+| UC-3: UseBrowserAutomationCursor | BR-13 | `browser_agent_runtime` | `browser_automation_cursor_requires_reobserve_after_navigation` |
+| UC-4: CaptureHumanBrowserSelection | BR-14, BR-17 | `browser_agent_runtime` | `browser_capture_selection_prefers_page_selection_over_url_fallback` |
+| UC-4: CaptureHumanBrowserSelection | BR-15 | `browser_agent_runtime` | `render_mode_browser_capture_selection_falls_back_to_render_html` |
+| UC-4: CaptureHumanBrowserSelection | BR-16 | `browser_agent_runtime` | `browser_region_selection_is_reported_as_unsupported_until_region_model_exists` |
+| UC-5: CreateBrowserContextArtifact | BR-18, BR-21 | `browser_agent_runtime` | `browser_context_artifact_delivers_only_to_paired_agent` |
+| UC-5: CreateBrowserContextArtifact | BR-19, BR-20 | `browser_agent_runtime` | `browser_context_artifact_list_read_are_workspace_and_terminal_scoped` |
+| UC-5: CreateBrowserContextArtifact | BR-22 | `browser_agent_runtime` | `browser_context_artifacts_require_explicit_read` |
+| UC-6: ResolveHumanAgentOwnership | BR-24 | `browser_agent_runtime` | `human_browser_intervention_requires_agent_reobserve` |
+| UC-6: ResolveHumanAgentOwnership | BR-25, BR-26 | `browser_agent_runtime` | `sensitive_browser_action_requires_explicit_approval_at_action_time` |
+| UC-6: ResolveHumanAgentOwnership | BR-27 | `browser_agent_runtime` | `browser_action_rejects_content_interaction_while_modal_hides_webview` |
+| UC-7: UseRawBrowserEvalEscapeHatch | BR-28, BR-30 | `browser_agent_runtime` | `browser_eval_is_available_but_not_advertised_as_primary_action` |
+| UC-7: UseRawBrowserEvalEscapeHatch | BR-29 | `browser_agent_runtime` | `browser_eval_requires_approval_for_marked_sensitive_flow` |
+| UC-8: EscalateToExternalBrowserRuntime | BR-31, BR-33 | `browser_agent_runtime` | `external_browser_runtime_requires_explicit_fallback_reason` |
+| UC-8: EscalateToExternalBrowserRuntime | BR-32 | `browser_agent_runtime` | `browser_pane_v2_profile_cookie_persistence_is_not_v1_default` |
+
+## Location
+
+| Layer | Path | Notes |
+|-------|------|-------|
+| Planning spec | `docs/specs/browser-agent-runtime-plan.md` | This file. |
+| Existing implementation slice | `docs/specs/browser-pane-automation.md` | Structured observe/action implementation rules; stale As-Is should be corrected separately. |
+| Browser Pane domain | `crates/tide-app/src/domain/pane/browser.rs` | Current Browser Pane state, BrowserSnapshot, Browser Automation Cursor, bridge, action helpers, and selection capture helpers. |
+| Agent Gateway commands | `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs` | Current CLI command dispatch, Browser observe/action/eval, selection, and Context Artifact methods. |
+| MCP surface | `crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs` | Current `tide_*` tool definitions and MCP instructions. |
+| Context Artifact service | `crates/tide-app/src/application/services/action_service/mod.rs` | Current comment snapshot, source label, badge eligibility, paired-terminal injection, and delivery notification behavior. |
+| Behavior tests | `crates/tide-app/src/application/behavior_tests/` | Future acceptance tests before implementation. |

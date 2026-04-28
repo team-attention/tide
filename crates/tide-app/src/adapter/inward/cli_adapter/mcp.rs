@@ -152,9 +152,18 @@ fn mcp_initialize(id: serde_json::Value) -> serde_json::Value {
             "protocolVersion": "2024-11-05",
             "capabilities": { "tools": {} },
             "serverInfo": { "name": "tide", "version": "0.1.0" },
-            "instructions": "Tide layout: The Stage holds Terminals. Each Terminal owns a Dock — a workspace for related panes. You are running inside a Terminal. To run a command, send keys to your terminal (omit pane_id). To open a browser or editor, use tide_open_browser / tide_open_editor — they open in your Dock automatically. Do NOT split or open new terminals in the Stage for side tasks."
+            "instructions": mcp_instructions()
         }
     })
+}
+
+fn mcp_instructions() -> &'static str {
+    "Tide layout: The Stage holds Terminals. Each Terminal owns a Dock, the Terminal Context Surface for related panes. You are running inside a Terminal. To run a command, send keys to your terminal (omit pane_id). Tide Browser Pane first: for local preview, file-backed preview, unauthenticated public page review, visual verification, and page comments, use tide_open_browser, then tide_browser_observe, then tide_browser_action for navigate/move/click/type/press/clear-cursor. Observe before content actions and observe again after navigate/click/type/press. Use tide_capture_selection and Context Artifact tools (tide_create_context_artifact, tide_list_context_artifacts, tide_read_context_artifact, tide_send_context_artifact) for Browser Pane comments and explicit paired-agent delivery. No ambient Browser Pane prompt injection: list/read Context Artifacts explicitly. tide_browser_eval is only an escape hatch when structured Browser Pane tools are insufficient; include a reason and do not use it to bypass sensitive-flow approval. Browser Automation Cursor is a visible marker only, not element identity, pointer ownership, or human consent. Browser Use, Browser Use Cloud, Playwright, Computer Use, and a regular browser are external browser runtimes: use them only with an explicit fallback reason and name them as separate from Tide Browser Pane. Do NOT split or open new terminals in the Stage for side tasks."
+}
+
+#[cfg(test)]
+pub(crate) fn mcp_initialize_for_test() -> serde_json::Value {
+    mcp_initialize(serde_json::Value::Null)
 }
 
 pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
@@ -178,11 +187,12 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
         },
         {
             "name": "tide_capture_selection",
-            "description": "Read the current selection content from a pane",
+            "description": "Read the current explicit selection content from a Pane. Browser Pane supports URL selection, page bridge selection, and render HTML fallback; element/region capture is unsupported V1 work.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "pane_id": { "type": "integer", "description": "Target pane ID (omit for self)" }
+                    "pane_id": { "type": "integer", "description": "Target pane ID (omit for self)" },
+                    "selection_kind": { "type": "string", "enum": ["text", "region", "element"], "description": "Use text for V1. Browser region/element capture is reported as unsupported until the future data model exists." }
                 }
             }
         },
@@ -253,24 +263,58 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
         },
         {
             "name": "tide_open_browser",
-            "description": "Open a URL in a Browser Pane",
+            "description": "Open a URL in Tide Browser Pane, the preferred shared Browser Pane runtime for task-local verification",
             "inputSchema": { "type": "object", "properties": { "url": { "type": "string" } } }
         },
         {
             "name": "tide_browser_eval",
-            "description": "Evaluate JavaScript in a targeted Browser Pane and refresh BrowserSnapshot",
+            "description": "escape hatch: evaluate narrow JavaScript in a targeted Tide Browser Pane and refresh BrowserSnapshot. Prefer tide_browser_observe and tide_browser_action for supported Browser Pane work.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "pane_id": { "type": "integer", "description": "Target pane ID (omit for self)" },
-                    "script": { "type": "string", "description": "JavaScript source to evaluate inside the Browser Pane" }
+                    "script": { "type": "string", "description": "JavaScript source to evaluate inside the Browser Pane" },
+                    "reason": { "type": "string", "description": "Why structured Browser Pane tools are insufficient" },
+                    "sensitive": { "type": "boolean", "description": "Set true for data-transmitting or sensitive flows" },
+                    "approved": { "type": "boolean", "description": "Required when sensitive is true" }
                 },
                 "required": ["script"]
             }
         },
         {
+            "name": "tide_browser_observe",
+            "description": "Read structured Tide Browser Pane state before acting, including BrowserSnapshot, selection, Browser Automation Cursor, and runtime identity",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID (omit for focused pane)" }
+                }
+            }
+        },
+        {
+            "name": "tide_browser_action",
+            "description": "preferred structured action path for Tide Browser Pane. Uses the existing Browser Pane runtime, requires prior observe for content actions, and requires observe again after navigate/click/type/press.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID (omit for focused pane)" },
+                    "action": { "type": "string", "enum": ["navigate", "move", "click", "type", "press", "clear-cursor"] },
+                    "url": { "type": "string", "description": "Required for navigate" },
+                    "x": { "type": "number", "description": "Viewport x coordinate for move or click" },
+                    "y": { "type": "number", "description": "Viewport y coordinate for move or click" },
+                    "label": { "type": "string", "description": "Optional Browser Automation Cursor label for move or click" },
+                    "text": { "type": "string", "description": "Required for type" },
+                    "key": { "type": "string", "description": "Required for press" },
+                    "reload": { "type": "boolean", "description": "Required to intentionally navigate to the already-loaded URL" },
+                    "sensitive": { "type": "boolean", "description": "Set true for data-transmitting or sensitive flows" },
+                    "approved": { "type": "boolean", "description": "Required when sensitive is true" }
+                },
+                "required": ["action"]
+            }
+        },
+        {
             "name": "tide_create_context_artifact",
-            "description": "Create a workspace-local ContextArtifact from a selected pane",
+            "description": "Create a Workspace-local Context Artifact from an explicit Pane selection/comment. No ambient Browser Pane prompt injection.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -284,12 +328,12 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
         },
         {
             "name": "tide_list_context_artifacts",
-            "description": "List ContextArtifacts in the active Workspace",
+            "description": "Explicitly list Context Artifacts in the active Workspace for the caller's Associated Terminal",
             "inputSchema": { "type": "object", "properties": {} }
         },
         {
             "name": "tide_read_context_artifact",
-            "description": "Read a ContextArtifact in the active Workspace",
+            "description": "Explicitly read a Context Artifact in the active Workspace for the caller's Associated Terminal",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -324,7 +368,7 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
         },
         {
             "name": "tide_send_context_artifact",
-            "description": "Deliver a ContextArtifact to the paired agent",
+            "description": "Deliver a Context Artifact only to the paired agent for its Associated Terminal",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -411,6 +455,8 @@ fn mcp_tools_call(
         "tide_open_editor" => "open-editor",
         "tide_open_browser" => "open-browser",
         "tide_browser_eval" => "browser-eval",
+        "tide_browser_observe" => "browser-observe",
+        "tide_browser_action" => "browser-action",
         "tide_create_context_artifact" => "create-context-artifact",
         "tide_list_context_artifacts" => "list-context-artifacts",
         "tide_read_context_artifact" => "read-context-artifact",

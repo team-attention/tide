@@ -5,6 +5,8 @@
 
 mod agent_coworking_context;
 mod agent_gateway;
+mod browser_agent_runtime;
+mod browser_pane_automation;
 mod browser_pane_fallbacks;
 mod browser_pane_ux;
 mod browser_pane_v2;

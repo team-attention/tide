@@ -31,6 +31,14 @@ pub fn run_cli(args: &[String]) -> i32 {
             let params = parse_browser_eval_args(&args[1..]);
             send_command("browser-eval", params)
         }
+        "browser-observe" => {
+            let params = parse_pane_target_args(&args[1..]);
+            send_command("browser-observe", params)
+        }
+        "browser-action" => {
+            let params = parse_browser_action_args(&args[1..]);
+            send_command("browser-action", params)
+        }
         "send-keys" => {
             let params = parse_send_keys_args(&args[1..]);
             send_command("send-keys", params)
@@ -125,6 +133,9 @@ fn usage_text() -> String {
         "  get-layout                       Get the layout tree as JSON",
         "  browser-eval [-t <id>] --script <js>",
         "                                   Evaluate JavaScript in a Browser Pane and refresh BrowserSnapshot",
+        "  browser-observe [-t <id>]        Read structured Browser Pane state",
+        "  browser-action [-t <id>] --action <name> [--url <u>] [--x <n>] [--y <n>]",
+        "                                   Apply a structured Browser Pane action and update the Browser Automation Cursor",
         "  send-keys [-t <id>] <keys...>    Send key sequences to a terminal pane",
         "  split-vertical [-t <id>]         Split pane vertically",
         "  split-horizontal [-t <id>]       Split pane horizontally",
@@ -357,6 +368,91 @@ fn parse_browser_eval_args(args: &[String]) -> serde_json::Value {
             "--script" => {
                 if let Some(script) = args.get(i + 1) {
                     params.insert("script".into(), serde_json::json!(script));
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    serde_json::Value::Object(params)
+}
+
+/// Parse browser-action args:
+/// [-t <id>] --action <name> [--url <u>] [--x <n>] [--y <n>] [--label <t>] [--text <t>] [--key <k>]
+fn parse_browser_action_args(args: &[String]) -> serde_json::Value {
+    let mut params = serde_json::Map::new();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-t" => {
+                if let Some(id_str) = args.get(i + 1) {
+                    if let Ok(id) = id_str.parse::<u64>() {
+                        params.insert("pane_id".into(), serde_json::json!(id));
+                    }
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "--action" => {
+                if let Some(value) = args.get(i + 1) {
+                    params.insert("action".into(), serde_json::json!(value));
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "--url" => {
+                if let Some(value) = args.get(i + 1) {
+                    params.insert("url".into(), serde_json::json!(value));
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "--x" => {
+                if let Some(value) = args.get(i + 1) {
+                    if let Ok(x) = value.parse::<f64>() {
+                        params.insert("x".into(), serde_json::json!(x));
+                    }
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "--y" => {
+                if let Some(value) = args.get(i + 1) {
+                    if let Ok(y) = value.parse::<f64>() {
+                        params.insert("y".into(), serde_json::json!(y));
+                    }
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "--label" => {
+                if let Some(value) = args.get(i + 1) {
+                    params.insert("label".into(), serde_json::json!(value));
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "--text" => {
+                if let Some(value) = args.get(i + 1) {
+                    params.insert("text".into(), serde_json::json!(value));
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "--key" => {
+                if let Some(value) = args.get(i + 1) {
+                    params.insert("key".into(), serde_json::json!(value));
                     i += 2;
                 } else {
                     i += 1;
@@ -698,7 +794,7 @@ fn run_render_stream(params: serde_json::Value) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_browser_eval_args, usage_text};
+    use super::{parse_browser_action_args, parse_browser_eval_args, usage_text};
 
     #[test]
     fn cli_usage_mentions_render_html_fragment_contract() {
@@ -737,6 +833,14 @@ mod tests {
     }
 
     #[test]
+    fn cli_usage_mentions_structured_browser_automation_commands() {
+        let usage = usage_text();
+        assert!(usage.contains("browser-observe [-t <id>]"));
+        assert!(usage.contains("browser-action [-t <id>] --action <name>"));
+        assert!(usage.contains("Browser Automation Cursor"));
+    }
+
+    #[test]
     fn parse_browser_eval_args_invalid_target_keeps_scanning_flags() {
         let args = vec![
             "-t".to_string(),
@@ -750,6 +854,38 @@ mod tests {
         assert_eq!(
             params.get("script").and_then(|value| value.as_str()),
             Some("document.title = 'Updated'")
+        );
+    }
+
+    #[test]
+    fn parse_browser_action_args_collects_action_payload() {
+        let args = vec![
+            "-t".to_string(),
+            "42".to_string(),
+            "--action".to_string(),
+            "click".to_string(),
+            "--x".to_string(),
+            "14.5".to_string(),
+            "--y".to_string(),
+            "28.0".to_string(),
+            "--label".to_string(),
+            "Target".to_string(),
+        ];
+
+        let params = parse_browser_action_args(&args);
+        assert_eq!(
+            params.get("pane_id").and_then(|value| value.as_u64()),
+            Some(42)
+        );
+        assert_eq!(
+            params.get("action").and_then(|value| value.as_str()),
+            Some("click")
+        );
+        assert_eq!(params.get("x").and_then(|value| value.as_f64()), Some(14.5));
+        assert_eq!(params.get("y").and_then(|value| value.as_f64()), Some(28.0));
+        assert_eq!(
+            params.get("label").and_then(|value| value.as_str()),
+            Some("Target")
         );
     }
 }

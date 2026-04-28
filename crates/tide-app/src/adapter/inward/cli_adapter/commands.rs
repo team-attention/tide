@@ -9,6 +9,9 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::pane::browser::{
+    BrowserAutomationCursor, BrowserPane, BrowserSelectionSnapshot, BrowserSnapshot,
+};
 use crate::pane::PaneKind;
 use crate::tide_core::{SplitDirection, TerminalBackend};
 use crate::tide_layout::LayoutSnapshot;
@@ -18,6 +21,7 @@ use crate::DockPort;
 use crate::FocusNavPort;
 use crate::GatewayPort;
 use crate::LayoutPort;
+use crate::ModalPort;
 use crate::PaneAccessPort;
 use crate::PaneLifecyclePort;
 use crate::WorkspaceNavPort;
@@ -106,8 +110,10 @@ impl crate::App {
             "capture-pane" => cli_capture_pane(self, params),
             "capture-selection" => cli_capture_selection(self, params),
             "get-layout" => cli_get_layout(self),
+            "browser-observe" => cli_browser_observe(self, params),
             // Phase 2 — Act
             "browser-eval" => cli_browser_eval(self, params),
+            "browser-action" => cli_browser_action(self, params),
             "send-keys" => cli_send_keys(self, params),
             "split-vertical" => cli_split(self, SplitDirection::Vertical, params),
             "split-horizontal" => cli_split(self, SplitDirection::Horizontal, params),
@@ -142,6 +148,142 @@ impl crate::App {
 }
 
 // ── Phase 1: Observe ─────────────────────────────────────────────
+
+fn pane_kind_label(pane: &PaneKind) -> &'static str {
+    match pane {
+        PaneKind::Terminal(_) => "terminal",
+        PaneKind::Editor(_) => "editor",
+        PaneKind::Diff(_) => "diff",
+        PaneKind::Browser(browser) if browser.render_mode => "render-mode browser",
+        PaneKind::Browser(_) => "browser",
+        PaneKind::Launcher(_) => "launcher",
+    }
+}
+
+fn browser_snapshot_json(snapshot: Option<&BrowserSnapshot>) -> Value {
+    match snapshot {
+        Some(snapshot) => json!({
+            "text": snapshot.text.clone(),
+            "title": snapshot.page_title.clone(),
+            "url": snapshot.page_url.clone(),
+        }),
+        None => Value::Null,
+    }
+}
+
+fn browser_selection_json(selection: Option<&BrowserSelectionSnapshot>) -> Value {
+    match selection {
+        Some(selection) => json!({
+            "text": selection.text.clone(),
+            "html": selection.html.clone(),
+            "context": selection.context.clone(),
+            "title": selection.page_title.clone(),
+            "url": selection.page_url.clone(),
+            "collapsed": selection.collapsed,
+        }),
+        None => Value::Null,
+    }
+}
+
+fn browser_automation_cursor_json(cursor: Option<&BrowserAutomationCursor>) -> Value {
+    match cursor {
+        Some(cursor) => json!({
+            "x": cursor.x,
+            "y": cursor.y,
+            "label": cursor.label.clone(),
+            "visible": cursor.visible,
+        }),
+        None => Value::Null,
+    }
+}
+
+fn browser_cursor_semantics_json() -> Value {
+    json!({
+        "marker_only": true,
+        "element_identity": false,
+        "pointer_ownership": false,
+        "human_consent": false,
+    })
+}
+
+fn param_bool(params: &Value, names: &[&str]) -> bool {
+    names
+        .iter()
+        .any(|name| params.get(*name).and_then(|value| value.as_bool()) == Some(true))
+}
+
+fn ensure_sensitive_action_approval(params: &Value, surface: &str) -> Result<(), CliError> {
+    let marked_sensitive = param_bool(
+        params,
+        &["sensitive", "data_transmitting", "requires_approval"],
+    );
+    if marked_sensitive && !param_bool(params, &["approved", "human_approved"]) {
+        return Err(CliError::InvalidParams(format!(
+            "{surface} marked sensitive requires approved=true"
+        )));
+    }
+    Ok(())
+}
+
+fn browser_action_is_supported(action: &str) -> bool {
+    matches!(
+        action,
+        "navigate" | "move" | "click" | "type" | "press" | "clear-cursor"
+    )
+}
+
+fn browser_action_requires_fresh_observe(action: &str) -> bool {
+    matches!(action, "navigate" | "click" | "type" | "press")
+}
+
+fn browser_action_interacts_with_page_content(action: &str) -> bool {
+    matches!(action, "click" | "type" | "press")
+}
+
+fn browser_action_requires_observe_after(action: &str) -> bool {
+    matches!(action, "navigate" | "click" | "type" | "press")
+}
+
+fn navigation_browser<'a>(pane_id: u64, pane: &'a PaneKind) -> Result<&'a BrowserPane, CliError> {
+    if let PaneKind::Browser(browser) = pane {
+        if !browser.render_mode {
+            return Ok(browser);
+        }
+        return Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "navigation-mode browser",
+            actual: "render-mode browser",
+        });
+    }
+
+    Err(CliError::InvalidPaneKind {
+        pane_id,
+        expected: "navigation-mode browser",
+        actual: pane_kind_label(pane),
+    })
+}
+
+fn navigation_browser_mut<'a>(
+    pane_id: u64,
+    pane: &'a mut PaneKind,
+) -> Result<&'a mut BrowserPane, CliError> {
+    if let PaneKind::Browser(browser) = pane {
+        if !browser.render_mode {
+            return Ok(browser);
+        }
+        return Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "navigation-mode browser",
+            actual: "render-mode browser",
+        });
+    }
+
+    Err(CliError::InvalidPaneKind {
+        pane_id,
+        expected: "navigation-mode browser",
+        actual: pane_kind_label(pane),
+    })
+}
 
 /// UC-1: ListPanes — return all panes in the active workspace.
 fn cli_list_panes(
@@ -309,11 +451,61 @@ fn cli_capture_pane(
     }
 }
 
+/// UC-1: ObserveBrowserPaneAutomationState — read structured Browser Pane state.
+fn cli_browser_observe(
+    ctx: &mut (impl FocusNavPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = params
+        .get("pane_id")
+        .and_then(|v| v.as_u64())
+        .or_else(|| ctx.focused_pane())
+        .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+
+    let pane = ctx
+        .pane_mut(pane_id)
+        .ok_or(CliError::PaneNotFound(pane_id))?;
+    let browser = navigation_browser_mut(pane_id, pane)?;
+
+    let title = browser
+        .page_snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.page_title.clone())
+        .or_else(|| {
+            browser
+                .page_selection
+                .as_ref()
+                .and_then(|selection| selection.page_title.clone())
+        })
+        .unwrap_or_else(|| browser.title());
+
+    let result = json!({
+        "pane_id": pane_id,
+        "title": title,
+        "url": browser.url.clone(),
+        "loading": browser.loading,
+        "load_progress": browser.load_progress,
+        "can_go_back": browser.can_go_back,
+        "can_go_forward": browser.can_go_forward,
+        "snapshot": browser_snapshot_json(browser.page_snapshot.as_ref()),
+        "selection": browser_selection_json(browser.page_selection.as_ref()),
+        "automation_cursor": browser_automation_cursor_json(browser.automation_cursor()),
+        "runtime": "tide_browser_pane",
+        "external_runtime": Value::Null,
+        "requires_prior_observe_for_actions": true,
+        "cursor_semantics": browser_cursor_semantics_json(),
+    });
+    browser.mark_agent_observed();
+    Ok(result)
+}
+
 /// UC-12: BrowserControl — evaluate JavaScript in a Browser Pane.
 fn cli_browser_eval(
     ctx: &mut (impl FocusNavPort + PaneAccessPort),
     params: Value,
 ) -> Result<Value, CliError> {
+    ensure_sensitive_action_approval(&params, "browser-eval")?;
+
     let pane_id = params
         .get("pane_id")
         .and_then(|v| v.as_u64())
@@ -334,7 +526,15 @@ fn cli_browser_eval(
                 webview.evaluate_javascript(script);
             }
             browser.request_page_snapshot_refresh();
-            Ok(json!({"ok": true}))
+            browser.mark_agent_action_requires_reobserve();
+            Ok(json!({
+                "ok": true,
+                "runtime": "tide_browser_pane",
+                "external_runtime": Value::Null,
+                "escape_hatch": true,
+                "prefer_structured_tools": true,
+                "observe_after_action": true,
+            }))
         }
         other => Err(CliError::InvalidPaneKind {
             pane_id,
@@ -348,6 +548,157 @@ fn cli_browser_eval(
             },
         }),
     }
+}
+
+/// UC-2: ActOnBrowserPaneWithStructuredCommands — drive a navigation-mode Browser Pane.
+fn cli_browser_action(
+    ctx: &mut (impl FocusNavPort + ModalPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    ensure_sensitive_action_approval(&params, "browser-action")?;
+
+    let pane_id = params
+        .get("pane_id")
+        .and_then(|v| v.as_u64())
+        .or_else(|| ctx.focused_pane())
+        .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+    let action = params
+        .get("action")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| CliError::InvalidParams("action required".into()))?;
+    if !browser_action_is_supported(action) {
+        return Err(CliError::InvalidParams(format!(
+            "unsupported browser action: {action}"
+        )));
+    }
+    let modal_open = ctx.modal().is_any_open();
+
+    let pane = ctx
+        .pane_mut(pane_id)
+        .ok_or(CliError::PaneNotFound(pane_id))?;
+    let browser = navigation_browser_mut(pane_id, pane)?;
+
+    if modal_open && browser_action_interacts_with_page_content(action) {
+        return Err(CliError::InvalidParams(
+            "Browser Pane content interaction is unavailable while ModalStack hides the webview"
+                .into(),
+        ));
+    }
+
+    if browser_action_requires_fresh_observe(action) && !browser.agent_has_fresh_observation() {
+        return Err(CliError::InvalidParams(
+            "tide_browser_observe required before this Browser Pane action".into(),
+        ));
+    }
+
+    let dispatched = match action {
+        "navigate" => {
+            let url = params
+                .get("url")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| CliError::InvalidParams("url required for navigate".into()))?;
+            let normalized = BrowserPane::normalize_navigation_url(url);
+            let intentional_reload = param_bool(&params, &["reload", "intentional_reload"]);
+            if browser.url == normalized && !intentional_reload {
+                return Err(CliError::InvalidParams(
+                    "navigate target is already loaded; pass reload=true for an intentional reload"
+                        .into(),
+                ));
+            }
+            browser.navigate(&normalized);
+            !browser.needs_initial_navigate
+        }
+        "move" => {
+            let x = params
+                .get("x")
+                .and_then(|v| v.as_f64())
+                .ok_or_else(|| CliError::InvalidParams("x required for move".into()))?;
+            let y = params
+                .get("y")
+                .and_then(|v| v.as_f64())
+                .ok_or_else(|| CliError::InvalidParams("y required for move".into()))?;
+            let label = params
+                .get("label")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            browser.set_automation_cursor(BrowserAutomationCursor {
+                x,
+                y,
+                label,
+                visible: true,
+            });
+            browser.webview.is_some()
+        }
+        "click" => {
+            let x = params
+                .get("x")
+                .and_then(|v| v.as_f64())
+                .ok_or_else(|| CliError::InvalidParams("x required for click".into()))?;
+            let y = params
+                .get("y")
+                .and_then(|v| v.as_f64())
+                .ok_or_else(|| CliError::InvalidParams("y required for click".into()))?;
+            let label = params
+                .get("label")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            browser.set_automation_cursor(BrowserAutomationCursor {
+                x,
+                y,
+                label,
+                visible: true,
+            });
+            let dispatched = browser.dispatch_automation_click(x, y);
+            if dispatched {
+                browser.request_page_snapshot_refresh();
+            }
+            dispatched
+        }
+        "type" => {
+            let text = params
+                .get("text")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| CliError::InvalidParams("text required for type".into()))?;
+            let dispatched = browser.dispatch_automation_type(text);
+            if dispatched {
+                browser.request_page_snapshot_refresh();
+            }
+            dispatched
+        }
+        "press" => {
+            let key = params
+                .get("key")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| CliError::InvalidParams("key required for press".into()))?;
+            let dispatched = browser.dispatch_automation_press(key);
+            if dispatched {
+                browser.request_page_snapshot_refresh();
+            }
+            dispatched
+        }
+        "clear-cursor" => {
+            browser.clear_automation_cursor();
+            browser.webview.is_some()
+        }
+        _ => unreachable!("browser action support is checked before dispatch"),
+    };
+    let observe_after_action = browser_action_requires_observe_after(action);
+    if observe_after_action {
+        browser.mark_agent_action_requires_reobserve();
+    }
+
+    Ok(json!({
+        "pane_id": pane_id,
+        "action": action,
+        "dispatched": dispatched,
+        "runtime": "tide_browser_pane",
+        "external_runtime": Value::Null,
+        "requires_prior_observe": browser_action_requires_fresh_observe(action),
+        "observe_after_action": observe_after_action,
+        "cursor_semantics": browser_cursor_semantics_json(),
+        "automation_cursor": browser_automation_cursor_json(browser.automation_cursor()),
+    }))
 }
 
 /// UC-4: GetLayout — return the layout tree as recursive JSON.
@@ -441,7 +792,11 @@ fn capture_selection_details(
         PaneKind::Browser(bp) => {
             let content = if bp.url_input_focused && bp.url_selection.is_some() {
                 bp.url_selected_text().unwrap_or_default()
-            } else if bp.page_selection.is_some() {
+            } else if bp
+                .page_selection
+                .as_ref()
+                .is_some_and(|selection| !selection.collapsed)
+            {
                 bp.page_selection_content().unwrap_or_default()
             } else if bp.render_mode {
                 bp.render_html.clone().unwrap_or_default()
@@ -470,6 +825,37 @@ fn serialize_selection(selection: &crate::pane::Selection) -> Value {
     crate::state::context_artifact::serialize_selection(selection)
 }
 
+fn browser_capture_selection_source(bp: &BrowserPane) -> &'static str {
+    if bp.url_input_focused && bp.url_selected_text().is_some() {
+        return "url";
+    }
+    if bp
+        .page_selection
+        .as_ref()
+        .is_some_and(|selection| !selection.collapsed)
+        && bp.page_selection_content().is_some()
+    {
+        return "page";
+    }
+    if bp.render_mode
+        && bp
+            .render_html
+            .as_deref()
+            .is_some_and(|html| !html.trim().is_empty())
+    {
+        return "render-html";
+    }
+    "none"
+}
+
+fn requested_browser_selection_kind(params: &Value) -> Option<&str> {
+    params
+        .get("selection_kind")
+        .or_else(|| params.get("kind"))
+        .or_else(|| params.get("mode"))
+        .and_then(|value| value.as_str())
+}
+
 fn cli_capture_selection(ctx: &crate::App, params: Value) -> Result<Value, CliError> {
     let pane_id = params
         .get("pane_id")
@@ -477,13 +863,43 @@ fn cli_capture_selection(ctx: &crate::App, params: Value) -> Result<Value, CliEr
         .or_else(|| ctx.focused_pane())
         .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
 
+    let pane = ctx.pane(pane_id).ok_or(CliError::PaneNotFound(pane_id))?;
+    if matches!(
+        (pane, requested_browser_selection_kind(&params)),
+        (PaneKind::Browser(_), Some("region" | "element"))
+    ) {
+        return Err(CliError::InvalidParams(
+            "Browser Pane element and region selection are unsupported until a V1 data model exists"
+                .into(),
+        ));
+    }
+
     let (content, selection, kind) = capture_selection_details(ctx, pane_id)?;
-    Ok(json!({
+    let mut result = json!({
         "pane_id": pane_id,
         "kind": kind,
         "content": content,
         "selection": selection.as_ref().map(serialize_selection).unwrap_or(Value::Null),
-    }))
+    });
+    if let PaneKind::Browser(bp) = pane {
+        let obj = result.as_object_mut().expect("selection result is object");
+        obj.insert(
+            "selection_source".to_string(),
+            json!(browser_capture_selection_source(bp)),
+        );
+        obj.insert(
+            "browser_selection".to_string(),
+            browser_selection_json(bp.page_selection.as_ref()),
+        );
+        obj.insert(
+            "future_region_selection".to_string(),
+            json!({
+                "supported": false,
+                "reason": "element identity, screenshot crop, and arbitrary region capture are future Browser Pane work",
+            }),
+        );
+    }
+    Ok(result)
 }
 
 /// UC-5: Split — split from a source pane, creating a new terminal.

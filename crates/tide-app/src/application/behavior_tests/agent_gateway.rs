@@ -1212,6 +1212,35 @@ fn mcp_tools_list_includes_browser_eval() {
     );
 }
 
+#[test]
+fn mcp_tools_list_includes_structured_browser_automation_tools() {
+    // Browser Pane automation slice: MCP exposes structured observe/action tools alongside raw eval.
+    let tools = mcp::mcp_tool_definitions();
+
+    let browser_observe = tools
+        .iter()
+        .find(|tool| tool.get("name").and_then(|v| v.as_str()) == Some("tide_browser_observe"))
+        .expect("tide_browser_observe tool should be present");
+    assert!(
+        browser_observe["description"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Browser Automation Cursor"),
+        "browser observe should mention Browser Automation Cursor state"
+    );
+
+    let browser_action = tools
+        .iter()
+        .find(|tool| tool.get("name").and_then(|v| v.as_str()) == Some("tide_browser_action"))
+        .expect("tide_browser_action tool should be present");
+    let action_enum = browser_action["inputSchema"]["properties"]["action"]["enum"]
+        .as_array()
+        .expect("browser action enum should exist");
+    assert!(action_enum.iter().any(|value| value == "navigate"));
+    assert!(action_enum.iter().any(|value| value == "click"));
+    assert!(action_enum.iter().any(|value| value == "clear-cursor"));
+}
+
 // --- UC-11: GatewayStatus ---
 
 #[test]

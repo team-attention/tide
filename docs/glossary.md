@@ -38,6 +38,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **TerminalGrid** | `TerminalGrid` | `domain/core_types.rs` | 2D array of `TerminalCell` — the terminal's visible content. |
 | **CursorState** | `CursorState` | `domain/core_types.rs` | Position + visibility + shape of a terminal cursor. |
 | **DropTarget** | `DropTarget` | `domain/core_types.rs` | Where a dragged pane can land: `Pane(id, zone)` or `Root(zone)`. |
+| **Browser Automation Cursor** | `BrowserAutomationCursor` | `domain/pane/browser.rs` | Browser Pane automation marker state for the last agent-targeted viewport point, including its visibility and optional label. |
 | **WebViewTarget** | `WebViewTarget` | `adapter/outward/platform_adapter/macos/webview.rs` | Value key for Browser Pane native state owned by one `Tide Window`, combining `TideWindowId` and `PaneId`. |
 
 ## Aggregates (consistency boundaries)

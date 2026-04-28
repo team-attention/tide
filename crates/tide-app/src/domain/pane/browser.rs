@@ -102,6 +102,15 @@ pub struct BrowserSnapshot {
     pub page_url: Option<String>,
 }
 
+/// Visible Browser Pane automation marker owned by Browser Pane state.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrowserAutomationCursor {
+    pub x: f64,
+    pub y: f64,
+    pub label: Option<String>,
+    pub visible: bool,
+}
+
 /// A browser pane backed by a native WKWebView.
 pub struct BrowserPane {
     /// Stable PaneId, used to route bridge messages back to the owning pane.
@@ -139,6 +148,12 @@ pub struct BrowserPane {
     pub page_snapshot: Option<BrowserSnapshot>,
     /// Latest page selection snapshot captured from the WKWebView bridge.
     pub page_selection: Option<BrowserSelectionSnapshot>,
+    /// Visible Browser Automation Cursor state for agent-driven Browser Pane actions.
+    automation_cursor: Option<BrowserAutomationCursor>,
+    /// Browser Pane Generation last observed by an agent before structured action.
+    agent_observed_generation: Option<u64>,
+    /// Whether the agent must observe again before content-changing Browser Pane actions.
+    agent_reobserve_required: bool,
     /// Whether the selection bridge has been injected into the current page context.
     selection_bridge_installed: bool,
     /// Current context menu target captured from the webview bridge.
@@ -199,6 +214,9 @@ impl BrowserPane {
             url_selection: None,
             page_snapshot: None,
             page_selection: None,
+            automation_cursor: None,
+            agent_observed_generation: None,
+            agent_reobserve_required: true,
             selection_bridge_installed: false,
             context_menu: None,
             pending_permission: None,
@@ -236,6 +254,9 @@ impl BrowserPane {
             url_selection: None,
             page_snapshot: None,
             page_selection: None,
+            automation_cursor: None,
+            agent_observed_generation: None,
+            agent_reobserve_required: true,
             selection_bridge_installed: false,
             context_menu: None,
             pending_permission: None,
@@ -273,6 +294,9 @@ impl BrowserPane {
             url_selection: None,
             page_snapshot: None,
             page_selection: None,
+            automation_cursor: None,
+            agent_observed_generation: None,
+            agent_reobserve_required: true,
             selection_bridge_installed: false,
             context_menu: None,
             pending_permission: None,
@@ -309,6 +333,9 @@ impl BrowserPane {
             url_selection: None,
             page_snapshot: None,
             page_selection: None,
+            automation_cursor: None,
+            agent_observed_generation: None,
+            agent_reobserve_required: true,
             selection_bridge_installed: false,
             context_menu: None,
             pending_permission: None,
@@ -357,16 +384,7 @@ impl BrowserPane {
     /// Navigate to a URL. Normalizes bare domains to https://.
     /// Localhost and 127.0.0.1 URLs default to http:// instead.
     pub fn navigate(&mut self, url: &str) {
-        let normalized = if url.contains("://") {
-            url.to_string()
-        } else if url.starts_with("localhost")
-            || url.starts_with("127.0.0.1")
-            || url.starts_with("[::1]")
-        {
-            format!("http://{}", url)
-        } else {
-            format!("https://{}", url)
-        };
+        let normalized = normalize_navigation_url(url);
         self.url = normalized.clone();
         self.url_input = normalized.clone();
         self.url_input_cursor = normalized.chars().count();
@@ -379,10 +397,14 @@ impl BrowserPane {
         self.selection_bridge_installed = false;
         self.clear_page_snapshot();
         self.clear_page_selection();
+        let mut dispatched = false;
         if let Some(ref wv) = self.webview {
             wv.navigate(&normalized);
+            dispatched = true;
         }
+        self.needs_initial_navigate = !dispatched;
         self.generation = self.generation.wrapping_add(1);
+        self.agent_reobserve_required = true;
     }
 
     /// Set a pending permission request from the page.
@@ -536,6 +558,8 @@ impl BrowserPane {
         self.page_selection = None;
         self.page_snapshot = None;
         self.search = None;
+        self.agent_observed_generation = None;
+        self.agent_reobserve_required = true;
     }
 
     pub fn to_workspace_snapshot(&self) -> BrowserWorkspaceSnapshot {
@@ -809,6 +833,115 @@ impl BrowserPane {
         true
     }
 
+    pub fn automation_cursor(&self) -> Option<&BrowserAutomationCursor> {
+        self.automation_cursor.as_ref()
+    }
+
+    pub fn normalize_navigation_url(url: &str) -> String {
+        normalize_navigation_url(url)
+    }
+
+    pub fn mark_agent_observed(&mut self) {
+        self.agent_observed_generation = Some(self.generation);
+        self.agent_reobserve_required = false;
+    }
+
+    pub fn agent_has_fresh_observation(&self) -> bool {
+        self.agent_observed_generation == Some(self.generation) && !self.agent_reobserve_required
+    }
+
+    pub fn mark_agent_action_requires_reobserve(&mut self) {
+        self.agent_reobserve_required = true;
+    }
+
+    pub fn mark_human_intervention(&mut self) {
+        self.agent_reobserve_required = true;
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    pub fn set_automation_cursor(&mut self, cursor: BrowserAutomationCursor) {
+        if self.automation_cursor.as_ref() == Some(&cursor) {
+            self.sync_automation_cursor_overlay();
+            return;
+        }
+        self.automation_cursor = Some(cursor);
+        self.generation = self.generation.wrapping_add(1);
+        self.sync_automation_cursor_overlay();
+    }
+
+    pub fn clear_automation_cursor(&mut self) {
+        if self.automation_cursor.is_none() {
+            self.sync_automation_cursor_overlay();
+            return;
+        }
+        self.automation_cursor = None;
+        self.generation = self.generation.wrapping_add(1);
+        self.sync_automation_cursor_overlay();
+    }
+
+    pub fn sync_automation_cursor_overlay(&self) -> bool {
+        let Some(ref wv) = self.webview else {
+            return false;
+        };
+        let js = match self.automation_cursor.as_ref() {
+            Some(cursor) if cursor.visible => {
+                let label = cursor
+                    .label
+                    .as_deref()
+                    .map(escape_js_string_literal)
+                    .unwrap_or_default();
+                format!(
+                    "if (window.__tideSetAutomationCursor) {{ window.__tideSetAutomationCursor({{x:{}, y:{}, visible:true, label:`{}`}}); }}",
+                    cursor.x, cursor.y, label
+                )
+            }
+            _ => {
+                "if (window.__tideClearAutomationCursor) { window.__tideClearAutomationCursor(); }"
+                    .to_string()
+            }
+        };
+        wv.evaluate_javascript(&js);
+        true
+    }
+
+    pub fn dispatch_automation_click(&self, x: f64, y: f64) -> bool {
+        let Some(ref wv) = self.webview else {
+            return false;
+        };
+        let js = format!(
+            "if (window.__tideBrowserAutomationClick) {{ window.__tideBrowserAutomationClick({}, {}); }}",
+            x, y
+        );
+        wv.evaluate_javascript(&js);
+        true
+    }
+
+    pub fn dispatch_automation_type(&self, text: &str) -> bool {
+        let Some(ref wv) = self.webview else {
+            return false;
+        };
+        let escaped = escape_js_string_literal(text);
+        let js = format!(
+            "if (window.__tideBrowserAutomationType) {{ window.__tideBrowserAutomationType(`{}`); }}",
+            escaped
+        );
+        wv.evaluate_javascript(&js);
+        true
+    }
+
+    pub fn dispatch_automation_press(&self, key: &str) -> bool {
+        let Some(ref wv) = self.webview else {
+            return false;
+        };
+        let escaped = escape_js_string_literal(key);
+        let js = format!(
+            "if (window.__tideBrowserAutomationPress) {{ window.__tideBrowserAutomationPress(`{}`); }}",
+            escaped
+        );
+        wv.evaluate_javascript(&js);
+        true
+    }
+
     /// Get the selected text in the URL bar, if any.
     pub fn url_selected_text(&self) -> Option<String> {
         let (start, end) = self.url_selection?;
@@ -904,6 +1037,7 @@ impl BrowserPane {
         }
         wv.evaluate_javascript(&browser_selection_bridge_script(self.id));
         self.selection_bridge_installed = true;
+        self.sync_automation_cursor_overlay();
         true
     }
 
@@ -1029,6 +1163,26 @@ fn extract_origin(url: &str) -> String {
     }
 }
 
+fn normalize_navigation_url(url: &str) -> String {
+    if url.contains("://") {
+        url.to_string()
+    } else if url.starts_with("localhost")
+        || url.starts_with("127.0.0.1")
+        || url.starts_with("[::1]")
+    {
+        format!("http://{}", url)
+    } else {
+        format!("https://{}", url)
+    }
+}
+
+fn escape_js_string_literal(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('`', "\\`")
+        .replace("${", "\\${")
+}
+
 /// Build the full render HTML document with render runtime injected.
 /// BR-31: morphdom, Tailwind CSS, Tide theme CSS vars, JS bridge.
 fn build_render_document(agent_html: &str) -> String {
@@ -1121,6 +1275,115 @@ fn browser_selection_bridge_script(pane_id: PaneId) -> String {
   const snapshot = () => {{
     postPageSnapshot();
     postSelectionSnapshot();
+  }};
+  const ensureAutomationCursor = () => {{
+    let cursor = document.getElementById('__tide-automation-cursor');
+    if (cursor) return cursor;
+    cursor = document.createElement('div');
+    cursor.id = '__tide-automation-cursor';
+    cursor.style.position = 'fixed';
+    cursor.style.left = '0px';
+    cursor.style.top = '0px';
+    cursor.style.width = '16px';
+    cursor.style.height = '16px';
+    cursor.style.borderRadius = '999px';
+    cursor.style.background = 'rgba(255, 90, 31, 0.92)';
+    cursor.style.border = '2px solid white';
+    cursor.style.boxShadow = '0 0 0 2px rgba(0,0,0,0.24)';
+    cursor.style.transform = 'translate(-50%, -50%)';
+    cursor.style.pointerEvents = 'none';
+    cursor.style.zIndex = '2147483647';
+    cursor.style.display = 'none';
+    cursor.style.transition = 'left 120ms ease, top 120ms ease, opacity 120ms ease';
+    const label = document.createElement('div');
+    label.dataset.role = 'label';
+    label.style.position = 'absolute';
+    label.style.left = '18px';
+    label.style.top = '-10px';
+    label.style.padding = '2px 6px';
+    label.style.borderRadius = '999px';
+    label.style.background = 'rgba(17, 24, 39, 0.92)';
+    label.style.color = 'white';
+    label.style.font = '12px/1.4 -apple-system, BlinkMacSystemFont, sans-serif';
+    label.style.whiteSpace = 'nowrap';
+    label.style.display = 'none';
+    cursor.appendChild(label);
+    (document.body || document.documentElement).appendChild(cursor);
+    return cursor;
+  }};
+  window.__tideSetAutomationCursor = (payload) => {{
+    if (!payload || payload.visible === false) {{
+      if (window.__tideClearAutomationCursor) window.__tideClearAutomationCursor();
+      return;
+    }}
+    const cursor = ensureAutomationCursor();
+    cursor.style.display = 'block';
+    cursor.style.left = `${{payload.x || 0}}px`;
+    cursor.style.top = `${{payload.y || 0}}px`;
+    const label = cursor.querySelector('[data-role="label"]');
+    const text = payload.label || '';
+    if (label) {{
+      label.textContent = text;
+      label.style.display = text ? 'block' : 'none';
+    }}
+  }};
+  window.__tideClearAutomationCursor = () => {{
+    const cursor = document.getElementById('__tide-automation-cursor');
+    if (cursor) cursor.style.display = 'none';
+  }};
+  const dispatchMouse = (target, type, x, y) => {{
+    target.dispatchEvent(new MouseEvent(type, {{
+      bubbles: true,
+      cancelable: true,
+      clientX: x,
+      clientY: y,
+      view: window
+    }}));
+  }};
+  window.__tideBrowserAutomationClick = (x, y) => {{
+    const target = document.elementFromPoint(x, y);
+    if (!target) return false;
+    if (typeof target.focus === 'function') target.focus();
+    dispatchMouse(target, 'mousemove', x, y);
+    dispatchMouse(target, 'mouseover', x, y);
+    dispatchMouse(target, 'mousedown', x, y);
+    dispatchMouse(target, 'mouseup', x, y);
+    dispatchMouse(target, 'click', x, y);
+    return true;
+  }};
+  window.__tideBrowserAutomationType = (text) => {{
+    const target = document.activeElement;
+    if (!target) return false;
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {{
+      const start = target.selectionStart ?? target.value.length;
+      const end = target.selectionEnd ?? target.value.length;
+      target.setRangeText(text, start, end, 'end');
+      target.dispatchEvent(new InputEvent('input', {{bubbles: true, data: text, inputType: 'insertText'}}));
+      return true;
+    }}
+    if (target.isContentEditable) {{
+      if (document.execCommand) {{
+        document.execCommand('insertText', false, text);
+      }} else {{
+        target.textContent = (target.textContent || '') + text;
+      }}
+      target.dispatchEvent(new InputEvent('input', {{bubbles: true, data: text, inputType: 'insertText'}}));
+      return true;
+    }}
+    return false;
+  }};
+  window.__tideBrowserAutomationPress = (key) => {{
+    const target = document.activeElement || document.body || document.documentElement;
+    if (!target) return false;
+    const init = {{key, bubbles: true, cancelable: true}};
+    target.dispatchEvent(new KeyboardEvent('keydown', init));
+    target.dispatchEvent(new KeyboardEvent('keypress', init));
+    target.dispatchEvent(new KeyboardEvent('keyup', init));
+    if ((key === 'Enter' || key === ' ') && typeof target.click === 'function' &&
+        (target.tagName === 'BUTTON' || target.tagName === 'A')) {{
+      target.click();
+    }}
+    return true;
   }};
   let scheduled = false;
   const schedule = () => {{
