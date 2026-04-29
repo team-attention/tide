@@ -284,6 +284,9 @@ The change should land as a sequence of product layers. Each layer is useful alo
   7. Tide keeps seams between Workspace rail, Stage, Terminal Context Surface, and FileTree View compact enough that they read as resize/drop affordances, not wasted gutters.
   8. Tide resizes major regions from the rendered seam so the first drag movement does not jump away from the cursor.
   9. Tide renders Stage-to-Terminal Context Surface and Terminal Context Surface-to-FileTree View boundaries as single hairlines, not shadow gutters.
+  10. Tide gives the Terminal Context Surface enough default width for Browser Pane work while keeping FileTree View compact.
+  11. When FileTree View opens beside an already-open Terminal Context Surface, Tide keeps the right-side support surface budget stable by taking FileTree View width from the Terminal Context Surface first.
+  12. Tide preserves minimum usable widths for Terminal Context Surface and FileTree View; only after those minimums are reached may Stage width shrink.
 - **Postcondition**: The screen communicates task, execution, context, and Pane details in that order.
 - **Business Rules**:
   - BR-1: Workspace identity must be visible even when the rail is collapsed.
@@ -294,6 +297,9 @@ The change should land as a sequence of product layers. Each layer is useful alo
   - BR-6: Major region seams must use compact spacing and thin hover/drop affordances.
   - BR-7: Border resize for Workspace rail, Terminal Context Surface, and FileTree View must preserve the current region width when the cursor is on the rendered seam.
   - BR-8: Terminal Context Surface seams must not draw multi-strip shadow gutters.
+  - BR-9: New Workspaces must default to a wide Terminal Context Surface and a compact FileTree View so Browser Pane verification is readable without manual resizing.
+  - BR-10: Opening FileTree View while Terminal Context Surface is visible must reduce Terminal Context Surface width before reducing Stage width.
+  - BR-11: Terminal Context Surface and FileTree View must keep minimum usable widths; once those minimums are reached, Stage may absorb the remaining size pressure.
 
 ## Invariants
 
@@ -353,6 +359,9 @@ The change should land as a sequence of product layers. Each layer is useful alo
 | UC-9: PreserveVisualHierarchy | BR-6 | `open_terminal_codex_app` | `major_region_seams_stay_compact` |
 | UC-9: PreserveVisualHierarchy | BR-7 | `open_terminal_codex_app` | `region_border_drag_preserves_width_at_current_seams` |
 | UC-9: PreserveVisualHierarchy | BR-8 | `open_terminal_codex_app` | `terminal_context_surface_seam_uses_single_hairline_without_shadow_strips` |
+| UC-9: PreserveVisualHierarchy | BR-9 | `open_terminal_codex_app` | `default_support_surface_widths_prioritize_terminal_context_surface` |
+| UC-9: PreserveVisualHierarchy | BR-10 | `open_terminal_codex_app` | `file_tree_view_reduces_terminal_context_surface_before_stage` |
+| UC-9: PreserveVisualHierarchy | BR-11 | `open_terminal_codex_app` | `support_surfaces_keep_minimum_widths_before_pushing_stage` |
 
 ## Location
 

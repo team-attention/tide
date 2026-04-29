@@ -1037,6 +1037,10 @@ impl crate::application::ports::inward::GatewayPort for App {
         self.pending_subscribe_tx.take()
     }
 
+    fn cli_caller_pane(&self) -> Option<PaneId> {
+        self.pending_cli_caller_pane
+    }
+
     fn toggle_auto_integration(&mut self) {
         self.settings.auto_integration = !self.settings.auto_integration;
         crate::tide_terminal::set_auto_integration(self.settings.auto_integration);
@@ -1047,6 +1051,10 @@ impl crate::application::ports::inward::GatewayPort for App {
         self.pending_platform_commands
             .push(crate::tide_platform::WindowCommand::BroadcastSettingsChanged);
         self.cache.chrome_generation += 1;
+    }
+
+    fn detected_agent(&self, pane_id: PaneId) -> Option<crate::state::gateway_status::AgentInfo> {
+        self.gateway.detected_agents.get(&pane_id).cloned()
     }
 
     fn detected_agents_mut(

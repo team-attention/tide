@@ -65,6 +65,7 @@ Tide keeps a bounded first Browser Pane automation slice for the Agent Gateway:
   - BR-3: `browser-observe` must include Browser Automation Cursor state when present.
   - BR-4: `browser-observe` must reject non-browser Panes.
   - BR-5: `browser-observe` must reject render-mode Browser Panes because this slice only covers navigation-mode Browser Pane automation.
+  - BR-17: `browser-observe` must include Browser Pane visual fit and Tool Selection Guidance so agents can pick `tide_layout_action` before falling back to BrowserSnapshot-only, app-internal API, URL-parameter, or eval-based workarounds.
 
 ### UC-2: ActOnBrowserPaneWithStructuredCommands
 
@@ -80,7 +81,7 @@ Tide keeps a bounded first Browser Pane automation slice for the Agent Gateway:
 - **Business Rules**:
   - BR-6: Supported Browser actions in this slice are `navigate`, `move`, `click`, `type`, `press`, and `clear-cursor`.
   - BR-7: `navigate` must reuse the targeted Browser Pane instead of creating a replacement Pane.
-  - BR-8: `move` and `click` must update Browser Automation Cursor state with viewport coordinates and optional label text.
+  - BR-8: `move` and `click` must update Browser Automation Cursor state with viewport coordinates and optional label text stored as tool metadata.
   - BR-9: `clear-cursor` must hide Browser Automation Cursor state.
   - BR-10: `click`, `type`, and `press` must request a BrowserSnapshot refresh after dispatch so later observation sees page-side effects.
   - BR-11: `browser-action` must reject unsupported action names.
@@ -97,9 +98,10 @@ Tide keeps a bounded first Browser Pane automation slice for the Agent Gateway:
   3. After navigation or bridge reinstall, Tide reapplies the current Browser Automation Cursor state to the page DOM.
 - **Postcondition**: The user can see where the agent is targeting inside the in-app Browser Pane.
 - **Business Rules**:
-  - BR-13: Visible Browser Automation Cursor must be DOM-injected through the Browser Pane helper path, not through Tide's normal renderer overlay path.
+  - BR-13: Visible Browser Automation Cursor must be a cursor-shaped DOM overlay injected through the Browser Pane helper path, not through Tide's normal renderer overlay path, and it must not render optional tool-label text beside the cursor.
   - BR-14: Browser Automation Cursor state must survive Browser bridge reinstall inside the same Browser Pane session.
   - BR-15: Browser Automation Cursor state must clear explicitly on `clear-cursor`, not only when BrowserSnapshot changes.
+  - BR-16: Browser Pane click automation must move the visible Browser Automation Cursor in page JavaScript and allow a short visible motion interval before dispatching mouse events, so human-visible agent control cannot skip straight to invisible DOM interaction.
 
 ## Invariants
 
@@ -118,6 +120,7 @@ Tide keeps a bounded first Browser Pane automation slice for the Agent Gateway:
 | UC-1: ObserveBrowserPaneAutomationState | BR-3 | `browser_pane_automation` | `browser_observe_includes_snapshot_selection_and_cursor_state` |
 | UC-1: ObserveBrowserPaneAutomationState | BR-4 | `browser_pane_automation` | `browser_observe_rejects_non_browser_pane` |
 | UC-1: ObserveBrowserPaneAutomationState | BR-5 | `browser_pane_automation` | `browser_observe_rejects_render_mode_browser_pane` |
+| UC-1: ObserveBrowserPaneAutomationState | BR-17 | `browser_pane_automation` | `browser_observe_includes_visual_fit_tool_selection_guidance` |
 | UC-2: ActOnBrowserPaneWithStructuredCommands | BR-6 | `browser_pane_automation` | `browser_action_accepts_each_supported_action_name` |
 | UC-2: ActOnBrowserPaneWithStructuredCommands | BR-7 | `browser_pane_automation` | `browser_action_navigate_reuses_the_target_browser_pane` |
 | UC-2: ActOnBrowserPaneWithStructuredCommands | BR-8 | `browser_pane_automation` | `browser_action_move_updates_browser_automation_cursor_state` |
@@ -129,6 +132,7 @@ Tide keeps a bounded first Browser Pane automation slice for the Agent Gateway:
 | UC-3: MirrorBrowserAutomationCursorIntoBrowserPane | BR-14 | `browser_pane_automation` | `browser_automation_cursor_state_survives_navigation_reinstall` |
 | UC-3: MirrorBrowserAutomationCursorIntoBrowserPane | BR-14 | `browser_pane_automation` | `browser_selection_bridge_reapplies_browser_automation_cursor_on_install` |
 | UC-3: MirrorBrowserAutomationCursorIntoBrowserPane | BR-15 | `browser_pane_automation` | `browser_action_clear_cursor_hides_browser_automation_cursor_state` |
+| UC-3: MirrorBrowserAutomationCursorIntoBrowserPane | BR-16 | `browser_pane_automation` | `browser_automation_cursor_is_injected_through_the_browser_bridge_dom_path` |
 
 ## Location
 

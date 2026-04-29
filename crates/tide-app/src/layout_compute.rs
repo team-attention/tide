@@ -333,19 +333,7 @@ impl crate::application::ports::inward::LayoutPort for App {
             0.0
         };
 
-        // Clamp FileTree View width so it never exceeds the window (leave at least 100px for Stage).
-        let max_sidebar = (logical.width - ws_sidebar_width - 100.0).max(0.0);
-        if show_file_tree && self.ft.width > max_sidebar {
-            self.ft.width = max_sidebar;
-        }
-        let sidebar_width = if show_file_tree {
-            self.ft.rendered_width(now).min(max_sidebar)
-        } else {
-            0.0
-        };
-
         let mut left_reserved = 0.0_f32;
-        let mut right_reserved = 0.0_f32;
 
         // Reserve workspace sidebar space (always on the left, with edge gap)
         if show_ws_sidebar {
@@ -367,23 +355,64 @@ impl crate::application::ports::inward::LayoutPort for App {
             }
         }
 
-        // FileTree View is an outer-right sibling view, independent from Terminal Context Surface.
-        if show_file_tree {
-            right_reserved += PANE_GAP + sidebar_width;
+        let show_dock = self.dock.visible_for_layout();
+
+        if show_file_tree && self.ft.visibility_animation.is_none() {
+            self.ft.width = self.ft.width.max(FILE_TREE_MIN_WIDTH);
+        }
+        if show_dock && self.dock.visibility_animation.is_none() {
+            self.dock.dock_width = self.dock.dock_width.max(TERMINAL_CONTEXT_SURFACE_MIN_WIDTH);
         }
 
-        // Reserve Terminal Context Surface space on the right (when open).
-        let show_dock = self.dock.visible_for_layout();
-        // Dock width is global (not per-terminal)
-        let effective_dock_width = self.dock.rendered_width(now);
-        let dock_width = if show_dock {
-            let max_ctx = (logical.width - left_reserved - right_reserved - 200.0).max(100.0);
-            effective_dock_width.min(max_ctx)
+        let max_right_reserved = (logical.width - left_reserved - 100.0).max(0.0);
+        let file_tree_min_width = if show_file_tree && self.ft.visibility_animation.is_none() {
+            FILE_TREE_MIN_WIDTH
         } else {
             0.0
         };
-        if show_dock {
-            right_reserved += PANE_GAP + dock_width;
+        let dock_min_width = if show_dock && self.dock.visibility_animation.is_none() {
+            TERMINAL_CONTEXT_SURFACE_MIN_WIDTH
+        } else {
+            0.0
+        };
+        let mut file_tree_width = if show_file_tree {
+            self.ft
+                .rendered_width(now)
+                .max(file_tree_min_width)
+                .min(max_right_reserved)
+        } else {
+            0.0
+        };
+        let mut dock_width = if show_dock {
+            let rendered = self.dock.rendered_width(now).max(dock_min_width);
+            if show_file_tree {
+                (rendered - file_tree_width - PANE_GAP).max(dock_min_width)
+            } else {
+                rendered
+            }
+        } else {
+            0.0
+        };
+
+        let right_reserved_for = |dock: f32, file_tree: f32| match (show_dock, show_file_tree) {
+            (true, true) => PANE_GAP + dock + PANE_GAP + file_tree,
+            (true, false) => PANE_GAP + dock,
+            (false, true) => PANE_GAP + file_tree,
+            (false, false) => 0.0,
+        };
+        let mut right_reserved = right_reserved_for(dock_width, file_tree_width);
+        if right_reserved > max_right_reserved {
+            let mut overflow = right_reserved - max_right_reserved;
+            let dock_slack = (dock_width - dock_min_width).max(0.0);
+            let dock_reduction = overflow.min(dock_slack);
+            dock_width -= dock_reduction;
+            overflow -= dock_reduction;
+
+            let file_tree_slack = (file_tree_width - file_tree_min_width).max(0.0);
+            let file_tree_reduction = overflow.min(file_tree_slack);
+            file_tree_width -= file_tree_reduction;
+
+            right_reserved = right_reserved_for(dock_width, file_tree_width);
         }
 
         let terminal_area = Size::new(
@@ -407,11 +436,11 @@ impl crate::application::ports::inward::LayoutPort for App {
 
         // Compute FileTree View rect on the outer-right side.
         if show_file_tree {
-            let sidebar_x = logical.width - sidebar_width - PANE_GAP;
+            let sidebar_x = logical.width - file_tree_width - PANE_GAP;
             self.ft.rect = Some(Rect::new(
                 sidebar_x,
                 top,
-                sidebar_width,
+                file_tree_width,
                 logical.height - top,
             ));
         } else {

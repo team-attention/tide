@@ -10,10 +10,15 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::pane::browser::{
-    BrowserAutomationCursor, BrowserPane, BrowserSelectionSnapshot, BrowserSnapshot,
+    BrowserAutomationCursor, BrowserPageElement, BrowserPageElementKind, BrowserPageMap,
+    BrowserPane, BrowserSelectionSnapshot, BrowserSnapshot, BROWSER_PAGE_MAP_INTERACTABLE_LIMIT,
+    BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES, BROWSER_PAGE_MAP_REGION_LIMIT,
+    BROWSER_PAGE_MAP_TEXT_LIMIT_BYTES, BROWSER_SNAPSHOT_TEXT_LIMIT_BYTES,
 };
 use crate::pane::PaneKind;
-use crate::tide_core::{SplitDirection, TerminalBackend};
+use crate::state::gateway_status::{AgentInfo, AgentStatus};
+use crate::state::FocusArea;
+use crate::tide_core::{PaneId, Rect, SplitDirection, TerminalBackend};
 use crate::tide_layout::LayoutSnapshot;
 use crate::ActionPort;
 use crate::AppCorePort;
@@ -107,12 +112,17 @@ impl crate::App {
         match method {
             // Phase 1 — Observe
             "list-panes" => cli_list_panes(self),
+            "observe-workspace" => cli_observe_workspace(self),
             "capture-pane" => cli_capture_pane(self, params),
             "capture-selection" => cli_capture_selection(self, params),
             "get-layout" => cli_get_layout(self),
             "browser-observe" => cli_browser_observe(self, params),
+            "browser-read-snapshot" => cli_browser_read_snapshot(self, params),
+            "browser-find-in-snapshot" => cli_browser_find_in_snapshot(self, params),
+            "browser-diff-since" => cli_browser_diff_since(self, params),
             // Phase 2 — Act
             "browser-eval" => cli_browser_eval(self, params),
+            "browser-operation" => cli_browser_operation(self, params),
             "browser-action" => cli_browser_action(self, params),
             "send-keys" => cli_send_keys(self, params),
             "split-vertical" => cli_split(self, SplitDirection::Vertical, params),
@@ -120,6 +130,7 @@ impl crate::App {
             "close-pane" => cli_close_pane(self, params),
             "focus-pane" => cli_focus_pane(self, params),
             "activate-notification-target" => cli_activate_notification_target(self, params),
+            "layout-action" => cli_layout_action(self, params),
             "resize-pane" => cli_resize_pane(self, params),
             "open-terminal" => cli_open_terminal(self, params),
             "open-editor" => cli_open_editor(self, params),
@@ -160,6 +171,35 @@ fn pane_kind_label(pane: &PaneKind) -> &'static str {
     }
 }
 
+const BROWSER_OBSERVATION_SUMMARY_TEXT_LIMIT_BYTES: usize = 2 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BrowserObserveDetail {
+    Full,
+    Compact,
+}
+
+fn browser_observe_detail(params: &Value) -> Result<BrowserObserveDetail, CliError> {
+    if param_bool(params, &["compact", "summary"]) {
+        return Ok(BrowserObserveDetail::Compact);
+    }
+    let Some(detail) = params
+        .get("detail")
+        .or_else(|| params.get("mode"))
+        .and_then(|value| value.as_str())
+    else {
+        return Ok(BrowserObserveDetail::Full);
+    };
+
+    match detail {
+        "full" => Ok(BrowserObserveDetail::Full),
+        "compact" | "summary" => Ok(BrowserObserveDetail::Compact),
+        other => Err(CliError::InvalidParams(format!(
+            "unsupported browser observe detail: {other}"
+        ))),
+    }
+}
+
 fn browser_snapshot_json(snapshot: Option<&BrowserSnapshot>) -> Value {
     match snapshot {
         Some(snapshot) => json!({
@@ -169,6 +209,176 @@ fn browser_snapshot_json(snapshot: Option<&BrowserSnapshot>) -> Value {
         }),
         None => Value::Null,
     }
+}
+
+fn browser_snapshot_summary_json(snapshot: Option<&BrowserSnapshot>) -> Value {
+    match snapshot {
+        Some(snapshot) => {
+            let (text_excerpt, text_truncated) = truncate_utf8_to_byte_limit(
+                &snapshot.text,
+                BROWSER_OBSERVATION_SUMMARY_TEXT_LIMIT_BYTES,
+            );
+            let returned_bytes = text_excerpt.len();
+            json!({
+                "status": "ok",
+                "title": snapshot.page_title.clone(),
+                "url": snapshot.page_url.clone(),
+                "text_excerpt": text_excerpt,
+                "truncation": {
+                    "text_truncated": text_truncated,
+                    "original_bytes": snapshot.text.len(),
+                    "returned_bytes": returned_bytes,
+                    "limit_bytes": BROWSER_OBSERVATION_SUMMARY_TEXT_LIMIT_BYTES,
+                },
+            })
+        }
+        None => json!({
+            "status": "missing",
+            "title": Value::Null,
+            "url": Value::Null,
+            "text_excerpt": "",
+            "truncation": {
+                "text_truncated": false,
+                "original_bytes": 0,
+                "returned_bytes": 0,
+                "limit_bytes": BROWSER_OBSERVATION_SUMMARY_TEXT_LIMIT_BYTES,
+            },
+        }),
+    }
+}
+
+fn browser_page_element_kind_label(kind: &BrowserPageElementKind) -> &'static str {
+    match kind {
+        BrowserPageElementKind::Region => "region",
+        BrowserPageElementKind::Interactable => "interactable",
+    }
+}
+
+fn bounded_json_string(value: &str, limit: usize) -> Value {
+    let (bounded, _truncated) = truncate_utf8_to_byte_limit(value, limit);
+    json!(bounded)
+}
+
+fn optional_bounded_json_string(value: Option<&String>, limit: usize) -> Value {
+    value
+        .map(|value| bounded_json_string(value, limit))
+        .unwrap_or(Value::Null)
+}
+
+fn browser_page_element_json(element: &BrowserPageElement) -> Value {
+    json!({
+        "ref": element.reference.clone(),
+        "kind": browser_page_element_kind_label(&element.kind),
+        "role": element.role.clone(),
+        "tag": element.tag.clone(),
+        "label": bounded_json_string(&element.label, BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES),
+        "text": bounded_json_string(&element.text, BROWSER_PAGE_MAP_TEXT_LIMIT_BYTES),
+        "value": optional_bounded_json_string(element.value.as_ref(), BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES),
+        "placeholder": optional_bounded_json_string(element.placeholder.as_ref(), BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES),
+        "action": element.action.clone(),
+        "disabled": element.disabled,
+        "enabled": !element.disabled,
+        "rect": rect_value(element.rect),
+    })
+}
+
+fn browser_page_element_summary_json(element: &BrowserPageElement) -> Value {
+    json!({
+        "ref": element.reference.clone(),
+        "kind": browser_page_element_kind_label(&element.kind),
+        "role": element.role.clone(),
+        "tag": element.tag.clone(),
+        "label": bounded_json_string(&element.label, BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES),
+        "value": optional_bounded_json_string(element.value.as_ref(), BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES),
+        "placeholder": optional_bounded_json_string(element.placeholder.as_ref(), BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES),
+        "action": element.action.clone(),
+        "disabled": element.disabled,
+        "enabled": !element.disabled,
+        "rect": rect_value(element.rect),
+    })
+}
+
+fn browser_page_map_json(page_map: Option<&BrowserPageMap>, generation: u64) -> Value {
+    let regions = page_map
+        .map(|page_map| {
+            page_map
+                .regions
+                .iter()
+                .map(browser_page_element_json)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let interactables = page_map
+        .map(|page_map| {
+            page_map
+                .interactables
+                .iter()
+                .map(browser_page_element_json)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    json!({
+        "generation": generation,
+        "status": if page_map.is_some() { "ok" } else { "missing" },
+        "regions": regions,
+        "interactables": interactables,
+        "limits": {
+            "region_limit": BROWSER_PAGE_MAP_REGION_LIMIT,
+            "interactable_limit": BROWSER_PAGE_MAP_INTERACTABLE_LIMIT,
+            "label_limit_bytes": BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES,
+            "text_limit_bytes": BROWSER_PAGE_MAP_TEXT_LIMIT_BYTES,
+            "regions_truncated": page_map.map(|page_map| page_map.truncated_regions).unwrap_or(false),
+            "interactables_truncated": page_map.map(|page_map| page_map.truncated_interactables).unwrap_or(false),
+        },
+        "ref_semantics": {
+            "generation_scoped": true,
+            "persistent_dom_identity": false,
+            "css_selector_identity": false,
+            "authorization": false,
+        }
+    })
+}
+
+fn browser_page_map_summary_json(page_map: Option<&BrowserPageMap>, generation: u64) -> Value {
+    let regions = page_map
+        .map(|page_map| {
+            page_map
+                .regions
+                .iter()
+                .map(browser_page_element_summary_json)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let interactables = page_map
+        .map(|page_map| {
+            page_map
+                .interactables
+                .iter()
+                .map(browser_page_element_summary_json)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    json!({
+        "generation": generation,
+        "status": if page_map.is_some() { "ok" } else { "missing" },
+        "detail": "compact",
+        "regions": regions,
+        "interactables": interactables,
+        "limits": {
+            "region_limit": BROWSER_PAGE_MAP_REGION_LIMIT,
+            "interactable_limit": BROWSER_PAGE_MAP_INTERACTABLE_LIMIT,
+            "label_limit_bytes": BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES,
+            "text_limit_bytes": 0,
+            "regions_truncated": page_map.map(|page_map| page_map.truncated_regions).unwrap_or(false),
+            "interactables_truncated": page_map.map(|page_map| page_map.truncated_interactables).unwrap_or(false),
+        },
+        "ref_semantics": {
+            "generation_scoped": true,
+            "persistent_dom_identity": false,
+            "css_selector_identity": false,
+            "authorization": false,
+        }
+    })
 }
 
 fn browser_selection_json(selection: Option<&BrowserSelectionSnapshot>) -> Value {
@@ -206,6 +416,27 @@ fn browser_cursor_semantics_json() -> Value {
     })
 }
 
+const BROWSER_SNAPSHOT_FIND_MATCH_LIMIT: usize = 50;
+const BROWSER_SNAPSHOT_MATCH_CONTEXT_LIMIT_BYTES: usize = 2 * 1024;
+const BROWSER_SNAPSHOT_DIFF_LIMIT_BYTES: usize = 64 * 1024;
+
+#[derive(Debug, Clone, Copy)]
+struct BrowserToolAuthorization {
+    caller_pane_id: u64,
+    associated_terminal_id: u64,
+}
+
+#[derive(Debug, Clone)]
+struct AgentBrowserControlDecision {
+    active: bool,
+    caller_pane_id: Option<u64>,
+    associated_terminal_id: Option<u64>,
+    wrapper_managed: bool,
+    gateway_connected: bool,
+    status: Option<AgentStatus>,
+    reason: &'static str,
+}
+
 fn param_bool(params: &Value, names: &[&str]) -> bool {
     names
         .iter()
@@ -232,8 +463,64 @@ fn browser_action_is_supported(action: &str) -> bool {
     )
 }
 
+fn browser_operation_action_is_supported(action: &str) -> bool {
+    matches!(action, "start" | "finish")
+}
+
+fn browser_action_target_ref(params: &Value) -> Option<&str> {
+    params
+        .get("target_ref")
+        .or_else(|| params.get("ref"))
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn resolve_browser_action_target(
+    browser: &BrowserPane,
+    params: &Value,
+    action: &str,
+) -> Result<Option<BrowserPageElement>, CliError> {
+    let Some(target_ref) = browser_action_target_ref(params) else {
+        return Ok(None);
+    };
+    if !matches!(action, "click" | "type") {
+        return Err(CliError::InvalidParams(
+            "target_ref is supported only for click and type Browser Pane actions".into(),
+        ));
+    }
+    let Some(page_map) = browser.page_map.as_ref() else {
+        return Err(CliError::InvalidParams(
+            "target_ref requires a Browser Page Map from tide_browser_observe".into(),
+        ));
+    };
+    let element = page_map
+        .element_by_ref(target_ref)
+        .cloned()
+        .ok_or_else(|| {
+            CliError::InvalidParams(format!(
+                "Browser Page Element ref {target_ref} is unknown for the current Browser Pane Generation"
+            ))
+        })?;
+    if element.disabled {
+        return Err(CliError::InvalidParams(format!(
+            "Browser Page Element ref {target_ref} is disabled"
+        )));
+    }
+    Ok(Some(element))
+}
+
 fn browser_action_requires_fresh_observe(action: &str) -> bool {
     matches!(action, "navigate" | "click" | "type" | "press")
+}
+
+fn browser_action_can_use_current_page_map_target_without_fresh_observe(
+    browser: &BrowserPane,
+    action: &str,
+    action_target: Option<&BrowserPageElement>,
+) -> bool {
+    browser.agent_has_observed_browser_pane()
+        && matches!(action, "click" | "type")
+        && action_target.is_some_and(|target| !target.disabled)
 }
 
 fn browser_action_interacts_with_page_content(action: &str) -> bool {
@@ -242,6 +529,330 @@ fn browser_action_interacts_with_page_content(action: &str) -> bool {
 
 fn browser_action_requires_observe_after(action: &str) -> bool {
     matches!(action, "navigate" | "click" | "type" | "press")
+}
+
+fn browser_eval_contains_any(script: &str, patterns: &[&str]) -> bool {
+    let compact = script
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    patterns.iter().any(|pattern| compact.contains(pattern))
+}
+
+fn reject_browser_eval_if_it_bypasses_structured_action(script: &str) -> Result<(), CliError> {
+    const INTERACTIVE_PATTERNS: &[&str] = &[
+        ".click(",
+        ".submit(",
+        "dispatchevent(",
+        "mouseevent(",
+        "keyboardevent(",
+        "inputevent(",
+        "__tidebrowserautomationclick(",
+        "__tidebrowserautomationtype(",
+        "__tidebrowserautomationtypeat(",
+        "__tidebrowserautomationpress(",
+    ];
+    if browser_eval_contains_any(script, INTERACTIVE_PATTERNS) {
+        return Err(CliError::InvalidParams(
+            "browser-eval cannot perform Browser Pane interaction; use tide_browser_action so Browser Automation Cursor and Agent Browser Control Mode stay visible"
+                .into(),
+        ));
+    }
+
+    const DOM_MUTATION_PATTERNS: &[&str] = &[
+        "createelement(",
+        "appendchild(",
+        "prepend(",
+        "insertadjacent",
+        "replacechildren(",
+        "removechild(",
+        ".remove(",
+        "innerhtml=",
+        "outerhtml=",
+        "innertext=",
+        "textcontent=",
+        "setattribute(",
+    ];
+    if browser_eval_contains_any(script, DOM_MUTATION_PATTERNS) {
+        return Err(CliError::InvalidParams(
+            "browser-eval cannot mutate Browser Pane DOM; use structured Tide tools or a Render Pane instead"
+                .into(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn truncate_utf8_to_byte_limit(text: &str, limit: usize) -> (String, bool) {
+    if text.len() <= limit {
+        return (text.to_string(), false);
+    }
+    let mut end = limit;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    (text[..end].to_string(), true)
+}
+
+fn truncation_json(original_bytes: usize, returned_bytes: usize, limit_bytes: usize) -> Value {
+    json!({
+        "text_truncated": original_bytes > returned_bytes,
+        "original_bytes": original_bytes,
+        "returned_bytes": returned_bytes,
+        "limit_bytes": limit_bytes,
+    })
+}
+
+fn agent_status_json(status: Option<AgentStatus>) -> Value {
+    match status {
+        Some(AgentStatus::Running) => json!("running"),
+        Some(AgentStatus::Idle) => json!("idle"),
+        Some(AgentStatus::NeedsInput) => json!("needs_input"),
+        None => Value::Null,
+    }
+}
+
+fn required_browser_pane_id(params: &Value) -> Result<u64, CliError> {
+    params
+        .get("pane_id")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| CliError::InvalidParams("pane_id required".into()))
+}
+
+fn ensure_snapshot_tool_authorized(
+    ctx: &(impl DockPort + GatewayPort + PaneAccessPort),
+    pane_id: u64,
+) -> Result<BrowserToolAuthorization, CliError> {
+    let caller_pane_id = ctx
+        .cli_caller_pane()
+        .ok_or_else(|| CliError::InvalidParams("Caller Pane required".into()))?;
+
+    match ctx.pane(caller_pane_id) {
+        Some(PaneKind::Terminal(_)) => {}
+        Some(other) => {
+            return Err(CliError::InvalidPaneKind {
+                pane_id: caller_pane_id,
+                expected: "terminal Caller Pane",
+                actual: pane_kind_label(other),
+            });
+        }
+        None => return Err(CliError::PaneNotFound(caller_pane_id)),
+    }
+
+    let pane = ctx.pane(pane_id).ok_or(CliError::PaneNotFound(pane_id))?;
+    if !matches!(pane, PaneKind::Browser(_)) {
+        return Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "browser",
+            actual: pane_kind_label(pane),
+        });
+    }
+
+    let associated_terminal_id = ctx.associated_terminal(pane_id).ok_or_else(|| {
+        CliError::InvalidParams(format!("Browser Pane {pane_id} has no Associated Terminal"))
+    })?;
+    if associated_terminal_id != caller_pane_id {
+        return Err(CliError::InvalidParams(format!(
+            "Browser Pane {pane_id} is owned by Associated Terminal {associated_terminal_id}, not Caller Pane {caller_pane_id}"
+        )));
+    }
+
+    Ok(BrowserToolAuthorization {
+        caller_pane_id,
+        associated_terminal_id,
+    })
+}
+
+fn agent_browser_control_decision(
+    ctx: &(impl DockPort + GatewayPort + PaneAccessPort),
+    pane_id: u64,
+) -> AgentBrowserControlDecision {
+    let caller_pane_id = ctx.cli_caller_pane();
+    let Some(caller) = caller_pane_id else {
+        return AgentBrowserControlDecision {
+            active: false,
+            caller_pane_id,
+            associated_terminal_id: None,
+            wrapper_managed: false,
+            gateway_connected: false,
+            status: None,
+            reason: "missing_caller_pane",
+        };
+    };
+
+    if !matches!(ctx.pane(caller), Some(PaneKind::Terminal(_))) {
+        return AgentBrowserControlDecision {
+            active: false,
+            caller_pane_id,
+            associated_terminal_id: ctx.associated_terminal(pane_id),
+            wrapper_managed: false,
+            gateway_connected: false,
+            status: None,
+            reason: "caller_pane_not_terminal",
+        };
+    }
+    if ctx.is_pane_in_dock(caller) {
+        return AgentBrowserControlDecision {
+            active: false,
+            caller_pane_id,
+            associated_terminal_id: ctx.associated_terminal(pane_id),
+            wrapper_managed: false,
+            gateway_connected: false,
+            status: None,
+            reason: "caller_pane_not_direct_stage_terminal",
+        };
+    }
+
+    let associated_terminal_id = ctx.associated_terminal(pane_id);
+    if associated_terminal_id != Some(caller) {
+        let agent = ctx.detected_agent(caller);
+        return AgentBrowserControlDecision {
+            active: false,
+            caller_pane_id,
+            associated_terminal_id,
+            wrapper_managed: agent.as_ref().is_some_and(|agent| agent.wrapper_managed),
+            gateway_connected: agent.as_ref().is_some_and(|agent| agent.gateway_connected),
+            status: agent.and_then(|agent| agent.status),
+            reason: "wrong_associated_terminal",
+        };
+    }
+
+    let agent: Option<AgentInfo> = ctx.detected_agent(caller);
+    let wrapper_managed = agent.as_ref().is_some_and(|agent| agent.wrapper_managed);
+    let gateway_connected = agent.as_ref().is_some_and(|agent| agent.gateway_connected);
+    let status = agent.as_ref().and_then(|agent| agent.status);
+    let active =
+        wrapper_managed && gateway_connected && matches!(status, Some(AgentStatus::Running));
+    let reason = if active {
+        "authorized"
+    } else if !wrapper_managed {
+        "not_wrapper_managed"
+    } else if !gateway_connected {
+        "gateway_disconnected"
+    } else {
+        "incompatible_agent_status"
+    };
+
+    AgentBrowserControlDecision {
+        active,
+        caller_pane_id,
+        associated_terminal_id,
+        wrapper_managed,
+        gateway_connected,
+        status,
+        reason,
+    }
+}
+
+fn agent_browser_control_mode_json(
+    decision: &AgentBrowserControlDecision,
+    browser: &BrowserPane,
+) -> Value {
+    let state = browser.agent_browser_control_mode();
+    json!({
+        "active": decision.active && state.is_some(),
+        "reason": decision.reason,
+        "caller_pane": state
+            .map(|state| state.caller_pane_id)
+            .or(decision.caller_pane_id),
+        "associated_terminal": state
+            .map(|state| state.associated_terminal_id)
+            .or(decision.associated_terminal_id),
+        "generation": state.map(|state| state.generation),
+        "wrapper_managed": decision.wrapper_managed,
+        "gateway_connected": decision.gateway_connected,
+        "agent_status": agent_status_json(decision.status),
+    })
+}
+
+fn browser_operation_json(active: bool) -> Value {
+    json!({
+        "kind": "browser_operation",
+        "active": active,
+        "human_like_browser_pane_work": true,
+        "avoid_shortcuts": [
+            "app_internal_api_shortcuts",
+            "credential_bearing_url_shortcuts",
+            "url_parameter_shortcuts",
+            "dom_mutation_shortcuts",
+        ],
+    })
+}
+
+fn set_agent_browser_control_mode(
+    browser: &mut BrowserPane,
+    decision: &AgentBrowserControlDecision,
+) {
+    if decision.active {
+        browser.enter_agent_browser_control_mode(
+            decision
+                .caller_pane_id
+                .expect("active control mode requires Caller Pane"),
+            decision
+                .associated_terminal_id
+                .expect("active control mode requires Associated Terminal"),
+        );
+    } else {
+        browser.clear_agent_browser_control_mode();
+    }
+}
+
+fn ensure_browser_operation_visuals(
+    browser: &mut BrowserPane,
+    decision: &AgentBrowserControlDecision,
+) {
+    if !decision.active {
+        browser.clear_agent_browser_control_mode();
+        return;
+    }
+
+    match browser.automation_cursor().cloned() {
+        Some(mut cursor) if !cursor.visible => {
+            cursor.visible = true;
+            browser.set_automation_cursor(cursor);
+        }
+        Some(_) => {
+            browser.sync_automation_cursor_overlay();
+        }
+        None => {
+            browser.set_automation_cursor(BrowserAutomationCursor {
+                x: 24.0,
+                y: 24.0,
+                label: None,
+                visible: true,
+            });
+        }
+    }
+    set_agent_browser_control_mode(browser, decision);
+}
+
+fn clear_browser_operation_visuals_for_terminal(
+    ctx: &mut (impl DockPort + PaneAccessPort),
+    terminal_id: PaneId,
+) {
+    let browser_ids: Vec<_> = ctx
+        .pane_entries()
+        .into_iter()
+        .filter_map(|(pane_id, pane)| match pane {
+            PaneKind::Browser(browser)
+                if ctx.associated_terminal(pane_id) == Some(terminal_id)
+                    && browser
+                        .agent_browser_control_mode()
+                        .is_some_and(|state| state.associated_terminal_id == terminal_id) =>
+            {
+                Some(pane_id)
+            }
+            _ => None,
+        })
+        .collect();
+
+    for pane_id in browser_ids {
+        if let Some(PaneKind::Browser(browser)) = ctx.pane_mut(pane_id) {
+            browser.clear_agent_browser_control_mode();
+            browser.clear_automation_cursor();
+        }
+    }
 }
 
 fn navigation_browser<'a>(pane_id: u64, pane: &'a PaneKind) -> Result<&'a BrowserPane, CliError> {
@@ -283,6 +894,214 @@ fn navigation_browser_mut<'a>(
         expected: "navigation-mode browser",
         actual: pane_kind_label(pane),
     })
+}
+
+fn focus_area_label(area: FocusArea) -> &'static str {
+    match area {
+        FocusArea::FileTree => "file_tree",
+        FocusArea::Stage => "stage",
+        FocusArea::Dock => "terminal_context_surface",
+    }
+}
+
+fn rect_value(rect: Rect) -> Value {
+    json!({
+        "x": rect.x,
+        "y": rect.y,
+        "width": rect.width,
+        "height": rect.height,
+    })
+}
+
+fn optional_rect_value(rect: Option<Rect>) -> Value {
+    rect.map(rect_value).unwrap_or(Value::Null)
+}
+
+fn pane_rect(ctx: &(impl AppCorePort + ?Sized), pane_id: PaneId) -> Option<Rect> {
+    ctx.pane_rects()
+        .iter()
+        .find(|(id, _)| *id == pane_id)
+        .map(|(_, rect)| *rect)
+}
+
+fn browser_layout_correction_action(owner_terminal_id: Option<PaneId>, pane_id: PaneId) -> Value {
+    const RECOMMENDED_CONTEXT_WIDTH: f32 = 720.0;
+
+    if let Some(owner_terminal_id) = owner_terminal_id {
+        json!({
+            "tool": "tide_layout_action",
+            "action": "resize",
+            "target": {
+                "kind": "terminal_context_surface",
+                "owner_terminal_id": owner_terminal_id,
+            },
+            "width_px": RECOMMENDED_CONTEXT_WIDTH,
+        })
+    } else {
+        json!({
+            "tool": "tide_layout_action",
+            "action": "resize",
+            "target": {
+                "kind": "pane_split",
+                "pane_id": pane_id,
+            },
+            "ratio": 0.65,
+        })
+    }
+}
+
+fn browser_fit_tool_selection(status: &str, recommended_action: Option<&Value>) -> Value {
+    if let Some(action) = recommended_action {
+        return json!({
+            "status": "layout_correction_recommended",
+            "next_tool": "tide_layout_action",
+            "reason": status,
+            "action": action,
+            "then": ["tide_observe_workspace", "tide_browser_observe"],
+            "do_not_substitute": [
+                "tide_browser_eval",
+                "app_internal_api_shortcuts",
+                "credential_bearing_url_shortcuts",
+                "url_parameter_shortcuts",
+                "url_shortening",
+                "browser_snapshot_only_targeting"
+            ],
+        });
+    }
+
+    json!({
+        "status": "ready_for_browser_action",
+        "next_tool": "tide_browser_action",
+        "reason": status,
+    })
+}
+
+fn browser_visual_fit(
+    rect: Option<Rect>,
+    owner_terminal_id: Option<PaneId>,
+    pane_id: PaneId,
+) -> Value {
+    const MIN_BROWSER_WIDTH: f32 = 640.0;
+    const MIN_BROWSER_HEIGHT: f32 = 360.0;
+
+    let Some(rect) = rect else {
+        let recommended_action = browser_layout_correction_action(owner_terminal_id, pane_id);
+        return json!({
+            "status": "not_visible",
+            "visible": false,
+            "min_width": MIN_BROWSER_WIDTH,
+            "min_height": MIN_BROWSER_HEIGHT,
+            "recommended_action": recommended_action,
+            "tool_selection": browser_fit_tool_selection("not_visible", Some(&recommended_action)),
+        });
+    };
+
+    let too_small = rect.width < MIN_BROWSER_WIDTH || rect.height < MIN_BROWSER_HEIGHT;
+    let mut fit = json!({
+        "status": if too_small { "too_small" } else { "ok" },
+        "visible": true,
+        "rect": rect_value(rect),
+        "min_width": MIN_BROWSER_WIDTH,
+        "min_height": MIN_BROWSER_HEIGHT,
+    });
+
+    if too_small {
+        let recommended_action = browser_layout_correction_action(owner_terminal_id, pane_id);
+
+        fit.as_object_mut().unwrap().insert(
+            "tool_selection".to_string(),
+            browser_fit_tool_selection("too_small", Some(&recommended_action)),
+        );
+        fit.as_object_mut()
+            .unwrap()
+            .insert("recommended_action".to_string(), recommended_action);
+    } else {
+        fit.as_object_mut().unwrap().insert(
+            "tool_selection".to_string(),
+            browser_fit_tool_selection("ok", None),
+        );
+    }
+
+    fit
+}
+
+/// UC-1: ObserveTideWorkspace — return provider-neutral Tide surfaces and Pane geometry.
+fn cli_observe_workspace(
+    ctx: &mut (impl AppCorePort + DockPort + FocusNavPort + LayoutPort + PaneAccessPort),
+) -> Result<Value, CliError> {
+    ctx.compute_layout();
+
+    let mut surfaces = vec![json!({
+        "kind": "stage",
+        "rect": optional_rect_value(ctx.pane_area_rect()),
+        "visible": ctx.pane_area_rect().is_some(),
+        "capabilities": ["pane_split"],
+    })];
+
+    if let Some(rect) = ctx.dock_area_rect() {
+        surfaces.push(json!({
+            "kind": "terminal_context_surface",
+            "owner_terminal_id": ctx.focused_terminal_id(),
+            "rect": rect_value(rect),
+            "visible": true,
+            "capabilities": ["resize_width", "pane_split"],
+        }));
+    }
+
+    let focused_id = ctx.focused_pane();
+    let mut panes = Vec::new();
+    for (id, pane) in ctx.pane_entries() {
+        let owner_terminal_id = ctx.terminal_owning(id);
+        let surface = if owner_terminal_id.is_some() {
+            "terminal_context_surface"
+        } else {
+            "stage"
+        };
+        let rect = pane_rect(ctx, id);
+        let mut entry = json!({
+            "pane_id": id,
+            "id": id,
+            "kind": pane_kind_label(pane),
+            "title": ctx.pane_title(id),
+            "surface": surface,
+            "owner_terminal_id": owner_terminal_id,
+            "rect": optional_rect_value(rect),
+            "focused": focused_id == Some(id),
+        });
+
+        if matches!(pane, PaneKind::Browser(_)) {
+            entry.as_object_mut().unwrap().insert(
+                "visual_fit".to_string(),
+                browser_visual_fit(rect, owner_terminal_id, id),
+            );
+            entry
+                .as_object_mut()
+                .unwrap()
+                .insert("runtime".to_string(), json!("tide_browser_pane"));
+            entry
+                .as_object_mut()
+                .unwrap()
+                .insert("human_visible".to_string(), json!(true));
+        }
+
+        panes.push(entry);
+    }
+
+    Ok(json!({
+        "runtime": "tide_mcp_runtime",
+        "browser_runtime_router": {
+            "default_runtime": "tide_browser_pane",
+            "external_runtime": "explicit_fallback_only",
+            "provider_neutral": true,
+            "human_visible_default": true,
+        },
+        "focus": {
+            "pane_id": focused_id,
+            "area": focus_area_label(ctx.current_focus_area()),
+        },
+        "surfaces": surfaces,
+        "panes": panes,
+    }))
 }
 
 /// UC-1: ListPanes — return all panes in the active workspace.
@@ -453,19 +1272,26 @@ fn cli_capture_pane(
 
 /// UC-1: ObserveBrowserPaneAutomationState — read structured Browser Pane state.
 fn cli_browser_observe(
-    ctx: &mut (impl FocusNavPort + PaneAccessPort),
+    ctx: &mut (impl AppCorePort + DockPort + FocusNavPort + GatewayPort + LayoutPort + PaneAccessPort),
     params: Value,
 ) -> Result<Value, CliError> {
+    let detail = browser_observe_detail(&params)?;
     let pane_id = params
         .get("pane_id")
         .and_then(|v| v.as_u64())
         .or_else(|| ctx.focused_pane())
         .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+    ctx.compute_layout();
+    let owner_terminal_id = ctx.terminal_owning(pane_id);
+    let rect = pane_rect(ctx, pane_id);
+    let visual_fit = browser_visual_fit(rect, owner_terminal_id, pane_id);
+    let control_decision = agent_browser_control_decision(ctx, pane_id);
 
     let pane = ctx
         .pane_mut(pane_id)
         .ok_or(CliError::PaneNotFound(pane_id))?;
     let browser = navigation_browser_mut(pane_id, pane)?;
+    ensure_browser_operation_visuals(browser, &control_decision);
 
     let title = browser
         .page_snapshot
@@ -479,24 +1305,301 @@ fn cli_browser_observe(
         })
         .unwrap_or_else(|| browser.title());
 
+    let (detail_label, snapshot, page_map) = match detail {
+        BrowserObserveDetail::Full => (
+            "full",
+            browser_snapshot_json(browser.page_snapshot.as_ref()),
+            browser_page_map_json(browser.page_map.as_ref(), browser.generation),
+        ),
+        BrowserObserveDetail::Compact => (
+            "compact",
+            browser_snapshot_summary_json(browser.page_snapshot.as_ref()),
+            browser_page_map_summary_json(browser.page_map.as_ref(), browser.generation),
+        ),
+    };
+
     let result = json!({
         "pane_id": pane_id,
+        "detail": detail_label,
         "title": title,
         "url": browser.url.clone(),
         "loading": browser.loading,
         "load_progress": browser.load_progress,
         "can_go_back": browser.can_go_back,
         "can_go_forward": browser.can_go_forward,
-        "snapshot": browser_snapshot_json(browser.page_snapshot.as_ref()),
+        "snapshot": snapshot,
+        "page_map": page_map,
         "selection": browser_selection_json(browser.page_selection.as_ref()),
         "automation_cursor": browser_automation_cursor_json(browser.automation_cursor()),
         "runtime": "tide_browser_pane",
         "external_runtime": Value::Null,
+        "operation": browser_operation_json(control_decision.active),
         "requires_prior_observe_for_actions": true,
         "cursor_semantics": browser_cursor_semantics_json(),
+        "rect": optional_rect_value(rect),
+        "visual_fit": visual_fit,
+        "agent_browser_control_mode": agent_browser_control_mode_json(&control_decision, browser),
     });
     browser.mark_agent_observed();
     Ok(result)
+}
+
+fn cli_browser_read_snapshot(
+    ctx: &(impl DockPort + GatewayPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = required_browser_pane_id(&params)?;
+    let auth = ensure_snapshot_tool_authorized(ctx, pane_id)?;
+    let pane = ctx.pane(pane_id).ok_or(CliError::PaneNotFound(pane_id))?;
+    let PaneKind::Browser(browser) = pane else {
+        return Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "browser",
+            actual: pane_kind_label(pane),
+        });
+    };
+
+    let Some(snapshot) = browser.page_snapshot.as_ref() else {
+        return Ok(json!({
+            "pane_id": pane_id,
+            "caller_pane": auth.caller_pane_id,
+            "associated_terminal": auth.associated_terminal_id,
+            "status": "missing",
+            "generation": Value::Null,
+            "page_title": Value::Null,
+            "page_url": Value::Null,
+            "text": "",
+            "truncation": truncation_json(0, 0, BROWSER_SNAPSHOT_TEXT_LIMIT_BYTES),
+            "refreshed_live_page": false,
+        }));
+    };
+
+    let (text, text_truncated) =
+        truncate_utf8_to_byte_limit(&snapshot.text, BROWSER_SNAPSHOT_TEXT_LIMIT_BYTES);
+    let returned_bytes = text.len();
+    let original_bytes = snapshot.text.len();
+    let mut truncation = truncation_json(
+        original_bytes,
+        returned_bytes,
+        BROWSER_SNAPSHOT_TEXT_LIMIT_BYTES,
+    );
+    truncation["text_truncated"] = json!(text_truncated);
+
+    Ok(json!({
+        "pane_id": pane_id,
+        "caller_pane": auth.caller_pane_id,
+        "associated_terminal": auth.associated_terminal_id,
+        "status": "ok",
+        "generation": browser.current_snapshot_generation(),
+        "anchor": {
+            "pane_id": pane_id,
+            "generation": browser.current_snapshot_generation(),
+        },
+        "page_title": snapshot.page_title.clone(),
+        "page_url": snapshot.page_url.clone(),
+        "text": text,
+        "truncation": truncation,
+        "refreshed_live_page": false,
+    }))
+}
+
+fn cli_browser_find_in_snapshot(
+    ctx: &(impl DockPort + GatewayPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = required_browser_pane_id(&params)?;
+    let auth = ensure_snapshot_tool_authorized(ctx, pane_id)?;
+    let query = params
+        .get("query")
+        .or_else(|| params.get("literal"))
+        .and_then(|value| value.as_str())
+        .filter(|query| !query.is_empty())
+        .ok_or_else(|| CliError::InvalidParams("query required".into()))?;
+
+    let pane = ctx.pane(pane_id).ok_or(CliError::PaneNotFound(pane_id))?;
+    let PaneKind::Browser(browser) = pane else {
+        return Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "browser",
+            actual: pane_kind_label(pane),
+        });
+    };
+
+    let Some(snapshot) = browser.page_snapshot.as_ref() else {
+        return Ok(json!({
+            "pane_id": pane_id,
+            "caller_pane": auth.caller_pane_id,
+            "associated_terminal": auth.associated_terminal_id,
+            "status": "missing",
+            "generation": Value::Null,
+            "query": query,
+            "matches": [],
+            "truncation": {
+                "matches_truncated": false,
+                "match_limit": BROWSER_SNAPSHOT_FIND_MATCH_LIMIT,
+                "context_limit_bytes": BROWSER_SNAPSHOT_MATCH_CONTEXT_LIMIT_BYTES,
+            },
+            "refreshed_live_page": false,
+        }));
+    };
+
+    let mut matches = Vec::new();
+    let mut total_matches = 0usize;
+    for (offset, _) in snapshot.text.match_indices(query) {
+        total_matches += 1;
+        if matches.len() >= BROWSER_SNAPSHOT_FIND_MATCH_LIMIT {
+            continue;
+        }
+        let prefix = &snapshot.text[..offset];
+        let line = prefix.bytes().filter(|byte| *byte == b'\n').count() + 1;
+        let line_start = snapshot.text[..offset]
+            .rfind('\n')
+            .map(|idx| idx + 1)
+            .unwrap_or(0);
+        let line_end = snapshot.text[offset..]
+            .find('\n')
+            .map(|idx| offset + idx)
+            .unwrap_or(snapshot.text.len());
+        let column = snapshot.text[line_start..offset].chars().count() + 1;
+        let (context, context_truncated) = truncate_utf8_to_byte_limit(
+            &snapshot.text[line_start..line_end],
+            BROWSER_SNAPSHOT_MATCH_CONTEXT_LIMIT_BYTES,
+        );
+        matches.push(json!({
+            "offset": offset,
+            "line": line,
+            "column": column,
+            "context": context,
+            "context_truncated": context_truncated,
+        }));
+    }
+
+    Ok(json!({
+        "pane_id": pane_id,
+        "caller_pane": auth.caller_pane_id,
+        "associated_terminal": auth.associated_terminal_id,
+        "status": "ok",
+        "generation": browser.current_snapshot_generation(),
+        "anchor": {
+            "pane_id": pane_id,
+            "generation": browser.current_snapshot_generation(),
+        },
+        "query": query,
+        "matches": matches,
+        "truncation": {
+            "matches_truncated": total_matches > BROWSER_SNAPSHOT_FIND_MATCH_LIMIT,
+            "match_limit": BROWSER_SNAPSHOT_FIND_MATCH_LIMIT,
+            "total_matches": total_matches,
+            "context_limit_bytes": BROWSER_SNAPSHOT_MATCH_CONTEXT_LIMIT_BYTES,
+        },
+        "refreshed_live_page": false,
+    }))
+}
+
+fn parse_snapshot_anchor(params: &Value, pane_id: u64) -> Result<(u64, u64), CliError> {
+    if let Some(anchor) = params.get("anchor") {
+        let anchor_pane_id = anchor
+            .get("pane_id")
+            .and_then(|value| value.as_u64())
+            .ok_or_else(|| CliError::InvalidParams("anchor.pane_id required".into()))?;
+        let generation = anchor
+            .get("generation")
+            .and_then(|value| value.as_u64())
+            .ok_or_else(|| CliError::InvalidParams("anchor.generation required".into()))?;
+        return Ok((anchor_pane_id, generation));
+    }
+
+    let generation = params
+        .get("since_generation")
+        .or_else(|| params.get("generation"))
+        .and_then(|value| value.as_u64())
+        .ok_or_else(|| CliError::InvalidParams("anchor generation required".into()))?;
+    let anchor_pane_id = params
+        .get("since_pane_id")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(pane_id);
+    Ok((anchor_pane_id, generation))
+}
+
+fn line_diff(before: &str, after: &str) -> String {
+    let before_lines: Vec<&str> = before.lines().collect();
+    let after_lines: Vec<&str> = after.lines().collect();
+    let mut lines = Vec::new();
+
+    for line in &before_lines {
+        if !after_lines.contains(line) {
+            lines.push(format!("-{line}"));
+        }
+    }
+    for line in &after_lines {
+        if !before_lines.contains(line) {
+            lines.push(format!("+{line}"));
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn cli_browser_diff_since(
+    ctx: &(impl DockPort + GatewayPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = required_browser_pane_id(&params)?;
+    let auth = ensure_snapshot_tool_authorized(ctx, pane_id)?;
+    let (anchor_pane_id, anchor_generation) = parse_snapshot_anchor(&params, pane_id)?;
+    if anchor_pane_id != pane_id {
+        return Err(CliError::InvalidParams(format!(
+            "anchor PaneId {anchor_pane_id} does not match target Browser Pane {pane_id}"
+        )));
+    }
+
+    let pane = ctx.pane(pane_id).ok_or(CliError::PaneNotFound(pane_id))?;
+    let PaneKind::Browser(browser) = pane else {
+        return Err(CliError::InvalidPaneKind {
+            pane_id,
+            expected: "browser",
+            actual: pane_kind_label(pane),
+        });
+    };
+    let Some(current_snapshot) = browser.page_snapshot.as_ref() else {
+        return Err(CliError::InvalidParams(
+            "current BrowserSnapshot is missing".into(),
+        ));
+    };
+    let baseline = browser
+        .snapshot_history_entry(anchor_generation)
+        .ok_or_else(|| {
+            CliError::InvalidParams(format!(
+                "BrowserSnapshot Generation {anchor_generation} is stale or missing"
+            ))
+        })?;
+
+    let diff = line_diff(&baseline.snapshot.text, &current_snapshot.text);
+    let (bounded_diff, diff_truncated) =
+        truncate_utf8_to_byte_limit(&diff, BROWSER_SNAPSHOT_DIFF_LIMIT_BYTES);
+    let returned_diff_bytes = bounded_diff.len();
+
+    Ok(json!({
+        "pane_id": pane_id,
+        "caller_pane": auth.caller_pane_id,
+        "associated_terminal": auth.associated_terminal_id,
+        "status": "ok",
+        "from_generation": anchor_generation,
+        "generation": browser.current_snapshot_generation(),
+        "anchor": {
+            "pane_id": pane_id,
+            "generation": browser.current_snapshot_generation(),
+        },
+        "diff": bounded_diff,
+        "truncation": {
+            "diff_truncated": diff_truncated,
+            "original_bytes": diff.len(),
+            "returned_bytes": returned_diff_bytes,
+            "limit_bytes": BROWSER_SNAPSHOT_DIFF_LIMIT_BYTES,
+            "retained_generations": browser.snapshot_history().len(),
+        },
+        "refreshed_live_page": false,
+    }))
 }
 
 /// UC-12: BrowserControl — evaluate JavaScript in a Browser Pane.
@@ -515,6 +1618,7 @@ fn cli_browser_eval(
         .get("script")
         .and_then(|v| v.as_str())
         .ok_or_else(|| CliError::InvalidParams("script required".into()))?;
+    reject_browser_eval_if_it_bypasses_structured_action(script)?;
 
     let pane = ctx
         .pane_mut(pane_id)
@@ -550,9 +1654,81 @@ fn cli_browser_eval(
     }
 }
 
+/// UC-11: HoldBrowserOperation — hold visible browser-operation state across a task.
+fn cli_browser_operation(
+    ctx: &mut (impl DockPort + FocusNavPort + GatewayPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let pane_id = params
+        .get("pane_id")
+        .and_then(|v| v.as_u64())
+        .or_else(|| ctx.focused_pane())
+        .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+    let action = params
+        .get("action")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| CliError::InvalidParams("action required".into()))?;
+    if !browser_operation_action_is_supported(action) {
+        return Err(CliError::InvalidParams(format!(
+            "unsupported browser operation action: {action}"
+        )));
+    }
+
+    let control_decision = agent_browser_control_decision(ctx, pane_id);
+    let pane = ctx
+        .pane_mut(pane_id)
+        .ok_or(CliError::PaneNotFound(pane_id))?;
+    let browser = navigation_browser_mut(pane_id, pane)?;
+
+    match action {
+        "start" => {
+            let existing_cursor = browser.automation_cursor().cloned();
+            let x = params
+                .get("x")
+                .and_then(|value| value.as_f64())
+                .or_else(|| existing_cursor.as_ref().map(|cursor| cursor.x))
+                .unwrap_or(24.0);
+            let y = params
+                .get("y")
+                .and_then(|value| value.as_f64())
+                .or_else(|| existing_cursor.as_ref().map(|cursor| cursor.y))
+                .unwrap_or(24.0);
+            let label = params
+                .get("label")
+                .and_then(|value| value.as_str())
+                .map(String::from)
+                .or_else(|| existing_cursor.and_then(|cursor| cursor.label))
+                .or_else(|| Some("Browser Operation".to_string()));
+            browser.set_automation_cursor(BrowserAutomationCursor {
+                x,
+                y,
+                label,
+                visible: true,
+            });
+            set_agent_browser_control_mode(browser, &control_decision);
+        }
+        "finish" => {
+            browser.clear_agent_browser_control_mode();
+            browser.clear_automation_cursor();
+        }
+        _ => unreachable!("browser operation action support is checked before dispatch"),
+    }
+
+    Ok(json!({
+        "pane_id": pane_id,
+        "action": action,
+        "runtime": "tide_browser_pane",
+        "external_runtime": Value::Null,
+        "operation": browser_operation_json(action == "start" && control_decision.active),
+        "cursor_semantics": browser_cursor_semantics_json(),
+        "automation_cursor": browser_automation_cursor_json(browser.automation_cursor()),
+        "agent_browser_control_mode": agent_browser_control_mode_json(&control_decision, browser),
+    }))
+}
+
 /// UC-2: ActOnBrowserPaneWithStructuredCommands — drive a navigation-mode Browser Pane.
 fn cli_browser_action(
-    ctx: &mut (impl FocusNavPort + ModalPort + PaneAccessPort),
+    ctx: &mut (impl DockPort + FocusNavPort + GatewayPort + ModalPort + PaneAccessPort),
     params: Value,
 ) -> Result<Value, CliError> {
     ensure_sensitive_action_approval(&params, "browser-action")?;
@@ -572,6 +1748,7 @@ fn cli_browser_action(
         )));
     }
     let modal_open = ctx.modal().is_any_open();
+    let control_decision = agent_browser_control_decision(ctx, pane_id);
 
     let pane = ctx
         .pane_mut(pane_id)
@@ -585,12 +1762,28 @@ fn cli_browser_action(
         ));
     }
 
-    if browser_action_requires_fresh_observe(action) && !browser.agent_has_fresh_observation() {
+    let action_target = resolve_browser_action_target(browser, &params, action)?;
+    let used_current_page_map_target_without_fresh_observe =
+        browser_action_requires_fresh_observe(action)
+            && !browser.agent_has_fresh_observation()
+            && browser_action_can_use_current_page_map_target_without_fresh_observe(
+                browser,
+                action,
+                action_target.as_ref(),
+            );
+
+    if browser_action_requires_fresh_observe(action)
+        && !browser.agent_has_fresh_observation()
+        && !used_current_page_map_target_without_fresh_observe
+    {
         return Err(CliError::InvalidParams(
             "tide_browser_observe required before this Browser Pane action".into(),
         ));
     }
 
+    let mut targeted_focus = false;
+    let mut cursor_motion_ms = 0_u64;
+    let mut dispatch_delay_ms = 0_u64;
     let dispatched = match action {
         "navigate" => {
             let url = params
@@ -622,34 +1815,57 @@ fn cli_browser_action(
                 .get("label")
                 .and_then(|v| v.as_str())
                 .map(String::from);
-            browser.set_automation_cursor(BrowserAutomationCursor {
-                x,
-                y,
-                label,
-                visible: true,
-            });
+            cursor_motion_ms = browser.automation_cursor_motion_duration_ms(x, y);
+            browser.set_automation_cursor_with_motion_duration(
+                BrowserAutomationCursor {
+                    x,
+                    y,
+                    label,
+                    visible: true,
+                },
+                cursor_motion_ms,
+            );
             browser.webview.is_some()
         }
         "click" => {
-            let x = params
-                .get("x")
-                .and_then(|v| v.as_f64())
-                .ok_or_else(|| CliError::InvalidParams("x required for click".into()))?;
-            let y = params
-                .get("y")
-                .and_then(|v| v.as_f64())
-                .ok_or_else(|| CliError::InvalidParams("y required for click".into()))?;
+            let (x, y, target_label) =
+                match action_target.as_ref() {
+                    Some(target) => {
+                        let (x, y) = target.center();
+                        let label = if target.label.trim().is_empty() {
+                            None
+                        } else {
+                            Some(target.label.clone())
+                        };
+                        (x, y, label)
+                    }
+                    None => {
+                        let x = params.get("x").and_then(|v| v.as_f64()).ok_or_else(|| {
+                            CliError::InvalidParams("x required for click".into())
+                        })?;
+                        let y = params.get("y").and_then(|v| v.as_f64()).ok_or_else(|| {
+                            CliError::InvalidParams("y required for click".into())
+                        })?;
+                        (x, y, None)
+                    }
+                };
             let label = params
                 .get("label")
                 .and_then(|v| v.as_str())
-                .map(String::from);
-            browser.set_automation_cursor(BrowserAutomationCursor {
-                x,
-                y,
-                label,
-                visible: true,
-            });
-            let dispatched = browser.dispatch_automation_click(x, y);
+                .map(String::from)
+                .or(target_label);
+            cursor_motion_ms = browser.automation_cursor_motion_duration_ms(x, y);
+            dispatch_delay_ms = BrowserPane::automation_cursor_action_delay_ms(cursor_motion_ms);
+            browser.set_automation_cursor_with_motion_duration(
+                BrowserAutomationCursor {
+                    x,
+                    y,
+                    label,
+                    visible: true,
+                },
+                cursor_motion_ms,
+            );
+            let dispatched = browser.dispatch_automation_click_after(x, y, dispatch_delay_ms);
             if dispatched {
                 browser.request_page_snapshot_refresh();
             }
@@ -660,7 +1876,31 @@ fn cli_browser_action(
                 .get("text")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| CliError::InvalidParams("text required for type".into()))?;
-            let dispatched = browser.dispatch_automation_type(text);
+            let dispatched = match action_target.as_ref() {
+                Some(target) => {
+                    let (x, y) = target.center();
+                    let label = if target.label.trim().is_empty() {
+                        None
+                    } else {
+                        Some(target.label.clone())
+                    };
+                    cursor_motion_ms = browser.automation_cursor_motion_duration_ms(x, y);
+                    dispatch_delay_ms =
+                        BrowserPane::automation_cursor_action_delay_ms(cursor_motion_ms);
+                    browser.set_automation_cursor_with_motion_duration(
+                        BrowserAutomationCursor {
+                            x,
+                            y,
+                            label,
+                            visible: true,
+                        },
+                        cursor_motion_ms,
+                    );
+                    targeted_focus = true;
+                    browser.dispatch_automation_type_at_after(x, y, text, dispatch_delay_ms)
+                }
+                None => browser.dispatch_automation_type(text),
+            };
             if dispatched {
                 browser.request_page_snapshot_refresh();
             }
@@ -687,6 +1927,10 @@ fn cli_browser_action(
     if observe_after_action {
         browser.mark_agent_action_requires_reobserve();
     }
+    set_agent_browser_control_mode(browser, &control_decision);
+    if browser.automation_cursor().is_some() && cursor_motion_ms == 0 {
+        browser.sync_automation_cursor_overlay();
+    }
 
     Ok(json!({
         "pane_id": pane_id,
@@ -696,8 +1940,17 @@ fn cli_browser_action(
         "external_runtime": Value::Null,
         "requires_prior_observe": browser_action_requires_fresh_observe(action),
         "observe_after_action": observe_after_action,
+        "used_current_page_map_target_without_fresh_observe": used_current_page_map_target_without_fresh_observe,
+        "cursor_motion_ms": cursor_motion_ms,
+        "dispatch_delay_ms": dispatch_delay_ms,
+        "target": action_target
+            .as_ref()
+            .map(browser_page_element_json)
+            .unwrap_or(Value::Null),
+        "targeted_focus": targeted_focus,
         "cursor_semantics": browser_cursor_semantics_json(),
         "automation_cursor": browser_automation_cursor_json(browser.automation_cursor()),
+        "agent_browser_control_mode": agent_browser_control_mode_json(&control_decision, browser),
     }))
 }
 
@@ -986,6 +2239,133 @@ fn cli_activate_notification_target(
     Ok(json!({"ok": true}))
 }
 
+fn layout_action_number(params: &Value, target: &Value, key: &str) -> Option<f32> {
+    params
+        .get(key)
+        .and_then(|value| value.as_f64())
+        .or_else(|| target.get(key).and_then(|value| value.as_f64()))
+        .map(|value| value as f32)
+}
+
+/// UC-2: ResizeLayoutTarget — mutate a product-level Tide Layout Target.
+fn cli_layout_action(
+    ctx: &mut (impl AppCorePort + DockPort + FocusNavPort + LayoutPort + PaneAccessPort),
+    params: Value,
+) -> Result<Value, CliError> {
+    let action = params
+        .get("action")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| CliError::InvalidParams("action required".into()))?;
+    if action != "resize" {
+        return Err(CliError::InvalidParams(format!(
+            "unsupported layout action: {action}"
+        )));
+    }
+
+    let target = params
+        .get("target")
+        .ok_or_else(|| CliError::InvalidParams("target required".into()))?;
+    let target_kind = target
+        .get("kind")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| CliError::InvalidParams("target.kind required".into()))?;
+
+    match target_kind {
+        "terminal_context_surface" => {
+            let width = layout_action_number(&params, target, "width_px")
+                .or_else(|| layout_action_number(&params, target, "width"))
+                .ok_or_else(|| {
+                    CliError::InvalidParams(
+                        "width_px required for terminal_context_surface resize".into(),
+                    )
+                })?;
+            let active_owner = ctx.focused_terminal_id().ok_or_else(|| {
+                CliError::InvalidParams(
+                    "terminal_context_surface resize requires an active Stage Terminal".into(),
+                )
+            })?;
+            if let Some(requested_owner) = target.get("owner_terminal_id").and_then(|v| v.as_u64())
+            {
+                if requested_owner != active_owner {
+                    return Err(CliError::InvalidParams(
+                        "terminal_context_surface target must be the active owner".into(),
+                    ));
+                }
+            }
+
+            let from_width = ctx.animate_dock_width(width);
+            ctx.compute_layout();
+            ctx.invalidate_chrome();
+            ctx.request_redraw();
+            let animation_active = (from_width - width).abs() >= 0.5;
+
+            Ok(json!({
+                "ok": true,
+                "runtime": "tide_mcp_runtime",
+                "action": action,
+                "target": {
+                    "kind": "terminal_context_surface",
+                    "owner_terminal_id": active_owner,
+                },
+                "requested": {
+                    "width_px": width,
+                },
+                "animation": {
+                    "active": animation_active,
+                    "from_width_px": from_width,
+                    "to_width_px": width,
+                },
+                "effective_rect": optional_rect_value(ctx.dock_area_rect()),
+            }))
+        }
+        "pane_split" => {
+            let pane_id = target
+                .get("pane_id")
+                .and_then(|value| value.as_u64())
+                .ok_or_else(|| CliError::InvalidParams("target.pane_id required".into()))?;
+            if !ctx.has_pane(pane_id) {
+                return Err(CliError::PaneNotFound(pane_id));
+            }
+            let ratio = layout_action_number(&params, target, "ratio")
+                .ok_or_else(|| CliError::InvalidParams("ratio required for pane_split".into()))?;
+
+            let owner_terminal_id = ctx.terminal_owning(pane_id);
+            let resized = if let Some(owner) = owner_terminal_id {
+                ctx.dock_layout_set_split_ratio(owner, pane_id, ratio)
+            } else {
+                ctx.layout_set_split_ratio(pane_id, ratio)
+            };
+
+            if !resized {
+                return Err(CliError::InvalidParams("pane is not in a split".into()));
+            }
+
+            ctx.compute_layout();
+            ctx.invalidate_chrome();
+            ctx.request_redraw();
+
+            Ok(json!({
+                "ok": true,
+                "runtime": "tide_mcp_runtime",
+                "action": action,
+                "target": {
+                    "kind": "pane_split",
+                    "pane_id": pane_id,
+                    "surface": if owner_terminal_id.is_some() { "terminal_context_surface" } else { "stage" },
+                    "owner_terminal_id": owner_terminal_id,
+                },
+                "requested": {
+                    "ratio": ratio,
+                },
+                "effective_rect": optional_rect_value(pane_rect(ctx, pane_id)),
+            }))
+        }
+        other => Err(CliError::InvalidParams(format!(
+            "unsupported layout target kind: {other}"
+        ))),
+    }
+}
+
 /// UC-5: ResizePane — adjust the split ratio of the parent split.
 fn cli_resize_pane(
     ctx: &mut (impl FocusNavPort + LayoutPort + PaneAccessPort),
@@ -1073,7 +2453,7 @@ fn cli_open_editor(
 
 /// UC-6: OpenBrowser — open a URL in a browser pane.
 fn cli_open_browser(
-    ctx: &mut (impl FocusNavPort + PaneLifecyclePort),
+    ctx: &mut (impl DockPort + FocusNavPort + GatewayPort + PaneAccessPort + PaneLifecyclePort),
     params: Value,
 ) -> Result<Value, CliError> {
     let url = params.get("url").and_then(|v| v.as_str()).map(String::from);
@@ -1081,7 +2461,21 @@ fn cli_open_browser(
     ctx.open_browser_pane(url);
 
     if let Some(focused) = ctx.focused_pane() {
-        Ok(json!({"pane_id": focused}))
+        let control_decision = agent_browser_control_decision(ctx, focused);
+        let pane = ctx
+            .pane_mut(focused)
+            .ok_or(CliError::PaneNotFound(focused))?;
+        let browser = navigation_browser_mut(focused, pane)?;
+        ensure_browser_operation_visuals(browser, &control_decision);
+        Ok(json!({
+            "pane_id": focused,
+            "runtime": "tide_browser_pane",
+            "external_runtime": Value::Null,
+            "operation": browser_operation_json(control_decision.active),
+            "cursor_semantics": browser_cursor_semantics_json(),
+            "automation_cursor": browser_automation_cursor_json(browser.automation_cursor()),
+            "agent_browser_control_mode": agent_browser_control_mode_json(&control_decision, browser),
+        }))
     } else {
         Err(CliError::InvalidParams("browser creation failed".into()))
     }
@@ -1722,7 +3116,7 @@ fn serialize_snapshot(snap: &LayoutSnapshot) -> Value {
 /// Handle agent lifecycle notifications sent by wrapper hooks.
 /// Updates AgentInfo.status for the given pane and bumps chrome generation.
 fn cli_notify(
-    ctx: &mut (impl AppCorePort + GatewayPort + PaneAccessPort),
+    ctx: &mut (impl AppCorePort + DockPort + GatewayPort + PaneAccessPort),
     params: Value,
 ) -> Result<Value, CliError> {
     use crate::state::gateway_status::AgentStatus;
@@ -1879,6 +3273,9 @@ fn cli_notify(
                 });
             }
             ctx.set_agent_notification_snippet(pane_id, notification_snippet.clone());
+            if matches!(status, AgentStatus::Idle | AgentStatus::NeedsInput) {
+                clear_browser_operation_visuals_for_terminal(ctx, pane_id);
+            }
             // Route notification based on user context (UC-1)
             ctx.route_agent_notification(pane_id, status, notification_snippet);
         } else {

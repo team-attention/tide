@@ -251,7 +251,7 @@ pub(super) fn render_pane_chrome(
             all_hit_zones.extend(tab_zones);
         } else {
             // Normal pane: render per-pane header (with agent status dot)
-            let agent_chrome_state = crate::header::terminal_chrome_visual_state(
+            let agent_chrome_state = crate::header::pane_agent_chrome_visual_state(
                 &app.panes,
                 &app.gateway.detected_agents,
                 id,
@@ -268,7 +268,7 @@ pub(super) fn render_pane_chrome(
                 renderer,
                 agent_chrome_state,
                 blink_time,
-                !app.is_pane_in_dock(id),
+                agent_chrome_state.is_some(),
                 if app.is_pane_in_dock(id) {
                     header::HeaderSurfaceKind::TerminalContextSurface
                 } else {

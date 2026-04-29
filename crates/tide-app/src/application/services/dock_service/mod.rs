@@ -460,6 +460,19 @@ impl DockPort for App {
         }
     }
 
+    fn dock_layout_set_split_ratio(
+        &mut self,
+        terminal_id: PaneId,
+        pane_id: PaneId,
+        ratio: f32,
+    ) -> bool {
+        if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&terminal_id) {
+            tp.dock_layout.set_split_ratio(pane_id, ratio)
+        } else {
+            false
+        }
+    }
+
     fn dock_layout_split_with_leaf_group(
         &mut self,
         terminal_id: PaneId,
@@ -535,6 +548,18 @@ impl DockPort for App {
 
     fn set_dock_width(&mut self, w: f32) {
         self.dock.dock_width = w;
+    }
+
+    fn animate_dock_width(&mut self, w: f32) -> f32 {
+        let now = self.ports.clock.now();
+        let from_width = self.dock.rendered_width(now);
+        self.dock.dock_open = true;
+        self.dock.dock_width = w;
+        if (from_width - w).abs() < 0.5 && self.dock.visibility_animation.is_none() {
+            return from_width;
+        }
+        self.dock.begin_visibility_animation(from_width, w, now);
+        from_width
     }
 
     fn dock_begin_split_drag(

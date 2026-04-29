@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-pub(crate) const SURFACE_VISIBILITY_ANIMATION_DURATION: Duration = Duration::from_millis(160);
+pub(crate) const SURFACE_VISIBILITY_ANIMATION_DURATION: Duration = Duration::from_millis(240);
 
 #[cfg_attr(test, derive(Debug))]
 #[derive(Clone, Copy)]

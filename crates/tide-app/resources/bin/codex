@@ -123,6 +123,7 @@ trap 'tide_notify "agent-detached"; rm -rf "$TIDE_CODEX_HOME"' EXIT
 codex_direct_launch() {
   CODEX_HOME="$TIDE_CODEX_HOME" "$REAL_CMD" \
     -c "features.codex_hooks=true" \
+    -c "plugins.\"browser-use@openai-bundled\".enabled=false" \
     -c "mcp_servers.tide.command=\"$TIDE_BIN\"" \
     -c "mcp_servers.tide.args=[\"mcp\"]" \
     -c "mcp_servers.tide.env.TIDE_SOCKET=\"$TIDE_SOCKET\"" \

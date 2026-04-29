@@ -3,6 +3,7 @@
 use serde_json::Value;
 
 use crate::state::gateway_status::AgentInfo;
+use crate::tide_core::PaneId;
 
 pub(crate) trait GatewayPort {
     fn gateway_notify(&mut self, event: &str, data: Value);
@@ -15,7 +16,11 @@ pub(crate) trait GatewayPort {
         event_filter: Vec<String>,
     ) -> bool;
     fn take_subscribe_tx(&mut self) -> Option<std::sync::mpsc::Sender<String>>;
+    /// Caller Pane for the CLI command currently being dispatched.
+    fn cli_caller_pane(&self) -> Option<PaneId>;
     fn toggle_auto_integration(&mut self);
+    /// Read a detected agent record without exposing GatewayStatus internals to an Inward Adapter.
+    fn detected_agent(&self, pane_id: PaneId) -> Option<AgentInfo>;
     /// Mutable access to detected agents map for status updates.
     fn detected_agents_mut(&mut self) -> &mut std::collections::HashMap<u64, AgentInfo>;
     /// Set or clear the stored notification snippet for a wrapped-agent Pane.

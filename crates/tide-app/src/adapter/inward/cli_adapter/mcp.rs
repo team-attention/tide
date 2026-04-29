@@ -158,7 +158,25 @@ fn mcp_initialize(id: serde_json::Value) -> serde_json::Value {
 }
 
 fn mcp_instructions() -> &'static str {
-    "Tide layout: The Stage holds Terminals. Each Terminal owns a Dock, the Terminal Context Surface for related panes. You are running inside a Terminal. To run a command, send keys to your terminal (omit pane_id). Tide Browser Pane first: for local preview, file-backed preview, unauthenticated public page review, visual verification, and page comments, use tide_open_browser, then tide_browser_observe, then tide_browser_action for navigate/move/click/type/press/clear-cursor. Observe before content actions and observe again after navigate/click/type/press. Use tide_capture_selection and Context Artifact tools (tide_create_context_artifact, tide_list_context_artifacts, tide_read_context_artifact, tide_send_context_artifact) for Browser Pane comments and explicit paired-agent delivery. No ambient Browser Pane prompt injection: list/read Context Artifacts explicitly. tide_browser_eval is only an escape hatch when structured Browser Pane tools are insufficient; include a reason and do not use it to bypass sensitive-flow approval. Browser Automation Cursor is a visible marker only, not element identity, pointer ownership, or human consent. Browser Use, Browser Use Cloud, Playwright, Computer Use, and a regular browser are external browser runtimes: use them only with an explicit fallback reason and name them as separate from Tide Browser Pane. Do NOT split or open new terminals in the Stage for side tasks."
+    concat!(
+        "Tide MCP Runtime: Codex, Claude, Gemini, and other Wrapped Agents use the same provider-neutral contract. ",
+        "First call tide_observe_workspace when you need Tide geometry, focus, Pane membership, or browser fit. ",
+        "Tide layout: the Stage holds Terminals; each active Stage Terminal owns a Terminal Context Surface for related Panes. ",
+        "Use tide_layout_action for Layout Target mutations such as Terminal Context Surface width or pane_split ratio; tide_resize_pane is legacy Stage split compatibility. ",
+        "Tool Selection Guidance: if a Browser Pane observation has visual_fit.tool_selection.next_tool=tide_layout_action, select tide_layout_action next, then re-observe with tide_observe_workspace or tide_browser_observe before Browser Pane content actions. ",
+        "When layout correction is recommended, use tide_layout_action, re-observe, and continue with visible Browser Pane work. ",
+        "Browser Runtime Router: For supported browser work inside Tide, you must use Tide Browser Pane Runtime as the first runtime. It is the shared, human-visible browser runtime for local preview, file-backed preview, unauthenticated public page review, visual verification, and page comments. ",
+        "For user-requested browser work, treat the task as a Browser Operation: tide_open_browser, tide_browser_observe, and tide_browser_action start visible operation state for authorized Wrapped Agents; use human-like Browser Pane observe/action work, then call tide_browser_operation action=finish after the final observe. ",
+        "Use tide_open_browser, then tide_browser_observe, then tide_browser_action for navigate/move/click/type/press/clear-cursor; prefer Browser Page Map target_ref from tide_browser_observe over guessed coordinates when click/type targets are listed. Browser Automation Cursor motion is distance-scaled and click/type target dispatch waits for that motion to settle. Use tide_browser_observe detail=compact for routine action loops, and detail=full only when full BrowserSnapshot body text is needed. ",
+        "Use tide_browser_read_snapshot, tide_browser_find_in_snapshot, and tide_browser_diff_since only for bounded cached BrowserSnapshot text; they do not refresh the live page. ",
+        "Observe before the first content action; after navigate/click/type/press, observe when you need changed page content, but you may chain another click/type through a current enabled Browser Page Map target_ref. ",
+        "Use tide_capture_selection and Context Artifact tools (tide_create_context_artifact, tide_list_context_artifacts, tide_read_context_artifact, tide_send_context_artifact) for Browser Pane comments and explicit paired-agent delivery. ",
+        "No ambient Browser Pane prompt injection: list/read Context Artifacts explicitly. ",
+        "For page interaction, use tide_browser_action. Use tide_browser_eval for narrow read-only page inspection with a reason when structured tools lack the needed read data. ",
+        "Browser Automation Cursor is a visible marker only, not element identity, pointer ownership, or human consent; label fields are structured metadata and are not rendered beside the cursor. ",
+        "To run a command, send keys to your Terminal by omitting pane_id. ",
+        "Do NOT split or open new Terminals in the Stage for side tasks."
+    )
 }
 
 #[cfg(test)]
@@ -171,6 +189,11 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
         {
             "name": "tide_list_panes",
             "description": "List all panes in the active workspace with id, kind, rect, and focus status",
+            "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "tide_observe_workspace",
+            "description": "Provider-neutral Tide MCP Runtime preflight. Reports Stage, Terminal Context Surface, visible Pane geometry, focus, Browser Pane visual fit, Tool Selection Guidance, and Browser Runtime Router policy. If visual_fit.tool_selection recommends tide_layout_action, choose that layout tool next and then re-observe.",
             "inputSchema": { "type": "object", "properties": {} }
         },
         {
@@ -235,7 +258,7 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
         },
         {
             "name": "tide_resize_pane",
-            "description": "Resize a pane's split ratio",
+            "description": "Legacy compatibility: resize a Stage pane's split ratio. Prefer tide_layout_action for product-level Layout Target mutations.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -243,6 +266,30 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
                     "ratio": { "type": "number", "description": "New split ratio (0.0 - 1.0)" }
                 },
                 "required": ["ratio"]
+            }
+        },
+        {
+            "name": "tide_layout_action",
+            "description": "Mutate a product-level Layout Target. This is the normal next tool when Browser Pane visual_fit.tool_selection recommends layout correction. Use action=resize with target.kind=terminal_context_surface and width_px, or target.kind=pane_split with pane_id and ratio.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["resize"] },
+                    "target": {
+                        "type": "object",
+                        "properties": {
+                            "kind": { "type": "string", "enum": ["terminal_context_surface", "pane_split"] },
+                            "owner_terminal_id": { "type": "integer", "description": "Active owner Terminal for terminal_context_surface targets" },
+                            "pane_id": { "type": "integer", "description": "Pane to resize for pane_split targets" },
+                            "width_px": { "type": "number", "description": "Requested width for terminal_context_surface targets" },
+                            "ratio": { "type": "number", "description": "Requested split ratio for pane_split targets" }
+                        },
+                        "required": ["kind"]
+                    },
+                    "width_px": { "type": "number", "description": "Requested width for terminal_context_surface targets" },
+                    "ratio": { "type": "number", "description": "Requested split ratio for pane_split targets" }
+                },
+                "required": ["action", "target"]
             }
         },
         {
@@ -263,12 +310,12 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
         },
         {
             "name": "tide_open_browser",
-            "description": "Open a URL in Tide Browser Pane, the preferred shared Browser Pane runtime for task-local verification",
+            "description": "Open a URL in Tide Browser Pane, the preferred shared Browser Pane runtime for task-local verification. For authorized Wrapped Agents this starts visible Browser Operation state immediately; do not synthesize credential-bearing or app-internal launch URLs unless the user explicitly asks for that internal route.",
             "inputSchema": { "type": "object", "properties": { "url": { "type": "string" } } }
         },
         {
             "name": "tide_browser_eval",
-            "description": "escape hatch: evaluate narrow JavaScript in a targeted Tide Browser Pane and refresh BrowserSnapshot. Prefer tide_browser_observe and tide_browser_action for supported Browser Pane work.",
+            "description": "escape hatch: evaluate narrow read-only JavaScript in a targeted Tide Browser Pane and refresh BrowserSnapshot. Cannot click/type/submit/dispatchEvent or mutate page DOM. Do not use eval to compensate for poor Browser Pane visual fit; follow visual_fit.tool_selection and prefer tide_layout_action, tide_browser_observe, and tide_browser_action.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -283,17 +330,76 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
         },
         {
             "name": "tide_browser_observe",
-            "description": "Read structured Tide Browser Pane state before acting, including BrowserSnapshot, selection, Browser Automation Cursor, and runtime identity",
+            "description": "Read structured Tide Browser Pane state before acting, including BrowserSnapshot, Browser Page Map regions/interactables with target refs, selection, Browser Automation Cursor, visual fit, Tool Selection Guidance, and runtime identity. Use detail=compact for routine click/type loops; use detail=full when full BrowserSnapshot body text is needed.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID (omit for focused pane)" }
+                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID (omit for focused pane)" },
+                    "detail": { "type": "string", "enum": ["compact", "full"], "description": "compact returns Browser Observation Summary with target refs and short excerpts; full returns the full cached BrowserSnapshot text and full Browser Page Map metadata" }
                 }
             }
         },
         {
+            "name": "tide_browser_operation",
+            "description": "Explicitly start or finish a Browser Operation around user-requested human-like Tide Browser Pane work. tide_open_browser, tide_browser_observe, and tide_browser_action also start visible operation state for authorized Wrapped Agents; finish clears the operation visuals after final observe.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID (omit for focused pane)" },
+                    "action": { "type": "string", "enum": ["start", "finish"] },
+                    "x": { "type": "number", "description": "Optional initial Browser Automation Cursor x coordinate for start" },
+                    "y": { "type": "number", "description": "Optional initial Browser Automation Cursor y coordinate for start" },
+                    "label": { "type": "string", "description": "Optional Browser Automation Cursor label metadata for start; label text is not rendered beside the cursor" }
+                },
+                "required": ["action"]
+            }
+        },
+        {
+            "name": "tide_browser_read_snapshot",
+            "description": "Read the bounded cached BrowserSnapshot for a Browser Pane without refreshing the live page. Requires Caller Pane and Associated Terminal authorization.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID" }
+                },
+                "required": ["pane_id"]
+            }
+        },
+        {
+            "name": "tide_browser_find_in_snapshot",
+            "description": "Search the cached BrowserSnapshot by literal query without refreshing the live page. Returns bounded matches and truncation metadata.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID" },
+                    "query": { "type": "string", "description": "Literal query to search for in cached BrowserSnapshot text" }
+                },
+                "required": ["pane_id", "query"]
+            }
+        },
+        {
+            "name": "tide_browser_diff_since",
+            "description": "Diff the current cached BrowserSnapshot against a retained same-Pane Generation anchor without refreshing the live page.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID" },
+                    "anchor": {
+                        "type": "object",
+                        "properties": {
+                            "pane_id": { "type": "integer" },
+                            "generation": { "type": "integer" }
+                        },
+                        "required": ["pane_id", "generation"]
+                    },
+                    "since_generation": { "type": "integer", "description": "Compatibility shorthand for anchor.generation when the anchor PaneId is the target PaneId" }
+                },
+                "required": ["pane_id"]
+            }
+        },
+        {
             "name": "tide_browser_action",
-            "description": "preferred structured action path for Tide Browser Pane. Uses the existing Browser Pane runtime, requires prior observe for content actions, and requires observe again after navigate/click/type/press.",
+            "description": "preferred structured action path for Tide Browser Pane. Uses the existing Browser Pane runtime, requires an initial observe for content actions, accepts target_ref from tide_browser_observe page_map for click/type, may chain current enabled target_ref actions after live input, moves Browser Automation Cursor with distance-scaled motion for move/click/targeted type without rendering label text, and dispatches click/type target actions after the cursor motion settles.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -302,7 +408,8 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
                     "url": { "type": "string", "description": "Required for navigate" },
                     "x": { "type": "number", "description": "Viewport x coordinate for move or click" },
                     "y": { "type": "number", "description": "Viewport y coordinate for move or click" },
-                    "label": { "type": "string", "description": "Optional Browser Automation Cursor label for move or click" },
+                    "target_ref": { "type": "string", "description": "Generation-scoped Browser Page Element ref from tide_browser_observe page_map for click/type targeting" },
+                    "label": { "type": "string", "description": "Optional Browser Automation Cursor label metadata for move or click; label text is not rendered beside the cursor" },
                     "text": { "type": "string", "description": "Required for type" },
                     "key": { "type": "string", "description": "Required for press" },
                     "reload": { "type": "boolean", "description": "Required to intentionally navigate to the already-loaded URL" },
@@ -442,6 +549,7 @@ fn mcp_tools_call(
 
     let method = match tool_name {
         "tide_list_panes" => "list-panes",
+        "tide_observe_workspace" => "observe-workspace",
         "tide_capture_pane" => "capture-pane",
         "tide_capture_selection" => "capture-selection",
         "tide_get_layout" => "get-layout",
@@ -451,11 +559,16 @@ fn mcp_tools_call(
         "tide_close_pane" => "close-pane",
         "tide_focus_pane" => "focus-pane",
         "tide_resize_pane" => "resize-pane",
+        "tide_layout_action" => "layout-action",
         "tide_open_terminal" => "open-terminal",
         "tide_open_editor" => "open-editor",
         "tide_open_browser" => "open-browser",
         "tide_browser_eval" => "browser-eval",
         "tide_browser_observe" => "browser-observe",
+        "tide_browser_operation" => "browser-operation",
+        "tide_browser_read_snapshot" => "browser-read-snapshot",
+        "tide_browser_find_in_snapshot" => "browser-find-in-snapshot",
+        "tide_browser_diff_since" => "browser-diff-since",
         "tide_browser_action" => "browser-action",
         "tide_create_context_artifact" => "create-context-artifact",
         "tide_list_context_artifacts" => "list-context-artifacts",

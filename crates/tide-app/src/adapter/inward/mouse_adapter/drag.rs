@@ -9,14 +9,11 @@ use crate::theme::*;
 
 pub(crate) fn dock_width_from_border_drag(
     logical_width: f32,
-    dock_area_rect: Option<Rect>,
+    _dock_area_rect: Option<Rect>,
     cursor_x: f32,
     gap: f32,
 ) -> f32 {
-    let dock_right = dock_area_rect
-        .map(|rect| rect.x + rect.width)
-        .unwrap_or(logical_width);
-    dock_right - cursor_x - gap
+    logical_width - cursor_x - gap
 }
 
 pub(crate) fn file_tree_width_from_border_drag(logical_width: f32, cursor_x: f32, gap: f32) -> f32 {
@@ -80,10 +77,10 @@ pub(crate) fn handle_cursor_moved_logical(
     // Handle context area border resize
     if ctx.dock_border_dragging() {
         let logical = ctx.logical_size();
-        let max_w = (logical.width - 200.0).max(100.0);
+        let max_w = (logical.width - 200.0).max(TERMINAL_CONTEXT_SURFACE_MIN_WIDTH);
         let raw_width =
             dock_width_from_border_drag(logical.width, ctx.dock_area_rect(), pos.x, PANE_GAP);
-        let new_width = raw_width.max(100.0).min(max_w);
+        let new_width = raw_width.max(TERMINAL_CONTEXT_SURFACE_MIN_WIDTH).min(max_w);
         ctx.set_dock_width(new_width);
         ctx.compute_layout();
         ctx.invalidate_chrome();
@@ -104,9 +101,9 @@ pub(crate) fn handle_cursor_moved_logical(
     // Handle file-tree border resize
     if ctx.ft().border_dragging {
         let logical = ctx.logical_size();
-        let max_w = (logical.width - 100.0).max(120.0);
+        let max_w = (logical.width - 100.0).max(FILE_TREE_MIN_WIDTH);
         let raw_width = file_tree_width_from_border_drag(logical.width, pos.x, PANE_GAP);
-        let new_width = raw_width.max(120.0).min(max_w);
+        let new_width = raw_width.max(FILE_TREE_MIN_WIDTH).min(max_w);
         ctx.ft_mut().width = new_width;
         ctx.compute_layout();
         ctx.invalidate_chrome();

@@ -7,7 +7,10 @@ use crate::adapter::outward::view::{titlebar_workspace_meta_text, titlebar_works
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
 use crate::state::{FocusArea, ViewMode};
-use crate::theme::PANE_GAP;
+use crate::theme::{
+    FILE_TREE_MIN_WIDTH, FILE_TREE_WIDTH, PANE_GAP, TERMINAL_CONTEXT_SURFACE_MIN_WIDTH,
+    TERMINAL_CONTEXT_SURFACE_WIDTH,
+};
 use crate::tide_core::LayoutEngine;
 use crate::tide_input::GlobalAction;
 use crate::ActionPort;
@@ -453,9 +456,10 @@ fn region_border_drag_preserves_width_at_current_seams() {
     // UC-9 BR-7: Border resize must preserve current width when dragging starts on the rendered seam.
     let (mut app, terminal_id) = app_with_real_terminal();
     add_editor_context_tab(&mut app, terminal_id);
+    app.window.window_size = (1400, 640);
     app.ws.show_sidebar = true;
     app.ws.width = 160.0;
-    app.dock.dock_width = 240.0;
+    app.dock.dock_width = 720.0;
     app.ft.visible = true;
     app.ft.width = 180.0;
     app.ws.visibility_animation = None;
@@ -510,4 +514,84 @@ fn terminal_context_surface_seam_uses_single_hairline_without_shadow_strips() {
     assert!(!source.contains("sep_x + 1.0"));
     assert!(!source.contains("sep_x + 2.0"));
     assert!(!source.contains("sep_x + 3.0"));
+}
+
+#[test]
+fn default_support_surface_widths_prioritize_terminal_context_surface() {
+    // UC-9 BR-9: New Workspaces start with a wide Terminal Context Surface and compact FileTree View.
+    let app = test_app();
+
+    assert_eq!(app.dock.dock_width, TERMINAL_CONTEXT_SURFACE_WIDTH);
+    assert_eq!(app.ft.width, FILE_TREE_WIDTH);
+    assert!(
+        app.dock.dock_width > app.ft.width * 4.0,
+        "Terminal Context Surface default should be clearly wider than FileTree View"
+    );
+}
+
+#[test]
+fn file_tree_view_reduces_terminal_context_surface_before_stage() {
+    // UC-9 BR-10: FileTree View takes width from Terminal Context Surface before shrinking Stage.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    add_editor_context_tab(&mut app, terminal_id);
+    app.dock.visibility_animation = None;
+    app.window.window_size = (1600, 720);
+    app.dock.dock_width = 920.0;
+    app.ft.width = 220.0;
+
+    app.ft.visible = false;
+    app.compute_layout();
+    let stage_before = app.pane_area_rect.expect("Stage area should be computed");
+
+    app.ft.visible = true;
+    app.compute_layout();
+    let stage_after = app.pane_area_rect.expect("Stage area should be computed");
+    let dock_area = app
+        .dock_area_rect
+        .expect("Terminal Context Surface area should be computed");
+    let file_tree = app.ft.rect.expect("FileTree View rect should be computed");
+
+    assert!(
+        (stage_after.width - stage_before.width).abs() < f32::EPSILON,
+        "Stage width should stay stable while Terminal Context Surface can absorb FileTree View"
+    );
+    assert!(
+        (dock_area.width - (920.0 - app.ft.width - PANE_GAP)).abs() < f32::EPSILON,
+        "Terminal Context Surface should give up the FileTree View width and outer gap"
+    );
+    assert_eq!(
+        file_tree.x,
+        dock_area.x + dock_area.width,
+        "FileTree View should remain the outer-right sibling surface"
+    );
+}
+
+#[test]
+fn support_surfaces_keep_minimum_widths_before_pushing_stage() {
+    // UC-9 BR-11: Terminal Context Surface and FileTree View keep minimum widths before Stage absorbs pressure.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    add_editor_context_tab(&mut app, terminal_id);
+    app.dock.visibility_animation = None;
+    app.window.window_size = (1600, 720);
+    app.dock.dock_width = TERMINAL_CONTEXT_SURFACE_MIN_WIDTH + FILE_TREE_WIDTH - 40.0;
+    app.ft.width = FILE_TREE_WIDTH;
+
+    app.ft.visible = false;
+    app.compute_layout();
+    let stage_before = app.pane_area_rect.expect("Stage area should be computed");
+
+    app.ft.visible = true;
+    app.compute_layout();
+    let stage_after = app.pane_area_rect.expect("Stage area should be computed");
+    let dock_area = app
+        .dock_area_rect
+        .expect("Terminal Context Surface area should be computed");
+    let file_tree = app.ft.rect.expect("FileTree View rect should be computed");
+
+    assert_eq!(dock_area.width, TERMINAL_CONTEXT_SURFACE_MIN_WIDTH);
+    assert_eq!(file_tree.width, FILE_TREE_WIDTH.max(FILE_TREE_MIN_WIDTH));
+    assert!(
+        stage_after.width < stage_before.width,
+        "Stage should shrink only after Terminal Context Surface reaches its minimum"
+    );
 }

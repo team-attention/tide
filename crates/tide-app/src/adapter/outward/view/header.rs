@@ -654,6 +654,22 @@ pub(crate) fn terminal_chrome_visual_state(
     }
 }
 
+pub(crate) fn pane_agent_chrome_visual_state(
+    panes: &HashMap<PaneId, PaneKind>,
+    detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
+    pane_id: PaneId,
+) -> Option<AgentChromeState> {
+    match panes.get(&pane_id) {
+        Some(PaneKind::Browser(browser)) if browser.agent_browser_control_mode().is_some() => {
+            Some(AgentChromeState::Running)
+        }
+        Some(PaneKind::Terminal(_)) => {
+            terminal_chrome_visual_state(panes, detected_agents, pane_id)
+        }
+        _ => None,
+    }
+}
+
 pub(crate) fn stage_terminal_dot_status(
     panes: &HashMap<PaneId, PaneKind>,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
@@ -886,7 +902,7 @@ pub fn render_pane_header_inner(
     // --- Build content: [pad 6] [dot?] [icon 14x14] [gap 6] [title...] [spacer] [badges...] [close 16x16 (9px icon)] [pad 6] ---
     let mut cx = rect.x + TAB_H_PAD;
 
-    let visible_dot_state = if show_stage_terminal_dot {
+    let visible_dot_state = if show_stage_terminal_dot || agent_chrome_state.is_some() {
         agent_chrome_state
     } else {
         None
@@ -1309,8 +1325,9 @@ fn render_tab_bar_impl(
         if pinned_ids.contains(&tid) {
             label = format!("\u{f08d} {}", label);
         }
-        let has_agent_status =
-            stage_terminal_dot_visual_state(panes, detected_agents, tid, !is_dock).is_some();
+        let has_agent_status = pane_agent_chrome_visual_state(panes, detected_agents, tid)
+            .filter(|_| !is_dock || matches!(panes.get(&tid), Some(PaneKind::Browser(_))))
+            .is_some();
         let badge_widths: Vec<f32> = if tid == active_pane {
             active_tab_badges(panes, &tid, is_focused, show_comment_badge)
                 .iter()
@@ -1388,7 +1405,8 @@ fn render_tab_bar_impl(
 
         // Agent status dot
         let mut dot_offset = 0.0_f32;
-        if let Some(state) = stage_terminal_dot_visual_state(panes, detected_agents, *tid, !is_dock)
+        if let Some(state) = pane_agent_chrome_visual_state(panes, detected_agents, *tid)
+            .filter(|_| !is_dock || matches!(panes.get(tid), Some(PaneKind::Browser(_))))
         {
             let dot_color = stage_terminal_dot_color(state, blink_time);
             let dot_size = 8.0_f32;
@@ -1949,6 +1967,31 @@ mod tests {
         assert_eq!(
             single_pane_header_paint_steps(false),
             vec![SinglePaneHeaderPaintStep::Background]
+        );
+    }
+
+    #[test]
+    fn browser_agent_control_mode_projects_agent_chrome_state() {
+        let browser_id = 7;
+        let browser =
+            crate::pane::browser::BrowserPane::with_url(browser_id, "https://example.com".into());
+        let mut panes = HashMap::new();
+        panes.insert(browser_id, PaneKind::Browser(browser));
+        let agents = HashMap::new();
+
+        assert_eq!(
+            pane_agent_chrome_visual_state(&panes, &agents, browser_id),
+            None
+        );
+
+        let Some(PaneKind::Browser(browser)) = panes.get_mut(&browser_id) else {
+            panic!("browser should exist");
+        };
+        browser.enter_agent_browser_control_mode(1, 1);
+
+        assert_eq!(
+            pane_agent_chrome_visual_state(&panes, &agents, browser_id),
+            Some(AgentChromeState::Running)
         );
     }
 

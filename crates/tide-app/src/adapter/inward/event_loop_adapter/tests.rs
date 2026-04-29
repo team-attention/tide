@@ -1,4 +1,6 @@
-use crate::pane::browser::{BrowserPane, BrowserSelectionSnapshot, BrowserSnapshot};
+use crate::pane::browser::{
+    BrowserPageElementKind, BrowserPane, BrowserSelectionSnapshot, BrowserSnapshot,
+};
 use crate::pane::PaneKind;
 use crate::App;
 
@@ -38,6 +40,66 @@ fn browser_snapshot_bridge_message_updates_browser_pane_state() {
         snapshot.page_url.as_deref(),
         Some("https://example.com/article")
     );
+}
+
+#[test]
+fn browser_snapshot_bridge_message_updates_browser_page_map() {
+    let mut app = App::new();
+    let (layout, browser_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes.insert(
+        browser_id,
+        PaneKind::Browser(BrowserPane::with_url(
+            browser_id,
+            "https://example.com".into(),
+        )),
+    );
+
+    let msg = serde_json::json!({
+        "kind": "browser-snapshot",
+        "pane_id": browser_id,
+        "text": "Conversation Lab\nUser\n+ Debug User",
+        "title": "Conversation Lab",
+        "url": "https://example.com/lab",
+        "page_map": {
+            "regions": [{
+                "ref": "r1",
+                "role": "complementary",
+                "tag": "ASIDE",
+                "label": "User list",
+                "text": "User\nDebug User",
+                "rect": {"x": 720.0, "y": 0.0, "width": 320.0, "height": 640.0}
+            }],
+            "interactables": [{
+                "ref": "i1",
+                "role": "button",
+                "tag": "BUTTON",
+                "label": "+ Debug User",
+                "text": "+ Debug User",
+                "action": "open-dev-user-modal",
+                "disabled": false,
+                "rect": {"x": 902.0, "y": 48.0, "width": 104.0, "height": 32.0}
+            }]
+        }
+    })
+    .to_string();
+
+    assert!(app.apply_webview_bridge_message(&msg));
+
+    let Some(PaneKind::Browser(browser)) = app.panes.get(&browser_id) else {
+        panic!("browser pane should exist");
+    };
+    let Some(page_map) = browser.page_map.as_ref() else {
+        panic!("browser page map should exist");
+    };
+    assert_eq!(page_map.regions[0].kind, BrowserPageElementKind::Region);
+    assert_eq!(page_map.regions[0].label, "User list");
+    assert_eq!(page_map.interactables[0].reference, "i1");
+    assert_eq!(
+        page_map.interactables[0].action.as_deref(),
+        Some("open-dev-user-modal")
+    );
+    assert_eq!(page_map.interactables[0].rect.x, 902.0);
 }
 
 #[test]

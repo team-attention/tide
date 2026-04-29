@@ -6,9 +6,11 @@ use crate::pane::browser::{
     BrowserAutomationCursor, BrowserPane, BrowserSelectionSnapshot, BrowserSnapshot,
 };
 use crate::pane::editor::EditorPane;
-use crate::pane::PaneKind;
+use crate::pane::{PaneKind, TerminalPane};
 use crate::state::FocusArea;
 use crate::App;
+use crate::DockPort;
+use crate::LayoutPort;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -41,6 +43,35 @@ fn app_with_editor() -> (App, u64) {
     app.focus.focus_area = FocusArea::Stage;
     app.router.set_focused(id);
     (app, id)
+}
+
+fn app_with_context_browser(dock_width: f32) -> (App, u64, u64) {
+    let mut app = test_app();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    let terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    app.panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    app.focus.focused = Some(terminal_id);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.router.set_focused(terminal_id);
+    app.compute_layout();
+
+    app.dock.dock_width = dock_width;
+    let browser_id = app.layout.alloc_id();
+    app.panes.insert(
+        browser_id,
+        PaneKind::Browser(BrowserPane::with_url(
+            browser_id,
+            "http://localhost:4174".to_string(),
+        )),
+    );
+    app.add_pane_to_dock(browser_id, Some(terminal_id));
+    app.dock.dock_open = true;
+    app.dock.visibility_animation = None;
+    app.compute_layout();
+
+    (app, terminal_id, browser_id)
 }
 
 fn observe_browser(app: &mut App, browser_id: u64) {
@@ -111,6 +142,45 @@ fn browser_observe_includes_snapshot_selection_and_cursor_state() {
     assert_eq!(result["automation_cursor"]["y"], 240.0);
     assert_eq!(result["automation_cursor"]["label"], "Inspect");
     assert_eq!(result["automation_cursor"]["visible"], true);
+}
+
+#[test]
+fn browser_observe_includes_visual_fit_tool_selection_guidance() {
+    // UC-1 BR-17: browser-observe includes visual fit and Tool Selection Guidance before BrowserSnapshot-only or eval workarounds.
+    let (mut app, terminal_id, browser_id) = app_with_context_browser(398.0);
+
+    let result = app
+        .handle_cli_command("browser-observe", json!({"pane_id": browser_id}))
+        .expect("browser-observe should succeed");
+
+    assert_eq!(result["visual_fit"]["status"], "too_small");
+    assert_eq!(
+        result["visual_fit"]["tool_selection"]["next_tool"],
+        "tide_layout_action"
+    );
+    assert_eq!(
+        result["visual_fit"]["tool_selection"]["action"]["target"]["kind"],
+        "terminal_context_surface"
+    );
+    assert_eq!(
+        result["visual_fit"]["tool_selection"]["action"]["target"]["owner_terminal_id"].as_u64(),
+        Some(terminal_id)
+    );
+    assert!(result["visual_fit"]["tool_selection"]["do_not_substitute"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|value| value == "app_internal_api_shortcuts"));
+    assert!(result["visual_fit"]["tool_selection"]["do_not_substitute"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|value| value == "url_parameter_shortcuts"));
+    assert!(result["visual_fit"]["tool_selection"]["do_not_substitute"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|value| value == "browser_snapshot_only_targeting"));
 }
 
 #[test]
@@ -323,8 +393,11 @@ fn browser_action_source_requests_snapshot_refresh_after_live_input_dispatch() {
     // UC-2 BR-10: click, type, and press request a BrowserSnapshot refresh after live dispatch
     let source = include_str!("../../adapter/inward/cli_adapter/commands.rs");
 
-    assert!(source.contains("let dispatched = browser.dispatch_automation_click(x, y);"));
-    assert!(source.contains("let dispatched = browser.dispatch_automation_type(text);"));
+    assert!(source.contains(
+        "let dispatched = browser.dispatch_automation_click_after(x, y, dispatch_delay_ms);"
+    ));
+    assert!(source.contains("browser.dispatch_automation_type_at_after("));
+    assert!(source.contains("None => browser.dispatch_automation_type(text),"));
     assert!(source.contains("let dispatched = browser.dispatch_automation_press(key);"));
     assert_eq!(
         source
@@ -336,15 +409,38 @@ fn browser_action_source_requests_snapshot_refresh_after_live_input_dispatch() {
 
 #[test]
 fn browser_automation_cursor_is_injected_through_the_browser_bridge_dom_path() {
-    // UC-3 BR-13: visible Browser Automation Cursor is DOM-injected through the Browser Pane helper path, not Tide's normal renderer overlay path
+    // UC-3 BR-13 / BR-16: visible Browser Automation Cursor is cursor-shaped, DOM-injected, and updated before click events through the Browser Pane helper path.
     let browser_source = include_str!("../../domain/pane/browser.rs");
     let layout_source = include_str!("../../layout_compute.rs");
 
     assert!(browser_source.contains("window.__tideSetAutomationCursor = (payload) => {"));
     assert!(browser_source.contains("window.__tideClearAutomationCursor = () => {"));
     assert!(
+        browser_source.contains("document.createElementNS('http://www.w3.org/2000/svg', 'svg')")
+    );
+    assert!(browser_source.contains("shape.setAttribute('viewBox', '0 0 24 24')"));
+    assert!(browser_source.contains(
+        "cursor.style.transition = 'left 280ms cubic-bezier(0.2, 0.8, 0.2, 1), top 280ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease-out';"
+    ));
+    assert!(browser_source.contains("window.__tideAutomationCursorLastPoint"));
+    assert!(browser_source.contains("window.__tideAutomationCursorMotionDurationMs"));
+    assert!(browser_source.contains("const motionMs = window.__tideAutomationCursorMotionDurationMs(origin, target, payload.motionMs);"));
+    assert!(!browser_source.contains("cursor.style.transition = 'none';"));
+    assert!(!browser_source.contains("label.dataset.role = 'label';"));
+    assert!(
         browser_source.contains("(document.body || document.documentElement).appendChild(cursor);")
     );
+    assert!(
+        browser_source.contains("window.__tideBrowserAutomationClick = (x, y, delayMs = 0) => {")
+    );
+    assert!(browser_source.contains("const clickDelayMs = Math.max(0, delayMs + 45);"));
+    assert!(browser_source
+        .contains("window.setTimeout(() => requestAnimationFrame(fireClick), clickDelayMs);"));
+    assert!(browser_source
+        .contains("window.__tideBrowserAutomationTypeAt = (x, y, text, delayMs = 0) => {"));
+    assert!(browser_source.contains("const typeDelayMs = Math.max(0, delayMs + 45);"));
+    assert!(browser_source
+        .contains("window.setTimeout(() => requestAnimationFrame(focusAndType), typeDelayMs);"));
     assert!(browser_source.contains("self.sync_automation_cursor_overlay();"));
     assert!(layout_source.contains("browser_native_views_obscured_by_overlays"));
 }

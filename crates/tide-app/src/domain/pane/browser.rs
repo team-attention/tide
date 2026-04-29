@@ -1,4 +1,4 @@
-use crate::tide_core::PaneId;
+use crate::tide_core::{PaneId, Rect};
 use crate::tide_platform::macos::webview::WebViewHandle;
 
 use crate::state::search::SearchState;
@@ -102,6 +102,86 @@ pub struct BrowserSnapshot {
     pub page_url: Option<String>,
 }
 
+pub const BROWSER_SNAPSHOT_TEXT_LIMIT_BYTES: usize = 128 * 1024;
+pub const BROWSER_SNAPSHOT_HISTORY_LIMIT: usize = 2;
+pub const BROWSER_PAGE_MAP_REGION_LIMIT: usize = 30;
+pub const BROWSER_PAGE_MAP_INTERACTABLE_LIMIT: usize = 80;
+pub const BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES: usize = 160;
+pub const BROWSER_PAGE_MAP_TEXT_LIMIT_BYTES: usize = 512;
+const BROWSER_AUTOMATION_CURSOR_MIN_MOTION_MS: u64 = 120;
+const BROWSER_AUTOMATION_CURSOR_MAX_MOTION_MS: u64 = 900;
+const BROWSER_AUTOMATION_CURSOR_PX_PER_MS: f64 = 1.35;
+const BROWSER_AUTOMATION_CURSOR_SETTLE_MS: u64 = 45;
+
+fn automation_cursor_motion_duration_ms(from: (f64, f64), to: (f64, f64)) -> u64 {
+    let distance = (to.0 - from.0).hypot(to.1 - from.1);
+    if distance < 1.0 {
+        return 0;
+    }
+    let duration = (distance / BROWSER_AUTOMATION_CURSOR_PX_PER_MS).round() as u64;
+    duration.clamp(
+        BROWSER_AUTOMATION_CURSOR_MIN_MOTION_MS,
+        BROWSER_AUTOMATION_CURSOR_MAX_MOTION_MS,
+    )
+}
+
+/// One retained BrowserSnapshot anchor for bounded diff_since operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserSnapshotHistoryEntry {
+    pub generation: u64,
+    pub snapshot: BrowserSnapshot,
+}
+
+/// Kind of visible Browser Page Element captured in Browser Page Map.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BrowserPageElementKind {
+    Region,
+    Interactable,
+}
+
+/// Visible Browser Pane page region or interactable captured from the bridge.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrowserPageElement {
+    pub reference: String,
+    pub kind: BrowserPageElementKind,
+    pub role: Option<String>,
+    pub tag: String,
+    pub label: String,
+    pub text: String,
+    pub value: Option<String>,
+    pub placeholder: Option<String>,
+    pub action: Option<String>,
+    pub disabled: bool,
+    pub rect: Rect,
+}
+
+impl BrowserPageElement {
+    pub fn center(&self) -> (f64, f64) {
+        (
+            f64::from(self.rect.x + self.rect.width * 0.5),
+            f64::from(self.rect.y + self.rect.height * 0.5),
+        )
+    }
+}
+
+/// Bounded structured map of visible Browser Pane page regions and interactables.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrowserPageMap {
+    pub regions: Vec<BrowserPageElement>,
+    pub interactables: Vec<BrowserPageElement>,
+    pub truncated_regions: bool,
+    pub truncated_interactables: bool,
+}
+
+impl BrowserPageMap {
+    pub fn element_by_ref(&self, reference: &str) -> Option<&BrowserPageElement> {
+        self.interactables
+            .iter()
+            .chain(self.regions.iter())
+            .find(|element| element.reference == reference)
+    }
+}
+
 /// Visible Browser Pane automation marker owned by Browser Pane state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BrowserAutomationCursor {
@@ -109,6 +189,14 @@ pub struct BrowserAutomationCursor {
     pub y: f64,
     pub label: Option<String>,
     pub visible: bool,
+}
+
+/// Wrapper-managed visual control state for an actively driven Browser Pane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentBrowserControlMode {
+    pub caller_pane_id: PaneId,
+    pub associated_terminal_id: PaneId,
+    pub generation: u64,
 }
 
 /// A browser pane backed by a native WKWebView.
@@ -146,10 +234,16 @@ pub struct BrowserPane {
     pub url_selection: Option<(usize, usize)>,
     /// Latest BrowserSnapshot captured from the WKWebView bridge.
     pub page_snapshot: Option<BrowserSnapshot>,
+    /// Latest Browser Page Map captured from the WKWebView bridge.
+    pub page_map: Option<BrowserPageMap>,
+    /// Bounded in-memory BrowserSnapshot history for read/find/diff tools.
+    snapshot_history: Vec<BrowserSnapshotHistoryEntry>,
     /// Latest page selection snapshot captured from the WKWebView bridge.
     pub page_selection: Option<BrowserSelectionSnapshot>,
     /// Visible Browser Automation Cursor state for agent-driven Browser Pane actions.
     automation_cursor: Option<BrowserAutomationCursor>,
+    /// Wrapper-managed visual Browser Pane control state.
+    agent_browser_control_mode: Option<AgentBrowserControlMode>,
     /// Browser Pane Generation last observed by an agent before structured action.
     agent_observed_generation: Option<u64>,
     /// Whether the agent must observe again before content-changing Browser Pane actions.
@@ -213,8 +307,11 @@ impl BrowserPane {
             search: None,
             url_selection: None,
             page_snapshot: None,
+            page_map: None,
+            snapshot_history: Vec::new(),
             page_selection: None,
             automation_cursor: None,
+            agent_browser_control_mode: None,
             agent_observed_generation: None,
             agent_reobserve_required: true,
             selection_bridge_installed: false,
@@ -253,8 +350,11 @@ impl BrowserPane {
             search: None,
             url_selection: None,
             page_snapshot: None,
+            page_map: None,
+            snapshot_history: Vec::new(),
             page_selection: None,
             automation_cursor: None,
+            agent_browser_control_mode: None,
             agent_observed_generation: None,
             agent_reobserve_required: true,
             selection_bridge_installed: false,
@@ -293,8 +393,11 @@ impl BrowserPane {
             search: None,
             url_selection: None,
             page_snapshot: None,
+            page_map: None,
+            snapshot_history: Vec::new(),
             page_selection: None,
             automation_cursor: None,
+            agent_browser_control_mode: None,
             agent_observed_generation: None,
             agent_reobserve_required: true,
             selection_bridge_installed: false,
@@ -332,8 +435,11 @@ impl BrowserPane {
             search: None,
             url_selection: None,
             page_snapshot: None,
+            page_map: None,
+            snapshot_history: Vec::new(),
             page_selection: None,
             automation_cursor: None,
+            agent_browser_control_mode: None,
             agent_observed_generation: None,
             agent_reobserve_required: true,
             selection_bridge_installed: false,
@@ -557,7 +663,10 @@ impl BrowserPane {
         self.context_menu = None;
         self.page_selection = None;
         self.page_snapshot = None;
+        self.page_map = None;
+        self.snapshot_history.clear();
         self.search = None;
+        self.agent_browser_control_mode = None;
         self.agent_observed_generation = None;
         self.agent_reobserve_required = true;
     }
@@ -837,6 +946,28 @@ impl BrowserPane {
         self.automation_cursor.as_ref()
     }
 
+    pub fn agent_browser_control_mode(&self) -> Option<&AgentBrowserControlMode> {
+        self.agent_browser_control_mode.as_ref()
+    }
+
+    pub fn snapshot_history(&self) -> &[BrowserSnapshotHistoryEntry] {
+        &self.snapshot_history
+    }
+
+    pub fn snapshot_history_entry(&self, generation: u64) -> Option<&BrowserSnapshotHistoryEntry> {
+        self.snapshot_history
+            .iter()
+            .find(|entry| entry.generation == generation)
+    }
+
+    pub fn current_snapshot_generation(&self) -> Option<u64> {
+        self.page_snapshot.as_ref()?;
+        self.snapshot_history
+            .last()
+            .map(|entry| entry.generation)
+            .or(Some(self.generation))
+    }
+
     pub fn normalize_navigation_url(url: &str) -> String {
         normalize_navigation_url(url)
     }
@@ -850,6 +981,10 @@ impl BrowserPane {
         self.agent_observed_generation == Some(self.generation) && !self.agent_reobserve_required
     }
 
+    pub fn agent_has_observed_browser_pane(&self) -> bool {
+        self.agent_observed_generation.is_some()
+    }
+
     pub fn mark_agent_action_requires_reobserve(&mut self) {
         self.agent_reobserve_required = true;
     }
@@ -860,13 +995,36 @@ impl BrowserPane {
     }
 
     pub fn set_automation_cursor(&mut self, cursor: BrowserAutomationCursor) {
+        let motion_duration_ms = self.automation_cursor_motion_duration_ms(cursor.x, cursor.y);
+        self.set_automation_cursor_with_motion_duration(cursor, motion_duration_ms);
+    }
+
+    pub fn set_automation_cursor_with_motion_duration(
+        &mut self,
+        cursor: BrowserAutomationCursor,
+        motion_duration_ms: u64,
+    ) {
         if self.automation_cursor.as_ref() == Some(&cursor) {
-            self.sync_automation_cursor_overlay();
+            self.sync_automation_cursor_overlay_with_motion_duration(motion_duration_ms);
             return;
         }
         self.automation_cursor = Some(cursor);
         self.generation = self.generation.wrapping_add(1);
-        self.sync_automation_cursor_overlay();
+        self.sync_automation_cursor_overlay_with_motion_duration(motion_duration_ms);
+    }
+
+    pub fn automation_cursor_motion_duration_ms(&self, x: f64, y: f64) -> u64 {
+        let from = self
+            .automation_cursor
+            .as_ref()
+            .filter(|cursor| cursor.visible)
+            .map(|cursor| (cursor.x, cursor.y))
+            .unwrap_or_else(|| ((x - 28.0).max(0.0), (y - 18.0).max(0.0)));
+        automation_cursor_motion_duration_ms(from, (x, y))
+    }
+
+    pub fn automation_cursor_action_delay_ms(motion_duration_ms: u64) -> u64 {
+        motion_duration_ms.saturating_add(BROWSER_AUTOMATION_CURSOR_SETTLE_MS)
     }
 
     pub fn clear_automation_cursor(&mut self) {
@@ -879,7 +1037,47 @@ impl BrowserPane {
         self.sync_automation_cursor_overlay();
     }
 
+    pub fn enter_agent_browser_control_mode(
+        &mut self,
+        caller_pane_id: PaneId,
+        associated_terminal_id: PaneId,
+    ) {
+        if self
+            .agent_browser_control_mode
+            .as_ref()
+            .is_some_and(|state| {
+                state.caller_pane_id == caller_pane_id
+                    && state.associated_terminal_id == associated_terminal_id
+            })
+        {
+            return;
+        }
+        let next_generation = self.generation.wrapping_add(1);
+        let state = AgentBrowserControlMode {
+            caller_pane_id,
+            associated_terminal_id,
+            generation: next_generation,
+        };
+        self.agent_browser_control_mode = Some(state);
+        self.generation = next_generation;
+    }
+
+    pub fn clear_agent_browser_control_mode(&mut self) {
+        if self.agent_browser_control_mode.is_none() {
+            return;
+        }
+        self.agent_browser_control_mode = None;
+        self.generation = self.generation.wrapping_add(1);
+    }
+
     pub fn sync_automation_cursor_overlay(&self) -> bool {
+        self.sync_automation_cursor_overlay_with_motion_duration(0)
+    }
+
+    pub fn sync_automation_cursor_overlay_with_motion_duration(
+        &self,
+        motion_duration_ms: u64,
+    ) -> bool {
         let Some(ref wv) = self.webview else {
             return false;
         };
@@ -891,8 +1089,8 @@ impl BrowserPane {
                     .map(escape_js_string_literal)
                     .unwrap_or_default();
                 format!(
-                    "if (window.__tideSetAutomationCursor) {{ window.__tideSetAutomationCursor({{x:{}, y:{}, visible:true, label:`{}`}}); }}",
-                    cursor.x, cursor.y, label
+                    "if (window.__tideSetAutomationCursor) {{ window.__tideSetAutomationCursor({{x:{}, y:{}, visible:true, label:`{}`, motionMs:{}}}); }}",
+                    cursor.x, cursor.y, label, motion_duration_ms
                 )
             }
             _ => {
@@ -905,12 +1103,16 @@ impl BrowserPane {
     }
 
     pub fn dispatch_automation_click(&self, x: f64, y: f64) -> bool {
+        self.dispatch_automation_click_after(x, y, 0)
+    }
+
+    pub fn dispatch_automation_click_after(&self, x: f64, y: f64, delay_ms: u64) -> bool {
         let Some(ref wv) = self.webview else {
             return false;
         };
         let js = format!(
-            "if (window.__tideBrowserAutomationClick) {{ window.__tideBrowserAutomationClick({}, {}); }}",
-            x, y
+            "if (window.__tideBrowserAutomationClick) {{ window.__tideBrowserAutomationClick({}, {}, {}); }}",
+            x, y, delay_ms
         );
         wv.evaluate_javascript(&js);
         true
@@ -924,6 +1126,29 @@ impl BrowserPane {
         let js = format!(
             "if (window.__tideBrowserAutomationType) {{ window.__tideBrowserAutomationType(`{}`); }}",
             escaped
+        );
+        wv.evaluate_javascript(&js);
+        true
+    }
+
+    pub fn dispatch_automation_type_at(&self, x: f64, y: f64, text: &str) -> bool {
+        self.dispatch_automation_type_at_after(x, y, text, 0)
+    }
+
+    pub fn dispatch_automation_type_at_after(
+        &self,
+        x: f64,
+        y: f64,
+        text: &str,
+        delay_ms: u64,
+    ) -> bool {
+        let Some(ref wv) = self.webview else {
+            return false;
+        };
+        let escaped = escape_js_string_literal(text);
+        let js = format!(
+            "if (window.__tideBrowserAutomationTypeAt) {{ window.__tideBrowserAutomationTypeAt({}, {}, `{}`, {}); }}",
+            x, y, escaped, delay_ms
         );
         wv.evaluate_javascript(&js);
         true
@@ -1049,19 +1274,69 @@ impl BrowserPane {
         );
     }
 
-    /// Update the latest BrowserSnapshot from the WKWebView bridge.
-    pub fn update_page_snapshot(&mut self, snapshot: Option<BrowserSnapshot>) -> bool {
-        if self.page_snapshot == snapshot {
+    /// Update the latest BrowserSnapshot and Browser Page Map from the WKWebView bridge.
+    pub fn update_page_observation(
+        &mut self,
+        snapshot: Option<BrowserSnapshot>,
+        page_map: Option<BrowserPageMap>,
+    ) -> bool {
+        if self.page_snapshot == snapshot && self.page_map == page_map {
             return false;
         }
+        let next_generation = self.generation.wrapping_add(1);
+        if let Some(snapshot) = snapshot.as_ref() {
+            self.record_snapshot_history(next_generation, snapshot);
+        }
         self.page_snapshot = snapshot;
-        self.generation = self.generation.wrapping_add(1);
+        self.page_map = page_map;
+        self.generation = next_generation;
         true
+    }
+
+    /// Update the latest BrowserSnapshot from the WKWebView bridge.
+    pub fn update_page_snapshot(&mut self, snapshot: Option<BrowserSnapshot>) -> bool {
+        let page_map = if snapshot.is_none() {
+            None
+        } else {
+            self.page_map.clone()
+        };
+        self.update_page_observation(snapshot, page_map)
+    }
+
+    fn record_snapshot_history(&mut self, generation: u64, snapshot: &BrowserSnapshot) {
+        let bounded = BrowserSnapshot {
+            text: truncate_utf8_to_byte_limit(&snapshot.text, BROWSER_SNAPSHOT_TEXT_LIMIT_BYTES),
+            page_title: snapshot.page_title.clone(),
+            page_url: snapshot.page_url.clone(),
+        };
+        self.snapshot_history.push(BrowserSnapshotHistoryEntry {
+            generation,
+            snapshot: bounded,
+        });
+        if self.snapshot_history.len() > BROWSER_SNAPSHOT_HISTORY_LIMIT {
+            let overflow = self.snapshot_history.len() - BROWSER_SNAPSHOT_HISTORY_LIMIT;
+            self.snapshot_history.drain(0..overflow);
+        }
     }
 
     /// Clear any cached BrowserSnapshot.
     pub fn clear_page_snapshot(&mut self) {
         let _ = self.update_page_snapshot(None);
+    }
+
+    /// Update the latest Browser Page Map from the WKWebView bridge.
+    pub fn update_page_map(&mut self, page_map: Option<BrowserPageMap>) -> bool {
+        if self.page_map == page_map {
+            return false;
+        }
+        self.page_map = page_map;
+        self.generation = self.generation.wrapping_add(1);
+        true
+    }
+
+    /// Clear any cached Browser Page Map.
+    pub fn clear_page_map(&mut self) {
+        let _ = self.update_page_map(None);
     }
 
     /// Update the latest page selection snapshot from the WKWebView bridge.
@@ -1149,6 +1424,17 @@ impl BrowserPane {
     }
 }
 
+fn truncate_utf8_to_byte_limit(text: &str, limit: usize) -> String {
+    if text.len() <= limit {
+        return text.to_string();
+    }
+    let mut end = limit;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text[..end].to_string()
+}
+
 /// Extract the origin (scheme + host + port) from a URL for same-origin comparison.
 /// Returns the original string if parsing fails.
 fn extract_origin(url: &str) -> String {
@@ -1234,12 +1520,132 @@ fn browser_selection_bridge_script(pane_id: PaneId) -> String {
       window.webkit.messageHandlers.tide.postMessage(JSON.stringify(payload));
     }} catch (_e) {{}}
   }};
+  const clampText = (value, limit) => {{
+    const text = value == null ? "" : String(value);
+    return text.length > limit ? text.slice(0, limit) : text;
+  }};
+  const visibleRect = (el) => {{
+    if (!el || el.id === "__tide-automation-cursor") return null;
+    const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+    const style = window.getComputedStyle ? window.getComputedStyle(el) : null;
+    if (style && (style.display === "none" || style.visibility === "hidden" || style.opacity === "0")) return null;
+    const left = Math.max(0, Math.min(window.innerWidth || rect.right, rect.left));
+    const top = Math.max(0, Math.min(window.innerHeight || rect.bottom, rect.top));
+    const right = Math.max(0, Math.min(window.innerWidth || rect.right, rect.right));
+    const bottom = Math.max(0, Math.min(window.innerHeight || rect.bottom, rect.bottom));
+    const width = right - left;
+    const height = bottom - top;
+    if (width < 1 || height < 1) return null;
+    return {{x: left, y: top, width, height}};
+  }};
+  const derivedRole = (el) => {{
+    const explicit = el.getAttribute && el.getAttribute("role");
+    if (explicit) return explicit;
+    const tag = (el.tagName || "").toLowerCase();
+    const type = (el.getAttribute && el.getAttribute("type") || "").toLowerCase();
+    if (tag === "button") return "button";
+    if (tag === "a") return "link";
+    if (tag === "textarea") return "textbox";
+    if (tag === "input") {{
+      if (type === "checkbox") return "checkbox";
+      if (type === "radio") return "radio";
+      if (type === "submit" || type === "button") return "button";
+      return "textbox";
+    }}
+    if (tag === "select") return "combobox";
+    if (tag === "form") return "form";
+    if (tag === "nav") return "navigation";
+    if (tag === "main") return "main";
+    if (tag === "aside") return "complementary";
+    if (tag === "dialog") return "dialog";
+    if (tag === "ul" || tag === "ol") return "list";
+    return null;
+  }};
+  const elementLabel = (el) => {{
+    const candidates = [
+      el.getAttribute && el.getAttribute("aria-label"),
+      el.getAttribute && el.getAttribute("title"),
+      el.getAttribute && el.getAttribute("alt"),
+      el.getAttribute && el.getAttribute("placeholder"),
+      el.value,
+      el.innerText,
+      el.textContent,
+      el.getAttribute && el.getAttribute("data-action"),
+      el.getAttribute && el.getAttribute("name"),
+      el.id
+    ];
+    for (const candidate of candidates) {{
+      if (candidate && String(candidate).trim()) return clampText(String(candidate).trim().replace(/\s+/g, " "), 160);
+    }}
+    return "";
+  }};
+  const elementPayload = (el, ref, kind) => {{
+    const rect = visibleRect(el);
+    if (!rect) return null;
+    const role = derivedRole(el);
+    const text = el.innerText || el.textContent || "";
+    return {{
+      ref,
+      kind,
+      role,
+      tag: el.tagName || "",
+      label: elementLabel(el),
+      text: clampText(String(text).trim().replace(/\s+/g, " "), 512),
+      value: typeof el.value === "string" ? clampText(el.value, 160) : null,
+      placeholder: el.getAttribute ? el.getAttribute("placeholder") : null,
+      action: el.getAttribute ? el.getAttribute("data-action") : null,
+      disabled: !!el.disabled || (el.getAttribute && el.getAttribute("aria-disabled") === "true"),
+      rect
+    }};
+  }};
+  const collectPageMap = () => {{
+    const regionLimit = 30;
+    const interactableLimit = 80;
+    const interactableSelector = [
+      "button", "input", "textarea", "select", "a[href]",
+      "[role='button']", "[role='link']", "[role='textbox']", "[role='combobox']",
+      "[role='checkbox']", "[role='radio']", "[role='tab']", "[role='menuitem']",
+      "[data-action]", "[contenteditable='true']"
+    ].join(",");
+    const regionSelector = [
+      "main", "aside", "nav", "header", "footer", "section", "form", "dialog", "ul", "ol",
+      "[role='main']", "[role='navigation']", "[role='complementary']", "[role='dialog']",
+      "[role='form']", "[role='search']", "[role='list']", "[role='listbox']",
+      "[aria-label]", "[data-region]", "[data-panel]"
+    ].join(",");
+    const interactables = [];
+    const regions = [];
+    let seen = new Set();
+    const pushElement = (target, el, prefix, kind, limit) => {{
+      if (!el || seen.has(el)) return false;
+      const payload = elementPayload(el, `${{prefix}}${{target.length + 1}}`, kind);
+      if (!payload) return false;
+      seen.add(el);
+      if (target.length < limit) target.push(payload);
+      return true;
+    }};
+    const interactableNodes = Array.from(document.querySelectorAll(interactableSelector));
+    for (const el of interactableNodes) pushElement(interactables, el, "i", "interactable", interactableLimit);
+    seen = new Set();
+    const regionNodes = Array.from(document.querySelectorAll(regionSelector));
+    for (const el of regionNodes) {{
+      if (interactableNodes.includes(el)) continue;
+      pushElement(regions, el, "r", "region", regionLimit);
+    }}
+    return {{
+      regions,
+      interactables,
+      truncated_regions: regionNodes.length > regionLimit,
+      truncated_interactables: interactableNodes.length > interactableLimit
+    }};
+  }};
   const postPageSnapshot = () => {{
     const title = document.title || "";
     const url = window.location ? window.location.href : "";
     const root = document.body || document.documentElement;
     const text = root && typeof root.innerText === "string" ? root.innerText : "";
-    post({{kind: "browser-snapshot", pane_id: paneId, text, title, url}});
+    post({{kind: "browser-snapshot", pane_id: paneId, text, title, url, page_map: collectPageMap()}});
   }};
   const postSelectionSnapshot = () => {{
     const selection = window.getSelection ? window.getSelection() : null;
@@ -1284,32 +1690,40 @@ fn browser_selection_bridge_script(pane_id: PaneId) -> String {
     cursor.style.position = 'fixed';
     cursor.style.left = '0px';
     cursor.style.top = '0px';
-    cursor.style.width = '16px';
-    cursor.style.height = '16px';
-    cursor.style.borderRadius = '999px';
-    cursor.style.background = 'rgba(255, 90, 31, 0.92)';
-    cursor.style.border = '2px solid white';
-    cursor.style.boxShadow = '0 0 0 2px rgba(0,0,0,0.24)';
-    cursor.style.transform = 'translate(-50%, -50%)';
+    cursor.style.width = '24px';
+    cursor.style.height = '24px';
+    cursor.style.background = 'transparent';
+    cursor.style.transform = 'translate(-2px, -2px)';
     cursor.style.pointerEvents = 'none';
     cursor.style.zIndex = '2147483647';
     cursor.style.display = 'none';
-    cursor.style.transition = 'left 120ms ease, top 120ms ease, opacity 120ms ease';
-    const label = document.createElement('div');
-    label.dataset.role = 'label';
-    label.style.position = 'absolute';
-    label.style.left = '18px';
-    label.style.top = '-10px';
-    label.style.padding = '2px 6px';
-    label.style.borderRadius = '999px';
-    label.style.background = 'rgba(17, 24, 39, 0.92)';
-    label.style.color = 'white';
-    label.style.font = '12px/1.4 -apple-system, BlinkMacSystemFont, sans-serif';
-    label.style.whiteSpace = 'nowrap';
-    label.style.display = 'none';
-    cursor.appendChild(label);
+    cursor.style.opacity = '0';
+    cursor.style.transition = 'left 280ms cubic-bezier(0.2, 0.8, 0.2, 1), top 280ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease-out';
+    const shape = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    shape.setAttribute('viewBox', '0 0 24 24');
+    shape.setAttribute('width', '24');
+    shape.setAttribute('height', '24');
+    shape.style.filter = 'drop-shadow(0 1px 2px rgba(0,0,0,0.55))';
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M3 2 L3 21 L8.6 15.7 L12.2 23 L15.4 21.4 L11.9 14.3 L19 14.3 Z');
+    path.setAttribute('fill', 'white');
+    path.setAttribute('stroke', 'rgba(17,24,39,0.92)');
+    path.setAttribute('stroke-width', '1.6');
+    path.setAttribute('stroke-linejoin', 'round');
+    shape.appendChild(path);
+    cursor.appendChild(shape);
     (document.body || document.documentElement).appendChild(cursor);
     return cursor;
+  }};
+  window.__tideAutomationCursorMotionDurationMs = (origin, target, provided) => {{
+    if (Number.isFinite(provided)) {{
+      return Math.max(0, Math.min(900, Math.round(provided)));
+    }}
+    const dx = target.x - origin.x;
+    const dy = target.y - origin.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance < 1) return 0;
+    return Math.max(120, Math.min(900, Math.round(distance / 1.35)));
   }};
   window.__tideSetAutomationCursor = (payload) => {{
     if (!payload || payload.visible === false) {{
@@ -1317,19 +1731,47 @@ fn browser_selection_bridge_script(pane_id: PaneId) -> String {
       return;
     }}
     const cursor = ensureAutomationCursor();
+    const wasHidden = cursor.style.display === 'none' || cursor.style.opacity === '0';
+    const target = {{
+      x: Number.isFinite(payload.x) ? payload.x : 0,
+      y: Number.isFinite(payload.y) ? payload.y : 0
+    }};
+    const previous = window.__tideAutomationCursorLastPoint;
+    const origin = wasHidden
+      ? (previous || {{
+          x: Math.max(0, target.x - 28),
+          y: Math.max(0, target.y - 18)
+        }})
+      : (previous || {{
+          x: Number.parseFloat(cursor.style.left) || target.x,
+          y: Number.parseFloat(cursor.style.top) || target.y
+        }});
+    const motionMs = window.__tideAutomationCursorMotionDurationMs(origin, target, payload.motionMs);
+    cursor.style.transition = `left ${{motionMs}}ms cubic-bezier(0.2, 0.8, 0.2, 1), top ${{motionMs}}ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 180ms ease-out`;
     cursor.style.display = 'block';
-    cursor.style.left = `${{payload.x || 0}}px`;
-    cursor.style.top = `${{payload.y || 0}}px`;
-    const label = cursor.querySelector('[data-role="label"]');
-    const text = payload.label || '';
-    if (label) {{
-      label.textContent = text;
-      label.style.display = text ? 'block' : 'none';
+    if (wasHidden) {{
+      cursor.style.left = `${{origin.x}}px`;
+      cursor.style.top = `${{origin.y}}px`;
+      cursor.offsetHeight;
+      requestAnimationFrame(() => {{
+        cursor.style.opacity = '1';
+        cursor.style.left = `${{target.x}}px`;
+        cursor.style.top = `${{target.y}}px`;
+      }});
+    }} else {{
+      cursor.style.opacity = '1';
+      cursor.style.left = `${{target.x}}px`;
+      cursor.style.top = `${{target.y}}px`;
     }}
+    window.__tideAutomationCursorLastPoint = target;
   }};
   window.__tideClearAutomationCursor = () => {{
     const cursor = document.getElementById('__tide-automation-cursor');
-    if (cursor) cursor.style.display = 'none';
+    if (!cursor) return;
+    cursor.style.opacity = '0';
+    window.setTimeout(() => {{
+      if (cursor.style.opacity === '0') cursor.style.display = 'none';
+    }}, 180);
   }};
   const dispatchMouse = (target, type, x, y) => {{
     target.dispatchEvent(new MouseEvent(type, {{
@@ -1340,15 +1782,20 @@ fn browser_selection_bridge_script(pane_id: PaneId) -> String {
       view: window
     }}));
   }};
-  window.__tideBrowserAutomationClick = (x, y) => {{
-    const target = document.elementFromPoint(x, y);
-    if (!target) return false;
-    if (typeof target.focus === 'function') target.focus();
-    dispatchMouse(target, 'mousemove', x, y);
-    dispatchMouse(target, 'mouseover', x, y);
-    dispatchMouse(target, 'mousedown', x, y);
-    dispatchMouse(target, 'mouseup', x, y);
-    dispatchMouse(target, 'click', x, y);
+  window.__tideBrowserAutomationClick = (x, y, delayMs = 0) => {{
+    const fireClick = () => {{
+      const target = document.elementFromPoint(x, y);
+      if (!target) return false;
+      if (typeof target.focus === 'function') target.focus();
+      dispatchMouse(target, 'mousemove', x, y);
+      dispatchMouse(target, 'mouseover', x, y);
+      dispatchMouse(target, 'mousedown', x, y);
+      dispatchMouse(target, 'mouseup', x, y);
+      dispatchMouse(target, 'click', x, y);
+      return true;
+    }};
+    const clickDelayMs = Math.max(0, delayMs + 45);
+    window.setTimeout(() => requestAnimationFrame(fireClick), clickDelayMs);
     return true;
   }};
   window.__tideBrowserAutomationType = (text) => {{
@@ -1371,6 +1818,17 @@ fn browser_selection_bridge_script(pane_id: PaneId) -> String {
       return true;
     }}
     return false;
+  }};
+  window.__tideBrowserAutomationTypeAt = (x, y, text, delayMs = 0) => {{
+    const focusAndType = () => {{
+      const target = document.elementFromPoint(x, y);
+      if (!target) return false;
+      if (typeof target.focus === 'function') target.focus();
+      return window.__tideBrowserAutomationType ? window.__tideBrowserAutomationType(text) : false;
+    }};
+    const typeDelayMs = Math.max(0, delayMs + 45);
+    window.setTimeout(() => requestAnimationFrame(focusAndType), typeDelayMs);
+    return true;
   }};
   window.__tideBrowserAutomationPress = (key) => {{
     const target = document.activeElement || document.body || document.documentElement;

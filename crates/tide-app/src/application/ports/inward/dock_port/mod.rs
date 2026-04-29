@@ -36,6 +36,12 @@ pub(crate) trait DockPort {
     fn dock_layout_set_focused(&mut self, terminal_id: PaneId, pane_id: PaneId);
     fn dock_layout_set_active_tab(&mut self, terminal_id: PaneId, pane_id: PaneId);
     fn dock_layout_remove(&mut self, terminal_id: PaneId, pane_id: PaneId);
+    fn dock_layout_set_split_ratio(
+        &mut self,
+        terminal_id: PaneId,
+        pane_id: PaneId,
+        ratio: f32,
+    ) -> bool;
     fn dock_layout_split_with_leaf_group(
         &mut self,
         terminal_id: PaneId,
@@ -55,6 +61,7 @@ pub(crate) trait DockPort {
     fn dock_split_dragging(&self) -> bool;
     fn set_dock_split_dragging(&mut self, v: bool);
     fn set_dock_width(&mut self, w: f32);
+    fn animate_dock_width(&mut self, w: f32) -> f32;
     fn dock_begin_split_drag(
         &mut self,
         local_pos: crate::tide_core::Vec2,

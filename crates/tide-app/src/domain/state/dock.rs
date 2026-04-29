@@ -2,6 +2,7 @@
 
 use super::focus::ViewMode;
 use super::SurfaceVisibilityAnimation;
+use crate::theme::TERMINAL_CONTEXT_SURFACE_WIDTH;
 
 pub(crate) struct DockState {
     pub terminal_view_mode: ViewMode,
@@ -22,7 +23,7 @@ impl DockState {
         Self {
             terminal_view_mode: ViewMode::Split,
             dock_open: false,
-            dock_width: 400.0,
+            dock_width: TERMINAL_CONTEXT_SURFACE_WIDTH,
             visibility_animation: None,
             dock_border_dragging: false,
             dock_split_dragging: false,

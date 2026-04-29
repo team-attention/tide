@@ -211,7 +211,8 @@ fn surface_visibility_animation_eases_width_to_target() {
     // UC-4 BR-9: SurfaceVisibilityAnimation uses a bounded ease-out transition from current width to target width.
     let started_at = Instant::now();
     let animation = SurfaceVisibilityAnimation::new(0.0, 400.0, started_at);
-    let midpoint = started_at + Duration::from_millis(80);
+    assert!(SURFACE_VISIBILITY_ANIMATION_DURATION >= Duration::from_millis(220));
+    let midpoint = started_at + SURFACE_VISIBILITY_ANIMATION_DURATION / 2;
     let finished = started_at + SURFACE_VISIBILITY_ANIMATION_DURATION;
 
     assert_eq!(animation.width_at(started_at).to_bits(), 0.0f32.to_bits());

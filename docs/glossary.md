@@ -21,6 +21,9 @@ All paths below are relative to `crates/tide-app/src/`.
 | **LspManager** | `LspManager` | `adapter/outward/lsp_adapter/manager.rs` | Owns all LspClient instances (one per language). Orchestrates start/stop and request routing. |
 | **CompletionPopup** | `CompletionState` | `domain/pane/editor_completion.rs` | Per-EditorPane inline autocomplete dropdown. NOT part of ModalStack — coexists with typing. |
 | **BrowserSnapshot** | `BrowserSnapshot` | `domain/pane/browser.rs` | Cached page text and page metadata captured from a Browser Pane's `WKWebView` bridge for Agent Gateway observe commands. |
+| **Browser Observation Summary** | concept | A compact Agent Gateway observation shape for routine Browser Pane loops. It preserves targeting refs, visible geometry, Browser Automation Cursor, URL/loading state, and short text excerpts without returning the full BrowserSnapshot body. |
+| **Browser Page Map** | `BrowserPageMap` | `domain/pane/browser.rs` | Bounded structured map of visible Browser Pane regions and interactable page elements captured from the `WKWebView` bridge for Agent Gateway observe/action commands. |
+| **Browser Page Element** | `BrowserPageElement` | `domain/pane/browser.rs` | A visible Browser Pane page region or interactable with a generation-scoped reference, role/tag metadata, label/text/value hints, and a viewport `Rect`. |
 | **WorktreeInfo** | `WorktreeInfo` | `domain/terminal/git.rs` | Cached git worktree metadata for a working directory, including its `path`, `branch`, `is_main`, and `is_current` flags. |
 
 ## Value Objects (identity-less, compared by value)
@@ -38,7 +41,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **TerminalGrid** | `TerminalGrid` | `domain/core_types.rs` | 2D array of `TerminalCell` — the terminal's visible content. |
 | **CursorState** | `CursorState` | `domain/core_types.rs` | Position + visibility + shape of a terminal cursor. |
 | **DropTarget** | `DropTarget` | `domain/core_types.rs` | Where a dragged pane can land: `Pane(id, zone)` or `Root(zone)`. |
-| **Browser Automation Cursor** | `BrowserAutomationCursor` | `domain/pane/browser.rs` | Browser Pane automation marker state for the last agent-targeted viewport point, including its visibility and optional label. |
+| **Browser Automation Cursor** | `BrowserAutomationCursor` | `domain/pane/browser.rs` | Browser Pane automation marker state for the last agent-targeted viewport point, including its visibility and optional structured label metadata. The Browser Pane renders the cursor shape only, not the label text. |
 | **WebViewTarget** | `WebViewTarget` | `adapter/outward/platform_adapter/macos/webview.rs` | Value key for Browser Pane native state owned by one `Tide Window`, combining `TideWindowId` and `PaneId`. |
 
 ## Aggregates (consistency boundaries)
@@ -110,7 +113,14 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Pinned Pane** | legacy concept | A removed Dock model where a context Pane could appear in a global pinned group. Terminal Context Surface does not expose pinned Pane behavior; legacy pin actions are compatibility no-ops. |
 | **Browser Pane** | `PaneKind::Browser` | A Pane backed by a native `WKWebView`. Can run in navigation mode with a URL bar or in render mode for agent-provided HTML. |
 | **Browser Pane V2** | concept | A later capability track for Browser Pane work that goes beyond Browser Pane UX hardening, including in-app download management, stronger credential integration, and deeper browser session behavior. |
+| **Tide MCP Runtime** | concept | The provider-neutral Agent Gateway MCP contract exposed to Wrapped Agents and external MCP clients. It observes and mutates Tide Workspaces, Panes, and layout targets without depending on Codex-, Claude-, or Gemini-specific browser tools. |
+| **Layout Target** | concept | A typed target for Tide layout mutation, such as Stage Pane split, Terminal Context Surface, or FileTree View. Layout Target names describe product surfaces, not implementation storage such as `dock_width`. |
+| **Tide Browser Pane Runtime** | concept | The shared, human-visible browser runtime backed by a Tide Browser Pane. It is the default browser runtime for Wrapped Agents inside Tide. |
+| **External Browser Runtime** | concept | Any non-Tide browser automation surface, including provider-specific browser tools, Playwright, browser-use, Computer Use, or a regular browser. Used only after explicit user request or Tide Browser Pane unsupported fallback. |
+| **Browser Runtime Router** | concept | The provider-neutral wrapper policy that routes browser work to Tide Browser Pane Runtime by default and records explicit fallback to an External Browser Runtime when required. |
+| **Tool Selection Guidance** | concept | Structured guidance returned by Tide MCP Runtime observations that tells a Wrapped Agent which Tide tool should normally be selected next, such as resizing a Layout Target before Browser Pane content actions when Browser visual fit is poor. |
 | **Agent Browser Control Mode** | concept | Wrapper-managed visual control state for a Browser Pane while a `Wrapped Agent` is actively driving it. Entered only through an authorized wrapper-managed `Caller Pane`; ordinary Gateway/MCP callers never gain wrapper-managed privileges. |
+| **Browser Operation** | concept | A bounded user-requested browser task in Tide Browser Pane Runtime. A Wrapped Agent starts it before human-like Browser Pane work, keeps Agent Browser Control Mode and Browser Automation Cursor visible while it operates, and finishes it after the final observation. |
 | **GitSwitcher** | `GitSwitcherState` | Popup state that lists git worktrees for a Terminal Pane, tracks filtering and selection, and marks the current worktree row. |
 | **Search Bar** | concept | A Pane-scoped inline text input identified by `FocusState.search_focus`. When active it takes text-input priority over the underlying Pane. |
 | **FileFinder** | `FileFinderState` | Tide's modal navigation palette opened by `GlobalAction::FileFinder`. It can search files, current-file symbols, workspace symbols, or workspace text hits depending on `FileFinderMode`. |

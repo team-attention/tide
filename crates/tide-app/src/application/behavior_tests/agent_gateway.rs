@@ -1535,6 +1535,17 @@ fn codex_wrapper_omits_app_server_and_launches_direct_cli_only() {
 }
 
 #[test]
+fn codex_wrapper_disables_browser_use_plugin_inside_tide() {
+    // Spec: docs/specs/tide-mcp-runtime.md
+    // UC-3 BR-4: Tide-wrapped Codex disables Browser Use so Tide Browser Pane Runtime stays the default browser runtime.
+    let wrapper_path = format!("{}/resources/bin/codex", env!("CARGO_MANIFEST_DIR"));
+    let wrapper = std::fs::read_to_string(&wrapper_path)
+        .unwrap_or_else(|err| panic!("failed to read {wrapper_path}: {err}"));
+
+    assert!(wrapper.contains("-c \"plugins.\\\"browser-use@openai-bundled\\\".enabled=false\""));
+}
+
+#[test]
 fn claude_wrapper_forwards_hook_stdin_payloads_for_notification_and_stop() {
     // Spec: docs/specs/agent-auto-integration.md
     // UC-5 BR-13: Claude Notification and Stop hooks forward stdin JSON through tide notify.

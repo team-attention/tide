@@ -55,6 +55,7 @@ mod terminal_pane_inset;
 mod terminal_text_interaction;
 mod text_input_routing;
 mod theme_behavior;
+mod tide_mcp_runtime;
 mod titlebar_toggle_behavior;
 mod visual_hierarchy;
 mod workspace_behavior;
