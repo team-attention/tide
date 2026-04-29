@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::tide_core::TerminalBackend;
 
@@ -10,6 +10,12 @@ use crate::search;
 use crate::App;
 use crate::PaneLifecyclePort;
 
+fn editor_file_parent_matches(file_path: &Path, directory_path: &Path) -> bool {
+    file_path
+        .parent()
+        .is_some_and(|parent| paths_refer_to_same_file(parent, directory_path))
+}
+
 impl App {
     /// Start watching a file path for changes.
     pub(crate) fn watch_file(&mut self, path: &std::path::Path) {
@@ -19,6 +25,61 @@ impl App {
     /// Stop watching a file path.
     pub(crate) fn unwatch_file(&mut self, path: &std::path::Path) {
         self.ports.file_watcher.unwatch(path);
+    }
+
+    fn expand_clean_editor_paths_for_directory_watch_events(
+        &self,
+        changed_paths: &mut HashSet<PathBuf>,
+    ) {
+        let directory_paths: Vec<PathBuf> = changed_paths
+            .iter()
+            .filter(|path| path.is_dir())
+            .cloned()
+            .collect();
+
+        for directory_path in directory_paths {
+            for pane in self.panes.values() {
+                let PaneKind::Editor(editor_pane) = pane else {
+                    continue;
+                };
+                if editor_pane.editor.is_modified() {
+                    continue;
+                }
+                let Some(file_path) = editor_pane.editor.file_path() else {
+                    continue;
+                };
+                if editor_file_parent_matches(file_path, &directory_path) {
+                    changed_paths.insert(file_path.to_path_buf());
+                }
+            }
+        }
+    }
+
+    fn promote_existing_removed_paths_to_changes(
+        &self,
+        changed_paths: &mut HashSet<PathBuf>,
+        removed_paths: &mut HashSet<PathBuf>,
+    ) {
+        let existing_removed_paths: Vec<PathBuf> = removed_paths
+            .iter()
+            .filter(|path| path.exists())
+            .cloned()
+            .collect();
+        for path in existing_removed_paths {
+            removed_paths.remove(&path);
+            changed_paths.insert(path);
+        }
+
+        let existing_changed_paths: Vec<PathBuf> = changed_paths
+            .iter()
+            .filter(|path| path.exists())
+            .cloned()
+            .collect();
+        removed_paths.retain(|removed_path| {
+            !existing_changed_paths
+                .iter()
+                .any(|changed_path| paths_refer_to_same_file(changed_path, removed_path))
+        });
     }
 
     pub(crate) fn update(&mut self) {
@@ -126,6 +187,8 @@ impl App {
                     }
                 }
             }
+            self.promote_existing_removed_paths_to_changes(&mut changed_paths, &mut removed_paths);
+            self.expand_clean_editor_paths_for_directory_watch_events(&mut changed_paths);
             for changed_path in &changed_paths {
                 // Find editor panes with this file path
                 let matching_ids: Vec<crate::tide_core::PaneId> =

@@ -172,6 +172,65 @@ fn clean_editor_reload_clamps_cursor_to_character_boundary() {
     let _ = std::fs::remove_dir_all(fixture_root);
 }
 
+// --- UC-3: ReloadCleanEditorPaneAfterAtomicReplacement ---
+
+#[test]
+fn clean_editor_treats_existing_removed_path_as_atomic_replacement() {
+    // UC-3 BR-7: A remove event for a file path that currently exists again is treated as a changed file, not as a deletion.
+    let fixture_root = temp_fixture_dir("atomic-replace-remove");
+    std::fs::create_dir_all(&fixture_root).unwrap();
+    let path = fixture_root.join("note.md");
+    std::fs::write(&path, "# Before\n").unwrap();
+
+    let watched = Arc::new(Mutex::new(Vec::new()));
+    let watcher = RecordingFileWatcher::new(vec![FileWatchEvent::Removed(path.clone())], watched);
+    let (mut app, id) = app_with_file_backed_editor(&path);
+    app.ports.file_watcher = Box::new(watcher);
+
+    std::fs::write(&path, "# After\n").unwrap();
+    app.update();
+
+    let pane = match app.panes.get(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane to stay open"),
+    };
+    assert_eq!(pane.editor.buffer.lines, vec!["# After".to_string()]);
+    assert!(!pane.disk_changed);
+    assert!(!pane.file_deleted);
+
+    let _ = std::fs::remove_dir_all(fixture_root);
+}
+
+#[test]
+fn clean_editor_reloads_when_parent_directory_watch_event_reports_directory_path() {
+    // UC-3 BR-8: A parent-directory change event refreshes clean Editor Panes in that directory when no child path is available.
+    let fixture_root = temp_fixture_dir("atomic-replace-parent");
+    std::fs::create_dir_all(&fixture_root).unwrap();
+    let path = fixture_root.join("note.md");
+    std::fs::write(&path, "# Before\n").unwrap();
+
+    let watched = Arc::new(Mutex::new(Vec::new()));
+    let watcher = RecordingFileWatcher::new(
+        vec![FileWatchEvent::Modified(fixture_root.clone())],
+        watched,
+    );
+    let (mut app, id) = app_with_file_backed_editor(&path);
+    app.ports.file_watcher = Box::new(watcher);
+
+    std::fs::write(&path, "# After\n").unwrap();
+    app.update();
+
+    let pane = match app.panes.get(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    assert_eq!(pane.editor.buffer.lines, vec!["# After".to_string()]);
+    assert!(!pane.disk_changed);
+    assert!(!pane.file_deleted);
+
+    let _ = std::fs::remove_dir_all(fixture_root);
+}
+
 // --- UC-2: RefreshFileTreeGitStatusAfterEditorFileWatchEvent ---
 
 #[test]
