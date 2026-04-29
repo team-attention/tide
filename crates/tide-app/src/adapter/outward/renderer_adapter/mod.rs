@@ -9,8 +9,10 @@ mod init;
 mod msdf;
 mod overlay;
 pub(crate) mod port_impl;
+mod raster_icon;
 pub(crate) mod render_thread;
 mod shaders;
+mod svg_icon;
 mod vertex;
 
 use std::collections::{HashMap, HashSet};
@@ -23,6 +25,9 @@ use unicode_width::UnicodeWidthChar;
 use atlas::GlyphAtlas;
 use grid::PaneGridCache;
 use msdf::MsdfFontStore;
+pub(crate) use raster_icon::RasterIconAsset;
+use raster_icon::{RasterIconDrawCall, RasterIconTexture};
+pub(crate) use svg_icon::SvgIconPalette;
 use vertex::{ChromeRectVertex, GlyphVertex, GridBgInstance, GridGlyphInstance, RectVertex};
 
 // ──────────────────────────────────────────────
@@ -34,6 +39,7 @@ pub struct WgpuRenderer {
     pub(crate) rect_pipeline: wgpu::RenderPipeline,
     pub(crate) chrome_rounded_pipeline: wgpu::RenderPipeline,
     pub(crate) glyph_pipeline: wgpu::RenderPipeline,
+    pub(crate) raster_icon_pipeline: wgpu::RenderPipeline,
 
     // Uniform buffer (screen size)
     pub(crate) uniform_buffer: wgpu::Buffer,
@@ -42,6 +48,9 @@ pub struct WgpuRenderer {
     // Atlas
     pub(crate) atlas: GlyphAtlas,
     pub(crate) atlas_bind_group: wgpu::BindGroup,
+    pub(crate) raster_icon_bind_group_layout: wgpu::BindGroupLayout,
+    pub(crate) raster_icon_sampler: wgpu::Sampler,
+    pub(crate) raster_icon_textures: HashMap<&'static str, RasterIconTexture>,
 
     // Text subsystem
     pub(crate) font_system: FontSystem,
@@ -70,15 +79,28 @@ pub struct WgpuRenderer {
     // Chrome layer — cached for panel backgrounds and file tree
     pub(crate) chrome_rect_vertices: Vec<ChromeRectVertex>,
     pub(crate) chrome_rect_indices: Vec<u32>,
+    pub(crate) chrome_vector_vertices: Vec<RectVertex>,
+    pub(crate) chrome_vector_indices: Vec<u32>,
+    pub(crate) chrome_icon_vertices: Vec<GlyphVertex>,
+    pub(crate) chrome_icon_indices: Vec<u32>,
+    pub(crate) chrome_icon_draws: Vec<RasterIconDrawCall>,
     pub(crate) chrome_glyph_vertices: Vec<GlyphVertex>,
     pub(crate) chrome_glyph_indices: Vec<u32>,
     pub(crate) chrome_needs_upload: bool,
     pub(crate) chrome_rect_vb: wgpu::Buffer,
     pub(crate) chrome_rect_ib: wgpu::Buffer,
+    pub(crate) chrome_vector_vb: wgpu::Buffer,
+    pub(crate) chrome_vector_ib: wgpu::Buffer,
+    pub(crate) chrome_icon_vb: wgpu::Buffer,
+    pub(crate) chrome_icon_ib: wgpu::Buffer,
     pub(crate) chrome_glyph_vb: wgpu::Buffer,
     pub(crate) chrome_glyph_ib: wgpu::Buffer,
     pub(crate) chrome_rect_vb_capacity: usize,
     pub(crate) chrome_rect_ib_capacity: usize,
+    pub(crate) chrome_vector_vb_capacity: usize,
+    pub(crate) chrome_vector_ib_capacity: usize,
+    pub(crate) chrome_icon_vb_capacity: usize,
+    pub(crate) chrome_icon_ib_capacity: usize,
     pub(crate) chrome_glyph_vb_capacity: usize,
     pub(crate) chrome_glyph_ib_capacity: usize,
 
@@ -103,18 +125,25 @@ pub struct WgpuRenderer {
     pub(crate) top_rect_indices: Vec<u32>,
     pub(crate) top_rounded_rect_vertices: Vec<ChromeRectVertex>,
     pub(crate) top_rounded_rect_indices: Vec<u32>,
+    pub(crate) top_icon_vertices: Vec<GlyphVertex>,
+    pub(crate) top_icon_indices: Vec<u32>,
+    pub(crate) top_icon_draws: Vec<RasterIconDrawCall>,
     pub(crate) top_glyph_vertices: Vec<GlyphVertex>,
     pub(crate) top_glyph_indices: Vec<u32>,
     pub(crate) top_rect_vb: wgpu::Buffer,
     pub(crate) top_rect_ib: wgpu::Buffer,
     pub(crate) top_rounded_rect_vb: wgpu::Buffer,
     pub(crate) top_rounded_rect_ib: wgpu::Buffer,
+    pub(crate) top_icon_vb: wgpu::Buffer,
+    pub(crate) top_icon_ib: wgpu::Buffer,
     pub(crate) top_glyph_vb: wgpu::Buffer,
     pub(crate) top_glyph_ib: wgpu::Buffer,
     pub(crate) top_rect_vb_capacity: usize,
     pub(crate) top_rect_ib_capacity: usize,
     pub(crate) top_rounded_rect_vb_capacity: usize,
     pub(crate) top_rounded_rect_ib_capacity: usize,
+    pub(crate) top_icon_vb_capacity: usize,
+    pub(crate) top_icon_ib_capacity: usize,
     pub(crate) top_glyph_vb_capacity: usize,
     pub(crate) top_glyph_ib_capacity: usize,
 
@@ -200,6 +229,9 @@ impl Renderer for WgpuRenderer {
         self.top_rect_indices.clear();
         self.top_rounded_rect_vertices.clear();
         self.top_rounded_rect_indices.clear();
+        self.top_icon_vertices.clear();
+        self.top_icon_indices.clear();
+        self.top_icon_draws.clear();
         self.top_glyph_vertices.clear();
         self.top_glyph_indices.clear();
     }

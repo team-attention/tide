@@ -20,7 +20,7 @@ App
 ├── modal: ModalStack                    ← popups (mutually exclusive)
 ├── cache: RenderCache                   ← render cache + Generation tracking
 ├── interaction: InteractionState        ← mouse/drag/scroll
-├── ft: FileTreeModel                    ← file tree + git status
+├── ft: FileTreeModel                    ← FileTree View + git status
 └── ws: WorkspaceManager                 ← workspace list
 ```
 
@@ -43,13 +43,14 @@ CJK input method composition state. Manages per-Pane IME proxy lifecycle.
 
 | Modal | Trigger | Purpose |
 |-------|---------|---------|
-| `file_finder` | Shift+Shift | File search |
-| `git_switcher` | Cmd+G | Branch/worktree switch |
+| `file_finder` | Cmd+Shift+O | File, symbol, and workspace text search |
+| `git_switcher` | Header git/worktree badge | Branch/worktree switch |
 | `config_page` | Cmd+, | Settings overlay |
 | `save_confirm` | Closing dirty editor | Save confirmation |
-| `save_as_input` | Cmd+Shift+S | Save as dialog |
+| `save_as_input` | Cmd+S on untitled Editor Pane | Save as dialog |
 | `context_menu` | Right-click | Context menu |
-| `file_tree_rename` | R key (file tree) | Inline rename |
+| `file_tree_rename` | R key (FileTree View) | Inline rename |
+| `context_comment_composer` | Context comment affordance | Create Context Artifact |
 | `branch_cleanup` | Branch delete | Delete confirmation |
 
 ### RenderCache (`domain/state/render_cache.rs`)
@@ -70,7 +71,7 @@ PaneDragState: Idle → PendingDrag → Dragging
 ```
 
 ### FileTreeModel (`domain/state/file_tree_model.rs`)
-File tree + git status cache. CWD tracking → sticky git root.
+FileTree View + git status cache. CWD tracking → sticky git root.
 
 ### WorkspaceManager (`application/services/workspace_infra_service/`)
 **Core pattern: Swap**
@@ -93,7 +94,7 @@ handle_platform_event()
     ├── KeyDown → handle_key_down()
     │               │
     │               ├── Modal open? → modal consumes it
-    │               ├── FocusArea == FileTree? → file tree key handling
+    │               ├── FocusArea == FileTree? → FileTree View key handling
     │               ├── Router.process() → Action
     │               │     ├── GlobalAction → handle_action()
     │               │     ├── RouteToPane → send_text_to_target()
@@ -114,7 +115,7 @@ handle_platform_event()
 update()  (every frame)
     ├── Terminal.process() — consume PTY output
     ├── File watcher — editor reload
-    ├── Git poller — file tree status refresh
+    ├── Git poller — FileTree View status refresh
     └── Animations (scroll, cursor blink)
 
     ▼
@@ -133,12 +134,13 @@ This order **must never be skipped** (Invariant):
 4. git_switcher      (text input + arrows + ESC)
 5. file_finder       (text input + arrows + ESC)
 6. save_as_input     (text input + ESC)
-7. branch_cleanup    (Enter/ESC)
-8. save_confirm      (ESC to cancel)
-9. Completion popup  (arrows + Enter + ESC)
-10. FocusArea dispatch (FileTree / Stage / Dock)
-11. Router.process() → GlobalAction
-12. Text input → send_text_to_target()
+7. context_comment_composer (text input + submit/cancel)
+8. branch_cleanup    (Enter/ESC)
+9. save_confirm      (ESC to cancel)
+10. Completion popup (arrows + Enter/Tab + ESC)
+11. FocusArea dispatch (FileTree / Stage / Dock)
+12. Router.process() → GlobalAction
+13. Text input → send_text_to_target()
 ```
 
 ## Key Methods

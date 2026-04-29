@@ -55,7 +55,7 @@ The change should land as a sequence of product layers. Each layer is useful alo
 1. Establish the Workspace-as-task shell.
    - Continue using `Workspace` as the task boundary.
    - Rename the user-facing concept in chrome copy from generic Workspace numbering toward task identity, while keeping code-level domain terms as `Workspace`.
-   - Reuse and extend `docs/specs/worktree-ux.md` for auto-naming, visual identity, richer sidebar rows, and Workspace fuzzy switching.
+   - Reuse and extend `docs/specs/worktree-ux.md` for auto-naming, visual identity, richer Workspace rail rows, and Workspace fuzzy switching.
    - Keep Workspace rows compact enough to show many concurrent tasks without turning the rail into a card list.
 
 2. Make the open `Terminal` the first-class session.
@@ -102,7 +102,7 @@ The change should land as a sequence of product layers. Each layer is useful alo
 
 | Context | Role |
 |---------|------|
-| `domain/state/workspace_mgr.rs` | Owns the Workspace list, active index, sidebar state, and future task identity metadata. |
+| `domain/state/workspace_mgr.rs` | Owns the Workspace list, active index, Workspace rail visibility state, and future task identity metadata. |
 | `application/services/workspace_infra_service/` | Saves, loads, switches, creates, and closes Workspaces; remains the boundary for Workspace hot/cold storage. |
 | `domain/layout/` | Keeps `SplitLayout` and `TabGroup` as layout primitives. Stage and Terminal Context Surface both use `SplitLayout`; Stacked view is presentation state, not a second layout owner. |
 | `domain/pane/` | Keeps `PaneKind` as the Pane surface model: `Terminal`, `Editor`, `Diff`, `Browser`, `Launcher`. FileTree View is backed by `FileTreeModel`, not `PaneKind`, in V1. |
@@ -131,7 +131,7 @@ The change should land as a sequence of product layers. Each layer is useful alo
   2. User selects a Workspace by click, keyboard navigation, or fuzzy search.
   3. Tide calls the existing Workspace switch path.
   4. The selected Workspace restores its Stage layout, active Terminal Context Surface, focus, and `Context Artifact`s.
-- **Postcondition**: The chosen Workspace is active and visually identified in the titlebar and rail.
+- **Postcondition**: The chosen Workspace is active and visually identified in the Workspace rail and focused content chrome.
 - **Business Rules**:
   - BR-1: The left rail must use `Workspace` identity, not `Pane` identity, as the top-level task list.
   - BR-2: Switching Workspaces must continue to use `save_active_workspace()` and `load_active_workspace()`.
@@ -284,12 +284,13 @@ The change should land as a sequence of product layers. Each layer is useful alo
   7. Tide keeps seams between Workspace rail, Stage, Terminal Context Surface, and FileTree View compact enough that they read as resize/drop affordances, not wasted gutters.
   8. Tide resizes major regions from the rendered seam so the first drag movement does not jump away from the cursor.
   9. Tide renders Stage-to-Terminal Context Surface and Terminal Context Surface-to-FileTree View boundaries as single hairlines, not shadow gutters.
-  10. Tide gives the Terminal Context Surface enough default width for Browser Pane work while keeping FileTree View compact.
+  10. Tide gives the Terminal Context Surface a proportional default width for the current `Tide Window` so Browser Pane work is readable without overwhelming Stage in small windows.
   11. When FileTree View opens beside an already-open Terminal Context Surface, Tide keeps the right-side support surface budget stable by taking FileTree View width from the Terminal Context Surface first.
   12. Tide preserves minimum usable widths for Terminal Context Surface and FileTree View; only after those minimums are reached may Stage width shrink.
+  13. When the `Tide Window` is resized, Tide scales an explicit Terminal Context Surface width against the available support-surface budget while keeping FileTree View and Workspace rail stored widths stable unless the window is too small to honor them.
 - **Postcondition**: The screen communicates task, execution, context, and Pane details in that order.
 - **Business Rules**:
-  - BR-1: Workspace identity must be visible even when the rail is collapsed.
+  - BR-1: The titlebar must use its leading empty lane for the active `Workspace` identity and cwd metadata instead of a centered neutral product title.
   - BR-2: Stage and Terminal Context Surface must be visually distinct, but the Terminal Context Surface must read as attached to the active Terminal.
   - BR-3: Active Terminal and active context tab must not compete at equal visual weight.
   - BR-4: HeaderActionStrip must not create persistent repeated noise across every Pane.
@@ -297,9 +298,12 @@ The change should land as a sequence of product layers. Each layer is useful alo
   - BR-6: Major region seams must use compact spacing and thin hover/drop affordances.
   - BR-7: Border resize for Workspace rail, Terminal Context Surface, and FileTree View must preserve the current region width when the cursor is on the rendered seam.
   - BR-8: Terminal Context Surface seams must not draw multi-strip shadow gutters.
-  - BR-9: New Workspaces must default to a wide Terminal Context Surface and a compact FileTree View so Browser Pane verification is readable without manual resizing.
+  - BR-9: New Workspaces must render the default Terminal Context Surface width from the current `Tide Window` width ratio, bounded by minimum and legacy large-window cap, while keeping FileTree View compact.
   - BR-10: Opening FileTree View while Terminal Context Surface is visible must reduce Terminal Context Surface width before reducing Stage width.
   - BR-11: Terminal Context Surface and FileTree View must keep minimum usable widths; once those minimums are reached, Stage may absorb the remaining size pressure.
+  - BR-12: A user-resized Terminal Context Surface width must remain explicit instead of being reinterpreted as the proportional default.
+  - BR-13: `Tide Window` resize must scale an explicit Terminal Context Surface width proportionally to the available support-surface budget.
+  - BR-14: `Tide Window` resize must not rewrite stored FileTree View or Workspace rail widths when computing the resized layout.
 
 ## Invariants
 
@@ -352,7 +356,7 @@ The change should land as a sequence of product layers. Each layer is useful alo
 | UC-7: VerifyInBrowserPane | BR-2 | `open_terminal_codex_app` | `browser_use_targets_in_app_browser_pane` |
 | UC-8: RunLocalActions | BR-1 | `open_terminal_codex_app` | `local_action_sends_command_to_terminal` |
 | UC-8: RunLocalActions | BR-2 | `open_terminal_codex_app` | `local_action_does_not_require_wrapped_agent` |
-| UC-9: PreserveVisualHierarchy | BR-1 | `open_terminal_codex_app` | `collapsed_workspace_rail_keeps_active_workspace_identity_visible` |
+| UC-9: PreserveVisualHierarchy | BR-1 | `open_terminal_codex_app` | `titlebar_uses_active_workspace_identity_instead_of_neutral_product_title` |
 | UC-9: PreserveVisualHierarchy | BR-2 | `open_terminal_codex_app` | `stage_and_terminal_context_surface_have_distinct_region_chrome` |
 | UC-9: PreserveVisualHierarchy | BR-4 | `open_terminal_codex_app` | `inactive_pane_header_actions_are_not_persistently_emphasized` |
 | UC-9: PreserveVisualHierarchy | BR-5 | `open_terminal_codex_app` | `ordinary_stage_tab_groups_are_not_rendered` |
@@ -360,8 +364,10 @@ The change should land as a sequence of product layers. Each layer is useful alo
 | UC-9: PreserveVisualHierarchy | BR-7 | `open_terminal_codex_app` | `region_border_drag_preserves_width_at_current_seams` |
 | UC-9: PreserveVisualHierarchy | BR-8 | `open_terminal_codex_app` | `terminal_context_surface_seam_uses_single_hairline_without_shadow_strips` |
 | UC-9: PreserveVisualHierarchy | BR-9 | `open_terminal_codex_app` | `default_support_surface_widths_prioritize_terminal_context_surface` |
+| UC-9: PreserveVisualHierarchy | BR-12 | `open_terminal_codex_app` | `explicit_terminal_context_surface_width_is_not_reinterpreted_as_default_ratio` |
 | UC-9: PreserveVisualHierarchy | BR-10 | `open_terminal_codex_app` | `file_tree_view_reduces_terminal_context_surface_before_stage` |
 | UC-9: PreserveVisualHierarchy | BR-11 | `open_terminal_codex_app` | `support_surfaces_keep_minimum_widths_before_pushing_stage` |
+| UC-9: PreserveVisualHierarchy | BR-13/BR-14 | `open_terminal_codex_app` | `window_resize_scales_terminal_context_surface_without_rewriting_fixed_side_widths` |
 
 ## Location
 

@@ -205,6 +205,16 @@ pub(crate) fn handle_mouse_down(
         }
     }
 
+    // Launcher Pane choice rows
+    if button == MouseButton::Left {
+        if crate::adapter::inward::click_adapter::pane::handle_launcher_choice_click(
+            ctx,
+            ctx.last_cursor_pos(),
+        ) {
+            return;
+        }
+    }
+
     // Right-click on file tree
     if button == MouseButton::Right {
         if ctx.ft().visible {
@@ -360,10 +370,6 @@ fn handle_mouse_input_core(ctx: &mut impl MousePorts, button: MouseButton, _wind
             match &hover {
                 Some(crate::state::drag_types::HoverTarget::TitlebarSettings) => {
                     ctx.toggle_config_page();
-                    return;
-                }
-                Some(crate::state::drag_types::HoverTarget::TitlebarTheme) => {
-                    ctx.handle_global_action(crate::tide_input::GlobalAction::ToggleTheme);
                     return;
                 }
                 Some(crate::state::drag_types::HoverTarget::TitlebarIntegration) => {

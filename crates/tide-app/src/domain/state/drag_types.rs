@@ -36,10 +36,10 @@ pub(crate) enum HoverTarget {
     PaneTabClose(PaneId),
     PaneMaximize(PaneId),
     HeaderAction(PaneId, crate::header::HeaderHitAction),
+    LauncherChoice(PaneId, crate::action::LauncherChoice),
     FileFinderItem(usize),
     SidebarHandle,
     TitlebarSettings,
-    TitlebarTheme,
     TitlebarIntegration,
     TitlebarWorkspace,
     TitlebarFileTree,
@@ -68,7 +68,6 @@ impl HoverTarget {
         matches!(
             self,
             HoverTarget::TitlebarSettings
-                | HoverTarget::TitlebarTheme
                 | HoverTarget::TitlebarIntegration
                 | HoverTarget::TitlebarWorkspace
                 | HoverTarget::TitlebarFileTree
@@ -80,6 +79,7 @@ impl HoverTarget {
                 | HoverTarget::BrowserOpenExternal
                 | HoverTarget::PaneTabClose(_)
                 | HoverTarget::HeaderAction(_, _)
+                | HoverTarget::LauncherChoice(_, _)
                 | HoverTarget::WorkspaceSidebarItem(_)
                 | HoverTarget::WorkspaceSidebarNewBtn
         )

@@ -37,6 +37,23 @@ use crate::application::ports::outward::{
 const INITIAL_TERMINAL_COLS: u16 = 80;
 const INITIAL_TERMINAL_ROWS: u16 = 24;
 
+fn terminal_context_surface_resize_capacity(
+    logical_width: f32,
+    ws_visible: bool,
+    ws_width: f32,
+    file_tree_visible: bool,
+    file_tree_width: f32,
+) -> f32 {
+    let left_reserved = if ws_visible { PANE_GAP + ws_width } else { 0.0 };
+    let fixed_right_width = if file_tree_visible {
+        file_tree_width + PANE_GAP
+    } else {
+        0.0
+    };
+    (logical_width - left_reserved - 100.0 - fixed_right_width)
+        .max(TERMINAL_CONTEXT_SURFACE_MIN_WIDTH)
+}
+
 /// Aggregates all outward port implementations. Injected into App.
 pub(crate) struct Ports {
     pub clock: Box<dyn ClockPort>,
@@ -143,6 +160,12 @@ pub(crate) struct App {
     // Dock layout state (grouped)
     pub(crate) dock: state::DockState,
 
+    // Transient split-ratio animation for newly created Stage or Terminal Context Surface splits.
+    pub(crate) split_transition_animation: Option<state::SplitTransitionAnimation>,
+    pub(crate) pending_split_close: Option<(state::SplitTransitionScope, PaneId)>,
+    pub(crate) finishing_split_close: bool,
+    pub(crate) split_close_animation_requested: bool,
+
     // Header hit zones (for badge click handling)
     pub(crate) header_hit_zones: Vec<crate::header::HeaderHitZone>,
 
@@ -220,6 +243,10 @@ impl App {
             interaction: state::InteractionState::new(),
             modal: state::ModalStack::new(),
             dock: state::DockState::new(),
+            split_transition_animation: None,
+            pending_split_close: None,
+            finishing_split_close: false,
+            split_close_animation_requested: false,
             header_hit_zones: Vec::new(),
             ws: state::WorkspaceManager::new(),
             context_artifacts: state::ContextArtifactStore::new(),
@@ -396,6 +423,10 @@ impl App {
         self.ft.visibility_animation = None;
         self.dock.dock_open = false;
         self.dock.visibility_animation = None;
+        self.split_transition_animation = None;
+        self.pending_split_close = None;
+        self.finishing_split_close = false;
+        self.split_close_animation_requested = false;
 
         let pane_id = self.next_workspace_pane_id();
         let (layout, pane_id) = SplitLayout::with_initial_pane_id(pane_id);
@@ -775,7 +806,47 @@ impl crate::application::ports::inward::AppCorePort for App {
     }
 
     fn set_window_size(&mut self, width: u32, height: u32) {
+        let old_logical_width = self.window.logical_size().width;
+        let should_scale_terminal_context_surface = width != self.window.window_size.0
+            && old_logical_width > 0.0
+            && !terminal_context_surface_uses_default_width(self.dock.dock_width);
+        let ws_visible = self.ws.visible_for_layout();
+        let file_tree_visible = self.ft.visible_for_layout();
+        let ws_width = self.ws.width;
+        let file_tree_width = self.ft.width;
+        let fixed_right_width = if file_tree_visible {
+            file_tree_width + PANE_GAP
+        } else {
+            0.0
+        };
+        let old_support_capacity = terminal_context_surface_resize_capacity(
+            old_logical_width,
+            ws_visible,
+            ws_width,
+            file_tree_visible,
+            file_tree_width,
+        );
+        let old_terminal_context_surface_width =
+            (self.dock.dock_width - fixed_right_width).max(TERMINAL_CONTEXT_SURFACE_MIN_WIDTH);
+
         self.window.window_size = (width, height);
+
+        if should_scale_terminal_context_surface {
+            let new_logical_width = self.window.logical_size().width;
+            let new_support_capacity = terminal_context_surface_resize_capacity(
+                new_logical_width,
+                ws_visible,
+                ws_width,
+                file_tree_visible,
+                file_tree_width,
+            );
+            if old_support_capacity > 0.0 && new_support_capacity > 0.0 {
+                let scaled_terminal_context_surface_width = (old_terminal_context_surface_width
+                    * (new_support_capacity / old_support_capacity))
+                    .clamp(TERMINAL_CONTEXT_SURFACE_MIN_WIDTH, new_support_capacity);
+                self.dock.dock_width = scaled_terminal_context_surface_width + fixed_right_width;
+            }
+        }
     }
 
     fn scale_factor(&self) -> f32 {

@@ -62,8 +62,8 @@ pre-spawned `Terminal`.
 - **Postcondition**: App state preserved across sessions
 - **Business Rules**:
   - BR-1: Session preserves dark_mode preference
-  - BR-2: Session preserves file tree visibility and width
-  - BR-3: Session without sidebar fields uses defaults (left side, outer position)
+  - BR-2: Session preserves FileTree View visibility and width
+  - BR-3: Session without side-surface fields uses defaults
 
 ### UC-2: CreateFreshWorkspaceWithoutSession
 

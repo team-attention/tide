@@ -378,6 +378,10 @@ impl App {
         }
         self.pane_rects.clear();
         self.visual_pane_rects.clear();
+        self.split_transition_animation = None;
+        self.pending_split_close = None;
+        self.finishing_split_close = false;
+        self.split_close_animation_requested = false;
         self.cache.pane_generations.clear();
         self.cache.invalidate_chrome();
         self.ime.cursor_dirty = true;

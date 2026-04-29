@@ -168,6 +168,17 @@ impl SplitLayout {
         }
     }
 
+    pub fn closing_transition_ratios(&self, pane: PaneId) -> Option<(f32, f32)> {
+        let (from_ratio, is_leading_child) =
+            self.root.as_ref()?.parent_ratio_and_leading_side(pane)?;
+        let to_ratio = if is_leading_child {
+            MIN_RATIO
+        } else {
+            1.0 - MIN_RATIO
+        };
+        Some((from_ratio, to_ratio))
+    }
+
     /// Snap all split ratios so that pane content areas align to cell boundaries.
     /// Call this after `compute()` but before using the resulting rects for rendering.
     /// The caller should call `compute()` again after snapping.

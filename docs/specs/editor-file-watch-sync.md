@@ -3,10 +3,10 @@
 ## Overview
 
 ### As-Is
-`crates/tide-app/src/application/services/update_service/mod.rs` consumes `FileWatchEvent` values and tries to match them to file-backed Editor Panes by exact `Path` equality. The same path is then used to decide whether the Pane should reload from disk or mark `disk_changed`. That path match is brittle when the file watcher reports an equivalent realpath while the Editor Pane stores a symlink path. The file watcher also watches the file path itself, but `notify` documents that watching a file path can behave unexpectedly when the file is renamed or removed and recommends also watching the parent directory for less surprising behavior. Atomic replacement writes from external tools can therefore leave a clean Editor Pane stale until the Pane is closed and reopened. The same file-watch path also updates the Editor Pane without calling `trigger_git_poll()`, so file tree git status can stay stale until unrelated terminal output or another git-poll trigger arrives. `trigger_git_poll()` currently collects CWDs from live Terminal Panes only, even though `focused_terminal_cwd()` can resolve retained terminal context for Editor Panes whose owner Terminal has already been closed. `EditorState::reload()` also clamps the cursor only to the new line length, not to a valid UTF-8 character boundary, so a clean external reload can leave `cursor.position.col` inside a multibyte scalar and later LivePreviewMode or render-time slicing can panic.
+`crates/tide-app/src/application/services/update_service/mod.rs` consumes `FileWatchEvent` values and tries to match them to file-backed Editor Panes by exact `Path` equality. The same path is then used to decide whether the Pane should reload from disk or mark `disk_changed`. That path match is brittle when the file watcher reports an equivalent realpath while the Editor Pane stores a symlink path. The file watcher also watches the file path itself, but `notify` documents that watching a file path can behave unexpectedly when the file is renamed or removed and recommends also watching the parent directory for less surprising behavior. Atomic replacement writes from external tools can therefore leave a clean Editor Pane stale until the Pane is closed and reopened. The same file-watch path also updates the Editor Pane without calling `trigger_git_poll()`, so FileTree View git status can stay stale until unrelated terminal output or another git-poll trigger arrives. `trigger_git_poll()` currently collects CWDs from live Terminal Panes only, even though `focused_terminal_cwd()` can resolve retained terminal context for Editor Panes whose owner Terminal has already been closed. `EditorState::reload()` also clamps the cursor only to the new line length, not to a valid UTF-8 character boundary, so a clean external reload can leave `cursor.position.col` inside a multibyte scalar and later LivePreviewMode or render-time slicing can panic.
 
 ### To-Be
-File-watch events match file-backed Editor Panes by normalized path identity rather than raw string equality. A clean Editor Pane reloads immediately when an external change arrives for the same file, even if the watcher reports an equivalent realpath. File watching is resilient to atomic replacement by watching each open Editor Pane file and its parent directory, with parent watches deduplicated by directory. If a stale remove event arrives for a path that already exists again, Tide treats it as a changed file rather than closing the clean Editor Pane. If a parent-directory event arrives without a child path, Tide refreshes clean Editor Panes in that directory. File-watch-driven Editor Pane updates also trigger the background git poll using the current editor context, including retained terminal CWDs, so file tree git status refreshes promptly. Clean external reload also preserves the cursor only at valid UTF-8 character boundaries so Markdown Pane rendering and LivePreviewMode cannot inherit an invalid byte offset.
+File-watch events match file-backed Editor Panes by normalized path identity rather than raw string equality. A clean Editor Pane reloads immediately when an external change arrives for the same file, even if the watcher reports an equivalent realpath. File watching is resilient to atomic replacement by watching each open Editor Pane file and its parent directory, with parent watches deduplicated by directory. If a stale remove event arrives for a path that already exists again, Tide treats it as a changed file rather than closing the clean Editor Pane. If a parent-directory event arrives without a child path, Tide refreshes clean Editor Panes in that directory. File-watch-driven Editor Pane updates also trigger the background git poll using the current editor context, including retained terminal CWDs, so FileTree View git status refreshes promptly. Clean external reload also preserves the cursor only at valid UTF-8 character boundaries so Markdown Pane rendering and LivePreviewMode cannot inherit an invalid byte offset.
 
 ### Approach
 1. Normalize file-watch event paths and Editor Pane file paths through filesystem-aware comparison before matching them.
@@ -23,7 +23,7 @@ File-watch events match file-backed Editor Panes by normalized path identity rat
 |---------|------|
 | `domain/pane` | Owns file-backed Editor Pane disk-sync flags (`disk_changed`, `file_deleted`, `diff_mode`). |
 | `application/services/update_service` | Consumes file-watch events and applies reload/conflict behavior to Editor Panes. |
-| `application/services/file_tree_service` | Triggers the background git poll and applies git-status results to the file tree. |
+| `application/services/file_tree_service` | Triggers the background git poll and applies git-status results to FileTree View. |
 | `adapter/outward/file_watcher_adapter` | Produces file-watch paths that must be matched back to Editor Panes robustly. |
 
 ## Use Cases
@@ -43,7 +43,7 @@ File-watch events match file-backed Editor Panes by normalized path identity rat
   - BR-2: A clean file-backed Editor Pane reloads immediately after a matching external change.
   - BR-3: A clean file-backed Editor Pane reload clamps the preserved cursor column to a valid UTF-8 character boundary on the reloaded line.
 
-### UC-2: RefreshFileTreeGitStatusAfterEditorFileWatchEvent
+### UC-2: RefreshFileTreeViewGitStatusAfterEditorFileWatchEvent
 - **Actor**: System
 - **Trigger**: A file-watch event affects a file-backed Editor Pane
 - **Precondition**: The Editor Pane belongs to a live or retained terminal context with a CWD
@@ -51,8 +51,8 @@ File-watch events match file-backed Editor Panes by normalized path identity rat
   1. The app processes the file-watch event for the matching Editor Pane.
   2. The app collects git-poll CWDs from live Terminal Panes, retained terminal contexts, and the focused editor context.
   3. The app triggers the background git poll with those CWDs.
-  4. The file tree later refreshes from the resulting git-status payload.
-- **Postcondition**: File tree git status refreshes promptly after external file changes, without waiting for unrelated terminal output.
+  4. FileTree View later refreshes from the resulting git-status payload.
+- **Postcondition**: FileTree View git status refreshes promptly after external file changes, without waiting for unrelated terminal output.
 - **Business Rules**:
   - BR-4: File-watch-driven Editor Pane updates trigger the background git poll.
   - BR-5: Git-poll CWD collection includes retained terminal context when no live Terminal Pane owns the focused Editor Pane.

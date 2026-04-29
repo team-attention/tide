@@ -1,28 +1,30 @@
-# Spec: Layout V2 — Stage + Dock
+# Spec: Layout V2 — Stage + Terminal Context Surface
 
 ## Overview
 
 ### As-Is
 
-TerminalArea + ContextArea with DrawerState HashMap. DrawerState uses SplitLayout with single-pane leaves (TabGroup removed). 84+ references to DrawerState, inconsistent routing via owner_terminal() with many edge cases.
+Tide uses four product surfaces in one `Tide Window`: Workspace rail, Stage, Terminal Context Surface, and FileTree View. `layout_compute.rs` places Workspace rail on the left, Stage in the main execution area, Terminal Context Surface between Stage and FileTree View, and FileTree View on the outer right.
+
+The legacy `TerminalArea` / `ContextArea` / `DrawerState` language is no longer the user-facing model. Current routing is based on `FocusArea::{FileTree, Stage, Dock}` and current side-surface actions: `ToggleWorkspaceSidebar`, `ToggleDock`, and `ToggleFileTree`.
 
 ### To-Be
 
-**Stage** (terminal splits) + **Dock** (per-terminal tab groups). Dock state lives directly on TerminalPane. No DrawerState HashMap. SplitLayout reintroduces TabGroup for Dock only.
+**Stage** remains the primary execution surface. **Terminal Context Surface** is the Dock region attached to the focused Stage Terminal through the Associated Terminal relationship. **FileTree View** is separate right-side chrome, not a Terminal Context Surface Pane.
 
 ```
-(WorkspaceSidebar) | (FileTree) | Stage | (Dock)
-     Cmd+E            Cmd+B              Cmd+Backslash
+Workspace rail | Stage | Terminal Context Surface | FileTree View
+    Cmd+E       H/J/K/L        Cmd+\                 Cmd+B
 ```
 
 ### Key Design Decisions
 
-1. **TerminalPane owns its Dock panes directly** — no separate DrawerState or HashMap.
-2. **Dock uses SplitLayout with TabGroup leaves** — reuse existing layout engine.
-3. **Stage uses SplitLayout with single-PaneId leaves** — no TabGroups.
-4. **All routing is determined by FocusArea alone** — no owner_terminal() inference.
+1. **TerminalPane owns its Terminal Context Surface panes directly** — no separate DrawerState or global pinned hierarchy.
+2. **Terminal Context Surface uses SplitLayout with TabGroup leaves** — reuse existing layout engine.
+3. **Stage uses SplitLayout leaves for the primary task surface**.
+4. **All keyboard routing is determined by FocusArea first**.
 5. **`focused_terminal_id()`** is the single function to resolve which Terminal is active.
-6. **Terminal can be a child in Dock** — but child terminals cannot have their own Dock children (1 level deep).
+6. **Terminal can be a child in Terminal Context Surface** — but child terminals cannot have their own nested context children.
 
 ## Domain Model
 
@@ -30,10 +32,10 @@ TerminalArea + ContextArea with DrawerState HashMap. DrawerState uses SplitLayou
 
 | Region | Visibility | Content | Internal Layout |
 |--------|-----------|---------|-----------------|
-| WorkspaceSidebar | Toggleable (Cmd+E) | Workspace list | Fixed list |
-| FileTree | Toggleable (Cmd+B) | File browser | Fixed tree |
-| Stage | Always visible | Terminal Panes only | SplitLayout, Leaf(PaneId) |
-| Dock | Toggleable (Cmd+Backslash) | Any PaneKind, bound to focused Terminal | SplitLayout, Leaf(TabGroup) |
+| Workspace rail | Toggleable (Cmd+E) | Workspace list and task signals | Fixed side surface |
+| Stage | Always visible | Primary task Panes, usually Terminal Panes | SplitLayout |
+| Terminal Context Surface | Toggleable (Cmd+Backslash) | Editor, Browser, Diff, Launcher, secondary Terminal, or Render Panes bound to focused Terminal | SplitLayout, Leaf(TabGroup) |
+| FileTree View | Toggleable (Cmd+B) | File browser rooted at the focused Stage Terminal's working directory | Fixed right-side chrome |
 
 ### FileTree Root
 
@@ -48,18 +50,18 @@ FileTree root follows the focused Terminal's working directory:
 pub struct TerminalPane {
     // ... existing fields ...
 
-    /// Panes bound to this terminal, displayed in the Dock.
-    /// SplitLayout with TabGroup leaves.
-    pub dock_layout: SplitLayout,
+/// Panes bound to this terminal, displayed in the Terminal Context Surface.
+/// SplitLayout with TabGroup leaves.
+pub dock_layout: SplitLayout,
 
-    /// Last focused pane in this terminal's Dock.
-    pub dock_focused: Option<PaneId>,
+/// Last focused pane in this terminal's Terminal Context Surface.
+pub dock_focused: Option<PaneId>,
 }
 ```
 
 - Every non-Stage Pane belongs to exactly one Terminal's `dock_layout`.
 - Terminal close → cascade close all panes in `dock_layout`.
-- Terminal focus switch → Dock content swaps to new Terminal's `dock_layout`.
+- Terminal focus switch → Terminal Context Surface content swaps to new Terminal's `dock_layout`.
 - A Terminal can appear as a Pane inside another Terminal's `dock_layout` (e.g., build runner). Such child Terminals have an empty `dock_layout` (no nesting beyond 1 level).
 
 ### FocusArea
@@ -67,8 +69,8 @@ pub struct TerminalPane {
 ```rust
 enum FocusArea {
     FileTree,
-    Stage,      // was TerminalArea
-    Dock,       // was ContextArea
+    Stage,
+    Dock,       // Terminal Context Surface
 }
 ```
 
@@ -116,7 +118,8 @@ enum ViewMode {
 ```
 
 - **Stage**: Split (default) ↔ Stacked. Cmd+Enter toggles.
-- **Dock**: Split (TabGroups visible) ↔ Stacked (flatten all TabGroups' tabs, linear navigation). Cmd+Enter toggles.
+- **Terminal Context Surface**: Split (TabGroups visible) ↔ Stacked (flatten all TabGroups' tabs, linear navigation). `Cmd+Enter` toggles when Dock has focus; `Cmd+Ctrl+Enter` targets Dock stacked mode without permanently changing FocusArea.
+- **Region header ViewMode controls**: The Stage header and Terminal Context Surface header expose separate icon controls. These target their region explicitly rather than relying on the current `FocusArea`.
 
 ### Internal TabPrev/TabNext Navigation
 
@@ -136,7 +139,7 @@ In **Dock Stacked mode**: identical flat traversal, just visually shows one pane
 
 ## Use Cases
 
-### UC-1: OpenPaneInDock
+### UC-1: OpenPaneInTerminalContextSurface
 
 - **Trigger**: File click in FileTree, FileFinder, Ctrl+Click URL, or GlobalAction::NewFile
 - **Flow**:
@@ -144,7 +147,7 @@ In **Dock Stacked mode**: identical flat traversal, just visually shows one pane
   2. Create Pane, insert into App.panes
   3. Add to owner's `dock_layout`: find first TabGroup leaf → `tab_group.add_tab(new_id)`. If no TabGroup exists, create one.
   4. Set `dock_focused = new_id`
-  5. Open Dock if closed
+  5. Open Terminal Context Surface if closed
   6. FocusArea = Dock, focused = new_id
 
 ### UC-2: SwitchTerminalFocus
@@ -152,20 +155,20 @@ In **Dock Stacked mode**: identical flat traversal, just visually shows one pane
 - **Trigger**: Click Terminal in Stage or Cmd+H/J/K/L in Stage
 - **Flow**:
   1. Set focused = new Terminal
-  2. Dock content swaps (new Terminal's dock_layout is now displayed)
-  3. If new Terminal's dock_layout is empty → hide Dock
-  4. If non-empty → show Dock
+  2. Terminal Context Surface content swaps (new Terminal's dock_layout is now displayed)
+  3. If new Terminal's dock_layout is empty → hide Terminal Context Surface
+  4. If non-empty → show Terminal Context Surface
 
 ### UC-3: ToggleStacked (Cmd+Enter)
 
 - **Stage**: Toggle `terminal_view_mode` between Split and Stacked(focused)
-- **Dock**: Toggle between Split (all TabGroups visible) and Stacked (one pane fills Dock)
+- **Terminal Context Surface**: Toggle between Split (all TabGroups visible) and Stacked (one pane fills Dock)
 
 ### UC-4: ToggleDock (Cmd+Backslash)
 
 | State | Action |
 |-------|--------|
-| Closed + dock empty | Create Launcher in dock → open |
+| Closed + dock empty | Create Launcher in Terminal Context Surface → open |
 | Closed + dock has panes | Open + focus |
 | Open + Dock focused | Close + focus Stage |
 | Open + other focused | Focus Dock |
@@ -202,7 +205,7 @@ In **Dock Stacked mode**: identical flat traversal, just visually shows one pane
 ## Data Model
 
 ```rust
-// Stage (TerminalArea)
+// Stage
 App {
     layout: SplitLayout,             // Leaf(PaneId), Terminal-only
     terminal_view_mode: ViewMode,
@@ -220,7 +223,7 @@ App {
 // Per-terminal Dock state lives on TerminalPane
 TerminalPane {
     // ... existing PTY fields ...
-    dock_layout: SplitLayout,         // Leaf(TabGroup), any PaneKind
+    dock_layout: SplitLayout,         // Terminal Context Surface layout
     dock_focused: Option<PaneId>,
 }
 
@@ -234,44 +237,21 @@ enum Node {
 
 ## Invariants
 
-1. **Stage is Terminal-only**: Only Terminal and Launcher (resolving to Terminal) in Stage SplitLayout
-2. **Dock ownership**: Every pane in a dock_layout belongs to exactly one Terminal
-3. **Dock display matches focus**: Dock always shows `focused_terminal_id()`'s dock_layout
+1. **Stage is primary task execution**: default Stage creation paths create Terminal Panes directly.
+2. **Terminal Context Surface ownership**: Every Pane in a `dock_layout` belongs to exactly one Stage Terminal.
+3. **Terminal Context Surface display matches focus**: Dock shows `focused_terminal_id()`'s `dock_layout`.
 4. **PaneId sync**: All PaneIds in Stage + all PaneIds across all dock_layouts = App.panes keys
 5. **No deep nesting**: A Terminal in a Dock has an empty dock_layout
 6. **FocusArea routes everything**: No operation checks pane type to decide routing — only FocusArea
 
-## Migration from Current Code
-
-1. Remove `DrawerState` struct and `drawer_states: HashMap` from App
-2. Remove `context_area_open` → rename to `dock_open`
-3. Remove `context_area_width` → rename to `dock_width`
-4. Add `dock_layout: SplitLayout` and `dock_focused: Option<PaneId>` to TerminalPane
-5. Reintroduce TabGroup to SplitLayout Node (as `LeafGroup` variant, distinct from `Leaf`)
-6. Remove `owner_terminal()` → replace with `focused_terminal_id()` + `terminal_owning()`
-7. Remove `swap_drawer_state()` → Dock content swap is implicit (read from focused Terminal's dock_layout)
-8. Remove `add_pane_to_context_area()` → direct manipulation of TerminalPane.dock_layout
-9. Remove `remove_pane_from_context_area()` → direct manipulation
-10. Remove `toggle_context_area()` → replace with `toggle_dock()`
-11. Update all `FocusArea::TerminalArea` → `FocusArea::Stage`
-12. Update all `FocusArea::ContextArea` → `FocusArea::Dock`
-13. Rename in glossary: TerminalArea→Stage, ContextArea→Dock
-
-## Affected Files
+## Current Files
 
 | File | Changes |
 |------|---------|
-| `ui_state.rs` | Remove DrawerState, ViewMode stays, FocusArea rename |
-| `main.rs` | Remove drawer_states/context_area_*, add dock_open/dock_width |
-| `pane.rs` | Add dock_layout/dock_focused to TerminalPane |
-| `action/drawer.rs` | Rewrite entirely → `action/dock.rs` |
-| `action/mod.rs` | Update all routing to use FocusArea + focused_terminal_id() |
-| `action/pane_lifecycle.rs` | Route pane creation to dock_layout |
-| `action/focus_nav.rs` | Update navigation, remove is_pane_in_drawer |
-| `layout_compute.rs` | Compute Dock rects from focused Terminal's dock_layout |
-| `rendering/chrome.rs` | Dock separator, owner highlight |
-| `workspace.rs` | dock_layout saved/restored with Terminal |
-| `session.rs` | dock_layout serialized with Terminal |
-| `tide-layout/node.rs` | Add Node::LeafGroup(TabGroup) |
-| `tide-layout/lib.rs` | Re-export TabGroup, add LeafGroup methods |
-| `behavior_tests.rs` | Update all drawer tests |
+| `crates/tide-app/src/layout_compute.rs` | Computes Workspace rail, Stage, Terminal Context Surface, and FileTree View rects |
+| `crates/tide-app/src/application/services/pane_create_service/mod.rs` | Routes Stage and Terminal Context Surface Pane creation |
+| `crates/tide-app/src/application/services/dock_service/mod.rs` | Owns Terminal Context Surface split/tab behavior |
+| `crates/tide-app/src/application/services/workspace_service/mod.rs` | Handles FocusArea navigation and stacked view cycling |
+| `crates/tide-app/src/domain/state/dock.rs` | Stores Dock visibility, width, animation, and legacy pinned compatibility state |
+| `crates/tide-app/src/domain/layout/` | Provides SplitLayout and TabGroup behavior |
+| `crates/tide-app/src/application/behavior_tests/` | Covers pane lifecycle, input routing, Dock behavior, and layout invariants |

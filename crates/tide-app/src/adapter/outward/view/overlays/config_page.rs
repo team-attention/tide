@@ -9,6 +9,22 @@ use super::{
     text_style, visual_width,
 };
 
+pub(crate) fn config_page_theme_status_text(dark_mode: bool) -> &'static str {
+    if dark_mode {
+        "Dark"
+    } else {
+        "Light"
+    }
+}
+
+pub(crate) fn config_page_theme_toggle_text(dark_mode: bool) -> &'static str {
+    if dark_mode {
+        "Switch to Light"
+    } else {
+        "Switch to Dark"
+    }
+}
+
 /// Render the config page overlay (settings modal).
 pub(super) fn render_config_page(
     app: &App,
@@ -82,58 +98,42 @@ pub(super) fn render_config_page(
     let tab_h = CONFIG_PAGE_TAB_H;
     let tab_y = title_y + title_h + 1.0;
     let tab_text_y = tab_y + (tab_h - cell_height) / 2.0;
-    let half_w = popup_w / 2.0;
+    let tab_w = popup_w / 3.0;
+    let tab_labels = [
+        (ConfigSection::Keybindings, "Keybindings"),
+        (ConfigSection::Worktree, "Worktree"),
+        (ConfigSection::Appearance, "Appearance"),
+    ];
 
-    let keybindings_label = "Keybindings";
-    let worktree_label = "Worktree";
-
-    let kb_active = page.section == ConfigSection::Keybindings;
-    let kb_style = TextStyle {
-        foreground: if kb_active {
-            tab_active_color
-        } else {
-            tab_inactive_color
-        },
-        background: None,
-        bold: kb_active,
-        dim: false,
-        italic: false,
-        underline: false,
-    };
-    let wt_style = TextStyle {
-        foreground: if !kb_active {
-            tab_active_color
-        } else {
-            tab_inactive_color
-        },
-        background: None,
-        bold: !kb_active,
-        dim: false,
-        italic: false,
-        underline: false,
-    };
     let tab_clip = Rect::new(popup_x, tab_y, popup_w, tab_h);
-    let kb_text_w = keybindings_label.len() as f32 * cell_size.width;
-    let wt_text_w = worktree_label.len() as f32 * cell_size.width;
-    let kb_text_x = popup_x + (half_w - kb_text_w) / 2.0;
-    let wt_text_x = popup_x + half_w + (half_w - wt_text_w) / 2.0;
-    renderer.draw_top_text(
-        keybindings_label,
-        Vec2::new(kb_text_x, tab_text_y),
-        kb_style,
-        tab_clip,
-    );
-    renderer.draw_top_text(
-        worktree_label,
-        Vec2::new(wt_text_x, tab_text_y),
-        wt_style,
-        tab_clip,
-    );
+    for (idx, (section, label)) in tab_labels.iter().enumerate() {
+        let active = page.section == *section;
+        let style = TextStyle {
+            foreground: if active {
+                tab_active_color
+            } else {
+                tab_inactive_color
+            },
+            background: None,
+            bold: active,
+            dim: false,
+            italic: false,
+            underline: false,
+        };
+        let text_w = label.len() as f32 * cell_size.width;
+        let text_x = popup_x + idx as f32 * tab_w + (tab_w - text_w) / 2.0;
+        renderer.draw_top_text(label, Vec2::new(text_x, tab_text_y), style, tab_clip);
+    }
 
     // Active tab underline
-    let active_tab_x = if kb_active { popup_x } else { popup_x + half_w };
+    let active_tab_idx = match page.section {
+        ConfigSection::Keybindings => 0,
+        ConfigSection::Worktree => 1,
+        ConfigSection::Appearance => 2,
+    };
+    let active_tab_x = popup_x + active_tab_idx as f32 * tab_w;
     renderer.draw_top_rect(
-        Rect::new(active_tab_x, tab_y + tab_h - 2.0, half_w, 2.0),
+        Rect::new(active_tab_x, tab_y + tab_h - 2.0, tab_w, 2.0),
         accent_color,
     );
     renderer.draw_top_rect(Rect::new(popup_x, tab_y + tab_h, popup_w, 1.0), sep_color);
@@ -420,6 +420,48 @@ pub(super) fn render_config_page(
                 Rect::new(popup_x, cf_help_y, popup_w, cell_height + 4.0),
             );
         }
+        ConfigSection::Appearance => {
+            let row_y = content_top + 12.0;
+            let row_h = line_height + 8.0;
+            renderer.draw_top_rect(
+                Rect::new(
+                    popup_x + POPUP_SELECTED_INSET,
+                    row_y,
+                    popup_w - 2.0 * POPUP_SELECTED_INSET,
+                    row_h,
+                ),
+                p.popup_selected,
+            );
+
+            let item_y = row_y + (row_h - cell_height) / 2.0;
+            let label_style = bold_style(tab_active_color);
+            renderer.draw_top_text(
+                "Theme",
+                Vec2::new(popup_x + item_pad, item_y),
+                label_style,
+                Rect::new(popup_x + item_pad, row_y, popup_w * 0.30, row_h),
+            );
+
+            let status = config_page_theme_status_text(app.window.dark_mode);
+            let status_style = text_style(p.tab_text_focused);
+            renderer.draw_top_text(
+                status,
+                Vec2::new(popup_x + popup_w * 0.38, item_y),
+                status_style,
+                Rect::new(popup_x + popup_w * 0.38, row_y, popup_w * 0.20, row_h),
+            );
+
+            let action = config_page_theme_toggle_text(app.window.dark_mode);
+            let action_w = action.len() as f32 * cell_size.width;
+            let action_x = popup_x + popup_w - item_pad - action_w;
+            let action_style = text_style(accent_color);
+            renderer.draw_top_text(
+                action,
+                Vec2::new(action_x, item_y),
+                action_style,
+                Rect::new(action_x, row_y, action_w, row_h),
+            );
+        }
     }
 
     // ── Hint bar at bottom ──
@@ -440,6 +482,7 @@ pub(super) fn render_config_page(
                 "Esc close  Tab section  \u{2191}\u{2193} select  \u{21B5} edit"
             }
         }
+        ConfigSection::Appearance => "Esc close  Tab section  Enter toggle theme",
     };
     let hint_text_w = hint_text.len() as f32 * cell_size.width;
     let hint_text_x = popup_x + (popup_w - hint_text_w) / 2.0;

@@ -1,8 +1,12 @@
 // Spec: docs/specs/theme.md
-use crate::adapter::outward::view::file_tree_disclosure_color;
+use crate::adapter::outward::view::{
+    config_page_theme_status_text, config_page_theme_toggle_text, file_tree_disclosure_color,
+};
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
+use crate::state::{ConfigPageState, ConfigSection};
 use crate::theme::{DARK, LIGHT};
+use crate::tide_core::{Key, Modifiers};
 use crate::tide_editor::highlight::LIGHT_SYNTAX_THEME_NAME;
 use crate::tide_editor::markdown::MarkdownTheme;
 use crate::ActionPort;
@@ -125,4 +129,35 @@ fn light_markdown_theme_uses_quiet_readable_colors() {
 fn light_syntax_highlighting_uses_base16_ocean_theme() {
     // UC-4 BR-11: Light syntax highlighting uses the restrained base16-ocean.light theme.
     assert_eq!(LIGHT_SYNTAX_THEME_NAME, "base16-ocean.light");
+}
+
+// --- UC-5: ConfigureAppearanceTheme ---
+
+#[test]
+fn config_page_appearance_theme_uses_text_status() {
+    // UC-5 BR-12/BR-13: ConfigPage Appearance exposes current theme and next theme action as text.
+    assert_eq!(config_page_theme_status_text(true), "Dark");
+    assert_eq!(config_page_theme_status_text(false), "Light");
+    assert_eq!(config_page_theme_toggle_text(true), "Switch to Light");
+    assert_eq!(config_page_theme_toggle_text(false), "Switch to Dark");
+}
+
+#[test]
+fn config_page_appearance_theme_toggle_switches_theme() {
+    // UC-5 BR-14: Activating the Appearance theme row toggles theme through GlobalAction::ToggleTheme.
+    let mut app = test_app();
+    let mut page = ConfigPageState::new(vec![], String::new(), String::new());
+    page.section = ConfigSection::Appearance;
+    app.modal.config_page = Some(page);
+
+    assert!(app.window.dark_mode);
+    crate::adapter::inward::keyboard_adapter::handle_key_down(
+        &mut app,
+        Key::Enter,
+        Modifiers::default(),
+        None,
+    );
+
+    assert!(!app.window.dark_mode);
+    assert!(app.modal.config_page.is_some());
 }

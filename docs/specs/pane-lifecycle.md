@@ -9,7 +9,7 @@ Create, split, resolve, open, close, and drag Panes.
 | `tide-app` | Orchestrates lifecycle, maintains panes HashMap |
 | `tide-layout` | Manages SplitLayout binary tree and TabGroups |
 | `tide-terminal` | Creates PTY for Terminal panes |
-| `tide-editor` | Creates EditorState buffer for Editor panes |
+| `tide-editor` | Creates EditorState buffer for Editor Panes |
 
 ## Use Cases
 
@@ -123,11 +123,11 @@ Create, split, resolve, open, close, and drag Panes.
   1. Mouse down on a Dock tab or Stage tab → `PaneDragState::PendingDrag { source, press_pos }`
   2. Mouse moves beyond threshold → PaneDragState::Dragging { source, drop_target }
   3. Mouse over pane → compute DropZone (Top/Bottom/Left/Right/Center)
-  4. Mouse over workspace sidebar → highlight Workspace
+  4. Mouse over Workspace rail → highlight Workspace
   5. Mouse released:
      - clear the current hover target immediately
      - On pane DropZone → layout.move_pane(source, target, zone)
-     - On Workspace sidebar → move_pane_to_workspace(source, ws_idx)
+     - On Workspace rail → move_pane_to_workspace(source, ws_idx)
      - On root DropZone → layout.move_pane_to_root(source, zone)
   6. Mouse released before threshold → just a click (focus tab)
 - **Postcondition**: Pane moved to new position in SplitLayout or to another Workspace

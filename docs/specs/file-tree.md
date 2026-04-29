@@ -1,4 +1,4 @@
-# Spec: File Tree
+# Spec: FileTree View
 
 FileTree View placement and scroll behavior.
 
@@ -16,8 +16,8 @@ FileTree View placement and scroll behavior.
 ### UC-1: ScrollClamp
 
 - **Actor**: System (update loop)
-- **Trigger**: Window resize or content change while file tree is visible
-- **Precondition**: File tree is visible
+- **Trigger**: Window resize or content change while FileTree View is visible
+- **Precondition**: FileTree View is visible
 - **Flow**:
   1. On each update(), compute max scroll based on content height vs viewport
   2. Clamp scroll and scroll_target to [0, max]
@@ -25,7 +25,7 @@ FileTree View placement and scroll behavior.
 - **Business Rules**:
   - BR-1: Scroll is clamped after window resize shrinks viewport
   - BR-2: scroll_target is clamped independently of scroll
-  - BR-3: Hidden file tree scroll is not clamped (preserves position for re-show)
+  - BR-3: Hidden FileTree View scroll is not clamped (preserves position for re-show)
 
 ### UC-2: PlaceFileTreeOnRight
 
@@ -35,15 +35,15 @@ FileTree View placement and scroll behavior.
 - **Flow**:
   1. Tide marks `FileTreeModel.visible` true.
   2. Layout computation reserves one right-side FileTree View region.
-  3. Tide renders FileTree in that right region instead of reserving a left global sidebar.
+  3. Tide renders FileTree View in that right region instead of reserving a left global sidebar.
   4. When Terminal Context Surface is also visible, Tide keeps it visible between Stage and FileTree View.
   5. Switching the focused Stage `Terminal` keeps FileTree View on the right and refreshes root state through `update_file_tree_cwd()`.
 - **Postcondition**: FileTree View behaves as an independent right-side tree view, not as a Terminal Context Surface Pane.
 - **Business Rules**:
-  - BR-1: Visible FileTree must reserve right-side space, not left Stage sidebar space.
+  - BR-1: Visible FileTree View must reserve right-side space, not left Stage sidebar space.
   - BR-2: FileTree View and Terminal Context Surface must be independently visible when `ToggleFileTree` and Dock are both active.
-  - BR-3: FileTree must continue to use `FocusArea::FileTree` for keyboard routing.
-  - BR-4: FileTree root refresh follows the focused Stage `Terminal` via the existing CWD update path.
+  - BR-3: FileTree View must continue to use `FocusArea::FileTree` for keyboard routing.
+  - BR-4: FileTree View root refresh follows the focused Stage `Terminal` via the existing CWD update path.
 
 ## Tests
 

@@ -65,7 +65,7 @@ the restored active Workspace.
   - BR-7: Closing the only Workspace is a no-op
   - BR-8: Closing a Workspace removes it from WorkspaceManager and switches to adjacent
 
-### UC-3: ToggleWorkspaceSidebar
+### UC-3: ToggleWorkspaceRail
 
 - **Actor**: User
 - **Trigger**: GlobalAction::ToggleWorkspaceSidebar
@@ -73,7 +73,7 @@ the restored active Workspace.
   1. Toggle ws.show_sidebar boolean
   2. Start a `SurfaceVisibilityAnimation` from the current rendered Workspace rail width to the target width
   3. Compute layout from the animated width until the transition settles
-- **Postcondition**: Sidebar visibility toggled and the Workspace rail opens/closes as an attached side surface
+- **Postcondition**: Workspace rail visibility toggled and the Workspace rail opens/closes as an attached side surface
 - **Business Rules**:
   - BR-9: Toggle flips visibility state
   - BR-13: Toggle starts Workspace rail width animation
@@ -81,7 +81,7 @@ the restored active Workspace.
 ### UC-4: MovePaneToWorkspace
 
 - **Actor**: User
-- **Trigger**: Drag Pane tab to Workspace sidebar item
+- **Trigger**: Drag Pane tab to Workspace rail item
 - **Precondition**: Source Pane exists, target Workspace differs from current
 - **Flow**:
   1. Remove Pane from current layout + panes
@@ -113,8 +113,8 @@ the restored active Workspace.
 | UC-1: SwitchWorkspace | BR-5 | `workspace_next_wraps_from_last_to_first` |
 | UC-2: CloseWorkspace | BR-7 | `closing_only_workspace_in_workspace_manager_is_a_no_op` |
 | UC-2: CloseWorkspace | BR-8 | `closing_workspace_removes_from_workspace_manager_and_switches` |
-| UC-3: ToggleSidebar | BR-9 | `toggling_workspace_sidebar_toggles_visibility` |
-| UC-3: ToggleSidebar | BR-13 | `toggle_workspace_rail_starts_surface_visibility_animation` |
+| UC-3: ToggleWorkspaceRail | BR-9 | `toggling_workspace_sidebar_toggles_visibility` |
+| UC-3: ToggleWorkspaceRail | BR-13 | `toggle_workspace_rail_starts_surface_visibility_animation` |
 | UC-1: SwitchWorkspace | BR-10 | `switching_workspace_preserves_view_mode` |
 | UC-1: SwitchWorkspace | BR-11 | `switching_workspace_preserves_zoomed_pane` |
 | UC-1: SwitchWorkspace | BR-12 | `switching_workspace_preserves_focus_area` |

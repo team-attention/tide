@@ -6,7 +6,7 @@
 
 `MacosWindow::new()` in `crates/tide-app/src/adapter/outward/platform_adapter/macos/window.rs` constructs a transparent-titlebar `NSWindow`, but it does not explicitly set any `collectionBehavior` for Spaces, Stage Manager, or the `Full-Screen Space` path. `toggleFullScreen:` still works, but Tide leaves the native full-screen role to AppKit defaults instead of marking the `Tide Window` as the primary full-screen window.
 
-`Shift+Shift` opens `FileFinder` through `GlobalAction::FileFinder`, but `open_file_finder_with_replace()` in `crates/tide-app/src/application/services/file_ops_service/mod.rs` does more than show the modal. It recursively scans files and also reads workspace files immediately to build `workspace_symbols` before the `ModalStack` is shown. That means the open gesture pays the full file-scan and workspace-symbol indexing cost up front.
+`Cmd+Shift+O` opens `FileFinder` through `GlobalAction::FileFinder`. Before this polish pass, `open_file_finder_with_replace()` in `crates/tide-app/src/application/services/file_ops_service/mod.rs` did more than show the modal: it recursively scanned files and also read workspace files immediately to build `workspace_symbols` before the `ModalStack` was shown. That meant the open gesture paid the full file-scan and workspace-symbol indexing cost up front.
 
 `ActionService::handle_action()` in `crates/tide-app/src/application/services/action_service/mod.rs` already uses modifier-click affordances for `Terminal` URL/file extraction, and LivePreviewMode link clicks also route through `extract_url_at()`. But `Editor Pane` modifier-click currently falls through to plain cursor placement. Tide has no `Editor Pane` affordance that turns a clicked identifier into symbol navigation, while VS Code's default editor navigation uses `Cmd/Ctrl+Hover` and `Cmd/Ctrl+Click` for definition-style navigation and keeps `@` / `#` symbol search close to Quick Open.
 
@@ -54,7 +54,7 @@
 ### UC-2: OpenFileFinderWithoutWorkspaceSymbolPreload
 
 - **Actor**: User
-- **Trigger**: Open `FileFinder` with `Shift+Shift` or `GlobalAction::FileFinder`
+- **Trigger**: Open `FileFinder` with `Cmd+Shift+O` or `GlobalAction::FileFinder`
 - **Precondition**: Tide can resolve a base directory and file list
 - **Flow**:
   1. Tide scans file entries and current-file symbols.

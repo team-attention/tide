@@ -3,9 +3,9 @@
 ## Overview
 
 ### As-Is
-`GlobalAction::FileFinder` in `crates/tide-app/src/domain/input/mod.rs` opens one floating `FileFinder` modal through `open_file_finder()` in `crates/tide-app/src/application/services/file_ops_service/mod.rs`. That modal currently loads a recursive file list once, then `FileFinderState::filter()` in `crates/tide-app/src/domain/modal/mod.rs` lowercases each relative path and keeps entries whose full path string `contains()` the query. The overlay in `crates/tide-app/src/adapter/outward/view/overlays/file_finder.rs` renders the result list as paths only, and Enter in `crates/tide-app/src/adapter/inward/keyboard_adapter/modal.rs` opens the selected destination. But pointer activation in `crates/tide-app/src/adapter/inward/mouse_adapter/mod.rs` ignores the clicked row index and reuses the current keyboard selection instead.
+`GlobalAction::FileFinder` in `crates/tide-app/src/domain/input/mod.rs` opens one floating `FileFinder` modal through `open_file_finder()` in `crates/tide-app/src/application/services/file_ops_service/mod.rs`. The default keybinding is `Cmd+Shift+O`.
 
-That means Tide currently has one narrow navigation path where every query is treated as a file-path substring search. There is no mode split for current-file symbol search, workspace symbol search, or workspace text search. This limitation matches the rest of the code: `LspPort` in `crates/tide-app/src/application/ports/outward/lsp_port/mod.rs` only exposes completion requests today, so symbol navigation is not currently available through the existing LSP bridge either.
+`FileFinderState` in `crates/tide-app/src/domain/modal/mod.rs` now supports four modes: plain file search, `@` current-file symbols, `#` workspace symbols, and `/` workspace text search. File search uses path ranking, current-file symbols are gathered when the modal opens, workspace symbol indexing is lazy and runs only after `WorkspaceSymbols` mode is requested, and workspace text search is query-driven. Keyboard selection and pointer activation both resolve a `FileFinderDestination`, so clicking a visible row opens that clicked destination.
 
 ### To-Be
 `FileFinder` remains Tide's single navigation entry point, but it behaves more like a Quick Open palette:
@@ -25,7 +25,7 @@ Selection remains predictable:
 ### Approach
 1. Keep `GlobalAction::FileFinder` and the existing modal surface instead of adding a second navigation popup.
 2. Extend `FileFinderState` with `FileFinderMode`, symbol datasets, and destination-aware selection.
-3. Precompute current-file and workspace `SymbolMatch` datasets when the modal opens.
+3. Precompute current-file `SymbolMatch` data when the modal opens and load workspace `SymbolMatch` data lazily on the first `WorkspaceSymbols` query.
 4. Keep workspace text search capped and query-driven so the palette stays responsive.
 5. Render mode-aware placeholders and result rows so the user can see which navigation model is active before pressing Enter.
 6. Make pointer activation resolve the clicked filtered row, not the stale selected row.

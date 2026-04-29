@@ -5,10 +5,10 @@
 ### As-Is
 
 - Every Pane determines its own context independently
-- File tree root is determined by `focused_terminal_cwd()`, which falls back to the first terminal in layout order when a non-terminal Pane is focused
-- Opening a file from the file tree can create a new split without consistently using the owning Terminal context and right-side placement
+- FileTree View root is determined by `focused_terminal_cwd()`, which falls back to the first terminal in layout order when a non-terminal Pane is focused
+- Opening a file from FileTree View can create a new split without consistently using the owning Terminal context and right-side placement
 - This causes two bugs:
-  1. Focusing an Editor opened from a different directory resets the file tree to the first terminal's cwd
+  1. Focusing an Editor opened from a different directory resets FileTree View to the first terminal's cwd
   2. Opening a file while an Editor is focused can choose an inconsistent split direction
   3. Opening a file from a non-terminal Pane whose `Associated Terminal` only exists in `retained_contexts` can still try to target that closed Terminal's Dock, leaving the new Pane outside both `SplitLayout` and any live dock_layout
 
@@ -17,7 +17,7 @@
 - Terminal is the **context provider** for all non-terminal Panes
 - Each non-terminal Pane has an `associated_terminal: Option<PaneId>` pointing to its context terminal
 - TabGroups are **kind-constrained**: a terminal TabGroup only holds terminals; non-terminal TabGroups hold Editor/Browser/Diff/Launcher
-- File tree root follows the focused Pane's associated terminal cwd
+- FileTree View root follows the focused Pane's associated terminal cwd
 - Opening a file routes to the owning Terminal's Terminal Context Surface, or to a Stage fallback split when no live owning Terminal exists
 - Opening a file only targets Dock when the chosen `Associated Terminal` is a live `Terminal` Pane; retained context still provides cwd and association, but not a Dock target
 - When a terminal is closed (soft delete), its cwd data is retained so associated Panes keep their context
@@ -63,17 +63,17 @@
 
 - **Actor**: System
 - **Trigger**: Pane focus changes
-- **Precondition**: File tree is visible
+- **Precondition**: FileTree View is visible
 - **Flow**:
   1. Get focused Pane's associated terminal (or itself if it's a terminal)
   2. Look up terminal's cwd (live terminal or retained_contexts)
-  3. Set file tree root to that cwd (or git repo root)
-- **Postcondition**: File tree shows the correct directory for the focused Pane's context
+  3. Set FileTree View root to that cwd (or git repo root)
+- **Postcondition**: FileTree View shows the correct directory for the focused Pane's context
 - **Business Rules**:
-  - BR-3: Focusing a terminal → file tree shows that terminal's cwd
-  - BR-4: Focusing a non-terminal → file tree shows its associated terminal's cwd
-  - BR-5: If associated terminal is a retained context → file tree shows retained context's last known cwd
-  - BR-6: If no association exists → file tree stays unchanged (last_cwd)
+  - BR-3: Focusing a terminal → FileTree View shows that terminal's cwd
+  - BR-4: Focusing a non-terminal → FileTree View shows its associated terminal's cwd
+  - BR-5: If associated terminal is a retained context → FileTree View shows retained context's last known cwd
+  - BR-6: If no association exists → FileTree View stays unchanged (last_cwd)
 
 ### UC-3: OpenFileRouting
 
@@ -124,7 +124,7 @@
 ### UC-6: MoveTerminalToWorkspace
 
 - **Actor**: User
-- **Trigger**: Drag terminal Pane to Workspace sidebar
+- **Trigger**: Drag terminal Pane to Workspace rail
 - **Precondition**: Terminal Pane has associated non-terminal Panes
 - **Flow**:
   1. Collect all Panes with `associated_terminal == moving_terminal_id`

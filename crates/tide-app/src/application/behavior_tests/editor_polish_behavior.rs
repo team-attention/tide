@@ -55,7 +55,7 @@ fn active_markdown_pane_shows_explicit_mode_badge() {
 #[test]
 fn focused_single_pane_editor_header_uses_full_width_active_surface() {
     // UC-1 BR-4: A focused single-pane Editor header uses the full header width as the active surface.
-    let layout = single_pane_header_layout(320.0, 0.0, 96.0, &[48.0], false);
+    let layout = single_pane_header_layout(320.0, 0.0, 96.0, &[48.0], false, 0.0);
 
     assert_eq!(layout.surface_w, 320.0);
 }
@@ -93,7 +93,8 @@ fn single_pane_editor_header_places_close_next_to_visible_title_cluster() {
     // UC-2 BR-7: A single-pane Editor header places the close affordance immediately after the visible title/badge cluster while keeping header actions in the trailing strip.
     let header_action_width = 3.0 * 18.0 + 2.0 * BADGE_GAP;
     let badge_widths = [48.0];
-    let layout = single_pane_header_layout(320.0, header_action_width, 120.0, &badge_widths, false);
+    let layout =
+        single_pane_header_layout(320.0, header_action_width, 120.0, &badge_widths, false, 0.0);
     let action_strip_start_x = header_action_strip_start_x(320.0, header_action_width);
     let visible_badge_width = if layout.title_layout.visible_badges > 0 {
         BADGE_GAP

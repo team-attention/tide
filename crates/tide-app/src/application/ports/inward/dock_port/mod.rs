@@ -16,6 +16,7 @@ pub(crate) trait DockPort {
     fn ensure_dock_placeholder(&mut self);
     fn dock_launcher_id(&self) -> Option<PaneId>;
     fn dock_split_new_tab_group(&mut self, direction: SplitDirection);
+    fn dock_split_last_with_launcher(&mut self, direction: SplitDirection);
     fn swap_dock_state(&mut self, incoming_terminal: PaneId);
     fn toggle_dock_pin(&mut self);
 

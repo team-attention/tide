@@ -542,6 +542,37 @@ impl Node {
         false
     }
 
+    pub(crate) fn parent_ratio_and_leading_side(&self, pane: PaneId) -> Option<(f32, bool)> {
+        if let Node::Split {
+            ratio, left, right, ..
+        } = self
+        {
+            let left_direct = left.directly_contains_pane(pane);
+            let right_direct = right.directly_contains_pane(pane);
+            if left_direct {
+                return Some((*ratio, true));
+            }
+            if right_direct {
+                return Some((*ratio, false));
+            }
+            if left.contains(pane) {
+                return left.parent_ratio_and_leading_side(pane);
+            }
+            if right.contains(pane) {
+                return right.parent_ratio_and_leading_side(pane);
+            }
+        }
+        None
+    }
+
+    fn directly_contains_pane(&self, pane: PaneId) -> bool {
+        match self {
+            Node::Leaf(id) => *id == pane,
+            Node::LeafGroup(tg) => tg.contains(pane),
+            Node::Split { .. } => false,
+        }
+    }
+
     /// Recursively snap split ratios so that the left/top child's content area
     /// aligns to a whole number of cells.
     pub(crate) fn snap_ratios(

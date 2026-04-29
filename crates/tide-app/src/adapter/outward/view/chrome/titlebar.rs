@@ -5,6 +5,11 @@ use crate::theme::*;
 use crate::App;
 use crate::PaneLifecyclePort;
 
+use super::super::raster_icons::{
+    FLATICON_CONNECT, FLATICON_DOCK_CONTEXT, FLATICON_FILE_TREE, FLATICON_SETTINGS,
+    FLATICON_WORKSPACE_RAIL,
+};
+
 pub(crate) fn workspace_item_indicator_status(
     _is_active: bool,
     has_running: bool,
@@ -69,24 +74,24 @@ pub(crate) fn integration_toggle_notification_indicator_color(
 }
 
 pub(crate) fn titlebar_workspace_title(app: &App) -> String {
-    let fallback = "Workspace".to_string();
-    let name = app
-        .ws
+    let fallback = format!("Workspace {}", app.ws.active + 1);
+    app.ws
         .workspaces
         .get(app.ws.active)
         .map(|workspace| workspace.name.clone())
         .filter(|name| !name.trim().is_empty())
-        .unwrap_or(fallback);
+        .unwrap_or(fallback)
+}
 
-    if app.ws.workspaces.len() > 1 {
-        format!(
-            "{} · {}/{}",
-            name,
-            app.ws.active + 1,
-            app.ws.workspaces.len()
-        )
+pub(crate) fn titlebar_identity_origin_x() -> f32 {
+    96.0
+}
+
+pub(crate) fn titlebar_identity_origin_x_for_window(is_fullscreen: bool) -> f32 {
+    if is_fullscreen {
+        PANE_PADDING
     } else {
-        name
+        titlebar_identity_origin_x()
     }
 }
 
@@ -109,6 +114,12 @@ pub(crate) enum TitlebarSurfaceIcon {
     FileTree,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TitlebarActionIcon {
+    Integration,
+    Settings,
+}
+
 pub(crate) fn titlebar_surface_button_icon(target: &HoverTarget) -> Option<TitlebarSurfaceIcon> {
     match target {
         HoverTarget::TitlebarWorkspace => Some(TitlebarSurfaceIcon::WorkspaceRail),
@@ -120,6 +131,40 @@ pub(crate) fn titlebar_surface_button_icon(target: &HoverTarget) -> Option<Title
 
 pub(crate) fn titlebar_surface_icon_text_glyph(_icon: TitlebarSurfaceIcon) -> Option<&'static str> {
     None
+}
+
+pub(crate) fn titlebar_action_button_icon(
+    target: &HoverTarget,
+    _dark_mode: bool,
+) -> Option<TitlebarActionIcon> {
+    match target {
+        HoverTarget::TitlebarIntegration => Some(TitlebarActionIcon::Integration),
+        HoverTarget::TitlebarSettings => Some(TitlebarActionIcon::Settings),
+        _ => None,
+    }
+}
+
+pub(crate) fn titlebar_action_icon_text_glyph(_icon: TitlebarActionIcon) -> Option<&'static str> {
+    None
+}
+
+pub(crate) fn titlebar_surface_raster_icon_asset(
+    icon: TitlebarSurfaceIcon,
+) -> &'static crate::tide_renderer::RasterIconAsset {
+    match icon {
+        TitlebarSurfaceIcon::WorkspaceRail => &FLATICON_WORKSPACE_RAIL,
+        TitlebarSurfaceIcon::DockContext => &FLATICON_DOCK_CONTEXT,
+        TitlebarSurfaceIcon::FileTree => &FLATICON_FILE_TREE,
+    }
+}
+
+pub(crate) fn titlebar_action_raster_icon_asset(
+    icon: TitlebarActionIcon,
+) -> &'static crate::tide_renderer::RasterIconAsset {
+    match icon {
+        TitlebarActionIcon::Integration => &FLATICON_CONNECT,
+        TitlebarActionIcon::Settings => &FLATICON_SETTINGS,
+    }
 }
 
 pub(crate) fn titlebar_workspace_meta_text(app: &App, workspace_index: usize) -> String {
@@ -229,43 +274,6 @@ fn draw_titlebar_button_backdrop(
     );
 }
 
-fn draw_icon_stroke(
-    renderer: &mut crate::tide_renderer::WgpuRenderer,
-    rect: Rect,
-    color: crate::tide_core::Color,
-) {
-    let radius = (rect.width.min(rect.height) / 2.0).min(1.2);
-    renderer.draw_chrome_rounded_rect(rect, color, radius);
-}
-
-fn draw_icon_outline(
-    renderer: &mut crate::tide_renderer::WgpuRenderer,
-    rect: Rect,
-    color: crate::tide_core::Color,
-    stroke: f32,
-) {
-    draw_icon_stroke(
-        renderer,
-        Rect::new(rect.x, rect.y, rect.width, stroke),
-        color,
-    );
-    draw_icon_stroke(
-        renderer,
-        Rect::new(rect.x, rect.y + rect.height - stroke, rect.width, stroke),
-        color,
-    );
-    draw_icon_stroke(
-        renderer,
-        Rect::new(rect.x, rect.y, stroke, rect.height),
-        color,
-    );
-    draw_icon_stroke(
-        renderer,
-        Rect::new(rect.x + rect.width - stroke, rect.y, stroke, rect.height),
-        color,
-    );
-}
-
 fn draw_titlebar_surface_icon(
     renderer: &mut crate::tide_renderer::WgpuRenderer,
     icon: TitlebarSurfaceIcon,
@@ -296,82 +304,41 @@ fn draw_titlebar_surface_icon(
         return;
     }
 
-    let stroke = 1.35_f32;
     let icon_w = 16.0_f32;
-    let icon_h = 13.0_f32;
+    let icon_h = 16.0_f32;
     let x = (button_rect.x + (button_rect.width - icon_w) / 2.0).round();
     let y = (button_rect.y + (button_rect.height - icon_h) / 2.0).round();
-    let body = Rect::new(x, y, icon_w, icon_h);
-    let secondary = with_alpha(color, color.a * 0.52);
+    renderer.draw_chrome_raster_icon(
+        titlebar_surface_raster_icon_asset(icon),
+        Rect::new(x, y, icon_w, icon_h),
+        color,
+    );
+}
 
-    match icon {
-        TitlebarSurfaceIcon::WorkspaceRail => {
-            draw_icon_outline(renderer, body, secondary, stroke);
-            draw_icon_stroke(
-                renderer,
-                Rect::new(x + 2.4, y + 2.4, 3.0, icon_h - 4.8),
-                secondary,
-            );
-            draw_icon_stroke(
-                renderer,
-                Rect::new(x + 6.4, y + 1.0, stroke, icon_h - 2.0),
-                color,
-            );
-            draw_icon_stroke(renderer, Rect::new(x + 9.0, y + 4.0, 4.6, stroke), color);
-            draw_icon_stroke(
-                renderer,
-                Rect::new(x + 9.0, y + 7.6, 3.4, stroke),
-                secondary,
-            );
-        }
-        TitlebarSurfaceIcon::DockContext => {
-            draw_icon_outline(renderer, body, secondary, stroke);
-            draw_icon_stroke(
-                renderer,
-                Rect::new(x + icon_w - 5.2, y + 1.0, stroke, icon_h - 2.0),
-                color,
-            );
-            draw_icon_stroke(
-                renderer,
-                Rect::new(x + icon_w - 4.0, y + 2.4, 2.6, icon_h - 4.8),
-                secondary,
-            );
-            draw_icon_stroke(renderer, Rect::new(x + 3.0, y + 4.0, 5.2, stroke), color);
-            draw_icon_stroke(
-                renderer,
-                Rect::new(x + 3.0, y + 7.6, 4.0, stroke),
-                secondary,
-            );
-        }
-        TitlebarSurfaceIcon::FileTree => {
-            draw_icon_stroke(renderer, Rect::new(x + 1.5, y + 1.8, 4.2, stroke), color);
-            draw_icon_stroke(renderer, Rect::new(x + 1.5, y + 1.8, stroke, 3.0), color);
-            draw_icon_stroke(renderer, Rect::new(x + 5.0, y + 3.2, 4.4, stroke), color);
-            draw_icon_stroke(renderer, Rect::new(x + 1.5, y + 4.6, 8.0, stroke), color);
-            draw_icon_stroke(
-                renderer,
-                Rect::new(x + 1.5, y + 4.6, stroke, 3.8),
-                secondary,
-            );
-            draw_icon_stroke(
-                renderer,
-                Rect::new(x + 1.5, y + 7.2, 8.0, stroke),
-                secondary,
-            );
-
-            draw_icon_stroke(
-                renderer,
-                Rect::new(x + 4.0, y + 8.4, stroke, 3.0),
-                secondary,
-            );
-            draw_icon_stroke(renderer, Rect::new(x + 5.8, y + 9.0, 7.4, stroke), color);
-            draw_icon_stroke(
-                renderer,
-                Rect::new(x + 5.8, y + 11.2, 5.2, stroke),
-                secondary,
-            );
-        }
+fn draw_titlebar_action_icon(
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    icon: TitlebarActionIcon,
+    button_rect: Rect,
+    color: crate::tide_core::Color,
+) {
+    if titlebar_action_icon_text_glyph(icon).is_some() {
+        return;
     }
+
+    let icon_w = 16.0_f32;
+    let icon_h = 16.0_f32;
+    let x = (button_rect.x + (button_rect.width - icon_w) / 2.0).round();
+    let y = (button_rect.y + (button_rect.height - icon_h) / 2.0).round();
+    renderer.draw_chrome_raster_icon(
+        titlebar_action_raster_icon_asset(icon),
+        Rect::new(x, y, icon_w, icon_h),
+        color,
+    );
+}
+
+fn titlebar_controls_left_edge(logical_width: f32, cell_width: f32) -> f32 {
+    let btn_w = titlebar_toggle_button_width(cell_width);
+    logical_width - PANE_PADDING - btn_w * 5.0 - TITLEBAR_BUTTON_GAP * 4.0
 }
 
 /// Render the titlebar background, title text, icons, and toggle buttons.
@@ -402,60 +369,71 @@ pub(super) fn render_titlebar_and_sidebar(
             ),
             p.border_subtle,
         );
-        // Centered title keeps active Workspace identity visible when the rail is collapsed.
+        // Leading identity uses the otherwise empty traffic-light lane without turning
+        // the titlebar into a centered label.
         let cs = renderer.cell_size();
         {
             let title_text = titlebar_workspace_title(app);
-            let title_w = title_text.chars().count() as f32 * cs.width;
-            let title_x = (logical.width - title_w) / 2.0;
+            let meta_text = titlebar_workspace_meta_text(app, app.ws.active);
+            let identity_x = titlebar_identity_origin_x_for_window(app.window.is_fullscreen);
+            let controls_left = titlebar_controls_left_edge(logical.width, cs.width);
+            let identity_w = (controls_left - identity_x - PANE_PADDING).max(0.0);
             let title_y = (app.window.top_inset - cs.height) / 2.0;
-            renderer.draw_chrome_text(
-                &title_text,
-                Vec2::new(title_x, title_y),
-                TextStyle {
-                    foreground: p.tab_text,
-                    background: None,
-                    bold: false,
-                    dim: false,
-                    italic: false,
-                    underline: false,
-                },
-                tb,
-            );
-        }
-        // Right: titlebar icons
-        {
-            let btn_w = titlebar_toggle_button_width(cs.width);
-            let btn_h = titlebar_toggle_button_height(cs.height);
-            let icon_logical_w = cs.width * TITLEBAR_ICON_SCALE;
-            let icon_logical_h = cs.height * TITLEBAR_ICON_SCALE;
-            let draw_titlebar_icon = |renderer: &mut crate::tide_renderer::WgpuRenderer,
-                                      icon: &str,
-                                      rect: Rect,
-                                      foreground: crate::tide_core::Color,
-                                      clip: Rect| {
-                renderer.draw_chrome_text_scaled(
-                    icon,
-                    Vec2::new(
-                        rect.x + (rect.width - icon_logical_w) / 2.0,
-                        rect.y + (rect.height - icon_logical_h) / 2.0,
-                    ),
+            if identity_w >= cs.width * 4.0 {
+                let meta_reserved_w = if meta_text.is_empty() {
+                    0.0
+                } else {
+                    let meta_cap = identity_w * 0.42;
+                    if meta_cap >= cs.width * 6.0 {
+                        (meta_text.chars().count() as f32 * cs.width).min(meta_cap)
+                    } else {
+                        0.0
+                    }
+                };
+                let title_gap = if meta_reserved_w > 0.0 {
+                    cs.width * 2.0
+                } else {
+                    0.0
+                };
+                let title_w = (identity_w - meta_reserved_w - title_gap).max(cs.width * 4.0);
+                renderer.draw_chrome_text(
+                    &title_text,
+                    Vec2::new(identity_x, title_y),
                     TextStyle {
-                        foreground,
+                        foreground: p.tab_text_focused,
                         background: None,
                         bold: false,
                         dim: false,
                         italic: false,
                         underline: false,
                     },
-                    clip,
-                    TITLEBAR_ICON_SCALE,
+                    Rect::new(identity_x, title_y, title_w, cs.height),
                 );
-            };
+                if meta_reserved_w > 0.0 {
+                    let meta_x = identity_x + title_w + title_gap;
+                    renderer.draw_chrome_text(
+                        &meta_text,
+                        Vec2::new(meta_x, title_y),
+                        TextStyle {
+                            foreground: p.tab_text,
+                            background: None,
+                            bold: false,
+                            dim: false,
+                            italic: false,
+                            underline: false,
+                        },
+                        Rect::new(meta_x, title_y, meta_reserved_w, cs.height),
+                    );
+                }
+            }
+        }
+        // Right: titlebar icons
+        {
+            let btn_w = titlebar_toggle_button_width(cs.width);
+            let btn_h = titlebar_toggle_button_height(cs.height);
 
             // Settings gear icon
             {
-                let gear_icon = "\u{f013}"; // FontAwesome gear
                 let gear_w = btn_w;
                 let gear_h = btn_h;
                 let gear_x = logical.width - PANE_PADDING - gear_w;
@@ -477,36 +455,23 @@ pub(super) fn render_titlebar_and_sidebar(
                     app.modal.config_page.is_some(),
                     gear_hovered,
                 );
-                draw_titlebar_icon(renderer, gear_icon, gear_rect, gear_color, tb);
+                if let Some(icon) = titlebar_action_button_icon(
+                    &HoverTarget::TitlebarSettings,
+                    app.window.dark_mode,
+                ) {
+                    draw_titlebar_action_icon(renderer, icon, gear_rect, gear_color);
+                }
             }
 
-            // Titlebar toggle buttons: [Workspace] [Dock] [FileTree] [Integration] [Theme] [Settings]
+            // Titlebar toggle buttons: [Workspace] [Dock] [FileTree] [Integration] [Settings]
             // Positioned right-to-left from the settings icon
             let settings_w = btn_w;
             let settings_x = logical.width - PANE_PADDING - settings_w;
 
-            // Theme toggle icon (between settings and toggle buttons)
-            let theme_w = btn_w;
-            let theme_h = btn_h;
-            let theme_x = settings_x - theme_w - TITLEBAR_BUTTON_GAP;
-            let theme_y = (app.window.top_inset - theme_h) / 2.0;
-            let theme_rect = Rect::new(theme_x, theme_y, theme_w, theme_h);
-            let theme_hovered = matches!(
-                app.interaction.hover_target,
-                Some(HoverTarget::TitlebarTheme)
-            );
-            let theme_icon = if app.window.dark_mode {
-                "\u{f186}"
-            } else {
-                "\u{f185}"
-            }; // moon / sun
-            draw_titlebar_button_backdrop(renderer, theme_rect, p, false, theme_hovered);
-            draw_titlebar_icon(renderer, theme_icon, theme_rect, p.tab_text, tb);
-
-            // Integration toggle button (left of theme icon)
+            // Integration toggle button (left of settings)
             let integ_w = btn_w;
             let integ_h = btn_h;
-            let integ_x = theme_x - integ_w - TITLEBAR_BUTTON_GAP;
+            let integ_x = settings_x - integ_w - TITLEBAR_BUTTON_GAP;
             let integ_y = (app.window.top_inset - integ_h) / 2.0;
             let integ_rect = Rect::new(integ_x, integ_y, integ_w, integ_h);
             {
@@ -515,14 +480,18 @@ pub(super) fn render_titlebar_and_sidebar(
                     app.interaction.hover_target,
                     Some(HoverTarget::TitlebarIntegration)
                 );
-                let icon = "\u{f1e6}"; // FontAwesome plug icon
                 let icon_color = if is_active {
                     p.dock_tab_underline
                 } else {
                     p.tab_text
                 };
                 draw_titlebar_button_backdrop(renderer, integ_rect, p, is_active, is_hovered);
-                draw_titlebar_icon(renderer, icon, integ_rect, icon_color, tb);
+                if let Some(icon) = titlebar_action_button_icon(
+                    &HoverTarget::TitlebarIntegration,
+                    app.window.dark_mode,
+                ) {
+                    draw_titlebar_action_icon(renderer, icon, integ_rect, icon_color);
+                }
                 if let Some(indicator_color) = integration_toggle_notification_indicator_color(
                     is_active,
                     app.window.notification_authorization_status,
@@ -539,38 +508,38 @@ pub(super) fn render_titlebar_and_sidebar(
             }
 
             let btn_right = integ_x - TITLEBAR_BUTTON_GAP;
-            // Helper: render a larger icon-only titlebar toggle button.
-            // Returns the total width consumed
-            let render_titlebar_btn = |renderer: &mut crate::tide_renderer::WgpuRenderer,
-                                       icon: TitlebarSurfaceIcon,
-                                       right_edge: f32,
-                                       is_active: bool,
-                                       is_hovered: bool|
-             -> f32 {
-                let btn_w = titlebar_toggle_button_width(cs.width);
-                let btn_h = titlebar_toggle_button_height(cs.height);
-                let btn_x = right_edge - btn_w;
-                let btn_y = (app.window.top_inset - btn_h) / 2.0;
-                let btn_rect = Rect::new(btn_x, btn_y, btn_w, btn_h);
+            // Helper: render a larger icon-only titlebar surface toggle button.
+            // Returns the total width consumed.
+            let render_titlebar_surface_btn =
+                |renderer: &mut crate::tide_renderer::WgpuRenderer,
+                 icon: TitlebarSurfaceIcon,
+                 right_edge: f32,
+                 is_active: bool,
+                 is_hovered: bool|
+                 -> f32 {
+                    let btn_w = titlebar_toggle_button_width(cs.width);
+                    let btn_h = titlebar_toggle_button_height(cs.height);
+                    let btn_x = right_edge - btn_w;
+                    let btn_y = (app.window.top_inset - btn_h) / 2.0;
+                    let btn_rect = Rect::new(btn_x, btn_y, btn_w, btn_h);
 
-                draw_titlebar_button_backdrop(renderer, btn_rect, p, is_active, is_hovered);
+                    draw_titlebar_button_backdrop(renderer, btn_rect, p, is_active, is_hovered);
 
-                // Icon
-                let icon_color = if is_active {
-                    p.dock_tab_underline
-                } else {
-                    p.tab_text
+                    // Icon
+                    let icon_color = if is_active {
+                        p.dock_tab_underline
+                    } else {
+                        p.tab_text
+                    };
+                    draw_titlebar_surface_icon(renderer, icon, btn_rect, icon_color);
+
+                    btn_w
                 };
-                draw_titlebar_surface_icon(renderer, icon, btn_rect, icon_color);
-
-                btn_w
-            };
-
             // Render buttons right-to-left: [FileTree] [Dock] [Workspace]
             let mut cur_right = btn_right;
 
             // FileTree button
-            let w = render_titlebar_btn(
+            let w = render_titlebar_surface_btn(
                 renderer,
                 titlebar_surface_button_icon(&HoverTarget::TitlebarFileTree).unwrap(),
                 cur_right,
@@ -580,7 +549,7 @@ pub(super) fn render_titlebar_and_sidebar(
             cur_right -= w + TITLEBAR_BUTTON_GAP;
 
             // Dock button
-            let w = render_titlebar_btn(
+            let w = render_titlebar_surface_btn(
                 renderer,
                 titlebar_surface_button_icon(&HoverTarget::TitlebarDock).unwrap(),
                 cur_right,
@@ -590,7 +559,7 @@ pub(super) fn render_titlebar_and_sidebar(
             cur_right -= w + TITLEBAR_BUTTON_GAP;
 
             // Workspace sidebar button
-            let _w = render_titlebar_btn(
+            let _w = render_titlebar_surface_btn(
                 renderer,
                 titlebar_surface_button_icon(&HoverTarget::TitlebarWorkspace).unwrap(),
                 cur_right,

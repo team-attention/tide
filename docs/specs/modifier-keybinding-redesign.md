@@ -1,10 +1,12 @@
 # Spec: Modifier Keybinding Redesign
 
+This spec is an implementation record for the completed keybinding redesign. For the current default shortcuts, use `docs/domain/input.md` and the README shortcut table.
+
 ## Overview
 
-### As-Is
+### Pre-Redesign State
 
-The current keybinding system in `domain/input/mod.rs` has several problems:
+Before the redesign, the keybinding system in `domain/input/mod.rs` had several problems:
 
 1. **Inconsistent modifier mental model.** Navigate (Cmd+HJKL) targets Stage when FocusArea is Stage but forces a jump to Stage when FocusArea is Dock (`handle_navigate` in `workspace_service/mod.rs:189-194` sets `focused` to the stage terminal, pulling focus out of Dock). There is no way to navigate within Dock spatially.
 

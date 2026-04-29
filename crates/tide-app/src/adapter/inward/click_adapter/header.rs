@@ -22,16 +22,6 @@ fn focus_header_context(
     }
 }
 
-fn resolve_terminal_launcher_if_needed(
-    ctx: &mut (impl FocusNavPort + PaneAccessPort + PaneLifecyclePort),
-) {
-    if let Some(new_id) = ctx.focused_pane() {
-        if matches!(ctx.pane(new_id), Some(PaneKind::Launcher(_))) {
-            ctx.resolve_launcher(new_id, crate::action::LauncherChoice::Terminal);
-        }
-    }
-}
-
 /// Check if the current cursor position clicks on a header badge or close button.
 /// Returns true if the click was consumed.
 pub(crate) fn check_header_click(
@@ -53,13 +43,17 @@ pub(crate) fn check_header_click(
         if zone.rect.contains(pos) {
             match zone.action {
                 HeaderHitAction::Close => {
-                    ctx.close_specific_pane(zone.pane_id);
+                    ctx.close_specific_pane_with_split_animation(zone.pane_id);
                     ctx.request_redraw();
                     return true;
                 }
                 HeaderHitAction::AddPane => {
                     focus_header_context(ctx, zone.pane_id);
-                    ctx.new_terminal_tab();
+                    if ctx.zoomed_pane().is_some() || ctx.is_pane_in_dock(zone.pane_id) {
+                        ctx.open_stacked_launcher_pane();
+                    } else {
+                        ctx.open_launcher_pane();
+                    }
                     ctx.request_redraw();
                     return true;
                 }
@@ -79,7 +73,6 @@ pub(crate) fn check_header_click(
                     focus_header_context(ctx, zone.pane_id);
                     if ctx.is_pane_in_dock(zone.pane_id) {
                         ctx.dock_split_new_tab_group(SplitDirection::Horizontal);
-                        resolve_terminal_launcher_if_needed(ctx);
                     } else {
                         ctx.split_with_launcher(SplitDirection::Horizontal);
                     }
@@ -90,10 +83,24 @@ pub(crate) fn check_header_click(
                     focus_header_context(ctx, zone.pane_id);
                     if ctx.is_pane_in_dock(zone.pane_id) {
                         ctx.dock_split_new_tab_group(SplitDirection::Vertical);
-                        resolve_terminal_launcher_if_needed(ctx);
                     } else {
                         ctx.split_with_launcher(SplitDirection::Vertical);
                     }
+                    ctx.request_redraw();
+                    return true;
+                }
+                HeaderHitAction::ToggleStageViewMode(_) => {
+                    if let Some(stage_pane) = ctx.focused_terminal_id() {
+                        ctx.focus_terminal(stage_pane);
+                    } else {
+                        ctx.set_focus_area(crate::state::FocusArea::Stage);
+                    }
+                    ctx.handle_toggle_stacked();
+                    ctx.request_redraw();
+                    return true;
+                }
+                HeaderHitAction::ToggleDockViewMode(_) => {
+                    ctx.handle_global_action(crate::tide_input::GlobalAction::DockToggleStacked);
                     ctx.request_redraw();
                     return true;
                 }

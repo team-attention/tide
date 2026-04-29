@@ -41,9 +41,18 @@ pub(crate) fn search_bar_cursor_advance_cells(query: &str, cursor: usize, preedi
     search_bar_text_advance_cells(&query[..cursor]) + search_bar_text_advance_cells(preedit)
 }
 
+#[cfg(test)]
+pub(crate) use config_page::{config_page_theme_status_text, config_page_theme_toggle_text};
 pub(crate) use context_comment::context_comment_composer_cursor_area;
 #[cfg(test)]
 pub(crate) use context_comment::{composer_input_rect, composer_popup_rect};
+#[cfg(test)]
+pub(crate) use context_menu::{
+    context_menu_icon, context_menu_icon_text_glyph, context_menu_raster_icon_asset,
+    ContextMenuIcon,
+};
+#[cfg(test)]
+pub(crate) use search_bar::{search_bar_close_icon_text_glyph, search_close_raster_icon_asset};
 
 // ── Shared helper functions ──
 

@@ -403,12 +403,34 @@ pub const FILE_TREE_WIDTH: f32 = 220.0;
 pub const FILE_TREE_MIN_WIDTH: f32 = 180.0;
 pub const TERMINAL_CONTEXT_SURFACE_WIDTH: f32 = 1040.0;
 pub const TERMINAL_CONTEXT_SURFACE_MIN_WIDTH: f32 = 360.0;
+pub const TERMINAL_CONTEXT_SURFACE_DEFAULT_RATIO: f32 = 0.42;
 
 pub const TAB_BAR_HEIGHT: f32 = 35.0;
 pub const SIDE_SURFACE_BORDER_HIT_SLOP: f32 = 8.0;
 pub const TAB_CLOSE_ICON_SIZE: f32 = 9.0;
 pub const TAB_H_PAD: f32 = 11.0;
 pub const TAB_CONTENT_SPACING: f32 = 6.0;
+
+pub fn terminal_context_surface_uses_default_width(width: f32) -> bool {
+    (width - TERMINAL_CONTEXT_SURFACE_WIDTH).abs() < 0.5
+}
+
+pub fn terminal_context_surface_default_width(window_width: f32) -> f32 {
+    let cap = TERMINAL_CONTEXT_SURFACE_WIDTH.min(window_width.max(0.0));
+    if cap <= 0.0 {
+        return 0.0;
+    }
+    let min = TERMINAL_CONTEXT_SURFACE_MIN_WIDTH.min(cap);
+    (window_width * TERMINAL_CONTEXT_SURFACE_DEFAULT_RATIO).clamp(min, cap)
+}
+
+pub fn terminal_context_surface_width_for_layout(stored_width: f32, window_width: f32) -> f32 {
+    if terminal_context_surface_uses_default_width(stored_width) {
+        terminal_context_surface_default_width(window_width)
+    } else {
+        stored_width
+    }
+}
 
 pub fn terminal_top_padding(cell_height: f32) -> f32 {
     if cell_height <= 0.0 {

@@ -6,19 +6,20 @@ Inline code completion powered by Language Server Protocol.
 
 ### As-Is
 
-Editor panes have syntax highlighting (syntect) but no code intelligence. No LSP infrastructure exists.
-Users must rely on external tools for code completion.
+Editor Panes have syntax highlighting through syntect and an implemented LSP completion slice. Current source includes `LspClient`, `LspManager`, LSP transport/protocol helpers, and per-EditorPane `CompletionPopup` state. The implemented LSP surface is completion-oriented: it starts one language server per language, syncs documents, requests completions, and renders a popup.
+
+The remaining IDE gap is broader code intelligence. Diagnostics, hover, go-to-definition, go-to-references, rename/refactor actions, and richer symbol/reference indexing are not part of this completion spec.
 
 ### To-Be
 
-As the user types in an Editor pane, a CompletionPopup appears below the cursor showing relevant
+As the user types in an Editor Pane, a CompletionPopup appears below the cursor showing relevant
 suggestions from a language server. The user can navigate, accept, or dismiss completions with keyboard.
 
 Supported languages (v1): TypeScript, Python, Rust, Go.
 
 ### Approach
 
-1. **New crate `tide-lsp`**: LSP client that manages language server processes and JSON-RPC communication.
+1. **LSP adapter**: LSP client that manages language server processes and JSON-RPC communication.
    - One background thread per language server instance (follows git poller pattern: std::thread + mpsc + WakeCallback)
    - Uses `lsp-types` crate for protocol types, manual JSON-RPC serialization (no tokio/async)
    - Full document sync (TextDocumentSyncKind::Full) for v1
@@ -38,17 +39,18 @@ Supported languages (v1): TypeScript, Python, Rust, Go.
 
 | Context | Role |
 |---------|------|
-| `tide-lsp` (new) | LSP client: process lifecycle, JSON-RPC, document sync, request/response |
-| `tide-editor` | Provides buffer content and cursor position for LSP sync |
-| `tide-app` | CompletionPopup UI, LspManager orchestration, input routing, rendering |
-| `tide-core` | Shared types (may add CompletionItem if needed cross-crate) |
+| `adapter/outward/lsp_adapter` | LSP client: process lifecycle, JSON-RPC, document sync, request/response |
+| `domain/editor` | Provides buffer content and cursor position for LSP sync |
+| `domain/pane` | CompletionPopup state on Editor Pane |
+| `application/services/lsp_service` | LspManager orchestration and completion request/response flow |
+| `adapter/outward/view/overlays` | CompletionPopup rendering |
 
 ## Use Cases
 
 ### UC-1: StartLanguageServer
 
 - **Actor**: System
-- **Trigger**: User opens a file with a recognized language extension in an Editor pane
+- **Trigger**: User opens a file with a recognized language extension in an Editor Pane
 - **Precondition**: No LspClient is running for that language
 - **Flow**:
   1. Detect language from file extension (e.g., `.ts` → TypeScript, `.py` → Python, `.rs` → Rust, `.go` → Go)
@@ -67,24 +69,24 @@ Supported languages (v1): TypeScript, Python, Rust, Go.
 ### UC-2: SyncDocument
 
 - **Actor**: System
-- **Trigger**: User modifies buffer in an Editor pane that has an active LspClient
+- **Trigger**: User modifies buffer in an Editor Pane that has an active LspClient
 - **Precondition**: LspClient running for this file's language
 - **Flow**:
   1. After buffer mutation, send `textDocument/didChange` with full document content
   2. On file save, send `textDocument/didSave`
-  3. On editor pane close, send `textDocument/didClose`
+  3. On Editor Pane close, send `textDocument/didClose`
 - **Postcondition**: Language server has up-to-date document state
 - **Business Rules**:
   - BR-5: didChange sends full content (TextDocumentSyncKind::Full)
   - BR-6: didChange is debounced — coalesce rapid keystrokes (e.g., 50ms after last keystroke)
   - BR-7: didOpen sent when a file is opened and server is already running
-  - BR-8: didClose sent when editor pane is closed
+  - BR-8: didClose sent when Editor Pane is closed
 
 ### UC-3: ShowCompletion
 
 - **Actor**: User
 - **Trigger**: User types a character in Editor, or presses Ctrl+Space
-- **Precondition**: Editor pane focused, LspClient running for this language
+- **Precondition**: Editor Pane focused, LspClient running for this language
 - **Flow**:
   1. **Trigger check**: character is a trigger character (`.`, `:`, etc. from server capabilities) or Ctrl+Space
   2. Send `textDocument/completion` request with current cursor position
@@ -158,7 +160,7 @@ Supported languages (v1): TypeScript, Python, Rust, Go.
 ### UC-7: StopLanguageServer
 
 - **Actor**: System
-- **Trigger**: All editor panes of a language are closed, or app shutdown
+- **Trigger**: All Editor Panes of a language are closed, or app shutdown
 - **Precondition**: LspClient is running for that language
 - **Flow**:
   1. Send `shutdown` request to server
@@ -217,9 +219,10 @@ Supported languages (v1): TypeScript, Python, Rust, Go.
 
 | Layer | Crate | Key Files |
 |-------|-------|-----------|
-| LspClient | tide-lsp (new) | `lib.rs`, `client.rs`, `transport.rs`, `protocol.rs` |
-| CompletionPopup state | tide-app | `editor_pane/completion.rs` (new) |
-| CompletionPopup rendering | tide-app | `rendering/overlays.rs` |
-| Input routing | tide-app | `event_handler/keyboard.rs` |
-| LspManager | tide-app | `lsp_manager.rs` (new) |
+| LspClient | tide-app | `crates/tide-app/src/adapter/outward/lsp_adapter/client.rs` |
+| LspManager | tide-app | `crates/tide-app/src/adapter/outward/lsp_adapter/manager.rs` |
+| LSP service | tide-app | `crates/tide-app/src/application/services/lsp_service/mod.rs` |
+| CompletionPopup state | tide-app | `crates/tide-app/src/domain/pane/editor_completion.rs` |
+| CompletionPopup rendering | tide-app | `crates/tide-app/src/adapter/outward/view/overlays/completions.rs` |
+| Input routing | tide-app | `crates/tide-app/src/adapter/inward/keyboard_adapter/` |
 | Tests | tide-app | `behavior_tests.rs :: mod lsp_completion` |

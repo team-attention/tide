@@ -966,9 +966,8 @@ impl App {
                 }
             }
 
-            // Side surface visibility animations are layout animations, so each
-            // frame recomputes geometry from the current animated width.
-            if self.surface_visibility_animation_active() {
+            // Layout animations recompute geometry from the current animated width or split ratio.
+            if self.layout_animation_active() {
                 self.compute_layout();
                 crate::AppCorePort::request_redraw(&mut self);
             }
@@ -1041,9 +1040,8 @@ impl App {
             }
         }
 
-        // Side surface visibility animations should tick even when no external
-        // input arrives.
-        if self.surface_visibility_animation_frame_due() {
+        // Layout animations should tick even when no external input arrives.
+        if self.layout_animation_frame_due() {
             timeout = timeout.min(Duration::from_millis(16));
         }
 

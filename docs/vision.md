@@ -1,87 +1,78 @@
-# Tide — Vision
+# Tide Vision
 
-## One sentence
+## One Sentence
 
-Tide is an **Integrated Task Environment (ITE)** — the workspace where humans and AI agents get work done together.
+Tide is an **Integrated Task Environment**: a native macOS Workspace where humans and coding agents work on the same task through shared Terminal, Editor, Diff, Browser, and Render Panes.
 
-## What is an ITE?
+## Why This Exists
 
-The IDE (Integrated Development Environment) unified everything a programmer needs: editor, compiler, debugger, version control — all in one place. But IDEs are built around **code**. The unit of work is a file.
+IDEs organize software work around files and projects. Agent-led work is organized around tasks: run commands, inspect output, edit files, check a Browser Pane, review a Diff Pane, leave feedback, and ask the agent to continue.
 
-An ITE (Integrated Task Environment) unifies everything needed to **complete a task with AI agents**: terminal, editor, browser, agent-generated UI — all in one place. The unit of work is a **task**, not a file. And the worker is not just the human — it's human + agent, together.
+Today those surfaces usually live in separate apps. The human sees the browser and editor; the agent sees its Terminal stream. Tide makes the task itself the shared environment.
 
-| | IDE | ITE |
+| | IDE | Tide |
 |---|---|---|
-| **Unit of work** | File / Project | Task |
-| **Worker** | Human | Human + Agent |
-| **Core tools** | Editor, compiler, debugger | Terminal, editor, browser, generative UI |
-| **AI role** | Autocomplete assistant | Co-worker with full environment access |
-| **Context sharing** | Manual (copy-paste, @-mentions) | Automatic (ambient context, MCP) |
+| Unit of work | File / project | Workspace task |
+| Worker | Human | Human + Wrapped Agent |
+| Primary surfaces | Editor, compiler, debugger | Terminal, Editor, Browser, Diff, Render Pane |
+| Agent role | Assistant inside one surface | Coworker operating shared Panes |
+| Context flow | Copy-paste and descriptions | MCP tools and explicit Context Artifacts |
 
-## The problem
+## Product Model
 
-Today, humans and AI agents use computers through separate interfaces:
+Tide keeps the Terminal as the primary session, then gives it structured surroundings:
 
-- **Humans** use terminals, editors, browsers — each in its own window, its own app, its own context.
-- **AI agents** (Claude Code, Codex, Gemini, ...) run in a terminal and see only their own text stream. They cannot see what the human is editing, browsing, or looking at.
+| Surface | Human use | Agent use |
+|---------|-----------|-----------|
+| Terminal Pane | Run commands and agent CLIs | Receive keys through `tide_send_keys`; expose output through `tide_capture_pane` |
+| Editor Pane | Read and make focused edits | Open files through `tide_open_editor`; expose text through capture tools |
+| Browser Pane | Preview local apps, docs, and public pages | Open, observe, and act through Tide Browser Pane Runtime |
+| Diff Pane | Review changes visually | Provide review context through captures and comments |
+| Render Pane | View generated task UI | Render HTML through `tide_render_html` |
+| Workspace | Keep a task isolated | Scope Pane identity, layout, and Context Artifacts |
 
-When a human wants to collaborate with an agent, they must manually bridge these worlds: copy-paste context, describe what's on screen, switch between apps. The tools don't share a workspace — the human is the glue.
+The Dock is the active Terminal's Terminal Context Surface. It keeps supporting Panes attached to the task through Associated Terminal ownership instead of becoming a global pile of tabs.
 
-Meanwhile, IDEs like Cursor embed AI inside a code editor. This works for coding, but the agent is trapped in the editor's worldview. Terminal workflows, web research, visual design — all outside. And the unit of work is still a file.
+## Agent Interface
 
-## The insight
+Wrapped Agents connect through the Agent Gateway and Tide MCP Runtime. The current MCP surface covers these families:
 
-The right unit is not "a file being edited" but **a task being done**. A task might involve running commands, editing code, checking a web page, reviewing a diff, and asking an agent to generate a dashboard — all at once. The environment should hold all of that, and both human and agent should be able to see and act on all of it.
+- Observe Tide surfaces, Pane geometry, focus, and Browser Pane visual fit with `tide_observe_workspace`.
+- Open and capture Terminal, Editor, Browser, and Render Panes.
+- Use Tide Browser Pane Runtime with `tide_open_browser`, `tide_browser_observe`, `tide_browser_action`, and BrowserSnapshot tools.
+- Adjust layout through product-level Layout Targets with `tide_layout_action`.
+- Create, list, read, and send Context Artifacts for explicit human feedback.
 
-## What Tide is
+Browser work defaults to the shared Tide Browser Pane. External browser runtimes, including browser-use style runtimes, are explicit fallbacks when Tide cannot represent the target or the user asks for that handoff.
 
-Tide is a native macOS ITE that provides multiple **interaction panes** in a shared layout:
+## Context Flow
 
-| Pane | For the human | For the agent |
-|------|--------------|---------------|
-| **Terminal** | Run commands, use the shell | Execute commands via `tide_send_keys`, read output via `tide_capture_pane` |
-| **Editor** | Edit code with syntax highlighting, LSP | Read what the human is editing (agent-context-injection), open files via `tide_open_editor` |
-| **Browser** | Browse the web | Open URLs via `tide_open_browser`, render agent-generated UI via `tide_render_html` |
-| **Diff** | Review changes visually | (future: propose changes as diffs) |
-| **Launcher** | Quick-create any pane type | — |
+Tide's current context model is explicit:
 
-The key: **every pane is observable and controllable by both human and agent.** The environment is shared — the task is shared.
+- A human can select text or page content, add a comment, and create a Workspace-local Context Artifact.
+- The artifact is bound to the source PaneId and Associated Terminal.
+- The paired agent can list, read, or receive the artifact through MCP and Terminal delivery.
+- Browser Pane comments and selections stay visible in the same Workspace instead of becoming hidden prompt state.
 
-## How it works
+This keeps collaboration inspectable. The human can see what was shared, and the agent can ask for more context through stable tools.
 
-### MCP (Model Context Protocol)
+## Agent Lifecycle
 
-Agents connect to Tide via MCP. Tide exposes 13+ tools that let agents observe and act:
+Wrapped Agents report lifecycle state through Tide's wrapper-managed paths. Tide projects that state into the interface as Pane and Workspace attention, including running, idle, and needs-input states.
 
-- **Observe**: `tide_list_panes`, `tide_capture_pane`, `tide_get_layout`
-- **Act**: `tide_send_keys`, `tide_open_terminal`, `tide_open_editor`, `tide_open_browser`, `tide_split_vertical`, `tide_close_pane`, ...
-- **Create UI**: `tide_render_html` — agents can generate ad-hoc interfaces on the fly
+## What Tide Is Not
 
-### Auto-integration
+- **Not a replacement editor.** Editor Panes are for task-local reading, focused edits, and context sharing.
+- **Not only a terminal app.** Terminal Panes are the substrate; the product is the shared Workspace around them.
+- **Not an LLM vendor.** Tide runs the agent CLIs you bring, including Claude Code, Codex, and Gemini.
+- **Not a second hidden browser.** Browser Pane work is human-visible by default; external browser runtimes are explicit fallbacks.
 
-When you launch an agent (Claude Code, Codex, Gemini) inside Tide, the MCP connection and hooks are configured automatically. No setup required. The agent immediately gains awareness of the workspace.
+## Direction
 
-### Context flow
+- Make Editor Pane mature enough for real task-local code work: workspace search, symbols, diagnostics, completion polish, hover, and source navigation.
+- Make Workspace rail a task monitor with compact identity, status, change, activity, and context signals.
+- Make Browser Pane review feel as direct as code review: visible operations, comments, and paired-agent delivery.
+- Keep expanding Tide MCP Runtime around product concepts: Workspace, Pane, Terminal Context Surface, Layout Target, Browser Operation, and Context Artifact.
+- Support multiple agents by keeping each task's Workspace, Panes, and context boundaries explicit.
 
-- **Ambient context**: Every prompt submission automatically includes what the human is editing in other panes (agent-context-injection)
-- **Pinned context**: `Cmd+L` in an editor sends a specific selection to the agent
-- **Agent-initiated**: Agents can call `tide_get_context` or `tide_capture_pane` at any time
-
-### Agent lifecycle
-
-Tide tracks agent status (Running / Idle / NeedsInput) and routes notifications:
-- Tab dot indicators (green = running, orange = needs input)
-- macOS system notifications when the window is not focused
-- Dock badge bounce for background alerts
-
-## What Tide is not
-
-- **Not a code editor.** The editor pane exists for quick edits and context sharing, not to replace VS Code or Neovim.
-- **Not a terminal emulator.** The terminal is the substrate, not the product. Tide is powered by alacritty_terminal, but the value is the integrated task environment.
-- **Not an AI product.** Tide doesn't bundle or sell an LLM. It's the environment where any agent can work. Bring your own agent.
-
-## Where this goes
-
-- Agent context injection (ambient + pinned context)
-- Richer MCP tools (file tree access, git status, search)
-- Multi-agent workspaces (different agents in different terminals, same workspace)
+See [Roadmap](roadmap.md) for the current product sequence.

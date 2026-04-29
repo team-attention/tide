@@ -37,6 +37,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Modifiers** | `Modifiers` | `domain/core_types.rs` | `{shift, ctrl, alt, meta}` — modifier key state. |
 | **Hotkey** | `Hotkey` | `domain/input/mod.rs` | A `Key` + `Modifiers` combination that maps to a `GlobalAction`. |
 | **Color** | `Color` | `domain/core_types.rs` | RGBA float color. |
+| **RasterIconAsset** | `RasterIconAsset` | `adapter/outward/renderer_adapter/raster_icon.rs` | Static PNG icon metadata and bytes used by chrome icon roles that must render from source assets instead of hand-authored vector markup. |
 | **TextStyle** | `TextStyle` | `domain/core_types.rs` | Bold/dim/italic/underline + fg/bg color. |
 | **TerminalCell** | `TerminalCell` | `domain/core_types.rs` | One character + its `TextStyle`. |
 | **TerminalGrid** | `TerminalGrid` | `domain/core_types.rs` | 2D array of `TerminalCell` — the terminal's visible content. |
@@ -67,7 +68,9 @@ All paths below are relative to `crates/tide-app/src/`.
 |------|------|----------|-------------|
 | **GlobalAction** | `GlobalAction` | `domain/input/mod.rs` | A user-intent command: `SplitVertical`, `ClosePane`, `Navigate(Up)`, `DockNavigate(Right)`, etc. 41 enum variants. |
 | **HeaderHitAction** | `HeaderHitAction` | `adapter/outward/view/header.rs` | A click action exposed by Pane header or TabGroup chrome. Tide resolves it through header hit zones instead of raw coordinate checks. |
+| **LauncherChoice** | `LauncherChoice` | `application/services/action_service/mod.rs` | A user choice inside a Launcher Pane: Terminal, NewFile, OpenFile, or Browser. Keyboard, IME, and Launcher row clicks all resolve to this command before replacing the Launcher Pane in-place. |
 | **HeaderActionStrip** | `HeaderActionSpec` + render helpers | `adapter/outward/view/header.rs` | The visible-header right-aligned control cluster that exposes mouse-first Pane creation and split actions. |
+| **HeaderActionIcon** | `HeaderActionIcon` | `adapter/outward/view/header.rs` | A vector icon role for HeaderActionStrip actions such as AddPane, SplitHorizontal, SplitVertical, EnterStackMode, and EnterSplitMode. It keeps header action icons independent from private font glyphs. |
 | **Action** | `Action` | `domain/input/mod.rs` | Routing decision: `RouteToPane(id)`, `GlobalAction(...)`, `DragBorder(pos)`, or `None`. |
 | **EditorAction** | `EditorAction` | `domain/editor/input.rs` | Editor-specific command: `InsertChar`, `Backspace`, `Save`, `Undo`, etc. |
 | **WindowCommand** | `WindowCommand` | `adapter/outward/platform_adapter/mod.rs` | App→window command: `RequestRedraw`, `SetFullscreen`, `CreateImeProxy`, etc. |
@@ -104,9 +107,15 @@ All paths below are relative to `crates/tide-app/src/`.
 | **FileTree Cursor Row** | concept | The FileTree row addressed by `FileTreeModel.cursor`. Tide renders keyboard-selection chrome on this row only when the FileTree has explicit keyboard focus, not merely when FileTree View is visible. |
 | **Expanded Directory Row** | concept | A FileTree row for a directory whose `TreeEntry.is_expanded` is true. Tide renders open-directory chrome on this row even when it is not the `FileTree Cursor Row`. |
 | **TitlebarSurfaceIcon** | `TitlebarSurfaceIcon` | `adapter/outward/view/chrome/titlebar.rs` | A vector icon drawn for the titlebar surface toggles. It avoids font-dependent private glyphs for Workspace rail, Dock, and FileTree View controls. |
+| **HeaderViewModeIcon** | `HeaderActionIcon` | `adapter/outward/view/header.rs` | A vector icon drawn in the region header leading slot for `ViewMode` toggles. It distinguishes Stage Split/Stacked and Terminal Context Surface Split/Stacked controls from per-Pane creation and split actions. |
+| **TitlebarActionIcon** | `TitlebarActionIcon` | `adapter/outward/view/chrome/titlebar.rs` | A vector icon drawn for titlebar app actions such as Integration and settings. It shares the same stroke grammar as TitlebarSurfaceIcon. |
+| **BrowserNavIcon** | `BrowserNavIcon` | `adapter/outward/view/chrome/tab_bar.rs` | A vector icon role for Browser Pane navigation controls, including OpenExternal. It keeps Browser Pane navigation independent from font-dependent arrow and external-link glyphs. |
+| **ContextMenuIcon** | `ContextMenuIcon` | `adapter/outward/view/overlays/context_menu.rs` | A vector icon role for FileTree context menu actions, including file handoff actions that open through an external app or Finder. |
+| **ConfigPage** | `ConfigPageState` | `domain/modal/mod.rs` | A settings page inside `ModalStack`. It contains Keybindings, Worktree, and Appearance sections for app-level options. |
 | **Terminal Context Surface** | concept | The Dock region attached to one Stage Terminal. In Split view it is backed by that Terminal's context `SplitLayout`; in Stacked view it renders one active context Pane with a flat tab bar over all context Panes. It can show Browser Pane, Diff, Editor, Launcher, secondary Terminal, or Render Pane. It does not contain a pinned group or FileTree View. |
 | **Terminal Context TabGroup** | legacy concept | The old flat-only name for Terminal Context Surface. Use Terminal Context Surface for new behavior and specs. |
 | **FileTree View** | concept | A `FileTreeModel`-backed right-side chrome view toggled by `ToggleFileTree`. It is independent from Terminal Context Surface, can use `FocusArea::FileTree` only when explicitly focused for keyboard routing, and follows the focused Stage Terminal's working directory through the existing FileTree root update path. It is not a `PaneKind` in V1. |
+| **Workspace rail** | concept | The `WorkspaceManager`-backed side surface for task navigation and monitoring. It lists Workspaces, can show compact identity and attention metadata, and is not a `PaneKind` or `FocusArea` in V1. |
 | **Ratio** | `f32` | Split position (0.0–1.0). Clamped to [0.1, 0.9] minimum. |
 | **Cell Size** | `Size` | Pixel dimensions of one terminal character cell (font-dependent). |
 | **Context Artifact** | concept | A Workspace-local record of an optional captured Pane selection plus an optional user comment. Bound to a source PaneId and its Associated Terminal. |
@@ -143,6 +152,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **HeaderSurfaceKind** | `HeaderSurfaceKind` | Renderer-facing classification for Pane header chrome: `Stage` for quiet primary-session chrome, or `TerminalContextSurface` for tabbed supporting-context chrome. |
 | **FileIconKind** | `FileIconKind` | Renderer-facing classification for FileTree and file-finder glyphs before choosing a concrete icon character. Keeps special project files, folders, and extension families stable across views. |
 | **SurfaceVisibilityAnimation** | `SurfaceVisibilityAnimation` | Pure width animation state for side surfaces such as Dock, FileTree View, and Workspace rail. It interpolates the rendered width between current and target widths without changing Pane identity. |
+| **SplitTransitionAnimation** | `SplitTransitionAnimation` | Pure split-ratio animation state for Stage or Terminal Context Surface split changes. Opening transitions interpolate from a narrow new Pane to the settled ratio; closing transitions interpolate toward a collapsed closing Pane before removal completes. |
 | **Notification Snippet** | concept | The single-line wrapped-agent response text Tide prefers for a macOS notification body. Tide derives it from structured wrapper payloads when available and otherwise falls back to the owning `Terminal`'s visible grid. |
 | **NotificationAuthorizationStatus** | enum | Tide's normalized view of the OS notification-permission state for the bundled macOS app: `Unknown`, `NotDetermined`, `Denied`, `Authorized`, `Provisional`, or `Ephemeral`. Stored in `WindowState` and used only as a runtime diagnostic and chrome signal. |
 | **Cascaded Tide Window Position** | concept | The native macOS placement used for newly created `Tide Window`s in one `Tide Instance`. Each new `Tide Window` is offset from the prior placement so the new title bar remains visible. |
@@ -166,6 +176,8 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Render Thread** | Dedicated background thread (`adapter/outward/renderer_adapter/render_thread.rs`) for GPU drawable acquisition and frame submission. Decouples CAMetalLayer blocking from the main App thread. |
 | **IME Proxy** | Per-pane `NSTextInputClient` view for Input Method Editor composition. |
 | **Glyph Atlas** | GPU texture cache of rendered font glyphs (MSDF format). |
+| **SVG Icon Renderer** | Renderer-side vector path for chrome icons. It parses SVG icon markup, tessellates supported SVG shapes into GPU triangles, and renders them without private font glyphs or square-step rect fragments. |
+| **Raster Icon Renderer** | Renderer-side image path for chrome icons. It decodes `RasterIconAsset` PNG bytes, uploads them as GPU textures, and renders tinted quads for asset-backed icon roles. |
 | **Dirty Tracking** | Generation-based system to skip re-rendering unchanged panes/chrome. |
 | **WrapMap** | Cached mapping from logical lines to visual rows for soft-wrap rendering. Built per EditorPane when soft wrap is active. |
 | **Soft Wrap** | Automatic line wrapping at viewport width. Enabled for prose files (`.md`, `.txt`). Line numbers only on first visual row. |

@@ -18,7 +18,7 @@ How modals intercept input, enforce exclusivity, and return control.
 - **Precondition**: At least one modal is `Some` in ModalStack
 - **Flow**:
   1. Check modal priority chain:
-     - config_page (highest) → context_menu → save_confirm → save_as_input → file_finder → git_switcher → file_tree_rename
+     - config_page (highest) → context_menu → file_tree_rename → git_switcher → file_finder → save_as_input → context_comment_composer → branch_cleanup → save_confirm → CompletionPopup
   2. First open modal consumes the event
   3. RETURN immediately — input never reaches Router or Panes
 - **Postcondition**: Event consumed by modal
@@ -47,7 +47,7 @@ How modals intercept input, enforce exclusivity, and return control.
   - BR-10: ESC closes save_as_input
   - BR-11: ESC closes context menu
   - BR-12: ESC cancels save confirm (Pane stays open)
-  - BR-13: ESC closes file tree rename
+  - BR-13: ESC closes FileTree View rename
 
 ### UC-3: ModalLifecycle
 

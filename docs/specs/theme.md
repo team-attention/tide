@@ -7,13 +7,14 @@ Theme switching and font defaults.
 | Context | Role |
 |---------|------|
 | `tide-app` | dark_mode flag, font size, cache invalidation |
+| `ModalStack` | ConfigPage Appearance section for text-first theme controls |
 
 ## Use Cases
 
 ### UC-1: ToggleTheme
 
 - **Actor**: User
-- **Trigger**: GlobalAction::ToggleTheme
+- **Trigger**: `GlobalAction::ToggleTheme` from a keybinding or the ConfigPage Appearance section
 - **Precondition**: App is running
 - **Flow**:
   1. Flip dark_mode boolean
@@ -63,6 +64,21 @@ Theme switching and font defaults.
   - BR-10: Light Markdown heading and code colors must remain darker than the light pane surface.
   - BR-11: Light syntax highlighting must use the restrained `base16-ocean.light` theme.
 
+### UC-5: ConfigureAppearanceTheme
+
+- **Actor**: User
+- **Trigger**: User opens ConfigPage and selects the Appearance section
+- **Precondition**: ConfigPage is open
+- **Flow**:
+  1. Tide renders an Appearance section with a text label for the current theme mode.
+  2. Tide renders the next theme action as text instead of exposing a titlebar theme icon.
+  3. Pressing Enter or clicking the Appearance theme row invokes `GlobalAction::ToggleTheme`.
+- **Postcondition**: The current theme mode is visible in ConfigPage text and theme switching remains keyboard/click reachable.
+- **Business Rules**:
+  - BR-12: ConfigPage Appearance must expose the current theme as text: `Dark` or `Light`.
+  - BR-13: ConfigPage Appearance must expose the next theme action as text: `Switch to Light` or `Switch to Dark`.
+  - BR-14: Activating the Appearance theme row must toggle theme through the same `GlobalAction::ToggleTheme` path.
+
 ## Tests
 
 | UC | BR | Test |
@@ -76,10 +92,12 @@ Theme switching and font defaults.
 | UC-4 | BR-9 | `editor_live_preview_rendering_uses_mode_aware_markdown_theme` |
 | UC-4 | BR-10 | `light_markdown_theme_uses_quiet_readable_colors` |
 | UC-4 | BR-11 | `light_syntax_highlighting_uses_base16_ocean_theme` |
+| UC-5 | BR-12/BR-13 | `config_page_appearance_theme_uses_text_status` |
+| UC-5 | BR-14 | `config_page_appearance_theme_toggle_switches_theme` |
 
 ## Location
 
 | Layer | Crate | Key Files |
 |-------|-------|-----------|
-| Theme | tide-app | `theme.rs`, `domain/editor/highlight.rs`, `domain/editor/markdown.rs`, `domain/pane/editor_rendering.rs`, `adapter/outward/view/chrome/file_tree.rs` |
+| Theme | tide-app | `theme.rs`, `domain/editor/highlight.rs`, `domain/editor/markdown.rs`, `domain/pane/editor_rendering.rs`, `adapter/outward/view/chrome/file_tree.rs`, `adapter/outward/view/overlays/config_page.rs` |
 | Tests | tide-app | `behavior_tests.rs :: mod theme_behavior` |

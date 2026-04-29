@@ -101,6 +101,29 @@ fn browser_url_text_x(nav_x: f32, cell_w: f32) -> f32 {
     nav_x + 8.0 + icon_button_w * buttons_before_url + gaps_before_url + url_text_inset
 }
 
+pub(crate) fn handle_launcher_choice_click(
+    ctx: &mut (impl AppCorePort + PaneAccessPort + PaneLifecyclePort),
+    pos: Vec2,
+) -> bool {
+    let cell_size = ctx.cell_size();
+    let rects: Vec<_> = ctx.visual_pane_rects().to_vec();
+    for (id, rect) in rects {
+        if !matches!(ctx.pane(id), Some(PaneKind::Launcher(_))) {
+            continue;
+        }
+
+        let inner = crate::rendering::launcher::launcher_content_rect(rect);
+        if let Some(choice) = crate::rendering::launcher::launcher_choice_at(inner, cell_size, pos)
+        {
+            ctx.resolve_launcher(id, choice);
+            ctx.request_redraw();
+            return true;
+        }
+    }
+
+    false
+}
+
 /// Handle notification bar button clicks (conflict bar + save confirm bar).
 /// Checks all editor panes. Returns true if the click was consumed.
 pub(crate) fn handle_notification_bar_click(
@@ -256,7 +279,7 @@ fn handle_conflict_bar_click_inner(
 
 /// Handle click when config page is open.
 pub(crate) fn handle_config_page_click(
-    ctx: &mut (impl AppCorePort + ModalPort + WorkspaceNavPort),
+    ctx: &mut (impl AppCorePort + ActionPort + ModalPort + WorkspaceNavPort),
     pos: Vec2,
 ) {
     use crate::state::ConfigSection;
@@ -288,18 +311,20 @@ pub(crate) fn handle_config_page_click(
     // Tab bar area
     let tab_h = crate::theme::CONFIG_PAGE_TAB_H;
     let tab_y = title_y + title_h + 1.0;
-    let half_w = popup_w / 2.0;
+    let tab_w = popup_w / 3.0;
 
     // Click on tab bar → switch section
     if pos.y >= tab_y && pos.y < tab_y + tab_h {
         if let Some(ref mut page) = ctx.modal_mut().config_page {
-            if pos.x < popup_x + half_w {
-                page.section = ConfigSection::Keybindings;
-            } else {
-                page.section = ConfigSection::Worktree;
-            }
+            let tab_idx = ((pos.x - popup_x) / tab_w).floor().clamp(0.0, 2.0) as usize;
+            page.section = match tab_idx {
+                0 => ConfigSection::Keybindings,
+                1 => ConfigSection::Worktree,
+                _ => ConfigSection::Appearance,
+            };
             page.selected = 0;
             page.scroll_offset = 0;
+            page.selected_field = 0;
         }
         ctx.invalidate_chrome();
         return;
@@ -312,6 +337,7 @@ pub(crate) fn handle_config_page_click(
     let line_height = 32.0_f32.max(cell_height + crate::theme::POPUP_LINE_EXTRA);
 
     if pos.y >= content_top && pos.y < content_bottom {
+        let mut toggle_theme = false;
         if let Some(ref mut page) = ctx.modal_mut().config_page {
             match page.section {
                 ConfigSection::Keybindings => {
@@ -342,7 +368,17 @@ pub(crate) fn handle_config_page_click(
                         page.worktree_editing = false;
                     }
                 }
+                ConfigSection::Appearance => {
+                    let row_y = content_top + 12.0;
+                    let row_h = line_height + 8.0;
+                    if pos.y >= row_y && pos.y < row_y + row_h {
+                        toggle_theme = true;
+                    }
+                }
             }
+        }
+        if toggle_theme {
+            ctx.handle_global_action(crate::tide_input::GlobalAction::ToggleTheme);
         }
         ctx.invalidate_chrome();
     }

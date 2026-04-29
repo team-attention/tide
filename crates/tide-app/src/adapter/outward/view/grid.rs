@@ -1,10 +1,28 @@
 use crate::tide_core::{Rect, Renderer};
 
 use crate::pane::PaneKind;
+use crate::state::drag_types::HoverTarget;
 use crate::theme::*;
 use crate::App;
 
 use super::bar_offset_for;
+use super::launcher::{
+    launcher_choice_rects, launcher_content_rect, launcher_icon_raster_icon_asset, LauncherIcon,
+    LAUNCHER_CHOICES,
+};
+use super::svg_icons::{svg_icon_palette, SVG_ICON_FOLDER, SVG_ICON_TERMINAL};
+
+fn with_alpha(color: crate::tide_core::Color, alpha: f32) -> crate::tide_core::Color {
+    crate::tide_core::Color::new(color.r, color.g, color.b, alpha)
+}
+
+fn launcher_icon_svg(icon: LauncherIcon) -> &'static str {
+    match icon {
+        LauncherIcon::Terminal => SVG_ICON_TERMINAL,
+        LauncherIcon::OpenFile => SVG_ICON_FOLDER,
+        LauncherIcon::NewFile | LauncherIcon::Browser => SVG_ICON_FOLDER,
+    }
+}
 
 /// Perform per-pane dirty checking and rebuild grid caches for panes whose content changed.
 /// Returns (pane_id, generation) pairs for caller to update pane_generations.
@@ -116,34 +134,65 @@ pub(crate) fn render_grid(
                 }
                 Some(PaneKind::Browser(_)) => {} // webview renders natively
                 Some(PaneKind::Launcher(_launcher_id)) => {
-                    let inner = crate::pane::pane_content_rect(rect, TAB_BAR_HEIGHT + pane_bar);
-                    // Render launcher type-selection UI
+                    let inner = launcher_content_rect(rect);
                     let cs = renderer.cell_size();
-                    let lines: [(&str, crate::tide_core::Color); 4] = [
-                        ("\u{f120}  [T]  Terminal", p.tab_text_focused),
-                        ("\u{f15c}  [E]  New File", p.tab_text),
-                        ("\u{f07c}  [O]  Open File", p.tab_text),
-                        ("\u{f268}  [B]  Browser", p.tab_text),
-                    ];
-                    let line_h = cs.height * 1.8;
-                    let block_h = lines.len() as f32 * line_h;
-                    let start_y = inner.y + (inner.height - block_h) / 2.0;
-                    for (i, (text, color)) in lines.iter().enumerate() {
-                        let text_w = text.chars().count() as f32 * cs.width;
-                        let x = inner.x + (inner.width - text_w) / 2.0;
-                        let y = start_y + i as f32 * line_h;
+                    let hover_choice = match app.interaction.hover_target {
+                        Some(HoverTarget::LauncherChoice(pane_id, choice)) if pane_id == id => {
+                            Some(choice)
+                        }
+                        _ => None,
+                    };
+
+                    for (spec, (choice, row_rect)) in LAUNCHER_CHOICES
+                        .iter()
+                        .zip(launcher_choice_rects(inner, cs).into_iter())
+                    {
+                        let is_hovered = hover_choice == Some(choice);
+                        let is_primary = choice == crate::action::LauncherChoice::Terminal;
+                        let bg = if is_hovered {
+                            with_alpha(p.dock_tab_underline, 0.18)
+                        } else {
+                            with_alpha(p.badge_bg, 0.24)
+                        };
+                        renderer.draw_rect(row_rect, bg);
+
+                        let icon_size = 16.0_f32;
+                        let icon_rect = Rect::new(
+                            row_rect.x + 12.0,
+                            row_rect.y + (row_rect.height - icon_size) / 2.0,
+                            icon_size,
+                            icon_size,
+                        );
+                        let color = if is_hovered || is_primary {
+                            p.tab_text_focused
+                        } else {
+                            p.tab_text
+                        };
+                        if let Some(asset) = launcher_icon_raster_icon_asset(spec.icon) {
+                            renderer.draw_top_raster_icon(asset, icon_rect, color);
+                        } else {
+                            renderer.draw_top_svg_icon(
+                                launcher_icon_svg(spec.icon),
+                                icon_rect,
+                                svg_icon_palette(color, with_alpha(color, color.a * 0.55)),
+                            );
+                        }
+
+                        let text = format!("[{}]  {}", spec.hotkey, spec.label);
+                        let x = icon_rect.x + icon_size + 12.0;
+                        let y = row_rect.y + (row_rect.height - cs.height) / 2.0;
                         renderer.draw_text(
-                            text,
+                            &text,
                             crate::tide_core::Vec2::new(x, y),
                             crate::tide_core::TextStyle {
-                                foreground: *color,
+                                foreground: color,
                                 background: None,
-                                bold: i == 0,
+                                bold: is_primary,
                                 dim: false,
                                 italic: false,
                                 underline: false,
                             },
-                            inner,
+                            row_rect,
                         );
                     }
                     // Don't cache generation — Launcher is static/cheap, always

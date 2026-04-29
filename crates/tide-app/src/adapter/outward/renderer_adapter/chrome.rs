@@ -257,6 +257,11 @@ impl WgpuRenderer {
     pub fn invalidate_chrome(&mut self) {
         self.chrome_rect_vertices.clear();
         self.chrome_rect_indices.clear();
+        self.chrome_vector_vertices.clear();
+        self.chrome_vector_indices.clear();
+        self.chrome_icon_vertices.clear();
+        self.chrome_icon_indices.clear();
+        self.chrome_icon_draws.clear();
         self.chrome_glyph_vertices.clear();
         self.chrome_glyph_indices.clear();
         self.chrome_needs_upload = true;

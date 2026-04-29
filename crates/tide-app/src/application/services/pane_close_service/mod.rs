@@ -3,9 +3,70 @@ use crate::tide_core::LayoutEngine;
 use crate::pane::PaneKind;
 use crate::state::drag_types::PaneDragState;
 use crate::App;
+use crate::DockPort;
 use crate::LayoutPort;
 
 impl App {
+    pub(super) fn begin_split_close_transition_if_needed(
+        &mut self,
+        pane_id: crate::tide_core::PaneId,
+    ) -> bool {
+        if self.finishing_split_close
+            || self.pending_split_close.is_some()
+            || self.split_transition_animation.is_some()
+        {
+            return false;
+        }
+
+        let (scope, from_ratio, to_ratio) = if self.is_pane_in_dock(pane_id) {
+            let terminal_id = match self.terminal_owning(pane_id) {
+                Some(id) => id,
+                None => return false,
+            };
+            let ratios = match self.panes.get(&terminal_id) {
+                Some(PaneKind::Terminal(terminal))
+                    if terminal.dock_view_mode == crate::state::ViewMode::Split
+                        && terminal.dock_layout.all_pane_ids().len() > 1 =>
+                {
+                    terminal.dock_layout.closing_transition_ratios(pane_id)
+                }
+                _ => None,
+            };
+            let Some((from_ratio, to_ratio)) = ratios else {
+                return false;
+            };
+            (
+                crate::state::SplitTransitionScope::TerminalContextSurface { terminal_id },
+                from_ratio,
+                to_ratio,
+            )
+        } else {
+            if self.focus.zoomed_pane.is_some() || self.layout.all_pane_ids().len() <= 1 {
+                return false;
+            }
+            let Some((from_ratio, to_ratio)) = self.layout.closing_transition_ratios(pane_id)
+            else {
+                return false;
+            };
+            (
+                crate::state::SplitTransitionScope::Stage,
+                from_ratio,
+                to_ratio,
+            )
+        };
+
+        let now = self.ports.clock.now();
+        self.split_transition_animation =
+            Some(crate::state::SplitTransitionAnimation::new_closing_pane(
+                scope, pane_id, from_ratio, to_ratio, now,
+            ));
+        self.pending_split_close = Some((scope, pane_id));
+        self.split_close_animation_requested = false;
+        self.cache.invalidate_chrome();
+        self.compute_layout();
+        true
+    }
+
     pub(crate) fn focus_before_or_after_in_order(
         pane_id: crate::tide_core::PaneId,
         ordered_panes: &[crate::tide_core::PaneId],
@@ -51,7 +112,12 @@ impl App {
 
     /// Close a pane unconditionally (no dirty check, no branch cleanup check).
     /// Used by branch cleanup confirm/keep methods after cleanup is resolved.
-    pub(super) fn close_pane_final(&mut self, pane_id: crate::tide_core::PaneId) {
+    pub(crate) fn close_pane_final(&mut self, pane_id: crate::tide_core::PaneId) {
+        if self.split_close_animation_requested
+            && self.begin_split_close_transition_if_needed(pane_id)
+        {
+            return;
+        }
         // Cancel drag if the closing pane is the drag source
         if self.interaction.pane_drag.source_pane() == Some(pane_id) {
             self.interaction.pane_drag = PaneDragState::Idle;

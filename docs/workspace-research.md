@@ -4,18 +4,20 @@ Research on workspace/context management in terminal apps to inform Tide UI rede
 
 Core question: **What model allows organizing and switching between multiple project contexts while preserving the terminal app experience?**
 
+Note: shortcuts in the external-tool sections describe those tools or earlier proposals. Current Tide defaults are `Cmd+E` for Workspace rail, `Cmd+B` for FileTree View, `Cmd+\` for Dock, `Cmd+[` / `Cmd+]` for Workspace switching, and `Cmd+Shift+N` for new Workspace.
+
 ---
 
 ## Current Tide Structure
 
 ```
-Window → [FileTree | PaneArea (binary split tree) | EditorDock]
+Tide Window → [Workspace rail | Stage | Terminal Context Surface | FileTree View]
 ```
 
-- Single workspace. One layout, one pane set.
-- Session restore exists but targets a single session.
-- Context switching = manually closing/opening panes → state loss.
-- 3-area model (FileTree/PaneArea/EditorDock) is a fixed structure.
+- Multiple Workspaces. Each Workspace has its own panes, layout, focus, and extras.
+- Stage is the primary execution surface.
+- Terminal Context Surface follows the focused Stage Terminal.
+- FileTree View is independent right-side chrome.
 
 ---
 
@@ -44,7 +46,7 @@ Ghostty  Rio  Kitty  tmux  Zellij  iTerm2  WezTerm  Wave  Warp
 **Pros:** Clean. Focused on a single role.
 **Cons:** Doesn't solve the context-switching problem. Delegates to tmux/zellij.
 
-**Implications for Tide:** Tide has already moved beyond this stage (file tree, editor dock, etc.). Going back would be a regression.
+**Implications for Tide:** Tide has already moved beyond this stage with FileTree View, Editor Panes, Browser Panes, and Terminal Context Surface. Going back would be a regression.
 
 ---
 
@@ -292,18 +294,19 @@ end)
 
 ```
 Tide Workspace (label/directory)
-├── FileTree state
-├── PaneArea layout (binary split tree)
+├── Workspace rail item state
+├── Stage layout (SplitLayout)
 │   ├── Terminal panes (CWD, scrollback)
 │   └── Editor/Diff/Browser panes
-├── EditorDock state
+├── Terminal Context Surface state
+├── FileTree View state
 └── Focus state, scroll positions, etc.
 ```
 
 - **Workspace = label** (whether directory-based or name-based)
 - **Auto-persist** — Periodic serialization like Zellij. No explicit save.
 - **Switch = swap visibility** — Swap only related state like WezTerm. Instant.
-- **Switcher = fuzzy finder** — `Cmd+Shift+S` etc. for workspace list → select → switch.
+- **Switcher = fuzzy finder** — a future Workspace picker action for workspace list → select → switch.
 - **Preserve terminal app identity** — Opening Tide starts with the last workspace immediately. No separate launcher/manager.
 
 ### Open Questions

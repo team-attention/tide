@@ -6,7 +6,9 @@ use crate::tide_core::{Color, Size};
 use super::atlas::GlyphAtlas;
 use super::grid::PaneGridCache;
 use super::msdf::MsdfFontStore;
-use super::shaders::{CHROME_RECT_SHADER, GRID_BG_INSTANCED_SHADER, RECT_SHADER};
+use super::shaders::{
+    CHROME_RECT_SHADER, GRID_BG_INSTANCED_SHADER, RASTER_ICON_SHADER, RECT_SHADER,
+};
 use super::vertex::{ChromeRectVertex, GlyphVertex, GridBgInstance, GridGlyphInstance, RectVertex};
 use super::WgpuRenderer;
 
@@ -194,6 +196,39 @@ impl WgpuRenderer {
             ],
         });
 
+        // --- Raster icon texture layout ---
+        let raster_icon_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("raster_icon_sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
+        let raster_icon_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("raster_icon_bgl"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
         // --- Glyph pipeline (MSDF) ---
         let glyph_shader_src = super::shaders::glyph_shader();
         let glyph_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -219,6 +254,53 @@ impl WgpuRenderer {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &glyph_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        // --- Raster icon pipeline (PNG alpha mask) ---
+        let raster_icon_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("raster_icon_shader"),
+            source: wgpu::ShaderSource::Wgsl(RASTER_ICON_SHADER.into()),
+        });
+
+        let raster_icon_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("raster_icon_pipeline_layout"),
+                bind_group_layouts: &[&uniform_bind_group_layout, &raster_icon_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let raster_icon_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("raster_icon_pipeline"),
+            layout: Some(&raster_icon_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &raster_icon_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[GlyphVertex::LAYOUT],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &raster_icon_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
@@ -405,12 +487,16 @@ impl WgpuRenderer {
             rect_pipeline,
             chrome_rounded_pipeline,
             glyph_pipeline,
+            raster_icon_pipeline,
             grid_bg_pipeline,
             grid_glyph_pipeline,
             uniform_buffer,
             uniform_bind_group,
             atlas,
             atlas_bind_group,
+            raster_icon_bind_group_layout,
+            raster_icon_sampler,
+            raster_icon_textures: HashMap::new(),
             font_system,
             msdf_font_store,
             // Per-pane grid caching
@@ -428,15 +514,28 @@ impl WgpuRenderer {
             // Chrome layer (cached for borders and file tree)
             chrome_rect_vertices: Vec::with_capacity(4096),
             chrome_rect_indices: Vec::with_capacity(6144),
+            chrome_vector_vertices: Vec::with_capacity(2048),
+            chrome_vector_indices: Vec::with_capacity(3072),
+            chrome_icon_vertices: Vec::with_capacity(512),
+            chrome_icon_indices: Vec::with_capacity(768),
+            chrome_icon_draws: Vec::with_capacity(64),
             chrome_glyph_vertices: Vec::with_capacity(8192),
             chrome_glyph_indices: Vec::with_capacity(12288),
             chrome_needs_upload: true,
             chrome_rect_vb: create_buf("chrome_rect_vb", vb_usage),
             chrome_rect_ib: create_buf("chrome_rect_ib", ib_usage),
+            chrome_vector_vb: create_buf("chrome_vector_vb", vb_usage),
+            chrome_vector_ib: create_buf("chrome_vector_ib", ib_usage),
+            chrome_icon_vb: create_buf("chrome_icon_vb", vb_usage),
+            chrome_icon_ib: create_buf("chrome_icon_ib", ib_usage),
             chrome_glyph_vb: create_buf("chrome_glyph_vb", vb_usage),
             chrome_glyph_ib: create_buf("chrome_glyph_ib", ib_usage),
             chrome_rect_vb_capacity: initial_buf_size as usize,
             chrome_rect_ib_capacity: initial_buf_size as usize,
+            chrome_vector_vb_capacity: initial_buf_size as usize,
+            chrome_vector_ib_capacity: initial_buf_size as usize,
+            chrome_icon_vb_capacity: initial_buf_size as usize,
+            chrome_icon_ib_capacity: initial_buf_size as usize,
             chrome_glyph_vb_capacity: initial_buf_size as usize,
             chrome_glyph_ib_capacity: initial_buf_size as usize,
             // Overlay layer (rebuilt every frame)
@@ -457,18 +556,25 @@ impl WgpuRenderer {
             top_rect_indices: Vec::with_capacity(384),
             top_rounded_rect_vertices: Vec::with_capacity(256),
             top_rounded_rect_indices: Vec::with_capacity(384),
+            top_icon_vertices: Vec::with_capacity(128),
+            top_icon_indices: Vec::with_capacity(192),
+            top_icon_draws: Vec::with_capacity(16),
             top_glyph_vertices: Vec::with_capacity(512),
             top_glyph_indices: Vec::with_capacity(768),
             top_rect_vb: create_buf("top_rect_vb", vb_usage),
             top_rect_ib: create_buf("top_rect_ib", ib_usage),
             top_rounded_rect_vb: create_buf("top_rounded_rect_vb", vb_usage),
             top_rounded_rect_ib: create_buf("top_rounded_rect_ib", ib_usage),
+            top_icon_vb: create_buf("top_icon_vb", vb_usage),
+            top_icon_ib: create_buf("top_icon_ib", ib_usage),
             top_glyph_vb: create_buf("top_glyph_vb", vb_usage),
             top_glyph_ib: create_buf("top_glyph_ib", ib_usage),
             top_rect_vb_capacity: initial_buf_size as usize,
             top_rect_ib_capacity: initial_buf_size as usize,
             top_rounded_rect_vb_capacity: initial_buf_size as usize,
             top_rounded_rect_ib_capacity: initial_buf_size as usize,
+            top_icon_vb_capacity: initial_buf_size as usize,
+            top_icon_ib_capacity: initial_buf_size as usize,
             top_glyph_vb_capacity: initial_buf_size as usize,
             top_glyph_ib_capacity: initial_buf_size as usize,
             screen_size: Size::new(800.0, 600.0),

@@ -4,7 +4,76 @@ use crate::theme::*;
 use crate::App;
 use crate::AppCorePort;
 
-use super::{draw_popup_rounded_bg, text_style};
+use super::super::raster_icons::FLATICON_OPEN_EXTERNAL;
+use super::super::svg_icons::{
+    svg_icon_palette, SVG_ICON_DELETE, SVG_ICON_FOLDER, SVG_ICON_RENAME, SVG_ICON_TERMINAL,
+};
+use super::draw_popup_rounded_bg;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ContextMenuIcon {
+    Folder,
+    Terminal,
+    OpenExternal,
+    Rename,
+    Delete,
+}
+
+pub(crate) fn context_menu_icon(action: crate::ContextMenuAction) -> ContextMenuIcon {
+    match action {
+        crate::ContextMenuAction::CdHere => ContextMenuIcon::Folder,
+        crate::ContextMenuAction::OpenTerminalHere => ContextMenuIcon::Terminal,
+        crate::ContextMenuAction::OpenApp | crate::ContextMenuAction::RevealInFinder => {
+            ContextMenuIcon::OpenExternal
+        }
+        crate::ContextMenuAction::Rename => ContextMenuIcon::Rename,
+        crate::ContextMenuAction::Delete => ContextMenuIcon::Delete,
+    }
+}
+
+pub(crate) fn context_menu_icon_text_glyph(_icon: ContextMenuIcon) -> Option<&'static str> {
+    None
+}
+
+pub(crate) fn context_menu_raster_icon_asset(
+    icon: ContextMenuIcon,
+) -> Option<&'static crate::tide_renderer::RasterIconAsset> {
+    match icon {
+        ContextMenuIcon::OpenExternal => Some(&FLATICON_OPEN_EXTERNAL),
+        _ => None,
+    }
+}
+
+fn render_context_menu_icon(
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    icon: ContextMenuIcon,
+    rect: Rect,
+    color: crate::tide_core::Color,
+) {
+    if context_menu_icon_text_glyph(icon).is_some() {
+        return;
+    }
+
+    let icon_w = 13.0_f32;
+    let icon_h = 13.0_f32;
+    let x = (rect.x + (rect.width - icon_w) / 2.0).round();
+    let y = (rect.y + (rect.height - icon_h) / 2.0).round();
+    let icon_rect = Rect::new(x, y, icon_w, icon_h);
+    if let Some(asset) = context_menu_raster_icon_asset(icon) {
+        renderer.draw_top_raster_icon(asset, icon_rect, color);
+        return;
+    }
+
+    let secondary = crate::tide_core::Color::new(color.r, color.g, color.b, color.a * 0.56);
+    let svg = match icon {
+        ContextMenuIcon::Folder => SVG_ICON_FOLDER,
+        ContextMenuIcon::Terminal => SVG_ICON_TERMINAL,
+        ContextMenuIcon::Rename => SVG_ICON_RENAME,
+        ContextMenuIcon::Delete => SVG_ICON_DELETE,
+        ContextMenuIcon::OpenExternal => return,
+    };
+    renderer.draw_top_svg_icon(svg, icon_rect, svg_icon_palette(color, secondary));
+}
 
 /// Render context menu popup (right-click on file tree).
 pub(super) fn render_context_menu(
@@ -53,12 +122,11 @@ pub(super) fn render_context_menu(
         let item_clip = Rect::new(rect.x, y, rect.width, line_height);
 
         // Icon
-        let icon_style = text_style(p.tree_icon);
-        renderer.draw_top_text(
-            action.icon(),
-            Vec2::new(item_x, item_y),
-            icon_style,
-            item_clip,
+        render_context_menu_icon(
+            renderer,
+            context_menu_icon(*action),
+            Rect::new(item_x, y, 2.0 * cell_size.width, line_height),
+            p.tree_icon,
         );
 
         // Label

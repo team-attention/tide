@@ -56,6 +56,18 @@ impl ClipboardPort for RecordingClipboard {
     }
 }
 
+struct FailingClipboard;
+
+impl ClipboardPort for FailingClipboard {
+    fn get_text(&self) -> Result<String, String> {
+        Err("clipboard read failed".to_string())
+    }
+
+    fn set_text(&self, _text: &str) -> Result<(), String> {
+        Ok(())
+    }
+}
+
 #[test]
 fn text_goes_to_editor_when_nothing_else_is_open() {
     // UC-2 BR-10: Text goes to Editor when nothing else is open
@@ -188,6 +200,22 @@ fn paste_action_routes_multiline_clipboard_text_to_context_comment_composer() {
         .as_ref()
         .expect("composer should stay open after paste");
     assert_eq!(composer.comment.text, "alpha\nbeta");
+}
+
+#[test]
+fn paste_action_consumes_clipboard_failure_without_mutating_editor() {
+    // UC-2 BR-18a: Clipboard paste failure is consumed without mutating the focused Pane
+    let (mut app, id) = app_with_editor();
+    app.ports.clipboard = Box::new(FailingClipboard);
+
+    app.handle_paste();
+
+    if let Some(PaneKind::Editor(pane)) = app.panes.get(&id) {
+        assert_eq!(pane.editor.buffer.line(0), Some(""));
+        assert!(!pane.editor.is_modified());
+    } else {
+        panic!("expected editor Pane");
+    }
 }
 
 #[test]

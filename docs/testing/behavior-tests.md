@@ -41,13 +41,13 @@ mod pane_lifecycle {
 |--------|------|-------|------------------|
 | `pane_lifecycle` | `pane-lifecycle.md` | 13 | Create, split, close, dedup open |
 | `modal_behavior` | `modal.md` | 15 | Modal priority, ESC dismiss, input blocking |
-| `focus_management` | `input-routing.md` UC-3 | 10 | Focus switching, zoom, file tree toggle |
+| `focus_management` | `input-routing.md` UC-3 | 10 | Focus switching, stacked view, FileTree View toggle |
 | `keyboard_routing` | `input-routing.md` UC-1 | 9 | Key routing through modal/focus chain |
 | `text_input_routing` | `input-routing.md` UC-2 | 9 | Text routing target resolution |
 | `global_actions` | `input-routing.md` UC-4 | 10 | GlobalAction dispatch |
 | `editor_behavior` | `editor.md` | 8 | Text input, dirty detection, preview mode |
 | `preview_scroll` | `editor.md` UC-3 | 8 | j/k/d/u/g/G scroll, clamp |
-| `workspace_behavior` | `workspace.md` | 8 | Switch, close, wrap-around, sidebar |
+| `workspace_behavior` | `workspace.md` | 8 | Switch, close, wrap-around, Workspace rail |
 | `launcher_behavior` | `launcher.md` | 6 | Launcher resolution, Korean IME, invalid choices |
 | `search_behavior` | `search.md` | 6 | Search query, match navigation, wrap |
 | `ime_behavior` | `ime.md` | 8 | Composition lifecycle, cleanup on switch/close |
@@ -81,7 +81,7 @@ mod drag_drop_behavior {
 ```rust
 // Good — reading it tells you the behavior
 fn dragging_pane_to_left_zone_creates_vertical_split()
-fn dropping_on_workspace_sidebar_moves_pane_to_that_workspace()
+fn dropping_on_workspace_rail_moves_pane_to_that_workspace()
 fn drag_cancelled_on_escape_key()
 
 // Bad — unclear what's being verified

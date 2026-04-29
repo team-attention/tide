@@ -80,6 +80,9 @@ pub(crate) fn render_hover(
                         renderer.draw_rect(zone.rect, p.hover_tab);
                     }
                 }
+                crate::state::drag_types::HoverTarget::LauncherChoice(_, _) => {
+                    // Hover is rendered inline with the Launcher choice rows.
+                }
                 crate::state::drag_types::HoverTarget::FileFinderItem(_) => {
                     // File finder hover — rendered inline in overlays
                 }
@@ -192,9 +195,6 @@ pub(crate) fn render_hover(
                 }
                 crate::state::drag_types::HoverTarget::TitlebarSettings => {
                     // Hover is rendered via chrome.rs (bg on settings gear icon)
-                }
-                crate::state::drag_types::HoverTarget::TitlebarTheme => {
-                    // Hover is rendered via chrome.rs (bg on theme toggle icon)
                 }
                 crate::state::drag_types::HoverTarget::TitlebarIntegration => {
                     // Hover is rendered via chrome.rs (bg on integration toggle)

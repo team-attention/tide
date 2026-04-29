@@ -1,6 +1,6 @@
-# Tide System Documentation
+# Tide Documentation
 
-A DDD-style living specification of the Tide terminal emulator.
+Product direction and DDD-style living specifications for Tide.
 
 ## How to Read This
 
@@ -11,6 +11,10 @@ Glossary → Spec (UC + BR) → Behavior Test (BR comment) → Code
 ```
 
 ## Documents
+
+### Product
+- **[Vision](vision.md)** — The Integrated Task Environment direction for human-agent work.
+- **[Roadmap](roadmap.md)** — Public product roadmap across Terminal, Editor, Browser, Workspace rail, review, and local actions.
 
 ### Foundation
 - **[Glossary](glossary.md)** — Ubiquitous language. Every domain term defined in one place.
@@ -33,7 +37,7 @@ Glossary → Spec (UC + BR) → Behavior Test (BR comment) → Code
 - **[Pane Lifecycle](specs/pane-lifecycle.md)** — Create, split, resolve, open, close, drag Panes.
 - **[Input Routing](specs/input-routing.md)** — Keystroke resolution, text routing, focus, GlobalAction dispatch.
 - **[Modal](specs/modal.md)** — Modal interception, dismiss, lifecycle.
-- **[Workspace](specs/workspace.md)** — Switch, close, sidebar, cross-workspace drag.
+- **[Workspace](specs/workspace.md)** — Switch, close, Workspace rail, cross-workspace drag.
 - **[Terminal Sync](specs/terminal-sync.md)** — PTY → grid sync, render cache invalidation.
 - **[Editor](specs/editor.md)** — Text editing, preview mode, scroll.
 - **[Launcher](specs/launcher.md)** — Launcher resolution to concrete PaneKind.
@@ -41,7 +45,7 @@ Glossary → Spec (UC + BR) → Behavior Test (BR comment) → Code
 - **[IME](specs/ime.md)** — Input method composition lifecycle and cleanup.
 - **[Session](specs/session.md)** — Save/load App state across launches.
 - **[Theme](specs/theme.md)** — Theme toggle and font defaults.
-- **[File Tree](specs/file-tree.md)** — File tree scroll clamping.
+- **[FileTree View](specs/file-tree.md)** — FileTree View placement and scroll clamping.
 
 ### Living Tests
 - **[Behavior Test Guide](testing/behavior-tests.md)** — How to read and write behavioral tests as specification.

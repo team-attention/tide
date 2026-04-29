@@ -12,6 +12,8 @@ pub(crate) trait PaneLifecyclePort {
     fn focused_terminal_cwd(&self) -> Option<PathBuf>;
     fn new_editor_pane(&mut self);
     fn new_terminal_tab(&mut self);
+    fn open_launcher_pane(&mut self);
+    fn open_stacked_launcher_pane(&mut self);
     fn resolve_launcher(&mut self, launcher_id: PaneId, choice: crate::action::LauncherChoice);
     fn split_with_launcher(&mut self, direction: crate::tide_core::SplitDirection);
     fn open_browser_pane(&mut self, url: Option<String>);
@@ -25,6 +27,7 @@ pub(crate) trait PaneLifecyclePort {
     fn close_editor_panel_tab(&mut self, tab_id: PaneId);
     fn force_close_editor_panel_tab(&mut self, tab_id: PaneId);
     fn complete_save_as(&mut self, pane_id: PaneId, filename: &str);
+    fn close_specific_pane_with_split_animation(&mut self, pane_id: PaneId);
     fn close_specific_pane(&mut self, pane_id: PaneId);
     fn force_close_specific_pane(&mut self, pane_id: PaneId);
     fn confirm_save_and_close(&mut self);

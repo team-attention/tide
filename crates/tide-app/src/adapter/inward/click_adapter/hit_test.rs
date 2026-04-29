@@ -40,7 +40,7 @@ pub(crate) fn compute_hover_target(
     ctx: &(impl AppCorePort + PaneAccessPort + LayoutPort + FileTreePort + WorkspaceNavPort + DockPort),
     pos: Vec2,
 ) -> Option<HoverTarget> {
-    // Titlebar buttons (right-to-left: settings, theme, integration, area toggles)
+    // Titlebar buttons (right-to-left: settings, integration, surface visibility)
     if ctx.top_inset() > 0.0 {
         let logical = ctx.logical_size();
         let cs = ctx.cell_size();
@@ -60,23 +60,10 @@ pub(crate) fn compute_hover_target(
             return Some(HoverTarget::TitlebarSettings);
         }
 
-        // Theme toggle icon
-        let theme_w = btn_w;
-        let theme_h = btn_h;
-        let theme_x = gear_x - theme_w - TITLEBAR_BUTTON_GAP;
-        let theme_y = (ctx.top_inset() - theme_h) / 2.0;
-        if pos.x >= theme_x
-            && pos.x <= theme_x + theme_w
-            && pos.y >= theme_y
-            && pos.y <= theme_y + theme_h
-        {
-            return Some(HoverTarget::TitlebarTheme);
-        }
-
-        // Integration toggle button (left of theme icon)
+        // Integration toggle button (left of settings)
         let integ_w = btn_w;
         let integ_h = btn_h;
-        let integ_x = theme_x - integ_w - TITLEBAR_BUTTON_GAP;
+        let integ_x = gear_x - integ_w - TITLEBAR_BUTTON_GAP;
         let integ_y = (ctx.top_inset() - integ_h) / 2.0;
 
         if pos.x >= integ_x
@@ -232,6 +219,15 @@ pub(crate) fn compute_hover_target(
 
     // Browser navigation bar (back, forward, refresh, URL bar)
     for &(id, rect) in ctx.visual_pane_rects() {
+        if let Some(PaneKind::Launcher(_)) = ctx.pane(id) {
+            let inner = crate::rendering::launcher::launcher_content_rect(rect);
+            if let Some(choice) =
+                crate::rendering::launcher::launcher_choice_at(inner, ctx.cell_size(), pos)
+            {
+                return Some(HoverTarget::LauncherChoice(id, choice));
+            }
+        }
+
         if let Some(PaneKind::Browser(_)) = ctx.pane(id) {
             let cell_size = ctx.cell_size();
             let cell_w = cell_size.width;

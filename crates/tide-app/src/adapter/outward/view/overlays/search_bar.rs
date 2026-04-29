@@ -4,10 +4,38 @@ use crate::pane::PaneKind;
 use crate::theme::*;
 use crate::App;
 
+use super::super::raster_icons::FLATICON_CLOSE;
 use super::{
     draw_cursor_beam, draw_popup_border, search_bar_cursor_advance_cells,
     search_bar_text_advance_cells, text_style,
 };
+
+pub(crate) fn search_bar_close_icon_text_glyph() -> Option<&'static str> {
+    None
+}
+
+pub(crate) fn search_close_raster_icon_asset() -> &'static crate::tide_renderer::RasterIconAsset {
+    &FLATICON_CLOSE
+}
+
+fn render_search_close_icon(
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    rect: Rect,
+    color: crate::tide_core::Color,
+) {
+    if search_bar_close_icon_text_glyph().is_some() {
+        return;
+    }
+
+    let icon_size = 12.0_f32;
+    let icon_rect = Rect::new(
+        (rect.x + (rect.width - icon_size) / 2.0).round(),
+        (rect.y + (rect.height - icon_size) / 2.0).round(),
+        icon_size,
+        icon_size,
+    );
+    renderer.draw_top_raster_icon(search_close_raster_icon_asset(), icon_rect, color);
+}
 
 /// Render search bar UI for panes that have search visible.
 pub(super) fn render_search_bars(
@@ -168,13 +196,7 @@ pub(super) fn render_search_bars(
         );
 
         // Close button
-        let close_icon_x = close_x + (close_area_w - cell_size.width) / 2.0;
         let close_clip = Rect::new(close_x, bar_y, close_area_w, bar_h);
-        renderer.draw_top_text(
-            "\u{f00d}",
-            Vec2::new(close_icon_x, text_y),
-            counter_style,
-            close_clip,
-        );
+        render_search_close_icon(renderer, close_clip, counter_style.foreground);
     }
 }

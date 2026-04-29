@@ -44,8 +44,12 @@ impl App {
 
     pub(crate) fn set_dock_visible_with_animation(&mut self, visible: bool) {
         let now = self.ports.clock.now();
-        let current_width = self.dock.rendered_width(now);
-        let target_width = if visible { self.dock.dock_width } else { 0.0 };
+        let current_width = self.terminal_context_surface_rendered_width(now);
+        let target_width = if visible {
+            self.terminal_context_surface_layout_width()
+        } else {
+            0.0
+        };
         let already_at_target = self.dock.dock_open == visible
             && (current_width - target_width).abs() < 0.5
             && self.dock.visibility_animation.is_none();
@@ -65,6 +69,30 @@ impl App {
 
     pub(crate) fn surface_visibility_animation_frame_due(&self) -> bool {
         self.surface_visibility_animation_active()
+    }
+
+    pub(crate) fn begin_split_transition_animation(
+        &mut self,
+        scope: crate::state::SplitTransitionScope,
+        pane_id: PaneId,
+    ) {
+        let now = self.ports.clock.now();
+        self.split_transition_animation = Some(
+            crate::state::SplitTransitionAnimation::new_trailing_pane(scope, pane_id, now),
+        );
+        self.cache.invalidate_chrome();
+    }
+
+    pub(crate) fn split_transition_animation_active(&self) -> bool {
+        self.split_transition_animation.is_some()
+    }
+
+    pub(crate) fn layout_animation_active(&self) -> bool {
+        self.surface_visibility_animation_active() || self.split_transition_animation_active()
+    }
+
+    pub(crate) fn layout_animation_frame_due(&self) -> bool {
+        self.layout_animation_active()
     }
 }
 

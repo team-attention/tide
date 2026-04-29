@@ -56,6 +56,9 @@ ttf-parser = "0.25"
 nalgebra = "0.34"
 image = "0.25"
 fontdb = "0.16"
+lyon = "1.0.19"
+svgtypes = "0.16.1"
+roxmltree = "0.21.1"
 
 # ── From tide-platform ──
 raw-window-handle = "0.6"

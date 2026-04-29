@@ -225,6 +225,90 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.compute_layout();
     }
 
+    fn open_launcher_pane(&mut self) {
+        let focused = match self.focus.focused {
+            Some(id) => id,
+            None => return,
+        };
+        let context_terminal = self.resolve_context_terminal_id();
+        let new_id = self.layout.alloc_id();
+        self.panes.insert(new_id, PaneKind::Launcher(new_id));
+        self.ime.pending_creates.push(new_id);
+
+        if let Some(tid) = self.live_dock_terminal_for_context(context_terminal) {
+            self.add_pane_to_dock(new_id, Some(tid));
+            self.assoc.associated_terminal.insert(new_id, tid);
+            self.focus.focus_area = crate::state::FocusArea::Dock;
+        } else {
+            self.layout
+                .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
+            self.add_to_non_terminal_group(focused, new_id);
+            if self.focus.zoomed_pane.is_some() {
+                self.focus.zoomed_pane = Some(new_id);
+            }
+            if let Some(tid) = context_terminal {
+                self.assoc.associated_terminal.insert(new_id, tid);
+            }
+            self.focus.focus_area = crate::state::FocusArea::Stage;
+        }
+
+        self.focus.focused = Some(new_id);
+        self.router.set_focused(new_id);
+        self.cache.invalidate_chrome();
+        self.compute_layout();
+    }
+
+    fn open_stacked_launcher_pane(&mut self) {
+        if self
+            .focus
+            .focused
+            .map(|pane_id| self.is_pane_in_dock(pane_id))
+            .unwrap_or(false)
+            || self.focus.focus_area == crate::state::FocusArea::Dock
+        {
+            self.dock_split_last_with_launcher(crate::tide_core::SplitDirection::Vertical);
+            return;
+        }
+
+        self.layout
+            .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
+        let target = match self.layout.pane_ids().last().copied() {
+            Some(id) => id,
+            None => return,
+        };
+        let context_terminal = self
+            .assoc
+            .associated_terminal
+            .get(&target)
+            .copied()
+            .or_else(|| {
+                matches!(self.panes.get(&target), Some(PaneKind::Terminal(_))).then_some(target)
+            })
+            .or(self.focus.stage_focused);
+
+        let new_id = self.layout.alloc_id();
+        self.panes.insert(new_id, PaneKind::Launcher(new_id));
+        self.ime.pending_creates.push(new_id);
+        self.layout.insert_pane(
+            target,
+            new_id,
+            crate::tide_core::SplitDirection::Vertical,
+            false,
+        );
+        self.begin_split_transition_animation(crate::state::SplitTransitionScope::Stage, new_id);
+        if let Some(tid) = context_terminal {
+            self.assoc.associated_terminal.insert(new_id, tid);
+        }
+        if self.focus.zoomed_pane.is_some() {
+            self.focus.zoomed_pane = Some(new_id);
+        }
+        self.focus.focus_area = crate::state::FocusArea::Stage;
+        self.focus.focused = Some(new_id);
+        self.router.set_focused(new_id);
+        self.cache.invalidate_chrome();
+        self.compute_layout();
+    }
+
     /// Replace a Launcher pane with the chosen pane type.
     fn resolve_launcher(&mut self, launcher_id: crate::tide_core::PaneId, choice: LauncherChoice) {
         let context_terminal = self.resolve_context_terminal_id();
@@ -305,8 +389,13 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                     .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
                 let cwd = self.focused_terminal_cwd();
                 let new_id = self.layout.split(focused, direction);
+                self.begin_split_transition_animation(
+                    crate::state::SplitTransitionScope::Stage,
+                    new_id,
+                );
                 self.create_terminal_pane(new_id, cwd);
                 self.focus_terminal(new_id);
+                self.compute_layout();
                 return;
             }
         }
@@ -610,6 +699,11 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
     }
 
     fn force_close_editor_panel_tab(&mut self, tab_id: crate::tide_core::PaneId) {
+        if self.split_close_animation_requested
+            && self.begin_split_close_transition_if_needed(tab_id)
+        {
+            return;
+        }
         // Cancel drag if the closing pane is the drag source
         if self.interaction.pane_drag.source_pane() == Some(tab_id) {
             self.interaction.pane_drag = PaneDragState::Idle;
@@ -734,6 +828,14 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.watch_file(&path);
         self.sync_file_tree_modified_editor_cache();
         self.cache.invalidate_chrome();
+    }
+
+    fn close_specific_pane_with_split_animation(&mut self, pane_id: crate::tide_core::PaneId) {
+        self.split_close_animation_requested = true;
+        self.close_specific_pane(pane_id);
+        if self.pending_split_close.is_none() {
+            self.split_close_animation_requested = false;
+        }
     }
 
     fn close_specific_pane(&mut self, pane_id: crate::tide_core::PaneId) {

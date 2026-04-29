@@ -356,8 +356,10 @@ impl DockPort for App {
         self.panes.insert(new_id, PaneKind::Launcher(new_id));
         self.ime.pending_creates.push(new_id);
         self.assoc.associated_terminal.insert(new_id, tid);
+        let mut created_split = false;
         if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-            if tp.dock_layout.all_pane_ids().is_empty() {
+            let had_existing = !tp.dock_layout.all_pane_ids().is_empty();
+            if !had_existing {
                 tp.dock_layout.insert_at_root(new_id, DropZone::Bottom);
             } else if let Some(focused) = tp.dock_focused {
                 if !tp
@@ -366,11 +368,62 @@ impl DockPort for App {
                 {
                     tp.dock_layout.insert_at_root(new_id, DropZone::Bottom);
                 }
+                created_split = true;
+            } else {
+                tp.dock_layout.insert_at_root(new_id, DropZone::Bottom);
+                created_split = true;
+            }
+            tp.dock_focused = Some(new_id);
+            tp.dock_layout.set_active_tab(new_id);
+        }
+        if created_split {
+            self.begin_split_transition_animation(
+                crate::state::SplitTransitionScope::TerminalContextSurface { terminal_id: tid },
+                new_id,
+            );
+        }
+        self.set_dock_visible_with_animation(true);
+        self.focus.focus_area = FocusArea::Dock;
+        self.focus.focused = Some(new_id);
+        self.router.set_focused(new_id);
+        self.cache.invalidate_chrome();
+        self.compute_layout();
+    }
+
+    /// In stacked Terminal Context Surface chrome, add a Launcher by splitting the
+    /// last context Pane so the new item becomes the final stacked tab.
+    fn dock_split_last_with_launcher(&mut self, direction: SplitDirection) {
+        let tid = match self.focus.stage_focused {
+            Some(id) => id,
+            None => return,
+        };
+        let new_id = self.layout.alloc_id();
+        self.panes.insert(new_id, PaneKind::Launcher(new_id));
+        self.ime.pending_creates.push(new_id);
+        self.assoc.associated_terminal.insert(new_id, tid);
+
+        let mut created_split = false;
+        if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+            let target = tp.dock_layout.all_tabs_flat().last().copied();
+            if let Some(target) = target {
+                if !tp.dock_layout.insert_pane(target, new_id, direction, false) {
+                    tp.dock_layout.insert_at_root(new_id, DropZone::Bottom);
+                }
+                created_split = true;
             } else {
                 tp.dock_layout.insert_at_root(new_id, DropZone::Bottom);
             }
             tp.dock_focused = Some(new_id);
             tp.dock_layout.set_active_tab(new_id);
+            tp.dock_view_mode = ViewMode::Stacked;
+            self.dock.dock_zoomed = true;
+        }
+
+        if created_split {
+            self.begin_split_transition_animation(
+                crate::state::SplitTransitionScope::TerminalContextSurface { terminal_id: tid },
+                new_id,
+            );
         }
         self.set_dock_visible_with_animation(true);
         self.focus.focus_area = FocusArea::Dock;
@@ -552,7 +605,7 @@ impl DockPort for App {
 
     fn animate_dock_width(&mut self, w: f32) -> f32 {
         let now = self.ports.clock.now();
-        let from_width = self.dock.rendered_width(now);
+        let from_width = self.terminal_context_surface_rendered_width(now);
         self.dock.dock_open = true;
         self.dock.dock_width = w;
         if (from_width - w).abs() < 0.5 && self.dock.visibility_animation.is_none() {

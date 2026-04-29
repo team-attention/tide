@@ -8,8 +8,8 @@ use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
 use crate::state::{FocusArea, ViewMode};
 use crate::theme::{
-    FILE_TREE_MIN_WIDTH, FILE_TREE_WIDTH, PANE_GAP, TERMINAL_CONTEXT_SURFACE_MIN_WIDTH,
-    TERMINAL_CONTEXT_SURFACE_WIDTH,
+    terminal_context_surface_default_width, FILE_TREE_MIN_WIDTH, FILE_TREE_WIDTH, PANE_GAP,
+    TERMINAL_CONTEXT_SURFACE_MIN_WIDTH, TERMINAL_CONTEXT_SURFACE_WIDTH,
 };
 use crate::tide_core::LayoutEngine;
 use crate::tide_input::GlobalAction;
@@ -389,8 +389,8 @@ fn inactive_workspace_rows_show_terminal_cwd_metadata() {
 // --- UC-9: PreserveVisualHierarchy ---
 
 #[test]
-fn collapsed_workspace_rail_keeps_active_workspace_identity_visible() {
-    // UC-9 BR-1: Workspace identity must be visible even when the rail is collapsed.
+fn titlebar_uses_active_workspace_identity_instead_of_neutral_product_title() {
+    // UC-9 BR-1: The titlebar uses active Workspace identity instead of a neutral product title.
     let (mut app, _terminal_id) = app_with_real_terminal();
     if app.ws.workspaces.is_empty() {
         app.ws.workspaces.push(crate::Workspace {
@@ -407,10 +407,7 @@ fn collapsed_workspace_rail_keeps_active_workspace_identity_visible() {
     let title = titlebar_workspace_title(&app);
 
     assert_eq!(title, "Review browser flow");
-    assert!(
-        !title.starts_with("Tide"),
-        "titlebar should show active Workspace identity rather than app-only numbering"
-    );
+    assert_ne!(title, "Tide");
 }
 
 #[test]
@@ -518,15 +515,45 @@ fn terminal_context_surface_seam_uses_single_hairline_without_shadow_strips() {
 
 #[test]
 fn default_support_surface_widths_prioritize_terminal_context_surface() {
-    // UC-9 BR-9: New Workspaces start with a wide Terminal Context Surface and compact FileTree View.
-    let app = test_app();
+    // UC-9 BR-9: New Workspaces derive the default Terminal Context Surface width from the Tide Window width.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    add_editor_context_tab(&mut app, terminal_id);
+    app.dock.visibility_animation = None;
+    app.window.window_size = (960, 640);
 
     assert_eq!(app.dock.dock_width, TERMINAL_CONTEXT_SURFACE_WIDTH);
     assert_eq!(app.ft.width, FILE_TREE_WIDTH);
+    app.compute_layout();
+    let dock_area = app
+        .dock_area_rect
+        .expect("Terminal Context Surface area should be computed");
+    let expected = terminal_context_surface_default_width(app.logical_size().width);
+
     assert!(
-        app.dock.dock_width > app.ft.width * 4.0,
-        "Terminal Context Surface default should be clearly wider than FileTree View"
+        (dock_area.width - expected).abs() < f32::EPSILON,
+        "Terminal Context Surface default should scale from the Tide Window width"
     );
+    assert!(
+        dock_area.width < app.logical_size().width * 0.5,
+        "Small Tide Windows should keep Stage visually primary when the Terminal Context Surface opens"
+    );
+}
+
+#[test]
+fn explicit_terminal_context_surface_width_is_not_reinterpreted_as_default_ratio() {
+    // UC-9 BR-12: User-resized Terminal Context Surface widths stay explicit.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    add_editor_context_tab(&mut app, terminal_id);
+    app.dock.visibility_animation = None;
+    app.window.window_size = (960, 640);
+    app.dock.dock_width = 720.0;
+
+    app.compute_layout();
+
+    let dock_area = app
+        .dock_area_rect
+        .expect("Terminal Context Surface area should be computed");
+    assert_eq!(dock_area.width, 720.0);
 }
 
 #[test]
@@ -594,4 +621,48 @@ fn support_surfaces_keep_minimum_widths_before_pushing_stage() {
         stage_after.width < stage_before.width,
         "Stage should shrink only after Terminal Context Surface reaches its minimum"
     );
+}
+
+#[test]
+fn window_resize_scales_terminal_context_surface_without_rewriting_fixed_side_widths() {
+    // UC-9 BR-13/BR-14: Tide Window resize scales explicit Terminal Context Surface width while preserving stored FileTree View and Workspace rail widths.
+    let (mut app, terminal_id) = app_with_real_terminal();
+    add_editor_context_tab(&mut app, terminal_id);
+    app.window.window_size = (1600, 720);
+    app.ws.show_sidebar = true;
+    app.ws.width = 180.0;
+    app.ft.visible = true;
+    app.ft.width = 240.0;
+    app.dock.dock_width = 900.0;
+    app.ws.visibility_animation = None;
+    app.ft.visibility_animation = None;
+    app.dock.visibility_animation = None;
+
+    let old_logical_width = app.logical_size().width;
+    let old_left_reserved = PANE_GAP + app.ws.width;
+    let old_fixed_right = app.ft.width + PANE_GAP;
+    let old_support_capacity = (old_logical_width - old_left_reserved - 100.0 - old_fixed_right)
+        .max(TERMINAL_CONTEXT_SURFACE_MIN_WIDTH);
+    let old_terminal_context_surface_width = app.dock.dock_width - old_fixed_right;
+    let file_tree_width = app.ft.width;
+    let workspace_width = app.ws.width;
+
+    app.set_window_size(1200, 720);
+
+    let new_logical_width = app.logical_size().width;
+    let new_left_reserved = PANE_GAP + workspace_width;
+    let new_fixed_right = file_tree_width + PANE_GAP;
+    let new_support_capacity = (new_logical_width - new_left_reserved - 100.0 - new_fixed_right)
+        .max(TERMINAL_CONTEXT_SURFACE_MIN_WIDTH);
+    let expected_terminal_context_surface_width = (old_terminal_context_surface_width
+        * (new_support_capacity / old_support_capacity))
+        .clamp(TERMINAL_CONTEXT_SURFACE_MIN_WIDTH, new_support_capacity);
+    let expected_stored_width = expected_terminal_context_surface_width + new_fixed_right;
+
+    assert!(
+        (app.dock.dock_width - expected_stored_width).abs() < 0.1,
+        "Terminal Context Surface stored width should track the resized support-surface budget"
+    );
+    assert_eq!(app.ft.width, file_tree_width);
+    assert_eq!(app.ws.width, workspace_width);
 }

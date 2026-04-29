@@ -8,6 +8,12 @@ use crate::tide_renderer::WgpuRenderer;
 use crate::pane::PaneKind;
 use crate::theme::*;
 
+use super::raster_icons::{
+    FLATICON_BROWSER, FLATICON_CLOSE, FLATICON_ENTER_SPLIT_MODE, FLATICON_ENTER_STACK_MODE,
+    FLATICON_SPLIT_HORIZONTAL, FLATICON_SPLIT_VERTICAL,
+};
+use super::svg_icons::{svg_icon_palette, SVG_ICON_ADD_PANE};
+
 /// Clickable zone within a pane header.
 #[derive(Debug, Clone)]
 pub struct HeaderHitZone {
@@ -35,6 +41,8 @@ pub enum HeaderHitAction {
     OpenBrowser,
     SplitHorizontal,
     SplitVertical,
+    ToggleStageViewMode(bool),
+    ToggleDockViewMode(bool),
     /// Click on a Dock tab-bar item — switch to this pane.
     DockTab(crate::tide_core::PaneId),
     /// Click on a Stage tab in stacked mode — switch zoomed pane.
@@ -50,6 +58,16 @@ pub(crate) struct HeaderActionSpec {
 pub(crate) enum HeaderSurfaceKind {
     Stage,
     TerminalContextSurface,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HeaderActionIcon {
+    Browser,
+    SplitHorizontal,
+    SplitVertical,
+    AddPane,
+    EnterStackMode,
+    EnterSplitMode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,6 +182,7 @@ pub(crate) fn single_pane_header_layout(
     title_w_raw: f32,
     badge_widths: &[f32],
     has_status_dot: bool,
+    leading_view_mode_width: f32,
 ) -> SinglePaneHeaderLayout {
     let action_strip_start_x = header_action_strip_start_x(available_w, header_action_width);
     let action_gap = if header_action_width > 0.0 {
@@ -177,8 +196,9 @@ pub(crate) fn single_pane_header_layout(
         available_w - TAB_H_PAD
     };
     let dot_w = tab_status_dot_width(has_status_dot);
+    let content_left = TAB_H_PAD + leading_view_mode_width + dot_w;
     let close_gap = BADGE_GAP;
-    let title_and_badges_budget = (content_right - TAB_H_PAD - dot_w - close_gap - 16.0).max(0.0);
+    let title_and_badges_budget = (content_right - content_left - close_gap - 16.0).max(0.0);
     let title_layout = reserve_title_before_badges(
         title_w_raw,
         badge_widths,
@@ -196,10 +216,10 @@ pub(crate) fn single_pane_header_layout(
     } else {
         0.0
     };
-    let title_cluster_end = TAB_H_PAD + dot_w + title_layout.title_w + visible_badge_width;
+    let title_cluster_end = content_left + title_layout.title_w + visible_badge_width;
     let close_hit_x = (title_cluster_end + close_gap)
         .min(content_right - 16.0)
-        .max(TAB_H_PAD + dot_w);
+        .max(content_left);
 
     SinglePaneHeaderLayout {
         surface_w: available_w.max(0.0),
@@ -208,11 +228,8 @@ pub(crate) fn single_pane_header_layout(
     }
 }
 
-fn shared_header_action_specs() -> Vec<HeaderActionSpec> {
+fn terminal_context_header_action_specs() -> Vec<HeaderActionSpec> {
     vec![
-        HeaderActionSpec {
-            action: HeaderHitAction::OpenBrowser,
-        },
         HeaderActionSpec {
             action: HeaderHitAction::SplitHorizontal,
         },
@@ -223,14 +240,25 @@ fn shared_header_action_specs() -> Vec<HeaderActionSpec> {
 }
 
 pub(crate) fn single_pane_header_action_specs() -> Vec<HeaderActionSpec> {
-    shared_header_action_specs()
+    terminal_context_header_action_specs()
+}
+
+fn stage_single_pane_header_action_specs() -> Vec<HeaderActionSpec> {
+    vec![
+        HeaderActionSpec {
+            action: HeaderHitAction::SplitHorizontal,
+        },
+        HeaderActionSpec {
+            action: HeaderHitAction::SplitVertical,
+        },
+    ]
 }
 
 pub(crate) fn single_pane_header_action_specs_for_surface(
     surface: HeaderSurfaceKind,
 ) -> Vec<HeaderActionSpec> {
     match surface {
-        HeaderSurfaceKind::Stage => single_pane_header_action_specs(),
+        HeaderSurfaceKind::Stage => stage_single_pane_header_action_specs(),
         HeaderSurfaceKind::TerminalContextSurface => single_pane_header_action_specs(),
     }
 }
@@ -254,14 +282,40 @@ pub(crate) fn single_pane_header_chrome(
 }
 
 pub(crate) fn stacked_tab_bar_header_action_specs() -> Vec<HeaderActionSpec> {
-    vec![
-        HeaderActionSpec {
-            action: HeaderHitAction::OpenBrowser,
+    vec![HeaderActionSpec {
+        action: HeaderHitAction::AddPane,
+    }]
+}
+
+pub(crate) fn stacked_tab_bar_header_action_specs_for_surface(
+    surface: HeaderSurfaceKind,
+) -> Vec<HeaderActionSpec> {
+    match surface {
+        HeaderSurfaceKind::Stage => stacked_tab_bar_header_action_specs(),
+        HeaderSurfaceKind::TerminalContextSurface => stacked_tab_bar_header_action_specs(),
+    }
+}
+
+pub(crate) fn surface_view_mode_header_action(
+    surface: HeaderSurfaceKind,
+    is_stacked: bool,
+) -> HeaderActionSpec {
+    HeaderActionSpec {
+        action: match surface {
+            HeaderSurfaceKind::Stage => HeaderHitAction::ToggleStageViewMode(is_stacked),
+            HeaderSurfaceKind::TerminalContextSurface => {
+                HeaderHitAction::ToggleDockViewMode(is_stacked)
+            }
         },
-        HeaderActionSpec {
-            action: HeaderHitAction::AddPane,
-        },
-    ]
+    }
+}
+
+pub(crate) fn header_leading_view_mode_width(action: Option<&HeaderHitAction>) -> f32 {
+    if action.is_some() {
+        HEADER_ACTION_TILE_SIZE + TAB_CONTENT_SPACING
+    } else {
+        0.0
+    }
 }
 
 pub(crate) fn dock_tab_group_uses_shared_tab_bar(tab_group: &crate::tide_layout::TabGroup) -> bool {
@@ -297,17 +351,49 @@ pub(crate) fn is_header_action_strip_action(action: &HeaderHitAction) -> bool {
             | HeaderHitAction::OpenBrowser
             | HeaderHitAction::SplitHorizontal
             | HeaderHitAction::SplitVertical
+            | HeaderHitAction::ToggleStageViewMode(_)
+            | HeaderHitAction::ToggleDockViewMode(_)
     )
 }
 
-pub(crate) fn header_action_glyph(action: &HeaderHitAction) -> Option<&'static str> {
+pub(crate) fn header_action_icon(action: &HeaderHitAction) -> Option<HeaderActionIcon> {
     match action {
-        HeaderHitAction::AddPane => Some("\u{f067}"),
-        HeaderHitAction::OpenBrowser => Some("\u{f268}"),
-        HeaderHitAction::SplitHorizontal => Some("\u{2195}"),
-        HeaderHitAction::SplitVertical => Some("\u{2194}"),
+        HeaderHitAction::AddPane => Some(HeaderActionIcon::AddPane),
+        HeaderHitAction::OpenBrowser => Some(HeaderActionIcon::Browser),
+        HeaderHitAction::SplitHorizontal => Some(HeaderActionIcon::SplitHorizontal),
+        HeaderHitAction::SplitVertical => Some(HeaderActionIcon::SplitVertical),
+        HeaderHitAction::ToggleStageViewMode(false)
+        | HeaderHitAction::ToggleDockViewMode(false) => Some(HeaderActionIcon::EnterStackMode),
+        HeaderHitAction::ToggleStageViewMode(true) | HeaderHitAction::ToggleDockViewMode(true) => {
+            Some(HeaderActionIcon::EnterSplitMode)
+        }
         _ => None,
     }
+}
+
+pub(crate) fn header_action_icon_text_glyph(_icon: HeaderActionIcon) -> Option<&'static str> {
+    None
+}
+
+pub(crate) fn header_close_icon_text_glyph() -> Option<&'static str> {
+    None
+}
+
+pub(crate) fn header_action_raster_icon_asset(
+    icon: HeaderActionIcon,
+) -> Option<&'static crate::tide_renderer::RasterIconAsset> {
+    match icon {
+        HeaderActionIcon::Browser => Some(&FLATICON_BROWSER),
+        HeaderActionIcon::SplitHorizontal => Some(&FLATICON_SPLIT_HORIZONTAL),
+        HeaderActionIcon::SplitVertical => Some(&FLATICON_SPLIT_VERTICAL),
+        HeaderActionIcon::AddPane => None,
+        HeaderActionIcon::EnterStackMode => Some(&FLATICON_ENTER_STACK_MODE),
+        HeaderActionIcon::EnterSplitMode => Some(&FLATICON_ENTER_SPLIT_MODE),
+    }
+}
+
+pub(crate) fn header_close_raster_icon_asset() -> &'static crate::tide_renderer::RasterIconAsset {
+    &FLATICON_CLOSE
 }
 
 pub(crate) fn active_tab_width_cap(available_w: f32) -> f32 {
@@ -497,29 +583,27 @@ fn header_action_tile_style(is_emphasized: bool, p: &ThemePalette) -> HeaderActi
     }
 }
 
-fn render_header_action_glyph(
+fn render_header_action_icon(
     renderer: &mut WgpuRenderer,
     action: &HeaderHitAction,
     tile_rect: Rect,
     color: crate::tide_core::Color,
 ) {
-    if let Some(glyph) = header_action_glyph(action) {
-        let cell_size = renderer.cell_size();
-        let glyph_x = tile_rect.x + ((tile_rect.width - cell_size.width).max(0.0) / 2.0);
-        let glyph_y = tile_rect.y + ((tile_rect.height - cell_size.height).max(0.0) / 2.0) - 1.0;
-        renderer.draw_chrome_text(
-            glyph,
-            Vec2::new(glyph_x, glyph_y),
-            TextStyle {
-                foreground: color,
-                background: None,
-                bold: false,
-                dim: false,
-                italic: false,
-                underline: false,
-            },
-            tile_rect,
-        );
+    let Some(icon) = header_action_icon(action) else {
+        return;
+    };
+
+    let icon_size = 13.0_f32;
+    let icon_rect = Rect::new(
+        (tile_rect.x + (tile_rect.width - icon_size) / 2.0).round(),
+        (tile_rect.y + (tile_rect.height - icon_size) / 2.0).round(),
+        icon_size,
+        icon_size,
+    );
+    if let Some(asset) = header_action_raster_icon_asset(icon) {
+        renderer.draw_chrome_raster_icon(asset, icon_rect, color);
+    } else {
+        renderer.draw_chrome_svg_icon(SVG_ICON_ADD_PANE, icon_rect, svg_icon_palette(color, color));
     }
 }
 
@@ -536,22 +620,7 @@ fn render_header_action_strip(
     let mut x = start_x;
 
     for spec in specs {
-        let tile_rect = Rect::new(
-            x,
-            rect.y + (TAB_BAR_HEIGHT - HEADER_ACTION_TILE_SIZE) / 2.0,
-            HEADER_ACTION_TILE_SIZE,
-            HEADER_ACTION_TILE_SIZE,
-        );
-        let style = header_action_tile_style(is_emphasized, p);
-        renderer.draw_chrome_rounded_rect(tile_rect, style.bg_color, HEADER_ACTION_TILE_RADIUS);
-        if style.draw_outline {
-            renderer.draw_chrome_rounded_rect(
-                tile_rect,
-                p.border_subtle,
-                HEADER_ACTION_TILE_RADIUS,
-            );
-        }
-        render_header_action_glyph(renderer, &spec.action, tile_rect, style.icon_color);
+        render_header_action_tile(renderer, rect, x, is_emphasized, &spec.action, p);
         zones.push(HeaderHitZone {
             pane_id,
             rect: Rect::new(x, rect.y, HEADER_ACTION_TILE_SIZE, TAB_BAR_HEIGHT),
@@ -559,6 +628,81 @@ fn render_header_action_strip(
         });
         x += HEADER_ACTION_TILE_SIZE + BADGE_GAP;
     }
+}
+
+fn render_header_action_tile(
+    renderer: &mut WgpuRenderer,
+    rect: Rect,
+    x: f32,
+    is_emphasized: bool,
+    action: &HeaderHitAction,
+    p: &ThemePalette,
+) {
+    let tile_rect = Rect::new(
+        x,
+        rect.y + (TAB_BAR_HEIGHT - HEADER_ACTION_TILE_SIZE) / 2.0,
+        HEADER_ACTION_TILE_SIZE,
+        HEADER_ACTION_TILE_SIZE,
+    );
+    let style = header_action_tile_style(is_emphasized, p);
+    renderer.draw_chrome_rounded_rect(tile_rect, style.bg_color, HEADER_ACTION_TILE_RADIUS);
+    if style.draw_outline {
+        renderer.draw_chrome_rounded_rect(tile_rect, p.border_subtle, HEADER_ACTION_TILE_RADIUS);
+    }
+    render_header_action_icon(renderer, action, tile_rect, style.icon_color);
+}
+
+fn render_header_close_icon(
+    renderer: &mut WgpuRenderer,
+    hit_rect: Rect,
+    color: crate::tide_core::Color,
+    is_modified: bool,
+) {
+    if is_modified {
+        let dot_size = 6.0_f32;
+        renderer.draw_chrome_rounded_rect(
+            Rect::new(
+                hit_rect.x + (hit_rect.width - dot_size) / 2.0,
+                hit_rect.y + (hit_rect.height - dot_size) / 2.0,
+                dot_size,
+                dot_size,
+            ),
+            color,
+            dot_size / 2.0,
+        );
+    } else {
+        let icon_size = 12.0_f32;
+        let icon_rect = Rect::new(
+            (hit_rect.x + (hit_rect.width - icon_size) / 2.0).round(),
+            (hit_rect.y + (hit_rect.height - icon_size) / 2.0).round(),
+            icon_size,
+            icon_size,
+        );
+        renderer.draw_chrome_raster_icon(header_close_raster_icon_asset(), icon_rect, color);
+    }
+}
+
+fn render_header_leading_view_mode_action(
+    renderer: &mut WgpuRenderer,
+    rect: Rect,
+    x: f32,
+    is_emphasized: bool,
+    pane_id: PaneId,
+    action: Option<&HeaderHitAction>,
+    p: &ThemePalette,
+    zones: &mut Vec<HeaderHitZone>,
+) -> f32 {
+    let Some(action) = action else {
+        return 0.0;
+    };
+
+    render_header_action_tile(renderer, rect, x, is_emphasized, action, p);
+    zones.push(HeaderHitZone {
+        pane_id,
+        rect: Rect::new(x, rect.y, HEADER_ACTION_TILE_SIZE, TAB_BAR_HEIGHT),
+        action: action.clone(),
+    });
+    header_leading_view_mode_width(Some(action))
 }
 
 fn badge_tint(color: crate::tide_core::Color, alpha: f32) -> crate::tide_core::Color {
@@ -697,15 +841,22 @@ pub(crate) fn stage_terminal_dot_visual_state(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SinglePaneHeaderPaintStep {
+pub(crate) enum SinglePaneHeaderPaintStep {
     Background,
     Dot,
+    LeadingViewModeAction,
 }
 
-fn single_pane_header_paint_steps(has_visible_dot: bool) -> Vec<SinglePaneHeaderPaintStep> {
+pub(crate) fn single_pane_header_paint_steps(
+    has_visible_dot: bool,
+    has_leading_view_mode_action: bool,
+) -> Vec<SinglePaneHeaderPaintStep> {
     let mut steps = vec![SinglePaneHeaderPaintStep::Background];
     if has_visible_dot {
         steps.push(SinglePaneHeaderPaintStep::Dot);
+    }
+    if has_leading_view_mode_action {
+        steps.push(SinglePaneHeaderPaintStep::LeadingViewModeAction);
     }
     steps
 }
@@ -850,6 +1001,7 @@ pub fn render_pane_header(
         None,
         false,
         HeaderSurfaceKind::TerminalContextSurface,
+        None,
     )
 }
 
@@ -867,6 +1019,7 @@ pub fn render_pane_header_inner(
     blink_time: Option<f64>,
     show_stage_terminal_dot: bool,
     surface_kind: HeaderSurfaceKind,
+    surface_view_mode_action: Option<HeaderHitAction>,
 ) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
     let cell_size = renderer.cell_size();
@@ -876,6 +1029,7 @@ pub fn render_pane_header_inner(
     let header_chrome = single_pane_header_chrome(surface_kind, is_focused);
     let header_actions = single_pane_header_action_specs_for_surface(surface_kind);
     let header_action_width = header_action_strip_width(cell_w, &header_actions);
+    let leading_view_mode_width = header_leading_view_mode_width(surface_view_mode_action.as_ref());
     let text_y = rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
     let action_strip_start_x =
         header_action_strip_start_x(rect.x + rect.width, header_action_width);
@@ -900,7 +1054,8 @@ pub fn render_pane_header_inner(
     // Active tab bg + accent line drawn AFTER computing tab width (see below)
 
     // --- Build content: [pad 6] [dot?] [icon 14x14] [gap 6] [title...] [spacer] [badges...] [close 16x16 (9px icon)] [pad 6] ---
-    let mut cx = rect.x + TAB_H_PAD;
+    let view_mode_action_x = rect.x + TAB_H_PAD;
+    let mut cx = view_mode_action_x + leading_view_mode_width;
 
     let visible_dot_state = if show_stage_terminal_dot || agent_chrome_state.is_some() {
         agent_chrome_state
@@ -1032,16 +1187,15 @@ pub fn render_pane_header_inner(
     }
 
     // Close icon config
-    let close_icon_w = TAB_CLOSE_ICON_SIZE;
     let close_hit_size = 16.0_f32;
     let is_modified = match panes.get(&id) {
         Some(PaneKind::Editor(ep)) => ep.editor.is_modified(),
         _ => false,
     };
-    let (close_icon_str, close_color) = if is_modified {
-        ("\u{f111}", p.editor_modified)
+    let close_color = if is_modified {
+        p.editor_modified
     } else {
-        ("\u{f00d}", p.close_icon)
+        p.close_icon
     };
 
     let badge_gap = 4.0_f32;
@@ -1056,10 +1210,14 @@ pub fn render_pane_header_inner(
         title_w_raw,
         &badge_widths,
         visible_dot_state.is_some(),
+        leading_view_mode_width,
     );
 
     // Draw full-width focused single-pane header surface.
-    for step in single_pane_header_paint_steps(visible_dot_state.is_some()) {
+    for step in single_pane_header_paint_steps(
+        visible_dot_state.is_some(),
+        surface_view_mode_action.is_some(),
+    ) {
         match step {
             SinglePaneHeaderPaintStep::Background => {
                 if header_chrome.draw_active_background {
@@ -1092,14 +1250,23 @@ pub fn render_pane_header_inner(
                     );
                 }
             }
+            SinglePaneHeaderPaintStep::LeadingViewModeAction => {
+                render_header_leading_view_mode_action(
+                    renderer,
+                    rect,
+                    view_mode_action_x,
+                    is_focused,
+                    id,
+                    surface_view_mode_action.as_ref(),
+                    p,
+                    &mut zones,
+                );
+            }
         }
     }
 
     // Position close icon relative to the full-width header lane.
     let close_hit_x = rect.x + header_layout.close_hit_x;
-    let _close_icon_x = close_hit_x + (close_hit_size - close_icon_w) / 2.0;
-    let _close_icon_y = rect.y + (TAB_BAR_HEIGHT - close_icon_w) / 2.0;
-
     let title_layout = header_layout.title_layout;
     let title_w = title_layout.title_w;
 
@@ -1167,26 +1334,12 @@ pub fn render_pane_header_inner(
         }
     }
 
-    // Draw close icon centered in hit area
-    let close_text_x = close_hit_x + (close_hit_size - cell_w) / 2.0;
-    let close_text_y = rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
-    let close_style = TextStyle {
-        foreground: close_color,
-        background: None,
-        bold: false,
-        dim: false,
-        italic: false,
-        underline: false,
-    };
-    renderer.draw_chrome_text(
-        close_icon_str,
-        Vec2::new(close_text_x, close_text_y),
-        close_style,
-        Rect::new(close_hit_x, rect.y, close_hit_size, TAB_BAR_HEIGHT),
-    );
+    // Draw close icon centered in hit area.
+    let close_hit_rect = Rect::new(close_hit_x, rect.y, close_hit_size, TAB_BAR_HEIGHT);
+    render_header_close_icon(renderer, close_hit_rect, close_color, is_modified);
     zones.push(HeaderHitZone {
         pane_id: id,
-        rect: Rect::new(close_hit_x, rect.y, close_hit_size, TAB_BAR_HEIGHT),
+        rect: close_hit_rect,
         action: HeaderHitAction::Close,
     });
 
@@ -1211,6 +1364,7 @@ pub fn render_dock_tab_bar(
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
     auto_fit_active_tab: bool,
+    surface_view_mode_action: Option<HeaderHitAction>,
 ) -> Vec<HeaderHitZone> {
     render_tab_bar_impl(
         pane_id,
@@ -1229,13 +1383,13 @@ pub fn render_dock_tab_bar(
         blink_time,
         tab_scroll_offset,
         auto_fit_active_tab,
+        surface_view_mode_action,
     )
 }
 
 /// Shared tab bar rendering for both Dock and Stage stacked mode.
 /// `is_dock` determines the hit action type (DockTab vs StageTab).
-/// `is_stacked` true = zoomed/stacked mode (layers icon + bottom border),
-///              false = tab group within split (per-tab underline).
+/// `_is_stacked` true = zoomed/stacked mode; false = tab group within split.
 fn render_tab_bar_impl(
     pane_id: PaneId,
     rect: Rect,
@@ -1247,19 +1401,25 @@ fn render_tab_bar_impl(
     p: &ThemePalette,
     renderer: &mut WgpuRenderer,
     is_dock: bool,
-    is_stacked: bool,
+    _is_stacked: bool,
     show_comment_badge: bool,
     detected_agents: &HashMap<u64, crate::state::gateway_status::AgentInfo>,
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
     auto_fit_active_tab: bool,
+    surface_view_mode_action: Option<HeaderHitAction>,
 ) -> Vec<HeaderHitZone> {
     let mut zones = Vec::new();
     let cell_size = renderer.cell_size();
     let cell_height = cell_size.height;
     let cell_w = cell_size.width;
     let is_focused = focused == Some(pane_id);
-    let header_actions = stacked_tab_bar_header_action_specs();
+    let header_surface = if is_dock {
+        HeaderSurfaceKind::TerminalContextSurface
+    } else {
+        HeaderSurfaceKind::Stage
+    };
+    let header_actions = stacked_tab_bar_header_action_specs_for_surface(header_surface);
     let header_action_width = header_action_strip_width(cell_w, &header_actions);
     let header_action_gap = if header_action_width > 0.0 {
         TAB_H_PAD
@@ -1273,27 +1433,20 @@ fn render_tab_bar_impl(
     let mut content_left = rect.x;
     let content_right = rect.x + rect.width;
 
-    // Stacked mode: render layers icon with left padding
-    if is_stacked {
-        content_left += TAB_H_PAD; // breathing room before icon
-        let icon = "\u{f24d}"; // fa-clone (stacked layers)
-        let icon_y = rect.y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
-        let icon_color = p.tab_text;
-
-        renderer.draw_chrome_text(
-            icon,
-            Vec2::new(content_left, icon_y),
-            TextStyle {
-                foreground: icon_color,
-                background: None,
-                bold: false,
-                dim: false,
-                italic: false,
-                underline: false,
-            },
-            Rect::new(content_left, rect.y, cell_w + 4.0, TAB_BAR_HEIGHT),
+    // Region ViewMode controls live in the leading slot. In stacked mode this
+    // reuses the existing stack icon position instead of adding a trailing tile.
+    if surface_view_mode_action.is_some() {
+        content_left += TAB_H_PAD;
+        content_left += render_header_leading_view_mode_action(
+            renderer,
+            rect,
+            content_left,
+            is_focused,
+            pane_id,
+            surface_view_mode_action.as_ref(),
+            p,
+            &mut zones,
         );
-        content_left += cell_w + 6.0;
     }
 
     if content_right - content_left < 40.0 {
@@ -1317,7 +1470,6 @@ fn render_tab_bar_impl(
     // Compute tab labels and widths
     // Layout per tab: [pad 6] [dot?] [icon?] [gap 6] [title...] [spacer] [badges?] [close 16x16 (9px)] [pad 6]
     let close_hit_size = 16.0_f32;
-    let close_icon_width = TAB_CLOSE_ICON_SIZE;
     let badge_gap = 4.0_f32;
     let mut tabs_info: Vec<(PaneId, String, f32)> = Vec::new();
     for &tid in tab_ids {
@@ -1430,9 +1582,6 @@ fn render_tab_bar_impl(
 
         // Close icon at right: [close 16x16] [pad 6]
         let tab_close_hit_x = cx + tw - TAB_H_PAD - close_hit_size;
-        let _tab_close_icon_x = tab_close_hit_x + (close_hit_size - close_icon_width) / 2.0;
-        let _tab_close_icon_y = tab_y + (tab_h - close_icon_width) / 2.0;
-
         // Compute badges for active tab
         let mut active_badges: Vec<EditorBadge> = Vec::new();
         if is_active {
@@ -1511,29 +1660,15 @@ fn render_tab_bar_impl(
             Some(PaneKind::Editor(ep)) => ep.editor.is_modified(),
             _ => false,
         };
-        let (tab_close_icon, tab_close_color) = if is_tab_modified {
-            ("\u{f111}", p.editor_modified)
+        let tab_close_color = if is_tab_modified {
+            p.editor_modified
         } else {
-            ("\u{f00d}", p.close_icon)
+            p.close_icon
         };
-        let tab_close_text_x = tab_close_hit_x + (close_hit_size - cell_w) / 2.0;
-        let tab_close_text_y = tab_y + (TAB_BAR_HEIGHT - cell_height) / 2.0;
         let close_clip =
             Rect::new(tab_close_hit_x, rect.y, close_hit_size, TAB_BAR_HEIGHT).clip_to(&tab_clip);
         if close_clip.width > 0.0 {
-            renderer.draw_chrome_text(
-                tab_close_icon,
-                Vec2::new(tab_close_text_x, tab_close_text_y),
-                TextStyle {
-                    foreground: tab_close_color,
-                    background: None,
-                    bold: false,
-                    dim: false,
-                    italic: false,
-                    underline: false,
-                },
-                close_clip,
-            );
+            render_header_close_icon(renderer, close_clip, tab_close_color, is_tab_modified);
             zones.push(HeaderHitZone {
                 pane_id: *tid,
                 rect: close_clip,
@@ -1636,6 +1771,7 @@ pub fn render_stage_tab_bar(
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
     auto_fit_active_tab: bool,
+    surface_view_mode_action: Option<HeaderHitAction>,
 ) -> Vec<HeaderHitZone> {
     if stage_pane_ids.len() < 2 {
         return Vec::new();
@@ -1657,6 +1793,7 @@ pub fn render_stage_tab_bar(
         blink_time,
         tab_scroll_offset,
         auto_fit_active_tab,
+        surface_view_mode_action,
     )
 }
 
@@ -1674,6 +1811,7 @@ pub fn render_dock_stacked_tab_bar(
     blink_time: Option<f64>,
     tab_scroll_offset: f32,
     auto_fit_active_tab: bool,
+    surface_view_mode_action: Option<HeaderHitAction>,
 ) -> Vec<HeaderHitZone> {
     if dock_pane_ids.len() < 2 {
         return Vec::new();
@@ -1695,6 +1833,7 @@ pub fn render_dock_stacked_tab_bar(
         blink_time,
         tab_scroll_offset,
         auto_fit_active_tab,
+        surface_view_mode_action,
     )
 }
 
@@ -1958,14 +2097,14 @@ mod tests {
     #[test]
     fn single_pane_header_paints_status_dot_after_background() {
         assert_eq!(
-            single_pane_header_paint_steps(true),
+            single_pane_header_paint_steps(true, false),
             vec![
                 SinglePaneHeaderPaintStep::Background,
                 SinglePaneHeaderPaintStep::Dot,
             ]
         );
         assert_eq!(
-            single_pane_header_paint_steps(false),
+            single_pane_header_paint_steps(false, false),
             vec![SinglePaneHeaderPaintStep::Background]
         );
     }
@@ -1996,50 +2135,66 @@ mod tests {
     }
 
     #[test]
-    fn single_pane_header_action_specs_keep_browser_and_split_icons() {
-        let specs = single_pane_header_action_specs();
+    fn terminal_context_single_pane_header_action_specs_use_split_icons_without_add_pane() {
+        let specs =
+            single_pane_header_action_specs_for_surface(HeaderSurfaceKind::TerminalContextSurface);
         let actions: Vec<HeaderHitAction> = specs.iter().map(|spec| spec.action.clone()).collect();
 
         assert_eq!(
             actions,
             vec![
-                HeaderHitAction::OpenBrowser,
                 HeaderHitAction::SplitHorizontal,
                 HeaderHitAction::SplitVertical,
             ]
         );
+        assert!(!actions.contains(&HeaderHitAction::AddPane));
     }
 
     #[test]
-    fn browser_header_action_reuses_launcher_browser_glyph() {
+    fn stage_single_pane_header_action_specs_omit_add_pane() {
+        let specs = single_pane_header_action_specs_for_surface(HeaderSurfaceKind::Stage);
+        let actions: Vec<HeaderHitAction> = specs.iter().map(|spec| spec.action.clone()).collect();
+
         assert_eq!(
-            header_action_glyph(&HeaderHitAction::OpenBrowser),
-            Some("\u{f268}")
+            actions,
+            vec![
+                HeaderHitAction::SplitHorizontal,
+                HeaderHitAction::SplitVertical,
+            ]
         );
-        assert_eq!(header_action_glyph(&HeaderHitAction::Close), None);
+        assert!(!actions.contains(&HeaderHitAction::AddPane));
     }
 
     #[test]
-    fn add_pane_header_action_uses_plus_glyph() {
+    fn browser_header_action_uses_browser_window_icon_role() {
         assert_eq!(
-            header_action_glyph(&HeaderHitAction::AddPane),
-            Some("\u{f067}")
+            header_action_icon(&HeaderHitAction::OpenBrowser),
+            Some(HeaderActionIcon::Browser)
+        );
+        assert_eq!(header_action_icon(&HeaderHitAction::Close), None);
+    }
+
+    #[test]
+    fn add_pane_header_action_uses_plus_icon_role() {
+        assert_eq!(
+            header_action_icon(&HeaderHitAction::AddPane),
+            Some(HeaderActionIcon::AddPane)
         );
     }
 
     #[test]
-    fn split_header_action_glyphs_use_a_matched_horizontal_vertical_axis_arrow_pair() {
+    fn split_header_action_icons_use_requested_direction_roles() {
         assert_eq!(
-            header_action_glyph(&HeaderHitAction::SplitHorizontal),
-            Some("\u{2195}")
+            header_action_icon(&HeaderHitAction::SplitHorizontal),
+            Some(HeaderActionIcon::SplitHorizontal)
         );
         assert_eq!(
-            header_action_glyph(&HeaderHitAction::SplitVertical),
-            Some("\u{2194}")
+            header_action_icon(&HeaderHitAction::SplitVertical),
+            Some(HeaderActionIcon::SplitVertical)
         );
         assert_ne!(
-            header_action_glyph(&HeaderHitAction::SplitHorizontal),
-            header_action_glyph(&HeaderHitAction::SplitVertical)
+            header_action_icon(&HeaderHitAction::SplitHorizontal),
+            header_action_icon(&HeaderHitAction::SplitVertical)
         );
     }
 
@@ -2068,28 +2223,43 @@ mod tests {
 
     #[test]
     fn stacked_tab_bar_header_action_specs_use_plus_instead_of_split_icons() {
-        let actions: Vec<HeaderHitAction> = stacked_tab_bar_header_action_specs()
-            .iter()
-            .map(|spec| spec.action.clone())
-            .collect();
+        for surface in [
+            HeaderSurfaceKind::Stage,
+            HeaderSurfaceKind::TerminalContextSurface,
+        ] {
+            let actions: Vec<HeaderHitAction> =
+                stacked_tab_bar_header_action_specs_for_surface(surface)
+                    .iter()
+                    .map(|spec| spec.action.clone())
+                    .collect();
 
-        assert_eq!(
-            actions,
-            vec![HeaderHitAction::OpenBrowser, HeaderHitAction::AddPane]
-        );
+            assert_eq!(actions, vec![HeaderHitAction::AddPane]);
+            assert!(!actions.contains(&HeaderHitAction::SplitHorizontal));
+            assert!(!actions.contains(&HeaderHitAction::SplitVertical));
+        }
     }
 
     #[test]
-    fn unfocused_stacked_tab_bar_header_action_specs_remain_visible() {
-        let actions: Vec<HeaderHitAction> = stacked_tab_bar_header_action_specs()
-            .iter()
-            .map(|spec| spec.action.clone())
-            .collect();
+    fn stage_stacked_tab_bar_header_action_specs_use_add_pane() {
+        let actions: Vec<HeaderHitAction> =
+            stacked_tab_bar_header_action_specs_for_surface(HeaderSurfaceKind::Stage)
+                .iter()
+                .map(|spec| spec.action.clone())
+                .collect();
 
-        assert_eq!(
-            actions,
-            vec![HeaderHitAction::OpenBrowser, HeaderHitAction::AddPane]
-        );
+        assert_eq!(actions, vec![HeaderHitAction::AddPane]);
+    }
+
+    #[test]
+    fn unfocused_terminal_context_stacked_tab_bar_header_action_specs_remain_visible() {
+        let actions: Vec<HeaderHitAction> = stacked_tab_bar_header_action_specs_for_surface(
+            HeaderSurfaceKind::TerminalContextSurface,
+        )
+        .iter()
+        .map(|spec| spec.action.clone())
+        .collect();
+
+        assert_eq!(actions, vec![HeaderHitAction::AddPane]);
     }
 
     #[test]

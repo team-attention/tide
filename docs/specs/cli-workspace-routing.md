@@ -18,7 +18,7 @@ Key code locations:
 - `adapter/inward/cli_adapter/mcp.rs:246-298` -- `mcp_tools_call()` forwards arguments without `_caller_pane`
 - `adapter/inward/event_loop_adapter/mod.rs:406-421` -- `CliCommand` arm, calls `handle_cli_command` directly
 - `application/services/workspace_infra_service/mod.rs:55-94` -- `save_active_workspace()` / `load_active_workspace()` raw swap
-- `application/services/workspace_infra_service/mod.rs:113-162` -- `switch_workspace()` with side effects (IME commit, browser hide/show, file tree update)
+- `application/services/workspace_infra_service/mod.rs:113-162` -- `switch_workspace()` with side effects (IME commit, browser hide/show, FileTree View update)
 
 ### To-Be
 
@@ -103,7 +103,7 @@ Transparent to agents. No MCP protocol changes. No new env vars.
 - **Business Rules**:
   - BR-1: If `_caller_pane` belongs to a non-active Workspace, commands execute in that Workspace's context
   - BR-2: Active Workspace must be restored after cross-workspace command execution, even on error
-  - BR-4: Raw `save_active_workspace` / `load_active_workspace` is used (NOT `switch_workspace`) to avoid side effects like IME commit, file tree update, `TIDE_WORKSPACE` updates, and broad chrome invalidation
+  - BR-4: Raw `save_active_workspace` / `load_active_workspace` is used (NOT `switch_workspace`) to avoid side effects like IME commit, FileTree View update, `TIDE_WORKSPACE` updates, and broad chrome invalidation
   - BR-5: `_caller_pane` is stripped from params before reaching command handlers
   - BR-8: Before any temporarily loaded Workspace is cold-stored during cross-Workspace routing, Browser Pane native views are hidden and Browser Pane first-responder state is cleared so `WKWebView` subviews cannot remain visible over the restored active Workspace
   - BR-9: After a cross-Workspace Browser Pane command restores the user's active Workspace, active Workspace geometry is restored before Browser Pane native-view sync runs, so stale target-Workspace rects cannot drive visible native views
@@ -172,7 +172,7 @@ Transparent to agents. No MCP protocol changes. No new env vars.
 ## Invariants
 
 1. **Active Workspace restoration**: After any cross-workspace CLI command execution, `ws.active` and all App fields (layout, panes, focus, dock state) MUST be restored to the user's active Workspace. This holds even if the command handler returns an error or panics.
-2. **No broad UI side effects on swap**: Cross-workspace context swap uses raw `save_active_workspace` / `load_active_workspace` only. It MUST NOT trigger IME commit, file tree update, broad chrome invalidation, or `TIDE_WORKSPACE` env var update. It MAY hide native Browser Pane views before cold-storing a temporarily loaded Workspace because `WKWebView` is an AppKit subview outside the wgpu render tree.
+2. **No broad UI side effects on swap**: Cross-workspace context swap uses raw `save_active_workspace` / `load_active_workspace` only. It MUST NOT trigger IME commit, FileTree View update, broad chrome invalidation, or `TIDE_WORKSPACE` env var update. It MAY hide native Browser Pane views before cold-storing a temporarily loaded Workspace because `WKWebView` is an AppKit subview outside the wgpu render tree.
 3. **Param transparency**: Command handlers never see `_caller_pane` in their params. The dispatch layer strips it before forwarding.
 4. **PaneId sync maintained**: The save/load swap preserves the PaneId sync invariant (every PaneId in SplitLayout exists in App.panes and vice versa) because it swaps the entire layout+panes set atomically.
 5. **Dock placement consistency**: A pane added to a Terminal's Dock via `add_pane_to_dock` MUST appear in that Terminal's `dock_layout`, not in a different Terminal's.

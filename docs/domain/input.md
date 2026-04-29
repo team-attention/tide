@@ -24,7 +24,7 @@ InputEvent
     │
     ├── KeyPress { key, modifiers }
     │     │
-    │     ├── Has Cmd/Ctrl modifier? → keybinding_map.lookup(key, mods)
+    │     ├── Has Cmd, or Ctrl+Shift fallback? → match hotkey table
     │     │     ├── Found → Action::GlobalAction(action)
     │     │     └── Not found → Action::RouteToPane(focused)
     │     │
@@ -66,7 +66,7 @@ KeybindingMap {
 }
 ```
 
-- 47 default bindings hardcoded
+- 37 default bindings hardcoded
 - `with_overrides(user_bindings)` layers user customization on top
 - `lookup(key, modifiers)` → first match wins
 
@@ -84,8 +84,8 @@ KeybindingMap {
 | `DockNavigate(Direction)` | Cmd+Shift+HJKL | Move focus within Dock without changing FocusArea |
 | `TabPrev` / `TabNext` | None by default | Cycle stacked panes in the current FocusArea |
 | `DockTabPrev` / `DockTabNext` | None by default | Cycle Dock tabs without changing FocusArea |
-| `NewTab` | Cmd+T | New Stage Terminal split to the right |
-| `DockNewTab` | None by default | New Dock tab |
+| `NewTab` | Cmd+T | New Stage Terminal split, or Dock Launcher when Dock is focused |
+| `DockNewTab` | None by default | New Dock Launcher without permanently changing FocusArea |
 | `DockSplitHorizontal` | None by default | Split Dock into top/bottom panes |
 | `DockSplitVertical` | None by default | Split Dock into left/right panes |
 | `NewFile` | — | New empty editor |
@@ -102,7 +102,7 @@ KeybindingMap {
 | `FontSizeUp/Down/Reset` | Cmd+=/Cmd+-/Cmd+0 | Font size |
 | `ToggleFullscreen` | Cmd+Ctrl+F | Fullscreen |
 | `NewWindow` | Cmd+N | New window |
-| `OpenBrowser` | Cmd+Shift+B | Browser pane |
+| `OpenBrowser` | Cmd+Shift+B | Browser Pane |
 | `BrowserReload` | Cmd+R | Reload Browser Pane |
 | `ScrollHalfPageUp/Down` | Cmd+U / Cmd+D | Half-page scroll |
 | `ToggleDock` | Cmd+Backslash | Show/hide or focus Dock |
@@ -116,11 +116,11 @@ KeybindingMap {
 | `NewWorkspace` | Cmd+Shift+N | Create workspace |
 | `CloseWorkspace` | Cmd+Shift+W | Close workspace |
 
-### Sidebar
+### Side Surfaces
 | Action | Default Binding | Description |
 |--------|----------------|-------------|
 | `ToggleFileTree` | Cmd+B | Show/hide FileTree View |
-| `ToggleWorkspaceSidebar` | Cmd+E | Show/hide workspace list |
+| `ToggleWorkspaceSidebar` | Cmd+E | Show/hide Workspace rail |
 
 ### Retired Action Keys
 

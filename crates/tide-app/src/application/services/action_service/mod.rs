@@ -1,4 +1,5 @@
 /// Launcher type selection choices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LauncherChoice {
     Terminal,
     NewFile,
@@ -1040,6 +1041,7 @@ impl crate::application::ports::inward::ActionPort for App {
             self.cache.pane_generations.clear();
         }
         let new_id = self.layout.split(source, direction);
+        self.begin_split_transition_animation(crate::state::SplitTransitionScope::Stage, new_id);
         self.create_terminal_pane(new_id, cwd);
         self.focus.focused = Some(new_id);
         self.router.set_focused(new_id);

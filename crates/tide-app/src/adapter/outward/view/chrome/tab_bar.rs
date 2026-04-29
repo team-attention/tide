@@ -1,11 +1,17 @@
 use crate::tide_core::{Rect, Renderer, TextStyle, Vec2};
 
 use crate::header;
-use crate::state::FocusArea;
+use crate::state::{drag_types::HoverTarget, FocusArea};
 use crate::theme::*;
 use crate::App;
 use crate::AppCorePort;
 use crate::DockPort;
+
+use super::super::raster_icons::{FLATICON_CLOSE, FLATICON_OPEN_EXTERNAL};
+use super::super::svg_icons::{
+    svg_icon_palette, SVG_ICON_BROWSER_BACK, SVG_ICON_BROWSER_FORWARD, SVG_ICON_BROWSER_REFRESH,
+    SVG_ICON_COPY_URL,
+};
 
 pub(crate) fn pane_surface_attention_status(
     status: Option<crate::state::gateway_status::AgentStatus>,
@@ -13,6 +19,127 @@ pub(crate) fn pane_surface_attention_status(
 ) -> Option<crate::state::gateway_status::AgentStatus> {
     let _ = status;
     None
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BrowserNavIcon {
+    Back,
+    Forward,
+    Refresh,
+    StopLoading,
+    CopyUrl,
+    OpenExternal,
+}
+
+pub(crate) fn browser_nav_icon_for_target(
+    target: &HoverTarget,
+    loading: bool,
+) -> Option<BrowserNavIcon> {
+    match target {
+        HoverTarget::BrowserBack => Some(BrowserNavIcon::Back),
+        HoverTarget::BrowserForward => Some(BrowserNavIcon::Forward),
+        HoverTarget::BrowserRefresh if loading => Some(BrowserNavIcon::StopLoading),
+        HoverTarget::BrowserRefresh => Some(BrowserNavIcon::Refresh),
+        HoverTarget::BrowserCopyUrl => Some(BrowserNavIcon::CopyUrl),
+        HoverTarget::BrowserOpenExternal => Some(BrowserNavIcon::OpenExternal),
+        _ => None,
+    }
+}
+
+pub(crate) fn browser_nav_icon_text_glyph(_icon: BrowserNavIcon) -> Option<&'static str> {
+    None
+}
+
+pub(crate) fn browser_nav_raster_icon_asset(
+    icon: BrowserNavIcon,
+) -> Option<&'static crate::tide_renderer::RasterIconAsset> {
+    match icon {
+        BrowserNavIcon::StopLoading => Some(&FLATICON_CLOSE),
+        BrowserNavIcon::OpenExternal => Some(&FLATICON_OPEN_EXTERNAL),
+        _ => None,
+    }
+}
+
+pub(crate) fn region_header_anchor_pane_id(
+    app: &App,
+    visual_pane_rects: &[(u64, Rect)],
+    dock_region: bool,
+) -> Option<u64> {
+    let is_visible_in_region = |pane_id: u64| {
+        visual_pane_rects
+            .iter()
+            .any(|(id, _)| *id == pane_id && app.is_pane_in_dock(*id) == dock_region)
+    };
+
+    if dock_region {
+        if let Some(focused) = app
+            .focus
+            .focused
+            .filter(|pane_id| app.is_pane_in_dock(*pane_id) && is_visible_in_region(*pane_id))
+        {
+            return Some(focused);
+        }
+
+        if let Some(dock_focused) = app.focused_terminal_id().and_then(|terminal_id| {
+            app.panes.get(&terminal_id).and_then(|pane| match pane {
+                crate::pane::PaneKind::Terminal(tp) => tp.dock_focused,
+                _ => None,
+            })
+        }) {
+            if is_visible_in_region(dock_focused) {
+                return Some(dock_focused);
+            }
+        }
+
+        if let Some(zoomed) = app
+            .dock_zoomed_pane()
+            .filter(|pane_id| is_visible_in_region(*pane_id))
+        {
+            return Some(zoomed);
+        }
+    } else {
+        if let Some(focused) = app
+            .focus
+            .focused
+            .filter(|pane_id| !app.is_pane_in_dock(*pane_id) && is_visible_in_region(*pane_id))
+        {
+            return Some(focused);
+        }
+
+        if let Some(stage_focused) = app
+            .focus
+            .stage_focused
+            .filter(|pane_id| !app.is_pane_in_dock(*pane_id) && is_visible_in_region(*pane_id))
+        {
+            return Some(stage_focused);
+        }
+
+        if let Some(zoomed) = app
+            .focus
+            .zoomed_pane
+            .filter(|pane_id| is_visible_in_region(*pane_id))
+        {
+            return Some(zoomed);
+        }
+    }
+
+    let mut best: Option<(u64, Rect)> = None;
+    for &(id, rect) in visual_pane_rects {
+        if app.is_pane_in_dock(id) != dock_region {
+            continue;
+        }
+
+        let right = rect.x + rect.width;
+        let is_better = best.is_none_or(|(_, best_rect)| {
+            let best_right = best_rect.x + best_rect.width;
+            rect.y < best_rect.y - 1.0
+                || ((rect.y - best_rect.y).abs() <= 1.0 && right > best_right)
+        });
+        if is_better {
+            best = Some((id, rect));
+        }
+    }
+    best.map(|(id, _)| id)
 }
 
 /// Render dock background, pane borders/backgrounds, pane headers (tab bars),
@@ -169,6 +296,9 @@ pub(super) fn render_pane_chrome(
     // Collect Stage pane IDs for stacked tab bar (zoomed mode)
     let stage_pane_ids = app.layout.pane_ids();
     let show_stage_tabs = app.focus.zoomed_pane.is_some() && stage_pane_ids.len() > 1;
+    let stage_header_anchor = region_header_anchor_pane_id(app, visual_pane_rects, false);
+    let dock_header_anchor = region_header_anchor_pane_id(app, visual_pane_rects, true);
+    let stage_mode_stacked = app.focus.zoomed_pane.is_some();
 
     // Compute blink time for wrapped-agent alert animation across Stage terminals
     // and inactive Workspace indicators.
@@ -211,6 +341,13 @@ pub(super) fn render_pane_chrome(
                 blink_time,
                 scroll_off,
                 auto_fit_active_tab,
+                Some(
+                    header::surface_view_mode_header_action(
+                        header::HeaderSurfaceKind::TerminalContextSurface,
+                        dock_stacked,
+                    )
+                    .action,
+                ),
             );
             all_hit_zones.extend(tab_zones);
         } else if has_dock_tab_bar {
@@ -230,6 +367,17 @@ pub(super) fn render_pane_chrome(
                 blink_time,
                 scroll_off,
                 auto_fit_active_tab,
+                if dock_header_anchor == Some(id) {
+                    Some(
+                        header::surface_view_mode_header_action(
+                            header::HeaderSurfaceKind::TerminalContextSurface,
+                            dock_stacked,
+                        )
+                        .action,
+                    )
+                } else {
+                    None
+                },
             );
             all_hit_zones.extend(tab_zones);
         } else if has_stage_tab_bar {
@@ -247,6 +395,13 @@ pub(super) fn render_pane_chrome(
                 blink_time,
                 scroll_off,
                 auto_fit_active_tab,
+                Some(
+                    header::surface_view_mode_header_action(
+                        header::HeaderSurfaceKind::Stage,
+                        stage_mode_stacked,
+                    )
+                    .action,
+                ),
             );
             all_hit_zones.extend(tab_zones);
         } else {
@@ -256,6 +411,32 @@ pub(super) fn render_pane_chrome(
                 &app.gateway.detected_agents,
                 id,
             );
+            let surface_kind = if app.is_pane_in_dock(id) {
+                header::HeaderSurfaceKind::TerminalContextSurface
+            } else {
+                header::HeaderSurfaceKind::Stage
+            };
+            let surface_view_mode_action = match surface_kind {
+                header::HeaderSurfaceKind::Stage if stage_header_anchor == Some(id) => Some(
+                    header::surface_view_mode_header_action(
+                        header::HeaderSurfaceKind::Stage,
+                        stage_mode_stacked,
+                    )
+                    .action,
+                ),
+                header::HeaderSurfaceKind::TerminalContextSurface
+                    if dock_header_anchor == Some(id) =>
+                {
+                    Some(
+                        header::surface_view_mode_header_action(
+                            header::HeaderSurfaceKind::TerminalContextSurface,
+                            dock_stacked,
+                        )
+                        .action,
+                    )
+                }
+                _ => None,
+            };
             let zones = header::render_pane_header_inner(
                 id,
                 rect,
@@ -269,11 +450,8 @@ pub(super) fn render_pane_chrome(
                 agent_chrome_state,
                 blink_time,
                 agent_chrome_state.is_some(),
-                if app.is_pane_in_dock(id) {
-                    header::HeaderSurfaceKind::TerminalContextSurface
-                } else {
-                    header::HeaderSurfaceKind::Stage
-                },
+                surface_kind,
+                surface_view_mode_action,
             );
             all_hit_zones.extend(zones);
         }
@@ -288,6 +466,37 @@ pub(super) fn render_pane_chrome(
     }
 
     all_hit_zones
+}
+
+fn render_browser_nav_icon(
+    renderer: &mut crate::tide_renderer::WgpuRenderer,
+    icon: BrowserNavIcon,
+    button_rect: Rect,
+    color: crate::tide_core::Color,
+) {
+    if browser_nav_icon_text_glyph(icon).is_some() {
+        return;
+    }
+
+    let icon_w = 13.0_f32;
+    let icon_h = 13.0_f32;
+    let x = (button_rect.x + (button_rect.width - icon_w) / 2.0).round();
+    let y = (button_rect.y + (button_rect.height - icon_h) / 2.0).round();
+    let icon_rect = Rect::new(x, y, icon_w, icon_h);
+    if let Some(asset) = browser_nav_raster_icon_asset(icon) {
+        renderer.draw_chrome_raster_icon(asset, icon_rect, color);
+        return;
+    }
+
+    let secondary = crate::tide_core::Color::new(color.r, color.g, color.b, color.a * 0.56);
+    let svg = match icon {
+        BrowserNavIcon::Back => SVG_ICON_BROWSER_BACK,
+        BrowserNavIcon::Forward => SVG_ICON_BROWSER_FORWARD,
+        BrowserNavIcon::Refresh => SVG_ICON_BROWSER_REFRESH,
+        BrowserNavIcon::CopyUrl => SVG_ICON_COPY_URL,
+        BrowserNavIcon::StopLoading | BrowserNavIcon::OpenExternal => return,
+    };
+    renderer.draw_chrome_svg_icon(svg, icon_rect, svg_icon_palette(color, secondary));
 }
 
 /// Render browser navigation bar (back/forward/refresh + URL bar) inside a browser pane.
@@ -323,7 +532,7 @@ fn render_browser_nav_bar(
     };
     let draw_icon_button = |renderer: &mut crate::tide_renderer::WgpuRenderer,
                             x: f32,
-                            icon: &str,
+                            icon: BrowserNavIcon,
                             is_hovered: bool,
                             color: crate::tide_core::Color| {
         let rect = Rect::new(x, nav_y, cell_w * 2.0, nav_h);
@@ -334,19 +543,7 @@ fn render_browser_nav_bar(
                 3.0,
             );
         }
-        renderer.draw_chrome_text(
-            icon,
-            Vec2::new(x, text_y),
-            TextStyle {
-                foreground: color,
-                background: None,
-                bold: false,
-                dim: false,
-                italic: false,
-                underline: false,
-            },
-            rect,
-        );
+        render_browser_nav_icon(renderer, icon, rect, color);
     };
 
     // Back button
@@ -358,7 +555,7 @@ fn render_browser_nav_bar(
     draw_icon_button(
         renderer,
         cx,
-        "\u{2190}",
+        BrowserNavIcon::Back,
         hovered(crate::state::drag_types::HoverTarget::BrowserBack),
         back_color,
     );
@@ -373,14 +570,18 @@ fn render_browser_nav_bar(
     draw_icon_button(
         renderer,
         cx,
-        "\u{2192}",
+        BrowserNavIcon::Forward,
         hovered(crate::state::drag_types::HoverTarget::BrowserForward),
         fwd_color,
     );
     cx += cell_w * 2.0;
 
     // Refresh button
-    let refresh_icon = if bp.loading { "\u{00d7}" } else { "\u{21bb}" };
+    let refresh_icon = if bp.loading {
+        BrowserNavIcon::StopLoading
+    } else {
+        BrowserNavIcon::Refresh
+    };
     draw_icon_button(
         renderer,
         cx,
@@ -394,7 +595,7 @@ fn render_browser_nav_bar(
     draw_icon_button(
         renderer,
         cx,
-        "\u{2398}",
+        BrowserNavIcon::CopyUrl,
         hovered(crate::state::drag_types::HoverTarget::BrowserCopyUrl),
         p.tab_text_focused,
     );
@@ -404,7 +605,7 @@ fn render_browser_nav_bar(
     draw_icon_button(
         renderer,
         cx,
-        "\u{2197}",
+        BrowserNavIcon::OpenExternal,
         hovered(crate::state::drag_types::HoverTarget::BrowserOpenExternal),
         p.tab_text_focused,
     );

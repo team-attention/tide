@@ -958,6 +958,7 @@ impl ContextMenuState {
 pub(crate) enum ConfigSection {
     Keybindings,
     Worktree,
+    Appearance,
 }
 
 pub(crate) struct RecordingState {

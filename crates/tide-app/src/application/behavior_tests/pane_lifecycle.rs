@@ -37,8 +37,7 @@ fn titlebar_surface_button_center(app: &App, button: TitlebarSurfaceButton) -> V
     let cs = app.window.cached_cell_size;
     let btn_w = cs.width * TITLEBAR_ICON_SCALE + TITLEBAR_ICON_BUTTON_PAD_H * 2.0;
     let gear_x = logical.width - PANE_PADDING - btn_w;
-    let theme_x = gear_x - btn_w - TITLEBAR_BUTTON_GAP;
-    let integ_x = theme_x - btn_w - TITLEBAR_BUTTON_GAP;
+    let integ_x = gear_x - btn_w - TITLEBAR_BUTTON_GAP;
     let mut cur_right = integ_x - TITLEBAR_BUTTON_GAP;
     let index = match button {
         TitlebarSurfaceButton::FileTree => 0,

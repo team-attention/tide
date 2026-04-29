@@ -198,6 +198,50 @@ impl WgpuRenderer {
                 );
                 self.queue.write_buffer(&self.chrome_rect_ib, 0, ib_bytes);
             }
+            if !self.chrome_vector_vertices.is_empty() {
+                let vb_bytes = bytemuck::cast_slice(&self.chrome_vector_vertices);
+                Self::ensure_buffer_capacity(
+                    &self.device,
+                    &mut self.chrome_vector_vb,
+                    &mut self.chrome_vector_vb_capacity,
+                    vb_bytes.len(),
+                    vb_usage,
+                    "chrome_vector_vb",
+                );
+                self.queue.write_buffer(&self.chrome_vector_vb, 0, vb_bytes);
+                let ib_bytes = bytemuck::cast_slice(&self.chrome_vector_indices);
+                Self::ensure_buffer_capacity(
+                    &self.device,
+                    &mut self.chrome_vector_ib,
+                    &mut self.chrome_vector_ib_capacity,
+                    ib_bytes.len(),
+                    ib_usage,
+                    "chrome_vector_ib",
+                );
+                self.queue.write_buffer(&self.chrome_vector_ib, 0, ib_bytes);
+            }
+            if !self.chrome_icon_vertices.is_empty() {
+                let vb_bytes = bytemuck::cast_slice(&self.chrome_icon_vertices);
+                Self::ensure_buffer_capacity(
+                    &self.device,
+                    &mut self.chrome_icon_vb,
+                    &mut self.chrome_icon_vb_capacity,
+                    vb_bytes.len(),
+                    vb_usage,
+                    "chrome_icon_vb",
+                );
+                self.queue.write_buffer(&self.chrome_icon_vb, 0, vb_bytes);
+                let ib_bytes = bytemuck::cast_slice(&self.chrome_icon_indices);
+                Self::ensure_buffer_capacity(
+                    &self.device,
+                    &mut self.chrome_icon_ib,
+                    &mut self.chrome_icon_ib_capacity,
+                    ib_bytes.len(),
+                    ib_usage,
+                    "chrome_icon_ib",
+                );
+                self.queue.write_buffer(&self.chrome_icon_ib, 0, ib_bytes);
+            }
             if !self.chrome_glyph_vertices.is_empty() {
                 let vb_bytes = bytemuck::cast_slice(&self.chrome_glyph_vertices);
                 Self::ensure_buffer_capacity(
@@ -276,6 +320,7 @@ impl WgpuRenderer {
         // ── Upload top layer (every frame) ──
         let has_top_rects = !self.top_rect_vertices.is_empty();
         let has_top_rounded_rects = !self.top_rounded_rect_vertices.is_empty();
+        let has_top_icons = !self.top_icon_vertices.is_empty();
         let has_top_glyphs = !self.top_glyph_vertices.is_empty();
 
         if has_top_rects {
@@ -326,6 +371,29 @@ impl WgpuRenderer {
                 .write_buffer(&self.top_rounded_rect_ib, 0, ib_bytes);
         }
 
+        if has_top_icons {
+            let vb_bytes = bytemuck::cast_slice(&self.top_icon_vertices);
+            Self::ensure_buffer_capacity(
+                &self.device,
+                &mut self.top_icon_vb,
+                &mut self.top_icon_vb_capacity,
+                vb_bytes.len(),
+                vb_usage,
+                "top_icon_vb",
+            );
+            self.queue.write_buffer(&self.top_icon_vb, 0, vb_bytes);
+            let ib_bytes = bytemuck::cast_slice(&self.top_icon_indices);
+            Self::ensure_buffer_capacity(
+                &self.device,
+                &mut self.top_icon_ib,
+                &mut self.top_icon_ib_capacity,
+                ib_bytes.len(),
+                ib_usage,
+                "top_icon_ib",
+            );
+            self.queue.write_buffer(&self.top_icon_ib, 0, ib_bytes);
+        }
+
         if has_top_glyphs {
             let vb_bytes = bytemuck::cast_slice(&self.top_glyph_vertices);
             Self::ensure_buffer_capacity(
@@ -352,11 +420,14 @@ impl WgpuRenderer {
         let grid_bg_instance_count = self.grid_bg_instances.len() as u32;
         let grid_glyph_instance_count = self.grid_glyph_instances.len() as u32;
         let chrome_rect_count = self.chrome_rect_indices.len() as u32;
+        let chrome_vector_count = self.chrome_vector_indices.len() as u32;
+        let chrome_icon_count = self.chrome_icon_indices.len() as u32;
         let chrome_glyph_count = self.chrome_glyph_indices.len() as u32;
         let overlay_rect_count = self.rect_indices.len() as u32;
         let overlay_glyph_count = self.glyph_indices.len() as u32;
         let top_rect_count = self.top_rect_indices.len() as u32;
         let top_rounded_rect_count = self.top_rounded_rect_indices.len() as u32;
+        let top_icon_count = self.top_icon_indices.len() as u32;
         let top_glyph_count = self.top_glyph_indices.len() as u32;
 
         {
@@ -381,7 +452,7 @@ impl WgpuRenderer {
             });
 
             // Draw order: chrome rects → grid bg (instanced) → overlay rects →
-            //             chrome glyphs → grid glyphs (instanced) → overlay glyphs
+            //             chrome vectors → chrome glyphs → grid glyphs (instanced) → overlay glyphs
             // Chrome rects (pane backgrounds, panel backgrounds) are drawn first so that
             // grid cell backgrounds (e.g. INVERSE/standout for paste highlighting) show on top.
 
@@ -409,6 +480,33 @@ impl WgpuRenderer {
                 pass.set_vertex_buffer(0, self.rect_vb.slice(..));
                 pass.set_index_buffer(self.rect_ib.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..overlay_rect_count, 0, 0..1);
+            }
+
+            // Chrome vectors — SVG icon tessellation in cached chrome
+            if chrome_vector_count > 0 {
+                pass.set_pipeline(&self.rect_pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                pass.set_vertex_buffer(0, self.chrome_vector_vb.slice(..));
+                pass.set_index_buffer(self.chrome_vector_ib.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..chrome_vector_count, 0, 0..1);
+            }
+
+            // Chrome raster icons — exact PNG source assets tinted by chrome color
+            if chrome_icon_count > 0 {
+                pass.set_pipeline(&self.raster_icon_pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                pass.set_vertex_buffer(0, self.chrome_icon_vb.slice(..));
+                pass.set_index_buffer(self.chrome_icon_ib.slice(..), wgpu::IndexFormat::Uint32);
+                for draw in &self.chrome_icon_draws {
+                    if let Some(texture) = self.raster_icon_textures.get(draw.key) {
+                        pass.set_bind_group(1, &texture.bind_group, &[]);
+                        pass.draw_indexed(
+                            draw.index_start..draw.index_start + draw.index_count,
+                            0,
+                            0..1,
+                        );
+                    }
+                }
             }
 
             // Chrome glyphs — indexed (traditional)
@@ -459,6 +557,23 @@ impl WgpuRenderer {
                 pass.set_vertex_buffer(0, self.top_rect_vb.slice(..));
                 pass.set_index_buffer(self.top_rect_ib.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..top_rect_count, 0, 0..1);
+            }
+
+            if top_icon_count > 0 {
+                pass.set_pipeline(&self.raster_icon_pipeline);
+                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                pass.set_vertex_buffer(0, self.top_icon_vb.slice(..));
+                pass.set_index_buffer(self.top_icon_ib.slice(..), wgpu::IndexFormat::Uint32);
+                for draw in &self.top_icon_draws {
+                    if let Some(texture) = self.raster_icon_textures.get(draw.key) {
+                        pass.set_bind_group(1, &texture.bind_group, &[]);
+                        pass.draw_indexed(
+                            draw.index_start..draw.index_start + draw.index_count,
+                            0,
+                            0..1,
+                        );
+                    }
+                }
             }
 
             if top_glyph_count > 0 {

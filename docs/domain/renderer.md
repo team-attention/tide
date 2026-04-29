@@ -11,7 +11,7 @@ Owns the glyph atlas, pipelines, and per-pane grid caches.
 
 ```
 Layer 1: Grid         — Terminal/editor cell backgrounds + text glyphs (instanced)
-Layer 2: Chrome       — UI chrome: tab bars, borders, file tree, search bar (cached)
+Layer 2: Chrome       — UI chrome: tab bars, borders, FileTree View, search bar (cached)
 Layer 3: Overlay      — Per-frame: cursor, IME preedit, selection highlight (rebuilt every frame)
 Layer 4: Top          — Modals, search results, rounded rects (rebuilt every frame)
 ```

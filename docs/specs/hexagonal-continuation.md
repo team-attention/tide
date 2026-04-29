@@ -1,5 +1,7 @@
 # Spec: Hexagonal Architecture — Continuation Plan
 
+This is a historical continuation plan from the hexagonal migration. It is not the current product-surface reference; use `docs/glossary.md`, `docs/context-map.md`, and the active specs for current Tide terminology such as Workspace rail, Stage, Terminal Context Surface, and FileTree View.
+
 ## Current State (commit 0968fb9)
 
 tide-app has been restructured into hexagonal architecture. 332 tests pass, bundle builds and runs.

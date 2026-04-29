@@ -8,15 +8,79 @@ use crate::theme::*;
 use crate::App;
 use crate::AppCorePort;
 use crate::DockPort;
+use crate::PaneLifecyclePort;
 
 impl App {
+    fn apply_split_transition_animation(&mut self, now: std::time::Instant) {
+        let Some(animation) = self.split_transition_animation else {
+            return;
+        };
+        let ratio = animation.ratio_at(now);
+        match animation.scope {
+            crate::state::SplitTransitionScope::Stage => {
+                self.layout.set_split_ratio(animation.pane_id, ratio);
+            }
+            crate::state::SplitTransitionScope::TerminalContextSurface { terminal_id } => {
+                if let Some(PaneKind::Terminal(terminal)) = self.panes.get_mut(&terminal_id) {
+                    terminal
+                        .dock_layout
+                        .set_split_ratio(animation.pane_id, ratio);
+                }
+            }
+        }
+    }
+
+    fn finish_split_transition_animation_if_complete(&mut self, now: std::time::Instant) {
+        let Some(animation) = self.split_transition_animation else {
+            return;
+        };
+        if !animation.is_complete_at(now) {
+            return;
+        }
+
+        let pending_close = if animation.is_closing() {
+            self.pending_split_close.take()
+        } else {
+            None
+        };
+        self.split_transition_animation = None;
+
+        if let Some((_scope, pane_id)) = pending_close {
+            self.finishing_split_close = true;
+            if self.is_pane_in_dock(pane_id)
+                || !matches!(self.panes.get(&pane_id), Some(PaneKind::Terminal(_)))
+            {
+                self.force_close_editor_panel_tab(pane_id);
+                self.update_file_tree_cwd();
+            } else {
+                self.close_pane_final(pane_id);
+            }
+            self.finishing_split_close = false;
+        }
+    }
+
+    pub(crate) fn terminal_context_surface_layout_width(&self) -> f32 {
+        terminal_context_surface_width_for_layout(self.dock.dock_width, self.logical_size().width)
+            .max(TERMINAL_CONTEXT_SURFACE_MIN_WIDTH)
+    }
+
+    pub(crate) fn terminal_context_surface_rendered_width(&self, now: std::time::Instant) -> f32 {
+        if self.dock.visibility_animation.is_some() {
+            self.dock.rendered_width(now)
+        } else if self.dock.dock_open {
+            self.terminal_context_surface_layout_width()
+        } else {
+            0.0
+        }
+    }
+
     fn terminal_backend_resize_motion_active(&self) -> bool {
         self.router.is_dragging_border()
             || self.ft.border_dragging
             || self.ws.border_dragging
             || self.dock.dock_border_dragging
             || self.dock.dock_split_dragging
-            || self.surface_visibility_animation_active()
+            || self.layout_animation_active()
     }
 
     fn terminal_backend_resize_due_during_motion(&self, now: std::time::Instant) -> bool {
@@ -59,13 +123,13 @@ impl crate::application::ports::inward::LayoutPort for App {
             | Some(HoverTarget::PaneTabClose(_))
             | Some(HoverTarget::FileFinderItem(_))
             | Some(HoverTarget::TitlebarSettings)
-            | Some(HoverTarget::TitlebarTheme)
             | Some(HoverTarget::TitlebarIntegration)
             | Some(HoverTarget::TitlebarFileTree)
             | Some(HoverTarget::TitlebarWorkspace)
             | Some(HoverTarget::TitlebarDock)
             | Some(HoverTarget::PaneMaximize(_))
             | Some(HoverTarget::HeaderAction(_, _))
+            | Some(HoverTarget::LauncherChoice(_, _))
             | Some(HoverTarget::BrowserBack)
             | Some(HoverTarget::BrowserForward)
             | Some(HoverTarget::BrowserRefresh)
@@ -316,16 +380,15 @@ impl crate::application::ports::inward::LayoutPort for App {
         {
             self.cache.invalidate_chrome();
         }
+        self.apply_split_transition_animation(now);
+        self.finish_split_transition_animation_if_complete(now);
         let pane_ids = self.layout.pane_ids();
 
         let show_file_tree = self.ft.visible_for_layout();
         let show_ws_sidebar = self.ws.visible_for_layout();
 
-        // Clamp workspace sidebar width
+        // Clamp rendered Workspace rail width without rewriting the stored width.
         let max_ws = (logical.width - 200.0).max(80.0);
-        if show_ws_sidebar && self.ws.width > max_ws {
-            self.ws.width = max_ws;
-        }
         let ws_sidebar_width = if show_ws_sidebar {
             self.ws.rendered_width(now).min(max_ws)
         } else {
@@ -359,7 +422,10 @@ impl crate::application::ports::inward::LayoutPort for App {
         if show_file_tree && self.ft.visibility_animation.is_none() {
             self.ft.width = self.ft.width.max(FILE_TREE_MIN_WIDTH);
         }
-        if show_dock && self.dock.visibility_animation.is_none() {
+        if show_dock
+            && self.dock.visibility_animation.is_none()
+            && !terminal_context_surface_uses_default_width(self.dock.dock_width)
+        {
             self.dock.dock_width = self.dock.dock_width.max(TERMINAL_CONTEXT_SURFACE_MIN_WIDTH);
         }
 
@@ -383,11 +449,11 @@ impl crate::application::ports::inward::LayoutPort for App {
             0.0
         };
         let mut dock_width = if show_dock {
-            let rendered = self.dock.rendered_width(now).max(dock_min_width);
+            let rendered = self.terminal_context_surface_rendered_width(now);
             if show_file_tree {
                 (rendered - file_tree_width - PANE_GAP).max(dock_min_width)
             } else {
-                rendered
+                rendered.max(dock_min_width)
             }
         } else {
             0.0
@@ -474,7 +540,7 @@ impl crate::application::ports::inward::LayoutPort for App {
             || self.ws.border_dragging
             || self.dock.dock_border_dragging
             || self.dock.dock_split_dragging
-            || self.surface_visibility_animation_active();
+            || self.layout_animation_active();
         if !is_dragging {
             let cell_size = self.cell_size();
             if cell_size.width > 0.0 {

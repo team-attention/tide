@@ -606,10 +606,12 @@ pub(super) fn handle_config_page_key(
             if let Some(page) = ctx.modal_mut().config_page.as_mut() {
                 page.section = match page.section {
                     ConfigSection::Keybindings => ConfigSection::Worktree,
-                    ConfigSection::Worktree => ConfigSection::Keybindings,
+                    ConfigSection::Worktree => ConfigSection::Appearance,
+                    ConfigSection::Appearance => ConfigSection::Keybindings,
                 };
                 page.selected = 0;
                 page.scroll_offset = 0;
+                page.selected_field = 0;
             }
         }
         Key::Up | Key::Char('k') => {
@@ -629,6 +631,7 @@ pub(super) fn handle_config_page_key(
                                 page.selected_field -= 1;
                             }
                         }
+                        ConfigSection::Appearance => {}
                     }
                 }
             }
@@ -652,24 +655,35 @@ pub(super) fn handle_config_page_key(
                                 page.selected_field += 1;
                             }
                         }
+                        ConfigSection::Appearance => {}
                     }
                 }
             }
         }
         Key::Enter => {
-            if let Some(page) = ctx.modal_mut().config_page.as_mut() {
-                match page.section {
-                    ConfigSection::Keybindings => {
-                        page.recording = Some(crate::RecordingState {
-                            action_index: page.selected,
-                        });
-                    }
-                    ConfigSection::Worktree => match page.selected_field {
-                        0 => page.worktree_editing = true,
-                        1 => page.copy_files_editing = true,
-                        _ => {}
-                    },
+            let section = ctx.modal().config_page.as_ref().map(|page| page.section);
+            match section {
+                Some(ConfigSection::Appearance) => {
+                    ctx.handle_global_action(crate::tide_input::GlobalAction::ToggleTheme);
                 }
+                Some(ConfigSection::Keybindings | ConfigSection::Worktree) => {
+                    if let Some(page) = ctx.modal_mut().config_page.as_mut() {
+                        match page.section {
+                            ConfigSection::Keybindings => {
+                                page.recording = Some(crate::RecordingState {
+                                    action_index: page.selected,
+                                });
+                            }
+                            ConfigSection::Worktree => match page.selected_field {
+                                0 => page.worktree_editing = true,
+                                1 => page.copy_files_editing = true,
+                                _ => {}
+                            },
+                            ConfigSection::Appearance => {}
+                        }
+                    }
+                }
+                None => {}
             }
         }
         Key::Backspace => {
