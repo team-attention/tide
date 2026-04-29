@@ -84,6 +84,13 @@ impl crate::App {
             .filter(|&ws_idx| ws_idx != self.ws.active);
 
         let original_ws = self.ws.active;
+        let original_transient_state = need_swap.is_some().then(|| {
+            (
+                self.pane_rects.clone(),
+                self.visual_pane_rects.clone(),
+                self.dock.visibility_animation,
+            )
+        });
 
         // Swap to target workspace if needed (BR-1, BR-4: raw save/load, not switch_workspace)
         if let Some(target) = need_swap {
@@ -100,6 +107,14 @@ impl crate::App {
             self.save_active_workspace();
             self.ws.active = original_ws;
             self.load_active_workspace();
+            if let Some((pane_rects, visual_pane_rects, dock_visibility_animation)) =
+                original_transient_state
+            {
+                self.pane_rects = pane_rects;
+                self.visual_pane_rects = visual_pane_rects;
+                self.dock.visibility_animation = dock_visibility_animation;
+                self.sync_browser_webview_frames();
+            }
         }
 
         self.pending_cli_caller_pane = None;

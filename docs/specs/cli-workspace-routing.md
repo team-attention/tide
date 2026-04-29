@@ -54,6 +54,7 @@ Transparent to agents. No MCP protocol changes. No new env vars.
    - If different from active: `save_active_workspace()`, set `ws.active = target`, `load_active_workspace()`
    - Execute command
    - If swapped: `save_active_workspace()`, set `ws.active = original`, `load_active_workspace()`
+   - Restore active Workspace transient render state that is not part of raw Workspace storage, including active pane geometry and Terminal Context Surface `SurfaceVisibilityAnimation`
    - Use a scope guard or explicit finally block to guarantee restoration even on error
 4. **Notify cross-workspace**: `cli_notify` already handles cross-workspace notification dots by iterating stored workspaces. For the `has_pane` check that currently drops notifications for inactive workspace panes, use the new `find_workspace_for_pane` to detect the pane exists before processing.
 
@@ -102,8 +103,11 @@ Transparent to agents. No MCP protocol changes. No new env vars.
 - **Business Rules**:
   - BR-1: If `_caller_pane` belongs to a non-active Workspace, commands execute in that Workspace's context
   - BR-2: Active Workspace must be restored after cross-workspace command execution, even on error
-  - BR-4: Raw `save_active_workspace` / `load_active_workspace` is used (NOT `switch_workspace`) to avoid side effects like browser hide/show, IME commit, file tree update, and chrome invalidation
+  - BR-4: Raw `save_active_workspace` / `load_active_workspace` is used (NOT `switch_workspace`) to avoid side effects like IME commit, file tree update, `TIDE_WORKSPACE` updates, and broad chrome invalidation
   - BR-5: `_caller_pane` is stripped from params before reaching command handlers
+  - BR-8: Before any temporarily loaded Workspace is cold-stored during cross-Workspace routing, Browser Pane native views are hidden and Browser Pane first-responder state is cleared so `WKWebView` subviews cannot remain visible over the restored active Workspace
+  - BR-9: After a cross-Workspace Browser Pane command restores the user's active Workspace, active Workspace geometry is restored before Browser Pane native-view sync runs, so stale target-Workspace rects cannot drive visible native views
+  - BR-10: A `SurfaceVisibilityAnimation` started by a temporarily loaded Workspace MUST NOT leak into the restored active Workspace's Terminal Context Surface visibility
 
 ### UC-3: CLI command without `_caller_pane` (fallback to active Workspace)
 
@@ -168,7 +172,7 @@ Transparent to agents. No MCP protocol changes. No new env vars.
 ## Invariants
 
 1. **Active Workspace restoration**: After any cross-workspace CLI command execution, `ws.active` and all App fields (layout, panes, focus, dock state) MUST be restored to the user's active Workspace. This holds even if the command handler returns an error or panics.
-2. **No UI side effects on swap**: Cross-workspace context swap uses raw `save_active_workspace` / `load_active_workspace` only. It MUST NOT trigger IME commit, browser hide/show, file tree update, chrome invalidation, or `TIDE_WORKSPACE` env var update.
+2. **No broad UI side effects on swap**: Cross-workspace context swap uses raw `save_active_workspace` / `load_active_workspace` only. It MUST NOT trigger IME commit, file tree update, broad chrome invalidation, or `TIDE_WORKSPACE` env var update. It MAY hide native Browser Pane views before cold-storing a temporarily loaded Workspace because `WKWebView` is an AppKit subview outside the wgpu render tree.
 3. **Param transparency**: Command handlers never see `_caller_pane` in their params. The dispatch layer strips it before forwarding.
 4. **PaneId sync maintained**: The save/load swap preserves the PaneId sync invariant (every PaneId in SplitLayout exists in App.panes and vice versa) because it swaps the entire layout+panes set atomically.
 5. **Dock placement consistency**: A pane added to a Terminal's Dock via `add_pane_to_dock` MUST appear in that Terminal's `dock_layout`, not in a different Terminal's.
@@ -183,6 +187,9 @@ Transparent to agents. No MCP protocol changes. No new env vars.
 | UC-2 | BR-2 | `cli_command_in_inactive_workspace_restores_on_error` |
 | UC-2 | BR-4 | `cross_workspace_swap_uses_raw_save_load_not_switch` |
 | UC-2 | BR-5 | `caller_pane_stripped_before_handler_receives_params` |
+| UC-2 | BR-8 | `cross_workspace_swap_hides_inactive_browser_pane_native_view_before_restore` |
+| UC-2 | BR-9 | `cross_workspace_browser_pane_command_restores_active_workspace_geometry` |
+| UC-2 | BR-10 | `cross_workspace_context_pane_command_does_not_leak_terminal_context_surface_animation` |
 | UC-3 | BR-3 | `cli_command_without_caller_pane_uses_active_workspace` |
 | UC-4 | BR-3 | `cli_command_with_nonexistent_caller_pane_falls_back_to_active` |
 | UC-5 | BR-1 | `notify_for_inactive_workspace_pane_updates_agent_status` |

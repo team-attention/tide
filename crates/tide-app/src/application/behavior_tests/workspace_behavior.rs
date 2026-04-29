@@ -1,4 +1,5 @@
 // Spec: docs/specs/workspace.md
+use crate::pane::browser::BrowserPane;
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
@@ -189,6 +190,42 @@ fn switching_workspace_preserves_focus_area() {
     // Switch back to WS1 — should restore Dock
     app.switch_workspace(0);
     assert_eq!(app.focus.focus_area, FocusArea::Dock);
+}
+
+#[test]
+fn save_active_workspace_hides_browser_native_view_before_cold_storage() {
+    // UC-1 BR-14: save_active_workspace hides Browser Pane native views and
+    // clears Browser Pane first-responder state before cold storage.
+    let mut app = test_app();
+    let browser_id = 42u64;
+
+    app.ws.workspaces.push(Workspace {
+        name: "WS1".into(),
+        layout: SplitLayout::new(),
+        focused: None,
+        panes: HashMap::new(),
+    });
+    app.ws.active = 0;
+    app.panes.insert(
+        browser_id,
+        PaneKind::Browser(BrowserPane::with_url(
+            browser_id,
+            "https://example.com".to_string(),
+        )),
+    );
+    if let Some(PaneKind::Browser(browser)) = app.panes.get_mut(&browser_id) {
+        browser.is_first_responder = true;
+    }
+
+    app.save_active_workspace();
+
+    match app.ws.workspaces[0].panes.get(&browser_id) {
+        Some(PaneKind::Browser(browser)) => assert!(
+            !browser.is_first_responder,
+            "cold-stored Browser Pane must not retain native first responder state"
+        ),
+        _ => panic!("Browser Pane should be cold-stored in Workspace 0"),
+    }
 }
 
 // --- UC-3: ToggleWorkspaceSidebar ---

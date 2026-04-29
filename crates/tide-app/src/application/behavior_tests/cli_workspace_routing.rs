@@ -3,10 +3,11 @@
 use serde_json::json;
 use std::collections::HashMap;
 
+use crate::pane::browser::BrowserPane;
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
 use crate::state::FocusArea;
-use crate::tide_core::LayoutEngine;
+use crate::tide_core::{LayoutEngine, Rect};
 use crate::tide_layout::SplitLayout;
 use crate::update::workspace_infra_service::Workspace;
 use crate::App;
@@ -60,6 +61,55 @@ fn app_with_two_workspaces() -> App {
     app.save_active_workspace();
 
     // Load WS0 back as active
+    app.ws.active = 0;
+    app.load_active_workspace();
+    app
+}
+
+/// Build an App with two Workspaces, each containing one direct Stage Terminal.
+/// WS0 (active) has Terminal Pane 100, WS1 (inactive) has Terminal Pane 200.
+fn app_with_two_terminal_workspaces() -> App {
+    let mut app = test_app();
+
+    app.ws.workspaces.push(Workspace {
+        name: "WS0".into(),
+        layout: SplitLayout::new(),
+        focused: None,
+        panes: HashMap::new(),
+    });
+    app.ws.workspaces.push(Workspace {
+        name: "WS1".into(),
+        layout: SplitLayout::new(),
+        focused: None,
+        panes: HashMap::new(),
+    });
+
+    let (layout0, t0) = SplitLayout::with_initial_pane_id(100);
+    app.ws.active = 0;
+    app.layout = layout0;
+    app.panes = HashMap::new();
+    app.panes.insert(
+        t0,
+        PaneKind::Terminal(TerminalPane::with_cwd(t0, 80, 24, None, true).unwrap()),
+    );
+    app.focus.focused = Some(t0);
+    app.focus.stage_focused = Some(t0);
+    app.focus.focus_area = FocusArea::Stage;
+    app.save_active_workspace();
+
+    let (layout1, t1) = SplitLayout::with_initial_pane_id(200);
+    app.ws.active = 1;
+    app.layout = layout1;
+    app.panes = HashMap::new();
+    app.panes.insert(
+        t1,
+        PaneKind::Terminal(TerminalPane::with_cwd(t1, 80, 24, None, true).unwrap()),
+    );
+    app.focus.focused = Some(t1);
+    app.focus.stage_focused = Some(t1);
+    app.focus.focus_area = FocusArea::Stage;
+    app.save_active_workspace();
+
     app.ws.active = 0;
     app.load_active_workspace();
     app
@@ -212,6 +262,128 @@ fn caller_pane_stripped_before_handler_receives_params() {
     assert!(
         result.is_ok(),
         "open-editor should succeed when _caller_pane is stripped"
+    );
+}
+
+#[test]
+fn cross_workspace_swap_hides_inactive_browser_pane_native_view_before_restore() {
+    // UC-2 BR-8: Before a temporarily loaded Workspace is cold-stored, Browser Pane
+    // native views are hidden and Browser Pane first-responder state is cleared.
+    let mut app = app_with_two_terminal_workspaces();
+    let inactive_terminal_id = 200u64;
+    let browser_id = 201u64;
+
+    app.ws.workspaces[1].panes.insert(
+        browser_id,
+        PaneKind::Browser(BrowserPane::with_url(
+            browser_id,
+            "https://example.com".to_string(),
+        )),
+    );
+    match app.ws.workspaces[1].panes.get_mut(&browser_id) {
+        Some(PaneKind::Browser(browser)) => {
+            browser.is_first_responder = true;
+        }
+        _ => panic!("inactive Workspace should contain Browser Pane {browser_id}"),
+    }
+
+    let _result = app
+        .handle_cli_command("list-panes", json!({"_caller_pane": inactive_terminal_id}))
+        .unwrap();
+
+    assert_eq!(app.ws.active, 0, "active Workspace must be restored");
+    match app.ws.workspaces[1].panes.get(&browser_id) {
+        Some(PaneKind::Browser(browser)) => assert!(
+            !browser.is_first_responder,
+            "inactive Browser Pane must not retain native first responder state"
+        ),
+        _ => panic!("inactive Workspace should still contain Browser Pane {browser_id}"),
+    }
+}
+
+#[test]
+fn cross_workspace_browser_pane_command_restores_active_workspace_geometry() {
+    // UC-2 BR-9: A Browser Pane command in an inactive Workspace must not leave
+    // target-Workspace geometry driving the restored active Workspace.
+    let mut app = app_with_two_terminal_workspaces();
+    let inactive_terminal_id = 200u64;
+    let original_geometry = vec![(100u64, Rect::new(12.0, 24.0, 320.0, 240.0))];
+    app.pane_rects = original_geometry.clone();
+    app.visual_pane_rects = original_geometry.clone();
+
+    let _result = app
+        .handle_cli_command(
+            "open-browser",
+            json!({
+                "_caller_pane": inactive_terminal_id,
+                "url": "https://example.com"
+            }),
+        )
+        .unwrap();
+
+    assert_eq!(app.ws.active, 0, "active Workspace must be restored");
+    assert_eq!(
+        app.pane_rects, original_geometry,
+        "active Workspace pane geometry must be restored"
+    );
+    assert_eq!(
+        app.visual_pane_rects, original_geometry,
+        "active Workspace visual geometry must be restored before Browser Pane sync"
+    );
+    assert!(
+        !app.panes
+            .values()
+            .any(|pane| matches!(pane, PaneKind::Browser(_))),
+        "inactive Browser Pane must not leak into active Workspace panes"
+    );
+    assert!(
+        app.ws.workspaces[1]
+            .panes
+            .values()
+            .any(|pane| matches!(pane, PaneKind::Browser(_))),
+        "Browser Pane should be stored in the caller Workspace"
+    );
+}
+
+#[test]
+fn cross_workspace_context_pane_command_does_not_leak_terminal_context_surface_animation() {
+    // UC-2 BR-10: SurfaceVisibilityAnimation started by a temporarily loaded
+    // Workspace must not leak into the restored active Workspace.
+    let mut app = app_with_two_terminal_workspaces();
+    let inactive_terminal_id = 200u64;
+
+    app.dock.dock_open = false;
+    app.dock.visibility_animation = None;
+    assert!(
+        !app.dock.visible_for_layout(),
+        "precondition: active Workspace Terminal Context Surface is hidden"
+    );
+
+    let _result = app
+        .handle_cli_command(
+            "open-browser",
+            json!({
+                "_caller_pane": inactive_terminal_id,
+                "url": "https://example.com"
+            }),
+        )
+        .unwrap();
+
+    assert_eq!(app.ws.active, 0, "active Workspace must be restored");
+    assert!(
+        app.dock.visibility_animation.is_none(),
+        "inactive Workspace Terminal Context Surface animation must not leak"
+    );
+    assert!(
+        !app.dock.visible_for_layout(),
+        "restored active Workspace Terminal Context Surface must stay hidden"
+    );
+    assert!(
+        app.ws.workspaces[1]
+            .panes
+            .values()
+            .any(|pane| matches!(pane, PaneKind::Browser(_))),
+        "Browser Pane should be stored in the caller Workspace"
     );
 }
 

@@ -213,6 +213,10 @@ impl App {
         if self.ws.workspaces.is_empty() {
             return;
         }
+        // Browser Pane WebViews are native NSViews outside the wgpu render tree.
+        // Hide them before cold-storing this Workspace so they cannot remain
+        // visually above another Workspace.
+        self.hide_active_browser_webviews_for_workspace_storage();
         // UC-3 BR-9: Strip transient capability state from Browser Panes
         // before cold-storing so downloads, permissions, certificates, etc.
         // do not survive workspace transitions.
@@ -256,6 +260,15 @@ impl App {
         std::mem::swap(&mut self.context_artifacts, artifacts);
 
         self.refresh_workspace_agent_notification(self.ws.active);
+    }
+
+    fn hide_active_browser_webviews_for_workspace_storage(&mut self) {
+        for pane in self.panes.values_mut() {
+            if let PaneKind::Browser(bp) = pane {
+                bp.set_visible(false);
+                bp.is_first_responder = false;
+            }
+        }
     }
 
     /// Load the active workspace's state from the workspaces vec into App fields.
@@ -345,14 +358,6 @@ impl App {
             self.ime.clear_composition();
             self.ime.last_target = None;
         }
-        // Hide all browser WebViews in the current workspace before saving,
-        // since native NSViews persist across workspace swaps.
-        for pane in self.panes.values_mut() {
-            if let PaneKind::Browser(bp) = pane {
-                bp.set_visible(false);
-                bp.is_first_responder = false;
-            }
-        }
         let previous_workspace = self.ws.active;
         self.save_active_workspace();
         self.ws.active = idx;
@@ -403,14 +408,6 @@ impl App {
 
     /// Create a new workspace with a single terminal pane and switch to it.
     pub(crate) fn new_workspace(&mut self) {
-        // Hide browser WebViews from current workspace
-        for pane in self.panes.values_mut() {
-            if let PaneKind::Browser(bp) = pane {
-                bp.set_visible(false);
-                bp.is_first_responder = false;
-            }
-        }
-
         // If this App has not been seeded with an initial Workspace yet,
         // preserve the current live state as Workspace 0 before creating a new one.
         if self.ws.workspaces.is_empty() {

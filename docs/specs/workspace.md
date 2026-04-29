@@ -17,6 +17,12 @@ Inactive Workspaces are cold-stored in `WorkspaceManager.workspaces[i]`.
 
 Switching = **save current → update index → load target**.
 
+`save_active_workspace()` is the cold-storage boundary for the active Workspace. It hides
+Browser Pane native `WKWebView` subviews and clears Browser Pane first-responder state
+before moving panes into `WorkspaceManager`, because inactive Workspace Browser Pane
+native views live outside the wgpu render tree and otherwise can remain visually above
+the restored active Workspace.
+
 ## Use Cases
 
 ### UC-1: SwitchWorkspace
@@ -43,6 +49,7 @@ Switching = **save current → update index → load target**.
   - BR-10: Switching preserves each Workspace's ViewMode (Split/Stacked)
   - BR-11: Switching preserves each Workspace's zoomed_pane
   - BR-12: Switching preserves each Workspace's FocusArea
+  - BR-14: `save_active_workspace()` hides Browser Pane native views and clears Browser Pane first-responder state before cold storage
 
 ### UC-2: CloseWorkspace
 
@@ -93,6 +100,7 @@ Switching = **save current → update index → load target**.
 3. **Full invalidation on switch**: All pane_generations cleared to force complete redraw
 4. **IME proxy sync**: After load, IME proxies must be recreated for new panes
 5. **Per-workspace view state**: ViewMode, zoomed_pane, and FocusArea are per-Workspace state stored in WorkspaceExtras
+6. **Inactive Browser native views hidden**: A Browser Pane stored in an inactive Workspace must not keep a visible native `WKWebView` or native first-responder state.
 
 ## Tests
 
@@ -110,6 +118,7 @@ Switching = **save current → update index → load target**.
 | UC-1: SwitchWorkspace | BR-10 | `switching_workspace_preserves_view_mode` |
 | UC-1: SwitchWorkspace | BR-11 | `switching_workspace_preserves_zoomed_pane` |
 | UC-1: SwitchWorkspace | BR-12 | `switching_workspace_preserves_focus_area` |
+| UC-1: SwitchWorkspace | BR-14 | `save_active_workspace_hides_browser_native_view_before_cold_storage` |
 
 ## Location
 
