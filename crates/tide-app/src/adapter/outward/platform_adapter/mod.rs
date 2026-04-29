@@ -228,7 +228,10 @@ pub type WakeCallback = std::sync::Arc<dyn Fn() + Send + Sync + 'static>;
 #[derive(Debug)]
 pub enum WindowCommand {
     RequestRedraw,
-    CreateWindow,
+    CreateWindow {
+        width: f64,
+        height: f64,
+    },
     CloseWindow,
     ShowWindow,
     SetFullscreen(bool),
@@ -313,7 +316,7 @@ pub fn show_close_confirm() -> bool {
 pub fn execute_window_command(window: &dyn PlatformWindow, cmd: WindowCommand) {
     match cmd {
         WindowCommand::RequestRedraw => window.request_redraw(),
-        WindowCommand::CreateWindow => {}
+        WindowCommand::CreateWindow { .. } => {}
         WindowCommand::CloseWindow => window.close_window(),
         WindowCommand::ShowWindow => window.show_window(),
         WindowCommand::SetFullscreen(fs) => window.set_fullscreen(fs),
@@ -415,8 +418,8 @@ impl WindowProxy {
         self.send_and_wake(WindowCommand::RequestRedraw);
     }
 
-    pub fn create_window(&self) {
-        self.send_and_wake(WindowCommand::CreateWindow);
+    pub fn create_window(&self, width: f64, height: f64) {
+        self.send_and_wake(WindowCommand::CreateWindow { width, height });
     }
 
     pub fn close_window(&self) {

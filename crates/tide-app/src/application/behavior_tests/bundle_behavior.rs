@@ -57,7 +57,7 @@ fn new_window_global_action_queues_create_window_without_process_launch() {
     assert_eq!(launched_windows.get(), 0);
     assert!(matches!(
         app.pending_platform_commands.last(),
-        Some(WindowCommand::CreateWindow)
+        Some(WindowCommand::CreateWindow { .. })
     ));
 }
 

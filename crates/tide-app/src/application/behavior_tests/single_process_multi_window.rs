@@ -50,7 +50,7 @@ impl ProcessPort for RecordingProcess {
 
 #[test]
 fn cmd_n_creates_new_tide_window_in_same_process() {
-    // UC-1 BR-1, BR-2, BR-3: NewWindow stays the action, requests CreateWindow, and does not launch a process.
+    // UC-1 BR-1, BR-2, BR-3, BR-6: NewWindow stays the action, requests CreateWindow with source size, and does not launch a process.
     let mut app = test_app();
     let launched_windows = Rc::new(Cell::new(0));
     app.ports.process = Box::new(RecordingProcess {
@@ -62,7 +62,24 @@ fn cmd_n_creates_new_tide_window_in_same_process() {
     assert_eq!(launched_windows.get(), 0);
     assert!(matches!(
         app.pending_platform_commands.last(),
-        Some(WindowCommand::CreateWindow)
+        Some(WindowCommand::CreateWindow { .. })
+    ));
+}
+
+#[test]
+fn cmd_n_create_window_command_uses_source_tide_window_logical_size() {
+    // UC-1 BR-6: CreateWindow carries the triggering Tide Window logical size.
+    let mut app = test_app();
+    app.window.window_size = (1512, 982);
+    app.window.scale_factor = 2.0;
+
+    app.handle_global_action(GlobalAction::NewWindow);
+
+    assert!(matches!(
+        app.pending_platform_commands.last(),
+        Some(WindowCommand::CreateWindow { width, height })
+            if (*width - 756.0).abs() < f64::EPSILON
+                && (*height - 491.0).abs() < f64::EPSILON
     ));
 }
 

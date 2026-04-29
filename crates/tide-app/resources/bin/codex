@@ -14,6 +14,8 @@ REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|
 REAL_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 TIDE_CODEX_HOME="$(mktemp -d /tmp/tide-codex-home.XXXXXX)"
 HOOKS_FILE="$TIDE_CODEX_HOME/hooks.json"
+TIDE_SKILLS_DIR="$TIDE_CODEX_HOME/skills"
+TIDE_SKILL_DIR="$TIDE_SKILLS_DIR/tide"
 
 # Wrapper-owned OSC 9 helper used only as a fallback when `tide notify` is unavailable.
 tide_osc9() { printf '\033]9;%s\007' "$1"; }
@@ -34,9 +36,42 @@ if [ -d "$REAL_CODEX_HOME" ]; then
     [ -e "$entry" ] || continue
     base="$(basename "$entry")"
     [ "$base" = "hooks.json" ] && continue
+    [ "$base" = "skills" ] && continue
     ln -s "$entry" "$TIDE_CODEX_HOME/$base"
   done
 fi
+
+mkdir -p "$TIDE_SKILLS_DIR"
+if [ -d "$REAL_CODEX_HOME/skills" ]; then
+  for entry in "$REAL_CODEX_HOME/skills"/* "$REAL_CODEX_HOME/skills"/.[!.]* "$REAL_CODEX_HOME/skills"/..?*; do
+    [ -e "$entry" ] || continue
+    base="$(basename "$entry")"
+    [ "$base" = "tide" ] && continue
+    ln -s "$entry" "$TIDE_SKILLS_DIR/$base"
+  done
+fi
+
+mkdir -p "$TIDE_SKILL_DIR"
+cat > "$TIDE_SKILL_DIR/SKILL.md" <<'TIDE_SKILL_EOF'
+---
+name: tide
+description: Use when Codex is running inside Tide and the user asks to open, show, view, browse, inspect, preview, navigate to, or display a file, URL, webpage, local server, Pane, or Tide surface.
+---
+
+# Tide
+
+You are running inside Tide, a terminal-centered task Workspace.
+
+Before using macOS `open` for a file, URL, webpage, preview, local server, or "show/view/open this" request, search Tide tools with `tool_search` using task terms such as `tide open browser editor observe workspace`.
+
+Prefer `mcp__tide__` tools when they are available:
+
+- Use `tide_open_browser` for URLs, webpages, local previews, and browser inspection inside a Tide Browser Pane.
+- Use `tide_open_editor` for existing source or text files inside a Tide Editor Pane.
+- Use `tide_observe_workspace` when you need current Stage, Terminal Context Surface, Pane geometry, or focus.
+
+Use macOS `open` only when the user explicitly asks for the default app or external browser, or when Tide tools cannot represent the target.
+TIDE_SKILL_EOF
 
 if [ -f "$REAL_CODEX_HOME/hooks.json" ] && command -v python3 >/dev/null 2>&1; then
   TIDE_RUNNING_HOOK_COMMAND="$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent codex" \

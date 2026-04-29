@@ -63,6 +63,15 @@ fn pane_entry<'a>(observed: &'a serde_json::Value, pane_id: PaneId) -> &'a serde
         .expect("pane entry should be reported")
 }
 
+fn mcp_tool_description(tools: &[serde_json::Value], name: &str) -> String {
+    tools
+        .iter()
+        .find(|tool| tool.get("name").and_then(|value| value.as_str()) == Some(name))
+        .and_then(|tool| tool.get("description").and_then(|value| value.as_str()))
+        .unwrap_or_default()
+        .to_string()
+}
+
 // --- UC-1: ObserveTideWorkspace ---
 
 #[test]
@@ -313,4 +322,50 @@ fn mcp_instructions_route_browsers_provider_neutrally() {
     assert!(tools.iter().any(|tool| {
         tool.get("name").and_then(|value| value.as_str()) == Some("tide_browser_operation")
     }));
+}
+
+// --- UC-5: OrientWrappedAgentToTideStructure ---
+
+#[test]
+fn mcp_instructions_describe_tide_structure_and_capabilities() {
+    // UC-5 BR-1 / BR-2 / BR-3 / BR-4: MCP startup instructions orient Wrapped Agents to Tide structure and keep exact intent boundaries in tool descriptions.
+    let initialize = mcp::mcp_initialize_for_test();
+    let instructions = initialize["result"]["instructions"]
+        .as_str()
+        .unwrap_or_default();
+
+    assert!(instructions.contains("terminal-centered task Workspace"));
+    assert!(instructions.contains("Stage is the primary live Terminal area"));
+    assert!(instructions.contains("Terminal Context Surface is the right-side support surface"));
+    assert!(instructions.contains("FileTree View is a separate filesystem view, not a Pane"));
+    assert!(instructions.contains("Workspace rail is task navigation"));
+    assert!(instructions.contains("Pane kinds are Terminal, Editor, Diff, Browser, and Launcher"));
+    assert!(instructions.contains("observe surfaces and Pane geometry"));
+    assert!(instructions.contains("open Editor and Browser Panes"));
+    assert!(instructions.contains("send keys to the Terminal"));
+    assert!(instructions.contains("manage Context Artifacts"));
+    assert!(
+        instructions.contains("Tool descriptions define the exact intent, placement, and limits")
+    );
+}
+
+#[test]
+fn open_tool_descriptions_distinguish_content_from_surface_intent() {
+    // UC-5 BR-5 / BR-6: open tools describe content-opening intent instead of treating every open request as Editor or Browser creation.
+    let tools = mcp::mcp_tool_definitions();
+
+    let editor = mcp_tool_description(&tools, "tide_open_editor");
+    assert!(editor.contains("Open an existing file path"));
+    assert!(editor.contains("Tide Editor Pane"));
+    assert!(editor.contains("active Terminal Context Surface when possible"));
+    assert!(editor.contains("source or text files the user wants to read or edit"));
+    assert!(editor.contains("Do not use this to merely reveal"));
+    assert!(editor.contains("create an empty workspace area"));
+
+    let browser = mcp_tool_description(&tools, "tide_open_browser");
+    assert!(browser.contains("Open a URL or empty browser"));
+    assert!(browser.contains("Tide Browser Pane"));
+    assert!(browser.contains("active Terminal Context Surface when possible"));
+    assert!(browser.contains("links, pages, previews, and web inspection inside Tide"));
+    assert!(browser.contains("external/default browser"));
 }

@@ -1237,8 +1237,8 @@ impl App {
                             window.focus_ime_proxy(target);
                         }
                     }
-                    WindowCommand::CreateWindow => {
-                        window.create_window();
+                    WindowCommand::CreateWindow { width, height } => {
+                        window.create_window(width, height);
                     }
                     WindowCommand::CloseWindow => {
                         window.close_window();

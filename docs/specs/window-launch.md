@@ -12,6 +12,7 @@
 ### To-Be
 
 - `GlobalAction::NewWindow` queues `WindowCommand::CreateWindow` so Tide creates another `Tide Window` inside the current `Tide Instance`.
+- `WindowCommand::CreateWindow` carries the triggering `Tide Window` logical size, so `Cmd+N` opens the new `Tide Window` at the same content size as the source `Tide Window`.
 - The legacy `SystemProcess::launch_new_tide_window` bundle path is not part of the `Cmd+N` flow.
 - The bundled app path must allow multiple Tide instances, and the macOS startup path must create a new Tide `Window` instead of reusing an already-running Tide instance during ordinary launch.
 - Notification activation must continue to encode the owning `Tide Instance` PID plus `TideWindowId` and target `PaneId`, relay to the owning `Tide Instance` when needed, and reveal the owning `Tide Window`.
@@ -20,7 +21,7 @@
 
 1. Add the `Tide Window` term to the glossary so the contract uses one term for native app windows.
 2. Add behavior tests for `GlobalAction::NewWindow` in-process `Tide Window` creation and the bundled launch contract.
-3. Route `GlobalAction::NewWindow` through addressed platform commands instead of through `ProcessPort`.
+3. Route `GlobalAction::NewWindow` through addressed platform commands instead of through `ProcessPort`, and include the source `Tide Window` logical size in the create command.
 4. Remove the Launch Services single-instance bundle metadata and the macOS startup reuse path so a new Tide launch can create another Tide `Window`.
 5. Keep the existing notification activation relay coverage so a notification still focuses the owning Tide `Window`.
 
@@ -43,12 +44,13 @@
 - **Precondition**: A Tide `Window` is already running
 - **Flow**:
   1. Tide resolves `Cmd+N` to `GlobalAction::NewWindow`
-  2. `action_service` queues `WindowCommand::CreateWindow`
+  2. `action_service` queues `WindowCommand::CreateWindow` with the triggering `Tide Window` logical size
   3. The main thread creates a new native `Tide Window` in the same `Tide Instance`
 - **Postcondition**: Tide creates another `Tide Window` without launching another process
 - **Business Rules**:
   - BR-1: `GlobalAction::NewWindow` must queue `WindowCommand::CreateWindow`
   - BR-2: `GlobalAction::NewWindow` must not call `ProcessPort::launch_new_tide_window`
+  - BR-10: `WindowCommand::CreateWindow` must carry the triggering `Tide Window` logical size
 
 ### UC-2: LaunchAnotherBundledTideWindow
 
@@ -95,6 +97,7 @@
 |----|----|---------------|
 | UC-1 | BR-1, BR-2 | `new_window_global_action_queues_create_window_without_process_launch` |
 | UC-1 | BR-2 | `cmd_n_creates_new_tide_window_in_same_process` |
+| UC-1 | BR-10 | `cmd_n_create_window_command_uses_source_tide_window_logical_size` |
 | UC-2 | BR-3 | `source_tide_info_plist_does_not_prohibit_multiple_instances` |
 | UC-2 | BR-4 | `local_bundle_build_script_does_not_stamp_lsmultipleinstancesprohibited_before_signing` |
 | UC-2 | BR-5 | `macos_launch_path_does_not_reuse_an_existing_tide_instance_before_creating_a_window` |

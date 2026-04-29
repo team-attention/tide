@@ -1188,8 +1188,13 @@ impl crate::application::ports::inward::ActionPort for App {
                 self.apply_font_size(14.0);
             }
             GlobalAction::NewWindow => {
-                self.pending_platform_commands
-                    .push(crate::tide_platform::WindowCommand::CreateWindow);
+                let size = self.window.logical_size();
+                self.pending_platform_commands.push(
+                    crate::tide_platform::WindowCommand::CreateWindow {
+                        width: size.width as f64,
+                        height: size.height as f64,
+                    },
+                );
             }
             GlobalAction::NewFile => {
                 self.new_editor_pane();

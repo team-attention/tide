@@ -32,6 +32,7 @@ All paths below are relative to `crates/tide-app/src/`.
 |------|------|----------|-------------|
 | **Rect** | `Rect` | `domain/core_types.rs` | `{x, y, width, height}` — a positioned rectangle. |
 | **Size** | `Size` | `domain/core_types.rs` | `{width, height}` — dimensions without position. |
+| **WindowConfig** | `WindowConfig` | `adapter/outward/platform_adapter/mod.rs` | Native creation options for a `Tide Window`, including launch size, minimum size, title, and titlebar behavior. |
 | **Key** | `Key` | `domain/core_types.rs` | A keyboard key (`Char('a')`, `Enter`, `F(1)`, etc.). |
 | **Modifiers** | `Modifiers` | `domain/core_types.rs` | `{shift, ctrl, alt, meta}` — modifier key state. |
 | **Hotkey** | `Hotkey` | `domain/input/mod.rs` | A `Key` + `Modifiers` combination that maps to a `GlobalAction`. |
@@ -119,6 +120,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **External Browser Runtime** | concept | Any non-Tide browser automation surface, including provider-specific browser tools, Playwright, browser-use, Computer Use, or a regular browser. Used only after explicit user request or Tide Browser Pane unsupported fallback. |
 | **Browser Runtime Router** | concept | The provider-neutral wrapper policy that routes browser work to Tide Browser Pane Runtime by default and records explicit fallback to an External Browser Runtime when required. |
 | **Tool Selection Guidance** | concept | Structured guidance returned by Tide MCP Runtime observations that tells a Wrapped Agent which Tide tool should normally be selected next, such as resizing a Layout Target before Browser Pane content actions when Browser visual fit is poor. |
+| **Tide Tool Discovery Context** | concept | Temporary startup guidance injected by an Agent Wrapper through each Wrapped Agent's native context surface. It makes Tide structure and Tide MCP Runtime discovery visible before the agent falls back to macOS default-app commands. |
 | **Agent Browser Control Mode** | concept | Wrapper-managed visual control state for a Browser Pane while a `Wrapped Agent` is actively driving it. Entered only through an authorized wrapper-managed `Caller Pane`; ordinary Gateway/MCP callers never gain wrapper-managed privileges. |
 | **Browser Operation** | concept | A bounded user-requested browser task in Tide Browser Pane Runtime. A Wrapped Agent starts it before human-like Browser Pane work, keeps Agent Browser Control Mode and Browser Automation Cursor visible while it operates, and finishes it after the final observation. |
 | **GitSwitcher** | `GitSwitcherState` | Popup state that lists git worktrees for a Terminal Pane, tracks filtering and selection, and marks the current worktree row. |

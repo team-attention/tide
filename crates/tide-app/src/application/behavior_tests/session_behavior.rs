@@ -143,7 +143,7 @@ fn fresh_workspace_default_surface_shows_workspace_rail_and_terminal_only() {
 
 #[test]
 fn restore_preferences_starts_from_workspace_rail_and_terminal_only() {
-    // UC-3 BR-8: restore_preferences preserves dimensions and theme but resets launch surface visibility.
+    // UC-3 BR-8: restore_preferences preserves side-surface widths and theme but resets launch surface visibility.
     let session = Session {
         layout: SessionLayout::Leaf {
             pane_id: 1,
@@ -213,4 +213,31 @@ fn restore_preferences_applies_light_mode_to_prespawned_terminal() {
         !terminal.backend.dark_mode_for_test(),
         "pre-spawned Terminal backend should match restored light mode"
     );
+}
+
+#[test]
+fn launch_window_config_uses_default_size_despite_saved_session_dimensions() {
+    // UC-3 BR-10: Ordinary launch ignores saved native Tide Window dimensions and uses default WindowConfig size.
+    let session = Session {
+        layout: SessionLayout::Leaf {
+            pane_id: 1,
+            cwd: None,
+        },
+        focused_pane_id: Some(1),
+        show_file_tree: true,
+        file_tree_width: 312.0,
+        dark_mode: false,
+        window_width: 1560.0,
+        window_height: 909.0,
+        sidebar_side: "right".to_string(),
+        sidebar_outer: true,
+        ws_sidebar_width: 96.0,
+        show_workspace_sidebar: false,
+        dock_open: true,
+    };
+
+    let config = crate::launch_window_config(Some(&session));
+
+    assert_eq!(config.width, 960.0);
+    assert_eq!(config.height, 640.0);
 }

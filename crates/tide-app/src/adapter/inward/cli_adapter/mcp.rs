@@ -160,6 +160,14 @@ fn mcp_initialize(id: serde_json::Value) -> serde_json::Value {
 fn mcp_instructions() -> &'static str {
     concat!(
         "Tide MCP Runtime: Codex, Claude, Gemini, and other Wrapped Agents use the same provider-neutral contract. ",
+        "You are running inside Tide, a terminal-centered task Workspace. ",
+        "Tide structure: Stage is the primary live Terminal area. ",
+        "Terminal Context Surface is the right-side support surface owned by the active Stage Terminal for related Panes. ",
+        "FileTree View is a separate filesystem view, not a Pane. ",
+        "Workspace rail is task navigation. ",
+        "Pane kinds are Terminal, Editor, Diff, Browser, and Launcher. ",
+        "Tide MCP tools can observe surfaces and Pane geometry, open Editor and Browser Panes, adjust Layout Targets, send keys to the Terminal, capture Pane content or selections, and manage Context Artifacts. ",
+        "Tool descriptions define the exact intent, placement, and limits for each action. ",
         "First call tide_observe_workspace when you need Tide geometry, focus, Pane membership, or browser fit. ",
         "Tide layout: the Stage holds Terminals; each active Stage Terminal owns a Terminal Context Surface for related Panes. ",
         "Use tide_layout_action for Layout Target mutations such as Terminal Context Surface width or pane_split ratio; tide_resize_pane is legacy Stage split compatibility. ",
@@ -305,12 +313,12 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
         },
         {
             "name": "tide_open_editor",
-            "description": "Open a file in an editor pane",
+            "description": "Open an existing file path in a Tide Editor Pane attached to the active Terminal Context Surface when possible. Use this for source or text files the user wants to read or edit. Do not use this to merely reveal the Terminal Context Surface or create an empty workspace area.",
             "inputSchema": { "type": "object", "properties": { "file": { "type": "string" } }, "required": ["file"] }
         },
         {
             "name": "tide_open_browser",
-            "description": "Open a URL in Tide Browser Pane, the preferred shared Browser Pane runtime for task-local verification. For authorized Wrapped Agents this starts visible Browser Operation state immediately; do not synthesize credential-bearing or app-internal launch URLs unless the user explicitly asks for that internal route.",
+            "description": "Open a URL or empty browser in a Tide Browser Pane attached to the active Terminal Context Surface when possible. Use this for links, pages, previews, and web inspection inside Tide. Use an external/default browser only when the user explicitly asks for that handoff or Tide cannot represent the target. For authorized Wrapped Agents this starts visible Browser Operation state immediately; do not synthesize credential-bearing or app-internal launch URLs unless the user explicitly asks for that internal route.",
             "inputSchema": { "type": "object", "properties": { "url": { "type": "string" } } }
         },
         {

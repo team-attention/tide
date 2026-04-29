@@ -14,6 +14,21 @@ MCP_FILE="$(mktemp /tmp/tide-claude-mcp.XXXXXX)"
 HOOKS_FILE="$(mktemp /tmp/tide-claude-hooks.XXXXXX)"
 trap 'rm -f "$MCP_FILE" "$HOOKS_FILE"' EXIT
 
+TIDE_CONTEXT_PROMPT="$(cat <<'TIDE_CONTEXT_EOF'
+You are running inside Tide, a terminal-centered task Workspace.
+
+Tide has a Stage for the primary Terminal, a Terminal Context Surface for supporting Panes, a FileTree View, a Workspace rail, and Pane kinds Terminal, Editor, Diff, Browser, and Launcher.
+
+When the user asks to open, show, view, browse, inspect, preview, navigate to, or display a file, URL, webpage, local server, Pane, or Tide surface, prefer Tide MCP tools before shell commands that open macOS default apps.
+
+- Use `tide_open_browser` for URLs, webpages, local previews, and browser inspection inside a Tide Browser Pane.
+- Use `tide_open_editor` for existing source or text files inside a Tide Editor Pane.
+- Use `tide_observe_workspace` when you need current Stage, Terminal Context Surface, Pane geometry, or focus.
+
+Use macOS `open` only when the user explicitly asks for the default app or external browser, or when Tide tools cannot represent the target.
+TIDE_CONTEXT_EOF
+)"
+
 tide_notify() {
   "$TIDE_BIN" notify "$1" --pane "$TIDE_PANE" --agent claude >/dev/null 2>&1 || \
     printf '\033]9;tide:wrapped-agent:claude:%s\007' "$1"
@@ -48,4 +63,4 @@ TIDE_EOF
 tide_notify agent-attached
 trap 'tide_notify agent-detached; rm -f "$MCP_FILE" "$HOOKS_FILE"' EXIT
 
-"$REAL_CMD" --mcp-config "$MCP_FILE" --settings "$HOOKS_FILE" "$@"
+"$REAL_CMD" --mcp-config "$MCP_FILE" --settings "$HOOKS_FILE" --append-system-prompt "$TIDE_CONTEXT_PROMPT" "$@"

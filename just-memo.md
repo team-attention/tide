@@ -1,6 +1,7 @@
 - 워크트리 매니징 더 편하게
-- notification
-- document for every file
-- evaluation? 
-- cmd sft f. content search
+- 워크스페이스 관리
+	- 왼쪽에 엄청 크게 차지하는데 아무런 정보도 없음 사실
+	- 
+- 코드 데이터 관련
+	- 개별로
 - code signature/reference search? 

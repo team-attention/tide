@@ -13,7 +13,7 @@
 
 Each `Tide Window` has an independent `App` aggregate. Each `App` owns its own panes, layout, focus, router, IME state, `WorkspaceManager`, active `Workspace` fields, renderer state, Browser Pane native view attachments, and pending platform commands.
 
-Platform commands sent from an `App` to the main thread are addressed by `TideWindowId`. The main thread executes each command on the addressed `Tide Window`.
+Platform commands sent from an `App` to the main thread are addressed by `TideWindowId`. The main thread executes each command on the addressed `Tide Window`. `WindowCommand::CreateWindow` carries the triggering `Tide Window` logical size so the new `Tide Window` can open at the same content size as the source.
 
 Terminals export both `TIDE_SOCKET` and `TIDE_WINDOW`. CLI, MCP, and notification clients include `_caller_window`, and the Agent Gateway routes commands to the addressed `Tide Window` before the target `App` performs its existing Workspace routing by `_caller_pane`.
 
@@ -23,7 +23,7 @@ Process-global state that is only safe for one native window must either be keye
 
 ### Approach
 1. Add `TideWindowId` to the domain core identity types.
-2. Add `WindowCommand::CreateWindow` and a `WindowCommandEnvelope` that pairs every `WindowCommand` with a `TideWindowId`.
+2. Add `WindowCommand::CreateWindow` and a `WindowCommandEnvelope` that pairs every `WindowCommand` with a `TideWindowId`; include source logical size in `WindowCommand::CreateWindow`.
 3. Make `WindowProxy` carry a `TideWindowId` and send `WindowCommandEnvelope` values.
 4. Change `GlobalAction::NewWindow` to queue `WindowCommand::CreateWindow` instead of launching another process.
 5. Replace the single `MAIN_WINDOW` storage in `MacosApp` with a window registry keyed by `TideWindowId`.
@@ -63,7 +63,7 @@ Precondition: A `Tide Instance` is already running with at least one `Tide Windo
 
 Flow:
 1. The input router resolves `Cmd+N` to `GlobalAction::NewWindow`.
-2. The active `App` queues `WindowCommand::CreateWindow`.
+2. The active `App` queues `WindowCommand::CreateWindow` with its current logical size.
 3. The active `WindowProxy` sends that command in a `WindowCommandEnvelope` with its `TideWindowId`.
 4. The main thread receives the command and creates a new native `Tide Window` inside the same `Tide Instance`.
 5. The new `Tide Window` starts a fresh `App` runtime.
@@ -77,6 +77,7 @@ Business Rules:
 - BR-3: `GlobalAction::NewWindow` MUST NOT call `ProcessPort::launch_new_tide_window`.
 - BR-4: The bundled `open -n` path MUST NOT be part of the `Cmd+N` flow.
 - BR-5: A newly created `Tide Window` MUST use the Cascaded Tide Window Position instead of appearing directly over the prior `Tide Window`.
+- BR-6: `WindowCommand::CreateWindow` MUST carry the triggering `Tide Window` logical size.
 
 ### UC-2: RouteWindowCommandByTideWindowId
 Actor: App runtime

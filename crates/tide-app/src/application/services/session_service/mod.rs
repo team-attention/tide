@@ -357,7 +357,7 @@ impl App {
         true
     }
 
-    /// Restore only preferences (window size, theme, side-surface widths) from a session,
+    /// Restore only preferences (theme and side-surface widths) from a session,
     /// then create a fresh initial pane. Used after intentional quit.
     pub(crate) fn restore_preferences(
         &mut self,

@@ -11,12 +11,28 @@ REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|
 [ -z "$TIDE_BIN" ] && exec "$REAL_CMD" "$@"
 
 DEFAULTS_FILE="$(mktemp /tmp/tide-gemini.XXXXXX)"
-trap 'rm -f "$DEFAULTS_FILE"' EXIT
+CONTEXT_DIR="$(mktemp -d /tmp/tide-gemini-context.XXXXXX)"
+CONTEXT_FILE="$CONTEXT_DIR/GEMINI.md"
+trap 'rm -f "$DEFAULTS_FILE"; rm -rf "$CONTEXT_DIR"' EXIT
 
 tide_notify() {
   "$TIDE_BIN" notify "$1" --pane "$TIDE_PANE" --agent gemini >/dev/null 2>&1 || \
     printf '\033]9;tide:wrapped-agent:gemini:%s\007' "$1"
 }
+
+cat > "$CONTEXT_FILE" <<'TIDE_CONTEXT_EOF'
+You are running inside Tide, a terminal-centered task Workspace.
+
+Tide has a Stage for the primary Terminal, a Terminal Context Surface for supporting Panes, a FileTree View, a Workspace rail, and Pane kinds Terminal, Editor, Diff, Browser, and Launcher.
+
+When the user asks to open, show, view, browse, inspect, preview, navigate to, or display a file, URL, webpage, local server, Pane, or Tide surface, prefer Tide MCP tools before shell commands that open macOS default apps.
+
+- Use `tide_open_browser` for URLs, webpages, local previews, and browser inspection inside a Tide Browser Pane.
+- Use `tide_open_editor` for existing source or text files inside a Tide Editor Pane.
+- Use `tide_observe_workspace` when you need current Stage, Terminal Context Surface, Pane geometry, or focus.
+
+Use macOS `open` only when the user explicitly asks for the default app or external browser, or when Tide tools cannot represent the target.
+TIDE_CONTEXT_EOF
 
 # System defaults: lowest priority — user settings always override.
 # mcpServers uses SHALLOW_MERGE (new keys additive).
@@ -24,6 +40,10 @@ tide_notify() {
 # Gemini event names: BeforeAgent (prompt submit), AfterAgent (turn done), Notification
 cat > "$DEFAULTS_FILE" << TIDE_EOF
 {
+  "context": {
+    "includeDirectories": ["$CONTEXT_DIR"],
+    "loadMemoryFromIncludeDirectories": true
+  },
   "mcpServers": {
     "tide": {
       "command": "$TIDE_BIN",
@@ -40,6 +60,6 @@ cat > "$DEFAULTS_FILE" << TIDE_EOF
 TIDE_EOF
 
 tide_notify agent-attached
-trap 'tide_notify agent-detached; rm -f "$DEFAULTS_FILE"' EXIT
+trap 'tide_notify agent-detached; rm -f "$DEFAULTS_FILE"; rm -rf "$CONTEXT_DIR"' EXIT
 
 GEMINI_CLI_SYSTEM_DEFAULTS_PATH="$DEFAULTS_FILE" "$REAL_CMD" "$@"

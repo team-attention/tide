@@ -16,10 +16,20 @@ Repo evidence:
 | Terminal Context Surface width | `crates/tide-app/src/domain/state/dock.rs` stores `dock_width`; `layout_compute.rs` uses it as the Terminal Context Surface width and clamps it against the available window width. |
 | Existing port | `crates/tide-app/src/application/ports/inward/dock_port/mod.rs` already exposes `set_dock_width`, but no Agent Gateway command models this as a product-level Layout Target. |
 | Provider neutrality | `docs/specs/open-terminal-codex-app.md` says wrapped-agent integration targets `claude`, `codex`, and `gemini`, and its invariants say no user-facing workflow may require Codex CLI specifically unless explicitly under the Codex wrapper path. |
+| Codex wrapper injection | `crates/tide-app/resources/bin/codex` creates a temporary `CODEX_HOME`, symlinks the user's Codex home entries, and injects Tide MCP config with `mcp_servers.tide.*`. |
+| Failed Codex open selection | `/Users/eatnug/.codex/sessions/2026/04/29/rollout-2026-04-29T17-49-26-019dd86d-c63d-7072-b456-6c6758650b44.jsonl` used `/private/tmp/tide-codex-home.azzYY8`, proving the wrapper was active, but called shell `open` for a YouTube URL without any `mcp__tide__` tool call. |
+| Successful Codex open selection | `/Users/eatnug/.codex/sessions/2026/04/29/rollout-2026-04-29T14-35-43-019dd7bc-6c0d-7571-86ca-9a3bababa40c.jsonl` used `/private/tmp/tide-codex-home.GdnIaH` and called `tool_search` before using `mcp__tide__` `tide_open_browser`. |
+| Claude wrapper injection | `crates/tide-app/resources/bin/claude` injects Tide MCP config with `--mcp-config "$MCP_FILE"` and hooks with `--settings "$HOOKS_FILE"`. `claude --help` shows `--append-system-prompt`, which is a non-mutating wrapper surface for additional startup guidance. |
+| Gemini wrapper injection | `crates/tide-app/resources/bin/gemini` injects Tide MCP config and hooks through `GEMINI_CLI_SYSTEM_DEFAULTS_PATH`. Gemini CLI source reads `context.includeDirectories` when `context.loadMemoryFromIncludeDirectories` is true and loads `GEMINI.md` files from those directories. |
+| Gemini skill limitation | `gemini skills list --all` failed with `Agent skills is disabled by your administrator`, so Gemini skill injection is not a reliable Tide wrapper surface. |
 
 ### To-Be
 
 Tide exposes a provider-neutral Tide MCP Runtime that agents can use before any Pane-specific work. It describes product surfaces, visible geometry, focus, and supported layout mutations in one place. Browser work inside Tide defaults to Tide Browser Pane Runtime for Codex, Claude, Gemini, and future Wrapped Agents. External Browser Runtime is an explicit fallback identity, not the default.
+
+MCP startup instructions orient a Wrapped Agent to Tide's structure and available surfaces without encoding every routing decision as global policy. The instructions should describe that Tide is a terminal-centered task Workspace with a Stage Terminal, Terminal Context Surface, FileTree View, Workspace rail, and Pane kinds. Individual MCP tool descriptions then carry the exact intent and placement rules for opening files, Browser Panes, layout surfaces, Terminal commands, capture, selection, and Context Artifacts.
+
+Wrapped Agents also receive Tide Tool Discovery Context through their native startup guidance surfaces. Codex gets a temporary skill in its `CODEX_HOME` overlay, Claude gets appended system-prompt guidance, and Gemini gets a temporary `GEMINI.md` memory file loaded through its context include directory. The context tells agents to prefer Tide MCP tools for open, show, view, browser, file, URL, and preview requests before using macOS default-app commands.
 
 Browser work is modeled as a Browser Operation when a user asks an agent to operate a Browser Pane. The operation starts no later than the first Tide Browser Pane runtime tool, keeps Agent Browser Control Mode and Browser Automation Cursor visible during the task, and finishes after the final observation or the Wrapped Agent's idle signal.
 
@@ -35,6 +45,12 @@ The runtime must not add a one-off Dock resize tool. Instead, it must expose a g
 6. Disable Codex Browser Use plugin inside Tide-wrapped Codex launches so the provider-specific browser runtime remains an explicit External Browser Runtime fallback instead of a competing default.
 7. Add `tide_browser_operation` as explicit Browser Operation transaction control and make `tide_open_browser`, `tide_browser_observe`, and `tide_browser_action` implicitly enter operation visuals for authorized Wrapped Agents. Agents still finish an operation after final observation.
 8. Make Terminal Context Surface resize through `tide_layout_action` use the existing SurfaceVisibilityAnimation path so MCP-triggered layout correction is visually continuous instead of an instant Dock width jump.
+9. Keep startup MCP instructions as concise Tide structure and capability orientation, while moving specific open/show/view intent boundaries into the relevant tool descriptions.
+10. Add Tide Tool Discovery Context to each checked-in Agent Wrapper using the agent's native non-mutating startup surface.
+11. For Codex, inject a temporary Tide skill into the wrapper-owned `CODEX_HOME` overlay so Codex can discover deferred Tide MCP tools through `tool_search`.
+12. For Claude, append Tide Tool Discovery Context with `--append-system-prompt` while keeping the existing MCP and hooks flags.
+13. For Gemini, create a temporary `GEMINI.md` context file and load it through `context.includeDirectories` plus `context.loadMemoryFromIncludeDirectories` in the wrapper-owned system defaults file.
+14. Preserve user Codex skills by creating a real temporary `skills/` directory in the overlay, symlinking user skill entries into it, and adding the wrapper-owned Tide skill there instead of mutating the user's real Codex home.
 
 ## Bounded Contexts
 
@@ -149,6 +165,41 @@ Business Rules:
 - BR-5: Repeated Browser Pane runtime calls in the same Browser Operation must keep the operation stable instead of regenerating Agent Browser Control Mode.
 - BR-6: Wrapped Agent Idle or NeedsInput lifecycle signals must clear Browser Operation visual state for Browser Panes owned by that Terminal.
 
+### UC-5: OrientWrappedAgentToTideStructure
+
+Actor: Wrapped Agent running Codex, Claude, Gemini, or another agent CLI
+
+Trigger: The agent receives MCP initialization instructions, tool definitions, or wrapper-injected startup context.
+
+Precondition: The agent is running inside Tide with Agent Gateway MCP available.
+
+Flow:
+
+1. Tide initializes the MCP server for the Wrapped Agent.
+2. MCP startup instructions describe Tide as a terminal-centered task Workspace.
+3. The instructions name the Stage Terminal, Terminal Context Surface, FileTree View, Workspace rail, and available Pane kinds.
+4. The instructions describe broad MCP capabilities without overloading startup text with every open/show/view routing case.
+5. The `tide_open_editor` and `tide_open_browser` tool descriptions state their exact content-opening intent and avoid claiming that every "open" request means a file or Browser Pane.
+6. For Codex, the Agent Wrapper adds Tide Tool Discovery Context as a temporary skill in the `CODEX_HOME` overlay.
+7. For Claude, the Agent Wrapper adds Tide Tool Discovery Context through `--append-system-prompt`.
+8. For Gemini, the Agent Wrapper adds Tide Tool Discovery Context through a temporary `GEMINI.md` include directory.
+9. The Tide Tool Discovery Context tells Wrapped Agents to prefer Tide MCP tools for open, show, view, browser, file, URL, and preview requests before using macOS default-app commands.
+
+Postcondition: The agent starts with enough Tide structure to choose Tide MCP tools naturally, while precise intent selection remains local to tool descriptions.
+
+Business Rules:
+
+- BR-1: MCP startup instructions must describe Tide as a terminal-centered task Workspace.
+- BR-2: MCP startup instructions must name Stage, Terminal Context Surface, FileTree View, Workspace rail, and the core Pane kinds.
+- BR-3: MCP startup instructions must list available Tide MCP capability families at a high level.
+- BR-4: MCP startup instructions must say tool descriptions define exact intent, placement, and limits.
+- BR-5: `tide_open_editor` must describe opening an existing file path in an Editor Pane, not merely revealing a surface or creating empty context space.
+- BR-6: `tide_open_browser` must describe opening a URL or empty Browser Pane in Tide and must keep external/default browser behavior as explicit handoff.
+- BR-7: The Codex Agent Wrapper must inject Tide Tool Discovery Context into the temporary `CODEX_HOME` overlay without mutating the user's real Codex home.
+- BR-8: The Claude Agent Wrapper must inject Tide Tool Discovery Context through `--append-system-prompt` without mutating the user's real Claude home.
+- BR-9: The Gemini Agent Wrapper must inject Tide Tool Discovery Context through a temporary `GEMINI.md` include directory without mutating the user's real Gemini home.
+- BR-10: Tide Tool Discovery Context must tell Wrapped Agents to prefer Tide MCP tools before macOS default-app commands when the user asks to open, show, view, browse, inspect, preview, or display files, URLs, local servers, Panes, or Tide surfaces.
+
 ## Invariants
 
 1. Tide MCP Runtime is provider-neutral. It can describe Codex, Claude, or Gemini as a Wrapped Agent, but its layout and Browser Pane tools do not require any one provider.
@@ -173,6 +224,11 @@ Business Rules:
 | UC-4: HoldBrowserOperation | BR-2, BR-3 | `browser_agent_runtime` | `browser_operation_transaction_keeps_agent_indicator_and_cursor_visible_until_finish` |
 | UC-4: HoldBrowserOperation | BR-2, BR-5 | `browser_agent_runtime` | `browser_observe_starts_operation_visuals_and_keeps_generation_stable` |
 | UC-4: HoldBrowserOperation | BR-6 | `browser_agent_runtime` | `wrapped_agent_idle_clears_browser_operation_visuals` |
+| UC-5: OrientWrappedAgentToTideStructure | BR-1, BR-2, BR-3, BR-4 | `tide_mcp_runtime` | `mcp_instructions_describe_tide_structure_and_capabilities` |
+| UC-5: OrientWrappedAgentToTideStructure | BR-5, BR-6 | `tide_mcp_runtime` | `open_tool_descriptions_distinguish_content_from_surface_intent` |
+| UC-5: OrientWrappedAgentToTideStructure | BR-7, BR-10 | `wrapped_agent_release_integration` | `codex_wrapper_injects_tide_tool_discovery_context` |
+| UC-5: OrientWrappedAgentToTideStructure | BR-8, BR-10 | `wrapped_agent_release_integration` | `claude_wrapper_appends_tide_tool_discovery_context` |
+| UC-5: OrientWrappedAgentToTideStructure | BR-9, BR-10 | `wrapped_agent_release_integration` | `gemini_wrapper_loads_tide_tool_discovery_context_from_temp_memory` |
 
 ## Location
 
@@ -181,6 +237,8 @@ Business Rules:
 | Spec | `docs/specs/tide-mcp-runtime.md` | This file. |
 | Glossary | `docs/glossary.md`, `.krow/language.md` | Provider-neutral runtime terms. |
 | MCP bridge | `crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs` | Tool definitions, mapping, and instructions. |
+| Agent Wrappers | `crates/tide-app/resources/bin/{codex,claude,gemini}` | Lifecycle hooks, Tide MCP config, and Tide Tool Discovery Context injection. |
 | Gateway commands | `crates/tide-app/src/adapter/inward/cli_adapter/commands.rs` | `observe-workspace`, `layout-action`, and `browser-operation`. |
 | Dock port/service | `crates/tide-app/src/application/ports/inward/dock_port/mod.rs`, `crates/tide-app/src/application/services/dock_service/mod.rs` | Terminal Context Surface width and split ratio mutations. |
 | Behavior tests | `crates/tide-app/src/application/behavior_tests/tide_mcp_runtime.rs` | Living spec coverage. |
+| Wrapper behavior tests | `crates/tide-app/src/application/behavior_tests/wrapped_agent_release_integration.rs` | Agent Wrapper context injection coverage. |

@@ -121,8 +121,8 @@ fn drain_window_commands(shared: &WindowRuntimeShared) {
 
     for envelope in commands {
         match envelope.command {
-            crate::tide_platform::WindowCommand::CreateWindow => {
-                create_tide_window_runtime(shared);
+            crate::tide_platform::WindowCommand::CreateWindow { width, height } => {
+                create_tide_window_runtime(shared, width, height);
             }
             crate::tide_platform::WindowCommand::CloseWindow => {
                 shared
@@ -146,6 +146,23 @@ fn drain_window_commands(shared: &WindowRuntimeShared) {
             }
         }
     }
+}
+
+pub(crate) fn launch_window_config(
+    _saved_session: Option<&crate::application::ports::outward::persistence_port::Session>,
+) -> crate::tide_platform::WindowConfig {
+    crate::tide_platform::WindowConfig::default()
+}
+
+fn child_window_config(
+    base: &crate::tide_platform::WindowConfig,
+    width: f64,
+    height: f64,
+) -> crate::tide_platform::WindowConfig {
+    let mut config = base.clone();
+    config.width = width.max(config.min_width);
+    config.height = height.max(config.min_height);
+    config
 }
 
 fn build_window_callback(
@@ -214,12 +231,16 @@ fn build_window_callback(
     })
 }
 
-fn create_tide_window_runtime(shared: &WindowRuntimeShared) -> crate::tide_core::TideWindowId {
+fn create_tide_window_runtime(
+    shared: &WindowRuntimeShared,
+    width: f64,
+    height: f64,
+) -> crate::tide_core::TideWindowId {
     let tide_window_id = crate::tide_platform::macos::MacosApp::allocate_window_id();
     let callback = build_window_callback(shared.clone(), tide_window_id, false);
     crate::tide_platform::macos::MacosApp::create_window(
         tide_window_id,
-        shared.config.clone(),
+        child_window_config(&shared.config, width, height),
         callback,
     )
 }
@@ -291,20 +312,7 @@ fn main() {
         };
     let gateway_info = GatewayRuntimeInfo::from_server(_gateway_server.as_ref());
 
-    let saved_session = update::session_service::load_session();
-    let (win_w, win_h) = saved_session
-        .as_ref()
-        .map(|s| (s.window_width as f64, s.window_height as f64))
-        .unwrap_or((960.0, 640.0));
-
-    let config = crate::tide_platform::WindowConfig {
-        title: "Tide".to_string(),
-        width: win_w,
-        height: win_h,
-        min_width: 400.0,
-        min_height: 300.0,
-        transparent_titlebar: true,
-    };
+    let config = launch_window_config(None);
 
     let (command_tx, command_rx) =
         std::sync::mpsc::channel::<crate::tide_platform::WindowCommandEnvelope>();

@@ -195,6 +195,62 @@ fn codex_wrapper_installs_user_prompt_submit_and_stop_hooks() {
 }
 
 #[test]
+fn codex_wrapper_injects_tide_tool_discovery_context() {
+    // Spec: docs/specs/tide-mcp-runtime.md
+    // UC-5 BR-7: The Codex Agent Wrapper injects Tide Tool Discovery Context into the temporary CODEX_HOME overlay without mutating the user's real Codex home.
+    // UC-5 BR-10: Tide Tool Discovery Context tells Wrapped Agents to prefer Tide MCP tools before macOS default-app commands.
+    let wrapper = include_str!("../../../resources/bin/codex");
+
+    assert!(wrapper.contains("TIDE_SKILLS_DIR=\"$TIDE_CODEX_HOME/skills\""));
+    assert!(wrapper.contains("TIDE_SKILL_DIR=\"$TIDE_SKILLS_DIR/tide\""));
+    assert!(wrapper.contains("[ \"$base\" = \"skills\" ] && continue"));
+    assert!(wrapper.contains("Use when Codex is running inside Tide"));
+    assert!(wrapper.contains("tool_search"));
+    assert!(wrapper.contains("mcp__tide__"));
+    assert!(wrapper.contains("tide_open_browser"));
+    assert!(wrapper.contains("tide_open_editor"));
+    assert!(wrapper.contains("tide_observe_workspace"));
+    assert!(wrapper.contains("macOS `open`"));
+}
+
+#[test]
+fn claude_wrapper_appends_tide_tool_discovery_context() {
+    // Spec: docs/specs/tide-mcp-runtime.md
+    // UC-5 BR-8: The Claude Agent Wrapper injects Tide Tool Discovery Context through --append-system-prompt without mutating the user's real Claude home.
+    // UC-5 BR-10: Tide Tool Discovery Context tells Wrapped Agents to prefer Tide MCP tools before macOS default-app commands.
+    let wrapper = include_str!("../../../resources/bin/claude");
+
+    assert!(wrapper.contains("TIDE_CONTEXT_PROMPT="));
+    assert!(wrapper.contains("--append-system-prompt \"$TIDE_CONTEXT_PROMPT\""));
+    assert!(wrapper.contains("You are running inside Tide"));
+    assert!(wrapper.contains("Tide MCP tools"));
+    assert!(wrapper.contains("tide_open_browser"));
+    assert!(wrapper.contains("tide_open_editor"));
+    assert!(wrapper.contains("tide_observe_workspace"));
+    assert!(wrapper.contains("macOS `open`"));
+}
+
+#[test]
+fn gemini_wrapper_loads_tide_tool_discovery_context_from_temp_memory() {
+    // Spec: docs/specs/tide-mcp-runtime.md
+    // UC-5 BR-9: The Gemini Agent Wrapper injects Tide Tool Discovery Context through a temporary GEMINI.md include directory without mutating the user's real Gemini home.
+    // UC-5 BR-10: Tide Tool Discovery Context tells Wrapped Agents to prefer Tide MCP tools before macOS default-app commands.
+    let wrapper = include_str!("../../../resources/bin/gemini");
+
+    assert!(wrapper.contains("CONTEXT_DIR=\"$(mktemp -d /tmp/tide-gemini-context.XXXXXX)\""));
+    assert!(wrapper.contains("CONTEXT_FILE=\"$CONTEXT_DIR/GEMINI.md\""));
+    assert!(wrapper.contains("\"includeDirectories\": [\"$CONTEXT_DIR\"]"));
+    assert!(wrapper.contains("\"loadMemoryFromIncludeDirectories\": true"));
+    assert!(wrapper.contains("You are running inside Tide"));
+    assert!(wrapper.contains("Tide MCP tools"));
+    assert!(wrapper.contains("tide_open_browser"));
+    assert!(wrapper.contains("tide_open_editor"));
+    assert!(wrapper.contains("tide_observe_workspace"));
+    assert!(wrapper.contains("macOS `open`"));
+    assert!(wrapper.contains("rm -rf \"$CONTEXT_DIR\""));
+}
+
+#[test]
 fn notify_client_accepts_payload_from_stdin() {
     // UC-2 BR-6: The notify client must accept payload JSON from stdin.
     let source = include_str!("../../adapter/inward/cli_adapter/notify.rs");
