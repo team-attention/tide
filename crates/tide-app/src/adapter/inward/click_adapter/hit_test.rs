@@ -40,33 +40,17 @@ pub(crate) fn compute_hover_target(
     ctx: &(impl AppCorePort + PaneAccessPort + LayoutPort + FileTreePort + WorkspaceNavPort + DockPort),
     pos: Vec2,
 ) -> Option<HoverTarget> {
-    // Titlebar buttons (right-to-left: swap icon, settings, theme, area toggles)
+    // Titlebar buttons (right-to-left: settings, theme, integration, area toggles)
     if ctx.top_inset() > 0.0 {
         let logical = ctx.logical_size();
         let cs = ctx.cell_size();
-
-        // Swap icon dimensions (enlarged)
-        let swap_icon_h = 16.0_f32 * TITLEBAR_ICON_SCALE;
-        let swap_rect_w = 7.0_f32 * TITLEBAR_ICON_SCALE;
-        let swap_gap = 3.0_f32 * TITLEBAR_ICON_SCALE;
-        let swap_icon_w = swap_rect_w * 2.0 + swap_gap;
-        let swap_x = logical.width - PANE_PADDING - swap_icon_w;
-        let swap_y = (ctx.top_inset() - swap_icon_h) / 2.0;
-        let swap_pad = 4.0_f32;
-        if pos.x >= swap_x - swap_pad
-            && pos.x <= swap_x + swap_icon_w + swap_pad
-            && pos.y >= swap_y - swap_pad
-            && pos.y <= swap_y + swap_icon_h + swap_pad
-        {
-            return Some(HoverTarget::TitlebarSwap);
-        }
-
-        // Settings gear icon
         let btn_w = cs.width * TITLEBAR_ICON_SCALE + TITLEBAR_ICON_BUTTON_PAD_H * 2.0;
         let btn_h = cs.height * TITLEBAR_ICON_SCALE + TITLEBAR_ICON_BUTTON_PAD_V * 2.0;
+
+        // Settings gear icon
         let gear_w = btn_w;
         let gear_h = btn_h;
-        let gear_x = swap_x - gear_w - TITLEBAR_BUTTON_GAP;
+        let gear_x = logical.width - PANE_PADDING - gear_w;
         let gear_y = (ctx.top_inset() - gear_h) / 2.0;
         if pos.x >= gear_x
             && pos.x <= gear_x + gear_w

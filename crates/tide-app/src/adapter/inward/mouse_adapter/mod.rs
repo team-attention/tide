@@ -371,16 +371,6 @@ fn handle_mouse_input_core(ctx: &mut impl MousePorts, button: MouseButton, _wind
                     ctx.invalidate_chrome();
                     return;
                 }
-                Some(crate::state::drag_types::HoverTarget::TitlebarSwap) => {
-                    let new_side = match ctx.sidebar_side() {
-                        crate::LayoutSide::Left => crate::LayoutSide::Right,
-                        crate::LayoutSide::Right => crate::LayoutSide::Left,
-                    };
-                    ctx.set_sidebar_side(new_side);
-                    ctx.compute_layout();
-                    ctx.invalidate_chrome();
-                    return;
-                }
                 Some(crate::state::drag_types::HoverTarget::TitlebarWorkspace) => {
                     let v = !ctx.ws_show_sidebar();
                     ctx.set_ws_show_sidebar(v);

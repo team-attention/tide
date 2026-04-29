@@ -8,6 +8,7 @@ use crate::adapter::outward::view::{
     titlebar_toggle_button_draws_hotkey_hint, titlebar_toggle_button_height,
     titlebar_toggle_button_width, TitlebarSurfaceIcon,
 };
+use crate::event_loop::handle_platform_event;
 use crate::header::{
     header_action_glyph, single_pane_header_action_specs_for_surface, single_pane_header_chrome,
     single_pane_header_layout, stacked_tab_bar_header_action_specs, HeaderHitAction,
@@ -17,9 +18,13 @@ use crate::pane::{PaneKind, TerminalPane};
 use crate::state::{
     drag_types::HoverTarget, SurfaceVisibilityAnimation, SURFACE_VISIBILITY_ANIMATION_DURATION,
 };
-use crate::theme::{TITLEBAR_ICON_BUTTON_PAD_H, TITLEBAR_ICON_BUTTON_PAD_V, TITLEBAR_ICON_SCALE};
-use crate::tide_core::LayoutEngine;
+use crate::theme::{
+    PANE_PADDING, TITLEBAR_BUTTON_GAP, TITLEBAR_HEIGHT, TITLEBAR_ICON_BUTTON_PAD_H,
+    TITLEBAR_ICON_BUTTON_PAD_V, TITLEBAR_ICON_SCALE,
+};
+use crate::tide_core::{LayoutEngine, Vec2};
 use crate::tide_input::GlobalAction;
+use crate::tide_platform::{PlatformEvent, WindowProxy};
 use crate::ui::{file_icon, file_icon_kind, file_tree_disclosure, FileIconKind};
 use crate::ActionPort;
 use crate::App;
@@ -32,6 +37,45 @@ fn test_app() -> App {
     app.window.cached_cell_size = crate::tide_core::Size::new(8.0, 16.0);
     app.window.window_size = (960, 640);
     app
+}
+
+fn test_window_proxy() -> WindowProxy {
+    let (tx, _rx) = std::sync::mpsc::channel();
+    WindowProxy::new(tx, std::sync::Arc::new(|| {}))
+}
+
+enum TitlebarSurfaceButton {
+    FileTree,
+    Dock,
+    Workspace,
+}
+
+fn titlebar_surface_button_center(app: &App, button: TitlebarSurfaceButton) -> Vec2 {
+    let logical = app.window.logical_size();
+    let cs = app.window.cached_cell_size;
+    let btn_w = cs.width * TITLEBAR_ICON_SCALE + TITLEBAR_ICON_BUTTON_PAD_H * 2.0;
+    let gear_x = logical.width - PANE_PADDING - btn_w;
+    let theme_x = gear_x - btn_w - TITLEBAR_BUTTON_GAP;
+    let integ_x = theme_x - btn_w - TITLEBAR_BUTTON_GAP;
+    let mut cur_right = integ_x - TITLEBAR_BUTTON_GAP;
+    let index = match button {
+        TitlebarSurfaceButton::FileTree => 0,
+        TitlebarSurfaceButton::Dock => 1,
+        TitlebarSurfaceButton::Workspace => 2,
+    };
+    for _ in 0..index {
+        cur_right -= btn_w + TITLEBAR_BUTTON_GAP;
+    }
+    let btn_x = cur_right - btn_w;
+    Vec2::new(btn_x + btn_w / 2.0, app.window.top_inset / 2.0)
+}
+
+fn titlebar_settings_button_center(app: &App) -> Vec2 {
+    let logical = app.window.logical_size();
+    let cs = app.window.cached_cell_size;
+    let btn_w = cs.width * TITLEBAR_ICON_SCALE + TITLEBAR_ICON_BUTTON_PAD_H * 2.0;
+    let btn_x = logical.width - PANE_PADDING - btn_w;
+    Vec2::new(btn_x + btn_w / 2.0, app.window.top_inset / 2.0)
 }
 
 fn app_with_context_pane() -> (App, u64) {
@@ -515,5 +559,42 @@ fn titlebar_file_tree_toggle_uses_vector_icon_without_text_glyph() {
     assert_eq!(
         titlebar_surface_icon_text_glyph(TitlebarSurfaceIcon::WorkspaceRail),
         None
+    );
+}
+
+#[test]
+fn titlebar_controls_do_not_expose_titlebar_swap() {
+    // UC-5 BR-29: The titlebar does not reserve a right-edge swap control; settings is the rightmost titlebar button.
+    let app = test_app();
+    let pos = titlebar_settings_button_center(&app);
+
+    assert_eq!(
+        crate::adapter::inward::click_adapter::hit_test::compute_hover_target(&app, pos),
+        Some(HoverTarget::TitlebarSettings)
+    );
+}
+
+#[test]
+fn fullscreen_keeps_titlebar_surface_toggles_visible_and_clickable() {
+    // UC-6 BR-27/BR-28: Entering a Full-Screen Space keeps the Tide-rendered titlebar inset and hit targets.
+    let mut app = test_app();
+    let window = test_window_proxy();
+
+    handle_platform_event(
+        &mut app,
+        PlatformEvent::Fullscreen {
+            is_fullscreen: true,
+            width: 960,
+            height: 640,
+        },
+        &window,
+    );
+
+    assert!(app.window.is_fullscreen);
+    assert_eq!(app.window.top_inset, TITLEBAR_HEIGHT);
+    let pos = titlebar_surface_button_center(&app, TitlebarSurfaceButton::FileTree);
+    assert_eq!(
+        crate::adapter::inward::click_adapter::hit_test::compute_hover_target(&app, pos),
+        Some(HoverTarget::TitlebarFileTree)
     );
 }

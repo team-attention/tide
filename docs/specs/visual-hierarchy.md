@@ -20,6 +20,7 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
 4. Dock, FileTree View, and Workspace rail toggles animate width over a short ease-out transition while keeping layout and hit-test state coherent.
 5. Titlebar surface toggles use larger icon-only controls with distinct hover and active backdrops. Keyboard shortcuts stay in input behavior and are not rendered as persistent hotkey hints in the titlebar.
 6. While a side surface is animating, Stage `SplitLayout` proportions remain stable until the surface reaches its settled width.
+7. A `Full-Screen Space` keeps Tide's own titlebar surface visible so Workspace rail, Dock, FileTree View, theme, settings, and integration controls remain available without leaving fullscreen.
 
 ### Approach
 1. Add a `HeaderSurfaceKind` decision to header chrome so Stage and Terminal Context Surface can share layout primitives without sharing visual weight.
@@ -30,6 +31,7 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
 6. Drive visibility animations from the event loop by keeping redraws alive while an animation is active.
 7. Normalize chrome icon glyphs around a small quiet set: lightweight FileTree chevrons, restrained document glyphs for project-special files, and icon-only titlebar toggles.
 8. Treat side-surface visibility animation like an active border drag for Stage ratio snapping so intermediate animated widths do not rewrite `SplitLayout` ratios.
+9. Keep the Tide-rendered titlebar inset during `Full-Screen Space` transitions instead of collapsing it to zero.
 
 ## Bounded Contexts
 
@@ -134,7 +136,24 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
   - BR-16: Titlebar surface toggle hit targets must use the same larger width as the rendered icon-only controls.
   - BR-19: Titlebar surface toggle glyphs must render above the base terminal cell size.
   - BR-20: Titlebar surface toggles must expose distinct backdrop levels for rest, hover, active, and active-hover states.
+  - BR-23: Titlebar surface toggles render right-to-left as FileTree View, Dock, Workspace rail, using vector `TitlebarSurfaceIcon` roles instead of font-dependent private glyphs.
   - BR-24: The FileTree View titlebar toggle must use the `TitlebarSurfaceIcon::FileTree` vector icon with no font-dependent text glyph fallback.
+  - BR-29: The titlebar must not reserve a right-edge swap control; settings is the rightmost titlebar button.
+
+### UC-6: PreserveTitlebarControlsInFullScreen
+
+- **Actor**: User
+- **Trigger**: A `Tide Window` enters a `Full-Screen Space`
+- **Precondition**: Tide has an active Workspace and titlebar controls are available before fullscreen
+- **Flow**:
+  1. Tide receives the native fullscreen transition event.
+  2. Tide records fullscreen state while keeping the Tide-rendered titlebar inset.
+  3. Tide recomputes layout below that titlebar inset.
+  4. Tide hit-tests titlebar controls using the same visible titlebar geometry.
+- **Postcondition**: Fullscreen preserves app-level navigation and surface toggles.
+- **Business Rules**:
+  - BR-27: Entering a `Full-Screen Space` must keep the Tide-rendered titlebar inset nonzero.
+  - BR-28: Titlebar surface toggle hit targets must remain available inside a `Full-Screen Space`.
 
 ## Invariants
 
@@ -171,9 +190,12 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
 | UC-5 | BR-20 | `titlebar_surface_toggles_have_distinct_backdrop_levels` |
 | UC-5 | BR-23 | `titlebar_surface_toggles_use_dock_filetree_workspace_order_and_icons` |
 | UC-5 | BR-24 | `titlebar_file_tree_toggle_uses_vector_icon_without_text_glyph` |
+| UC-5 | BR-29 | `titlebar_controls_do_not_expose_titlebar_swap` |
+| UC-6 | BR-27/BR-28 | `fullscreen_keeps_titlebar_surface_toggles_visible_and_clickable` |
 
 ## Location
 
+- `crates/tide-app/src/adapter/inward/event_loop_adapter/mod.rs`
 - `crates/tide-app/src/adapter/outward/view/header.rs`
 - `crates/tide-app/src/adapter/outward/view/chrome/file_tree.rs`
 - `crates/tide-app/src/adapter/outward/view/ui.rs`

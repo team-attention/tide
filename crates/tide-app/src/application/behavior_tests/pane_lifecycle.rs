@@ -35,10 +35,8 @@ enum TitlebarSurfaceButton {
 fn titlebar_surface_button_center(app: &App, button: TitlebarSurfaceButton) -> Vec2 {
     let logical = app.logical_size();
     let cs = app.window.cached_cell_size;
-    let swap_icon_w = (7.0_f32 * TITLEBAR_ICON_SCALE) * 2.0 + 3.0_f32 * TITLEBAR_ICON_SCALE;
-    let swap_x = logical.width - PANE_PADDING - swap_icon_w;
     let btn_w = cs.width * TITLEBAR_ICON_SCALE + TITLEBAR_ICON_BUTTON_PAD_H * 2.0;
-    let gear_x = swap_x - btn_w - TITLEBAR_BUTTON_GAP;
+    let gear_x = logical.width - PANE_PADDING - btn_w;
     let theme_x = gear_x - btn_w - TITLEBAR_BUTTON_GAP;
     let integ_x = theme_x - btn_w - TITLEBAR_BUTTON_GAP;
     let mut cur_right = integ_x - TITLEBAR_BUTTON_GAP;

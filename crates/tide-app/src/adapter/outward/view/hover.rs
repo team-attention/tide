@@ -161,9 +161,6 @@ pub(crate) fn render_hover(
                         renderer.draw_rect(handle_rect, p.hover_panel_border);
                     }
                 }
-                crate::state::drag_types::HoverTarget::TitlebarSwap => {
-                    // Hover is rendered via chrome.rs
-                }
                 crate::state::drag_types::HoverTarget::TitlebarFileTree => {
                     // Hover is rendered via chrome.rs (badge_bg on sidebar button)
                 }

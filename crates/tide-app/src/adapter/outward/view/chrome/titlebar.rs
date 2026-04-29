@@ -425,10 +425,8 @@ pub(super) fn render_titlebar_and_sidebar(
         }
         // Right: titlebar icons
         {
-            let rect_w = 7.0_f32 * TITLEBAR_ICON_SCALE;
-            let gap = 3.0_f32 * TITLEBAR_ICON_SCALE;
-            let icon_w = rect_w * 2.0 + gap;
-            let icon_x = logical.width - PANE_PADDING - icon_w;
+            let btn_w = titlebar_toggle_button_width(cs.width);
+            let btn_h = titlebar_toggle_button_height(cs.height);
             let icon_logical_w = cs.width * TITLEBAR_ICON_SCALE;
             let icon_logical_h = cs.height * TITLEBAR_ICON_SCALE;
             let draw_titlebar_icon = |renderer: &mut crate::tide_renderer::WgpuRenderer,
@@ -458,9 +456,9 @@ pub(super) fn render_titlebar_and_sidebar(
             // Settings gear icon
             {
                 let gear_icon = "\u{f013}"; // FontAwesome gear
-                let gear_w = titlebar_toggle_button_width(cs.width);
-                let gear_h = titlebar_toggle_button_height(cs.height);
-                let gear_x = icon_x - gear_w - TITLEBAR_BUTTON_GAP;
+                let gear_w = btn_w;
+                let gear_h = btn_h;
+                let gear_x = logical.width - PANE_PADDING - gear_w;
                 let gear_y = (app.window.top_inset - gear_h) / 2.0;
                 let gear_rect = Rect::new(gear_x, gear_y, gear_w, gear_h);
                 let gear_hovered = matches!(
@@ -482,14 +480,14 @@ pub(super) fn render_titlebar_and_sidebar(
                 draw_titlebar_icon(renderer, gear_icon, gear_rect, gear_color, tb);
             }
 
-            // Titlebar toggle buttons: [Sidebar] [Stage] [Dock] [gap] [Theme] [Settings] [Swap icon]
+            // Titlebar toggle buttons: [Workspace] [Dock] [FileTree] [Integration] [Theme] [Settings]
             // Positioned right-to-left from the settings icon
-            let settings_w = titlebar_toggle_button_width(cs.width);
-            let settings_x = icon_x - settings_w - TITLEBAR_BUTTON_GAP;
+            let settings_w = btn_w;
+            let settings_x = logical.width - PANE_PADDING - settings_w;
 
             // Theme toggle icon (between settings and toggle buttons)
-            let theme_w = titlebar_toggle_button_width(cs.width);
-            let theme_h = titlebar_toggle_button_height(cs.height);
+            let theme_w = btn_w;
+            let theme_h = btn_h;
             let theme_x = settings_x - theme_w - TITLEBAR_BUTTON_GAP;
             let theme_y = (app.window.top_inset - theme_h) / 2.0;
             let theme_rect = Rect::new(theme_x, theme_y, theme_w, theme_h);
@@ -506,8 +504,8 @@ pub(super) fn render_titlebar_and_sidebar(
             draw_titlebar_icon(renderer, theme_icon, theme_rect, p.tab_text, tb);
 
             // Integration toggle button (left of theme icon)
-            let integ_w = titlebar_toggle_button_width(cs.width);
-            let integ_h = titlebar_toggle_button_height(cs.height);
+            let integ_w = btn_w;
+            let integ_h = btn_h;
             let integ_x = theme_x - integ_w - TITLEBAR_BUTTON_GAP;
             let integ_y = (app.window.top_inset - integ_h) / 2.0;
             let integ_rect = Rect::new(integ_x, integ_y, integ_w, integ_h);

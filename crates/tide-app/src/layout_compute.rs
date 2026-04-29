@@ -58,7 +58,6 @@ impl crate::application::ports::inward::LayoutPort for App {
             | Some(HoverTarget::PaneTabBar(_))
             | Some(HoverTarget::PaneTabClose(_))
             | Some(HoverTarget::FileFinderItem(_))
-            | Some(HoverTarget::TitlebarSwap)
             | Some(HoverTarget::TitlebarSettings)
             | Some(HoverTarget::TitlebarTheme)
             | Some(HoverTarget::TitlebarIntegration)

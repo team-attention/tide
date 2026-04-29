@@ -38,7 +38,6 @@ pub(crate) enum HoverTarget {
     HeaderAction(PaneId, crate::header::HeaderHitAction),
     FileFinderItem(usize),
     SidebarHandle,
-    TitlebarSwap,
     TitlebarSettings,
     TitlebarTheme,
     TitlebarIntegration,
@@ -68,8 +67,7 @@ impl HoverTarget {
     pub(crate) fn affects_chrome(&self) -> bool {
         matches!(
             self,
-            HoverTarget::TitlebarSwap
-                | HoverTarget::TitlebarSettings
+            HoverTarget::TitlebarSettings
                 | HoverTarget::TitlebarTheme
                 | HoverTarget::TitlebarIntegration
                 | HoverTarget::TitlebarWorkspace

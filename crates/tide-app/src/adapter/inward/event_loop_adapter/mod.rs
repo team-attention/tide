@@ -326,7 +326,7 @@ pub(crate) fn handle_platform_event(
             height,
         } => {
             ctx.set_fullscreen_state(is_fullscreen);
-            ctx.set_top_inset(if is_fullscreen { 0.0 } else { TITLEBAR_HEIGHT });
+            ctx.set_top_inset(TITLEBAR_HEIGHT);
             ctx.clear_resize_deferred();
 
             // Use the size included in the event (avoids querying window
