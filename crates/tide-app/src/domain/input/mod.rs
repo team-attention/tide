@@ -255,7 +255,6 @@ impl GlobalAction {
     /// All bindable actions for display in the config page.
     pub fn all_actions() -> Vec<GlobalAction> {
         vec![
-            GlobalAction::SplitVertical,
             GlobalAction::SplitHorizontal,
             GlobalAction::ClosePane,
             GlobalAction::Navigate(Direction::Up),
@@ -274,7 +273,6 @@ impl GlobalAction {
             GlobalAction::Copy,
             GlobalAction::Find,
             GlobalAction::ToggleFullscreen,
-            GlobalAction::ToggleTheme,
             GlobalAction::FontSizeUp,
             GlobalAction::FontSizeDown,
             GlobalAction::FontSizeReset,
@@ -464,10 +462,6 @@ impl KeybindingMap {
                 GlobalAction::ToggleDock,
             ),
             (
-                Hotkey::new(Key::Char('\\'), true, false, true, false),
-                GlobalAction::SplitVertical,
-            ),
-            (
                 Hotkey::new(Key::Char('w'), false, false, true, false),
                 GlobalAction::ClosePane,
             ),
@@ -498,10 +492,6 @@ impl KeybindingMap {
             (
                 Hotkey::new(Key::Enter, false, true, true, false),
                 GlobalAction::DockToggleStacked,
-            ),
-            (
-                Hotkey::new(Key::Char('d'), true, false, true, false),
-                GlobalAction::ToggleTheme,
             ),
             (
                 Hotkey::new(Key::Char('['), false, false, true, false),
@@ -778,10 +768,10 @@ impl Router {
                     Some(GlobalAction::NewTab)
                 }
             }
-            // Cmd+\ -> toggle Dock, Cmd+Shift+\ -> split current area
+            // Cmd+\ -> toggle Dock
             Key::Char('\\') | Key::Char('|') => match (modifiers.ctrl, modifiers.shift) {
                 (true, _) => None,
-                (false, true) => Some(GlobalAction::SplitVertical),
+                (false, true) => None,
                 (false, false) => Some(GlobalAction::ToggleDock),
             },
             // Cmd+W -> close pane, Cmd+Shift+W -> close workspace
@@ -825,10 +815,10 @@ impl Router {
             // Cmd+Enter -> toggle stacked, Cmd+Ctrl+Enter -> dock toggle stacked
             Key::Enter if modifiers.ctrl => Some(GlobalAction::DockToggleStacked),
             Key::Enter if !modifiers.shift => Some(GlobalAction::ToggleStacked),
-            // Cmd+Shift+D -> toggle dark/light theme, Cmd+D -> scroll half page down
+            // Cmd+D -> scroll half page down
             Key::Char('d') | Key::Char('D') => {
                 if modifiers.shift {
-                    Some(GlobalAction::ToggleTheme)
+                    None
                 } else {
                     Some(GlobalAction::ScrollHalfPageDown)
                 }

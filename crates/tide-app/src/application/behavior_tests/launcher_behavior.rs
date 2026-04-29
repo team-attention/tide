@@ -184,3 +184,25 @@ fn clicking_launcher_choice_icon_area_resolves_that_choice() {
     assert!(handle_launcher_choice_click(&mut app, icon_center));
     assert!(matches!(app.panes.get(&id), Some(PaneKind::Browser(_))));
 }
+
+#[test]
+fn terminal_launcher_choice_is_not_emphasized_without_hover() {
+    // UC-2 BR-11: Terminal is not permanently emphasized as a fake default.
+    let state = crate::rendering::launcher::launcher_choice_visual_state(
+        crate::action::LauncherChoice::Terminal,
+        None,
+    );
+
+    assert!(!state.emphasized);
+}
+
+#[test]
+fn hovered_launcher_choice_is_emphasized() {
+    // UC-2 BR-11: Active visual emphasis belongs to the hovered LauncherChoice.
+    let state = crate::rendering::launcher::launcher_choice_visual_state(
+        crate::action::LauncherChoice::OpenFile,
+        Some(crate::action::LauncherChoice::OpenFile),
+    );
+
+    assert!(state.emphasized);
+}

@@ -20,6 +20,23 @@ pub(crate) struct LauncherChoiceSpec {
     pub icon: LauncherIcon,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LauncherChoiceVisualState {
+    pub hovered: bool,
+    pub emphasized: bool,
+}
+
+pub(crate) fn launcher_choice_visual_state(
+    choice: LauncherChoice,
+    hover_choice: Option<LauncherChoice>,
+) -> LauncherChoiceVisualState {
+    let hovered = hover_choice == Some(choice);
+    LauncherChoiceVisualState {
+        hovered,
+        emphasized: hovered,
+    }
+}
+
 pub(crate) const LAUNCHER_CHOICES: [LauncherChoiceSpec; 4] = [
     LauncherChoiceSpec {
         choice: LauncherChoice::Terminal,

@@ -7,8 +7,8 @@ use crate::App;
 
 use super::bar_offset_for;
 use super::launcher::{
-    launcher_choice_rects, launcher_content_rect, launcher_icon_raster_icon_asset, LauncherIcon,
-    LAUNCHER_CHOICES,
+    launcher_choice_rects, launcher_choice_visual_state, launcher_content_rect,
+    launcher_icon_raster_icon_asset, LauncherIcon, LAUNCHER_CHOICES,
 };
 use super::svg_icons::{svg_icon_palette, SVG_ICON_FOLDER, SVG_ICON_TERMINAL};
 
@@ -147,12 +147,11 @@ pub(crate) fn render_grid(
                         .iter()
                         .zip(launcher_choice_rects(inner, cs).into_iter())
                     {
-                        let is_hovered = hover_choice == Some(choice);
-                        let is_primary = choice == crate::action::LauncherChoice::Terminal;
-                        let bg = if is_hovered {
+                        let visual = launcher_choice_visual_state(choice, hover_choice);
+                        let bg = if visual.hovered {
                             with_alpha(p.dock_tab_underline, 0.18)
                         } else {
-                            with_alpha(p.badge_bg, 0.24)
+                            with_alpha(p.badge_bg, 0.14)
                         };
                         renderer.draw_rect(row_rect, bg);
 
@@ -163,31 +162,58 @@ pub(crate) fn render_grid(
                             icon_size,
                             icon_size,
                         );
-                        let color = if is_hovered || is_primary {
+                        let icon_color = if visual.emphasized {
                             p.tab_text_focused
                         } else {
                             p.tab_text
                         };
                         if let Some(asset) = launcher_icon_raster_icon_asset(spec.icon) {
-                            renderer.draw_top_raster_icon(asset, icon_rect, color);
+                            renderer.draw_top_raster_icon(asset, icon_rect, icon_color);
                         } else {
                             renderer.draw_top_svg_icon(
                                 launcher_icon_svg(spec.icon),
                                 icon_rect,
-                                svg_icon_palette(color, with_alpha(color, color.a * 0.55)),
+                                svg_icon_palette(
+                                    icon_color,
+                                    with_alpha(icon_color, icon_color.a * 0.55),
+                                ),
                             );
                         }
 
-                        let text = format!("[{}]  {}", spec.hotkey, spec.label);
                         let x = icon_rect.x + icon_size + 12.0;
                         let y = row_rect.y + (row_rect.height - cs.height) / 2.0;
+                        let hotkey_text = format!("[{}]", spec.hotkey);
+                        let hotkey_color = if visual.emphasized {
+                            p.badge_text
+                        } else {
+                            p.badge_text_dimmed
+                        };
                         renderer.draw_text(
-                            &text,
+                            &hotkey_text,
                             crate::tide_core::Vec2::new(x, y),
                             crate::tide_core::TextStyle {
-                                foreground: color,
+                                foreground: hotkey_color,
                                 background: None,
-                                bold: is_primary,
+                                bold: visual.emphasized,
+                                dim: false,
+                                italic: false,
+                                underline: false,
+                            },
+                            row_rect,
+                        );
+                        let label_x = x + (hotkey_text.chars().count() as f32 + 2.0) * cs.width;
+                        let label_color = if visual.emphasized {
+                            p.tab_text_focused
+                        } else {
+                            p.tree_text
+                        };
+                        renderer.draw_text(
+                            spec.label,
+                            crate::tide_core::Vec2::new(label_x, y),
+                            crate::tide_core::TextStyle {
+                                foreground: label_color,
+                                background: None,
+                                bold: visual.emphasized,
                                 dim: false,
                                 italic: false,
                                 underline: false,

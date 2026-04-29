@@ -111,6 +111,8 @@ Create, split, resolve, open, close, and drag Panes.
   - BR-12: After close, focus stays in the same TabGroup (next tab, or previous if last)
   - BR-12a: If the closed tab was the only tab in its TabGroup, focus moves to a layout neighbor
   - BR-12b: In Stage `ViewMode::Stacked`, closing the focused `Pane` moves focus to the immediately previous `Pane` in the flat stacked tab order; if there is no previous `Pane`, focus moves to the immediately next `Pane`.
+  - BR-12c: In Stage `ViewMode::Split`, closing the focused `Pane` prefers the immediate right layout neighbor; if no right neighbor exists, focus moves to the immediately previous `Pane` in flat layout order.
+  - BR-12d: Closing a non-focused Stage `Pane` must not steal focus from the currently focused Stage `Pane`.
   - BR-13: App always has at least one Pane (create Launcher if last one closed)
   - BR-14: Cancel on SaveConfirm clears the modal without closing
   - BR-15: Browser Pane native teardown must complete on the main thread before Browser Pane state is dropped, so `MainThreadOnly` WebKit/AppKit objects are not released on `app-thread`
@@ -176,6 +178,8 @@ After ANY Pane lifecycle operation:
 | UC-5: ClosePane | BR-12 | `closing_editor_pane_moves_focus_to_another_pane` |
 | UC-5: ClosePane | BR-12 | `closing_tab_in_right_group_focuses_same_group_not_left` |
 | UC-5: ClosePane | BR-12a | `closing_only_tab_in_group_focuses_neighbor_group` |
+| UC-5: ClosePane | BR-12c | `closing_rightmost_split_pane_focuses_immediate_left_neighbor` |
+| UC-5: ClosePane | BR-12d | `closing_unfocused_stage_terminal_preserves_current_focus` |
 | UC-5: ClosePane | BR-14 | `cancel_save_confirm_clears_the_modal` |
 | UC-5: ClosePane | BR-15 | `closing_browser_pane_moves_focus_to_another_pane` |
 | UC-5: ClosePane | BR-16 | `closing_browser_pane_with_pending_certificate_error_preserves_pane_lifecycle_invariants` |

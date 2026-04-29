@@ -7,6 +7,10 @@
 
 `FileFinderState` in `crates/tide-app/src/domain/modal/mod.rs` now supports four modes: plain file search, `@` current-file symbols, `#` workspace symbols, and `/` workspace text search. File search uses path ranking, current-file symbols are gathered when the modal opens, workspace symbol indexing is lazy and runs only after `WorkspaceSymbols` mode is requested, and workspace text search is query-driven. Keyboard selection and pointer activation both resolve a `FileFinderDestination`, so clicking a visible row opens that clicked destination.
 
+`FileFinderState` owns `scroll_offset`, but `scroll_adapter` routes wheel events only to config page, git switcher, tab bars, FileTree View, or the Pane under the pointer. A wheel event over the `FileFinder` popup therefore does not scroll the result list.
+
+The default file list was path-sorted directly from `scan_dir()`. That put hidden/tooling paths such as `.DS_Store`, `.claude/...`, and `.codex/...` before ordinary project files. File rows also rendered only the basename as primary text, which made duplicate names such as `SKILL.md` look indistinguishable.
+
 ### To-Be
 `FileFinder` remains Tide's single navigation entry point, but it behaves more like a Quick Open palette:
 
@@ -21,6 +25,10 @@ Selection remains predictable:
 - selecting a workspace `SymbolMatch` opens its file and jumps to the symbol line
 - selecting a `WorkspaceSearchHit` opens its file and jumps to the hit line
 - clicking a visible `FileFinder` row opens that clicked destination, even when the keyboard selection is elsewhere
+- wheel and trackpad scroll over the `FileFinder` popup scroll the result list
+- empty file search shows ordinary project files before hidden/tooling paths
+- file result rows show a compact relative path as the primary label so duplicate basenames remain distinguishable
+- symbol and text-search rows separate the primary label from path or line metadata so the list scans like a navigation palette
 
 ### Approach
 1. Keep `GlobalAction::FileFinder` and the existing modal surface instead of adding a second navigation popup.
@@ -29,6 +37,9 @@ Selection remains predictable:
 4. Keep workspace text search capped and query-driven so the palette stays responsive.
 5. Render mode-aware placeholders and result rows so the user can see which navigation model is active before pressing Enter.
 6. Make pointer activation resolve the clicked filtered row, not the stale selected row.
+7. Route popup-local wheel events to `FileFinderState::scroll_by_lines()` before pane-level scroll routing.
+8. Sort default file entries with a `FileFinder`-specific comparator: visible paths first, then hidden/tooling paths, each ordered by relative path.
+9. Render file rows as relative paths, and render symbol/text rows as primary text plus muted location metadata.
 
 ## Bounded Contexts
 
@@ -53,6 +64,7 @@ Selection remains predictable:
 - **Business Rules**:
   - BR-1: A plain query uses `FileFinderMode::Files`.
   - BR-2: File search prefers basename and prefix matches ahead of deeper path-only matches.
+  - BR-15: Empty file search orders visible project files before hidden/tooling paths, while still keeping hidden files searchable.
 
 ### UC-2: SearchSymbols
 - **Actor**: User
@@ -95,6 +107,33 @@ Selection remains predictable:
 - **Business Rules**:
   - BR-10: Clicking a visible `FileFinder` file result must open the clicked file, not the previously selected result.
 
+### UC-5: ScrollWithPointer
+- **Actor**: User
+- **Trigger**: Wheel or trackpad scroll while the pointer is inside the `FileFinder` popup
+- **Precondition**: `FileFinder` is open and has more results than visible rows
+- **Flow**:
+  1. Tide hit-tests the pointer against the `FileFinder` popup.
+  2. Tide updates `FileFinderState.scroll_offset` by the normalized scroll-line delta.
+  3. Tide clamps `scroll_offset` to the available result range.
+  4. Tide keeps the selected result within the visible row window.
+- **Postcondition**: The visible result list moves without scrolling the Pane below the popup.
+- **Business Rules**:
+  - BR-11: Wheel or trackpad scroll over the `FileFinder` popup scrolls the `FileFinder` list, not the Pane below it.
+  - BR-12: `FileFinder` scroll offset is clamped to the filtered result range and keeps the selected result visible.
+
+### UC-6: ScanResultRows
+- **Actor**: User
+- **Trigger**: `FileFinder` renders file, symbol, or workspace text results
+- **Precondition**: `FileFinder` has at least one visible result
+- **Flow**:
+  1. Tide resolves a primary row label for the result.
+  2. Tide resolves secondary metadata for path, parent directory, or line context.
+  3. Tide renders the primary label with stronger contrast and metadata with muted contrast.
+- **Postcondition**: Result rows expose the item first and supporting context second.
+- **Business Rules**:
+  - BR-13: File result rows render the relative path as primary text.
+  - BR-14: Symbol and workspace-search rows render the symbol or preview as primary text and path/line context as secondary metadata.
+
 ## Invariants
 
 1. `FileFinder` stays the single modal entry point for file and code navigation.
@@ -108,6 +147,7 @@ Selection remains predictable:
 |----|----|-------------|------|
 | UC-1 | BR-1 | `file_finder_behavior` | `plain_query_uses_file_mode` |
 | UC-1 | BR-2 | `file_finder_behavior` | `plain_file_query_prefers_basename_matches_over_deeper_paths` |
+| UC-1 | BR-15 | `file_finder_behavior` | `empty_file_query_orders_visible_project_files_before_hidden_paths` |
 | UC-2 | BR-3 | `file_finder_behavior` | `at_prefix_switches_to_current_file_symbol_mode` |
 | UC-2 | BR-4 | `file_finder_behavior` | `hash_prefix_switches_to_workspace_symbol_mode` |
 | UC-2 | BR-5 | `file_finder_behavior` | `selected_current_file_symbol_targets_focused_editor` |
@@ -116,6 +156,9 @@ Selection remains predictable:
 | UC-3 | BR-8 | `file_finder_behavior` | `workspace_search_ignores_single_character_queries` |
 | UC-3 | BR-9 | `file_finder_behavior` | `selected_workspace_search_hit_opens_file_at_matching_line` |
 | UC-4 | BR-10 | `file_finder_behavior` | `clicking_second_file_result_opens_the_clicked_file` |
+| UC-5 | BR-11/BR-12 | `file_finder_behavior` | `scrolling_over_file_finder_popup_scrolls_results` |
+| UC-6 | BR-13 | `file_finder_behavior` | `file_result_row_parts_show_relative_path` |
+| UC-6 | BR-14 | `file_finder_behavior` | `symbol_result_row_parts_separate_label_and_location` |
 
 ## Location
 

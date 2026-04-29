@@ -17,6 +17,7 @@ pub(crate) trait WorkspaceNavPort {
     fn close_config_page(&mut self);
     fn resolve_slot(&self, slot: AreaSlot) -> FocusArea;
     fn handle_navigate(&mut self, direction: crate::tide_input::Direction);
+    fn dock_navigate(&mut self, direction: crate::tide_input::Direction);
     fn cycle_tab(&mut self, direction: i32);
     fn navigate_panes(&mut self, direction: i32);
 

@@ -76,7 +76,7 @@ KeybindingMap {
 | Action | Default Binding | Description |
 |--------|----------------|-------------|
 | `SplitHorizontal` | Cmd+Shift+T | Split the current FocusArea into top/bottom panes |
-| `SplitVertical` | Cmd+Shift+Backslash | Split the current FocusArea into left/right panes |
+| `SplitVertical` | None by default | Split the current FocusArea into left/right panes |
 | `ClosePane` | Cmd+W | Close focused pane |
 | `ToggleStacked` | Cmd+Enter | Toggle stacked mode for the current FocusArea |
 | `DockToggleStacked` | Cmd+Ctrl+Enter | Toggle Dock stacked mode without permanently changing FocusArea |
@@ -98,7 +98,7 @@ KeybindingMap {
 | `Find` | Cmd+F | Search in pane |
 | `Paste` / `Copy` | Cmd+V / Cmd+C | Clipboard |
 | `OpenConfig` | Cmd+, | Settings page |
-| `ToggleTheme` | Cmd+Shift+D | Dark/light mode |
+| `ToggleTheme` | None by default | Dark/light mode through Appearance settings or user overrides |
 | `FontSizeUp/Down/Reset` | Cmd++ or Cmd+= / Cmd+- / Cmd+0 | Font size |
 | `ToggleFullscreen` | Cmd+Ctrl+F | Fullscreen |
 | `NewWindow` | Cmd+N | New window |

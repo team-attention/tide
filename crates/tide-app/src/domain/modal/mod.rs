@@ -96,9 +96,32 @@ pub(crate) struct SaveConfirmState {
 // File finder state (floating popup file search/open UI)
 // ──────────────────────────────────────────────
 
-pub(crate) const FILE_FINDER_POPUP_W: f32 = 500.0;
-pub(crate) const FILE_FINDER_MAX_VISIBLE: usize = 12;
+pub(crate) const FILE_FINDER_POPUP_W: f32 = 680.0;
+pub(crate) const FILE_FINDER_MAX_VISIBLE: usize = 14;
 const FILE_FINDER_MAX_WORKSPACE_SEARCH_HITS: usize = 200;
+
+pub(crate) fn sort_file_finder_entries(entries: &mut [PathBuf]) {
+    entries.sort_by(|left, right| {
+        let left_hidden = file_finder_entry_is_hidden_or_tooling(left);
+        let right_hidden = file_finder_entry_is_hidden_or_tooling(right);
+        left_hidden
+            .cmp(&right_hidden)
+            .then_with(|| file_finder_sort_key(left).cmp(&file_finder_sort_key(right)))
+    });
+}
+
+fn file_finder_entry_is_hidden_or_tooling(path: &std::path::Path) -> bool {
+    path.components().any(|component| {
+        let std::path::Component::Normal(part) = component else {
+            return false;
+        };
+        part.to_string_lossy().starts_with('.')
+    })
+}
+
+fn file_finder_sort_key(path: &std::path::Path) -> String {
+    path.to_string_lossy().to_lowercase()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FileFinderMode {
@@ -284,6 +307,25 @@ impl FileFinderState {
         }
     }
 
+    pub fn scroll_by_lines(&mut self, lines: isize) {
+        if self.filtered.is_empty() {
+            self.selected = 0;
+            self.scroll_offset = 0;
+            return;
+        }
+
+        let max_offset = self.filtered.len().saturating_sub(FILE_FINDER_MAX_VISIBLE);
+        let next = (self.scroll_offset as isize + lines).clamp(0, max_offset as isize) as usize;
+        self.scroll_offset = next;
+
+        let visible_end = (self.scroll_offset + FILE_FINDER_MAX_VISIBLE).min(self.filtered.len());
+        if self.selected < self.scroll_offset {
+            self.selected = self.scroll_offset;
+        } else if self.selected >= visible_end {
+            self.selected = visible_end.saturating_sub(1);
+        }
+    }
+
     pub fn selected_path(&self) -> Option<PathBuf> {
         if self.mode != FileFinderMode::Files {
             return None;
@@ -364,29 +406,36 @@ impl FileFinderState {
     }
 
     pub fn row_text(&self, filtered_index: usize) -> Option<String> {
+        let (primary, secondary) = self.row_parts(filtered_index)?;
+        if secondary.is_empty() {
+            return Some(primary);
+        }
+        Some(format!("{primary}  {secondary}"))
+    }
+
+    pub fn row_parts(&self, filtered_index: usize) -> Option<(String, String)> {
         let idx = *self.filtered.get(filtered_index)?;
         match self.mode {
-            FileFinderMode::Files => Some(self.entries.get(idx)?.to_string_lossy().to_string()),
+            FileFinderMode::Files => {
+                let rel_path = self.entries.get(idx)?;
+                Some((rel_path.to_string_lossy().to_string(), String::new()))
+            }
             FileFinderMode::Symbols | FileFinderMode::WorkspaceSymbols => {
                 let symbol = if self.mode == FileFinderMode::Symbols {
                     self.current_file_symbols.get(idx)?
                 } else {
                     self.workspace_symbols.get(idx)?
                 };
-                Some(format!(
-                    "{}  {}:{}",
-                    symbol.label,
-                    symbol.path.display(),
-                    symbol.line
+                Some((
+                    symbol.label.clone(),
+                    format!("{}:{}", symbol.path.display(), symbol.line),
                 ))
             }
             FileFinderMode::WorkspaceSearch => {
                 let hit = self.workspace_search_hits.get(idx)?;
-                Some(format!(
-                    "{}  {}:{}",
+                Some((
                     trim_preview(&hit.preview),
-                    hit.path.display(),
-                    hit.line
+                    format!("{}:{}", hit.path.display(), hit.line),
                 ))
             }
         }

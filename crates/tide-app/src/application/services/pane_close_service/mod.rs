@@ -101,13 +101,9 @@ impl App {
             }
         }
 
-        self.layout.right_neighbor_pane(pane_id).or_else(|| {
-            self.layout
-                .pane_ids()
-                .iter()
-                .find(|&&id| id != pane_id)
-                .copied()
-        })
+        self.layout
+            .right_neighbor_pane(pane_id)
+            .or_else(|| Self::focus_before_or_after_in_order(pane_id, &self.layout.pane_ids()))
     }
 
     /// Close a pane unconditionally (no dirty check, no branch cleanup check).
@@ -153,7 +149,13 @@ impl App {
 
         // Determine next focus target BEFORE removal so we can find a
         // layout neighbor while the tree is still intact.
-        let next_focus = self.next_stage_focus_after_close(pane_id);
+        let focused_was_closed = self.focus.focused == Some(pane_id);
+        let stage_focused_was_closed = self.focus.stage_focused == Some(pane_id);
+        let next_focus = if focused_was_closed || stage_focused_was_closed {
+            self.next_stage_focus_after_close(pane_id)
+        } else {
+            None
+        };
 
         // Retain terminal context before removing (soft delete)
         self.retain_terminal_context(pane_id);
@@ -166,22 +168,25 @@ impl App {
         self.gateway
             .notify("pane-closed", serde_json::json!({"pane_id": pane_id}));
 
-        // If the closed pane was stage_focused, move it to the next target
-        if self.focus.stage_focused == Some(pane_id) {
+        // If the closed pane was stage_focused, move it to the next target.
+        if stage_focused_was_closed {
             self.focus.stage_focused = next_focus;
         }
 
-        if let Some(next) = next_focus {
-            self.focus.focused = Some(next);
-            self.router.set_focused(next);
-            // Stacked mode: move zoom to the next pane instead of dropping mode
-            if self.focus.zoomed_pane == Some(pane_id) {
-                self.focus.zoomed_pane = Some(next);
+        if focused_was_closed || stage_focused_was_closed {
+            if let Some(next) = next_focus {
+                self.focus.focused = Some(next);
+                self.router.set_focused(next);
+                self.focus.focus_area = crate::state::FocusArea::Stage;
+                // Stacked mode: move zoom to the next pane instead of dropping mode
+                if self.focus.zoomed_pane == Some(pane_id) {
+                    self.focus.zoomed_pane = Some(next);
+                }
+                self.gateway
+                    .notify("focus-changed", serde_json::json!({"pane_id": next}));
+            } else {
+                self.focus.focused = None;
             }
-            self.gateway
-                .notify("focus-changed", serde_json::json!({"pane_id": next}));
-        } else {
-            self.focus.focused = None;
         }
 
         self.cache.invalidate_chrome();

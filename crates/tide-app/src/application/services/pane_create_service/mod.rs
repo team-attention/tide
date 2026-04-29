@@ -478,7 +478,11 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         };
         match self.focus.focus_area {
             crate::state::FocusArea::Dock => {
-                self.dock_split_new_tab_group(direction);
+                if self.active_terminal_context_is_stacked() {
+                    self.dock_split_last_with_launcher(direction);
+                } else {
+                    self.dock_split_new_tab_group(direction);
+                }
                 return;
             }
             _ => {

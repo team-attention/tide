@@ -48,6 +48,7 @@ Launcher Pane resolution: how a placeholder Pane becomes a concrete PaneKind.
   - BR-8: Hovering a Launcher choice row produces a `HoverTarget::LauncherChoice` pointer target.
   - BR-9: Launcher rendering and Launcher click hit-testing use the same choice row geometry.
   - BR-10: Clicking inside a visible Launcher choice icon area resolves the same `LauncherChoice` as clicking the row text.
+  - BR-11: Launcher choice rows use active visual emphasis only for the hovered `LauncherChoice`; Terminal is not permanently emphasized as a fake default.
 
 ## Tests
 
@@ -63,6 +64,7 @@ Launcher Pane resolution: how a placeholder Pane becomes a concrete PaneKind.
 | UC-2 | BR-8 | `hovering_launcher_choice_returns_launcher_choice_target` |
 | UC-2 | BR-9 | `launcher_choice_hit_testing_uses_rendered_choice_rects` |
 | UC-2 | BR-10 | `clicking_launcher_choice_icon_area_resolves_that_choice` |
+| UC-2 | BR-11 | `terminal_launcher_choice_is_not_emphasized_without_hover` |
 
 ## Location
 

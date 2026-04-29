@@ -181,8 +181,8 @@ In **Dock Stacked mode**: identical flat traversal, just visually shows one pane
 ### UC-6: SplitInDock
 
 - **Trigger**: Cmd+Shift+T while FocusArea = Dock
-- Splits the focused TabGroup's node in dock_layout
-- New leaf gets a new TabGroup with a Launcher
+- If Terminal Context Surface is Split, splits the focused context node in dock_layout and focuses a Launcher
+- If Terminal Context Surface is Stacked, preserves Stacked presentation and adds a focused Launcher as the final stacked context tab
 
 ### UC-7: CloseTerminalCascade
 

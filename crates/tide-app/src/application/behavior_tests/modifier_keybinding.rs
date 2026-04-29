@@ -4,13 +4,14 @@
 // action-key migration behavior for removed bindings.
 
 use crate::pane::editor::EditorPane;
-use crate::pane::PaneKind;
-use crate::state::FocusArea;
+use crate::pane::{PaneKind, TerminalPane};
+use crate::state::{FocusArea, ViewMode};
 use crate::tide_core::{Key, LayoutEngine, Modifiers, SplitDirection};
 use crate::tide_input::{Direction, GlobalAction, KeybindingMap};
 use crate::ActionPort;
 use crate::App;
 use crate::DockPort;
+use crate::LayoutPort;
 use crate::WorkspaceNavPort;
 
 fn test_app() -> App {
@@ -40,6 +41,21 @@ fn app_with_two_stage_panes() -> (App, u64, u64) {
     (app, p1, p2)
 }
 
+fn app_with_stage_terminal() -> (App, u64) {
+    let mut app = test_app();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes.insert(
+        terminal_id,
+        PaneKind::Terminal(TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap()),
+    );
+    app.focus.focused = Some(terminal_id);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.router.set_focused(terminal_id);
+    (app, terminal_id)
+}
+
 /// Helper: add a pane to a terminal's dock.
 /// For Launcher panes (test fixtures without real PTY), manually set dock state.
 fn add_to_dock(app: &mut App, terminal_id: u64, pane_id: u64) {
@@ -48,6 +64,31 @@ fn add_to_dock(app: &mut App, terminal_id: u64, pane_id: u64) {
     if matches!(app.panes.get(&terminal_id), Some(PaneKind::Launcher(_))) {
         app.dock.dock_open = true;
         app.assoc.associated_terminal.insert(pane_id, terminal_id);
+    }
+}
+
+fn add_context_editor(app: &mut App, terminal_id: u64) -> u64 {
+    let pane_id = app.layout.alloc_id();
+    app.panes
+        .insert(pane_id, PaneKind::Editor(EditorPane::new_empty(pane_id)));
+    app.add_pane_to_dock(pane_id, Some(terminal_id));
+    app.dock.dock_open = true;
+    app.dock.visibility_animation = None;
+    pane_id
+}
+
+fn set_terminal_context_focus(app: &mut App, terminal_id: u64, pane_id: u64) {
+    let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&terminal_id) else {
+        panic!("expected Stage Terminal");
+    };
+    terminal.dock_focused = Some(pane_id);
+    terminal.dock_layout.set_active_tab(pane_id);
+}
+
+fn terminal_context_focus(app: &App, terminal_id: u64) -> Option<u64> {
+    match app.panes.get(&terminal_id) {
+        Some(PaneKind::Terminal(terminal)) => terminal.dock_focused,
+        _ => None,
     }
 }
 
@@ -235,7 +276,65 @@ fn dock_navigate_when_dock_closed_is_noop() {
         app.focus.focused, focused_before,
         "DockNavigate when dock closed should be no-op"
     );
+    assert!(
+        !app.dock.dock_open,
+        "DockNavigate when dock closed must not open the Dock"
+    );
     assert_eq!(app.focus.focus_area, FocusArea::Stage);
+}
+
+#[test]
+fn dock_navigate_from_stage_updates_split_terminal_context_surface_focus() {
+    // UC-2 BR-4: Cross-area DockNavigate updates the focused Stage Terminal's
+    // Terminal Context Surface active Pane without moving keyboard focus.
+    let (mut app, terminal_id) = app_with_stage_terminal();
+    let first = add_context_editor(&mut app, terminal_id);
+    let second = add_context_editor(&mut app, terminal_id);
+    {
+        let Some(PaneKind::Terminal(terminal)) = app.panes.get_mut(&terminal_id) else {
+            panic!("expected Stage Terminal");
+        };
+        terminal.dock_view_mode = ViewMode::Split;
+    }
+    set_terminal_context_focus(&mut app, terminal_id, first);
+    app.focus.focus_area = FocusArea::Stage;
+    app.focus.focused = Some(terminal_id);
+    app.router.set_focused(terminal_id);
+    app.compute_layout();
+
+    app.handle_global_action(GlobalAction::DockNavigate(Direction::Right));
+
+    assert_eq!(terminal_context_focus(&app, terminal_id), Some(second));
+    assert_eq!(app.focus.focus_area, FocusArea::Stage);
+    assert_eq!(
+        app.focus.focused,
+        Some(terminal_id),
+        "keyboard focus must stay on the Stage Pane"
+    );
+}
+
+#[test]
+fn dock_navigate_from_stage_preserves_keyboard_focus_in_stacked_terminal_context_surface() {
+    // UC-2 BR-4: Cross-area DockNavigate in a stacked Terminal Context Surface
+    // cycles the active Pane without routing text input away from Stage.
+    let (mut app, terminal_id) = app_with_stage_terminal();
+    let first = add_context_editor(&mut app, terminal_id);
+    let second = add_context_editor(&mut app, terminal_id);
+    set_terminal_context_focus(&mut app, terminal_id, first);
+    app.focus.focus_area = FocusArea::Stage;
+    app.focus.focused = Some(terminal_id);
+    app.router.set_focused(terminal_id);
+    app.compute_layout();
+
+    app.handle_global_action(GlobalAction::DockNavigate(Direction::Right));
+
+    assert_eq!(terminal_context_focus(&app, terminal_id), Some(second));
+    assert_eq!(app.focus.focus_area, FocusArea::Stage);
+    assert_eq!(
+        app.focus.focused,
+        Some(terminal_id),
+        "keyboard focus must stay on the Stage Pane"
+    );
 }
 
 // ─────────────────────────────────────────────────
@@ -450,6 +549,41 @@ fn split_vertical_in_dock_targets_terminal_context_surface() {
 }
 
 #[test]
+fn split_horizontal_in_stacked_dock_preserves_stacked_terminal_context_surface() {
+    // UC-5 BR-3: SplitHorizontal in a Stacked Terminal Context Surface adds a Launcher without switching to Split view.
+    let (mut app, terminal_id) = app_with_stage_terminal();
+    let first_context_id = add_context_editor(&mut app, terminal_id);
+    let second_context_id = add_context_editor(&mut app, terminal_id);
+    app.set_active_terminal_context_stacked(true);
+    set_terminal_context_focus(&mut app, terminal_id, second_context_id);
+    app.focus.focus_area = FocusArea::Dock;
+    app.focus.focused = Some(second_context_id);
+    app.router.set_focused(second_context_id);
+
+    app.handle_global_action(GlobalAction::SplitHorizontal);
+
+    let new_id = app
+        .focus
+        .focused
+        .expect("Dock split should focus the new Launcher");
+    assert!(matches!(
+        app.panes.get(&new_id),
+        Some(PaneKind::Launcher(_))
+    ));
+    assert_eq!(app.focus.focus_area, FocusArea::Dock);
+    assert_eq!(app.terminal_owning(new_id), Some(terminal_id));
+
+    let Some(PaneKind::Terminal(owner)) = app.panes.get(&terminal_id) else {
+        panic!("expected Stage Terminal");
+    };
+    assert_eq!(owner.dock_view_mode, ViewMode::Stacked);
+    assert_eq!(
+        owner.dock_layout.all_tabs_flat(),
+        vec![first_context_id, second_context_id, new_id]
+    );
+}
+
+#[test]
 fn cmd_backslash_maps_to_toggle_dock() {
     // UC-8 BR-1: Cmd+\ = ToggleDock.
     let map = KeybindingMap::new();
@@ -575,6 +709,8 @@ fn keybinding_settings_omit_retired_tab_group_and_unbound_dock_split_actions() {
         GlobalAction::DockSplitHorizontal,
         GlobalAction::DockSplitVertical,
         GlobalAction::DockNewTab,
+        GlobalAction::SplitVertical,
+        GlobalAction::ToggleTheme,
         GlobalAction::ToggleDockPin,
     ] {
         assert!(
@@ -608,8 +744,8 @@ fn cmd_shift_p_is_not_bound_to_retired_dock_pin() {
 }
 
 #[test]
-fn cmd_shift_backslash_maps_to_split_vertical() {
-    // Cmd+Shift+\ = SplitVertical in current area (right). Shift flips orientation.
+fn cmd_shift_backslash_is_not_bound_to_split_vertical() {
+    // UC-5 BR-2: SplitVertical has no default keyboard binding.
     let map = KeybindingMap::new();
     let mods = Modifiers {
         shift: true,
@@ -619,9 +755,25 @@ fn cmd_shift_backslash_maps_to_split_vertical() {
     };
     let action = map.lookup(&Key::Char('\\'), &mods);
     assert_eq!(
-        action,
-        Some(GlobalAction::SplitVertical),
-        "Cmd+Shift+\\ should map to SplitVertical"
+        action, None,
+        "Cmd+Shift+\\ should not have a default binding"
+    );
+}
+
+#[test]
+fn cmd_shift_d_is_not_bound_to_toggle_theme() {
+    // UC-8 BR-5: ToggleTheme has no default keyboard binding.
+    let map = KeybindingMap::new();
+    let mods = Modifiers {
+        shift: true,
+        ctrl: false,
+        meta: true,
+        alt: false,
+    };
+    let action = map.lookup(&Key::Char('d'), &mods);
+    assert_eq!(
+        action, None,
+        "Cmd+Shift+D should not have a default binding"
     );
 }
 

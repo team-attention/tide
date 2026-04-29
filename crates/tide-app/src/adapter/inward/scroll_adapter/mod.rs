@@ -124,6 +124,30 @@ pub(crate) fn handle_scroll(
         }
     }
 
+    // Popup scroll: file finder
+    {
+        let cursor_pos = ctx.last_cursor_pos();
+        let has_file_finder = ctx.modal().file_finder.is_some();
+        if has_file_finder && ctx.file_finder_contains(cursor_pos) {
+            let lines = if dy.abs() >= 1.0 {
+                dy.abs().ceil() as isize
+            } else if dy != 0.0 {
+                1
+            } else {
+                0
+            };
+            if lines != 0 {
+                let delta = if dy > 0.0 { -lines } else { lines };
+                if let Some(ref mut finder) = ctx.modal_mut().file_finder {
+                    finder.scroll_by_lines(delta);
+                }
+            }
+            ctx.invalidate_chrome();
+            ctx.request_redraw();
+            return;
+        }
+    }
+
     let editor_dx = dx;
     let editor_dy = dy;
 

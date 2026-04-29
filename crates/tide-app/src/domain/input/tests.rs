@@ -180,6 +180,36 @@ mod tests {
     }
 
     #[test]
+    fn meta_shift_backslash_routes_to_pane() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let event = InputEvent::KeyPress {
+            key: Key::Char('\\'),
+            modifiers: meta_shift(),
+        };
+        let action = router.process(event, &panes);
+
+        assert_eq!(action, Action::RouteToPane(1));
+    }
+
+    #[test]
+    fn meta_shift_d_routes_to_pane() {
+        let mut router = Router::new();
+        router.set_focused(1);
+        let panes = two_panes_horizontal();
+
+        let event = InputEvent::KeyPress {
+            key: Key::Char('d'),
+            modifiers: meta_shift(),
+        };
+        let action = router.process(event, &panes);
+
+        assert_eq!(action, Action::RouteToPane(1));
+    }
+
+    #[test]
     fn meta_w_triggers_close_pane() {
         let mut router = Router::new();
         router.set_focused(1);

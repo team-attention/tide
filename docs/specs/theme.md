@@ -14,7 +14,7 @@ Theme switching and font defaults.
 ### UC-1: ToggleTheme
 
 - **Actor**: User
-- **Trigger**: `GlobalAction::ToggleTheme` from a keybinding or the ConfigPage Appearance section
+- **Trigger**: `GlobalAction::ToggleTheme` from the ConfigPage Appearance section or a user-configured keybinding
 - **Precondition**: App is running
 - **Flow**:
   1. Flip dark_mode boolean

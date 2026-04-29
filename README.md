@@ -13,9 +13,9 @@
 
 </div>
 
-Tide is an Integrated Task Environment for agent-led software work. Run Claude Code, Codex, or Gemini in Terminal Panes, split larger tasks into Workspaces, inspect code and diffs beside the task, and give agents a human-visible Browser Pane for previews, docs, and verification.
+Tide is an Integrated Task Environment for agent-led software work. Run Claude Code, Codex, or Gemini in Terminal Panes, split larger tasks into Workspaces, inspect code and diffs beside the task, and give Wrapped Agents a human-visible Browser Pane for previews, docs, and verification.
 
-Through the Agent Gateway and Tide MCP Runtime, Wrapped Agents can observe the same Workspace structure you see: Pane geometry, Terminal output, Editor content, Browser Pane state, Context Artifacts, and layout targets. Browser work stays inside Tide's Browser Pane Runtime by default, so the human and the agent can look at the same page instead of handing context through screenshots or copy-paste.
+Through the Agent Gateway and Tide MCP Runtime, Wrapped Agents can inspect Workspace structure and Pane geometry, operate Browser Panes through Tide's Browser Pane Runtime, capture Terminal or Editor Pane content on request, and manage Context Artifacts. Browser Pane operations are the default path for Wrapped Agents using the Tide MCP Runtime; external browser runtimes remain explicit fallbacks.
 
 https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad
 
@@ -23,7 +23,7 @@ https://github.com/user-attachments/assets/c4d04f84-e4fe-4aba-9202-044314f5f3ad
 
 ### Run Multiple Coding Agents
 
-Launch Claude Code, Codex, or Gemini from Terminal Panes. Split agents side by side in the Stage, keep separate tasks in separate Workspaces, and see when each Wrapped Agent is running, idle, or waiting for input.
+Launch Claude Code, Codex, or Gemini from Terminal Panes. Split agents side by side in the Stage, keep separate tasks in separate Workspaces, and when they are launched through Tide wrappers or auto-integration, see whether each Wrapped Agent is running, idle, or waiting for input.
 
 ### Keep Each Task in a Workspace
 
@@ -31,7 +31,7 @@ Each Workspace has its own Pane layout and focus state. Split the Stage, switch 
 
 ### Use the Dock as a Terminal Context Surface
 
-Keep the Terminal in the Stage and open its supporting Panes in the Dock: inspect code in an Editor Pane, check a running app in a Browser Pane, compare a Diff Pane, or keep a Render Pane beside the command that produced it. The Dock follows the focused Stage Terminal through the Associated Terminal relationship, so supporting context stays attached to the task that produced it.
+Keep the Terminal in the Stage and open its supporting Panes in the Dock: inspect code in an Editor Pane, check a running app in a Browser Pane, compare a Diff Pane, or keep a Render Pane (Browser Pane render mode) beside the command that produced it. The Dock follows the focused Stage Terminal through the Associated Terminal relationship, so supporting context stays attached to the task that produced it.
 
 ### Share a Browser Pane With the Agent
 
@@ -39,11 +39,11 @@ Open a Browser Pane for docs, local previews, and unauthenticated public pages. 
 
 ### Capture Context Without Leaving Tide
 
-Create Context Artifacts from Pane selections and comments, then deliver them to the paired agent for the source Pane's Associated Terminal. Agents can explicitly list and read those artifacts through MCP instead of relying on hidden prompt context.
+Create Context Artifacts from Dock Pane selections and comments, then deliver them to the paired agent for the source Pane's Associated Terminal. Agents can explicitly list and read those artifacts through MCP instead of relying on hidden prompt context.
 
 ### Render Agent-Generated UI
 
-Agents can create Render Panes with `tide_render_html` for task dashboards, checklists, reports, or custom controls in the same Workspace.
+Agents can create Render Panes (Browser Panes in render mode) with `tide_render_html` from HTML fragments for task dashboards, checklists, reports, or custom controls in the same Workspace.
 
 ## Install
 
@@ -73,15 +73,15 @@ cargo build --release                    # binary
 
 - **Workspace rail**: switch between task Workspaces.
 - **Stage**: the main area for Terminal Panes, splits, and stacked views.
-- **Dock**: the focused Terminal's Terminal Context Surface for Editor, Browser, Diff, Launcher, secondary Terminal, and Render Panes.
+- **Dock**: the focused Terminal's Terminal Context Surface for Editor, Browser, Diff, Launcher, secondary Terminal, and Render Panes (Browser Pane render mode).
 - **FileTree View**: the outer-right filesystem view rooted at the focused Terminal's working directory.
 
 ## Quick Start
 
 1. Open Tide. It starts with one Workspace and one Terminal Pane.
 2. Run a coding agent inside the Terminal, such as Claude Code, Codex, or Gemini.
-3. Add another Terminal with `Cmd+T`, split the current FocusArea with `Cmd+Shift+T` or `Cmd+Shift+\`, or open a Browser Pane with `Cmd+Shift+B`.
-4. Open or focus the Dock with `Cmd+\`. If the Dock is empty, use the Launcher keys: `B` for a Browser Pane, `E` for a new Editor Pane, `O` to open a file, or `T` for a Terminal Pane.
+3. Add another Terminal with `Cmd+T`, split the current FocusArea top/bottom with `Cmd+Shift+T`, or open a Browser Pane with `Cmd+Shift+B`.
+4. Open or focus the Dock with `Cmd+\`. If opening the Dock creates or focuses a Launcher, use the Launcher keys: `B` for a Browser Pane, `E` for a new Editor Pane, `O` to open a file, or `T` for a Terminal Pane.
 5. The Dock is tied to the focused Terminal Pane in the Stage. When you move between Terminal Panes, the Dock swaps to that Terminal's Terminal Context Surface.
 6. Use `Cmd+B` for FileTree View, `Cmd+E` for the Workspace rail, `Cmd+[` / `Cmd+]` to switch Workspaces, and `Cmd+Shift+N` for a new Workspace.
 
@@ -106,7 +106,6 @@ Some Browser and Editor Pane shortcuts below are handled inside the focused Pane
 | --- | --- |
 | `Cmd+T` | New Terminal as a right-side Stage split, or a Launcher when the Dock is focused |
 | `Cmd+Shift+T` | Split the current FocusArea into top/bottom panes |
-| `Cmd+Shift+\` | Split the current FocusArea into left/right panes |
 | `Cmd+\` | Open, focus, or close the Dock |
 | `Cmd+W` | Close focused Pane |
 | `Cmd+Enter` | Toggle stacked view for the current FocusArea |
@@ -143,12 +142,11 @@ Some Browser and Editor Pane shortcuts below are handled inside the focused Pane
 
 | Shortcut | Action |
 | --- | --- |
-| `Cmd+S` | Save focused Editor Pane |
-| `Cmd+F` | Find in focused Pane |
+| `Cmd+S` | Save focused Editor Pane, or open Save As for an untitled Editor Pane |
+| `Cmd+F` | Find in the focused Terminal, Editor, or Browser Pane |
 | `Cmd+C` / `Cmd+V` | Copy / paste |
 | `Cmd+U` / `Cmd+D` | Scroll half page up / down |
 | `Cmd++` or `Cmd+=` / `Cmd+-` / `Cmd+0` | Increase / decrease / reset font size |
-| `Cmd+Shift+D` | Toggle theme |
 | `Cmd+Ctrl+F` | Toggle fullscreen |
 | `Cmd+N` | New Tide Window |
 | `Cmd+,` | Open settings |

@@ -560,6 +560,56 @@ fn closing_only_pane_in_split_focuses_neighbor() {
 }
 
 #[test]
+fn closing_rightmost_split_pane_focuses_immediate_left_neighbor() {
+    // UC-5 BR-12c: Stage Split close uses the immediate right neighbor, then the immediate previous Pane in flat layout order.
+    let (mut app, left_id) = app_with_editor();
+    let middle_id = app
+        .layout
+        .split(left_id, crate::tide_core::SplitDirection::Vertical);
+    app.panes.insert(
+        middle_id,
+        PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(middle_id)),
+    );
+    let right_id = app
+        .layout
+        .split(middle_id, crate::tide_core::SplitDirection::Vertical);
+    app.panes.insert(
+        right_id,
+        PaneKind::Editor(crate::pane::editor::EditorPane::new_empty(right_id)),
+    );
+    app.focus.focused = Some(right_id);
+
+    app.force_close_editor_panel_tab(right_id);
+
+    assert_eq!(app.focus.focused, Some(middle_id));
+    assert_eq!(app.layout.pane_ids(), vec![left_id, middle_id]);
+    assert_eq!(app.layout.pane_ids().len(), app.panes.len());
+}
+
+#[test]
+fn closing_unfocused_stage_terminal_preserves_current_focus() {
+    // UC-5 BR-12d: Closing a non-focused Stage Pane must not steal focus from the currently focused Stage Pane.
+    let (mut app, left_id, middle_id) = app_with_two_real_terminal_stage_splits();
+    let right_id = app
+        .layout
+        .split(middle_id, crate::tide_core::SplitDirection::Vertical);
+    app.panes.insert(
+        right_id,
+        PaneKind::Terminal(TerminalPane::with_cwd(right_id, 80, 24, None, true).unwrap()),
+    );
+    app.focus.focused = Some(middle_id);
+    app.focus.stage_focused = Some(middle_id);
+    app.router.set_focused(middle_id);
+
+    app.force_close_specific_pane(right_id);
+
+    assert_eq!(app.focus.focused, Some(middle_id));
+    assert_eq!(app.focus.stage_focused, Some(middle_id));
+    assert_eq!(app.layout.pane_ids(), vec![left_id, middle_id]);
+    assert_eq!(app.layout.pane_ids().len(), app.panes.len());
+}
+
+#[test]
 fn closing_focused_stacked_stage_pane_focuses_previous_flat_pane() {
     // UC-5 BR-12b: Stage ViewMode::Stacked close uses the flat stacked order and prefers the Pane immediately to the left.
     let (mut app, first_id) = app_with_editor();

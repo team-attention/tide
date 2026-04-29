@@ -1126,12 +1126,7 @@ impl crate::application::ports::inward::ActionPort for App {
                 self.handle_navigate(direction);
             }
             GlobalAction::DockNavigate(direction) => {
-                // Navigate within Dock without changing FocusArea (auto-opens dock)
-                self.set_dock_visible_with_animation(true);
-                let saved_area = self.focus.focus_area;
-                self.focus.focus_area = FocusArea::Dock;
-                self.handle_navigate(direction);
-                self.focus.focus_area = saved_area;
+                self.dock_navigate(direction);
             }
             GlobalAction::TabPrev => {
                 self.cycle_tab(-1);

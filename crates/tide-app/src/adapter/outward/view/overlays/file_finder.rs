@@ -1,11 +1,16 @@
 use crate::tide_core::{Color, Rect, Renderer, TextStyle, Vec2};
 
+use crate::state::drag_types::HoverTarget;
 use crate::theme::*;
 use crate::ui::file_icon;
 use crate::App;
 use crate::AppCorePort;
 
 use super::{draw_cursor_beam, draw_popup_rounded_bg, draw_popup_scrim, text_style, visual_width};
+
+fn with_alpha(color: Color, alpha: f32) -> Color {
+    Color::new(color.r, color.g, color.b, alpha)
+}
 
 /// Render file finder UI on top layer (visible regardless of tab state).
 pub(super) fn render_file_finder(
@@ -106,10 +111,19 @@ pub(super) fn render_file_finder(
 
     let mode_text = finder.mode_label();
     let mode_w = mode_text.len() as f32 * cell_size.width;
-    let mode_x = count_x - mode_w - item_pad;
+    let mode_pad_x = 7.0_f32;
+    let mode_h = cell_height + 4.0;
+    let mode_x = count_x - mode_w - item_pad - mode_pad_x * 2.0;
+    let mode_rect = Rect::new(
+        mode_x,
+        text_y + (cell_height - mode_h) / 2.0,
+        mode_w + mode_pad_x * 2.0,
+        mode_h,
+    );
+    renderer.draw_top_rounded_rect(mode_rect, with_alpha(p.badge_bg, 0.55), 4.0);
     renderer.draw_top_text(
         mode_text,
-        Vec2::new(mode_x, text_y),
+        Vec2::new(mode_x + mode_pad_x, text_y),
         text_style(p.badge_text),
         input_clip,
     );
@@ -144,11 +158,26 @@ pub(super) fn render_file_finder(
             break;
         }
         let y = list_top + vi as f32 * line_height;
+        let is_selected = fi == finder.selected;
+        let is_hovered = matches!(
+            app.interaction.hover_target,
+            Some(HoverTarget::FileFinderItem(idx)) if idx == fi
+        );
 
         // Selected item highlight
-        if fi == finder.selected {
-            let sel_rect = Rect::new(popup_x + 2.0, y, popup_w - 4.0, line_height);
-            renderer.draw_top_rect(sel_rect, p.popup_selected);
+        if is_selected || is_hovered {
+            let color = if is_selected {
+                p.file_tree_focus_fill
+            } else {
+                with_alpha(p.badge_bg, 0.18)
+            };
+            let sel_rect = Rect::new(
+                popup_x + POPUP_SELECTED_INSET,
+                y + 2.0,
+                popup_w - 2.0 * POPUP_SELECTED_INSET,
+                line_height - 4.0,
+            );
+            renderer.draw_top_rounded_rect(sel_rect, color, FILE_TREE_ROW_RADIUS);
         }
 
         // Result icon
@@ -185,8 +214,8 @@ pub(super) fn render_file_finder(
 
         // Result row text
         let path_x = icon_x + indent_width + 4.0;
-        let display_path = finder.row_text(fi).unwrap_or_default();
-        let path_color = if fi == finder.selected {
+        let (primary, secondary) = finder.row_parts(fi).unwrap_or_default();
+        let path_color = if is_selected {
             p.tab_text_focused
         } else {
             p.tree_text
@@ -194,16 +223,59 @@ pub(super) fn render_file_finder(
         let path_style = TextStyle {
             foreground: path_color,
             background: None,
-            bold: fi == finder.selected,
+            bold: is_selected,
             dim: false,
             italic: false,
             underline: false,
         };
+        let meta_style = TextStyle {
+            foreground: if is_selected {
+                p.badge_text
+            } else {
+                p.badge_text_dimmed
+            },
+            background: None,
+            bold: false,
+            dim: false,
+            italic: false,
+            underline: false,
+        };
+        let secondary_w = visual_width(&secondary) as f32 * cell_size.width;
+        let secondary_x = popup_x + popup_w - item_pad - secondary_w;
+        let primary_clip_w = if secondary.is_empty() {
+            popup_x + popup_w - item_pad - path_x
+        } else {
+            (secondary_x - path_x - 12.0).max(0.0)
+        };
         renderer.draw_top_text(
-            &display_path,
+            &primary,
             Vec2::new(path_x, y + text_offset_y),
             path_style,
-            list_clip,
+            Rect::new(path_x, list_top, primary_clip_w, list_clip.height),
         );
+        if !secondary.is_empty() && secondary_w < list_clip.width {
+            renderer.draw_top_text(
+                &secondary,
+                Vec2::new(secondary_x, y + text_offset_y),
+                meta_style,
+                list_clip,
+            );
+        }
+    }
+
+    if finder.filtered.len() > max_visible {
+        let track_h = max_visible as f32 * line_height;
+        let track_x = popup_x + popup_w - 5.0;
+        let track = Rect::new(track_x, list_top, 2.0, track_h);
+        renderer.draw_top_rounded_rect(track, p.scrollbar_track, 1.0);
+
+        let max_offset = finder.filtered.len().saturating_sub(max_visible);
+        if max_offset > 0 {
+            let thumb_h = (track_h * (max_visible as f32 / finder.filtered.len() as f32)).max(18.0);
+            let progress = finder.scroll_offset as f32 / max_offset as f32;
+            let thumb_y = list_top + (track_h - thumb_h) * progress;
+            let thumb = Rect::new(track_x - 1.0, thumb_y, 4.0, thumb_h);
+            renderer.draw_top_rounded_rect(thumb, p.scrollbar_thumb, 2.0);
+        }
     }
 }

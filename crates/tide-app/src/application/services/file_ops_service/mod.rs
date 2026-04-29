@@ -51,7 +51,7 @@ impl crate::FileOpsPort for App {
         let base_dir = self.resolve_base_dir();
         let mut entries: Vec<PathBuf> = Vec::new();
         Self::scan_dir(&base_dir, &base_dir, &mut entries, 0, 8);
-        entries.sort();
+        crate::state::sort_file_finder_entries(&mut entries);
 
         let (symbol_source_pane_id, current_file_symbols) =
             self.build_current_file_finder_symbols(&base_dir);

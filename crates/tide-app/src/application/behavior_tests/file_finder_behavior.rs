@@ -4,11 +4,13 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use crate::adapter::inward::scroll_adapter::handle_scroll;
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
 use crate::state::{
-    FileFinderDestination, FileFinderMode, FileFinderState, SymbolMatch, WorkspaceSearchHit,
+    sort_file_finder_entries, FileFinderDestination, FileFinderMode, FileFinderState, SymbolMatch,
+    WorkspaceSearchHit, FILE_FINDER_MAX_VISIBLE,
 };
 use crate::tide_core::{MouseButton, Vec2};
 use crate::App;
@@ -105,6 +107,29 @@ fn plain_file_query_prefers_basename_matches_over_deeper_paths() {
     assert_eq!(
         finder.entries[finder.filtered[0]],
         PathBuf::from("editor.rs")
+    );
+}
+
+#[test]
+fn empty_file_query_orders_visible_project_files_before_hidden_paths() {
+    // UC-1 BR-15: Empty file search orders visible project files before hidden/tooling paths.
+    let mut entries = vec![
+        PathBuf::from(".codex/skills/work/SKILL.md"),
+        PathBuf::from("src/main.rs"),
+        PathBuf::from(".DS_Store"),
+        PathBuf::from("Cargo.toml"),
+    ];
+
+    sort_file_finder_entries(&mut entries);
+
+    assert_eq!(
+        entries,
+        vec![
+            PathBuf::from("Cargo.toml"),
+            PathBuf::from("src/main.rs"),
+            PathBuf::from(".codex/skills/work/SKILL.md"),
+            PathBuf::from(".DS_Store"),
+        ]
     );
 }
 
@@ -291,4 +316,68 @@ fn clicking_second_file_result_opens_the_clicked_file() {
         _ => panic!("expected focused editor pane"),
     };
     assert_eq!(pane.editor.file_path(), Some(beta_path.as_path()));
+}
+
+// --- UC-5: ScrollWithPointer ---
+
+#[test]
+fn scrolling_over_file_finder_popup_scrolls_results() {
+    // UC-5 BR-11/BR-12: Wheel scroll over FileFinder scrolls the FileFinder list and keeps selection visible.
+    let base = temp_dir("file_finder_scroll");
+    let entries: Vec<PathBuf> = (0..(FILE_FINDER_MAX_VISIBLE + 6))
+        .map(|idx| PathBuf::from(format!("file_{idx}.rs")))
+        .collect();
+    let mut app = test_app();
+    app.modal.file_finder = Some(FileFinderState::new(base, entries));
+
+    let scroll_position = {
+        let finder = app.modal.file_finder.as_ref().expect("file finder");
+        let cell = app.window.cached_cell_size;
+        let logical = app.logical_size();
+        let geo = finder.geometry(cell.height, logical.width, logical.height);
+        Vec2::new(geo.popup_x + 16.0, geo.list_top + geo.line_height * 1.5)
+    };
+    app.window.last_cursor_pos = scroll_position;
+
+    handle_scroll(&mut app, 0.0, -3.0);
+
+    let finder = app.modal.file_finder.as_ref().expect("file finder");
+    assert_eq!(finder.scroll_offset, 3);
+    assert!(
+        finder.selected >= finder.scroll_offset
+            && finder.selected < finder.scroll_offset + FILE_FINDER_MAX_VISIBLE,
+        "selected result should remain visible after popup-local scroll"
+    );
+}
+
+// --- UC-6: ScanResultRows ---
+
+#[test]
+fn file_result_row_parts_show_relative_path() {
+    // UC-6 BR-13: File rows expose the relative path as primary text.
+    let base = temp_dir("file_row_parts");
+    let finder = FileFinderState::new(base, vec![PathBuf::from("src/editor/view.rs")]);
+
+    assert_eq!(
+        finder.row_parts(0),
+        Some(("src/editor/view.rs".to_string(), String::new()))
+    );
+}
+
+#[test]
+fn symbol_result_row_parts_separate_label_and_location() {
+    // UC-6 BR-14: Symbol rows expose the symbol label first and path:line as metadata.
+    let base = temp_dir("symbol_row_parts");
+    let mut finder = FileFinderState::new(base, vec![]).with_symbol_sources(
+        Some(7),
+        vec![symbol("render_header", "src/header.rs", 12)],
+        vec![],
+    );
+    finder.insert_char('@');
+    finder.insert_char('r');
+
+    assert_eq!(
+        finder.row_parts(0),
+        Some(("render_header".to_string(), "src/header.rs:12".to_string()))
+    );
 }
