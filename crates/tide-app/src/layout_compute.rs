@@ -64,11 +64,31 @@ impl App {
             .max(TERMINAL_CONTEXT_SURFACE_MIN_WIDTH)
     }
 
+    pub(crate) fn terminal_context_surface_support_width_for_layout(
+        &self,
+        now: std::time::Instant,
+    ) -> f32 {
+        let width = self.terminal_context_surface_layout_width();
+        if !self.ft.visible_for_layout() {
+            return width;
+        }
+
+        let file_tree_min_width = if self.ft.visibility_animation.is_none() {
+            FILE_TREE_MIN_WIDTH
+        } else {
+            0.0
+        };
+        let file_tree_width = self.ft.rendered_width(now).max(file_tree_min_width);
+        let dock_width =
+            (width - file_tree_width - PANE_GAP).max(TERMINAL_CONTEXT_SURFACE_MIN_WIDTH);
+        file_tree_width + PANE_GAP + dock_width
+    }
+
     pub(crate) fn terminal_context_surface_rendered_width(&self, now: std::time::Instant) -> f32 {
         if self.dock.visibility_animation.is_some() {
             self.dock.rendered_width(now)
         } else if self.dock.dock_open {
-            self.terminal_context_surface_layout_width()
+            self.terminal_context_surface_support_width_for_layout(now)
         } else {
             0.0
         }

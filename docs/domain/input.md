@@ -84,7 +84,7 @@ KeybindingMap {
 | `DockNavigate(Direction)` | Cmd+Shift+HJKL | Move focus within Dock without changing FocusArea |
 | `TabPrev` / `TabNext` | None by default | Cycle stacked panes in the current FocusArea |
 | `DockTabPrev` / `DockTabNext` | None by default | Cycle Dock tabs without changing FocusArea |
-| `NewTab` | Cmd+T | New Stage Terminal split, or Dock Launcher when Dock is focused |
+| `NewTab` | Cmd+T | New Terminal as a right-side Stage split, or Dock Launcher when Dock is focused |
 | `DockNewTab` | None by default | New Dock Launcher without permanently changing FocusArea |
 | `DockSplitHorizontal` | None by default | Split Dock into top/bottom panes |
 | `DockSplitVertical` | None by default | Split Dock into left/right panes |
@@ -99,7 +99,7 @@ KeybindingMap {
 | `Paste` / `Copy` | Cmd+V / Cmd+C | Clipboard |
 | `OpenConfig` | Cmd+, | Settings page |
 | `ToggleTheme` | Cmd+Shift+D | Dark/light mode |
-| `FontSizeUp/Down/Reset` | Cmd+=/Cmd+-/Cmd+0 | Font size |
+| `FontSizeUp/Down/Reset` | Cmd++ or Cmd+= / Cmd+- / Cmd+0 | Font size |
 | `ToggleFullscreen` | Cmd+Ctrl+F | Fullscreen |
 | `NewWindow` | Cmd+N | New window |
 | `OpenBrowser` | Cmd+Shift+B | Browser Pane |

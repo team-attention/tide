@@ -115,6 +115,7 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
   - BR-22: Adding a Pane to a closed Terminal Context Surface through `add_pane_to_dock()` starts the same width animation as an explicit Dock toggle.
   - BR-25: Closing Terminal Context Surface animation must not keep a minimum-width `Pane` visual rect alive past the Terminal Context Surface bounds into FileTree View.
   - BR-26: Active side-surface visibility animation must not mutate Stage `SplitLayout` ratios from their pre-animation values.
+  - BR-51: When FileTree View is visible, Terminal Context Surface visibility animation must target the same right-side support width as the settled layout so a short stored Terminal Context Surface width does not jump wider on the completion frame.
   - BR-44: Creating a Stage split starts a `SplitTransitionAnimation` from a narrow new Pane ratio toward the settled split ratio.
   - BR-45: Creating a Terminal Context Surface split starts a `SplitTransitionAnimation` from a narrow new Pane ratio toward the settled split ratio.
   - BR-46: Active split transition animation keeps the event loop scheduling redraws and is treated like transient layout motion for ratio snapping and terminal backend resize pacing.
@@ -216,6 +217,7 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
 | UC-4 | BR-22 | `adding_pane_to_closed_dock_starts_surface_visibility_animation` |
 | UC-4 | BR-25 | `closing_dock_animation_does_not_overlap_file_tree_view` |
 | UC-4 | BR-26 | `stage_split_ratio_stays_stable_during_side_surface_visibility_animation` |
+| UC-4 | BR-51 | `dock_opening_animation_finishes_without_width_jump_when_file_tree_is_visible` |
 | UC-4 | BR-44 | `stage_split_with_launcher_starts_split_transition_animation` |
 | UC-4 | BR-45 | `dock_split_header_action_starts_split_transition_animation` |
 | UC-4 | BR-46 | `split_transition_animation_eases_ratio_to_target` |

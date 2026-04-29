@@ -203,7 +203,7 @@ Socket Thread → write response → client
 - **Business Rules**:
   - BR-21: Terminal accepts cwd
   - BR-22: Editor non-existent file → empty buffer
-  - BR-23: Already-open file → dedup
+  - BR-23: Already-open file → dedup only within the current open target; `_caller_pane` keeps dedup scoped to that caller Terminal's Terminal Context Surface
   - BR-24: `--position`: `split-right` (default), `split-below`, `tab`
 
 ### UC-7: RenderHTML (Generative UI)
@@ -531,6 +531,7 @@ Agent                          Tide                         User
 | UC-5 | BR-19 | `cli_focus_pane_changes_focus` |
 | UC-6 | BR-21 | `cli_open_terminal_with_cwd` |
 | UC-6 | BR-23 | `cli_open_editor_dedup` |
+| UC-6 | BR-23 | `cli_open_editor_dedup_scopes_to_caller_terminal_context` |
 | UC-7 | BR-25 | `render_html_uses_load_html_string` |
 | UC-7 | BR-26 | `render_html_hides_url_bar` |
 | UC-7 | BR-27 | `render_html_replaces_existing_pane` |

@@ -74,16 +74,18 @@ Create, split, resolve, open, close, and drag Panes.
 - **Trigger**: Select file in FileTree or FileFinder
 - **Precondition**: File path is valid
 - **Flow**:
-  1. Check if file is already open in any tab
-  2. If YES → set_active_tab(existing_id), focus it, return
-  3. If NO → allocate PaneId, create EditorState::open(path)
-  4. Insert into app.panes
-  5. Insert the new Editor Pane as a split to the right of the focused Pane or focused context Pane
-  6. Set focused = new_id
-  7. Start file watcher on path
+  1. Resolve the current open target: the live owning Terminal Context Surface, or Stage fallback
+  2. Check if file is already open in that open target
+  3. If YES → set_active_tab(existing_id), focus it, return
+  4. If NO → allocate PaneId, create EditorState::open(path)
+  5. Insert into app.panes
+  6. Insert the new Editor Pane as a split to the right of the focused Pane or focused context Pane
+  7. Set focused = new_id
+  8. Start file watcher on path
 - **Postcondition**: File visible in an Editor Pane, focused
 - **Business Rules**:
-  - BR-8: Opening an already-open file activates the existing tab (dedup)
+  - BR-8: Opening an already-open file activates an existing tab only when it is already open in the current open target
+  - BR-8a: A matching file in another Stage Terminal's Terminal Context Surface must not satisfy dedup; opening keeps the current Stage Terminal and creates an Editor Pane in its Terminal Context Surface
   - BR-9: Focus moves to the opened file's Pane
   - BR-9a: Opening a new file defaults to a right-side split when it creates a new split in Stage fallback or Terminal Context Surface
 
@@ -166,6 +168,7 @@ After ANY Pane lifecycle operation:
 | UC-2: SplitPane | — | `split_creates_new_pane_in_split_layout` |
 | UC-3: ResolveLauncher | BR-7 | `resolving_launcher_as_new_file_replaces_pane_kind_with_editor` |
 | UC-4: OpenFile | BR-8 | `opening_same_file_twice_activates_existing_tab_instead` |
+| UC-4: OpenFile | BR-8a | `opening_same_file_from_another_stage_terminal_keeps_current_terminal_context` |
 | UC-4: OpenFile | BR-9a | `opening_file_defaults_to_right_split_when_focused_is_non_terminal` |
 | UC-4: OpenFile | BR-9a | `opening_file_in_context_surface_defaults_to_right_split` |
 | UC-5: ClosePane | BR-10 | `closing_a_dirty_editor_with_file_shows_save_confirm` |

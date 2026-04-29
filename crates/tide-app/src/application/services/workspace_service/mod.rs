@@ -46,7 +46,7 @@ impl App {
         let now = self.ports.clock.now();
         let current_width = self.terminal_context_surface_rendered_width(now);
         let target_width = if visible {
-            self.terminal_context_surface_layout_width()
+            self.terminal_context_surface_support_width_for_layout(now)
         } else {
             0.0
         };

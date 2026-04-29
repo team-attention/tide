@@ -28,8 +28,8 @@ use crate::state::{
     SURFACE_VISIBILITY_ANIMATION_DURATION,
 };
 use crate::theme::{
-    PANE_PADDING, TITLEBAR_BUTTON_GAP, TITLEBAR_HEIGHT, TITLEBAR_ICON_BUTTON_PAD_H,
-    TITLEBAR_ICON_BUTTON_PAD_V, TITLEBAR_ICON_SCALE,
+    FILE_TREE_WIDTH, PANE_PADDING, TERMINAL_CONTEXT_SURFACE_MIN_WIDTH, TITLEBAR_BUTTON_GAP,
+    TITLEBAR_HEIGHT, TITLEBAR_ICON_BUTTON_PAD_H, TITLEBAR_ICON_BUTTON_PAD_V, TITLEBAR_ICON_SCALE,
 };
 use crate::tide_core::{LayoutEngine, MouseButton, SplitDirection, Vec2};
 use crate::tide_input::GlobalAction;
@@ -447,6 +447,48 @@ fn stage_split_ratio_stays_stable_during_side_surface_visibility_animation() {
     assert!(
         mid_second_rect.width < initial_second_rect.width,
         "second Stage Pane should visually shrink during FileTree View animation"
+    );
+}
+
+#[test]
+fn dock_opening_animation_finishes_without_width_jump_when_file_tree_is_visible() {
+    // UC-4 BR-51: Terminal Context Surface animation targets the settled right-side support width when FileTree View is visible.
+    let (mut app, _terminal_id) = app_with_context_pane();
+    app.ft.visible = true;
+    app.ft.width = FILE_TREE_WIDTH;
+    app.ft.visibility_animation = None;
+    app.dock.dock_open = false;
+    app.dock.visibility_animation = None;
+    app.dock.dock_width = TERMINAL_CONTEXT_SURFACE_MIN_WIDTH;
+
+    let started_at = app.ports.clock.now();
+    app.set_dock_visible_with_animation(true);
+
+    app.ports.clock = Box::new(FixedClock {
+        instant: started_at + SURFACE_VISIBILITY_ANIMATION_DURATION - Duration::from_millis(1),
+    });
+    app.compute_layout();
+    let almost_settled_width = app
+        .dock_area_rect
+        .expect("Terminal Context Surface rect should exist during opening animation")
+        .width;
+
+    app.ports.clock = Box::new(FixedClock {
+        instant: started_at + SURFACE_VISIBILITY_ANIMATION_DURATION,
+    });
+    app.compute_layout();
+    let settled_width = app
+        .dock_area_rect
+        .expect("Terminal Context Surface rect should exist after opening animation")
+        .width;
+
+    assert!(
+        settled_width >= TERMINAL_CONTEXT_SURFACE_MIN_WIDTH,
+        "Terminal Context Surface should settle at or above its minimum width"
+    );
+    assert!(
+        (settled_width - almost_settled_width).abs() < 4.0,
+        "Terminal Context Surface should not jump wider when visibility animation completes"
     );
 }
 

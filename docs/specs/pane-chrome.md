@@ -167,6 +167,8 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
   - BR-30: Header-area scroll is only consumed by an overflowed shared tab bar; single-pane headers and non-overflowing shared headers fall through to pane scroll handling
   - BR-31: A `Terminal Pane` `cwd` change clears stale git branch, git status, and worktree chrome immediately before fresh poll results arrive
   - BR-32: The background git poller prefers the latest pending `cwd` refresh request before publishing repo chrome results, so fast repo-to-repo navigation does not wait behind obsolete polls
+  - BR-37: Stacked Stage shared-tab scroll bounds must use the same leading `ViewMode` control and trailing header action reservations as rendering, so a visually clipped Stage tab bar accepts horizontal scroll just like Dock tab bars.
+  - BR-38: Dock shared-tab scroll bounds must include the leading Terminal Context Surface `ViewMode` control when that control is rendered, so the tab strip can scroll far enough to reveal tabs hidden behind the leading control.
 
 ### UC-9: CollapseSingleDockTabGroupChrome
 
@@ -236,6 +238,8 @@ Focused `Pane`s stay easy to identify in both Stage and Dock through the current
 | UC-7 | BR-30 | `single_pane_header_scroll_falls_through_to_preview_content` |
 | UC-7 | BR-31 | `terminal_cwd_change_clears_stale_git_badges_before_poll_results_arrive` |
 | UC-7 | BR-32 | `git_poller_prefers_the_latest_cwd_request_after_quick_repo_switches` |
+| UC-7 | BR-37 | `stacked_stage_tab_bar_scroll_uses_rendered_tab_bounds` |
+| UC-7 | BR-38 | `dock_tab_bar_scroll_uses_rendered_view_mode_bounds` |
 | UC-8 | BR-33 | `connected_wrapped_agent_without_active_status_renders_idle_presence_dot` |
 | UC-8 | BR-34 | `workspace_connected_idle_renders_an_idle_presence_dot` |
 | UC-9 | BR-35 | `dock_single_tab_group_uses_single_pane_header_chrome` |

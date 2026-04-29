@@ -2447,20 +2447,21 @@ fn cli_open_editor(
 
     let path = PathBuf::from(file);
 
-    // BR-23: Check if already open → dedup
-    for (id, pane) in ctx.pane_entries() {
-        if let PaneKind::Editor(editor) = pane {
-            if editor.editor.file_path() == Some(path.as_path()) {
-                ctx.focus_pane(id);
-                return Ok(json!({"pane_id": id, "already_open": true}));
-            }
-        }
-    }
+    let before_ids: Vec<PaneId> = ctx.pane_entries().into_iter().map(|(id, _)| id).collect();
 
-    ctx.open_editor_pane(path);
+    ctx.open_editor_pane(path.clone());
 
     if let Some(focused) = ctx.focused_pane() {
-        Ok(json!({"pane_id": focused}))
+        let already_open = before_ids.contains(&focused)
+            && matches!(
+                ctx.pane(focused),
+                Some(PaneKind::Editor(editor)) if editor.editor.file_path() == Some(path.as_path())
+            );
+        let mut result = json!({"pane_id": focused});
+        if already_open {
+            result["already_open"] = json!(true);
+        }
+        Ok(result)
     } else {
         Err(CliError::InvalidParams("editor creation failed".into()))
     }

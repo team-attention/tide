@@ -6,7 +6,7 @@ use crate::theme::{
     PANE_PADDING, SIDE_SURFACE_BORDER_HIT_SLOP, TITLEBAR_BUTTON_GAP, TITLEBAR_ICON_BUTTON_PAD_H,
     TITLEBAR_ICON_SCALE,
 };
-use crate::tide_core::{LayoutEngine, MouseButton, SplitDirection, Vec2};
+use crate::tide_core::{LayoutEngine, MouseButton, Rect, SplitDirection, Vec2};
 use crate::App;
 use crate::AppCorePort;
 use crate::DockPort;
@@ -128,6 +128,37 @@ fn app_with_two_terminal_stage_splits() -> (App, u64, u64) {
     assert!(app.layout.tab_group_containing(second_id).is_none());
 
     (app, first_id, second_id)
+}
+
+fn app_with_two_real_terminal_stage_splits() -> (App, u64, u64) {
+    let mut app = test_app();
+    let (layout, first_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes.insert(
+        first_id,
+        PaneKind::Terminal(TerminalPane::with_cwd(first_id, 80, 24, None, true).unwrap()),
+    );
+    app.focus.focused = Some(first_id);
+    app.focus.stage_focused = Some(first_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.router.set_focused(first_id);
+
+    let second_id = app
+        .layout
+        .split(first_id, crate::tide_core::SplitDirection::Vertical);
+    app.panes.insert(
+        second_id,
+        PaneKind::Terminal(TerminalPane::with_cwd(second_id, 80, 24, None, true).unwrap()),
+    );
+
+    (app, first_id, second_id)
+}
+
+fn first_file_tree_row_click_position() -> Vec2 {
+    Vec2::new(
+        12.0,
+        crate::theme::PANE_CORNER_RADIUS + crate::theme::FILE_TREE_HEADER_HEIGHT + 1.0,
+    )
 }
 
 fn layout_snapshot_contains(snapshot: &crate::tide_layout::LayoutSnapshot, pane_id: u64) -> bool {
@@ -302,7 +333,7 @@ fn resolving_launcher_as_new_file_replaces_pane_kind_with_editor() {
 
 #[test]
 fn opening_same_file_twice_activates_existing_tab_instead() {
-    // UC-4 BR-8: Opening an already-open file activates the existing tab (dedup)
+    // UC-4 BR-8: Opening an already-open file activates the existing tab in the current open target.
     let (mut app, first_id) = app_with_editor();
     let test_path = std::path::PathBuf::from("/tmp/behavior_test_dedup.txt");
     // Write a temp file for testing
@@ -319,6 +350,49 @@ fn opening_same_file_twice_activates_existing_tab_instead() {
     // Should refocus the existing editor, not create a new one
     assert_eq!(app.focus.focused, Some(editor_id));
     let _ = std::fs::remove_file(&test_path);
+}
+
+#[test]
+fn opening_same_file_from_another_stage_terminal_keeps_current_terminal_context() {
+    // UC-4 BR-8a: A matching file in another Stage Terminal's Terminal Context Surface must not satisfy dedup.
+    let (mut app, first_terminal, second_terminal) = app_with_two_real_terminal_stage_splits();
+    let tmp = tempfile::TempDir::new().expect("temp dir should be created");
+    let test_path = tmp.path().join("just-memo.md");
+    std::fs::write(&test_path, "memo").expect("test file should be written");
+
+    app.focus.stage_focused = Some(first_terminal);
+    app.focus.focused = Some(first_terminal);
+    app.focus.focus_area = FocusArea::Stage;
+    app.open_editor_pane(test_path.clone());
+    let first_editor = app.focus.focused.expect("first open should focus editor");
+    assert_eq!(app.terminal_owning(first_editor), Some(first_terminal));
+
+    // Simulate the stale-focus failure mode: the active Stage Terminal is the
+    // second one, but focus still points at a context Pane owned by the first.
+    app.focus.stage_focused = Some(second_terminal);
+    app.focus.focused = Some(first_editor);
+    app.focus.focus_area = FocusArea::Dock;
+    app.ft.visible = true;
+    app.ft.rect = Some(Rect::new(0.0, 0.0, 320.0, 420.0));
+    app.ft.tree = Some(crate::tide_tree::FsTree::new(tmp.path().to_path_buf()));
+
+    app.handle_file_tree_click(first_file_tree_row_click_position());
+
+    let second_editor = app
+        .focus
+        .focused
+        .expect("FileTree open should focus editor");
+    assert_ne!(
+        second_editor, first_editor,
+        "FileTree open from the second Stage Terminal must not reuse the first Terminal Context Surface tab"
+    );
+    assert_eq!(app.focus.stage_focused, Some(second_terminal));
+    assert_eq!(app.focus.focus_area, FocusArea::Dock);
+    assert_eq!(app.terminal_owning(second_editor), Some(second_terminal));
+    assert_eq!(
+        app.assoc.associated_terminal.get(&second_editor),
+        Some(&second_terminal)
+    );
 }
 
 #[test]

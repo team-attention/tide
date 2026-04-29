@@ -20,7 +20,7 @@ Today those surfaces usually live in separate apps. The human sees the browser a
 
 ## Product Model
 
-Tide keeps the Terminal as the primary session, then gives it structured surroundings:
+Tide keeps the Terminal as the primary live surface, then gives it structured surroundings:
 
 | Surface | Human use | Agent use |
 |---------|-----------|-----------|
@@ -31,7 +31,7 @@ Tide keeps the Terminal as the primary session, then gives it structured surroun
 | Render Pane | View generated task UI | Render HTML through `tide_render_html` |
 | Workspace | Keep a task isolated | Scope Pane identity, layout, and Context Artifacts |
 
-The Dock is the active Terminal's Terminal Context Surface. It keeps supporting Panes attached to the task through Associated Terminal ownership instead of becoming a global pile of tabs.
+The Dock is the active Terminal's Terminal Context Surface. It keeps supporting Panes attached to the task through Associated Terminal ownership instead of mixing every supporting Pane into one global TabGroup.
 
 ## Agent Interface
 

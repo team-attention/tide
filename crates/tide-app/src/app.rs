@@ -320,6 +320,75 @@ impl App {
         self.cache.needs_redraw = true;
     }
 
+    fn visible_dock_pane_rect(&self, pane_id: PaneId) -> Option<Rect> {
+        self.visual_pane_rects
+            .iter()
+            .find_map(|(id, rect)| (*id == pane_id && self.is_pane_in_dock(*id)).then_some(*rect))
+    }
+
+    fn active_dock_stacked_pane_id(&self) -> Option<PaneId> {
+        if !self.active_terminal_context_is_stacked() {
+            return None;
+        }
+        let terminal_id = self.focused_terminal_id()?;
+        match self.panes.get(&terminal_id) {
+            Some(PaneKind::Terminal(terminal)) => {
+                let all_ids = terminal.dock_layout.all_pane_ids();
+                terminal
+                    .dock_focused
+                    .filter(|pane_id| all_ids.contains(pane_id))
+                    .or_else(|| terminal.dock_layout.pane_ids().first().copied())
+                    .or_else(|| all_ids.first().copied())
+            }
+            _ => None,
+        }
+    }
+
+    fn dock_header_anchor_pane_id(&self) -> Option<PaneId> {
+        if let Some(focused) = self
+            .focus
+            .focused
+            .filter(|pane_id| self.visible_dock_pane_rect(*pane_id).is_some())
+        {
+            return Some(focused);
+        }
+
+        if let Some(dock_focused) = self.focused_terminal_id().and_then(|terminal_id| {
+            self.panes.get(&terminal_id).and_then(|pane| match pane {
+                PaneKind::Terminal(terminal) => terminal.dock_focused,
+                _ => None,
+            })
+        }) {
+            if self.visible_dock_pane_rect(dock_focused).is_some() {
+                return Some(dock_focused);
+            }
+        }
+
+        if let Some(zoomed) = self
+            .active_dock_stacked_pane_id()
+            .filter(|pane_id| self.visible_dock_pane_rect(*pane_id).is_some())
+        {
+            return Some(zoomed);
+        }
+
+        let mut best: Option<(PaneId, Rect)> = None;
+        for &(id, rect) in &self.visual_pane_rects {
+            if !self.is_pane_in_dock(id) {
+                continue;
+            }
+            let right = rect.x + rect.width;
+            let is_better = best.is_none_or(|(_, best_rect)| {
+                let best_right = best_rect.x + best_rect.width;
+                rect.y < best_rect.y - 1.0
+                    || ((rect.y - best_rect.y).abs() <= 1.0 && right > best_right)
+            });
+            if is_better {
+                best = Some((id, rect));
+            }
+        }
+        best.map(|(id, _)| id)
+    }
+
     fn is_terminal_pane_in_any_workspace(&self, pane_id: PaneId) -> bool {
         matches!(
             self.panes.get(&pane_id),
@@ -734,11 +803,37 @@ impl crate::application::ports::inward::AppCorePort for App {
             };
 
         let cell_w = self.window.cached_cell_size.width;
+        let header_surface = if is_stage_surface {
+            crate::header::HeaderSurfaceKind::Stage
+        } else {
+            crate::header::HeaderSurfaceKind::TerminalContextSurface
+        };
         let mut content_left = rect.x;
-        if is_stacked {
-            content_left += TAB_H_PAD + cell_w + 6.0;
+        let content_right = rect.x + rect.width;
+        let has_leading_view_mode_action =
+            is_stacked || (!is_stage_surface && self.dock_header_anchor_pane_id() == Some(pane_id));
+        if has_leading_view_mode_action {
+            let leading_action =
+                crate::header::surface_view_mode_header_action(header_surface, is_stacked);
+            content_left += TAB_H_PAD
+                + crate::header::header_leading_view_mode_width(Some(&leading_action.action));
         }
-        let visible_w = (rect.x + rect.width - content_left).max(0.0);
+        let header_actions =
+            crate::header::stacked_tab_bar_header_action_specs_for_surface(header_surface);
+        let header_action_width = crate::header::header_action_strip_width(cell_w, &header_actions);
+        let header_action_gap = if header_action_width > 0.0 {
+            TAB_H_PAD
+        } else {
+            0.0
+        };
+        let action_strip_start_x =
+            crate::header::header_action_strip_start_x(content_right, header_action_width);
+        let tabs_right = if header_action_width > 0.0 {
+            action_strip_start_x - header_action_gap
+        } else {
+            content_right
+        };
+        let visible_w = (tabs_right - content_left).max(0.0);
         if visible_w <= 0.0 {
             return Some(0.0);
         }

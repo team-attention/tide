@@ -20,6 +20,7 @@
 - FileTree View root follows the focused Pane's associated terminal cwd
 - Opening a file routes to the owning Terminal's Terminal Context Surface, or to a Stage fallback split when no live owning Terminal exists
 - Opening a file only targets Dock when the chosen `Associated Terminal` is a live `Terminal` Pane; retained context still provides cwd and association, but not a Dock target
+- File open dedup is scoped to that owning Terminal Context Surface or Stage fallback, so another Stage `Terminal` can open the same file in its own Terminal Context Surface
 - When a terminal is closed (soft delete), its cwd data is retained so associated Panes keep their context
 - When a terminal moves to another Workspace, its associated Panes move together
 
@@ -91,6 +92,7 @@
   - BR-8: New file splits default to the right of the focused context Pane or focused Stage fallback Pane.
   - BR-9: If multiple context Panes exist, use the most recently focused context Pane as the split anchor.
   - BR-10: If the creation context resolves to retained terminal context instead of a live `Terminal` Pane, the new non-terminal Pane still inherits that `Associated Terminal` but opens as a Stage fallback split instead of a nonexistent Dock target
+  - BR-11: A matching file already open under a different live `Associated Terminal` does not redirect focus away from the current Stage `Terminal`; the file opens under the current owning Terminal Context Surface
 
 ### UC-4: TabGroupKindConstraint
 
@@ -156,6 +158,7 @@
 | UC-3 | BR-8 | `opening_file_defaults_to_right_split_when_focused_is_non_terminal` |
 | UC-3 | BR-9 | `opening_file_in_context_surface_defaults_to_right_split` |
 | UC-3 | BR-10 | `opening_file_from_retained_terminal_context_uses_stage_fallback_split` |
+| UC-3 | BR-11 | `opening_same_file_from_another_stage_terminal_keeps_current_terminal_context` |
 | UC-4 | BR-10 | `adding_editor_to_terminal_tab_group_is_rejected` |
 | UC-4 | BR-11 | `adding_terminal_to_editor_tab_group_is_rejected` |
 | UC-5 | BR-13 | `closing_terminal_preserves_cwd_in_retained_contexts` |

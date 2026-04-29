@@ -29,10 +29,10 @@ use crate::theme::{
     ACTIVE_TAB_MAX_WIDTH, AGENT_BLINK_FREQUENCY, BADGE_GAP, BADGE_PADDING_H, DARK, LIGHT,
     TAB_BAR_HEIGHT, TAB_CONTENT_SPACING, TAB_H_PAD, TAB_MAX_WIDTH, TAB_MIN_TITLE_WIDTH,
 };
-use crate::tide_core::Rect;
+use crate::tide_core::{DropZone, LayoutEngine, Rect, SplitDirection, Vec2};
 use crate::tide_terminal::git::{GitInfo, GitStatus, WorktreeInfo};
 use crate::ui::pane_title;
-use crate::{App, DockPort};
+use crate::{App, AppCorePort, DockPort};
 
 fn terminal_with_git_info(id: u64) -> (HashMap<u64, PaneKind>, String) {
     let pid = std::process::id();
@@ -898,6 +898,105 @@ fn single_pane_header_scroll_falls_through_to_preview_content() {
     assert!(
         preview_scroll > 0,
         "scroll over a single-pane header should still reach the preview content when no shared tab bar can scroll"
+    );
+}
+
+#[test]
+fn stacked_stage_tab_bar_scroll_uses_rendered_tab_bounds() {
+    // UC-7 BR-37: Stacked Stage shared-tab scroll bounds match the rendered leading ViewMode and trailing action reservations.
+    let mut app = test_app();
+    let (layout, first_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.panes
+        .insert(first_id, PaneKind::Editor(EditorPane::new_empty(first_id)));
+    let second_id = app.layout.split(first_id, SplitDirection::Vertical);
+    app.panes.insert(
+        second_id,
+        PaneKind::Editor(EditorPane::new_empty(second_id)),
+    );
+    let third_id = app.layout.split(second_id, SplitDirection::Vertical);
+    app.panes
+        .insert(third_id, PaneKind::Editor(EditorPane::new_empty(third_id)));
+    app.focus.focused = Some(first_id);
+    app.focus.stage_focused = Some(first_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.focus.zoomed_pane = Some(first_id);
+    app.router.set_focused(first_id);
+    let pane_rect = Rect::new(0.0, 0.0, 360.0, 320.0);
+    app.pane_rects = vec![(first_id, pane_rect)];
+    app.visual_pane_rects = vec![(first_id, pane_rect)];
+    app.window.last_cursor_pos = Vec2::new(pane_rect.x + 80.0, pane_rect.y + 8.0);
+
+    assert!(
+        AppCorePort::shared_tab_max_scroll(&app, first_id).unwrap_or(0.0) > 0.0,
+        "visually clipped stacked Stage tabs should expose shared-tab scroll capacity"
+    );
+
+    handle_scroll(&mut app, -1.0, 0.0);
+
+    assert!(
+        app.interaction
+            .tab_scroll_offset
+            .get(&first_id)
+            .copied()
+            .unwrap_or(0.0)
+            > 0.0,
+        "horizontal scroll over a stacked Stage tab bar should update the shared-tab scroll offset"
+    );
+}
+
+#[test]
+fn dock_tab_bar_scroll_uses_rendered_view_mode_bounds() {
+    // UC-7 BR-38: Dock shared-tab scroll bounds include the rendered leading ViewMode control.
+    let mut app = test_app();
+    let (layout, terminal_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+
+    let first_id = app.layout.alloc_id();
+    let second_id = app.layout.alloc_id();
+    let third_id = app.layout.alloc_id();
+    let mut terminal = TerminalPane::with_cwd(terminal_id, 80, 24, None, true).unwrap();
+    terminal.dock_view_mode = crate::state::ViewMode::Split;
+    terminal
+        .dock_layout
+        .insert_at_root(first_id, DropZone::Right);
+    assert!(terminal.dock_layout.add_tab(first_id, second_id));
+    assert!(terminal.dock_layout.add_tab(second_id, third_id));
+    assert!(terminal.dock_layout.set_active_tab(third_id));
+    terminal.dock_focused = Some(third_id);
+
+    app.panes.insert(terminal_id, PaneKind::Terminal(terminal));
+    for pane_id in [first_id, second_id, third_id] {
+        app.panes
+            .insert(pane_id, PaneKind::Editor(EditorPane::new_empty(pane_id)));
+        app.assoc.associated_terminal.insert(pane_id, terminal_id);
+    }
+    app.dock.dock_open = true;
+    app.dock.dock_zoomed = false;
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focused = Some(third_id);
+    app.focus.focus_area = FocusArea::Dock;
+    app.router.set_focused(third_id);
+    let pane_rect = Rect::new(0.0, 0.0, 360.0, 320.0);
+    app.pane_rects = vec![(third_id, pane_rect)];
+    app.visual_pane_rects = vec![(third_id, pane_rect)];
+    app.window.last_cursor_pos = Vec2::new(pane_rect.x + 80.0, pane_rect.y + 8.0);
+
+    assert!(
+        AppCorePort::shared_tab_max_scroll(&app, third_id).unwrap_or(0.0) > 24.0,
+        "Dock shared tabs should expose scroll capacity for tabs hidden behind the ViewMode control"
+    );
+
+    handle_scroll(&mut app, -4.0, 0.0);
+
+    assert!(
+        app.interaction
+            .tab_scroll_offset
+            .get(&third_id)
+            .copied()
+            .unwrap_or(0.0)
+            > 24.0,
+        "Dock shared-tab scroll should continue past the short pre-ViewMode bound"
     );
 }
 

@@ -1,6 +1,6 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use crate::tide_core::LayoutEngine;
+use crate::tide_core::{LayoutEngine, PaneId};
 
 use crate::pane::browser::BrowserPane;
 use crate::pane::editor::EditorPane;
@@ -19,14 +19,113 @@ use super::action_service::LauncherChoice;
 impl App {
     pub(crate) fn live_dock_terminal_for_context(
         &self,
-        context_terminal: Option<crate::tide_core::PaneId>,
-    ) -> Option<crate::tide_core::PaneId> {
+        context_terminal: Option<PaneId>,
+    ) -> Option<PaneId> {
         match context_terminal {
             Some(tid) if matches!(self.panes.get(&tid), Some(PaneKind::Terminal(_))) => Some(tid),
             Some(_) => None,
             None => self
                 .focused_terminal_id()
                 .filter(|tid| matches!(self.panes.get(tid), Some(PaneKind::Terminal(_)))),
+        }
+    }
+
+    fn editor_pane_matches_path(&self, pane_id: PaneId, path: &Path) -> bool {
+        matches!(
+            self.panes.get(&pane_id),
+            Some(PaneKind::Editor(editor)) if editor.editor.file_path() == Some(path)
+        )
+    }
+
+    fn open_target_editor_for_path(
+        &self,
+        path: &Path,
+        context_terminal: Option<PaneId>,
+    ) -> Option<PaneId> {
+        if let Some(tid) = self.live_dock_terminal_for_context(context_terminal) {
+            let Some(PaneKind::Terminal(terminal)) = self.panes.get(&tid) else {
+                return None;
+            };
+            return terminal
+                .dock_layout
+                .all_pane_ids()
+                .into_iter()
+                .find(|&pane_id| self.editor_pane_matches_path(pane_id, path));
+        }
+
+        self.layout
+            .all_pane_ids()
+            .into_iter()
+            .find(|&pane_id| self.editor_pane_matches_path(pane_id, path))
+    }
+
+    fn focus_existing_editor_pane(&mut self, pane_id: PaneId) {
+        self.cache.invalidate_pane(pane_id);
+        self.focus.focused = Some(pane_id);
+        self.router.set_focused(pane_id);
+        if self.is_pane_in_dock(pane_id) {
+            self.set_dock_visible_with_animation(true);
+            self.focus.focus_area = crate::state::FocusArea::Dock;
+            if let Some(tid) = self.terminal_owning(pane_id) {
+                if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                    tp.dock_focused = Some(pane_id);
+                    tp.dock_layout.set_active_tab(pane_id);
+                }
+            }
+        } else {
+            self.focus.focus_area = crate::state::FocusArea::Stage;
+            self.layout.set_active_tab(pane_id);
+            if self.focus.zoomed_pane.is_some() {
+                self.focus.zoomed_pane = Some(pane_id);
+            }
+        }
+        self.cache.invalidate_chrome();
+        self.compute_layout();
+    }
+
+    pub(crate) fn open_editor_pane_in_context(
+        &mut self,
+        path: PathBuf,
+        context_terminal: Option<PaneId>,
+    ) {
+        let focused = match self.focus.focused {
+            Some(id) => id,
+            None => return,
+        };
+
+        if let Some(existing_id) = self.open_target_editor_for_path(&path, context_terminal) {
+            self.focus_existing_editor_pane(existing_id);
+            return;
+        }
+
+        let new_id = self.layout.alloc_id();
+        match EditorPane::open(new_id, &path) {
+            Ok(mut pane) => {
+                pane.editor.set_dark_mode(self.window.dark_mode);
+                self.panes.insert(new_id, PaneKind::Editor(pane));
+                self.ime.pending_creates.push(new_id);
+                if let Some(tid) = self.live_dock_terminal_for_context(context_terminal) {
+                    self.add_pane_to_dock(new_id, Some(tid));
+                    self.assoc.associated_terminal.insert(new_id, tid);
+                    self.focus.focus_area = crate::state::FocusArea::Dock;
+                } else {
+                    self.add_to_non_terminal_group(focused, new_id);
+                    if let Some(tid) = context_terminal {
+                        self.assoc.associated_terminal.insert(new_id, tid);
+                    }
+                    self.focus.focus_area = crate::state::FocusArea::Stage;
+                }
+                self.sync_file_tree_modified_editor_cache();
+                self.focus.focused = Some(new_id);
+                self.router.set_focused(new_id);
+                self.cache.invalidate_chrome();
+                self.watch_file(&path);
+                self.notify_lsp_did_open(new_id);
+                self.compute_layout();
+            }
+            Err(e) => {
+                log::error!("Failed to open editor for {:?}: {}", path, e);
+            }
         }
     }
 }
@@ -499,51 +598,29 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
     /// Replace an existing pane (e.g. a Launcher) with an editor for the given file.
     /// The editor reuses the same layout slot.
     fn replace_pane_with_editor(&mut self, pane_id: crate::tide_core::PaneId, path: PathBuf) {
-        // Check if already open anywhere -> activate & focus (and close the launcher)
-        for (&id, pane) in &self.panes {
-            if let PaneKind::Editor(editor) = pane {
-                if editor.editor.file_path() == Some(path.as_path()) {
-                    // File already open — remove the launcher, then focus existing editor.
-                    // Remove from dock_layout directly (not remove_pane_from_dock
-                    // which would overwrite focused/focus_area).
-                    if let Some(tid) = self.terminal_owning(pane_id) {
-                        if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                            tp.dock_layout.remove(pane_id);
-                            // If the launcher was dock_focused, point to the existing editor
-                            if tp.dock_focused == Some(pane_id) {
-                                tp.dock_focused = Some(id);
-                                tp.dock_layout.set_active_tab(id);
-                            }
-                        }
-                    } else {
-                        self.layout.remove(pane_id);
+        let context_terminal = self
+            .terminal_owning(pane_id)
+            .or_else(|| self.resolve_context_terminal_id());
+        if let Some(existing_id) = self.open_target_editor_for_path(&path, context_terminal) {
+            // File already open in this open target: remove the launcher, then focus the editor.
+            if let Some(tid) = self.terminal_owning(pane_id) {
+                if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                    tp.dock_layout.remove(pane_id);
+                    if tp.dock_focused == Some(pane_id) {
+                        tp.dock_focused = Some(existing_id);
+                        tp.dock_layout.set_active_tab(existing_id);
                     }
-                    self.panes.remove(&pane_id);
-                    self.assoc.associated_terminal.remove(&pane_id);
-                    self.cleanup_closed_pane_state(pane_id);
-                    // Now focus the existing editor
-                    self.cache.invalidate_pane(id);
-                    self.focus.focused = Some(id);
-                    self.router.set_focused(id);
-                    if self.is_pane_in_dock(id) {
-                        self.focus.focus_area = crate::state::FocusArea::Dock;
-                        if let Some(tid) = self.terminal_owning(id) {
-                            if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                                tp.dock_focused = Some(id);
-                                tp.dock_layout.set_active_tab(id);
-                            }
-                        }
-                    } else {
-                        self.focus.focus_area = crate::state::FocusArea::Stage;
-                    }
-                    self.cache.invalidate_chrome();
-                    self.compute_layout();
-                    return;
                 }
+            } else {
+                self.layout.remove(pane_id);
             }
+            self.panes.remove(&pane_id);
+            self.assoc.associated_terminal.remove(&pane_id);
+            self.cleanup_closed_pane_state(pane_id);
+            self.focus_existing_editor_pane(existing_id);
+            return;
         }
 
-        let context_terminal = self.resolve_context_terminal_id();
         // Replace the pane in-place: swap PaneKind from Launcher to Editor
         match EditorPane::open(pane_id, &path) {
             Ok(mut pane) => {
@@ -583,71 +660,8 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
     /// If focused is non-terminal → add as split next to the same pane.
     /// If already open, focus it.
     fn open_editor_pane(&mut self, path: PathBuf) {
-        let focused = match self.focus.focused {
-            Some(id) => id,
-            None => return,
-        };
-
-        // Check if already open anywhere -> focus
-        for (&id, pane) in &self.panes {
-            if let PaneKind::Editor(editor) = pane {
-                if editor.editor.file_path() == Some(path.as_path()) {
-                    self.cache.invalidate_pane(id);
-                    self.focus.focused = Some(id);
-                    self.router.set_focused(id);
-                    // If the pane is in a dock, open Dock and focus there
-                    if self.is_pane_in_dock(id) {
-                        self.set_dock_visible_with_animation(true);
-                        self.focus.focus_area = crate::state::FocusArea::Dock;
-                        // Update dock_focused on the owning terminal
-                        if let Some(tid) = self.terminal_owning(id) {
-                            if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                                tp.dock_focused = Some(id);
-                                tp.dock_layout.set_active_tab(id);
-                            }
-                        }
-                    } else {
-                        self.focus.focus_area = crate::state::FocusArea::Stage;
-                    }
-                    self.cache.invalidate_chrome();
-                    self.compute_layout();
-                    return;
-                }
-            }
-        }
-
         let context_terminal = self.resolve_context_terminal_id();
-        // Create new editor pane, routed to a split next to the focused pane
-        let new_id = self.layout.alloc_id();
-        match EditorPane::open(new_id, &path) {
-            Ok(mut pane) => {
-                pane.editor.set_dark_mode(self.window.dark_mode);
-                self.panes.insert(new_id, PaneKind::Editor(pane));
-                self.ime.pending_creates.push(new_id);
-                if let Some(tid) = self.live_dock_terminal_for_context(context_terminal) {
-                    self.add_pane_to_dock(new_id, Some(tid));
-                    self.assoc.associated_terminal.insert(new_id, tid);
-                    self.focus.focus_area = crate::state::FocusArea::Dock;
-                } else {
-                    self.add_to_non_terminal_group(focused, new_id);
-                    if let Some(tid) = context_terminal {
-                        self.assoc.associated_terminal.insert(new_id, tid);
-                    }
-                    self.focus.focus_area = crate::state::FocusArea::Stage;
-                }
-                self.sync_file_tree_modified_editor_cache();
-                self.focus.focused = Some(new_id);
-                self.router.set_focused(new_id);
-                self.cache.invalidate_chrome();
-                // Watch the file for external changes
-                self.watch_file(&path);
-                self.notify_lsp_did_open(new_id);
-                self.compute_layout();
-            }
-            Err(e) => {
-                log::error!("Failed to open editor for {:?}: {}", path, e);
-            }
-        }
+        self.open_editor_pane_in_context(path, context_terminal);
     }
 
     /// Open a file in the editor and jump to a specific line.

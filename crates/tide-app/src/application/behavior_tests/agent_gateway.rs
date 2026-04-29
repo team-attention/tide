@@ -9,7 +9,9 @@ use crate::state::FocusArea;
 use crate::tide_core::{LayoutEngine, SplitDirection};
 use crate::tide_platform::WindowProxy;
 use crate::App;
+use crate::DockPort;
 use crate::GatewayPort;
+use crate::PaneLifecyclePort;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -56,6 +58,14 @@ fn app_with_terminal() -> (App, u64) {
     app.focus.focus_area = FocusArea::Stage;
     app.focus.stage_focused = Some(id);
     (app, id)
+}
+
+fn app_with_two_real_terminals() -> (App, u64, u64) {
+    let (mut app, first_id) = app_with_terminal();
+    let second_id = app.layout.split(first_id, SplitDirection::Vertical);
+    let terminal = TerminalPane::with_cwd(second_id, 80, 24, None, true).unwrap();
+    app.panes.insert(second_id, PaneKind::Terminal(terminal));
+    (app, first_id, second_id)
 }
 
 fn test_window_proxy() -> WindowProxy {
@@ -537,6 +547,39 @@ fn cli_open_editor_dedup() {
     assert_eq!(result["already_open"], true);
     // Should still be the same number of panes
     assert_eq!(app.panes.len(), 1);
+}
+
+#[test]
+fn cli_open_editor_dedup_scopes_to_caller_terminal_context() {
+    // UC-6 BR-23: Already-open file dedup is scoped to the caller Terminal's Terminal Context Surface.
+    let (mut app, first_terminal, second_terminal) = app_with_two_real_terminals();
+    let tmp = tempfile::TempDir::new().expect("temp dir should be created");
+    let test_path = tmp.path().join("shared.rs");
+    std::fs::write(&test_path, "fn main() {}").expect("test file should be written");
+
+    app.focus.stage_focused = Some(first_terminal);
+    app.focus.focused = Some(first_terminal);
+    app.focus.focus_area = FocusArea::Stage;
+    app.open_editor_pane(test_path.clone());
+    let first_editor = app.focus.focused.expect("first open should focus editor");
+    assert_eq!(app.terminal_owning(first_editor), Some(first_terminal));
+
+    let result = app
+        .handle_cli_command(
+            "open-editor",
+            json!({
+                "file": test_path.to_string_lossy().to_string(),
+                "_caller_pane": second_terminal,
+            }),
+        )
+        .unwrap();
+    let second_editor = result["pane_id"]
+        .as_u64()
+        .expect("open-editor should return pane_id");
+
+    assert_ne!(second_editor, first_editor);
+    assert_ne!(result["already_open"], true);
+    assert_eq!(app.terminal_owning(second_editor), Some(second_terminal));
 }
 
 #[test]

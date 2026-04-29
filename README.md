@@ -82,12 +82,14 @@ cargo build --release                    # binary
 2. Run a coding agent inside the Terminal, such as Claude Code, Codex, or Gemini.
 3. Add another Terminal with `Cmd+T`, split the current FocusArea with `Cmd+Shift+T` or `Cmd+Shift+\`, or open a Browser Pane with `Cmd+Shift+B`.
 4. Open or focus the Dock with `Cmd+\`. If the Dock is empty, use the Launcher keys: `B` for a Browser Pane, `E` for a new Editor Pane, `O` to open a file, or `T` for a Terminal Pane.
-5. The Dock is tied to the focused Terminal Pane in the Stage. When you move between Terminal Panes, the Dock swaps to that Terminal's workbench.
+5. The Dock is tied to the focused Terminal Pane in the Stage. When you move between Terminal Panes, the Dock swaps to that Terminal's Terminal Context Surface.
 6. Use `Cmd+B` for FileTree View, `Cmd+E` for the Workspace rail, `Cmd+[` / `Cmd+]` to switch Workspaces, and `Cmd+Shift+N` for a new Workspace.
 
 ## Keyboard Shortcuts
 
-All keybindings are customizable in `~/.config/tide/settings.json`. Open settings with `Cmd+,`.
+These are the default macOS shortcuts. GlobalAction binding overrides are stored in the platform config directory: `~/Library/Application Support/tide/settings.json` on macOS and `~/.config/tide/settings.json` on Linux. Open settings with `Cmd+,`.
+
+Some Browser and Editor Pane shortcuts below are handled inside the focused Pane rather than through the global keybinding table.
 
 ### Workspace
 
@@ -102,14 +104,14 @@ All keybindings are customizable in `~/.config/tide/settings.json`. Open setting
 
 | Shortcut | Action |
 | --- | --- |
-| `Cmd+T` | New Terminal in the Stage, or a Launcher when the Dock is focused |
-| `Cmd+Shift+T` | Split the current FocusArea horizontally |
-| `Cmd+Shift+\` | Split the current FocusArea vertically |
-| `Cmd+\` | Show, hide, or focus the Dock |
+| `Cmd+T` | New Terminal as a right-side Stage split, or a Launcher when the Dock is focused |
+| `Cmd+Shift+T` | Split the current FocusArea into top/bottom panes |
+| `Cmd+Shift+\` | Split the current FocusArea into left/right panes |
+| `Cmd+\` | Open, focus, or close the Dock |
 | `Cmd+W` | Close focused Pane |
 | `Cmd+Enter` | Toggle stacked view for the current FocusArea |
-| `Cmd+Ctrl+Enter` | Toggle Dock stacked view |
-| `Cmd+Shift+B` | Open a Browser Pane |
+| `Cmd+Ctrl+Enter` | Toggle Dock stacked view without changing the current FocusArea |
+| `Cmd+Shift+B` | Open a Browser Pane for the current Terminal context |
 
 ### Launcher
 
@@ -133,9 +135,9 @@ All keybindings are customizable in `~/.config/tide/settings.json`. Open setting
 
 | Shortcut | Action |
 | --- | --- |
-| `Cmd+L` | Focus the Browser URL bar |
-| `Cmd+R` | Reload |
-| `Cmd+Shift+B` | Open new Browser Pane |
+| `Cmd+L` | Focus and select the Browser URL bar in the focused Browser Pane |
+| `Cmd+R` | Reload the focused Browser Pane |
+| `Cmd+Shift+B` | Open a Browser Pane for the current Terminal context |
 
 ### Editor And Utilities
 
@@ -145,7 +147,7 @@ All keybindings are customizable in `~/.config/tide/settings.json`. Open setting
 | `Cmd+F` | Find in focused Pane |
 | `Cmd+C` / `Cmd+V` | Copy / paste |
 | `Cmd+U` / `Cmd+D` | Scroll half page up / down |
-| `Cmd+=` / `Cmd+-` / `Cmd+0` | Increase / decrease / reset font size |
+| `Cmd++` or `Cmd+=` / `Cmd+-` / `Cmd+0` | Increase / decrease / reset font size |
 | `Cmd+Shift+D` | Toggle theme |
 | `Cmd+Ctrl+F` | Toggle fullscreen |
 | `Cmd+N` | New Tide Window |
