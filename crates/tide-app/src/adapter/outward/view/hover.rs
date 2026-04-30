@@ -1,6 +1,6 @@
 use crate::tide_core::{Rect, Renderer};
 
-use super::chrome::file_tree_hover_shows_overlay;
+use super::chrome::{file_tree_hover_shows_overlay, file_tree_row_slab_clip};
 use crate::state::drag_types::PaneDragState;
 use crate::theme::*;
 use crate::App;
@@ -33,6 +33,12 @@ pub(crate) fn render_hover(
                             let content_h = ft_rect.height - PANE_CORNER_RADIUS * 2.0;
                             // Skip hover on entries hidden behind the header
                             let header_bottom = content_y + FILE_TREE_HEADER_HEIGHT;
+                            let entries_clip = Rect::new(
+                                ft_rect.x,
+                                header_bottom,
+                                ft_rect.width,
+                                (content_y + content_h - header_bottom).max(0.0),
+                            );
                             let y =
                                 content_y + FILE_TREE_HEADER_HEIGHT + *index as f32 * line_height
                                     - file_tree_scroll;
@@ -50,7 +56,11 @@ pub(crate) fn render_hover(
                                     );
                                     // Use draw_rect (overlay pipeline, updates every frame)
                                     // not draw_chrome_rounded_rect (chrome texture, only on chrome_dirty)
-                                    renderer.draw_rect(row_rect, p.hover_file_tree);
+                                    if let Some(row_rect) =
+                                        file_tree_row_slab_clip(row_rect, entries_clip)
+                                    {
+                                        renderer.draw_rect(row_rect, p.hover_file_tree);
+                                    }
                                 }
                             }
                         }

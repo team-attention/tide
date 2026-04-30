@@ -1,17 +1,19 @@
 // Spec: docs/specs/visual-hierarchy.md
 
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::adapter::outward::clock_adapter::FixedClock;
 use crate::adapter::outward::view::{
     browser_nav_icon_for_target, browser_nav_icon_text_glyph, context_menu_icon,
-    context_menu_icon_text_glyph, region_header_anchor_pane_id, search_bar_close_icon_text_glyph,
-    titlebar_action_button_icon, titlebar_action_icon_text_glyph, titlebar_button_backdrop_level,
-    titlebar_identity_origin_x, titlebar_identity_origin_x_for_window,
-    titlebar_surface_button_icon, titlebar_surface_icon_text_glyph,
-    titlebar_toggle_button_draws_hotkey_hint, titlebar_toggle_button_height,
-    titlebar_toggle_button_width, titlebar_workspace_meta_text, titlebar_workspace_title,
-    BrowserNavIcon, ContextMenuIcon, TitlebarActionIcon, TitlebarSurfaceIcon,
+    context_menu_icon_text_glyph, file_tree_row_slab_clip, region_header_anchor_pane_id,
+    search_bar_close_icon_text_glyph, titlebar_action_button_icon, titlebar_action_icon_text_glyph,
+    titlebar_button_backdrop_level, titlebar_identity_origin_x,
+    titlebar_identity_origin_x_for_window, titlebar_surface_button_icon,
+    titlebar_surface_icon_text_glyph, titlebar_toggle_button_draws_hotkey_hint,
+    titlebar_toggle_button_height, titlebar_toggle_button_width, titlebar_workspace_meta_text,
+    titlebar_workspace_title, BrowserNavIcon, ContextMenuIcon, TitlebarActionIcon,
+    TitlebarSurfaceIcon,
 };
 use crate::event_loop::handle_platform_event;
 use crate::header::{
@@ -21,6 +23,7 @@ use crate::header::{
     stacked_tab_bar_header_action_specs_for_surface, HeaderActionIcon, HeaderHitAction,
     HeaderHitZone, HeaderSurfaceKind, SinglePaneHeaderPaintStep,
 };
+use crate::outward::{ClockPort, TerminalFactoryPort};
 use crate::pane::{PaneKind, TerminalPane};
 use crate::state::{
     drag_types::HoverTarget, SplitTransitionAnimation, SplitTransitionScope,
@@ -28,10 +31,11 @@ use crate::state::{
     SURFACE_VISIBILITY_ANIMATION_DURATION,
 };
 use crate::theme::{
-    FILE_TREE_WIDTH, PANE_PADDING, TERMINAL_CONTEXT_SURFACE_MIN_WIDTH, TITLEBAR_BUTTON_GAP,
-    TITLEBAR_HEIGHT, TITLEBAR_ICON_BUTTON_PAD_H, TITLEBAR_ICON_BUTTON_PAD_V, TITLEBAR_ICON_SCALE,
+    FILE_TREE_MIN_WIDTH, FILE_TREE_WIDTH, PANE_PADDING, TERMINAL_CONTEXT_SURFACE_MIN_WIDTH,
+    TITLEBAR_BUTTON_GAP, TITLEBAR_HEIGHT, TITLEBAR_ICON_BUTTON_PAD_H, TITLEBAR_ICON_BUTTON_PAD_V,
+    TITLEBAR_ICON_SCALE,
 };
-use crate::tide_core::{LayoutEngine, MouseButton, SplitDirection, Vec2};
+use crate::tide_core::{LayoutEngine, MouseButton, Rect, SplitDirection, Vec2};
 use crate::tide_input::GlobalAction;
 use crate::tide_platform::{PlatformEvent, WindowProxy};
 use crate::ui::{file_icon, file_icon_kind, file_tree_disclosure, FileIconKind};
@@ -136,6 +140,64 @@ fn app_with_two_stage_terminals() -> (App, u64, u64) {
     app.focus.stage_focused = Some(first_id);
     app.layout.set_split_ratio(first_id, 0.35);
     (app, first_id, second_id)
+}
+
+struct SharedTestClock {
+    instant: Arc<Mutex<Instant>>,
+}
+
+impl ClockPort for SharedTestClock {
+    fn now(&self) -> Instant {
+        *self
+            .instant
+            .lock()
+            .expect("test clock lock should be available")
+    }
+}
+
+struct DelayedTerminalFactory {
+    instant: Arc<Mutex<Instant>>,
+    delay: Duration,
+}
+
+impl TerminalFactoryPort for DelayedTerminalFactory {
+    fn create_terminal(
+        &self,
+        id: crate::tide_core::PaneId,
+        cols: u16,
+        rows: u16,
+        cwd: Option<&std::path::Path>,
+        dark_mode: bool,
+        _tide_window_id: crate::tide_core::TideWindowId,
+        _workspace_name: Option<&str>,
+    ) -> Result<TerminalPane, Box<dyn std::error::Error>> {
+        {
+            let mut instant = self
+                .instant
+                .lock()
+                .expect("test clock lock should be available");
+            *instant = *instant + self.delay;
+        }
+        TerminalPane::with_cwd(
+            id,
+            cols,
+            rows,
+            cwd.map(|path| path.to_path_buf()),
+            dark_mode,
+        )
+    }
+
+    fn pre_spawn_terminal(
+        &self,
+        _cols: u16,
+        _rows: u16,
+        _dark_mode: bool,
+        _pane_id: Option<crate::tide_core::PaneId>,
+        _tide_window_id: crate::tide_core::TideWindowId,
+        _workspace_name: Option<&str>,
+    ) -> Result<crate::tide_terminal::Terminal, Box<dyn std::error::Error>> {
+        Err("delayed terminal factory does not pre-spawn terminals".into())
+    }
 }
 
 fn root_split_ratio(app: &App) -> f32 {
@@ -260,6 +322,28 @@ fn file_icon_uses_file_icon_kind_as_compatibility_wrapper() {
         file_icon("src", true, false),
         FileIconKind::FolderClosed.glyph()
     );
+}
+
+#[test]
+fn file_tree_view_default_width_is_compact() {
+    // UC-3 BR-52: FileTree View defaults to a compact 200px width with a 160px minimum resize width.
+    assert_eq!(FILE_TREE_WIDTH.to_bits(), 200.0_f32.to_bits());
+    assert_eq!(FILE_TREE_MIN_WIDTH.to_bits(), 160.0_f32.to_bits());
+}
+
+#[test]
+fn file_tree_row_highlight_clips_to_entries_below_header() {
+    // UC-3 BR-53: FileTree View row highlights and expanded directory slabs are clipped to the entries area below the header before rendering.
+    let entries_clip = Rect::new(100.0, 148.0, 200.0, 300.0);
+    let row_rect = Rect::new(104.0, 132.0, 192.0, 32.0);
+
+    let clipped =
+        file_tree_row_slab_clip(row_rect, entries_clip).expect("row should overlap entries area");
+
+    assert_eq!(clipped.x.to_bits(), row_rect.x.to_bits());
+    assert_eq!(clipped.width.to_bits(), row_rect.width.to_bits());
+    assert_eq!(clipped.y.to_bits(), entries_clip.y.to_bits());
+    assert_eq!(clipped.height.to_bits(), 16.0_f32.to_bits());
 }
 
 // --- UC-4: AnimateSideSurfaceVisibility ---
@@ -530,6 +614,51 @@ fn stage_split_with_launcher_starts_split_transition_animation() {
 }
 
 #[test]
+fn stage_split_transition_starts_after_terminal_creation_latency() {
+    // UC-4 BR-44a: Terminal startup latency must not consume the Stage SplitTransitionAnimation before the first rendered frame.
+    let started_at = Instant::now();
+    let shared_clock = Arc::new(Mutex::new(started_at));
+    let (mut app, first_id) = app_with_stage_terminal_only();
+    app.ports.clock = Box::new(SharedTestClock {
+        instant: Arc::clone(&shared_clock),
+    });
+    app.ports.terminal_factory = Box::new(DelayedTerminalFactory {
+        instant: Arc::clone(&shared_clock),
+        delay: SPLIT_TRANSITION_ANIMATION_DURATION + Duration::from_millis(20),
+    });
+    app.compute_layout();
+
+    app.split_with_launcher(SplitDirection::Vertical);
+
+    let new_id = app
+        .focus
+        .focused
+        .expect("new Stage split should be focused");
+    let animation = app
+        .split_transition_animation
+        .expect("Stage split should still be animating after Terminal creation");
+    assert_eq!(animation.scope, SplitTransitionScope::Stage);
+    assert_eq!(animation.pane_id, new_id);
+
+    let first_rect = app
+        .pane_rects
+        .iter()
+        .find(|(pane_id, _)| *pane_id == first_id)
+        .expect("first Stage Pane rect should exist")
+        .1;
+    let new_rect = app
+        .pane_rects
+        .iter()
+        .find(|(pane_id, _)| *pane_id == new_id)
+        .expect("new Stage Pane rect should exist")
+        .1;
+    assert!(
+        new_rect.width < first_rect.width,
+        "new Stage Pane should still start narrow after Terminal creation latency"
+    );
+}
+
+#[test]
 fn dock_split_header_action_starts_split_transition_animation() {
     // UC-4 BR-45: Creating a Terminal Context Surface split starts a SplitTransitionAnimation from a narrow new Pane ratio.
     let (mut app, terminal_id) = app_with_context_pane();
@@ -593,6 +722,25 @@ fn closing_stage_split_starts_split_transition_animation_before_removal() {
     assert!(!app.panes.contains_key(&second_id));
     assert!(!app.layout.all_pane_ids().contains(&second_id));
     assert!(app.split_transition_animation.is_none());
+}
+
+#[test]
+fn global_close_pane_starts_split_transition_animation_before_removal() {
+    // UC-4 BR-49a: GlobalAction::ClosePane uses the split close transition path for visible Stage splits.
+    let (mut app, _first_id, second_id) = app_with_two_stage_terminals();
+    app.focus.focused = Some(second_id);
+    app.router.set_focused(second_id);
+    app.compute_layout();
+
+    app.handle_global_action(GlobalAction::ClosePane);
+
+    assert!(app.panes.contains_key(&second_id));
+    let animation = app
+        .split_transition_animation
+        .expect("GlobalAction::ClosePane should start a split transition");
+    assert!(animation.is_closing());
+    assert_eq!(animation.scope, SplitTransitionScope::Stage);
+    assert_eq!(animation.pane_id, second_id);
 }
 
 #[test]

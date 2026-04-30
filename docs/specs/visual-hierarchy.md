@@ -93,6 +93,8 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
   - BR-6: Directory rows expose a disclosure chevron separate from the folder glyph.
   - BR-7: Project-special files such as `README.md`, `AGENTS.md`, `.gitignore`, and `Cargo.toml` map to stable `FileIconKind`s before rendering.
   - BR-8: `file_icon()` remains a compatibility wrapper over `FileIconKind`.
+  - BR-52: FileTree View defaults to a compact 200px width with a 160px minimum resize width.
+  - BR-53: FileTree View row highlights and expanded directory slabs are clipped to the entries area below the header before rendering.
 
 ### UC-4: AnimateSideSurfaceVisibility
 
@@ -117,9 +119,11 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
   - BR-26: Active side-surface visibility animation must not mutate Stage `SplitLayout` ratios from their pre-animation values.
   - BR-51: When FileTree View is visible, Terminal Context Surface visibility animation must target the same right-side support width as the settled layout so a short stored Terminal Context Surface width does not jump wider on the completion frame.
   - BR-44: Creating a Stage split starts a `SplitTransitionAnimation` from a narrow new Pane ratio toward the settled split ratio.
+  - BR-44a: Stage split transition timing starts after Terminal creation completes, so Terminal startup latency cannot consume the `SplitTransitionAnimation` before the first rendered frame.
   - BR-45: Creating a Terminal Context Surface split starts a `SplitTransitionAnimation` from a narrow new Pane ratio toward the settled split ratio.
   - BR-46: Active split transition animation keeps the event loop scheduling redraws and is treated like transient layout motion for ratio snapping and terminal backend resize pacing.
   - BR-49: Closing a visible Stage or Terminal Context Surface split starts a closing `SplitTransitionAnimation` before removing the closing `Pane`.
+  - BR-49a: `GlobalAction::ClosePane` and Pane close hit zones use the split close transition path for visible Stage or Terminal Context Surface splits.
 
 ### UC-5: NormalizeChromeIcons
 
@@ -208,6 +212,8 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
 | UC-3 | BR-6 | `directory_file_tree_rows_have_separate_disclosure_and_icon` |
 | UC-3 | BR-7 | `project_special_files_map_to_stable_icon_kinds` |
 | UC-3 | BR-8 | `file_icon_uses_file_icon_kind_as_compatibility_wrapper` |
+| UC-3 | BR-52 | `file_tree_view_default_width_is_compact` |
+| UC-3 | BR-53 | `file_tree_row_highlight_clips_to_entries_below_header` |
 | UC-4 | BR-9 | `surface_visibility_animation_eases_width_to_target` |
 | UC-4 | BR-10 | `toggle_dock_starts_surface_visibility_animation` |
 | UC-4 | BR-11 | `toggle_file_tree_starts_surface_visibility_animation` |
@@ -219,10 +225,12 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
 | UC-4 | BR-26 | `stage_split_ratio_stays_stable_during_side_surface_visibility_animation` |
 | UC-4 | BR-51 | `dock_opening_animation_finishes_without_width_jump_when_file_tree_is_visible` |
 | UC-4 | BR-44 | `stage_split_with_launcher_starts_split_transition_animation` |
+| UC-4 | BR-44a | `stage_split_transition_starts_after_terminal_creation_latency` |
 | UC-4 | BR-45 | `dock_split_header_action_starts_split_transition_animation` |
 | UC-4 | BR-46 | `split_transition_animation_eases_ratio_to_target` |
 | UC-4 | BR-49 | `closing_stage_split_starts_split_transition_animation_before_removal` |
 | UC-4 | BR-49 | `closing_dock_split_starts_split_transition_animation_before_removal` |
+| UC-4 | BR-49a | `global_close_pane_starts_split_transition_animation_before_removal` |
 | UC-5 | BR-13 | `directory_file_tree_rows_use_lightweight_disclosure_chevrons` |
 | UC-5 | BR-14 | `project_special_file_icons_share_restrained_document_glyphs` |
 | UC-5 | BR-15/BR-16/BR-19 | `titlebar_surface_toggles_are_icon_only_larger_controls` |

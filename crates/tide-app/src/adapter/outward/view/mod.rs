@@ -14,7 +14,7 @@ pub(crate) mod ui;
 pub(crate) use chrome::{
     browser_nav_icon_for_target, browser_nav_icon_text_glyph, browser_nav_raster_icon_asset,
     file_tree_disclosure_color, file_tree_expanded_directory_chrome, file_tree_focus_chrome,
-    file_tree_hover_shows_overlay, file_tree_name_style,
+    file_tree_hover_shows_overlay, file_tree_name_style, file_tree_row_slab_clip,
     integration_toggle_notification_indicator_color, pane_surface_attention_status,
     region_header_anchor_pane_id, titlebar_action_button_icon, titlebar_action_icon_text_glyph,
     titlebar_action_raster_icon_asset, titlebar_button_backdrop_level, titlebar_identity_origin_x,

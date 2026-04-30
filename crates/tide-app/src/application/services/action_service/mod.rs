@@ -888,7 +888,7 @@ impl crate::application::ports::inward::ActionPort for App {
                                     Some(crate::action::LauncherChoice::Browser)
                                 }
                                 crate::tide_core::Key::Escape => {
-                                    self.close_specific_pane(id);
+                                    self.close_specific_pane_with_split_animation(id);
                                     None
                                 }
                                 _ => None,
@@ -1041,8 +1041,13 @@ impl crate::application::ports::inward::ActionPort for App {
             self.cache.pane_generations.clear();
         }
         let new_id = self.layout.split(source, direction);
-        self.begin_split_transition_animation(crate::state::SplitTransitionScope::Stage, new_id);
         self.create_terminal_pane(new_id, cwd);
+        if self.panes.contains_key(&new_id) {
+            self.begin_split_transition_animation(
+                crate::state::SplitTransitionScope::Stage,
+                new_id,
+            );
+        }
         self.focus.focused = Some(new_id);
         self.router.set_focused(new_id);
         self.cache.invalidate_chrome();
@@ -1066,7 +1071,7 @@ impl crate::application::ports::inward::ActionPort for App {
             }
             GlobalAction::ClosePane => {
                 if let Some(focused) = self.focus.focused {
-                    self.close_specific_pane(focused);
+                    self.close_specific_pane_with_split_animation(focused);
                 }
             }
             GlobalAction::FocusArea(slot) => {

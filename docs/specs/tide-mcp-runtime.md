@@ -51,6 +51,7 @@ The runtime must not add a one-off Dock resize tool. Instead, it must expose a g
 12. For Claude, append Tide Tool Discovery Context with `--append-system-prompt` while keeping the existing MCP and hooks flags.
 13. For Gemini, create a temporary `GEMINI.md` context file and load it through `context.includeDirectories` plus `context.loadMemoryFromIncludeDirectories` in the wrapper-owned system defaults file.
 14. Preserve user Codex skills by creating a real temporary `skills/` directory in the overlay, symlinking user skill entries into it, and adding the wrapper-owned Tide skill there instead of mutating the user's real Codex home.
+15. Route MCP-opened and MCP-closed Terminal Context Surface Panes through the same split transition animation paths used by human split and close actions.
 
 ## Bounded Contexts
 
@@ -200,6 +201,28 @@ Business Rules:
 - BR-9: The Gemini Agent Wrapper must inject Tide Tool Discovery Context through a temporary `GEMINI.md` include directory without mutating the user's real Gemini home.
 - BR-10: Tide Tool Discovery Context must tell Wrapped Agents to prefer Tide MCP tools before macOS default-app commands when the user asks to open, show, view, browse, inspect, preview, or display files, URLs, local servers, Panes, or Tide surfaces.
 
+### UC-6: AnimateMcpPaneLifecycle
+
+Actor: Wrapped Agent or external MCP client
+
+Trigger: The agent opens or closes a Pane through Tide MCP Runtime.
+
+Precondition: The target Workspace is active and the affected Pane is visible in Stage or Terminal Context Surface.
+
+Flow:
+
+1. Agent calls `tide_open_browser`, `tide_render_html`, or another MCP open tool that creates a Pane in Terminal Context Surface.
+2. If Terminal Context Surface already has a visible split, Tide starts `SplitTransitionAnimation` for the new Pane.
+3. Agent calls `tide_close_pane`.
+4. If the target Pane is in a visible Stage or Terminal Context Surface split, Tide starts the closing `SplitTransitionAnimation` before removing the Pane.
+
+Postcondition: Agent-driven Pane lifecycle changes use the same visible split transition grammar as human actions.
+
+Business Rules:
+
+- BR-1: MCP-opened Terminal Context Surface Panes must start `SplitTransitionAnimation` when they create a visible split in an existing Terminal Context Surface.
+- BR-2: `tide_close_pane` must use the split close transition path for visible Stage or Terminal Context Surface splits.
+
 ## Invariants
 
 1. Tide MCP Runtime is provider-neutral. It can describe Codex, Claude, or Gemini as a Wrapped Agent, but its layout and Browser Pane tools do not require any one provider.
@@ -229,6 +252,8 @@ Business Rules:
 | UC-5: OrientWrappedAgentToTideStructure | BR-7, BR-10 | `wrapped_agent_release_integration` | `codex_wrapper_injects_tide_tool_discovery_context` |
 | UC-5: OrientWrappedAgentToTideStructure | BR-8, BR-10 | `wrapped_agent_release_integration` | `claude_wrapper_appends_tide_tool_discovery_context` |
 | UC-5: OrientWrappedAgentToTideStructure | BR-9, BR-10 | `wrapped_agent_release_integration` | `gemini_wrapper_loads_tide_tool_discovery_context_from_temp_memory` |
+| UC-6: AnimateMcpPaneLifecycle | BR-1 | `tide_mcp_runtime` | `mcp_open_browser_in_terminal_context_surface_starts_split_transition_animation` |
+| UC-6: AnimateMcpPaneLifecycle | BR-2 | `tide_mcp_runtime` | `mcp_close_pane_in_terminal_context_surface_starts_split_transition_animation` |
 
 ## Location
 

@@ -2212,7 +2212,7 @@ fn cli_close_pane(
         return Err(CliError::PaneNotFound(pane_id));
     }
 
-    ctx.close_specific_pane(pane_id);
+    ctx.close_specific_pane_with_split_animation(pane_id);
     Ok(json!({"ok": true}))
 }
 

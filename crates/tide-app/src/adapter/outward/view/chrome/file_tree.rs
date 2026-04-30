@@ -62,6 +62,12 @@ pub(crate) fn file_tree_expanded_directory_chrome(p: &ThemePalette) -> FileTreeR
     }
 }
 
+pub(crate) fn file_tree_row_slab_clip(row_rect: Rect, entries_clip: Rect) -> Option<Rect> {
+    let top = row_rect.y.max(entries_clip.y);
+    let bottom = (row_rect.y + row_rect.height).min(entries_clip.y + entries_clip.height);
+    (bottom > top).then(|| Rect::new(row_rect.x, top, row_rect.width, bottom - top))
+}
+
 pub(crate) fn file_tree_disclosure_color(p: &ThemePalette) -> Color {
     let bg_lum = 0.2126 * p.file_tree_bg.r + 0.7152 * p.file_tree_bg.g + 0.0722 * p.file_tree_bg.b;
     let alpha = if bg_lum > 0.5 { 0.54 } else { 0.84 };
@@ -372,7 +378,13 @@ pub(super) fn render_file_tree(
                     tree_visual_rect.width - left_padding,
                     line_height,
                 );
-                draw_file_tree_row_slab(renderer, row_rect, file_tree_expanded_directory_chrome(p));
+                if let Some(row_rect) = file_tree_row_slab_clip(row_rect, entries_clip) {
+                    draw_file_tree_row_slab(
+                        renderer,
+                        row_rect,
+                        file_tree_expanded_directory_chrome(p),
+                    );
+                }
             }
 
             if is_cursor_row {
@@ -382,14 +394,16 @@ pub(super) fn render_file_tree(
                     tree_visual_rect.width - left_padding,
                     line_height,
                 );
-                draw_file_tree_row_slab(
-                    renderer,
-                    row_rect,
-                    FileTreeRowChrome {
-                        fill: focus_chrome.cursor_fill,
-                        stroke: focus_chrome.cursor_stroke,
-                    },
-                );
+                if let Some(row_rect) = file_tree_row_slab_clip(row_rect, entries_clip) {
+                    draw_file_tree_row_slab(
+                        renderer,
+                        row_rect,
+                        FileTreeRowChrome {
+                            fill: focus_chrome.cursor_fill,
+                            stroke: focus_chrome.cursor_stroke,
+                        },
+                    );
+                }
             }
 
             // Look up git status for this entry (O(1) via pre-computed cache)

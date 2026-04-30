@@ -192,7 +192,7 @@ Socket Thread → write response → client
 - **Trigger**: `tide cli split-vertical|split-horizontal|close-pane|focus-pane|resize-pane`
 - **Business Rules**:
   - BR-17: `split` returns new PaneId
-  - BR-18: `close-pane` follows pane-lifecycle spec
+  - BR-18: `close-pane` follows pane-lifecycle spec and, for a visible split, starts the split close transition before final Pane removal.
   - BR-19: `focus-pane` changes focus
   - BR-20: `resize-pane` adjusts split ratio
 
@@ -528,6 +528,8 @@ Agent                          Tide                         User
 | UC-4 | BR-15 | `get_layout_recursive_tree` |
 | UC-4 | BR-16 | `get_layout_leaf_includes_tab_group` |
 | UC-5 | BR-17 | `cli_split_returns_new_pane_id` |
+| UC-5 | BR-18 | `cli_close_pane_removes_pane` |
+| UC-5 | BR-18 | `cli_close_pane_defaults_to_focused` |
 | UC-5 | BR-19 | `cli_focus_pane_changes_focus` |
 | UC-6 | BR-21 | `cli_open_terminal_with_cwd` |
 | UC-6 | BR-23 | `cli_open_editor_dedup` |

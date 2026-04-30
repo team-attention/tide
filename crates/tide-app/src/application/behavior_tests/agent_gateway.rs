@@ -3,14 +3,16 @@
 use serde_json::json;
 
 use crate::adapter::inward::cli_adapter::mcp;
+use crate::adapter::outward::clock_adapter::FixedClock;
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
-use crate::state::FocusArea;
+use crate::state::{FocusArea, SplitTransitionScope, SPLIT_TRANSITION_ANIMATION_DURATION};
 use crate::tide_core::{LayoutEngine, SplitDirection};
 use crate::tide_platform::WindowProxy;
 use crate::App;
 use crate::DockPort;
 use crate::GatewayPort;
+use crate::LayoutPort;
 use crate::PaneLifecyclePort;
 
 fn test_app() -> App {
@@ -71,6 +73,14 @@ fn app_with_two_real_terminals() -> (App, u64, u64) {
 fn test_window_proxy() -> WindowProxy {
     let (tx, _rx) = std::sync::mpsc::channel();
     WindowProxy::new(tx, std::sync::Arc::new(|| {}))
+}
+
+fn finish_split_transition_animation(app: &mut App) {
+    let started_at = app.ports.clock.now();
+    app.ports.clock = Box::new(FixedClock {
+        instant: started_at + SPLIT_TRANSITION_ANIMATION_DURATION,
+    });
+    app.compute_layout();
 }
 
 fn write_codex_transcript(contents: &str) -> std::path::PathBuf {
@@ -442,14 +452,25 @@ fn cli_focus_pane_requires_pane_id() {
 
 #[test]
 fn cli_close_pane_removes_pane() {
-    // UC-5 BR-18: close-pane follows pane-lifecycle spec
+    // UC-5 BR-18: close-pane follows pane-lifecycle spec and starts split close transition before final Pane removal.
     let (mut app, id1, _id2) = app_with_two_editors();
+    app.compute_layout();
     assert_eq!(app.panes.len(), 2);
 
     let result = app
         .handle_cli_command("close-pane", json!({"pane_id": id1}))
         .unwrap();
     assert_eq!(result["ok"], true);
+    assert!(app.panes.contains_key(&id1));
+    let animation = app
+        .split_transition_animation
+        .expect("close-pane should start a Stage split transition");
+    assert!(animation.is_closing());
+    assert_eq!(animation.scope, SplitTransitionScope::Stage);
+    assert_eq!(animation.pane_id, id1);
+
+    finish_split_transition_animation(&mut app);
+
     assert!(!app.panes.contains_key(&id1));
     assert_eq!(app.panes.len(), 1);
 }
@@ -464,12 +485,23 @@ fn cli_close_pane_nonexistent_error() {
 
 #[test]
 fn cli_close_pane_defaults_to_focused() {
-    // close-pane without pane_id → closes focused pane
+    // UC-5 BR-18: close-pane without pane_id closes the focused Pane through the same split close transition.
     let (mut app, id1, id2) = app_with_two_editors();
     app.focus.focused = Some(id1);
+    app.compute_layout();
 
     let result = app.handle_cli_command("close-pane", json!({})).unwrap();
     assert_eq!(result["ok"], true);
+    assert!(app.panes.contains_key(&id1));
+    let animation = app
+        .split_transition_animation
+        .expect("focused close-pane should start a Stage split transition");
+    assert!(animation.is_closing());
+    assert_eq!(animation.scope, SplitTransitionScope::Stage);
+    assert_eq!(animation.pane_id, id1);
+
+    finish_split_transition_animation(&mut app);
+
     assert!(!app.panes.contains_key(&id1));
     assert!(app.panes.contains_key(&id2));
 }

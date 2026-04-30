@@ -316,6 +316,12 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                 }
                 let cwd = self.focused_terminal_cwd();
                 self.create_terminal_pane(new_id, cwd);
+                if self.panes.contains_key(&new_id) {
+                    self.begin_split_transition_animation(
+                        crate::state::SplitTransitionScope::Stage,
+                        new_id,
+                    );
+                }
                 self.focus_terminal(new_id);
             }
         }
@@ -492,11 +498,13 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
                     .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
                 let cwd = self.focused_terminal_cwd();
                 let new_id = self.layout.split(focused, direction);
-                self.begin_split_transition_animation(
-                    crate::state::SplitTransitionScope::Stage,
-                    new_id,
-                );
                 self.create_terminal_pane(new_id, cwd);
+                if self.panes.contains_key(&new_id) {
+                    self.begin_split_transition_animation(
+                        crate::state::SplitTransitionScope::Stage,
+                        new_id,
+                    );
+                }
                 self.focus_terminal(new_id);
                 self.compute_layout();
                 return;

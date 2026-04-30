@@ -5,7 +5,7 @@ use serde_json::json;
 use crate::adapter::inward::cli_adapter::mcp;
 use crate::pane::browser::BrowserPane;
 use crate::pane::{PaneKind, TerminalPane};
-use crate::state::FocusArea;
+use crate::state::{FocusArea, SplitTransitionScope};
 use crate::tide_core::PaneId;
 use crate::App;
 use crate::DockPort;
@@ -237,6 +237,7 @@ fn layout_action_resizes_terminal_context_surface_pane_split() {
     app.dock.dock_open = true;
     app.dock.visibility_animation = None;
     app.set_active_terminal_context_stacked(false);
+    app.split_transition_animation = None;
     app.compute_layout();
 
     let result = app
@@ -368,4 +369,63 @@ fn open_tool_descriptions_distinguish_content_from_surface_intent() {
     assert!(browser.contains("active Terminal Context Surface when possible"));
     assert!(browser.contains("links, pages, previews, and web inspection inside Tide"));
     assert!(browser.contains("external/default browser"));
+}
+
+#[test]
+fn mcp_open_browser_in_terminal_context_surface_starts_split_transition_animation() {
+    // UC-6 BR-1: MCP-opened Terminal Context Surface Panes start SplitTransitionAnimation when they create a visible split.
+    let (mut app, terminal_id, _browser_id) = app_with_context_browser(360.0);
+    app.set_active_terminal_context_stacked(false);
+    app.split_transition_animation = None;
+    app.compute_layout();
+
+    let result = app
+        .handle_cli_command("open-browser", json!({"url": "http://localhost:4175"}))
+        .expect("MCP open-browser should create a Browser Pane");
+    let new_id = result["pane_id"]
+        .as_u64()
+        .expect("open-browser should return pane_id");
+
+    let animation = app
+        .split_transition_animation
+        .expect("MCP-opened Browser Pane should start a split transition");
+    assert_eq!(
+        animation.scope,
+        SplitTransitionScope::TerminalContextSurface { terminal_id }
+    );
+    assert_eq!(animation.pane_id, new_id);
+    assert!(app.layout_animation_active());
+}
+
+#[test]
+fn mcp_close_pane_in_terminal_context_surface_starts_split_transition_animation() {
+    // UC-6 BR-2: tide_close_pane uses the split close transition path for visible Terminal Context Surface splits.
+    let (mut app, terminal_id, first_browser_id) = app_with_context_browser(360.0);
+    let second_browser_id = app.layout.alloc_id();
+    app.panes.insert(
+        second_browser_id,
+        PaneKind::Browser(BrowserPane::with_url(
+            second_browser_id,
+            "http://localhost:4175".to_string(),
+        )),
+    );
+    app.add_pane_to_dock(second_browser_id, Some(terminal_id));
+    app.set_active_terminal_context_stacked(false);
+    app.split_transition_animation = None;
+    app.compute_layout();
+
+    app.handle_cli_command("close-pane", json!({"pane_id": second_browser_id}))
+        .expect("MCP close-pane should accept a context Browser Pane");
+
+    assert!(app.panes.contains_key(&second_browser_id));
+    assert!(app.panes.contains_key(&first_browser_id));
+    let animation = app
+        .split_transition_animation
+        .expect("MCP close-pane should start a split transition");
+    assert!(animation.is_closing());
+    assert_eq!(
+        animation.scope,
+        SplitTransitionScope::TerminalContextSurface { terminal_id }
+    );
+    assert_eq!(animation.pane_id, second_browser_id);
 }

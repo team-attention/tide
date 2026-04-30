@@ -103,6 +103,7 @@ impl DockPort for App {
         }
 
         if let Some(tid) = target_terminal.or_else(|| self.focused_terminal_id()) {
+            let mut created_split = false;
             if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
                 if tp.dock_layout.all_pane_ids().is_empty() {
                     tp.dock_layout.insert_at_root(new_pane_id, DropZone::Right);
@@ -115,11 +116,19 @@ impl DockPort for App {
                     ) {
                         tp.dock_layout.insert_at_root(new_pane_id, DropZone::Right);
                     }
+                    created_split = true;
                 } else {
                     tp.dock_layout.insert_at_root(new_pane_id, DropZone::Right);
+                    created_split = true;
                 }
                 tp.dock_focused = Some(new_pane_id);
                 tp.dock_layout.set_active_tab(new_pane_id);
+            }
+            if created_split {
+                self.begin_split_transition_animation(
+                    crate::state::SplitTransitionScope::TerminalContextSurface { terminal_id: tid },
+                    new_pane_id,
+                );
             }
             self.set_dock_visible_with_animation(true);
             self.assoc.associated_terminal.insert(new_pane_id, tid);

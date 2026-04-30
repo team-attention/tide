@@ -10,11 +10,11 @@ use crate::App;
 
 #[cfg(test)]
 pub(crate) use file_tree::file_tree_focus_chrome;
-pub(crate) use file_tree::file_tree_hover_shows_overlay;
 #[cfg(test)]
 pub(crate) use file_tree::file_tree_name_style;
 #[cfg(test)]
 pub(crate) use file_tree::{file_tree_disclosure_color, file_tree_expanded_directory_chrome};
+pub(crate) use file_tree::{file_tree_hover_shows_overlay, file_tree_row_slab_clip};
 #[cfg(test)]
 pub(crate) use tab_bar::{
     browser_nav_icon_for_target, browser_nav_icon_text_glyph, browser_nav_raster_icon_asset,

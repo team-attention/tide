@@ -199,7 +199,7 @@ pub(crate) fn handle_mouse_down(
     // Pane tab close
     if button == MouseButton::Left {
         if let Some(pane_id) = ctx.pane_tab_close_at(ctx.last_cursor_pos()) {
-            ctx.close_specific_pane(pane_id);
+            ctx.close_specific_pane_with_split_animation(pane_id);
             ctx.request_redraw();
             return;
         }
