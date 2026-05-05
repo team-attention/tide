@@ -11,6 +11,8 @@ pub struct WrapMap {
     /// For each logical line `i`, `offsets[i]` is the visual row index
     /// where that line starts. `offsets[line_count]` == total visual rows.
     offsets: Vec<usize>,
+    /// Cached visual row info for each wrapped sub-row of each logical line.
+    rows_by_line: Vec<Vec<VisualRowInfo>>,
     /// The column width used to build this map.
     wrap_width: usize,
     /// Content generation at the time of build.
@@ -35,14 +37,18 @@ impl WrapMap {
     /// Build a new WrapMap from the given lines.
     pub fn build(lines: &[String], wrap_width: usize, generation: u64) -> Self {
         let mut offsets = Vec::with_capacity(lines.len() + 1);
+        let mut rows_by_line = Vec::with_capacity(lines.len());
         let mut visual_row = 0;
-        for line in lines {
+        for (logical_line, line) in lines.iter().enumerate() {
             offsets.push(visual_row);
-            visual_row += visual_rows_for_line(line, wrap_width);
+            let rows = visual_row_infos_for_line(logical_line, line, wrap_width);
+            visual_row += rows.len();
+            rows_by_line.push(rows);
         }
         offsets.push(visual_row);
         Self {
             offsets,
+            rows_by_line,
             wrap_width,
             generation,
         }
@@ -65,10 +71,30 @@ impl WrapMap {
 
     /// How many visual rows a given logical line occupies.
     pub fn visual_rows_for(&self, logical_line: usize) -> usize {
-        if logical_line + 1 >= self.offsets.len() {
-            return 1;
-        }
-        self.offsets[logical_line + 1] - self.offsets[logical_line]
+        self.rows_by_line
+            .get(logical_line)
+            .map(|rows| rows.len())
+            .unwrap_or(1)
+    }
+
+    /// Number of cached visual row entries for a logical line.
+    pub fn cached_visual_row_count_for_line(&self, logical_line: usize) -> usize {
+        self.rows_by_line
+            .get(logical_line)
+            .map(|rows| rows.len())
+            .unwrap_or(0)
+    }
+
+    /// Return cached row metadata for one wrapped sub-row in a logical line.
+    pub fn visual_row_info_for_line(
+        &self,
+        logical_line: usize,
+        sub_row: usize,
+    ) -> Option<VisualRowInfo> {
+        self.rows_by_line
+            .get(logical_line)
+            .and_then(|rows| rows.get(sub_row))
+            .copied()
     }
 
     /// The visual row index where a logical line starts.
@@ -84,7 +110,7 @@ impl WrapMap {
     pub fn visual_row_to_line_info(
         &self,
         visual_row: usize,
-        lines: &[String],
+        _lines: &[String],
     ) -> Option<VisualRowInfo> {
         if visual_row >= self.total_visual_rows() {
             return None;
@@ -105,28 +131,10 @@ impl WrapMap {
             Err(i) => i - 1,
         };
         let row_within_line = visual_row - self.offsets[logical_line];
-        let line = lines.get(logical_line)?;
-        let total_sub_rows = self.visual_rows_for(logical_line);
-
-        // Walk the line to find the byte/char offset for this visual sub-row.
-        let (byte_offset, char_offset) =
-            offset_for_visual_sub_row(line, self.wrap_width, row_within_line);
-
-        // Compute char_end: start of next sub-row, or total chars if last sub-row
-        let char_end = if row_within_line + 1 < total_sub_rows {
-            let (_, next_char) =
-                offset_for_visual_sub_row(line, self.wrap_width, row_within_line + 1);
-            next_char
-        } else {
-            line.chars().count()
-        };
-
-        Some(VisualRowInfo {
-            logical_line,
-            byte_offset,
-            char_offset,
-            char_end,
-        })
+        self.rows_by_line
+            .get(logical_line)
+            .and_then(|rows| rows.get(row_within_line))
+            .copied()
     }
 
     /// Map a buffer position (logical_line, byte_col) to a visual row index.
@@ -195,36 +203,52 @@ pub fn visual_rows_for_line(line: &str, wrap_width: usize) -> usize {
     rows
 }
 
-/// Find the byte offset and char offset of the start of a given visual sub-row
-/// within a line.
-fn offset_for_visual_sub_row(
+/// Build cached row metadata for every visual sub-row in a logical line.
+fn visual_row_infos_for_line(
+    logical_line: usize,
     line: &str,
     wrap_width: usize,
-    target_sub_row: usize,
-) -> (usize, usize) {
-    if wrap_width == 0 || target_sub_row == 0 {
-        return (0, 0);
+) -> Vec<VisualRowInfo> {
+    let mut rows = Vec::new();
+    if wrap_width == 0 {
+        rows.push(VisualRowInfo {
+            logical_line,
+            byte_offset: 0,
+            char_offset: 0,
+            char_end: line.chars().count(),
+        });
+        return rows;
     }
-    let mut current_row = 0;
-    let mut col = 0;
-    let mut char_idx = 0;
+
+    let mut row_byte_offset = 0usize;
+    let mut row_char_offset = 0usize;
+    let mut col = 0usize;
+    let mut char_idx = 0usize;
+
     for (byte_idx, ch) in line.char_indices() {
-        if current_row == target_sub_row {
-            return (byte_idx, char_idx);
-        }
         let w = ch.width().unwrap_or(1);
         if col + w > wrap_width && col > 0 {
-            current_row += 1;
+            rows.push(VisualRowInfo {
+                logical_line,
+                byte_offset: row_byte_offset,
+                char_offset: row_char_offset,
+                char_end: char_idx,
+            });
+            row_byte_offset = byte_idx;
+            row_char_offset = char_idx;
             col = 0;
-            if current_row == target_sub_row {
-                return (byte_idx, char_idx);
-            }
         }
         col += w;
         char_idx += 1;
     }
-    // Past the end — return end of line
-    (line.len(), char_idx)
+
+    rows.push(VisualRowInfo {
+        logical_line,
+        byte_offset: row_byte_offset,
+        char_offset: row_char_offset,
+        char_end: char_idx,
+    });
+    rows
 }
 
 #[cfg(test)]

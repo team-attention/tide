@@ -138,6 +138,43 @@ fn wide_characters_wrap_correctly() {
     assert_eq!(map.total_visual_rows(), 2);
 }
 
+#[test]
+fn wrap_map_returns_cached_info_for_long_wrapped_sub_rows() {
+    // markdown-preview-performance-polish UC-2 BR-4/BR-5: WrapMap returns cached VisualRowInfo for wrapped sub-rows.
+    use crate::tide_editor::wrap::WrapMap;
+
+    let lines = vec!["a".repeat(10_000)];
+    let map = WrapMap::build(&lines, 40, 0);
+
+    assert_eq!(map.cached_visual_row_count_for_line(0), 250);
+
+    let info = map
+        .visual_row_to_line_info(123, &lines)
+        .expect("sub-row should map inside the long logical line");
+    assert_eq!(info.logical_line, 0);
+    assert_eq!(info.char_offset, 123 * 40);
+    assert_eq!(info.byte_offset, 123 * 40);
+    assert_eq!(info.char_end, 124 * 40);
+}
+
+#[test]
+fn wrap_map_returns_direct_info_for_logical_sub_row() {
+    // markdown-preview-performance-polish UC-2 BR-16: WrapMap directly returns VisualRowInfo for a logical line's sub-row.
+    use crate::tide_editor::wrap::WrapMap;
+
+    let lines = vec!["short".to_string(), "a".repeat(10_000)];
+    let map = WrapMap::build(&lines, 40, 0);
+
+    let info = map
+        .visual_row_info_for_line(1, 123)
+        .expect("sub-row should map inside the long logical line");
+    assert_eq!(info.logical_line, 1);
+    assert_eq!(info.char_offset, 123 * 40);
+    assert_eq!(info.byte_offset, 123 * 40);
+    assert_eq!(info.char_end, 124 * 40);
+    assert!(map.visual_row_info_for_line(1, 250).is_none());
+}
+
 // --- UC-5: Selection Highlight in Wrapped Text ---
 
 #[test]

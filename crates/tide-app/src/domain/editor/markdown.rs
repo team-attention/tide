@@ -79,6 +79,35 @@ pub struct PreviewLine {
     pub bg_color: Option<Color>,
 }
 
+fn push_styled_text(spans: &mut Vec<StyledSpan>, text: &str, style: TextStyle) {
+    if text.is_empty() {
+        return;
+    }
+    if let Some(last) = spans.last_mut() {
+        if last.style == style {
+            last.text.push_str(text);
+            return;
+        }
+    }
+    spans.push(StyledSpan {
+        text: text.to_string(),
+        style,
+    });
+}
+
+fn push_styled_string(spans: &mut Vec<StyledSpan>, text: String, style: TextStyle) {
+    if text.is_empty() {
+        return;
+    }
+    if let Some(last) = spans.last_mut() {
+        if last.style == style {
+            last.text.push_str(&text);
+            return;
+        }
+    }
+    spans.push(StyledSpan { text, style });
+}
+
 /// Wrap text into lines that fit within `max_width` display columns.
 fn wrap_cell_text(text: &str, max_width: usize) -> Vec<String> {
     use unicode_width::UnicodeWidthChar;
@@ -247,8 +276,8 @@ fn render_table(
     result.push(make_rule("\u{250C}", "\u{252C}", "\u{2510}", "\u{2500}"));
 
     for (ri, row) in rows.iter().enumerate() {
-        // Row separator ├───┼───┤ (between every row, including between data rows)
-        if ri > 0 {
+        // Header separator only; body-row separators double large table line counts.
+        if ri > 0 && ri == header_count {
             result.push(make_rule("\u{251C}", "\u{253C}", "\u{2524}", "\u{2500}"));
         }
 
@@ -594,9 +623,10 @@ pub fn render_markdown_preview(
                 if let CodeBlockKind::Fenced(lang) = &kind {
                     let lang_str = lang.as_ref();
                     if !lang_str.is_empty() {
-                        current_spans.push(StyledSpan {
-                            text: format!(" {}", lang_str),
-                            style: TextStyle {
+                        push_styled_string(
+                            &mut current_spans,
+                            format!(" {}", lang_str),
+                            TextStyle {
                                 foreground: theme.blockquote,
                                 background: None,
                                 bold: false,
@@ -604,7 +634,7 @@ pub fn render_markdown_preview(
                                 italic: true,
                                 underline: false,
                             },
-                        });
+                        );
                         flush_line(
                             &mut current_spans,
                             &current_bg,
@@ -715,9 +745,10 @@ pub fn render_markdown_preview(
                 // Track marker_width so the first word/line stays with the marker.
                 let marker_width = if let Some(marker) = pending_list_marker.take() {
                     let mw = marker.width();
-                    current_spans.push(StyledSpan {
-                        text: marker,
-                        style: TextStyle {
+                    push_styled_string(
+                        &mut current_spans,
+                        marker,
+                        TextStyle {
                             foreground: theme.list_marker,
                             background: None,
                             bold: false,
@@ -725,7 +756,7 @@ pub fn render_markdown_preview(
                             italic: false,
                             underline: false,
                         },
-                    });
+                    );
                     current_col += mw;
                     mw
                 } else {
@@ -760,10 +791,7 @@ pub fn render_markdown_preview(
                         if !line.is_empty() {
                             let padded = format!(" {}", line);
                             current_col += padded.width();
-                            current_spans.push(StyledSpan {
-                                text: padded,
-                                style,
-                            });
+                            push_styled_string(&mut current_spans, padded, style);
                         } else if !(li == last_idx && text.ends_with('\n')) {
                             // Empty line in code block — emit blank line with bg
                             result.push(PreviewLine {
@@ -788,9 +816,10 @@ pub fn render_markdown_preview(
                     let prefix_len = blockquote_prefix.width();
 
                     if current_col == 0 && !blockquote_prefix.is_empty() {
-                        current_spans.push(StyledSpan {
-                            text: blockquote_prefix.to_string(),
-                            style: TextStyle {
+                        push_styled_text(
+                            &mut current_spans,
+                            blockquote_prefix,
+                            TextStyle {
                                 foreground: theme.blockquote,
                                 background: None,
                                 bold: false,
@@ -798,7 +827,7 @@ pub fn render_markdown_preview(
                                 italic: false,
                                 underline: false,
                             },
-                        });
+                        );
                         current_col += prefix_len;
                     }
 
@@ -819,9 +848,10 @@ pub fn render_markdown_preview(
                                 &mut current_col,
                             );
                             if !blockquote_prefix.is_empty() {
-                                current_spans.push(StyledSpan {
-                                    text: blockquote_prefix.to_string(),
-                                    style: TextStyle {
+                                push_styled_text(
+                                    &mut current_spans,
+                                    blockquote_prefix,
+                                    TextStyle {
                                         foreground: theme.blockquote,
                                         background: None,
                                         bold: false,
@@ -829,13 +859,10 @@ pub fn render_markdown_preview(
                                         italic: false,
                                         underline: false,
                                     },
-                                });
+                                );
                                 current_col += prefix_len;
                             }
-                            current_spans.push(StyledSpan {
-                                text: word.to_string(),
-                                style,
-                            });
+                            push_styled_text(&mut current_spans, word, style);
                             current_col += word_len;
                         } else if current_col + word_len > effective_width {
                             // Word is too wide even on its own line — break character by character
@@ -845,11 +872,11 @@ pub fn render_markdown_preview(
                                 if current_col + ch_w > effective_width && current_col > wrap_min {
                                     // Flush accumulated chars
                                     if !char_buf.is_empty() {
-                                        current_spans.push(StyledSpan {
-                                            text: char_buf.clone(),
+                                        push_styled_string(
+                                            &mut current_spans,
+                                            std::mem::take(&mut char_buf),
                                             style,
-                                        });
-                                        char_buf.clear();
+                                        );
                                     }
                                     flush_line(
                                         &mut current_spans,
@@ -858,9 +885,10 @@ pub fn render_markdown_preview(
                                         &mut current_col,
                                     );
                                     if !blockquote_prefix.is_empty() {
-                                        current_spans.push(StyledSpan {
-                                            text: blockquote_prefix.to_string(),
-                                            style: TextStyle {
+                                        push_styled_text(
+                                            &mut current_spans,
+                                            blockquote_prefix,
+                                            TextStyle {
                                                 foreground: theme.blockquote,
                                                 background: None,
                                                 bold: false,
@@ -868,7 +896,7 @@ pub fn render_markdown_preview(
                                                 italic: false,
                                                 underline: false,
                                             },
-                                        });
+                                        );
                                         current_col += prefix_len;
                                     }
                                 }
@@ -876,17 +904,11 @@ pub fn render_markdown_preview(
                                 current_col += ch_w;
                             }
                             if !char_buf.is_empty() {
-                                current_spans.push(StyledSpan {
-                                    text: char_buf,
-                                    style,
-                                });
+                                push_styled_string(&mut current_spans, char_buf, style);
                             }
                         } else {
                             // Word fits on current line
-                            current_spans.push(StyledSpan {
-                                text: word.to_string(),
-                                style,
-                            });
+                            push_styled_text(&mut current_spans, word, style);
                             current_col += word_len;
                         }
                         wrap_min = prefix_len; // after first word, normal wrapping
@@ -897,9 +919,11 @@ pub fn render_markdown_preview(
                 // Inline code: `code`
                 let just_placed_marker = pending_list_marker.is_some();
                 if let Some(marker) = pending_list_marker.take() {
-                    current_spans.push(StyledSpan {
-                        text: marker.clone(),
-                        style: TextStyle {
+                    let marker_width = marker.width();
+                    push_styled_string(
+                        &mut current_spans,
+                        marker,
+                        TextStyle {
                             foreground: theme.list_marker,
                             background: None,
                             bold: false,
@@ -907,41 +931,79 @@ pub fn render_markdown_preview(
                             italic: false,
                             underline: false,
                         },
-                    });
-                    current_col += marker.width();
+                    );
+                    current_col += marker_width;
                 }
                 let code_text = format!(" {} ", code);
                 let code_len = code_text.width();
-                // Don't wrap inline code away from a list marker that was just placed
-                if current_col + code_len > effective_width
-                    && current_col > 0
-                    && !just_placed_marker
-                {
-                    flush_line(
-                        &mut current_spans,
-                        &current_bg,
-                        &mut result,
-                        &mut current_col,
-                    );
+                let code_style = TextStyle {
+                    foreground: theme.code_fg,
+                    background: Some(theme.code_bg),
+                    bold: false,
+                    dim: false,
+                    italic: false,
+                    underline: false,
+                };
+
+                if code_len <= effective_width {
+                    // Don't wrap inline code away from a list marker that was just placed.
+                    if current_col + code_len > effective_width
+                        && current_col > 0
+                        && !just_placed_marker
+                    {
+                        flush_line(
+                            &mut current_spans,
+                            &current_bg,
+                            &mut result,
+                            &mut current_col,
+                        );
+                    }
+                    push_styled_string(&mut current_spans, code_text, code_style);
+                    current_col += code_len;
+                } else {
+                    if current_col > 0 && !just_placed_marker {
+                        flush_line(
+                            &mut current_spans,
+                            &current_bg,
+                            &mut result,
+                            &mut current_col,
+                        );
+                    }
+
+                    let mut char_buf = String::new();
+                    let mut wrap_min = if just_placed_marker { current_col } else { 0 };
+                    for ch in code_text.chars() {
+                        let ch_w = ch.width().unwrap_or(1);
+                        if current_col + ch_w > effective_width && current_col > wrap_min {
+                            if !char_buf.is_empty() {
+                                push_styled_string(
+                                    &mut current_spans,
+                                    std::mem::take(&mut char_buf),
+                                    code_style,
+                                );
+                            }
+                            flush_line(
+                                &mut current_spans,
+                                &current_bg,
+                                &mut result,
+                                &mut current_col,
+                            );
+                            wrap_min = 0;
+                        }
+                        char_buf.push(ch);
+                        current_col += ch_w;
+                    }
+                    if !char_buf.is_empty() {
+                        push_styled_string(&mut current_spans, char_buf, code_style);
+                    }
                 }
-                current_spans.push(StyledSpan {
-                    text: code_text,
-                    style: TextStyle {
-                        foreground: theme.code_fg,
-                        background: Some(theme.code_bg),
-                        bold: false,
-                        dim: false,
-                        italic: false,
-                        underline: false,
-                    },
-                });
-                current_col += code_len;
             }
             Event::SoftBreak => {
                 // Treat soft breaks as spaces (markdown paragraph continuation)
-                current_spans.push(StyledSpan {
-                    text: " ".to_string(),
-                    style: style_for(
+                push_styled_text(
+                    &mut current_spans,
+                    " ",
+                    style_for(
                         theme,
                         &heading_level,
                         bold,
@@ -950,7 +1012,7 @@ pub fn render_markdown_preview(
                         in_code_block,
                         in_blockquote,
                     ),
-                });
+                );
                 current_col += 1;
             }
             Event::HardBreak => {
@@ -1080,6 +1142,16 @@ pub struct MdElement {
 pub struct LivePreviewMap {
     /// All markdown elements found in the buffer, sorted by `full_range.start`.
     pub elements: Vec<MdElement>,
+    /// Byte offset where each buffer line starts.
+    line_starts: Vec<usize>,
+    /// Source buffer length after joining lines with `\n`.
+    source_len: usize,
+    /// Element indexes grouped by line for visible-row lookup.
+    elements_by_line: Vec<Vec<usize>>,
+    /// Hidden inline syntax ranges grouped by line for visible-row lookup.
+    hidden_syntax_ranges_by_line: Vec<Vec<Range<usize>>>,
+    /// Element style ranges grouped by line for visible-row lookup.
+    element_style_ranges_by_line: Vec<Vec<(Range<usize>, MdElementKind)>>,
 }
 
 /// Helper: convert a byte offset into a 0-based line number using precomputed line starts.
@@ -1099,6 +1171,62 @@ fn build_line_starts(source: &str) -> Vec<usize> {
         }
     }
     starts
+}
+
+fn element_style_in_elements(elements: &[MdElement], byte_offset: usize) -> Option<MdElementKind> {
+    let idx = elements
+        .binary_search_by(|e| {
+            if e.full_range.end <= byte_offset {
+                std::cmp::Ordering::Less
+            } else if e.full_range.start > byte_offset {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        })
+        .ok()?;
+    Some(elements[idx].kind)
+}
+
+fn build_element_style_ranges_by_line(
+    source_len: usize,
+    line_starts: &[usize],
+    elements: &[MdElement],
+) -> Vec<Vec<(Range<usize>, MdElementKind)>> {
+    let line_count = line_starts.len().max(1);
+    let mut ranges_by_line = vec![Vec::new(); line_count];
+
+    for line in 0..line_count {
+        let line_start = line_starts.get(line).copied().unwrap_or(source_len);
+        let line_end = line_starts
+            .get(line + 1)
+            .map(|next| next.saturating_sub(1))
+            .unwrap_or(source_len);
+        let mut current: Option<(usize, MdElementKind)> = None;
+
+        for byte_offset in line_start..line_end {
+            let style = element_style_in_elements(elements, byte_offset);
+            match (current, style) {
+                (Some((start, current_kind)), Some(kind)) if current_kind == kind => {
+                    current = Some((start, current_kind));
+                }
+                (Some((start, current_kind)), next_kind) => {
+                    ranges_by_line[line].push((start..byte_offset, current_kind));
+                    current = next_kind.map(|kind| (byte_offset, kind));
+                }
+                (None, Some(kind)) => {
+                    current = Some((byte_offset, kind));
+                }
+                (None, None) => {}
+            }
+        }
+
+        if let Some((start, kind)) = current {
+            ranges_by_line[line].push((start..line_end, kind));
+        }
+    }
+
+    ranges_by_line
 }
 
 /// Pending element on the parser stack — tracks where a Start event was seen.
@@ -1366,28 +1494,83 @@ impl LivePreviewMap {
         // Sort by start offset (spec BR-2: sorted by start offset)
         elements.sort_by_key(|e| e.full_range.start);
 
-        LivePreviewMap { elements }
+        let line_count = lines.len().max(1);
+        let mut elements_by_line = vec![Vec::new(); line_count];
+        for (idx, element) in elements.iter().enumerate() {
+            let start = element.line_range.start.min(line_count);
+            let end = element.line_range.end.min(line_count);
+            for line in start..end {
+                elements_by_line[line].push(idx);
+            }
+        }
+        let mut hidden_syntax_ranges_by_line = vec![Vec::new(); line_count];
+        for line in 0..line_count {
+            for idx in &elements_by_line[line] {
+                let element = &elements[*idx];
+                if element.kind.is_inline() {
+                    hidden_syntax_ranges_by_line[line]
+                        .extend(element.syntax_ranges.iter().cloned());
+                }
+            }
+            hidden_syntax_ranges_by_line[line].sort_by_key(|range| (range.start, range.end));
+        }
+        let element_style_ranges_by_line =
+            build_element_style_ranges_by_line(source.len(), &line_starts, &elements);
+
+        LivePreviewMap {
+            elements,
+            line_starts,
+            source_len: source.len(),
+            elements_by_line,
+            hidden_syntax_ranges_by_line,
+            element_style_ranges_by_line,
+        }
+    }
+
+    /// Return the cached byte offset where `line` starts, clamped to source end.
+    pub fn line_byte_start(&self, line: usize) -> usize {
+        self.line_starts
+            .get(line)
+            .copied()
+            .unwrap_or(self.source_len)
+    }
+
+    /// Count markdown elements indexed on a specific line.
+    pub fn element_count_on_line(&self, line: usize) -> usize {
+        self.elements_by_line
+            .get(line)
+            .map(|indices| indices.len())
+            .unwrap_or(0)
     }
 
     /// Get all elements that overlap with the given line (0-based).
     pub fn elements_on_line(&self, line: usize) -> Vec<&MdElement> {
-        self.elements
-            .iter()
-            .filter(|e| e.line_range.start <= line && line < e.line_range.end)
-            .collect()
+        self.elements_by_line
+            .get(line)
+            .map(|indices| indices.iter().map(|idx| &self.elements[*idx]).collect())
+            .unwrap_or_default()
     }
 
     /// Get all inline elements whose syntax should be hidden on the given line
     /// (i.e., cursor is NOT on this line).
     pub fn hidden_syntax_ranges(&self, line: usize, cursor_line: usize) -> Vec<Range<usize>> {
+        self.hidden_syntax_ranges_for_line(line, cursor_line)
+            .to_vec()
+    }
+
+    /// Borrow cached inline syntax ranges hidden on the given line.
+    pub fn hidden_syntax_ranges_for_line(
+        &self,
+        line: usize,
+        cursor_line: usize,
+    ) -> &[Range<usize>] {
         if line == cursor_line {
-            return vec![]; // Never hide syntax on cursor line
+            return &[]; // Never hide syntax on cursor line
         }
-        self.elements_on_line(line)
-            .into_iter()
-            .filter(|e| e.kind.is_inline())
-            .flat_map(|e| e.syntax_ranges.clone())
-            .collect()
+        self.hidden_syntax_ranges_by_line
+            .get(line)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     /// Check if a byte offset falls within any syntax range that should be hidden.
@@ -1405,26 +1588,31 @@ impl LivePreviewMap {
             target_line = i + 1;
         }
 
-        let hidden = self.hidden_syntax_ranges(target_line, cursor_line);
+        let hidden = self.hidden_syntax_ranges_for_line(target_line, cursor_line);
         hidden.iter().any(|r| r.contains(&byte_offset))
     }
 
     /// Get the element kind at a byte offset (used by the renderer for styling).
     pub fn element_style(&self, byte_offset: usize) -> Option<MdElementKind> {
-        // Binary search for the first element whose full_range might contain byte_offset.
-        let idx = self
-            .elements
-            .binary_search_by(|e| {
-                if e.full_range.end <= byte_offset {
-                    std::cmp::Ordering::Less
-                } else if e.full_range.start > byte_offset {
-                    std::cmp::Ordering::Greater
-                } else {
-                    std::cmp::Ordering::Equal
-                }
-            })
-            .ok()?;
-        Some(self.elements[idx].kind)
+        element_style_in_elements(&self.elements, byte_offset)
+    }
+
+    /// Get the element kind at a byte offset on a known line using a monotonic range cursor.
+    pub fn element_style_for_line(
+        &self,
+        line: usize,
+        byte_offset: usize,
+        range_idx: &mut usize,
+    ) -> Option<MdElementKind> {
+        let Some(ranges) = self.element_style_ranges_by_line.get(line) else {
+            return None;
+        };
+        while *range_idx < ranges.len() && ranges[*range_idx].0.end <= byte_offset {
+            *range_idx += 1;
+        }
+        ranges
+            .get(*range_idx)
+            .and_then(|(range, kind)| range.contains(&byte_offset).then_some(*kind))
     }
 
     /// Map a visual column to a buffer column on a given line,
@@ -1441,7 +1629,7 @@ impl LivePreviewMap {
         if line == cursor_line {
             return visual_col; // No mapping needed on cursor line
         }
-        let hidden = self.hidden_syntax_ranges(line, cursor_line);
+        let hidden = self.hidden_syntax_ranges_for_line(line, cursor_line);
         if hidden.is_empty() {
             return visual_col;
         }

@@ -1,5 +1,6 @@
 // Spec: docs/specs/live-preview.md
 use crate::domain::editor::markdown::{LivePreviewMap, MdElementKind};
+use crate::domain::editor::wrap::WrapMap;
 use crate::pane::editor::EditorPane;
 use crate::pane::{PaneKind, TerminalPane};
 use crate::state::FocusArea;
@@ -9,6 +10,7 @@ use crate::App;
 use crate::DockPort;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use unicode_width::UnicodeWidthChar;
 
 fn lines(s: &str) -> Vec<String> {
     s.lines().map(String::from).collect()
@@ -136,6 +138,34 @@ fn live_preview_map_builds_from_buffer_lines() {
 }
 
 #[test]
+fn live_preview_map_exposes_cached_line_byte_starts() {
+    // markdown-preview-performance-polish UC-1 BR-1/BR-3: LivePreviewMap exposes cached line byte starts for render-time lookup.
+    let input = lines("alpha\n**bold**\nlast");
+    let map = LivePreviewMap::build(&input);
+
+    assert_eq!(map.line_byte_start(0), 0);
+    assert_eq!(map.line_byte_start(1), "alpha\n".len());
+    assert_eq!(map.line_byte_start(2), "alpha\n**bold**\n".len());
+    assert_eq!(
+        map.line_byte_start(99),
+        "alpha\n**bold**\nlast".len(),
+        "out-of-range line starts should clamp to the source end"
+    );
+}
+
+#[test]
+fn live_preview_map_counts_elements_by_line() {
+    // markdown-preview-performance-polish UC-1 BR-2: LivePreviewMap keeps a per-line element index for line-scoped lookup.
+    let input = lines("plain\n**bold**\n`code` and [link](https://example.com)");
+    let map = LivePreviewMap::build(&input);
+
+    assert_eq!(map.element_count_on_line(0), 0);
+    assert_eq!(map.element_count_on_line(1), 1);
+    assert_eq!(map.element_count_on_line(2), 2);
+    assert_eq!(map.element_count_on_line(99), 0);
+}
+
+#[test]
 fn element_ranges_sorted_non_overlapping() {
     // UC-4 BR-2: Element ranges are non-overlapping and sorted by start offset
     let input = lines("**bold** and *italic* and `code` here\n# Heading\n> quote");
@@ -210,6 +240,140 @@ fn inline_syntax_hidden_on_non_cursor_lines() {
     assert!(
         not_hidden.is_empty(),
         "should not hide syntax on cursor line"
+    );
+}
+
+#[test]
+fn live_preview_map_exposes_cached_hidden_syntax_ranges_by_line() {
+    // markdown-preview-performance-polish UC-1 BR-18: LivePreviewMap exposes cached hidden inline syntax ranges per line.
+    let input = lines("`code` and **bold** plus [link](url)\nplain");
+    let map = LivePreviewMap::build(&input);
+
+    let cached = map.hidden_syntax_ranges_for_line(0, 1);
+    let owned = map.hidden_syntax_ranges(0, 1);
+    assert_eq!(cached, owned.as_slice());
+    assert!(
+        !cached.is_empty(),
+        "inline syntax ranges should be cached for non-cursor lines"
+    );
+    assert!(
+        cached.windows(2).all(|pair| pair[0].start <= pair[1].start),
+        "cached hidden syntax ranges should be sorted"
+    );
+    assert!(map.hidden_syntax_ranges_for_line(0, 0).is_empty());
+    assert!(map.hidden_syntax_ranges_for_line(99, 1).is_empty());
+}
+
+#[test]
+fn live_preview_map_line_style_cursor_matches_element_style_for_monotonic_offsets() {
+    // markdown-preview-performance-polish UC-1 BR-20: Line-scoped style ranges match element_style for monotonic byte offsets.
+    let input = lines("# Heading\n\nText with `code`, **bold**, and [link](url).\n\n| A | B |\n|---|---|\n| `x` | y |");
+    let map = LivePreviewMap::build(&input);
+
+    for line in 0..input.len() {
+        let line_start = map.line_byte_start(line);
+        let line_end = input
+            .get(line + 1)
+            .map(|_| map.line_byte_start(line + 1).saturating_sub(1))
+            .unwrap_or(line_start + input[line].len());
+        let mut style_idx = 0usize;
+        for byte_offset in line_start..line_end {
+            assert_eq!(
+                map.element_style_for_line(line, byte_offset, &mut style_idx),
+                map.element_style(byte_offset),
+                "line {line} byte {byte_offset} should match element_style"
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "profiling harness; run explicitly with --ignored"]
+fn profile_live_preview_terminal_pane_inset_hidden_ranges() {
+    profile_live_preview_hidden_ranges_file("docs/specs/terminal-pane-inset.md");
+}
+
+#[test]
+#[ignore = "profiling harness; run explicitly with --ignored"]
+fn profile_live_preview_terminal_context_hidden_ranges() {
+    profile_live_preview_hidden_ranges_file("docs/specs/terminal-context.md");
+}
+
+fn profile_live_preview_hidden_ranges_file(path: &str) {
+    let source = std::fs::read_to_string(path).expect("read markdown profile fixture");
+    let lines: Vec<String> = source.lines().map(str::to_string).collect();
+    let duration = std::env::var("TIDE_PROFILE_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(15);
+    let wrap_cols = std::env::var("TIDE_PROFILE_WRAP_COLS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(39);
+    let visible_rows = std::env::var("TIDE_PROFILE_VISIBLE_ROWS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(38);
+    let live_map = LivePreviewMap::build(&lines);
+    let wrap_map = WrapMap::build(&lines, wrap_cols, 0);
+    let total_rows = (0..lines.len())
+        .map(|line| wrap_map.visual_rows_for(line))
+        .sum::<usize>()
+        .max(1);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(duration);
+    let mut iterations = 0usize;
+    let mut hidden_hits = 0usize;
+    let mut styled_hits = 0usize;
+    let mut scroll = 0usize;
+
+    while std::time::Instant::now() < deadline {
+        for row in scroll..scroll + visible_rows {
+            let visual_row = row % total_rows;
+            let Some(info) = wrap_map.visual_row_to_line_info(visual_row, &lines) else {
+                continue;
+            };
+            let Some(line_text) = lines.get(info.logical_line) else {
+                continue;
+            };
+            let hidden_ranges =
+                live_map.hidden_syntax_ranges_for_line(info.logical_line, usize::MAX);
+            let row_text = line_text.get(info.byte_offset..).unwrap_or("");
+            let mut hidden_range_idx = 0usize;
+            let mut element_style_idx = 0usize;
+            let mut byte_offset = live_map.line_byte_start(info.logical_line) + info.byte_offset;
+            let mut char_idx = info.char_offset;
+
+            for ch in row_text.chars() {
+                if char_idx >= info.char_end {
+                    break;
+                }
+                while hidden_range_idx < hidden_ranges.len()
+                    && hidden_ranges[hidden_range_idx].end <= byte_offset
+                {
+                    hidden_range_idx += 1;
+                }
+                let is_hidden = hidden_ranges
+                    .get(hidden_range_idx)
+                    .is_some_and(|range| range.contains(&byte_offset));
+                if is_hidden {
+                    hidden_hits += 1;
+                } else if live_map
+                    .element_style_for_line(info.logical_line, byte_offset, &mut element_style_idx)
+                    .is_some()
+                {
+                    styled_hits += UnicodeWidthChar::width(ch).unwrap_or(1);
+                }
+                byte_offset += ch.len_utf8();
+                char_idx += 1;
+            }
+        }
+        iterations += 1;
+        scroll = (scroll + 1) % total_rows;
+        std::hint::black_box((hidden_hits, styled_hits, scroll));
+    }
+
+    eprintln!(
+        "profiled live preview {path}: iterations={iterations}, total_rows={total_rows}, hidden_hits={hidden_hits}, styled_hits={styled_hits}, wrap_cols={wrap_cols}, visible_rows={visible_rows}"
     );
 }
 

@@ -24,6 +24,7 @@ use crate::theme::{editor_live_preview_vertical_padding, SCROLLBAR_WIDTH};
 pub(crate) const GUTTER_WIDTH_CELLS: usize = 6;
 pub(crate) const SPLIT_PREVIEW_GAP_CELLS: usize = 2;
 pub(crate) const SPLIT_PREVIEW_MIN_CONTENT_CELLS: usize = 20;
+pub(crate) const MARKDOWN_PREVIEW_READABLE_WIDTH_CELLS: usize = 96;
 
 /// Pure preview scroll computation. Only used by tests now.
 #[cfg(test)]
@@ -865,15 +866,35 @@ impl EditorPane {
 
     /// Preview wrapping width for a preview rect.
     pub(crate) fn preview_wrap_width_for_rect(&self, rect: Rect, cell_size: Size) -> usize {
-        (rect.width / cell_size.width).floor() as usize
+        let available_cols =
+            ((rect.width - SCROLLBAR_WIDTH).max(0.0) / cell_size.width).floor() as usize;
+        available_cols
+            .min(MARKDOWN_PREVIEW_READABLE_WIDTH_CELLS)
+            .max(1)
+    }
+
+    /// Horizontal inset for centered full-preview content on wide Panes.
+    pub(crate) fn preview_content_inset_for_rect(
+        &self,
+        rect: Rect,
+        cell_size: Size,
+        scrollbar_reserved: f32,
+    ) -> f32 {
+        let available_width = (rect.width - scrollbar_reserved).max(0.0);
+        let readable_width =
+            (MARKDOWN_PREVIEW_READABLE_WIDTH_CELLS as f32 * cell_size.width).min(available_width);
+        if available_width <= readable_width {
+            0.0
+        } else {
+            ((available_width - readable_width) / 2.0).floor()
+        }
     }
 
     /// Prepare Pane-local wrap and preview caches for the current mode and rect.
     pub(crate) fn prepare_inline_caches(&mut self, rect: Rect, cell_size: Size, dark: bool) {
         if self.preview_mode {
             self.wrap_map = None;
-            let wrap_width =
-                ((rect.width - SCROLLBAR_WIDTH).max(0.0) / cell_size.width).floor() as usize;
+            let wrap_width = self.preview_wrap_width_for_rect(rect, cell_size);
             if wrap_width > 0 {
                 self.ensure_preview_cache(wrap_width, dark);
             }

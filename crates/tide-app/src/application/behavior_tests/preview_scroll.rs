@@ -3,8 +3,12 @@ use crate::pane::editor::{self, EditorPane};
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
 use crate::theme::{PANE_PADDING, TAB_BAR_HEIGHT};
+use crate::tide_core::{Color, TextStyle};
+use crate::tide_editor::highlight::{StyledSpan, StyledSpanCursor};
+use crate::tide_editor::markdown::{render_markdown_preview, MarkdownTheme};
 use crate::ActionPort;
 use crate::App;
+use unicode_width::UnicodeWidthStr;
 
 fn test_app() -> App {
     let mut app = App::new();
@@ -57,6 +61,201 @@ fn preview_max_scroll(app: &App, pane_id: u64, pane_rect: crate::tide_core::Rect
         Some(PaneKind::Editor(pane)) => pane.preview_line_count().saturating_sub(visible_rows),
         _ => 0,
     }
+}
+
+// --- markdown-preview-performance-polish UC-3: ReadFullMarkdownPreview ---
+
+#[test]
+fn wide_markdown_preview_uses_centered_readable_width() {
+    // UC-3 BR-7/BR-8: wide Markdown preview caps wrapping at the readable width and centers the content.
+    let pane = EditorPane::new_empty(1);
+    let cell = crate::tide_core::Size::new(8.0, 16.0);
+    let rect = crate::tide_core::Rect::new(0.0, 0.0, 1600.0, 640.0);
+
+    assert_eq!(
+        pane.preview_wrap_width_for_rect(rect, cell),
+        editor::MARKDOWN_PREVIEW_READABLE_WIDTH_CELLS
+    );
+    assert!(
+        pane.preview_content_inset_for_rect(rect, cell, 0.0) > 0.0,
+        "wide preview content should be centered with a positive inset"
+    );
+}
+
+#[test]
+fn narrow_markdown_preview_uses_available_width() {
+    // UC-3 BR-9: narrow Markdown preview keeps using the available width instead of clipping to the readable width.
+    let pane = EditorPane::new_empty(1);
+    let cell = crate::tide_core::Size::new(8.0, 16.0);
+    let rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
+
+    assert!(
+        pane.preview_wrap_width_for_rect(rect, cell)
+            < editor::MARKDOWN_PREVIEW_READABLE_WIDTH_CELLS
+    );
+    assert_eq!(pane.preview_content_inset_for_rect(rect, cell, 0.0), 0.0);
+}
+
+#[test]
+fn table_heavy_markdown_preview_uses_compact_table_rows() {
+    // markdown-preview-performance-polish UC-4 BR-10: table preview should not emit a separator before every body row.
+    let mut lines = vec!["| A | B | C |".to_string(), "|---|---|---|".to_string()];
+    for row in 0..100 {
+        lines.push(format!("| a{} | b{} | c{} |", row, row, row));
+    }
+
+    let preview = render_markdown_preview(&lines, &MarkdownTheme::dark(), 96);
+
+    assert!(
+        preview.len() <= 106,
+        "100 body rows should render near one preview line per row, not with body-row separators; got {} lines",
+        preview.len()
+    );
+}
+
+#[test]
+fn long_markdown_paragraph_coalesces_plain_text_spans() {
+    // markdown-preview-performance-polish UC-5 BR-12: same-style prose should not keep one span per word.
+    let paragraph = (0..120)
+        .map(|idx| format!("word{}", idx))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let preview = render_markdown_preview(&[paragraph], &MarkdownTheme::dark(), 40);
+    let content_lines: Vec<_> = preview
+        .iter()
+        .filter(|line| line.spans.iter().any(|span| !span.text.trim().is_empty()))
+        .collect();
+
+    assert!(
+        content_lines.len() > 10,
+        "test paragraph should wrap into many preview lines"
+    );
+    for line in content_lines {
+        assert!(
+            line.spans.len() <= 2,
+            "plain text line should contain only indent plus one body span, got {} spans",
+            line.spans.len()
+        );
+    }
+}
+
+#[test]
+fn overwide_inline_code_wraps_within_preview_width() {
+    // markdown-preview-performance-polish UC-5 BR-13: a single long inline code span should not create an overwide preview line.
+    let long_code = "a".repeat(120);
+    let source = format!("prefix `{}` suffix", long_code);
+    let preview = render_markdown_preview(&[source], &MarkdownTheme::dark(), 40);
+
+    assert!(
+        preview.len() > 3,
+        "long inline code should wrap into multiple preview lines"
+    );
+    for line in preview
+        .iter()
+        .filter(|line| line.spans.iter().any(|span| !span.text.trim().is_empty()))
+    {
+        let width: usize = line.spans.iter().map(|span| span.text.width()).sum();
+        assert!(
+            width <= 40,
+            "preview line should stay within wrap width, got width {}",
+            width
+        );
+    }
+}
+
+#[test]
+fn styled_span_cursor_matches_prefix_scan_for_monotonic_access() {
+    // markdown-preview-performance-polish UC-6 BR-14: StyledSpanCursor preserves fallback style lookup semantics for monotonic access.
+    let default_style = TextStyle {
+        foreground: Color::new(0.8, 0.8, 0.8, 1.0),
+        background: None,
+        bold: false,
+        dim: false,
+        italic: false,
+        underline: false,
+    };
+    let bold_style = TextStyle {
+        bold: true,
+        ..default_style
+    };
+    let italic_style = TextStyle {
+        italic: true,
+        ..default_style
+    };
+    let spans = vec![
+        StyledSpan {
+            text: "alpha ".repeat(20),
+            style: default_style,
+        },
+        StyledSpan {
+            text: "beta ".repeat(20),
+            style: bold_style,
+        },
+        StyledSpan {
+            text: "gamma ".repeat(20),
+            style: italic_style,
+        },
+    ];
+    let mut cursor = StyledSpanCursor::new(&spans, default_style);
+    let total_chars: usize = spans.iter().map(|span| span.text.chars().count()).sum();
+
+    for target_char in 0..total_chars {
+        let expected = prefix_scan_style_at(&spans, target_char, default_style);
+        assert_eq!(cursor.style_at(target_char), expected);
+    }
+}
+
+fn prefix_scan_style_at(
+    spans: &[StyledSpan],
+    target_char: usize,
+    fallback: TextStyle,
+) -> TextStyle {
+    let mut char_idx = 0usize;
+    for span in spans {
+        for _ in span.text.chars() {
+            if char_idx == target_char {
+                return span.style;
+            }
+            char_idx += 1;
+        }
+    }
+    fallback
+}
+
+#[test]
+#[ignore = "profiling harness; run explicitly with --ignored"]
+fn profile_markdown_preview_terminal_pane_inset() {
+    profile_markdown_preview_file("docs/specs/terminal-pane-inset.md");
+}
+
+#[test]
+#[ignore = "profiling harness; run explicitly with --ignored"]
+fn profile_markdown_preview_terminal_context() {
+    profile_markdown_preview_file("docs/specs/terminal-context.md");
+}
+
+fn profile_markdown_preview_file(path: &str) {
+    let source = std::fs::read_to_string(path).expect("read markdown profile fixture");
+    let lines: Vec<String> = source.lines().map(str::to_string).collect();
+    let duration = std::env::var("TIDE_PROFILE_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(20);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(duration);
+    let theme = MarkdownTheme::dark();
+    let mut iterations = 0usize;
+    let mut total_preview_lines = 0usize;
+
+    while std::time::Instant::now() < deadline {
+        let preview = std::hint::black_box(render_markdown_preview(&lines, &theme, 96));
+        total_preview_lines += preview.len();
+        iterations += 1;
+        std::hint::black_box(total_preview_lines);
+    }
+
+    eprintln!(
+        "profiled {path}: iterations={iterations}, total_preview_lines={total_preview_lines}"
+    );
 }
 
 // --- UC-4: PreviewScroll ---

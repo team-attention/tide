@@ -20,6 +20,52 @@ pub struct StyledSpan {
     pub style: TextStyle,
 }
 
+/// Monotonic cursor over syntax-highlighted spans.
+pub struct StyledSpanCursor<'a> {
+    spans: &'a [StyledSpan],
+    span_idx: usize,
+    span_start_char: usize,
+    span_end_char: usize,
+    fallback: TextStyle,
+}
+
+impl<'a> StyledSpanCursor<'a> {
+    pub fn new(spans: &'a [StyledSpan], fallback: TextStyle) -> Self {
+        let span_end_char = spans
+            .first()
+            .map(|span| span.text.chars().count())
+            .unwrap_or(0);
+        Self {
+            spans,
+            span_idx: 0,
+            span_start_char: 0,
+            span_end_char,
+            fallback,
+        }
+    }
+
+    pub fn style_at(&mut self, target_char: usize) -> TextStyle {
+        while self.span_idx < self.spans.len() && target_char >= self.span_end_char {
+            self.span_idx += 1;
+            self.span_start_char = self.span_end_char;
+            self.span_end_char += self
+                .spans
+                .get(self.span_idx)
+                .map(|span| span.text.chars().count())
+                .unwrap_or(0);
+        }
+
+        if self.span_idx < self.spans.len()
+            && target_char >= self.span_start_char
+            && target_char < self.span_end_char
+        {
+            self.spans[self.span_idx].style
+        } else {
+            self.fallback
+        }
+    }
+}
+
 /// Interval (in lines) between cached parse-state checkpoints.
 const CHECKPOINT_INTERVAL: usize = 256;
 
