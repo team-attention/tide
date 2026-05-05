@@ -36,39 +36,39 @@ impl MarkdownTheme {
 
     pub fn dark() -> Self {
         Self {
-            body: Color::new(0.85, 0.85, 0.85, 1.0),
-            h1: Color::new(0.55, 0.75, 1.0, 1.0),
-            h2: Color::new(0.55, 0.85, 0.65, 1.0),
-            h3: Color::new(0.95, 0.75, 0.45, 1.0),
-            h4: Color::new(0.80, 0.65, 0.90, 1.0),
-            bold: Color::new(0.95, 0.95, 0.95, 1.0),
-            italic: Color::new(0.78, 0.78, 0.78, 1.0),
-            code_fg: Color::new(0.90, 0.70, 0.50, 1.0),
-            code_bg: Color::new(1.0, 1.0, 1.0, 0.06),
-            code_block_bg: Color::new(1.0, 1.0, 1.0, 0.04),
-            link: Color::new(0.45, 0.65, 1.0, 1.0),
-            blockquote: Color::new(0.55, 0.55, 0.55, 1.0),
-            rule: Color::new(0.35, 0.35, 0.35, 1.0),
-            list_marker: Color::new(0.55, 0.75, 1.0, 1.0),
+            body: Color::rgb(0.831, 0.831, 0.831),
+            h1: Color::rgb(0.310, 0.757, 1.0),
+            h2: Color::rgb(0.306, 0.788, 0.690),
+            h3: Color::rgb(0.863, 0.863, 0.667),
+            h4: Color::rgb(0.773, 0.525, 0.753),
+            bold: Color::rgb(0.925, 0.925, 0.925),
+            italic: Color::rgb(0.690, 0.722, 0.765),
+            code_fg: Color::rgb(0.808, 0.569, 0.471),
+            code_bg: Color::new(1.0, 1.0, 1.0, 0.055),
+            code_block_bg: Color::new(1.0, 1.0, 1.0, 0.035),
+            link: Color::rgb(0.337, 0.612, 0.839),
+            blockquote: Color::rgb(0.416, 0.600, 0.333),
+            rule: Color::new(0.34, 0.36, 0.40, 1.0),
+            list_marker: Color::rgb(0.773, 0.525, 0.753),
         }
     }
 
     pub fn light() -> Self {
         Self {
-            body: Color::new(0.08, 0.075, 0.065, 1.0),
-            h1: Color::new(0.310, 0.430, 0.520, 1.0),
-            h2: Color::new(0.335, 0.470, 0.360, 1.0),
-            h3: Color::new(0.520, 0.405, 0.280, 1.0),
-            h4: Color::new(0.455, 0.395, 0.535, 1.0),
-            bold: Color::new(0.055, 0.050, 0.045, 1.0),
-            italic: Color::new(0.24, 0.22, 0.19, 1.0),
-            code_fg: Color::new(0.520, 0.375, 0.280, 1.0),
+            body: Color::rgb(0.0, 0.0, 0.0),
+            h1: Color::rgb(0.016, 0.318, 0.647),
+            h2: Color::rgb(0.149, 0.498, 0.6),
+            h3: Color::rgb(0.475, 0.369, 0.149),
+            h4: Color::rgb(0.686, 0.0, 0.859),
+            bold: Color::rgb(0.0, 0.0, 0.0),
+            italic: Color::rgb(0.24, 0.24, 0.24),
+            code_fg: Color::rgb(0.639, 0.082, 0.082),
             code_bg: Color::new(0.0, 0.0, 0.0, 0.045),
             code_block_bg: Color::new(0.0, 0.0, 0.0, 0.04),
-            link: Color::new(0.310, 0.435, 0.555, 1.0),
-            blockquote: Color::new(0.30, 0.28, 0.24, 1.0),
+            link: Color::rgb(0.0, 0.0, 1.0),
+            blockquote: Color::rgb(0.0, 0.502, 0.0),
             rule: Color::new(0.58, 0.55, 0.50, 1.0),
-            list_marker: Color::new(0.310, 0.430, 0.520, 1.0),
+            list_marker: Color::rgb(0.686, 0.0, 0.859),
         }
     }
 }
@@ -1150,6 +1150,8 @@ pub struct LivePreviewMap {
     elements_by_line: Vec<Vec<usize>>,
     /// Hidden inline syntax ranges grouped by line for visible-row lookup.
     hidden_syntax_ranges_by_line: Vec<Vec<Range<usize>>>,
+    /// All syntax marker ranges grouped by line for cursor-line editing display.
+    syntax_ranges_by_line: Vec<Vec<Range<usize>>>,
     /// Element style ranges grouped by line for visible-row lookup.
     element_style_ranges_by_line: Vec<Vec<(Range<usize>, MdElementKind)>>,
 }
@@ -1504,15 +1506,18 @@ impl LivePreviewMap {
             }
         }
         let mut hidden_syntax_ranges_by_line = vec![Vec::new(); line_count];
+        let mut syntax_ranges_by_line = vec![Vec::new(); line_count];
         for line in 0..line_count {
             for idx in &elements_by_line[line] {
                 let element = &elements[*idx];
+                syntax_ranges_by_line[line].extend(element.syntax_ranges.iter().cloned());
                 if element.kind.is_inline() {
                     hidden_syntax_ranges_by_line[line]
                         .extend(element.syntax_ranges.iter().cloned());
                 }
             }
             hidden_syntax_ranges_by_line[line].sort_by_key(|range| (range.start, range.end));
+            syntax_ranges_by_line[line].sort_by_key(|range| (range.start, range.end));
         }
         let element_style_ranges_by_line =
             build_element_style_ranges_by_line(source.len(), &line_starts, &elements);
@@ -1523,6 +1528,7 @@ impl LivePreviewMap {
             source_len: source.len(),
             elements_by_line,
             hidden_syntax_ranges_by_line,
+            syntax_ranges_by_line,
             element_style_ranges_by_line,
         }
     }
@@ -1568,6 +1574,14 @@ impl LivePreviewMap {
             return &[]; // Never hide syntax on cursor line
         }
         self.hidden_syntax_ranges_by_line
+            .get(line)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// Borrow all syntax marker ranges on a line, including the cursor line.
+    pub fn syntax_ranges_for_line(&self, line: usize) -> &[Range<usize>] {
+        self.syntax_ranges_by_line
             .get(line)
             .map(Vec::as_slice)
             .unwrap_or(&[])

@@ -1359,52 +1359,23 @@ impl App {
                 }
             }
             Some(PaneKind::Editor(pane)) => {
-                let pos = pane.editor.cursor_position();
-                let scroll = pane.editor.scroll_offset();
-                let h_scroll = pane.editor.h_scroll_offset();
-                if pos.line < scroll {
-                    return;
-                }
-                let visual_row = pos.line - scroll;
-                let cursor_char_col = if let Some(line_text) = pane.editor.buffer.line(pos.line) {
-                    let byte_col = pos.col.min(line_text.len());
-                    line_text[..byte_col].chars().count()
-                } else {
-                    0
-                };
-                if cursor_char_col < h_scroll {
-                    return;
-                }
-                let visual_col = cursor_char_col - h_scroll;
-                let gutter_cells = crate::pane::editor::GUTTER_WIDTH_CELLS;
-
-                let (inner_x, inner_y) = if let Some((_, rect)) = self
+                if let Some((_, rect)) = self
                     .visual_pane_rects
                     .iter()
                     .find(|(id, _)| *id == target_id)
                 {
-                    let content_rect =
-                        pane.content_rect(*rect, crate::theme::TAB_BAR_HEIGHT, cell_size);
-                    let authoring_rect = if pane.preview_mode {
-                        content_rect
-                    } else {
-                        pane.authoring_rect(content_rect, cell_size)
-                    };
-                    (authoring_rect.x, authoring_rect.y)
-                } else {
-                    return;
-                };
-
-                let gutter_width = gutter_cells as f32 * cell_size.width;
-                let cx = inner_x + gutter_width + visual_col as f32 * cell_size.width;
-                let cy = inner_y + visual_row as f32 * cell_size.height;
-                window.set_ime_proxy_cursor_area(
-                    target_id,
-                    cx as f64,
-                    cy as f64,
-                    cell_size.width as f64,
-                    cell_size.height as f64,
-                );
+                    if let Some(cursor_area) =
+                        editor_ime_cursor_area(pane, *rect, cell_size, &self.ime.preedit)
+                    {
+                        window.set_ime_proxy_cursor_area(
+                            target_id,
+                            cursor_area.x as f64,
+                            cursor_area.y as f64,
+                            cursor_area.width as f64,
+                            cursor_area.height as f64,
+                        );
+                    }
+                }
             }
             _ => {}
         }
@@ -1504,6 +1475,22 @@ pub(crate) fn overlay_ime_cursor_area(
 
     let _ = focused;
     None
+}
+
+pub(crate) fn editor_ime_cursor_area(
+    pane: &crate::pane::editor::EditorPane,
+    pane_rect: crate::tide_core::Rect,
+    cell_size: crate::tide_core::Size,
+    preedit: &str,
+) -> Option<crate::tide_core::Rect> {
+    let content_rect = pane.content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT, cell_size);
+    let authoring_rect = pane.authoring_rect(content_rect, cell_size);
+    let preedit_width_cells = preedit
+        .chars()
+        .map(|ch| unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1))
+        .sum();
+    pane.authoring_cursor_rect(authoring_rect, cell_size, preedit_width_cells)
+        .map(|rect| crate::tide_core::Rect::new(rect.x, rect.y, cell_size.width, rect.height))
 }
 
 fn input_cursor_advance_cells(text: &str, cursor: usize, preedit: &str) -> f32 {

@@ -204,6 +204,40 @@ pub(crate) fn handle_scroll(
         }
     }
 
+    // Horizontal scroll for fixed-width LivePreviewMode blocks must consume the gesture
+    // before vertical routing, including at the horizontal edge.
+    if editor_dx != 0.0 {
+        let editor_pane_id = ctx
+            .visual_pane_rects()
+            .iter()
+            .find(|(_, r)| r.contains(cursor_pos))
+            .map(|(id, r)| (*id, *r));
+        if let Some((pid, rect)) = editor_pane_id {
+            let cs = ctx.cell_size();
+            if let Some(PaneKind::Editor(pane)) = ctx.pane_mut(pid) {
+                let content_rect = crate::pane::pane_content_rect(rect, TAB_BAR_HEIGHT);
+                let (_, visible_cols) = pane.viewport_size_for_content_rect(content_rect, cs);
+                if pane.live_preview && pane.effective_soft_wrap() {
+                    let authoring_rect = pane.authoring_rect(content_rect, cs);
+                    if authoring_rect.contains(cursor_pos) {
+                        let row = ((cursor_pos.y - authoring_rect.y) / cs.height)
+                            .floor()
+                            .max(0.0) as usize;
+                        let visual_row = pane.soft_wrap_visual_scroll() + row;
+                        if pane.handle_live_preview_fixed_width_horizontal_scroll_at_visual_row(
+                            visual_row,
+                            editor_dx,
+                            visible_cols,
+                        ) {
+                            ctx.invalidate_pane(pid);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Check if scrolling over the file tree
     let ft_visible = ctx.ft().visible;
     let ft_rect = ctx.ft().rect;

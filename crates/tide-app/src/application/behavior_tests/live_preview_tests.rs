@@ -1,9 +1,16 @@
 // Spec: docs/specs/live-preview.md
+use crate::adapter::outward::view::editor_selection_rects;
 use crate::domain::editor::markdown::{LivePreviewMap, MdElementKind};
 use crate::domain::editor::wrap::WrapMap;
-use crate::pane::editor::EditorPane;
-use crate::pane::{PaneKind, TerminalPane};
+use crate::pane::editor::{
+    live_preview_code_fence_line, live_preview_editing_indicator_rect,
+    live_preview_syntax_marker_style, live_preview_table_cell_text,
+    live_preview_table_line_is_first, live_preview_table_line_is_header,
+    live_preview_table_line_is_last, live_preview_table_separator_line, EditorPane,
+};
+use crate::pane::{PaneKind, Selection, TerminalPane};
 use crate::state::FocusArea;
+use crate::tide_core::{Rect, Size};
 use crate::tide_platform::{WindowCommand, WindowProxy};
 use crate::ActionPort;
 use crate::App;
@@ -78,6 +85,14 @@ fn app_with_dock_markdown_editor(contents: &str) -> (App, u64, u64, PathBuf) {
     );
 
     (app, editor_id, terminal_id, path)
+}
+
+fn marker_text_for_ranges(line: &str, ranges: &[std::ops::Range<usize>]) -> String {
+    ranges
+        .iter()
+        .filter_map(|range| line.get(range.clone()))
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 fn pane_content_rect(
@@ -265,6 +280,41 @@ fn live_preview_map_exposes_cached_hidden_syntax_ranges_by_line() {
 }
 
 #[test]
+fn live_preview_map_keeps_cursor_line_syntax_ranges_for_dim_marker_styling() {
+    // UC-2 BR-5/BR-7: Cursor-line content keeps Markdown styling while revealed syntax markers can use a dim structural style.
+    let input = lines("# Heading with **bold** and `code`");
+    let map = LivePreviewMap::build(&input);
+
+    assert!(
+        map.hidden_syntax_ranges_for_line(0, 0).is_empty(),
+        "cursor line should still reveal syntax"
+    );
+    let syntax_ranges = map.syntax_ranges_for_line(0);
+    let marker_text = marker_text_for_ranges(&input[0], syntax_ranges);
+    assert!(marker_text.contains('#'));
+    assert!(marker_text.contains("**"));
+    assert!(marker_text.contains('`'));
+
+    let marker_style = live_preview_syntax_marker_style(false);
+    assert!(marker_style.dim);
+    assert!(marker_style.background.is_none());
+    assert!(marker_style.foreground.a < 1.0);
+}
+
+#[test]
+fn live_preview_editing_indicator_is_a_narrow_rail() {
+    // UC-2 BR-6: Cursor-line editing state uses a narrow rail instead of a full-row background tint.
+    let rect = crate::tide_core::Rect::new(10.0, 20.0, 420.0, 320.0);
+    let cell = crate::tide_core::Size::new(8.0, 16.0);
+    let rail = live_preview_editing_indicator_rect(rect, cell, 3);
+
+    assert_eq!(rail.width, 2.0);
+    assert!(rail.height < cell.height);
+    assert_eq!(rail.y, rect.y + 3.0 * cell.height + 2.0);
+    assert!(rail.x < rect.x + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width);
+}
+
+#[test]
 fn live_preview_map_line_style_cursor_matches_element_style_for_monotonic_offsets() {
     // markdown-preview-performance-polish UC-1 BR-20: Line-scoped style ranges match element_style for monotonic byte offsets.
     let input = lines("# Heading\n\nText with `code`, **bold**, and [link](url).\n\n| A | B |\n|---|---|\n| `x` | y |");
@@ -421,6 +471,134 @@ fn block_syntax_never_hidden() {
         hidden_code.is_empty(),
         "code block syntax should never be hidden; got {:?}",
         hidden_code
+    );
+}
+
+#[test]
+fn non_cursor_code_block_lines_render_as_preview_surface_until_edited() {
+    // UC-3 BR-5: Non-cursor code block fences are treated as preview chrome instead of body text.
+    assert!(live_preview_code_fence_line("```rust"));
+    assert!(live_preview_code_fence_line("   ~~~"));
+    assert!(!live_preview_code_fence_line("let value = 1;"));
+}
+
+#[test]
+fn non_cursor_table_lines_render_as_preview_table_until_edited() {
+    // UC-3 BR-6: Non-cursor table separator rows become table structure instead of Markdown text.
+    let rows = lines("| Name | Value |\n| --- | ---: |\n| Tide | 42 |");
+
+    assert!(live_preview_table_line_is_header(&rows, 0));
+    assert!(live_preview_table_separator_line(&rows[1]));
+    assert!(!live_preview_table_separator_line(&rows[0]));
+    assert!(!live_preview_table_line_is_header(&rows, 2));
+}
+
+#[test]
+fn live_preview_table_cells_render_without_source_markers() {
+    // UC-3 BR-11: Table cell text renders without simple Markdown source markers.
+    assert_eq!(live_preview_table_cell_text("**Domain**"), "Domain");
+    assert_eq!(live_preview_table_cell_text("`domain/`"), "domain/");
+    assert_eq!(
+        live_preview_table_cell_text("Application -> `application/services/`"),
+        "Application -> application/services/"
+    );
+}
+
+#[test]
+fn live_preview_table_surface_edges_follow_source_table_bounds() {
+    // UC-3 BR-11: Table surface edges follow the source table bounds instead of every row looking like a detached band.
+    let rows = lines(
+        "Before\n\n| Layer | Path | Responsibility |\n|-------|------|---------------|\n| **Domain** | `domain/` | Pure business logic |\n| **Application** | `application/ports/` | Port traits |\n\nAfter",
+    );
+
+    assert!(live_preview_table_line_is_first(&rows, 2));
+    assert!(!live_preview_table_line_is_last(&rows, 2));
+    assert!(!live_preview_table_line_is_first(&rows, 3));
+    assert!(!live_preview_table_line_is_last(&rows, 3));
+    assert!(!live_preview_table_line_is_first(&rows, 4));
+    assert!(!live_preview_table_line_is_last(&rows, 4));
+    assert!(live_preview_table_line_is_last(&rows, 5));
+}
+
+#[test]
+fn live_preview_block_cursor_raw_mode_only_for_structure_markers() {
+    // UC-3 BR-12: Complete Markdown tables stay rendered when focused; incomplete table syntax stays raw.
+    let mut complete = EditorPane::new_empty(1);
+    complete.editor.buffer.lines =
+        lines("| Layer | Path |\n|-------|------|\n| Domain | `domain/` |");
+    assert!(complete.live_preview_source_table_complete_at_line(0));
+    assert!(complete.live_preview_source_table_complete_at_line(1));
+    assert!(complete.live_preview_source_table_complete_at_line(2));
+
+    let mut incomplete = EditorPane::new_empty(2);
+    incomplete.editor.buffer.lines = lines("| Layer | Path |\n|-------|------|\n| Domain |");
+    assert!(!incomplete.live_preview_source_table_complete_at_line(0));
+    assert!(!incomplete.live_preview_source_table_complete_at_line(1));
+    assert!(!incomplete.live_preview_source_table_complete_at_line(2));
+}
+
+#[test]
+fn live_preview_fixed_width_hit_testing_uses_display_rows() {
+    // UC-6 BR-8: Hit-testing fixed-width blocks uses rendered display rows, not raw WrapMap sub-rows.
+    let mut pane = EditorPane::new_empty(1);
+    pane.editor.buffer.lines = lines("```text\nabcdefghijklmnop\n```\nafter");
+    pane.live_preview = true;
+    pane.soft_wrap = true;
+    pane.ensure_live_preview_map();
+    pane.ensure_wrap_map(6);
+
+    assert!(
+        pane.wrap_map().unwrap().visual_rows_for(1) > 1,
+        "fixture must raw-wrap the code block content"
+    );
+    assert_eq!(pane.soft_wrap_display_rows_for_line(1), 1);
+
+    let code_row = pane.soft_wrap_visual_row_of_line(1).unwrap();
+    assert_eq!(
+        pane.soft_wrap_display_position_for_visual_cell(code_row, 3),
+        Some((1, 0))
+    );
+    assert_eq!(
+        pane.soft_wrap_display_position_for_visual_cell(code_row + 1, 0)
+            .map(|(line, _)| line),
+        Some(2),
+        "the row after a rendered code line should map to the next logical line, not a raw wrapped sub-row"
+    );
+}
+
+#[test]
+fn live_preview_fixed_width_selection_rects_are_clipped_to_viewport() {
+    // UC-6 BR-9: Fixed-width LivePreviewMode selection highlights do not draw outside the Editor Pane viewport.
+    let mut pane = EditorPane::new_empty(1);
+    pane.editor.buffer.lines = lines("```text\nabcdefghijklmnop\n```\nafter");
+    pane.live_preview = true;
+    pane.soft_wrap = true;
+    pane.ensure_live_preview_map();
+    pane.ensure_wrap_map(6);
+    pane.selection = Some(Selection {
+        anchor: (1, 0),
+        end: (1, 16),
+    });
+
+    let cell_size = Size::new(8.0, 16.0);
+    let inner = Rect::new(
+        10.0,
+        20.0,
+        crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width + 10.0 * cell_size.width,
+        4.0 * cell_size.height,
+    );
+    let rects = editor_selection_rects(&pane, inner, cell_size, pane.selection.as_ref().unwrap());
+    assert_eq!(rects.len(), 1);
+    let right = rects[0].x + rects[0].width;
+    assert!(
+        right <= inner.x + inner.width,
+        "selection rect must be clipped to viewport: right={right}, viewport_right={}",
+        inner.x + inner.width
+    );
+    assert_eq!(
+        rects[0].width,
+        7.0 * cell_size.width,
+        "code block selection starts after preview padding and fills the remaining visible columns"
     );
 }
 
@@ -769,4 +947,221 @@ fn live_preview_ime_cursor_area_uses_the_live_preview_inset() {
     assert_eq!(y, content_rect.y as f64);
     assert_eq!(w, cell.width as f64);
     assert_eq!(h, cell.height as f64);
+}
+
+#[test]
+fn live_preview_soft_wrap_display_rows_do_not_enter_code_block_subrows() {
+    // UC-3 BR-9, UC-6 BR-4: LivePreviewMode Soft Wrap counts code block lines as one display row, so scrolling cannot land inside raw wrapped sub-rows.
+    let long_code = format!("application services renderer adapter {}", "x".repeat(80));
+    let contents = format!("# Context Map\n\n```text\n{long_code}\n```\n\nAfter\n");
+    let (mut app, id, path) = app_with_markdown_editor(&contents);
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 320.0, 220.0);
+    let cell = crate::tide_core::Size::new(8.0, 16.0);
+    let content_rect = pane_content_rect(pane_rect, cell.height);
+
+    let pane = match app.panes.get_mut(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    pane.prepare_inline_caches(content_rect, cell, false);
+
+    let raw_rows = pane.wrap_map().unwrap().visual_rows_for(3);
+    assert!(
+        raw_rows > 1,
+        "fixture must wrap the raw code block line before LivePreviewMode display mapping"
+    );
+    assert_eq!(pane.soft_wrap_display_rows_for_line(3), 1);
+
+    let code_display_row = pane.soft_wrap_visual_row_of_line(3).unwrap();
+    let next_row = pane
+        .soft_wrap_display_row_info(code_display_row + 1)
+        .expect("expected row after code block content");
+    assert_eq!(next_row.info.logical_line, 4);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn live_preview_soft_wrap_display_rows_do_not_enter_table_subrows() {
+    // UC-6 BR-4: LivePreviewMode Soft Wrap counts Markdown table rows as one display row even when their raw source exceeds the Pane width.
+    let long_cell = format!(
+        "domain/pane owns LivePreviewMode and Soft Wrap {}",
+        "x".repeat(90)
+    );
+    let contents = format!(
+        "# Tests\n\n| Context | Responsibility |\n| --- | --- |\n| domain/pane | {long_cell} |\n\nAfter\n"
+    );
+    let (mut app, id, path) = app_with_markdown_editor(&contents);
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 320.0, 220.0);
+    let cell = crate::tide_core::Size::new(8.0, 16.0);
+    let content_rect = pane_content_rect(pane_rect, cell.height);
+
+    let pane = match app.panes.get_mut(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    pane.prepare_inline_caches(content_rect, cell, false);
+
+    let raw_rows = pane.wrap_map().unwrap().visual_rows_for(4);
+    assert!(
+        raw_rows > 1,
+        "fixture must wrap the raw table row before LivePreviewMode display mapping"
+    );
+    assert_eq!(pane.soft_wrap_display_rows_for_line(4), 1);
+
+    let table_display_row = pane.soft_wrap_visual_row_of_line(4).unwrap();
+    let next_row = pane
+        .soft_wrap_display_row_info(table_display_row + 1)
+        .expect("expected row after table row");
+    assert_eq!(next_row.info.logical_line, 5);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn live_preview_soft_wrap_code_blocks_allow_horizontal_scroll() {
+    // UC-6 BR-5: Fixed-width code block content in LivePreviewMode can be viewed with horizontal scroll even while Soft Wrap is active.
+    let long_code = format!("application services renderer adapter {}", "x".repeat(120));
+    let contents = format!("# Context Map\n\n```text\n{long_code}\n```\n");
+    let (mut app, id, path) = app_with_markdown_editor(&contents);
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 280.0, 220.0);
+    let cell = crate::tide_core::Size::new(8.0, 16.0);
+    let content_rect = pane_content_rect(pane_rect, cell.height);
+
+    let pane = match app.panes.get_mut(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    pane.prepare_inline_caches(content_rect, cell, false);
+    let (_, visible_cols) = pane.viewport_size_for_content_rect(content_rect, cell);
+    assert!(
+        pane.live_preview_fixed_width_max_h_scroll(visible_cols)
+            .unwrap()
+            > 0
+    );
+
+    let visual_row = pane.soft_wrap_visual_row_of_line(3).unwrap();
+    pane.handle_live_preview_fixed_width_horizontal_scroll_at_visual_row(
+        visual_row,
+        -4.0,
+        visible_cols,
+    );
+
+    assert!(
+        pane.live_preview_fixed_width_h_scroll_for_line(3) > 0,
+        "horizontal scroll should move across long code block content"
+    );
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn live_preview_soft_wrap_tables_allow_horizontal_scroll() {
+    // UC-6 BR-5: Fixed-width table content in LivePreviewMode can be viewed with horizontal scroll even while Soft Wrap is active.
+    let long_cell = format!(
+        "domain/pane owns LivePreviewMode and Soft Wrap {}",
+        "x".repeat(120)
+    );
+    let contents = format!(
+        "# Tests\n\n| Context | Responsibility |\n| --- | --- |\n| domain/pane | {long_cell} |\n"
+    );
+    let (mut app, id, path) = app_with_markdown_editor(&contents);
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 280.0, 220.0);
+    let cell = crate::tide_core::Size::new(8.0, 16.0);
+    let content_rect = pane_content_rect(pane_rect, cell.height);
+
+    let pane = match app.panes.get_mut(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    pane.prepare_inline_caches(content_rect, cell, false);
+    let (_, visible_cols) = pane.viewport_size_for_content_rect(content_rect, cell);
+    assert!(
+        pane.live_preview_fixed_width_max_h_scroll(visible_cols)
+            .unwrap()
+            > 0
+    );
+
+    let visual_row = pane.soft_wrap_visual_row_of_line(4).unwrap();
+    pane.handle_live_preview_fixed_width_horizontal_scroll_at_visual_row(
+        visual_row,
+        -4.0,
+        visible_cols,
+    );
+
+    assert!(
+        pane.live_preview_fixed_width_h_scroll_for_line(4) > 0,
+        "horizontal scroll should move across long table content"
+    );
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn live_preview_fixed_width_blocks_keep_independent_horizontal_scroll() {
+    // UC-6 BR-5: Horizontal scroll is scoped to the fixed-width block under the gesture, not shared by every code block and table in the Markdown Pane.
+    let first = format!("first block {}", "a".repeat(100));
+    let second = format!("second block {}", "b".repeat(100));
+    let contents = format!("```text\n{first}\n```\n\n```text\n{second}\n```\n");
+    let (mut app, id, path) = app_with_markdown_editor(&contents);
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 280.0, 220.0);
+    let cell = crate::tide_core::Size::new(8.0, 16.0);
+    let content_rect = pane_content_rect(pane_rect, cell.height);
+
+    let pane = match app.panes.get_mut(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    pane.prepare_inline_caches(content_rect, cell, false);
+    let (_, visible_cols) = pane.viewport_size_for_content_rect(content_rect, cell);
+    let second_block_row = pane.soft_wrap_visual_row_of_line(5).unwrap();
+
+    pane.handle_live_preview_fixed_width_horizontal_scroll_at_visual_row(
+        second_block_row,
+        -4.0,
+        visible_cols,
+    );
+
+    assert_eq!(pane.live_preview_fixed_width_h_scroll_for_line(1), 0);
+    assert!(
+        pane.live_preview_fixed_width_h_scroll_for_line(5) > 0,
+        "horizontal scroll should only move the second fixed-width block"
+    );
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn live_preview_context_map_table_rows_use_fixed_width_display_rows() {
+    // UC-6 BR-4: Source-valid Markdown table rows stay one fixed-width display row even when pulldown_cmark styling is unavailable for a row.
+    let contents = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/context-map.md"),
+    )
+    .unwrap();
+    let (mut app, id, path) = app_with_markdown_editor(&contents);
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 280.0, 220.0);
+    let cell = crate::tide_core::Size::new(8.0, 16.0);
+    let content_rect = pane_content_rect(pane_rect, cell.height);
+
+    let pane = match app.panes.get_mut(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    pane.prepare_inline_caches(content_rect, cell, false);
+
+    for line in 54..=60 {
+        assert!(
+            pane.live_preview_source_table_line(line),
+            "context-map table line {} should be treated as a table row",
+            line + 1
+        );
+        assert_eq!(
+            pane.soft_wrap_display_rows_for_line(line),
+            1,
+            "context-map table line {} should not enter raw wrapped sub-rows",
+            line + 1
+        );
+    }
+
+    let _ = std::fs::remove_file(path);
 }

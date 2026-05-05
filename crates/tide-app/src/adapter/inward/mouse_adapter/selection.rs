@@ -64,6 +64,16 @@ fn live_preview_buffer_col(
     }
 }
 
+fn editor_soft_wrap_hit_position(
+    pane: &crate::pane::editor::EditorPane,
+    rel_row: usize,
+    rel_col: usize,
+) -> Option<(usize, usize)> {
+    let abs_vr = pane.soft_wrap_visual_scroll() + rel_row;
+    let (line, visual_col) = pane.soft_wrap_display_position_for_visual_cell(abs_vr, rel_col)?;
+    Some((line, live_preview_buffer_col(pane, line, visual_col)))
+}
+
 /// Begin text selection on mouse-down. Clears any existing selection in all
 /// panes, then anchors a new one in the clicked pane. Returns `true` if a
 /// selection was started.
@@ -160,18 +170,10 @@ pub(super) fn start_text_selection(
                     }
                 } else if pane.effective_soft_wrap() {
                     if let Some((rr, rc)) = editor_cell {
-                        if let Some(wrap_map) = pane.wrap_map() {
-                            let abs_vr = pane.soft_wrap_visual_scroll() + rr;
-                            if let Some(info) =
-                                wrap_map.visual_row_to_line_info(abs_vr, &pane.editor.buffer.lines)
-                            {
-                                let visual_col = (info.char_offset + rc).min(info.char_end);
-                                let col =
-                                    live_preview_buffer_col(pane, info.logical_line, visual_col);
-                                if let Some(ref mut sel) = pane.selection {
-                                    sel.end = (info.logical_line, col);
-                                    return true;
-                                }
+                        if let Some((line, col)) = editor_soft_wrap_hit_position(pane, rr, rc) {
+                            if let Some(ref mut sel) = pane.selection {
+                                sel.end = (line, col);
+                                return true;
                             }
                         }
                     }
@@ -226,18 +228,11 @@ pub(super) fn start_text_selection(
                 }
             } else if pane.effective_soft_wrap() {
                 if let Some((rr, rc)) = editor_cell {
-                    if let Some(wrap_map) = pane.wrap_map() {
-                        let abs_vr = pane.soft_wrap_visual_scroll() + rr;
-                        if let Some(info) =
-                            wrap_map.visual_row_to_line_info(abs_vr, &pane.editor.buffer.lines)
-                        {
-                            let visual_col = (info.char_offset + rc).min(info.char_end);
-                            let col = live_preview_buffer_col(pane, info.logical_line, visual_col);
-                            pane.selection = Some(Selection {
-                                anchor: (info.logical_line, col),
-                                end: (info.logical_line, col),
-                            });
-                        }
+                    if let Some((line, col)) = editor_soft_wrap_hit_position(pane, rr, rc) {
+                        pane.selection = Some(Selection {
+                            anchor: (line, col),
+                            end: (line, col),
+                        });
                     }
                 }
             } else if let Some((rr, rc)) = editor_cell {
@@ -311,15 +306,11 @@ pub(super) fn handle_selection_drag(ctx: &mut (impl AppCorePort + PaneAccessPort
                     }
                 } else if pane.effective_soft_wrap() {
                     if let Some((rel_row, rel_col)) = editor_cell {
-                        let mapped = pane.wrap_map().and_then(|wrap_map| {
-                            let abs_vr = pane.soft_wrap_visual_scroll() + rel_row;
-                            wrap_map.visual_row_to_line_info(abs_vr, &pane.editor.buffer.lines)
-                        });
-                        if let Some(info) = mapped {
-                            let visual_col = (info.char_offset + rel_col).min(info.char_end);
-                            let col = live_preview_buffer_col(pane, info.logical_line, visual_col);
+                        if let Some((line, col)) =
+                            editor_soft_wrap_hit_position(pane, rel_row, rel_col)
+                        {
                             if let Some(ref mut sel) = pane.selection {
-                                sel.end = (info.logical_line, col);
+                                sel.end = (line, col);
                             }
                         }
                     }

@@ -10,6 +10,7 @@ use crate::header::{
 use crate::pane::editor::EditorPane;
 use crate::pane::PaneKind;
 use crate::theme::{BADGE_GAP, BADGE_PADDING_H, DARK, LIGHT, TAB_H_PAD, TAB_MIN_TITLE_WIDTH};
+use crate::tide_editor::EditorActionKind;
 
 fn color_brightness(color: crate::tide_core::Color) -> f32 {
     color.r + color.g + color.b
@@ -122,7 +123,23 @@ fn active_indent_guides_are_stronger_on_current_line_than_surrounding_guides() {
         "dark active indent guides should be more visible than surrounding guides"
     );
     assert!(
-        LIGHT.active_indent_guide.a > LIGHT.indent_guide.a,
+        color_brightness(LIGHT.active_indent_guide) < color_brightness(LIGHT.indent_guide),
         "light active indent guides should be more visible than surrounding guides"
+    );
+}
+
+#[test]
+fn cursor_row_movement_invalidates_current_line_chrome() {
+    // UC-4 BR-14: Cursor-row-dependent editor chrome must invalidate when the cursor moves to another logical line.
+    let mut pane = EditorPane::new_empty(1);
+    pane.editor.buffer.lines = vec!["first".to_string(), "second".to_string()];
+
+    let before = pane.generation();
+    pane.handle_action_with_size(EditorActionKind::MoveDown, 20, 80);
+
+    assert_ne!(
+        pane.generation(),
+        before,
+        "moving the cursor to another row should refresh current-line chrome"
     );
 }

@@ -3,8 +3,9 @@
 use std::ops::Range;
 
 use unicode_width::UnicodeWidthChar;
+use unicode_width::UnicodeWidthStr;
 
-use crate::tide_core::{Color, Rect, Renderer, TextStyle, Vec2};
+use crate::tide_core::{Color, Rect, Renderer, Size, TextStyle, Vec2};
 use crate::tide_editor::highlight::StyledSpanCursor;
 use crate::tide_editor::markdown::{MarkdownTheme, MdElementKind, PreviewLine};
 use crate::tide_editor::wrap::WrapMap;
@@ -30,7 +31,276 @@ fn hidden_syntax_range_contains(
         .is_some_and(|range| range.contains(&byte_offset))
 }
 
+pub(crate) fn live_preview_editing_indicator_rect(
+    rect: Rect,
+    cell_size: Size,
+    visual_row: usize,
+) -> Rect {
+    let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+    Rect::new(
+        rect.x + gutter_width - 3.0,
+        rect.y + visual_row as f32 * cell_size.height + 2.0,
+        2.0,
+        (cell_size.height - 4.0).max(1.0),
+    )
+}
+
+pub(crate) fn live_preview_syntax_marker_style(dark_mode: bool) -> TextStyle {
+    let foreground = if dark_mode {
+        Color::new(0.50, 0.52, 0.56, 0.86)
+    } else {
+        Color::new(0.42, 0.45, 0.49, 0.92)
+    };
+    TextStyle {
+        foreground,
+        background: None,
+        bold: false,
+        dim: true,
+        italic: false,
+        underline: false,
+    }
+}
+
+pub(crate) fn live_preview_code_fence_line(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with("```") || trimmed.starts_with("~~~")
+}
+
+pub(crate) fn live_preview_table_separator_line(line: &str) -> bool {
+    let trimmed = line.trim().trim_matches('|');
+    let cells: Vec<&str> = trimmed.split('|').map(str::trim).collect();
+    !cells.is_empty()
+        && cells.iter().all(|cell| {
+            let has_dash = cell.chars().any(|ch| ch == '-');
+            has_dash
+                && cell
+                    .chars()
+                    .all(|ch| ch == '-' || ch == ':' || ch.is_whitespace())
+        })
+}
+
+fn live_preview_table_cells(line: &str) -> Vec<String> {
+    line.trim()
+        .trim_matches('|')
+        .split('|')
+        .map(|cell| live_preview_table_cell_text(cell.trim()))
+        .collect()
+}
+
+pub(crate) fn live_preview_table_cell_text(cell: &str) -> String {
+    let mut rendered = String::new();
+    let chars: Vec<char> = cell.chars().collect();
+    let mut idx = 0usize;
+    while idx < chars.len() {
+        if idx + 1 < chars.len() && chars[idx] == '*' && chars[idx + 1] == '*' {
+            idx += 2;
+            continue;
+        }
+        if chars[idx] == '`' {
+            idx += 1;
+            continue;
+        }
+        rendered.push(chars[idx]);
+        idx += 1;
+    }
+    rendered.trim().to_string()
+}
+
+fn live_preview_table_bounds(lines: &[String], line: usize) -> Range<usize> {
+    let mut start = line;
+    while start > 0 && lines[start - 1].contains('|') && !lines[start - 1].trim().is_empty() {
+        start -= 1;
+    }
+    let mut end = line + 1;
+    while end < lines.len() && lines[end].contains('|') && !lines[end].trim().is_empty() {
+        end += 1;
+    }
+    start..end
+}
+
+fn live_preview_table_column_widths(lines: &[String], line: usize) -> Vec<usize> {
+    let bounds = live_preview_table_bounds(lines, line);
+    let mut widths = Vec::new();
+    for row in &lines[bounds] {
+        if live_preview_table_separator_line(row) {
+            continue;
+        }
+        for (idx, cell) in live_preview_table_cells(row).iter().enumerate() {
+            if idx >= widths.len() {
+                widths.push(3);
+            }
+            widths[idx] = widths[idx].max(cell.width());
+        }
+    }
+    widths
+}
+
+pub(crate) fn live_preview_table_line_is_header(lines: &[String], line: usize) -> bool {
+    lines
+        .get(line + 1)
+        .is_some_and(|next| live_preview_table_separator_line(next))
+}
+
+pub(crate) fn live_preview_table_line_is_first(lines: &[String], line: usize) -> bool {
+    let Some(row) = lines.get(line) else {
+        return false;
+    };
+    row.contains('|')
+        && !row.trim().is_empty()
+        && (line == 0 || !lines[line - 1].contains('|') || lines[line - 1].trim().is_empty())
+}
+
+pub(crate) fn live_preview_table_line_is_last(lines: &[String], line: usize) -> bool {
+    let Some(row) = lines.get(line) else {
+        return false;
+    };
+    row.contains('|')
+        && !row.trim().is_empty()
+        && lines
+            .get(line + 1)
+            .is_none_or(|next| !next.contains('|') || next.trim().is_empty())
+}
+
+fn live_preview_code_block_bounds(lines: &[String], line: usize) -> Option<Range<usize>> {
+    let mut start = line;
+    loop {
+        let row = lines.get(start)?;
+        if live_preview_code_fence_line(row) {
+            break;
+        }
+        if start == 0 {
+            return None;
+        }
+        start -= 1;
+    }
+
+    let mut end = start + 1;
+    while end < lines.len() {
+        if end != start && live_preview_code_fence_line(&lines[end]) {
+            return Some(start..end + 1);
+        }
+        end += 1;
+    }
+    None
+}
+
+pub(crate) fn live_preview_code_block_line_is_first(lines: &[String], line: usize) -> bool {
+    live_preview_code_block_bounds(lines, line).is_some_and(|bounds| bounds.start == line)
+}
+
+pub(crate) fn live_preview_code_block_line_is_last(lines: &[String], line: usize) -> bool {
+    live_preview_code_block_bounds(lines, line).is_some_and(|bounds| bounds.end == line + 1)
+}
+
 impl EditorPane {
+    /// Pure authoring-cursor geometry used by rendering tests and the overlay
+    /// cursor path. Preview mode has no authoring cursor.
+    pub(crate) fn authoring_cursor_rect(
+        &self,
+        rect: Rect,
+        cell_size: Size,
+        preedit_width_cells: usize,
+    ) -> Option<Rect> {
+        if self.preview_mode {
+            return None;
+        }
+        if self.effective_soft_wrap() {
+            let wrap_map = self.wrap_map()?;
+            return self.authoring_cursor_rect_soft_wrap(
+                rect,
+                cell_size,
+                preedit_width_cells,
+                wrap_map,
+            );
+        }
+        self.authoring_cursor_rect_plain(rect, cell_size, preedit_width_cells)
+    }
+
+    fn authoring_cursor_rect_plain(
+        &self,
+        rect: Rect,
+        cell_size: Size,
+        preedit_width_cells: usize,
+    ) -> Option<Rect> {
+        let pos = self.editor.cursor_position();
+        let scroll = self.editor.scroll_offset();
+        let h_scroll = self.editor.h_scroll_offset();
+
+        if self.diff_mode {
+            return None;
+        }
+        if pos.line < scroll {
+            return None;
+        }
+        let visual_row = pos.line - scroll;
+
+        let cursor_char_col = if let Some(line_text) = self.editor.buffer.line(pos.line) {
+            let byte_col = pos.col.min(line_text.len());
+            line_text[..byte_col].chars().count()
+        } else {
+            0
+        };
+        if cursor_char_col < h_scroll {
+            return None;
+        }
+
+        let visual_col_offset = if let Some(line_text) = self.editor.buffer.line(pos.line) {
+            line_text
+                .chars()
+                .skip(h_scroll)
+                .take(cursor_char_col - h_scroll)
+                .map(|c| c.width().unwrap_or(1))
+                .sum::<usize>()
+        } else {
+            cursor_char_col - h_scroll
+        };
+        let visual_col = GUTTER_WIDTH_CELLS + visual_col_offset + preedit_width_cells;
+
+        let cx = rect.x + visual_col as f32 * cell_size.width;
+        let cy = rect.y + visual_row as f32 * cell_size.height;
+        if cy + cell_size.height > rect.y + rect.height {
+            return None;
+        }
+        let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+        if cx > rect.x + rect.width || cx < rect.x + gutter_width {
+            return None;
+        }
+
+        Some(Rect::new(cx, cy, 2.0, cell_size.height))
+    }
+
+    fn authoring_cursor_rect_soft_wrap(
+        &self,
+        rect: Rect,
+        cell_size: Size,
+        preedit_width_cells: usize,
+        _wrap_map: &WrapMap,
+    ) -> Option<Rect> {
+        let pos = self.editor.cursor_position();
+        let scroll = self.soft_wrap_visual_scroll();
+
+        let cursor_visual_row = self.soft_wrap_display_row_for_position(pos.line, pos.col);
+        if cursor_visual_row < scroll {
+            return None;
+        }
+        let visual_row = cursor_visual_row - scroll;
+
+        let visual_col_offset = self.soft_wrap_display_col_for_position(pos.line, pos.col);
+        let visual_col = GUTTER_WIDTH_CELLS + visual_col_offset + preedit_width_cells;
+
+        let cx = rect.x + visual_col as f32 * cell_size.width;
+        let cy = rect.y + visual_row as f32 * cell_size.height;
+        if cy + cell_size.height > rect.y + rect.height {
+            return None;
+        }
+        let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+        if cx > rect.x + rect.width || cx < rect.x + gutter_width {
+            return None;
+        }
+
+        Some(Rect::new(cx, cy, 2.0, cell_size.height))
+    }
+
     /// Render the editor grid cells into the cached grid layer, with optional diff colors.
     pub fn render_grid_full(
         &self,
@@ -373,7 +643,7 @@ impl EditorPane {
         gutter_text: Color,
         gutter_active_text: Color,
         ime_preedit: &str,
-        current_line_bg: Color,
+        _current_line_bg: Color,
         indent_guide: Color,
         active_indent_guide: Color,
         dark_mode: bool,
@@ -434,10 +704,11 @@ impl EditorPane {
                 break;
             }
 
-            // Current line highlight
             if abs_line == cursor_line {
-                let row_rect = Rect::new(rect.x, y, rect.width, cell_size.height);
-                renderer.draw_grid_rect(row_rect, current_line_bg);
+                renderer.draw_grid_rect(
+                    live_preview_editing_indicator_rect(rect, cell_size, vi),
+                    active_indent_guide,
+                );
             }
 
             // Gutter: line number
@@ -468,42 +739,101 @@ impl EditorPane {
                 }
             }
 
+            let line_text = match self.editor.buffer.line(abs_line) {
+                Some(t) => t,
+                None => continue,
+            };
+            match self.live_preview_line_kind(live_map, abs_line, line_text) {
+                Some(MdElementKind::CodeBlock) => {
+                    self.draw_live_preview_code_block_line(
+                        rect,
+                        renderer,
+                        vi,
+                        abs_line,
+                        line_text,
+                        content_width,
+                        &theme,
+                    );
+                    continue;
+                }
+                Some(MdElementKind::Table) => {
+                    self.draw_live_preview_table_line(
+                        rect,
+                        renderer,
+                        vi,
+                        abs_line,
+                        line_text,
+                        content_width,
+                        &theme,
+                    );
+                    continue;
+                }
+                _ => {}
+            }
+
             if abs_line == cursor_line {
-                // Cursor line: render exactly like authoring mode (raw text, all syntax)
+                // Cursor line: reveal syntax markers without changing content
+                // text away from its rendered Markdown role color.
+                let syntax_ranges = live_map.syntax_ranges_for_line(abs_line);
+                let line_byte_start = live_map.line_byte_start(abs_line);
                 let mut char_idx = 0usize;
                 let mut display_col = 0usize;
+                let mut byte_offset = line_byte_start;
                 let mut preedit_shifted = false;
-                for span in spans {
-                    for ch in span.text.chars() {
-                        if ch == '\n' {
-                            continue;
-                        }
-                        let char_w = ch.width().unwrap_or(1);
-                        if char_idx < h_scroll {
-                            char_idx += 1;
-                            continue;
-                        }
-                        if !preedit_shifted && preedit_width > 0 && char_idx >= cursor_char_col {
-                            display_col += preedit_width;
-                            preedit_shifted = true;
-                        }
-                        let px = content_x + display_col as f32 * cell_size.width;
-                        if px >= content_x + content_width {
-                            break;
-                        }
-                        if ch != ' ' || span.style.background.is_some() {
-                            renderer.draw_grid_cell(
-                                ch,
-                                vi,
-                                GUTTER_WIDTH_CELLS + display_col,
-                                span.style,
-                                cell_size,
-                                Vec2::new(rect.x, rect.y),
-                            );
-                        }
-                        display_col += char_w;
-                        char_idx += 1;
+                let mut syntax_range_idx = 0usize;
+                let mut element_style_idx = 0usize;
+                let mut span_style_cursor =
+                    StyledSpanCursor::new(spans, Self::default_live_preview_fallback_style());
+
+                for ch in line_text.chars() {
+                    if ch == '\n' {
+                        byte_offset += ch.len_utf8();
+                        continue;
                     }
+                    let char_byte_len = ch.len_utf8();
+                    let char_w = ch.width().unwrap_or(1);
+                    if char_idx < h_scroll {
+                        byte_offset += char_byte_len;
+                        char_idx += 1;
+                        continue;
+                    }
+                    if !preedit_shifted && preedit_width > 0 && char_idx >= cursor_char_col {
+                        display_col += preedit_width;
+                        preedit_shifted = true;
+                    }
+                    let is_syntax_marker = hidden_syntax_range_contains(
+                        syntax_ranges,
+                        &mut syntax_range_idx,
+                        byte_offset,
+                    );
+                    let fallback_style = span_style_cursor.style_at(char_idx);
+                    let style = if is_syntax_marker {
+                        live_preview_syntax_marker_style(dark_mode)
+                    } else {
+                        let md_style = live_map.element_style_for_line(
+                            abs_line,
+                            byte_offset,
+                            &mut element_style_idx,
+                        );
+                        self.resolve_md_style(md_style, &theme, fallback_style)
+                    };
+                    let px = content_x + display_col as f32 * cell_size.width;
+                    if px >= content_x + content_width {
+                        break;
+                    }
+                    if ch != ' ' || style.background.is_some() {
+                        renderer.draw_grid_cell(
+                            ch,
+                            vi,
+                            GUTTER_WIDTH_CELLS + display_col,
+                            style,
+                            cell_size,
+                            Vec2::new(rect.x, rect.y),
+                        );
+                    }
+                    display_col += char_w;
+                    byte_offset += char_byte_len;
+                    char_idx += 1;
                 }
 
                 // Indent guides on cursor line
@@ -530,11 +860,6 @@ impl EditorPane {
                 }
             } else {
                 // Non-cursor line: hide inline syntax, apply markdown styling
-                let line_text = match self.editor.buffer.line(abs_line) {
-                    Some(t) => t,
-                    None => continue,
-                };
-
                 // Get hidden byte ranges for this line
                 let hidden_ranges = live_map.hidden_syntax_ranges_for_line(abs_line, cursor_line);
 
@@ -673,9 +998,9 @@ impl EditorPane {
         gutter_text: Color,
         gutter_active_text: Color,
         ime_preedit: &str,
-        current_line_bg: Color,
+        _current_line_bg: Color,
         _indent_guide: Color,
-        _active_indent_guide: Color,
+        active_indent_guide: Color,
         dark_mode: bool,
     ) {
         let live_map = match &self.live_preview_map {
@@ -698,7 +1023,10 @@ impl EditorPane {
         let content_width = (rect.width - gutter_width - scrollbar_reserved).max(0.0);
         let visible_rows = (rect.height / cell_size.height).floor() as usize;
         let scroll = self.soft_wrap_visual_scroll();
-        let logical_scroll = self.editor.scroll_offset();
+        let start_row = self.soft_wrap_display_row_info(scroll);
+        let logical_scroll = start_row
+            .map(|row| row.info.logical_line)
+            .unwrap_or_else(|| self.editor.scroll_offset());
         let cursor_pos = self.editor.cursor_position();
         let cursor_line = cursor_pos.line;
 
@@ -726,12 +1054,12 @@ impl EditorPane {
 
         // Fetch enough logical lines to fill visible_rows visual rows.
         let line_count = self.editor.buffer.line_count();
-        let start_sub_row = scroll.saturating_sub(wrap_map.visual_row_of_line(logical_scroll));
+        let start_sub_row = start_row.map(|row| row.sub_row).unwrap_or(0);
         let mut fetch_lines = 0usize;
         let mut remaining_rows = visible_rows + start_sub_row;
         for line in logical_scroll..line_count {
             fetch_lines += 1;
-            let line_rows = wrap_map.visual_rows_for(line);
+            let line_rows = self.soft_wrap_display_rows_for_line(line);
             if line_rows >= remaining_rows {
                 break;
             }
@@ -746,8 +1074,79 @@ impl EditorPane {
                 break;
             }
 
-            let sub_rows = wrap_map.visual_rows_for(abs_line);
+            let sub_rows = self.soft_wrap_display_rows_for_line(abs_line);
             let first_sub_row = if li_offset == 0 { start_sub_row } else { 0 };
+            if let Some(line_text) = self.editor.buffer.line(abs_line) {
+                match self.live_preview_line_kind(live_map, abs_line, line_text) {
+                    Some(MdElementKind::CodeBlock) | Some(MdElementKind::Table) => {
+                        if first_sub_row > 0 {
+                            vi += 1;
+                            continue;
+                        }
+                        let y = rect.y + vi as f32 * cell_size.height;
+                        if y + cell_size.height > rect.y + rect.height {
+                            break;
+                        }
+                        if abs_line == cursor_line {
+                            renderer.draw_grid_rect(
+                                live_preview_editing_indicator_rect(rect, cell_size, vi),
+                                active_indent_guide,
+                            );
+                        }
+                        let line_num = format!("{:>4}  ", abs_line + 1);
+                        let gutter_color = if abs_line == cursor_line {
+                            gutter_active_text
+                        } else {
+                            gutter_text
+                        };
+                        let gutter_style = TextStyle {
+                            foreground: gutter_color,
+                            background: None,
+                            bold: abs_line == cursor_line,
+                            dim: false,
+                            italic: false,
+                            underline: false,
+                        };
+                        for (ci, ch) in line_num.chars().enumerate() {
+                            if ch != ' ' {
+                                renderer.draw_grid_cell(
+                                    ch,
+                                    vi,
+                                    ci,
+                                    gutter_style,
+                                    cell_size,
+                                    Vec2::new(rect.x, rect.y),
+                                );
+                            }
+                        }
+                        match self.live_preview_line_kind(live_map, abs_line, line_text) {
+                            Some(MdElementKind::CodeBlock) => self
+                                .draw_live_preview_code_block_line(
+                                    rect,
+                                    renderer,
+                                    vi,
+                                    abs_line,
+                                    line_text,
+                                    content_width,
+                                    &theme,
+                                ),
+                            Some(MdElementKind::Table) => self.draw_live_preview_table_line(
+                                rect,
+                                renderer,
+                                vi,
+                                abs_line,
+                                line_text,
+                                content_width,
+                                &theme,
+                            ),
+                            _ => {}
+                        }
+                        vi += 1;
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
 
             for sub_row in first_sub_row..sub_rows {
                 if vi >= visible_rows {
@@ -759,10 +1158,11 @@ impl EditorPane {
                     break;
                 }
 
-                // Current line highlight
                 if abs_line == cursor_line {
-                    let row_rect = Rect::new(rect.x, y, rect.width, cell_size.height);
-                    renderer.draw_grid_rect(row_rect, current_line_bg);
+                    renderer.draw_grid_rect(
+                        live_preview_editing_indicator_rect(rect, cell_size, vi),
+                        active_indent_guide,
+                    );
                 }
 
                 // Gutter: line number only on first sub-row
@@ -801,7 +1201,8 @@ impl EditorPane {
                 };
 
                 if abs_line == cursor_line {
-                    // Cursor line: render raw text with syntax highlighting (no hidden syntax)
+                    // Cursor line: reveal syntax markers without changing content
+                    // text away from its rendered Markdown role color.
                     let line_text = match self.editor.buffer.line(abs_line) {
                         Some(t) => t,
                         None => {
@@ -809,10 +1210,15 @@ impl EditorPane {
                             continue;
                         }
                     };
+                    let syntax_ranges = live_map.syntax_ranges_for_line(abs_line);
+                    let line_byte_start = live_map.line_byte_start(abs_line);
                     let row_text = line_text.get(row_info.byte_offset..).unwrap_or("");
                     let mut display_col = 0usize;
+                    let mut byte_offset = line_byte_start + row_info.byte_offset;
                     let mut char_idx = row_info.char_offset;
                     let mut preedit_shifted = false;
+                    let mut syntax_range_idx = 0usize;
+                    let mut element_style_idx = 0usize;
                     let mut span_style_cursor =
                         StyledSpanCursor::new(spans, Self::default_live_preview_fallback_style());
 
@@ -827,7 +1233,22 @@ impl EditorPane {
                             preedit_shifted = true;
                         }
 
-                        let style = span_style_cursor.style_at(char_idx);
+                        let is_syntax_marker = hidden_syntax_range_contains(
+                            syntax_ranges,
+                            &mut syntax_range_idx,
+                            byte_offset,
+                        );
+                        let fallback_style = span_style_cursor.style_at(char_idx);
+                        let style = if is_syntax_marker {
+                            live_preview_syntax_marker_style(dark_mode)
+                        } else {
+                            let md_style = live_map.element_style_for_line(
+                                abs_line,
+                                byte_offset,
+                                &mut element_style_idx,
+                            );
+                            self.resolve_md_style(md_style, &theme, fallback_style)
+                        };
                         let px = content_x + display_col as f32 * cell_size.width;
                         if px >= content_x + content_width {
                             break;
@@ -843,6 +1264,7 @@ impl EditorPane {
                             );
                         }
                         display_col += char_w;
+                        byte_offset += ch.len_utf8();
                         char_idx += 1;
                     }
                 } else {
@@ -855,6 +1277,38 @@ impl EditorPane {
                             continue;
                         }
                     };
+                    match self.live_preview_line_kind(live_map, abs_line, line_text) {
+                        Some(MdElementKind::CodeBlock) => {
+                            let row_text = line_text.get(row_info.byte_offset..).unwrap_or("");
+                            self.draw_live_preview_code_block_line(
+                                rect,
+                                renderer,
+                                vi,
+                                abs_line,
+                                row_text,
+                                content_width,
+                                &theme,
+                            );
+                            vi += 1;
+                            continue;
+                        }
+                        Some(MdElementKind::Table) => {
+                            if sub_row == 0 {
+                                self.draw_live_preview_table_line(
+                                    rect,
+                                    renderer,
+                                    vi,
+                                    abs_line,
+                                    line_text,
+                                    content_width,
+                                    &theme,
+                                );
+                            }
+                            vi += 1;
+                            continue;
+                        }
+                        _ => {}
+                    }
 
                     let hidden_ranges =
                         live_map.hidden_syntax_ranges_for_line(abs_line, cursor_line);
@@ -924,6 +1378,183 @@ impl EditorPane {
 
     /// Resolve a markdown element kind (or None) into a TextStyle.
     /// Falls back to syntax highlighting style when no markdown element applies.
+    fn live_preview_line_kind(
+        &self,
+        live_map: &crate::tide_editor::markdown::LivePreviewMap,
+        abs_line: usize,
+        line_text: &str,
+    ) -> Option<MdElementKind> {
+        let line_start = live_map.line_byte_start(abs_line);
+        let first_content_offset = line_text
+            .char_indices()
+            .find(|(_, ch)| !ch.is_whitespace())
+            .map(|(idx, _)| idx)
+            .unwrap_or(0);
+        let mut element_style_idx = 0usize;
+        match live_map.element_style_for_line(
+            abs_line,
+            line_start + first_content_offset,
+            &mut element_style_idx,
+        ) {
+            Some(kind) => Some(kind),
+            None if self.live_preview_source_table_line(abs_line) => Some(MdElementKind::Table),
+            None => None,
+        }
+    }
+
+    fn draw_live_preview_code_block_line(
+        &self,
+        rect: Rect,
+        renderer: &mut WgpuRenderer,
+        vi: usize,
+        abs_line: usize,
+        line_text: &str,
+        content_width: f32,
+        theme: &MarkdownTheme,
+    ) {
+        let cell_size = renderer.cell_size();
+        let content_x = rect.x + GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+        let y = rect.y + vi as f32 * cell_size.height;
+        let edge_width = content_width;
+        renderer.draw_grid_rect(
+            Rect::new(content_x, y, content_width, cell_size.height),
+            theme.code_block_bg.with_alpha_factor(0.52),
+        );
+        if live_preview_code_block_line_is_first(&self.editor.buffer.lines, abs_line) {
+            renderer.draw_grid_rect(
+                Rect::new(content_x, y, edge_width, 1.0),
+                theme.rule.with_alpha_factor(0.38),
+            );
+        }
+        if live_preview_code_block_line_is_last(&self.editor.buffer.lines, abs_line) {
+            renderer.draw_grid_rect(
+                Rect::new(
+                    content_x,
+                    y + (cell_size.height - 1.0).max(0.0),
+                    edge_width,
+                    1.0,
+                ),
+                theme.rule.with_alpha_factor(0.34),
+            );
+        }
+        if live_preview_code_fence_line(line_text) {
+            return;
+        }
+
+        let style = TextStyle {
+            foreground: theme.body,
+            background: None,
+            bold: false,
+            dim: false,
+            italic: false,
+            underline: false,
+        };
+        let h_scroll = self.live_preview_fixed_width_h_scroll_for_line(abs_line);
+        let mut source_col = 0usize;
+        let max_cols = (content_width / cell_size.width).floor().max(0.0) as usize;
+        for ch in line_text.chars() {
+            let ch_width = ch.width().unwrap_or(1);
+            if source_col + ch_width <= h_scroll {
+                source_col += ch_width;
+                continue;
+            }
+            let display_col = 3 + source_col.saturating_sub(h_scroll);
+            if display_col >= max_cols {
+                break;
+            }
+            renderer.draw_grid_cell(
+                ch,
+                vi,
+                GUTTER_WIDTH_CELLS + display_col,
+                style,
+                cell_size,
+                Vec2::new(rect.x, rect.y),
+            );
+            source_col += ch_width;
+        }
+    }
+
+    fn draw_live_preview_table_line(
+        &self,
+        rect: Rect,
+        renderer: &mut WgpuRenderer,
+        vi: usize,
+        abs_line: usize,
+        line_text: &str,
+        content_width: f32,
+        theme: &MarkdownTheme,
+    ) {
+        let cell_size = renderer.cell_size();
+        let content_x = rect.x + GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+        let y = rect.y + vi as f32 * cell_size.height;
+        let max_cols = (content_width / cell_size.width).floor().max(0.0) as usize;
+        let widths = live_preview_table_column_widths(&self.editor.buffer.lines, abs_line);
+        if widths.is_empty() {
+            return;
+        }
+        let table_gap_cols = 4usize;
+        let table_cols = widths.iter().sum::<usize>()
+            + table_gap_cols.saturating_mul(widths.len().saturating_sub(1))
+            + 4;
+        let surface_width = (table_cols as f32 * cell_size.width).min(content_width);
+
+        let is_header = live_preview_table_line_is_header(&self.editor.buffer.lines, abs_line);
+        let surface_alpha = if is_header { 0.16 } else { 0.08 };
+        renderer.draw_grid_rect(
+            Rect::new(content_x, y, content_width, cell_size.height),
+            theme.code_block_bg.with_alpha_factor(surface_alpha),
+        );
+
+        if live_preview_table_separator_line(line_text) {
+            renderer.draw_grid_rect(
+                Rect::new(content_x, y + 1.0, surface_width, 1.0),
+                theme.rule.with_alpha_factor(0.70),
+            );
+            return;
+        }
+
+        let cells = live_preview_table_cells(line_text);
+        let text_style = TextStyle {
+            foreground: if is_header { theme.bold } else { theme.body },
+            background: None,
+            bold: is_header,
+            dim: false,
+            italic: false,
+            underline: false,
+        };
+        let h_scroll = self.live_preview_fixed_width_h_scroll_for_line(abs_line);
+        let mut col = 2usize;
+        for (idx, width) in widths.iter().enumerate() {
+            let cell_start_col = col;
+            if let Some(cell) = cells.get(idx) {
+                let mut used = 0usize;
+                for ch in cell.chars() {
+                    let ch_width = ch.width().unwrap_or(1);
+                    if used + ch_width > *width {
+                        break;
+                    }
+                    if col + ch_width > h_scroll {
+                        let display_col = col.saturating_sub(h_scroll);
+                        if display_col >= max_cols {
+                            break;
+                        }
+                        renderer.draw_grid_cell(
+                            ch,
+                            vi,
+                            GUTTER_WIDTH_CELLS + display_col,
+                            text_style,
+                            cell_size,
+                            Vec2::new(rect.x, rect.y),
+                        );
+                    }
+                    col += ch_width;
+                    used += ch_width;
+                }
+            }
+            col = cell_start_col + width + table_gap_cols;
+        }
+    }
+
     fn resolve_md_style(
         &self,
         md_style: Option<MdElementKind>,
@@ -1251,10 +1882,9 @@ impl EditorPane {
     /// Whether soft-wrapped content needs a scrollbar.
     fn needs_scrollbar_soft_wrap(&self, rect: Rect, cell_height: f32) -> bool {
         let visible_rows = (rect.height / cell_height).floor() as usize;
-        match self.wrap_map() {
-            Some(map) => map.total_visual_rows() > visible_rows,
-            None => self.editor.buffer.line_count() > visible_rows,
-        }
+        self.soft_wrap_total_visual_rows()
+            .unwrap_or_else(|| self.editor.buffer.line_count())
+            > visible_rows
     }
 
     /// Render the diff view grid.
@@ -1573,12 +2203,11 @@ impl EditorPane {
         preedit_width_cells: usize,
     ) {
         let cell_size = renderer.cell_size();
-        let pos = self.editor.cursor_position();
-        let scroll = self.editor.scroll_offset();
-        let h_scroll = self.editor.h_scroll_offset();
-
-        // In diff mode, map buffer cursor line to virtual diff line
-        let visual_row = if self.diff_mode {
+        if self.diff_mode {
+            let pos = self.editor.cursor_position();
+            let scroll = self.editor.scroll_offset();
+            let h_scroll = self.editor.h_scroll_offset();
+            // In diff mode, map buffer cursor line to virtual diff line.
             if let Some(ref disk_content) = self.disk_content {
                 use crate::state::diff::{compute_diff, DiffOp};
                 let diff_ops = compute_diff(disk_content, &self.editor.buffer.lines);
@@ -1594,57 +2223,50 @@ impl EditorPane {
                         DiffOp::Delete(_) => {}
                     }
                 }
-                match vline {
+                let visual_row = match vline {
                     Some(vl) if vl >= scroll => vl - scroll,
                     _ => return,
+                };
+                let cursor_char_col = if let Some(line_text) = self.editor.buffer.line(pos.line) {
+                    let byte_col = pos.col.min(line_text.len());
+                    line_text[..byte_col].chars().count()
+                } else {
+                    0
+                };
+                if cursor_char_col < h_scroll {
+                    return;
                 }
+                let visual_col_offset = if let Some(line_text) = self.editor.buffer.line(pos.line) {
+                    line_text
+                        .chars()
+                        .skip(h_scroll)
+                        .take(cursor_char_col - h_scroll)
+                        .map(|c| c.width().unwrap_or(1))
+                        .sum::<usize>()
+                } else {
+                    cursor_char_col - h_scroll
+                };
+                let visual_col = GUTTER_WIDTH_CELLS + visual_col_offset + preedit_width_cells;
+                let cx = rect.x + visual_col as f32 * cell_size.width;
+                let cy = rect.y + visual_row as f32 * cell_size.height;
+                if cy + cell_size.height > rect.y + rect.height {
+                    return;
+                }
+                let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+                if cx > rect.x + rect.width || cx < rect.x + gutter_width {
+                    return;
+                }
+                renderer.draw_top_rect(Rect::new(cx, cy, 2.0, cell_size.height), cursor_color);
+                return;
             } else {
                 return;
             }
-        } else {
-            if pos.line < scroll {
-                return;
-            }
-            pos.line - scroll
-        };
-
-        // Convert byte offset to char index for comparison with h_scroll (char-indexed)
-        let cursor_char_col = if let Some(line_text) = self.editor.buffer.line(pos.line) {
-            let byte_col = pos.col.min(line_text.len());
-            line_text[..byte_col].chars().count()
-        } else {
-            0
-        };
-        if cursor_char_col < h_scroll {
-            return;
-        }
-        // Compute visual column accounting for wide characters
-        let visual_col_offset = if let Some(line_text) = self.editor.buffer.line(pos.line) {
-            line_text
-                .chars()
-                .skip(h_scroll)
-                .take(cursor_char_col - h_scroll)
-                .map(|c| c.width().unwrap_or(1))
-                .sum::<usize>()
-        } else {
-            cursor_char_col - h_scroll
-        };
-        let visual_col = GUTTER_WIDTH_CELLS + visual_col_offset + preedit_width_cells;
-
-        let cx = rect.x + visual_col as f32 * cell_size.width;
-        let cy = rect.y + visual_row as f32 * cell_size.height;
-
-        // Check if cursor is within visible area
-        if cy + cell_size.height > rect.y + rect.height {
-            return;
-        }
-        let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
-        if cx > rect.x + rect.width || cx < rect.x + gutter_width {
-            return;
         }
 
-        // Beam cursor (thin vertical line) — standard for text editors
-        renderer.draw_top_rect(Rect::new(cx, cy, 2.0, cell_size.height), cursor_color);
+        if let Some(cursor_rect) = self.authoring_cursor_rect(rect, cell_size, preedit_width_cells)
+        {
+            renderer.draw_top_rect(cursor_rect, cursor_color);
+        }
     }
 
     /// Render cursor for soft-wrapped mode.
@@ -1676,33 +2298,14 @@ impl EditorPane {
         preedit_width_cells: usize,
         wrap_map: &WrapMap,
     ) {
-        let cell_size = renderer.cell_size();
-        let pos = self.editor.cursor_position();
-        let scroll = self.soft_wrap_visual_scroll();
-
-        let cursor_visual_row =
-            wrap_map.buffer_pos_to_visual_row(pos.line, pos.col, &self.editor.buffer.lines);
-        if cursor_visual_row < scroll {
-            return;
+        if let Some(cursor_rect) = self.authoring_cursor_rect_soft_wrap(
+            rect,
+            renderer.cell_size(),
+            preedit_width_cells,
+            wrap_map,
+        ) {
+            renderer.draw_top_rect(cursor_rect, cursor_color);
         }
-        let visual_row = cursor_visual_row - scroll;
-
-        let visual_col_offset =
-            wrap_map.buffer_pos_to_visual_col(pos.line, pos.col, &self.editor.buffer.lines);
-        let visual_col = GUTTER_WIDTH_CELLS + visual_col_offset + preedit_width_cells;
-
-        let cx = rect.x + visual_col as f32 * cell_size.width;
-        let cy = rect.y + visual_row as f32 * cell_size.height;
-
-        if cy + cell_size.height > rect.y + rect.height {
-            return;
-        }
-        let gutter_width = GUTTER_WIDTH_CELLS as f32 * cell_size.width;
-        if cx > rect.x + rect.width || cx < rect.x + gutter_width {
-            return;
-        }
-
-        renderer.draw_top_rect(Rect::new(cx, cy, 2.0, cell_size.height), cursor_color);
     }
 
     /// Whether the file is long enough to need a scrollbar.
@@ -1739,11 +2342,11 @@ impl EditorPane {
         let (total_lines, scroll) = if self.preview_mode {
             (self.preview_line_count(), self.preview_scroll)
         } else if self.effective_soft_wrap() {
-            if let Some(ref map) = self.wrap_map {
-                (map.total_visual_rows(), self.soft_wrap_visual_scroll())
-            } else {
-                (self.editor.buffer.line_count(), self.editor.scroll_offset())
-            }
+            (
+                self.soft_wrap_total_visual_rows()
+                    .unwrap_or_else(|| self.editor.buffer.line_count()),
+                self.soft_wrap_visual_scroll(),
+            )
         } else {
             (self.editor.buffer.line_count(), self.editor.scroll_offset())
         };

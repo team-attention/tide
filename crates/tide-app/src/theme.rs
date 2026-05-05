@@ -134,14 +134,14 @@ pub struct ThemePalette {
 }
 
 // ──────────────────────────────────────────────
-// DARK palette — deep black, monochrome, high contrast
+// DARK palette — charcoal document surface, monochrome, high contrast
 // ──────────────────────────────────────────────
 
 pub static DARK: ThemePalette = ThemePalette {
-    // Surface — #0A0A0B base, #0E0E10 pane, #111113 panels
-    surface_bg: Color::new(0.039, 0.039, 0.043, 1.0),
-    pane_bg: Color::new(0.055, 0.055, 0.063, 1.0),
-    file_tree_bg: Color::new(0.061, 0.061, 0.067, 1.0), // close to Dock surface; edge line provides separation
+    // Surface — app shell stays deep; document panes lift one neutral step.
+    surface_bg: Color::new(0.034, 0.035, 0.040, 1.0),
+    pane_bg: Color::new(0.067, 0.068, 0.077, 1.0),
+    file_tree_bg: Color::new(0.047, 0.048, 0.054, 1.0), // quieter than document panes
     border_color: Color::new(0.039, 0.039, 0.043, 1.0),
     border_focused: Color::new(0.769, 0.722, 0.651, 0.65),
     border_subtle: Color::new(0.145, 0.140, 0.157, 1.0), // stronger for clearer panel edges
@@ -178,8 +178,8 @@ pub static DARK: ThemePalette = ThemePalette {
     drag_source_dim: Color::new(0.0, 0.0, 0.0, 0.35),
 
     // Scrollbar
-    scrollbar_track: Color::new(1.0, 1.0, 1.0, 0.03),
-    scrollbar_thumb: Color::new(1.0, 1.0, 1.0, 0.12),
+    scrollbar_track: Color::new(1.0, 1.0, 1.0, 0.024),
+    scrollbar_thumb: Color::new(1.0, 1.0, 1.0, 0.10),
     scrollbar_match: Color::new(0.95, 0.75, 0.10, 0.85),
     scrollbar_current: Color::new(1.0, 0.90, 0.20, 1.0),
 
@@ -241,9 +241,9 @@ pub static DARK: ThemePalette = ThemePalette {
     link_color: Color::new(0.306, 0.580, 0.808, 1.0),
 
     // Editor enhancements
-    current_line_bg: Color::new(1.0, 1.0, 1.0, 0.055), // visible without becoming a stripe
-    indent_guide: Color::new(1.0, 1.0, 1.0, 0.095),    // quiet but easier structural read
-    active_indent_guide: Color::new(1.0, 1.0, 1.0, 0.18),
+    current_line_bg: Color::new(1.0, 1.0, 1.0, 0.040), // visible without becoming a stripe
+    indent_guide: Color::new(1.0, 1.0, 1.0, 0.075),    // quiet structural read
+    active_indent_guide: Color::new(1.0, 1.0, 1.0, 0.145),
     git_gutter_added: Color::new(0.133, 0.773, 0.369, 0.80), // green bar
     git_gutter_modified: Color::new(0.831, 0.659, 0.263, 0.80), // yellow bar
     bracket_match_bg: Color::new(1.0, 1.0, 1.0, 0.08),       // subtle bracket bg
@@ -284,7 +284,7 @@ pub static LIGHT: ThemePalette = ThemePalette {
 
     // Tab bar — neutral workbench header with white active tab
     tab_bar_bg: Color::rgb(0.953, 0.953, 0.953),
-    tab_bar_bg_focused: Color::rgb(0.953, 0.953, 0.953),
+    tab_bar_bg_focused: Color::rgb(0.965, 0.965, 0.965),
     active_tab_bg: Color::rgb(1.0, 1.0, 1.0),
     tab_text: Color::rgb(0.435, 0.435, 0.435),
     tab_text_active: Color::rgb(0.26, 0.26, 0.26),

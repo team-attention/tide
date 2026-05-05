@@ -4,17 +4,26 @@
 pub(crate) mod completion;
 #[path = "editor_rendering.rs"]
 mod rendering;
+#[cfg(test)]
+pub(crate) use rendering::{
+    live_preview_code_fence_line, live_preview_editing_indicator_rect,
+    live_preview_syntax_marker_style, live_preview_table_cell_text,
+    live_preview_table_line_is_first, live_preview_table_line_is_header,
+    live_preview_table_line_is_last, live_preview_table_separator_line,
+};
 
+use std::collections::HashMap;
 use std::io;
 use std::path::Path;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::tide_core::{PaneId, Rect, Size};
 use crate::tide_editor::input::EditorAction;
-use crate::tide_editor::wrap::WrapMap;
-use crate::tide_editor::EditorState;
+use crate::tide_editor::wrap::{VisualRowInfo, WrapMap};
+use crate::tide_editor::{EditorPosition, EditorState};
 
 use crate::tide_editor::markdown::{
-    render_markdown_preview, LivePreviewMap, MarkdownTheme, PreviewLine,
+    render_markdown_preview, LivePreviewMap, MarkdownTheme, MdElementKind, PreviewLine,
 };
 
 use crate::pane::Selection;
@@ -25,6 +34,101 @@ pub(crate) const GUTTER_WIDTH_CELLS: usize = 6;
 pub(crate) const SPLIT_PREVIEW_GAP_CELLS: usize = 2;
 pub(crate) const SPLIT_PREVIEW_MIN_CONTENT_CELLS: usize = 20;
 pub(crate) const MARKDOWN_PREVIEW_READABLE_WIDTH_CELLS: usize = 96;
+
+struct MarkdownListContinuation {
+    marker_start: usize,
+    marker_end: usize,
+    next_marker: String,
+    empty: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SoftWrapDisplayRowInfo {
+    pub info: VisualRowInfo,
+    pub sub_row: usize,
+}
+
+impl MarkdownListContinuation {
+    fn parse(line: &str) -> Option<Self> {
+        let marker_start = line
+            .char_indices()
+            .find(|(_, ch)| *ch != ' ' && *ch != '\t')
+            .map(|(idx, _)| idx)
+            .unwrap_or(line.len());
+        let indent = &line[..marker_start];
+        let rest = &line[marker_start..];
+
+        if let Some(parsed) = Self::parse_unordered(indent, marker_start, rest) {
+            return Some(parsed);
+        }
+        Self::parse_ordered(indent, marker_start, rest)
+    }
+
+    fn parse_unordered(indent: &str, marker_start: usize, rest: &str) -> Option<Self> {
+        let marker = ['-', '*', '+']
+            .into_iter()
+            .find(|marker| rest.starts_with(&format!("{marker} ")))?;
+        let bullet_prefix = format!("{marker} ");
+
+        if let Some(task_marker) = Self::task_marker(rest, &bullet_prefix) {
+            let marker_end = marker_start + task_marker.len();
+            return Some(Self {
+                marker_start,
+                marker_end,
+                next_marker: format!("{indent}{marker} [ ] "),
+                empty: rest[task_marker.len()..].trim().is_empty(),
+            });
+        }
+
+        let marker_end = marker_start + bullet_prefix.len();
+        Some(Self {
+            marker_start,
+            marker_end,
+            next_marker: format!("{indent}{bullet_prefix}"),
+            empty: rest[bullet_prefix.len()..].trim().is_empty(),
+        })
+    }
+
+    fn task_marker<'a>(rest: &'a str, bullet_prefix: &str) -> Option<&'a str> {
+        ["[ ] ", "[x] ", "[X] "]
+            .into_iter()
+            .map(|state| format!("{bullet_prefix}{state}"))
+            .find(|candidate| rest.starts_with(candidate))
+            .map(|candidate| {
+                let len = candidate.len();
+                &rest[..len]
+            })
+    }
+
+    fn parse_ordered(indent: &str, marker_start: usize, rest: &str) -> Option<Self> {
+        let digit_end = rest
+            .char_indices()
+            .take_while(|(_, ch)| ch.is_ascii_digit())
+            .last()
+            .map(|(idx, ch)| idx + ch.len_utf8())?;
+        if digit_end == 0 {
+            return None;
+        }
+
+        let delimiter = rest[digit_end..].chars().next()?;
+        if delimiter != '.' && delimiter != ')' {
+            return None;
+        }
+        let delimiter_end = digit_end + delimiter.len_utf8();
+        if !rest[delimiter_end..].starts_with(' ') {
+            return None;
+        }
+
+        let marker_end = marker_start + delimiter_end + 1;
+        let number = rest[..digit_end].parse::<usize>().ok()?;
+        Some(Self {
+            marker_start,
+            marker_end,
+            next_marker: format!("{indent}{}{delimiter} ", number + 1),
+            empty: rest[delimiter_end + 1..].trim().is_empty(),
+        })
+    }
+}
 
 /// Pure preview scroll computation. Only used by tests now.
 #[cfg(test)]
@@ -110,6 +214,7 @@ pub struct EditorPane {
     pub preview_scroll: usize,
     pub preview_h_scroll: usize,
     soft_wrap_visual_scroll: usize,
+    live_preview_fixed_width_h_scroll: HashMap<usize, usize>,
     /// Last wrap_width passed to `ensure_preview_cache`, used to detect
     /// when the width has stabilised after a resize so we can defer the
     /// expensive markdown re-parse during continuous resize.
@@ -154,6 +259,7 @@ impl EditorPane {
             preview_scroll: 0,
             preview_h_scroll: 0,
             soft_wrap_visual_scroll: 0,
+            live_preview_fixed_width_h_scroll: HashMap::new(),
             preview_last_width: None,
             preview_scroll_pending_ratio: None,
             last_is_modified: false,
@@ -192,6 +298,7 @@ impl EditorPane {
             preview_scroll: 0,
             preview_h_scroll: 0,
             soft_wrap_visual_scroll: 0,
+            live_preview_fixed_width_h_scroll: HashMap::new(),
             preview_last_width: None,
             preview_scroll_pending_ratio: None,
             last_is_modified: false,
@@ -212,12 +319,12 @@ impl EditorPane {
 
     /// Handle an editor action (visible_cols defaults to 80 for scroll clamping).
     pub fn handle_action(&mut self, action: EditorAction, visible_rows: usize) {
-        // Block horizontal scroll when soft wrap is active
         if self.effective_soft_wrap() {
             if matches!(
                 action,
                 EditorAction::ScrollLeft(_) | EditorAction::ScrollRight(_)
             ) {
+                self.handle_soft_wrap_horizontal_scroll_action(&action, 80);
                 return;
             }
             if self.wrap_map.is_none() {
@@ -230,7 +337,7 @@ impl EditorPane {
                 self.handle_soft_wrap_scroll_action(&action, visible_rows);
                 return;
             }
-            self.editor.handle_action(action);
+            self.handle_editor_action(action);
             self.ensure_soft_wrap_cursor_visible(visible_rows);
             self.clamp_scroll(visible_rows);
             return;
@@ -242,7 +349,7 @@ impl EditorPane {
                 | EditorAction::ScrollLeft(_)
                 | EditorAction::ScrollRight(_)
         );
-        self.editor.handle_action(action);
+        self.handle_editor_action(action);
         if !is_scroll {
             self.editor.ensure_cursor_visible(visible_rows);
         }
@@ -259,12 +366,12 @@ impl EditorPane {
         visible_rows: usize,
         visible_cols: usize,
     ) {
-        // Block horizontal scroll when soft wrap is active
         if self.effective_soft_wrap() {
             if matches!(
                 action,
                 EditorAction::ScrollLeft(_) | EditorAction::ScrollRight(_)
             ) {
+                self.handle_soft_wrap_horizontal_scroll_action(&action, visible_cols);
                 return;
             }
             self.ensure_wrap_map(visible_cols.max(1));
@@ -275,7 +382,7 @@ impl EditorPane {
                 self.handle_soft_wrap_scroll_action(&action, visible_rows);
                 return;
             }
-            self.editor.handle_action(action);
+            self.handle_editor_action(action);
             self.ensure_soft_wrap_cursor_visible(visible_rows);
             self.clamp_scroll(visible_rows);
             return;
@@ -287,7 +394,7 @@ impl EditorPane {
                 | EditorAction::ScrollLeft(_)
                 | EditorAction::ScrollRight(_)
         );
-        self.editor.handle_action(action);
+        self.handle_editor_action(action);
         if !is_scroll {
             self.editor.ensure_cursor_visible(visible_rows);
             if !self.effective_soft_wrap() {
@@ -298,6 +405,54 @@ impl EditorPane {
         if !self.effective_soft_wrap() {
             self.clamp_h_scroll(visible_cols);
         }
+    }
+
+    fn handle_editor_action(&mut self, action: EditorAction) {
+        if matches!(&action, EditorAction::Enter) && self.handle_markdown_enter() {
+            return;
+        }
+        self.editor.handle_action(action);
+    }
+
+    fn handle_markdown_enter(&mut self) -> bool {
+        if !self.is_markdown() || self.preview_mode || self.diff_mode {
+            return false;
+        }
+
+        let pos = self.editor.cursor_position();
+        let Some(line) = self.editor.buffer.line(pos.line) else {
+            return false;
+        };
+        if pos.col < line.len() {
+            return false;
+        }
+
+        let Some(continuation) = MarkdownListContinuation::parse(line) else {
+            return false;
+        };
+
+        if continuation.empty {
+            let new_pos = self.editor.buffer.delete_range(
+                EditorPosition {
+                    line: pos.line,
+                    col: continuation.marker_start,
+                },
+                EditorPosition {
+                    line: pos.line,
+                    col: continuation.marker_end,
+                },
+            );
+            self.editor.cursor.set_position(new_pos);
+            return true;
+        }
+
+        let new_pos = self.editor.buffer.insert_newline(pos);
+        let end_pos = self
+            .editor
+            .buffer
+            .insert_text(new_pos, &continuation.next_marker);
+        self.editor.cursor.set_position(end_pos);
+        true
     }
 
     /// Prevent vertical over-scrolling: last line should stick to bottom.
@@ -334,11 +489,195 @@ impl EditorPane {
         self.soft_wrap_visual_scroll != previous
     }
 
-    fn soft_wrap_max_scroll(&self, visible_rows: usize) -> usize {
-        match self.wrap_map.as_ref() {
-            Some(map) => map.total_visual_rows().saturating_sub(visible_rows),
-            None => self.editor.buffer.line_count().saturating_sub(visible_rows),
+    fn handle_soft_wrap_horizontal_scroll_action(
+        &mut self,
+        action: &EditorAction,
+        visible_cols: usize,
+    ) -> bool {
+        let line = self.editor.cursor_position().line;
+        let Some(block_start) = self.live_preview_fixed_width_block_start(line) else {
+            self.editor.set_h_scroll_offset(0);
+            return false;
+        };
+        let max_scroll =
+            self.live_preview_fixed_width_block_max_h_scroll(block_start, visible_cols);
+        let previous = self
+            .live_preview_fixed_width_h_scroll
+            .get(&block_start)
+            .copied()
+            .unwrap_or(0);
+        let next = match action {
+            EditorAction::ScrollLeft(delta) => previous.saturating_sub(*delta as usize),
+            EditorAction::ScrollRight(delta) => (previous + *delta as usize).min(max_scroll),
+            _ => return false,
         }
+        .min(max_scroll);
+        if next == 0 {
+            self.live_preview_fixed_width_h_scroll.remove(&block_start);
+        } else {
+            self.live_preview_fixed_width_h_scroll
+                .insert(block_start, next);
+        }
+        max_scroll > 0
+    }
+
+    pub(crate) fn handle_live_preview_fixed_width_horizontal_scroll_at_visual_row(
+        &mut self,
+        visual_row: usize,
+        delta_x: f32,
+        visible_cols: usize,
+    ) -> bool {
+        let Some(row) = self.soft_wrap_display_row_info(visual_row) else {
+            return false;
+        };
+        let Some(block_start) = self.live_preview_fixed_width_block_start(row.info.logical_line)
+        else {
+            return false;
+        };
+        let max_scroll =
+            self.live_preview_fixed_width_block_max_h_scroll(block_start, visible_cols);
+        if max_scroll == 0 {
+            self.live_preview_fixed_width_h_scroll.remove(&block_start);
+            return false;
+        }
+        let previous = self
+            .live_preview_fixed_width_h_scroll
+            .get(&block_start)
+            .copied()
+            .unwrap_or(0);
+        let delta = (delta_x.abs() * 3.0).ceil() as usize;
+        let next = if delta_x > 0.0 {
+            previous.saturating_sub(delta)
+        } else {
+            (previous + delta).min(max_scroll)
+        };
+        if next == 0 {
+            self.live_preview_fixed_width_h_scroll.remove(&block_start);
+        } else {
+            self.live_preview_fixed_width_h_scroll
+                .insert(block_start, next);
+        }
+        true
+    }
+
+    pub(crate) fn live_preview_fixed_width_h_scroll_for_line(&self, line: usize) -> usize {
+        self.live_preview_fixed_width_block_start(line)
+            .and_then(|block_start| {
+                self.live_preview_fixed_width_h_scroll
+                    .get(&block_start)
+                    .copied()
+            })
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn clamp_live_preview_fixed_width_h_scrolls(&mut self, visible_cols: usize) {
+        let keys: Vec<usize> = self
+            .live_preview_fixed_width_h_scroll
+            .keys()
+            .copied()
+            .collect();
+        for block_start in keys {
+            let max_scroll =
+                self.live_preview_fixed_width_block_max_h_scroll(block_start, visible_cols);
+            let next = self
+                .live_preview_fixed_width_h_scroll
+                .get(&block_start)
+                .copied()
+                .unwrap_or(0)
+                .min(max_scroll);
+            if next == 0 {
+                self.live_preview_fixed_width_h_scroll.remove(&block_start);
+            } else {
+                self.live_preview_fixed_width_h_scroll
+                    .insert(block_start, next);
+            }
+        }
+    }
+
+    fn live_preview_fixed_width_block_start(&self, line: usize) -> Option<usize> {
+        let line_text = self.editor.buffer.line(line)?;
+        let kind = self.live_preview_fixed_width_line_kind(line, line_text)?;
+        let mut start = line;
+        while start > 0 {
+            let Some(prev_text) = self.editor.buffer.line(start - 1) else {
+                break;
+            };
+            if self.live_preview_fixed_width_line_kind(start - 1, prev_text) != Some(kind) {
+                break;
+            }
+            start -= 1;
+        }
+        Some(start)
+    }
+
+    fn live_preview_fixed_width_block_range(&self, block_start: usize) -> Option<(usize, usize)> {
+        let line_text = self.editor.buffer.line(block_start)?;
+        let kind = self.live_preview_fixed_width_line_kind(block_start, line_text)?;
+        let mut end = block_start + 1;
+        while end < self.editor.buffer.line_count() {
+            let Some(next_text) = self.editor.buffer.line(end) else {
+                break;
+            };
+            if self.live_preview_fixed_width_line_kind(end, next_text) != Some(kind) {
+                break;
+            }
+            end += 1;
+        }
+        Some((block_start, end))
+    }
+
+    fn live_preview_fixed_width_block_max_h_scroll(
+        &self,
+        block_start: usize,
+        visible_cols: usize,
+    ) -> usize {
+        let Some((start, end)) = self.live_preview_fixed_width_block_range(block_start) else {
+            return 0;
+        };
+        let max_width = (start..end)
+            .filter_map(|line| {
+                let line_text = self.editor.buffer.line(line)?;
+                let kind = self.live_preview_fixed_width_line_kind(line, line_text)?;
+                let padding = match kind {
+                    MdElementKind::CodeBlock => 4,
+                    MdElementKind::Table => 2,
+                    _ => 0,
+                };
+                Some(line_text.width() + padding)
+            })
+            .max()
+            .unwrap_or(0);
+        max_width.saturating_sub(visible_cols.max(1))
+    }
+
+    fn handle_legacy_soft_wrap_horizontal_scroll_action(
+        &mut self,
+        action: &EditorAction,
+        visible_cols: usize,
+    ) -> bool {
+        let Some(max_scroll) = self.live_preview_fixed_width_max_h_scroll(visible_cols) else {
+            self.editor.set_h_scroll_offset(0);
+            return false;
+        };
+        let previous = self.editor.h_scroll_offset();
+        match action {
+            EditorAction::ScrollLeft(delta) => {
+                let next = previous.saturating_sub(*delta as usize);
+                self.editor.set_h_scroll_offset(next.min(max_scroll));
+            }
+            EditorAction::ScrollRight(delta) => {
+                let next = (previous + *delta as usize).min(max_scroll);
+                self.editor.set_h_scroll_offset(next);
+            }
+            _ => return false,
+        }
+        self.editor.h_scroll_offset() != previous
+    }
+
+    fn soft_wrap_max_scroll(&self, visible_rows: usize) -> usize {
+        self.soft_wrap_display_total_visual_rows()
+            .unwrap_or_else(|| self.editor.buffer.line_count())
+            .saturating_sub(visible_rows)
     }
 
     fn clamp_soft_wrap_scroll(&mut self, visible_rows: usize) {
@@ -351,14 +690,9 @@ impl EditorPane {
         if visible_rows == 0 {
             return;
         }
-        let cursor_visual_row = match self.wrap_map.as_ref() {
-            Some(map) => map.buffer_pos_to_visual_row(
-                self.editor.cursor_position().line,
-                self.editor.cursor_position().col,
-                &self.editor.buffer.lines,
-            ),
-            None => self.editor.cursor_position().line,
-        };
+        let cursor_pos = self.editor.cursor_position();
+        let cursor_visual_row =
+            self.soft_wrap_display_row_for_position(cursor_pos.line, cursor_pos.col);
         if cursor_visual_row < self.soft_wrap_visual_scroll {
             self.soft_wrap_visual_scroll = cursor_visual_row;
         } else if cursor_visual_row >= self.soft_wrap_visual_scroll + visible_rows {
@@ -368,15 +702,13 @@ impl EditorPane {
     }
 
     fn sync_soft_wrap_scroll_line(&mut self) {
-        let target_line = match self.wrap_map.as_ref() {
-            Some(map) => map
-                .visual_row_to_line_info(self.soft_wrap_visual_scroll, &self.editor.buffer.lines)
-                .map(|info| info.logical_line)
-                .unwrap_or_else(|| self.editor.buffer.line_count().saturating_sub(1)),
-            None => self
-                .soft_wrap_visual_scroll
-                .min(self.editor.buffer.line_count().saturating_sub(1)),
-        };
+        let target_line = self
+            .soft_wrap_display_row_info(self.soft_wrap_visual_scroll)
+            .map(|row| row.info.logical_line)
+            .unwrap_or_else(|| {
+                self.soft_wrap_visual_scroll
+                    .min(self.editor.buffer.line_count().saturating_sub(1))
+            });
         self.editor.set_scroll_offset(target_line);
     }
 
@@ -704,10 +1036,13 @@ impl EditorPane {
                 .generation()
                 .wrapping_add(u64::from(self.split_preview_active()))
                 .wrapping_add(self.soft_wrap_visual_scroll as u64);
-            // In live preview, cursor line affects rendering (syntax hiding),
-            // so include it in the generation to trigger re-render on cursor movement.
-            if self.live_preview {
-                gen = gen.wrapping_add(self.editor.cursor_position().line as u64 * 100_003);
+            // Current-line chrome and LivePreviewMode syntax hiding both depend on
+            // the cursor row, so row movement must refresh the cached grid layer.
+            gen = gen.wrapping_add(self.editor.cursor_position().line as u64 * 100_003);
+            for (block_start, h_scroll) in &self.live_preview_fixed_width_h_scroll {
+                gen = gen
+                    .wrapping_add(*block_start as u64)
+                    .wrapping_add((*h_scroll as u64).wrapping_mul(1_000_003));
             }
             gen
         }
@@ -901,6 +1236,11 @@ impl EditorPane {
             return;
         }
 
+        // Keep live preview map in sync before mode-specific geometry uses it.
+        if self.live_preview {
+            self.ensure_live_preview_map();
+        }
+
         let authoring_rect = self.authoring_rect(rect, cell_size);
         if self.effective_soft_wrap() {
             let wrap_cols = self.wrap_cols_for_rect(authoring_rect, cell_size);
@@ -909,6 +1249,8 @@ impl EditorPane {
             }
             let visible_rows = (authoring_rect.height / cell_size.height).floor() as usize;
             self.clamp_soft_wrap_scroll(visible_rows);
+            self.clamp_live_preview_fixed_width_h_scrolls(wrap_cols);
+            self.editor.set_h_scroll_offset(0);
         } else {
             self.wrap_map = None;
         }
@@ -918,11 +1260,6 @@ impl EditorPane {
             if wrap_width > 0 {
                 self.ensure_preview_cache(wrap_width, dark);
             }
-        }
-
-        // Keep live preview map in sync with buffer edits.
-        if self.live_preview {
-            self.ensure_live_preview_map();
         }
     }
 
@@ -953,13 +1290,343 @@ impl EditorPane {
     }
 
     pub fn soft_wrap_total_visual_rows(&self) -> Option<usize> {
-        self.wrap_map.as_ref().map(|map| map.total_visual_rows())
+        self.soft_wrap_display_total_visual_rows()
     }
 
     pub fn soft_wrap_visual_row_of_line(&self, line: usize) -> Option<usize> {
+        if self.live_preview_soft_wrap_uses_display_rows() {
+            return self.soft_wrap_display_visual_row_of_line(line);
+        }
         self.wrap_map
             .as_ref()
             .map(|map| map.visual_row_of_line(line))
+    }
+
+    pub(crate) fn soft_wrap_display_row_info(
+        &self,
+        visual_row: usize,
+    ) -> Option<SoftWrapDisplayRowInfo> {
+        let wrap_map = self.wrap_map.as_ref()?;
+        if !self.live_preview_soft_wrap_uses_display_rows() {
+            let info = wrap_map.visual_row_to_line_info(visual_row, &self.editor.buffer.lines)?;
+            let sub_row = visual_row.saturating_sub(wrap_map.visual_row_of_line(info.logical_line));
+            return Some(SoftWrapDisplayRowInfo { info, sub_row });
+        }
+
+        let mut display_row = 0usize;
+        for (line, line_text) in self.editor.buffer.lines.iter().enumerate() {
+            let line_rows = self.soft_wrap_display_rows_for_line(line);
+            if visual_row < display_row + line_rows {
+                let sub_row = visual_row - display_row;
+                let info = if self
+                    .live_preview_fixed_width_line_kind(line, line_text)
+                    .is_some()
+                {
+                    VisualRowInfo {
+                        logical_line: line,
+                        byte_offset: 0,
+                        char_offset: 0,
+                        char_end: line_text.chars().count(),
+                    }
+                } else {
+                    wrap_map.visual_row_info_for_line(line, sub_row)?
+                };
+                return Some(SoftWrapDisplayRowInfo { info, sub_row });
+            }
+            display_row += line_rows;
+        }
+        None
+    }
+
+    pub(crate) fn soft_wrap_display_rows_for_line(&self, line: usize) -> usize {
+        let Some(wrap_map) = self.wrap_map.as_ref() else {
+            return 1;
+        };
+        if self.live_preview_soft_wrap_uses_display_rows() {
+            if let Some(line_text) = self.editor.buffer.line(line) {
+                if self
+                    .live_preview_fixed_width_line_kind(line, line_text)
+                    .is_some()
+                {
+                    return 1;
+                }
+            }
+        }
+        wrap_map.visual_rows_for(line)
+    }
+
+    fn soft_wrap_display_total_visual_rows(&self) -> Option<usize> {
+        let wrap_map = self.wrap_map.as_ref()?;
+        if !self.live_preview_soft_wrap_uses_display_rows() {
+            return Some(wrap_map.total_visual_rows());
+        }
+        Some(
+            (0..self.editor.buffer.line_count())
+                .map(|line| self.soft_wrap_display_rows_for_line(line))
+                .sum(),
+        )
+    }
+
+    fn soft_wrap_display_visual_row_of_line(&self, target_line: usize) -> Option<usize> {
+        self.wrap_map.as_ref()?;
+        if !self.live_preview_soft_wrap_uses_display_rows() {
+            return self
+                .wrap_map
+                .as_ref()
+                .map(|map| map.visual_row_of_line(target_line));
+        }
+        let clamped_line = target_line.min(self.editor.buffer.line_count());
+        Some(
+            (0..clamped_line)
+                .map(|line| self.soft_wrap_display_rows_for_line(line))
+                .sum(),
+        )
+    }
+
+    pub(crate) fn soft_wrap_display_row_for_position(&self, line: usize, byte_col: usize) -> usize {
+        let Some(wrap_map) = self.wrap_map.as_ref() else {
+            return line;
+        };
+        if !self.live_preview_soft_wrap_uses_display_rows() {
+            return wrap_map.buffer_pos_to_visual_row(line, byte_col, &self.editor.buffer.lines);
+        }
+        let base = self
+            .soft_wrap_display_visual_row_of_line(line)
+            .unwrap_or(line);
+        let Some(line_text) = self.editor.buffer.line(line) else {
+            return base;
+        };
+        if self
+            .live_preview_fixed_width_line_kind(line, line_text)
+            .is_some()
+        {
+            return base;
+        }
+        let raw_base = wrap_map.visual_row_of_line(line);
+        let raw_row = wrap_map.buffer_pos_to_visual_row(line, byte_col, &self.editor.buffer.lines);
+        base + raw_row.saturating_sub(raw_base)
+    }
+
+    pub(crate) fn soft_wrap_display_col_for_position(&self, line: usize, byte_col: usize) -> usize {
+        let Some(wrap_map) = self.wrap_map.as_ref() else {
+            return 0;
+        };
+        let Some(line_text) = self.editor.buffer.line(line) else {
+            return 0;
+        };
+        if self.live_preview_soft_wrap_uses_display_rows()
+            && self
+                .live_preview_fixed_width_line_kind(line, line_text)
+                .is_some()
+        {
+            let byte_col = byte_col.min(line_text.len());
+            return line_text[..byte_col]
+                .chars()
+                .map(|ch| ch.width().unwrap_or(1))
+                .sum::<usize>()
+                .saturating_sub(self.live_preview_fixed_width_h_scroll_for_line(line));
+        }
+        wrap_map.buffer_pos_to_visual_col(line, byte_col, &self.editor.buffer.lines)
+    }
+
+    pub(crate) fn soft_wrap_display_position_for_visual_cell(
+        &self,
+        visual_row: usize,
+        visual_col: usize,
+    ) -> Option<(usize, usize)> {
+        let row = self.soft_wrap_display_row_info(visual_row)?;
+        let line = row.info.logical_line;
+        let line_text = self.editor.buffer.line(line)?;
+        let Some(kind) = self.live_preview_fixed_width_line_kind(line, line_text) else {
+            return Some((
+                line,
+                (row.info.char_offset + visual_col).min(row.info.char_end),
+            ));
+        };
+
+        let h_scroll = self.live_preview_fixed_width_h_scroll_for_line(line);
+        let source_display_col = match kind {
+            MdElementKind::CodeBlock => visual_col.saturating_add(h_scroll).saturating_sub(3),
+            MdElementKind::Table => visual_col.saturating_add(h_scroll),
+            _ => visual_col,
+        };
+        Some((
+            line,
+            Self::char_index_for_display_width(line_text, source_display_col),
+        ))
+    }
+
+    fn char_index_for_display_width(line_text: &str, target_width: usize) -> usize {
+        let mut width = 0usize;
+        let mut char_idx = 0usize;
+        for ch in line_text.chars() {
+            let ch_width = ch.width().unwrap_or(1);
+            if width + ch_width > target_width {
+                break;
+            }
+            width += ch_width;
+            char_idx += 1;
+        }
+        char_idx
+    }
+
+    fn live_preview_soft_wrap_uses_display_rows(&self) -> bool {
+        self.live_preview && self.effective_soft_wrap() && self.live_preview_map.is_some()
+    }
+
+    pub(crate) fn live_preview_fixed_width_line_kind(
+        &self,
+        line: usize,
+        line_text: &str,
+    ) -> Option<MdElementKind> {
+        let live_map = self.live_preview_map.as_ref()?;
+        let line_start = live_map.line_byte_start(line);
+        let first_content_offset = line_text
+            .char_indices()
+            .find(|(_, ch)| !ch.is_whitespace())
+            .map(|(idx, _)| idx)
+            .unwrap_or(0);
+        let mut element_style_idx = 0usize;
+        match live_map.element_style_for_line(
+            line,
+            line_start + first_content_offset,
+            &mut element_style_idx,
+        ) {
+            Some(MdElementKind::CodeBlock) => Some(MdElementKind::CodeBlock),
+            Some(MdElementKind::Table) => Some(MdElementKind::Table),
+            _ if self.live_preview_source_table_line(line) => Some(MdElementKind::Table),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn live_preview_source_table_line(&self, line: usize) -> bool {
+        self.live_preview_source_table_bounds(line)
+            .is_some_and(|bounds| bounds.contains(&line))
+    }
+
+    fn live_preview_source_table_bounds(&self, line: usize) -> Option<std::ops::Range<usize>> {
+        let line_text = self.editor.buffer.line(line)?;
+        if !Self::live_preview_source_table_candidate_line(line_text) {
+            return None;
+        }
+
+        let mut start = line;
+        while start > 0 {
+            let Some(prev_text) = self.editor.buffer.line(start - 1) else {
+                break;
+            };
+            if !Self::live_preview_source_table_candidate_line(prev_text) {
+                break;
+            }
+            start -= 1;
+        }
+
+        let mut end = line + 1;
+        while end < self.editor.buffer.line_count() {
+            let Some(next_text) = self.editor.buffer.line(end) else {
+                break;
+            };
+            if !Self::live_preview_source_table_candidate_line(next_text) {
+                break;
+            }
+            end += 1;
+        }
+
+        let separator = (start..end).find(|row| {
+            self.editor
+                .buffer
+                .line(*row)
+                .is_some_and(Self::live_preview_source_table_separator_line)
+        })?;
+        if separator == start || end.saturating_sub(start) < 2 {
+            return None;
+        }
+
+        let separator_cols =
+            Self::live_preview_source_table_cell_count(self.editor.buffer.line(separator)?);
+        if separator_cols < 2 {
+            return None;
+        }
+        let header_cols =
+            Self::live_preview_source_table_cell_count(self.editor.buffer.line(separator - 1)?);
+        if header_cols != separator_cols {
+            return None;
+        }
+
+        for row in start..end {
+            let row_text = self.editor.buffer.line(row)?;
+            if Self::live_preview_source_table_separator_line(row_text) {
+                if Self::live_preview_source_table_cell_count(row_text) != separator_cols {
+                    return None;
+                }
+                continue;
+            }
+            if Self::live_preview_source_table_cell_count(row_text) != separator_cols {
+                return None;
+            }
+        }
+
+        Some(start..end)
+    }
+
+    fn live_preview_source_table_candidate_line(line: &str) -> bool {
+        line.contains('|') && !line.trim().is_empty()
+    }
+
+    fn live_preview_source_table_cell_count(line: &str) -> usize {
+        line.trim()
+            .trim_matches('|')
+            .split('|')
+            .map(str::trim)
+            .filter(|cell| !cell.is_empty())
+            .count()
+    }
+
+    fn live_preview_source_table_separator_line(line: &str) -> bool {
+        let trimmed = line.trim().trim_matches('|');
+        let cells: Vec<&str> = trimmed.split('|').map(str::trim).collect();
+        !cells.is_empty()
+            && cells.iter().all(|cell| {
+                let has_dash = cell.chars().any(|ch| ch == '-');
+                has_dash
+                    && cell
+                        .chars()
+                        .all(|ch| ch == '-' || ch == ':' || ch.is_whitespace())
+            })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn live_preview_source_table_complete_at_line(&self, line: usize) -> bool {
+        self.live_preview_source_table_bounds(line).is_some()
+    }
+
+    pub(crate) fn live_preview_fixed_width_max_h_scroll(
+        &self,
+        visible_cols: usize,
+    ) -> Option<usize> {
+        if !self.live_preview_soft_wrap_uses_display_rows() {
+            return None;
+        }
+        let max_width: usize = self
+            .editor
+            .buffer
+            .lines
+            .iter()
+            .enumerate()
+            .filter_map(|(line, line_text)| {
+                self.live_preview_fixed_width_line_kind(line, line_text)
+                    .map(|kind| {
+                        let padding = match kind {
+                            MdElementKind::CodeBlock => 4,
+                            MdElementKind::Table => 2,
+                            _ => 0,
+                        };
+                        line_text.width() + padding
+                    })
+            })
+            .max()
+            .unwrap_or(0);
+        Some(max_width.saturating_sub(visible_cols.max(1)))
     }
 
     pub fn set_soft_wrap_visual_scroll(&mut self, scroll: usize, visible_rows: usize) {

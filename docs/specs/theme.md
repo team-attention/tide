@@ -59,17 +59,34 @@ Theme switching and font defaults.
 - **Precondition**: `dark_mode = false`
 - **Flow**:
   1. Tide selects the light Markdown theme for Markdown live-preview rendering.
-  2. Tide selects a restrained Tide light syntax palette for source-code rendering.
-  3. Body colors stay readable on the light pane surface, while headings, code, links, badges, and terminal ANSI colors stay lighter than normal foreground text.
-  4. Tide strengthens muted light syntax foregrounds and editor support text enough for source identifiers to read with solid weight, without collapsing colored text toward near-black.
+  2. Tide selects VS Code Light+ role colors for source-code rendering.
+  3. Body colors stay readable on the light pane surface, while headings, code, links, badges, and terminal ANSI colors keep clear contrast and role separation.
+  4. Tide strengthens light syntax foregrounds and editor support text enough for source identifiers to read with solid weight while preserving token-role color separation.
 - **Postcondition**: Editor text remains legible and calm in light mode.
 - **Business Rules**:
   - BR-9: Markdown live-preview rendering must choose `MarkdownTheme` from the active theme mode instead of always using the dark Markdown theme.
-  - BR-10: Light Markdown heading and code colors must remain readable while staying lighter than normal foreground text.
-  - BR-11: Light syntax highlighting must use the restrained Tide light syntax palette.
-  - BR-17: Light syntax highlighting must keep source identifiers readable on `pane_bg` without forcing colored spans toward near-black.
+  - BR-10: Light Markdown heading and code colors must remain readable while following the same VS Code Light+ role-color family as source-code rendering.
+  - BR-11: Light syntax highlighting must use VS Code Light+ role colors for common token classes.
+  - BR-17: Light syntax highlighting must keep source identifiers readable on `pane_bg` while preserving token-role color separation.
   - BR-18: Light editor support text such as gutter numbers must be darker than low-priority chrome text.
-  - BR-19: Light mode accent and semantic colors must stay visibly lighter than normal foreground text so line numbers, links, badges, and terminal ANSI colors do not feel heavy.
+  - BR-19: Light mode accent and semantic colors must stay visibly distinct from normal foreground text so line numbers, links, badges, and terminal ANSI colors do not collapse into gray.
+  - BR-25: Light syntax highlighting must produce multiple visibly distinct token colors for representative Rust source while keeping token ink strong enough on a white editor surface.
+  - BR-26: Light Markdown theme roles must stay distinct enough for headings, code, links, and body text to read as separate content classes.
+
+### UC-4A: DarkModeEditorText
+
+- **Actor**: System
+- **Trigger**: App renders an Editor Pane with source-code or Markdown highlighting in dark mode
+- **Precondition**: `dark_mode = true`
+- **Flow**:
+  1. Tide selects VS Code Dark+ role colors for source-code rendering.
+  2. Tide separates common token roles such as keyword, type, function, string, number, macro, and comment.
+  3. Tide keeps Markdown headings, links, list markers, inline code, and body text distinct without using neon colors.
+- **Postcondition**: Dark editor text has enough chroma and role separation to scan like a modern code editor.
+- **Business Rules**:
+  - BR-22: Dark syntax highlighting must use VS Code Dark+ role colors instead of a stock low-variance base theme.
+  - BR-23: Dark syntax highlighting must produce multiple visibly distinct token colors for representative Rust source.
+  - BR-24: Dark Markdown theme roles must be distinct enough for headings, code, links, and body text to read as separate content classes.
 
 ### UC-5: ConfigureAppearanceTheme
 
@@ -86,6 +103,20 @@ Theme switching and font defaults.
   - BR-13: ConfigPage Appearance must expose the next theme action as text: `Switch to Light` or `Switch to Dark`.
   - BR-14: Activating the Appearance theme row must toggle theme through the same `GlobalAction::ToggleTheme` path.
 
+### UC-6: DarkModeEditorSurface
+
+- **Actor**: System
+- **Trigger**: App renders with `dark_mode = true`
+- **Precondition**: A Workspace contains an Editor Pane or Terminal Pane
+- **Flow**:
+  1. Tide uses a dark neutral app background for the outer shell.
+  2. Tide uses a slightly lifted document surface for Pane content so the editor does not read as a raw black canvas.
+  3. Tide keeps current-line, scrollbar, and indent-guide overlays quiet on top of that surface.
+- **Postcondition**: Dark mode feels like a composed desktop editor surface without changing tab chrome.
+- **Business Rules**:
+  - BR-20: Dark mode `pane_bg` must be visibly lifted from `surface_bg`.
+  - BR-21: Dark mode document overlays must stay low-alpha so they do not become broad stripes.
+
 ## Tests
 
 | UC | BR | Test |
@@ -98,13 +129,20 @@ Theme switching and font defaults.
 | UC-3 | BR-8 | `file_tree_disclosure_chevrons_use_mode_aware_opacity` |
 | UC-3 | BR-15/BR-16 | `light_mode_palette_separates_chrome_layers_and_current_line` |
 | UC-4 | BR-9 | `editor_live_preview_rendering_uses_mode_aware_markdown_theme` |
-| UC-4 | BR-10 | `light_markdown_theme_uses_quiet_readable_colors` |
-| UC-4 | BR-11 | `light_syntax_highlighting_uses_tide_light_palette` |
+| UC-4 | BR-10 | `light_markdown_theme_uses_vscode_light_plus_role_colors` |
+| UC-4 | BR-11 | `light_syntax_highlighting_uses_vscode_light_plus_role_colors` |
 | UC-4 | BR-17 | `light_syntax_highlighting_gives_typescript_source_solid_token_colors` |
 | UC-4 | BR-18 | `light_editor_support_text_is_crisper_than_inactive_chrome_text` |
 | UC-4 | BR-19 | `light_mode_accent_colors_stay_lighter_than_normal_text_weight` |
+| UC-4 | BR-25 | `light_syntax_highlighting_gives_rust_source_distinct_token_colors` |
+| UC-4 | BR-25 | `light_syntax_highlighting_separates_rust_import_blocks_from_plain_text` |
+| UC-4 | BR-26 | `light_markdown_theme_separates_content_roles` |
+| UC-4A | BR-22 | `dark_syntax_highlighting_uses_vscode_dark_plus_role_colors` |
+| UC-4A | BR-23 | `dark_syntax_highlighting_gives_rust_source_distinct_token_colors` |
+| UC-4A | BR-24 | `dark_markdown_theme_separates_content_roles` |
 | UC-5 | BR-12/BR-13 | `config_page_appearance_theme_uses_text_status` |
 | UC-5 | BR-14 | `config_page_appearance_theme_toggle_switches_theme` |
+| UC-6 | BR-20/BR-21 | `dark_mode_editor_surface_has_document_depth_without_loud_overlays` |
 
 ## Location
 

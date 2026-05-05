@@ -411,27 +411,15 @@ impl App {
         }
 
         if pane.effective_soft_wrap() {
-            let wrap_cols = pane.wrap_cols_for_rect(click_rect, cell_size).max(1);
-            let wrap_map = crate::tide_editor::wrap::WrapMap::build(
-                &pane.editor.buffer.lines,
-                wrap_cols,
-                pane.editor.content_generation(),
-            );
             let abs_visual_row = pane.soft_wrap_visual_scroll() + rel_row as usize;
-            let info =
-                wrap_map.visual_row_to_line_info(abs_visual_row, &pane.editor.buffer.lines)?;
-            let mut col = (info.char_offset + rel_col as usize).min(info.char_end);
+            let (line, mut col) =
+                pane.soft_wrap_display_position_for_visual_cell(abs_visual_row, rel_col as usize)?;
             if pane.live_preview {
                 if let Some(ref lpm) = pane.live_preview_map {
                     let cursor_line = pane.editor.cursor_position().line;
-                    let line_content = pane
-                        .editor
-                        .buffer
-                        .line(info.logical_line)
-                        .unwrap_or("")
-                        .to_string();
+                    let line_content = pane.editor.buffer.line(line).unwrap_or("").to_string();
                     col = lpm.visual_to_buffer_col(
-                        info.logical_line,
+                        line,
                         col,
                         cursor_line,
                         &line_content,
@@ -439,7 +427,7 @@ impl App {
                     );
                 }
             }
-            return Some((info.logical_line, col));
+            return Some((line, col));
         }
 
         let line = pane.editor.scroll_offset() + rel_row as usize;
@@ -636,45 +624,37 @@ impl crate::application::ports::inward::ActionPort for App {
                                         let wrap_cols =
                                             pane.wrap_cols_for_rect(click_rect, cell_size).max(1);
                                         pane.ensure_wrap_map(wrap_cols);
-                                        if let Some(wrap_map) = pane.wrap_map() {
-                                            let abs_visual_row =
-                                                pane.soft_wrap_visual_scroll() + rel_row as usize;
-                                            if let Some(info) = wrap_map.visual_row_to_line_info(
+                                        let abs_visual_row =
+                                            pane.soft_wrap_visual_scroll() + rel_row as usize;
+                                        if let Some((line, mut col)) = pane
+                                            .soft_wrap_display_position_for_visual_cell(
                                                 abs_visual_row,
-                                                &pane.editor.buffer.lines,
-                                            ) {
-                                                // col is relative to the sub-row, add the char offset
-                                                // Clamp to char_end to avoid jumping to next visual row
-                                                let mut col = (info.char_offset + rel_col as usize)
-                                                    .min(info.char_end);
-                                                // In live preview mode, reverse-map visual → buffer column
-                                                if pane.live_preview {
-                                                    if let Some(ref lpm) = pane.live_preview_map {
-                                                        let cursor_line =
-                                                            pane.editor.cursor_position().line;
-                                                        let line_content = pane
-                                                            .editor
-                                                            .buffer
-                                                            .line(info.logical_line)
-                                                            .unwrap_or("")
-                                                            .to_string();
-                                                        col = lpm.visual_to_buffer_col(
-                                                            info.logical_line,
-                                                            col,
-                                                            cursor_line,
-                                                            &line_content,
-                                                            &pane.editor.buffer.lines,
-                                                        );
-                                                    }
-                                                }
-                                                pane.handle_action(
-                                                    EditorAction::SetCursor {
-                                                        line: info.logical_line,
+                                                rel_col as usize,
+                                            )
+                                        {
+                                            if pane.live_preview {
+                                                if let Some(ref lpm) = pane.live_preview_map {
+                                                    let cursor_line =
+                                                        pane.editor.cursor_position().line;
+                                                    let line_content = pane
+                                                        .editor
+                                                        .buffer
+                                                        .line(line)
+                                                        .unwrap_or("")
+                                                        .to_string();
+                                                    col = lpm.visual_to_buffer_col(
+                                                        line,
                                                         col,
-                                                    },
-                                                    visible_rows,
-                                                );
+                                                        cursor_line,
+                                                        &line_content,
+                                                        &pane.editor.buffer.lines,
+                                                    );
+                                                }
                                             }
+                                            pane.handle_action(
+                                                EditorAction::SetCursor { line, col },
+                                                visible_rows,
+                                            );
                                         }
                                     } else {
                                         let line = pane.editor.scroll_offset() + rel_row as usize;

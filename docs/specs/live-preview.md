@@ -59,31 +59,44 @@ Precondition: LivePreviewMode is active
 Flow:
 1. When cursor leaves a line, inline syntax markers (**, *, _, `, [](), etc.) on that line are hidden
 2. Content text is styled (bold, italic, underline, code background, etc.)
-3. When cursor enters a line, all syntax markers on that line are revealed
-4. Content shows raw markdown text with syntax highlighting
-Postcondition: Lines without cursor show formatted preview; cursor line shows raw markdown
+3. When cursor enters a line, all syntax markers on that line are revealed.
+4. Content text keeps its Markdown role styling while revealed syntax markers use a dim structural style.
+5. The cursor line uses a narrow editing rail instead of a full-row color wash.
+Postcondition: Lines without cursor show formatted preview; cursor line becomes editable without changing the content text palette.
 Business Rules:
 - BR-1: Inline syntax hiding operates at the line level — all inline elements on a line share the same visibility
 - BR-2: Syntax chars include: ** (bold), * (italic), _ (italic/bold), ` (inline code), []() (links), ![]() (images)
 - BR-3: When syntax is hidden, content text shifts left to fill the space
 - BR-4: Styled text uses MarkdownTheme colors (bold color, italic style, link underline, code background)
+- BR-5: Cursor-line Markdown content must keep MarkdownTheme role colors instead of switching the whole line to raw syntax colors.
+- BR-6: Cursor-line editing state must use a narrow rail indicator instead of a full-row background tint.
+- BR-7: Revealed syntax markers on the cursor line must use a dim neutral structural style.
 
 ### UC-3: BlockElementStyling
 Actor: System (automatic)
 Trigger: LivePreviewMode rendering encounters block-level element
 Precondition: LivePreviewMode is active
 Flow:
-1. Block-level elements (code blocks, tables, blockquotes, lists) always show their syntax markers
-2. Background color and foreground styling are applied per MarkdownTheme
-3. Code blocks show ``` fences and apply code background
-4. Blockquotes show > prefix and apply quote styling
-5. List markers (-, *, 1.) remain visible and styled
-Postcondition: Block elements are visually distinct but always editable
+1. Block-level elements remain editable when the cursor is on their source line.
+2. Background color and foreground styling are applied per MarkdownTheme.
+3. Code blocks render as a code surface and hide fence text as preview chrome.
+4. Tables render as readable preview rows with columns and horizontal rules instead of pipe-heavy Markdown text, including while a table row has the cursor.
+5. Blockquotes show > prefix and apply quote styling.
+6. List markers (-, *, 1.) remain visible and styled.
+Postcondition: Block elements read like preview content until the user focuses their source line for editing.
 Business Rules:
 - BR-1: Block syntax markers are never hidden regardless of cursor position
 - BR-2: Code block content gets syntax highlighting (if language specified) or code styling
 - BR-3: Blockquote content gets quote foreground color
 - BR-4: Heading # markers always visible, heading text styled (larger visual weight via color/bold)
+- BR-5: Code block fence lines must render as preview structure instead of visible fence text.
+- BR-6: Table separator rows must render as table structure instead of visible Markdown pipe/alignment text.
+- BR-7: Table and code block content must preserve intrinsic source width and use horizontal scroll instead of fitting or reflowing to Pane width.
+- BR-8: Table rows and code block rows must render as one preview row in `Soft Wrap` instead of inheriting raw source wrap sub-rows.
+- BR-9: `LivePreviewMode` Soft Wrap scrolling must use the same one-row display model for table rows and code block rows, so vertical scrolling cannot land inside a hidden raw source sub-row.
+- BR-10: Code block background surfaces must use a consistent visible width across all rows; fence rows become subtle top/bottom structure instead of empty content bands.
+- BR-11: Table preview surfaces render readable cell text without source pipes or simple inline Markdown markers, and separator rows render as horizontal rule structure without a heavy full-row band.
+- BR-12: Focused table and code block content keeps rendered preview treatment when the Markdown block is syntactically complete; incomplete block syntax remains raw text.
 
 ### UC-4: LivePreviewMapConstruction
 Actor: System (automatic)
@@ -123,13 +136,22 @@ Actor: System (automatic)
 Trigger: LivePreviewMode with soft wrap enabled
 Precondition: Both LivePreviewMode and soft wrap are active
 Flow:
-1. WrapMap is built from raw buffer line widths (not display widths)
-2. Visual lines may be shorter than wrap width on non-cursor lines (due to hidden syntax)
-3. This is acceptable for v1 — no display-width-aware wrapping
-Postcondition: Soft wrap works but may produce slightly shorter visual lines
+1. WrapMap is built from raw buffer line widths for prose lines.
+2. Visual lines may be shorter than wrap width on non-cursor prose lines due to hidden inline syntax.
+3. Fixed-width block elements keep intrinsic width and use horizontal scroll.
+4. Table rows and code block rows count as one display row for viewport scrolling.
+5. Horizontal scroll moves across fixed-width table and code block rows when they exceed the visible content columns.
+Postcondition: Soft wrap uses one consistent display row model for rendering, cursor visibility, and viewport scroll.
 Business Rules:
-- BR-1: WrapMap uses raw buffer widths for v1 (no special live preview awareness)
-- BR-2: No correctness issues — only visual suboptimality on non-cursor lines
+- BR-1: WrapMap uses raw buffer widths for prose lines.
+- BR-2: Hidden inline syntax may make non-cursor prose lines visually shorter without changing cursor mapping.
+- BR-3: Fixed-width block elements preserve intrinsic width and use horizontal scroll instead of being reflowed.
+- BR-4: Fixed-width block elements count as one display row for Soft Wrap viewport mapping.
+- BR-5: `ScrollLeft` and `ScrollRight` update horizontal scroll for the fixed-width block under the gesture or cursor in `LivePreviewMode`; other fixed-width blocks keep their own horizontal scroll.
+- BR-6: A horizontal gesture over a horizontally scrollable fixed-width block is consumed by that block and must not fall through to vertical scrolling when the block reaches its horizontal edge.
+- BR-7: Source-valid Markdown table rows must use fixed-width table display rows even when the Markdown parser does not provide table styling for that row.
+- BR-8: Cursor placement and selection hit-testing use the same fixed-width display row model as rendering, so clicks inside code block or table preview rows cannot map to raw wrapped sub-rows.
+- BR-9: Selection highlights for fixed-width LivePreviewMode rows are clipped to the Editor Pane viewport and clamp to visible content columns.
 
 ### UC-7: VisibleTextInteraction
 Actor: User
@@ -182,10 +204,21 @@ Business Rules:
 | UC-2 | BR-2 | all_inline_syntax_types_detected() |
 | UC-2 | BR-3 | content_shifts_left_when_syntax_hidden() |
 | UC-2 | BR-4 | styled_text_uses_markdown_theme() |
+| UC-2 | BR-5, BR-7 | live_preview_map_keeps_cursor_line_syntax_ranges_for_dim_marker_styling() |
+| UC-2 | BR-6 | live_preview_editing_indicator_is_a_narrow_rail() |
 | UC-3 | BR-1 | block_syntax_never_hidden() |
 | UC-3 | BR-2 | code_block_content_styled() |
 | UC-3 | BR-3 | blockquote_content_styled() |
 | UC-3 | BR-4 | heading_markers_visible_and_styled() |
+| UC-3 | BR-5 | non_cursor_code_block_lines_render_as_preview_surface_until_edited() |
+| UC-3 | BR-6 | non_cursor_table_lines_render_as_preview_table_until_edited() |
+| UC-3 | BR-7 | implementation: `draw_live_preview_code_block_line` and `draw_live_preview_table_line` preserve source width and apply horizontal scroll |
+| UC-3 | BR-8 | implementation: `render_live_preview_soft_wrap_grid` block rows bypass raw source sub-rows |
+| UC-3 | BR-9 | live_preview_soft_wrap_display_rows_do_not_enter_code_block_subrows() |
+| UC-3 | BR-10 | implementation: `draw_live_preview_code_block_line` uses one full visible surface and no decorative fence/rail |
+| UC-3 | BR-11 | live_preview_table_cells_render_without_source_markers() |
+| UC-3 | BR-11 | live_preview_table_surface_edges_follow_source_table_bounds() |
+| UC-3 | BR-12 | live_preview_block_cursor_raw_mode_only_for_structure_markers() |
 | UC-4 | BR-1 | live_preview_map_cached_by_generation() |
 | UC-4 | BR-2 | element_ranges_sorted_non_overlapping() |
 | UC-4 | BR-3 | nested_formatting_produces_separate_entries() |
@@ -195,6 +228,14 @@ Business Rules:
 | UC-5 | BR-4 | mouse_selection_on_hidden_syntax_line_maps_visual_column_to_buffer_column() |
 | UC-5 | BR-5 | split_preview_selection_stays_in_authoring_region() |
 | UC-6 | BR-1 | soft_wrap_uses_raw_widths() |
+| UC-6 | BR-4 | live_preview_soft_wrap_display_rows_do_not_enter_code_block_subrows() |
+| UC-6 | BR-4 | live_preview_soft_wrap_display_rows_do_not_enter_table_subrows() |
+| UC-6 | BR-5 | live_preview_soft_wrap_code_blocks_allow_horizontal_scroll() |
+| UC-6 | BR-5 | live_preview_soft_wrap_tables_allow_horizontal_scroll() |
+| UC-6 | BR-5 | live_preview_fixed_width_blocks_keep_independent_horizontal_scroll() |
+| UC-6 | BR-7 | live_preview_context_map_table_rows_use_fixed_width_display_rows() |
+| UC-6 | BR-8 | live_preview_fixed_width_hit_testing_uses_display_rows() |
+| UC-6 | BR-9 | live_preview_fixed_width_selection_rects_are_clipped_to_viewport() |
 | UC-7 | BR-1 | live_preview_selected_text_omits_hidden_syntax_markers() |
 | UC-7 | BR-2 | live_preview_context_artifact_capture_uses_visible_selected_text() |
 | UC-7 | BR-3 | live_preview_link_click_opens_rendered_link_target() |

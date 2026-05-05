@@ -249,9 +249,9 @@ impl Terminal {
         let hb = color.b / max;
         let strength = 0.08;
         Color::new(
-            (0.055 + hr * strength).clamp(0.0, 1.0),
-            (0.055 + hg * strength).clamp(0.0, 1.0),
-            (0.063 + hb * strength).clamp(0.0, 1.0),
+            (0.067 + hr * strength).clamp(0.0, 1.0),
+            (0.068 + hg * strength).clamp(0.0, 1.0),
+            (0.077 + hb * strength).clamp(0.0, 1.0),
             color.a,
         )
     }

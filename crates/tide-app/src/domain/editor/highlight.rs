@@ -12,7 +12,7 @@ use syntect::parsing::{ParseState, ScopeStack, SyntaxDefinition, SyntaxReference
 
 use crate::tide_core::{Color, TextStyle};
 
-pub(crate) const DARK_SYNTAX_THEME_NAME: &str = "base16-eighties.dark";
+pub(crate) const DARK_SYNTAX_THEME_NAME: &str = "tide-dark";
 pub(crate) const LIGHT_SYNTAX_THEME_NAME: &str = "tide-light";
 
 /// A styled span of text produced by syntax highlighting.
@@ -105,40 +105,193 @@ fn theme_item(scope: &str, color: SyntectColor) -> Option<ThemeItem> {
     })
 }
 
+fn ensure_light_syntax_contrast(color: Color) -> Color {
+    const BG_LUM: f32 = 1.0;
+    const MIN_CONTRAST: f32 = 3.15;
+    let fg_lum = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
+    let contrast = (BG_LUM + 0.05) / (fg_lum + 0.05);
+    if contrast >= MIN_CONTRAST {
+        return color;
+    }
+
+    let target_lum = (BG_LUM + 0.05) / MIN_CONTRAST - 0.05;
+    let scale = if fg_lum > 0.001 {
+        (target_lum / fg_lum).min(1.0)
+    } else {
+        1.0
+    };
+    Color::new(
+        (color.r * scale).clamp(0.0, 1.0),
+        (color.g * scale).clamp(0.0, 1.0),
+        (color.b * scale).clamp(0.0, 1.0),
+        color.a,
+    )
+}
+
+fn is_light_theme(theme: &Theme) -> bool {
+    theme.name.as_deref() == Some(LIGHT_SYNTAX_THEME_NAME)
+}
+
+fn style_with_foreground(mut style: TextStyle, foreground: Color) -> TextStyle {
+    style.foreground = foreground;
+    style
+}
+
+fn push_styled_token(out: &mut Vec<StyledSpan>, text: String, style: TextStyle) {
+    if !text.is_empty() {
+        out.push(StyledSpan { text, style });
+    }
+}
+
+fn light_rust_import_token_style(token: &str, base: TextStyle) -> TextStyle {
+    match token {
+        "use" | "crate" | "self" | "super" => {
+            style_with_foreground(base, Color::rgb(0.686, 0.0, 0.859))
+        }
+        _ if token
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_uppercase()) =>
+        {
+            style_with_foreground(base, Color::rgb(0.149, 0.498, 0.6))
+        }
+        _ => style_with_foreground(base, Color::rgb(0.0, 0.063, 0.502)),
+    }
+}
+
+fn enhance_light_rust_import_spans(spans: Vec<StyledSpan>, line: &str) -> Vec<StyledSpan> {
+    if !line.trim_start().starts_with("use ") {
+        return spans;
+    }
+
+    let mut out = Vec::new();
+    for span in spans {
+        let mut token = String::new();
+        for ch in span.text.chars() {
+            if ch == '_' || ch.is_ascii_alphanumeric() {
+                token.push(ch);
+                continue;
+            }
+
+            if !token.is_empty() {
+                let style = light_rust_import_token_style(&token, span.style);
+                push_styled_token(&mut out, std::mem::take(&mut token), style);
+            }
+
+            let punctuation_style = style_with_foreground(span.style, Color::rgb(0.0, 0.0, 0.0));
+            push_styled_token(&mut out, ch.to_string(), punctuation_style);
+        }
+
+        if !token.is_empty() {
+            let style = light_rust_import_token_style(&token, span.style);
+            push_styled_token(&mut out, token, style);
+        }
+    }
+    out
+}
+
 fn build_light_syntax_theme(theme_set: &ThemeSet) -> Theme {
     let mut theme = theme_set.themes["base16-ocean.light"].clone();
     theme.name = Some(LIGHT_SYNTAX_THEME_NAME.to_string());
-    theme.settings.foreground = Some(syntax_color(63, 70, 77));
+    theme.settings.foreground = Some(syntax_color(0, 0, 0));
     theme.settings.background = Some(syntax_color(255, 255, 255));
+    theme.scopes.clear();
 
+    // Token role colors follow VS Code Light+.
     let rules = [
+        ("source, text", syntax_color(0, 0, 0)),
+        ("comment, punctuation.definition.comment", syntax_color(0, 128, 0)),
         (
-            "source.jsx",
-            syntax_color(63, 70, 77),
+            "keyword, storage.type, storage.modifier, keyword.control, keyword.other.ts, storage.type.js, storage.type.class.js",
+            syntax_color(175, 0, 219),
+        ),
+        ("entity.name.type, support.type, support.class", syntax_color(38, 127, 153)),
+        (
+            "entity.name.function, support.function, meta.function-call entity.name.function",
+            syntax_color(121, 94, 38),
         ),
         (
-            "comment.line.documentation.js, comment.line.double-slash.js, comment.block.documentation.js, comment.block.js",
-            syntax_color(95, 105, 113),
+            "variable, variable.function, variable.other, variable.language, meta.property.object",
+            syntax_color(0, 16, 128),
         ),
         (
-            "keyword.control.import.js, keyword.control.flow.js, keyword.control.js, keyword.other.ts, storage.type.js, storage.type.class.js",
-            syntax_color(121, 94, 143),
+            "entity.name.macro, meta.macro, support.macro",
+            syntax_color(121, 94, 38),
         ),
-        (
-            "entity.name.type.ts, support.class.js",
-            syntax_color(68, 105, 145),
-        ),
-        ("entity.name.function.js", syntax_color(105, 88, 132)),
         (
             "string.quoted.single.js, string.quoted.double.js, string.quoted.other.js",
-            syntax_color(70, 119, 78),
+            syntax_color(163, 21, 21),
+        ),
+        (
+            "string, punctuation.definition.string",
+            syntax_color(163, 21, 21),
+        ),
+        ("constant.numeric", syntax_color(9, 134, 88)),
+        ("constant.language, constant.other", syntax_color(0, 112, 193)),
+        ("variable.parameter, variable.other.member", syntax_color(0, 16, 128)),
+        ("entity.name.tag, entity.other.attribute-name", syntax_color(128, 0, 0)),
+        ("keyword.operator", syntax_color(0, 0, 0)),
+        ("punctuation, meta.brace, meta.group", syntax_color(0, 0, 0)),
+    ];
+
+    theme.scopes.extend(
+        rules
+            .into_iter()
+            .filter_map(|(scope, color)| theme_item(scope, color)),
+    );
+    theme
+}
+
+fn build_dark_syntax_theme(theme_set: &ThemeSet) -> Theme {
+    let mut theme = theme_set.themes["base16-eighties.dark"].clone();
+    theme.name = Some(DARK_SYNTAX_THEME_NAME.to_string());
+    theme.settings.foreground = Some(syntax_color(212, 212, 212));
+    theme.settings.background = Some(syntax_color(17, 17, 20));
+    theme.scopes.clear();
+
+    // Token role colors follow VS Code Dark+.
+    let rules = [
+        ("source, text", syntax_color(212, 212, 212)),
+        (
+            "comment, punctuation.definition.comment",
+            syntax_color(106, 153, 85),
+        ),
+        (
+            "keyword, storage.type, storage.modifier, keyword.control, keyword.operator.word",
+            syntax_color(197, 134, 192),
+        ),
+        (
+            "entity.name.type, support.type, support.class, storage.type.rust",
+            syntax_color(78, 201, 176),
+        ),
+        (
+            "entity.name.function, support.function, meta.function-call entity.name.function",
+            syntax_color(220, 220, 170),
+        ),
+        (
+            "entity.name.macro, meta.macro, support.macro",
+            syntax_color(215, 186, 125),
+        ),
+        (
+            "string, punctuation.definition.string",
+            syntax_color(206, 145, 120),
         ),
         (
             "constant.numeric, constant.language",
-            syntax_color(137, 106, 41),
+            syntax_color(181, 206, 168),
         ),
-        ("keyword.operator", syntax_color(78, 88, 96)),
-        ("punctuation", syntax_color(88, 96, 104)),
+        (
+            "variable.parameter, variable.other.member",
+            syntax_color(156, 220, 254),
+        ),
+        (
+            "entity.name.tag, entity.other.attribute-name",
+            syntax_color(86, 156, 214),
+        ),
+        (
+            "punctuation, meta.brace, meta.group",
+            syntax_color(212, 212, 212),
+        ),
     ];
 
     theme.scopes.extend(
@@ -161,7 +314,7 @@ impl Highlighter {
 
         let syntax_set = builder.build();
         let theme_set = ThemeSet::load_defaults();
-        let dark_theme = theme_set.themes[DARK_SYNTAX_THEME_NAME].clone();
+        let dark_theme = build_dark_syntax_theme(&theme_set);
         let light_theme = build_light_syntax_theme(&theme_set);
         let theme = dark_theme.clone();
         Self {
@@ -230,7 +383,7 @@ impl Highlighter {
         // Invalidate cache if syntax or file changed.
         if cache.syntax_name != syntax_name || cache.line_count != line_count {
             cache.checkpoints.clear();
-            cache.syntax_name = syntax_name;
+            cache.syntax_name = syntax_name.clone();
             cache.line_count = line_count;
         }
 
@@ -315,15 +468,18 @@ impl Highlighter {
                 .map(|(style, text, _range)| (style, text))
                 .collect();
 
-                let spans: Vec<StyledSpan> = regions
+                let mut spans: Vec<StyledSpan> = regions
                     .into_iter()
                     .map(|(style, text)| {
-                        let fg = Color::new(
+                        let mut fg = Color::new(
                             style.foreground.r as f32 / 255.0,
                             style.foreground.g as f32 / 255.0,
                             style.foreground.b as f32 / 255.0,
                             style.foreground.a as f32 / 255.0,
                         );
+                        if is_light_theme(&self.theme) {
+                            fg = ensure_light_syntax_contrast(fg);
+                        }
                         let is_theme_bg = style.background.r == theme_bg.r
                             && style.background.g == theme_bg.g
                             && style.background.b == theme_bg.b;
@@ -359,6 +515,9 @@ impl Highlighter {
                         }
                     })
                     .collect();
+                if is_light_theme(&self.theme) && syntax_name == "Rust" {
+                    spans = enhance_light_rust_import_spans(spans, line);
+                }
                 result.push(spans);
             } else {
                 // Still need to advance highlight_state for non-visible lines.

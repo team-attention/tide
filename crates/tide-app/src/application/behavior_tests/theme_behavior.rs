@@ -7,7 +7,7 @@ use crate::pane::PaneKind;
 use crate::state::{ConfigPageState, ConfigSection};
 use crate::theme::{DARK, LIGHT};
 use crate::tide_core::{Key, Modifiers};
-use crate::tide_editor::highlight::{Highlighter, LIGHT_SYNTAX_THEME_NAME};
+use crate::tide_editor::highlight::{Highlighter, DARK_SYNTAX_THEME_NAME, LIGHT_SYNTAX_THEME_NAME};
 use crate::tide_editor::markdown::MarkdownTheme;
 use crate::tide_terminal::Terminal;
 use crate::ActionPort;
@@ -146,6 +146,18 @@ fn light_mode_palette_separates_chrome_layers_and_current_line() {
 }
 
 #[test]
+fn dark_mode_editor_surface_has_document_depth_without_loud_overlays() {
+    // UC-6 BR-20/BR-21: Dark mode Pane content is lifted from the shell while editor overlays stay quiet.
+    assert!(luminance(DARK.pane_bg) > luminance(DARK.surface_bg) + 0.020);
+    assert!(luminance(DARK.file_tree_bg) > luminance(DARK.surface_bg));
+    assert!(DARK.current_line_bg.a <= 0.045);
+    assert!(DARK.indent_guide.a <= 0.085);
+    assert!(DARK.active_indent_guide.a > DARK.indent_guide.a);
+    assert!(DARK.active_indent_guide.a <= 0.16);
+    assert!(DARK.scrollbar_thumb.a <= 0.11);
+}
+
+#[test]
 fn file_tree_disclosure_chevrons_use_mode_aware_opacity() {
     // UC-3 BR-8: Disclosure chevrons are more opaque in dark mode than light mode to keep visibility consistent.
     let dark = file_tree_disclosure_color(&DARK);
@@ -168,29 +180,35 @@ fn editor_live_preview_rendering_uses_mode_aware_markdown_theme() {
 }
 
 #[test]
-fn light_markdown_theme_uses_quiet_readable_colors() {
-    // UC-4 BR-10: Light Markdown heading and code colors stay readable while staying lighter than normal foreground text.
+fn light_markdown_theme_uses_vscode_light_plus_role_colors() {
+    // UC-4 BR-10: Light Markdown heading and code colors stay readable while following VS Code Light+ role colors.
     let theme = MarkdownTheme::light();
-    let normal_text_lum = luminance(LIGHT.tab_text_focused);
 
     assert!(contrast_ratio(theme.body, LIGHT.pane_bg) >= 7.0);
+    assert!(contrast_ratio(theme.h1, LIGHT.pane_bg) >= 3.0);
     assert!(contrast_ratio(theme.h2, LIGHT.pane_bg) >= 2.1);
     assert!(contrast_ratio(theme.h3, LIGHT.pane_bg) >= 2.1);
-    assert!(contrast_ratio(theme.code_fg, LIGHT.pane_bg) >= 2.1);
-    assert!(luminance(theme.h2) > normal_text_lum);
-    assert!(luminance(theme.h3) > normal_text_lum);
-    assert!(luminance(theme.code_fg) > normal_text_lum);
+    assert!(contrast_ratio(theme.code_fg, LIGHT.pane_bg) >= 4.0);
+    assert_color_near(theme.h2, crate::tide_core::Color::rgb(0.149, 0.498, 0.6));
+    assert_color_near(
+        theme.code_fg,
+        crate::tide_core::Color::rgb(0.639, 0.082, 0.082),
+    );
+    assert_color_near(
+        theme.list_marker,
+        crate::tide_core::Color::rgb(0.686, 0.0, 0.859),
+    );
 }
 
 #[test]
-fn light_syntax_highlighting_uses_tide_light_palette() {
-    // UC-4 BR-11: Light syntax highlighting uses the restrained Tide light syntax palette.
+fn light_syntax_highlighting_uses_vscode_light_plus_role_colors() {
+    // UC-4 BR-11: Light syntax highlighting uses VS Code Light+ role colors.
     assert_eq!(LIGHT_SYNTAX_THEME_NAME, "tide-light");
 }
 
 #[test]
 fn light_syntax_highlighting_gives_typescript_source_solid_token_colors() {
-    // UC-4 BR-17: Light syntax highlighting keeps source identifiers readable without forcing colored spans toward near-black.
+    // UC-4 BR-17: Light syntax highlighting keeps source identifiers readable while preserving token-role color separation.
     let mut highlighter = Highlighter::new();
     highlighter.set_dark_mode(false);
     let syntax = highlighter
@@ -213,16 +231,11 @@ fn light_syntax_highlighting_gives_typescript_source_solid_token_colors() {
         .filter(|span| !span.text.trim().is_empty())
     {
         assert!(
-            contrast_ratio(span.style.foreground, LIGHT.pane_bg) >= 2.2,
+            contrast_ratio(span.style.foreground, LIGHT.pane_bg) >= 2.1,
             "light syntax span {:?} has contrast {} and luminance {}",
             span.text,
             contrast_ratio(span.style.foreground, LIGHT.pane_bg),
             luminance(span.style.foreground)
-        );
-        assert!(
-            luminance(span.style.foreground) >= 0.18,
-            "light syntax span {:?} should stay colored rather than near-black",
-            span.text
         );
         distinct_colors.insert((
             (span.style.foreground.r * 255.0).round() as u8,
@@ -236,6 +249,198 @@ fn light_syntax_highlighting_gives_typescript_source_solid_token_colors() {
         distinct_colors.len() >= 5,
         "typescript syntax should not collapse into one gray foreground"
     );
+}
+
+#[test]
+fn light_syntax_highlighting_gives_rust_source_distinct_token_colors() {
+    // UC-4 BR-25: Light syntax highlighting separates representative Rust token roles with distinct colors.
+    let mut highlighter = Highlighter::new();
+    highlighter.set_dark_mode(false);
+    let syntax = highlighter
+        .syntax_set()
+        .find_syntax_by_extension("rs")
+        .expect("rust syntax should be available");
+    let lines = vec![
+        "#[derive(Clone)]".to_string(),
+        "pub struct EditorPane { id: PaneId }".to_string(),
+        "fn render_cursor(value: usize) -> Option<String> {".to_string(),
+        "    let label = format!(\"cursor {value}\");".to_string(),
+        "    Some(label)".to_string(),
+        "}".to_string(),
+        "// comment".to_string(),
+    ];
+    let spans = highlighter.highlight_lines(&lines, syntax, 0, lines.len());
+
+    let mut distinct_colors = std::collections::HashSet::new();
+    let mut checked = 0usize;
+    for span in spans
+        .iter()
+        .flatten()
+        .filter(|span| !span.text.trim().is_empty())
+    {
+        assert!(
+            contrast_ratio(span.style.foreground, LIGHT.pane_bg) >= 2.1,
+            "light rust syntax span {:?} has weak contrast {}",
+            span.text,
+            contrast_ratio(span.style.foreground, LIGHT.pane_bg)
+        );
+        distinct_colors.insert((
+            (span.style.foreground.r * 255.0).round() as u8,
+            (span.style.foreground.g * 255.0).round() as u8,
+            (span.style.foreground.b * 255.0).round() as u8,
+        ));
+        checked += 1;
+    }
+
+    assert!(checked > 0);
+    assert!(
+        distinct_colors.len() >= 7,
+        "rust syntax should expose at least seven distinct token colors, got {:?}",
+        distinct_colors
+    );
+}
+
+#[test]
+fn light_syntax_highlighting_separates_rust_import_blocks_from_plain_text() {
+    // UC-4 BR-25: Rust import blocks in light mode must not collapse into a single gray text color.
+    let mut highlighter = Highlighter::new();
+    highlighter.set_dark_mode(false);
+    let syntax = highlighter
+        .syntax_set()
+        .find_syntax_by_extension("rs")
+        .expect("rust syntax should be available");
+    let lines = vec![
+        "use crate::tide_input::{Action, AreaSlot, GlobalAction};".to_string(),
+        "use crate::pane::PaneKind;".to_string(),
+        "use crate::application::ports::outward::ClipboardSearchPort;".to_string(),
+        "impl App {".to_string(),
+    ];
+    let spans = highlighter.highlight_lines(&lines, syntax, 0, lines.len());
+
+    let mut distinct_colors = std::collections::HashSet::new();
+    for span in spans
+        .iter()
+        .flatten()
+        .filter(|span| !span.text.trim().is_empty())
+    {
+        distinct_colors.insert((
+            (span.style.foreground.r * 255.0).round() as u8,
+            (span.style.foreground.g * 255.0).round() as u8,
+            (span.style.foreground.b * 255.0).round() as u8,
+        ));
+        assert!(
+            contrast_ratio(span.style.foreground, LIGHT.pane_bg) >= 2.1,
+            "import span {:?} should have solid light-mode ink",
+            span.text
+        );
+    }
+
+    assert!(
+        distinct_colors.len() >= 4,
+        "rust import blocks need visible role separation, got {:?}",
+        distinct_colors
+    );
+    assert!(distinct_colors.contains(&(175, 0, 219)));
+    assert!(distinct_colors.contains(&(0, 16, 128)));
+    assert!(distinct_colors.contains(&(38, 127, 153)));
+    assert!(distinct_colors.contains(&(0, 0, 0)));
+}
+
+#[test]
+fn light_markdown_theme_separates_content_roles() {
+    // UC-4 BR-26: Light Markdown theme separates headings, code, links, and body text.
+    let theme = MarkdownTheme::light();
+    let roles = [
+        theme.body,
+        theme.h1,
+        theme.h2,
+        theme.h3,
+        theme.code_fg,
+        theme.link,
+        theme.list_marker,
+        theme.blockquote,
+    ];
+    for (idx, a) in roles.iter().enumerate() {
+        for b in roles.iter().skip(idx + 1) {
+            assert!(
+                color_distance(*a, *b) >= 0.08,
+                "light markdown roles should not collapse into one tone"
+            );
+        }
+    }
+}
+
+#[test]
+fn dark_syntax_highlighting_uses_vscode_dark_plus_role_colors() {
+    // UC-4A BR-22: Dark syntax highlighting uses VS Code Dark+ role colors.
+    assert_eq!(DARK_SYNTAX_THEME_NAME, "tide-dark");
+}
+
+#[test]
+fn dark_syntax_highlighting_gives_rust_source_distinct_token_colors() {
+    // UC-4A BR-23: Dark syntax highlighting separates representative Rust token roles with distinct colors.
+    let mut highlighter = Highlighter::new();
+    highlighter.set_dark_mode(true);
+    let syntax = highlighter
+        .syntax_set()
+        .find_syntax_by_extension("rs")
+        .expect("rust syntax should be available");
+    let lines = vec![
+        "#[derive(Clone)]".to_string(),
+        "pub struct EditorPane { id: PaneId }".to_string(),
+        "fn render_cursor(value: usize) -> Option<String> {".to_string(),
+        "    let label = format!(\"cursor {value}\");".to_string(),
+        "    Some(label)".to_string(),
+        "}".to_string(),
+        "// comment".to_string(),
+    ];
+    let spans = highlighter.highlight_lines(&lines, syntax, 0, lines.len());
+
+    let mut distinct_colors = std::collections::HashSet::new();
+    let mut checked = 0usize;
+    for span in spans
+        .iter()
+        .flatten()
+        .filter(|span| !span.text.trim().is_empty())
+    {
+        distinct_colors.insert((
+            (span.style.foreground.r * 255.0).round() as u8,
+            (span.style.foreground.g * 255.0).round() as u8,
+            (span.style.foreground.b * 255.0).round() as u8,
+        ));
+        checked += 1;
+    }
+
+    assert!(checked > 0);
+    assert!(
+        distinct_colors.len() >= 7,
+        "rust syntax should expose at least seven distinct token colors, got {:?}",
+        distinct_colors
+    );
+}
+
+#[test]
+fn dark_markdown_theme_separates_content_roles() {
+    // UC-4A BR-24: Dark Markdown theme separates headings, code, links, and body text.
+    let theme = MarkdownTheme::dark();
+    let roles = [
+        theme.body,
+        theme.h1,
+        theme.h2,
+        theme.h3,
+        theme.code_fg,
+        theme.link,
+        theme.list_marker,
+        theme.blockquote,
+    ];
+    for (idx, a) in roles.iter().enumerate() {
+        for b in roles.iter().skip(idx + 1) {
+            assert!(
+                color_distance(*a, *b) >= 0.08,
+                "dark markdown roles should not collapse into one tone"
+            );
+        }
+    }
 }
 
 #[test]
@@ -268,9 +473,9 @@ fn light_mode_accent_colors_stay_lighter_than_normal_text_weight() {
     }
 
     let markdown = MarkdownTheme::light();
-    assert!(luminance(markdown.code_fg) > normal_text_lum);
-    assert!(luminance(markdown.link) > normal_text_lum);
-    assert!(contrast_ratio(markdown.code_fg, LIGHT.pane_bg) >= 2.1);
+    assert!(color_distance(markdown.code_fg, LIGHT.tab_text_focused) >= 0.12);
+    assert!(color_distance(markdown.link, LIGHT.tab_text_focused) >= 0.12);
+    assert!(contrast_ratio(markdown.code_fg, LIGHT.pane_bg) >= 4.0);
 
     let terminal_blue =
         Terminal::named_color_to_rgb(false, alacritty_terminal::vte::ansi::NamedColor::Blue);

@@ -21,6 +21,7 @@ After this slice:
 - current-line, gutter, and prose readability hierarchy feel more deliberate without changing layout semantics
 - focused single-pane Editor headers read as full editor-group chrome, but their close affordance sits beside the visible title cluster instead of floating on the far-right edge
 - current-line structure is clearer because active indent guides step forward slightly from surrounding guides
+- current-line chrome stays locked to the cursor row during navigation and scroll instead of lagging behind the overlay cursor
 
 ### Approach
 1. Treat `DESIGN.md` as the visual contract for this slice and keep all spec language consistent with the glossary.
@@ -102,6 +103,7 @@ After this slice:
   - BR-11: Gutter and indent guides must support structure while remaining quieter than document text.
   - BR-12: Readability tuning must not change `EditorState`, preview semantics, or the existing layout model.
   - BR-13: Current-line indent guides must be visually stronger than surrounding indent guides while staying quieter than document text.
+  - BR-14: Cursor-row-dependent editor chrome must invalidate when the cursor moves to another logical line.
 
 ## Invariants
 
@@ -130,6 +132,7 @@ After this slice:
 | UC-4 | BR-11 | `editor_polish_behavior` | `gutter_and_indent_guides_support_structure_without_competing_with_content` |
 | UC-4 | BR-12 | `editor_polish_behavior` | `editor_polish_preserves_existing_editor_semantics` |
 | UC-4 | BR-13 | `editor_polish_behavior` | `active_indent_guides_are_stronger_on_current_line_than_surrounding_guides` |
+| UC-4 | BR-14 | `editor_polish_behavior` | `cursor_row_movement_invalidates_current_line_chrome` |
 
 ## Location
 

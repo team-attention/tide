@@ -17,6 +17,14 @@ fn display_width_between_chars(line_text: &str, start_char: usize, end_char: usi
         .sum()
 }
 
+fn byte_col_for_char_index(line_text: &str, char_idx: usize) -> usize {
+    line_text
+        .char_indices()
+        .nth(char_idx)
+        .map(|(idx, _)| idx)
+        .unwrap_or(line_text.len())
+}
+
 fn soft_wrap_visible_segments_for_char_range(
     pane: &crate::pane::editor::EditorPane,
     line: usize,
@@ -34,6 +42,28 @@ fn soft_wrap_visible_segments_for_char_range(
     };
     let scroll = pane.soft_wrap_visual_scroll();
     let mut segments = Vec::new();
+    if let Some(kind) = pane.live_preview_fixed_width_line_kind(line, line_text) {
+        let visual_row = pane.soft_wrap_display_row_for_position(line, 0);
+        if visual_row < scroll || visual_row >= scroll + visible_rows {
+            return segments;
+        }
+        let start_byte = byte_col_for_char_index(line_text, start_char);
+        let end_byte = byte_col_for_char_index(line_text, end_char);
+        let preview_padding = match kind {
+            crate::tide_editor::markdown::MdElementKind::CodeBlock => 3,
+            _ => 0,
+        };
+        let start_col = pane
+            .soft_wrap_display_col_for_position(line, start_byte)
+            .saturating_add(preview_padding);
+        let end_col = pane
+            .soft_wrap_display_col_for_position(line, end_byte)
+            .saturating_add(preview_padding);
+        if start_col < end_col {
+            segments.push((visual_row - scroll, start_col, end_col));
+        }
+        return segments;
+    }
     let first_visual_row = wrap_map.visual_row_of_line(line);
     let row_count = wrap_map.visual_rows_for(line);
     for visual_row in first_visual_row..first_visual_row + row_count {
@@ -227,7 +257,10 @@ fn render_editor_selection(
     sel: &crate::pane::Selection,
 ) {
     for rect in editor_selection_rects(pane, inner, renderer.cell_size(), sel) {
-        renderer.draw_rect(rect, p.selection);
+        let clipped = rect.clip_to(&inner);
+        if clipped.width > 0.0 && clipped.height > 0.0 {
+            renderer.draw_rect(clipped, p.selection);
+        }
     }
 }
 
@@ -272,17 +305,21 @@ fn plain_editor_selection_rects(
         if row < scroll || row >= scroll + visible_rows {
             continue;
         }
+        let char_count = pane
+            .editor
+            .buffer
+            .line(row)
+            .map_or(0, |line| line.chars().count());
         let visual_row = row - scroll;
-        let col_start = if row == start.0 { start.1 } else { 0 };
-        let col_end = if row == end.0 {
-            end.1
+        let col_start = if row == start.0 {
+            start.1.min(char_count)
         } else {
-            let char_count = pane
-                .editor
-                .buffer
-                .line(row)
-                .map_or(0, |l| l.chars().count());
-            char_count.max(h_scroll + visible_cols)
+            0
+        };
+        let col_end = if row == end.0 {
+            end.1.min(char_count)
+        } else {
+            char_count
         };
         if col_start >= col_end {
             continue;
@@ -295,7 +332,10 @@ fn plain_editor_selection_rects(
         let rx = inner.x + gutter_width + vis_start as f32 * cell_size.width;
         let ry = inner.y + visual_row as f32 * cell_size.height;
         let rw = (vis_end - vis_start) as f32 * cell_size.width;
-        rects.push(Rect::new(rx, ry, rw, cell_size.height));
+        let rect = Rect::new(rx, ry, rw, cell_size.height).clip_to(&inner);
+        if rect.width > 0.0 && rect.height > 0.0 {
+            rects.push(rect);
+        }
     }
     rects
 }
@@ -310,6 +350,9 @@ fn soft_wrap_editor_selection_rects(
     let mut rects = Vec::new();
     let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
     let visible_rows = (inner.height / cell_size.height).ceil() as usize;
+    let visible_cols = ((inner.width - gutter_width) / cell_size.width)
+        .ceil()
+        .max(0.0) as usize;
     let line_count = pane.editor.buffer.line_count();
 
     for row in start.0..=end.0 {
@@ -341,10 +384,18 @@ fn soft_wrap_editor_selection_rects(
             row_char_end,
             visible_rows,
         ) {
+            let start_col = start_col.min(visible_cols);
+            let end_col = end_col.min(visible_cols);
+            if start_col >= end_col {
+                continue;
+            }
             let rx = inner.x + gutter_width + start_col as f32 * cell_size.width;
             let ry = inner.y + visual_row as f32 * cell_size.height;
             let rw = (end_col - start_col) as f32 * cell_size.width;
-            rects.push(Rect::new(rx, ry, rw, cell_size.height));
+            let rect = Rect::new(rx, ry, rw, cell_size.height).clip_to(&inner);
+            if rect.width > 0.0 && rect.height > 0.0 {
+                rects.push(rect);
+            }
         }
     }
 
