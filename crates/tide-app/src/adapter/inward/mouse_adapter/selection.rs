@@ -4,6 +4,7 @@ use crate::tide_core::{Rect, Vec2};
 
 use crate::pane::{PaneKind, Selection};
 use crate::theme::*;
+use crate::tide_editor::markdown::MdElementKind;
 use crate::AppCorePort;
 use crate::FocusNavPort;
 use crate::InputStatePort;
@@ -49,14 +50,27 @@ fn live_preview_buffer_col(
     if !pane.live_preview {
         return visual_col;
     }
+    let Some(line_text) = pane.editor.buffer.line(line) else {
+        return visual_col;
+    };
+    if let Some(kind) = pane.live_preview_fixed_width_line_kind(line, line_text) {
+        return match kind {
+            MdElementKind::CodeBlock => {
+                pane.live_preview_codeblock_source_char_for_visual_col(line, line_text, visual_col)
+            }
+            MdElementKind::Table => {
+                pane.live_preview_table_source_char_for_visual_col(line, line_text, visual_col)
+            }
+            _ => visual_col,
+        };
+    }
     if let Some(ref lpm) = pane.live_preview_map {
         let cursor_line = pane.editor.cursor_position().line;
-        let line_content = pane.editor.buffer.line(line).unwrap_or("");
         lpm.visual_to_buffer_col(
             line,
             visual_col,
             cursor_line,
-            line_content,
+            line_text,
             &pane.editor.buffer.lines,
         )
     } else {

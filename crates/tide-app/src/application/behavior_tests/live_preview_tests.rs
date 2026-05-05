@@ -671,6 +671,134 @@ fn mouse_selection_on_hidden_syntax_line_maps_visual_column_to_buffer_column() {
 }
 
 #[test]
+fn live_preview_table_selection_rects_skip_table_syntax_markers() {
+    // UC-6 BR-10: Table row selection uses table-specific visual↔source mapping.
+    let mut pane = EditorPane::new_empty(1);
+    pane.editor.buffer.lines = lines("| Domain | Adapter |\n| --- | --- |\n| Domain | adapter |\n");
+    pane.live_preview = true;
+    pane.soft_wrap = true;
+    pane.ensure_live_preview_map();
+    pane.ensure_wrap_map(80);
+
+    let line = 2;
+    let line_text = pane.editor.buffer.line(line).unwrap();
+    let to_byte = |text: &str, char_idx: usize| -> usize {
+        text.char_indices()
+            .nth(char_idx)
+            .map(|(idx, _)| idx)
+            .unwrap_or(text.len())
+    };
+
+    assert_eq!(
+        pane.live_preview_table_source_char_for_visual_col(line, line_text, 0),
+        2,
+        "left table gutter should map to first visible cell"
+    );
+    assert_eq!(
+        pane.live_preview_table_source_char_for_visual_col(line, line_text, 8),
+        11,
+        "gap after first cell should map to second visible cell start"
+    );
+
+    assert_eq!(
+        pane.live_preview_table_visual_col_for_source_char(line, line_text, 2),
+        2,
+        "first visible source char should align to its own display column"
+    );
+    assert_eq!(
+        pane.live_preview_table_visual_col_for_source_char(line, line_text, 8),
+        8,
+        "between visible cells should stay at first cell boundary"
+    );
+    assert_eq!(
+        pane.live_preview_table_visual_col_for_source_char(line, line_text, 11),
+        12,
+        "second cell start should align to table gap boundary"
+    );
+
+    let anchor = pane.live_preview_table_source_char_for_visual_col(line, line_text, 2);
+    let end = pane.live_preview_table_source_char_for_visual_col(line, line_text, 24);
+    assert!(anchor < end);
+    pane.selection = Some(Selection {
+        anchor: (line, anchor),
+        end: (line, end),
+    });
+
+    let cell_size = Size::new(8.0, 16.0);
+    let inner = Rect::new(0.0, 0.0, 28.0 * cell_size.width, 4.0 * cell_size.height);
+    let rects = editor_selection_rects(&pane, inner, cell_size, pane.selection.as_ref().unwrap());
+    assert_eq!(rects.len(), 1);
+
+    let expected_start_col =
+        pane.soft_wrap_display_col_for_position(line, to_byte(line_text, anchor));
+    let expected_end_col = pane.soft_wrap_display_col_for_position(line, to_byte(line_text, end));
+    let expected_width =
+        (expected_end_col.saturating_sub(expected_start_col)) as f32 * cell_size.width;
+    assert_eq!(rects[0].width, expected_width);
+    assert!(
+        rects[0].width > 0.0,
+        "table selection should remain visible with table-specific mapping"
+    );
+}
+
+#[test]
+fn live_preview_table_selection_expands_to_cell_width() {
+    // UC-6 BR-10: Table selections reflect computed column widths even when text is shorter than the cell.
+    let mut pane = EditorPane::new_empty(1);
+    pane.editor.buffer.lines = lines("| Domain | Adapter |\n| --- | --- |\n| D | x |\n");
+    pane.live_preview = true;
+    pane.soft_wrap = true;
+    pane.ensure_live_preview_map();
+    pane.ensure_wrap_map(80);
+
+    let line = 2;
+    let line_text = pane.editor.buffer.line(line).unwrap();
+    let to_byte = |text: &str, char_idx: usize| -> usize {
+        text.char_indices()
+            .nth(char_idx)
+            .map(|(idx, _)| idx)
+            .unwrap_or(text.len())
+    };
+
+    let x_pos = line_text
+        .char_indices()
+        .position(|(_, ch)| ch == 'x')
+        .unwrap();
+    let x_after = to_byte(line_text, x_pos + 1);
+
+    assert_eq!(
+        pane.soft_wrap_display_col_for_position(line, x_after),
+        13,
+        "single-char cell should keep row geometry"
+    );
+    assert_eq!(
+        pane.soft_wrap_display_col_for_position(
+            line,
+            to_byte(line_text, line_text.chars().count())
+        ),
+        19,
+        "selection at row end should include configured cell width"
+    );
+
+    let trailing = pane.live_preview_table_source_char_for_visual_col(line, line_text, 19);
+    assert!(
+        trailing > x_pos,
+        "padded zone should map to post-text source index"
+    );
+
+    pane.selection = Some(Selection {
+        anchor: (line, 2),
+        end: (line, line_text.chars().count()),
+    });
+
+    let cell_size = Size::new(8.0, 16.0);
+    let inner = Rect::new(0.0, 0.0, 28.0 * cell_size.width, 4.0 * cell_size.height);
+    let rects = editor_selection_rects(&pane, inner, cell_size, pane.selection.as_ref().unwrap());
+    assert_eq!(rects.len(), 1);
+    assert_eq!(rects[0].width, (19 - 2) as f32 * cell_size.width);
+}
+
+#[test]
 fn live_preview_selected_text_omits_hidden_syntax_markers() {
     // UC-7 BR-1: Visible-text copy in LivePreviewMode omits hidden inline syntax markers.
     let (mut app, id, _path) =

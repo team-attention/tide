@@ -152,6 +152,7 @@ Business Rules:
 - BR-7: Source-valid Markdown table rows must use fixed-width table display rows even when the Markdown parser does not provide table styling for that row.
 - BR-8: Cursor placement and selection hit-testing use the same fixed-width display row model as rendering, so clicks inside code block or table preview rows cannot map to raw wrapped sub-rows.
 - BR-9: Selection highlights for fixed-width LivePreviewMode rows are clipped to the Editor Pane viewport and clamp to visible content columns.
+- BR-10: Selection and reverse-mapping in Markdown tables use table-specific display geometry so visible columns map to visible source spans (pipes/border markers are skipped).
 
 ### UC-7: VisibleTextInteraction
 Actor: User
@@ -236,6 +237,7 @@ Business Rules:
 | UC-6 | BR-7 | live_preview_context_map_table_rows_use_fixed_width_display_rows() |
 | UC-6 | BR-8 | live_preview_fixed_width_hit_testing_uses_display_rows() |
 | UC-6 | BR-9 | live_preview_fixed_width_selection_rects_are_clipped_to_viewport() |
+| UC-6 | BR-10 | live_preview_table_selection_rects_skip_table_syntax_markers() |
 | UC-7 | BR-1 | live_preview_selected_text_omits_hidden_syntax_markers() |
 | UC-7 | BR-2 | live_preview_context_artifact_capture_uses_visible_selected_text() |
 | UC-7 | BR-3 | live_preview_link_click_opens_rendered_link_target() |

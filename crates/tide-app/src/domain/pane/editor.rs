@@ -48,6 +48,13 @@ pub(crate) struct SoftWrapDisplayRowInfo {
     pub sub_row: usize,
 }
 
+#[derive(Clone, Copy)]
+struct LivePreviewTableDisplaySpan {
+    source_char: usize,
+    start_col: usize,
+    width: usize,
+}
+
 impl MarkdownListContinuation {
     fn parse(line: &str) -> Option<Self> {
         let marker_start = line
@@ -1414,17 +1421,26 @@ impl EditorPane {
         let Some(line_text) = self.editor.buffer.line(line) else {
             return 0;
         };
-        if self.live_preview_soft_wrap_uses_display_rows()
-            && self
-                .live_preview_fixed_width_line_kind(line, line_text)
-                .is_some()
-        {
-            let byte_col = byte_col.min(line_text.len());
-            return line_text[..byte_col]
-                .chars()
-                .map(|ch| ch.width().unwrap_or(1))
-                .sum::<usize>()
-                .saturating_sub(self.live_preview_fixed_width_h_scroll_for_line(line));
+        let byte_col = byte_col.min(line_text.len());
+        let source_char = line_text[..byte_col].chars().count();
+        if self.live_preview_soft_wrap_uses_display_rows() {
+            let Some(kind) = self.live_preview_fixed_width_line_kind(line, line_text) else {
+                return wrap_map.buffer_pos_to_visual_col(
+                    line,
+                    byte_col,
+                    &self.editor.buffer.lines,
+                );
+            };
+            let source_display_col = Self::display_width_before_char(line_text, source_char);
+            return match kind {
+                MdElementKind::CodeBlock => source_display_col
+                    .saturating_sub(self.live_preview_fixed_width_h_scroll_for_line(line)),
+                MdElementKind::Table => {
+                    self.live_preview_table_visual_col_for_source_char(line, line_text, source_char)
+                }
+                _ => source_display_col
+                    .saturating_sub(self.live_preview_fixed_width_h_scroll_for_line(line)),
+            };
         }
         wrap_map.buffer_pos_to_visual_col(line, byte_col, &self.editor.buffer.lines)
     }
@@ -1444,16 +1460,210 @@ impl EditorPane {
             ));
         };
 
-        let h_scroll = self.live_preview_fixed_width_h_scroll_for_line(line);
         let source_display_col = match kind {
-            MdElementKind::CodeBlock => visual_col.saturating_add(h_scroll).saturating_sub(3),
-            MdElementKind::Table => visual_col.saturating_add(h_scroll),
+            MdElementKind::CodeBlock => {
+                self.live_preview_codeblock_source_char_for_visual_col(line, line_text, visual_col)
+            }
+            MdElementKind::Table => {
+                self.live_preview_table_source_char_for_visual_col(line, line_text, visual_col)
+            }
             _ => visual_col,
         };
-        Some((
-            line,
-            Self::char_index_for_display_width(line_text, source_display_col),
-        ))
+        Some((line, source_display_col))
+    }
+
+    pub(crate) fn live_preview_codeblock_source_char_for_visual_col(
+        &self,
+        line: usize,
+        line_text: &str,
+        visual_col: usize,
+    ) -> usize {
+        let h_scroll = self.live_preview_fixed_width_h_scroll_for_line(line);
+        let source_display_col = visual_col.saturating_add(h_scroll).saturating_sub(3);
+        Self::char_index_for_display_width(line_text, source_display_col)
+    }
+
+    pub(crate) fn live_preview_table_source_char_for_visual_col(
+        &self,
+        line: usize,
+        line_text: &str,
+        visual_col: usize,
+    ) -> usize {
+        let h_scroll = self.live_preview_fixed_width_h_scroll_for_line(line);
+        let target_col = visual_col.saturating_add(h_scroll);
+        let Some(spans) = self.live_preview_table_display_spans_for_line(line, line_text) else {
+            return 0;
+        };
+        if spans.is_empty() {
+            return 0;
+        }
+
+        if target_col <= 2 {
+            return spans[0].source_char;
+        }
+
+        for span in spans.iter() {
+            if target_col < span.start_col {
+                return span.source_char;
+            }
+            let span_end = span.start_col + span.width;
+            if target_col < span_end {
+                return span.source_char;
+            }
+        }
+
+        let trailing = spans
+            .last()
+            .map(|last| last.source_char.saturating_add(1))
+            .unwrap_or(0);
+        if trailing < line_text.chars().count() {
+            trailing
+        } else {
+            line_text.chars().count()
+        }
+    }
+
+    pub(crate) fn live_preview_table_visual_col_for_source_char(
+        &self,
+        line: usize,
+        line_text: &str,
+        source_char: usize,
+    ) -> usize {
+        let h_scroll = self.live_preview_fixed_width_h_scroll_for_line(line);
+        let Some(spans) = self.live_preview_table_display_spans_for_line(line, line_text) else {
+            return 0;
+        };
+        if spans.is_empty() {
+            return 0;
+        }
+
+        let source_limit = line_text.chars().count();
+        let source_char = source_char.min(source_limit);
+
+        if let Some(first) = spans.first() {
+            if source_char <= first.source_char {
+                return first.start_col.saturating_sub(h_scroll);
+            }
+        }
+
+        for idx in 0..spans.len() {
+            let current = &spans[idx];
+            if source_char <= current.source_char {
+                return current.start_col.saturating_sub(h_scroll);
+            }
+            if let Some(next) = spans.get(idx + 1) {
+                if source_char < next.source_char {
+                    return (current.start_col + current.width).saturating_sub(h_scroll);
+                }
+            }
+        }
+
+        let last = spans.last().expect("spans not empty");
+        if source_char == last.source_char {
+            last.start_col.saturating_sub(h_scroll)
+        } else {
+            (last.start_col + last.width).saturating_sub(h_scroll)
+        }
+    }
+
+    fn live_preview_table_display_spans_for_line(
+        &self,
+        line: usize,
+        line_text: &str,
+    ) -> Option<Vec<LivePreviewTableDisplaySpan>> {
+        let widths = rendering::live_preview_table_column_widths(&self.editor.buffer.lines, line);
+        if widths.is_empty() {
+            return None;
+        }
+
+        let mut row = line_text.trim();
+        if row.is_empty() {
+            return None;
+        }
+        let mut row_start_byte = line_text.find(row).unwrap_or(0);
+        if row.starts_with('|') {
+            row = &row[1..];
+            row_start_byte = row_start_byte.saturating_add(1);
+        }
+        if row.ends_with('|') {
+            row = &row[..row.len().saturating_sub(1)];
+        }
+        if row.is_empty() {
+            return None;
+        }
+
+        let table_gap_cols = 4usize;
+        let mut spans = Vec::new();
+        let cells: Vec<&str> = row.split('|').collect();
+        let mut col = 2usize;
+        let mut byte_cursor = 0usize;
+
+        for (idx, raw_cell) in cells.iter().enumerate() {
+            if idx >= widths.len() {
+                break;
+            }
+            let cell_width = widths[idx];
+            let cell_start_byte = row_start_byte + byte_cursor;
+            let source_start = line_text[..cell_start_byte].chars().count();
+            let raw_cell_chars: Vec<char> = raw_cell.chars().collect();
+            let mut trim_start = 0usize;
+            while trim_start < raw_cell_chars.len() && raw_cell_chars[trim_start].is_whitespace() {
+                trim_start += 1;
+            }
+            let mut trim_end = raw_cell_chars.len();
+            while trim_end > trim_start && raw_cell_chars[trim_end - 1].is_whitespace() {
+                trim_end = trim_end.saturating_sub(1);
+            }
+
+            let mut used = 0usize;
+            let mut cell_idx = trim_start;
+            let cell_start_col = col;
+            while cell_idx < trim_end {
+                if cell_idx + 1 < trim_end
+                    && raw_cell_chars[cell_idx] == '*'
+                    && raw_cell_chars[cell_idx + 1] == '*'
+                {
+                    cell_idx += 2;
+                    continue;
+                }
+                if raw_cell_chars[cell_idx] == '`' {
+                    cell_idx += 1;
+                    continue;
+                }
+                let width = raw_cell_chars[cell_idx].width().unwrap_or(1);
+                if used + width > cell_width {
+                    break;
+                }
+                spans.push(LivePreviewTableDisplaySpan {
+                    source_char: source_start + cell_idx,
+                    start_col: col,
+                    width,
+                });
+                col += width;
+                used += width;
+                cell_idx += 1;
+            }
+
+            if used < cell_width {
+                let padding_source = source_start + trim_end;
+                let padding_width = cell_width.saturating_sub(used);
+                if padding_width > 0 {
+                    spans.push(LivePreviewTableDisplaySpan {
+                        source_char: padding_source,
+                        start_col: col,
+                        width: padding_width,
+                    });
+                }
+            }
+
+            col = cell_start_col + cell_width + table_gap_cols;
+            byte_cursor += raw_cell.len();
+            if idx + 1 < cells.len() {
+                byte_cursor = byte_cursor.saturating_add(1);
+            }
+        }
+
+        Some(spans)
     }
 
     fn char_index_for_display_width(line_text: &str, target_width: usize) -> usize {
@@ -1468,6 +1678,14 @@ impl EditorPane {
             char_idx += 1;
         }
         char_idx
+    }
+
+    fn display_width_before_char(line_text: &str, source_char: usize) -> usize {
+        line_text
+            .chars()
+            .take(source_char)
+            .map(|ch| ch.width().unwrap_or(1))
+            .sum()
     }
 
     fn live_preview_soft_wrap_uses_display_rows(&self) -> bool {

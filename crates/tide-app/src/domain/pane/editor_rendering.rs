@@ -118,7 +118,7 @@ fn live_preview_table_bounds(lines: &[String], line: usize) -> Range<usize> {
     start..end
 }
 
-fn live_preview_table_column_widths(lines: &[String], line: usize) -> Vec<usize> {
+pub(crate) fn live_preview_table_column_widths(lines: &[String], line: usize) -> Vec<usize> {
     let bounds = live_preview_table_bounds(lines, line);
     let mut widths = Vec::new();
     for row in &lines[bounds] {
