@@ -197,10 +197,10 @@ impl TermEventListener {
                     } // dark pane_bg: (0.055, 0.055, 0.063)
                 } else {
                     AnsiRgb {
-                        r: 240,
-                        g: 235,
-                        b: 227,
-                    } // light pane_bg: (0.94, 0.92, 0.89)
+                        r: 255,
+                        g: 255,
+                        b: 255,
+                    } // light pane_bg: #FFFFFF
                 }
             }
             // Cursor (OSC 12) — use foreground color

@@ -2,17 +2,18 @@
 
 use std::cell::RefCell;
 use std::path::Path;
+use std::str::FromStr;
 
 use syntect::highlighting::{
-    HighlightState, Highlighter as SyntectHighlighter, RangedHighlightIterator, Style, Theme,
-    ThemeSet,
+    Color as SyntectColor, HighlightState, Highlighter as SyntectHighlighter,
+    RangedHighlightIterator, ScopeSelectors, Style, StyleModifier, Theme, ThemeItem, ThemeSet,
 };
 use syntect::parsing::{ParseState, ScopeStack, SyntaxDefinition, SyntaxReference, SyntaxSet};
 
 use crate::tide_core::{Color, TextStyle};
 
 pub(crate) const DARK_SYNTAX_THEME_NAME: &str = "base16-eighties.dark";
-pub(crate) const LIGHT_SYNTAX_THEME_NAME: &str = "base16-ocean.light";
+pub(crate) const LIGHT_SYNTAX_THEME_NAME: &str = "tide-light";
 
 /// A styled span of text produced by syntax highlighting.
 pub struct StyledSpan {
@@ -89,6 +90,65 @@ pub struct Highlighter {
     cache: RefCell<HighlightCache>,
 }
 
+fn syntax_color(r: u8, g: u8, b: u8) -> SyntectColor {
+    SyntectColor { r, g, b, a: 255 }
+}
+
+fn theme_item(scope: &str, color: SyntectColor) -> Option<ThemeItem> {
+    Some(ThemeItem {
+        scope: ScopeSelectors::from_str(scope).ok()?,
+        style: StyleModifier {
+            foreground: Some(color),
+            background: None,
+            font_style: None,
+        },
+    })
+}
+
+fn build_light_syntax_theme(theme_set: &ThemeSet) -> Theme {
+    let mut theme = theme_set.themes["base16-ocean.light"].clone();
+    theme.name = Some(LIGHT_SYNTAX_THEME_NAME.to_string());
+    theme.settings.foreground = Some(syntax_color(63, 70, 77));
+    theme.settings.background = Some(syntax_color(255, 255, 255));
+
+    let rules = [
+        (
+            "source.jsx",
+            syntax_color(63, 70, 77),
+        ),
+        (
+            "comment.line.documentation.js, comment.line.double-slash.js, comment.block.documentation.js, comment.block.js",
+            syntax_color(95, 105, 113),
+        ),
+        (
+            "keyword.control.import.js, keyword.control.flow.js, keyword.control.js, keyword.other.ts, storage.type.js, storage.type.class.js",
+            syntax_color(121, 94, 143),
+        ),
+        (
+            "entity.name.type.ts, support.class.js",
+            syntax_color(68, 105, 145),
+        ),
+        ("entity.name.function.js", syntax_color(105, 88, 132)),
+        (
+            "string.quoted.single.js, string.quoted.double.js, string.quoted.other.js",
+            syntax_color(70, 119, 78),
+        ),
+        (
+            "constant.numeric, constant.language",
+            syntax_color(137, 106, 41),
+        ),
+        ("keyword.operator", syntax_color(78, 88, 96)),
+        ("punctuation", syntax_color(88, 96, 104)),
+    ];
+
+    theme.scopes.extend(
+        rules
+            .into_iter()
+            .filter_map(|(scope, color)| theme_item(scope, color)),
+    );
+    theme
+}
+
 impl Highlighter {
     pub fn new() -> Self {
         let mut builder = SyntaxSet::load_defaults_newlines().into_builder();
@@ -102,7 +162,7 @@ impl Highlighter {
         let syntax_set = builder.build();
         let theme_set = ThemeSet::load_defaults();
         let dark_theme = theme_set.themes[DARK_SYNTAX_THEME_NAME].clone();
-        let light_theme = theme_set.themes[LIGHT_SYNTAX_THEME_NAME].clone();
+        let light_theme = build_light_syntax_theme(&theme_set);
         let theme = dark_theme.clone();
         Self {
             syntax_set,

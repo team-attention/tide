@@ -261,130 +261,130 @@ pub static DARK: ThemePalette = ThemePalette {
 };
 
 // ──────────────────────────────────────────────
-// LIGHT palette — clean off-white
+// LIGHT palette — VS Code Light inspired neutral values
 // ──────────────────────────────────────────────
 
 pub static LIGHT: ThemePalette = ThemePalette {
-    // Surface — warm beige tones
-    surface_bg: Color::new(0.96, 0.94, 0.92, 1.0), // #F5F0EB warm off-white
-    pane_bg: Color::new(0.94, 0.92, 0.89, 1.0),    // #F0EBE3 slightly warmer
-    file_tree_bg: Color::new(0.925, 0.905, 0.875, 1.0), // close to Dock surface; edge line provides separation
-    border_color: Color::new(0.915, 0.895, 0.865, 1.0), // quiet warm gap
-    border_focused: Color::new(0.48, 0.39, 0.28, 0.42), // restrained warm accent
-    border_subtle: Color::new(0.24, 0.22, 0.19, 0.08),  // low-alpha neutral separators
+    // Surface — VS Code Light: editor #FFFFFF, workbench #F3F3F3, separators #D4D4D4
+    surface_bg: Color::rgb(0.953, 0.953, 0.953),
+    pane_bg: Color::rgb(1.0, 1.0, 1.0),
+    file_tree_bg: Color::rgb(0.953, 0.953, 0.953),
+    border_color: Color::rgb(0.831, 0.831, 0.831),
+    border_focused: Color::new(0.420, 0.545, 0.620, 0.40),
+    border_subtle: Color::rgb(0.831, 0.831, 0.831),
 
-    // Text — warm dark brown (high contrast)
-    tree_text: Color::new(0.15, 0.14, 0.12, 1.0), // readable but not black
-    tree_dir: Color::new(0.10, 0.09, 0.075, 1.0),
-    tree_dir_icon: Color::new(0.36, 0.29, 0.20, 1.0),
-    tree_icon: Color::new(0.42, 0.38, 0.32, 1.0),
-    tree_row_active: Color::new(0.10, 0.08, 0.05, 0.045), // quiet expanded-folder cue
-    file_tree_focus_fill: Color::new(0.10, 0.08, 0.05, 0.085), // soft neutral selected-row fill
-    file_tree_focus_stroke: Color::new(0.10, 0.08, 0.05, 0.12), // light-mode list focus outline
+    // Text — VS Code Light foreground scale
+    tree_text: Color::rgb(0.17, 0.17, 0.17),
+    tree_dir: Color::rgb(0.17, 0.17, 0.17),
+    tree_dir_icon: Color::rgb(0.39, 0.39, 0.39),
+    tree_icon: Color::rgb(0.46, 0.46, 0.46),
+    tree_row_active: Color::new(0.420, 0.545, 0.620, 0.08),
+    file_tree_focus_fill: Color::rgb(0.910, 0.910, 0.910),
+    file_tree_focus_stroke: Color::rgb(0.650, 0.755, 0.815),
 
-    // Tab bar — VS Code inspired: clean minimal, bottom indicator
-    tab_bar_bg: Color::new(0.91, 0.895, 0.870, 1.0), // quieter inactive chrome
-    tab_bar_bg_focused: Color::new(0.955, 0.935, 0.905, 1.0), // stronger active-pane chrome
-    active_tab_bg: Color::new(0.985, 0.972, 0.950, 1.0), // lifted active tab surface
-    tab_text: Color::new(0.45, 0.41, 0.35, 1.0),     // calmer inactive chrome text
-    tab_text_active: Color::new(0.24, 0.21, 0.17, 1.0), // stronger active tab text
-    tab_text_focused: Color::new(0.075, 0.065, 0.055, 1.0),
-    close_icon: Color::new(0.42, 0.38, 0.32, 1.0),
-    dock_tab_underline: Color::new(0.48, 0.36, 0.22, 1.0), // restrained warm accent
+    // Tab bar — neutral workbench header with white active tab
+    tab_bar_bg: Color::rgb(0.953, 0.953, 0.953),
+    tab_bar_bg_focused: Color::rgb(0.953, 0.953, 0.953),
+    active_tab_bg: Color::rgb(1.0, 1.0, 1.0),
+    tab_text: Color::rgb(0.435, 0.435, 0.435),
+    tab_text_active: Color::rgb(0.26, 0.26, 0.26),
+    tab_text_focused: Color::rgb(0.18, 0.18, 0.18),
+    close_icon: Color::rgb(0.435, 0.435, 0.435),
+    dock_tab_underline: Color::rgb(0.420, 0.545, 0.620),
 
     // Editor
-    gutter_text: Color::new(0.54, 0.50, 0.44, 1.0), // warm gutter (readable)
-    gutter_active_text: Color::new(0.18, 0.15, 0.11, 1.0), // clearer active-line anchor
-    editor_modified: Color::new(0.75, 0.50, 0.15, 1.0), // warm amber
-    panel_tab_bg_active: Color::new(0.90, 0.87, 0.83, 1.0), // warm panel
+    gutter_text: Color::rgb(0.420, 0.545, 0.620),
+    gutter_active_text: Color::rgb(0.18, 0.18, 0.18),
+    editor_modified: Color::rgb(0.650, 0.520, 0.270),
+    panel_tab_bg_active: Color::rgb(1.0, 1.0, 1.0),
 
-    // Drop preview — warm brown overlays
-    drop_fill: Color::new(0.45, 0.35, 0.20, 0.08),
-    drop_border: Color::new(0.45, 0.35, 0.20, 0.18),
-    swap_border: Color::new(0.55, 0.38, 0.18, 0.32),
+    // Drop preview
+    drop_fill: Color::new(0.420, 0.545, 0.620, 0.09),
+    drop_border: Color::new(0.420, 0.545, 0.620, 0.26),
+    swap_border: Color::new(0.420, 0.545, 0.620, 0.36),
     drag_source_dim: Color::new(0.0, 0.0, 0.0, 0.15),
 
-    // Scrollbar — warm brown
-    scrollbar_track: Color::new(0.45, 0.35, 0.20, 0.05),
-    scrollbar_thumb: Color::new(0.45, 0.35, 0.20, 0.20),
-    scrollbar_match: Color::new(0.80, 0.60, 0.10, 0.70),
-    scrollbar_current: Color::new(0.75, 0.55, 0.08, 1.0),
+    // Scrollbar
+    scrollbar_track: Color::new(0.0, 0.0, 0.0, 0.04),
+    scrollbar_thumb: Color::new(0.0, 0.0, 0.0, 0.22),
+    scrollbar_match: Color::new(0.420, 0.545, 0.620, 0.42),
+    scrollbar_current: Color::rgb(0.420, 0.545, 0.620),
 
-    // Hover — warm brown tints
-    hover_file_tree: Color::new(0.45, 0.35, 0.20, 0.06),
-    hover_tab: Color::new(0.45, 0.35, 0.20, 0.07),
+    // Hover
+    hover_file_tree: Color::rgb(0.910, 0.910, 0.910),
+    hover_tab: Color::rgb(0.910, 0.910, 0.910),
     hover_close: Color::new(1.0, 0.3, 0.3, 0.18),
-    hover_panel_border: Color::new(0.45, 0.35, 0.20, 0.10),
+    hover_panel_border: Color::rgb(0.831, 0.831, 0.831),
 
-    // Search — warm amber
-    search_match_bg: Color::new(0.85, 0.72, 0.20, 0.25),
-    search_current_bg: Color::new(0.88, 0.68, 0.12, 0.45),
-    search_bar_bg: Color::new(0.95, 0.93, 0.90, 1.0), // warm search bg
-    search_bar_border: Color::new(0.45, 0.35, 0.20, 0.18),
-    search_bar_text: Color::new(0.10, 0.08, 0.05, 1.0), // warm dark
-    search_bar_counter: Color::new(0.40, 0.35, 0.28, 1.0), // warm muted
+    // Search
+    search_match_bg: Color::new(0.973, 0.847, 0.376, 0.65),
+    search_current_bg: Color::new(0.973, 0.847, 0.376, 0.95),
+    search_bar_bg: Color::rgb(1.0, 1.0, 1.0),
+    search_bar_border: Color::rgb(0.807, 0.807, 0.807),
+    search_bar_text: Color::rgb(0.18, 0.18, 0.18),
+    search_bar_counter: Color::rgb(0.435, 0.435, 0.435),
 
     // IME
-    ime_preedit_bg: Color::new(0.88, 0.85, 0.80, 1.0), // warm beige
-    ime_preedit_fg: Color::new(0.10, 0.08, 0.05, 1.0), // warm dark
+    ime_preedit_bg: Color::rgb(0.925, 0.935, 0.945),
+    ime_preedit_fg: Color::rgb(0.18, 0.18, 0.18),
 
-    // Selection — soft warm highlight
-    selection: Color::new(0.55, 0.45, 0.20, 0.18),
+    // Selection
+    selection: Color::new(0.745, 0.820, 0.875, 0.42),
 
-    // Cursor accent — chestnut brown
-    cursor_accent: Color::new(0.30, 0.22, 0.12, 1.0),
+    // Cursor accent
+    cursor_accent: Color::rgb(0.18, 0.18, 0.18),
 
     // Conflict bar
-    conflict_bar_bg: Color::new(1.0, 0.96, 0.84, 1.0),
-    conflict_bar_text: Color::new(0.42, 0.32, 0.08, 1.0),
-    conflict_bar_btn: Color::new(0.92, 0.88, 0.72, 1.0),
-    conflict_bar_btn_text: Color::new(0.32, 0.24, 0.04, 1.0),
+    conflict_bar_bg: Color::rgb(1.0, 0.957, 0.800),
+    conflict_bar_text: Color::rgb(0.520, 0.410, 0.185),
+    conflict_bar_btn: Color::rgb(0.941, 0.851, 0.612),
+    conflict_bar_btn_text: Color::rgb(0.20, 0.20, 0.20),
 
     // Diff view
-    diff_added_bg: Color::new(0.85, 0.95, 0.85, 1.0), // light green bg
-    diff_removed_bg: Color::new(0.95, 0.85, 0.85, 1.0), // light red bg
-    diff_added_gutter: Color::new(0.15, 0.55, 0.15, 1.0), // green gutter +
-    diff_removed_gutter: Color::new(0.60, 0.15, 0.15, 1.0), // red gutter -
+    diff_added_bg: Color::rgb(0.882, 0.961, 0.882),
+    diff_removed_bg: Color::rgb(1.0, 0.902, 0.902),
+    diff_added_gutter: Color::rgb(0.370, 0.625, 0.395),
+    diff_removed_gutter: Color::rgb(0.690, 0.390, 0.390),
 
-    // Header badges — warm-shifted
-    badge_bg: Color::new(0.45, 0.35, 0.20, 0.11),
-    badge_bg_unfocused: Color::new(0.45, 0.35, 0.20, 0.07),
-    badge_text: Color::new(0.34, 0.29, 0.22, 1.0), // warm brown (readable)
-    badge_text_dimmed: Color::new(0.50, 0.46, 0.40, 1.0), // warm muted
-    badge_git_branch: Color::new(0.45, 0.25, 0.80, 1.0),
-    badge_git_worktree: Color::new(0.15, 0.55, 0.50, 1.0),
-    badge_git_additions: Color::new(0.15, 0.55, 0.15, 1.0),
-    badge_git_deletions: Color::new(0.65, 0.15, 0.15, 1.0),
-    badge_conflict: Color::new(0.75, 0.50, 0.15, 1.0),
-    badge_deleted: Color::new(0.65, 0.15, 0.15, 1.0),
+    // Header badges
+    badge_bg: Color::new(0.0, 0.0, 0.0, 0.08),
+    badge_bg_unfocused: Color::new(0.0, 0.0, 0.0, 0.055),
+    badge_text: Color::rgb(0.20, 0.20, 0.20),
+    badge_text_dimmed: Color::rgb(0.435, 0.435, 0.435),
+    badge_git_branch: Color::rgb(0.560, 0.420, 0.650),
+    badge_git_worktree: Color::rgb(0.350, 0.580, 0.620),
+    badge_git_additions: Color::rgb(0.360, 0.620, 0.430),
+    badge_git_deletions: Color::rgb(0.690, 0.390, 0.390),
+    badge_conflict: Color::rgb(0.650, 0.520, 0.270),
+    badge_deleted: Color::rgb(0.690, 0.390, 0.390),
 
     // Popup — pure white with gentle scrim
     popup_bg: Color::new(1.0, 1.0, 1.0, 1.0), // pure white
-    popup_border: Color::new(0.0, 0.0, 0.0, 0.10),
-    popup_selected: Color::new(0.45, 0.35, 0.20, 0.08),
+    popup_border: Color::rgb(0.831, 0.831, 0.831),
+    popup_selected: Color::rgb(0.925, 0.935, 0.945),
     popup_scrim: Color::new(0.0, 0.0, 0.0, 0.12), // gentle dim
 
-    // Link highlight — #0969DA blue
-    link_color: Color::new(0.035, 0.412, 0.855, 1.0),
+    // Link highlight
+    link_color: Color::rgb(0.420, 0.545, 0.620),
 
     // Editor enhancements
-    current_line_bg: Color::new(0.0, 0.0, 0.0, 0.055), // visible without becoming muddy
-    indent_guide: Color::new(0.0, 0.0, 0.0, 0.095),    // quiet but clearer structure
-    active_indent_guide: Color::new(0.0, 0.0, 0.0, 0.18),
-    git_gutter_added: Color::new(0.15, 0.55, 0.15, 0.80), // green bar
-    git_gutter_modified: Color::new(0.70, 0.58, 0.10, 0.80), // yellow bar
-    bracket_match_bg: Color::new(0.0, 0.0, 0.0, 0.06),    // subtle bracket bg
-    bracket_match_border: Color::new(0.0, 0.0, 0.0, 0.20), // bracket border
-    scrollbar_thumb_hover: Color::new(0.45, 0.35, 0.20, 0.35), // darker thumb on hover
+    current_line_bg: Color::rgb(0.935, 0.940, 0.945),
+    indent_guide: Color::rgb(0.827, 0.827, 0.827),
+    active_indent_guide: Color::rgb(0.576, 0.576, 0.576),
+    git_gutter_added: Color::new(0.360, 0.620, 0.430, 0.85),
+    git_gutter_modified: Color::new(0.650, 0.520, 0.270, 0.85),
+    bracket_match_bg: Color::new(0.745, 0.820, 0.875, 0.28),
+    bracket_match_border: Color::rgb(0.420, 0.545, 0.620),
+    scrollbar_thumb_hover: Color::new(0.0, 0.0, 0.0, 0.35),
 
     // File tree git status
-    git_modified: Color::new(0.70, 0.58, 0.10, 1.0), // warm yellow
-    git_added: Color::new(0.15, 0.55, 0.15, 1.0),    // green
-    git_added_bg: Color::new(0.15, 0.55, 0.15, 0.094), // green badge bg
-    git_conflict: Color::new(0.80, 0.45, 0.10, 1.0), // orange
+    git_modified: Color::rgb(0.650, 0.520, 0.270),
+    git_added: Color::rgb(0.360, 0.620, 0.430),
+    git_added_bg: Color::new(0.360, 0.620, 0.430, 0.12),
+    git_conflict: Color::rgb(0.720, 0.430, 0.300),
 
     // Workspace sidebar
-    ws_sidebar_text_inactive: Color::new(0.48, 0.42, 0.34, 1.0), // warm muted brown
+    ws_sidebar_text_inactive: Color::rgb(0.435, 0.435, 0.435),
 };
 
 // ──────────────────────────────────────────────

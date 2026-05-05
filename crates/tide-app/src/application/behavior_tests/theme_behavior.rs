@@ -7,8 +7,9 @@ use crate::pane::PaneKind;
 use crate::state::{ConfigPageState, ConfigSection};
 use crate::theme::{DARK, LIGHT};
 use crate::tide_core::{Key, Modifiers};
-use crate::tide_editor::highlight::LIGHT_SYNTAX_THEME_NAME;
+use crate::tide_editor::highlight::{Highlighter, LIGHT_SYNTAX_THEME_NAME};
 use crate::tide_editor::markdown::MarkdownTheme;
+use crate::tide_terminal::Terminal;
 use crate::ActionPort;
 use crate::App;
 
@@ -32,6 +33,16 @@ fn contrast_ratio(a: crate::tide_core::Color, b: crate::tide_core::Color) -> f32
 
 fn color_distance(a: crate::tide_core::Color, b: crate::tide_core::Color) -> f32 {
     ((a.r - b.r).powi(2) + (a.g - b.g).powi(2) + (a.b - b.b).powi(2)).sqrt()
+}
+
+fn assert_color_near(actual: crate::tide_core::Color, expected: crate::tide_core::Color) {
+    assert!(
+        color_distance(actual, expected) < 0.006,
+        "expected color near {:?}, got {:?}",
+        (expected.r, expected.g, expected.b, expected.a),
+        (actual.r, actual.g, actual.b, actual.a)
+    );
+    assert!((actual.a - expected.a).abs() < 0.006);
 }
 
 // --- UC-1: ToggleTheme ---
@@ -82,12 +93,56 @@ fn font_size_starts_at_14() {
 
 #[test]
 fn light_mode_palette_keeps_borders_subtle_and_text_readable() {
-    // UC-3 BR-5/BR-6/BR-7: Light mode gaps and borders stay subtle while primary chrome text remains readable.
-    assert!(color_distance(LIGHT.border_color, LIGHT.pane_bg) < 0.055);
-    assert!(LIGHT.border_subtle.a <= 0.09);
-    assert!(contrast_ratio(LIGHT.tab_text_focused, LIGHT.pane_bg) >= 7.0);
+    // UC-3 BR-5/BR-6/BR-7: Light mode uses VS Code Light-style editor surface, separators, and readable chrome text.
+    assert_color_near(LIGHT.pane_bg, crate::tide_core::Color::rgb(1.0, 1.0, 1.0));
+    assert_color_near(
+        LIGHT.surface_bg,
+        crate::tide_core::Color::rgb(0.953, 0.953, 0.953),
+    );
+    assert_color_near(
+        LIGHT.border_subtle,
+        crate::tide_core::Color::rgb(0.831, 0.831, 0.831),
+    );
+    assert!(contrast_ratio(LIGHT.tab_text_focused, LIGHT.pane_bg) >= 4.5);
     assert!(contrast_ratio(LIGHT.tree_text, LIGHT.file_tree_bg) >= 4.5);
     assert!(contrast_ratio(LIGHT.tree_dir, LIGHT.file_tree_bg) >= 4.5);
+}
+
+#[test]
+fn light_mode_palette_separates_chrome_layers_and_current_line() {
+    // UC-3 BR-15/BR-16: Light mode chrome and editor support values follow VS Code Light-style neutral steps.
+    assert_color_near(
+        LIGHT.tab_bar_bg,
+        crate::tide_core::Color::rgb(0.953, 0.953, 0.953),
+    );
+    assert_color_near(
+        LIGHT.active_tab_bg,
+        crate::tide_core::Color::rgb(1.0, 1.0, 1.0),
+    );
+    assert_color_near(
+        LIGHT.tab_text_focused,
+        crate::tide_core::Color::rgb(0.18, 0.18, 0.18),
+    );
+    assert_color_near(
+        LIGHT.tab_text,
+        crate::tide_core::Color::rgb(0.435, 0.435, 0.435),
+    );
+    assert_color_near(
+        LIGHT.current_line_bg,
+        crate::tide_core::Color::rgb(0.935, 0.940, 0.945),
+    );
+    assert_color_near(
+        LIGHT.indent_guide,
+        crate::tide_core::Color::rgb(0.827, 0.827, 0.827),
+    );
+    assert_color_near(
+        LIGHT.active_indent_guide,
+        crate::tide_core::Color::rgb(0.576, 0.576, 0.576),
+    );
+    assert_color_near(
+        LIGHT.gutter_text,
+        crate::tide_core::Color::rgb(0.420, 0.545, 0.620),
+    );
 }
 
 #[test]
@@ -114,21 +169,113 @@ fn editor_live_preview_rendering_uses_mode_aware_markdown_theme() {
 
 #[test]
 fn light_markdown_theme_uses_quiet_readable_colors() {
-    // UC-4 BR-10: Light Markdown heading and code colors stay darker than the light pane surface.
+    // UC-4 BR-10: Light Markdown heading and code colors stay readable while staying lighter than normal foreground text.
     let theme = MarkdownTheme::light();
+    let normal_text_lum = luminance(LIGHT.tab_text_focused);
 
     assert!(contrast_ratio(theme.body, LIGHT.pane_bg) >= 7.0);
-    assert!(contrast_ratio(theme.h2, LIGHT.pane_bg) >= 4.5);
-    assert!(contrast_ratio(theme.h3, LIGHT.pane_bg) >= 4.5);
-    assert!(contrast_ratio(theme.code_fg, LIGHT.pane_bg) >= 4.5);
-    assert!(luminance(theme.h2) < 0.38);
-    assert!(luminance(theme.h3) < 0.38);
+    assert!(contrast_ratio(theme.h2, LIGHT.pane_bg) >= 2.1);
+    assert!(contrast_ratio(theme.h3, LIGHT.pane_bg) >= 2.1);
+    assert!(contrast_ratio(theme.code_fg, LIGHT.pane_bg) >= 2.1);
+    assert!(luminance(theme.h2) > normal_text_lum);
+    assert!(luminance(theme.h3) > normal_text_lum);
+    assert!(luminance(theme.code_fg) > normal_text_lum);
 }
 
 #[test]
-fn light_syntax_highlighting_uses_base16_ocean_theme() {
-    // UC-4 BR-11: Light syntax highlighting uses the restrained base16-ocean.light theme.
-    assert_eq!(LIGHT_SYNTAX_THEME_NAME, "base16-ocean.light");
+fn light_syntax_highlighting_uses_tide_light_palette() {
+    // UC-4 BR-11: Light syntax highlighting uses the restrained Tide light syntax palette.
+    assert_eq!(LIGHT_SYNTAX_THEME_NAME, "tide-light");
+}
+
+#[test]
+fn light_syntax_highlighting_gives_typescript_source_solid_token_colors() {
+    // UC-4 BR-17: Light syntax highlighting keeps source identifiers readable without forcing colored spans toward near-black.
+    let mut highlighter = Highlighter::new();
+    highlighter.set_dark_mode(false);
+    let syntax = highlighter
+        .syntax_set()
+        .find_syntax_by_extension("ts")
+        .expect("typescript syntax should be available");
+    let lines = vec![
+        "import type { NavigateFunction } from 'react-router-dom'".to_string(),
+        "export class WebNavigationAdapter implements INavigationPort {".to_string(),
+        "  constructor(private navigate: NavigateFunction) {}".to_string(),
+        "  navigateToHome(): void { this.navigate('/') }".to_string(),
+    ];
+    let spans = highlighter.highlight_lines(&lines, syntax, 0, lines.len());
+
+    let mut distinct_colors = std::collections::HashSet::new();
+    let mut checked = 0usize;
+    for span in spans
+        .iter()
+        .flatten()
+        .filter(|span| !span.text.trim().is_empty())
+    {
+        assert!(
+            contrast_ratio(span.style.foreground, LIGHT.pane_bg) >= 2.2,
+            "light syntax span {:?} has contrast {} and luminance {}",
+            span.text,
+            contrast_ratio(span.style.foreground, LIGHT.pane_bg),
+            luminance(span.style.foreground)
+        );
+        assert!(
+            luminance(span.style.foreground) >= 0.18,
+            "light syntax span {:?} should stay colored rather than near-black",
+            span.text
+        );
+        distinct_colors.insert((
+            (span.style.foreground.r * 255.0).round() as u8,
+            (span.style.foreground.g * 255.0).round() as u8,
+            (span.style.foreground.b * 255.0).round() as u8,
+        ));
+        checked += 1;
+    }
+    assert!(checked > 0);
+    assert!(
+        distinct_colors.len() >= 5,
+        "typescript syntax should not collapse into one gray foreground"
+    );
+}
+
+#[test]
+fn light_editor_support_text_is_crisper_than_inactive_chrome_text() {
+    // UC-4 BR-18: Light editor support text such as gutter numbers stays darker than low-priority chrome text.
+    assert!(luminance(LIGHT.gutter_text) >= 0.45);
+    assert_color_near(
+        LIGHT.gutter_text,
+        crate::tide_core::Color::rgb(0.420, 0.545, 0.620),
+    );
+}
+
+#[test]
+fn light_mode_accent_colors_stay_lighter_than_normal_text_weight() {
+    // UC-4 BR-19: Light accent and semantic colors stay visibly lighter than normal foreground text.
+    let normal_text_lum = luminance(LIGHT.tab_text_focused);
+    for color in [
+        LIGHT.gutter_text,
+        LIGHT.dock_tab_underline,
+        LIGHT.link_color,
+        LIGHT.badge_git_branch,
+        LIGHT.badge_git_worktree,
+        LIGHT.badge_git_additions,
+        LIGHT.badge_git_deletions,
+        LIGHT.git_added,
+        LIGHT.git_modified,
+        LIGHT.git_conflict,
+    ] {
+        assert!(luminance(color) >= normal_text_lum + 0.12);
+    }
+
+    let markdown = MarkdownTheme::light();
+    assert!(luminance(markdown.code_fg) > normal_text_lum);
+    assert!(luminance(markdown.link) > normal_text_lum);
+    assert!(contrast_ratio(markdown.code_fg, LIGHT.pane_bg) >= 2.1);
+
+    let terminal_blue =
+        Terminal::named_color_to_rgb(false, alacritty_terminal::vte::ansi::NamedColor::Blue);
+    assert!(luminance(terminal_blue) >= normal_text_lum + 0.12);
+    assert!(contrast_ratio(terminal_blue, LIGHT.pane_bg) >= 2.1);
 }
 
 // --- UC-5: ConfigureAppearanceTheme ---
