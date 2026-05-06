@@ -408,3 +408,57 @@ fn copying_application_reflowed_terminal_prose_preserves_new_block_rows() {
         &["완료기준 정\n1. 새 항목".to_string()]
     );
 }
+
+// --- UC-3: CopyScrolledTerminalSelection ---
+
+#[test]
+fn copying_terminal_selection_extended_after_scroll_includes_offscreen_rows() {
+    // UC-3 BR-6: Copying a Terminal Pane selection whose anchor is outside the current viewport
+    // must include offscreen selected rows still present in terminal scrollback.
+    let writes = Rc::new(RefCell::new(Vec::new()));
+    let (mut app, terminal_id) = app_with_terminal(16, 3);
+    app.ports.clipboard = Box::new(RecordingClipboard {
+        writes: writes.clone(),
+    });
+
+    if let Some(PaneKind::Terminal(pane)) = app.panes.get_mut(&terminal_id) {
+        pane.backend.bench_sync_grid();
+        pane.backend
+            .bench_write_to_term(b"alpha\r\nbeta\r\ngamma\r\ndelta");
+        pane.backend.bench_sync_grid();
+        pane.backend.bench_sync_grid();
+
+        let alpha_row = pane
+            .backend
+            .search_buffer("alpha")
+            .first()
+            .map(|(row, _, _)| *row)
+            .expect("alpha should be retained in terminal scrollback");
+        let delta_row = pane
+            .backend
+            .search_buffer("delta")
+            .first()
+            .map(|(row, _, _)| *row)
+            .expect("delta should be present on the terminal screen");
+        let visible_start = pane
+            .backend
+            .history_size()
+            .saturating_sub(pane.backend.display_offset());
+        assert!(
+            alpha_row < visible_start,
+            "test setup must put the selection anchor above the current viewport"
+        );
+
+        pane.selection = Some(Selection {
+            anchor: (alpha_row, 0),
+            end: (delta_row, "delta".chars().count()),
+        });
+    }
+
+    app.handle_global_action(GlobalAction::Copy);
+
+    assert_eq!(
+        writes.borrow().as_slice(),
+        &["alpha\nbeta\ngamma\ndelta".to_string()]
+    );
+}

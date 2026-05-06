@@ -269,6 +269,20 @@ pub(crate) fn live_preview_code_block_line_is_last(lines: &[String], line: usize
 }
 
 impl EditorPane {
+    fn authoring_cursor_position(&self) -> crate::tide_editor::EditorPosition {
+        if let Some(selection) = self.selection.as_ref() {
+            let line = selection
+                .end
+                .0
+                .min(self.editor.buffer.line_count().saturating_sub(1));
+            return crate::tide_editor::EditorPosition {
+                line,
+                col: self.char_col_to_byte(line, selection.end.1),
+            };
+        }
+        self.editor.cursor_position()
+    }
+
     /// Pure authoring-cursor geometry used by rendering tests and the overlay
     /// cursor path. Preview mode has no authoring cursor.
     pub(crate) fn authoring_cursor_rect(
@@ -298,7 +312,7 @@ impl EditorPane {
         cell_size: Size,
         preedit_width_cells: usize,
     ) -> Option<Rect> {
-        let pos = self.editor.cursor_position();
+        let pos = self.authoring_cursor_position();
         let scroll = self.editor.scroll_offset();
         let h_scroll = self.editor.h_scroll_offset();
 
@@ -352,7 +366,7 @@ impl EditorPane {
         preedit_width_cells: usize,
         _wrap_map: &WrapMap,
     ) -> Option<Rect> {
-        let pos = self.editor.cursor_position();
+        let pos = self.authoring_cursor_position();
         let scroll = self.soft_wrap_visual_scroll();
 
         let cursor_visual_row = self.soft_wrap_display_row_for_position(pos.line, pos.col);

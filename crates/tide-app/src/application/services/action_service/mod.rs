@@ -27,6 +27,53 @@ use crate::PaneLifecyclePort;
 use crate::TextExtractPort;
 use crate::WorkspaceNavPort;
 
+fn char_index_for_display_cell_from(
+    line_text: &str,
+    start_char: usize,
+    target_display_col: usize,
+) -> usize {
+    let mut display_col = 0usize;
+    let mut char_idx = start_char;
+    for ch in line_text.chars().skip(start_char) {
+        let width = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1);
+        if display_col + width > target_display_col {
+            break;
+        }
+        display_col += width;
+        char_idx += 1;
+    }
+    char_idx
+}
+
+fn editor_plain_click_col(
+    pane: &crate::pane::editor::EditorPane,
+    line: usize,
+    rel_col: usize,
+) -> usize {
+    if pane.live_preview {
+        let visual_col = pane.editor.h_scroll_offset() + rel_col;
+        if let Some(ref lpm) = pane.live_preview_map {
+            let cursor_line = pane.editor.cursor_position().line;
+            let line_content = pane.editor.buffer.line(line).unwrap_or("").to_string();
+            return lpm.visual_to_buffer_col(
+                line,
+                visual_col,
+                cursor_line,
+                &line_content,
+                &pane.editor.buffer.lines,
+            );
+        }
+        return visual_col;
+    }
+
+    let start_char = pane.editor.h_scroll_offset();
+    pane.editor
+        .buffer
+        .line(line)
+        .map(|line_text| char_index_for_display_cell_from(line_text, start_char, rel_col))
+        .unwrap_or(start_char + rel_col)
+}
+
 impl App {
     fn context_comment_terminal_id(
         &self,
@@ -412,43 +459,13 @@ impl App {
 
         if pane.effective_soft_wrap() {
             let abs_visual_row = pane.soft_wrap_visual_scroll() + rel_row as usize;
-            let (line, mut col) =
+            let (line, col) =
                 pane.soft_wrap_display_position_for_visual_cell(abs_visual_row, rel_col as usize)?;
-            if pane.live_preview {
-                if let Some(ref lpm) = pane.live_preview_map {
-                    let cursor_line = pane.editor.cursor_position().line;
-                    let line_content = pane.editor.buffer.line(line).unwrap_or("").to_string();
-                    col = lpm.visual_to_buffer_col(
-                        line,
-                        col,
-                        cursor_line,
-                        &line_content,
-                        &pane.editor.buffer.lines,
-                    );
-                }
-            }
             return Some((line, col));
         }
 
         let line = pane.editor.scroll_offset() + rel_row as usize;
-        let visual_col = pane.editor.h_scroll_offset() + rel_col as usize;
-        let col = if pane.live_preview {
-            if let Some(ref lpm) = pane.live_preview_map {
-                let cursor_line = pane.editor.cursor_position().line;
-                let line_content = pane.editor.buffer.line(line).unwrap_or("").to_string();
-                lpm.visual_to_buffer_col(
-                    line,
-                    visual_col,
-                    cursor_line,
-                    &line_content,
-                    &pane.editor.buffer.lines,
-                )
-            } else {
-                visual_col
-            }
-        } else {
-            visual_col
-        };
+        let col = editor_plain_click_col(pane, line, rel_col as usize);
         Some((line, col))
     }
 
@@ -626,31 +643,12 @@ impl crate::application::ports::inward::ActionPort for App {
                                         pane.ensure_wrap_map(wrap_cols);
                                         let abs_visual_row =
                                             pane.soft_wrap_visual_scroll() + rel_row as usize;
-                                        if let Some((line, mut col)) = pane
+                                        if let Some((line, col)) = pane
                                             .soft_wrap_display_position_for_visual_cell(
                                                 abs_visual_row,
                                                 rel_col as usize,
                                             )
                                         {
-                                            if pane.live_preview {
-                                                if let Some(ref lpm) = pane.live_preview_map {
-                                                    let cursor_line =
-                                                        pane.editor.cursor_position().line;
-                                                    let line_content = pane
-                                                        .editor
-                                                        .buffer
-                                                        .line(line)
-                                                        .unwrap_or("")
-                                                        .to_string();
-                                                    col = lpm.visual_to_buffer_col(
-                                                        line,
-                                                        col,
-                                                        cursor_line,
-                                                        &line_content,
-                                                        &pane.editor.buffer.lines,
-                                                    );
-                                                }
-                                            }
                                             pane.handle_action(
                                                 EditorAction::SetCursor { line, col },
                                                 visible_rows,
@@ -658,34 +656,8 @@ impl crate::application::ports::inward::ActionPort for App {
                                         }
                                     } else {
                                         let line = pane.editor.scroll_offset() + rel_row as usize;
-                                        let visual_col =
-                                            pane.editor.h_scroll_offset() + rel_col as usize;
-                                        // In live preview mode, visual columns don't match buffer
-                                        // columns on non-cursor lines because inline syntax is
-                                        // hidden.  Reverse-map visual → buffer column.
-                                        let col = if pane.live_preview {
-                                            if let Some(ref lpm) = pane.live_preview_map {
-                                                let cursor_line =
-                                                    pane.editor.cursor_position().line;
-                                                let line_content = pane
-                                                    .editor
-                                                    .buffer
-                                                    .line(line)
-                                                    .unwrap_or("")
-                                                    .to_string();
-                                                lpm.visual_to_buffer_col(
-                                                    line,
-                                                    visual_col,
-                                                    cursor_line,
-                                                    &line_content,
-                                                    &pane.editor.buffer.lines,
-                                                )
-                                            } else {
-                                                visual_col
-                                            }
-                                        } else {
-                                            visual_col
-                                        };
+                                        let col =
+                                            editor_plain_click_col(pane, line, rel_col as usize);
                                         pane.handle_action(
                                             EditorAction::SetCursor { line, col },
                                             visible_rows,

@@ -1577,23 +1577,38 @@ impl EditorPane {
         let row = self.soft_wrap_display_row_info(visual_row)?;
         let line = row.info.logical_line;
         let line_text = self.editor.buffer.line(line)?;
-        let Some(kind) = self.live_preview_fixed_width_line_kind(line, line_text) else {
-            return Some((
-                line,
-                (row.info.char_offset + visual_col).min(row.info.char_end),
-            ));
-        };
+        if let Some(kind) = self.live_preview_fixed_width_line_kind(line, line_text) {
+            let source_char = match kind {
+                MdElementKind::CodeBlock => self
+                    .live_preview_codeblock_source_char_for_visual_col(line, line_text, visual_col),
+                MdElementKind::Table => {
+                    self.live_preview_table_source_char_for_visual_col(line, line_text, visual_col)
+                }
+                _ => visual_col,
+            };
+            return Some((line, source_char.min(line_text.chars().count())));
+        }
 
-        let source_display_col = match kind {
-            MdElementKind::CodeBlock => {
-                self.live_preview_codeblock_source_char_for_visual_col(line, line_text, visual_col)
+        let line_display_col =
+            Self::display_width_before_char(line_text, row.info.char_offset) + visual_col;
+        if self.live_preview {
+            if let Some(ref live_map) = self.live_preview_map {
+                let cursor_line = self.editor.cursor_position().line;
+                if line != cursor_line {
+                    let buffer_col = live_map.visual_to_buffer_col(
+                        line,
+                        line_display_col,
+                        cursor_line,
+                        line_text,
+                        &self.editor.buffer.lines,
+                    );
+                    return Some((line, buffer_col.min(row.info.char_end)));
+                }
             }
-            MdElementKind::Table => {
-                self.live_preview_table_source_char_for_visual_col(line, line_text, visual_col)
-            }
-            _ => visual_col,
-        };
-        Some((line, source_display_col))
+        }
+
+        let source_char = Self::char_index_for_display_width(line_text, line_display_col);
+        Some((line, source_char.min(row.info.char_end)))
     }
 
     pub(crate) fn live_preview_codeblock_source_char_for_visual_col(

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use unicode_width::UnicodeWidthChar;
 
 use crate::tide_core::{
-    Color, CursorShape, Key, Modifiers, Rect, Renderer, Size, TerminalBackend, Vec2,
+    Color, CursorShape, Key, Modifiers, Rect, Renderer, Size, TerminalBackend, TerminalGrid, Vec2,
 };
 use crate::tide_renderer::WgpuRenderer;
 use crate::tide_terminal::git::GitInfo;
@@ -227,13 +227,12 @@ impl TerminalPane {
         let mut current_line = String::new();
         let mut saw_visible_row = false;
         for row in start.0..=end.0 {
-            // Skip rows outside the visible screen
-            if row < visible_start || row >= visible_end {
+            let Some((line, row_is_wrapped)) =
+                self.selected_terminal_row(row, visible_start, visible_end, grid)
+            else {
                 continue;
-            }
+            };
             saw_visible_row = true;
-            let screen_row = row - visible_start;
-            let line = &grid.cells[screen_row];
             let col_start = if row == start.0 { start.1 } else { 0 };
             let col_end = if row == end.0 {
                 end.1.min(line.len())
@@ -254,18 +253,16 @@ impl TerminalPane {
             current_line.push_str(&line_text);
             if row != end.0 {
                 let application_reflow_continuation =
-                    terminal_selection_row_fills_width(line, col_end)
+                    terminal_selection_row_fills_width(&line, col_end)
                         && self.selected_next_terminal_row_is_continuation(
                             row,
                             end.0,
                             end.1,
                             visible_start,
                             visible_end,
-                            &grid.cells,
+                            grid,
                         );
-                if !self.backend.visible_row_is_wrapped(screen_row)
-                    && !application_reflow_continuation
-                {
+                if !row_is_wrapped && !application_reflow_continuation {
                     logical_lines.push(current_line);
                     current_line = String::new();
                 }
@@ -297,6 +294,27 @@ impl TerminalPane {
         logical_lines.join("\n")
     }
 
+    fn selected_terminal_row(
+        &self,
+        row: usize,
+        visible_start: usize,
+        visible_end: usize,
+        grid: &TerminalGrid,
+    ) -> Option<(Vec<crate::tide_core::TerminalCell>, bool)> {
+        if row >= visible_start && row < visible_end {
+            let screen_row = row - visible_start;
+            return grid
+                .cells
+                .get(screen_row)
+                .cloned()
+                .map(|cells| (cells, self.backend.visible_row_is_wrapped(screen_row)));
+        }
+
+        let cells = self.backend.buffer_row_cells(row)?;
+        let wrapped = self.backend.buffer_row_is_wrapped(row);
+        Some((cells, wrapped))
+    }
+
     fn selected_next_terminal_row_is_continuation(
         &self,
         row: usize,
@@ -304,15 +322,16 @@ impl TerminalPane {
         selection_end_col: usize,
         visible_start: usize,
         visible_end: usize,
-        cells: &[Vec<crate::tide_core::TerminalCell>],
+        grid: &TerminalGrid,
     ) -> bool {
         let next_row = row + 1;
-        if next_row > selection_end_row || next_row < visible_start || next_row >= visible_end {
+        if next_row > selection_end_row {
             return false;
         }
 
-        let next_screen_row = next_row - visible_start;
-        let Some(line) = cells.get(next_screen_row) else {
+        let Some((line, _)) =
+            self.selected_terminal_row(next_row, visible_start, visible_end, grid)
+        else {
             return false;
         };
         let col_end = if next_row == selection_end_row {

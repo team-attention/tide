@@ -96,8 +96,12 @@ After the revamp:
     moves to another logical line.
   - BR-2: Selection and search highlight rects must use the same authoring rect,
     gutter width, scroll origin, and `WrapMap` as text rendering, and plain
-    text selection rects must stop at line content instead of extending to the
-    viewport edge.
+    text selection rects must use display-cell widths for wide characters and
+    stop at line content instead of extending to the viewport edge. Soft Wrap
+    hit-testing must convert display cells to buffer character positions with
+    the same wide-character widths before cursor or selection state is set.
+    During mouse selection, the overlay cursor must follow the active selection
+    edge rather than a stale prior edit position.
   - BR-3: IME cursor areas must use the same authoring rect and `WrapMap` as the
     rendered editor cursor.
   - BR-4: Scrollbar markers must use the same logical-to-visual row mapping as
@@ -197,6 +201,10 @@ After the revamp:
 |----|----|-------------|------|
 | UC-1 | BR-1 | `editor_polish_behavior` | `cursor_row_movement_invalidates_current_line_chrome` |
 | UC-1 | BR-2 | `editor_viewport_behavior` | `selection_rects_share_authoring_viewport_geometry` |
+| UC-1 | BR-2 | `editor_viewport_behavior` | `split_preview_selection_rects_share_authoring_viewport_geometry` |
+| UC-1 | BR-2 | `editor_viewport_behavior` | `plain_selection_rects_use_display_cell_width_for_wide_text` |
+| UC-1 | BR-2 | `editor_viewport_behavior` | `wrapped_hit_testing_uses_display_cell_width_for_wide_text` |
+| UC-1 | BR-2 | `editor_viewport_behavior` | `dragging_editor_selection_moves_cursor_to_active_edge` |
 | UC-1 | BR-2 | `editor_viewport_behavior` | `plain_selection_rect_clamps_to_line_content_width` |
 | UC-1 | BR-2 | `editor_viewport_behavior` | `multiline_plain_selection_rects_stop_at_each_line_content_width` |
 | UC-1 | BR-3 | `editor_viewport_behavior` | `ime_cursor_area_matches_editor_cursor_geometry` |

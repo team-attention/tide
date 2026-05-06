@@ -281,11 +281,13 @@ pub(crate) fn editor_selection_rects(
 
     if pane.effective_soft_wrap() {
         if pane.wrap_map().is_some() {
-            return soft_wrap_editor_selection_rects(pane, inner, cell_size, start, end);
+            let authoring = pane.authoring_rect(inner, cell_size);
+            return soft_wrap_editor_selection_rects(pane, authoring, cell_size, start, end);
         }
     }
 
-    plain_editor_selection_rects(pane, inner, cell_size, start, end)
+    let authoring = pane.authoring_rect(inner, cell_size);
+    plain_editor_selection_rects(pane, authoring, cell_size, start, end)
 }
 
 fn plain_editor_selection_rects(
@@ -300,16 +302,22 @@ fn plain_editor_selection_rects(
     let h_scroll = pane.editor.h_scroll_offset();
     let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
     let visible_rows = (inner.height / cell_size.height).ceil() as usize;
-    let visible_cols = ((inner.width - gutter_width) / cell_size.width).ceil() as usize;
+    let scrollbar_reserved = if pane.needs_scrollbar(inner, cell_size.height) {
+        SCROLLBAR_WIDTH
+    } else {
+        0.0
+    };
+    let visible_cols = ((inner.width - gutter_width - scrollbar_reserved).max(0.0)
+        / cell_size.width)
+        .ceil() as usize;
     for row in start.0..=end.0 {
         if row < scroll || row >= scroll + visible_rows {
             continue;
         }
-        let char_count = pane
-            .editor
-            .buffer
-            .line(row)
-            .map_or(0, |line| line.chars().count());
+        let Some(line_text) = pane.editor.buffer.line(row) else {
+            continue;
+        };
+        let char_count = line_text.chars().count();
         let visual_row = row - scroll;
         let col_start = if row == start.0 {
             start.1.min(char_count)
@@ -324,8 +332,16 @@ fn plain_editor_selection_rects(
         if col_start >= col_end {
             continue;
         }
-        let vis_start = col_start.max(h_scroll).saturating_sub(h_scroll);
-        let vis_end = col_end.saturating_sub(h_scroll).min(visible_cols);
+        if col_end <= h_scroll {
+            continue;
+        }
+        let vis_start = if col_start <= h_scroll {
+            0
+        } else {
+            display_width_between_chars(line_text, h_scroll, col_start)
+        }
+        .min(visible_cols);
+        let vis_end = display_width_between_chars(line_text, h_scroll, col_end).min(visible_cols);
         if vis_start >= vis_end {
             continue;
         }
@@ -350,7 +366,13 @@ fn soft_wrap_editor_selection_rects(
     let mut rects = Vec::new();
     let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
     let visible_rows = (inner.height / cell_size.height).ceil() as usize;
-    let visible_cols = ((inner.width - gutter_width) / cell_size.width)
+    let scrollbar_reserved = if pane.needs_scrollbar(inner, cell_size.height) {
+        SCROLLBAR_WIDTH
+    } else {
+        0.0
+    };
+    let visible_cols = ((inner.width - gutter_width - scrollbar_reserved).max(0.0)
+        / cell_size.width)
         .ceil()
         .max(0.0) as usize;
     let line_count = pane.editor.buffer.line_count();

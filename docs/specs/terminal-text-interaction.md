@@ -13,6 +13,7 @@
 - Copying a `Terminal Pane` selection across `Application-Rendered Prose Reflow Row` continuations keeps likely visual continuations contiguous
 - Copying across an actual terminal line break still preserves the newline
 - Copying trims only the common selected blank margin before copied logical lines, while preserving relative indentation after the first visible content column
+- Copying a `Terminal Pane` selection extended after scroll includes selected rows still present in terminal scrollback, even when the selection anchor is outside the current viewport
 
 ### Approach
 1. Reconstruct the logical text cluster around the clicked visible terminal row before resolving URLs.
@@ -20,7 +21,8 @@
 3. Update `TerminalPane::selected_text()` to suppress synthetic newlines for wrapped visible rows while preserving real line breaks.
 4. Add a conservative fallback for `Application-Rendered Prose Reflow Row`s that fill the selected terminal row but do not carry emulator wrap metadata.
 5. Update `TerminalPane::selected_text()` to trim common selected blank margin cells after logical wrapped lines are reconstructed.
-6. Cover the behavior with behavior tests for URL activation and copy serialization.
+6. Read selected `Terminal Pane` rows by absolute terminal row so copy serialization can span the current viewport and scrollback.
+7. Cover the behavior with behavior tests for URL activation and copy serialization.
 
 ## Bounded Contexts
 
@@ -61,6 +63,19 @@
   - BR-4: Copying trims only common selected blank margin cells before copied logical lines, preserving relative indentation after the first visible content column
   - BR-5: A full-width `Application-Rendered Prose Reflow Row` may omit the copied newline when the next selected row is a continuation rather than a new block
 
+### UC-3: CopyScrolledTerminalSelection
+- **Actor**: User
+- **Trigger**: The user starts a `Terminal Pane` selection, scrolls the `Terminal Pane`, Shift-clicks another visible row to extend the selection, then copies
+- **Precondition**: The original selection anchor is outside the current viewport but still present in terminal scrollback
+- **Flow**:
+  1. Tide keeps the selection anchor as an absolute terminal row
+  2. Tide maps the Shift-click endpoint through the current viewport to another absolute terminal row
+  3. Tide serializes every selected row from terminal scrollback and the current screen
+  4. Tide writes the serialized text to the clipboard
+- **Postcondition**: Clipboard text includes the offscreen anchor row and all selected rows through the Shift-click endpoint
+- **Business Rules**:
+  - BR-6: Copying a `Terminal Pane` selection whose anchor is outside the current viewport must include the offscreen selected rows still present in terminal scrollback
+
 ## Invariants
 
 1. `Terminal Pane` copy output must remain stable for non-wrapped selections.
@@ -83,6 +98,7 @@
 | UC-2 | BR-4 | `copying_terminal_selection_preserves_later_indentation_without_shared_margin` |
 | UC-2 | BR-5 | `copying_application_reflowed_terminal_prose_joins_continuation_rows` |
 | UC-2 | BR-5 | `copying_application_reflowed_terminal_prose_preserves_new_block_rows` |
+| UC-3 | BR-6 | `copying_terminal_selection_extended_after_scroll_includes_offscreen_rows` |
 
 ## Location
 

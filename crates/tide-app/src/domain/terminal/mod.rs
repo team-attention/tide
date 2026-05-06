@@ -1200,6 +1200,52 @@ impl Terminal {
         self.wrapped_rows.get(row).copied().unwrap_or(false)
     }
 
+    /// Returns cells for an absolute row in the terminal scrollback + screen buffer.
+    pub fn buffer_row_cells(&self, absolute_row: usize) -> Option<Vec<TerminalCell>> {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let history_len = grid.history_size();
+        let total_lines = history_len + grid.screen_lines();
+        if absolute_row >= total_lines {
+            return None;
+        }
+
+        let line = Line(absolute_row as i32 - history_len as i32);
+        let cols = grid.columns();
+        let mut cells = Vec::with_capacity(cols);
+        for col_idx in 0..cols {
+            let point = Point::new(line, Column(col_idx));
+            let cell = &grid[point];
+            let mut terminal_cell = TerminalCell::default();
+            terminal_cell.character = if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                '\0'
+            } else {
+                cell.c
+            };
+            cells.push(terminal_cell);
+        }
+        Some(cells)
+    }
+
+    /// Returns whether an absolute row in the terminal buffer ended with a terminal wrap.
+    pub fn buffer_row_is_wrapped(&self, absolute_row: usize) -> bool {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let history_len = grid.history_size();
+        let total_lines = history_len + grid.screen_lines();
+        if absolute_row >= total_lines {
+            return false;
+        }
+
+        let line = Line(absolute_row as i32 - history_len as i32);
+        let grid_line = &grid[line];
+        let line_length = grid_line.line_length();
+        line_length.0 != 0
+            && grid_line[line_length - 1]
+                .flags
+                .contains(CellFlags::WRAPLINE)
+    }
+
     /// Returns the current column count.
     pub fn current_cols(&self) -> u16 {
         self.cols

@@ -1,10 +1,27 @@
 // Spec: docs/specs/editor-pane-revamp.md
 
+use std::path::PathBuf;
+
 use crate::adapter::outward::view::editor_selection_rects;
 use crate::pane::editor::EditorPane;
-use crate::pane::Selection;
-use crate::tide_core::{Rect, Size};
+use crate::pane::{PaneKind, Selection};
+use crate::state::FocusArea;
+use crate::tide_core::{MouseButton, Rect, Size, Vec2};
 use crate::tide_editor::EditorPosition;
+use crate::tide_platform::WindowProxy;
+use crate::App;
+
+fn test_window_proxy() -> WindowProxy {
+    let (tx, _rx) = std::sync::mpsc::channel();
+    WindowProxy::new(tx, std::sync::Arc::new(|| {}))
+}
+
+fn char_col_to_byte(line: &str, char_col: usize) -> usize {
+    line.char_indices()
+        .nth(char_col)
+        .map(|(idx, _)| idx)
+        .unwrap_or(line.len())
+}
 
 // --- UC-1: KeepDocumentChromeAndCursorLocked ---
 
@@ -35,6 +52,63 @@ fn selection_rects_share_authoring_viewport_geometry() {
 }
 
 #[test]
+fn split_preview_selection_rects_share_authoring_viewport_geometry() {
+    // UC-1 BR-2: Selection rects in split preview must stay inside the authoring rect.
+    let mut pane = EditorPane::new_empty(1);
+    pane.editor.buffer.file_path = Some(PathBuf::from("note.md"));
+    pane.split_preview = true;
+    pane.editor.buffer.lines = vec!["abcdefghijklmnopqrstuvwxyz0123456789".to_string()];
+
+    let inner = Rect::new(10.0, 20.0, 480.0, 160.0);
+    let cell_size = Size::new(8.0, 16.0);
+    let (authoring_rect, _) = pane
+        .split_preview_rects(inner, cell_size)
+        .expect("split preview should expose an authoring rect");
+    let selection = Selection {
+        anchor: (0, 0),
+        end: (0, 36),
+    };
+
+    let selection_rects = editor_selection_rects(&pane, inner, cell_size, &selection);
+
+    assert_eq!(selection_rects.len(), 1);
+    assert!(
+        selection_rects[0].x + selection_rects[0].width <= authoring_rect.x + authoring_rect.width,
+        "selection rect should not spill into the split preview region"
+    );
+}
+
+#[test]
+fn plain_selection_rects_use_display_cell_width_for_wide_text() {
+    // UC-1 BR-2: Plain selection rects must use display-cell widths for wide characters.
+    let mut pane = EditorPane::new_empty(1);
+    pane.editor.buffer.lines = vec!["한a글".to_string()];
+    pane.editor.cursor.set_position(EditorPosition {
+        line: 0,
+        col: "한".len(),
+    });
+
+    let inner = Rect::new(10.0, 20.0, 240.0, 160.0);
+    let cell_size = Size::new(8.0, 16.0);
+    let selection = Selection {
+        anchor: (0, 1),
+        end: (0, 3),
+    };
+
+    let cursor_rect = pane
+        .authoring_cursor_rect(inner, cell_size, 0)
+        .expect("cursor after first wide character should be visible");
+    let selection_rects = editor_selection_rects(&pane, inner, cell_size, &selection);
+
+    assert_eq!(selection_rects.len(), 1);
+    assert_eq!(selection_rects[0].x.to_bits(), cursor_rect.x.to_bits());
+    assert_eq!(
+        selection_rects[0].width.to_bits(),
+        (3.0_f32 * cell_size.width).to_bits()
+    );
+}
+
+#[test]
 fn wrapped_selection_rects_share_authoring_viewport_geometry() {
     // UC-1 BR-2: Wrapped selection rects must use the same WrapMap visual row as cursor geometry.
     let mut pane = EditorPane::new_empty(1);
@@ -60,6 +134,105 @@ fn wrapped_selection_rects_share_authoring_viewport_geometry() {
     assert_eq!(selection_rects.len(), 1);
     assert_eq!(selection_rects[0].x.to_bits(), cursor_rect.x.to_bits());
     assert_eq!(selection_rects[0].y.to_bits(), cursor_rect.y.to_bits());
+}
+
+#[test]
+fn wrapped_hit_testing_uses_display_cell_width_for_wide_text() {
+    // UC-1 BR-2: Wrapped hit-testing must convert display cells through wide-character widths before setting cursor state.
+    let mut pane = EditorPane::new_empty(1);
+    pane.soft_wrap = true;
+    pane.editor.buffer.lines = vec!["한글abc한글".to_string()];
+    pane.ensure_wrap_map(6);
+
+    let inner = Rect::new(10.0, 20.0, 144.0, 160.0);
+    let cell_size = Size::new(8.0, 16.0);
+    let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+    let expected_x = inner.x + gutter_width + 3.0 * cell_size.width;
+
+    let (line, char_col) = pane
+        .soft_wrap_display_position_for_visual_cell(1, 3)
+        .expect("wrapped hit target should resolve to a buffer position");
+    assert_eq!((line, char_col), (0, 6));
+
+    let byte_col = pane
+        .editor
+        .buffer
+        .line(line)
+        .and_then(|text| text.char_indices().nth(char_col).map(|(idx, _)| idx))
+        .unwrap_or_else(|| pane.editor.buffer.line(line).map_or(0, |text| text.len()));
+    pane.editor.cursor.set_position(EditorPosition {
+        line,
+        col: byte_col,
+    });
+
+    let cursor_rect = pane
+        .authoring_cursor_rect(inner, cell_size, 0)
+        .expect("wrapped cursor should be visible");
+
+    assert_eq!(cursor_rect.x.to_bits(), expected_x.to_bits());
+}
+
+#[test]
+fn dragging_editor_selection_moves_cursor_to_active_edge() {
+    // UC-1 BR-2: During mouse selection, the overlay cursor must follow the active selection edge.
+    let mut app = App::new();
+    app.window.cached_cell_size = Size::new(8.0, 16.0);
+    let (layout, pane_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.focus.focused = Some(pane_id);
+    app.focus.focus_area = FocusArea::Stage;
+
+    let mut pane = EditorPane::new_empty(pane_id);
+    pane.editor.buffer.lines = vec!["처음에는 좋은 선택".to_string()];
+    pane.editor.cursor.set_position(EditorPosition {
+        line: 0,
+        col: char_col_to_byte(&pane.editor.buffer.lines[0], 8),
+    });
+    app.panes.insert(pane_id, PaneKind::Editor(pane));
+
+    let pane_rect = Rect::new(0.0, 0.0, 360.0, 180.0);
+    let cell_size = app.window.cached_cell_size;
+    app.visual_pane_rects = vec![(pane_id, pane_rect)];
+    let content_rect = match app.panes.get(&pane_id) {
+        Some(PaneKind::Editor(pane)) => {
+            pane.content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT, cell_size)
+        }
+        _ => panic!("expected editor pane"),
+    };
+    let gutter_x =
+        content_rect.x + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+
+    let start = Vec2::new(gutter_x + 1.0, content_rect.y + 1.0);
+    let after_good = Vec2::new(
+        gutter_x + 11.0 * cell_size.width + 1.0,
+        content_rect.y + 1.0,
+    );
+    app.window.last_cursor_pos = start;
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(
+        &mut app,
+        MouseButton::Left,
+        &test_window_proxy(),
+    );
+    crate::adapter::inward::mouse_adapter::drag::handle_cursor_moved_logical(
+        &mut app,
+        after_good,
+        &test_window_proxy(),
+    );
+
+    let pane = match app.panes.get(&pane_id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    let selection = pane.selection.as_ref().expect("selection should be active");
+    assert_eq!(selection.anchor, (0, 0));
+    assert_eq!(selection.end, (0, 6));
+    let cursor_rect = pane
+        .authoring_cursor_rect(content_rect, cell_size, 0)
+        .expect("selection cursor should be visible");
+    assert_eq!(
+        cursor_rect.x.to_bits(),
+        (gutter_x + 11.0 * cell_size.width).to_bits()
+    );
 }
 
 #[test]

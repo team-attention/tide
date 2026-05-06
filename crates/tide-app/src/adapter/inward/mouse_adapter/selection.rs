@@ -78,14 +78,48 @@ fn live_preview_buffer_col(
     }
 }
 
+fn char_index_for_display_cell_from(
+    line_text: &str,
+    start_char: usize,
+    target_display_col: usize,
+) -> usize {
+    let mut display_col = 0usize;
+    let mut char_idx = start_char;
+    for ch in line_text.chars().skip(start_char) {
+        let width = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1);
+        if display_col + width > target_display_col {
+            break;
+        }
+        display_col += width;
+        char_idx += 1;
+    }
+    char_idx
+}
+
+fn plain_editor_hit_col(
+    pane: &crate::pane::editor::EditorPane,
+    line: usize,
+    rel_col: usize,
+) -> usize {
+    if pane.live_preview {
+        return live_preview_buffer_col(pane, line, pane.editor.h_scroll_offset() + rel_col);
+    }
+
+    let start_char = pane.editor.h_scroll_offset();
+    pane.editor
+        .buffer
+        .line(line)
+        .map(|line_text| char_index_for_display_cell_from(line_text, start_char, rel_col))
+        .unwrap_or(start_char + rel_col)
+}
+
 fn editor_soft_wrap_hit_position(
     pane: &crate::pane::editor::EditorPane,
     rel_row: usize,
     rel_col: usize,
 ) -> Option<(usize, usize)> {
     let abs_vr = pane.soft_wrap_visual_scroll() + rel_row;
-    let (line, visual_col) = pane.soft_wrap_display_position_for_visual_cell(abs_vr, rel_col)?;
-    Some((line, live_preview_buffer_col(pane, line, visual_col)))
+    pane.soft_wrap_display_position_for_visual_cell(abs_vr, rel_col)
 }
 
 /// Begin text selection on mouse-down. Clears any existing selection in all
@@ -193,8 +227,7 @@ pub(super) fn start_text_selection(
                     }
                 } else if let Some((rr, rc)) = editor_cell {
                     let line = pane.editor.scroll_offset() + rr;
-                    let visual_col = pane.editor.h_scroll_offset() + rc;
-                    let col = live_preview_buffer_col(pane, line, visual_col);
+                    let col = plain_editor_hit_col(pane, line, rc);
                     if let Some(ref mut sel) = pane.selection {
                         sel.end = (line, col);
                         return true;
@@ -251,8 +284,7 @@ pub(super) fn start_text_selection(
                 }
             } else if let Some((rr, rc)) = editor_cell {
                 let line = pane.editor.scroll_offset() + rr;
-                let visual_col = pane.editor.h_scroll_offset() + rc;
-                let col = live_preview_buffer_col(pane, line, visual_col);
+                let col = plain_editor_hit_col(pane, line, rc);
                 pane.selection = Some(Selection {
                     anchor: (line, col),
                     end: (line, col),
@@ -330,8 +362,7 @@ pub(super) fn handle_selection_drag(ctx: &mut (impl AppCorePort + PaneAccessPort
                     }
                 } else if let Some((rel_row, rel_col)) = editor_cell {
                     let line = pane.editor.scroll_offset() + rel_row;
-                    let visual_col = pane.editor.h_scroll_offset() + rel_col;
-                    let col = live_preview_buffer_col(pane, line, visual_col);
+                    let col = plain_editor_hit_col(pane, line, rel_col);
                     if let Some(ref mut sel) = pane.selection {
                         sel.end = (line, col);
                     }
