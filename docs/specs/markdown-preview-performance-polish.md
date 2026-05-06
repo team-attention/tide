@@ -112,6 +112,19 @@ Markdown scrolling keeps cache work proportional to the visible region and the t
   - BR-15: Live-preview rendering uses `StyledSpanCursor` for fallback syntax style resolution.
   - BR-17: Live-preview soft-wrap rendering starts cursor and non-cursor sub-row rendering from cached `VisualRowInfo` offsets.
 
+### UC-7: ScrollLivePreviewTableHeavyAuthoring
+- **Actor**: User
+- **Trigger**: The user opens or scrolls a Markdown Pane in `LivePreviewMode` with large Markdown tables
+- **Precondition**: `LivePreviewMode` and `Soft Wrap` are active, and the buffer contains source tables with many rows or escaped pipe characters inside cells
+- **Flow**:
+  1. Tide prepares source-table metadata for the current buffer `Generation`.
+  2. Tide treats escaped pipe characters (`\|`) as cell text, not table column separators.
+  3. Tide reuses cached source-table ranges and column widths for Soft Wrap display-row mapping, horizontal scroll limits, selection mapping, and table rendering.
+- **Postcondition**: Table-heavy Markdown authoring keeps table rows fixed-width without repeatedly rescanning whole table blocks during scroll-time rendering.
+- **Business Rules**:
+  - BR-22: Source-table detection must treat escaped pipe characters inside a Markdown table cell as content, not as separators.
+  - BR-23: Markdown Pane cache preparation must build generation-scoped source-table geometry reused by LivePreviewMode table row classification and column-width lookup.
+
 ## Invariants
 1. `LivePreviewMode` remains authoring mode and stays separate from full preview mode.
 2. `Soft Wrap` line numbers still render only on the first visual row of each logical line.
@@ -139,6 +152,8 @@ Markdown scrolling keeps cache work proportional to the visible region and the t
 | UC-6 | BR-14 | `preview_scroll` | `styled_span_cursor_matches_prefix_scan_for_monotonic_access` |
 | UC-6 | BR-15 | implementation | `render_live_preview_grid`, `render_live_preview_soft_wrap_grid` fallback style lookup |
 | UC-6 | BR-17 | implementation | `render_live_preview_soft_wrap_grid` starts from cached `VisualRowInfo` |
+| UC-7 | BR-22 | `live_preview_tests` | `live_preview_source_table_keeps_escaped_pipe_inside_cell` |
+| UC-7 | BR-23 | `live_preview_tests` | `live_preview_table_cache_reuses_large_table_geometry` |
 
 ## Location
 | What | Location |

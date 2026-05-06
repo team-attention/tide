@@ -1,4 +1,5 @@
 // Spec: docs/specs/live-preview.md
+use crate::adapter::inward::scroll_adapter::handle_scroll;
 use crate::adapter::outward::view::editor_selection_rects;
 use crate::domain::editor::markdown::{LivePreviewMap, MdElementKind};
 use crate::domain::editor::wrap::WrapMap;
@@ -53,6 +54,58 @@ fn app_with_markdown_editor(contents: &str) -> (App, u64, PathBuf) {
     app.focus.focused = Some(id);
     app.focus.focus_area = FocusArea::Stage;
     (app, id, path)
+}
+
+fn live_preview_scroll_axis_fixture() -> (App, u64, PathBuf, usize) {
+    let long_cell = format!(
+        "domain/pane owns LivePreviewMode and Soft Wrap {}",
+        "x".repeat(140)
+    );
+    let trailing_rows = (0..80)
+        .map(|idx| format!("after {}", idx))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let contents = format!(
+        "# Tests\n\n| Context | Responsibility |\n| --- | --- |\n| domain/pane | {long_cell} |\n\n{trailing_rows}\n"
+    );
+    let (mut app, id, path) = app_with_markdown_editor(&contents);
+    let pane_rect = Rect::new(0.0, 0.0, 280.0, 160.0);
+    let cell = Size::new(8.0, 16.0);
+    app.window.cached_cell_size = cell;
+    app.pane_rects = vec![(id, pane_rect)];
+    app.visual_pane_rects = vec![(id, pane_rect)];
+
+    let content_rect = pane_content_rect(pane_rect, cell.height);
+    let table_line = 4;
+    let table_visual_row = {
+        let pane = match app.panes.get_mut(&id) {
+            Some(PaneKind::Editor(pane)) => pane,
+            _ => panic!("expected editor pane"),
+        };
+        pane.prepare_inline_caches(content_rect, cell, false);
+        let (_, visible_cols) = pane.viewport_size_for_content_rect(content_rect, cell);
+        assert!(
+            pane.live_preview_fixed_width_max_h_scroll(visible_cols)
+                .unwrap()
+                > 0,
+            "fixture table must be horizontally scrollable"
+        );
+        pane.handle_action(
+            crate::tide_editor::input::EditorAction::SetCursor {
+                line: table_line,
+                col: 16,
+            },
+            12,
+        );
+        pane.soft_wrap_visual_row_of_line(table_line).unwrap()
+    };
+
+    let cursor_x =
+        content_rect.x + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width + 24.0;
+    let cursor_y = content_rect.y + table_visual_row as f32 * cell.height + 1.0;
+    app.window.last_cursor_pos = crate::tide_core::Vec2::new(cursor_x, cursor_y);
+
+    (app, id, path, table_line)
 }
 
 fn app_with_dock_markdown_editor(contents: &str) -> (App, u64, u64, PathBuf) {
@@ -535,6 +588,59 @@ fn live_preview_block_cursor_raw_mode_only_for_structure_markers() {
     assert!(!incomplete.live_preview_source_table_complete_at_line(0));
     assert!(!incomplete.live_preview_source_table_complete_at_line(1));
     assert!(!incomplete.live_preview_source_table_complete_at_line(2));
+}
+
+#[test]
+fn live_preview_source_table_keeps_escaped_pipe_inside_cell() {
+    // markdown-preview-performance-polish UC-7 BR-22: Escaped pipes inside cells do not split Markdown table columns.
+    let mut pane = EditorPane::new_empty(1);
+    pane.editor.buffer.lines = lines(
+        "| Turn | user text |\n| --- | --- |\n| 26 | 코드블럭 왼쪽에 \\| 랑 위에 짧은 선도 이상해 |",
+    );
+
+    assert!(pane.live_preview_source_table_complete_at_line(0));
+    assert!(pane.live_preview_source_table_complete_at_line(1));
+    assert!(pane.live_preview_source_table_complete_at_line(2));
+    assert_eq!(
+        live_preview_table_cell_text("코드블럭 왼쪽에 \\| 랑 위에 짧은 선도 이상해"),
+        "코드블럭 왼쪽에 | 랑 위에 짧은 선도 이상해"
+    );
+}
+
+#[test]
+fn live_preview_table_cache_reuses_large_table_geometry() {
+    // markdown-preview-performance-polish UC-7 BR-23: Table-heavy LivePreviewMode reuses prepared source-table geometry.
+    let mut contents = String::from("| Turn | user text |\n| --- | --- |\n");
+    for idx in 0..160 {
+        let text = if idx == 80 {
+            format!("scroll \\| edge {}", "x".repeat(96))
+        } else {
+            format!("ordinary row {}", idx)
+        };
+        contents.push_str(&format!("| {idx} | {text} |\n"));
+    }
+
+    let mut pane = EditorPane::new_empty(1);
+    pane.editor.buffer.lines = lines(&contents);
+    pane.live_preview = true;
+    pane.soft_wrap = true;
+    pane.ensure_live_preview_map();
+
+    let cell = Size::new(8.0, 16.0);
+    let rect = Rect::new(0.0, 0.0, 320.0, 240.0);
+    pane.prepare_inline_caches(rect, cell, false);
+
+    let escaped_row = 82;
+    assert!(pane.live_preview_source_table_line(escaped_row));
+    assert_eq!(pane.soft_wrap_display_rows_for_line(escaped_row), 1);
+    assert!(pane.live_preview_table_cache_contains_line(escaped_row));
+    let widths = pane
+        .live_preview_table_cached_widths_for_line(escaped_row)
+        .expect("prepared table widths");
+    assert!(
+        widths.get(1).copied().unwrap_or(0) > 96,
+        "cached user text column should preserve the long escaped-pipe cell width"
+    );
 }
 
 #[test]
@@ -1220,6 +1326,54 @@ fn live_preview_soft_wrap_tables_allow_horizontal_scroll() {
     assert!(
         pane.live_preview_fixed_width_h_scroll_for_line(4) > 0,
         "horizontal scroll should move across long table content"
+    );
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn vertical_scroll_over_fixed_width_live_preview_block_scrolls_pane_not_block() {
+    // UC-6 BR-11: Vertical-dominant scroll over a fixed-width LivePreviewMode block routes to Markdown Pane vertical scrolling and does not mutate block horizontal scroll.
+    let (mut app, id, path, table_line) = live_preview_scroll_axis_fixture();
+
+    handle_scroll(&mut app, -0.15, -3.0);
+
+    let pane = match app.panes.get(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    assert!(
+        pane.soft_wrap_visual_scroll() > 0,
+        "vertical-dominant scroll should move the Markdown Pane viewport"
+    );
+    assert_eq!(
+        pane.live_preview_fixed_width_h_scroll_for_line(table_line),
+        0,
+        "vertical-dominant scroll should not move the fixed-width block horizontally"
+    );
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn horizontal_scroll_over_fixed_width_live_preview_block_scrolls_block_not_pane() {
+    // UC-6 BR-12: Horizontal-dominant scroll over a fixed-width LivePreviewMode block mutates only that block's horizontal scroll and does not route Markdown Pane vertical scrolling.
+    let (mut app, id, path, table_line) = live_preview_scroll_axis_fixture();
+
+    handle_scroll(&mut app, -3.0, -0.15);
+
+    let pane = match app.panes.get(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    assert!(
+        pane.live_preview_fixed_width_h_scroll_for_line(table_line) > 0,
+        "horizontal-dominant scroll should move the fixed-width block horizontally"
+    );
+    assert_eq!(
+        pane.soft_wrap_visual_scroll(),
+        0,
+        "horizontal-dominant scroll should not move the Markdown Pane viewport"
     );
 
     let _ = std::fs::remove_file(path);

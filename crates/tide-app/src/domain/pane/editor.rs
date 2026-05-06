@@ -14,6 +14,7 @@ pub(crate) use rendering::{
 
 use std::collections::HashMap;
 use std::io;
+use std::ops::Range;
 use std::path::Path;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -53,6 +54,19 @@ struct LivePreviewTableDisplaySpan {
     source_char: usize,
     start_col: usize,
     width: usize,
+}
+
+#[derive(Clone)]
+struct LivePreviewSourceTableInfo {
+    range: Range<usize>,
+    widths: Vec<usize>,
+}
+
+#[derive(Clone)]
+struct LivePreviewSourceTableCache {
+    generation: u64,
+    line_to_table: Vec<Option<usize>>,
+    tables: Vec<LivePreviewSourceTableInfo>,
 }
 
 impl MarkdownListContinuation {
@@ -134,6 +148,98 @@ impl MarkdownListContinuation {
             next_marker: format!("{indent}{}{delimiter} ", number + 1),
             empty: rest[delimiter_end + 1..].trim().is_empty(),
         })
+    }
+}
+
+impl LivePreviewSourceTableCache {
+    fn build(lines: &[String], generation: u64) -> Self {
+        let mut line_to_table = vec![None; lines.len()];
+        let mut tables = Vec::new();
+        let mut row = 0usize;
+
+        while row < lines.len() {
+            if !Self::candidate_line(&lines[row]) {
+                row += 1;
+                continue;
+            }
+
+            let start = row;
+            let mut end = row + 1;
+            while end < lines.len() && Self::candidate_line(&lines[end]) {
+                end += 1;
+            }
+
+            if let Some(info) = Self::table_info_for_candidate_range(lines, start..end) {
+                let table_idx = tables.len();
+                for line in info.range.clone() {
+                    line_to_table[line] = Some(table_idx);
+                }
+                tables.push(info);
+            }
+            row = end;
+        }
+
+        Self {
+            generation,
+            line_to_table,
+            tables,
+        }
+    }
+
+    fn candidate_line(line: &str) -> bool {
+        line.contains('|') && !line.trim().is_empty()
+    }
+
+    fn table_info_for_candidate_range(
+        lines: &[String],
+        range: Range<usize>,
+    ) -> Option<LivePreviewSourceTableInfo> {
+        let separator = range.clone().find(|row| {
+            lines
+                .get(*row)
+                .is_some_and(|line| rendering::live_preview_table_separator_line(line))
+        })?;
+        if separator == range.start || range.end.saturating_sub(range.start) < 2 {
+            return None;
+        }
+
+        let separator_cols = rendering::live_preview_table_cell_count(lines.get(separator)?);
+        if separator_cols < 2 {
+            return None;
+        }
+        let header_cols = rendering::live_preview_table_cell_count(lines.get(separator - 1)?);
+        if header_cols != separator_cols {
+            return None;
+        }
+
+        for row in range.clone() {
+            let row_text = lines.get(row)?;
+            if rendering::live_preview_table_cell_count(row_text) != separator_cols {
+                return None;
+            }
+        }
+
+        let mut widths = vec![3usize; separator_cols];
+        for row in range.clone() {
+            let row_text = lines.get(row)?;
+            if rendering::live_preview_table_separator_line(row_text) {
+                continue;
+            }
+            for (idx, cell) in rendering::live_preview_table_cells(row_text)
+                .iter()
+                .enumerate()
+                .take(separator_cols)
+            {
+                widths[idx] = widths[idx].max(cell.width());
+            }
+        }
+
+        Some(LivePreviewSourceTableInfo { range, widths })
+    }
+
+    fn info_for_line(&self, line: usize) -> Option<&LivePreviewSourceTableInfo> {
+        let table_idx = self.line_to_table.get(line).copied().flatten()?;
+        self.tables.get(table_idx)
     }
 }
 
@@ -246,6 +352,8 @@ pub struct EditorPane {
     pub live_preview_map: Option<LivePreviewMap>,
     /// Generation counter for `live_preview_map` cache invalidation.
     live_preview_generation: u64,
+    /// Cached source-table geometry used by LivePreviewMode fallback table handling.
+    live_preview_source_table_cache: Option<LivePreviewSourceTableCache>,
 }
 
 impl EditorPane {
@@ -277,6 +385,7 @@ impl EditorPane {
             live_preview: false,
             live_preview_map: None,
             live_preview_generation: 0,
+            live_preview_source_table_cache: None,
         }
     }
 
@@ -316,6 +425,7 @@ impl EditorPane {
             live_preview,
             live_preview_map,
             live_preview_generation,
+            live_preview_source_table_cache: None,
         })
     }
 
@@ -602,6 +712,9 @@ impl EditorPane {
     }
 
     fn live_preview_fixed_width_block_start(&self, line: usize) -> Option<usize> {
+        if let Some(info) = self.live_preview_source_table_info_for_line(line) {
+            return Some(info.range.start);
+        }
         let line_text = self.editor.buffer.line(line)?;
         let kind = self.live_preview_fixed_width_line_kind(line, line_text)?;
         let mut start = line;
@@ -618,6 +731,9 @@ impl EditorPane {
     }
 
     fn live_preview_fixed_width_block_range(&self, block_start: usize) -> Option<(usize, usize)> {
+        if let Some(info) = self.live_preview_source_table_info_for_line(block_start) {
+            return Some((info.range.start, info.range.end));
+        }
         let line_text = self.editor.buffer.line(block_start)?;
         let kind = self.live_preview_fixed_width_line_kind(block_start, line_text)?;
         let mut end = block_start + 1;
@@ -638,6 +754,13 @@ impl EditorPane {
         block_start: usize,
         visible_cols: usize,
     ) -> usize {
+        if let Some(info) = self.live_preview_source_table_info_for_line(block_start) {
+            let table_gap_cols = 4usize;
+            let table_cols = info.widths.iter().sum::<usize>()
+                + table_gap_cols.saturating_mul(info.widths.len().saturating_sub(1))
+                + 4;
+            return table_cols.saturating_sub(visible_cols.max(1));
+        }
         let Some((start, end)) = self.live_preview_fixed_width_block_range(block_start) else {
             return 0;
         };
@@ -1246,6 +1369,7 @@ impl EditorPane {
         // Keep live preview map in sync before mode-specific geometry uses it.
         if self.live_preview {
             self.ensure_live_preview_map();
+            self.ensure_live_preview_source_table_cache();
         }
 
         let authoring_rect = self.authoring_rect(rect, cell_size);
@@ -1571,39 +1695,27 @@ impl EditorPane {
         line: usize,
         line_text: &str,
     ) -> Option<Vec<LivePreviewTableDisplaySpan>> {
-        let widths = rendering::live_preview_table_column_widths(&self.editor.buffer.lines, line);
+        let widths = self.live_preview_table_column_widths_for_line(line);
         if widths.is_empty() {
             return None;
         }
 
-        let mut row = line_text.trim();
-        if row.is_empty() {
-            return None;
-        }
-        let mut row_start_byte = line_text.find(row).unwrap_or(0);
-        if row.starts_with('|') {
-            row = &row[1..];
-            row_start_byte = row_start_byte.saturating_add(1);
-        }
-        if row.ends_with('|') {
-            row = &row[..row.len().saturating_sub(1)];
-        }
-        if row.is_empty() {
+        let cell_ranges = rendering::live_preview_table_cell_ranges(line_text);
+        if cell_ranges.is_empty() {
             return None;
         }
 
         let table_gap_cols = 4usize;
         let mut spans = Vec::new();
-        let cells: Vec<&str> = row.split('|').collect();
         let mut col = 2usize;
-        let mut byte_cursor = 0usize;
 
-        for (idx, raw_cell) in cells.iter().enumerate() {
+        for (idx, cell_range) in cell_ranges.iter().enumerate() {
             if idx >= widths.len() {
                 break;
             }
             let cell_width = widths[idx];
-            let cell_start_byte = row_start_byte + byte_cursor;
+            let raw_cell = &line_text[cell_range.clone()];
+            let cell_start_byte = cell_range.start;
             let source_start = line_text[..cell_start_byte].chars().count();
             let raw_cell_chars: Vec<char> = raw_cell.chars().collect();
             let mut trim_start = 0usize;
@@ -1619,6 +1731,21 @@ impl EditorPane {
             let mut cell_idx = trim_start;
             let cell_start_col = col;
             while cell_idx < trim_end {
+                if raw_cell_chars[cell_idx] == '\\' && cell_idx + 1 < trim_end {
+                    let width = raw_cell_chars[cell_idx + 1].width().unwrap_or(1);
+                    if used + width > cell_width {
+                        break;
+                    }
+                    spans.push(LivePreviewTableDisplaySpan {
+                        source_char: source_start + cell_idx + 1,
+                        start_col: col,
+                        width,
+                    });
+                    col += width;
+                    used += width;
+                    cell_idx += 2;
+                    continue;
+                }
                 if cell_idx + 1 < trim_end
                     && raw_cell_chars[cell_idx] == '*'
                     && raw_cell_chars[cell_idx + 1] == '*'
@@ -1657,13 +1784,16 @@ impl EditorPane {
             }
 
             col = cell_start_col + cell_width + table_gap_cols;
-            byte_cursor += raw_cell.len();
-            if idx + 1 < cells.len() {
-                byte_cursor = byte_cursor.saturating_add(1);
-            }
         }
 
         Some(spans)
+    }
+
+    pub(crate) fn live_preview_table_column_widths_for_line(&self, line: usize) -> Vec<usize> {
+        if let Some(info) = self.live_preview_source_table_info_for_line(line) {
+            return info.widths.clone();
+        }
+        rendering::live_preview_table_column_widths(&self.editor.buffer.lines, line)
     }
 
     fn char_index_for_display_width(line_text: &str, target_width: usize) -> usize {
@@ -1718,11 +1848,28 @@ impl EditorPane {
     }
 
     pub(crate) fn live_preview_source_table_line(&self, line: usize) -> bool {
+        if self.live_preview_source_table_info_for_line(line).is_some() {
+            return true;
+        }
         self.live_preview_source_table_bounds(line)
             .is_some_and(|bounds| bounds.contains(&line))
     }
 
+    fn live_preview_source_table_info_for_line(
+        &self,
+        line: usize,
+    ) -> Option<&LivePreviewSourceTableInfo> {
+        let cache = self.live_preview_source_table_cache.as_ref()?;
+        if cache.generation != self.editor.content_generation() {
+            return None;
+        }
+        cache.info_for_line(line)
+    }
+
     fn live_preview_source_table_bounds(&self, line: usize) -> Option<std::ops::Range<usize>> {
+        if let Some(info) = self.live_preview_source_table_info_for_line(line) {
+            return Some(info.range.clone());
+        }
         let line_text = self.editor.buffer.line(line)?;
         if !Self::live_preview_source_table_candidate_line(line_text) {
             return None;
@@ -1792,30 +1939,30 @@ impl EditorPane {
     }
 
     fn live_preview_source_table_cell_count(line: &str) -> usize {
-        line.trim()
-            .trim_matches('|')
-            .split('|')
-            .map(str::trim)
-            .filter(|cell| !cell.is_empty())
-            .count()
+        rendering::live_preview_table_cell_count(line)
     }
 
     fn live_preview_source_table_separator_line(line: &str) -> bool {
-        let trimmed = line.trim().trim_matches('|');
-        let cells: Vec<&str> = trimmed.split('|').map(str::trim).collect();
-        !cells.is_empty()
-            && cells.iter().all(|cell| {
-                let has_dash = cell.chars().any(|ch| ch == '-');
-                has_dash
-                    && cell
-                        .chars()
-                        .all(|ch| ch == '-' || ch == ':' || ch.is_whitespace())
-            })
+        rendering::live_preview_table_separator_line(line)
     }
 
     #[cfg(test)]
     pub(crate) fn live_preview_source_table_complete_at_line(&self, line: usize) -> bool {
         self.live_preview_source_table_bounds(line).is_some()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn live_preview_table_cache_contains_line(&self, line: usize) -> bool {
+        self.live_preview_source_table_info_for_line(line).is_some()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn live_preview_table_cached_widths_for_line(
+        &self,
+        line: usize,
+    ) -> Option<Vec<usize>> {
+        self.live_preview_source_table_info_for_line(line)
+            .map(|info| info.widths.clone())
     }
 
     pub(crate) fn live_preview_fixed_width_max_h_scroll(
@@ -1834,12 +1981,19 @@ impl EditorPane {
             .filter_map(|(line, line_text)| {
                 self.live_preview_fixed_width_line_kind(line, line_text)
                     .map(|kind| {
-                        let padding = match kind {
-                            MdElementKind::CodeBlock => 4,
-                            MdElementKind::Table => 2,
-                            _ => 0,
-                        };
-                        line_text.width() + padding
+                        if let Some(info) = self.live_preview_source_table_info_for_line(line) {
+                            let table_gap_cols = 4usize;
+                            info.widths.iter().sum::<usize>()
+                                + table_gap_cols.saturating_mul(info.widths.len().saturating_sub(1))
+                                + 4
+                        } else {
+                            let padding = match kind {
+                                MdElementKind::CodeBlock => 4,
+                                MdElementKind::Table => 2,
+                                _ => 0,
+                            };
+                            line_text.width() + padding
+                        }
                     })
             })
             .max()
@@ -1861,6 +2015,7 @@ impl EditorPane {
         if self.live_preview {
             self.live_preview = false;
             self.live_preview_map = None;
+            self.live_preview_source_table_cache = None;
         } else {
             // Exit full preview if active
             if self.preview_mode {
@@ -1868,6 +2023,7 @@ impl EditorPane {
             }
             self.live_preview = true;
             self.ensure_live_preview_map();
+            self.ensure_live_preview_source_table_cache();
         }
     }
 
@@ -1880,12 +2036,28 @@ impl EditorPane {
         }
     }
 
+    fn ensure_live_preview_source_table_cache(&mut self) {
+        let gen = self.editor.content_generation();
+        if self
+            .live_preview_source_table_cache
+            .as_ref()
+            .is_some_and(|cache| cache.generation == gen)
+        {
+            return;
+        }
+        self.live_preview_source_table_cache = Some(LivePreviewSourceTableCache::build(
+            &self.editor.buffer.lines,
+            gen,
+        ));
+    }
+
     /// Toggle preview mode on/off, syncing scroll position proportionally.
     pub fn toggle_preview(&mut self) {
         // Exit live preview if active (mutually exclusive)
         if self.live_preview {
             self.live_preview = false;
             self.live_preview_map = None;
+            self.live_preview_source_table_cache = None;
         }
 
         let raw_line_count = self.editor.buffer.line_count().max(1);

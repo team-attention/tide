@@ -67,10 +67,10 @@ pub(crate) fn live_preview_code_fence_line(line: &str) -> bool {
 }
 
 pub(crate) fn live_preview_table_separator_line(line: &str) -> bool {
-    let trimmed = line.trim().trim_matches('|');
-    let cells: Vec<&str> = trimmed.split('|').map(str::trim).collect();
+    let cells = live_preview_table_raw_cells(line);
     !cells.is_empty()
         && cells.iter().all(|cell| {
+            let cell = cell.trim();
             let has_dash = cell.chars().any(|ch| ch == '-');
             has_dash
                 && cell
@@ -79,10 +79,81 @@ pub(crate) fn live_preview_table_separator_line(line: &str) -> bool {
         })
 }
 
-fn live_preview_table_cells(line: &str) -> Vec<String> {
-    line.trim()
-        .trim_matches('|')
-        .split('|')
+pub(crate) fn live_preview_table_cell_ranges(line: &str) -> Vec<Range<usize>> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+
+    let row_start = line.find(trimmed).unwrap_or(0);
+    let mut start = row_start;
+    let mut end = row_start + trimmed.len();
+    if line[start..end].starts_with('|') {
+        start += 1;
+    }
+    if start < end && line[start..end].ends_with('|') && !pipe_is_escaped(line, end - 1) {
+        end = end.saturating_sub(1);
+    }
+    if start >= end {
+        return Vec::new();
+    }
+
+    let mut ranges = Vec::new();
+    let mut cell_start = start;
+    let mut escaped = false;
+    let mut in_code = false;
+    for (rel_idx, ch) in line[start..end].char_indices() {
+        let abs_idx = start + rel_idx;
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == '`' {
+            in_code = !in_code;
+            continue;
+        }
+        if ch == '|' && !in_code {
+            ranges.push(cell_start..abs_idx);
+            cell_start = abs_idx + ch.len_utf8();
+        }
+    }
+    ranges.push(cell_start..end);
+    ranges
+}
+
+fn pipe_is_escaped(line: &str, pipe_byte_idx: usize) -> bool {
+    let bytes = line.as_bytes();
+    let mut idx = pipe_byte_idx;
+    let mut slash_count = 0usize;
+    while idx > 0 {
+        idx -= 1;
+        if bytes.get(idx).copied() == Some(b'\\') {
+            slash_count += 1;
+        } else {
+            break;
+        }
+    }
+    slash_count % 2 == 1
+}
+
+pub(crate) fn live_preview_table_raw_cells(line: &str) -> Vec<&str> {
+    live_preview_table_cell_ranges(line)
+        .into_iter()
+        .map(|range| &line[range])
+        .collect()
+}
+
+pub(crate) fn live_preview_table_cell_count(line: &str) -> usize {
+    live_preview_table_raw_cells(line).len()
+}
+
+pub(crate) fn live_preview_table_cells(line: &str) -> Vec<String> {
+    live_preview_table_raw_cells(line)
+        .into_iter()
         .map(|cell| live_preview_table_cell_text(cell.trim()))
         .collect()
 }
@@ -98,6 +169,11 @@ pub(crate) fn live_preview_table_cell_text(cell: &str) -> String {
         }
         if chars[idx] == '`' {
             idx += 1;
+            continue;
+        }
+        if chars[idx] == '\\' && idx + 1 < chars.len() {
+            rendered.push(chars[idx + 1]);
+            idx += 2;
             continue;
         }
         rendered.push(chars[idx]);
@@ -1488,7 +1564,7 @@ impl EditorPane {
         let content_x = rect.x + GUTTER_WIDTH_CELLS as f32 * cell_size.width;
         let y = rect.y + vi as f32 * cell_size.height;
         let max_cols = (content_width / cell_size.width).floor().max(0.0) as usize;
-        let widths = live_preview_table_column_widths(&self.editor.buffer.lines, abs_line);
+        let widths = self.live_preview_table_column_widths_for_line(abs_line);
         if widths.is_empty() {
             return;
         }

@@ -150,6 +150,7 @@ pub(crate) fn handle_scroll(
 
     let editor_dx = dx;
     let editor_dy = dy;
+    let horizontal_scroll_dominant = editor_dx != 0.0 && editor_dx.abs() > editor_dy.abs();
 
     // Tab bar scroll: if cursor is within the tab bar header area of any pane
     let cursor_pos = ctx.last_cursor_pos();
@@ -204,9 +205,9 @@ pub(crate) fn handle_scroll(
         }
     }
 
-    // Horizontal scroll for fixed-width LivePreviewMode blocks must consume the gesture
-    // before vertical routing, including at the horizontal edge.
-    if editor_dx != 0.0 {
+    // Horizontal-dominant scroll for fixed-width LivePreviewMode blocks must consume
+    // the gesture before vertical routing, including at the horizontal edge.
+    if horizontal_scroll_dominant {
         let editor_pane_id = ctx
             .visual_pane_rects()
             .iter()
@@ -262,7 +263,7 @@ pub(crate) fn handle_scroll(
     }
 
     // Horizontal scroll for editor/diff panes (trackpad two-finger swipe)
-    if editor_dx != 0.0 {
+    if horizontal_scroll_dominant {
         let editor_pane_id = ctx
             .visual_pane_rects()
             .iter()

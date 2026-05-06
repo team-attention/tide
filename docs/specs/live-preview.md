@@ -141,6 +141,7 @@ Flow:
 3. Fixed-width block elements keep intrinsic width and use horizontal scroll.
 4. Table rows and code block rows count as one display row for viewport scrolling.
 5. Horizontal scroll moves across fixed-width table and code block rows when they exceed the visible content columns.
+6. Scroll gestures over fixed-width table and code block rows are axis-locked by the dominant delta: vertical-dominant gestures scroll the Markdown Pane vertically, and horizontal-dominant gestures scroll only that fixed-width block horizontally.
 Postcondition: Soft wrap uses one consistent display row model for rendering, cursor visibility, and viewport scroll.
 Business Rules:
 - BR-1: WrapMap uses raw buffer widths for prose lines.
@@ -153,6 +154,8 @@ Business Rules:
 - BR-8: Cursor placement and selection hit-testing use the same fixed-width display row model as rendering, so clicks inside code block or table preview rows cannot map to raw wrapped sub-rows.
 - BR-9: Selection highlights for fixed-width LivePreviewMode rows are clipped to the Editor Pane viewport and clamp to visible content columns.
 - BR-10: Selection and reverse-mapping in Markdown tables use table-specific display geometry so visible columns map to visible source spans (pipes/border markers are skipped).
+- BR-11: Vertical-dominant scroll gestures over fixed-width table and code block rows must route to Markdown Pane vertical scrolling and must not mutate fixed-width block horizontal scroll.
+- BR-12: Horizontal-dominant scroll gestures over fixed-width table and code block rows must mutate only that fixed-width block horizontal scroll and must not route Markdown Pane vertical scrolling.
 
 ### UC-7: VisibleTextInteraction
 Actor: User
@@ -238,6 +241,8 @@ Business Rules:
 | UC-6 | BR-8 | live_preview_fixed_width_hit_testing_uses_display_rows() |
 | UC-6 | BR-9 | live_preview_fixed_width_selection_rects_are_clipped_to_viewport() |
 | UC-6 | BR-10 | live_preview_table_selection_rects_skip_table_syntax_markers() |
+| UC-6 | BR-11 | vertical_scroll_over_fixed_width_live_preview_block_scrolls_pane_not_block() |
+| UC-6 | BR-12 | horizontal_scroll_over_fixed_width_live_preview_block_scrolls_block_not_pane() |
 | UC-7 | BR-1 | live_preview_selected_text_omits_hidden_syntax_markers() |
 | UC-7 | BR-2 | live_preview_context_artifact_capture_uses_visible_selected_text() |
 | UC-7 | BR-3 | live_preview_link_click_opens_rendered_link_target() |
