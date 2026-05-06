@@ -279,7 +279,7 @@ pub static LIGHT: ThemePalette = ThemePalette {
     tree_dir_icon: Color::rgb(0.39, 0.39, 0.39),
     tree_icon: Color::rgb(0.46, 0.46, 0.46),
     tree_row_active: Color::new(0.420, 0.545, 0.620, 0.08),
-    file_tree_focus_fill: Color::rgb(0.910, 0.910, 0.910),
+    file_tree_focus_fill: Color::rgb(0.875, 0.902, 0.918),
     file_tree_focus_stroke: Color::rgb(0.650, 0.755, 0.815),
 
     // Tab bar — neutral workbench header with white active tab
@@ -311,7 +311,7 @@ pub static LIGHT: ThemePalette = ThemePalette {
     scrollbar_current: Color::rgb(0.420, 0.545, 0.620),
 
     // Hover
-    hover_file_tree: Color::rgb(0.910, 0.910, 0.910),
+    hover_file_tree: Color::new(0.0, 0.0, 0.0, 0.04),
     hover_tab: Color::rgb(0.910, 0.910, 0.910),
     hover_close: Color::new(1.0, 0.3, 0.3, 0.18),
     hover_panel_border: Color::rgb(0.831, 0.831, 0.831),
