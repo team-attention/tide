@@ -21,6 +21,16 @@ fn test_app() -> App {
     app
 }
 
+fn layout_snapshot_contains(snapshot: &crate::tide_layout::LayoutSnapshot, pane_id: u64) -> bool {
+    match snapshot {
+        crate::tide_layout::LayoutSnapshot::Leaf { tabs, .. }
+        | crate::tide_layout::LayoutSnapshot::LeafGroup { tabs, .. } => tabs.contains(&pane_id),
+        crate::tide_layout::LayoutSnapshot::Split { left, right, .. } => {
+            layout_snapshot_contains(left, pane_id) || layout_snapshot_contains(right, pane_id)
+        }
+    }
+}
+
 /// Build an App with two workspaces, each containing one editor pane.
 /// WS0 (active) has pane 100, WS1 (inactive) has pane 200.
 fn app_with_two_workspaces() -> App {
@@ -250,12 +260,15 @@ fn caller_pane_stripped_before_handler_receives_params() {
     // cause unexpected behavior. The command should process normally without seeing _caller_pane.
     let mut app = app_with_two_workspaces();
     let inactive_pane_id = 200u64;
+    let tmp = tempfile::TempDir::new().expect("temp dir should be created");
+    let test_path = tmp.path().join("test-strip.rs");
+    std::fs::write(&test_path, "fn main() {}\n").expect("test file should be written");
 
     // open-editor requires "file" param. We pass _caller_pane alongside it.
     // The handler should see {file: ...} without _caller_pane.
     let result = app.handle_cli_command(
         "open-editor",
-        json!({"_caller_pane": inactive_pane_id, "file": "/tmp/test-strip.rs"}),
+        json!({"_caller_pane": inactive_pane_id, "file": test_path.to_string_lossy().to_string()}),
     );
 
     // The command should succeed (file param is present after stripping _caller_pane)
@@ -608,4 +621,284 @@ fn open_browser_pane_routes_to_caller_terminal_dock() {
         Some(t2),
         "associated_terminal must be t2 (the caller)"
     );
+}
+
+// --- UC-7: Explicit Terminal Context Surface target while human focus differs ---
+
+#[test]
+fn open_terminal_uses_caller_terminal_as_split_source() {
+    // UC-7 BR-11: open-terminal must prefer the CLI caller Terminal as the Stage split source.
+    let (mut app, t1, t2) = app_with_two_real_terminals();
+
+    app.focus.stage_focused = Some(t2);
+    app.focus.focused = Some(t2);
+    app.focus.focus_area = FocusArea::Stage;
+
+    let result = app
+        .handle_cli_command(
+            "open-terminal",
+            json!({
+                "_caller_pane": t1,
+                "position": "split-right"
+            }),
+        )
+        .unwrap();
+    let new_terminal = result["pane_id"]
+        .as_u64()
+        .expect("open-terminal should return pane_id");
+
+    let snapshot = app.layout.snapshot().expect("layout should have a root");
+    match snapshot {
+        crate::tide_layout::LayoutSnapshot::Split { left, right, .. } => {
+            assert!(
+                layout_snapshot_contains(&left, t1),
+                "caller Terminal must remain in the split branch"
+            );
+            assert!(
+                layout_snapshot_contains(&left, new_terminal),
+                "new Terminal must be split from caller Terminal"
+            );
+            assert!(
+                layout_snapshot_contains(&right, t2),
+                "human-focused Terminal must not be used as the split source"
+            );
+        }
+        _ => panic!("layout should remain a split after open-terminal"),
+    }
+}
+
+#[test]
+fn open_terminal_from_background_caller_preserves_human_focus() {
+    // UC-7 BR-12: a background caller can create a Terminal without stealing human focus.
+    let (mut app, t1, t2) = app_with_two_real_terminals();
+
+    app.focus.stage_focused = Some(t2);
+    app.focus.focused = Some(t2);
+    app.focus.focus_area = FocusArea::Stage;
+    app.dock.dock_open = false;
+
+    let _result = app
+        .handle_cli_command(
+            "open-terminal",
+            json!({
+                "_caller_pane": t1,
+                "position": "split-right"
+            }),
+        )
+        .unwrap();
+
+    assert_eq!(
+        app.focus.focused,
+        Some(t2),
+        "human focus must stay on Terminal B"
+    );
+    assert_eq!(
+        app.focus.stage_focused,
+        Some(t2),
+        "active Stage Terminal must stay Terminal B"
+    );
+    assert_eq!(app.focus.focus_area, FocusArea::Stage);
+    assert!(
+        !app.dock.dock_open,
+        "background Terminal creation must not reveal the visible Terminal Context Surface"
+    );
+}
+
+#[test]
+fn open_editor_explicit_owner_terminal_opens_in_background_context_surface() {
+    // UC-7 BR-13/BR-15: explicit owner opens an Editor Pane in that Terminal's
+    // Terminal Context Surface without moving visible focus when the owner is backgrounded.
+    let (mut app, t1, t2) = app_with_two_real_terminals();
+    let tmp = tempfile::TempDir::new().expect("temp dir should be created");
+    let test_path = tmp.path().join("background.md");
+    std::fs::write(&test_path, "# background\n").expect("test file should be written");
+
+    app.focus.stage_focused = Some(t2);
+    app.focus.focused = Some(t2);
+    app.focus.focus_area = FocusArea::Stage;
+    app.dock.dock_open = false;
+
+    let result = app
+        .handle_cli_command(
+            "open-editor",
+            json!({
+                "_caller_pane": t1,
+                "file": test_path.to_string_lossy().to_string(),
+                "target": {
+                    "kind": "terminal_context_surface",
+                    "owner_terminal_id": t1
+                }
+            }),
+        )
+        .unwrap();
+    let editor_id = result["pane_id"]
+        .as_u64()
+        .expect("open-editor should return pane_id");
+
+    assert_eq!(
+        app.terminal_owning(editor_id),
+        Some(t1),
+        "Editor Pane must be owned by explicit Terminal"
+    );
+    assert_eq!(app.associated_terminal(editor_id), Some(t1));
+    match app.panes.get(&t1) {
+        Some(PaneKind::Terminal(terminal)) => {
+            assert!(
+                terminal.dock_layout.all_pane_ids().contains(&editor_id),
+                "Editor Pane must be in explicit Terminal's Terminal Context Surface"
+            );
+            assert_eq!(terminal.dock_focused, Some(editor_id));
+        }
+        _ => panic!("explicit owner should be a Terminal Pane"),
+    }
+    assert_eq!(
+        app.focus.focused,
+        Some(t2),
+        "human focus must stay on Terminal B"
+    );
+    assert_eq!(app.focus.stage_focused, Some(t2));
+    assert_eq!(app.focus.focus_area, FocusArea::Stage);
+    assert!(
+        !app.dock.dock_open,
+        "background Editor Pane open must not reveal the visible Terminal Context Surface"
+    );
+}
+
+#[test]
+fn open_editor_explicit_owner_does_not_replace_visible_terminal_launcher() {
+    // UC-7 BR-15: background open must not replace a Launcher Pane from the
+    // currently visible Terminal Context Surface when the explicit owner differs.
+    let (mut app, t1, t2) = app_with_two_real_terminals();
+    let tmp = tempfile::TempDir::new().expect("temp dir should be created");
+    let test_path = tmp.path().join("background-with-launcher.md");
+    std::fs::write(&test_path, "# background\n").expect("test file should be written");
+
+    let visible_launcher = app.layout.alloc_id();
+    app.panes
+        .insert(visible_launcher, PaneKind::Launcher(visible_launcher));
+    app.add_pane_to_dock(visible_launcher, Some(t2));
+
+    app.focus.stage_focused = Some(t2);
+    app.focus.focused = Some(t2);
+    app.focus.focus_area = FocusArea::Stage;
+
+    let result = app
+        .handle_cli_command(
+            "open-editor",
+            json!({
+                "_caller_pane": t1,
+                "file": test_path.to_string_lossy().to_string(),
+                "target": {
+                    "kind": "terminal_context_surface",
+                    "owner_terminal_id": t1
+                }
+            }),
+        )
+        .unwrap();
+    let editor_id = result["pane_id"]
+        .as_u64()
+        .expect("open-editor should return pane_id");
+
+    assert!(
+        app.panes.contains_key(&visible_launcher),
+        "visible Terminal's Launcher Pane must not be removed"
+    );
+    match app.panes.get(&t2) {
+        Some(PaneKind::Terminal(terminal)) => assert!(
+            terminal
+                .dock_layout
+                .all_pane_ids()
+                .contains(&visible_launcher),
+            "visible Terminal Context Surface must keep its Launcher Pane"
+        ),
+        _ => panic!("visible owner should be a Terminal Pane"),
+    }
+    assert_eq!(app.terminal_owning(editor_id), Some(t1));
+}
+
+#[test]
+fn open_editor_explicit_owner_rejects_non_terminal_pane() {
+    // UC-7 BR-14: explicit owner_terminal_id must reference a live Terminal Pane.
+    let (mut app, _t1, t2) = app_with_two_real_terminals();
+    let editor_owner = app.layout.alloc_id();
+    app.panes.insert(
+        editor_owner,
+        PaneKind::Editor(EditorPane::new_empty(editor_owner)),
+    );
+    let tmp = tempfile::TempDir::new().expect("temp dir should be created");
+    let test_path = tmp.path().join("bad-owner.md");
+    std::fs::write(&test_path, "# bad owner\n").expect("test file should be written");
+
+    let result = app.handle_cli_command(
+        "open-editor",
+        json!({
+            "_caller_pane": t2,
+            "file": test_path.to_string_lossy().to_string(),
+            "target": {
+                "kind": "terminal_context_surface",
+                "owner_terminal_id": editor_owner
+            }
+        }),
+    );
+
+    assert!(
+        result.is_err(),
+        "non-Terminal explicit owner must fail instead of falling back"
+    );
+}
+
+#[test]
+fn open_editor_explicit_owner_in_inactive_workspace_restores_active_workspace() {
+    // UC-7 BR-16: cross-Workspace explicit owner mutations are stored in the caller
+    // Workspace and the human-visible active Workspace is restored.
+    let mut app = app_with_two_terminal_workspaces();
+    let active_terminal = 100u64;
+    let inactive_terminal = 200u64;
+    let tmp = tempfile::TempDir::new().expect("temp dir should be created");
+    let test_path = tmp.path().join("inactive.md");
+    std::fs::write(&test_path, "# inactive\n").expect("test file should be written");
+
+    app.focus.focused = Some(active_terminal);
+    app.focus.stage_focused = Some(active_terminal);
+    app.focus.focus_area = FocusArea::Stage;
+
+    let result = app
+        .handle_cli_command(
+            "open-editor",
+            json!({
+                "_caller_pane": inactive_terminal,
+                "file": test_path.to_string_lossy().to_string(),
+                "target": {
+                    "kind": "terminal_context_surface",
+                    "owner_terminal_id": inactive_terminal
+                }
+            }),
+        )
+        .unwrap();
+    let editor_id = result["pane_id"]
+        .as_u64()
+        .expect("open-editor should return pane_id");
+
+    assert_eq!(app.ws.active, 0, "active Workspace must be restored");
+    assert_eq!(app.focus.focused, Some(active_terminal));
+    assert_eq!(app.focus.stage_focused, Some(active_terminal));
+    assert!(
+        !app.panes.contains_key(&editor_id),
+        "inactive Workspace Editor Pane must not leak into active panes"
+    );
+    assert!(
+        app.ws.workspaces[1].panes.contains_key(&editor_id),
+        "Editor Pane must be stored in the caller Workspace"
+    );
+    match app.ws.workspaces[1].panes.get(&inactive_terminal) {
+        Some(PaneKind::Terminal(terminal)) => {
+            assert!(
+                terminal.dock_layout.all_pane_ids().contains(&editor_id),
+                "Editor Pane must be in inactive Terminal's Terminal Context Surface"
+            );
+            assert_eq!(terminal.dock_focused, Some(editor_id));
+        }
+        _ => panic!("inactive owner should be a Terminal Pane"),
+    }
+    assert_eq!(app.associated_terminal(editor_id), Some(inactive_terminal));
 }

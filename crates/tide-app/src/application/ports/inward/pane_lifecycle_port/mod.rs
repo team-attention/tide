@@ -19,6 +19,12 @@ pub(crate) trait PaneLifecyclePort {
     fn open_browser_pane(&mut self, url: Option<String>);
     fn replace_pane_with_editor(&mut self, pane_id: PaneId, path: PathBuf);
     fn open_editor_pane(&mut self, path: PathBuf);
+    fn open_editor_pane_in_context_with_activation(
+        &mut self,
+        path: PathBuf,
+        context_terminal: Option<PaneId>,
+        activate: bool,
+    ) -> Option<PaneId>;
     fn open_editor_pane_at_line(&mut self, path: PathBuf, line: Option<usize>);
     fn open_render_pane(&mut self, title: String, html: String) -> PaneId;
     fn open_render_stream_pane(&mut self, title: String) -> PaneId;

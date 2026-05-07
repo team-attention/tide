@@ -17,6 +17,13 @@ pub(crate) trait ActionPort {
         direction: SplitDirection,
         cwd: Option<std::path::PathBuf>,
     ) -> Option<crate::tide_core::PaneId>;
+    fn split_pane_from_with_activation(
+        &mut self,
+        source: crate::tide_core::PaneId,
+        direction: SplitDirection,
+        cwd: Option<std::path::PathBuf>,
+        activate: bool,
+    ) -> Option<crate::tide_core::PaneId>;
     fn cleanup_retained_context(&mut self, closed_pane_id: crate::tide_core::PaneId);
     fn exit_app(&self);
 }

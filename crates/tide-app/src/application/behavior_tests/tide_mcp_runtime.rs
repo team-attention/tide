@@ -358,10 +358,9 @@ fn open_tool_descriptions_distinguish_content_from_surface_intent() {
     let editor = mcp_tool_description(&tools, "tide_open_editor");
     assert!(editor.contains("Open an existing file path"));
     assert!(editor.contains("Tide Editor Pane"));
-    assert!(editor.contains("active Terminal Context Surface when possible"));
-    assert!(editor.contains("source or text files the user wants to read or edit"));
-    assert!(editor.contains("Do not use this to merely reveal"));
-    assert!(editor.contains("create an empty workspace area"));
+    assert!(editor.contains("caller Terminal's Terminal Context Surface"));
+    assert!(editor.contains("owner_terminal_id"));
+    assert!(editor.contains("without moving visible focus"));
 
     let browser = mcp_tool_description(&tools, "tide_open_browser");
     assert!(browser.contains("Open a URL or empty browser"));

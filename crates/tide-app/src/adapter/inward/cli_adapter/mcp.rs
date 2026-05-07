@@ -313,8 +313,23 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
         },
         {
             "name": "tide_open_editor",
-            "description": "Open an existing file path in a Tide Editor Pane attached to the active Terminal Context Surface when possible. Use this for source or text files the user wants to read or edit. Do not use this to merely reveal the Terminal Context Surface or create an empty workspace area.",
-            "inputSchema": { "type": "object", "properties": { "file": { "type": "string" } }, "required": ["file"] }
+            "description": "Open an existing file path in a Tide Editor Pane. By default it attaches to the caller Terminal's Terminal Context Surface. To attach to a specific Terminal Pane, pass target={kind:\"terminal_context_surface\", owner_terminal_id}. If the owner Terminal is not the human-focused Stage Terminal, Tide opens the Editor Pane in that Terminal Context Surface in the background without moving visible focus.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string" },
+                    "target": {
+                        "type": "object",
+                        "properties": {
+                            "kind": { "type": "string", "enum": ["terminal_context_surface"] },
+                            "owner_terminal_id": { "type": "integer", "description": "Terminal Pane whose Terminal Context Surface should own the Editor Pane" }
+                        },
+                        "required": ["kind", "owner_terminal_id"]
+                    },
+                    "owner_terminal_id": { "type": "integer", "description": "Compatibility shorthand for target.owner_terminal_id" }
+                },
+                "required": ["file"]
+            }
         },
         {
             "name": "tide_open_browser",

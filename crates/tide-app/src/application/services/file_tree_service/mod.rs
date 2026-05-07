@@ -770,7 +770,7 @@ impl App {
                     Self::log_app_handoff_failure(result, &path);
                 }
                 FileTreeClickResult::OpenEditor(path) => {
-                    self.open_editor_pane_in_context(path, self.focus.stage_focused)
+                    let _ = self.open_editor_pane_in_context(path, self.focus.stage_focused);
                 }
             }
         }

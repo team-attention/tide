@@ -35,6 +35,78 @@ impl App {
             self.dock.dock_zoomed = tp.dock_view_mode == ViewMode::Stacked;
         }
     }
+
+    pub(crate) fn add_pane_to_dock_with_reveal(
+        &mut self,
+        new_pane_id: PaneId,
+        target_terminal: Option<PaneId>,
+        reveal: bool,
+    ) {
+        let launcher_to_replace = self
+            .dock_launcher_id_for_target(target_terminal)
+            .filter(|&lid| lid != new_pane_id);
+
+        if let Some(launcher_id) = launcher_to_replace {
+            let tid = target_terminal.or_else(|| self.focused_terminal_id());
+            if let Some(tid) = tid {
+                if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                    tp.dock_layout.replace_pane(launcher_id, new_pane_id);
+                    tp.dock_focused = Some(new_pane_id);
+                    tp.dock_layout.set_active_tab(new_pane_id);
+                }
+                self.panes.remove(&launcher_id);
+                self.cleanup_closed_pane_state(launcher_id);
+                if reveal {
+                    self.set_dock_visible_with_animation(true);
+                }
+                self.assoc.associated_terminal.insert(new_pane_id, tid);
+            }
+            return;
+        }
+
+        if let Some(tid) = target_terminal.or_else(|| self.focused_terminal_id()) {
+            let mut created_split = false;
+            if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                if tp.dock_layout.all_pane_ids().is_empty() {
+                    tp.dock_layout.insert_at_root(new_pane_id, DropZone::Right);
+                } else if let Some(focused) = tp.dock_focused {
+                    if !tp.dock_layout.insert_pane(
+                        focused,
+                        new_pane_id,
+                        SplitDirection::Vertical,
+                        false,
+                    ) {
+                        tp.dock_layout.insert_at_root(new_pane_id, DropZone::Right);
+                    }
+                    created_split = true;
+                } else {
+                    tp.dock_layout.insert_at_root(new_pane_id, DropZone::Right);
+                    created_split = true;
+                }
+                tp.dock_focused = Some(new_pane_id);
+                tp.dock_layout.set_active_tab(new_pane_id);
+            }
+            if created_split {
+                self.begin_split_transition_animation(
+                    crate::state::SplitTransitionScope::TerminalContextSurface { terminal_id: tid },
+                    new_pane_id,
+                );
+            }
+            if reveal {
+                self.set_dock_visible_with_animation(true);
+            }
+            self.assoc.associated_terminal.insert(new_pane_id, tid);
+        }
+    }
+
+    fn dock_launcher_id_for_target(&self, target_terminal: Option<PaneId>) -> Option<PaneId> {
+        let tid = target_terminal.or_else(|| self.focused_terminal_id())?;
+        let focused_id = match self.panes.get(&tid) {
+            Some(PaneKind::Terminal(tp)) => tp.dock_focused?,
+            _ => return None,
+        };
+        matches!(self.panes.get(&focused_id), Some(PaneKind::Launcher(_))).then_some(focused_id)
+    }
 }
 
 impl DockPort for App {
@@ -84,55 +156,7 @@ impl DockPort for App {
     /// When `target_terminal` is Some, the pane is placed in that Terminal's dock.
     /// When None, falls back to `focused_terminal_id()` (= stage_focused).
     fn add_pane_to_dock(&mut self, new_pane_id: PaneId, target_terminal: Option<PaneId>) {
-        let launcher_to_replace = self.dock_launcher_id().filter(|&lid| lid != new_pane_id);
-
-        if let Some(launcher_id) = launcher_to_replace {
-            let tid = target_terminal.or_else(|| self.focused_terminal_id());
-            if let Some(tid) = tid {
-                if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                    tp.dock_layout.replace_pane(launcher_id, new_pane_id);
-                    tp.dock_focused = Some(new_pane_id);
-                    tp.dock_layout.set_active_tab(new_pane_id);
-                }
-                self.panes.remove(&launcher_id);
-                self.cleanup_closed_pane_state(launcher_id);
-                self.set_dock_visible_with_animation(true);
-                self.assoc.associated_terminal.insert(new_pane_id, tid);
-            }
-            return;
-        }
-
-        if let Some(tid) = target_terminal.or_else(|| self.focused_terminal_id()) {
-            let mut created_split = false;
-            if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
-                if tp.dock_layout.all_pane_ids().is_empty() {
-                    tp.dock_layout.insert_at_root(new_pane_id, DropZone::Right);
-                } else if let Some(focused) = tp.dock_focused {
-                    if !tp.dock_layout.insert_pane(
-                        focused,
-                        new_pane_id,
-                        SplitDirection::Vertical,
-                        false,
-                    ) {
-                        tp.dock_layout.insert_at_root(new_pane_id, DropZone::Right);
-                    }
-                    created_split = true;
-                } else {
-                    tp.dock_layout.insert_at_root(new_pane_id, DropZone::Right);
-                    created_split = true;
-                }
-                tp.dock_focused = Some(new_pane_id);
-                tp.dock_layout.set_active_tab(new_pane_id);
-            }
-            if created_split {
-                self.begin_split_transition_animation(
-                    crate::state::SplitTransitionScope::TerminalContextSurface { terminal_id: tid },
-                    new_pane_id,
-                );
-            }
-            self.set_dock_visible_with_animation(true);
-            self.assoc.associated_terminal.insert(new_pane_id, tid);
-        }
+        self.add_pane_to_dock_with_reveal(new_pane_id, target_terminal, true);
     }
 
     /// Toggle Dock visibility/focus.

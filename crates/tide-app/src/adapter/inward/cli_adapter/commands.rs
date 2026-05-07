@@ -2412,7 +2412,7 @@ fn cli_resize_pane(
 
 /// UC-6: OpenTerminal — create a new terminal pane.
 fn cli_open_terminal(
-    ctx: &mut (impl ActionPort + FocusNavPort + PaneAccessPort + PaneLifecyclePort),
+    ctx: &mut (impl ActionPort + DockPort + FocusNavPort + PaneAccessPort + PaneLifecyclePort),
     params: Value,
 ) -> Result<Value, CliError> {
     let cwd = params
@@ -2421,23 +2421,74 @@ fn cli_open_terminal(
         .map(PathBuf::from);
 
     let source = ctx
-        .focused_pane()
-        .ok_or_else(|| CliError::InvalidParams("no focused pane for split target".into()))?;
+        .resolve_context_terminal_id()
+        .or_else(|| ctx.focused_pane())
+        .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+
+    if !ctx.has_pane(source) {
+        return Err(CliError::PaneNotFound(source));
+    }
+
+    let activate = ctx.focused_terminal_id() == Some(source);
 
     let direction = match params.get("position").and_then(|v| v.as_str()) {
         Some("split-below") => SplitDirection::Horizontal,
         _ => SplitDirection::Vertical,
     };
 
-    match ctx.split_pane_from(source, direction, cwd) {
+    match ctx.split_pane_from_with_activation(source, direction, cwd, activate) {
         Some(new_id) => Ok(json!({"pane_id": new_id})),
         None => Err(CliError::InvalidParams("terminal creation failed".into())),
     }
 }
 
+fn open_editor_target_owner(params: &Value) -> Result<Option<PaneId>, CliError> {
+    if let Some(target) = params.get("target") {
+        let kind = target
+            .get("kind")
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| CliError::InvalidParams("target.kind required".into()))?;
+        if kind != "terminal_context_surface" {
+            return Err(CliError::InvalidParams(
+                "target.kind must be terminal_context_surface".into(),
+            ));
+        }
+        let owner = target
+            .get("owner_terminal_id")
+            .and_then(|value| value.as_u64())
+            .ok_or_else(|| {
+                CliError::InvalidParams(
+                    "target.owner_terminal_id required for terminal_context_surface".into(),
+                )
+            })?;
+        return Ok(Some(owner));
+    }
+
+    match params.get("owner_terminal_id") {
+        Some(value) => value
+            .as_u64()
+            .map(Some)
+            .ok_or_else(|| CliError::InvalidParams("owner_terminal_id must be an integer".into())),
+        None => Ok(None),
+    }
+}
+
+fn ensure_open_editor_owner_terminal(
+    ctx: &impl PaneAccessPort,
+    owner_terminal_id: PaneId,
+) -> Result<(), CliError> {
+    match ctx.pane(owner_terminal_id) {
+        Some(PaneKind::Terminal(_)) => Ok(()),
+        Some(_) => Err(CliError::InvalidParams(
+            "owner_terminal_id must reference a Terminal Pane".into(),
+        )),
+        None => Err(CliError::PaneNotFound(owner_terminal_id)),
+    }
+}
+
 /// UC-6: OpenEditor — open a file in an editor pane.
 fn cli_open_editor(
-    ctx: &mut (impl FocusNavPort + PaneAccessPort + PaneLifecyclePort),
+    ctx: &mut (impl DockPort + FocusNavPort + PaneAccessPort + PaneLifecyclePort),
     params: Value,
 ) -> Result<Value, CliError> {
     let file = params
@@ -2447,24 +2498,31 @@ fn cli_open_editor(
 
     let path = PathBuf::from(file);
 
+    let explicit_owner = open_editor_target_owner(&params)?;
+    if let Some(owner) = explicit_owner {
+        ensure_open_editor_owner_terminal(ctx, owner)?;
+    }
+    let context_terminal = explicit_owner.or_else(|| ctx.resolve_context_terminal_id());
+    let activate = context_terminal
+        .map(|owner| ctx.focused_terminal_id() == Some(owner))
+        .unwrap_or(true);
+
     let before_ids: Vec<PaneId> = ctx.pane_entries().into_iter().map(|(id, _)| id).collect();
 
-    ctx.open_editor_pane(path.clone());
+    let opened_id = ctx
+        .open_editor_pane_in_context_with_activation(path.clone(), context_terminal, activate)
+        .ok_or_else(|| CliError::InvalidParams("editor creation failed".into()))?;
 
-    if let Some(focused) = ctx.focused_pane() {
-        let already_open = before_ids.contains(&focused)
-            && matches!(
-                ctx.pane(focused),
-                Some(PaneKind::Editor(editor)) if editor.editor.file_path() == Some(path.as_path())
-            );
-        let mut result = json!({"pane_id": focused});
-        if already_open {
-            result["already_open"] = json!(true);
-        }
-        Ok(result)
-    } else {
-        Err(CliError::InvalidParams("editor creation failed".into()))
+    let already_open = before_ids.contains(&opened_id)
+        && matches!(
+            ctx.pane(opened_id),
+            Some(PaneKind::Editor(editor)) if editor.editor.file_path() == Some(path.as_path())
+        );
+    let mut result = json!({"pane_id": opened_id});
+    if already_open {
+        result["already_open"] = json!(true);
     }
+    Ok(result)
 }
 
 /// UC-6: OpenBrowser — open a URL in a browser pane.

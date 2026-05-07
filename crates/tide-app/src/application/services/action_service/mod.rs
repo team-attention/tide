@@ -987,8 +987,18 @@ impl crate::application::ports::inward::ActionPort for App {
         direction: SplitDirection,
         cwd: Option<std::path::PathBuf>,
     ) -> Option<crate::tide_core::PaneId> {
+        self.split_pane_from_with_activation(source, direction, cwd, true)
+    }
+
+    fn split_pane_from_with_activation(
+        &mut self,
+        source: crate::tide_core::PaneId,
+        direction: SplitDirection,
+        cwd: Option<std::path::PathBuf>,
+        activate: bool,
+    ) -> Option<crate::tide_core::PaneId> {
         // Unzoom before splitting so both panes are visible
-        if self.focus.zoomed_pane.is_some() {
+        if activate && self.focus.zoomed_pane.is_some() {
             self.focus.zoomed_pane = None;
             self.cache.pane_generations.clear();
         }
@@ -1000,8 +1010,9 @@ impl crate::application::ports::inward::ActionPort for App {
                 new_id,
             );
         }
-        self.focus.focused = Some(new_id);
-        self.router.set_focused(new_id);
+        if activate {
+            self.focus_terminal(new_id);
+        }
         self.cache.invalidate_chrome();
         self.compute_layout();
         Some(new_id)

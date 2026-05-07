@@ -87,15 +87,34 @@ impl App {
         &mut self,
         path: PathBuf,
         context_terminal: Option<PaneId>,
-    ) {
+    ) -> Option<PaneId> {
+        self.open_editor_pane_in_context_with_activation(path, context_terminal, true)
+    }
+
+    pub(crate) fn open_editor_pane_in_context_with_activation(
+        &mut self,
+        path: PathBuf,
+        context_terminal: Option<PaneId>,
+        activate: bool,
+    ) -> Option<PaneId> {
         let focused = match self.focus.focused {
             Some(id) => id,
-            None => return,
+            None => return None,
         };
 
         if let Some(existing_id) = self.open_target_editor_for_path(&path, context_terminal) {
-            self.focus_existing_editor_pane(existing_id);
-            return;
+            if activate {
+                self.focus_existing_editor_pane(existing_id);
+            } else if let Some(tid) = self.terminal_owning(existing_id) {
+                if let Some(PaneKind::Terminal(tp)) = self.panes.get_mut(&tid) {
+                    tp.dock_focused = Some(existing_id);
+                    tp.dock_layout.set_active_tab(existing_id);
+                }
+                self.cache.invalidate_pane(existing_id);
+                self.cache.invalidate_chrome();
+                self.compute_layout();
+            }
+            return Some(existing_id);
         }
 
         let new_id = self.layout.alloc_id();
@@ -105,26 +124,34 @@ impl App {
                 self.panes.insert(new_id, PaneKind::Editor(pane));
                 self.ime.pending_creates.push(new_id);
                 if let Some(tid) = self.live_dock_terminal_for_context(context_terminal) {
-                    self.add_pane_to_dock(new_id, Some(tid));
+                    self.add_pane_to_dock_with_reveal(new_id, Some(tid), activate);
                     self.assoc.associated_terminal.insert(new_id, tid);
-                    self.focus.focus_area = crate::state::FocusArea::Dock;
+                    if activate {
+                        self.focus.focus_area = crate::state::FocusArea::Dock;
+                    }
                 } else {
                     self.add_to_non_terminal_group(focused, new_id);
                     if let Some(tid) = context_terminal {
                         self.assoc.associated_terminal.insert(new_id, tid);
                     }
-                    self.focus.focus_area = crate::state::FocusArea::Stage;
+                    if activate {
+                        self.focus.focus_area = crate::state::FocusArea::Stage;
+                    }
                 }
                 self.sync_file_tree_modified_editor_cache();
-                self.focus.focused = Some(new_id);
-                self.router.set_focused(new_id);
+                if activate {
+                    self.focus.focused = Some(new_id);
+                    self.router.set_focused(new_id);
+                }
                 self.cache.invalidate_chrome();
                 self.watch_file(&path);
                 self.notify_lsp_did_open(new_id);
                 self.compute_layout();
+                Some(new_id)
             }
             Err(e) => {
                 log::error!("Failed to open editor for {:?}: {}", path, e);
+                None
             }
         }
     }
@@ -673,7 +700,16 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
     /// If already open, focus it.
     fn open_editor_pane(&mut self, path: PathBuf) {
         let context_terminal = self.resolve_context_terminal_id();
-        self.open_editor_pane_in_context(path, context_terminal);
+        let _ = self.open_editor_pane_in_context(path, context_terminal);
+    }
+
+    fn open_editor_pane_in_context_with_activation(
+        &mut self,
+        path: PathBuf,
+        context_terminal: Option<PaneId>,
+        activate: bool,
+    ) -> Option<PaneId> {
+        App::open_editor_pane_in_context_with_activation(self, path, context_terminal, activate)
     }
 
     /// Open a file in the editor and jump to a specific line.

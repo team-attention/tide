@@ -194,7 +194,7 @@ Business Rules:
 - BR-2: MCP startup instructions must name Stage, Terminal Context Surface, FileTree View, Workspace rail, and the core Pane kinds.
 - BR-3: MCP startup instructions must list available Tide MCP capability families at a high level.
 - BR-4: MCP startup instructions must say tool descriptions define exact intent, placement, and limits.
-- BR-5: `tide_open_editor` must describe opening an existing file path in an Editor Pane, not merely revealing a surface or creating empty context space.
+- BR-5: `tide_open_editor` must describe opening an existing file path in an Editor Pane, defaulting to the caller Terminal's Terminal Context Surface and supporting explicit `owner_terminal_id` targeting without moving visible focus for background owners.
 - BR-6: `tide_open_browser` must describe opening a URL or empty Browser Pane in Tide and must keep external/default browser behavior as explicit handoff.
 - BR-7: The Codex Agent Wrapper must inject Tide Tool Discovery Context into the temporary `CODEX_HOME` overlay without mutating the user's real Codex home.
 - BR-8: The Claude Agent Wrapper must inject Tide Tool Discovery Context through `--append-system-prompt` without mutating the user's real Claude home.

@@ -16,6 +16,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Workspace** | `Workspace` | `application/services/workspace_infra_service/mod.rs` | An isolated set of panes + layout + focus. Only one is active at a time. |
 | **TabGroup** | `TabGroup` | `domain/layout/tab_group.rs` | Multiple panes stacked in one layout slot. Only the active tab renders. |
 | **Terminal** | `Terminal` | `domain/terminal/mod.rs` | A PTY backend instance. Owns the shell process and grid state. |
+| **Terminal Pane** | `PaneKind::Terminal` | `domain/pane/mod.rs` | A Pane that presents a `Terminal` backend inside the Workspace layout. |
 | **TerminalContext** | `TerminalContext` | `domain/pane/mod.rs` | Lightweight cached terminal state (cwd, git_info, shell_idle, etc.) separated from the heavy PTY backend. Can outlive the terminal. |
 | **EditorState** | `EditorState` | `domain/editor/mod.rs` | A text buffer with cursor, undo stack, and syntax highlighting. |
 | **LspClient** | `LspClient` | `adapter/outward/lsp_adapter/client.rs` | Manages communication with one language server process via JSON-RPC over stdio. |

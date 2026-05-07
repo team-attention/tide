@@ -169,6 +169,28 @@ Transparent to agents. No MCP protocol changes. No new env vars.
   - BR-6: `add_pane_to_dock` uses the explicit `target_terminal` when provided, falling back to `focused_terminal_id()` only when `target_terminal` is None
   - BR-7: All pane creation methods (`open_browser_pane`, `open_editor_pane`, `open_render_pane`, `open_render_stream_pane`, `new_editor_pane`) pass `resolve_context_terminal_id()` result as the target terminal
 
+### UC-7: Explicit Terminal Context Surface target while human focus differs
+
+- **Actor**: Agent process (via MCP bridge)
+- **Trigger**: MCP tool call that creates a Terminal or opens an Editor Pane while the caller Terminal is not the currently human-focused Stage Terminal
+- **Precondition**: A Workspace has 2+ Stage Terminals. The agent runs in Terminal A, but the human has focused Terminal B, or the human has switched to another Workspace.
+- **Flow**:
+  1. `handle_cli_command` sets `pending_cli_caller_pane = A`.
+  2. `open-terminal` resolves Terminal A as the split source instead of the human-focused Terminal B.
+  3. If Terminal A is not the active Stage Terminal, Tide creates the new Terminal Pane without moving visible focus away from Terminal B.
+  4. `tide_open_editor` may carry `target.kind = terminal_context_surface` and `target.owner_terminal_id = T`.
+  5. Tide validates that `T` is a live Terminal Pane in the routed Workspace.
+  6. Tide opens or dedups the Editor Pane inside Terminal T's Terminal Context Surface.
+  7. If Terminal T is not the active Stage Terminal, Tide updates Terminal T's context `dock_layout` and `dock_focused` without changing the visible `FocusArea`, focused Pane, active Stage Terminal, Dock visibility, or active Workspace.
+- **Postcondition**: Background agent work lands in the intended Terminal's Terminal Context Surface, and the human-visible focus stays where it was.
+- **Business Rules**:
+  - BR-11: `open-terminal` must prefer the CLI caller Terminal as the Stage split source, falling back to focused Pane only when no live caller context exists.
+  - BR-12: When `open-terminal` is sourced from a background Terminal, the new Terminal Pane is created without changing human-visible focus or active Stage Terminal.
+  - BR-13: `tide_open_editor` accepts an explicit Terminal Context Surface target with `owner_terminal_id`.
+  - BR-14: An explicit `owner_terminal_id` must reference a live Terminal Pane in the routed Workspace; invalid owner targets fail instead of falling back to focused Terminal state.
+  - BR-15: When the explicit owner Terminal is not the active Stage Terminal, Editor Pane open and dedup update that Terminal's Terminal Context Surface in the background without revealing the visible Dock or moving focus.
+  - BR-16: When a cross-Workspace command targets an inactive Workspace, the command stores the Terminal Context Surface mutation in the caller Workspace and restores the originally active Workspace.
+
 ## Invariants
 
 1. **Active Workspace restoration**: After any cross-workspace CLI command execution, `ws.active` and all App fields (layout, panes, focus, dock state) MUST be restored to the user's active Workspace. This holds even if the command handler returns an error or panics.
@@ -176,6 +198,7 @@ Transparent to agents. No MCP protocol changes. No new env vars.
 3. **Param transparency**: Command handlers never see `_caller_pane` in their params. The dispatch layer strips it before forwarding.
 4. **PaneId sync maintained**: The save/load swap preserves the PaneId sync invariant (every PaneId in SplitLayout exists in App.panes and vice versa) because it swaps the entire layout+panes set atomically.
 5. **Dock placement consistency**: A pane added to a Terminal's Dock via `add_pane_to_dock` MUST appear in that Terminal's `dock_layout`, not in a different Terminal's.
+6. **Human focus preservation**: A background caller may mutate its own Stage or Terminal Context Surface while another Pane remains human-focused. Explicit background mutations MUST NOT move the visible `FocusArea`, focused Pane, active Stage Terminal, or visible Terminal Context Surface.
 
 ## Tests
 
@@ -196,6 +219,12 @@ Transparent to agents. No MCP protocol changes. No new env vars.
 | UC-5 | BR-2 | `notify_for_inactive_workspace_pane_restores_active_workspace` |
 | UC-6 | BR-6 | `add_pane_to_dock_uses_target_terminal_not_stage_focused` |
 | UC-6 | BR-7 | `open_browser_pane_routes_to_caller_terminal_dock` |
+| UC-7 | BR-11 | `open_terminal_uses_caller_terminal_as_split_source` |
+| UC-7 | BR-12 | `open_terminal_from_background_caller_preserves_human_focus` |
+| UC-7 | BR-13/BR-15 | `open_editor_explicit_owner_terminal_opens_in_background_context_surface` |
+| UC-7 | BR-15 | `open_editor_explicit_owner_does_not_replace_visible_terminal_launcher` |
+| UC-7 | BR-14 | `open_editor_explicit_owner_rejects_non_terminal_pane` |
+| UC-7 | BR-16 | `open_editor_explicit_owner_in_inactive_workspace_restores_active_workspace` |
 
 ## Location
 
