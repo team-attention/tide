@@ -1850,15 +1850,18 @@ impl EditorPane {
             .map(|(idx, _)| idx)
             .unwrap_or(0);
         let mut element_style_idx = 0usize;
-        match live_map.element_style_for_line(
+        let style = live_map.element_style_for_line(
             line,
             line_start + first_content_offset,
             &mut element_style_idx,
-        ) {
+        );
+        match style {
             Some(MdElementKind::CodeBlock) => Some(MdElementKind::CodeBlock),
             Some(MdElementKind::Table) => Some(MdElementKind::Table),
-            _ if self.live_preview_source_table_line(line) => Some(MdElementKind::Table),
-            _ => None,
+            _ => live_map.block_kind_for_line(line).or_else(|| {
+                self.live_preview_source_table_line(line)
+                    .then_some(MdElementKind::Table)
+            }),
         }
     }
 

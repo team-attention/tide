@@ -536,6 +536,17 @@ fn non_cursor_code_block_lines_render_as_preview_surface_until_edited() {
 }
 
 #[test]
+fn live_preview_code_block_blank_lines_keep_code_block_kind() {
+    // UC-3 BR-13: Empty source rows inside a fenced code block remain code-block rows.
+    let input = lines("```text\nfirst line\n\nsecond line\n```");
+    let map = LivePreviewMap::build(&input);
+
+    assert_eq!(map.block_kind_for_line(1), Some(MdElementKind::CodeBlock));
+    assert_eq!(map.block_kind_for_line(2), Some(MdElementKind::CodeBlock));
+    assert_eq!(map.block_kind_for_line(3), Some(MdElementKind::CodeBlock));
+}
+
+#[test]
 fn non_cursor_table_lines_render_as_preview_table_until_edited() {
     // UC-3 BR-6: Non-cursor table separator rows become table structure instead of Markdown text.
     let rows = lines("| Name | Value |\n| --- | ---: |\n| Tide | 42 |");
@@ -1409,6 +1420,42 @@ fn live_preview_fixed_width_blocks_keep_independent_horizontal_scroll() {
         pane.live_preview_fixed_width_h_scroll_for_line(5) > 0,
         "horizontal scroll should only move the second fixed-width block"
     );
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn live_preview_code_block_blank_lines_share_horizontal_scroll() {
+    // UC-6 BR-13: A fenced code block with empty source rows owns one horizontal scroll state across every row.
+    let first = format!("first line {}", "a".repeat(90));
+    let second = format!("second line {}", "b".repeat(120));
+    let contents = format!("```text\n{first}\n\n{second}\n```\n");
+    let (mut app, id, path) = app_with_markdown_editor(&contents);
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 280.0, 220.0);
+    let cell = crate::tide_core::Size::new(8.0, 16.0);
+    let content_rect = pane_content_rect(pane_rect, cell.height);
+
+    let pane = match app.panes.get_mut(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    pane.prepare_inline_caches(content_rect, cell, false);
+    let (_, visible_cols) = pane.viewport_size_for_content_rect(content_rect, cell);
+    let second_line_row = pane.soft_wrap_visual_row_of_line(3).unwrap();
+
+    pane.handle_live_preview_fixed_width_horizontal_scroll_at_visual_row(
+        second_line_row,
+        -4.0,
+        visible_cols,
+    );
+
+    let first_scroll = pane.live_preview_fixed_width_h_scroll_for_line(1);
+    let blank_scroll = pane.live_preview_fixed_width_h_scroll_for_line(2);
+    let second_scroll = pane.live_preview_fixed_width_h_scroll_for_line(3);
+
+    assert!(second_scroll > 0);
+    assert_eq!(first_scroll, second_scroll);
+    assert_eq!(blank_scroll, second_scroll);
 
     let _ = std::fs::remove_file(path);
 }

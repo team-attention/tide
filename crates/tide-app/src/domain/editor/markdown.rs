@@ -1557,6 +1557,17 @@ impl LivePreviewMap {
             .unwrap_or_default()
     }
 
+    /// Return the fixed-width block kind that owns this line, including empty rows.
+    pub fn block_kind_for_line(&self, line: usize) -> Option<MdElementKind> {
+        self.elements_by_line.get(line)?.iter().find_map(|idx| {
+            let kind = self.elements[*idx].kind;
+            match kind {
+                MdElementKind::CodeBlock | MdElementKind::Table => Some(kind),
+                _ => None,
+            }
+        })
+    }
+
     /// Get all inline elements whose syntax should be hidden on the given line
     /// (i.e., cursor is NOT on this line).
     pub fn hidden_syntax_ranges(&self, line: usize, cursor_line: usize) -> Vec<Range<usize>> {

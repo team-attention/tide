@@ -2,10 +2,10 @@
 
 ## Overview
 ### As-Is
-Current state: Two rendering modes — Plain (raw markdown with syntax highlighting) and Preview (read-only pulldown_cmark formatted). `LivePreviewMode` exists, and Markdown Panes now open with `live_preview = true` while staying in authoring mode. Click-to-cursor, mouse selection, visible-text copy, add-comment capture, and link activation already share the live-preview mapping path, but the editor content rect still starts directly at `TAB_BAR_HEIGHT` with no extra vertical inset for `LivePreviewMode`. That means the first visible Markdown row sits against the Pane chrome, and pointer mapping still treats that edge as immediate content.
+Current state: Two rendering modes — Plain (raw markdown with syntax highlighting) and Preview (read-only pulldown_cmark formatted). `LivePreviewMode` exists, and Markdown Panes now open with `live_preview = true` while staying in authoring mode. Click-to-cursor, mouse selection, visible-text copy, add-comment capture, and link activation already share the live-preview mapping path, but the editor content rect still starts directly at `TAB_BAR_HEIGHT` with no extra vertical inset for `LivePreviewMode`. That means the first visible Markdown row sits against the Pane chrome, and pointer mapping still treats that edge as immediate content. Fixed-Width Live Preview Block detection reads a line's styled byte ranges, so an empty source row inside a fenced code block can miss the code-block kind, lose the code surface background, and start a separate block-scoped horizontal scroll range after the blank row.
 
 ### To-Be
-Markdown Panes open in `LivePreviewMode` by default while staying in authoring mode. `LivePreviewMode` renders from the raw buffer but conditionally hides/shows markdown syntax based on cursor line position. Same coordinate space as raw buffer — no line folding. Mouse click and mouse selection both reverse-map live-preview columns back into buffer columns, including when Soft Wrap is active. Copy, add-comment capture, and link activation all operate on the same human-visible Markdown content that `LivePreviewMode` renders on screen. `LivePreviewMode` content also gets a small cell-relative vertical inset so the first and last visible rows do not sit flush against the Pane chrome.
+Markdown Panes open in `LivePreviewMode` by default while staying in authoring mode. `LivePreviewMode` renders from the raw buffer but conditionally hides/shows markdown syntax based on cursor line position. Same coordinate space as raw buffer — no line folding. Mouse click and mouse selection both reverse-map live-preview columns back into buffer columns, including when Soft Wrap is active. Copy, add-comment capture, and link activation all operate on the same human-visible Markdown content that `LivePreviewMode` renders on screen. `LivePreviewMode` content also gets a small cell-relative vertical inset so the first and last visible rows do not sit flush against the Pane chrome. Empty rows inside a fenced code block remain part of the same Fixed-Width Live Preview Block, keep the continuous code surface background, and share that block's horizontal scroll state with surrounding code rows.
 
 ### Approach
 Three layers:
@@ -97,6 +97,7 @@ Business Rules:
 - BR-10: Code block background surfaces must use a consistent visible width across all rows; fence rows become subtle top/bottom structure instead of empty content bands.
 - BR-11: Table preview surfaces render readable cell text without source pipes or simple inline Markdown markers, and separator rows render as horizontal rule structure without a heavy full-row band.
 - BR-12: Focused table and code block content keeps rendered preview treatment when the Markdown block is syntactically complete; incomplete block syntax remains raw text.
+- BR-13: Empty source rows inside a fenced code block remain code-block rows and keep the continuous code surface background.
 
 ### UC-4: LivePreviewMapConstruction
 Actor: System (automatic)
@@ -156,6 +157,7 @@ Business Rules:
 - BR-10: Selection and reverse-mapping in Markdown tables use table-specific display geometry so visible columns map to visible source spans (pipes/border markers are skipped).
 - BR-11: Vertical-dominant scroll gestures over fixed-width table and code block rows must route to Markdown Pane vertical scrolling and must not mutate fixed-width block horizontal scroll.
 - BR-12: Horizontal-dominant scroll gestures over fixed-width table and code block rows must mutate only that fixed-width block horizontal scroll and must not route Markdown Pane vertical scrolling.
+- BR-13: A fenced code block with empty source rows owns one block-scoped horizontal scroll state across every row in the code block.
 
 ### UC-7: VisibleTextInteraction
 Actor: User
@@ -223,6 +225,7 @@ Business Rules:
 | UC-3 | BR-11 | live_preview_table_cells_render_without_source_markers() |
 | UC-3 | BR-11 | live_preview_table_surface_edges_follow_source_table_bounds() |
 | UC-3 | BR-12 | live_preview_block_cursor_raw_mode_only_for_structure_markers() |
+| UC-3 | BR-13 | live_preview_code_block_blank_lines_keep_code_block_kind() |
 | UC-4 | BR-1 | live_preview_map_cached_by_generation() |
 | UC-4 | BR-2 | element_ranges_sorted_non_overlapping() |
 | UC-4 | BR-3 | nested_formatting_produces_separate_entries() |
@@ -243,6 +246,7 @@ Business Rules:
 | UC-6 | BR-10 | live_preview_table_selection_rects_skip_table_syntax_markers() |
 | UC-6 | BR-11 | vertical_scroll_over_fixed_width_live_preview_block_scrolls_pane_not_block() |
 | UC-6 | BR-12 | horizontal_scroll_over_fixed_width_live_preview_block_scrolls_block_not_pane() |
+| UC-6 | BR-13 | live_preview_code_block_blank_lines_share_horizontal_scroll() |
 | UC-7 | BR-1 | live_preview_selected_text_omits_hidden_syntax_markers() |
 | UC-7 | BR-2 | live_preview_context_artifact_capture_uses_visible_selected_text() |
 | UC-7 | BR-3 | live_preview_link_click_opens_rendered_link_target() |
