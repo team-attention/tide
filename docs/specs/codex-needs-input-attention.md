@@ -7,7 +7,7 @@
 - Tide already supports wrapper-managed `AgentStatus::NeedsInput` in `crates/tide-app/src/app.rs`, `crates/tide-app/src/application/services/workspace_infra_service/mod.rs`, and the chrome renderers, but the current Codex wrapper in `crates/tide-app/resources/bin/codex` still marks presence on launch and forwards a top-level completed-turn notify payload into Tide before the turn's final main-thread assistant message is confirmed, with process `EXIT` still acting as the fallback wrapper teardown path.
 - The current Claude wrapper in `crates/tide-app/resources/bin/claude` is different: it maps Claude's `Notification`, `Stop`, and `UserPromptSubmit` hooks directly to `agent-needs-input`, `agent-idle`, and `agent-running`.
 - OpenAI's official Codex config reference documents a top-level `notify` command that receives a JSON payload from Codex.
-- OpenAI's official Codex hooks docs document `UserPromptSubmit`, `PermissionRequest`, `Stop`, `PreToolUse`, and `PostToolUse`, with hooks gated behind `[features] codex_hooks = true` and loaded from `hooks.json`.
+- Codex hooks provide `UserPromptSubmit`, `PermissionRequest`, `Stop`, `PreToolUse`, and `PostToolUse`; the local Codex CLI feature list reports `hooks` as the stable feature flag, so wrapper launch config uses `features.hooks=true` instead of the deprecated `features.codex_hooks=true` key.
 - The official Codex hooks docs do not document a `Notification` hook like Claude's.
 - OpenAI's open-source Codex hook implementation shows the current notification payload shape as `agent-turn-complete`, including `input_messages` and `last_assistant_message`.
 - OpenAI's official Codex hooks docs document `PreToolUse` only for `Bash`, and explicitly say unsupported output forms such as `permissionDecision: "ask"` fail open today.
@@ -134,12 +134,13 @@
 - **Precondition**: The Codex `Agent Wrapper` is first on `PATH`
 - **Flow**:
   1. The wrapper reports `agent-attached`
-  2. The wrapper creates the temporary `CODEX_HOME` overlay and hook config
+  2. The wrapper creates the stable Tide-owned `CODEX_HOME` overlay and hook config
   3. The wrapper launches the real Codex CLI directly with hook and MCP injection
 - **Postcondition**: The checked-in Codex launch path remains the direct CLI path only
 - **Business Rules**:
   - BR-18: The Codex wrapper must not launch App Server remote mode
   - BR-19: Direct Codex launch keeps the existing hook and MCP injection
+  - BR-20: Codex hook config uses a stable Tide-owned path and stable environment-backed command strings so Codex hook review can remain valid after a relaunch
 
 ## Invariants
 

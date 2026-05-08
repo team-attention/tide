@@ -174,12 +174,16 @@ fn macos_launch_path_schedules_initial_redraw_on_run_loop() {
 // --- UC-2: ReportCodexLifecycleFromHooks ---
 
 #[test]
-fn codex_wrapper_uses_a_temporary_codex_home_overlay() {
-    // UC-2 BR-4: The wrapper must use a temporary CODEX_HOME overlay instead of mutating the user's real CODEX_HOME.
+fn codex_wrapper_uses_a_stable_codex_home_overlay() {
+    // UC-2 BR-4, BR-21: The wrapper must use a stable Tide-owned CODEX_HOME overlay instead of mutating the user's real CODEX_HOME.
     let wrapper = include_str!("../../../resources/bin/codex");
 
     assert!(wrapper.contains("TIDE_CODEX_HOME"));
     assert!(wrapper.contains("REAL_CODEX_HOME"));
+    assert!(wrapper.contains("TIDE_WRAPPER_CONFIG_ROOT"));
+    assert!(wrapper.contains("TIDE_CODEX_HOME=\"$TIDE_WRAPPER_CONFIG_ROOT/codex/home\""));
+    assert!(!wrapper.contains("mktemp -d /tmp/tide-codex-home"));
+    assert!(!wrapper.contains("rm -rf \"$TIDE_CODEX_HOME\""));
 }
 
 #[test]
@@ -189,15 +193,39 @@ fn codex_wrapper_installs_user_prompt_submit_and_stop_hooks() {
 
     assert!(wrapper.contains("\"UserPromptSubmit\""));
     assert!(wrapper.contains("\"Stop\""));
-    assert!(wrapper.contains("features.codex_hooks=true"));
-    assert!(wrapper.contains("notify codex-stop --pane $TIDE_PANE --agent codex --payload-stdin"));
+    assert!(wrapper.contains("features.hooks=true"));
+    assert!(!wrapper.contains("features.codex_hooks=true"));
+    assert!(
+        wrapper.contains("notify codex-stop --pane \"$TIDE_PANE\" --agent codex --payload-stdin")
+    );
+    assert!(wrapper.contains("is_tide_managed_hook_group"));
     assert!(!wrapper.contains("codex-turn-complete"));
+}
+
+#[test]
+fn agent_wrappers_use_stable_hook_bearing_config_files() {
+    // UC-2 BR-21, BR-22: Agent Wrapper hook-bearing config files and hook command strings stay stable across launches.
+    let codex = include_str!("../../../resources/bin/codex");
+    let claude = include_str!("../../../resources/bin/claude");
+    let gemini = include_str!("../../../resources/bin/gemini");
+
+    assert!(codex.contains("HOOKS_FILE=\"$TIDE_CODEX_HOME/hooks.json\""));
+    assert!(claude.contains("HOOKS_FILE=\"$TIDE_CLAUDE_CONFIG_DIR/hooks.json\""));
+    assert!(gemini.contains("DEFAULTS_FILE=\"$TIDE_GEMINI_CONFIG_DIR/defaults.json\""));
+
+    assert!(!claude.contains("HOOKS_FILE=\"$(mktemp"));
+    assert!(!gemini.contains("DEFAULTS_FILE=\"$(mktemp"));
+    assert!(!gemini.contains("CONTEXT_DIR=\"$(mktemp"));
+
+    assert!(codex.contains("notify agent-running --pane \"$TIDE_PANE\" --agent codex"));
+    assert!(claude.contains("notify agent-running --pane \\\"$TIDE_PANE\\\" --agent claude"));
+    assert!(gemini.contains("notify agent-running --pane \\\"\\$TIDE_PANE\\\" --agent gemini"));
 }
 
 #[test]
 fn codex_wrapper_injects_tide_tool_discovery_context() {
     // Spec: docs/specs/tide-mcp-runtime.md
-    // UC-5 BR-7: The Codex Agent Wrapper injects Tide Tool Discovery Context into the temporary CODEX_HOME overlay without mutating the user's real Codex home.
+    // UC-5 BR-7: The Codex Agent Wrapper injects Tide Tool Discovery Context into the stable CODEX_HOME overlay without mutating the user's real Codex home.
     // UC-5 BR-10: Tide Tool Discovery Context tells Wrapped Agents to prefer Tide MCP tools before macOS default-app commands.
     let wrapper = include_str!("../../../resources/bin/codex");
 
@@ -231,13 +259,13 @@ fn claude_wrapper_appends_tide_tool_discovery_context() {
 }
 
 #[test]
-fn gemini_wrapper_loads_tide_tool_discovery_context_from_temp_memory() {
+fn gemini_wrapper_loads_tide_tool_discovery_context_from_stable_memory() {
     // Spec: docs/specs/tide-mcp-runtime.md
-    // UC-5 BR-9: The Gemini Agent Wrapper injects Tide Tool Discovery Context through a temporary GEMINI.md include directory without mutating the user's real Gemini home.
+    // UC-5 BR-9: The Gemini Agent Wrapper injects Tide Tool Discovery Context through a stable Tide-owned GEMINI.md include directory without mutating the user's real Gemini home.
     // UC-5 BR-10: Tide Tool Discovery Context tells Wrapped Agents to prefer Tide MCP tools before macOS default-app commands.
     let wrapper = include_str!("../../../resources/bin/gemini");
 
-    assert!(wrapper.contains("CONTEXT_DIR=\"$(mktemp -d /tmp/tide-gemini-context.XXXXXX)\""));
+    assert!(wrapper.contains("CONTEXT_DIR=\"$TIDE_GEMINI_CONFIG_DIR/context\""));
     assert!(wrapper.contains("CONTEXT_FILE=\"$CONTEXT_DIR/GEMINI.md\""));
     assert!(wrapper.contains("\"includeDirectories\": [\"$CONTEXT_DIR\"]"));
     assert!(wrapper.contains("\"loadMemoryFromIncludeDirectories\": true"));
@@ -247,7 +275,7 @@ fn gemini_wrapper_loads_tide_tool_discovery_context_from_temp_memory() {
     assert!(wrapper.contains("tide_open_editor"));
     assert!(wrapper.contains("tide_observe_workspace"));
     assert!(wrapper.contains("macOS `open`"));
-    assert!(wrapper.contains("rm -rf \"$CONTEXT_DIR\""));
+    assert!(!wrapper.contains("rm -rf \"$CONTEXT_DIR\""));
 }
 
 #[test]

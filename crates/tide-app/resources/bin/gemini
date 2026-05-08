@@ -10,10 +10,12 @@ REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|
 # Skip injection if not inside Tide
 [ -z "$TIDE_BIN" ] && exec "$REAL_CMD" "$@"
 
-DEFAULTS_FILE="$(mktemp /tmp/tide-gemini.XXXXXX)"
-CONTEXT_DIR="$(mktemp -d /tmp/tide-gemini-context.XXXXXX)"
+TIDE_WRAPPER_CONFIG_ROOT="${TIDE_WRAPPER_CONFIG_ROOT:-${XDG_STATE_HOME:-$HOME/Library/Application Support/Tide}/agent-wrappers}"
+TIDE_GEMINI_CONFIG_DIR="$TIDE_WRAPPER_CONFIG_ROOT/gemini"
+DEFAULTS_FILE="$TIDE_GEMINI_CONFIG_DIR/defaults.json"
+CONTEXT_DIR="$TIDE_GEMINI_CONFIG_DIR/context"
 CONTEXT_FILE="$CONTEXT_DIR/GEMINI.md"
-trap 'rm -f "$DEFAULTS_FILE"; rm -rf "$CONTEXT_DIR"' EXIT
+mkdir -p "$CONTEXT_DIR"
 
 tide_notify() {
   "$TIDE_BIN" notify "$1" --pane "$TIDE_PANE" --agent gemini >/dev/null 2>&1 || \
@@ -47,19 +49,18 @@ cat > "$DEFAULTS_FILE" << TIDE_EOF
   "mcpServers": {
     "tide": {
       "command": "$TIDE_BIN",
-      "args": ["mcp"],
-      "env": { "TIDE_SOCKET": "$TIDE_SOCKET", "TIDE_PANE": "$TIDE_PANE" }
+      "args": ["mcp"]
     }
   },
   "hooks": {
-    "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": "$TIDE_BIN notify agent-needs-input --pane $TIDE_PANE --agent gemini --payload-stdin"}]}],
-    "AfterAgent": [{"matcher": "", "hooks": [{"type": "command", "command": "$TIDE_BIN notify agent-idle --pane $TIDE_PANE --agent gemini --payload-stdin"}]}],
-    "BeforeAgent": [{"matcher": "", "hooks": [{"type": "command", "command": "$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent gemini"}]}]
+    "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": "\"\$TIDE_BIN\" notify agent-needs-input --pane \"\$TIDE_PANE\" --agent gemini --payload-stdin"}]}],
+    "AfterAgent": [{"matcher": "", "hooks": [{"type": "command", "command": "\"\$TIDE_BIN\" notify agent-idle --pane \"\$TIDE_PANE\" --agent gemini --payload-stdin"}]}],
+    "BeforeAgent": [{"matcher": "", "hooks": [{"type": "command", "command": "\"\$TIDE_BIN\" notify agent-running --pane \"\$TIDE_PANE\" --agent gemini"}]}]
   }
 }
 TIDE_EOF
 
 tide_notify agent-attached
-trap 'tide_notify agent-detached; rm -f "$DEFAULTS_FILE"; rm -rf "$CONTEXT_DIR"' EXIT
+trap 'tide_notify agent-detached' EXIT
 
 GEMINI_CLI_SYSTEM_DEFAULTS_PATH="$DEFAULTS_FILE" "$REAL_CMD" "$@"

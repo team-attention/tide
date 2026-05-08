@@ -10,9 +10,12 @@ REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|
 # Skip injection if not inside Tide
 [ -z "$TIDE_BIN" ] && exec "$REAL_CMD" "$@"
 
+TIDE_WRAPPER_CONFIG_ROOT="${TIDE_WRAPPER_CONFIG_ROOT:-${XDG_STATE_HOME:-$HOME/Library/Application Support/Tide}/agent-wrappers}"
+TIDE_CLAUDE_CONFIG_DIR="$TIDE_WRAPPER_CONFIG_ROOT/claude"
 MCP_FILE="$(mktemp /tmp/tide-claude-mcp.XXXXXX)"
-HOOKS_FILE="$(mktemp /tmp/tide-claude-hooks.XXXXXX)"
-trap 'rm -f "$MCP_FILE" "$HOOKS_FILE"' EXIT
+HOOKS_FILE="$TIDE_CLAUDE_CONFIG_DIR/hooks.json"
+mkdir -p "$TIDE_CLAUDE_CONFIG_DIR"
+trap 'rm -f "$MCP_FILE"' EXIT
 
 TIDE_CONTEXT_PROMPT="$(cat <<'TIDE_CONTEXT_EOF'
 You are running inside Tide, a terminal-centered task Workspace.
@@ -50,17 +53,17 @@ TIDE_EOF
 
 # --settings: hooks use matcher + hooks array format.
 # Combined from all sources (user + project + this) — never replaces user hooks.
-cat > "$HOOKS_FILE" << TIDE_EOF
+cat > "$HOOKS_FILE" <<'TIDE_EOF'
 {
   "hooks": {
-    "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": "$TIDE_BIN notify agent-needs-input --pane $TIDE_PANE --agent claude --payload-stdin"}]}],
-    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "$TIDE_BIN notify agent-idle --pane $TIDE_PANE --agent claude --payload-stdin"}]}],
-    "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent claude"}]}]
+    "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": "\"$TIDE_BIN\" notify agent-needs-input --pane \"$TIDE_PANE\" --agent claude --payload-stdin"}]}],
+    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "\"$TIDE_BIN\" notify agent-idle --pane \"$TIDE_PANE\" --agent claude --payload-stdin"}]}],
+    "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "\"$TIDE_BIN\" notify agent-running --pane \"$TIDE_PANE\" --agent claude"}]}]
   }
 }
 TIDE_EOF
 
 tide_notify agent-attached
-trap 'tide_notify agent-detached; rm -f "$MCP_FILE" "$HOOKS_FILE"' EXIT
+trap 'tide_notify agent-detached; rm -f "$MCP_FILE"' EXIT
 
 "$REAL_CMD" --mcp-config "$MCP_FILE" --settings "$HOOKS_FILE" --append-system-prompt "$TIDE_CONTEXT_PROMPT" "$@"

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Tide auto-injected wrapper for Codex CLI.
 # Uses -c flag for additive config injection (deep table merge — new keys additive)
-# plus a temporary hooks.json overlay so Tide can observe UserPromptSubmit,
+# plus a stable hooks.json overlay so Tide can observe UserPromptSubmit,
 # PermissionRequest, and Stop without mutating the user's real CODEX_HOME.
 
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -12,10 +12,13 @@ REAL_CMD="$(PATH="$(echo "$PATH" | sed "s|${SELF_DIR}:||g; s|:${SELF_DIR}||g; s|
 [ -z "$TIDE_BIN" ] && exec "$REAL_CMD" "$@"
 
 REAL_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
-TIDE_CODEX_HOME="$(mktemp -d /tmp/tide-codex-home.XXXXXX)"
+TIDE_WRAPPER_CONFIG_ROOT="${TIDE_WRAPPER_CONFIG_ROOT:-${XDG_STATE_HOME:-$HOME/Library/Application Support/Tide}/agent-wrappers}"
+TIDE_CODEX_HOME="$TIDE_WRAPPER_CONFIG_ROOT/codex/home"
 HOOKS_FILE="$TIDE_CODEX_HOME/hooks.json"
 TIDE_SKILLS_DIR="$TIDE_CODEX_HOME/skills"
 TIDE_SKILL_DIR="$TIDE_SKILLS_DIR/tide"
+
+mkdir -p "$TIDE_CODEX_HOME"
 
 # Wrapper-owned OSC 9 helper used only as a fallback when `tide notify` is unavailable.
 tide_osc9() { printf '\033]9;%s\007' "$1"; }
@@ -28,7 +31,7 @@ tide_notify() {
 # Report wrapper-managed presence on start and Idle on exit.
 tide_notify "agent-attached"
 
-# Build a temporary CODEX_HOME overlay so Tide can add hooks.json without
+# Build a stable CODEX_HOME overlay so Tide can add hooks.json without
 # mutating the user's real Codex home. Existing config/state entries are
 # symlinked through, while Tide owns the overlay hooks file.
 if [ -d "$REAL_CODEX_HOME" ]; then
@@ -37,7 +40,15 @@ if [ -d "$REAL_CODEX_HOME" ]; then
     base="$(basename "$entry")"
     [ "$base" = "hooks.json" ] && continue
     [ "$base" = "skills" ] && continue
-    ln -s "$entry" "$TIDE_CODEX_HOME/$base"
+    dest="$TIDE_CODEX_HOME/$base"
+    if [ -L "$dest" ]; then
+      if [ "$(readlink "$dest" 2>/dev/null || true)" != "$entry" ]; then
+        rm -f "$dest"
+        ln -s "$entry" "$dest"
+      fi
+    elif [ ! -e "$dest" ]; then
+      ln -s "$entry" "$dest"
+    fi
   done
 fi
 
@@ -47,7 +58,15 @@ if [ -d "$REAL_CODEX_HOME/skills" ]; then
     [ -e "$entry" ] || continue
     base="$(basename "$entry")"
     [ "$base" = "tide" ] && continue
-    ln -s "$entry" "$TIDE_SKILLS_DIR/$base"
+    dest="$TIDE_SKILLS_DIR/$base"
+    if [ -L "$dest" ]; then
+      if [ "$(readlink "$dest" 2>/dev/null || true)" != "$entry" ]; then
+        rm -f "$dest"
+        ln -s "$entry" "$dest"
+      fi
+    elif [ ! -e "$dest" ]; then
+      ln -s "$entry" "$dest"
+    fi
   done
 fi
 
@@ -74,9 +93,9 @@ Use macOS `open` only when the user explicitly asks for the default app or exter
 TIDE_SKILL_EOF
 
 if [ -f "$REAL_CODEX_HOME/hooks.json" ] && command -v python3 >/dev/null 2>&1; then
-  TIDE_RUNNING_HOOK_COMMAND="$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent codex" \
-  TIDE_PERMISSION_REQUEST_HOOK_COMMAND="$TIDE_BIN notify agent-needs-input --pane $TIDE_PANE --agent codex --payload-stdin" \
-  TIDE_STOP_HOOK_COMMAND="$TIDE_BIN notify codex-stop --pane $TIDE_PANE --agent codex --payload-stdin" \
+  TIDE_RUNNING_HOOK_COMMAND='"$TIDE_BIN" notify agent-running --pane "$TIDE_PANE" --agent codex' \
+  TIDE_PERMISSION_REQUEST_HOOK_COMMAND='"$TIDE_BIN" notify agent-needs-input --pane "$TIDE_PANE" --agent codex --payload-stdin' \
+  TIDE_STOP_HOOK_COMMAND='"$TIDE_BIN" notify codex-stop --pane "$TIDE_PANE" --agent codex --payload-stdin' \
     python3 - "$REAL_CODEX_HOME/hooks.json" "$HOOKS_FILE" <<'PY'
 import json
 import os
@@ -87,6 +106,32 @@ with open(src, "r", encoding="utf-8") as f:
     data = json.load(f)
 
 hooks = data.setdefault("hooks", {})
+
+def is_tide_managed_hook_group(group: object) -> bool:
+    if not isinstance(group, dict):
+        return False
+    for hook in group.get("hooks", []):
+        if not isinstance(hook, dict):
+            continue
+        command = hook.get("command")
+        if not isinstance(command, str):
+            continue
+        if "--agent codex" not in command:
+            continue
+        if (
+            "notify agent-running" in command
+            or "notify agent-needs-input" in command
+            or "notify codex-stop" in command
+        ):
+            return True
+    return False
+
+for event_name in ("UserPromptSubmit", "PermissionRequest", "Stop"):
+    groups = hooks.get(event_name)
+    if isinstance(groups, list):
+        hooks[event_name] = [
+            group for group in groups if not is_tide_managed_hook_group(group)
+        ]
 
 def append_command_hook(event_name: str, command: str, matcher: str | None = None) -> None:
     groups = hooks.setdefault(event_name, [])
@@ -114,7 +159,7 @@ with open(dst, "w", encoding="utf-8") as f:
     json.dump(data, f)
 PY
 else
-  cat > "$HOOKS_FILE" << TIDE_EOF
+  cat > "$HOOKS_FILE" <<'TIDE_EOF'
 {
   "hooks": {
     "UserPromptSubmit": [
@@ -122,7 +167,7 @@ else
         "hooks": [
           {
             "type": "command",
-            "command": "$TIDE_BIN notify agent-running --pane $TIDE_PANE --agent codex"
+            "command": "\"$TIDE_BIN\" notify agent-running --pane \"$TIDE_PANE\" --agent codex"
           }
         ]
       }
@@ -133,7 +178,7 @@ else
         "hooks": [
           {
             "type": "command",
-            "command": "$TIDE_BIN notify agent-needs-input --pane $TIDE_PANE --agent codex --payload-stdin"
+            "command": "\"$TIDE_BIN\" notify agent-needs-input --pane \"$TIDE_PANE\" --agent codex --payload-stdin"
           }
         ]
       }
@@ -143,7 +188,7 @@ else
         "hooks": [
           {
             "type": "command",
-            "command": "$TIDE_BIN notify codex-stop --pane $TIDE_PANE --agent codex --payload-stdin"
+            "command": "\"$TIDE_BIN\" notify codex-stop --pane \"$TIDE_PANE\" --agent codex --payload-stdin"
           }
         ]
       }
@@ -153,11 +198,11 @@ else
 TIDE_EOF
 fi
 
-trap 'tide_notify "agent-detached"; rm -rf "$TIDE_CODEX_HOME"' EXIT
+trap 'tide_notify "agent-detached"' EXIT
 
 codex_direct_launch() {
   CODEX_HOME="$TIDE_CODEX_HOME" "$REAL_CMD" \
-    -c "features.codex_hooks=true" \
+    -c "features.hooks=true" \
     -c "plugins.\"browser-use@openai-bundled\".enabled=false" \
     -c "mcp_servers.tide.command=\"$TIDE_BIN\"" \
     -c "mcp_servers.tide.args=[\"mcp\"]" \

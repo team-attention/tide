@@ -5,7 +5,7 @@
 ### As-Is
 
 - The source `Info.plist` omits `LSRequiresCarbon`, but the local bundled `Tide.app` can still retain the obsolete key after `cargo bundle`, and `scripts/build-app.sh` currently swallows strip failures before signing.
-- The checked-in `codex` wrapper already uses a temporary `CODEX_HOME` overlay, emits `agent-attached` on launch, enables the documented `UserPromptSubmit` hook, but still forwards turn completion through top-level Codex `notify` instead of waiting for the documented `Stop` hook and transcript-based main-thread confirmation.
+- The checked-in `codex` wrapper already uses a Tide-owned `CODEX_HOME` overlay, emits `agent-attached` on launch, enables the documented `UserPromptSubmit` hook, but still forwards turn completion through top-level Codex `notify` instead of waiting for the documented `Stop` hook and transcript-based main-thread confirmation.
 - The wrapper-hook `notify` client still accepts any gateway socket that receives the request, because wrapped-agent lifecycle payloads do not carry the owning `Tide Instance` identity. A stale or misrouted hook can therefore deliver wrapper-managed notifications into the wrong `Tide Instance` when another instance has the same `PaneId`.
 - Shared wrapped-agent routing already treats `Running` as visible-only, routes background macOS notifications for unresolved `Idle` and `NeedsInput`, and reserves `RequestUserAttention` for unresolved `NeedsInput`.
 - Focusing a wrapped-agent source `Pane` now acknowledges unresolved wrapped-agent attention immediately in the focused Tide Window, while a later `Running` signal still does not acknowledge the unresolved alert on its own.
@@ -18,7 +18,8 @@
 ### To-Be
 
 - The local `Tide.app` bundle path omits `LSRequiresCarbon`, and the local bundle build script strips it before signing, verifies the key is gone, and fails closed if the obsolete key survives while keeping the bundle multi-instance capable.
-- The `codex` wrapper injects the documented `UserPromptSubmit` and `Stop` hooks through a temporary `CODEX_HOME` overlay, uses the `Stop` hook payload and transcript file to finalize main-thread completion, and keeps `agent-attached`/`agent-detached` as the wrapper-owned presence signals.
+- Agent Wrapper hook-bearing config files live under a stable Tide-owned config path instead of per-launch temp paths, while the user's real agent home directories remain untouched.
+- The `codex` wrapper injects the documented `UserPromptSubmit` and `Stop` hooks through a stable Tide-owned `CODEX_HOME` overlay, uses the `Stop` hook payload and transcript file to finalize main-thread completion, and keeps `agent-attached`/`agent-detached` as the wrapper-owned presence signals.
 - Wrapper-managed hook notifications require the owning `TIDE_SOCKET`, and the payload carries the owning `Tide Instance` PID. A gateway must ignore wrapper-managed lifecycle notifications whose owning `Tide Instance` PID does not match the current process.
 - `Idle` and `NeedsInput` may still render unresolved attention chrome until the user acknowledges the source `Pane`, and both may route a macOS notification when the source `Pane` is backgrounded.
 - Only `NeedsInput` is allowed to request user attention.
@@ -80,7 +81,7 @@
 - **Trigger**: Codex prompt submit or `Stop`
 - **Precondition**: The `codex` wrapper is running inside Tide
 - **Flow**:
-  1. The wrapper creates a temporary `CODEX_HOME` overlay
+  1. The wrapper creates a stable Tide-owned `CODEX_HOME` overlay
   2. The wrapper injects the documented `UserPromptSubmit` hook into the overlay
   3. The wrapper installs a `Stop` hook command that forwards hook stdin JSON into Tide
   4. Tide resolves the main-thread final assistant response from `transcript_path`
@@ -92,6 +93,9 @@
   - BR-6: The notify client must accept payload JSON from stdin
   - BR-7: Wrapper-hook `notify` must require the owning `TIDE_SOCKET`
   - BR-8: Wrapper-hook `notify` must forward the owning `Tide Instance` PID, and a mismatched gateway must ignore the wrapped-agent lifecycle notification
+  - BR-21: Agent Wrapper hook-bearing config paths must be stable across launches so external hook-review state can stay valid
+  - BR-22: Agent Wrapper hook command strings must read `TIDE_BIN`, `TIDE_PANE`, and `TIDE_SOCKET` from the runtime environment instead of embedding per-Pane values into hook config
+  - BR-23: The Codex wrapper must remove previously injected Tide-managed Codex hooks before appending the current stable hook commands, so nested or relaunched wrapper sessions do not accumulate duplicate Tide hooks
 
 ### UC-3: PreserveWrappedAgentAttentionUntilAcknowledged
 
@@ -148,8 +152,9 @@
 | UC-1 | BR-16 | `source_tide_info_plist_does_not_prohibit_multiple_instances` |
 | UC-1 | BR-17 | `local_bundle_build_script_does_not_stamp_lsmultipleinstancesprohibited_before_signing` |
 | UC-1 | BR-18 | `macos_launch_path_does_not_reuse_an_existing_tide_instance_before_creating_a_window` |
-| UC-2 | BR-4 | `codex_wrapper_uses_a_temporary_codex_home_overlay` |
-| UC-2 | BR-5 | `codex_wrapper_installs_user_prompt_submit_and_stop_hooks` |
+| UC-2 | BR-4, BR-21, BR-22 | `codex_wrapper_uses_a_stable_codex_home_overlay` |
+| UC-2 | BR-21, BR-22 | `agent_wrappers_use_stable_hook_bearing_config_files` |
+| UC-2 | BR-5, BR-23 | `codex_wrapper_installs_user_prompt_submit_and_stop_hooks` |
 | UC-2 | BR-6 | `notify_client_accepts_payload_from_stdin` |
 | UC-2 | BR-7 | `notify_client_requires_an_explicit_tide_socket_for_wrapper_hooks` |
 | UC-2 | BR-8 | `terminal_pty_env_exports_the_owning_tide_instance_pid` |
