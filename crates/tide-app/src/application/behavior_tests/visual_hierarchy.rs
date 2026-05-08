@@ -41,6 +41,7 @@ use crate::tide_platform::{PlatformEvent, WindowProxy};
 use crate::ui::{file_icon, file_icon_kind, file_tree_disclosure, FileIconKind};
 use crate::ActionPort;
 use crate::App;
+use crate::AppCorePort;
 use crate::ContextMenuAction;
 use crate::DockPort;
 use crate::LayoutPort;
@@ -531,6 +532,42 @@ fn stage_split_ratio_stays_stable_during_side_surface_visibility_animation() {
     assert!(
         mid_second_rect.width < initial_second_rect.width,
         "second Stage Pane should visually shrink during FileTree View animation"
+    );
+}
+
+#[test]
+fn stage_split_ratio_stays_stable_during_tide_window_resize() {
+    // UC-4 BR-54: Tide Window resize preserves Stage SplitLayout ratios from their pre-resize values.
+    let (mut app, first_id, _second_id) = app_with_two_stage_terminals();
+    app.compute_layout();
+    let initial_ratio = root_split_ratio(&app);
+    let initial_first_width = app
+        .pane_rects
+        .iter()
+        .find(|(pane_id, _)| *pane_id == first_id)
+        .expect("first Stage Pane rect should exist")
+        .1
+        .width;
+
+    app.set_window_size(1200, 640);
+    app.compute_layout();
+
+    let resized_ratio = root_split_ratio(&app);
+    let resized_first_width = app
+        .pane_rects
+        .iter()
+        .find(|(pane_id, _)| *pane_id == first_id)
+        .expect("first Stage Pane rect should exist after resize")
+        .1
+        .width;
+
+    assert!(
+        (resized_ratio - initial_ratio).abs() < f32::EPSILON,
+        "Tide Window resize should preserve the Stage root split ratio"
+    );
+    assert!(
+        resized_first_width > initial_first_width,
+        "Stage Pane rects should still be recomputed for the wider Tide Window"
     );
 }
 

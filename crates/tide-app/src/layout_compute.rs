@@ -553,30 +553,27 @@ impl crate::application::ports::inward::LayoutPort for App {
             self.dock_area_rect = None;
         }
 
-        // Snap ratios to cell boundaries, then recompute with snapped ratios.
-        // Skip during active border drags to prevent cumulative drift.
-        let is_dragging = self.router.is_dragging_border()
-            || self.ft.border_dragging
-            || self.ws.border_dragging
-            || self.dock.dock_border_dragging
-            || self.dock.dock_split_dragging
-            || self.layout_animation_active();
-        if !is_dragging {
+        // Derive cell-aligned Stage rects while leaving stored SplitLayout Ratio unchanged.
+        // During direct Stage split-border drag, keep the live border tied to the cursor.
+        let mut rects = if self.router.is_dragging_border() {
+            self.layout
+                .compute(terminal_area, &pane_ids, self.focus.focused)
+        } else {
             let cell_size = self.cell_size();
-            if cell_size.width > 0.0 {
+            if cell_size.width > 0.0 && cell_size.height > 0.0 {
                 let decorations = PaneDecorations {
                     gap: PANE_GAP,
                     padding: PANE_PADDING,
                     tab_bar_height: TAB_BAR_HEIGHT,
                 };
+                let mut layout_for_rects = self.layout.clone();
+                layout_for_rects.snap_ratios_to_cells(terminal_area, cell_size, &decorations);
+                layout_for_rects.compute(terminal_area, &pane_ids, self.focus.focused)
+            } else {
                 self.layout
-                    .snap_ratios_to_cells(terminal_area, cell_size, &decorations);
+                    .compute(terminal_area, &pane_ids, self.focus.focused)
             }
-        }
-
-        let mut rects = self
-            .layout
-            .compute(terminal_area, &pane_ids, self.focus.focused);
+        };
 
         // Offset rects to account for file tree panel and titlebar inset
         for (_, rect) in &mut rects {

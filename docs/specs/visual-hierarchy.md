@@ -6,6 +6,7 @@
 `docs/specs/open-terminal-codex-app.md` defines the product hierarchy as `Workspace` navigation, Stage execution, Terminal Context Surface support, and FileTree View navigation. Current source includes `HeaderSurfaceKind` in `crates/tide-app/src/adapter/outward/view/header.rs`, `FileIconKind` in `crates/tide-app/src/adapter/outward/view/ui.rs`, and `SurfaceVisibilityAnimation` paths covered by `crates/tide-app/src/application/behavior_tests/visual_hierarchy.rs`.
 
 The visual hierarchy work separates Stage and Terminal Context Surface header weight, gives FileTree View layered icon grammar, and animates Dock, FileTree View, and Workspace rail visibility while preserving Stage split ratios during side-surface motion.
+`crates/tide-app/src/layout_compute.rs` also derives Stage rects by snapping `SplitLayout` ratios to terminal `Cell Size` boundaries before computing Pane rects. Because that snap writes back into the Stage `SplitLayout`, a Tide Window resize can move the stored `Ratio` toward the current pixel width and away from the user's chosen proportional split.
 
 Remaining polish in this area should preserve the same product hierarchy: Workspace rail for task navigation, Stage for primary execution, Terminal Context Surface for support context, and FileTree View for filesystem navigation.
 
@@ -21,6 +22,7 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
 7. A `Full-Screen Space` keeps Tide's own titlebar surface visible so Workspace rail, Dock, FileTree View, theme, settings, and integration controls remain available without leaving fullscreen.
 8. New Stage and Terminal Context Surface splits reveal through a short `SplitTransitionAnimation` instead of snapping both panes to the final ratio in one frame.
 9. Closing a visible split in Stage or Terminal Context Surface Split mode collapses through the same transition grammar before removing the closed `Pane`.
+10. Tide Window resize preserves stored Stage `SplitLayout` `Ratio`; terminal `Cell Size` alignment is derived from transient layout state that leaves the saved split proportion unchanged.
 
 ### Approach
 1. Add a `HeaderSurfaceKind` decision to header chrome so Stage and Terminal Context Surface can share layout primitives without sharing visual weight.
@@ -32,6 +34,7 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
 7. Normalize chrome icon glyphs around a small quiet set: lightweight FileTree chevrons, restrained document glyphs for project-special files, icon-only titlebar toggles, vector titlebar action icons, Browser Pane navigation icons, and requested Flaticon chrome roles backed by exact `RasterIconAsset` PNG sources instead of hand-authored replacement SVG.
 8. Treat side-surface visibility animation like an active border drag for Stage ratio snapping so intermediate animated widths do not rewrite `SplitLayout` ratios.
 9. Keep the Tide-rendered titlebar inset during `Full-Screen Space` transitions instead of collapsing it to zero.
+10. Compute terminal-cell-snapped Stage rects from transient layout state so stable layout passes can align rendered panes without mutating the stored Stage `SplitLayout` `Ratio`.
 
 ## Bounded Contexts
 
@@ -124,6 +127,7 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
   - BR-46: Active split transition animation keeps the event loop scheduling redraws and is treated like transient layout motion for ratio snapping and terminal backend resize pacing.
   - BR-49: Closing a visible Stage or Terminal Context Surface split starts a closing `SplitTransitionAnimation` before removing the closing `Pane`.
   - BR-49a: `GlobalAction::ClosePane` and Pane close hit zones use the split close transition path for visible Stage or Terminal Context Surface splits.
+  - BR-54: Tide Window resize preserves Stage `SplitLayout` ratios from their pre-resize values.
 
 ### UC-5: NormalizeChromeIcons
 
@@ -231,6 +235,7 @@ Stage, Terminal Context Surface, and FileTree View use different visual grammars
 | UC-4 | BR-49 | `closing_stage_split_starts_split_transition_animation_before_removal` |
 | UC-4 | BR-49 | `closing_dock_split_starts_split_transition_animation_before_removal` |
 | UC-4 | BR-49a | `global_close_pane_starts_split_transition_animation_before_removal` |
+| UC-4 | BR-54 | `stage_split_ratio_stays_stable_during_tide_window_resize` |
 | UC-5 | BR-13 | `directory_file_tree_rows_use_lightweight_disclosure_chevrons` |
 | UC-5 | BR-14 | `project_special_file_icons_share_restrained_document_glyphs` |
 | UC-5 | BR-15/BR-16/BR-19 | `titlebar_surface_toggles_are_icon_only_larger_controls` |
