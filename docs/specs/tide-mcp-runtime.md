@@ -88,7 +88,7 @@ Business Rules:
 - BR-2: Pane entries must identify whether the Pane is in Stage or Terminal Context Surface.
 - BR-3: Browser Pane entries must report `visual_fit` using their visible `Rect`.
 - BR-4: The response must include the active Terminal Context Surface owner and resize capability when that surface is visible.
-- BR-5: Browser Pane visual fit that is `too_small` or `not_visible` must include Tool Selection Guidance that selects `tide_layout_action` as the normal next tool and lists re-observation as the next step before Browser Pane content actions; app-internal API calls, URL parameter shortcuts, and BrowserSnapshot-only targeting must not be presented as equivalent substitutes.
+- BR-5: Browser Pane visual fit that is `too_small` must include Tool Selection Guidance that selects `tide_layout_action`; Browser Pane visual fit that is `not_visible` because another Terminal Context Surface owner is active must select `tide_focus_pane`; both paths list re-observation as the next step before Browser Pane content actions, and app-internal API calls, URL parameter shortcuts, and BrowserSnapshot-only targeting must not be presented as equivalent substitutes.
 
 ### UC-2: ResizeLayoutTarget
 
@@ -114,6 +114,7 @@ Business Rules:
 - BR-3: Pane split resize must work for Stage Panes and Terminal Context Surface Panes.
 - BR-4: The response must include the requested action, target, and effective target rect when available.
 - BR-5: Terminal Context Surface resize initiated by `tide_layout_action` must start SurfaceVisibilityAnimation from the current rendered width to the requested width.
+- BR-6: Terminal Context Surface resize with an explicit `owner_terminal_id` must target that Terminal's Terminal Context Surface even when another Stage Terminal is focused at command start, without moving human-visible focus.
 
 ### UC-3: RouteBrowserRuntime
 
@@ -222,12 +223,13 @@ Business Rules:
 
 - BR-1: MCP-opened Terminal Context Surface Panes must start `SplitTransitionAnimation` when they create a visible split in an existing Terminal Context Surface.
 - BR-2: `tide_close_pane` must use the split close transition path for visible Stage or Terminal Context Surface splits.
+- BR-3: MCP-opened Terminal Context Surface Panes must use Caller Pane context for placement even when another Stage Terminal is focused at command start, without moving human-visible focus.
 
 ## Invariants
 
 1. Tide MCP Runtime is provider-neutral. It can describe Codex, Claude, or Gemini as a Wrapped Agent, but its layout and Browser Pane tools do not require any one provider.
 2. Layout Target names are product concepts. MCP callers should not need to know `dock_width`.
-3. Terminal Context Surface remains attached to the focused Stage Terminal and backed by that Terminal's context `SplitLayout`.
+3. The visible Terminal Context Surface has one active owner, and Agent Gateway commands with explicit `owner_terminal_id` or Caller Pane context may target a Terminal Context Surface without depending on the human-focused Pane at command start.
 4. Legacy tools can remain for compatibility, but new agent guidance prefers product-level runtime tools.
 5. Browser work inside Tide defaults to Tide Browser Pane Runtime and must remain human-visible when the target is supported.
 6. Browser Operation state is per Browser Pane and does not create a second browser runtime.
@@ -239,8 +241,10 @@ Business Rules:
 | UC-1: ObserveTideWorkspace | BR-1, BR-2, BR-4 | `tide_mcp_runtime` | `observing_workspace_reports_provider_neutral_surfaces_and_panes` |
 | UC-1: ObserveTideWorkspace | BR-3 | `tide_mcp_runtime` | `observing_workspace_reports_browser_visual_fit` |
 | UC-1: ObserveTideWorkspace | BR-5 | `tide_mcp_runtime` | `observing_workspace_guides_layout_correction_before_browser_workarounds` |
+| UC-1: ObserveTideWorkspace | BR-5 | `tide_mcp_runtime` | `observing_background_browser_guides_focus_pane_before_browser_actions` |
 | UC-2: ResizeLayoutTarget | BR-1, BR-2, BR-4, BR-5 | `tide_mcp_runtime` | `layout_action_resizes_terminal_context_surface_target` |
 | UC-2: ResizeLayoutTarget | BR-3 | `tide_mcp_runtime` | `layout_action_resizes_terminal_context_surface_pane_split` |
+| UC-2: ResizeLayoutTarget | BR-6 | `tide_mcp_runtime` | `layout_action_resizes_explicit_terminal_context_surface_owner_without_starting_focus` |
 | UC-3: RouteBrowserRuntime | BR-1, BR-2, BR-3 | `tide_mcp_runtime` | `mcp_instructions_route_browsers_provider_neutrally` |
 | UC-3: RouteBrowserRuntime | BR-4 | `agent_gateway` | `codex_wrapper_disables_browser_use_plugin_inside_tide` |
 | UC-4: HoldBrowserOperation | BR-1, BR-4 | `tide_mcp_runtime` | `mcp_instructions_route_browsers_provider_neutrally` |
@@ -254,6 +258,7 @@ Business Rules:
 | UC-5: OrientWrappedAgentToTideStructure | BR-9, BR-10 | `wrapped_agent_release_integration` | `gemini_wrapper_loads_tide_tool_discovery_context_from_stable_memory` |
 | UC-6: AnimateMcpPaneLifecycle | BR-1 | `tide_mcp_runtime` | `mcp_open_browser_in_terminal_context_surface_starts_split_transition_animation` |
 | UC-6: AnimateMcpPaneLifecycle | BR-2 | `tide_mcp_runtime` | `mcp_close_pane_in_terminal_context_surface_starts_split_transition_animation` |
+| UC-6: AnimateMcpPaneLifecycle | BR-3 | `tide_mcp_runtime` | `mcp_open_browser_uses_caller_terminal_context_surface_without_moving_focus` |
 
 ## Location
 

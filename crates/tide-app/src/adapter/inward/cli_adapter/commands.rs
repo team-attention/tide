@@ -186,6 +186,61 @@ fn pane_kind_label(pane: &PaneKind) -> &'static str {
     }
 }
 
+fn pane_id_param(params: &Value, key: &str) -> Option<PaneId> {
+    params.get(key).and_then(|value| value.as_u64())
+}
+
+fn command_target_pane_id(
+    ctx: &(impl FocusNavPort + GatewayPort),
+    params: &Value,
+    key: &str,
+) -> Result<PaneId, CliError> {
+    pane_id_param(params, key)
+        .or_else(|| ctx.cli_caller_pane())
+        .or_else(|| ctx.focused_pane())
+        .ok_or_else(|| CliError::InvalidParams(format!("no {key}, Caller Pane, or focused pane")))
+}
+
+fn terminal_context_owner_for_pane(
+    ctx: &(impl DockPort + PaneAccessPort),
+    pane_id: PaneId,
+) -> Option<PaneId> {
+    if matches!(ctx.pane(pane_id), Some(PaneKind::Terminal(_))) {
+        return Some(pane_id);
+    }
+    ctx.terminal_owning(pane_id)
+        .or_else(|| ctx.associated_terminal(pane_id))
+        .filter(|owner| matches!(ctx.pane(*owner), Some(PaneKind::Terminal(_))))
+}
+
+fn terminal_context_surface_target_owner(
+    ctx: &(impl DockPort + GatewayPort + PaneAccessPort),
+    target: &Value,
+) -> Result<PaneId, CliError> {
+    if let Some(owner) = target.get("owner_terminal_id").and_then(|v| v.as_u64()) {
+        return match ctx.pane(owner) {
+            Some(PaneKind::Terminal(_)) => Ok(owner),
+            Some(_) => Err(CliError::InvalidParams(
+                "owner_terminal_id must reference a Terminal Pane".into(),
+            )),
+            None => Err(CliError::PaneNotFound(owner)),
+        };
+    }
+
+    if let Some(caller) = ctx.cli_caller_pane() {
+        if let Some(owner) = terminal_context_owner_for_pane(ctx, caller) {
+            return Ok(owner);
+        }
+    }
+
+    ctx.focused_terminal_id().ok_or_else(|| {
+        CliError::InvalidParams(
+            "terminal_context_surface target requires owner_terminal_id, Caller Pane, or active Stage Terminal"
+                .into(),
+        )
+    })
+}
+
 const BROWSER_OBSERVATION_SUMMARY_TEXT_LIMIT_BYTES: usize = 2 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -965,11 +1020,27 @@ fn browser_layout_correction_action(owner_terminal_id: Option<PaneId>, pane_id: 
     }
 }
 
+fn browser_visibility_activation_action(pane_id: PaneId) -> Value {
+    json!({
+        "tool": "tide_focus_pane",
+        "pane_id": pane_id,
+    })
+}
+
 fn browser_fit_tool_selection(status: &str, recommended_action: Option<&Value>) -> Value {
     if let Some(action) = recommended_action {
+        let next_tool = action
+            .get("tool")
+            .and_then(|value| value.as_str())
+            .unwrap_or("tide_layout_action");
+        let guidance_status = if next_tool == "tide_focus_pane" {
+            "surface_activation_recommended"
+        } else {
+            "layout_correction_recommended"
+        };
         return json!({
-            "status": "layout_correction_recommended",
-            "next_tool": "tide_layout_action",
+            "status": guidance_status,
+            "next_tool": next_tool,
             "reason": status,
             "action": action,
             "then": ["tide_observe_workspace", "tide_browser_observe"],
@@ -994,13 +1065,19 @@ fn browser_fit_tool_selection(status: &str, recommended_action: Option<&Value>) 
 fn browser_visual_fit(
     rect: Option<Rect>,
     owner_terminal_id: Option<PaneId>,
+    active_owner_terminal_id: Option<PaneId>,
     pane_id: PaneId,
 ) -> Value {
     const MIN_BROWSER_WIDTH: f32 = 640.0;
     const MIN_BROWSER_HEIGHT: f32 = 360.0;
 
     let Some(rect) = rect else {
-        let recommended_action = browser_layout_correction_action(owner_terminal_id, pane_id);
+        let recommended_action =
+            if owner_terminal_id.is_some() && owner_terminal_id != active_owner_terminal_id {
+                browser_visibility_activation_action(pane_id)
+            } else {
+                browser_layout_correction_action(owner_terminal_id, pane_id)
+            };
         return json!({
             "status": "not_visible",
             "visible": false,
@@ -1087,7 +1164,7 @@ fn cli_observe_workspace(
         if matches!(pane, PaneKind::Browser(_)) {
             entry.as_object_mut().unwrap().insert(
                 "visual_fit".to_string(),
-                browser_visual_fit(rect, owner_terminal_id, id),
+                browser_visual_fit(rect, owner_terminal_id, ctx.focused_terminal_id(), id),
             );
             entry
                 .as_object_mut()
@@ -1194,14 +1271,10 @@ fn cli_list_panes(
 
 /// UC-2: CapturePaneContent — read text from a terminal, editor, or Browser Pane.
 fn cli_capture_pane(
-    ctx: &(impl FocusNavPort + PaneAccessPort),
+    ctx: &(impl FocusNavPort + GatewayPort + PaneAccessPort),
     params: Value,
 ) -> Result<Value, CliError> {
-    let pane_id = params
-        .get("pane_id")
-        .and_then(|v| v.as_u64())
-        .or_else(|| ctx.focused_pane())
-        .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+    let pane_id = command_target_pane_id(ctx, &params, "pane_id")?;
 
     let pane = ctx.pane(pane_id).ok_or(CliError::PaneNotFound(pane_id))?;
 
@@ -1291,15 +1364,12 @@ fn cli_browser_observe(
     params: Value,
 ) -> Result<Value, CliError> {
     let detail = browser_observe_detail(&params)?;
-    let pane_id = params
-        .get("pane_id")
-        .and_then(|v| v.as_u64())
-        .or_else(|| ctx.focused_pane())
-        .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+    let pane_id = command_target_pane_id(ctx, &params, "pane_id")?;
     ctx.compute_layout();
     let owner_terminal_id = ctx.terminal_owning(pane_id);
     let rect = pane_rect(ctx, pane_id);
-    let visual_fit = browser_visual_fit(rect, owner_terminal_id, pane_id);
+    let visual_fit =
+        browser_visual_fit(rect, owner_terminal_id, ctx.focused_terminal_id(), pane_id);
     let control_decision = agent_browser_control_decision(ctx, pane_id);
 
     let pane = ctx
@@ -1619,16 +1689,12 @@ fn cli_browser_diff_since(
 
 /// UC-12: BrowserControl — evaluate JavaScript in a Browser Pane.
 fn cli_browser_eval(
-    ctx: &mut (impl FocusNavPort + PaneAccessPort),
+    ctx: &mut (impl FocusNavPort + GatewayPort + PaneAccessPort),
     params: Value,
 ) -> Result<Value, CliError> {
     ensure_sensitive_action_approval(&params, "browser-eval")?;
 
-    let pane_id = params
-        .get("pane_id")
-        .and_then(|v| v.as_u64())
-        .or_else(|| ctx.focused_pane())
-        .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+    let pane_id = command_target_pane_id(ctx, &params, "pane_id")?;
     let script = params
         .get("script")
         .and_then(|v| v.as_str())
@@ -1674,11 +1740,7 @@ fn cli_browser_operation(
     ctx: &mut (impl DockPort + FocusNavPort + GatewayPort + PaneAccessPort),
     params: Value,
 ) -> Result<Value, CliError> {
-    let pane_id = params
-        .get("pane_id")
-        .and_then(|v| v.as_u64())
-        .or_else(|| ctx.focused_pane())
-        .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+    let pane_id = command_target_pane_id(ctx, &params, "pane_id")?;
     let action = params
         .get("action")
         .and_then(|v| v.as_str())
@@ -1748,11 +1810,7 @@ fn cli_browser_action(
 ) -> Result<Value, CliError> {
     ensure_sensitive_action_approval(&params, "browser-action")?;
 
-    let pane_id = params
-        .get("pane_id")
-        .and_then(|v| v.as_u64())
-        .or_else(|| ctx.focused_pane())
-        .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+    let pane_id = command_target_pane_id(ctx, &params, "pane_id")?;
     let action = params
         .get("action")
         .and_then(|v| v.as_str())
@@ -1981,14 +2039,10 @@ fn cli_get_layout(ctx: &impl LayoutPort) -> Result<Value, CliError> {
 
 /// UC-3: SendKeys — write key sequences to a terminal pane's PTY.
 fn cli_send_keys(
-    ctx: &mut (impl FocusNavPort + PaneAccessPort),
+    ctx: &mut (impl FocusNavPort + GatewayPort + PaneAccessPort),
     params: Value,
 ) -> Result<Value, CliError> {
-    let pane_id = params
-        .get("pane_id")
-        .and_then(|v| v.as_u64())
-        .or_else(|| ctx.focused_pane())
-        .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+    let pane_id = command_target_pane_id(ctx, &params, "pane_id")?;
 
     let pane = ctx
         .pane_mut(pane_id)
@@ -2125,11 +2179,7 @@ fn requested_browser_selection_kind(params: &Value) -> Option<&str> {
 }
 
 fn cli_capture_selection(ctx: &crate::App, params: Value) -> Result<Value, CliError> {
-    let pane_id = params
-        .get("pane_id")
-        .and_then(|v| v.as_u64())
-        .or_else(|| ctx.focused_pane())
-        .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+    let pane_id = command_target_pane_id(ctx, &params, "pane_id")?;
 
     let pane = ctx.pane(pane_id).ok_or(CliError::PaneNotFound(pane_id))?;
     if matches!(
@@ -2172,15 +2222,11 @@ fn cli_capture_selection(ctx: &crate::App, params: Value) -> Result<Value, CliEr
 
 /// UC-5: Split — split from a source pane, creating a new terminal.
 fn cli_split(
-    ctx: &mut (impl ActionPort + FocusNavPort + PaneAccessPort),
+    ctx: &mut (impl ActionPort + FocusNavPort + GatewayPort + PaneAccessPort),
     direction: SplitDirection,
     params: Value,
 ) -> Result<Value, CliError> {
-    let source = params
-        .get("pane_id")
-        .and_then(|v| v.as_u64())
-        .or_else(|| ctx.focused_pane())
-        .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+    let source = command_target_pane_id(ctx, &params, "pane_id")?;
 
     if !ctx.has_pane(source) {
         return Err(CliError::PaneNotFound(source));
@@ -2199,14 +2245,10 @@ fn cli_split(
 
 /// UC-5: ClosePaneCli — close a specific pane.
 fn cli_close_pane(
-    ctx: &mut (impl FocusNavPort + PaneAccessPort + PaneLifecyclePort),
+    ctx: &mut (impl FocusNavPort + GatewayPort + PaneAccessPort + PaneLifecyclePort),
     params: Value,
 ) -> Result<Value, CliError> {
-    let pane_id = params
-        .get("pane_id")
-        .and_then(|v| v.as_u64())
-        .or_else(|| ctx.focused_pane())
-        .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+    let pane_id = command_target_pane_id(ctx, &params, "pane_id")?;
 
     if !ctx.has_pane(pane_id) {
         return Err(CliError::PaneNotFound(pane_id));
@@ -2218,7 +2260,7 @@ fn cli_close_pane(
 
 /// UC-5: FocusPane — change focus to a specific pane.
 fn cli_focus_pane(
-    ctx: &mut (impl FocusNavPort + GatewayPort + PaneAccessPort),
+    ctx: &mut (impl DockPort + FocusNavPort + GatewayPort + PaneAccessPort + WorkspaceNavPort),
     params: Value,
 ) -> Result<Value, CliError> {
     let pane_id = params
@@ -2230,7 +2272,12 @@ fn cli_focus_pane(
         return Err(CliError::PaneNotFound(pane_id));
     }
 
-    ctx.focus_pane(pane_id);
+    if let Some(owner) = ctx.terminal_owning(pane_id) {
+        if ctx.focused_terminal_id() != Some(owner) {
+            ctx.focus_terminal(owner);
+        }
+    }
+    ctx.focus_terminal(pane_id);
     ctx.gateway_notify("focus-changed", json!({"pane_id": pane_id}));
     Ok(json!({"ok": true}))
 }
@@ -2264,7 +2311,7 @@ fn layout_action_number(params: &Value, target: &Value, key: &str) -> Option<f32
 
 /// UC-2: ResizeLayoutTarget — mutate a product-level Tide Layout Target.
 fn cli_layout_action(
-    ctx: &mut (impl AppCorePort + DockPort + FocusNavPort + LayoutPort + PaneAccessPort),
+    ctx: &mut (impl AppCorePort + DockPort + FocusNavPort + GatewayPort + LayoutPort + PaneAccessPort),
     params: Value,
 ) -> Result<Value, CliError> {
     let action = params
@@ -2294,19 +2341,7 @@ fn cli_layout_action(
                         "width_px required for terminal_context_surface resize".into(),
                     )
                 })?;
-            let active_owner = ctx.focused_terminal_id().ok_or_else(|| {
-                CliError::InvalidParams(
-                    "terminal_context_surface resize requires an active Stage Terminal".into(),
-                )
-            })?;
-            if let Some(requested_owner) = target.get("owner_terminal_id").and_then(|v| v.as_u64())
-            {
-                if requested_owner != active_owner {
-                    return Err(CliError::InvalidParams(
-                        "terminal_context_surface target must be the active owner".into(),
-                    ));
-                }
-            }
+            let owner = terminal_context_surface_target_owner(ctx, target)?;
 
             let from_width = ctx.animate_dock_width(width);
             ctx.compute_layout();
@@ -2320,7 +2355,7 @@ fn cli_layout_action(
                 "action": action,
                 "target": {
                     "kind": "terminal_context_surface",
-                    "owner_terminal_id": active_owner,
+                    "owner_terminal_id": owner,
                 },
                 "requested": {
                     "width_px": width,
@@ -2383,14 +2418,10 @@ fn cli_layout_action(
 
 /// UC-5: ResizePane — adjust the split ratio of the parent split.
 fn cli_resize_pane(
-    ctx: &mut (impl FocusNavPort + LayoutPort + PaneAccessPort),
+    ctx: &mut (impl FocusNavPort + GatewayPort + LayoutPort + PaneAccessPort),
     params: Value,
 ) -> Result<Value, CliError> {
-    let pane_id = params
-        .get("pane_id")
-        .and_then(|v| v.as_u64())
-        .or_else(|| ctx.focused_pane())
-        .ok_or_else(|| CliError::InvalidParams("no pane_id and no focused pane".into()))?;
+    let pane_id = command_target_pane_id(ctx, &params, "pane_id")?;
 
     if !ctx.has_pane(pane_id) {
         return Err(CliError::PaneNotFound(pane_id));
@@ -2531,18 +2562,22 @@ fn cli_open_browser(
     params: Value,
 ) -> Result<Value, CliError> {
     let url = params.get("url").and_then(|v| v.as_str()).map(String::from);
+    let context_terminal = ctx.resolve_context_terminal_id();
+    let activate = context_terminal
+        .map(|owner| ctx.focused_terminal_id() == Some(owner))
+        .unwrap_or(true);
 
-    ctx.open_browser_pane(url);
-
-    if let Some(focused) = ctx.focused_pane() {
-        let control_decision = agent_browser_control_decision(ctx, focused);
+    if let Some(opened_id) =
+        ctx.open_browser_pane_in_context_with_activation(url, context_terminal, activate)
+    {
+        let control_decision = agent_browser_control_decision(ctx, opened_id);
         let pane = ctx
-            .pane_mut(focused)
-            .ok_or(CliError::PaneNotFound(focused))?;
-        let browser = navigation_browser_mut(focused, pane)?;
+            .pane_mut(opened_id)
+            .ok_or(CliError::PaneNotFound(opened_id))?;
+        let browser = navigation_browser_mut(opened_id, pane)?;
         ensure_browser_operation_visuals(browser, &control_decision);
         Ok(json!({
-            "pane_id": focused,
+            "pane_id": opened_id,
             "runtime": "tide_browser_pane",
             "external_runtime": Value::Null,
             "operation": browser_operation_json(control_decision.active),

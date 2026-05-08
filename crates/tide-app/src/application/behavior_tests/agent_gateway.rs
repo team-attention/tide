@@ -70,6 +70,18 @@ fn app_with_two_real_terminals() -> (App, u64, u64) {
     (app, first_id, second_id)
 }
 
+fn app_with_terminal_and_focused_editor() -> (App, u64, u64) {
+    let (mut app, terminal_id) = app_with_terminal();
+    let editor_id = app.layout.split(terminal_id, SplitDirection::Vertical);
+    app.panes.insert(
+        editor_id,
+        PaneKind::Editor(EditorPane::new_empty(editor_id)),
+    );
+    app.focus.focused = Some(editor_id);
+    app.focus.focus_area = FocusArea::Stage;
+    (app, terminal_id, editor_id)
+}
+
 fn test_window_proxy() -> WindowProxy {
     let (tx, _rx) = std::sync::mpsc::channel();
     WindowProxy::new(tx, std::sync::Arc::new(|| {}))
@@ -228,6 +240,25 @@ fn capture_pane_no_target_uses_focused_pane() {
 }
 
 #[test]
+fn capture_pane_no_target_uses_caller_pane_before_focus() {
+    // UC-2 BR-10: omitted target resolves to Caller Pane before UI focus.
+    let (mut app, terminal_id, editor_id) = app_with_terminal_and_focused_editor();
+    if let Some(PaneKind::Editor(ep)) = app.panes.get_mut(&editor_id) {
+        ep.editor.buffer.lines = vec!["focused editor content".into()];
+    }
+
+    let result = app
+        .handle_cli_command("capture-pane", json!({"_caller_pane": terminal_id}))
+        .unwrap();
+
+    assert_eq!(result["pane_id"], terminal_id);
+    assert!(!result["content"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("focused editor content"));
+}
+
+#[test]
 fn capture_pane_browser_returns_browser_snapshot() {
     // UC-2 BR-9: Browser returns cached BrowserSnapshot text and metadata.
     let (mut app, editor_id) = app_with_editor();
@@ -310,6 +341,19 @@ fn send_keys_no_target_no_focus_error() {
     app.focus.focused = None;
     let result = app.handle_cli_command("send-keys", json!({"keys": ["hello"]}));
     assert!(result.is_err());
+}
+
+#[test]
+fn send_keys_no_target_uses_caller_pane_before_focus() {
+    // UC-3 BR-14: omitted target resolves to Caller Pane before UI focus.
+    let (mut app, terminal_id, _editor_id) = app_with_terminal_and_focused_editor();
+
+    let result = app.handle_cli_command(
+        "send-keys",
+        json!({"keys": ["hello"], "_caller_pane": terminal_id}),
+    );
+
+    assert!(result.is_ok());
 }
 
 #[test]

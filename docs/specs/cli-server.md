@@ -89,6 +89,7 @@ These propagate through the process tree: Tide → shell → agent → `tide mcp
 ### Pane Targeting & Workspace Safety
 
 - Commands that accept `-t <pane_id>` default to `TIDE_PANE` when omitted (agent targets itself)
+- Commands dispatched through MCP receive `TIDE_PANE` as Caller Pane context and resolve omitted targets from that Caller Pane before consulting UI focus.
 - `list-panes` defaults to active workspace; `--all` lists all workspaces
 - Commands targeting a pane in a **non-active workspace** still work (Tide looks up the pane across all workspaces). This handles the case where the user switches workspace while the agent is still running in a background workspace.
 - `TIDE_WORKSPACE` lets the agent know which workspace it belongs to, even after workspace switches
@@ -349,7 +350,7 @@ Agent                          Tide                         User
   "inputSchema": {
     "type": "object",
     "properties": {
-      "pane_id": { "type": "integer", "description": "Target pane ID (omit for self)" },
+      "pane_id": { "type": "integer", "description": "Target pane ID; omitted target resolves to Caller Pane before UI focus" },
       "start": { "type": "integer", "description": "Start line (negative = scrollback)" },
       "end": { "type": "integer", "description": "End line" }
     }

@@ -541,11 +541,20 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
 
     /// Open a browser pane next to the focused pane.
     fn open_browser_pane(&mut self, url: Option<String>) {
+        let context_terminal = self.resolve_context_terminal_id();
+        let _ = self.open_browser_pane_in_context_with_activation(url, context_terminal, true);
+    }
+
+    fn open_browser_pane_in_context_with_activation(
+        &mut self,
+        url: Option<String>,
+        context_terminal: Option<PaneId>,
+        activate: bool,
+    ) -> Option<PaneId> {
         let focused = match self.focus.focused {
             Some(id) => id,
-            None => return,
+            None => return None,
         };
-        let context_terminal = self.resolve_context_terminal_id();
         let new_id = self.layout.alloc_id();
         let pane = match url {
             Some(ref u) => BrowserPane::with_url(new_id, u.clone()),
@@ -554,9 +563,11 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.panes.insert(new_id, PaneKind::Browser(pane));
         self.ime.pending_creates.push(new_id);
         if let Some(tid) = self.live_dock_terminal_for_context(context_terminal) {
-            self.add_pane_to_dock(new_id, Some(tid));
+            self.add_pane_to_dock_with_reveal(new_id, Some(tid), activate);
             self.assoc.associated_terminal.insert(new_id, tid);
-            self.focus.focus_area = crate::state::FocusArea::Dock;
+            if activate {
+                self.focus.focus_area = crate::state::FocusArea::Dock;
+            }
         } else {
             self.layout
                 .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
@@ -567,34 +578,48 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
             if let Some(tid) = context_terminal {
                 self.assoc.associated_terminal.insert(new_id, tid);
             }
-            self.focus.focus_area = crate::state::FocusArea::Stage;
+            if activate {
+                self.focus.focus_area = crate::state::FocusArea::Stage;
+            }
         }
-        self.focus.focused = Some(new_id);
-        self.router.set_focused(new_id);
+        if activate {
+            self.focus.focused = Some(new_id);
+            self.router.set_focused(new_id);
+        }
         self.cache.invalidate_chrome();
         self.compute_layout();
+        Some(new_id)
     }
 
     /// Open a render-mode browser pane in the dock (generative UI).
     fn open_render_pane(&mut self, title: String, html: String) -> crate::tide_core::PaneId {
         let context_terminal = self.resolve_context_terminal_id();
+        let activate = context_terminal
+            .map(|owner| self.focused_terminal_id() == Some(owner))
+            .unwrap_or(true);
         let new_id = self.layout.alloc_id();
         let pane = BrowserPane::new_render(new_id, title, html);
         self.panes.insert(new_id, PaneKind::Browser(pane));
         self.ime.pending_creates.push(new_id);
         if let Some(tid) = self.live_dock_terminal_for_context(context_terminal) {
-            self.add_pane_to_dock(new_id, Some(tid));
+            self.add_pane_to_dock_with_reveal(new_id, Some(tid), activate);
             self.assoc.associated_terminal.insert(new_id, tid);
-            self.focus.focus_area = crate::state::FocusArea::Dock;
+            if activate {
+                self.focus.focus_area = crate::state::FocusArea::Dock;
+            }
         } else {
             let focused = self.focus.focused.unwrap_or(0);
             self.layout
                 .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
             self.add_to_non_terminal_group(focused, new_id);
-            self.focus.focus_area = crate::state::FocusArea::Stage;
+            if activate {
+                self.focus.focus_area = crate::state::FocusArea::Stage;
+            }
         }
-        self.focus.focused = Some(new_id);
-        self.router.set_focused(new_id);
+        if activate {
+            self.focus.focused = Some(new_id);
+            self.router.set_focused(new_id);
+        }
         self.cache.invalidate_chrome();
         self.compute_layout();
         self.gateway.notify(
@@ -607,23 +632,32 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
     /// Open a streaming render-mode browser pane in the dock.
     fn open_render_stream_pane(&mut self, title: String) -> crate::tide_core::PaneId {
         let context_terminal = self.resolve_context_terminal_id();
+        let activate = context_terminal
+            .map(|owner| self.focused_terminal_id() == Some(owner))
+            .unwrap_or(true);
         let new_id = self.layout.alloc_id();
         let pane = BrowserPane::new_render_stream(new_id, title);
         self.panes.insert(new_id, PaneKind::Browser(pane));
         self.ime.pending_creates.push(new_id);
         if let Some(tid) = self.live_dock_terminal_for_context(context_terminal) {
-            self.add_pane_to_dock(new_id, Some(tid));
+            self.add_pane_to_dock_with_reveal(new_id, Some(tid), activate);
             self.assoc.associated_terminal.insert(new_id, tid);
-            self.focus.focus_area = crate::state::FocusArea::Dock;
+            if activate {
+                self.focus.focus_area = crate::state::FocusArea::Dock;
+            }
         } else {
             let focused = self.focus.focused.unwrap_or(0);
             self.layout
                 .expand_leaf_groups_to_splits(crate::tide_core::SplitDirection::Vertical);
             self.add_to_non_terminal_group(focused, new_id);
-            self.focus.focus_area = crate::state::FocusArea::Stage;
+            if activate {
+                self.focus.focus_area = crate::state::FocusArea::Stage;
+            }
         }
-        self.focus.focused = Some(new_id);
-        self.router.set_focused(new_id);
+        if activate {
+            self.focus.focused = Some(new_id);
+            self.router.set_focused(new_id);
+        }
         self.gateway.active_streams += 1;
         self.cache.invalidate_chrome();
         self.compute_layout();

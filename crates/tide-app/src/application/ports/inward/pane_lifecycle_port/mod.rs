@@ -17,6 +17,12 @@ pub(crate) trait PaneLifecyclePort {
     fn resolve_launcher(&mut self, launcher_id: PaneId, choice: crate::action::LauncherChoice);
     fn split_with_launcher(&mut self, direction: crate::tide_core::SplitDirection);
     fn open_browser_pane(&mut self, url: Option<String>);
+    fn open_browser_pane_in_context_with_activation(
+        &mut self,
+        url: Option<String>,
+        context_terminal: Option<PaneId>,
+        activate: bool,
+    ) -> Option<PaneId>;
     fn replace_pane_with_editor(&mut self, pane_id: PaneId, path: PathBuf);
     fn open_editor_pane(&mut self, path: PathBuf);
     fn open_editor_pane_in_context_with_activation(

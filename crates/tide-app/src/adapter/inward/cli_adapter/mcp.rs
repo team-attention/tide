@@ -170,11 +170,11 @@ fn mcp_instructions() -> &'static str {
         "Tool descriptions define the exact intent, placement, and limits for each action. ",
         "First call tide_observe_workspace when you need Tide geometry, focus, Pane membership, or browser fit. ",
         "Tide layout: the Stage holds Terminals; each active Stage Terminal owns a Terminal Context Surface for related Panes. ",
-        "Use tide_layout_action for Layout Target mutations such as Terminal Context Surface width or pane_split ratio; tide_resize_pane is legacy Stage split compatibility. ",
-        "Tool Selection Guidance: if a Browser Pane observation has visual_fit.tool_selection.next_tool=tide_layout_action, select tide_layout_action next, then re-observe with tide_observe_workspace or tide_browser_observe before Browser Pane content actions. ",
-        "When layout correction is recommended, use tide_layout_action, re-observe, and continue with visible Browser Pane work. ",
+        "Use tide_layout_action for Layout Target mutations such as Terminal Context Surface width or pane_split ratio; explicit Terminal Context Surface targets use owner_terminal_id and do not depend on starting UI focus; tide_resize_pane is legacy Stage split compatibility. ",
+        "Tool Selection Guidance: if a Browser Pane observation has visual_fit.tool_selection.next_tool=tide_layout_action or tide_focus_pane, select that recommended Tide tool next, then re-observe with tide_observe_workspace or tide_browser_observe before Browser Pane content actions. ",
+        "When layout correction or Terminal Context Surface activation is recommended, use the recommended Tide tool, re-observe, and continue with visible Browser Pane work. ",
         "Browser Runtime Router: For supported browser work inside Tide, you must use Tide Browser Pane Runtime as the first runtime. It is the shared, human-visible browser runtime for local preview, file-backed preview, unauthenticated public page review, visual verification, and page comments. ",
-        "For user-requested browser work, treat the task as a Browser Operation: tide_open_browser, tide_browser_observe, and tide_browser_action start visible operation state for authorized Wrapped Agents; use human-like Browser Pane observe/action work, then call tide_browser_operation action=finish after the final observe. ",
+        "For user-requested browser work, treat the task as a Browser Operation: tide_open_browser, tide_browser_observe, and tide_browser_action start operation state for authorized Wrapped Agents; use human-like Browser Pane observe/action work, then call tide_browser_operation action=finish after the final observe. ",
         "Use tide_open_browser, then tide_browser_observe, then tide_browser_action for navigate/move/click/type/press/clear-cursor; prefer Browser Page Map target_ref from tide_browser_observe over guessed coordinates when click/type targets are listed. Browser Automation Cursor motion is distance-scaled and click/type target dispatch waits for that motion to settle. Use tide_browser_observe detail=compact for routine action loops, and detail=full only when full BrowserSnapshot body text is needed. ",
         "Use tide_browser_read_snapshot, tide_browser_find_in_snapshot, and tide_browser_diff_since only for bounded cached BrowserSnapshot text; they do not refresh the live page. ",
         "Observe before the first content action; after navigate/click/type/press, observe when you need changed page content, but you may chain another click/type through a current enabled Browser Page Map target_ref. ",
@@ -210,7 +210,7 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "pane_id": { "type": "integer", "description": "Target pane ID (omit for self)" },
+                    "pane_id": { "type": "integer", "description": "Target pane ID; omitted target resolves to Caller Pane before UI focus" },
                     "start": { "type": "integer", "description": "Start line (negative = scrollback)" },
                     "end": { "type": "integer", "description": "End line" }
                 }
@@ -222,7 +222,7 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "pane_id": { "type": "integer", "description": "Target pane ID (omit for self)" },
+                    "pane_id": { "type": "integer", "description": "Target pane ID; omitted target resolves to Caller Pane before UI focus" },
                     "selection_kind": { "type": "string", "enum": ["text", "region", "element"], "description": "Use text for V1. Browser region/element capture is reported as unsupported until the future data model exists." }
                 }
             }
@@ -238,7 +238,7 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "pane_id": { "type": "integer", "description": "Target pane ID (omit for self)" },
+                    "pane_id": { "type": "integer", "description": "Target pane ID; omitted target resolves to Caller Pane before UI focus" },
                     "keys": { "type": "array", "items": { "type": "string" }, "description": "Key sequences to send" }
                 },
                 "required": ["keys"]
@@ -287,7 +287,7 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
                         "type": "object",
                         "properties": {
                             "kind": { "type": "string", "enum": ["terminal_context_surface", "pane_split"] },
-                            "owner_terminal_id": { "type": "integer", "description": "Active owner Terminal for terminal_context_surface targets" },
+                            "owner_terminal_id": { "type": "integer", "description": "Terminal Pane whose Terminal Context Surface should be targeted" },
                             "pane_id": { "type": "integer", "description": "Pane to resize for pane_split targets" },
                             "width_px": { "type": "number", "description": "Requested width for terminal_context_surface targets" },
                             "ratio": { "type": "number", "description": "Requested split ratio for pane_split targets" }
@@ -333,7 +333,7 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
         },
         {
             "name": "tide_open_browser",
-            "description": "Open a URL or empty browser in a Tide Browser Pane attached to the active Terminal Context Surface when possible. Use this for links, pages, previews, and web inspection inside Tide. Use an external/default browser only when the user explicitly asks for that handoff or Tide cannot represent the target. For authorized Wrapped Agents this starts visible Browser Operation state immediately; do not synthesize credential-bearing or app-internal launch URLs unless the user explicitly asks for that internal route.",
+            "description": "Open a URL or empty browser in a Tide Browser Pane attached to the caller Terminal's Terminal Context Surface when possible, without depending on starting UI focus. Use this for links, pages, previews, and web inspection inside Tide. Use an external/default browser only when the user explicitly asks for that handoff or Tide cannot represent the target. For authorized Wrapped Agents this starts Browser Operation state immediately; do not synthesize credential-bearing or app-internal launch URLs unless the user explicitly asks for that internal route.",
             "inputSchema": { "type": "object", "properties": { "url": { "type": "string" } } }
         },
         {
@@ -342,7 +342,7 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "pane_id": { "type": "integer", "description": "Target pane ID (omit for self)" },
+                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID; pass explicitly when Caller Pane is a Terminal" },
                     "script": { "type": "string", "description": "JavaScript source to evaluate inside the Browser Pane" },
                     "reason": { "type": "string", "description": "Why structured Browser Pane tools are insufficient" },
                     "sensitive": { "type": "boolean", "description": "Set true for data-transmitting or sensitive flows" },
@@ -357,18 +357,18 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID (omit for focused pane)" },
+                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID; pass explicitly when Caller Pane is a Terminal" },
                     "detail": { "type": "string", "enum": ["compact", "full"], "description": "compact returns Browser Observation Summary with target refs and short excerpts; full returns the full cached BrowserSnapshot text and full Browser Page Map metadata" }
                 }
             }
         },
         {
             "name": "tide_browser_operation",
-            "description": "Explicitly start or finish a Browser Operation around user-requested human-like Tide Browser Pane work. tide_open_browser, tide_browser_observe, and tide_browser_action also start visible operation state for authorized Wrapped Agents; finish clears the operation visuals after final observe.",
+            "description": "Explicitly start or finish a Browser Operation around user-requested human-like Tide Browser Pane work. tide_open_browser, tide_browser_observe, and tide_browser_action also start operation state for authorized Wrapped Agents; finish clears the operation visuals after final observe.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID (omit for focused pane)" },
+                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID; pass explicitly when Caller Pane is a Terminal" },
                     "action": { "type": "string", "enum": ["start", "finish"] },
                     "x": { "type": "number", "description": "Optional initial Browser Automation Cursor x coordinate for start" },
                     "y": { "type": "number", "description": "Optional initial Browser Automation Cursor y coordinate for start" },
@@ -426,7 +426,7 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID (omit for focused pane)" },
+                    "pane_id": { "type": "integer", "description": "Target Browser Pane ID; pass explicitly when Caller Pane is a Terminal" },
                     "action": { "type": "string", "enum": ["navigate", "move", "click", "type", "press", "clear-cursor"] },
                     "url": { "type": "string", "description": "Required for navigate" },
                     "x": { "type": "number", "description": "Viewport x coordinate for move or click" },

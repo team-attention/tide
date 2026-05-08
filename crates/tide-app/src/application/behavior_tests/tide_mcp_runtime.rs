@@ -6,7 +6,7 @@ use crate::adapter::inward::cli_adapter::mcp;
 use crate::pane::browser::BrowserPane;
 use crate::pane::{PaneKind, TerminalPane};
 use crate::state::{FocusArea, SplitTransitionScope};
-use crate::tide_core::PaneId;
+use crate::tide_core::{LayoutEngine, PaneId, SplitDirection};
 use crate::App;
 use crate::DockPort;
 use crate::LayoutPort;
@@ -185,6 +185,57 @@ fn observing_workspace_guides_layout_correction_before_browser_workarounds() {
         .any(|value| value == "url_shortening"));
 }
 
+#[test]
+fn observing_background_browser_guides_focus_pane_before_browser_actions() {
+    // UC-1 BR-5: a not-visible Browser Pane owned by a background Terminal Context Surface guides focus-pane before Browser Pane content actions.
+    let (mut app, focused_terminal_id) = app_with_terminal();
+    let owner_terminal_id = app
+        .layout
+        .split(focused_terminal_id, SplitDirection::Vertical);
+    let terminal = TerminalPane::with_cwd(owner_terminal_id, 80, 24, None, true).unwrap();
+    app.panes
+        .insert(owner_terminal_id, PaneKind::Terminal(terminal));
+
+    let browser_id = app.layout.alloc_id();
+    app.panes.insert(
+        browser_id,
+        PaneKind::Browser(BrowserPane::with_url(
+            browser_id,
+            "http://localhost:4174".to_string(),
+        )),
+    );
+    app.add_pane_to_dock(browser_id, Some(owner_terminal_id));
+    app.dock.dock_open = true;
+    app.dock.visibility_animation = None;
+    app.focus.focused = Some(focused_terminal_id);
+    app.focus.stage_focused = Some(focused_terminal_id);
+    app.compute_layout();
+
+    let observed = app
+        .handle_cli_command("observe-workspace", json!({}))
+        .expect("workspace observe should succeed");
+    let browser = pane_entry(&observed, browser_id);
+
+    assert_eq!(browser["visual_fit"]["status"], "not_visible");
+    assert_eq!(
+        browser["visual_fit"]["tool_selection"]["status"],
+        "surface_activation_recommended"
+    );
+    assert_eq!(
+        browser["visual_fit"]["tool_selection"]["next_tool"],
+        "tide_focus_pane"
+    );
+    assert_eq!(
+        browser["visual_fit"]["tool_selection"]["action"]["pane_id"].as_u64(),
+        Some(browser_id)
+    );
+
+    app.handle_cli_command("focus-pane", json!({"pane_id": browser_id}))
+        .expect("focus-pane should reveal the Browser Pane owner");
+    assert_eq!(app.focus.stage_focused, Some(owner_terminal_id));
+    assert_eq!(app.focus.focused, Some(browser_id));
+}
+
 // --- UC-2: ResizeLayoutTarget ---
 
 #[test]
@@ -219,6 +270,56 @@ fn layout_action_resizes_terminal_context_surface_target() {
     assert_eq!(result["animation"]["to_width_px"], 720.0);
     assert!(app.dock.visibility_animation.is_some());
     assert!(app.surface_visibility_animation_active());
+}
+
+#[test]
+fn layout_action_resizes_explicit_terminal_context_surface_owner_without_starting_focus() {
+    // UC-2 BR-6: explicit owner_terminal_id targets that Terminal Context Surface even when another Stage Terminal is focused at command start, without moving human-visible focus.
+    let (mut app, focused_terminal_id) = app_with_terminal();
+    let owner_terminal_id = app
+        .layout
+        .split(focused_terminal_id, SplitDirection::Vertical);
+    let terminal = TerminalPane::with_cwd(owner_terminal_id, 80, 24, None, true).unwrap();
+    app.panes
+        .insert(owner_terminal_id, PaneKind::Terminal(terminal));
+
+    let browser_id = app.layout.alloc_id();
+    app.panes.insert(
+        browser_id,
+        PaneKind::Browser(BrowserPane::with_url(
+            browser_id,
+            "http://localhost:4174".to_string(),
+        )),
+    );
+    app.add_pane_to_dock(browser_id, Some(owner_terminal_id));
+    app.dock.dock_width = 360.0;
+    app.dock.dock_open = true;
+    app.dock.visibility_animation = None;
+    app.focus.focused = Some(focused_terminal_id);
+    app.focus.stage_focused = Some(focused_terminal_id);
+    app.compute_layout();
+
+    let result = app
+        .handle_cli_command(
+            "layout-action",
+            json!({
+                "action": "resize",
+                "target": {
+                    "kind": "terminal_context_surface",
+                    "owner_terminal_id": owner_terminal_id
+                },
+                "width_px": 720.0
+            }),
+        )
+        .expect("Terminal Context Surface resize should not depend on starting focus");
+
+    assert_eq!(result["ok"], true);
+    assert_eq!(
+        result["target"]["owner_terminal_id"].as_u64(),
+        Some(owner_terminal_id)
+    );
+    assert_eq!(app.focus.stage_focused, Some(focused_terminal_id));
+    assert_eq!(app.focus.focused, Some(focused_terminal_id));
 }
 
 #[test]
@@ -304,8 +405,10 @@ fn mcp_instructions_route_browsers_provider_neutrally() {
     assert!(instructions.contains("Tool Selection Guidance"));
     assert!(instructions.contains("Browser Operation"));
     assert!(instructions.contains("tide_browser_operation"));
-    assert!(instructions.contains("visual_fit.tool_selection.next_tool=tide_layout_action"));
-    assert!(instructions.contains("When layout correction is recommended, use tide_layout_action"));
+    assert!(instructions
+        .contains("visual_fit.tool_selection.next_tool=tide_layout_action or tide_focus_pane"));
+    assert!(instructions
+        .contains("When layout correction or Terminal Context Surface activation is recommended"));
     assert!(instructions.contains("human-like Browser Pane"));
     assert!(!instructions.contains("External Browser Runtime"));
     assert!(!instructions.contains("fallback reason"));
@@ -365,7 +468,8 @@ fn open_tool_descriptions_distinguish_content_from_surface_intent() {
     let browser = mcp_tool_description(&tools, "tide_open_browser");
     assert!(browser.contains("Open a URL or empty browser"));
     assert!(browser.contains("Tide Browser Pane"));
-    assert!(browser.contains("active Terminal Context Surface when possible"));
+    assert!(browser.contains("caller Terminal's Terminal Context Surface"));
+    assert!(browser.contains("without depending on starting UI focus"));
     assert!(browser.contains("links, pages, previews, and web inspection inside Tide"));
     assert!(browser.contains("external/default browser"));
 }
@@ -394,6 +498,35 @@ fn mcp_open_browser_in_terminal_context_surface_starts_split_transition_animatio
     );
     assert_eq!(animation.pane_id, new_id);
     assert!(app.layout_animation_active());
+}
+
+#[test]
+fn mcp_open_browser_uses_caller_terminal_context_surface_without_moving_focus() {
+    // UC-6 BR-3: MCP-opened Terminal Context Surface Panes use Caller Pane context for placement even when another Stage Terminal is focused at command start, without moving human-visible focus.
+    let (mut app, focused_terminal_id) = app_with_terminal();
+    let caller_terminal_id = app
+        .layout
+        .split(focused_terminal_id, SplitDirection::Vertical);
+    let terminal = TerminalPane::with_cwd(caller_terminal_id, 80, 24, None, true).unwrap();
+    app.panes
+        .insert(caller_terminal_id, PaneKind::Terminal(terminal));
+    app.focus.focused = Some(focused_terminal_id);
+    app.focus.stage_focused = Some(focused_terminal_id);
+    app.compute_layout();
+
+    let result = app
+        .handle_cli_command(
+            "open-browser",
+            json!({"url": "http://localhost:4175", "_caller_pane": caller_terminal_id}),
+        )
+        .expect("MCP open-browser should create a Browser Pane for Caller Pane context");
+    let browser_id = result["pane_id"]
+        .as_u64()
+        .expect("open-browser should return pane_id");
+
+    assert_eq!(app.terminal_owning(browser_id), Some(caller_terminal_id));
+    assert_eq!(app.focus.stage_focused, Some(focused_terminal_id));
+    assert_eq!(app.focus.focused, Some(focused_terminal_id));
 }
 
 #[test]
