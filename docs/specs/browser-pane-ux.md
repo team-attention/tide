@@ -20,6 +20,8 @@ Browser Pane click behavior is still split. `crates/tide-app/src/adapter/inward/
 
 `crates/tide-app/src/adapter/outward/platform_adapter/macos/webview.rs` treats non-renderable navigation responses as an external handoff: it opens the response URL with `NSWorkspace` and cancels Browser Pane navigation instead of managing a Browser Pane download flow. But the current bridge message still does not identify the originating `PaneId`, and `crates/tide-app/src/adapter/inward/event_loop_adapter/mod.rs` applies that handoff to `self.focus.focused`, so a background Browser Pane can currently mutate the wrong Browser Pane state in a multi-Pane Workspace. A repository search of `crates/tide-app/src` also shows no references to `AuthenticationServices`, `ASAuthorizationWebBrowserPublicKeyCredentialManager`, `passkey`, or `WKDownloadDelegate`, so Tide does not currently implement in-app passkey or download-manager integration.
 
+The reported LinkedIn Google Sign-In flow opens `https://accounts.google.com/gsi/select?...ux_mode=popup&origin=https%3A%2F%2Fwww.linkedin.com` from Browser Pane content. That URL shape is a Browser Auth Popup for this bug because the originating LinkedIn page needs to receive the sign-in result through its popup callback path. `crates/tide-app/src/adapter/outward/platform_adapter/macos/webview.rs` currently handles popup requests by either loading target-blank links in the same `WKWebView` or queueing only the popup URL for a new Browser Pane, so the originating opener/channel context can be lost and the Browser Pane can sit on a white Google account-selection page.
+
 `crates/tide-app/src/domain/pane/browser.rs` also moved Browser URL-sync logic into `sync_committed_url_from_navigation()`, but the Browser Pane `generation` bump is still split across helper methods instead of being centralized around the polled Browser Pane state transition. That means Browser Pane dirty tracking is harder to reason about and can drift when loading or back/forward state changes without a URL change.
 
 The Browser Pane target is also broader than a plain embedded surface. External browser-workspace tools describe browser surfaces with navigation, `focus-webview`, history/session handling, DOM interaction, and browser automation. Tide does not need to match that full capability set in this pass, but it does need Browser Pane interaction and fallback rules that feel like a first-class browser context instead of a passive `WKWebView`.
@@ -33,11 +35,11 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 3. Navigated Browser Pane is content-first. After successful navigation, Browser Pane content interaction defaults to the native `WKWebView` unless the user explicitly focuses the URL bar or the search bar.
 4. Search-active Browser Pane always routes text input to the search bar before the URL bar or the native `WKWebView`.
 5. URL-bar editing persists across incidental Browser Pane clicks until the user confirms or cancels editing, instead of silently bouncing focus back to Browser Pane content.
-6. Browser Pane chrome keeps explicit `Copy URL` and `Open externally` actions. External handoff is manual-only in this pass.
+6. Browser Pane chrome keeps explicit `Copy URL` and `Open externally` actions. Generic external handoff remains manual; unsupported-response fallback uses an explicit fallback path.
 7. Any `ModalStack` popup must hide the native Browser Pane view so Tide-rendered overlays stay visually above Browser Pane content.
 8. Browser Pane loading feedback remains visible even when the native `WKWebView` is hidden behind overlays or is waiting for its first usable frame.
 9. Browser Pane keeps separate committed-URL and editable-URL state, but the visible Browser URL bar must stay truthful: content-driven navigation updates the committed Browser URL immediately, and the visible Browser URL bar updates whenever the user is not actively editing a distinct Browser URL draft.
-10. Unsupported Browser Pane capability gaps are explicit in this pass. Non-renderable responses use an explicit external handoff path routed to the originating Browser Pane by `PaneId`, and passkey or AuthenticationServices-sensitive flows are treated as Browser Pane V2 capability work rather than silently implied Browser Pane guarantees.
+10. Unsupported Browser Pane capability gaps are explicit in this pass. Non-renderable responses use an explicit external handoff path routed to the originating Browser Pane by `PaneId`, Browser Auth Popup URLs use a native popup `WKWebView` returned to WebKit, and passkey or AuthenticationServices-sensitive flows are treated as Browser Pane V2 capability work rather than silently implied Browser Pane guarantees.
 11. Browser Pane dirty tracking stays centralized: `sync_webview_state()` owns the `generation` bump for Browser Pane state it polls from the native `WKWebView`, including committed-URL, loading, and navigation-availability changes.
 12. Browser Pane native content is full-bleed below Browser Pane chrome. The Browser URL bar may keep its inset chrome, but the `WKWebView` frame should not add extra Pane padding around page content.
 
@@ -53,7 +55,8 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 8. Preserve Browser Pane loading feedback when the native `WKWebView` is hidden or still waiting for its first frame.
 9. Keep empty Browser Pane native-view visibility explicit so Tide keeps its own dark `Pane` background until first navigation.
 10. Keep unsupported download and passkey flows explicit: this pass hardens Browser Pane fallback behavior, while in-app download management and AuthenticationServices integration remain Browser Pane V2 work.
-11. Compute the native `WKWebView` frame from the Pane rect and Browser Pane chrome height without reusing editor/terminal content padding.
+11. Detect Google GSI Browser Auth Popup URLs in `WKUIDelegate::createWebView`, create a native popup `WKWebView` using WebKit's supplied configuration, retain its delegates, and return it so the originating Browser Pane keeps opener/channel callback state.
+12. Compute the native `WKWebView` frame from the Pane rect and Browser Pane chrome height without reusing editor/terminal content padding.
 
 ## Bounded Contexts
 
@@ -142,7 +145,7 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
   - BR-16: Browser Pane chrome renders an `Open externally` action next to the Browser URL bar
   - BR-17: `Copy URL` copies the current Browser Pane URL state, preferring selected Browser URL-bar text or the current Browser URL-bar input while editing
   - BR-18: `Open externally` calls `ProcessPort::open_url()` with the current Browser Pane URL state, preferring the current Browser URL-bar input while editing
-  - BR-19: External-browser handoff is manual-only; Tide does not auto-open likely auth flows in this pass
+  - BR-19: Generic external-browser handoff is manual-only; unsupported Browser Auth Popup fallback is handled by UC-7
 
 ### UC-5: PreserveBrowserPaneLoadingFeedback
 
@@ -191,6 +194,8 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
   - BR-28: Download-triggered external handoff carries the originating `PaneId` and must update that Browser Pane even when another Pane is focused
   - BR-29: Browser Pane does not promise in-app passkey or AuthenticationServices behavior in this pass; unsupported auth flows rely on explicit external handoff
   - BR-30: External handoff preserves coherent Browser Pane chrome state, FocusArea, and committed Browser URL state after the handoff
+  - BR-33: A Google GSI Browser Auth Popup URL creates and returns a native popup `WKWebView` from `WKUIDelegate::createWebView` instead of loading the account-selection URL as ordinary Browser Pane navigation
+  - BR-34: Browser Auth Popup handling stays inside the originating Browser Pane's native WebKit context and must not use `ProcessPort::open_url()`
 
 ### UC-8: LayoutBrowserNativeContent
 
@@ -216,6 +221,7 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 7. **Explicit capability boundary**: This pass can improve Browser Pane fallback behavior, but it does not imply full in-app download-manager or passkey capability.
 8. **Empty-state background consistency**: An empty navigation-mode Browser Pane must not reveal the default native `WKWebView` background before first navigation.
 9. **Content-frame consistency**: Browser Pane native content uses the same Pane bounds that the user visually reads as Browser Pane content.
+10. **Browser Auth Popup boundary**: Browser Auth Popup detection must preserve the originating Browser Pane identity and WebKit opener/channel relationship.
 
 ## Tests
 
@@ -255,6 +261,8 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 | UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-28 | `browser_pane_fallbacks` | `download_external_handoff_updates_originating_background_browser_pane` |
 | UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-29 | `browser_pane_fallbacks` | `external_handoff_prefers_url_bar_draft_when_browser_is_editing` |
 | UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-30 | `browser_pane_fallbacks` | `external_handoff_prefers_committed_browser_url_when_browser_is_not_editing` |
+| UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-33 | `browser_pane_fallbacks` | `google_gsi_browser_auth_popup_requires_native_popup_webview` |
+| UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-34 | `browser_pane_fallbacks` | `browser_auth_popup_handling_does_not_use_external_browser_handoff` |
 | UC-8: LayoutBrowserNativeContent | BR-32 | `browser_pane_ux` | `browser_webview_frame_uses_full_bleed_content_below_browser_chrome` |
 
 ## Location
@@ -273,4 +281,4 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 | Outward Port | `crates/tide-app/src/application/ports/outward/process_port/` | `mod.rs` |
 | Outward Adapter | `crates/tide-app/src/adapter/outward/process_adapter/` | `mod.rs` |
 | Layout | `crates/tide-app/src/` | `layout_compute.rs` |
-| Tests | `crates/tide-app/src/application/behavior_tests/` | `browser_pane_ux.rs` |
+| Tests | `crates/tide-app/src/application/behavior_tests/` | `browser_pane_ux.rs`, `browser_pane_fallbacks.rs` |

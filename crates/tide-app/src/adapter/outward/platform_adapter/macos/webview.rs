@@ -75,6 +75,147 @@ pub(crate) fn queue_new_tab_url_for_window(tide_window_id: TideWindowId, url: St
     queue.entry(tide_window_id).or_default().push(url);
 }
 
+/// Retained native objects for a Browser Auth Popup `WKWebView`.
+/// SAFETY: These pointers are created, used, and released on the main thread.
+struct BrowserAuthPopupPtr {
+    webview: *mut std::ffi::c_void,
+    ui_delegate: *mut std::ffi::c_void,
+    nav_delegate: *mut std::ffi::c_void,
+}
+unsafe impl Send for BrowserAuthPopupPtr {}
+
+/// Active Browser Auth Popup webviews keyed by originating Browser Pane.
+static ACTIVE_BROWSER_AUTH_POPUPS: std::sync::LazyLock<
+    Mutex<HashMap<WebViewTarget, Vec<BrowserAuthPopupPtr>>>,
+> = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn percent_decode_query_component(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' => {
+                let hi = *bytes.get(i + 1)?;
+                let lo = *bytes.get(i + 2)?;
+                out.push(hex_value(hi)? << 4 | hex_value(lo)?);
+                i += 3;
+            }
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            byte => {
+                out.push(byte);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+fn query_param<'a>(query: &'a str, key: &str) -> Option<&'a str> {
+    query.split('&').find_map(|pair| {
+        let (raw_key, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
+        let decoded_key = percent_decode_query_component(raw_key)?;
+        (decoded_key == key).then_some(raw_value)
+    })
+}
+
+fn safe_https_origin(origin: &str) -> Option<String> {
+    if !origin.starts_with("https://") || origin.chars().any(char::is_control) {
+        return None;
+    }
+
+    let after_scheme = &origin["https://".len()..];
+    let authority = after_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or_default();
+    if authority.is_empty() || authority.contains('@') {
+        return None;
+    }
+
+    Some(origin.to_string())
+}
+
+/// Return true when a URL is an opener-bound Browser Auth Popup.
+pub(crate) fn is_browser_auth_popup_url(url: &str) -> bool {
+    let Some(after_scheme) = url.strip_prefix("https://") else {
+        return false;
+    };
+    let authority_end = after_scheme
+        .find(['/', '?', '#'])
+        .unwrap_or(after_scheme.len());
+    let authority = &after_scheme[..authority_end];
+    if !authority.eq_ignore_ascii_case("accounts.google.com") {
+        return false;
+    }
+
+    let after_authority = &after_scheme[authority_end..];
+    let path_end = after_authority
+        .find(['?', '#'])
+        .unwrap_or(after_authority.len());
+    if &after_authority[..path_end] != "/gsi/select" {
+        return false;
+    }
+
+    let Some((_, query_and_fragment)) = after_authority.split_once('?') else {
+        return false;
+    };
+    let query = query_and_fragment.split('#').next().unwrap_or_default();
+    let Some(raw_ux_mode) = query_param(query, "ux_mode") else {
+        return false;
+    };
+    let Some(ux_mode) = percent_decode_query_component(raw_ux_mode) else {
+        return false;
+    };
+    if ux_mode != "popup" {
+        return false;
+    }
+
+    let Some(raw_origin) = query_param(query, "origin") else {
+        return false;
+    };
+    let Some(origin) = percent_decode_query_component(raw_origin) else {
+        return false;
+    };
+    safe_https_origin(&origin).is_some()
+}
+
+unsafe fn absolute_url_string_from_request(request: &AnyObject) -> Option<String> {
+    let url_obj: Option<Retained<AnyObject>> = msg_send_id![request, URL];
+    let url = url_obj?;
+    let abs: Option<Retained<AnyObject>> = msg_send_id![&url, absoluteString];
+    let abs = abs?;
+    let utf8: *const std::ffi::c_char = msg_send![&abs, UTF8String];
+    if utf8.is_null() {
+        None
+    } else {
+        Some(
+            std::ffi::CStr::from_ptr(utf8)
+                .to_string_lossy()
+                .into_owned(),
+        )
+    }
+}
+
+unsafe fn absolute_url_string_from_navigation_action(
+    navigation_action: &AnyObject,
+) -> Option<String> {
+    let request: Retained<AnyObject> = msg_send_id![navigation_action, request];
+    absolute_url_string_from_request(&request)
+}
+
 /// Global wake callback for triggering redraws from delegate callbacks.
 /// Set once at startup via `set_webview_waker`.
 static WEBVIEW_WAKER: Mutex<Option<std::sync::Arc<dyn Fn() + Send + Sync>>> = Mutex::new(None);
@@ -149,42 +290,55 @@ declare_class!(
         fn create_webview(
             &self,
             webview: &AnyObject,
-            _config: &AnyObject,
+            config: &AnyObject,
             navigation_action: &AnyObject,
             _window_features: &AnyObject,
         ) -> Option<Retained<AnyObject>> {
+            let mut created_webview = None;
             unsafe {
                 let nav_type: isize = msg_send![navigation_action, navigationType];
                 let request: Retained<AnyObject> = msg_send_id![navigation_action, request];
-                let url_obj: Option<Retained<AnyObject>> = msg_send_id![&request, URL];
 
-                if let Some(url) = url_obj {
-                    let abs: Option<Retained<AnyObject>> = msg_send_id![&url, absoluteString];
-                    if let Some(s) = abs {
-                        let utf8: *const std::ffi::c_char = msg_send![&s, UTF8String];
-                        if !utf8.is_null() {
-                            let url_str = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
-                            // linkActivated (0) = user clicked a link with target=_blank
-                            // → load in same webview (normal navigation)
-                            if nav_type == 0 {
-                                let ns_url_cls = AnyClass::get("NSURL").expect("NSURL");
-                                let ns_url_str = NSString::from_str(&url_str);
-                                let ns_url: Retained<AnyObject> =
-                                    msg_send_id![ns_url_cls, URLWithString: &*ns_url_str];
-                                let req_cls = AnyClass::get("NSURLRequest").expect("NSURLRequest");
-                                let req: Retained<AnyObject> =
-                                    msg_send_id![req_cls, requestWithURL: &*ns_url];
-                                let _: () = msg_send![webview, loadRequest: &*req];
-                            } else {
-                                // window.open() or other JS-initiated → new tab (UC-7 BR-19)
-                                queue_new_tab_url_for_window(self.ivars().tide_window_id, url_str);
-                            }
-                        }
+                if let Some(url_str) = absolute_url_string_from_request(&request) {
+                    if is_browser_auth_popup_url(&url_str) {
+                        created_webview = create_browser_auth_popup_webview(
+                            webview,
+                            config,
+                            self.ivars().tide_window_id,
+                            self.ivars().pane_id,
+                        );
+                    } else if nav_type == 0 {
+                        // linkActivated (0) = user clicked a link with target=_blank
+                        // → load in same webview (normal navigation)
+                        let ns_url_cls = AnyClass::get("NSURL").expect("NSURL");
+                        let ns_url_str = NSString::from_str(&url_str);
+                        let ns_url: Retained<AnyObject> =
+                            msg_send_id![ns_url_cls, URLWithString: &*ns_url_str];
+                        let req_cls = AnyClass::get("NSURLRequest").expect("NSURLRequest");
+                        let req: Retained<AnyObject> =
+                            msg_send_id![req_cls, requestWithURL: &*ns_url];
+                        let _: () = msg_send![webview, loadRequest: &*req];
+                    } else {
+                        // window.open() or other JS-initiated → new tab (UC-7 BR-19)
+                        queue_new_tab_url_for_window(self.ivars().tide_window_id, url_str);
                     }
                 }
             }
             wake_event_loop();
-            None
+            created_webview
+        }
+
+        /// Called when a WebKit-created popup closes.
+        #[method(webViewDidClose:)]
+        fn webview_did_close(&self, webview: &AnyObject) {
+            unsafe {
+                queue_browser_auth_popup_close(
+                    self.ivars().tide_window_id,
+                    self.ivars().pane_id,
+                    webview,
+                );
+            }
+            wake_event_loop();
         }
 
         /// Handle JavaScript alert() — show native NSAlert.
@@ -340,6 +494,38 @@ declare_class!(
     }
 );
 
+struct BrowserAuthPopupCloseCtx {
+    tide_window_id: TideWindowId,
+    pane_id: PaneId,
+    webview: Retained<AnyObject>,
+}
+
+unsafe extern "C" fn close_browser_auth_popup_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
+    let ctx = Box::from_raw(ctx_ptr as *mut BrowserAuthPopupCloseCtx);
+    remove_browser_auth_popup_webview(ctx.tide_window_id, ctx.pane_id, &ctx.webview);
+}
+
+unsafe fn queue_browser_auth_popup_close(
+    tide_window_id: TideWindowId,
+    pane_id: PaneId,
+    webview: &AnyObject,
+) {
+    let Some(retained_webview) = Retained::retain(webview as *const AnyObject as *mut AnyObject)
+    else {
+        return;
+    };
+    let ctx = Box::into_raw(Box::new(BrowserAuthPopupCloseCtx {
+        tide_window_id,
+        pane_id,
+        webview: retained_webview,
+    }));
+    dispatch_async_f(
+        &_dispatch_main_q as *const std::ffi::c_void,
+        ctx as *mut std::ffi::c_void,
+        close_browser_auth_popup_on_main_thread,
+    );
+}
+
 // ---------------------------------------------------------------------------
 // WKNavigationDelegate — handles download responses
 // ---------------------------------------------------------------------------
@@ -386,6 +572,8 @@ declare_class!(
             decision_handler: &block2::Block<dyn Fn(i64)>,
         ) {
             unsafe {
+                let navigation_url = absolute_url_string_from_navigation_action(navigation_action);
+
                 // Check modifier flags for Cmd key (NSEventModifierFlagCommand = 1 << 20)
                 let modifier_flags: usize = msg_send![navigation_action, modifierFlags];
                 let cmd_held = modifier_flags & (1 << 20) != 0;
@@ -396,17 +584,8 @@ declare_class!(
 
                 if cmd_held && is_link_click {
                     // Cmd+click on a link: queue URL for new tab, cancel navigation
-                    let request: Retained<AnyObject> = msg_send_id![navigation_action, request];
-                    let url_obj: Option<Retained<AnyObject>> = msg_send_id![&request, URL];
-                    if let Some(url) = url_obj {
-                        let abs: Option<Retained<AnyObject>> = msg_send_id![&url, absoluteString];
-                        if let Some(s) = abs {
-                            let utf8: *const std::ffi::c_char = msg_send![&s, UTF8String];
-                            if !utf8.is_null() {
-                                let url_str = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
-                                queue_new_tab_url_for_window(self.ivars().tide_window_id, url_str);
-                            }
-                        }
+                    if let Some(url_str) = navigation_url {
+                        queue_new_tab_url_for_window(self.ivars().tide_window_id, url_str);
                     }
                     decision_handler.call((0,)); // .cancel — don't navigate current webview
                     return;
@@ -628,6 +807,154 @@ declare_class!(
         }
     }
 );
+
+unsafe fn retain_browser_auth_popup(
+    tide_window_id: TideWindowId,
+    pane_id: PaneId,
+    webview: &Retained<AnyObject>,
+    ui_delegate: &Retained<TideUIDelegate>,
+    nav_delegate: &Retained<TideNavigationDelegate>,
+) {
+    let popup = BrowserAuthPopupPtr {
+        webview: Retained::into_raw(webview.clone()) as *mut std::ffi::c_void,
+        ui_delegate: Retained::into_raw(ui_delegate.clone()) as *mut std::ffi::c_void,
+        nav_delegate: Retained::into_raw(nav_delegate.clone()) as *mut std::ffi::c_void,
+    };
+    let mut popups = ACTIVE_BROWSER_AUTH_POPUPS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    popups
+        .entry(WebViewTarget::new(tide_window_id, pane_id))
+        .or_default()
+        .push(popup);
+}
+
+unsafe fn release_browser_auth_popup(popup: BrowserAuthPopupPtr) {
+    if let Some(webview) = Retained::from_raw(popup.webview as *mut AnyObject) {
+        let _: () = msg_send![&*webview, removeFromSuperview];
+        drop(webview);
+    }
+    drop(Retained::from_raw(popup.ui_delegate as *mut TideUIDelegate));
+    drop(Retained::from_raw(
+        popup.nav_delegate as *mut TideNavigationDelegate,
+    ));
+}
+
+unsafe fn remove_browser_auth_popup_webview(
+    tide_window_id: TideWindowId,
+    pane_id: PaneId,
+    webview: &AnyObject,
+) -> bool {
+    let target = WebViewTarget::new(tide_window_id, pane_id);
+    let raw = webview as *const AnyObject as *mut std::ffi::c_void;
+    let removed = {
+        let mut popups = ACTIVE_BROWSER_AUTH_POPUPS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let Some(target_popups) = popups.get_mut(&target) else {
+            return false;
+        };
+        let Some(index) = target_popups.iter().position(|popup| popup.webview == raw) else {
+            return false;
+        };
+        let popup = target_popups.remove(index);
+        if target_popups.is_empty() {
+            popups.remove(&target);
+        }
+        popup
+    };
+
+    release_browser_auth_popup(removed);
+    true
+}
+
+unsafe fn cleanup_browser_auth_popups_for_target(tide_window_id: TideWindowId, pane_id: PaneId) {
+    let popups = {
+        let mut active_popups = ACTIVE_BROWSER_AUTH_POPUPS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        active_popups.remove(&WebViewTarget::new(tide_window_id, pane_id))
+    };
+
+    if let Some(popups) = popups {
+        for popup in popups {
+            release_browser_auth_popup(popup);
+        }
+    }
+}
+
+unsafe fn sync_browser_auth_popup_frames(
+    tide_window_id: TideWindowId,
+    pane_id: PaneId,
+    frame: NSRect,
+) {
+    let webviews = {
+        let active_popups = ACTIVE_BROWSER_AUTH_POPUPS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        active_popups
+            .get(&WebViewTarget::new(tide_window_id, pane_id))
+            .map(|popups| popups.iter().map(|popup| popup.webview).collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+
+    for webview_ptr in webviews {
+        let webview = &*(webview_ptr as *const AnyObject);
+        let _: () = msg_send![webview, setFrame: frame];
+    }
+}
+
+unsafe fn create_browser_auth_popup_webview(
+    parent_webview: &AnyObject,
+    config: &AnyObject,
+    tide_window_id: TideWindowId,
+    pane_id: PaneId,
+) -> Option<Retained<AnyObject>> {
+    let parent: *mut AnyObject = msg_send![parent_webview, superview];
+    if parent.is_null() {
+        return None;
+    }
+    let parent = &*parent;
+    let frame: NSRect = msg_send![parent_webview, frame];
+    let wk_cls = AnyClass::get("WKWebView")?;
+    let popup: Retained<AnyObject> = msg_send_id![
+        msg_send_id![wk_cls, alloc],
+        initWithFrame: frame,
+        configuration: config
+    ];
+
+    let ua = NSString::from_str(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
+         AppleWebKit/605.1.15 (KHTML, like Gecko) \
+         Version/18.3 Safari/605.1.15",
+    );
+    let _: () = msg_send![&popup, setCustomUserAgent: &*ua];
+    let _: () = msg_send![&popup, setAllowsBackForwardNavigationGestures: Bool::YES];
+    let _: () = msg_send![&popup, setOpaque: Bool::NO];
+    let _: () = msg_send![&popup, setHidden: Bool::NO];
+
+    let mtm = MainThreadMarker::new().expect("must be on main thread for Browser Auth Popup");
+    let ui_delegate: Retained<TideUIDelegate> = msg_send_id![mtm.alloc::<TideUIDelegate>(),
+        initWithTideWindowId: tide_window_id.get() as usize
+        paneId: pane_id as usize
+    ];
+    let _: () = msg_send![&popup, setUIDelegate: &*ui_delegate];
+
+    let nav_delegate: Retained<TideNavigationDelegate> = msg_send_id![mtm.alloc::<TideNavigationDelegate>(),
+        initWithTideWindowId: tide_window_id.get() as usize
+        paneId: pane_id as usize
+    ];
+    let _: () = msg_send![&popup, setNavigationDelegate: &*nav_delegate];
+
+    let _: () = msg_send![parent, addSubview: &*popup];
+    let window: *mut AnyObject = msg_send![parent_webview, window];
+    if !window.is_null() {
+        let _: Bool = msg_send![&*window, makeFirstResponder: &*popup];
+    }
+
+    retain_browser_auth_popup(tide_window_id, pane_id, &popup, &ui_delegate, &nav_delegate);
+    Some(popup)
+}
 
 // ---------------------------------------------------------------------------
 // WKDownloadDelegate — handles in-app download lifecycle (macOS 11.3+)
@@ -1020,6 +1347,7 @@ struct DestroyWebViewCtx {
 unsafe extern "C" fn destroy_webview_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
     let ctx = Box::from_raw(ctx_ptr as *mut DestroyWebViewCtx);
     let handle = Box::from_raw(ctx.handle);
+    cleanup_browser_auth_popups_for_target(handle.tide_window_id, handle.pane_id);
     handle.remove_from_parent();
     // `handle` drops here on the main thread, releasing MainThreadOnly ivars safely.
 }
@@ -1252,6 +1580,8 @@ unsafe extern "C" fn perform_webview_string_query_on_main_thread(ctx_ptr: *mut s
 /// Context passed through `dispatch_sync_f` to set the webview frame.
 struct SetFrameCtx {
     webview: *const AnyObject,
+    tide_window_id: TideWindowId,
+    pane_id: PaneId,
     frame: NSRect,
 }
 
@@ -1260,6 +1590,7 @@ unsafe extern "C" fn set_frame_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
     let ctx = &*(ctx_ptr as *const SetFrameCtx);
     let webview = &*ctx.webview;
     let _: () = msg_send![webview, setFrame: ctx.frame];
+    sync_browser_auth_popup_frames(ctx.tide_window_id, ctx.pane_id, ctx.frame);
 }
 
 /// Context passed through `dispatch_sync_f` to show/hide the webview.
@@ -1441,6 +1772,9 @@ impl WebViewHandle {
     /// released from the wrong thread.
     pub fn destroy(self) {
         if MainThreadMarker::new().is_some() {
+            unsafe {
+                cleanup_browser_auth_popups_for_target(self.tide_window_id, self.pane_id);
+            }
             self.remove_from_parent();
             return;
         }
@@ -1661,11 +1995,14 @@ impl WebViewHandle {
         if MainThreadMarker::new().is_some() {
             unsafe {
                 let _: () = msg_send![&self.webview, setFrame: frame];
+                sync_browser_auth_popup_frames(self.tide_window_id, self.pane_id, frame);
             }
             return;
         }
         let mut ctx = SetFrameCtx {
             webview: &*self.webview as *const AnyObject,
+            tide_window_id: self.tide_window_id,
+            pane_id: self.pane_id,
             frame,
         };
         unsafe {

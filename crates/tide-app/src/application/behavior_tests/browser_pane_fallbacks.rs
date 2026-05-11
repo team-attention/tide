@@ -5,6 +5,7 @@ use crate::pane::browser::BrowserPane;
 use crate::pane::PaneKind;
 use crate::state::FocusArea;
 use crate::tide_core::LayoutEngine;
+use crate::tide_platform::macos::webview::is_browser_auth_popup_url;
 use crate::App;
 use std::cell::RefCell;
 use std::io;
@@ -43,6 +44,10 @@ fn app_with_two_browsers() -> (App, u64, u64) {
     app.focus.focus_area = FocusArea::Stage;
     app.router.set_focused(second_id);
     (app, first_id, second_id)
+}
+
+fn google_gsi_popup_url() -> &'static str {
+    "https://accounts.google.com/gsi/select?client_id=990339570472-k6nqn1tpmitg8pui82bfaun3jrpmiuhs.apps.googleusercontent.com&auto_select=true&ux_mode=popup&ui_mode=card&context=signin&channel_id=17a0047ff41a7526ab59977be376236c4b1796b49cc5992060966b70308b6d8d&origin=https%3A%2F%2Fwww.linkedin.com"
 }
 
 #[derive(Clone)]
@@ -145,6 +150,35 @@ fn external_handoff_requires_some_browser_url_state() {
     app.open_focused_browser_externally();
 
     assert!(opened_urls.borrow().is_empty());
+}
+
+#[test]
+fn google_gsi_browser_auth_popup_requires_native_popup_webview() {
+    // UC-7 BR-33: A Google GSI Browser Auth Popup URL creates and returns a native popup WKWebView.
+    assert!(is_browser_auth_popup_url(google_gsi_popup_url()));
+
+    assert!(
+        !is_browser_auth_popup_url(
+            "https://accounts.google.com/gsi/select?ux_mode=redirect&origin=https%3A%2F%2Fwww.linkedin.com"
+        )
+    );
+    assert!(!is_browser_auth_popup_url(
+        "https://accounts.google.com/gsi/select?ux_mode=popup&origin=http%3A%2F%2Fwww.linkedin.com"
+    ));
+}
+
+#[test]
+fn browser_auth_popup_handling_does_not_use_external_browser_handoff() {
+    // UC-7 BR-34: Browser Auth Popup handling stays inside WebKit and does not use ProcessPort::open_url.
+    let webview_source = include_str!("../../adapter/outward/platform_adapter/macos/webview.rs");
+    let event_loop_source = include_str!("../../adapter/inward/event_loop_adapter/mod.rs");
+
+    assert!(webview_source.contains("create_browser_auth_popup_webview"));
+    assert!(webview_source.contains("initWithFrame: frame"));
+    assert!(webview_source.contains("configuration: config"));
+    assert!(webview_source.contains("created_webview = create_browser_auth_popup_webview"));
+    assert!(!webview_source.contains("browser-auth-popup-external-handoff"));
+    assert!(!event_loop_source.contains("browser-auth-popup-external-handoff"));
 }
 
 #[test]

@@ -22,7 +22,7 @@ Browser Pane V2 extends Browser Pane capability without regressing Browser Pane 
 2. Browser Pane owns a clearer session and navigation model for capability-heavy flows such as auth redirects, downloads, and post-auth return navigation.
 3. When a capability is still unsupported, Browser Pane keeps explicit external handoff behavior instead of silently implying support.
 4. Browser Pane surfaces permission requests (camera, microphone, geolocation) and certificate errors through explicit user prompts instead of silently failing.
-5. Browser Pane supports context menus, popup windows (window.open / target=_blank), and cookie/storage management.
+5. Browser Pane supports context menus, popup windows (window.open / target=_blank), and cookie/storage management. Browser Auth Popups follow `docs/specs/browser-pane-ux.md` opener/channel preservation rules.
 6. Browser Pane exposes load progress as a domain-level value for rendering.
 7. Browser Pane enables Safari Web Inspector in debug builds for developer tooling.
 
@@ -131,13 +131,14 @@ Browser Pane V2 extends Browser Pane capability without regressing Browser Pane 
 - **Precondition**: A Browser Pane is active
 - **Flow**:
   1. WKUIDelegate createWebView fires
-  2. Instead of loading in same webview, URL is queued for new Browser Pane creation
-  3. New Browser Pane opens with the popup URL
-  4. No state inherited from parent pane
-- **Postcondition**: Popups open as new Browser Panes instead of hijacking the current one
+  2. Tide classifies whether the popup is ordinary navigation or a Browser Auth Popup
+  3. Ordinary popup URLs are queued for new Browser Pane creation
+  4. Browser Auth Popups stay inside the originating Browser Pane's native WebKit popup context
+  5. New Browser Pane opens with the ordinary popup URL and no state inherited from parent pane
+- **Postcondition**: Ordinary popups open as new Browser Panes instead of hijacking the current one; Browser Auth Popups do not lose opener/channel state inside a detached Browser Pane
 - **Business Rules**:
-  - BR-19: window.open() creates a new Browser Pane instead of loading in the same webview
-  - BR-20: target=_blank links create a new Browser Pane
+  - BR-19: ordinary window.open() creates a new Browser Pane instead of loading in the same webview
+  - BR-20: ordinary target=_blank links create a new Browser Pane
   - BR-21: Popup Browser Pane inherits no navigation state (URL, back/forward history) from the parent Pane
 
 ### UC-8: ManageBrowserPaneCookiesAndStorage
@@ -192,7 +193,7 @@ Browser Pane V2 extends Browser Pane capability without regressing Browser Pane 
 4. **PaneId sync**: Browser Pane V2 work must preserve PaneId sync between `SplitLayout` and `App.panes`.
 5. **Permission state coherence**: Pending permission state must not outlive a navigation to a different origin.
 6. **Certificate decision isolation**: Certificate error decisions apply only to the requesting Browser Pane.
-7. **Popup Pane independence**: A popup Browser Pane inherits no navigation state from the parent Pane.
+7. **Popup Pane independence**: An ordinary popup Browser Pane inherits no navigation state from the parent Pane.
 8. **Load progress range**: Browser Pane load progress is always in [0.0, 1.0] and resets on new navigation.
 9. **DevTools build-gated**: isInspectable is enabled only in debug builds, never in release builds.
 
