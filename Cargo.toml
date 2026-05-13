@@ -7,7 +7,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-version = "0.51.33"
+version = "0.51.34"
 license = "MIT"
 repository = "https://github.com/eatnug/tide"
 authors = ["eatnug"]
