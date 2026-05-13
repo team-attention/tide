@@ -236,6 +236,58 @@ fn dragging_editor_selection_moves_cursor_to_active_edge() {
 }
 
 #[test]
+fn dragging_editor_selection_stays_bound_to_source_pane_outside_viewport() {
+    // UC-1 BR-2: Selection drag stays bound to the source Editor Pane and clamps pointer positions outside the authoring viewport.
+    let mut app = App::new();
+    app.window.cached_cell_size = Size::new(8.0, 16.0);
+    let (layout, pane_id) = crate::tide_layout::SplitLayout::with_initial_pane();
+    app.layout = layout;
+    app.focus.focused = Some(pane_id);
+    app.focus.focus_area = FocusArea::Stage;
+
+    let mut pane = EditorPane::new_empty(pane_id);
+    pane.editor.buffer.lines = vec!["abcdef".to_string()];
+    app.panes.insert(pane_id, PaneKind::Editor(pane));
+
+    let pane_rect = Rect::new(0.0, 0.0, 180.0, 120.0);
+    let cell_size = app.window.cached_cell_size;
+    app.visual_pane_rects = vec![(pane_id, pane_rect)];
+    let content_rect = match app.panes.get(&pane_id) {
+        Some(PaneKind::Editor(pane)) => {
+            pane.content_rect(pane_rect, crate::theme::TAB_BAR_HEIGHT, cell_size)
+        }
+        _ => panic!("expected editor pane"),
+    };
+    let gutter_x =
+        content_rect.x + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
+
+    let start = Vec2::new(gutter_x + 1.0, content_rect.y + 1.0);
+    let outside_right = Vec2::new(
+        content_rect.x + content_rect.width + 24.0,
+        content_rect.y + 1.0,
+    );
+    app.window.last_cursor_pos = start;
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(
+        &mut app,
+        MouseButton::Left,
+        &test_window_proxy(),
+    );
+    crate::adapter::inward::mouse_adapter::drag::handle_cursor_moved_logical(
+        &mut app,
+        outside_right,
+        &test_window_proxy(),
+    );
+
+    let pane = match app.panes.get(&pane_id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    let selection = pane.selection.as_ref().expect("selection should be active");
+    assert_eq!(selection.anchor, (0, 0));
+    assert_eq!(selection.end, (0, 6));
+}
+
+#[test]
 fn plain_selection_rect_clamps_to_line_content_width() {
     // UC-1 BR-2: Dragging past the end of a plain editor line must not paint selection to the viewport edge.
     let mut pane = EditorPane::new_empty(1);

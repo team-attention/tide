@@ -41,6 +41,7 @@ All paths below are relative to `crates/tide-app/src/`.
 | **Color** | `Color` | `domain/core_types.rs` | RGBA float color. |
 | **RasterIconAsset** | `RasterIconAsset` | `adapter/outward/renderer_adapter/raster_icon.rs` | Static PNG icon metadata and bytes used by chrome icon roles that must render from source assets instead of hand-authored vector markup. |
 | **TextStyle** | `TextStyle` | `domain/core_types.rs` | Bold/dim/italic/underline + fg/bg color. |
+| **Selection** | `Selection` | `domain/pane/mod.rs` | A Pane-local text range with an anchor row/column and active end row/column. Terminal, Editor, and Diff Panes use it for text selection, copy, and Context Artifact capture. |
 | **StyledSpanCursor** | `StyledSpanCursor` | `domain/editor/highlight.rs` | Monotonic cursor over syntax-highlighted `StyledSpan` runs. Used by LivePreviewMode rendering to resolve fallback `TextStyle` without rescanning prior spans for every character. |
 | **VisualRowInfo** | `VisualRowInfo` | `domain/editor/wrap.rs` | Cached Soft Wrap row metadata for one visual row, including logical line, row-start byte offset, row-start character offset, and row-end character offset. |
 | **TerminalCell** | `TerminalCell` | `domain/core_types.rs` | One character + its `TextStyle`. |

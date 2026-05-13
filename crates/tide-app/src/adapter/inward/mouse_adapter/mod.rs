@@ -68,7 +68,9 @@ pub(crate) fn handle_mouse_down(
     window: &WindowProxy,
 ) {
     if button == MouseButton::Left {
-        ctx.interaction_mut().mouse_left_pressed = true;
+        let interaction = ctx.interaction_mut();
+        interaction.mouse_left_pressed = true;
+        interaction.text_selection_drag_source = None;
 
         // Check editor scrollbar click
         if check_scrollbar_click(ctx, ctx.last_cursor_pos()) {
@@ -508,6 +510,7 @@ pub(crate) fn handle_mouse_up(ctx: &mut impl MousePorts, button: MouseButton) {
     let hover_cleared = if button == MouseButton::Left {
         let interaction = ctx.interaction_mut();
         interaction.mouse_left_pressed = false;
+        interaction.text_selection_drag_source = None;
         interaction.hover_target.take().is_some()
     } else {
         false

@@ -399,6 +399,7 @@ fn render_cache_is_chrome_dirty() {
 fn interaction_state_new_defaults() {
     let is = InteractionState::new();
     assert!(!is.mouse_left_pressed);
+    assert!(is.text_selection_drag_source.is_none());
     assert!(is.scrollbar_dragging.is_none());
     assert!(is.hover_target.is_none());
     assert!(is.scroll_accumulator.is_empty());

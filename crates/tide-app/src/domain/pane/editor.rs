@@ -18,7 +18,7 @@ use std::ops::Range;
 use std::path::Path;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::tide_core::{PaneId, Rect, Size};
+use crate::tide_core::{PaneId, Rect, Size, Vec2};
 use crate::tide_editor::input::EditorAction;
 use crate::tide_editor::wrap::{VisualRowInfo, WrapMap};
 use crate::tide_editor::{EditorPosition, EditorState};
@@ -1271,6 +1271,266 @@ impl EditorPane {
             rect.width,
             (rect.height - 2.0 * vertical_padding).max(1.0),
         )
+    }
+
+    /// Convert a pointer position to Selection-relative display cells for the
+    /// current Editor Pane mode.
+    pub(crate) fn selection_hit_cell(
+        &self,
+        pane_rect: Rect,
+        content_top_offset: f32,
+        cell_size: Size,
+        pos: Vec2,
+        clamp_to_target: bool,
+    ) -> Option<(usize, usize)> {
+        let content_rect = self.content_rect(pane_rect, content_top_offset, cell_size);
+        let target_rect = if self.preview_mode {
+            content_rect
+        } else {
+            self.authoring_rect(content_rect, cell_size)
+        };
+        if !target_rect.contains(pos) && !clamp_to_target {
+            return None;
+        }
+
+        let gutter_width = if self.preview_mode {
+            0.0
+        } else {
+            GUTTER_WIDTH_CELLS as f32 * cell_size.width
+        };
+        let content_x = target_rect.x + gutter_width;
+        let pos = if clamp_to_target {
+            let max_x = (target_rect.x + target_rect.width - 0.001).max(content_x);
+            let max_y = (target_rect.y + target_rect.height - 0.001).max(target_rect.y);
+            Vec2::new(
+                pos.x.max(content_x).min(max_x),
+                pos.y.max(target_rect.y).min(max_y),
+            )
+        } else {
+            pos
+        };
+
+        let rel_col = ((pos.x - content_x) / cell_size.width).floor() as isize;
+        let rel_row = ((pos.y - target_rect.y) / cell_size.height).floor() as isize;
+        if rel_row >= 0 && rel_col >= 0 {
+            Some((rel_row as usize, rel_col as usize))
+        } else {
+            None
+        }
+    }
+
+    /// Convert Selection display cells to buffer or preview coordinates.
+    pub(crate) fn selection_position_for_cell(
+        &self,
+        rel_row: usize,
+        rel_col: usize,
+    ) -> Option<(usize, usize)> {
+        if self.preview_mode {
+            return Some((
+                self.preview_scroll + rel_row,
+                self.preview_h_scroll + rel_col,
+            ));
+        }
+        if self.effective_soft_wrap() {
+            let visual_row = self.soft_wrap_visual_scroll() + rel_row;
+            return self.soft_wrap_display_position_for_visual_cell(visual_row, rel_col);
+        }
+
+        let line = self.editor.scroll_offset() + rel_row;
+        Some((line, self.plain_selection_hit_col(line, rel_col)))
+    }
+
+    fn plain_selection_hit_col(&self, line: usize, rel_col: usize) -> usize {
+        if self.live_preview {
+            return self.live_preview_buffer_col_for_visual_col(
+                line,
+                self.editor.h_scroll_offset() + rel_col,
+            );
+        }
+
+        let start_char = self.editor.h_scroll_offset();
+        self.editor
+            .buffer
+            .line(line)
+            .map(|line_text| Self::char_index_for_display_cell_from(line_text, start_char, rel_col))
+            .unwrap_or(start_char + rel_col)
+    }
+
+    fn live_preview_buffer_col_for_visual_col(&self, line: usize, visual_col: usize) -> usize {
+        if !self.live_preview {
+            return visual_col;
+        }
+        let Some(line_text) = self.editor.buffer.line(line) else {
+            return visual_col;
+        };
+        if let Some(kind) = self.live_preview_fixed_width_line_kind(line, line_text) {
+            return match kind {
+                MdElementKind::CodeBlock => self
+                    .live_preview_codeblock_source_char_for_visual_col(line, line_text, visual_col),
+                MdElementKind::Table => {
+                    self.live_preview_table_source_char_for_visual_col(line, line_text, visual_col)
+                }
+                _ => visual_col,
+            };
+        }
+        if let Some(ref live_map) = self.live_preview_map {
+            let cursor_line = self.editor.cursor_position().line;
+            live_map.visual_to_buffer_col(
+                line,
+                visual_col,
+                cursor_line,
+                line_text,
+                &self.editor.buffer.lines,
+            )
+        } else {
+            visual_col
+        }
+    }
+
+    fn char_index_for_display_cell_from(
+        line_text: &str,
+        start_char: usize,
+        target_display_col: usize,
+    ) -> usize {
+        let mut display_col = 0usize;
+        let mut char_idx = start_char;
+        for ch in line_text.chars().skip(start_char) {
+            let width = ch.width().unwrap_or(1);
+            if display_col + width > target_display_col {
+                break;
+            }
+            display_col += width;
+            char_idx += 1;
+        }
+        char_idx
+    }
+
+    pub(crate) fn visible_display_width_between_chars(
+        &self,
+        line: usize,
+        line_text: &str,
+        start_char: usize,
+        end_char: usize,
+    ) -> usize {
+        if !self.live_preview {
+            return Self::display_width_between_chars(line_text, start_char, end_char);
+        }
+        let Some(live_map) = self.live_preview_map.as_ref() else {
+            return Self::display_width_between_chars(line_text, start_char, end_char);
+        };
+        let cursor_line = self.editor.cursor_position().line;
+        let hidden_ranges = live_map.hidden_syntax_ranges_for_line(line, cursor_line);
+        if hidden_ranges.is_empty() {
+            return Self::display_width_between_chars(line_text, start_char, end_char);
+        }
+
+        let mut width = 0usize;
+        let mut byte_offset = live_map.line_byte_start(line);
+        for (char_idx, ch) in line_text.chars().enumerate() {
+            if char_idx >= end_char {
+                break;
+            }
+            let char_byte_len = ch.len_utf8();
+            let is_hidden = hidden_ranges
+                .iter()
+                .any(|range| range.contains(&byte_offset));
+            if char_idx >= start_char && !is_hidden {
+                width += ch.width().unwrap_or(1);
+            }
+            byte_offset += char_byte_len;
+        }
+        width
+    }
+
+    fn display_width_between_chars(line_text: &str, start_char: usize, end_char: usize) -> usize {
+        line_text
+            .chars()
+            .skip(start_char)
+            .take(end_char.saturating_sub(start_char))
+            .map(|ch| ch.width().unwrap_or(1))
+            .sum()
+    }
+
+    pub(crate) fn byte_col_for_char_index(line_text: &str, char_idx: usize) -> usize {
+        line_text
+            .char_indices()
+            .nth(char_idx)
+            .map(|(idx, _)| idx)
+            .unwrap_or(line_text.len())
+    }
+
+    pub(crate) fn soft_wrap_visible_segments_for_char_range(
+        &self,
+        line: usize,
+        start_char: usize,
+        end_char: usize,
+        visible_rows: usize,
+    ) -> Vec<(usize, usize, usize)> {
+        let wrap_map = match self.wrap_map() {
+            Some(map) => map,
+            None => return Vec::new(),
+        };
+        let line_text = match self.editor.buffer.line(line) {
+            Some(text) => text,
+            None => return Vec::new(),
+        };
+        let scroll = self.soft_wrap_visual_scroll();
+        let mut segments = Vec::new();
+        if let Some(kind) = self.live_preview_fixed_width_line_kind(line, line_text) {
+            let visual_row = self.soft_wrap_display_row_for_position(line, 0);
+            if visual_row < scroll || visual_row >= scroll + visible_rows {
+                return segments;
+            }
+            let start_byte = Self::byte_col_for_char_index(line_text, start_char);
+            let end_byte = Self::byte_col_for_char_index(line_text, end_char);
+            let preview_padding = match kind {
+                MdElementKind::CodeBlock => 3,
+                _ => 0,
+            };
+            let start_col = self
+                .soft_wrap_display_col_for_position(line, start_byte)
+                .saturating_add(preview_padding);
+            let end_col = self
+                .soft_wrap_display_col_for_position(line, end_byte)
+                .saturating_add(preview_padding);
+            if start_col < end_col {
+                segments.push((visual_row - scroll, start_col, end_col));
+            }
+            return segments;
+        }
+
+        let first_visual_row = self
+            .soft_wrap_visual_row_of_line(line)
+            .unwrap_or_else(|| wrap_map.visual_row_of_line(line));
+        let row_count = self.soft_wrap_display_rows_for_line(line);
+        for sub_row in 0..row_count {
+            let visual_row = first_visual_row + sub_row;
+            if visual_row < scroll || visual_row >= scroll + visible_rows {
+                continue;
+            }
+            let Some(info) = wrap_map.visual_row_info_for_line(line, sub_row) else {
+                continue;
+            };
+            let segment_start = start_char.max(info.char_offset);
+            let segment_end = end_char.min(info.char_end);
+            if segment_start >= segment_end {
+                continue;
+            }
+            let start_col = self.visible_display_width_between_chars(
+                line,
+                line_text,
+                info.char_offset,
+                segment_start,
+            );
+            let end_col = self.visible_display_width_between_chars(
+                line,
+                line_text,
+                info.char_offset,
+                segment_end,
+            );
+            segments.push((visual_row - scroll, start_col, end_col));
+        }
+        segments
     }
 
     /// Preview rect for split preview, if visible.

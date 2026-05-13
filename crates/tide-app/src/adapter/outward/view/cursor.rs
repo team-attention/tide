@@ -8,84 +8,6 @@ use crate::App;
 
 use super::bar_offset_for;
 
-fn display_width_between_chars(line_text: &str, start_char: usize, end_char: usize) -> usize {
-    line_text
-        .chars()
-        .skip(start_char)
-        .take(end_char.saturating_sub(start_char))
-        .map(|c| c.width().unwrap_or(1))
-        .sum()
-}
-
-fn byte_col_for_char_index(line_text: &str, char_idx: usize) -> usize {
-    line_text
-        .char_indices()
-        .nth(char_idx)
-        .map(|(idx, _)| idx)
-        .unwrap_or(line_text.len())
-}
-
-fn soft_wrap_visible_segments_for_char_range(
-    pane: &crate::pane::editor::EditorPane,
-    line: usize,
-    start_char: usize,
-    end_char: usize,
-    visible_rows: usize,
-) -> Vec<(usize, usize, usize)> {
-    let wrap_map = match pane.wrap_map() {
-        Some(map) => map,
-        None => return Vec::new(),
-    };
-    let line_text = match pane.editor.buffer.line(line) {
-        Some(text) => text,
-        None => return Vec::new(),
-    };
-    let scroll = pane.soft_wrap_visual_scroll();
-    let mut segments = Vec::new();
-    if let Some(kind) = pane.live_preview_fixed_width_line_kind(line, line_text) {
-        let visual_row = pane.soft_wrap_display_row_for_position(line, 0);
-        if visual_row < scroll || visual_row >= scroll + visible_rows {
-            return segments;
-        }
-        let start_byte = byte_col_for_char_index(line_text, start_char);
-        let end_byte = byte_col_for_char_index(line_text, end_char);
-        let preview_padding = match kind {
-            crate::tide_editor::markdown::MdElementKind::CodeBlock => 3,
-            _ => 0,
-        };
-        let start_col = pane
-            .soft_wrap_display_col_for_position(line, start_byte)
-            .saturating_add(preview_padding);
-        let end_col = pane
-            .soft_wrap_display_col_for_position(line, end_byte)
-            .saturating_add(preview_padding);
-        if start_col < end_col {
-            segments.push((visual_row - scroll, start_col, end_col));
-        }
-        return segments;
-    }
-    let first_visual_row = wrap_map.visual_row_of_line(line);
-    let row_count = wrap_map.visual_rows_for(line);
-    for visual_row in first_visual_row..first_visual_row + row_count {
-        if visual_row < scroll || visual_row >= scroll + visible_rows {
-            continue;
-        }
-        let Some(info) = wrap_map.visual_row_to_line_info(visual_row, &pane.editor.buffer.lines)
-        else {
-            continue;
-        };
-        let segment_start = start_char.max(info.char_offset);
-        let segment_end = end_char.min(info.char_end);
-        if segment_start >= segment_end {
-            continue;
-        }
-        let start_col = display_width_between_chars(line_text, info.char_offset, segment_start);
-        let end_col = display_width_between_chars(line_text, info.char_offset, segment_end);
-        segments.push((visual_row - scroll, start_col, end_col));
-    }
-    segments
-}
-
 /// Render cursor, selection highlights, search highlights, URL underlines, and scrollbars
 /// for all panes (both tree panes and the active panel editor).
 pub(crate) fn render_cursor_and_highlights(
@@ -338,10 +260,12 @@ fn plain_editor_selection_rects(
         let vis_start = if col_start <= h_scroll {
             0
         } else {
-            display_width_between_chars(line_text, h_scroll, col_start)
+            pane.visible_display_width_between_chars(row, line_text, h_scroll, col_start)
         }
         .min(visible_cols);
-        let vis_end = display_width_between_chars(line_text, h_scroll, col_end).min(visible_cols);
+        let vis_end = pane
+            .visible_display_width_between_chars(row, line_text, h_scroll, col_end)
+            .min(visible_cols);
         if vis_start >= vis_end {
             continue;
         }
@@ -399,8 +323,7 @@ fn soft_wrap_editor_selection_rects(
             continue;
         }
 
-        for (visual_row, start_col, end_col) in soft_wrap_visible_segments_for_char_range(
-            pane,
+        for (visual_row, start_col, end_col) in pane.soft_wrap_visible_segments_for_char_range(
             row,
             row_char_start,
             row_char_end,
@@ -487,8 +410,7 @@ fn render_editor_search_highlights_soft_wrap(
     let gutter_width = crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width;
     let visible_rows = (inner.height / cell_size.height).ceil() as usize;
     for (mi, m) in search.matches.iter().enumerate() {
-        for (visual_row, start_col, end_col) in soft_wrap_visible_segments_for_char_range(
-            pane,
+        for (visual_row, start_col, end_col) in pane.soft_wrap_visible_segments_for_char_range(
             m.line,
             m.col,
             m.col + m.len,
@@ -696,8 +618,7 @@ fn render_bracket_highlight_soft_wrap(
         } else {
             continue;
         };
-        for (visual_row, start_col, end_col) in soft_wrap_visible_segments_for_char_range(
-            pane,
+        for (visual_row, start_col, end_col) in pane.soft_wrap_visible_segments_for_char_range(
             bracket_pos.line,
             char_col,
             char_col + 1,

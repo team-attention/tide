@@ -4,122 +4,15 @@ use crate::tide_core::{Rect, Vec2};
 
 use crate::pane::{PaneKind, Selection};
 use crate::theme::*;
-use crate::tide_editor::markdown::MdElementKind;
 use crate::AppCorePort;
 use crate::FocusNavPort;
 use crate::InputStatePort;
 use crate::PaneAccessPort;
 
-fn editor_hit_cell(
-    pane: &crate::pane::editor::EditorPane,
-    rect: Rect,
-    pos: Vec2,
-    cell_size: crate::tide_core::Size,
-    content_top_offset: f32,
-) -> Option<(usize, usize)> {
-    let content_rect = pane.content_rect(rect, content_top_offset, cell_size);
-    let target_rect = if pane.preview_mode {
-        content_rect
-    } else {
-        pane.authoring_rect(content_rect, cell_size)
-    };
-    if !target_rect.contains(pos) {
-        return None;
-    }
-
-    let gutter_width = if pane.preview_mode {
-        0.0
-    } else {
-        crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell_size.width
-    };
-    let content_x = target_rect.x + gutter_width;
-    let rel_col = ((pos.x - content_x) / cell_size.width).floor() as isize;
-    let rel_row = ((pos.y - target_rect.y) / cell_size.height).floor() as isize;
-    if rel_row >= 0 && rel_col >= 0 {
-        Some((rel_row as usize, rel_col as usize))
-    } else {
-        None
-    }
-}
-
-fn live_preview_buffer_col(
-    pane: &crate::pane::editor::EditorPane,
-    line: usize,
-    visual_col: usize,
-) -> usize {
-    if !pane.live_preview {
-        return visual_col;
-    }
-    let Some(line_text) = pane.editor.buffer.line(line) else {
-        return visual_col;
-    };
-    if let Some(kind) = pane.live_preview_fixed_width_line_kind(line, line_text) {
-        return match kind {
-            MdElementKind::CodeBlock => {
-                pane.live_preview_codeblock_source_char_for_visual_col(line, line_text, visual_col)
-            }
-            MdElementKind::Table => {
-                pane.live_preview_table_source_char_for_visual_col(line, line_text, visual_col)
-            }
-            _ => visual_col,
-        };
-    }
-    if let Some(ref lpm) = pane.live_preview_map {
-        let cursor_line = pane.editor.cursor_position().line;
-        lpm.visual_to_buffer_col(
-            line,
-            visual_col,
-            cursor_line,
-            line_text,
-            &pane.editor.buffer.lines,
-        )
-    } else {
-        visual_col
-    }
-}
-
-fn char_index_for_display_cell_from(
-    line_text: &str,
-    start_char: usize,
-    target_display_col: usize,
-) -> usize {
-    let mut display_col = 0usize;
-    let mut char_idx = start_char;
-    for ch in line_text.chars().skip(start_char) {
-        let width = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(1);
-        if display_col + width > target_display_col {
-            break;
-        }
-        display_col += width;
-        char_idx += 1;
-    }
-    char_idx
-}
-
-fn plain_editor_hit_col(
-    pane: &crate::pane::editor::EditorPane,
-    line: usize,
-    rel_col: usize,
-) -> usize {
-    if pane.live_preview {
-        return live_preview_buffer_col(pane, line, pane.editor.h_scroll_offset() + rel_col);
-    }
-
-    let start_char = pane.editor.h_scroll_offset();
-    pane.editor
-        .buffer
-        .line(line)
-        .map(|line_text| char_index_for_display_cell_from(line_text, start_char, rel_col))
-        .unwrap_or(start_char + rel_col)
-}
-
-fn editor_soft_wrap_hit_position(
-    pane: &crate::pane::editor::EditorPane,
-    rel_row: usize,
-    rel_col: usize,
-) -> Option<(usize, usize)> {
-    let abs_vr = pane.soft_wrap_visual_scroll() + rel_row;
-    pane.soft_wrap_display_position_for_visual_cell(abs_vr, rel_col)
+fn clamp_pos_to_rect(pos: Vec2, rect: Rect) -> Vec2 {
+    let max_x = (rect.x + rect.width - 0.001).max(rect.x);
+    let max_y = (rect.y + rect.height - 0.001).max(rect.y);
+    Vec2::new(pos.x.max(rect.x).min(max_x), pos.y.max(rect.y).min(max_y))
 }
 
 /// Begin text selection on mouse-down. Clears any existing selection in all
@@ -162,7 +55,7 @@ pub(super) fn start_text_selection(
         if let Some((_, rect)) = rects.iter().find(|(id, _)| *id == pid) {
             match ctx.pane(pid) {
                 Some(PaneKind::Editor(pane)) => {
-                    editor_hit_cell(pane, *rect, pos, cs, TAB_BAR_HEIGHT)
+                    pane.selection_hit_cell(*rect, TAB_BAR_HEIGHT, cs, pos, false)
                 }
                 _ => None,
             }
@@ -197,6 +90,7 @@ pub(super) fn start_text_selection(
 
     // Shift+click: extend existing selection instead of starting a new one
     if shift_held {
+        let mut selection_started = false;
         match ctx.pane_mut(pid) {
             Some(PaneKind::Terminal(pane)) => {
                 if let (Some(ref mut sel), Some(cell)) = (&mut pane.selection, term_cell) {
@@ -205,42 +99,30 @@ pub(super) fn start_text_selection(
                         .history_size()
                         .saturating_sub(pane.backend.display_offset());
                     sel.end = (cell.0 + visible_start, cell.1);
-                    return true;
+                    selection_started = true;
                 }
             }
             Some(PaneKind::Editor(pane)) => {
-                if pane.preview_mode {
-                    if let Some((rr, rc)) = editor_cell {
+                if let Some((rr, rc)) = editor_cell {
+                    if let Some(end) = pane.selection_position_for_cell(rr, rc) {
                         if let Some(ref mut sel) = pane.selection {
-                            sel.end = (pane.preview_scroll + rr, pane.preview_h_scroll + rc);
-                            return true;
+                            sel.end = end;
+                            selection_started = true;
                         }
-                    }
-                } else if pane.effective_soft_wrap() {
-                    if let Some((rr, rc)) = editor_cell {
-                        if let Some((line, col)) = editor_soft_wrap_hit_position(pane, rr, rc) {
-                            if let Some(ref mut sel) = pane.selection {
-                                sel.end = (line, col);
-                                return true;
-                            }
-                        }
-                    }
-                } else if let Some((rr, rc)) = editor_cell {
-                    let line = pane.editor.scroll_offset() + rr;
-                    let col = plain_editor_hit_col(pane, line, rc);
-                    if let Some(ref mut sel) = pane.selection {
-                        sel.end = (line, col);
-                        return true;
                     }
                 }
             }
             Some(PaneKind::Diff(dp)) => {
                 if let (Some(ref mut sel), Some((vr, vc))) = (&mut dp.selection, diff_cell) {
                     sel.end = (vr, vc);
-                    return true;
+                    selection_started = true;
                 }
             }
             _ => {}
+        }
+        if selection_started {
+            ctx.interaction_mut().text_selection_drag_source = Some(pid);
+            return true;
         }
         // No existing selection to extend — fall through to create a new one
     }
@@ -248,6 +130,7 @@ pub(super) fn start_text_selection(
     // Clear all existing selections
     ctx.clear_all_selections();
 
+    let mut selection_started = false;
     match ctx.pane_mut(pid) {
         Some(PaneKind::Terminal(pane)) => {
             if let Some(cell) = term_cell {
@@ -260,35 +143,19 @@ pub(super) fn start_text_selection(
                     anchor: abs,
                     end: abs,
                 });
+                selection_started = true;
             }
         }
         Some(PaneKind::Browser(_)) => {}
         Some(PaneKind::Editor(pane)) => {
-            if pane.preview_mode {
-                if let Some((rr, rc)) = editor_cell {
-                    let line = pane.preview_scroll + rr;
-                    let col = pane.preview_h_scroll + rc;
+            if let Some((rr, rc)) = editor_cell {
+                if let Some(pos) = pane.selection_position_for_cell(rr, rc) {
                     pane.selection = Some(Selection {
-                        anchor: (line, col),
-                        end: (line, col),
+                        anchor: pos,
+                        end: pos,
                     });
+                    selection_started = true;
                 }
-            } else if pane.effective_soft_wrap() {
-                if let Some((rr, rc)) = editor_cell {
-                    if let Some((line, col)) = editor_soft_wrap_hit_position(pane, rr, rc) {
-                        pane.selection = Some(Selection {
-                            anchor: (line, col),
-                            end: (line, col),
-                        });
-                    }
-                }
-            } else if let Some((rr, rc)) = editor_cell {
-                let line = pane.editor.scroll_offset() + rr;
-                let col = plain_editor_hit_col(pane, line, rc);
-                pane.selection = Some(Selection {
-                    anchor: (line, col),
-                    end: (line, col),
-                });
             }
         }
         Some(PaneKind::Diff(dp)) => {
@@ -297,19 +164,113 @@ pub(super) fn start_text_selection(
                     anchor: (vr, vc),
                     end: (vr, vc),
                 });
+                selection_started = true;
             }
         }
         Some(PaneKind::Launcher(_)) => {}
         None => {}
     }
-    true
+    if selection_started {
+        ctx.interaction_mut().text_selection_drag_source = Some(pid);
+    }
+    selection_started
+}
+
+fn apply_selection_drag_for_pane(
+    ctx: &mut (impl AppCorePort + PaneAccessPort),
+    pid: crate::tide_core::PaneId,
+    rect: Rect,
+    pos: Vec2,
+    clamp_to_source: bool,
+) -> bool {
+    let cell_size = ctx.cell_size();
+    let term_cell = if matches!(ctx.pane(pid), Some(PaneKind::Terminal(_))) {
+        let target_pos = if clamp_to_source {
+            let inner =
+                crate::pane::pane_content_rect(rect, terminal_content_top(cell_size.height));
+            clamp_pos_to_rect(pos, inner)
+        } else {
+            pos
+        };
+        crate::adapter::inward::click_adapter::hit_test::pixel_to_cell(ctx, target_pos, pid)
+    } else {
+        None
+    };
+    let editor_cell = match ctx.pane(pid) {
+        Some(PaneKind::Editor(pane)) => {
+            pane.selection_hit_cell(rect, TAB_BAR_HEIGHT, cell_size, pos, clamp_to_source)
+        }
+        _ => None,
+    };
+    let diff_cell = if matches!(ctx.pane(pid), Some(PaneKind::Diff(_))) {
+        let target_pos = if clamp_to_source {
+            clamp_pos_to_rect(pos, crate::pane::pane_content_rect(rect, TAB_BAR_HEIGHT))
+        } else {
+            pos
+        };
+        let cx = rect.x + PANE_PADDING;
+        let cy = rect.y + TAB_BAR_HEIGHT;
+        let rc = ((target_pos.x - cx) / cell_size.width).floor() as isize;
+        let rr = ((target_pos.y - cy) / cell_size.height).floor() as isize;
+        if rr >= 0 && rc >= 0 {
+            Some((rr as usize, rc as usize))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    match ctx.pane_mut(pid) {
+        Some(PaneKind::Terminal(pane)) => {
+            if let (Some(ref mut sel), Some(c)) = (&mut pane.selection, term_cell) {
+                let visible_start = pane
+                    .backend
+                    .history_size()
+                    .saturating_sub(pane.backend.display_offset());
+                sel.end = (c.0 + visible_start, c.1);
+                return true;
+            }
+        }
+        Some(PaneKind::Browser(_)) => {}
+        Some(PaneKind::Editor(pane)) => {
+            let Some((rel_row, rel_col)) = editor_cell else {
+                return false;
+            };
+            let end = pane.selection_position_for_cell(rel_row, rel_col);
+            if let (Some(ref mut sel), Some(end)) = (&mut pane.selection, end) {
+                sel.end = end;
+                return true;
+            }
+        }
+        Some(PaneKind::Diff(dp)) => {
+            if let (Some(ref mut sel), Some((vr, vc))) = (&mut dp.selection, diff_cell) {
+                sel.end = (dp.scroll as usize + vr, vc);
+                return true;
+            }
+        }
+        Some(PaneKind::Launcher(_)) => {}
+        None => {}
+    }
+    false
 }
 
 /// Extend text selection while dragging (mouse move with left button held).
-pub(super) fn handle_selection_drag(ctx: &mut (impl AppCorePort + PaneAccessPort), pos: Vec2) {
+pub(super) fn handle_selection_drag(
+    ctx: &mut (impl AppCorePort + InputStatePort + PaneAccessPort),
+    pos: Vec2,
+) {
     let cell_size = ctx.cell_size();
-
     let pane_rects: Vec<_> = ctx.visual_pane_rects().to_vec();
+    if let Some(source_pid) = ctx.interaction().text_selection_drag_source {
+        if let Some((_, rect)) = pane_rects.iter().find(|(pid, _)| *pid == source_pid) {
+            if apply_selection_drag_for_pane(ctx, source_pid, *rect, pos, true) {
+                ctx.request_redraw();
+                return;
+            }
+        }
+    }
+
     for (pid, rect) in pane_rects {
         let content = match ctx.pane(pid) {
             Some(PaneKind::Editor(pane)) => pane.content_rect(rect, TAB_BAR_HEIGHT, cell_size),
@@ -322,67 +283,7 @@ pub(super) fn handle_selection_drag(ctx: &mut (impl AppCorePort + PaneAccessPort
         if !content.contains(pos) {
             continue;
         }
-        let cell = crate::adapter::inward::click_adapter::hit_test::pixel_to_cell(ctx, pos, pid);
-        let editor_cell = {
-            match ctx.pane(pid) {
-                Some(PaneKind::Editor(pane)) => {
-                    editor_hit_cell(pane, rect, pos, cell_size, TAB_BAR_HEIGHT)
-                }
-                _ => None,
-            }
-        };
-
-        match ctx.pane_mut(pid) {
-            Some(PaneKind::Terminal(pane)) => {
-                if let (Some(ref mut sel), Some(c)) = (&mut pane.selection, cell) {
-                    let visible_start = pane
-                        .backend
-                        .history_size()
-                        .saturating_sub(pane.backend.display_offset());
-                    sel.end = (c.0 + visible_start, c.1);
-                }
-            }
-            Some(PaneKind::Browser(_)) => {}
-            Some(PaneKind::Editor(pane)) => {
-                if pane.preview_mode {
-                    if let Some(ref mut sel) = &mut pane.selection {
-                        if let Some((rr, rc)) = editor_cell {
-                            sel.end = (pane.preview_scroll + rr, pane.preview_h_scroll + rc);
-                        }
-                    }
-                } else if pane.effective_soft_wrap() {
-                    if let Some((rel_row, rel_col)) = editor_cell {
-                        if let Some((line, col)) =
-                            editor_soft_wrap_hit_position(pane, rel_row, rel_col)
-                        {
-                            if let Some(ref mut sel) = pane.selection {
-                                sel.end = (line, col);
-                            }
-                        }
-                    }
-                } else if let Some((rel_row, rel_col)) = editor_cell {
-                    let line = pane.editor.scroll_offset() + rel_row;
-                    let col = plain_editor_hit_col(pane, line, rel_col);
-                    if let Some(ref mut sel) = pane.selection {
-                        sel.end = (line, col);
-                    }
-                }
-            }
-            Some(PaneKind::Diff(dp)) => {
-                let cx = rect.x + PANE_PADDING;
-                let cy = rect.y + TAB_BAR_HEIGHT;
-                let rc = ((pos.x - cx) / cell_size.width).floor() as isize;
-                let rr = ((pos.y - cy) / cell_size.height).floor() as isize;
-                if rr >= 0 && rc >= 0 {
-                    let virtual_row = dp.scroll as usize + rr as usize;
-                    if let Some(ref mut sel) = dp.selection {
-                        sel.end = (virtual_row, rc as usize);
-                    }
-                }
-            }
-            Some(PaneKind::Launcher(_)) => {}
-            None => {}
-        }
+        apply_selection_drag_for_pane(ctx, pid, rect, pos, false);
     }
     ctx.request_redraw();
 }

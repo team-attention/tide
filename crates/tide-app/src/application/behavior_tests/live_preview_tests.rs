@@ -720,6 +720,38 @@ fn live_preview_fixed_width_selection_rects_are_clipped_to_viewport() {
 }
 
 #[test]
+fn live_preview_selection_rects_after_fixed_width_rows_use_display_rows() {
+    // UC-6 BR-9: Selection highlights after fixed-width rows use LivePreviewMode display rows, not raw wrapped rows.
+    let mut pane = EditorPane::new_empty(1);
+    pane.editor.buffer.lines = lines("```text\nabcdefghijklmnop\n```\nafter");
+    pane.live_preview = true;
+    pane.soft_wrap = true;
+    pane.ensure_live_preview_map();
+    pane.ensure_wrap_map(6);
+    pane.selection = Some(Selection {
+        anchor: (3, 0),
+        end: (3, 5),
+    });
+
+    let raw_row = pane.wrap_map().unwrap().visual_row_of_line(3);
+    let display_row = pane.soft_wrap_visual_row_of_line(3).unwrap();
+    assert!(
+        raw_row > display_row,
+        "fixture must put the target line after raw-wrapped fixed-width rows"
+    );
+
+    let cell_size = Size::new(8.0, 16.0);
+    let inner = Rect::new(10.0, 20.0, 240.0, 8.0 * cell_size.height);
+    let rects = editor_selection_rects(&pane, inner, cell_size, pane.selection.as_ref().unwrap());
+
+    assert_eq!(rects.len(), 1);
+    assert_eq!(
+        rects[0].y.to_bits(),
+        (inner.y + display_row as f32 * cell_size.height).to_bits()
+    );
+}
+
+#[test]
 fn heading_markers_visible_and_styled() {
     // UC-3 BR-4: Heading # markers always visible, heading text styled
     let input = lines("# Heading");
@@ -965,6 +997,36 @@ fn live_preview_selected_text_omits_hidden_syntax_markers() {
     };
     let selection = pane.selection.as_ref().expect("selection should exist");
     assert_eq!(pane.selected_text(selection), "OpenAI");
+}
+
+#[test]
+fn live_preview_selection_rects_use_visible_markdown_columns() {
+    // UC-7 BR-4: Selection highlights in LivePreviewMode use visible Markdown columns instead of hidden syntax marker columns.
+    let (mut app, id, _path) = app_with_markdown_editor("cursor line\n**OpenAI** tail\n");
+    let pane_rect = crate::tide_core::Rect::new(0.0, 0.0, 420.0, 320.0);
+    let cell = app.window.cached_cell_size;
+    let content_rect = pane_content_rect(pane_rect, cell.height);
+
+    let pane = match app.panes.get_mut(&id) {
+        Some(PaneKind::Editor(pane)) => pane,
+        _ => panic!("expected editor pane"),
+    };
+    pane.handle_action(
+        crate::tide_editor::input::EditorAction::SetCursor { line: 0, col: 0 },
+        20,
+    );
+    pane.prepare_inline_caches(content_rect, cell, false);
+    pane.selection = Some(Selection {
+        anchor: (1, 2),
+        end: (1, 8),
+    });
+
+    let rects = editor_selection_rects(pane, content_rect, cell, pane.selection.as_ref().unwrap());
+    assert_eq!(rects.len(), 1);
+
+    let expected_x = content_rect.x + crate::pane::editor::GUTTER_WIDTH_CELLS as f32 * cell.width;
+    assert_eq!(rects[0].x, expected_x);
+    assert_eq!(rects[0].width, 6.0 * cell.width);
 }
 
 #[test]

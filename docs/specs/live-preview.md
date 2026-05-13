@@ -153,7 +153,7 @@ Business Rules:
 - BR-6: A horizontal gesture over a horizontally scrollable fixed-width block is consumed by that block and must not fall through to vertical scrolling when the block reaches its horizontal edge.
 - BR-7: Source-valid Markdown table rows must use fixed-width table display rows even when the Markdown parser does not provide table styling for that row.
 - BR-8: Cursor placement and selection hit-testing use the same fixed-width display row model as rendering, so clicks inside code block or table preview rows cannot map to raw wrapped sub-rows.
-- BR-9: Selection highlights for fixed-width LivePreviewMode rows are clipped to the Editor Pane viewport and clamp to visible content columns.
+- BR-9: Selection highlights use the same `LivePreviewMode` display-row model as rendering. Fixed-width rows are clipped to the Editor Pane viewport and clamp to visible content columns, and selections after fixed-width rows stay on their rendered rows instead of raw wrapped rows.
 - BR-10: Selection and reverse-mapping in Markdown tables use table-specific display geometry so visible columns map to visible source spans (pipes/border markers are skipped).
 - BR-11: Vertical-dominant scroll gestures over fixed-width table and code block rows must route to Markdown Pane vertical scrolling and must not mutate fixed-width block horizontal scroll.
 - BR-12: Horizontal-dominant scroll gestures over fixed-width table and code block rows must mutate only that fixed-width block horizontal scroll and must not route Markdown Pane vertical scrolling.
@@ -172,6 +172,7 @@ Business Rules:
 - BR-1: Visible-text copy in `LivePreviewMode` omits hidden inline syntax markers from the copied text.
 - BR-2: Add-comment capture in `LivePreviewMode` uses the same visible selected text that copy uses.
 - BR-3: Link activation in `LivePreviewMode` opens the rendered Markdown link target instead of moving the cursor through hidden syntax markers.
+- BR-4: Selection highlights in `LivePreviewMode` use visible Markdown columns, so hidden inline syntax markers do not shift or widen the highlighted area.
 
 ### UC-8: LivePreviewContentInset
 Actor: Tide
@@ -243,6 +244,7 @@ Business Rules:
 | UC-6 | BR-7 | live_preview_context_map_table_rows_use_fixed_width_display_rows() |
 | UC-6 | BR-8 | live_preview_fixed_width_hit_testing_uses_display_rows() |
 | UC-6 | BR-9 | live_preview_fixed_width_selection_rects_are_clipped_to_viewport() |
+| UC-6 | BR-9 | live_preview_selection_rects_after_fixed_width_rows_use_display_rows() |
 | UC-6 | BR-10 | live_preview_table_selection_rects_skip_table_syntax_markers() |
 | UC-6 | BR-11 | vertical_scroll_over_fixed_width_live_preview_block_scrolls_pane_not_block() |
 | UC-6 | BR-12 | horizontal_scroll_over_fixed_width_live_preview_block_scrolls_block_not_pane() |
@@ -250,6 +252,7 @@ Business Rules:
 | UC-7 | BR-1 | live_preview_selected_text_omits_hidden_syntax_markers() |
 | UC-7 | BR-2 | live_preview_context_artifact_capture_uses_visible_selected_text() |
 | UC-7 | BR-3 | live_preview_link_click_opens_rendered_link_target() |
+| UC-7 | BR-4 | live_preview_selection_rects_use_visible_markdown_columns() |
 | UC-8 | BR-1, BR-2 | live_preview_content_rect_uses_vertical_padding() |
 | UC-8 | BR-3, BR-4 | live_preview_click_mapping_respects_vertical_padding() |
 | UC-8 | BR-5 | live_preview_ime_cursor_area_uses_the_live_preview_inset() |
