@@ -208,6 +208,7 @@ codex_direct_launch() {
     -c "mcp_servers.tide.args=[\"mcp\"]" \
     -c "mcp_servers.tide.env.TIDE_SOCKET=\"$TIDE_SOCKET\"" \
     -c "mcp_servers.tide.env.TIDE_PANE=\"$TIDE_PANE\"" \
+    -c "mcp_servers.tide.env.TIDE_WINDOW=\"$TIDE_WINDOW\"" \
     "$@"
 }
 

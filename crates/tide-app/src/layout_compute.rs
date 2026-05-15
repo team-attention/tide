@@ -134,6 +134,64 @@ pub(crate) fn browser_webview_frame(visual_rect: Rect, content_top: f32) -> Rect
     )
 }
 
+impl App {
+    pub(crate) fn background_browser_visual_rect_for_layout(
+        &self,
+        pane_id: crate::tide_core::PaneId,
+        owner_terminal_id: crate::tide_core::PaneId,
+    ) -> Option<Rect> {
+        let PaneKind::Terminal(terminal) = self.panes.get(&owner_terminal_id)? else {
+            return None;
+        };
+
+        let active_area = self.dock_area_rect.unwrap_or_else(|| {
+            let width = self.terminal_context_surface_layout_width();
+            Rect::new(
+                0.0,
+                self.window.top_inset,
+                width,
+                self.logical_size().height - self.window.top_inset,
+            )
+        });
+        let offscreen_area = Rect::new(
+            -(active_area.width + 64.0),
+            active_area.y,
+            active_area.width,
+            active_area.height,
+        );
+
+        if terminal.dock_view_mode == crate::state::ViewMode::Stacked {
+            let all_ids = terminal.dock_layout.all_pane_ids();
+            let active = terminal
+                .dock_focused
+                .filter(|pane_id| all_ids.contains(pane_id))
+                .or_else(|| terminal.dock_layout.pane_ids().first().copied())
+                .or_else(|| all_ids.first().copied());
+            return (active == Some(pane_id)).then_some(offscreen_area);
+        }
+
+        let dock_pane_ids = terminal.dock_layout.pane_ids();
+        if dock_pane_ids.is_empty() {
+            return None;
+        }
+
+        let mut layout = terminal.dock_layout.clone();
+        layout.expand_leaf_groups_to_splits(SplitDirection::Vertical);
+        let ctx_size = Size::new(offscreen_area.width, offscreen_area.height);
+        layout
+            .compute(ctx_size, &dock_pane_ids, terminal.dock_focused)
+            .into_iter()
+            .find_map(|(id, mut rect)| {
+                if id != pane_id {
+                    return None;
+                }
+                rect.x += offscreen_area.x;
+                rect.y += offscreen_area.y;
+                Some(rect)
+            })
+    }
+}
+
 impl crate::application::ports::inward::LayoutPort for App {
     fn update_cursor_icon(&self, window: &crate::tide_platform::WindowProxy) {
         use crate::tide_platform::CursorIcon;
@@ -830,6 +888,17 @@ impl crate::application::ports::inward::LayoutPort for App {
                 .iter()
                 .find(|(pid, _)| *pid == id)
                 .map(|(_, r)| *r);
+            let owner_terminal_id = self.terminal_owning(id);
+            let background_context_surface = visual_rect.is_none()
+                && owner_terminal_id.is_some()
+                && owner_terminal_id != self.focused_terminal_id();
+            let background_visual_rect = if background_context_surface {
+                owner_terminal_id
+                    .and_then(|owner| self.background_browser_visual_rect_for_layout(id, owner))
+            } else {
+                None
+            };
+            let webview_rect = visual_rect.or(background_visual_rect);
 
             let bp = match self.panes.get_mut(&id) {
                 Some(PaneKind::Browser(bp)) => bp,
@@ -852,7 +921,7 @@ impl crate::application::ports::inward::LayoutPort for App {
 
             // Hide the native Browser Pane view whenever Tide is drawing a modal
             // overlay or drag overlay, otherwise the NSView will sit above wgpu.
-            if let Some(vr) = visual_rect {
+            if let Some(vr) = webview_rect {
                 // Keep Browser Pane loading/back-forward state honest even when
                 // overlays temporarily hide the native view.
                 if bp.sync_webview_state() {
@@ -889,7 +958,13 @@ impl crate::application::ports::inward::LayoutPort for App {
                     bp.clear_certificate_decision();
                 }
 
-                if !bp.native_webview_should_be_visible(popup_open) {
+                let should_show_native_view = if visual_rect.is_some() {
+                    bp.native_webview_should_be_visible(popup_open)
+                } else {
+                    true
+                };
+
+                if !should_show_native_view {
                     bp.set_visible(false);
                 } else {
                     // Position webview inside the pane's visual rect.
@@ -936,8 +1011,10 @@ impl crate::application::ports::inward::LayoutPort for App {
                     // terminal's IME proxy (causes input loss after app switch).
                     let is_focused_pane = self.focus.focused == Some(id);
                     let search_bar_active = self.focus.search_focus == Some(id);
-                    let should_be_first_responder =
-                        is_focused_pane && !bp.url_input_focused && !search_bar_active;
+                    let should_be_first_responder = visual_rect.is_some()
+                        && is_focused_pane
+                        && !bp.url_input_focused
+                        && !search_bar_active;
                     if should_be_first_responder && !bp.is_first_responder {
                         if let (Some(wv), Some(win_ptr)) =
                             (&bp.webview, self.ports.platform.window_ptr())
@@ -964,7 +1041,10 @@ impl crate::application::ports::inward::LayoutPort for App {
                     }
                 } // else (not popup_open)
             } else {
-                // Browser pane not in the visible layout -- hide it
+                bp.set_visible(false);
+
+                // Browser pane not in the visible layout -- keep it out of
+                // first responder even if a background runtime is active.
                 if bp.is_first_responder {
                     if let (Some(wv), Some(win_ptr), Some(view_ptr)) = (
                         &bp.webview,
@@ -977,7 +1057,6 @@ impl crate::application::ports::inward::LayoutPort for App {
                     }
                     bp.is_first_responder = false;
                 }
-                bp.set_visible(false);
             }
         }
     }

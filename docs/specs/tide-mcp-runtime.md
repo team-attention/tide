@@ -52,6 +52,8 @@ The runtime must not add a one-off Dock resize tool. Instead, it must expose a g
 13. For Gemini, create a stable Tide-owned `GEMINI.md` context file and load it through `context.includeDirectories` plus `context.loadMemoryFromIncludeDirectories` in the wrapper-owned system defaults file.
 14. Preserve user Codex skills by creating a real wrapper-owned `skills/` directory in the overlay, symlinking user skill entries into it, and adding the wrapper-owned Tide skill there instead of mutating the user's real Codex home.
 15. Route MCP-opened and MCP-closed Terminal Context Surface Panes through the same split transition animation paths used by human split and close actions.
+16. Keep background Browser Panes live in an offscreen WKWebView frame computed from their owning Terminal Context Surface layout when that owner is not the active Stage Terminal, so browser load, snapshot, Page Map, and action flows continue without changing human-visible focus.
+17. Forward `TIDE_WINDOW` through every Agent Wrapper MCP server configuration so Agent Gateway routes commands to the owning Tide Window before resolving Caller Pane placement.
 
 ## Bounded Contexts
 
@@ -88,7 +90,7 @@ Business Rules:
 - BR-2: Pane entries must identify whether the Pane is in Stage or Terminal Context Surface.
 - BR-3: Browser Pane entries must report `visual_fit` using their visible `Rect`.
 - BR-4: The response must include the active Terminal Context Surface owner and resize capability when that surface is visible.
-- BR-5: Browser Pane visual fit that is `too_small` must include Tool Selection Guidance that selects `tide_layout_action`; Browser Pane visual fit that is `not_visible` because another Terminal Context Surface owner is active must select `tide_focus_pane`; both paths list re-observation as the next step before Browser Pane content actions, and app-internal API calls, URL parameter shortcuts, and BrowserSnapshot-only targeting must not be presented as equivalent substitutes.
+- BR-5: Browser Pane visual fit that is `too_small` must include Tool Selection Guidance that selects `tide_layout_action`; Browser Pane visual fit that is `not_visible` because another Terminal Context Surface owner is active must report background Browser Pane runtime availability without selecting `tide_focus_pane`; both paths list re-observation as the next step before Browser Pane content actions, and app-internal API calls, URL parameter shortcuts, and BrowserSnapshot-only targeting must not be presented as equivalent substitutes.
 
 ### UC-2: ResizeLayoutTarget
 
@@ -131,13 +133,13 @@ Flow:
 3. The agent uses External Browser Runtime only after Tide reports unsupported capability or the user explicitly asks for an external browser runtime.
 4. Tool responses identify runtime as `tide_browser_pane` or `external_browser_runtime`.
 
-Postcondition: Browser work stays human-visible in Tide by default across Codex, Claude, and Gemini.
+Postcondition: Browser work stays inside Tide Browser Pane Runtime by default across Codex, Claude, and Gemini. A Browser Pane is human-visible when its owning Terminal Context Surface is active, and remains background-capable without moving human-visible focus when its owner is inactive.
 
 Business Rules:
 
 - BR-1: MCP instructions must say agents must use Tide Browser Pane Runtime as the first runtime for supported browser work inside Tide.
 - BR-2: MCP instructions must keep the default browser guidance focused on Tide Browser Pane Runtime and avoid naming fallback runtimes in the normal browser path.
-- BR-3: Tide Browser Pane Runtime responses must identify themselves as shared and human-visible.
+- BR-3: Tide Browser Pane Runtime responses must identify themselves as shared, Tide-owned, and explicit about visible or background-capable state.
 - BR-4: The Codex wrapper must disable Codex Browser Use plugin for Tide-wrapped sessions so Browser Use remains an explicit External Browser Runtime fallback.
 
 ### UC-4: HoldBrowserOperation
@@ -201,6 +203,7 @@ Business Rules:
 - BR-8: The Claude Agent Wrapper must inject Tide Tool Discovery Context through `--append-system-prompt` without mutating the user's real Claude home.
 - BR-9: The Gemini Agent Wrapper must inject Tide Tool Discovery Context through a stable Tide-owned `GEMINI.md` include directory without mutating the user's real Gemini home.
 - BR-10: Tide Tool Discovery Context must tell Wrapped Agents to prefer Tide MCP tools before macOS default-app commands when the user asks to open, show, view, browse, inspect, preview, or display files, URLs, local servers, Panes, or Tide surfaces.
+- BR-11: Agent Wrapper MCP server configuration must pass `TIDE_WINDOW` with `TIDE_SOCKET` and `TIDE_PANE` so Agent Gateway commands route to the owning Tide Window before resolving Caller Pane placement.
 
 ### UC-6: AnimateMcpPaneLifecycle
 
@@ -231,7 +234,7 @@ Business Rules:
 2. Layout Target names are product concepts. MCP callers should not need to know `dock_width`.
 3. The visible Terminal Context Surface has one active owner, and Agent Gateway commands with explicit `owner_terminal_id` or Caller Pane context may target a Terminal Context Surface without depending on the human-focused Pane at command start.
 4. Legacy tools can remain for compatibility, but new agent guidance prefers product-level runtime tools.
-5. Browser work inside Tide defaults to Tide Browser Pane Runtime and must remain human-visible when the target is supported.
+5. Browser work inside Tide defaults to Tide Browser Pane Runtime; active targets remain human-visible, and background targets preserve human-visible focus while structured browser data and actions continue.
 6. Browser Operation state is per Browser Pane and does not create a second browser runtime.
 
 ## Tests
@@ -241,7 +244,7 @@ Business Rules:
 | UC-1: ObserveTideWorkspace | BR-1, BR-2, BR-4 | `tide_mcp_runtime` | `observing_workspace_reports_provider_neutral_surfaces_and_panes` |
 | UC-1: ObserveTideWorkspace | BR-3 | `tide_mcp_runtime` | `observing_workspace_reports_browser_visual_fit` |
 | UC-1: ObserveTideWorkspace | BR-5 | `tide_mcp_runtime` | `observing_workspace_guides_layout_correction_before_browser_workarounds` |
-| UC-1: ObserveTideWorkspace | BR-5 | `tide_mcp_runtime` | `observing_background_browser_guides_focus_pane_before_browser_actions` |
+| UC-1: ObserveTideWorkspace | BR-5 | `tide_mcp_runtime` | `observing_background_browser_reports_background_runtime_without_focus_tool` |
 | UC-2: ResizeLayoutTarget | BR-1, BR-2, BR-4, BR-5 | `tide_mcp_runtime` | `layout_action_resizes_terminal_context_surface_target` |
 | UC-2: ResizeLayoutTarget | BR-3 | `tide_mcp_runtime` | `layout_action_resizes_terminal_context_surface_pane_split` |
 | UC-2: ResizeLayoutTarget | BR-6 | `tide_mcp_runtime` | `layout_action_resizes_explicit_terminal_context_surface_owner_without_starting_focus` |
@@ -256,6 +259,7 @@ Business Rules:
 | UC-5: OrientWrappedAgentToTideStructure | BR-7, BR-10 | `wrapped_agent_release_integration` | `codex_wrapper_injects_tide_tool_discovery_context` |
 | UC-5: OrientWrappedAgentToTideStructure | BR-8, BR-10 | `wrapped_agent_release_integration` | `claude_wrapper_appends_tide_tool_discovery_context` |
 | UC-5: OrientWrappedAgentToTideStructure | BR-9, BR-10 | `wrapped_agent_release_integration` | `gemini_wrapper_loads_tide_tool_discovery_context_from_stable_memory` |
+| UC-5: OrientWrappedAgentToTideStructure | BR-11 | `wrapped_agent_release_integration` | `agent_wrappers_forward_tide_window_to_mcp_server` |
 | UC-6: AnimateMcpPaneLifecycle | BR-1 | `tide_mcp_runtime` | `mcp_open_browser_in_terminal_context_surface_starts_split_transition_animation` |
 | UC-6: AnimateMcpPaneLifecycle | BR-2 | `tide_mcp_runtime` | `mcp_close_pane_in_terminal_context_surface_starts_split_transition_animation` |
 | UC-6: AnimateMcpPaneLifecycle | BR-3 | `tide_mcp_runtime` | `mcp_open_browser_uses_caller_terminal_context_surface_without_moving_focus` |

@@ -186,8 +186,8 @@ fn observing_workspace_guides_layout_correction_before_browser_workarounds() {
 }
 
 #[test]
-fn observing_background_browser_guides_focus_pane_before_browser_actions() {
-    // UC-1 BR-5: a not-visible Browser Pane owned by a background Terminal Context Surface guides focus-pane before Browser Pane content actions.
+fn observing_background_browser_reports_background_runtime_without_focus_tool() {
+    // UC-1 BR-5: a not-visible Browser Pane owned by a background Terminal Context Surface reports background runtime availability without guiding focus-pane.
     let (mut app, focused_terminal_id) = app_with_terminal();
     let owner_terminal_id = app
         .layout
@@ -217,23 +217,47 @@ fn observing_background_browser_guides_focus_pane_before_browser_actions() {
     let browser = pane_entry(&observed, browser_id);
 
     assert_eq!(browser["visual_fit"]["status"], "not_visible");
+    assert_eq!(browser["visual_fit"]["background_runtime_available"], true);
     assert_eq!(
         browser["visual_fit"]["tool_selection"]["status"],
-        "surface_activation_recommended"
+        "background_runtime_available"
     );
     assert_eq!(
         browser["visual_fit"]["tool_selection"]["next_tool"],
-        "tide_focus_pane"
+        "tide_browser_observe"
+    );
+    assert_eq!(
+        browser["visual_fit"]["tool_selection"]["action"]["kind"],
+        "background_browser_runtime"
     );
     assert_eq!(
         browser["visual_fit"]["tool_selection"]["action"]["pane_id"].as_u64(),
         Some(browser_id)
     );
-
-    app.handle_cli_command("focus-pane", json!({"pane_id": browser_id}))
-        .expect("focus-pane should reveal the Browser Pane owner");
-    assert_eq!(app.focus.stage_focused, Some(owner_terminal_id));
-    assert_eq!(app.focus.focused, Some(browser_id));
+    assert_eq!(
+        browser["visual_fit"]["tool_selection"]["action"]["owner_terminal_id"].as_u64(),
+        Some(owner_terminal_id)
+    );
+    assert_eq!(
+        browser["visual_fit"]["tool_selection"]["action"]["preserve_focus"],
+        true
+    );
+    let active_surface_rect = app
+        .dock_area_rect
+        .expect("active Terminal Context Surface rect should be computed");
+    let background_rect = app
+        .background_browser_visual_rect_for_layout(browser_id, owner_terminal_id)
+        .expect("background Browser Pane rect should be computed from owner Terminal Context Surface layout");
+    assert!(background_rect.x < 0.0);
+    assert!((background_rect.width - active_surface_rect.width).abs() < f32::EPSILON);
+    assert!((background_rect.height - active_surface_rect.height).abs() < f32::EPSILON);
+    assert!(browser["visual_fit"]["tool_selection"]["do_not_substitute"]
+        .as_array()
+        .expect("substitute guidance should be listed")
+        .iter()
+        .any(|value| value == "tide_focus_pane"));
+    assert_eq!(app.focus.stage_focused, Some(focused_terminal_id));
+    assert_eq!(app.focus.focused, Some(focused_terminal_id));
 }
 
 // --- UC-2: ResizeLayoutTarget ---
@@ -405,10 +429,9 @@ fn mcp_instructions_route_browsers_provider_neutrally() {
     assert!(instructions.contains("Tool Selection Guidance"));
     assert!(instructions.contains("Browser Operation"));
     assert!(instructions.contains("tide_browser_operation"));
-    assert!(instructions
-        .contains("visual_fit.tool_selection.next_tool=tide_layout_action or tide_focus_pane"));
-    assert!(instructions
-        .contains("When layout correction or Terminal Context Surface activation is recommended"));
+    assert!(instructions.contains("visual_fit.tool_selection.next_tool=tide_layout_action"));
+    assert!(instructions.contains("background_runtime_available"));
+    assert!(instructions.contains("preserve human-visible focus"));
     assert!(instructions.contains("human-like Browser Pane"));
     assert!(!instructions.contains("External Browser Runtime"));
     assert!(!instructions.contains("fallback reason"));

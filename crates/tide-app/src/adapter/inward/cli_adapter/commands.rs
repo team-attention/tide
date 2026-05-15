@@ -1020,10 +1020,12 @@ fn browser_layout_correction_action(owner_terminal_id: Option<PaneId>, pane_id: 
     }
 }
 
-fn browser_visibility_activation_action(pane_id: PaneId) -> Value {
+fn browser_background_runtime_action(owner_terminal_id: Option<PaneId>, pane_id: PaneId) -> Value {
     json!({
-        "tool": "tide_focus_pane",
+        "kind": "background_browser_runtime",
         "pane_id": pane_id,
+        "owner_terminal_id": owner_terminal_id,
+        "preserve_focus": true,
     })
 }
 
@@ -1062,6 +1064,25 @@ fn browser_fit_tool_selection(status: &str, recommended_action: Option<&Value>) 
     })
 }
 
+fn browser_background_runtime_tool_selection(status: &str, action: &Value) -> Value {
+    json!({
+        "status": "background_runtime_available",
+        "next_tool": "tide_browser_observe",
+        "reason": status,
+        "action": action,
+        "then": ["tide_browser_observe", "tide_browser_action"],
+        "do_not_substitute": [
+            "tide_focus_pane",
+            "tide_browser_eval",
+            "app_internal_api_shortcuts",
+            "credential_bearing_url_shortcuts",
+            "url_parameter_shortcuts",
+            "url_shortening",
+            "browser_snapshot_only_targeting"
+        ],
+    })
+}
+
 fn browser_visual_fit(
     rect: Option<Rect>,
     owner_terminal_id: Option<PaneId>,
@@ -1072,15 +1093,24 @@ fn browser_visual_fit(
     const MIN_BROWSER_HEIGHT: f32 = 360.0;
 
     let Some(rect) = rect else {
-        let recommended_action =
-            if owner_terminal_id.is_some() && owner_terminal_id != active_owner_terminal_id {
-                browser_visibility_activation_action(pane_id)
-            } else {
-                browser_layout_correction_action(owner_terminal_id, pane_id)
-            };
+        if owner_terminal_id.is_some() && owner_terminal_id != active_owner_terminal_id {
+            let recommended_action = browser_background_runtime_action(owner_terminal_id, pane_id);
+            return json!({
+                "status": "not_visible",
+                "visible": false,
+                "background_runtime_available": true,
+                "min_width": MIN_BROWSER_WIDTH,
+                "min_height": MIN_BROWSER_HEIGHT,
+                "recommended_action": recommended_action,
+                "tool_selection": browser_background_runtime_tool_selection("not_visible", &recommended_action),
+            });
+        }
+
+        let recommended_action = browser_layout_correction_action(owner_terminal_id, pane_id);
         return json!({
             "status": "not_visible",
             "visible": false,
+            "background_runtime_available": false,
             "min_width": MIN_BROWSER_WIDTH,
             "min_height": MIN_BROWSER_HEIGHT,
             "recommended_action": recommended_action,
@@ -1092,6 +1122,7 @@ fn browser_visual_fit(
     let mut fit = json!({
         "status": if too_small { "too_small" } else { "ok" },
         "visible": true,
+        "background_runtime_available": false,
         "rect": rect_value(rect),
         "min_width": MIN_BROWSER_WIDTH,
         "min_height": MIN_BROWSER_HEIGHT,

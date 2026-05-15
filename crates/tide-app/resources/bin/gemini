@@ -49,7 +49,8 @@ cat > "$DEFAULTS_FILE" << TIDE_EOF
   "mcpServers": {
     "tide": {
       "command": "$TIDE_BIN",
-      "args": ["mcp"]
+      "args": ["mcp"],
+      "env": { "TIDE_SOCKET": "$TIDE_SOCKET", "TIDE_PANE": "$TIDE_PANE", "TIDE_WINDOW": "$TIDE_WINDOW" }
     }
   },
   "hooks": {

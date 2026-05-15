@@ -223,6 +223,25 @@ fn agent_wrappers_use_stable_hook_bearing_config_files() {
 }
 
 #[test]
+fn agent_wrappers_forward_tide_window_to_mcp_server() {
+    // Spec: docs/specs/tide-mcp-runtime.md
+    // UC-5 BR-11: Agent Wrapper MCP server configuration forwards Tide Window identity with Caller Pane identity.
+    let codex = include_str!("../../../resources/bin/codex");
+    let claude = include_str!("../../../resources/bin/claude");
+    let gemini = include_str!("../../../resources/bin/gemini");
+
+    assert!(codex.contains(r#"mcp_servers.tide.env.TIDE_SOCKET=\"$TIDE_SOCKET\""#));
+    assert!(codex.contains(r#"mcp_servers.tide.env.TIDE_PANE=\"$TIDE_PANE\""#));
+    assert!(codex.contains(r#"mcp_servers.tide.env.TIDE_WINDOW=\"$TIDE_WINDOW\""#));
+    assert!(claude.contains(
+        "\"env\": { \"TIDE_SOCKET\": \"$TIDE_SOCKET\", \"TIDE_PANE\": \"$TIDE_PANE\", \"TIDE_WINDOW\": \"$TIDE_WINDOW\" }"
+    ));
+    assert!(gemini.contains(
+        "\"env\": { \"TIDE_SOCKET\": \"$TIDE_SOCKET\", \"TIDE_PANE\": \"$TIDE_PANE\", \"TIDE_WINDOW\": \"$TIDE_WINDOW\" }"
+    ));
+}
+
+#[test]
 fn codex_wrapper_injects_tide_tool_discovery_context() {
     // Spec: docs/specs/tide-mcp-runtime.md
     // UC-5 BR-7: The Codex Agent Wrapper injects Tide Tool Discovery Context into the stable CODEX_HOME overlay without mutating the user's real Codex home.
