@@ -553,6 +553,87 @@ fn mcp_open_browser_uses_caller_terminal_context_surface_without_moving_focus() 
 }
 
 #[test]
+fn mcp_open_browser_from_active_caller_reveals_without_stealing_text_focus() {
+    // UC-6 BR-4: an active Caller Pane can reveal a Browser Pane in its Terminal Context Surface without moving Terminal text focus.
+    let (mut app, terminal_id) = app_with_terminal();
+    app.dock.dock_open = false;
+    app.dock.visibility_animation = None;
+    app.focus.focused = Some(terminal_id);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.router.set_focused(terminal_id);
+
+    let result = app
+        .handle_cli_command(
+            "open-browser",
+            json!({
+                "url": "http://localhost:4175",
+                "_caller_pane": terminal_id
+            }),
+        )
+        .expect("MCP open-browser should reveal Browser Pane for active caller");
+    let browser_id = result["pane_id"]
+        .as_u64()
+        .expect("open-browser should return pane_id");
+
+    assert_eq!(app.terminal_owning(browser_id), Some(terminal_id));
+    assert!(
+        app.dock.dock_open,
+        "active caller Browser Pane should reveal the Terminal Context Surface"
+    );
+    match app.panes.get(&terminal_id) {
+        Some(PaneKind::Terminal(terminal)) => {
+            assert_eq!(
+                terminal.dock_focused,
+                Some(browser_id),
+                "Browser Pane should be the active context Pane"
+            );
+            assert!(terminal.dock_layout.all_pane_ids().contains(&browser_id));
+        }
+        _ => panic!("caller should be a Terminal Pane"),
+    }
+    assert_eq!(app.focus.focus_area, FocusArea::Stage);
+    assert_eq!(app.focus.focused, Some(terminal_id));
+    assert_eq!(app.focus.stage_focused, Some(terminal_id));
+    assert_eq!(app.router.focused(), Some(terminal_id));
+}
+
+#[test]
+fn mcp_focus_pane_from_caller_preserves_text_focus_without_explicit_transfer() {
+    // UC-6 BR-5: focus-pane from a Caller Pane updates context focus without moving text focus unless transfer is explicit.
+    let (mut app, terminal_id, browser_id) = app_with_context_browser(400.0);
+    app.focus.focused = Some(terminal_id);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.router.set_focused(terminal_id);
+
+    let result = app
+        .handle_cli_command(
+            "focus-pane",
+            json!({
+                "pane_id": browser_id,
+                "_caller_pane": terminal_id
+            }),
+        )
+        .expect("MCP focus-pane should preserve text focus by default");
+
+    assert_eq!(result["ok"], true);
+    assert_eq!(result["focus_preserved"], true);
+    assert_eq!(result["text_focus_transferred"], false);
+    match app.panes.get(&terminal_id) {
+        Some(PaneKind::Terminal(terminal)) => {
+            assert_eq!(terminal.dock_focused, Some(browser_id));
+            assert!(terminal.dock_layout.all_pane_ids().contains(&browser_id));
+        }
+        _ => panic!("caller should be a Terminal Pane"),
+    }
+    assert_eq!(app.focus.focus_area, FocusArea::Stage);
+    assert_eq!(app.focus.focused, Some(terminal_id));
+    assert_eq!(app.focus.stage_focused, Some(terminal_id));
+    assert_eq!(app.router.focused(), Some(terminal_id));
+}
+
+#[test]
 fn mcp_close_pane_in_terminal_context_surface_starts_split_transition_animation() {
     // UC-6 BR-2: tide_close_pane uses the split close transition path for visible Terminal Context Surface splits.
     let (mut app, terminal_id, first_browser_id) = app_with_context_browser(360.0);

@@ -563,7 +563,8 @@ impl crate::application::ports::inward::PaneLifecyclePort for App {
         self.panes.insert(new_id, PaneKind::Browser(pane));
         self.ime.pending_creates.push(new_id);
         if let Some(tid) = self.live_dock_terminal_for_context(context_terminal) {
-            self.add_pane_to_dock_with_reveal(new_id, Some(tid), activate);
+            let reveal = activate || self.focused_terminal_id() == Some(tid);
+            self.add_pane_to_dock_with_reveal(new_id, Some(tid), reveal);
             self.assoc.associated_terminal.insert(new_id, tid);
             if activate {
                 self.focus.focus_area = crate::state::FocusArea::Dock;

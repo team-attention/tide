@@ -2303,6 +2303,35 @@ fn cli_focus_pane(
         return Err(CliError::PaneNotFound(pane_id));
     }
 
+    let allow_text_focus_transfer = param_bool(
+        &params,
+        &[
+            "allow_text_focus_transfer",
+            "text_focus_transfer",
+            "explicit_focus",
+        ],
+    );
+    if ctx.cli_caller_pane().is_some() && !allow_text_focus_transfer {
+        if let Some(owner) = ctx.terminal_owning(pane_id) {
+            ctx.dock_layout_set_focused(owner, pane_id);
+            ctx.dock_layout_set_active_tab(owner, pane_id);
+            return Ok(json!({
+                "ok": true,
+                "pane_id": pane_id,
+                "owner_terminal_id": owner,
+                "focus_preserved": true,
+                "text_focus_transferred": false,
+            }));
+        }
+
+        return Ok(json!({
+            "ok": true,
+            "pane_id": pane_id,
+            "focus_preserved": true,
+            "text_focus_transferred": false,
+        }));
+    }
+
     if let Some(owner) = ctx.terminal_owning(pane_id) {
         if ctx.focused_terminal_id() != Some(owner) {
             ctx.focus_terminal(owner);
@@ -2310,7 +2339,12 @@ fn cli_focus_pane(
     }
     ctx.focus_terminal(pane_id);
     ctx.gateway_notify("focus-changed", json!({"pane_id": pane_id}));
-    Ok(json!({"ok": true}))
+    Ok(json!({
+        "ok": true,
+        "pane_id": pane_id,
+        "focus_preserved": false,
+        "text_focus_transferred": true,
+    }))
 }
 
 fn cli_activate_notification_target(
@@ -2594,9 +2628,13 @@ fn cli_open_browser(
 ) -> Result<Value, CliError> {
     let url = params.get("url").and_then(|v| v.as_str()).map(String::from);
     let context_terminal = ctx.resolve_context_terminal_id();
-    let activate = context_terminal
-        .map(|owner| ctx.focused_terminal_id() == Some(owner))
-        .unwrap_or(true);
+    let activate = if ctx.cli_caller_pane().is_some() {
+        false
+    } else {
+        context_terminal
+            .map(|owner| ctx.focused_terminal_id() == Some(owner))
+            .unwrap_or(true)
+    };
 
     if let Some(opened_id) =
         ctx.open_browser_pane_in_context_with_activation(url, context_terminal, activate)

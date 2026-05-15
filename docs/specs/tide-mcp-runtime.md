@@ -54,6 +54,7 @@ The runtime must not add a one-off Dock resize tool. Instead, it must expose a g
 15. Route MCP-opened and MCP-closed Terminal Context Surface Panes through the same split transition animation paths used by human split and close actions.
 16. Keep background Browser Panes live in an offscreen WKWebView frame computed from their owning Terminal Context Surface layout when that owner is not the active Stage Terminal, so browser load, snapshot, Page Map, and action flows continue without changing human-visible focus.
 17. Forward `TIDE_WINDOW` through every Agent Wrapper MCP server configuration so Agent Gateway routes commands to the owning Tide Window before resolving Caller Pane placement.
+18. Preserve Terminal text focus during Wrapped Agent Browser Pane setup: MCP `open-browser` may reveal and select the Browser Pane in the caller Terminal's Terminal Context Surface, but it must keep `FocusArea`, focused Pane, active Stage Terminal, and Router focus on the caller Terminal unless the user explicitly requested a text-focus transfer.
 
 ## Bounded Contexts
 
@@ -227,6 +228,8 @@ Business Rules:
 - BR-1: MCP-opened Terminal Context Surface Panes must start `SplitTransitionAnimation` when they create a visible split in an existing Terminal Context Surface.
 - BR-2: `tide_close_pane` must use the split close transition path for visible Stage or Terminal Context Surface splits.
 - BR-3: MCP-opened Terminal Context Surface Panes must use Caller Pane context for placement even when another Stage Terminal is focused at command start, without moving human-visible focus.
+- BR-4: `tide_open_browser` from an active Caller Pane must reveal the caller Terminal's Terminal Context Surface and make the Browser Pane the active context Pane without moving Terminal text focus away from the caller Terminal.
+- BR-5: `tide_focus_pane` from a Caller Pane must preserve human-visible text focus unless the call includes an explicit text-focus transfer intent; when preserving focus for a Terminal Context Surface Pane, it may update that owner's active context Pane.
 
 ## Invariants
 
@@ -263,6 +266,8 @@ Business Rules:
 | UC-6: AnimateMcpPaneLifecycle | BR-1 | `tide_mcp_runtime` | `mcp_open_browser_in_terminal_context_surface_starts_split_transition_animation` |
 | UC-6: AnimateMcpPaneLifecycle | BR-2 | `tide_mcp_runtime` | `mcp_close_pane_in_terminal_context_surface_starts_split_transition_animation` |
 | UC-6: AnimateMcpPaneLifecycle | BR-3 | `tide_mcp_runtime` | `mcp_open_browser_uses_caller_terminal_context_surface_without_moving_focus` |
+| UC-6: AnimateMcpPaneLifecycle | BR-4 | `tide_mcp_runtime` | `mcp_open_browser_from_active_caller_reveals_without_stealing_text_focus` |
+| UC-6: AnimateMcpPaneLifecycle | BR-5 | `tide_mcp_runtime` | `mcp_focus_pane_from_caller_preserves_text_focus_without_explicit_transfer` |
 
 ## Location
 

@@ -172,7 +172,7 @@ fn mcp_instructions() -> &'static str {
         "Tide layout: the Stage holds Terminals; each active Stage Terminal owns a Terminal Context Surface for related Panes. ",
         "Use tide_layout_action for Layout Target mutations such as Terminal Context Surface width or pane_split ratio; explicit Terminal Context Surface targets use owner_terminal_id and do not depend on starting UI focus; tide_resize_pane is legacy Stage split compatibility. ",
         "Tool Selection Guidance: if a Browser Pane observation has visual_fit.tool_selection.next_tool=tide_layout_action, select that recommended Tide tool next, then re-observe with tide_observe_workspace or tide_browser_observe before Browser Pane content actions. ",
-        "When visual_fit reports background_runtime_available, continue with Tide Browser Pane Runtime tools for that Browser Pane and preserve human-visible focus; use tide_focus_pane only after an explicit user request to reveal or focus that Pane. ",
+        "When visual_fit reports background_runtime_available, continue with Tide Browser Pane Runtime tools for that Browser Pane and preserve human-visible focus; use tide_focus_pane with allow_text_focus_transfer=true only after an explicit user request to reveal or focus that Pane. ",
         "Browser Runtime Router: For supported browser work inside Tide, you must use Tide Browser Pane Runtime as the first runtime. It is the shared Tide-owned browser runtime for local preview, file-backed preview, unauthenticated public page review, visual verification, and page comments; it is visible when its Terminal Context Surface is active and background-capable when focus is elsewhere. ",
         "For user-requested browser work, treat the task as a Browser Operation: tide_open_browser, tide_browser_observe, and tide_browser_action start operation state for authorized Wrapped Agents; use human-like Browser Pane observe/action work, then call tide_browser_operation action=finish after the final observe. ",
         "Use tide_open_browser, then tide_browser_observe, then tide_browser_action for navigate/move/click/type/press/clear-cursor; prefer Browser Page Map target_ref from tide_browser_observe over guessed coordinates when click/type targets are listed. Browser Automation Cursor motion is distance-scaled and click/type target dispatch waits for that motion to settle. Use tide_browser_observe detail=compact for routine action loops, and detail=full only when full BrowserSnapshot body text is needed. ",
@@ -261,8 +261,15 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
         },
         {
             "name": "tide_focus_pane",
-            "description": "Focus a specific pane",
-            "inputSchema": { "type": "object", "properties": { "pane_id": { "type": "integer" } }, "required": ["pane_id"] }
+            "description": "Make a Pane active. Wrapped Agent calls preserve Terminal text focus by default; pass allow_text_focus_transfer=true only when the user explicitly asked to move human-visible focus to that Pane.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pane_id": { "type": "integer" },
+                    "allow_text_focus_transfer": { "type": "boolean", "description": "Explicit user-approved transfer of human-visible text focus" }
+                },
+                "required": ["pane_id"]
+            }
         },
         {
             "name": "tide_resize_pane",
@@ -333,7 +340,7 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
         },
         {
             "name": "tide_open_browser",
-            "description": "Open a URL or empty browser in a Tide Browser Pane attached to the caller Terminal's Terminal Context Surface when possible, without depending on starting UI focus. Use this for links, pages, previews, and web inspection inside Tide. Use an external/default browser only when the user explicitly asks for that handoff or Tide cannot represent the target. For authorized Wrapped Agents this starts Browser Operation state immediately; do not synthesize credential-bearing or app-internal launch URLs unless the user explicitly asks for that internal route.",
+            "description": "Open a URL or empty browser in a Tide Browser Pane attached to the caller Terminal's Terminal Context Surface when possible, without depending on starting UI focus and without moving Terminal text focus for Wrapped Agents. Use this for links, pages, previews, and web inspection inside Tide. Use an external/default browser only when the user explicitly asks for that handoff or Tide cannot represent the target. For authorized Wrapped Agents this starts Browser Operation state immediately; do not synthesize credential-bearing or app-internal launch URLs unless the user explicitly asks for that internal route.",
             "inputSchema": { "type": "object", "properties": { "url": { "type": "string" } } }
         },
         {
