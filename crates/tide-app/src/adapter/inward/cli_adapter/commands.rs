@@ -213,6 +213,19 @@ fn terminal_context_owner_for_pane(
         .filter(|owner| matches!(ctx.pane(*owner), Some(PaneKind::Terminal(_))))
 }
 
+fn caller_terminal_scope(ctx: &(impl GatewayPort + PaneAccessPort)) -> Option<PaneId> {
+    ctx.cli_caller_pane()
+        .filter(|caller| matches!(ctx.pane(*caller), Some(PaneKind::Terminal(_))))
+}
+
+fn pane_is_in_caller_terminal_scope(
+    pane_id: PaneId,
+    owner_terminal_id: Option<PaneId>,
+    caller_terminal_id: PaneId,
+) -> bool {
+    pane_id == caller_terminal_id || owner_terminal_id == Some(caller_terminal_id)
+}
+
 fn terminal_context_surface_target_owner(
     ctx: &(impl DockPort + GatewayPort + PaneAccessPort),
     target: &Value,
@@ -690,7 +703,7 @@ fn required_browser_pane_id(params: &Value) -> Result<u64, CliError> {
         .ok_or_else(|| CliError::InvalidParams("pane_id required".into()))
 }
 
-fn ensure_snapshot_tool_authorized(
+fn ensure_browser_tool_authorized(
     ctx: &(impl DockPort + GatewayPort + PaneAccessPort),
     pane_id: u64,
 ) -> Result<BrowserToolAuthorization, CliError> {
@@ -732,6 +745,23 @@ fn ensure_snapshot_tool_authorized(
         caller_pane_id,
         associated_terminal_id,
     })
+}
+
+fn ensure_browser_tool_authorized_if_caller(
+    ctx: &(impl DockPort + GatewayPort + PaneAccessPort),
+    pane_id: u64,
+) -> Result<Option<BrowserToolAuthorization>, CliError> {
+    if ctx.cli_caller_pane().is_none() {
+        return Ok(None);
+    }
+    ensure_browser_tool_authorized(ctx, pane_id).map(Some)
+}
+
+fn ensure_snapshot_tool_authorized(
+    ctx: &(impl DockPort + GatewayPort + PaneAccessPort),
+    pane_id: u64,
+) -> Result<BrowserToolAuthorization, CliError> {
+    ensure_browser_tool_authorized(ctx, pane_id)
 }
 
 fn agent_browser_control_decision(
@@ -1150,10 +1180,12 @@ fn browser_visual_fit(
 
 /// UC-1: ObserveTideWorkspace — return provider-neutral Tide surfaces and Pane geometry.
 fn cli_observe_workspace(
-    ctx: &mut (impl AppCorePort + DockPort + FocusNavPort + LayoutPort + PaneAccessPort),
+    ctx: &mut (impl AppCorePort + DockPort + FocusNavPort + GatewayPort + LayoutPort + PaneAccessPort),
 ) -> Result<Value, CliError> {
     ctx.compute_layout();
 
+    let caller_terminal_id = caller_terminal_scope(ctx);
+    let active_terminal_id = ctx.focused_terminal_id();
     let mut surfaces = vec![json!({
         "kind": "stage",
         "rect": optional_rect_value(ctx.pane_area_rect()),
@@ -1161,20 +1193,41 @@ fn cli_observe_workspace(
         "capabilities": ["pane_split"],
     })];
 
-    if let Some(rect) = ctx.dock_area_rect() {
+    if let Some(owner_terminal_id) = caller_terminal_id {
+        let rect = (active_terminal_id == Some(owner_terminal_id))
+            .then(|| ctx.dock_area_rect())
+            .flatten();
         surfaces.push(json!({
             "kind": "terminal_context_surface",
-            "owner_terminal_id": ctx.focused_terminal_id(),
+            "owner_terminal_id": owner_terminal_id,
+            "rect": optional_rect_value(rect),
+            "visible": rect.is_some(),
+            "capabilities": ["resize_width", "pane_split"],
+        }));
+    } else if let Some(rect) = ctx.dock_area_rect() {
+        surfaces.push(json!({
+            "kind": "terminal_context_surface",
+            "owner_terminal_id": active_terminal_id,
             "rect": rect_value(rect),
             "visible": true,
             "capabilities": ["resize_width", "pane_split"],
         }));
     }
 
-    let focused_id = ctx.focused_pane();
+    let focused_id = caller_terminal_id.or_else(|| ctx.focused_pane());
+    let focus_area = if caller_terminal_id.is_some() {
+        "stage"
+    } else {
+        focus_area_label(ctx.current_focus_area())
+    };
     let mut panes = Vec::new();
     for (id, pane) in ctx.pane_entries() {
         let owner_terminal_id = ctx.terminal_owning(id);
+        if let Some(caller_terminal_id) = caller_terminal_id {
+            if !pane_is_in_caller_terminal_scope(id, owner_terminal_id, caller_terminal_id) {
+                continue;
+            }
+        }
         let surface = if owner_terminal_id.is_some() {
             "terminal_context_surface"
         } else {
@@ -1204,7 +1257,7 @@ fn cli_observe_workspace(
             entry
                 .as_object_mut()
                 .unwrap()
-                .insert("human_visible".to_string(), json!(true));
+                .insert("human_visible".to_string(), json!(rect.is_some()));
         }
 
         panes.push(entry);
@@ -1220,7 +1273,7 @@ fn cli_observe_workspace(
         },
         "focus": {
             "pane_id": focused_id,
-            "area": focus_area_label(ctx.current_focus_area()),
+            "area": focus_area,
         },
         "surfaces": surfaces,
         "panes": panes,
@@ -1396,6 +1449,7 @@ fn cli_browser_observe(
 ) -> Result<Value, CliError> {
     let detail = browser_observe_detail(&params)?;
     let pane_id = command_target_pane_id(ctx, &params, "pane_id")?;
+    let _auth = ensure_browser_tool_authorized_if_caller(ctx, pane_id)?;
     ctx.compute_layout();
     let owner_terminal_id = ctx.terminal_owning(pane_id);
     let rect = pane_rect(ctx, pane_id);
@@ -1720,12 +1774,13 @@ fn cli_browser_diff_since(
 
 /// UC-12: BrowserControl — evaluate JavaScript in a Browser Pane.
 fn cli_browser_eval(
-    ctx: &mut (impl FocusNavPort + GatewayPort + PaneAccessPort),
+    ctx: &mut (impl DockPort + FocusNavPort + GatewayPort + PaneAccessPort),
     params: Value,
 ) -> Result<Value, CliError> {
     ensure_sensitive_action_approval(&params, "browser-eval")?;
 
     let pane_id = command_target_pane_id(ctx, &params, "pane_id")?;
+    let _auth = ensure_browser_tool_authorized_if_caller(ctx, pane_id)?;
     let script = params
         .get("script")
         .and_then(|v| v.as_str())
@@ -1781,6 +1836,7 @@ fn cli_browser_operation(
             "unsupported browser operation action: {action}"
         )));
     }
+    let _auth = ensure_browser_tool_authorized_if_caller(ctx, pane_id)?;
 
     let control_decision = agent_browser_control_decision(ctx, pane_id);
     let pane = ctx
@@ -1851,6 +1907,7 @@ fn cli_browser_action(
             "unsupported browser action: {action}"
         )));
     }
+    let _auth = ensure_browser_tool_authorized_if_caller(ctx, pane_id)?;
     let modal_open = ctx.modal().is_any_open();
     let control_decision = agent_browser_control_decision(ctx, pane_id);
 

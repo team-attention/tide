@@ -260,6 +260,69 @@ fn observing_background_browser_reports_background_runtime_without_focus_tool() 
     assert_eq!(app.focus.focused, Some(focused_terminal_id));
 }
 
+#[test]
+fn observing_workspace_from_caller_scopes_panes_to_caller_terminal_context_surface() {
+    // UC-1 BR-6: Caller-scoped workspace observe returns only the caller Terminal boundary as ordinary targets.
+    let (mut app, caller_terminal_id, caller_browser_id) = app_with_context_browser(400.0);
+    let other_terminal_id = app
+        .layout
+        .split(caller_terminal_id, SplitDirection::Vertical);
+    let terminal = TerminalPane::with_cwd(other_terminal_id, 80, 24, None, true).unwrap();
+    app.panes
+        .insert(other_terminal_id, PaneKind::Terminal(terminal));
+
+    let other_browser_id = app.layout.alloc_id();
+    app.panes.insert(
+        other_browser_id,
+        PaneKind::Browser(BrowserPane::with_url(
+            other_browser_id,
+            "http://localhost:4174".to_string(),
+        )),
+    );
+    app.add_pane_to_dock(other_browser_id, Some(other_terminal_id));
+    app.focus.focused = Some(other_terminal_id);
+    app.focus.stage_focused = Some(other_terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.router.set_focused(other_terminal_id);
+    app.compute_layout();
+
+    let observed = app
+        .handle_cli_command(
+            "observe-workspace",
+            json!({"_caller_pane": caller_terminal_id}),
+        )
+        .expect("caller-scoped workspace observe should succeed");
+    let pane_ids: Vec<PaneId> = observed["panes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["pane_id"].as_u64().unwrap())
+        .collect();
+
+    assert!(pane_ids.contains(&caller_terminal_id));
+    assert!(pane_ids.contains(&caller_browser_id));
+    assert!(!pane_ids.contains(&other_terminal_id));
+    assert!(!pane_ids.contains(&other_browser_id));
+    assert_eq!(
+        observed["focus"]["pane_id"].as_u64(),
+        Some(caller_terminal_id)
+    );
+    assert_eq!(observed["focus"]["area"], "stage");
+
+    let terminal_context_surface = observed["surfaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|surface| surface["kind"] == "terminal_context_surface")
+        .expect("caller Terminal Context Surface should be reported");
+    assert_eq!(
+        terminal_context_surface["owner_terminal_id"].as_u64(),
+        Some(caller_terminal_id)
+    );
+    assert_eq!(terminal_context_surface["visible"], false);
+    assert!(terminal_context_surface["rect"].is_null());
+}
+
 // --- UC-2: ResizeLayoutTarget ---
 
 #[test]

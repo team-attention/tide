@@ -1551,6 +1551,65 @@ fn browser_snapshot_tools_reject_missing_caller_wrong_terminal_and_wrong_workspa
     assert!(wrong_workspace.is_err());
 }
 
+#[test]
+fn browser_live_tools_reject_wrong_associated_terminal_for_caller() {
+    // UC-10 BR-60: Caller-scoped live Browser Pane tools reject a target owned by a different Associated Terminal before live read or mutation.
+    let (mut app, terminal_id, browser_id) =
+        app_with_caller_and_browser("https://example.com/scope");
+    let wrong_terminal_id = add_stage_terminal(&mut app, terminal_id);
+
+    app.handle_cli_command(
+        "browser-observe",
+        json!({"pane_id": browser_id, "_caller_pane": terminal_id}),
+    )
+    .expect("owner Caller Pane should be allowed to observe its Browser Pane");
+
+    let wrong_observe = app.handle_cli_command(
+        "browser-observe",
+        json!({"pane_id": browser_id, "_caller_pane": wrong_terminal_id}),
+    );
+    assert!(wrong_observe.is_err());
+
+    let before_url = match app.panes.get(&browser_id) {
+        Some(PaneKind::Browser(browser)) => browser.url.clone(),
+        _ => panic!("Browser Pane should exist"),
+    };
+    let wrong_action = app.handle_cli_command(
+        "browser-action",
+        json!({
+            "pane_id": browser_id,
+            "action": "navigate",
+            "url": "https://example.com/wrong",
+            "_caller_pane": wrong_terminal_id
+        }),
+    );
+    assert!(wrong_action.is_err());
+    assert!(matches!(
+        app.panes.get(&browser_id),
+        Some(PaneKind::Browser(browser)) if browser.url == before_url
+    ));
+
+    let wrong_operation = app.handle_cli_command(
+        "browser-operation",
+        json!({"pane_id": browser_id, "action": "start", "_caller_pane": wrong_terminal_id}),
+    );
+    assert!(wrong_operation.is_err());
+    assert!(matches!(
+        app.panes.get(&browser_id),
+        Some(PaneKind::Browser(browser)) if browser.automation_cursor().is_none()
+    ));
+
+    let wrong_eval = app.handle_cli_command(
+        "browser-eval",
+        json!({
+            "pane_id": browser_id,
+            "script": "document.title",
+            "_caller_pane": wrong_terminal_id
+        }),
+    );
+    assert!(wrong_eval.is_err());
+}
+
 // --- UC-11: HoldBrowserOperation ---
 
 #[test]

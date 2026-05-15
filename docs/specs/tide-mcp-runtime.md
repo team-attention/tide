@@ -55,6 +55,8 @@ The runtime must not add a one-off Dock resize tool. Instead, it must expose a g
 16. Keep background Browser Panes live in an offscreen WKWebView frame computed from their owning Terminal Context Surface layout when that owner is not the active Stage Terminal, so browser load, snapshot, Page Map, and action flows continue without changing human-visible focus.
 17. Forward `TIDE_WINDOW` through every Agent Wrapper MCP server configuration so Agent Gateway routes commands to the owning Tide Window before resolving Caller Pane placement.
 18. Preserve Terminal text focus during Wrapped Agent Browser Pane setup: MCP `open-browser` may reveal and select the Browser Pane in the caller Terminal's Terminal Context Surface, but it must keep `FocusArea`, focused Pane, active Stage Terminal, and Router focus on the caller Terminal unless the user explicitly requested a text-focus transfer.
+19. Scope `tide_observe_workspace` responses with Caller Pane identity to the caller Terminal boundary, so a Wrapped Agent sees its own Stage Terminal and Terminal Context Surface Panes as ordinary targets and does not receive another Terminal Context Surface's Browser PaneId.
+20. Reject live Browser Pane observe, action, operation, and eval calls from a Caller Pane when the target Browser Pane's Associated Terminal is a different Terminal.
 
 ## Bounded Contexts
 
@@ -92,6 +94,7 @@ Business Rules:
 - BR-3: Browser Pane entries must report `visual_fit` using their visible `Rect`.
 - BR-4: The response must include the active Terminal Context Surface owner and resize capability when that surface is visible.
 - BR-5: Browser Pane visual fit that is `too_small` must include Tool Selection Guidance that selects `tide_layout_action`; Browser Pane visual fit that is `not_visible` because another Terminal Context Surface owner is active must report background Browser Pane runtime availability without selecting `tide_focus_pane`; both paths list re-observation as the next step before Browser Pane content actions, and app-internal API calls, URL parameter shortcuts, and BrowserSnapshot-only targeting must not be presented as equivalent substitutes.
+- BR-6: When `tide_observe_workspace` is called from a Caller Pane, the returned Pane entries must be scoped to the caller Terminal boundary and must not expose other Terminal Context Surface Browser PaneIds as ordinary action targets.
 
 ### UC-2: ResizeLayoutTarget
 
@@ -169,6 +172,7 @@ Business Rules:
 - BR-4: MCP instructions must tell agents to prefer human-like Browser Pane observe/action work inside a Browser Operation and not replace it with shell/backend/API shortcuts, credential-bearing URL shortcuts, URL parameter shortcuts, or DOM mutation shortcuts unless the user explicitly asked to test that internal route.
 - BR-5: Repeated Browser Pane runtime calls in the same Browser Operation must keep the operation stable instead of regenerating Agent Browser Control Mode.
 - BR-6: Wrapped Agent Idle or NeedsInput lifecycle signals must clear Browser Operation visual state for Browser Panes owned by that Terminal.
+- BR-7: Caller-scoped live Browser Pane tools must reject targets whose Associated Terminal differs from the Caller Pane before returning live page state or mutating Browser Pane state.
 
 ### UC-5: OrientWrappedAgentToTideStructure
 
@@ -248,6 +252,7 @@ Business Rules:
 | UC-1: ObserveTideWorkspace | BR-3 | `tide_mcp_runtime` | `observing_workspace_reports_browser_visual_fit` |
 | UC-1: ObserveTideWorkspace | BR-5 | `tide_mcp_runtime` | `observing_workspace_guides_layout_correction_before_browser_workarounds` |
 | UC-1: ObserveTideWorkspace | BR-5 | `tide_mcp_runtime` | `observing_background_browser_reports_background_runtime_without_focus_tool` |
+| UC-1: ObserveTideWorkspace | BR-6 | `tide_mcp_runtime` | `observing_workspace_from_caller_scopes_panes_to_caller_terminal_context_surface` |
 | UC-2: ResizeLayoutTarget | BR-1, BR-2, BR-4, BR-5 | `tide_mcp_runtime` | `layout_action_resizes_terminal_context_surface_target` |
 | UC-2: ResizeLayoutTarget | BR-3 | `tide_mcp_runtime` | `layout_action_resizes_terminal_context_surface_pane_split` |
 | UC-2: ResizeLayoutTarget | BR-6 | `tide_mcp_runtime` | `layout_action_resizes_explicit_terminal_context_surface_owner_without_starting_focus` |
@@ -257,6 +262,7 @@ Business Rules:
 | UC-4: HoldBrowserOperation | BR-2, BR-3 | `browser_agent_runtime` | `browser_operation_transaction_keeps_agent_indicator_and_cursor_visible_until_finish` |
 | UC-4: HoldBrowserOperation | BR-2, BR-5 | `browser_agent_runtime` | `browser_observe_starts_operation_visuals_and_keeps_generation_stable` |
 | UC-4: HoldBrowserOperation | BR-6 | `browser_agent_runtime` | `wrapped_agent_idle_clears_browser_operation_visuals` |
+| UC-4: HoldBrowserOperation | BR-7 | `browser_agent_runtime` | `browser_live_tools_reject_wrong_associated_terminal_for_caller` |
 | UC-5: OrientWrappedAgentToTideStructure | BR-1, BR-2, BR-3, BR-4 | `tide_mcp_runtime` | `mcp_instructions_describe_tide_structure_and_capabilities` |
 | UC-5: OrientWrappedAgentToTideStructure | BR-5, BR-6 | `tide_mcp_runtime` | `open_tool_descriptions_distinguish_content_from_surface_intent` |
 | UC-5: OrientWrappedAgentToTideStructure | BR-7, BR-10 | `wrapped_agent_release_integration` | `codex_wrapper_injects_tide_tool_discovery_context` |

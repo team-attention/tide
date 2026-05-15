@@ -98,6 +98,7 @@ Agent Browser Control Mode is separate from ordinary Gateway/MCP behavior. It is
 3. Browser Automation Cursor mimic behavior should feel natural: move/click actions move a visible cursor-shaped overlay, type/press preserve the last cursor position, optional labels are preserved as tool metadata but not rendered beside the cursor, clear works explicitly, re-observe is required when the Browser Pane Generation changes, and the overlay never implies OS pointer ownership, element identity, human consent, or permission to bypass ModalStack or sensitive-action checks.
 4. Agent Browser Control Mode state must be scoped to the target Browser Pane and Workspace. Multiple Browser Panes and inactive Workspaces must not read, diff, or visually project each other's BrowserSnapshot or Browser Automation Cursor state through stale identifiers.
 5. Browser Operation state must hold Agent Browser Control Mode across the whole user-requested browser task, not only during a single `browser-action` call. It must seed a visible Browser Automation Cursor when the Browser Pane is opened, observed, or explicitly started by an authorized Wrapped Agent, keep that state stable across repeated actions, and clear the visual operation state when the operation finishes.
+6. Caller-scoped live Browser Pane tools must enforce Associated Terminal ownership before live reads or mutations. `browser-observe`, `browser-action`, `browser-operation`, and `browser-eval` reject a target Browser Pane whose Associated Terminal differs from the Caller Pane.
 
 ### Implementation Addendum: Browser Page Map
 
@@ -350,6 +351,7 @@ Resolution: Tide Browser Pane is the first browser surface for Tide task verific
   - BR-41: Agent Browser Control Mode must preserve ModalStack, sensitive-action approval, observe-before-action, and Generation freshness rules.
   - BR-42: Multiple Browser Panes and inactive Workspaces must not expose or project each other's BrowserSnapshot, Browser Automation Cursor, or Agent Browser Control Mode state through stale PaneId, missing Caller Pane, wrong Associated Terminal, or wrong Workspace.
   - BR-44: Browser Panes in Agent Browser Control Mode must project a visible agent-control indicator through normal Tide chrome, including Terminal Context Surface tab/header rendering.
+  - BR-60: Caller-scoped `browser-observe`, `browser-action`, `browser-operation`, and `browser-eval` must fail when the target Browser Pane's Associated Terminal differs from the Caller Pane, before live page state is returned or Browser Pane state is mutated.
 
 ### UC-11: HoldBrowserOperation
 
@@ -528,6 +530,7 @@ V1 implementation must add or update behavior tests before code changes. Require
 | UC-10: GateAgentBrowserControlMode | BR-41 | `browser_agent_runtime` | `agent_browser_control_mode_preserves_modal_sensitive_and_generation_gates` |
 | UC-10: GateAgentBrowserControlMode | BR-42 | `browser_agent_runtime` | `browser_snapshot_tools_reject_missing_caller_wrong_terminal_and_wrong_workspace` |
 | UC-10: GateAgentBrowserControlMode | BR-44 | `header` | `browser_agent_control_mode_projects_agent_chrome_state` |
+| UC-10: GateAgentBrowserControlMode | BR-60 | `browser_agent_runtime` | `browser_live_tools_reject_wrong_associated_terminal_for_caller` |
 | UC-11: HoldBrowserOperation | BR-47, BR-48, BR-49 | `browser_agent_runtime` | `browser_operation_transaction_keeps_agent_indicator_and_cursor_visible_until_finish` |
 | UC-11: HoldBrowserOperation | BR-47, BR-48 | `browser_agent_runtime` | `open_browser_starts_operation_visuals_for_wrapped_agent_before_first_action` |
 | UC-11: HoldBrowserOperation | BR-47, BR-48, BR-51 | `browser_agent_runtime` | `browser_observe_starts_operation_visuals_and_keeps_generation_stable` |
