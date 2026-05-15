@@ -1065,13 +1065,8 @@ fn browser_fit_tool_selection(status: &str, recommended_action: Option<&Value>) 
             .get("tool")
             .and_then(|value| value.as_str())
             .unwrap_or("tide_layout_action");
-        let guidance_status = if next_tool == "tide_focus_pane" {
-            "surface_activation_recommended"
-        } else {
-            "layout_correction_recommended"
-        };
         return json!({
-            "status": guidance_status,
+            "status": "layout_correction_recommended",
             "next_tool": next_tool,
             "reason": status,
             "action": action,
@@ -1102,7 +1097,6 @@ fn browser_background_runtime_tool_selection(status: &str, action: &Value) -> Va
         "action": action,
         "then": ["tide_browser_observe", "tide_browser_action"],
         "do_not_substitute": [
-            "tide_focus_pane",
             "tide_browser_eval",
             "app_internal_api_shortcuts",
             "credential_bearing_url_shortcuts",
@@ -2368,7 +2362,7 @@ fn cli_focus_pane(
             "explicit_focus",
         ],
     );
-    if ctx.cli_caller_pane().is_some() && !allow_text_focus_transfer {
+    if ctx.cli_caller_pane().is_some() {
         if let Some(owner) = ctx.terminal_owning(pane_id) {
             ctx.dock_layout_set_focused(owner, pane_id);
             ctx.dock_layout_set_active_tab(owner, pane_id);
@@ -2378,6 +2372,7 @@ fn cli_focus_pane(
                 "owner_terminal_id": owner,
                 "focus_preserved": true,
                 "text_focus_transferred": false,
+                "ignored_text_focus_transfer": allow_text_focus_transfer,
             }));
         }
 
@@ -2386,6 +2381,7 @@ fn cli_focus_pane(
             "pane_id": pane_id,
             "focus_preserved": true,
             "text_focus_transferred": false,
+            "ignored_text_focus_transfer": allow_text_focus_transfer,
         }));
     }
 

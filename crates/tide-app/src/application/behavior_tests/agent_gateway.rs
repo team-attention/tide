@@ -1275,7 +1275,7 @@ fn mcp_is_tide_subcommand() {
 
 #[test]
 fn mcp_tools_list_returns_all_commands() {
-    // UC-10 BR-43: Exposes all CLI commands as MCP tools with JSON Schema parameters
+    // UC-10 BR-43: Exposes supported Agent Gateway commands as MCP tools with JSON Schema parameters.
     use crate::adapter::inward::cli_adapter::mcp;
 
     let tools = mcp::mcp_tool_definitions();

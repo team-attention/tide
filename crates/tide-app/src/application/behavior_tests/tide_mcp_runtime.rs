@@ -251,11 +251,13 @@ fn observing_background_browser_reports_background_runtime_without_focus_tool() 
     assert!(background_rect.x < 0.0);
     assert!((background_rect.width - active_surface_rect.width).abs() < f32::EPSILON);
     assert!((background_rect.height - active_surface_rect.height).abs() < f32::EPSILON);
-    assert!(browser["visual_fit"]["tool_selection"]["do_not_substitute"]
-        .as_array()
-        .expect("substitute guidance should be listed")
-        .iter()
-        .any(|value| value == "tide_focus_pane"));
+    assert!(
+        !browser["visual_fit"]["tool_selection"]["do_not_substitute"]
+            .as_array()
+            .expect("substitute guidance should be listed")
+            .iter()
+            .any(|value| value == "tide_focus_pane")
+    );
     assert_eq!(app.focus.stage_focused, Some(focused_terminal_id));
     assert_eq!(app.focus.focused, Some(focused_terminal_id));
 }
@@ -540,6 +542,26 @@ fn mcp_instructions_describe_tide_structure_and_capabilities() {
 }
 
 #[test]
+fn mcp_tool_definitions_do_not_expose_focus_pane_or_text_focus_transfer() {
+    // UC-5 BR-12: Wrapped Agent MCP tools do not include focus transfer primitives.
+    let initialize = mcp::mcp_initialize_for_test();
+    let instructions = initialize["result"]["instructions"]
+        .as_str()
+        .unwrap_or_default();
+    let tools = mcp::mcp_tool_definitions();
+    let serialized_tools = serde_json::to_string(&tools).expect("tools should serialize");
+
+    assert!(!tools.iter().any(|tool| {
+        tool.get("name").and_then(|value| value.as_str()) == Some("tide_focus_pane")
+    }));
+    assert!(!serialized_tools.contains("tide_focus_pane"));
+    assert!(!serialized_tools.contains("allow_text_focus_transfer"));
+    assert!(!serialized_tools.contains("text_focus_transfer"));
+    assert!(!instructions.contains("tide_focus_pane"));
+    assert!(!instructions.contains("allow_text_focus_transfer"));
+}
+
+#[test]
 fn open_tool_descriptions_distinguish_content_from_surface_intent() {
     // UC-5 BR-5 / BR-6: open tools describe content-opening intent instead of treating every open request as Editor or Browser creation.
     let tools = mcp::mcp_tool_definitions();
@@ -683,6 +705,43 @@ fn mcp_focus_pane_from_caller_preserves_text_focus_without_explicit_transfer() {
     assert_eq!(result["ok"], true);
     assert_eq!(result["focus_preserved"], true);
     assert_eq!(result["text_focus_transferred"], false);
+    match app.panes.get(&terminal_id) {
+        Some(PaneKind::Terminal(terminal)) => {
+            assert_eq!(terminal.dock_focused, Some(browser_id));
+            assert!(terminal.dock_layout.all_pane_ids().contains(&browser_id));
+        }
+        _ => panic!("caller should be a Terminal Pane"),
+    }
+    assert_eq!(app.focus.focus_area, FocusArea::Stage);
+    assert_eq!(app.focus.focused, Some(terminal_id));
+    assert_eq!(app.focus.stage_focused, Some(terminal_id));
+    assert_eq!(app.router.focused(), Some(terminal_id));
+}
+
+#[test]
+fn mcp_focus_pane_from_caller_ignores_text_focus_transfer_flag() {
+    // UC-6 BR-5: Caller-scoped focus-pane never lets a Wrapped Agent self-authorize human-visible text focus transfer.
+    let (mut app, terminal_id, browser_id) = app_with_context_browser(400.0);
+    app.focus.focused = Some(terminal_id);
+    app.focus.stage_focused = Some(terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.router.set_focused(terminal_id);
+
+    let result = app
+        .handle_cli_command(
+            "focus-pane",
+            json!({
+                "pane_id": browser_id,
+                "allow_text_focus_transfer": true,
+                "_caller_pane": terminal_id
+            }),
+        )
+        .expect("MCP focus-pane should preserve text focus for Caller Pane calls");
+
+    assert_eq!(result["ok"], true);
+    assert_eq!(result["focus_preserved"], true);
+    assert_eq!(result["text_focus_transferred"], false);
+    assert_eq!(result["ignored_text_focus_transfer"], true);
     match app.panes.get(&terminal_id) {
         Some(PaneKind::Terminal(terminal)) => {
             assert_eq!(terminal.dock_focused, Some(browser_id));

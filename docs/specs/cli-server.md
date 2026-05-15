@@ -325,13 +325,13 @@ Agent                          Tide                         User
   1. `tide mcp` launches as a child process of the AI tool
   2. Reads MCP JSON-RPC requests from stdin, writes responses to stdout
   3. Internally connects to `$TIDE_SOCKET` (or `$TMPDIR/tide-latest.sock`)
-  4. Translates MCP `tools/list` → returns tool schemas for all commands
+  4. Translates MCP `tools/list` → returns tool schemas for supported Agent Gateway commands
   5. Translates MCP `tools/call` → sends JSON-RPC to socket → returns result
   6. Stateless bridge — no state of its own
 - **Postcondition**: AI tool sees Tide's capabilities as native MCP tools
 - **Business Rules**:
   - BR-42: `tide mcp` is a subcommand of the `tide` binary (no separate install)
-  - BR-43: Exposes all CLI commands as MCP tools with JSON Schema parameters
+  - BR-43: Exposes supported Agent Gateway commands as MCP tools with JSON Schema parameters; commands that transfer human-visible text focus may remain CLI-only.
   - BR-44: If `TIDE_SOCKET` not set, tries `$TMPDIR/tide-latest.sock`
   - BR-45: If socket not reachable, returns MCP error (not crash)
   - BR-46: Tool names prefixed with `tide_` (e.g., `tide_list_panes`, `tide_render_html`)
@@ -610,7 +610,7 @@ Agent                          Tide                         User
 
 ### Phase 4 — Discover + React
 - `tide mcp` subcommand (MCP ↔ socket bridge)
-- MCP tool schemas for all commands
+- MCP tool schemas for supported Agent Gateway commands
 - `subscribe` command + event emission
 - Badge popover with integration snippets
 - Integration docs for Claude Code / Cursor / Codex

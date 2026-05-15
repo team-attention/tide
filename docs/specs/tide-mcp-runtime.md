@@ -54,9 +54,10 @@ The runtime must not add a one-off Dock resize tool. Instead, it must expose a g
 15. Route MCP-opened and MCP-closed Terminal Context Surface Panes through the same split transition animation paths used by human split and close actions.
 16. Keep background Browser Panes live in an offscreen WKWebView frame computed from their owning Terminal Context Surface layout when that owner is not the active Stage Terminal, so browser load, snapshot, Page Map, and action flows continue without changing human-visible focus.
 17. Forward `TIDE_WINDOW` through every Agent Wrapper MCP server configuration so Agent Gateway routes commands to the owning Tide Window before resolving Caller Pane placement.
-18. Preserve Terminal text focus during Wrapped Agent Browser Pane setup: MCP `open-browser` may reveal and select the Browser Pane in the caller Terminal's Terminal Context Surface, but it must keep `FocusArea`, focused Pane, active Stage Terminal, and Router focus on the caller Terminal unless the user explicitly requested a text-focus transfer.
+18. Preserve Terminal text focus during Wrapped Agent Browser Pane setup: MCP `open-browser` may reveal and select the Browser Pane in the caller Terminal's Terminal Context Surface, but it must keep `FocusArea`, focused Pane, active Stage Terminal, and Router focus on the caller Terminal without exposing a Wrapped Agent text-focus transfer argument.
 19. Scope `tide_observe_workspace` responses with Caller Pane identity to the caller Terminal boundary, so a Wrapped Agent sees its own Stage Terminal and Terminal Context Surface Panes as ordinary targets and does not receive another Terminal Context Surface's Browser PaneId.
 20. Reject live Browser Pane observe, action, operation, and eval calls from a Caller Pane when the target Browser Pane's Associated Terminal is a different Terminal.
+21. Keep `focus-pane` as an Agent Gateway CLI compatibility command, but remove `tide_focus_pane` from the Wrapped Agent MCP tool surface; Browser Pane visibility and background work must use open, observe, layout, and Browser Pane runtime tools.
 
 ## Bounded Contexts
 
@@ -93,7 +94,7 @@ Business Rules:
 - BR-2: Pane entries must identify whether the Pane is in Stage or Terminal Context Surface.
 - BR-3: Browser Pane entries must report `visual_fit` using their visible `Rect`.
 - BR-4: The response must include the active Terminal Context Surface owner and resize capability when that surface is visible.
-- BR-5: Browser Pane visual fit that is `too_small` must include Tool Selection Guidance that selects `tide_layout_action`; Browser Pane visual fit that is `not_visible` because another Terminal Context Surface owner is active must report background Browser Pane runtime availability without selecting `tide_focus_pane`; both paths list re-observation as the next step before Browser Pane content actions, and app-internal API calls, URL parameter shortcuts, and BrowserSnapshot-only targeting must not be presented as equivalent substitutes.
+- BR-5: Browser Pane visual fit that is `too_small` must include Tool Selection Guidance that selects `tide_layout_action`; Browser Pane visual fit that is `not_visible` because another Terminal Context Surface owner is active must report background Browser Pane runtime availability without selecting or naming a focus tool; both paths list re-observation as the next step before Browser Pane content actions, and app-internal API calls, URL parameter shortcuts, and BrowserSnapshot-only targeting must not be presented as equivalent substitutes.
 - BR-6: When `tide_observe_workspace` is called from a Caller Pane, the returned Pane entries must be scoped to the caller Terminal boundary and must not expose other Terminal Context Surface Browser PaneIds as ordinary action targets.
 
 ### UC-2: ResizeLayoutTarget
@@ -209,6 +210,7 @@ Business Rules:
 - BR-9: The Gemini Agent Wrapper must inject Tide Tool Discovery Context through a stable Tide-owned `GEMINI.md` include directory without mutating the user's real Gemini home.
 - BR-10: Tide Tool Discovery Context must tell Wrapped Agents to prefer Tide MCP tools before macOS default-app commands when the user asks to open, show, view, browse, inspect, preview, or display files, URLs, local servers, Panes, or Tide surfaces.
 - BR-11: Agent Wrapper MCP server configuration must pass `TIDE_WINDOW` with `TIDE_SOCKET` and `TIDE_PANE` so Agent Gateway commands route to the owning Tide Window before resolving Caller Pane placement.
+- BR-12: Wrapped Agent MCP tool definitions must not expose `tide_focus_pane` or a text-focus transfer flag; visibility and browser work remain on open, observe, layout, and Browser Pane runtime tools.
 
 ### UC-6: AnimateMcpPaneLifecycle
 
@@ -233,7 +235,7 @@ Business Rules:
 - BR-2: `tide_close_pane` must use the split close transition path for visible Stage or Terminal Context Surface splits.
 - BR-3: MCP-opened Terminal Context Surface Panes must use Caller Pane context for placement even when another Stage Terminal is focused at command start, without moving human-visible focus.
 - BR-4: `tide_open_browser` from an active Caller Pane must reveal the caller Terminal's Terminal Context Surface and make the Browser Pane the active context Pane without moving Terminal text focus away from the caller Terminal.
-- BR-5: `tide_focus_pane` from a Caller Pane must preserve human-visible text focus unless the call includes an explicit text-focus transfer intent; when preserving focus for a Terminal Context Surface Pane, it may update that owner's active context Pane.
+- BR-5: Agent Gateway `focus-pane` from a Caller Pane must preserve human-visible text focus even when the caller supplies a text-focus transfer flag; when preserving focus for a Terminal Context Surface Pane, it may update that owner's active context Pane. Human-visible text-focus transfer belongs to human UI or non-caller activation paths, not a Wrapped Agent's self-declared tool argument.
 
 ## Invariants
 
@@ -269,11 +271,13 @@ Business Rules:
 | UC-5: OrientWrappedAgentToTideStructure | BR-8, BR-10 | `wrapped_agent_release_integration` | `claude_wrapper_appends_tide_tool_discovery_context` |
 | UC-5: OrientWrappedAgentToTideStructure | BR-9, BR-10 | `wrapped_agent_release_integration` | `gemini_wrapper_loads_tide_tool_discovery_context_from_stable_memory` |
 | UC-5: OrientWrappedAgentToTideStructure | BR-11 | `wrapped_agent_release_integration` | `agent_wrappers_forward_tide_window_to_mcp_server` |
+| UC-5: OrientWrappedAgentToTideStructure | BR-12 | `tide_mcp_runtime` | `mcp_tool_definitions_do_not_expose_focus_pane_or_text_focus_transfer` |
 | UC-6: AnimateMcpPaneLifecycle | BR-1 | `tide_mcp_runtime` | `mcp_open_browser_in_terminal_context_surface_starts_split_transition_animation` |
 | UC-6: AnimateMcpPaneLifecycle | BR-2 | `tide_mcp_runtime` | `mcp_close_pane_in_terminal_context_surface_starts_split_transition_animation` |
 | UC-6: AnimateMcpPaneLifecycle | BR-3 | `tide_mcp_runtime` | `mcp_open_browser_uses_caller_terminal_context_surface_without_moving_focus` |
 | UC-6: AnimateMcpPaneLifecycle | BR-4 | `tide_mcp_runtime` | `mcp_open_browser_from_active_caller_reveals_without_stealing_text_focus` |
 | UC-6: AnimateMcpPaneLifecycle | BR-5 | `tide_mcp_runtime` | `mcp_focus_pane_from_caller_preserves_text_focus_without_explicit_transfer` |
+| UC-6: AnimateMcpPaneLifecycle | BR-5 | `tide_mcp_runtime` | `mcp_focus_pane_from_caller_ignores_text_focus_transfer_flag` |
 
 ## Location
 
