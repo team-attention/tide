@@ -58,6 +58,7 @@ The runtime must not add a one-off Dock resize tool. Instead, it must expose a g
 19. Scope `tide_observe_workspace` responses with Caller Pane identity to the caller Terminal boundary, so a Wrapped Agent sees its own Stage Terminal and Terminal Context Surface Panes as ordinary targets and does not receive another Terminal Context Surface's Browser PaneId.
 20. Reject live Browser Pane observe, action, operation, and eval calls from a Caller Pane when the target Browser Pane's Associated Terminal is a different Terminal.
 21. Keep `focus-pane` as an Agent Gateway CLI compatibility command, but remove `tide_focus_pane` from the Wrapped Agent MCP tool surface; Browser Pane visibility and background work must use open, observe, layout, and Browser Pane runtime tools.
+22. Add compact `tide_observe_workspace` detail for mechanical orientation. It reports Caller Pane, Terminal Context Surface owner, visible state, active context Pane, scoped Pane identities, and Browser Pane targets without the full Browser visual-fit guidance payload. Scope `tide_list_panes` to the Caller Pane Terminal boundary when Caller Pane identity is present.
 
 ## Bounded Contexts
 
@@ -96,6 +97,8 @@ Business Rules:
 - BR-4: The response must include the active Terminal Context Surface owner and resize capability when that surface is visible.
 - BR-5: Browser Pane visual fit that is `too_small` must include Tool Selection Guidance that selects `tide_layout_action`; Browser Pane visual fit that is `not_visible` because another Terminal Context Surface owner is active must report background Browser Pane runtime availability without selecting or naming a focus tool; both paths list re-observation as the next step before Browser Pane content actions, and app-internal API calls, URL parameter shortcuts, and BrowserSnapshot-only targeting must not be presented as equivalent substitutes.
 - BR-6: When `tide_observe_workspace` is called from a Caller Pane, the returned Pane entries must be scoped to the caller Terminal boundary and must not expose other Terminal Context Surface Browser PaneIds as ordinary action targets.
+- BR-7: Compact `tide_observe_workspace` must return Caller Pane orientation, Terminal Context Surface visibility, scoped Pane identities, and Browser Pane target summaries without full Browser visual-fit guidance fields.
+- BR-8: `tide_list_panes` from a Caller Pane must list only the caller Terminal boundary instead of every Pane in the active Workspace.
 
 ### UC-2: ResizeLayoutTarget
 
@@ -255,6 +258,8 @@ Business Rules:
 | UC-1: ObserveTideWorkspace | BR-5 | `tide_mcp_runtime` | `observing_workspace_guides_layout_correction_before_browser_workarounds` |
 | UC-1: ObserveTideWorkspace | BR-5 | `tide_mcp_runtime` | `observing_background_browser_reports_background_runtime_without_focus_tool` |
 | UC-1: ObserveTideWorkspace | BR-6 | `tide_mcp_runtime` | `observing_workspace_from_caller_scopes_panes_to_caller_terminal_context_surface` |
+| UC-1: ObserveTideWorkspace | BR-7 | `tide_mcp_runtime` | `observing_workspace_compact_reports_caller_orientation_without_full_visual_payload` |
+| UC-1: ObserveTideWorkspace | BR-8 | `tide_mcp_runtime` | `list_panes_from_caller_scopes_to_caller_terminal_context_surface` |
 | UC-2: ResizeLayoutTarget | BR-1, BR-2, BR-4, BR-5 | `tide_mcp_runtime` | `layout_action_resizes_terminal_context_surface_target` |
 | UC-2: ResizeLayoutTarget | BR-3 | `tide_mcp_runtime` | `layout_action_resizes_terminal_context_surface_pane_split` |
 | UC-2: ResizeLayoutTarget | BR-6 | `tide_mcp_runtime` | `layout_action_resizes_explicit_terminal_context_surface_owner_without_starting_focus` |

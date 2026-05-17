@@ -325,6 +325,110 @@ fn observing_workspace_from_caller_scopes_panes_to_caller_terminal_context_surfa
     assert!(terminal_context_surface["rect"].is_null());
 }
 
+#[test]
+fn observing_workspace_compact_reports_caller_orientation_without_full_visual_payload() {
+    // UC-1 BR-7: compact workspace observe gives mechanical Caller Pane orientation without full visual-fit guidance payload.
+    let (mut app, caller_terminal_id, caller_browser_id) = app_with_context_browser(400.0);
+    let other_terminal_id = app
+        .layout
+        .split(caller_terminal_id, SplitDirection::Vertical);
+    let terminal = TerminalPane::with_cwd(other_terminal_id, 80, 24, None, true).unwrap();
+    app.panes
+        .insert(other_terminal_id, PaneKind::Terminal(terminal));
+    app.focus.focused = Some(other_terminal_id);
+    app.focus.stage_focused = Some(other_terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.router.set_focused(other_terminal_id);
+    app.compute_layout();
+
+    let observed = app
+        .handle_cli_command(
+            "observe-workspace",
+            json!({"_caller_pane": caller_terminal_id, "detail": "compact"}),
+        )
+        .expect("compact caller-scoped workspace observe should succeed");
+
+    assert_eq!(observed["detail"], "compact");
+    assert_eq!(
+        observed["caller"]["pane_id"].as_u64(),
+        Some(caller_terminal_id)
+    );
+    assert_eq!(
+        observed["terminal_context_surface"]["owner_terminal_id"].as_u64(),
+        Some(caller_terminal_id)
+    );
+    assert_eq!(observed["terminal_context_surface"]["visible"], false);
+    assert_eq!(
+        observed["terminal_context_surface"]["active_pane_id"].as_u64(),
+        Some(caller_browser_id)
+    );
+
+    let pane_ids: Vec<PaneId> = observed["panes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["pane_id"].as_u64().unwrap())
+        .collect();
+    assert!(pane_ids.contains(&caller_terminal_id));
+    assert!(pane_ids.contains(&caller_browser_id));
+    assert!(!pane_ids.contains(&other_terminal_id));
+
+    let browser_target = observed["browser_targets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["pane_id"].as_u64() == Some(caller_browser_id))
+        .expect("caller Browser Pane should be summarized as a target");
+    assert_eq!(browser_target["visible"], false);
+    assert_eq!(browser_target["visual_fit_status"], "not_visible");
+    assert_eq!(browser_target["next_tool"], "tide_browser_observe");
+    assert!(browser_target.get("tool_selection").is_none());
+    assert!(observed.get("browser_runtime_router").is_none());
+}
+
+#[test]
+fn list_panes_from_caller_scopes_to_caller_terminal_context_surface() {
+    // UC-1 BR-8: Caller-scoped list-panes lists only the caller Terminal boundary.
+    let (mut app, caller_terminal_id, caller_browser_id) = app_with_context_browser(400.0);
+    let other_terminal_id = app
+        .layout
+        .split(caller_terminal_id, SplitDirection::Vertical);
+    let terminal = TerminalPane::with_cwd(other_terminal_id, 80, 24, None, true).unwrap();
+    app.panes
+        .insert(other_terminal_id, PaneKind::Terminal(terminal));
+
+    let other_browser_id = app.layout.alloc_id();
+    app.panes.insert(
+        other_browser_id,
+        PaneKind::Browser(BrowserPane::with_url(
+            other_browser_id,
+            "http://localhost:4174".to_string(),
+        )),
+    );
+    app.add_pane_to_dock(other_browser_id, Some(other_terminal_id));
+    app.focus.focused = Some(other_terminal_id);
+    app.focus.stage_focused = Some(other_terminal_id);
+    app.focus.focus_area = FocusArea::Stage;
+    app.router.set_focused(other_terminal_id);
+    app.compute_layout();
+
+    let listed = app
+        .handle_cli_command("list-panes", json!({"_caller_pane": caller_terminal_id}))
+        .expect("caller-scoped list-panes should succeed");
+    let pane_ids: Vec<PaneId> = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["id"].as_u64().unwrap())
+        .collect();
+
+    assert!(pane_ids.contains(&caller_terminal_id));
+    assert!(pane_ids.contains(&caller_browser_id));
+    assert!(!pane_ids.contains(&other_terminal_id));
+    assert!(!pane_ids.contains(&other_browser_id));
+    assert_eq!(listed.as_array().unwrap().len(), 2);
+}
+
 // --- UC-2: ResizeLayoutTarget ---
 
 #[test]

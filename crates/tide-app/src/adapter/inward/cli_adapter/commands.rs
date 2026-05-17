@@ -127,7 +127,7 @@ impl crate::App {
         match method {
             // Phase 1 — Observe
             "list-panes" => cli_list_panes(self),
-            "observe-workspace" => cli_observe_workspace(self),
+            "observe-workspace" => cli_observe_workspace(self, params),
             "capture-pane" => cli_capture_pane(self, params),
             "capture-selection" => cli_capture_selection(self, params),
             "get-layout" => cli_get_layout(self),
@@ -262,6 +262,12 @@ enum BrowserObserveDetail {
     Compact,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorkspaceObserveDetail {
+    Full,
+    Compact,
+}
+
 fn browser_observe_detail(params: &Value) -> Result<BrowserObserveDetail, CliError> {
     if param_bool(params, &["compact", "summary"]) {
         return Ok(BrowserObserveDetail::Compact);
@@ -279,6 +285,27 @@ fn browser_observe_detail(params: &Value) -> Result<BrowserObserveDetail, CliErr
         "compact" | "summary" => Ok(BrowserObserveDetail::Compact),
         other => Err(CliError::InvalidParams(format!(
             "unsupported browser observe detail: {other}"
+        ))),
+    }
+}
+
+fn workspace_observe_detail(params: &Value) -> Result<WorkspaceObserveDetail, CliError> {
+    if param_bool(params, &["compact", "summary"]) {
+        return Ok(WorkspaceObserveDetail::Compact);
+    }
+    let Some(detail) = params
+        .get("detail")
+        .or_else(|| params.get("mode"))
+        .and_then(|value| value.as_str())
+    else {
+        return Ok(WorkspaceObserveDetail::Full);
+    };
+
+    match detail {
+        "full" => Ok(WorkspaceObserveDetail::Full),
+        "compact" | "summary" => Ok(WorkspaceObserveDetail::Compact),
+        other => Err(CliError::InvalidParams(format!(
+            "unsupported workspace observe detail: {other}"
         ))),
     }
 }
@@ -1172,13 +1199,151 @@ fn browser_visual_fit(
     fit
 }
 
+fn terminal_cwd_json(pane: Option<&PaneKind>) -> Value {
+    match pane {
+        Some(PaneKind::Terminal(terminal)) => terminal
+            .context
+            .cwd
+            .as_ref()
+            .map(|cwd| json!(cwd.to_string_lossy()))
+            .unwrap_or(Value::Null),
+        _ => Value::Null,
+    }
+}
+
+fn terminal_context_active_pane_id(
+    ctx: &impl PaneAccessPort,
+    owner_terminal_id: PaneId,
+) -> Option<PaneId> {
+    match ctx.pane(owner_terminal_id) {
+        Some(PaneKind::Terminal(terminal)) => terminal
+            .dock_focused
+            .or_else(|| terminal.dock_layout.all_pane_ids().into_iter().next()),
+        _ => None,
+    }
+}
+
+fn scoped_pane_entries<'a>(
+    ctx: &'a (impl DockPort + GatewayPort + PaneAccessPort),
+    caller_terminal_id: Option<PaneId>,
+) -> Vec<(PaneId, &'a PaneKind)> {
+    ctx.pane_entries()
+        .into_iter()
+        .filter(|(id, _pane)| {
+            let Some(caller_terminal_id) = caller_terminal_id else {
+                return true;
+            };
+            let owner_terminal_id = ctx.terminal_owning(*id);
+            pane_is_in_caller_terminal_scope(*id, owner_terminal_id, caller_terminal_id)
+        })
+        .collect()
+}
+
+fn compact_visual_fit_summary(visual_fit: &Value) -> Value {
+    json!({
+        "status": visual_fit.get("status").cloned().unwrap_or(Value::Null),
+        "background_runtime_available": visual_fit
+            .get("background_runtime_available")
+            .cloned()
+            .unwrap_or(json!(false)),
+        "next_tool": visual_fit
+            .get("tool_selection")
+            .and_then(|selection| selection.get("next_tool"))
+            .cloned()
+            .unwrap_or(Value::Null),
+    })
+}
+
+fn cli_observe_workspace_compact(
+    ctx: &(impl AppCorePort + DockPort + FocusNavPort + GatewayPort + PaneAccessPort),
+    caller_terminal_id: Option<PaneId>,
+) -> Value {
+    let active_terminal_id = ctx.focused_terminal_id();
+    let focused_id = caller_terminal_id.or_else(|| ctx.focused_pane());
+    let focus_area = if caller_terminal_id.is_some() {
+        "stage"
+    } else {
+        focus_area_label(ctx.current_focus_area())
+    };
+    let surface_owner = caller_terminal_id.or(active_terminal_id);
+    let surface_rect = surface_owner
+        .filter(|owner| active_terminal_id == Some(*owner))
+        .and_then(|_| ctx.dock_area_rect());
+
+    let mut panes = Vec::new();
+    let mut browser_targets = Vec::new();
+    for (id, pane) in scoped_pane_entries(ctx, caller_terminal_id) {
+        let owner_terminal_id = ctx.terminal_owning(id);
+        let rect = pane_rect(ctx, id);
+        let surface = if owner_terminal_id.is_some() {
+            "terminal_context_surface"
+        } else {
+            "stage"
+        };
+        panes.push(json!({
+            "pane_id": id,
+            "id": id,
+            "kind": pane_kind_label(pane),
+            "title": ctx.pane_title(id),
+            "surface": surface,
+            "owner_terminal_id": owner_terminal_id,
+            "visible": rect.is_some(),
+            "focused": focused_id == Some(id),
+        }));
+
+        if matches!(pane, PaneKind::Browser(_)) {
+            let visual_fit =
+                browser_visual_fit(rect, owner_terminal_id, ctx.focused_terminal_id(), id);
+            let visual_fit_summary = compact_visual_fit_summary(&visual_fit);
+            browser_targets.push(json!({
+                "pane_id": id,
+                "title": ctx.pane_title(id),
+                "owner_terminal_id": owner_terminal_id,
+                "visible": rect.is_some(),
+                "visual_fit_status": visual_fit_summary["status"].clone(),
+                "background_runtime_available": visual_fit_summary["background_runtime_available"].clone(),
+                "next_tool": visual_fit_summary["next_tool"].clone(),
+            }));
+        }
+    }
+
+    json!({
+        "runtime": "tide_mcp_runtime",
+        "detail": "compact",
+        "focus": {
+            "pane_id": focused_id,
+            "area": focus_area,
+        },
+        "caller": caller_terminal_id.map(|caller| json!({
+            "pane_id": caller,
+            "terminal_id": caller,
+            "title": ctx.pane_title(caller),
+            "cwd": terminal_cwd_json(ctx.pane(caller)),
+        })),
+        "terminal_context_surface": surface_owner.map(|owner| json!({
+            "owner_terminal_id": owner,
+            "visible": surface_rect.is_some(),
+            "rect": optional_rect_value(surface_rect),
+            "active_pane_id": terminal_context_active_pane_id(ctx, owner),
+        })),
+        "panes": panes,
+        "browser_targets": browser_targets,
+    })
+}
+
 /// UC-1: ObserveTideWorkspace — return provider-neutral Tide surfaces and Pane geometry.
 fn cli_observe_workspace(
     ctx: &mut (impl AppCorePort + DockPort + FocusNavPort + GatewayPort + LayoutPort + PaneAccessPort),
+    params: Value,
 ) -> Result<Value, CliError> {
+    let detail = workspace_observe_detail(&params)?;
     ctx.compute_layout();
 
     let caller_terminal_id = caller_terminal_scope(ctx);
+    if detail == WorkspaceObserveDetail::Compact {
+        return Ok(cli_observe_workspace_compact(ctx, caller_terminal_id));
+    }
+
     let active_terminal_id = ctx.focused_terminal_id();
     let mut surfaces = vec![json!({
         "kind": "stage",
@@ -1276,12 +1441,13 @@ fn cli_observe_workspace(
 
 /// UC-1: ListPanes — return all panes in the active workspace.
 fn cli_list_panes(
-    ctx: &(impl AppCorePort + FocusNavPort + PaneAccessPort),
+    ctx: &(impl AppCorePort + DockPort + FocusNavPort + GatewayPort + PaneAccessPort),
 ) -> Result<Value, CliError> {
-    let focused_id = ctx.focused_pane();
+    let caller_terminal_id = caller_terminal_scope(ctx);
+    let focused_id = caller_terminal_id.or_else(|| ctx.focused_pane());
     let mut result = Vec::new();
 
-    for (id, pane) in ctx.pane_entries() {
+    for (id, pane) in scoped_pane_entries(ctx, caller_terminal_id) {
         let kind_str = match pane {
             PaneKind::Terminal(_) => "terminal",
             PaneKind::Editor(_) => "editor",

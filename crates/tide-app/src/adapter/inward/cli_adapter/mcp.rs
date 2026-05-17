@@ -168,7 +168,7 @@ fn mcp_instructions() -> &'static str {
         "Pane kinds are Terminal, Editor, Diff, Browser, and Launcher. ",
         "Tide MCP tools can observe surfaces and Pane geometry, open Editor and Browser Panes, adjust Layout Targets, send keys to the Terminal, capture Pane content or selections, and manage Context Artifacts. ",
         "Tool descriptions define the exact intent, placement, and limits for each action. ",
-        "First call tide_observe_workspace when you need Tide geometry, focus, Pane membership, or browser fit. ",
+        "First call tide_observe_workspace with detail=compact when you need current Caller Pane orientation, Terminal Context Surface owner, Pane membership, or Browser Pane targets; use detail=full when you need complete geometry or Browser Pane visual-fit guidance. ",
         "Tide layout: the Stage holds Terminals; each active Stage Terminal owns a Terminal Context Surface for related Panes. ",
         "Use tide_layout_action for Layout Target mutations such as Terminal Context Surface width or pane_split ratio; explicit Terminal Context Surface targets use owner_terminal_id and do not depend on starting UI focus; tide_resize_pane is legacy Stage split compatibility. ",
         "Tool Selection Guidance: if a Browser Pane observation has visual_fit.tool_selection.next_tool=tide_layout_action, select that recommended Tide tool next, then re-observe with tide_observe_workspace or tide_browser_observe before Browser Pane content actions. ",
@@ -196,13 +196,18 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
     serde_json::json!([
         {
             "name": "tide_list_panes",
-            "description": "List all panes in the active workspace with id, kind, rect, and focus status",
+            "description": "List panes with id, kind, rect, and focus status. Wrapped Agent calls are scoped to the Caller Pane Terminal boundary.",
             "inputSchema": { "type": "object", "properties": {} }
         },
         {
             "name": "tide_observe_workspace",
-            "description": "Provider-neutral Tide MCP Runtime preflight. Reports Stage, Terminal Context Surface, visible Pane geometry, focus, Browser Pane visual fit, Tool Selection Guidance, and Browser Runtime Router policy. If visual_fit.tool_selection recommends tide_layout_action, choose that layout tool next and then re-observe.",
-            "inputSchema": { "type": "object", "properties": {} }
+            "description": "Provider-neutral Tide MCP Runtime preflight. Use detail=compact for mechanical orientation and current Browser Pane targets. Use detail=full for Stage, Terminal Context Surface, visible Pane geometry, focus, Browser Pane visual fit, Tool Selection Guidance, and Browser Runtime Router policy. If visual_fit.tool_selection recommends tide_layout_action, choose that layout tool next and then re-observe.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "detail": { "type": "string", "enum": ["compact", "full"], "description": "compact reports Caller Pane orientation and Browser Pane targets; full includes complete geometry and visual-fit guidance" }
+                }
+            }
         },
         {
             "name": "tide_capture_pane",
