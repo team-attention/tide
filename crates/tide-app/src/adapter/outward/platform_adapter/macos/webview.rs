@@ -75,6 +75,10 @@ pub(crate) fn queue_new_tab_url_for_window(tide_window_id: TideWindowId, url: St
     queue.entry(tide_window_id).or_default().push(url);
 }
 
+pub(crate) fn browser_content_pinch_zoom_enabled() -> bool {
+    true
+}
+
 /// Retained native objects for a Browser Auth Popup `WKWebView`.
 /// SAFETY: These pointers are created, used, and released on the main thread.
 struct BrowserAuthPopupPtr {
@@ -1606,6 +1610,27 @@ unsafe extern "C" fn set_visible_on_main_thread(ctx_ptr: *mut std::ffi::c_void) 
     let _: () = msg_send![webview, setHidden: ctx.hidden];
 }
 
+/// Context passed through `dispatch_sync_f` to set page content zoom.
+struct SetPageZoomCtx {
+    webview: *const AnyObject,
+    page_zoom: CGFloat,
+}
+
+unsafe fn set_page_zoom_inner(webview: &AnyObject, page_zoom: CGFloat) {
+    let sel = objc2::sel!(setPageZoom:);
+    let responds: Bool = msg_send![webview, respondsToSelector: sel];
+    if responds.as_bool() {
+        let _: () = msg_send![webview, setPageZoom: page_zoom];
+    }
+}
+
+/// Trampoline called on the main thread by `dispatch_sync_f`.
+unsafe extern "C" fn set_page_zoom_on_main_thread(ctx_ptr: *mut std::ffi::c_void) {
+    let ctx = &*(ctx_ptr as *const SetPageZoomCtx);
+    let webview = &*ctx.webview;
+    set_page_zoom_inner(webview, ctx.page_zoom);
+}
+
 /// Context passed through `dispatch_sync_f` to make the webview first responder.
 struct MakeFirstResponderCtx {
     webview: *const AnyObject,
@@ -1871,6 +1896,18 @@ impl WebViewHandle {
         // Enable trackpad swipe gestures for back/forward navigation
         let _: () = msg_send![&webview, setAllowsBackForwardNavigationGestures: Bool::YES];
 
+        // Enable native pinch-to-zoom gestures for Browser Pane content.
+        let magnification_sel = objc2::sel!(setAllowsMagnification:);
+        let responds: Bool = msg_send![&webview, respondsToSelector: magnification_sel];
+        if responds.as_bool() {
+            let allows_magnification = if browser_content_pinch_zoom_enabled() {
+                Bool::YES
+            } else {
+                Bool::NO
+            };
+            let _: () = msg_send![&webview, setAllowsMagnification: allows_magnification];
+        }
+
         // Disable opaque background so rounded corners etc. work
         let _: () = msg_send![&webview, setOpaque: Bool::NO];
 
@@ -2035,6 +2072,31 @@ impl WebViewHandle {
                 &_dispatch_main_q as *const std::ffi::c_void,
                 &mut ctx as *mut SetVisibleCtx as *mut std::ffi::c_void,
                 set_visible_on_main_thread,
+            );
+        }
+    }
+
+    /// Set the Browser Pane page content zoom factor.
+    ///
+    /// WKWebView's `pageZoom` **must** be set on the main thread. This method
+    /// dispatches synchronously to the main queue when called from another thread.
+    pub fn set_page_zoom(&self, factor: f64) {
+        let page_zoom = factor as CGFloat;
+        if MainThreadMarker::new().is_some() {
+            unsafe {
+                set_page_zoom_inner(&self.webview, page_zoom);
+            }
+            return;
+        }
+        let mut ctx = SetPageZoomCtx {
+            webview: &*self.webview as *const AnyObject,
+            page_zoom,
+        };
+        unsafe {
+            dispatch_sync_f(
+                &_dispatch_main_q as *const std::ffi::c_void,
+                &mut ctx as *mut SetPageZoomCtx as *mut std::ffi::c_void,
+                set_page_zoom_on_main_thread,
             );
         }
     }

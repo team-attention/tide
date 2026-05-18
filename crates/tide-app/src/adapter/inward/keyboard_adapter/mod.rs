@@ -61,6 +61,45 @@ impl<
 {
 }
 
+fn handle_browser_content_zoom_key(
+    ctx: &mut impl KeyboardPorts,
+    focused_id: crate::tide_core::PaneId,
+    key: Key,
+    modifiers: &Modifiers,
+) -> bool {
+    if !modifiers.meta || modifiers.ctrl || modifiers.alt {
+        return false;
+    }
+
+    let handled = if let Some(PaneKind::Browser(bp)) = ctx.pane_mut(focused_id) {
+        match key {
+            Key::Char('+') | Key::Char('=') => {
+                bp.zoom_content_in();
+                true
+            }
+            Key::Char('-') | Key::Char('_') => {
+                bp.zoom_content_out();
+                true
+            }
+            Key::Char('0') => {
+                bp.reset_content_zoom();
+                true
+            }
+            _ => false,
+        }
+    } else {
+        false
+    };
+
+    if handled {
+        ctx.invalidate_chrome();
+        ctx.invalidate_pane(focused_id);
+        ctx.request_redraw();
+    }
+
+    handled
+}
+
 pub(crate) fn handle_key_down(
     ctx: &mut impl KeyboardPorts,
     key: Key,
@@ -316,6 +355,10 @@ pub(crate) fn handle_key_down(
         FocusArea::Stage | FocusArea::Dock => {
             // Browser URL bar keyboard handling
             if let Some(focused_id) = ctx.focused_pane() {
+                if handle_browser_content_zoom_key(ctx, focused_id, key, &modifiers) {
+                    return;
+                }
+
                 let is_browser_url_focused = matches!(
                     ctx.pane(focused_id),
                     Some(PaneKind::Browser(bp)) if bp.url_input_focused

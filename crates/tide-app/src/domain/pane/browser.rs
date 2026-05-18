@@ -92,6 +92,7 @@ pub struct BrowserDownloadState {
 pub struct BrowserWorkspaceSnapshot {
     pub url: String,
     pub url_input: String,
+    pub content_zoom_factor: f64,
 }
 
 /// Cached Browser Pane page text and metadata captured from the webview bridge.
@@ -108,10 +109,18 @@ pub const BROWSER_PAGE_MAP_REGION_LIMIT: usize = 30;
 pub const BROWSER_PAGE_MAP_INTERACTABLE_LIMIT: usize = 80;
 pub const BROWSER_PAGE_MAP_LABEL_LIMIT_BYTES: usize = 160;
 pub const BROWSER_PAGE_MAP_TEXT_LIMIT_BYTES: usize = 512;
+pub const BROWSER_CONTENT_ZOOM_DEFAULT: f64 = 1.0;
+pub const BROWSER_CONTENT_ZOOM_MIN: f64 = 0.5;
+pub const BROWSER_CONTENT_ZOOM_MAX: f64 = 3.0;
+pub const BROWSER_CONTENT_ZOOM_STEP: f64 = 0.1;
 const BROWSER_AUTOMATION_CURSOR_MIN_MOTION_MS: u64 = 120;
 const BROWSER_AUTOMATION_CURSOR_MAX_MOTION_MS: u64 = 900;
 const BROWSER_AUTOMATION_CURSOR_PX_PER_MS: f64 = 1.35;
 const BROWSER_AUTOMATION_CURSOR_SETTLE_MS: u64 = 45;
+
+fn normalize_browser_content_zoom_factor(factor: f64) -> f64 {
+    ((factor * 10.0).round() / 10.0).clamp(BROWSER_CONTENT_ZOOM_MIN, BROWSER_CONTENT_ZOOM_MAX)
+}
 
 fn automation_cursor_motion_duration_ms(from: (f64, f64), to: (f64, f64)) -> u64 {
     let distance = (to.0 - from.0).hypot(to.1 - from.1);
@@ -220,6 +229,8 @@ pub struct BrowserPane {
     pub can_go_back: bool,
     /// Whether forward navigation is available.
     pub can_go_forward: bool,
+    /// Per-Browser Pane page content scale applied to the native WKWebView.
+    pub content_zoom_factor: f64,
     /// The native WKWebView handle (created lazily when content_view_ptr is available).
     pub webview: Option<WebViewHandle>,
     /// Generation counter for dirty tracking.
@@ -300,6 +311,7 @@ impl BrowserPane {
             load_progress: 0.0,
             can_go_back: false,
             can_go_forward: false,
+            content_zoom_factor: BROWSER_CONTENT_ZOOM_DEFAULT,
             webview: None,
             generation: 0,
             is_first_responder: false,
@@ -343,6 +355,7 @@ impl BrowserPane {
             load_progress: 0.0,
             can_go_back: false,
             can_go_forward: false,
+            content_zoom_factor: BROWSER_CONTENT_ZOOM_DEFAULT,
             webview: None,
             generation: 0,
             is_first_responder: false,
@@ -386,6 +399,7 @@ impl BrowserPane {
             load_progress: 0.0,
             can_go_back: false,
             can_go_forward: false,
+            content_zoom_factor: BROWSER_CONTENT_ZOOM_DEFAULT,
             webview: None,
             generation: 0,
             is_first_responder: false,
@@ -428,6 +442,7 @@ impl BrowserPane {
             load_progress: 0.0,
             can_go_back: false,
             can_go_forward: false,
+            content_zoom_factor: BROWSER_CONTENT_ZOOM_DEFAULT,
             webview: None,
             generation: 0,
             is_first_responder: false,
@@ -675,6 +690,7 @@ impl BrowserPane {
         BrowserWorkspaceSnapshot {
             url: self.url.clone(),
             url_input: self.url_input.clone(),
+            content_zoom_factor: self.content_zoom_factor,
         }
     }
 
@@ -688,7 +704,38 @@ impl BrowserPane {
         };
         bp.url_input = snapshot.url_input.clone();
         bp.url_input_cursor = bp.url_input.chars().count();
+        bp.content_zoom_factor =
+            normalize_browser_content_zoom_factor(snapshot.content_zoom_factor);
         bp
+    }
+
+    pub fn zoom_content_in(&mut self) {
+        self.set_content_zoom_factor(self.content_zoom_factor + BROWSER_CONTENT_ZOOM_STEP);
+    }
+
+    pub fn zoom_content_out(&mut self) {
+        self.set_content_zoom_factor(self.content_zoom_factor - BROWSER_CONTENT_ZOOM_STEP);
+    }
+
+    pub fn reset_content_zoom(&mut self) {
+        self.set_content_zoom_factor(BROWSER_CONTENT_ZOOM_DEFAULT);
+    }
+
+    pub fn set_content_zoom_factor(&mut self, factor: f64) {
+        let normalized = normalize_browser_content_zoom_factor(factor);
+        if (normalized - self.content_zoom_factor).abs() < f64::EPSILON {
+            return;
+        }
+        self.content_zoom_factor = normalized;
+        self.sync_content_zoom_to_webview();
+        self.generation = self.generation.wrapping_add(1);
+        self.agent_reobserve_required = true;
+    }
+
+    pub fn sync_content_zoom_to_webview(&self) {
+        if let Some(ref wv) = self.webview {
+            wv.set_page_zoom(self.content_zoom_factor);
+        }
     }
 
     pub fn go_back(&mut self) {

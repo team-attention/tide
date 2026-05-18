@@ -916,6 +916,7 @@ impl crate::application::ports::inward::LayoutPort for App {
                 };
                 if let Some(handle) = handle {
                     bp.webview = Some(handle);
+                    bp.sync_content_zoom_to_webview();
                 }
             }
 

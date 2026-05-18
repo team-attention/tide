@@ -37,11 +37,40 @@ fn app_with_browser() -> (App, u64) {
     (app, id)
 }
 
+fn browser_pane(app: &App, id: u64) -> &BrowserPane {
+    match app.panes.get(&id) {
+        Some(PaneKind::Browser(bp)) => bp,
+        other => panic!(
+            "expected Browser pane, got {:?}",
+            other.map(|_| "non-browser")
+        ),
+    }
+}
+
+fn browser_pane_mut(app: &mut App, id: u64) -> &mut BrowserPane {
+    match app.panes.get_mut(&id) {
+        Some(PaneKind::Browser(bp)) => bp,
+        other => panic!(
+            "expected Browser pane, got {:?}",
+            other.map(|_| "non-browser")
+        ),
+    }
+}
+
 fn cmd() -> Modifiers {
     Modifiers {
         meta: true,
         ctrl: false,
         shift: false,
+        alt: false,
+    }
+}
+
+fn cmd_shift() -> Modifiers {
+    Modifiers {
+        meta: true,
+        ctrl: false,
+        shift: true,
         alt: false,
     }
 }
@@ -128,6 +157,72 @@ fn browser_webview_frame_uses_full_bleed_content_below_browser_chrome() {
     assert_eq!(frame.y, pane_rect.y + content_top);
     assert_eq!(frame.width, pane_rect.width);
     assert_eq!(frame.height, pane_rect.height - content_top);
+}
+
+// --- UC-9: AdjustBrowserContentZoom ---
+
+#[test]
+fn cmd_plus_and_cmd_equals_increase_browser_content_zoom_without_changing_app_font_size() {
+    // UC-9 BR-35: Cmd+Plus and Cmd+Equals increase Browser Content Zoom while a Browser Pane is focused
+    let (mut app, id) = app_with_browser();
+    let initial_font_size = app.window.current_font_size;
+
+    keyboard_adapter::handle_key_down(&mut app, Key::Char('='), cmd_shift(), None);
+    assert!((browser_pane(&app, id).content_zoom_factor - 1.1).abs() < f64::EPSILON);
+
+    keyboard_adapter::handle_key_down(&mut app, Key::Char('='), cmd(), None);
+    assert!((browser_pane(&app, id).content_zoom_factor - 1.2).abs() < f64::EPSILON);
+    assert!((app.window.current_font_size - initial_font_size).abs() < f32::EPSILON);
+}
+
+#[test]
+fn cmd_minus_decreases_browser_content_zoom_without_changing_app_font_size() {
+    // UC-9 BR-36: Cmd+Minus decreases Browser Content Zoom while a Browser Pane is focused
+    let (mut app, id) = app_with_browser();
+    let initial_font_size = app.window.current_font_size;
+    browser_pane_mut(&mut app, id).set_content_zoom_factor(1.2);
+
+    keyboard_adapter::handle_key_down(&mut app, Key::Char('-'), cmd(), None);
+
+    assert!((browser_pane(&app, id).content_zoom_factor - 1.1).abs() < f64::EPSILON);
+    assert!((app.window.current_font_size - initial_font_size).abs() < f32::EPSILON);
+}
+
+#[test]
+fn cmd_zero_resets_browser_content_zoom_without_changing_app_font_size() {
+    // UC-9 BR-37: Cmd+0 resets Browser Content Zoom to 1.0 while a Browser Pane is focused
+    let (mut app, id) = app_with_browser();
+    let initial_font_size = app.window.current_font_size;
+    browser_pane_mut(&mut app, id).set_content_zoom_factor(1.3);
+
+    keyboard_adapter::handle_key_down(&mut app, Key::Char('0'), cmd(), None);
+
+    assert!(
+        (browser_pane(&app, id).content_zoom_factor
+            - crate::pane::browser::BROWSER_CONTENT_ZOOM_DEFAULT)
+            .abs()
+            < f64::EPSILON
+    );
+    assert!((app.window.current_font_size - initial_font_size).abs() < f32::EPSILON);
+}
+
+#[test]
+fn browser_content_zoom_survives_workspace_snapshot() {
+    // UC-9 BR-38: Browser Content Zoom survives Browser Pane workspace cold-storage and webview recreation
+    let id = 42;
+    let mut bp = BrowserPane::with_url(id, "https://example.com".to_string());
+    bp.set_content_zoom_factor(1.4);
+
+    let snapshot = bp.to_workspace_snapshot();
+    let restored = BrowserPane::from_workspace_snapshot(id, &snapshot);
+
+    assert!((restored.content_zoom_factor - 1.4).abs() < f64::EPSILON);
+}
+
+#[test]
+fn browser_content_pinch_zoom_is_enabled_for_native_webviews() {
+    // UC-9 BR-39: Browser Pane native WKWebView creation enables macOS magnification gestures for pinch zoom
+    assert!(crate::tide_platform::macos::webview::browser_content_pinch_zoom_enabled());
 }
 
 #[test]

@@ -24,6 +24,8 @@ The reported LinkedIn Google Sign-In flow opens `https://accounts.google.com/gsi
 
 `crates/tide-app/src/domain/pane/browser.rs` also moved Browser URL-sync logic into `sync_committed_url_from_navigation()`, but the Browser Pane `generation` bump is still split across helper methods instead of being centralized around the polled Browser Pane state transition. That means Browser Pane dirty tracking is harder to reason about and can drift when loading or back/forward state changes without a URL change.
 
+`crates/tide-app/src/domain/input/mod.rs` maps `Cmd+Plus`, `Cmd+Equals`, `Cmd+Minus`, and `Cmd+0` to app-level `FontSizeUp`, `FontSizeDown`, and `FontSizeReset`. `crates/tide-app/src/adapter/inward/keyboard_adapter/mod.rs` only has Browser Pane keyboard special cases for Browser URL-bar editing and `Cmd+L`. `crates/tide-app/src/domain/pane/browser.rs` has no Browser Content Zoom state, and `crates/tide-app/src/adapter/outward/platform_adapter/macos/webview.rs` has no native page zoom bridge. That means Browser Pane focused zoom shortcuts currently route as app font-size changes instead of Browser Pane page content zoom. The macOS SDK `WKWebView.h` defines `allowsMagnification` as the property that allows magnify gestures to change webview magnification, and the current Tide `WKWebView` creation path does not set it.
+
 The Browser Pane target is also broader than a plain embedded surface. External browser-workspace tools describe browser surfaces with navigation, `focus-webview`, history/session handling, DOM interaction, and browser automation. Tide does not need to match that full capability set in this pass, but it does need Browser Pane interaction and fallback rules that feel like a first-class browser context instead of a passive `WKWebView`.
 
 ### To-Be
@@ -42,6 +44,7 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 10. Unsupported Browser Pane capability gaps are explicit in this pass. Non-renderable responses use an explicit external handoff path routed to the originating Browser Pane by `PaneId`, Browser Auth Popup URLs use a native popup `WKWebView` returned to WebKit, and passkey or AuthenticationServices-sensitive flows are treated as Browser Pane V2 capability work rather than silently implied Browser Pane guarantees.
 11. Browser Pane dirty tracking stays centralized: `sync_webview_state()` owns the `generation` bump for Browser Pane state it polls from the native `WKWebView`, including committed-URL, loading, and navigation-availability changes.
 12. Browser Pane native content is full-bleed below Browser Pane chrome. The Browser URL bar may keep its inset chrome, but the `WKWebView` frame should not add extra Pane padding around page content.
+13. Browser Content Zoom is Pane-local. While a Browser Pane is focused, `Cmd+Plus` or `Cmd+Equals` increases Browser Content Zoom, `Cmd+Minus` decreases it, `Cmd+0` resets it to `1.0`, and native pinch gestures may magnify Browser Pane content. These interactions must not change Tide's app font size in that Browser Pane context.
 
 ### Approach
 
@@ -57,6 +60,7 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 10. Keep unsupported download and passkey flows explicit: this pass hardens Browser Pane fallback behavior, while in-app download management and AuthenticationServices integration remain Browser Pane V2 work.
 11. Detect Google GSI Browser Auth Popup URLs in `WKUIDelegate::createWebView`, create a native popup `WKWebView` using WebKit's supplied configuration, retain its delegates, and return it so the originating Browser Pane keeps opener/channel callback state.
 12. Compute the native `WKWebView` frame from the Pane rect and Browser Pane chrome height without reusing editor/terminal content padding.
+13. Store Browser Content Zoom on `BrowserPane`, route Browser Pane focused zoom shortcuts before app-level font-size routing, apply the value to the native `WKWebView.pageZoom`, enable `WKWebView.allowsMagnification` for native pinch gestures, and restore the keyboard zoom value when a Browser Pane webview is recreated after Workspace transitions.
 
 ## Bounded Contexts
 
@@ -210,6 +214,24 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 - **Business Rules**:
   - BR-32: Browser Pane native content must not add `PANE_PADDING` to the left, right, or bottom of the `WKWebView` frame.
 
+### UC-9: AdjustBrowserContentZoom
+
+- **Actor**: User
+- **Trigger**: The user presses `Cmd+Plus`, `Cmd+Equals`, `Cmd+Minus`, `Cmd+0`, or uses a native pinch gesture over Browser Pane content
+- **Precondition**: The focused Pane is a Browser Pane
+- **Flow**:
+  1. Tide resolves the focused Browser Pane before global font-size routing
+  2. Tide updates that Browser Pane's Browser Content Zoom
+  3. Tide applies Browser Content Zoom to the native `WKWebView` when present
+  4. Tide preserves Tide's app font size
+- **Postcondition**: The focused Browser Pane page content changes scale independently from the rest of Tide
+- **Business Rules**:
+  - BR-35: `Cmd+Plus` and `Cmd+Equals` increase Browser Content Zoom while a Browser Pane is focused
+  - BR-36: `Cmd+Minus` decreases Browser Content Zoom while a Browser Pane is focused
+  - BR-37: `Cmd+0` resets Browser Content Zoom to `1.0` while a Browser Pane is focused
+  - BR-38: Browser Content Zoom survives Browser Pane workspace cold-storage and webview recreation
+  - BR-39: Browser Pane native `WKWebView` creation enables macOS magnification gestures for pinch zoom
+
 ## Invariants
 
 1. **Search precedence**: `search_focus` remains the highest-priority Browser Pane text target.
@@ -222,6 +244,7 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 8. **Empty-state background consistency**: An empty navigation-mode Browser Pane must not reveal the default native `WKWebView` background before first navigation.
 9. **Content-frame consistency**: Browser Pane native content uses the same Pane bounds that the user visually reads as Browser Pane content.
 10. **Browser Auth Popup boundary**: Browser Auth Popup detection must preserve the originating Browser Pane identity and WebKit opener/channel relationship.
+11. **Browser Content Zoom locality**: Browser Content Zoom changes only the focused Browser Pane's native content scale and must not mutate Tide's app font size.
 
 ## Tests
 
@@ -264,6 +287,11 @@ Browser Pane behavior must become state-driven, address-bar-truthful, and explic
 | UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-33 | `browser_pane_fallbacks` | `google_gsi_browser_auth_popup_requires_native_popup_webview` |
 | UC-7: HandleUnsupportedBrowserPaneFlowsExplicitly | BR-34 | `browser_pane_fallbacks` | `browser_auth_popup_handling_does_not_use_external_browser_handoff` |
 | UC-8: LayoutBrowserNativeContent | BR-32 | `browser_pane_ux` | `browser_webview_frame_uses_full_bleed_content_below_browser_chrome` |
+| UC-9: AdjustBrowserContentZoom | BR-35 | `browser_pane_ux` | `cmd_plus_and_cmd_equals_increase_browser_content_zoom_without_changing_app_font_size` |
+| UC-9: AdjustBrowserContentZoom | BR-36 | `browser_pane_ux` | `cmd_minus_decreases_browser_content_zoom_without_changing_app_font_size` |
+| UC-9: AdjustBrowserContentZoom | BR-37 | `browser_pane_ux` | `cmd_zero_resets_browser_content_zoom_without_changing_app_font_size` |
+| UC-9: AdjustBrowserContentZoom | BR-38 | `browser_pane_ux` | `browser_content_zoom_survives_workspace_snapshot` |
+| UC-9: AdjustBrowserContentZoom | BR-39 | `browser_pane_ux` | `browser_content_pinch_zoom_is_enabled_for_native_webviews` |
 
 ## Location
 
