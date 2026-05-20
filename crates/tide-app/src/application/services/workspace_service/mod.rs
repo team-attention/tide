@@ -822,6 +822,18 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         }
     }
 
+    fn rename_workspace(&mut self, idx: usize, name: String) {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        if idx >= self.ws.workspaces.len() {
+            return;
+        }
+        self.ws.workspaces[idx].name = trimmed.to_string();
+        self.cache.invalidate_chrome();
+    }
+
     fn workspace_sidebar_item_rect(&self, idx: usize) -> Option<crate::tide_core::Rect> {
         crate::adapter::inward::drag_drop_adapter::workspace_sidebar_item_rect(self, idx)
     }

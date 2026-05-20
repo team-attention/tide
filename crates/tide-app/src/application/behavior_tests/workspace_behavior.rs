@@ -240,3 +240,19 @@ fn toggling_workspace_sidebar_toggles_visibility() {
     app.handle_global_action(crate::tide_input::GlobalAction::ToggleWorkspaceSidebar);
     assert!(!app.ws.show_sidebar);
 }
+
+// Spec: docs/specs/rename-workspaces.md
+//
+// --- UC-1: RenameWorkspace ---
+
+// UC-1 BR-1: rename_workspace updates the active Workspace name
+#[test]
+fn rename_workspace_updates_active_workspace_name() {
+    use crate::WorkspaceNavPort;
+    let mut app = app_with_two_workspaces();
+    let active = app.ws.active;
+
+    app.rename_workspace(active, "Renamed Active".to_string());
+
+    assert_eq!(app.ws.workspaces[active].name, "Renamed Active");
+}
