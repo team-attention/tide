@@ -14,6 +14,7 @@ Tracks upstream issue: [team-attention/tide#98](https://github.com/team-attentio
 - No port method, GlobalAction, modal, context-menu entry, or MCP tool mutates the name after creation. Right-click on a Workspace rail item is unhandled — `mouse_adapter/mod.rs:221` only branches on the FileTree View rect.
 - `ContextMenuState` (`domain/modal/mod.rs:963`) is file-tree-coupled: it embeds `entry_index`, `path`, `is_dir`, `is_app_bundle`, `shell_idle`. `execute_context_menu_action` lives in `file_tree_service` and dispatches on that file-tree shape (`application/services/file_tree_service/mod.rs:573`).
 - A clean inline-rename pattern already exists for files: `FileTreeRenameState { entry_index, original_path, input: InputLine }` (`domain/modal/mod.rs:1131`), with a dedicated keyboard handler (`adapter/inward/keyboard_adapter/modal.rs:386`), text routing (`adapter/inward/text_routing_adapter/mod.rs:59`), and rendering (`adapter/outward/view/chrome/file_tree.rs:272`).
+- `WorkspaceManager.workspaces` is empty until `new_workspace()` runs (`workspace_infra_service/mod.rs:414-429`). The active Workspace's live state lives in `App` fields (`panes`, `layout`, `focus`) and only lands in the Vec when the user creates a second Workspace. As a consequence the Workspace rail draws zero items for the entire lifetime of a single-Workspace session, so right-click on the rail has no hit-target and a future MCP `rename-workspace` call on `ws_index = 0` would fail out-of-bounds.
 
 ### To-Be
 
@@ -25,13 +26,14 @@ Tracks upstream issue: [team-attention/tide#98](https://github.com/team-attentio
 
 ### Approach
 
-1. Add `WorkspaceNavPort::rename_workspace(idx: usize, name: String)`; implement in `workspace_service`.
-2. Generalize `ContextMenuState` to a tagged target (`ContextMenuTarget::FileTreeEntry { … } | WorkspaceSidebarItem { ws_index }`); move `ContextMenuAction::items()` to take the target; split `execute_context_menu_action` so workspace actions dispatch to `workspace_service` and file-tree actions stay in `file_tree_service`.
-3. Add right-click handling for the Workspace rail item in `mouse_adapter`.
-4. Add `WorkspaceRenameState { ws_index, input: InputLine }` to `ModalStack`. Mirror `FileTreeRenameState` for keyboard handling, text routing, and `is_any_open()` / `close_all()` participation.
-5. Render the InputLine over the rail item rect when `workspace_rename` is active for that index, replacing the static `display_name` draw in `titlebar.rs`.
-6. Register `tide_rename_workspace` in the Tide MCP Runtime — entry in `mcp.rs` tool list, mapping in the tool-name switch, `"rename-workspace" => cli_rename_workspace(self, params)` in `commands.rs:dispatch`. `cli_rename_workspace` calls the port method and echoes `{ ws_index, name }`.
-7. Add behavior tests in `application/behavior_tests/workspace_behavior.rs` and a new modal test in `application/behavior_tests/modal_behavior.rs`.
+1. Add to `WorkspaceNavPort`: `rename_workspace(idx, name)` (mutator), `complete_workspace_rename()` (modal-commit entry called from the keyboard handler), and `workspace_name(idx) -> Option<String>` (read accessor used by the MCP echo so the cli adapter does not bypass the port). Implement all three on `App` in `workspace_service`.
+2. Extract the lazy-seed buried inside `new_workspace` into a reusable `App::ensure_initial_workspace_seeded()`. Call it from `main.rs` right after `App::new()` so the active Workspace is in the Vec from boot — fixing the rail-draws-zero-items case described in As-Is. Also call it from `rename_workspace` and `execute_workspace_context_menu_action` when `idx == ws.active`, as a safety net for code paths that build an `App` outside `main.rs`.
+3. Generalize `ContextMenuState` to a tagged target (`ContextMenuTarget::FileTreeEntry { … } | WorkspaceSidebarItem { ws_index }`); move `ContextMenuAction::items()` to take the target; split `execute_context_menu_action` so workspace actions dispatch to `workspace_service` and file-tree actions stay in `file_tree_service`.
+4. Add right-click handling for the Workspace rail item in `mouse_adapter`.
+5. Add `WorkspaceRenameState { ws_index, input: InputLine }` to `ModalStack`. Mirror `FileTreeRenameState` for keyboard handling, text routing, and `is_any_open()` / `close_all()` participation.
+6. Render the InputLine over the rail item rect when `workspace_rename` is active for that index, replacing the static `display_name` draw in `titlebar.rs`.
+7. Register `tide_rename_workspace` in the Tide MCP Runtime — entry in `mcp.rs` tool list, mapping in the tool-name switch, `"rename-workspace" => cli_rename_workspace(self, params)` in `commands.rs:dispatch`. `cli_rename_workspace` calls the port method and echoes `{ ws_index, name }`.
+8. Add behavior tests in `application/behavior_tests/workspace_behavior.rs`, `text_input_routing.rs`, and `cli_workspace_routing.rs`.
 
 ## Bounded Contexts
 
@@ -67,6 +69,7 @@ Tracks upstream issue: [team-attention/tide#98](https://github.com/team-attentio
   - BR-3: Empty or whitespace-only names are rejected (no mutation).
   - BR-4: The renamed name survives a switch out and back to the Workspace.
   - BR-5: Out-of-bounds `ws_index` is a no-op.
+  - BR-6: When the target is the active Workspace and `ws.workspaces` is empty (fresh `App`, no `new_workspace` call yet), `rename_workspace` calls `ensure_initial_workspace_seeded` to push the live state into the Vec before writing the new name. This makes idx 0 reachable for both the rail context menu and the MCP path on the very first user action.
 
 ### UC-2: OpenWorkspaceRenameModal
 
@@ -132,18 +135,21 @@ Tracks upstream issue: [team-attention/tide#98](https://github.com/team-attentio
 | UC-3 | BR-2 | `cli_rename_workspace_without_index_renames_active_workspace` |
 | UC-3 | BR-3 | `cli_rename_workspace_with_empty_name_is_a_no_op` |
 | UC-3 | BR-4 | `cli_rename_workspace_with_out_of_bounds_index_returns_error` |
+| UC-1 | BR-6 | `rename_workspace_seeds_initial_when_workspaces_vec_is_empty` |
 
 ## Location
 
 | Layer | Crate | Key Files |
 |-------|-------|-----------|
 | Modal state | tide-app | `crates/tide-app/src/domain/modal/mod.rs` (`WorkspaceRenameState`, `ContextMenuTarget`, refactored `ContextMenuState`) |
-| Port | tide-app | `crates/tide-app/src/application/ports/inward/workspace_nav_port/mod.rs` (`rename_workspace`) |
-| Service | tide-app | `crates/tide-app/src/application/services/workspace_service/mod.rs` (`rename_workspace`, `execute_workspace_context_menu_action`) |
+| Port | tide-app | `crates/tide-app/src/application/ports/inward/workspace_nav_port/mod.rs` (`rename_workspace`, `complete_workspace_rename`, `workspace_name`) |
+| Service | tide-app | `crates/tide-app/src/application/services/workspace_service/mod.rs` (`rename_workspace`, `complete_workspace_rename`, `workspace_name`, `execute_workspace_context_menu_action`) |
+| Service | tide-app | `crates/tide-app/src/application/services/workspace_infra_service/mod.rs` (`ensure_initial_workspace_seeded`, refactored `new_workspace`) |
 | Service | tide-app | `crates/tide-app/src/application/services/file_tree_service/mod.rs` (split workspace branch out of `execute_context_menu_action`) |
+| Boot | tide-app | `crates/tide-app/src/main.rs` (calls `ensure_initial_workspace_seeded` after `App::new()`) |
 | Mouse | tide-app | `crates/tide-app/src/adapter/inward/mouse_adapter/mod.rs` (right-click on Workspace rail item) |
 | Keyboard | tide-app | `crates/tide-app/src/adapter/inward/keyboard_adapter/modal.rs` (`handle_workspace_rename_key`) |
 | Text routing | tide-app | `crates/tide-app/src/adapter/inward/text_routing_adapter/mod.rs` (route to `workspace_rename.input`) |
 | Render | tide-app | `crates/tide-app/src/adapter/outward/view/chrome/titlebar.rs` (InputLine over item rect when `workspace_rename` is active) |
 | MCP | tide-app | `crates/tide-app/src/adapter/inward/cli_adapter/mcp.rs`, `commands.rs` (`tide_rename_workspace` ↔ `rename-workspace` ↔ `cli_rename_workspace`) |
-| Tests | tide-app | `crates/tide-app/src/application/behavior_tests/workspace_behavior.rs`, `modal_behavior.rs`, `text_input_routing.rs` |
+| Tests | tide-app | `crates/tide-app/src/application/behavior_tests/workspace_behavior.rs`, `text_input_routing.rs`, `cli_workspace_routing.rs` |

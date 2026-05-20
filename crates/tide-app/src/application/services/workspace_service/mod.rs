@@ -845,20 +845,14 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
     }
 
     fn complete_workspace_rename(&mut self) {
-        let state = match self.modal.workspace_rename.take() {
-            Some(s) => s,
-            None => return,
-        };
-        let new_name = state.input.text.trim().to_string();
-        if new_name.is_empty() {
-            // No change — modal is already cleared by `.take()`.
+        if let Some(state) = self.modal.workspace_rename.take() {
+            // `rename_workspace` handles trimming, seeding, bounds checking, and
+            // chrome invalidation on the success path. The trailing invalidate
+            // covers the no-op cases (empty name / out-of-bounds) so the rail
+            // still re-renders to clear the now-closed modal.
+            self.rename_workspace(state.ws_index, state.input.text);
             self.cache.invalidate_chrome();
-            return;
         }
-        if state.ws_index < self.ws.workspaces.len() {
-            self.ws.workspaces[state.ws_index].name = new_name;
-        }
-        self.cache.invalidate_chrome();
     }
 
     fn workspace_sidebar_item_rect(&self, idx: usize) -> Option<crate::tide_core::Rect> {
