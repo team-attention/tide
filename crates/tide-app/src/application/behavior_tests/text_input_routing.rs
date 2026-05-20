@@ -235,7 +235,7 @@ fn text_goes_to_file_tree_rename_when_active() {
 
 #[test]
 fn text_goes_to_workspace_rename_input_when_active() {
-    // Spec: docs/specs/workspace-rename.md
+    // Spec: docs/specs/rename-workspaces.md
     // UC-2 BR-6: IME-committed text while workspace_rename is open is
     // routed to the modal's InputLine.
     let (mut app, _) = app_with_editor();

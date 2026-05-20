@@ -357,6 +357,55 @@ fn right_click_on_workspace_sidebar_item_opens_context_menu_with_rename() {
     assert_eq!(labels, vec!["Rename"]);
 }
 
+// UC-2 BR-2: selecting Rename opens workspace_rename seeded with current name
+#[test]
+fn selecting_rename_in_workspace_context_menu_opens_workspace_rename_modal() {
+    let mut app = app_with_two_workspaces();
+    let original = app.ws.workspaces[0].name.clone();
+    app.modal.context_menu = Some(crate::ContextMenuState {
+        target: crate::ContextMenuTarget::WorkspaceSidebarItem { ws_index: 0 },
+        position: crate::tide_core::Vec2::new(0.0, 0.0),
+        selected: 0,
+    });
+
+    app.execute_context_menu_action(0); // index 0 = Rename in WORKSPACE_ACTIONS
+
+    let state = app
+        .modal
+        .workspace_rename
+        .as_ref()
+        .expect("workspace_rename modal open after selecting Rename");
+    assert_eq!(state.ws_index, 0);
+    assert_eq!(state.input.text, original);
+    assert!(
+        app.modal.context_menu.is_none(),
+        "context menu consumed by dispatch"
+    );
+}
+
+// UC-2 BR-7: workspace_rename participates in is_any_open() and close_all()
+#[test]
+fn workspace_rename_participates_in_modal_is_any_open_and_close_all() {
+    let mut app = app_with_two_workspaces();
+    assert!(!app.modal.is_any_open(), "no modals open at start");
+
+    app.modal.workspace_rename = Some(crate::WorkspaceRenameState {
+        ws_index: 0,
+        input: crate::InputLine::new(),
+    });
+    assert!(
+        app.modal.is_any_open(),
+        "is_any_open must report true when workspace_rename is set"
+    );
+
+    app.modal.close_all();
+    assert!(
+        app.modal.workspace_rename.is_none(),
+        "close_all must clear workspace_rename"
+    );
+    assert!(!app.modal.is_any_open(), "no modals open after close_all");
+}
+
 // UC-2 BR-3: Enter commits the new name and closes the modal
 #[test]
 fn enter_in_workspace_rename_commits_new_name() {

@@ -223,7 +223,6 @@ pub(crate) fn handle_mouse_down(
         let new_hover =
             crate::adapter::inward::click_adapter::hit_test::compute_hover_target(ctx, pos);
         if let Some(crate::state::drag_types::HoverTarget::WorkspaceSidebarItem(idx)) = new_hover {
-            ctx.modal_mut().context_menu = None;
             ctx.modal_mut().file_tree_rename = None;
             ctx.modal_mut().workspace_rename = None;
             ctx.modal_mut().context_menu = Some(crate::ContextMenuState {
