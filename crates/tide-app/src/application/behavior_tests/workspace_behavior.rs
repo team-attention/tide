@@ -312,3 +312,47 @@ fn rename_workspace_with_out_of_bounds_index_is_a_no_op() {
     let after: Vec<String> = app.ws.workspaces.iter().map(|w| w.name.clone()).collect();
     assert_eq!(before, after);
 }
+
+// --- UC-2: OpenWorkspaceRenameModal ---
+
+// UC-2 BR-1: right-click on a Workspace rail item opens the ContextMenu with Rename
+#[test]
+fn right_click_on_workspace_sidebar_item_opens_context_menu_with_rename() {
+    use crate::tide_core::MouseButton;
+    use crate::LayoutPort;
+    use crate::WorkspaceNavPort;
+
+    let (tx, _rx) = std::sync::mpsc::channel();
+    let window = crate::tide_platform::WindowProxy::new(tx, std::sync::Arc::new(|| {}));
+
+    let mut app = app_with_two_workspaces();
+    app.ws.show_sidebar = true;
+    app.compute_layout();
+
+    // Resolve where the workspace 0 rail item sits on screen
+    let rect = app
+        .workspace_sidebar_item_rect(0)
+        .expect("workspace sidebar item rect");
+    app.window.last_cursor_pos = crate::tide_core::Vec2::new(
+        rect.x + rect.width / 2.0,
+        rect.y + rect.height / 2.0,
+    );
+
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(
+        &mut app,
+        MouseButton::Right,
+        &window,
+    );
+
+    let menu = app
+        .modal
+        .context_menu
+        .as_ref()
+        .expect("context menu should be open");
+    match &menu.target {
+        crate::ContextMenuTarget::WorkspaceSidebarItem { ws_index } => assert_eq!(*ws_index, 0),
+        other => panic!("expected WorkspaceSidebarItem target, got {:?}", other),
+    }
+    let labels: Vec<&'static str> = menu.items().iter().map(|a| a.label()).collect();
+    assert_eq!(labels, vec!["Rename"]);
+}
