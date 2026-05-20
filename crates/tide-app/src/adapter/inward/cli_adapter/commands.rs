@@ -128,6 +128,7 @@ impl crate::App {
             // Phase 1 — Observe
             "list-panes" => cli_list_panes(self),
             "observe-workspace" => cli_observe_workspace(self, params),
+            "rename-workspace" => cli_rename_workspace(self, params),
             "capture-pane" => cli_capture_pane(self, params),
             "capture-selection" => cli_capture_selection(self, params),
             "get-layout" => cli_get_layout(self),
@@ -2583,6 +2584,41 @@ fn cli_activate_notification_target(
     ctx.queue_show_window();
     ctx.request_redraw();
     Ok(json!({"ok": true}))
+}
+
+/// UC-3: RenameWorkspaceViaMcp — rename a Workspace by index (defaults to active).
+fn cli_rename_workspace(
+    ctx: &mut impl WorkspaceNavPort,
+    params: Value,
+) -> Result<Value, CliError> {
+    let name = params
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| CliError::InvalidParams("name is required".into()))?
+        .to_string();
+
+    let ws_index = match params.get("ws_index") {
+        Some(v) => v
+            .as_u64()
+            .ok_or_else(|| CliError::InvalidParams("ws_index must be a number".into()))?
+            as usize,
+        None => ctx.ws_active(),
+    };
+
+    if ws_index >= ctx.ws_workspaces_len() {
+        return Err(CliError::InvalidParams(format!(
+            "ws_index {ws_index} out of bounds (len {})",
+            ctx.ws_workspaces_len()
+        )));
+    }
+
+    ctx.rename_workspace(ws_index, name);
+
+    let resolved_name = ctx.workspace_name(ws_index).unwrap_or_default();
+    Ok(json!({
+        "ws_index": ws_index,
+        "name": resolved_name,
+    }))
 }
 
 fn layout_action_number(params: &Value, target: &Value, key: &str) -> Option<f32> {

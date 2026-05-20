@@ -42,6 +42,7 @@ pub(crate) trait WorkspaceNavPort {
     fn activate_notification_target(&mut self, pane_id: PaneId);
     fn ws_reorder(&mut self, src: usize, target: usize);
     fn rename_workspace(&mut self, idx: usize, name: String);
+    fn workspace_name(&self, idx: usize) -> Option<String>;
     fn complete_workspace_rename(&mut self);
     fn workspace_sidebar_item_rect(&self, idx: usize) -> Option<crate::tide_core::Rect>;
 }

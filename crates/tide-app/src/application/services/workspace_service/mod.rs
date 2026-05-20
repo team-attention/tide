@@ -834,6 +834,10 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         self.cache.invalidate_chrome();
     }
 
+    fn workspace_name(&self, idx: usize) -> Option<String> {
+        self.ws.workspaces.get(idx).map(|w| w.name.clone())
+    }
+
     fn complete_workspace_rename(&mut self) {
         let state = match self.modal.workspace_rename.take() {
             Some(s) => s,
