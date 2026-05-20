@@ -23,7 +23,8 @@ pub(crate) fn render_ime_and_drop_preview(
     let popup_active = app.modal.file_finder.is_some()
         || app.modal.git_switcher.is_some()
         || app.modal.save_as_input.is_some()
-        || app.modal.file_tree_rename.is_some();
+        || app.modal.file_tree_rename.is_some()
+        || app.modal.workspace_rename.is_some();
     let search_bar_focused = app.focus.search_focus.is_some();
     if !app.ime.preedit.is_empty() && !popup_active && !search_bar_focused {
         let effective_id = focused;

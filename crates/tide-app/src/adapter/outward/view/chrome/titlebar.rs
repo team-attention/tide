@@ -661,6 +661,42 @@ pub(super) fn render_titlebar_and_sidebar(
                 }
             }
 
+            // Inline rename: when workspace_rename targets this rail item,
+            // draw the InputLine text + caret in place of the static name.
+            let is_renaming = matches!(
+                app.modal.workspace_rename.as_ref(),
+                Some(state) if state.ws_index == i
+            );
+            if is_renaming {
+                let state = app.modal.workspace_rename.as_ref().unwrap();
+                // Use the full content width for the input — no truncation
+                let (text_x, text_y) = (
+                    content_x + WS_SIDEBAR_ITEM_PAD_H,
+                    item_rect.y + (item_rect.height - cs.height) / 2.0,
+                );
+                renderer.draw_chrome_text(
+                    &state.input.text,
+                    Vec2::new(text_x, text_y),
+                    TextStyle {
+                        foreground: p.tab_text_focused,
+                        background: None,
+                        bold: true,
+                        dim: false,
+                        italic: false,
+                        underline: false,
+                    },
+                    inset,
+                );
+                // Caret
+                let caret_chars = state.input.text[..state.input.cursor].chars().count() as f32;
+                let caret_x = text_x + caret_chars * cs.width;
+                renderer.draw_chrome_rect(
+                    Rect::new(caret_x, text_y, 1.5, cs.height),
+                    p.tab_text_focused,
+                );
+                continue;
+            }
+
             // Name text -- one-line rows keep the rail useful as a dense task monitor.
             let indicator_reserved_w = if indicator_color.is_some() {
                 WS_SIDEBAR_ITEM_PAD_H + 10.0
