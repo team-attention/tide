@@ -459,3 +459,20 @@ fn empty_commit_in_workspace_rename_leaves_name_unchanged() {
     assert_eq!(app.ws.workspaces[0].name, original);
     assert!(app.modal.workspace_rename.is_none());
 }
+
+// UC-1 BR-6: rename_workspace on the active idx seeds the Vec when empty
+#[test]
+fn rename_workspace_seeds_initial_when_workspaces_vec_is_empty() {
+    use crate::WorkspaceNavPort;
+    let mut app = test_app();
+    assert!(
+        app.ws.workspaces.is_empty(),
+        "fresh App starts with empty workspaces Vec"
+    );
+    assert_eq!(app.ws.active, 0);
+
+    app.rename_workspace(0, "Renamed from boot".to_string());
+
+    assert_eq!(app.ws.workspaces.len(), 1);
+    assert_eq!(app.ws.workspaces[0].name, "Renamed from boot");
+}

@@ -177,6 +177,11 @@ fn build_window_callback(
         .register_window(tide_window_id, event_tx.clone(), combined_waker.clone());
 
     let mut app = App::new();
+    // Seed the WorkspaceManager so the rail draws the active Workspace from
+    // boot. Without this, `workspaces` is empty until the user creates a
+    // second Workspace via `new_workspace`, which leaves the rail blank and
+    // makes the Workspace rail context menu / MCP rename for idx 0 inaccessible.
+    app.ensure_initial_workspace_seeded();
     configure_window_app(
         &mut app,
         tide_window_id,
