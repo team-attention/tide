@@ -960,19 +960,33 @@ impl ContextMenuAction {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) enum ContextMenuTarget {
+    FileTreeEntry {
+        entry_index: usize,
+        path: PathBuf,
+        is_dir: bool,
+        is_app_bundle: bool,
+        shell_idle: bool,
+    },
+}
+
 pub(crate) struct ContextMenuState {
-    pub entry_index: usize,
-    pub path: PathBuf,
-    pub is_dir: bool,
-    pub is_app_bundle: bool,
-    pub shell_idle: bool,
+    pub target: ContextMenuTarget,
     pub position: Vec2,
     pub selected: usize,
 }
 
 impl ContextMenuState {
     pub fn items(&self) -> &'static [ContextMenuAction] {
-        ContextMenuAction::items(self.is_dir, self.is_app_bundle, self.shell_idle)
+        match &self.target {
+            ContextMenuTarget::FileTreeEntry {
+                is_dir,
+                is_app_bundle,
+                shell_idle,
+                ..
+            } => ContextMenuAction::items(*is_dir, *is_app_bundle, *shell_idle),
+        }
     }
 
     /// Compute the popup rect, clamped to window bounds.

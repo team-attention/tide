@@ -261,11 +261,13 @@ pub(crate) fn handle_mouse_down(
                             })
                             .unwrap_or(false);
                         ctx.modal_mut().context_menu = Some(crate::ContextMenuState {
-                            entry_index: index,
-                            path,
-                            is_dir,
-                            is_app_bundle,
-                            shell_idle,
+                            target: crate::ContextMenuTarget::FileTreeEntry {
+                                entry_index: index,
+                                path,
+                                is_dir,
+                                is_app_bundle,
+                                shell_idle,
+                            },
                             position: pos,
                             selected: 0,
                         });

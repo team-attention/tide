@@ -576,8 +576,18 @@ impl App {
             None => return,
         };
 
-        let items =
-            crate::ContextMenuAction::items(menu.is_dir, menu.is_app_bundle, menu.shell_idle);
+        let (entry_index, path, is_dir, is_app_bundle, shell_idle) = match menu.target {
+            crate::ContextMenuTarget::FileTreeEntry {
+                entry_index,
+                path,
+                is_dir,
+                is_app_bundle,
+                shell_idle,
+            } => (entry_index, path, is_dir, is_app_bundle, shell_idle),
+            // future targets dispatched elsewhere (e.g. WorkspaceSidebarItem in Task 6)
+        };
+
+        let items = crate::ContextMenuAction::items(is_dir, is_app_bundle, shell_idle);
         let action = match items.get(action_index) {
             Some(a) => *a,
             None => return,
@@ -585,7 +595,7 @@ impl App {
 
         match action {
             crate::ContextMenuAction::CdHere => {
-                let path_str = menu.path.to_string_lossy();
+                let path_str = path.to_string_lossy();
                 let cmd = format!("cd {}\n", crate::shell_escape(&path_str));
                 // Find the focused terminal pane
                 if let Some(tid) = self.focus.focused {
@@ -595,20 +605,20 @@ impl App {
                 }
             }
             crate::ContextMenuAction::OpenTerminalHere => {
-                self.split_pane(crate::tide_core::SplitDirection::Vertical, Some(menu.path));
+                self.split_pane(crate::tide_core::SplitDirection::Vertical, Some(path));
             }
             crate::ContextMenuAction::OpenApp => {
-                let result = self.ports.process.open_with_default_app(&menu.path);
-                Self::log_app_handoff_failure(result, &menu.path);
+                let result = self.ports.process.open_with_default_app(&path);
+                Self::log_app_handoff_failure(result, &path);
             }
             crate::ContextMenuAction::Delete => {
-                let result = if menu.is_dir {
-                    self.ports.fs.remove_dir_all(&menu.path)
+                let result = if is_dir {
+                    self.ports.fs.remove_dir_all(&path)
                 } else {
-                    self.ports.fs.remove_file(&menu.path)
+                    self.ports.fs.remove_file(&path)
                 };
                 if let Err(e) = result {
-                    log::error!("Failed to delete {:?}: {}", menu.path, e);
+                    log::error!("Failed to delete {:?}: {}", path, e);
                 }
                 if let Some(tree) = self.ft.tree.as_mut() {
                     tree.refresh();
@@ -618,23 +628,22 @@ impl App {
                 self.cache.invalidate_chrome();
             }
             crate::ContextMenuAction::RevealInFinder => {
-                if Self::is_app_bundle_directory(&menu.path, menu.is_dir) {
-                    let _ = self.ports.process.reveal_in_finder(&menu.path);
-                } else if menu.is_dir {
-                    let _ = self.ports.process.open_with_default_app(&menu.path);
+                if Self::is_app_bundle_directory(&path, is_dir) {
+                    let _ = self.ports.process.reveal_in_finder(&path);
+                } else if is_dir {
+                    let _ = self.ports.process.open_with_default_app(&path);
                 } else {
-                    let _ = self.ports.process.reveal_in_finder(&menu.path);
+                    let _ = self.ports.process.reveal_in_finder(&path);
                 }
             }
             crate::ContextMenuAction::Rename => {
-                let file_name = menu
-                    .path
+                let file_name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
                 self.modal.file_tree_rename = Some(crate::FileTreeRenameState {
-                    entry_index: menu.entry_index,
-                    original_path: menu.path,
+                    entry_index,
+                    original_path: path,
                     input: crate::InputLine::with_text(file_name),
                 });
                 self.cache.invalidate_chrome();

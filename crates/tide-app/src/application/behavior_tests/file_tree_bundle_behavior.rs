@@ -177,11 +177,13 @@ fn open_app_launches_app_bundles_from_the_file_tree_context_menu() {
     let (mut app, calls) = app_with_recording_process();
     let bundle_path = PathBuf::from("/tmp/Tide.app");
     app.modal.context_menu = Some(ContextMenuState {
-        entry_index: 0,
-        path: bundle_path.clone(),
-        is_dir: true,
-        is_app_bundle: true,
-        shell_idle: true,
+        target: crate::ContextMenuTarget::FileTreeEntry {
+            entry_index: 0,
+            path: bundle_path.clone(),
+            is_dir: true,
+            is_app_bundle: true,
+            shell_idle: true,
+        },
         position: crate::tide_core::Vec2::new(0.0, 0.0),
         selected: 0,
     });
@@ -199,11 +201,13 @@ fn open_app_leaves_the_current_tide_window_open_after_launch() {
     let (mut app, _calls) = app_with_recording_process();
     let bundle_path = PathBuf::from("/tmp/Tide.app");
     app.modal.context_menu = Some(ContextMenuState {
-        entry_index: 0,
-        path: bundle_path,
-        is_dir: true,
-        is_app_bundle: true,
-        shell_idle: true,
+        target: crate::ContextMenuTarget::FileTreeEntry {
+            entry_index: 0,
+            path: bundle_path,
+            is_dir: true,
+            is_app_bundle: true,
+            shell_idle: true,
+        },
         position: crate::tide_core::Vec2::new(0.0, 0.0),
         selected: 0,
     });
@@ -233,11 +237,13 @@ fn finder_reveal_reveals_app_bundles_without_launching_them() {
     let (mut app, calls) = app_with_recording_process();
     let bundle_path = PathBuf::from("/tmp/Tide.app");
     app.modal.context_menu = Some(ContextMenuState {
-        entry_index: 0,
-        path: bundle_path.clone(),
-        is_dir: true,
-        is_app_bundle: true,
-        shell_idle: true,
+        target: crate::ContextMenuTarget::FileTreeEntry {
+            entry_index: 0,
+            path: bundle_path.clone(),
+            is_dir: true,
+            is_app_bundle: true,
+            shell_idle: true,
+        },
         position: crate::tide_core::Vec2::new(0.0, 0.0),
         selected: 0,
     });
@@ -268,11 +274,13 @@ fn open_in_finder_keeps_default_directory_handoff_for_non_bundle_directories() {
     let (mut app, calls) = app_with_recording_process();
     let dir_path = PathBuf::from("/tmp/workspace");
     app.modal.context_menu = Some(ContextMenuState {
-        entry_index: 0,
-        path: dir_path.clone(),
-        is_dir: true,
-        is_app_bundle: false,
-        shell_idle: true,
+        target: crate::ContextMenuTarget::FileTreeEntry {
+            entry_index: 0,
+            path: dir_path.clone(),
+            is_dir: true,
+            is_app_bundle: false,
+            shell_idle: true,
+        },
         position: crate::tide_core::Vec2::new(0.0, 0.0),
         selected: 0,
     });
