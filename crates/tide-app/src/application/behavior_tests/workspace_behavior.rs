@@ -256,3 +256,59 @@ fn rename_workspace_updates_active_workspace_name() {
 
     assert_eq!(app.ws.workspaces[active].name, "Renamed Active");
 }
+
+// UC-1 BR-2: rename_workspace updates a cold-stored (inactive) Workspace
+#[test]
+fn rename_workspace_updates_cold_stored_workspace_name() {
+    use crate::WorkspaceNavPort;
+    let mut app = app_with_two_workspaces();
+    let inactive = 1 - app.ws.active;
+
+    app.rename_workspace(inactive, "Renamed Cold".to_string());
+
+    assert_eq!(app.ws.workspaces[inactive].name, "Renamed Cold");
+}
+
+// UC-1 BR-3: empty / whitespace-only names are rejected
+#[test]
+fn rename_workspace_with_empty_name_is_a_no_op() {
+    use crate::WorkspaceNavPort;
+    let mut app = app_with_two_workspaces();
+    let active = app.ws.active;
+    let original = app.ws.workspaces[active].name.clone();
+
+    app.rename_workspace(active, "".to_string());
+    app.rename_workspace(active, "   ".to_string());
+
+    assert_eq!(app.ws.workspaces[active].name, original);
+}
+
+// UC-1 BR-4: rename survives a switch out and back
+#[test]
+fn rename_workspace_persists_across_switch_out_and_back() {
+    use crate::WorkspaceNavPort;
+    let mut app = app_with_two_workspaces();
+    let active = app.ws.active;
+    let other = 1 - active;
+
+    app.rename_workspace(active, "Persisted".to_string());
+    app.switch_workspace(other);
+    app.switch_workspace(active);
+
+    assert_eq!(app.ws.workspaces[active].name, "Persisted");
+}
+
+// UC-1 BR-5: out-of-bounds index is a no-op
+#[test]
+fn rename_workspace_with_out_of_bounds_index_is_a_no_op() {
+    use crate::WorkspaceNavPort;
+    let mut app = app_with_two_workspaces();
+    let len = app.ws.workspaces.len();
+    let before: Vec<String> = app.ws.workspaces.iter().map(|w| w.name.clone()).collect();
+
+    app.rename_workspace(len, "Nope".to_string());
+    app.rename_workspace(len + 5, "Also nope".to_string());
+
+    let after: Vec<String> = app.ws.workspaces.iter().map(|w| w.name.clone()).collect();
+    assert_eq!(before, after);
+}
