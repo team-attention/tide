@@ -185,6 +185,12 @@ pub(crate) fn handle_key_down(
         return;
     }
 
+    // Workspace rename modal interception
+    if ctx.modal().workspace_rename.is_some() {
+        modal::handle_workspace_rename_key(ctx, key, &modifiers);
+        return;
+    }
+
     // Git switcher popup interception
     if ctx.modal().git_switcher.is_some() {
         modal::handle_git_switcher_key(ctx, key, &modifiers);

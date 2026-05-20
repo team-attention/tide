@@ -834,6 +834,23 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         self.cache.invalidate_chrome();
     }
 
+    fn complete_workspace_rename(&mut self) {
+        let state = match self.modal.workspace_rename.take() {
+            Some(s) => s,
+            None => return,
+        };
+        let new_name = state.input.text.trim().to_string();
+        if new_name.is_empty() {
+            // No change — modal is already cleared by `.take()`.
+            self.cache.invalidate_chrome();
+            return;
+        }
+        if state.ws_index < self.ws.workspaces.len() {
+            self.ws.workspaces[state.ws_index].name = new_name;
+        }
+        self.cache.invalidate_chrome();
+    }
+
     fn workspace_sidebar_item_rect(&self, idx: usize) -> Option<crate::tide_core::Rect> {
         crate::adapter::inward::drag_drop_adapter::workspace_sidebar_item_rect(self, idx)
     }

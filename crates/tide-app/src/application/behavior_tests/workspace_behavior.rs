@@ -356,3 +356,57 @@ fn right_click_on_workspace_sidebar_item_opens_context_menu_with_rename() {
     let labels: Vec<&'static str> = menu.items().iter().map(|a| a.label()).collect();
     assert_eq!(labels, vec!["Rename"]);
 }
+
+// UC-2 BR-3: Enter commits the new name and closes the modal
+#[test]
+fn enter_in_workspace_rename_commits_new_name() {
+    use crate::WorkspaceNavPort;
+    let mut app = app_with_two_workspaces();
+    app.modal.workspace_rename = Some(crate::WorkspaceRenameState {
+        ws_index: 0,
+        input: crate::InputLine::with_text("Committed".to_string()),
+    });
+
+    app.complete_workspace_rename();
+
+    assert_eq!(app.ws.workspaces[0].name, "Committed");
+    assert!(app.modal.workspace_rename.is_none());
+}
+
+// UC-2 BR-4: Escape cancels and closes the modal without renaming
+#[test]
+fn escape_in_workspace_rename_cancels() {
+    let mut app = app_with_two_workspaces();
+    let original = app.ws.workspaces[0].name.clone();
+    app.modal.workspace_rename = Some(crate::WorkspaceRenameState {
+        ws_index: 0,
+        input: crate::InputLine::with_text("Should Not Apply".to_string()),
+    });
+
+    crate::adapter::inward::keyboard_adapter::handle_key_down(
+        &mut app,
+        crate::tide_core::Key::Escape,
+        crate::tide_core::Modifiers::default(),
+        None,
+    );
+
+    assert_eq!(app.ws.workspaces[0].name, original);
+    assert!(app.modal.workspace_rename.is_none());
+}
+
+// UC-2 BR-5: empty commit leaves the name unchanged
+#[test]
+fn empty_commit_in_workspace_rename_leaves_name_unchanged() {
+    use crate::WorkspaceNavPort;
+    let mut app = app_with_two_workspaces();
+    let original = app.ws.workspaces[0].name.clone();
+    app.modal.workspace_rename = Some(crate::WorkspaceRenameState {
+        ws_index: 0,
+        input: crate::InputLine::with_text("   ".to_string()),
+    });
+
+    app.complete_workspace_rename();
+
+    assert_eq!(app.ws.workspaces[0].name, original);
+    assert!(app.modal.workspace_rename.is_none());
+}
