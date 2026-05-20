@@ -948,3 +948,34 @@ impl App {
         self.cache.invalidate_chrome();
     }
 }
+
+impl App {
+    pub(crate) fn execute_workspace_context_menu_action(
+        &mut self,
+        action_index: usize,
+        ws_index: usize,
+    ) {
+        let items = crate::ContextMenuAction::workspace_items();
+        let action = match items.get(action_index) {
+            Some(a) => *a,
+            None => return,
+        };
+
+        if ws_index >= self.ws.workspaces.len() {
+            return;
+        }
+
+        match action {
+            crate::ContextMenuAction::Rename => {
+                let current = self.ws.workspaces[ws_index].name.clone();
+                self.modal.workspace_rename = Some(crate::WorkspaceRenameState {
+                    ws_index,
+                    input: crate::InputLine::with_text(current),
+                });
+                self.cache.invalidate_chrome();
+            }
+            _ => {}
+        }
+        self.cache.needs_redraw = true;
+    }
+}

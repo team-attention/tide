@@ -576,17 +576,36 @@ impl App {
             None => return,
         };
 
-        let (entry_index, path, is_dir, is_app_bundle, shell_idle) = match menu.target {
+        match menu.target {
             crate::ContextMenuTarget::FileTreeEntry {
                 entry_index,
                 path,
                 is_dir,
                 is_app_bundle,
                 shell_idle,
-            } => (entry_index, path, is_dir, is_app_bundle, shell_idle),
-            // future targets dispatched elsewhere (e.g. WorkspaceSidebarItem in Task 6)
-        };
+            } => self.execute_file_tree_context_menu_action(
+                action_index,
+                entry_index,
+                path,
+                is_dir,
+                is_app_bundle,
+                shell_idle,
+            ),
+            crate::ContextMenuTarget::WorkspaceSidebarItem { ws_index } => {
+                self.execute_workspace_context_menu_action(action_index, ws_index)
+            }
+        }
+    }
 
+    fn execute_file_tree_context_menu_action(
+        &mut self,
+        action_index: usize,
+        entry_index: usize,
+        path: PathBuf,
+        is_dir: bool,
+        is_app_bundle: bool,
+        shell_idle: bool,
+    ) {
         let items = crate::ContextMenuAction::items(is_dir, is_app_bundle, shell_idle);
         let action = match items.get(action_index) {
             Some(a) => *a,
