@@ -902,3 +902,106 @@ fn open_editor_explicit_owner_in_inactive_workspace_restores_active_workspace() 
     }
     assert_eq!(app.associated_terminal(editor_id), Some(inactive_terminal));
 }
+
+// Spec: docs/specs/rename-workspaces.md
+//
+// --- UC-3: RenameWorkspaceViaMcp ---
+
+// UC-3 BR-1: cli_rename_workspace with index renames the targeted Workspace
+#[test]
+fn cli_rename_workspace_with_index_renames_targeted_workspace() {
+    let mut app = app_with_two_workspaces();
+
+    let result = app
+        .handle_cli_command(
+            "rename-workspace",
+            json!({ "ws_index": 1, "name": "Renamed WS1" }),
+        )
+        .expect("rename-workspace should succeed");
+
+    assert_eq!(result["ws_index"], 1);
+    assert_eq!(result["name"], "Renamed WS1");
+    assert_eq!(app.ws.workspaces[1].name, "Renamed WS1");
+    assert_eq!(app.ws.workspaces[0].name, "WS0", "WS0 must be unchanged");
+}
+
+// UC-3 BR-2: cli_rename_workspace without index renames the active Workspace
+#[test]
+fn cli_rename_workspace_without_index_renames_active_workspace() {
+    let mut app = app_with_two_workspaces();
+    let active = app.ws.active;
+
+    let result = app
+        .handle_cli_command("rename-workspace", json!({ "name": "Renamed Active" }))
+        .expect("rename-workspace should succeed");
+
+    assert_eq!(result["ws_index"], active as u64);
+    assert_eq!(result["name"], "Renamed Active");
+    assert_eq!(app.ws.workspaces[active].name, "Renamed Active");
+}
+
+// UC-3 BR-5: cli_rename_workspace on a fresh App seeds and renames the active Workspace
+#[test]
+fn cli_rename_workspace_on_fresh_app_seeds_active_workspace() {
+    let mut app = test_app();
+    assert!(
+        app.ws.workspaces.is_empty(),
+        "fresh App starts with an empty WorkspaceManager Vec"
+    );
+
+    let result = app
+        .handle_cli_command(
+            "rename-workspace",
+            json!({ "ws_index": 0, "name": "Renamed From Boot" }),
+        )
+        .expect("rename-workspace should seed and rename the active Workspace");
+
+    assert_eq!(result["ws_index"], 0);
+    assert_eq!(result["name"], "Renamed From Boot");
+    assert_eq!(app.ws.workspaces.len(), 1);
+    assert_eq!(app.ws.workspaces[0].name, "Renamed From Boot");
+}
+
+// UC-3 BR-3: cli_rename_workspace with empty name is a no-op and returns the unchanged name
+#[test]
+fn cli_rename_workspace_with_empty_name_is_a_no_op() {
+    let mut app = app_with_two_workspaces();
+    let active = app.ws.active;
+    let original = app.ws.workspaces[active].name.clone();
+
+    let result = app
+        .handle_cli_command("rename-workspace", json!({ "name": "" }))
+        .expect("rename-workspace should succeed even on empty name");
+
+    assert_eq!(result["ws_index"], active as u64);
+    assert_eq!(result["name"], original);
+    assert_eq!(app.ws.workspaces[active].name, original);
+
+    let result_ws = app
+        .handle_cli_command(
+            "rename-workspace",
+            json!({ "ws_index": 1, "name": "   " }),
+        )
+        .expect("rename-workspace should succeed even on whitespace name");
+    assert_eq!(result_ws["ws_index"], 1);
+    assert_eq!(result_ws["name"], "WS1");
+    assert_eq!(app.ws.workspaces[1].name, "WS1");
+}
+
+// UC-3 BR-4: cli_rename_workspace with out-of-bounds index returns an error
+#[test]
+fn cli_rename_workspace_with_out_of_bounds_index_returns_error() {
+    let mut app = app_with_two_workspaces();
+    let len = app.ws.workspaces.len();
+    let before: Vec<String> = app.ws.workspaces.iter().map(|w| w.name.clone()).collect();
+
+    let result = app.handle_cli_command(
+        "rename-workspace",
+        json!({ "ws_index": len, "name": "Nope" }),
+    );
+
+    assert!(result.is_err(), "out-of-bounds ws_index must return an error");
+
+    let after: Vec<String> = app.ws.workspaces.iter().map(|w| w.name.clone()).collect();
+    assert_eq!(before, after, "no Workspace name should change");
+}

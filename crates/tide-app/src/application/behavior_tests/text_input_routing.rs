@@ -234,6 +234,30 @@ fn text_goes_to_file_tree_rename_when_active() {
 }
 
 #[test]
+fn text_goes_to_workspace_rename_input_when_active() {
+    // Spec: docs/specs/rename-workspaces.md
+    // UC-2 BR-6: IME-committed text while workspace_rename is open is
+    // routed to the modal's InputLine.
+    let (mut app, _) = app_with_editor();
+    app.modal.workspace_rename = Some(crate::WorkspaceRenameState {
+        ws_index: 0,
+        input: InputLine::new(),
+    });
+    assert_eq!(
+        text_routing_adapter::text_input_target(&app),
+        TextInputTarget::WorkspaceRename
+    );
+    app.send_text_to_target("h");
+    app.send_text_to_target("i");
+    let rename = app
+        .modal
+        .workspace_rename
+        .as_ref()
+        .expect("workspace_rename should stay open after text input");
+    assert_eq!(rename.input.text, "hi");
+}
+
+#[test]
 fn config_page_worktree_editing_receives_text() {
     // UC-2 BR-18: ConfigPage worktree editing receives text
     let mut app = test_app();

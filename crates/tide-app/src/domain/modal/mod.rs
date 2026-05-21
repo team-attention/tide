@@ -917,6 +917,7 @@ impl ContextMenuAction {
         ContextMenuAction::Rename,
         ContextMenuAction::Delete,
     ];
+    const WORKSPACE_ACTIONS: [ContextMenuAction; 1] = [ContextMenuAction::Rename];
 
     pub fn items(
         is_dir: bool,
@@ -935,6 +936,10 @@ impl ContextMenuAction {
         } else {
             &Self::FILE_ACTIONS
         }
+    }
+
+    pub fn workspace_items() -> &'static [ContextMenuAction] {
+        &Self::WORKSPACE_ACTIONS
     }
 
     pub fn label(&self) -> &'static str {
@@ -960,19 +965,39 @@ impl ContextMenuAction {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) enum ContextMenuTarget {
+    FileTreeEntry {
+        entry_index: usize,
+        path: PathBuf,
+        is_dir: bool,
+        is_app_bundle: bool,
+        shell_idle: bool,
+    },
+    WorkspaceSidebarItem {
+        ws_index: usize,
+    },
+}
+
 pub(crate) struct ContextMenuState {
-    pub entry_index: usize,
-    pub path: PathBuf,
-    pub is_dir: bool,
-    pub is_app_bundle: bool,
-    pub shell_idle: bool,
+    pub target: ContextMenuTarget,
     pub position: Vec2,
     pub selected: usize,
 }
 
 impl ContextMenuState {
     pub fn items(&self) -> &'static [ContextMenuAction] {
-        ContextMenuAction::items(self.is_dir, self.is_app_bundle, self.shell_idle)
+        match &self.target {
+            ContextMenuTarget::FileTreeEntry {
+                is_dir,
+                is_app_bundle,
+                shell_idle,
+                ..
+            } => ContextMenuAction::items(*is_dir, *is_app_bundle, *shell_idle),
+            ContextMenuTarget::WorkspaceSidebarItem { .. } => {
+                ContextMenuAction::workspace_items()
+            }
+        }
     }
 
     /// Compute the popup rect, clamped to window bounds.
@@ -1135,6 +1160,15 @@ pub(crate) struct FileTreeRenameState {
 }
 
 // ──────────────────────────────────────────────
+// Workspace rail inline rename state
+// ──────────────────────────────────────────────
+
+pub(crate) struct WorkspaceRenameState {
+    pub ws_index: usize,
+    pub input: InputLine,
+}
+
+// ──────────────────────────────────────────────
 // ModalStack
 // ──────────────────────────────────────────────
 
@@ -1147,6 +1181,7 @@ pub(crate) struct ModalStack {
     pub context_menu: Option<ContextMenuState>,
     pub context_comment_composer: Option<ContextCommentComposerState>,
     pub file_tree_rename: Option<FileTreeRenameState>,
+    pub workspace_rename: Option<WorkspaceRenameState>,
     pub branch_cleanup: Option<BranchCleanupState>,
 }
 
@@ -1161,6 +1196,7 @@ impl ModalStack {
             context_menu: None,
             context_comment_composer: None,
             file_tree_rename: None,
+            workspace_rename: None,
             branch_cleanup: None,
         }
     }
@@ -1176,6 +1212,7 @@ impl ModalStack {
             || self.context_menu.is_some()
             || self.context_comment_composer.is_some()
             || self.file_tree_rename.is_some()
+            || self.workspace_rename.is_some()
             || self.branch_cleanup.is_some()
     }
 
@@ -1205,6 +1242,7 @@ impl ModalStack {
         self.context_menu = None;
         self.context_comment_composer = None;
         self.file_tree_rename = None;
+        self.workspace_rename = None;
         self.branch_cleanup = None;
     }
 }

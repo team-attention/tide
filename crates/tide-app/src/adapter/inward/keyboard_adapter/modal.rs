@@ -433,6 +433,56 @@ pub(super) fn handle_file_tree_rename_key(
     ctx.request_redraw();
 }
 
+pub(super) fn handle_workspace_rename_key(
+    ctx: &mut impl KeyboardPorts,
+    key: Key,
+    modifiers: &Modifiers,
+) {
+    match key {
+        Key::Escape => {
+            ctx.modal_mut().workspace_rename = None;
+            ctx.invalidate_chrome();
+        }
+        Key::Enter => {
+            ctx.complete_workspace_rename();
+        }
+        Key::Backspace => {
+            if let Some(ref mut rename) = ctx.modal_mut().workspace_rename {
+                rename.input.backspace();
+            }
+            ctx.invalidate_chrome();
+        }
+        Key::Delete => {
+            if let Some(ref mut rename) = ctx.modal_mut().workspace_rename {
+                rename.input.delete_char();
+            }
+            ctx.invalidate_chrome();
+        }
+        Key::Left => {
+            if let Some(ref mut rename) = ctx.modal_mut().workspace_rename {
+                rename.input.move_cursor_left();
+            }
+            ctx.invalidate_chrome();
+        }
+        Key::Right => {
+            if let Some(ref mut rename) = ctx.modal_mut().workspace_rename {
+                rename.input.move_cursor_right();
+            }
+            ctx.invalidate_chrome();
+        }
+        Key::Char(ch) => {
+            if !modifiers.ctrl && !modifiers.meta {
+                if let Some(ref mut rename) = ctx.modal_mut().workspace_rename {
+                    rename.input.insert_char(ch);
+                }
+                ctx.invalidate_chrome();
+            }
+        }
+        _ => {}
+    }
+    ctx.request_redraw();
+}
+
 pub(super) fn handle_config_page_key(
     ctx: &mut impl KeyboardPorts,
     key: Key,

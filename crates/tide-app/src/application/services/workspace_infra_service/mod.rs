@@ -410,23 +410,39 @@ impl App {
         None
     }
 
+    /// Seed the WorkspaceManager with a placeholder Workspace entry for the
+    /// currently-active live state. No-op when the Vec is already non-empty.
+    ///
+    /// On a fresh `App`, `App.layout`/`App.panes`/`App.focus` carry the live
+    /// state of "Workspace 1" but `WorkspaceManager.workspaces` is empty.
+    /// This helper pushes a placeholder so the Workspace rail can draw an
+    /// item from boot, MCP rename can target `ws_index = 0`, and
+    /// right-click on the rail has a hit-target. The placeholder's layout
+    /// and panes are intentionally empty — the immediately-following
+    /// `save_active_workspace()` (called from `new_workspace`, switch, etc.)
+    /// swaps the live state into the slot.
+    pub(crate) fn ensure_initial_workspace_seeded(&mut self) {
+        if !self.ws.workspaces.is_empty() {
+            return;
+        }
+        self.ws.workspaces.push(Workspace {
+            name: "Workspace 1".to_string(),
+            layout: SplitLayout::new(),
+            focused: None,
+            panes: HashMap::new(),
+        });
+        self.ws.workspace_extras.push(WorkspaceExtras::new());
+        self.ws
+            .workspace_context_artifacts
+            .push(crate::ContextArtifactStore::new());
+        self.ws.active = 0;
+    }
+
     /// Create a new workspace with a single terminal pane and switch to it.
     pub(crate) fn new_workspace(&mut self) {
         // If this App has not been seeded with an initial Workspace yet,
         // preserve the current live state as Workspace 0 before creating a new one.
-        if self.ws.workspaces.is_empty() {
-            self.ws.workspaces.push(Workspace {
-                name: "Workspace 1".to_string(),
-                layout: SplitLayout::new(),
-                focused: None,
-                panes: HashMap::new(),
-            });
-            self.ws.workspace_extras.push(WorkspaceExtras::new());
-            self.ws
-                .workspace_context_artifacts
-                .push(crate::ContextArtifactStore::new());
-            self.ws.active = 0;
-        }
+        self.ensure_initial_workspace_seeded();
 
         self.save_active_workspace();
 

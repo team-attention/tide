@@ -240,3 +240,239 @@ fn toggling_workspace_sidebar_toggles_visibility() {
     app.handle_global_action(crate::tide_input::GlobalAction::ToggleWorkspaceSidebar);
     assert!(!app.ws.show_sidebar);
 }
+
+// Spec: docs/specs/rename-workspaces.md
+//
+// --- UC-1: RenameWorkspace ---
+
+// UC-1 BR-1: rename_workspace updates the active Workspace name
+#[test]
+fn rename_workspace_updates_active_workspace_name() {
+    use crate::WorkspaceNavPort;
+    let mut app = app_with_two_workspaces();
+    let active = app.ws.active;
+
+    app.rename_workspace(active, "Renamed Active".to_string());
+
+    assert_eq!(app.ws.workspaces[active].name, "Renamed Active");
+}
+
+// UC-1 BR-2: rename_workspace updates a cold-stored (inactive) Workspace
+#[test]
+fn rename_workspace_updates_cold_stored_workspace_name() {
+    use crate::WorkspaceNavPort;
+    let mut app = app_with_two_workspaces();
+    let inactive = 1 - app.ws.active;
+
+    app.rename_workspace(inactive, "Renamed Cold".to_string());
+
+    assert_eq!(app.ws.workspaces[inactive].name, "Renamed Cold");
+}
+
+// UC-1 BR-3: empty / whitespace-only names are rejected
+#[test]
+fn rename_workspace_with_empty_name_is_a_no_op() {
+    use crate::WorkspaceNavPort;
+    let mut app = app_with_two_workspaces();
+    let active = app.ws.active;
+    let original = app.ws.workspaces[active].name.clone();
+
+    app.rename_workspace(active, "".to_string());
+    app.rename_workspace(active, "   ".to_string());
+
+    assert_eq!(app.ws.workspaces[active].name, original);
+}
+
+// UC-1 BR-4: rename survives a switch out and back
+#[test]
+fn rename_workspace_persists_across_switch_out_and_back() {
+    use crate::WorkspaceNavPort;
+    let mut app = app_with_two_workspaces();
+    let active = app.ws.active;
+    let other = 1 - active;
+
+    app.rename_workspace(active, "Persisted".to_string());
+    app.switch_workspace(other);
+    app.switch_workspace(active);
+
+    assert_eq!(app.ws.workspaces[active].name, "Persisted");
+}
+
+// UC-1 BR-5: out-of-bounds index is a no-op
+#[test]
+fn rename_workspace_with_out_of_bounds_index_is_a_no_op() {
+    use crate::WorkspaceNavPort;
+    let mut app = app_with_two_workspaces();
+    let len = app.ws.workspaces.len();
+    let before: Vec<String> = app.ws.workspaces.iter().map(|w| w.name.clone()).collect();
+
+    app.rename_workspace(len, "Nope".to_string());
+    app.rename_workspace(len + 5, "Also nope".to_string());
+
+    let after: Vec<String> = app.ws.workspaces.iter().map(|w| w.name.clone()).collect();
+    assert_eq!(before, after);
+}
+
+// --- UC-2: OpenWorkspaceRenameModal ---
+
+// UC-2 BR-1: right-click on a Workspace rail item opens the ContextMenu with Rename
+#[test]
+fn right_click_on_workspace_sidebar_item_opens_context_menu_with_rename() {
+    use crate::tide_core::MouseButton;
+    use crate::LayoutPort;
+    use crate::WorkspaceNavPort;
+
+    let (tx, _rx) = std::sync::mpsc::channel();
+    let window = crate::tide_platform::WindowProxy::new(tx, std::sync::Arc::new(|| {}));
+
+    let mut app = app_with_two_workspaces();
+    app.ws.show_sidebar = true;
+    app.compute_layout();
+
+    // Resolve where the workspace 0 rail item sits on screen
+    let rect = app
+        .workspace_sidebar_item_rect(0)
+        .expect("workspace sidebar item rect");
+    app.window.last_cursor_pos = crate::tide_core::Vec2::new(
+        rect.x + rect.width / 2.0,
+        rect.y + rect.height / 2.0,
+    );
+
+    crate::adapter::inward::mouse_adapter::handle_mouse_down(
+        &mut app,
+        MouseButton::Right,
+        &window,
+    );
+
+    let menu = app
+        .modal
+        .context_menu
+        .as_ref()
+        .expect("context menu should be open");
+    match &menu.target {
+        crate::ContextMenuTarget::WorkspaceSidebarItem { ws_index } => assert_eq!(*ws_index, 0),
+        other => panic!("expected WorkspaceSidebarItem target, got {:?}", other),
+    }
+    let labels: Vec<&'static str> = menu.items().iter().map(|a| a.label()).collect();
+    assert_eq!(labels, vec!["Rename"]);
+}
+
+// UC-2 BR-2: selecting Rename opens workspace_rename seeded with current name
+#[test]
+fn selecting_rename_in_workspace_context_menu_opens_workspace_rename_modal() {
+    let mut app = app_with_two_workspaces();
+    let original = app.ws.workspaces[0].name.clone();
+    app.modal.context_menu = Some(crate::ContextMenuState {
+        target: crate::ContextMenuTarget::WorkspaceSidebarItem { ws_index: 0 },
+        position: crate::tide_core::Vec2::new(0.0, 0.0),
+        selected: 0,
+    });
+
+    app.execute_context_menu_action(0); // index 0 = Rename in WORKSPACE_ACTIONS
+
+    let state = app
+        .modal
+        .workspace_rename
+        .as_ref()
+        .expect("workspace_rename modal open after selecting Rename");
+    assert_eq!(state.ws_index, 0);
+    assert_eq!(state.input.text, original);
+    assert!(
+        app.modal.context_menu.is_none(),
+        "context menu consumed by dispatch"
+    );
+}
+
+// UC-2 BR-7: workspace_rename participates in is_any_open() and close_all()
+#[test]
+fn workspace_rename_participates_in_modal_is_any_open_and_close_all() {
+    let mut app = app_with_two_workspaces();
+    assert!(!app.modal.is_any_open(), "no modals open at start");
+
+    app.modal.workspace_rename = Some(crate::WorkspaceRenameState {
+        ws_index: 0,
+        input: crate::InputLine::new(),
+    });
+    assert!(
+        app.modal.is_any_open(),
+        "is_any_open must report true when workspace_rename is set"
+    );
+
+    app.modal.close_all();
+    assert!(
+        app.modal.workspace_rename.is_none(),
+        "close_all must clear workspace_rename"
+    );
+    assert!(!app.modal.is_any_open(), "no modals open after close_all");
+}
+
+// UC-2 BR-3: Enter commits the new name and closes the modal
+#[test]
+fn enter_in_workspace_rename_commits_new_name() {
+    use crate::WorkspaceNavPort;
+    let mut app = app_with_two_workspaces();
+    app.modal.workspace_rename = Some(crate::WorkspaceRenameState {
+        ws_index: 0,
+        input: crate::InputLine::with_text("Committed".to_string()),
+    });
+
+    app.complete_workspace_rename();
+
+    assert_eq!(app.ws.workspaces[0].name, "Committed");
+    assert!(app.modal.workspace_rename.is_none());
+}
+
+// UC-2 BR-4: Escape cancels and closes the modal without renaming
+#[test]
+fn escape_in_workspace_rename_cancels() {
+    let mut app = app_with_two_workspaces();
+    let original = app.ws.workspaces[0].name.clone();
+    app.modal.workspace_rename = Some(crate::WorkspaceRenameState {
+        ws_index: 0,
+        input: crate::InputLine::with_text("Should Not Apply".to_string()),
+    });
+
+    crate::adapter::inward::keyboard_adapter::handle_key_down(
+        &mut app,
+        crate::tide_core::Key::Escape,
+        crate::tide_core::Modifiers::default(),
+        None,
+    );
+
+    assert_eq!(app.ws.workspaces[0].name, original);
+    assert!(app.modal.workspace_rename.is_none());
+}
+
+// UC-2 BR-5: empty commit leaves the name unchanged
+#[test]
+fn empty_commit_in_workspace_rename_leaves_name_unchanged() {
+    use crate::WorkspaceNavPort;
+    let mut app = app_with_two_workspaces();
+    let original = app.ws.workspaces[0].name.clone();
+    app.modal.workspace_rename = Some(crate::WorkspaceRenameState {
+        ws_index: 0,
+        input: crate::InputLine::with_text("   ".to_string()),
+    });
+
+    app.complete_workspace_rename();
+
+    assert_eq!(app.ws.workspaces[0].name, original);
+    assert!(app.modal.workspace_rename.is_none());
+}
+
+// UC-1 BR-6: rename_workspace on the active idx seeds the Vec when empty
+#[test]
+fn rename_workspace_seeds_initial_when_workspaces_vec_is_empty() {
+    use crate::WorkspaceNavPort;
+    let mut app = test_app();
+    assert!(
+        app.ws.workspaces.is_empty(),
+        "fresh App starts with empty workspaces Vec"
+    );
+    assert_eq!(app.ws.active, 0);
+
+    app.rename_workspace(0, "Renamed from boot".to_string());
+
+    assert_eq!(app.ws.workspaces.len(), 1);
+    assert_eq!(app.ws.workspaces[0].name, "Renamed from boot");
+}

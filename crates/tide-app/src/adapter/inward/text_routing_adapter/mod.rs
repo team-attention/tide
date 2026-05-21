@@ -17,6 +17,7 @@ pub(crate) enum TextInputTarget {
     ConfigPageCopyFiles,
     ConfigPageWorktree,
     FileTreeRename,
+    WorkspaceRename,
     GitSwitcher,
     FileFinder,
     SaveAsInput,
@@ -58,6 +59,9 @@ pub(crate) fn text_input_target(ctx: &impl TextRoutingPorts) -> TextInputTarget 
     // Text-input popups
     if modal.file_tree_rename.is_some() {
         return TextInputTarget::FileTreeRename;
+    }
+    if modal.workspace_rename.is_some() {
+        return TextInputTarget::WorkspaceRename;
     }
     if modal.git_switcher.is_some() {
         return TextInputTarget::GitSwitcher;
@@ -156,6 +160,14 @@ impl App {
             }
             TextInputTarget::FileTreeRename => {
                 if let Some(ref mut rename) = self.modal.file_tree_rename {
+                    for ch in text.chars() {
+                        rename.input.insert_char(ch);
+                    }
+                    crate::AppCorePort::invalidate_chrome(self);
+                }
+            }
+            TextInputTarget::WorkspaceRename => {
+                if let Some(ref mut rename) = self.modal.workspace_rename {
                     for ch in text.chars() {
                         rename.input.insert_char(ch);
                     }
@@ -479,11 +491,13 @@ mod tests {
         );
         app.focus.focused = Some(id);
         app.modal.context_menu = Some(ContextMenuState {
-            entry_index: 0,
-            path: PathBuf::from("/tmp"),
-            is_dir: false,
-            is_app_bundle: false,
-            shell_idle: true,
+            target: crate::ContextMenuTarget::FileTreeEntry {
+                entry_index: 0,
+                path: PathBuf::from("/tmp"),
+                is_dir: false,
+                is_app_bundle: false,
+                shell_idle: true,
+            },
             position: crate::tide_core::Vec2::new(0.0, 0.0),
             selected: 0,
         });

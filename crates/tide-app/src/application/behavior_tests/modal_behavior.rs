@@ -75,11 +75,13 @@ fn context_menu_blocks_text_input() {
     // UC-1 BR-2: Context menu blocks text input
     let (mut app, _id) = app_with_editor();
     app.modal.context_menu = Some(ContextMenuState {
-        entry_index: 0,
-        path: PathBuf::from("/tmp"),
-        is_dir: false,
-        is_app_bundle: false,
-        shell_idle: true,
+        target: crate::ContextMenuTarget::FileTreeEntry {
+            entry_index: 0,
+            path: PathBuf::from("/tmp"),
+            is_dir: false,
+            is_app_bundle: false,
+            shell_idle: true,
+        },
         position: crate::tide_core::Vec2::new(0.0, 0.0),
         selected: 0,
     });
@@ -212,11 +214,13 @@ fn escape_closes_context_menu() {
     // UC-2 BR-11: ESC closes context menu
     let (mut app, _id) = app_with_editor();
     app.modal.context_menu = Some(ContextMenuState {
-        entry_index: 0,
-        path: PathBuf::from("/tmp"),
-        is_dir: false,
-        is_app_bundle: false,
-        shell_idle: true,
+        target: crate::ContextMenuTarget::FileTreeEntry {
+            entry_index: 0,
+            path: PathBuf::from("/tmp"),
+            is_dir: false,
+            is_app_bundle: false,
+            shell_idle: true,
+        },
         position: crate::tide_core::Vec2::new(0.0, 0.0),
         selected: 0,
     });

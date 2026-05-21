@@ -217,6 +217,24 @@ pub(crate) fn handle_mouse_down(
         }
     }
 
+    // Right-click on Workspace rail item
+    if button == MouseButton::Right {
+        let pos = ctx.last_cursor_pos();
+        let new_hover =
+            crate::adapter::inward::click_adapter::hit_test::compute_hover_target(ctx, pos);
+        if let Some(crate::state::drag_types::HoverTarget::WorkspaceSidebarItem(idx)) = new_hover {
+            ctx.modal_mut().file_tree_rename = None;
+            ctx.modal_mut().workspace_rename = None;
+            ctx.modal_mut().context_menu = Some(crate::ContextMenuState {
+                target: crate::ContextMenuTarget::WorkspaceSidebarItem { ws_index: idx },
+                position: pos,
+                selected: 0,
+            });
+            ctx.request_redraw();
+            return;
+        }
+    }
+
     // Right-click on file tree
     if button == MouseButton::Right {
         if ctx.ft().visible {
@@ -261,11 +279,13 @@ pub(crate) fn handle_mouse_down(
                             })
                             .unwrap_or(false);
                         ctx.modal_mut().context_menu = Some(crate::ContextMenuState {
-                            entry_index: index,
-                            path,
-                            is_dir,
-                            is_app_bundle,
-                            shell_idle,
+                            target: crate::ContextMenuTarget::FileTreeEntry {
+                                entry_index: index,
+                                path,
+                                is_dir,
+                                is_app_bundle,
+                                shell_idle,
+                            },
                             position: pos,
                             selected: 0,
                         });

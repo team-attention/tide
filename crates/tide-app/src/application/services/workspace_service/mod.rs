@@ -822,6 +822,39 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
         }
     }
 
+    fn rename_workspace(&mut self, idx: usize, name: String) {
+        // On a fresh `App` the active Workspace lives in `App` fields and
+        // `workspaces` is empty; seed a placeholder so `idx == ws.active`
+        // can be addressed without callers needing to call `new_workspace` first.
+        if idx == self.ws.active {
+            self.ensure_initial_workspace_seeded();
+        }
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        if idx >= self.ws.workspaces.len() {
+            return;
+        }
+        self.ws.workspaces[idx].name = trimmed.to_string();
+        self.cache.invalidate_chrome();
+    }
+
+    fn workspace_name(&self, idx: usize) -> Option<String> {
+        self.ws.workspaces.get(idx).map(|w| w.name.clone())
+    }
+
+    fn complete_workspace_rename(&mut self) {
+        if let Some(state) = self.modal.workspace_rename.take() {
+            // `rename_workspace` handles trimming, seeding, bounds checking, and
+            // chrome invalidation on the success path. The trailing invalidate
+            // covers the no-op cases (empty name / out-of-bounds) so the rail
+            // still re-renders to clear the now-closed modal.
+            self.rename_workspace(state.ws_index, state.input.text);
+            self.cache.invalidate_chrome();
+        }
+    }
+
     fn workspace_sidebar_item_rect(&self, idx: usize) -> Option<crate::tide_core::Rect> {
         crate::adapter::inward::drag_drop_adapter::workspace_sidebar_item_rect(self, idx)
     }
@@ -934,5 +967,39 @@ impl App {
             copy_files,
         ));
         self.cache.invalidate_chrome();
+    }
+}
+
+impl App {
+    pub(crate) fn execute_workspace_context_menu_action(
+        &mut self,
+        action_index: usize,
+        ws_index: usize,
+    ) {
+        let items = crate::ContextMenuAction::workspace_items();
+        let action = match items.get(action_index) {
+            Some(a) => *a,
+            None => return,
+        };
+
+        if ws_index == self.ws.active {
+            self.ensure_initial_workspace_seeded();
+        }
+        if ws_index >= self.ws.workspaces.len() {
+            return;
+        }
+
+        match action {
+            crate::ContextMenuAction::Rename => {
+                let current = self.ws.workspaces[ws_index].name.clone();
+                self.modal.workspace_rename = Some(crate::WorkspaceRenameState {
+                    ws_index,
+                    input: crate::InputLine::with_text(current),
+                });
+                self.cache.invalidate_chrome();
+            }
+            _ => {}
+        }
+        self.cache.needs_redraw = true;
     }
 }

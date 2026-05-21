@@ -210,6 +210,18 @@ pub(crate) fn mcp_tool_definitions() -> Vec<serde_json::Value> {
             }
         },
         {
+            "name": "tide_rename_workspace",
+            "description": "Rename a Workspace by index (defaults to the active Workspace). Empty or whitespace-only names are no-ops and return the unchanged name; an out-of-bounds ws_index returns an error.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ws_index": { "type": "number", "description": "Optional; defaults to the active Workspace." },
+                    "name": { "type": "string", "description": "New Workspace name. Empty / whitespace-only is a no-op." }
+                },
+                "required": ["name"]
+            }
+        },
+        {
             "name": "tide_capture_pane",
             "description": "Read text content from a Terminal, Editor, or Browser Pane",
             "inputSchema": {
@@ -573,6 +585,7 @@ fn mcp_tools_call(
     let method = match tool_name {
         "tide_list_panes" => "list-panes",
         "tide_observe_workspace" => "observe-workspace",
+        "tide_rename_workspace" => "rename-workspace",
         "tide_capture_pane" => "capture-pane",
         "tide_capture_selection" => "capture-selection",
         "tide_get_layout" => "get-layout",
