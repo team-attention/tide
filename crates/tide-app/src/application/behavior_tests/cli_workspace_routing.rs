@@ -940,6 +940,28 @@ fn cli_rename_workspace_without_index_renames_active_workspace() {
     assert_eq!(app.ws.workspaces[active].name, "Renamed Active");
 }
 
+// UC-3 BR-5: cli_rename_workspace on a fresh App seeds and renames the active Workspace
+#[test]
+fn cli_rename_workspace_on_fresh_app_seeds_active_workspace() {
+    let mut app = test_app();
+    assert!(
+        app.ws.workspaces.is_empty(),
+        "fresh App starts with an empty WorkspaceManager Vec"
+    );
+
+    let result = app
+        .handle_cli_command(
+            "rename-workspace",
+            json!({ "ws_index": 0, "name": "Renamed From Boot" }),
+        )
+        .expect("rename-workspace should seed and rename the active Workspace");
+
+    assert_eq!(result["ws_index"], 0);
+    assert_eq!(result["name"], "Renamed From Boot");
+    assert_eq!(app.ws.workspaces.len(), 1);
+    assert_eq!(app.ws.workspaces[0].name, "Renamed From Boot");
+}
+
 // UC-3 BR-3: cli_rename_workspace with empty name is a no-op and returns the unchanged name
 #[test]
 fn cli_rename_workspace_with_empty_name_is_a_no_op() {

@@ -2605,14 +2605,14 @@ fn cli_rename_workspace(
         None => ctx.ws_active(),
     };
 
+    ctx.rename_workspace(ws_index, name);
+
     if ws_index >= ctx.ws_workspaces_len() {
         return Err(CliError::InvalidParams(format!(
             "ws_index {ws_index} out of bounds (len {})",
             ctx.ws_workspaces_len()
         )));
     }
-
-    ctx.rename_workspace(ws_index, name);
 
     let resolved_name = ctx.workspace_name(ws_index).unwrap_or_default();
     Ok(json!({

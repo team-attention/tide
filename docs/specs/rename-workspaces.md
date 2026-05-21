@@ -32,7 +32,7 @@ Tracks upstream issue: [team-attention/tide#98](https://github.com/team-attentio
 4. Add right-click handling for the Workspace rail item in `mouse_adapter`.
 5. Add `WorkspaceRenameState { ws_index, input: InputLine }` to `ModalStack`. Mirror `FileTreeRenameState` for keyboard handling, text routing, and `is_any_open()` / `close_all()` participation.
 6. Render the InputLine over the rail item rect when `workspace_rename` is active for that index, replacing the static `display_name` draw in `titlebar.rs`.
-7. Register `tide_rename_workspace` in the Tide MCP Runtime — entry in `mcp.rs` tool list, mapping in the tool-name switch, `"rename-workspace" => cli_rename_workspace(self, params)` in `commands.rs:dispatch`. `cli_rename_workspace` calls the port method and echoes `{ ws_index, name }`.
+7. Register `tide_rename_workspace` in the Tide MCP Runtime — entry in `mcp.rs` tool list, mapping in the tool-name switch, `"rename-workspace" => cli_rename_workspace(self, params)` in `commands.rs:dispatch`. `cli_rename_workspace` calls the port method before final bounds validation so the active fresh-App target can be seeded through the port, then echoes `{ ws_index, name }`.
 8. Add behavior tests in `application/behavior_tests/workspace_behavior.rs`, `text_input_routing.rs`, and `cli_workspace_routing.rs`.
 
 ## Bounded Contexts
@@ -99,14 +99,16 @@ Tracks upstream issue: [team-attention/tide#98](https://github.com/team-attentio
 - **Precondition**: Wrapped Agent is authorized through the Agent Gateway
 - **Flow**:
   1. Resolve `ws_index`: use the provided value, else default to the currently active Workspace.
-  2. Invoke `rename_workspace(ws_index, name)`.
-  3. Return `{ "ws_index": idx, "name": new_name }`.
+  2. Invoke `rename_workspace(ws_index, name)` so an active fresh-App target can seed the initial Workspace through the port.
+  3. If the target index is still unavailable after the port call, return `InvalidParams`.
+  4. Return `{ "ws_index": idx, "name": new_name }`.
 - **Postcondition**: Same as UC-1; the tool result echoes the resolved index and new name.
 - **Business Rules**:
   - BR-1: `tide_rename_workspace` with `ws_index` renames the targeted Workspace.
   - BR-2: `tide_rename_workspace` without `ws_index` renames the active Workspace.
   - BR-3: `tide_rename_workspace` with empty `name` is a no-op and returns the unchanged name.
   - BR-4: `tide_rename_workspace` with out-of-bounds `ws_index` returns an error and does not mutate state.
+  - BR-5: `tide_rename_workspace` targeting the active Workspace in a fresh `App` seeds the initial Workspace before final bounds validation, then renames it.
 
 ## Invariants
 
@@ -135,6 +137,7 @@ Tracks upstream issue: [team-attention/tide#98](https://github.com/team-attentio
 | UC-3 | BR-2 | `cli_rename_workspace_without_index_renames_active_workspace` |
 | UC-3 | BR-3 | `cli_rename_workspace_with_empty_name_is_a_no_op` |
 | UC-3 | BR-4 | `cli_rename_workspace_with_out_of_bounds_index_returns_error` |
+| UC-3 | BR-5 | `cli_rename_workspace_on_fresh_app_seeds_active_workspace` |
 | UC-1 | BR-6 | `rename_workspace_seeds_initial_when_workspaces_vec_is_empty` |
 
 ## Location

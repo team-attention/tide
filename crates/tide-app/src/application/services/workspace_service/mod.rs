@@ -823,15 +823,15 @@ impl crate::application::ports::inward::WorkspaceNavPort for App {
     }
 
     fn rename_workspace(&mut self, idx: usize, name: String) {
+        // On a fresh `App` the active Workspace lives in `App` fields and
+        // `workspaces` is empty; seed a placeholder so `idx == ws.active`
+        // can be addressed without callers needing to call `new_workspace` first.
+        if idx == self.ws.active {
+            self.ensure_initial_workspace_seeded();
+        }
         let trimmed = name.trim();
         if trimmed.is_empty() {
             return;
-        }
-        // On a fresh `App` the active Workspace lives in `App` fields and
-        // `workspaces` is empty; seed a placeholder so `idx == ws.active`
-        // can be written without callers needing to call `new_workspace` first.
-        if idx == self.ws.active {
-            self.ensure_initial_workspace_seeded();
         }
         if idx >= self.ws.workspaces.len() {
             return;
