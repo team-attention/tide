@@ -28,6 +28,13 @@ It does not define final visual polish, App Chrome details, Workbench Tab Strip 
 - `docs_v2/implementation/electron-node-architecture-decisions.md` says the Composer is the active input surface and Agent Session is the narrative/history surface.
 - `docs_v2/research/ui-rendering-surface.md` says React maps well to Agent Session Blocks and browser-native text input gives a stronger base for Korean IME than custom GPU input.
 - `docs_v2/research/ui-rendering-surface.md` says CodeMirror is a candidate for code-aware Composer or prompt editor but is not necessary for the first Composer if native textarea is enough.
+- `src/shared/contracts/agent-session-block.ts` defines `AgentSessionBlockDto` as the process-boundary render DTO with block id, Thread id, kind, role, status, body, data, raw fallback, and timestamps.
+- `src/shared/contracts/commands.ts` defines `thread.start`, `composer.sendInput`, `prompt.answer`, `agentRuntime.stop`, and `workbench.command` command payloads.
+- `src/shared/contracts/events.ts` defines `thread.hydrated`, `thread.started`, `agentRuntime.stateChanged`, `providerReadiness.changed`, `prompt.changed`, and Agent Session Block stream events.
+- `src/shared/contracts/thread.ts` currently defines `ThreadSummaryDto` with Agent Binding and scope but no Worktree Option or Branch Option fields.
+- `src/desktop/application/domains/agent-chat/agent-chat-shell-state.ts` currently displays Follow-up Worktree and Branch values as fixed placeholders.
+- `src/desktop/adapters/inbound/react-renderer/agent-chat-contract-adapter.ts` currently casts Composer shell commands to a type derived from all `BackendCommandKind` values, including commands the shell cannot emit.
+- Existing v2 TypeScript tests under `tests/*.test.ts` use `node:test`; the repo currently has no `package.json`, `vitest.config.*`, or installed React scaffold in the bounded source search.
 
 ## Decisions
 
@@ -82,6 +89,34 @@ When Backend reports Provider Readiness blockers, Composer preserves the user's 
 Agent Chat renders Agent Session Blocks and operational states.
 
 It does not render the hidden Agent Runtime as a terminal by default.
+
+### D10. First shell keeps React adapter thin
+
+The first implementation keeps Desktop Agent Chat state and submit routing in a pure Desktop application model.
+
+The React renderer adapter imports Shared Contracts, maps BackendEvent DTOs into the Desktop model, renders `AgentSessionBlockDto` values through that model, and emits BackendCommand payloads.
+
+This keeps the UI testable before the full electron-vite/Vitest scaffold lands.
+
+### D11. No user decision is open for this slice
+
+No current question changes product behavior, architecture boundary, data ownership, provider behavior, or UI hierarchy.
+
+Missing npm/electron-vite/Vitest packaging remains part of the Build and Package slice, not a user-facing decision for this shell.
+
+### D12. Follow-up context must not invent missing Thread metadata
+
+Follow-up Composer may show Agent and Project/Scratch from the current `ThreadSummaryDto`.
+
+It must not fabricate Worktree Option or Branch Option values when Shared Contracts do not provide those values.
+
+When Shared Contracts later add explicit Thread execution metadata, the adapter may map those fields into read-only Follow-up context.
+
+### D13. Composer shell command mapping is narrow
+
+The first Composer shell can emit only `thread.start`, `composer.sendInput`, and `prompt.answer`.
+
+The React contract adapter must expose exactly those command drafts and must not type-cast them as the full `BackendCommandKind` union.
 
 ## Out Of Scope
 
@@ -221,26 +256,33 @@ Desktop consumes BackendEvents:
 7. Agent Chat renders Agent Session Blocks, not the hidden PTY terminal.
 8. Workbench does not replace Agent Chat as the narrative area.
 9. CodeMirror is not part of the first Composer unless a later spec reopens the editor requirement.
+10. Follow-up context displays only Thread metadata that came from Backend events or explicit Desktop state.
+11. Composer shell command mapping does not claim unsupported BackendCommand kinds.
 
 ## Tests
 
 | Rule | Test expectation |
 |------|------------------|
-| Draft does not create Thread | Typing in Start Composer changes local draft state but sends no BackendCommand. |
-| First send creates Thread | Sending non-empty draft emits `thread.start` with Launch Options. |
-| Empty send is blocked | Empty or whitespace-only Start Composer send emits no command. |
-| Follow-up sends input | Follow-up Composer emits `composer.sendInput` with active Thread id. |
-| Prompt answer routes correctly | Active Prompt State changes submit command from `composer.sendInput` to `prompt.answer`. |
-| Provider readiness preserves draft | Readiness blocker leaves draft text intact and shows blocked state. |
-| Thread context is read-only after start | Follow-up Composer does not expose editable Agent, Project, Worktree, or Branch controls inline. |
-| Agent Session block stream renders | `agentSessionBlock.upserted` adds or updates one visible block. |
-| Hidden runtime is not terminal UI | Running state does not mount a visible Terminal Pane for Agent Runtime. |
+| Draft does not create Thread | `typing_in_start_composer_keeps_a_local_draft_without_emitting_a_backend_command` changes local draft state but sends no BackendCommand. |
+| First send creates Thread | `sending_a_non_empty_start_composer_draft_emits_thread_start_with_launch_options` emits `thread.start` with Launch Options. |
+| Empty send is blocked | `sending_an_empty_start_composer_draft_emits_no_command` emits no command for empty or whitespace-only input. |
+| Follow-up sends input | `follow_up_composer_emits_composer_send_input_for_the_active_thread` emits `composer.sendInput` with active Thread id. |
+| Prompt answer routes correctly | `active_prompt_state_routes_submit_to_prompt_answer` changes submit command from `composer.sendInput` to `prompt.answer`. |
+| Provider readiness preserves draft | `provider_readiness_blocker_preserves_the_composer_draft_and_marks_shell_blocked` leaves draft text intact and shows blocked state. |
+| Thread context is read-only after start | `follow_up_shell_displays_thread_context_without_inline_edit_controls` displays available Thread context as read-only text. |
+| Agent Session block stream renders | `agent_session_block_upserts_render_one_visible_block_per_block_id` adds or updates one visible block from `agentSessionBlock.upserted`. |
+| Hidden runtime is not terminal UI | `running_agent_runtime_state_does_not_render_a_terminal_pane` shows runtime state without a visible Terminal Pane for Agent Runtime. |
+| Composer shell displays Thread, Agent Runtime State, and Prompt State | `composer_shell_displays_thread_runtime_and_prompt_state` renders active Thread metadata, runtime state, and prompt state together. |
+| Desktop application boundary holds | `desktop_application_shell_state_does_not_import_react_backend_or_shared_contracts` keeps React and Shared Contracts in the adapter/test layer. |
+| Follow-up context does not fabricate missing fields | `follow_up_shell_does_not_fabricate_worktree_or_branch_when_thread_contract_omits_them` shows no placeholder Worktree or Branch values when `ThreadSummaryDto` omits those fields. |
+| Command adapter stays narrow | `composer_shell_command_adapter_does_not_claim_unsupported_backend_command_kinds` ensures the adapter exposes only `thread.start`, `composer.sendInput`, and `prompt.answer` command drafts. |
 
 ## Implementation Notes
 
-- Build this as a React shell under `src/desktop/renderer`.
+- Build this as a React shell under `src/desktop/adapters/inbound/react-renderer` plus pure Desktop application state under `src/desktop/application`.
 - Keep UI state reducers separate from Shared Contract definitions.
 - Use browser-native input behavior for IME, selection, copy, paste, and focus in the first Composer.
-- Add component tests for command emission and state transitions before visual polish.
+- Add component tests for command emission, state transitions, and `AgentSessionBlockDto` rendering before visual polish.
 - Keep Composer Options shallow in the first shell; detailed provider command menus belong to later provider feature specs.
 - Do not put global Thread queues or status dashboards inside Agent Chat.
+- Use `React.createElement` without JSX until the Build and Package slice introduces the final TSX/Vitest/electron-vite setup.

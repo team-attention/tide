@@ -1,0 +1,12 @@
+{
+  "name": "tide-v2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:v2": "node --test --experimental-strip-types tests/*.test.ts"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}
