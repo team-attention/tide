@@ -3,7 +3,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:v2": "node --test --experimental-strip-types tests/*.test.ts"
+    "dev": "node scripts/v2-tooling-command.mjs electron-vite dev",
+    "build": "node scripts/v2-tooling-command.mjs electron-vite build",
+    "typecheck": "node scripts/v2-tooling-command.mjs tsc --noEmit",
+    "test": "npm run test:v2",
+    "test:v2": "node --test --experimental-strip-types tests/*.test.ts",
+    "test:watch": "node --test --watch --experimental-strip-types tests/*.test.ts",
+    "test:architecture": "node --test --experimental-strip-types tests/shared-contracts.test.ts tests/backend-thread-agent-runtime-lifecycle.test.ts tests/desktop-agent-chat-composer-shell.test.ts",
+    "test:smoke:providers": "node scripts/v2-provider-smoke.mjs",
+    "package:mac": "node scripts/v2-tooling-command.mjs electron-builder --mac"
   },
   "dependencies": {
     "react": "^19.0.0",

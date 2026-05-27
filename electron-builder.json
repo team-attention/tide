@@ -1,0 +1,16 @@
+{
+  "appId": "app.tide.v2",
+  "productName": "Tide",
+  "directories": {
+    "output": "dist/package-mac"
+  },
+  "files": [
+    "dist/**",
+    "package.json"
+  ],
+  "mac": {
+    "target": [
+      "dmg"
+    ]
+  }
+}

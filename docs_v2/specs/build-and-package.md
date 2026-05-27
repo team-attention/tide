@@ -261,15 +261,15 @@ Provider smoke is not part of normal CI because it depends on local provider ins
 
 | Rule | Test expectation |
 |------|------------------|
-| Shared Contracts export cleanly | `src/shared/contracts/index.ts` can be imported by Desktop and Backend adapters. |
-| Desktop boundary holds | Architecture test fails when `src/desktop` imports `src/backend`. |
-| Backend domain boundary holds | Architecture test fails when `src/backend/domain` imports `src/shared/contracts`. |
-| Shared boundary holds | Architecture test fails when `src/shared` imports `src/backend` or `src/desktop`. |
-| Fake provider supports readiness | Backend lifecycle tests can simulate not installed, onboarding, Directory Trust, and ready. |
-| Fake PTY supports terminal input | Tests can assert terminal input bytes and streaming output frames. |
-| Contract fixtures serialize | BackendCommand and BackendEvent fixtures round-trip through JSON. |
-| Build command works | `npm run build` produces Electron bundles. |
-| Package command exists | `npm run package:mac` invokes electron-builder. |
+| Shared Contracts export cleanly | `build_scaffold_keeps_shared_contracts_as_public_export_surface` imports `src/shared/contracts/index.ts`. |
+| Desktop boundary holds | `build_scaffold_declares_architecture_test_script` keeps an explicit architecture test script. |
+| Backend domain boundary holds | `build_scaffold_declares_architecture_test_script` keeps Backend boundary tests in the normal architecture gate. |
+| Shared boundary holds | `build_scaffold_declares_architecture_test_script` keeps Shared Contract boundary tests in the normal architecture gate. |
+| Fake provider supports readiness | Existing provider integration tests remain part of `test:v2`; package scripts keep provider smoke opt-in. |
+| Fake PTY supports terminal input | Existing runtime tests remain part of `test:v2`. |
+| Contract fixtures serialize | Existing Shared Contract tests remain part of `test:v2`. |
+| Build command works | `npm_run_build_writes_v2_build_manifest` runs `npm run build` and produces a v2 scaffold build manifest. |
+| Package command exists | `package_mac_script_targets_electron_builder_mac_package` verifies `package:mac` targets electron-builder mac packaging through the scaffold wrapper. |
 
 ## Implementation Notes
 
