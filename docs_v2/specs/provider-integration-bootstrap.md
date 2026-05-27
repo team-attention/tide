@@ -2,23 +2,24 @@
 
 ## Scope
 
-This spec defines the first provider bootstrap contract and the first concrete Agent Integration implementation path.
+This spec defines the provider bootstrap contract and the concrete Agent Integration implementation path as each provider slice is proven.
 
-The first implementation provider is Codex CLI. Claude Code and Antigravity CLI remain supported design targets, but their concrete adapters stay out of this slice.
+Codex CLI was the first implementation provider. This slice adds the Claude Code Agent Integration bootstrap while keeping Antigravity CLI as a supported design target for a later provider-specific slice.
 
 It covers:
 
 - Agent Integration responsibilities.
 - hidden PTY as the single runtime transport.
 - Codex launch/resume bootstrap evidence gates.
+- Claude Code launch/resume bootstrap evidence gates.
 - Provider Readiness preflight.
 - Directory Trust and onboarding handling.
 - hook/bootstrap setup.
 - Tide MCP Tool Surface attachment.
 - provider-owned Raw Agent Session reference discovery.
-- prompt and permission signal collection.
+- prompt, permission, and elicitation signal collection.
 
-It does not implement Claude or Antigravity adapters, full Agent Session readers, Workbench tool contracts, Desktop UI, persistence storage, a real PTY process adapter, or provider smoke execution.
+It does not implement the Antigravity adapter, full Agent Session readers, Workbench tool contracts, Desktop UI, persistence storage, a real PTY process adapter, or provider smoke execution.
 
 ## Evidence
 
@@ -32,6 +33,8 @@ It does not implement Claude or Antigravity adapters, full Agent Session readers
 - `crates/tide-app/resources/bin/claude` injects Claude MCP config with `--mcp-config`, hook settings with `--settings`, and a Tide context prompt.
 - `crates/tide-app/resources/bin/gemini` shows the existing wrapper pattern for a Gemini-like CLI using system defaults, MCP config, hooks, and context injection. Antigravity v2 must be researched and implemented as Antigravity-specific, not assumed to be the same binary.
 - `docs_v2/master-plan.md` says Codex `exec --json`, Claude print-mode JSON, Claude Remote Control, and batch modes are research or fixture inputs, not v2 runtime transports.
+- Official Claude Code [hooks reference](https://code.claude.com/docs/en/hooks) says `AskUserQuestion` is handled through `PreToolUse` as a tool requiring user interaction, while `Elicitation` is a separate hook event for MCP-server user input requests.
+- Claude permission fixture `/private/tmp/tide-provider-evidence/20260527-182233-claude-permission` captured `UserPromptSubmit`, `PermissionRequest`, and `Notification` for the same session and transcript; `PermissionRequest` carried tool/action structure, while `Notification` carried `notification_type: "permission_prompt"` and the attention message.
 
 ## Decisions
 
@@ -99,13 +102,30 @@ The current v1 wrapper evidence covers `gemini`, while v2 target support include
 
 Antigravity bootstrap must be specified and smoked from `agy` behavior and local Antigravity state, not copied from Gemini wrapper behavior without verification.
 
-### D9. First implementation provider is Codex CLI
+### D9. Codex remains provider-specific
 
-This slice implements a Codex Agent Integration adapter only.
+The first provider slice implemented a Codex Agent Integration adapter.
 
 The adapter builds Backend-internal Codex launch and resume plans, reports Provider Readiness blockers, exposes Codex capabilities, and keeps Tide MCP Tool Surface and hook/bootstrap configuration in the provider-specific adapter layer.
 
 Claude Code and Antigravity CLI must not be hidden behind the Codex adapter or genericized from Codex behavior.
+
+### D10. Claude Code prompt signals are single-source
+
+Claude Code Prompt State classification must use one provider-owned structured event for each Prompt State kind.
+
+- `PermissionRequest` creates a permission Prompt State.
+- `PreToolUse` with `tool_name: "AskUserQuestion"` creates a question Prompt State.
+- `Elicitation` creates a question Prompt State for MCP-server user input.
+- `Notification` does not create Prompt State. It is an attention Provider Signal only.
+
+Tide must not implement hybrid or optional fallback classification where both `Notification` and another structured hook can create the same Prompt State.
+
+### D11. Claude Code launch context matches the Codex wrapper pattern
+
+Codex's existing Tide wrapper injects three provider-owned bootstrap surfaces: hooks, Tide MCP config, and Tide context guidance through a Tide skill.
+
+Claude Code's matching provider-owned context guidance is `--append-system-prompt`. The Claude Code Agent Integration start and resume plans include `--mcp-config`, `--settings`, and `--append-system-prompt` together, rather than deferring the context prompt to a later Workbench slice.
 
 ## Out Of Scope
 
@@ -115,7 +135,7 @@ Claude Code and Antigravity CLI must not be hidden behind the Codex adapter or g
 - Electron process spawn implementation.
 - Persistence schema.
 - UI setup screens.
-- Claude Code or Antigravity CLI adapter implementation.
+- Antigravity CLI adapter implementation.
 - Batch runtime transports.
 - Running a real provider smoke as part of the default test suite.
 
@@ -268,6 +288,7 @@ Must prove:
 - resume using `--resume`, `--continue`, or session id semantics proven by smoke.
 - hook/bootstrap path for running, notification, permission, elicitation, and stop signals.
 - Tide MCP config through provider-supported config.
+- Tide context guidance through `--append-system-prompt`, matching Codex's Tide skill bootstrap pattern.
 - transcript JSONL reference discovery.
 - terminal key protocol support for CSI-u Enter when required.
 - authentication readiness detection for Claude account, Anthropic Console, and third-party platform paths.
@@ -278,9 +299,27 @@ Must prove:
 
 Initial known reference:
 
-- Existing v1 wrapper uses `--mcp-config`, `--settings`, hooks, and a Tide context prompt.
+- Existing v1 wrapper uses `--mcp-config`, `--settings`, hooks, and a Tide context prompt through `--append-system-prompt`.
 - Smoke found CSI-u Enter submitted turns and provider transcript JSONL supported resume evidence.
 - Fresh-state Claude showed theme selection, login method selection, browser OAuth with `Paste code here if prompted >`, security notes, workspace trust, and then the main TUI.
+
+First implementation behavior:
+
+- `preflight` returns `not_installed` when the Claude executable cannot be resolved.
+- `preflight` returns `not_authenticated` when provider state says Claude auth is incomplete.
+- `preflight` returns `onboarding_required` when theme/text-style, OAuth code paste, or security note setup is incomplete.
+- `preflight` returns `directory_trust_required` when the selected Execution Context cwd is not trusted by provider-owned Claude state.
+- `preflight` returns `hook_bootstrap_required` when Tide-owned Claude hook/bootstrap config is missing.
+- ready `preflight` returns a Backend-internal launch plan.
+- start launch plan uses `claude` with provider-supported `--settings`, `--mcp-config`, and `--append-system-prompt` arguments.
+- resume launch plan uses `claude --resume <provider-native-session-ref>` with the same `--settings`, `--mcp-config`, and `--append-system-prompt` bootstrap arguments.
+- launch and resume plans set `TERM=xterm-256color` and `COLORTERM=truecolor`.
+- launch and resume plans include expected Provider Signal sources for PTY Transcript, Claude hooks, Claude transcript JSONL, and Tide MCP.
+- Claude capabilities mark `requiresTerminalKeyProtocol` true because CSI-u Enter is required for submitted turns in observed hidden PTY evidence.
+- Claude permission Prompt State is created only from `PermissionRequest`.
+- Claude question Prompt State is created only from `PreToolUse` where `tool_name` is `AskUserQuestion`.
+- Claude MCP elicitation question Prompt State is created only from `Elicitation`.
+- Claude `Notification` is recorded as attention Provider Signal only and does not create Prompt State.
 
 ### Antigravity
 
@@ -346,6 +385,8 @@ Initial known reference:
 6. Provider-owned history remains the Raw Agent Session source of truth.
 7. Prompt State requires provider evidence; unknown output remains raw or text.
 8. Antigravity support is based on `agy` evidence, not Gemini wrapper assumptions.
+9. Claude Prompt State classification is single-source by event kind; `Notification` never creates Prompt State.
+10. Claude launch and resume bootstrap includes provider-native Tide context guidance to match Codex's Tide skill bootstrap pattern.
 
 ## Tests
 
@@ -361,6 +402,14 @@ Initial known reference:
 | Codex Prompt State is evidence-gated | `codex_permission_prompt_detection_requires_permission_request_hook_payload` returns Prompt State for a Codex `PermissionRequest` hook payload and returns no Prompt State for unknown PTY text. |
 | One runtime transport per Agent | `codex_launch_plan_does_not_use_exec_json_app_server_or_remote_runtime` fails if the Codex plan contains `exec`, `app-server`, `--remote`, or print/batch runtime flags. |
 | Provider-specific adapter location | `provider_specific_agent_integrations_stay_under_backend_adapters` fails if Codex integration code appears in Desktop or Shared Contracts. |
+| Claude missing executable blocks preflight | `claude_preflight_reports_not_installed_when_claude_executable_is_missing` resolves no command, returns `not_installed`, and returns no launch plan. |
+| Claude readiness blockers are provider-owned | `claude_preflight_reports_auth_onboarding_directory_trust_and_hook_bootstrap_blockers` returns the exact blocker kinds from Claude provider state without inferring readiness from generic CLI text. |
+| Claude ready preflight builds start plan | `claude_ready_preflight_returns_hidden_pty_start_plan_with_settings_mcp_context_and_terminal_env` returns `claude`, `--settings`, `--mcp-config`, `--append-system-prompt`, `TERM=xterm-256color`, `COLORTERM=truecolor`, and expected signal sources. |
+| Claude resume uses provider session ref | `claude_resume_plan_uses_provider_native_session_ref` builds `claude --resume <session-id>` from `ProviderSessionRef`. |
+| Claude launch plan keeps one runtime path | `claude_launch_plan_does_not_use_print_stream_json_or_remote_control_runtime` fails if the plan contains `--print`, stream-json runtime flags, or Remote Control flags. |
+| Claude permission Prompt State is single-source | `claude_permission_prompt_detection_uses_permission_request_not_notification` returns Prompt State for `PermissionRequest` and returns null for `Notification` permission prompts. |
+| Claude AskUserQuestion is PreToolUse only | `claude_question_prompt_detection_uses_pretooluse_ask_user_question` returns question Prompt State only for `PreToolUse` with `tool_name: "AskUserQuestion"`. |
+| Claude Elicitation is its own Prompt State source | `claude_elicitation_prompt_detection_uses_elicitation_event` returns question Prompt State only for `Elicitation` payloads and does not treat `Notification` as elicitation fallback. |
 
 ## Implementation Notes
 

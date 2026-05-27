@@ -1,0 +1,317 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+import {
+  createClaudeAgentIntegration,
+  type ClaudeProviderState,
+} from "../src/backend/adapters/outbound/agent-integrations/claude/claude-agent-integration.ts";
+import type {
+  AgentIntegrationPreflightInput,
+  ProviderSessionRef,
+} from "../src/backend/application/ports/outbound/agent-integration-port.ts";
+
+// Spec: docs_v2/specs/provider-integration-bootstrap.md
+
+const projectScope = {
+  kind: "project" as const,
+  projectId: "project-1",
+  cwd: "/repo",
+};
+const basePreflightInput: AgentIntegrationPreflightInput = {
+  agentId: "claude",
+  scope: projectScope,
+};
+
+test("claude_preflight_reports_not_installed_when_claude_executable_is_missing", async () => {
+  const integration = claudeIntegration({
+    executablePath: undefined,
+    providerState: readyClaudeState(),
+  });
+
+  const result = await integration.preflight(basePreflightInput);
+
+  assert.equal(result.ready, false);
+  assert.equal(result.blockers[0]?.kind, "not_installed");
+  assert.equal(result.launchPlan, undefined);
+});
+
+test("claude_preflight_reports_auth_onboarding_directory_trust_and_hook_bootstrap_blockers", async () => {
+  const integration = claudeIntegration({
+    providerState: readyClaudeState({
+      authenticated: false,
+      onboardingComplete: false,
+      trustedCwds: ["/trusted-repo"],
+      hookBootstrapReady: false,
+    }),
+  });
+
+  const result = await integration.preflight(basePreflightInput);
+
+  assert.equal(result.ready, false);
+  assert.deepEqual(
+    result.blockers.map((blocker) => [blocker.kind, blocker.scope]),
+    [
+      ["not_authenticated", "provider"],
+      ["onboarding_required", "provider"],
+      ["directory_trust_required", "execution_context"],
+      ["hook_bootstrap_required", "integration"],
+    ],
+  );
+  assert.equal(result.blockers[2]?.setup?.command, "/usr/local/bin/claude");
+  assert.equal(result.blockers[2]?.setup?.cwd, "/repo");
+  assert.equal(result.launchPlan, undefined);
+});
+
+test("claude_ready_preflight_returns_hidden_pty_start_plan_with_settings_mcp_context_and_terminal_env", async () => {
+  const integration = claudeIntegration();
+
+  const result = await integration.preflight(basePreflightInput);
+
+  assert.equal(result.ready, true);
+  assert.equal(result.capabilities.requiresTerminalKeyProtocol, true);
+  assert.equal(result.launchPlan?.command, "/usr/local/bin/claude");
+  assert.equal(result.launchPlan?.cwd, "/repo");
+  assert.equal(result.launchPlan?.env.TERM, "xterm-256color");
+  assert.equal(result.launchPlan?.env.COLORTERM, "truecolor");
+  assert.deepEqual(result.launchPlan?.args.slice(0, 6), [
+    "--mcp-config",
+    "/tmp/tide-claude-mcp.json",
+    "--settings",
+    "/tmp/tide-claude-settings.json",
+    "--append-system-prompt",
+    "Use Tide MCP tools for Tide Workbench surfaces.",
+  ]);
+  assert.deepEqual(
+    result.launchPlan?.expectedSignalSources.map((source) => source.kind),
+    ["pty_transcript", "provider_hook", "provider_history", "tide_mcp"],
+  );
+});
+
+test("claude_resume_plan_uses_provider_native_session_ref", async () => {
+  const integration = claudeIntegration();
+  const providerSessionRef: ProviderSessionRef = {
+    kind: "claude_transcript",
+    value: "6a26b8ab-c91e-4846-aae5-f51ce6b04a39",
+    transcriptPath:
+      "/Users/example/.claude/projects/-repo/6a26b8ab-c91e-4846-aae5-f51ce6b04a39.jsonl",
+  };
+
+  const plan = await integration.buildResumePlan({
+    agentId: "claude",
+    providerSessionRef,
+    scope: projectScope,
+  });
+
+  assert.deepEqual(plan.args.slice(-2), [
+    "--resume",
+    "6a26b8ab-c91e-4846-aae5-f51ce6b04a39",
+  ]);
+  assert.equal(plan.cwd, "/repo");
+});
+
+test("claude_launch_plan_does_not_use_print_stream_json_or_remote_control_runtime", async () => {
+  const integration = claudeIntegration();
+
+  const result = await integration.preflight(basePreflightInput);
+  const args = result.launchPlan?.args ?? [];
+  const joinedArgs = args.join(" ");
+
+  assert.equal(args.includes("--print"), false);
+  assert.equal(args.includes("-p"), false);
+  assert.equal(joinedArgs.includes("stream-json"), false);
+  assert.equal(args.includes("--remote"), false);
+});
+
+test("claude_permission_prompt_detection_uses_permission_request_not_notification", () => {
+  const integration = claudeIntegration();
+
+  const prompt = integration.detectPromptState({
+    threadId: "thread-1",
+    source: "provider_hook",
+    eventName: "PermissionRequest",
+    payload: {
+      tool_name: "Bash",
+      tool_input: {
+        description: "Run a fixture command",
+        command: "python3 -c 'print(\"CLAUDE_PERMISSION_FIXTURE\")'",
+      },
+      permission_suggestions: [
+        {
+          behavior: "allow",
+          type: "addRules",
+        },
+      ],
+    },
+  });
+  const notification = integration.detectPromptState({
+    threadId: "thread-1",
+    source: "provider_hook",
+    eventName: "Notification",
+    payload: {
+      notification_type: "permission_prompt",
+      message: "Claude needs your permission",
+    },
+  });
+
+  assert.equal(prompt?.kind, "permission");
+  assert.equal(prompt?.source, "provider_hook");
+  assert.equal(prompt?.message, "Run a fixture command");
+  assert.equal(notification, null);
+});
+
+test("claude_question_prompt_detection_uses_pretooluse_ask_user_question", () => {
+  const integration = claudeIntegration();
+
+  const question = integration.detectPromptState({
+    threadId: "thread-1",
+    source: "provider_hook",
+    eventName: "PreToolUse",
+    payload: {
+      tool_name: "AskUserQuestion",
+      tool_input: {
+        questions: ["Which branch should Tide use?"],
+      },
+    },
+  });
+  const otherPreToolUse = integration.detectPromptState({
+    threadId: "thread-1",
+    source: "provider_hook",
+    eventName: "PreToolUse",
+    payload: {
+      tool_name: "Bash",
+      tool_input: {
+        command: "git status",
+      },
+    },
+  });
+
+  assert.equal(question?.kind, "question");
+  assert.equal(question?.message, "Which branch should Tide use?");
+  assert.equal(otherPreToolUse, null);
+});
+
+test("claude_elicitation_prompt_detection_uses_elicitation_event", () => {
+  const integration = claudeIntegration();
+
+  const elicitation = integration.detectPromptState({
+    threadId: "thread-1",
+    source: "provider_hook",
+    eventName: "Elicitation",
+    payload: {
+      mcp_server_name: "tide",
+      message: "Please choose a Workbench target.",
+      mode: "form",
+      elicitation_id: "elicit-1",
+    },
+  });
+  const notification = integration.detectPromptState({
+    threadId: "thread-1",
+    source: "provider_hook",
+    eventName: "Notification",
+    payload: {
+      notification_type: "question",
+      message: "Please choose a Workbench target.",
+    },
+  });
+
+  assert.equal(elicitation?.kind, "question");
+  assert.equal(elicitation?.source, "provider_hook");
+  assert.equal(elicitation?.message, "Please choose a Workbench target.");
+  assert.equal(notification, null);
+});
+
+test("backend_application_does_not_import_claude_adapter_or_shared_contracts", () => {
+  assert.deepEqual(
+    findSourceMentions(["src/backend/application"], [
+      /from\s+["'][^"']*agent-integrations\/claude/,
+      /import\(["'][^"']*agent-integrations\/claude/,
+      /from\s+["'][^"']*shared\/contracts/,
+      /import\(["'][^"']*shared\/contracts/,
+    ]),
+    [],
+  );
+});
+
+test("claude_provider_specific_agent_integration_stays_under_backend_adapters", () => {
+  assert.deepEqual(
+    findSourceMentions(["src/desktop", "src/shared/contracts"], [
+      /agent-integrations\/claude/,
+      /claude-agent-integration/,
+      /createClaudeAgentIntegration/,
+    ]),
+    [],
+  );
+});
+
+function claudeIntegration(options: {
+  executablePath?: string;
+  providerState?: ClaudeProviderState;
+} = {}) {
+  const executablePath = Object.hasOwn(options, "executablePath")
+    ? options.executablePath
+    : "/usr/local/bin/claude";
+
+  return createClaudeAgentIntegration({
+    resolveExecutable: async () => executablePath,
+    readProviderState: async () => options.providerState ?? readyClaudeState(),
+    mcpConfigPath: "/tmp/tide-claude-mcp.json",
+    settingsPath: "/tmp/tide-claude-settings.json",
+    tideContextPrompt: "Use Tide MCP tools for Tide Workbench surfaces.",
+  });
+}
+
+function readyClaudeState(
+  overrides: Partial<ClaudeProviderState> = {},
+): ClaudeProviderState {
+  return {
+    authenticated: true,
+    onboardingComplete: true,
+    trustedCwds: ["/repo"],
+    hookBootstrapReady: true,
+    ...overrides,
+  };
+}
+
+function findSourceMentions(relativeRoots: string[], patterns: RegExp[]): string[] {
+  const repoRoot = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+  );
+  const violations: string[] = [];
+
+  for (const relativeRoot of relativeRoots) {
+    const absoluteRoot = path.join(repoRoot, relativeRoot);
+    if (!fs.existsSync(absoluteRoot)) {
+      continue;
+    }
+    for (const filePath of sourceFiles(absoluteRoot)) {
+      const source = fs.readFileSync(filePath, "utf8");
+      if (patterns.some((pattern) => pattern.test(source))) {
+        violations.push(path.relative(repoRoot, filePath));
+      }
+    }
+  }
+
+  return violations.sort();
+}
+
+function sourceFiles(root: string): string[] {
+  const files: string[] = [];
+  const entries = fs.readdirSync(root, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...sourceFiles(fullPath));
+      continue;
+    }
+    if (/\.(cjs|cts|js|jsx|mjs|mts|ts|tsx)$/.test(entry.name)) {
+      files.push(fullPath);
+    }
+  }
+
+  return files;
+}

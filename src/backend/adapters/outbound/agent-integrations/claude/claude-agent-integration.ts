@@ -1,0 +1,383 @@
+import type {
+  AgentIntegrationCapabilities,
+  AgentIntegrationPort,
+  AgentIntegrationPreflightInput,
+  AgentIntegrationPreflightResult,
+  AgentIntegrationReadinessBlocker,
+  AgentPromptSignalInput,
+  AgentResumePlanInput,
+  AgentStartPlanInput,
+  ProviderLaunchPlan,
+  ProviderSetupSurfaceAction,
+  ProviderSignalSource,
+} from "../../../../application/ports/outbound/agent-integration-port.ts";
+import type { PromptState, ThreadScope } from "../../../../application/domains/thread/thread.ts";
+
+export interface ClaudeProviderState {
+  authenticated: boolean;
+  onboardingComplete: boolean;
+  trustedCwds: string[];
+  hookBootstrapReady: boolean;
+}
+
+export type ClaudeExecutableResolver = (
+  command: "claude",
+) => Promise<string | undefined> | string | undefined;
+
+export type ClaudeProviderStateReader = (input: {
+  cwd: string;
+  executablePath: string;
+  launchOptions?: Record<string, unknown>;
+}) => Promise<ClaudeProviderState> | ClaudeProviderState;
+
+export interface CreateClaudeAgentIntegrationInput {
+  resolveExecutable: ClaudeExecutableResolver;
+  readProviderState: ClaudeProviderStateReader;
+  mcpConfigPath: string;
+  settingsPath: string;
+  tideContextPrompt: string;
+  defaultCwd?: string;
+}
+
+const claudeCapabilities: AgentIntegrationCapabilities = {
+  supportsHiddenPty: true,
+  supportsResume: true,
+  supportsTideMcp: true,
+  supportsHooks: true,
+  supportsReadableHistory: true,
+  requiresTerminalKeyProtocol: true,
+};
+
+const expectedSignalSources: ProviderSignalSource[] = [
+  {
+    kind: "pty_transcript",
+    description: "Captured hidden PTY input and output.",
+  },
+  {
+    kind: "provider_hook",
+    description:
+      "Claude UserPromptSubmit, PermissionRequest, PreToolUse, Elicitation, Notification, and Stop hooks.",
+  },
+  {
+    kind: "provider_history",
+    description: "Claude transcript JSONL under provider-owned project history.",
+  },
+  {
+    kind: "tide_mcp",
+    description: "Tide MCP Tool Surface attached to the same Claude session.",
+  },
+];
+
+export function createClaudeAgentIntegration(
+  input: CreateClaudeAgentIntegrationInput,
+): AgentIntegrationPort {
+  return new ClaudeAgentIntegration(input);
+}
+
+class ClaudeAgentIntegration implements AgentIntegrationPort {
+  private readonly resolveExecutable: ClaudeExecutableResolver;
+  private readonly readProviderState: ClaudeProviderStateReader;
+  private readonly mcpConfigPath: string;
+  private readonly settingsPath: string;
+  private readonly tideContextPrompt: string;
+  private readonly defaultCwd: string;
+
+  constructor(input: CreateClaudeAgentIntegrationInput) {
+    this.resolveExecutable = input.resolveExecutable;
+    this.readProviderState = input.readProviderState;
+    this.mcpConfigPath = input.mcpConfigPath;
+    this.settingsPath = input.settingsPath;
+    this.tideContextPrompt = input.tideContextPrompt;
+    this.defaultCwd = input.defaultCwd ?? ".";
+  }
+
+  async preflight(
+    input: AgentIntegrationPreflightInput,
+  ): Promise<AgentIntegrationPreflightResult> {
+    const cwd = cwdFromScope(input.scope, this.defaultCwd);
+    const executablePath = await this.resolveExecutable("claude");
+    if (executablePath === undefined) {
+      return {
+        agentId: "claude",
+        ready: false,
+        blockers: [
+          {
+            kind: "not_installed",
+            scope: "provider",
+            message: "Claude Code executable was not found.",
+          },
+        ],
+        capabilities: claudeCapabilities,
+      };
+    }
+
+    const providerState = await this.readProviderState({
+      cwd,
+      executablePath,
+      launchOptions: input.launchOptions,
+    });
+    const setup = claudeSetupAction(executablePath, cwd);
+    const blockers: AgentIntegrationReadinessBlocker[] = [];
+
+    if (!providerState.authenticated) {
+      blockers.push({
+        kind: "not_authenticated",
+        scope: "provider",
+        message:
+          "Claude Code authentication is required before starting a Thread.",
+        setup,
+      });
+    }
+    if (!providerState.onboardingComplete) {
+      blockers.push({
+        kind: "onboarding_required",
+        scope: "provider",
+        message:
+          "Claude Code onboarding must be completed before starting a Thread.",
+        setup,
+      });
+    }
+    if (!providerState.trustedCwds.includes(cwd)) {
+      blockers.push({
+        kind: "directory_trust_required",
+        scope: "execution_context",
+        message:
+          "Claude Code workspace trust is required for this Execution Context.",
+        setup,
+      });
+    }
+    if (!providerState.hookBootstrapReady) {
+      blockers.push({
+        kind: "hook_bootstrap_required",
+        scope: "integration",
+        message: "Tide Claude Code hook/bootstrap setup is required.",
+        setup,
+      });
+    }
+
+    if (blockers.length > 0) {
+      return {
+        agentId: "claude",
+        ready: false,
+        blockers,
+        capabilities: claudeCapabilities,
+      };
+    }
+
+    return {
+      agentId: "claude",
+      ready: true,
+      blockers: [],
+      capabilities: claudeCapabilities,
+      launchPlan: this.claudeLaunchPlan({
+        executablePath,
+        cwd,
+        resumeRef: undefined,
+      }),
+    };
+  }
+
+  async buildStartPlan(input: AgentStartPlanInput): Promise<ProviderLaunchPlan> {
+    const executablePath = (await this.resolveExecutable("claude")) ?? "claude";
+    const cwd = cwdFromScope(input.scope, this.defaultCwd);
+
+    return this.claudeLaunchPlan({
+      executablePath,
+      cwd,
+      resumeRef: undefined,
+    });
+  }
+
+  async buildResumePlan(input: AgentResumePlanInput): Promise<ProviderLaunchPlan> {
+    const executablePath = (await this.resolveExecutable("claude")) ?? "claude";
+    const cwd = cwdFromScope(input.scope, this.defaultCwd);
+
+    return this.claudeLaunchPlan({
+      executablePath,
+      cwd,
+      resumeRef: input.providerSessionRef.value,
+    });
+  }
+
+  detectPromptState(input: AgentPromptSignalInput): PromptState | null {
+    if (input.source !== "provider_hook" || !isRecord(input.payload)) {
+      return null;
+    }
+
+    if (input.eventName === "PermissionRequest") {
+      return this.detectPermissionPrompt(input);
+    }
+    if (input.eventName === "PreToolUse") {
+      return this.detectAskUserQuestion(input);
+    }
+    if (input.eventName === "Elicitation") {
+      return this.detectElicitation(input);
+    }
+
+    return null;
+  }
+
+  private detectPermissionPrompt(input: AgentPromptSignalInput): PromptState | null {
+    if (!isRecord(input.payload)) {
+      return null;
+    }
+    const toolInput = isRecord(input.payload.tool_input)
+      ? input.payload.tool_input
+      : undefined;
+    const toolName = stringValue(input.payload.tool_name);
+    const message =
+      stringValue(toolInput?.description) ??
+      stringValue(toolInput?.command) ??
+      (toolName === undefined
+        ? undefined
+        : `Claude Code permission required for ${toolName}.`);
+
+    if (message === undefined) {
+      return null;
+    }
+
+    return {
+      promptId: claudePromptId(input.payload, "permission", message),
+      threadId: input.threadId,
+      agentId: "claude",
+      kind: "permission",
+      message,
+      source: "provider_hook",
+    };
+  }
+
+  private detectAskUserQuestion(
+    input: AgentPromptSignalInput,
+  ): PromptState | null {
+    if (!isRecord(input.payload)) {
+      return null;
+    }
+    if (stringValue(input.payload.tool_name) !== "AskUserQuestion") {
+      return null;
+    }
+    const toolInput = isRecord(input.payload.tool_input)
+      ? input.payload.tool_input
+      : undefined;
+    const message = questionMessage(toolInput?.questions);
+    if (message === undefined) {
+      return null;
+    }
+
+    return {
+      promptId: claudePromptId(input.payload, "question", message),
+      threadId: input.threadId,
+      agentId: "claude",
+      kind: "question",
+      message,
+      source: "provider_hook",
+    };
+  }
+
+  private detectElicitation(input: AgentPromptSignalInput): PromptState | null {
+    if (!isRecord(input.payload)) {
+      return null;
+    }
+    const message = stringValue(input.payload.message);
+    if (message === undefined) {
+      return null;
+    }
+
+    return {
+      promptId: claudePromptId(input.payload, "elicitation", message),
+      threadId: input.threadId,
+      agentId: "claude",
+      kind: "question",
+      message,
+      source: "provider_hook",
+    };
+  }
+
+  private claudeLaunchPlan(input: {
+    executablePath: string;
+    cwd: string;
+    resumeRef?: string;
+  }): ProviderLaunchPlan {
+    const args = [
+      "--mcp-config",
+      this.mcpConfigPath,
+      "--settings",
+      this.settingsPath,
+      "--append-system-prompt",
+      this.tideContextPrompt,
+    ];
+
+    if (input.resumeRef !== undefined) {
+      args.push("--resume", input.resumeRef);
+    }
+
+    return {
+      command: input.executablePath,
+      args,
+      env: {
+        TERM: "xterm-256color",
+        COLORTERM: "truecolor",
+      },
+      cwd: input.cwd,
+      expectedSignalSources: expectedSignalSources.map((source) => ({
+        ...source,
+      })),
+    };
+  }
+}
+
+function claudeSetupAction(
+  executablePath: string,
+  cwd: string,
+): ProviderSetupSurfaceAction {
+  return {
+    command: executablePath,
+    args: [],
+    cwd,
+    expectedCompletion: "retry_preflight",
+  };
+}
+
+function cwdFromScope(scope: ThreadScope | undefined, fallback: string): string {
+  if (scope === undefined) {
+    return fallback;
+  }
+  return scope.kind === "project" ? scope.cwd : scope.scratchCwd;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function questionMessage(value: unknown): string | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  for (const question of value) {
+    const text =
+      stringValue(question) ??
+      (isRecord(question)
+        ? stringValue(question.text) ?? stringValue(question.question)
+        : undefined);
+    if (text !== undefined) {
+      return text;
+    }
+  }
+  return undefined;
+}
+
+function claudePromptId(
+  payload: Record<string, unknown>,
+  kind: string,
+  message: string,
+): string {
+  return (
+    stringValue(payload.call_id) ??
+    stringValue(payload.tool_use_id) ??
+    stringValue(payload.elicitation_id) ??
+    `claude-${kind}-${message}`
+  );
+}
