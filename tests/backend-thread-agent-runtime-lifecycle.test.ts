@@ -251,18 +251,28 @@ test("mcp_tool_calls_are_counted_by_the_service_without_creating_a_second_runtim
     ...fakes.ports,
     clock: fixedClock,
     idGenerator: sequentialIdGenerator("id"),
-    initialThreads: [threadSeed("thread-mcp")],
+    initialThreads: [
+      threadSeed("thread-mcp", {
+        activeRuntimeHandle: {
+          runtimeId: "runtime-mcp",
+          threadId: "thread-mcp",
+          agentId: "codex",
+        },
+        runtimeState: "running",
+      }),
+    ],
   });
 
   const result = await service.handleTideMcpToolCall({
-    threadId: "thread-mcp",
-    toolName: "tide.workbench.observe",
+    session: { runtimeId: "runtime-mcp", agentId: "codex" },
+    toolName: "tide_observe_workbench",
     input: { includePanes: true },
   });
 
   assert.equal(result.ok, true);
   assert.equal(result.handledByService, true);
   assert.equal(result.mcpToolCallCount, 1);
+  assert.equal(result.output.kind, "observe_workbench");
   assert.deepEqual(fakes.runtime.events, []);
 });
 

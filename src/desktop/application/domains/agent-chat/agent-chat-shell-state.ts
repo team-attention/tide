@@ -289,6 +289,7 @@ export function applyAgentChatBackendEvent(
         blocks?: AgentChatBlock[];
         providerReadiness?: AgentChatProviderReadiness;
         runtimeState?: AgentRuntimeStateName;
+        workbenchPanes?: unknown[];
       };
       return {
         ...state,
@@ -296,6 +297,10 @@ export function applyAgentChatBackendEvent(
         blocks: payload.blocks ?? state.blocks,
         providerReadiness: payload.providerReadiness ?? state.providerReadiness,
         runtimeState: payload.runtimeState ?? state.runtimeState,
+        workbenchOpen:
+          payload.workbenchPanes === undefined
+            ? state.workbenchOpen
+            : payload.workbenchPanes.length > 0,
       };
     }
     case "thread.started": {

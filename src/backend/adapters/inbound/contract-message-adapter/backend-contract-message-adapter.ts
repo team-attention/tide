@@ -27,6 +27,7 @@ import {
   type PromptStateDto,
   type ThreadScopeDto,
   type ThreadSummaryDto,
+  type WorkbenchPaneRefDto,
   validateBackendCommandEnvelope,
 } from "../../../../shared/contracts/index.ts";
 
@@ -177,6 +178,7 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           toAgentSessionBlockDto(result.thread, block),
         ),
         runtimeState: result.runtimeState,
+        workbenchPanes: result.thread.workbench.panes.map(toWorkbenchPaneRefDto),
       },
     };
   }
@@ -401,6 +403,9 @@ function contractCodeFromServiceError(error: ServiceError): ContractErrorCode {
       return error.code;
     case "agent_binding_locked":
     case "prompt_not_found":
+    case "workbench_target_not_found":
+    case "workbench_stale_reference":
+    case "unsupported_tide_mcp_tool":
       return "invalid_command";
   }
 }
@@ -429,4 +434,30 @@ function defaultClock(): string {
 
 function defaultIdGenerator(): string {
   return `evt-${Math.random().toString(36).slice(2)}`;
+}
+
+function toWorkbenchPaneRefDto(
+  pane: ThreadSnapshot["workbench"]["panes"][number],
+): WorkbenchPaneRefDto {
+  if (pane.kind === "browser") {
+    return {
+      paneId: pane.paneId,
+      kind: "browser",
+      title: pane.title,
+      visible: pane.visible,
+      revision: pane.revision,
+      updatedAt: pane.updatedAt,
+      url: pane.url,
+      pageTitle: pane.pageTitle,
+      loading: pane.loading,
+    };
+  }
+  return {
+    paneId: pane.paneId,
+    kind: pane.kind,
+    title: pane.title,
+    visible: pane.visible,
+    revision: pane.revision,
+    updatedAt: pane.updatedAt,
+  };
 }

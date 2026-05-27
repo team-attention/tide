@@ -13,6 +13,7 @@ import {
   validateBackendCommandEnvelope,
   validateBackendEventEnvelope,
   type AgentSessionBlockDto,
+  type BrowserPaneRefDto,
   type PromptChoiceDto,
   type ProviderReadinessDto,
 } from "../src/shared/contracts/index.ts";
@@ -260,6 +261,25 @@ test("Provider Readiness setup actions cross the boundary without launch env int
     expectedCompletion: "retry_preflight",
   });
   assert.equal("env" in roundTripped.blockers[0].setup, false);
+});
+
+test("Browser Pane refs preserve revision and browser metadata", () => {
+  const pane: BrowserPaneRefDto = {
+    paneId: "pane-browser-1",
+    kind: "browser",
+    title: "Local preview",
+    visible: true,
+    revision: "rev-1",
+    updatedAt: emittedAt,
+    url: "http://localhost:3000",
+    loading: false,
+  };
+
+  const roundTripped = JSON.parse(JSON.stringify(pane));
+
+  assert.equal(roundTripped.revision, "rev-1");
+  assert.equal(roundTripped.url, "http://localhost:3000");
+  assert.equal(roundTripped.loading, false);
 });
 
 function findSourceMentions(relativeRoots: string[], pattern: RegExp): string[] {

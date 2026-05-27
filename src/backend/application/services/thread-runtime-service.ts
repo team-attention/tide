@@ -27,6 +27,16 @@ import type {
   ThreadScope,
   ThreadSnapshot,
 } from "../domains/thread/thread.ts";
+import type {
+  BrowserPaneRef,
+  BrowserPaneState,
+  TideMcpToolDefinition,
+  TideMcpToolName,
+  WorkbenchPaneRef,
+  WorkbenchSnapshot,
+  WorkbenchState,
+} from "../domains/workbench/workbench.ts";
+import { TIDE_MCP_WORKBENCH_TOOL_NAMES } from "../domains/workbench/workbench.ts";
 import type { AgentRuntimePort } from "../ports/outbound/agent-runtime-port.ts";
 import type { ProviderReadinessPort } from "../ports/outbound/provider-readiness-port.ts";
 import type { PtyTranscriptPort } from "../ports/outbound/pty-transcript-port.ts";
@@ -54,6 +64,11 @@ export type {
   ThreadLifecycleState,
   ThreadScope,
   ThreadSnapshot,
+  BrowserPaneRef,
+  TideMcpToolDefinition,
+  TideMcpToolName,
+  WorkbenchSnapshot,
+  WorkbenchState,
 };
 
 export interface ThreadSeed {
@@ -72,6 +87,7 @@ export interface ThreadSeed {
   activeRuntimeHandle?: AgentRuntimeHandle;
   rawFrameSequence?: number;
   mcpToolCallCount?: number;
+  workbench?: WorkbenchState;
 }
 
 export interface CreateThreadRuntimeServiceInput {
@@ -88,7 +104,10 @@ export type ServiceErrorCode =
   | "agent_binding_locked"
   | "provider_not_ready"
   | "prompt_not_found"
-  | "agent_runtime_unavailable";
+  | "agent_runtime_unavailable"
+  | "workbench_target_not_found"
+  | "workbench_stale_reference"
+  | "unsupported_tide_mcp_tool";
 
 export interface ServiceError {
   code: ServiceErrorCode;
@@ -169,16 +188,57 @@ export interface AppendRawAgentFrameInput {
   truncated?: boolean;
 }
 
+export interface TideMcpSessionRef {
+  runtimeId: string;
+  agentId: AgentId;
+  threadId?: ThreadId;
+}
+
 export interface TideMcpToolCallInput {
-  threadId: ThreadId;
-  toolName: string;
+  session: TideMcpSessionRef;
+  toolName: TideMcpToolName;
   input?: Record<string, unknown>;
+}
+
+export type TideMcpToolOutput =
+  | TideObserveThreadOutput
+  | TideObserveWorkbenchOutput
+  | TideOpenBrowserOutput
+  | TideObserveBrowserOutput;
+
+export interface TideObserveThreadOutput {
+  kind: "observe_thread";
+  threadId: ThreadId;
+  agentId: AgentId;
+  agentChatState: AgentRuntimeState;
+  promptActive: boolean;
+  workbenchOpen: boolean;
+  availableTools: TideMcpToolName[];
+}
+
+export interface TideObserveWorkbenchOutput extends WorkbenchSnapshot {
+  kind: "observe_workbench";
+  threadId: ThreadId;
+}
+
+export interface TideOpenBrowserOutput {
+  kind: "open_browser";
+  threadId: ThreadId;
+  pane: BrowserPaneRef;
+  visibleSideEffect: "created" | "revealed" | "navigated";
+}
+
+export interface TideObserveBrowserOutput {
+  kind: "observe_browser";
+  threadId: ThreadId;
+  pane: BrowserPaneRef;
 }
 
 export interface TideMcpToolCallResult {
   handledByService: true;
   thread: ThreadSnapshot;
-  toolName: string;
+  toolName: TideMcpToolName;
+  output: TideMcpToolOutput;
   mcpToolCallCount: number;
 }
 
@@ -193,6 +253,7 @@ export interface ThreadRuntimeService {
     input: StopAgentRuntimeInput,
   ): Promise<ServiceResult<StopAgentRuntimeResult>>;
   appendRawAgentFrame(input: AppendRawAgentFrameInput): Promise<RawAgentFrame>;
+  listTideMcpTools(): TideMcpToolDefinition[];
   handleTideMcpToolCall(
     input: TideMcpToolCallInput,
   ): Promise<ServiceResult<TideMcpToolCallResult>>;
@@ -203,6 +264,57 @@ export function createThreadRuntimeService(
 ): ThreadRuntimeService {
   return new InMemoryThreadRuntimeService(input);
 }
+
+const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
+  {
+    name: "tide_observe_thread",
+    description: "Observe bounded Thread and Agent Chat state for the owning MCP Session.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        detail: { type: "string", enum: ["compact", "full"] },
+      },
+    },
+  },
+  {
+    name: "tide_observe_workbench",
+    description: "Observe visible Workbench Pane refs for the owning Thread without mutating state.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        detail: { type: "string", enum: ["compact", "full"] },
+      },
+    },
+  },
+  {
+    name: "tide_open_browser",
+    description: "Create, reveal, or navigate a visible Tide Browser Pane in the owning Thread Workbench.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string" },
+        title: { type: "string" },
+        disposition: {
+          type: "string",
+          enum: ["reuse_active_browser", "new_browser_pane"],
+        },
+      },
+    },
+  },
+  {
+    name: "tide_observe_browser",
+    description: "Observe bounded Browser Pane state after validating Thread ownership and revision.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        paneId: { type: "string" },
+        revision: { type: "string" },
+        detail: { type: "string", enum: ["compact", "full"] },
+      },
+      required: ["paneId"],
+    },
+  },
+];
 
 class InMemoryThreadRuntimeService implements ThreadRuntimeService {
   agentRuntimePort: AgentRuntimePort;
@@ -258,6 +370,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       cachedBlocks: [],
       rawFrameSequence: 0,
       mcpToolCallCount: 0,
+      workbench: defaultWorkbenchState(),
     };
     this.threads.set(threadId, thread);
 
@@ -471,23 +584,200 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     return frame;
   }
 
+  listTideMcpTools(): TideMcpToolDefinition[] {
+    return TIDE_MCP_TOOL_DEFINITIONS.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: { ...tool.inputSchema },
+    }));
+  }
+
   async handleTideMcpToolCall(
     input: TideMcpToolCallInput,
   ): Promise<ServiceResult<TideMcpToolCallResult>> {
-    const thread = this.threads.get(input.threadId);
-    if (thread === undefined) {
-      return failure("thread_not_found", "Thread was not found.");
+    if (!isTideMcpToolName(input.toolName)) {
+      return failure(
+        "unsupported_tide_mcp_tool",
+        "Tide MCP tool is not supported by this slice.",
+      );
     }
+
+    const resolved = this.resolveMcpThread(input.session);
+    if (!resolved.ok) {
+      return { ok: false, error: resolved.error };
+    }
+    const thread = resolved.thread;
 
     thread.mcpToolCallCount += 1;
     thread.updatedAt = this.clock();
+
+    const output = this.handleResolvedTideMcpToolCall(thread, input);
+    if (!output.ok) {
+      return { ok: false, error: output.error };
+    }
 
     return {
       ok: true,
       handledByService: true,
       thread: snapshotThread(thread),
       toolName: input.toolName,
+      output: output.value,
       mcpToolCallCount: thread.mcpToolCallCount,
+    };
+  }
+
+  private resolveMcpThread(
+    session: TideMcpSessionRef,
+  ): ServiceResult<{ thread: ThreadRecord }> {
+    if (session.threadId !== undefined) {
+      const thread = this.threads.get(session.threadId);
+      if (thread === undefined) {
+        return failure("thread_not_found", "Thread was not found.");
+      }
+      if (!threadMatchesMcpSession(thread, session)) {
+        return failure(
+          "agent_runtime_unavailable",
+          "MCP Session does not match the Thread's active Agent Runtime.",
+        );
+      }
+      return { ok: true, thread };
+    }
+
+    for (const thread of this.threads.values()) {
+      if (threadMatchesMcpSession(thread, session)) {
+        return { ok: true, thread };
+      }
+    }
+
+    return failure(
+      "agent_runtime_unavailable",
+      "MCP Session did not match an active Agent Runtime.",
+    );
+  }
+
+  private handleResolvedTideMcpToolCall(
+    thread: ThreadRecord,
+    input: TideMcpToolCallInput,
+  ): ServiceResult<{ value: TideMcpToolOutput }> {
+    switch (input.toolName) {
+      case "tide_observe_thread":
+        return {
+          ok: true,
+          value: observeThreadOutput(thread),
+        };
+      case "tide_observe_workbench":
+        return {
+          ok: true,
+          value: observeWorkbenchOutput(thread),
+        };
+      case "tide_open_browser":
+        return {
+          ok: true,
+          value: this.openBrowserOutput(thread, input.input),
+        };
+      case "tide_observe_browser":
+        return this.observeBrowserOutput(thread, input.input);
+    }
+  }
+
+  private openBrowserOutput(
+    thread: ThreadRecord,
+    input: Record<string, unknown> | undefined,
+  ): TideOpenBrowserOutput {
+    const capturedAt = this.clock();
+    const requestedUrl = optionalString(input?.url);
+    const requestedTitle = optionalString(input?.title);
+    const disposition =
+      input?.disposition === "new_browser_pane"
+        ? "new_browser_pane"
+        : "reuse_active_browser";
+    const reusablePane =
+      disposition === "reuse_active_browser"
+        ? firstBrowserPane(thread.workbench)
+        : undefined;
+
+    if (reusablePane === undefined) {
+      const pane: BrowserPaneState = {
+        paneId: this.idGenerator(),
+        kind: "browser",
+        title: requestedTitle ?? browserTitleFromUrl(requestedUrl),
+        url: requestedUrl,
+        loading: false,
+        visible: true,
+        revision: this.idGenerator(),
+        updatedAt: capturedAt,
+      };
+      thread.workbench.panes.push(pane);
+      thread.workbench.activePaneId = pane.paneId;
+      thread.workbench.focusOwner = "composer";
+
+      return {
+        kind: "open_browser",
+        threadId: thread.threadId,
+        pane: browserPaneRef(pane),
+        visibleSideEffect: "created",
+      };
+    }
+
+    const urlChanged =
+      requestedUrl !== undefined && requestedUrl !== reusablePane.url;
+    reusablePane.visible = true;
+    reusablePane.title =
+      requestedTitle ?? browserTitleFromUrl(requestedUrl ?? reusablePane.url);
+    if (requestedUrl !== undefined) {
+      reusablePane.url = requestedUrl;
+    }
+    reusablePane.revision = this.idGenerator();
+    reusablePane.updatedAt = capturedAt;
+    thread.workbench.activePaneId = reusablePane.paneId;
+    thread.workbench.focusOwner = "composer";
+
+    return {
+      kind: "open_browser",
+      threadId: thread.threadId,
+      pane: browserPaneRef(reusablePane),
+      visibleSideEffect: urlChanged ? "navigated" : "revealed",
+    };
+  }
+
+  private observeBrowserOutput(
+    thread: ThreadRecord,
+    input: Record<string, unknown> | undefined,
+  ): ServiceResult<{ value: TideObserveBrowserOutput }> {
+    const paneId = optionalString(input?.paneId);
+    if (paneId === undefined) {
+      return failure(
+        "workbench_target_not_found",
+        "Browser Pane target was not found.",
+      );
+    }
+
+    const pane = thread.workbench.panes.find(
+      (candidate) =>
+        candidate.kind === "browser" && candidate.paneId === paneId,
+    );
+    if (pane === undefined) {
+      return failure(
+        "workbench_target_not_found",
+        "Browser Pane target was not found for this Thread.",
+      );
+    }
+
+    const revision = optionalString(input?.revision);
+    if (revision !== undefined && revision !== pane.revision) {
+      return failure(
+        "workbench_stale_reference",
+        "Browser Pane revision is stale.",
+      );
+    }
+
+    return {
+      ok: true,
+      value: {
+        kind: "observe_browser",
+        threadId: thread.threadId,
+        pane: browserPaneRef(pane),
+      },
     };
   }
 
@@ -526,6 +816,7 @@ function normalizeThreadSeed(seed: ThreadSeed): ThreadRecord {
     activeRuntimeHandle: cloneRuntimeHandle(seed.activeRuntimeHandle),
     rawFrameSequence: seed.rawFrameSequence ?? 0,
     mcpToolCallCount: seed.mcpToolCallCount ?? 0,
+    workbench: cloneWorkbenchState(seed.workbench ?? defaultWorkbenchState()),
   };
 }
 
@@ -543,6 +834,7 @@ function snapshotThread(thread: ThreadRecord): ThreadSnapshot {
     cachedBlocks: cloneBlocks(thread.cachedBlocks),
     pendingInput: clonePendingInput(thread.pendingInput),
     promptState: clonePromptState(thread.promptState),
+    workbench: snapshotWorkbench(thread.workbench),
   };
 }
 
@@ -591,6 +883,121 @@ function cloneRuntimeHandle(
   handle: AgentRuntimeHandle | undefined,
 ): AgentRuntimeHandle | undefined {
   return handle === undefined ? undefined : { ...handle };
+}
+
+function cloneWorkbenchState(workbench: WorkbenchState): WorkbenchState {
+  return {
+    panes: workbench.panes.map((pane) => ({ ...pane })),
+    activePaneId: workbench.activePaneId,
+    focusOwner: workbench.focusOwner,
+  };
+}
+
+function defaultWorkbenchState(): WorkbenchState {
+  return {
+    panes: [],
+    focusOwner: "composer",
+  };
+}
+
+function snapshotWorkbench(workbench: WorkbenchState): WorkbenchSnapshot {
+  return {
+    panes: workbench.panes.map(browserPaneRef),
+    activePaneId: workbench.activePaneId,
+    focusOwner: workbench.focusOwner,
+    availableTools: [...TIDE_MCP_WORKBENCH_TOOL_NAMES],
+  };
+}
+
+function observeThreadOutput(thread: ThreadRecord): TideObserveThreadOutput {
+  return {
+    kind: "observe_thread",
+    threadId: thread.threadId,
+    agentId: thread.agentBinding.agentId,
+    agentChatState: thread.runtimeState,
+    promptActive: thread.promptState !== undefined,
+    workbenchOpen: thread.workbench.panes.some((pane) => pane.visible),
+    availableTools: [...TIDE_MCP_WORKBENCH_TOOL_NAMES],
+  };
+}
+
+function observeWorkbenchOutput(thread: ThreadRecord): TideObserveWorkbenchOutput {
+  return {
+    kind: "observe_workbench",
+    threadId: thread.threadId,
+    ...snapshotWorkbench(thread.workbench),
+  };
+}
+
+function workbenchPaneRef(pane: BrowserPaneState): WorkbenchPaneRef {
+  return {
+    paneId: pane.paneId,
+    kind: pane.kind,
+    title: pane.title,
+    visible: pane.visible,
+    revision: pane.revision,
+    updatedAt: pane.updatedAt,
+  };
+}
+
+function browserPaneRef(pane: BrowserPaneState): BrowserPaneRef {
+  return {
+    ...workbenchPaneRef(pane),
+    kind: "browser",
+    url: pane.url,
+    pageTitle: pane.pageTitle,
+    loading: pane.loading,
+    bodyTextPreview: pane.bodyTextPreview,
+    stale: false,
+    availableTools: [...TIDE_MCP_WORKBENCH_TOOL_NAMES],
+  };
+}
+
+function firstBrowserPane(
+  workbench: WorkbenchState,
+): BrowserPaneState | undefined {
+  const activePane = workbench.panes.find(
+    (pane) =>
+      pane.kind === "browser" && pane.paneId === workbench.activePaneId,
+  );
+  return activePane ?? workbench.panes.find((pane) => pane.kind === "browser");
+}
+
+function threadMatchesMcpSession(
+  thread: ThreadRecord,
+  session: TideMcpSessionRef,
+): boolean {
+  const handle = thread.activeRuntimeHandle;
+  return (
+    handle !== undefined &&
+    handle.runtimeId === session.runtimeId &&
+    handle.agentId === session.agentId &&
+    handle.threadId === thread.threadId
+  );
+}
+
+function isTideMcpToolName(toolName: string): toolName is TideMcpToolName {
+  return TIDE_MCP_WORKBENCH_TOOL_NAMES.includes(toolName as TideMcpToolName);
+}
+
+function optionalString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
+}
+
+function browserTitleFromUrl(url: string | undefined): string {
+  if (url === undefined) {
+    return "Browser";
+  }
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname || "Browser";
+  } catch {
+    return "Browser";
+  }
 }
 
 function titleFromMessage(message: string): string {

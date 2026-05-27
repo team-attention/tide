@@ -2,6 +2,10 @@ import type {
   AgentRuntimeHandle,
   AgentRuntimeState,
 } from "../agent-runtime/agent-runtime.ts";
+import type {
+  WorkbenchSnapshot,
+  WorkbenchState,
+} from "../workbench/workbench.ts";
 
 export type AgentId = "codex" | "claude" | "antigravity";
 export type ThreadId = string;
@@ -98,6 +102,7 @@ export interface ThreadRecord {
   activeRuntimeHandle?: AgentRuntimeHandle;
   rawFrameSequence: number;
   mcpToolCallCount: number;
+  workbench: WorkbenchState;
 }
 
 export interface ThreadSnapshot {
@@ -113,4 +118,5 @@ export interface ThreadSnapshot {
   cachedBlocks: AgentSessionBlockReference[];
   pendingInput?: PendingInput;
   promptState?: PromptState;
+  workbench: WorkbenchSnapshot;
 }

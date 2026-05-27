@@ -196,7 +196,7 @@ Desktop consumes BackendEvents:
 
 | Event | UI effect |
 |-------|-----------|
-| `thread.hydrated` | Render Thread metadata and cached blocks. |
+| `thread.hydrated` | Render Thread metadata, cached blocks, and Workbench open state when Workbench Pane refs are present. |
 | `thread.started` | Switch from Start Composer to Follow-up Composer. |
 | `agentRuntime.stateChanged` | Update Agent Chat state. |
 | `providerReadiness.changed` | Show setup/trust blocker and preserve draft. |
@@ -267,6 +267,7 @@ Desktop consumes BackendEvents:
 | First send creates Thread | `sending_a_non_empty_start_composer_draft_emits_thread_start_with_launch_options` emits `thread.start` with Launch Options. |
 | Empty send is blocked | `sending_an_empty_start_composer_draft_emits_no_command` emits no command for empty or whitespace-only input. |
 | Follow-up sends input | `follow_up_composer_emits_composer_send_input_for_the_active_thread` emits `composer.sendInput` with active Thread id. |
+| Hydrate restores Workbench presence | `hydrating_thread_with_workbench_panes_marks_workbench_open` marks the Workbench open when `thread.hydrated` carries Workbench Pane refs. |
 | Prompt answer routes correctly | `active_prompt_state_routes_submit_to_prompt_answer` changes submit command from `composer.sendInput` to `prompt.answer`. |
 | Provider readiness preserves draft | `provider_readiness_blocker_preserves_the_composer_draft_and_marks_shell_blocked` leaves draft text intact and shows blocked state. |
 | Thread context is read-only after start | `follow_up_shell_displays_thread_context_without_inline_edit_controls` displays available Thread context as read-only text. |

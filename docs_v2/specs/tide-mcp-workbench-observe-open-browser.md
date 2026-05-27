@@ -30,6 +30,25 @@ It does not define browser click/type automation, full page map, Diff/File tools
 
 ## Decisions
 
+### Already Decided
+
+- Tide MCP Tool Surface is Tide-owned and provider-visible.
+- Tide MCP Tool Surface attaches to the same Agent Runtime session as the provider CLI.
+- Workbench is Thread-scoped and supports visible Workbench Panes.
+- Browser Pane is the only concrete Workbench Pane implemented by this slice.
+- External browser delegation does not satisfy this slice.
+
+### Implementation Details
+
+- Backend resolves Thread identity from the MCP Session's Agent Runtime handle when a tool call omits explicit Thread id.
+- Backend stores the first-slice Workbench Snapshot in the in-memory Thread model so observe tools and later Desktop events share the same source of truth.
+- Browser Pane revision is a monotonic opaque token derived from the Backend clock/id path for this in-memory slice.
+- `disposition` defaults to `reuse_active_browser`.
+
+### Needs User Decision
+
+None for this slice.
+
 ### D1. MCP is attached to the Agent Runtime session
 
 Tide MCP Tool Surface is attached by the selected Agent Integration during provider launch or resume.
@@ -108,6 +127,26 @@ It carries:
 - Backend connection identity.
 - supported tool list.
 
+The minimal Backend call shape is:
+
+```ts
+interface TideMcpSessionRef {
+  runtimeId: string;
+  agentId: AgentId;
+  threadId?: ThreadId;
+}
+
+interface TideMcpToolCallInput {
+  session: TideMcpSessionRef;
+  toolName:
+    | "tide_observe_thread"
+    | "tide_observe_workbench"
+    | "tide_open_browser"
+    | "tide_observe_browser";
+  input?: Record<string, unknown>;
+}
+```
+
 ### Workbench Snapshot
 
 Workbench Snapshot is a bounded read model:
@@ -131,6 +170,19 @@ Browser Pane Ref:
 - loading state.
 - visible state.
 - stale flag.
+
+Structured tool errors:
+
+```ts
+type TideMcpToolErrorCode =
+  | "thread_not_found"
+  | "agent_runtime_unavailable"
+  | "workbench_target_not_found"
+  | "workbench_stale_reference"
+  | "unsupported_tide_mcp_tool";
+```
+
+Tool errors return through the MCP response path as bounded structured errors. Backend does not guess another Browser Pane when a target is stale, missing, or owned by another Thread.
 
 ## Tool Contracts
 
@@ -273,16 +325,16 @@ The first slice may omit full DOM page map. Browser action tools require a later
 
 ## Tests
 
-| Rule | Test expectation |
-|------|------------------|
-| MCP session resolves Thread | Fake MCP call without explicit Thread id resolves from Agent Runtime session. |
-| Observe is read-only | `tide_observe_workbench` returns snapshot without changing pane list. |
-| Open browser creates visible pane | `tide_open_browser` creates a Browser Pane attached to active Thread Workbench. |
-| Open browser does not open OS browser | Test double records no external browser call. |
-| Browser observe checks ownership | Observing a pane from another Thread returns structured error. |
-| Stale revision is detected | Observing with old revision returns stale target result. |
-| Focus is preserved | Opening Browser Pane does not move Composer text focus by default. |
-| Tool list is bounded | MCP tools/list exposes only first-slice tools for this spec. |
+| Use Case | Business Rule | Test expectation |
+|----------|---------------|------------------|
+| UC-1 | BR-1: MCP Session resolves Thread | `mcp_session_without_explicit_thread_id_resolves_thread_from_agent_runtime_session` calls `tide_observe_thread` with only runtime id and agent id and receives the owning Thread. |
+| UC-2 | BR-1: Observe is read-only | `observing_workbench_returns_snapshot_without_mutating_panes` observes Workbench before and after and the pane list stays unchanged. |
+| UC-3 | BR-1: Open Browser creates visible pane | `opening_browser_creates_visible_browser_pane_in_thread_workbench` creates a Browser Pane attached to the owning Thread Workbench. |
+| UC-3 | BR-2: Open Browser does not open OS browser | `opening_browser_uses_tide_workbench_and_not_external_browser` proves the Browser Pane is represented as Tide Workbench state and Agent Runtime start/resume is not called. |
+| UC-4 | BR-1: Browser observe checks ownership | `observing_browser_pane_from_another_thread_returns_structured_error` targets another Thread's Browser Pane and receives `workbench_target_not_found`. |
+| UC-4 | BR-2: Stale revision is detected | `observing_browser_with_stale_revision_returns_structured_error` passes an old revision and receives `workbench_stale_reference`. |
+| UC-3 | BR-3: Focus is preserved | `opening_browser_preserves_composer_focus_by_default` opens Browser Pane and keeps focus owner as Composer. |
+| UC-1 | BR-2: Tool list is bounded | `tide_mcp_tool_surface_lists_only_first_slice_tools` exposes only `tide_observe_thread`, `tide_observe_workbench`, `tide_open_browser`, and `tide_observe_browser`. |
 
 ## Implementation Notes
 

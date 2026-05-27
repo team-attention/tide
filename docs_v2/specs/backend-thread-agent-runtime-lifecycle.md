@@ -314,7 +314,7 @@ tests/backend-thread-agent-runtime-lifecycle.test.ts
 | Prompt answer uses same runtime | `answering_an_active_prompt_writes_to_the_same_runtime_and_clears_prompt_state` writes the answer to the active runtime handle and clears Prompt State. |
 | Stop preserves Thread | `stopping_agent_runtime_preserves_thread_metadata` stops the active handle and changes runtime state without deleting Thread metadata. |
 | Raw Agent Frame ordering is monotonic | `raw_agent_frames_receive_monotonic_thread_local_sequences` appends fake runtime frames and assigns increasing sequence values for one Thread. |
-| MCP tool call uses service path | `mcp_tool_calls_are_counted_by_the_service_without_creating_a_second_runtime` routes a fake MCP tool call through the service and leaves AgentRuntimePort.start and resume unused. |
+| MCP tool call uses service path | `mcp_tool_calls_are_counted_by_the_service_without_creating_a_second_runtime` routes a fake `tide_observe_workbench` MCP tool call through the service from the active Agent Runtime session and leaves AgentRuntimePort.start and resume unused. |
 | Backend application stays inside its boundary | `backend_application_does_not_import_shared_contracts_or_adapters` verifies Backend application files stay independent from Shared Contracts, Backend adapters, Backend infrastructure, Electron, React, and Node IO modules. |
 
 ## Implementation Notes

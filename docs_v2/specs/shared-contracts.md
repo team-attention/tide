@@ -395,7 +395,15 @@ export interface WorkbenchPaneRefDto {
   kind: "browser" | "diff" | "editor" | "terminal";
   title: string;
   visible: boolean;
+  revision: string;
   updatedAt: string;
+}
+
+export interface BrowserPaneRefDto extends WorkbenchPaneRefDto {
+  kind: "browser";
+  url?: string;
+  pageTitle?: string;
+  loading: boolean;
 }
 ```
 

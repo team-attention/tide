@@ -30,6 +30,7 @@ import {
   type PromptStateDto,
   type ProviderReadinessDto,
   type ThreadSummaryDto,
+  type WorkbenchPaneRefDto,
 } from "../src/shared/contracts/index.ts";
 
 const now = "2026-05-27T00:00:00.000Z";
@@ -103,6 +104,22 @@ test("follow_up_composer_emits_composer_send_input_for_the_active_thread", () =>
     threadId: "thread-shell",
     input: "Continue this Thread",
   });
+});
+
+test("hydrating_thread_with_workbench_panes_marks_workbench_open", () => {
+  const state = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", {
+      thread,
+      blocks: [],
+      runtimeState: "idle",
+      workbenchPanes: [browserPane("pane-browser-1")],
+    }),
+  );
+  const view = createAgentChatShellViewModel(state);
+
+  assert.equal(state.workbenchOpen, true);
+  assert.equal(view.workbenchOpen, true);
 });
 
 test("active_prompt_state_routes_submit_to_prompt_answer", () => {
@@ -343,6 +360,19 @@ function block(
     status,
     body,
     updatedAt: later,
+  };
+}
+
+function browserPane(paneId: string): WorkbenchPaneRefDto {
+  return {
+    paneId,
+    kind: "browser",
+    title: "Local preview",
+    visible: true,
+    revision: "rev-1",
+    updatedAt: later,
+    url: "http://localhost:3000",
+    loading: false,
   };
 }
 
