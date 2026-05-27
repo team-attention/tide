@@ -181,6 +181,32 @@ test("Backend domain, services, and ports do not import Shared Contracts", () =>
   assert.deepEqual(findSourceMentions(roots, /shared\/contracts/), []);
 });
 
+test("Shared Contracts do not import Backend or Desktop internals", () => {
+  assert.deepEqual(
+    findSourceMentions(
+      ["src/shared/contracts"],
+      /from\s+["'][^"']*(?:backend|desktop)\//,
+    ),
+    [],
+  );
+});
+
+test("Shared Contracts public index remains an export surface", () => {
+  const repoRoot = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+  );
+  const source = fs.readFileSync(
+    path.join(repoRoot, "src/shared/contracts/index.ts"),
+    "utf8",
+  );
+
+  assert.equal(
+    /export\s+(?:const|interface|function|type)\b/.test(source),
+    false,
+  );
+});
+
 test("Desktop does not import Backend internals", () => {
   assert.deepEqual(
     findSourceMentions(

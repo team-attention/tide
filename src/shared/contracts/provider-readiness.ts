@@ -1,0 +1,19 @@
+import type { AgentId } from "./agent.ts";
+
+export interface ProviderReadinessDto {
+  agentId: AgentId;
+  ready: boolean;
+  blockers: ProviderReadinessBlockerDto[];
+}
+
+export interface ProviderReadinessBlockerDto {
+  kind:
+    | "not_installed"
+    | "not_authenticated"
+    | "onboarding_required"
+    | "directory_trust_required"
+    | "hook_bootstrap_required"
+    | "unknown";
+  message: string;
+  action?: "open_terminal" | "open_provider" | "retry" | "none";
+}

@@ -40,7 +40,9 @@ Desktop may import Shared Contracts.
 
 Backend inbound and outbound adapters may import Shared Contracts.
 
-Backend domain, Backend services, and Backend ports do not import Shared Contracts.
+Backend domain, Backend services, and Backend ports stay independent from Shared Contracts.
+
+The public entrypoint is `src/shared/contracts/index.ts`. It re-exports contract families and remains an export surface, while the current implementation keeps separate files for ids/version, JSON primitives, commands, events, envelopes, errors, Thread, Agent, Agent Runtime, Provider Readiness, Prompt, Agent Session Block, and Workbench DTOs.
 
 ### D2. Contract envelope model
 
@@ -79,7 +81,7 @@ It includes:
 - retryable.
 - details as bounded JSON.
 
-Raw JavaScript Error objects, stack traces, and provider-private raw payloads do not cross by default.
+Raw JavaScript Error objects, stack traces, and provider-private raw payloads stay inside Backend unless a later spec defines an explicit safe mapping.
 
 ### D6. Stream Update shape
 
@@ -423,11 +425,13 @@ export interface WorkbenchPaneRefDto {
 3. Every command-scoped BackendEvent carries the command's RequestId.
 4. Every BackendEvent has an eventId.
 5. Contract DTOs are JSON-serializable plain data.
-6. Backend domain, Backend services, and Backend ports do not import from `src/shared/contracts`.
+6. Backend domain, Backend services, and Backend ports stay independent from `src/shared/contracts`.
 7. Desktop does not import from `src/backend`.
 8. Provider-native values that users see remain provider-native strings.
 9. Stream Updates target stable ids so Desktop can coalesce or replay them.
-10. Contract Error payloads do not expose raw Error objects across the boundary.
+10. Contract Error payloads expose bounded serializable details across the boundary.
+11. Shared Contracts stay independent from Backend and Desktop internals.
+12. `src/shared/contracts/index.ts` remains a public export surface rather than an implementation file.
 
 ## Tests
 
@@ -447,18 +451,20 @@ The first slice uses Node's built-in test runner so Shared Contracts can be veri
 | Command-scoped events preserve RequestId | A fake command produces accepted, stream, and completed events with the same RequestId. |
 | Contract Error is serializable | A Contract Error payload round-trips through JSON without Error objects or stack references. |
 | Stream Updates target stable ids | Replaying two `agentSessionBlock.upserted` events for the same blockId produces one updated UI record in a reducer test. |
-| Backend domain, services, and ports do not import Shared Contracts | Architecture boundary test fails if `src/backend/domain`, `src/backend/services`, `src/backend/ports`, or their `src/backend/application/*` equivalents import `src/shared/contracts`. |
+| Backend domain, services, and ports stay independent from Shared Contracts | Architecture boundary test reports zero imports from `src/backend/domain`, `src/backend/services`, `src/backend/ports`, and their `src/backend/application/*` equivalents into `src/shared/contracts`. |
+| Shared Contracts stay independent from Backend and Desktop internals | Architecture boundary test reports zero imports from `src/shared/contracts` into `src/backend` or `src/desktop`. |
+| Shared Contracts public index remains an export surface | Architecture boundary test fails if `src/shared/contracts/index.ts` starts declaring contract implementations directly. |
 | Desktop does not import Backend internals | Architecture boundary test fails if `src/desktop` imports `src/backend`. |
 | Provider-native values are preserved | Prompt choice DTO keeps providerValue unchanged while allowing a display label. |
 
 ## Implementation Notes
 
-- Create `src/shared/contracts/index.ts` as the public export surface.
-- Split contract families by file only when the first implementation needs it; avoid deep folders before the contract grows.
+- Keep `src/shared/contracts/index.ts` as the public export surface.
+- Keep current contract families in flat files under `src/shared/contracts`: ids/version, JSON primitives, commands, events, envelopes, errors, Thread, Agent, Agent Runtime, Provider Readiness, Prompt, Agent Session Block, and Workbench DTOs.
 - Implement small explicit runtime validators for the envelope and common primitives in the first slice.
 - Keep mapping code in Backend adapters, not in Backend domain/services.
 - Keep React state reducers on the Desktop side separate from Contract DTO definitions.
 - Use ISO timestamp strings at the boundary.
 - Use opaque string ids for RequestId, eventId, ThreadId, ProjectId, promptId, blockId, and WorkbenchPaneId.
 - Add architecture boundary tests in this slice using bounded source scanning.
-- Do not add alternate provider transports or provider-specific fallback command paths in this spec.
+- Keep provider transport and provider-specific command paths in their later Agent Integration specs.
