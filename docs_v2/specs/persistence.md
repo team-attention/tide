@@ -257,15 +257,15 @@ Source fingerprint may use provider transcript path, file size, modified time, s
 
 | Rule | Test expectation |
 |------|------------------|
-| Thread metadata persists | Creating Thread writes `thread.json` and updates index. |
-| Provider ref attaches later | Thread can exist before providerSessionRef and update after Agent Integration discovers it. |
-| Cache is derived | Deleting cache does not delete Thread metadata or provider session reference. |
-| Reopen uses cache | Valid cache returns blocks without starting runtime. |
-| Stale cache rebuilds | Changed source fingerprint marks cache stale and calls reader rebuild path. |
-| PTY Transcript is bounded | Active runtime transcript ring enforces configured byte/frame limit. |
-| Readiness is advisory | Stored readiness blocker is shown but provider preflight still runs before input. |
-| Unsupported version fails | Future `storageVersion` produces visible storage error. |
-| Index is rebuildable | Removing `threads/index.json` can rebuild from `thread.json` files. |
+| Thread metadata persists | `creating_thread_metadata_writes_thread_json_and_updates_index` writes `thread.json` and updates `threads/index.json`. |
+| Provider ref attaches later | `provider_session_reference_attaches_after_thread_creation` stores a provider session reference after initial Thread metadata exists. |
+| Cache is derived | `deleting_agent_session_cache_preserves_thread_metadata_and_provider_ref` removes derived cache without deleting Thread metadata or provider session reference. |
+| Reopen uses cache | `reopening_thread_uses_valid_agent_session_cache_without_rebuild` returns cached blocks without calling rebuild. |
+| Stale cache rebuilds | `stale_agent_session_cache_rebuilds_from_provider_history` detects changed source fingerprint and calls the rebuild path. |
+| PTY Transcript is bounded | `pty_transcript_ring_enforces_frame_and_byte_limits` enforces configured byte and frame limits. |
+| Readiness is advisory | `stored_provider_readiness_is_returned_but_preflight_is_still_required` returns stored readiness while still requiring provider recheck before input. |
+| Unsupported version fails | `unsupported_storage_version_returns_visible_storage_error` rejects future `storageVersion` records. |
+| Index is rebuildable | `thread_index_rebuilds_from_thread_json_files` rebuilds `threads/index.json` from per-Thread metadata. |
 
 ## Implementation Notes
 
