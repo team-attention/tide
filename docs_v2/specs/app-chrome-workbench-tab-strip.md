@@ -169,6 +169,9 @@ Chrome consumes BackendEvents:
 
 | Event | Chrome effect |
 |-------|---------------|
+| `backend.connectionChanged` | Status Bar connection indicator. |
+| `thread.hydrated` | Active Thread identity, Agent identity, and Workbench Pane refs after reconnect. |
+| `thread.started` | Active Thread identity and Agent identity. |
 | `agentRuntime.stateChanged` | Status Bar runtime indicator. |
 | `providerReadiness.changed` | Status Bar readiness indicator and optional attention. |
 | `prompt.changed` | Composer chrome attention and active prompt state. |
@@ -238,16 +241,16 @@ Chrome emits BackendCommands:
 
 | Rule | Test expectation |
 |------|------------------|
-| Status Bar is Thread-scoped | Runtime state for active Thread updates Status Bar without adding global queue item. |
-| Hidden runtime excluded | Workbench Tab Strip does not render Agent Runtime as a tab. |
-| Browser Pane tab appears | Workbench changed event with Browser Pane renders one tab. |
-| Close emits command | Close tab action emits `workbench.command` with pane id. |
-| Focus emits command | Selecting tab emits focus Workbench command. |
-| Overflow keeps action | Overflow menu lists hidden tabs and focusing one emits focus command. |
-| Pin unavailable | No pin action appears for Workbench Pane tabs in first slice. |
-| Split unavailable | No split action appears until Workbench split spec exists. |
-| Icon buttons are labeled | Chrome Action tests require tooltip and accessible label. |
-| Loading disables conflicts | Async Chrome Action enters loading and disables conflicting action. |
+| Status Bar is Thread-scoped | `status_bar_updates_runtime_state_without_global_queue` updates active Thread runtime state and does not render a global queue. |
+| Hidden runtime excluded | `workbench_tab_strip_excludes_hidden_agent_runtime` renders Workbench Pane tabs but no Agent Runtime tab. |
+| Browser Pane tab appears | `workbench_changed_event_with_browser_pane_renders_tab_strip` renders one Browser Pane tab from `workbench.changed`. |
+| Close emits command | `closing_workbench_tab_emits_workbench_command_with_pane_id` emits `workbench.command` with the Thread id and Pane id. |
+| Focus emits command | `selecting_workbench_tab_emits_focus_workbench_command` emits focus `workbench.command` with the Thread id and Pane id. |
+| Overflow keeps action | `overflow_menu_lists_hidden_tabs_and_focuses_selected_pane` keeps extra tabs in overflow and emits focus command for an overflow item. |
+| Pin unavailable | `first_tab_strip_does_not_render_pin_or_split_actions` renders no pin action for Workbench Pane tabs. |
+| Split unavailable | `first_tab_strip_does_not_render_pin_or_split_actions` renders no split action until Workbench split behavior is specified. |
+| Icon buttons are labeled | `chrome_action_buttons_have_tooltips_and_accessible_labels` requires tooltip and accessible label for icon-only actions. |
+| Loading disables conflicts | `loading_chrome_action_disables_conflicting_action` models loading state and disables the conflicting action. |
 
 ## Implementation Notes
 
