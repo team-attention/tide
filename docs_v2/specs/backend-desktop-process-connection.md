@@ -18,6 +18,15 @@ It covers:
 
 It does not define Backend domain lifecycle, provider launch details, Shared Contract payload internals, React UI, or packaging.
 
+The first implementation covers the minimum testable connection path before the Electron build scaffold exists:
+
+- Shared Contract connection DTOs.
+- a Backend inbound Contract Message Adapter for BackendCommand envelopes.
+- a Desktop outbound MessagePort-compatible Backend client.
+- a Desktop Main supervisor state machine with fake Backend process seams.
+
+It does not import Electron or spawn a real utilityProcess yet.
+
 ## Evidence
 
 - `docs_v2/implementation/electron-node-architecture-decisions.md` says Tide v2 uses Electron + React for Desktop and a process-separated Node Backend for Agent Runtime ownership.
@@ -25,6 +34,8 @@ It does not define Backend domain lifecycle, provider launch details, Shared Con
 - `docs_v2/implementation/electron-node-architecture-decisions.md` says Desktop Renderer should not own provider processes or PTYs because it can reload, crash, or slow down.
 - `docs_v2/implementation/electron-node-architecture-decisions.md` says the initial model is Renderer to Main to Backend, with a preferred streaming model where Renderer and Backend communicate through direct MessagePort after Main creates the connection.
 - `docs_v2/implementation/concrete-design-backlog.md` selects Electron utilityProcess Backend and lists spawn protocol, connection protocol, reconnect, crash, app close, shutdown, and buffering as required details.
+- `package.json` currently exposes `test:v2` through Node's built-in test runner and does not include Electron or electron-vite dependencies.
+- Existing v2 source already contains `src/shared/contracts`, Backend application services, Desktop React adapter code, and no Desktop infrastructure process supervisor.
 
 ## Decisions
 
@@ -85,6 +96,14 @@ Backend keeps enough event/state buffer to reconnect Renderer to current Thread 
 Backend does not keep unbounded event history in memory.
 
 Raw PTY evidence belongs to PTY Transcript and provider history, not Renderer replay buffers.
+
+### D9. First implementation uses process seams, not Electron imports
+
+The first code slice implements the process connection seam with fake Backend process handles and MessagePort-compatible ports.
+
+This proves the command/event path, handshake validation, reconnect snapshot, crash visibility, and shutdown ordering under Node tests.
+
+Real Electron utilityProcess spawning and packaging are deferred to the Build and Package slice because the current scaffold does not include Electron runtime dependencies.
 
 ## Out Of Scope
 
@@ -173,6 +192,13 @@ type DesktopConnectionEvent =
 
 These lifecycle events may be represented as BackendEvent envelopes where they cross the Renderer/Backend boundary.
 
+First implementation contract additions:
+
+- `ConnectionState` and handshake DTOs live in Shared Contracts.
+- `backend.connectionChanged`, `backend.snapshotRequested`, and `backend.snapshotReady` are BackendEvent kinds.
+- Desktop outbound adapters validate BackendCommand envelopes before posting to the process data plane.
+- Desktop inbound event listeners validate BackendEvent envelopes before handing them to Desktop application code.
+
 ## Flow
 
 ### UC-1: App starts Backend
@@ -233,14 +259,15 @@ These lifecycle events may be represented as BackendEvent envelopes where they c
 
 | Rule | Test expectation |
 |------|------------------|
-| Main starts Backend | Process supervisor test records one Backend spawn and handshake. |
-| Contract mismatch fails handshake | Unsupported Contract Version marks connection failed before command handling. |
-| Renderer sends only envelopes | Renderer transport test rejects non-envelope payloads. |
-| Renderer reconnect gets snapshot | Fake Backend receives reconnect and emits active Thread snapshot. |
-| Backend continues while Renderer reloads | Fake runtime keeps collecting events during Renderer disconnect. |
-| Backend crash is visible | Supervisor emits backend disconnected state and does not pretend runtime handles survived. |
-| App close requests shutdown | Supervisor sends shutdown and waits before terminate path. |
-| Main has no runtime logic | Architecture test prevents provider/PTY modules from being imported by Desktop Main runtime supervisor. |
+| UC-1 BR-1: Main starts Backend | `main_starts_backend_and_brokers_contract_handshake` records one Backend spawn, validates handshake, and emits connected state. |
+| UC-1 BR-2: Contract mismatch fails handshake | `unsupported_contract_version_fails_handshake_before_command_handling` marks Backend disconnected and posts a Contract Error before any command handling. |
+| UC-2 BR-1: Renderer sends only BackendCommand envelopes | `message_port_backend_client_rejects_non_envelope_payloads` rejects non-envelope payloads before transport post. |
+| UC-2 BR-2: Commands cross through Shared Contracts | `renderer_command_reaches_backend_adapter_and_returns_backend_events` posts a BackendCommand envelope and receives BackendEvent envelopes with the same RequestId. |
+| UC-3 BR-1: Renderer reconnect gets snapshot | `renderer_reconnect_receives_active_thread_snapshot` reconnects with active Thread id and receives snapshot lifecycle plus Thread hydration events. |
+| UC-3 BR-2: Backend continues while Renderer reloads | `backend_keeps_runtime_events_while_renderer_is_disconnected` records Backend runtime observations during disconnect and sends current snapshot on reconnect. |
+| UC-4 BR-1: Backend crash is visible | `backend_crash_emits_disconnected_state_without_survived_runtime_claim` emits Backend disconnected state and marks runtime handles as lost. |
+| UC-5 BR-1: App close requests shutdown | `app_close_requests_backend_shutdown_before_terminate_path` sends graceful shutdown before terminate fallback. |
+| Architecture BR-1: Main has no runtime logic | `desktop_main_supervisor_does_not_import_provider_or_pty_modules` prevents provider/PTY modules from being imported by Desktop Main runtime supervisor. |
 
 ## Implementation Notes
 
@@ -250,3 +277,5 @@ These lifecycle events may be represented as BackendEvent envelopes where they c
 - Coalesce high-volume Agent Session updates before Renderer state application.
 - Treat Backend restart as recovery, not transparent runtime continuity.
 - Do not route provider process APIs through preload or Renderer.
+- Keep Backend application services independent from Shared Contracts; the Backend inbound Contract Message Adapter owns DTO mapping.
+- Keep Desktop application domains independent from Shared Contracts; the Desktop outbound Backend client owns transport envelope validation.

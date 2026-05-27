@@ -1,6 +1,11 @@
 import type { AgentRuntimeStateDto } from "./agent-runtime.ts";
 import type { AgentSessionBlockDto } from "./agent-session-block.ts";
 import type { ContractErrorPayload } from "./errors.ts";
+import type {
+  BackendConnectionChangedPayload,
+  BackendSnapshotReadyPayload,
+  BackendSnapshotRequestedPayload,
+} from "./connection.ts";
 import type { RequestId, ThreadId } from "./ids.ts";
 import type { JsonObject } from "./json.ts";
 import type { PromptStateDto } from "./prompt.ts";
@@ -9,6 +14,9 @@ import type { ThreadSummaryDto } from "./thread.ts";
 import type { WorkbenchPaneRefDto } from "./workbench.ts";
 
 export type BackendEventKind =
+  | "backend.connectionChanged"
+  | "backend.snapshotRequested"
+  | "backend.snapshotReady"
   | "command.accepted"
   | "command.completed"
   | "contract.error"
@@ -22,6 +30,9 @@ export type BackendEventKind =
   | "workbench.changed";
 
 export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
+  "backend.connectionChanged",
+  "backend.snapshotRequested",
+  "backend.snapshotReady",
   "command.accepted",
   "command.completed",
   "contract.error",
@@ -36,6 +47,9 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
 ];
 
 export interface BackendEventPayloadByKind {
+  "backend.connectionChanged": BackendConnectionChangedPayload;
+  "backend.snapshotRequested": BackendSnapshotRequestedPayload;
+  "backend.snapshotReady": BackendSnapshotReadyPayload;
   "command.accepted": {
     requestId: RequestId;
     acceptedAt: string;

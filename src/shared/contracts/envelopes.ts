@@ -9,6 +9,7 @@ import {
   type ContractErrorCode,
   type ContractErrorPayload,
 } from "./errors.ts";
+import type { ConnectionState } from "./connection.ts";
 import {
   BACKEND_EVENT_KINDS,
   type BackendEventKind,
@@ -58,6 +59,12 @@ export function validateBackendCommandEnvelope(
       "BackendCommandEnvelope must be a JSON object.",
     );
   }
+  if (value.contractVersion === undefined) {
+    return contractValidationFailure(
+      "invalid_command",
+      "BackendCommandEnvelope requires Contract Version.",
+    );
+  }
   if (value.contractVersion !== CONTRACT_VERSION) {
     return contractValidationFailure(
       "unsupported_contract_version",
@@ -102,6 +109,12 @@ export function validateBackendEventEnvelope(
     return contractValidationFailure(
       "invalid_event",
       "BackendEventEnvelope must be a JSON object.",
+    );
+  }
+  if (value.contractVersion === undefined) {
+    return contractValidationFailure(
+      "invalid_event",
+      "BackendEventEnvelope requires Contract Version.",
     );
   }
   if (value.contractVersion !== CONTRACT_VERSION) {
@@ -180,6 +193,86 @@ export function createCommandCompletedEvent(
         : {
             result: options.result,
           },
+  };
+}
+
+export function createContractErrorEvent(options: {
+  eventId: BackendEventId;
+  requestId?: RequestId;
+  emittedAt: string;
+  error: ContractErrorPayload;
+}): BackendEventEnvelope<"contract.error"> {
+  return {
+    contractVersion: CONTRACT_VERSION,
+    eventId: options.eventId,
+    requestId: options.requestId,
+    kind: "contract.error",
+    emittedAt: options.emittedAt,
+    payload: options.error,
+  };
+}
+
+export function createBackendConnectionChangedEvent(options: {
+  eventId: BackendEventId;
+  emittedAt: string;
+  state: ConnectionState;
+  backendInstanceId?: string;
+  reason?: ContractErrorPayload;
+}): BackendEventEnvelope<"backend.connectionChanged"> {
+  const payload: BackendEventPayloadByKind["backend.connectionChanged"] = {
+    state: options.state,
+  };
+  if (options.backendInstanceId !== undefined) {
+    payload.backendInstanceId = options.backendInstanceId;
+  }
+  if (options.reason !== undefined) {
+    payload.reason = options.reason;
+  }
+
+  return {
+    contractVersion: CONTRACT_VERSION,
+    eventId: options.eventId,
+    kind: "backend.connectionChanged",
+    emittedAt: options.emittedAt,
+    payload,
+  };
+}
+
+export function createBackendSnapshotRequestedEvent(options: {
+  eventId: BackendEventId;
+  emittedAt: string;
+  activeThreadId?: ThreadId;
+}): BackendEventEnvelope<"backend.snapshotRequested"> {
+  const payload: BackendEventPayloadByKind["backend.snapshotRequested"] = {};
+  if (options.activeThreadId !== undefined) {
+    payload.activeThreadId = options.activeThreadId;
+  }
+
+  return {
+    contractVersion: CONTRACT_VERSION,
+    eventId: options.eventId,
+    kind: "backend.snapshotRequested",
+    emittedAt: options.emittedAt,
+    payload,
+  };
+}
+
+export function createBackendSnapshotReadyEvent(options: {
+  eventId: BackendEventId;
+  emittedAt: string;
+  activeThreadId?: ThreadId;
+}): BackendEventEnvelope<"backend.snapshotReady"> {
+  const payload: BackendEventPayloadByKind["backend.snapshotReady"] = {};
+  if (options.activeThreadId !== undefined) {
+    payload.activeThreadId = options.activeThreadId;
+  }
+
+  return {
+    contractVersion: CONTRACT_VERSION,
+    eventId: options.eventId,
+    kind: "backend.snapshotReady",
+    emittedAt: options.emittedAt,
+    payload,
   };
 }
 

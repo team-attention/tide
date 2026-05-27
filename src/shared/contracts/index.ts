@@ -2,6 +2,7 @@ export * from "./agent.ts";
 export * from "./agent-runtime.ts";
 export * from "./agent-session-block.ts";
 export * from "./commands.ts";
+export * from "./connection.ts";
 export * from "./envelopes.ts";
 export * from "./errors.ts";
 export * from "./events.ts";
