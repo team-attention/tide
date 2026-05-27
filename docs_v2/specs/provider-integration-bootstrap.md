@@ -4,7 +4,7 @@
 
 This spec defines the provider bootstrap contract and the concrete Agent Integration implementation path as each provider slice is proven.
 
-Codex CLI was the first implementation provider. This slice adds the Claude Code Agent Integration bootstrap while keeping Antigravity CLI as a supported design target for a later provider-specific slice.
+Codex CLI was the first implementation provider. Claude Code was the second provider slice. This slice adds the Antigravity CLI Agent Integration bootstrap from `agy` evidence.
 
 It covers:
 
@@ -12,6 +12,7 @@ It covers:
 - hidden PTY as the single runtime transport.
 - Codex launch/resume bootstrap evidence gates.
 - Claude Code launch/resume bootstrap evidence gates.
+- Antigravity CLI launch/resume bootstrap evidence gates.
 - Provider Readiness preflight.
 - Directory Trust and onboarding handling.
 - hook/bootstrap setup.
@@ -19,7 +20,7 @@ It covers:
 - provider-owned Raw Agent Session reference discovery.
 - prompt, permission, and elicitation signal collection.
 
-It does not implement the Antigravity adapter, full Agent Session readers, Workbench tool contracts, Desktop UI, persistence storage, a real PTY process adapter, or provider smoke execution.
+It does not implement full Agent Session readers, Workbench tool contracts, Desktop UI, persistence storage, a real PTY process adapter, or provider smoke execution.
 
 ## Evidence
 
@@ -35,6 +36,11 @@ It does not implement the Antigravity adapter, full Agent Session readers, Workb
 - `docs_v2/master-plan.md` says Codex `exec --json`, Claude print-mode JSON, Claude Remote Control, and batch modes are research or fixture inputs, not v2 runtime transports.
 - Official Claude Code [hooks reference](https://code.claude.com/docs/en/hooks) says `AskUserQuestion` is handled through `PreToolUse` as a tool requiring user interaction, while `Elicitation` is a separate hook event for MCP-server user input requests.
 - Claude permission fixture `/private/tmp/tide-provider-evidence/20260527-182233-claude-permission` captured `UserPromptSubmit`, `PermissionRequest`, and `Notification` for the same session and transcript; `PermissionRequest` carried tool/action structure, while `Notification` carried `notification_type: "permission_prompt"` and the attention message.
+- Official Antigravity plugin docs say plugins can contain root `plugin.json`, `mcp_config.json`, `hooks.json`, skills, and rules, and can be loaded from workspace or global plugin directories.
+- Official Antigravity CLI features docs say `agy plugin install` stages plugins under `~/.gemini/antigravity-cli/plugins/<plugin_name>/`, and the CLI exposes `/mcp` for MCP management.
+- Official Antigravity migration docs say Antigravity CLI stores MCP servers in `~/.gemini/antigravity-cli/mcp_config.json` globally or `.agents/mcp_config.json` per workspace, not inline in Gemini `settings.json`.
+- Local validation on 2026-05-27 with installed `agy` processed one MCP server from `/private/tmp/tide-agy-plugin-mcp/tide-bootstrap/mcp_config.json` using `agy plugin validate`.
+- Local validation on 2026-05-27 with installed `agy` processed one hook file when the temporary plugin included `hooks/tide-hooks.json`; prior runtime smoke remains the proof that installed global plugin root `hooks.json` is loaded during execution.
 
 ## Decisions
 
@@ -127,6 +133,19 @@ Codex's existing Tide wrapper injects three provider-owned bootstrap surfaces: h
 
 Claude Code's matching provider-owned context guidance is `--append-system-prompt`. The Claude Code Agent Integration start and resume plans include `--mcp-config`, `--settings`, and `--append-system-prompt` together, rather than deferring the context prompt to a later Workbench slice.
 
+### D12. Antigravity bootstrap is plugin-owned
+
+Antigravity CLI does not expose Codex-style inline config or Claude-style `--settings`/`--mcp-config` launch flags in the local `agy --help` evidence.
+
+Antigravity Tide MCP and Provider Signal bootstrap therefore use Antigravity plugin/customization files:
+
+- `mcp_config.json` for the Tide MCP Tool Surface.
+- `hooks.json` and the validated hook layout for Provider Signals.
+
+The Antigravity Agent Integration marks Tide MCP support true only when plugin/bootstrap readiness is satisfied. If the required plugin/customization files are not installed or verified, preflight returns `hook_bootstrap_required` and does not start the real Thread turn.
+
+The Antigravity launch plan remains the normal interactive `agy` hidden PTY session. Resume uses `agy --conversation <conversation-id>`.
+
 ## Out Of Scope
 
 - Full provider parser implementation.
@@ -135,7 +154,6 @@ Claude Code's matching provider-owned context guidance is `--append-system-promp
 - Electron process spawn implementation.
 - Persistence schema.
 - UI setup screens.
-- Antigravity CLI adapter implementation.
 - Batch runtime transports.
 - Running a real provider smoke as part of the default test suite.
 
@@ -326,9 +344,10 @@ First implementation behavior:
 Must prove:
 
 - executable detection for `agy`.
-- interactive launch using `--prompt-interactive` when needed.
+- interactive launch using `agy` by default; `--prompt-interactive` only when a scenario supplies an initial provider prompt.
 - resume using `--conversation` or `--continue` semantics proven by smoke.
 - hook/plugin bootstrap layout for installed Antigravity version.
+- Tide MCP Tool Surface bootstrap through Antigravity `mcp_config.json`, not Gemini inline settings.
 - readable transcript path or conversation id discovery.
 - onboarding and Directory Trust readiness detection.
 - terminal protocol handling for alternate screen, provider TUI input, arrow-key focus movement, checkbox toggles, and Enter confirmation.
@@ -340,6 +359,23 @@ Initial known reference:
 - Model-driven command approval produced both structured `PreToolUse` evidence and AGY's native PTY `Bash(...)` permission prompt.
 - Fresh-state onboarding showed color scheme selection, Terms of Service & Data Use checkbox plus Done action, and workspace trust; these screens require terminal navigation keys, not only text plus Enter.
 - Existing v1 Gemini wrapper is only pattern evidence for MCP/hooks/context injection, not Antigravity proof.
+
+First implementation behavior:
+
+- `preflight` returns `not_installed` when the Antigravity executable cannot be resolved.
+- `preflight` returns `not_authenticated` when provider state says Antigravity auth is incomplete.
+- `preflight` returns `onboarding_required` when color scheme, Terms of Service & Data Use, or other first-run setup is incomplete.
+- `preflight` returns `directory_trust_required` when the selected Execution Context cwd is not trusted by provider-owned Antigravity state.
+- `preflight` returns `hook_bootstrap_required` when Tide-owned Antigravity plugin/bootstrap config is missing or not verified.
+- ready `preflight` returns a Backend-internal launch plan.
+- start launch plan uses `agy` with terminal env and no print/batch runtime flag.
+- resume launch plan uses `agy --conversation <conversation-id>`.
+- launch and resume plans set `TERM=xterm-256color` and `COLORTERM=truecolor`.
+- launch and resume plans include expected Provider Signal sources for PTY Transcript, Antigravity hooks, Antigravity readable transcript history, and Tide MCP.
+- Antigravity capabilities mark `requiresTerminalKeyProtocol` true because observed setup and provider TUI screens require arrows, checkbox toggles, and provider-native focus movement.
+- Antigravity permission Prompt State is created from `PreToolUse` hook payloads for `toolCall.name: "run_command"` using `toolCall.args.CommandLine`.
+- Antigravity direct user shell-mode PTY input does not create structured Prompt State without Provider Signal evidence.
+- Antigravity passive capture hooks must not emit stdout because local evidence showed stdout `{}` can deny the tool call.
 
 ## Flow
 
@@ -375,6 +411,38 @@ Initial known reference:
 3. Backend creates Prompt State.
 4. User answer is routed through the same hidden PTY session unless a proven hook response path exists.
 
+### UC-5: Preflight Antigravity before Thread start
+
+1. Backend receives `thread.start`.
+2. Backend asks Antigravity Agent Integration to preflight.
+3. Antigravity Agent Integration checks executable, auth/setup, Directory Trust for the selected Execution Context, plugin hook/bootstrap, and MCP bootstrap.
+4. If ready, Backend proceeds to launch.
+5. If blocked, Backend emits Provider Readiness and preserves pending user input.
+6. Desktop shows a Provider Setup Surface action when the Agent Integration can provide one.
+7. After user setup completes or the user retries, Backend re-runs Provider Readiness.
+
+### UC-6: Build Antigravity hidden PTY launch plan
+
+1. Antigravity Agent Integration builds provider-specific launch plan.
+2. Backend Agent Runtime port starts hidden PTY with `agy`.
+3. Antigravity Agent Integration observes Provider Signals from the verified plugin.
+4. Antigravity Agent Integration discovers provider-owned Raw Agent Session reference from hook payloads, readable transcript paths, provider logs, or conversation cache evidence.
+5. Backend writes Composer input through terminal input semantics.
+
+### UC-7: Build Antigravity Raw Agent Session resume plan
+
+1. Backend resolves provider conversation reference from Thread metadata.
+2. Antigravity Agent Integration builds provider-specific resume command.
+3. Backend starts hidden PTY with `agy --conversation <conversation-id>`.
+4. Provider output and Provider Signals are tied back to the same Thread.
+
+### UC-8: Capture Antigravity permission signal
+
+1. Antigravity emits `PreToolUse` hook payload for a model-driven `run_command` tool call.
+2. Antigravity Agent Integration classifies it only when evidence matches the provider-owned payload shape.
+3. Backend creates permission Prompt State.
+4. User answer is routed through the same hidden PTY session because no separate AGY hook response path is proven for Tide.
+
 ## Invariants
 
 1. Each supported Agent has a provider-specific Agent Integration.
@@ -387,6 +455,8 @@ Initial known reference:
 8. Antigravity support is based on `agy` evidence, not Gemini wrapper assumptions.
 9. Claude Prompt State classification is single-source by event kind; `Notification` never creates Prompt State.
 10. Claude launch and resume bootstrap includes provider-native Tide context guidance to match Codex's Tide skill bootstrap pattern.
+11. Antigravity Tide MCP bootstrap uses Antigravity plugin/customization `mcp_config.json`, not Gemini inline settings.
+12. Antigravity Prompt State classification uses AGY Provider Signal evidence; direct user shell-mode PTY text stays raw unless separately proven.
 
 ## Tests
 
@@ -410,6 +480,14 @@ Initial known reference:
 | Claude permission Prompt State is single-source | `claude_permission_prompt_detection_uses_permission_request_not_notification` returns Prompt State for `PermissionRequest` and returns null for `Notification` permission prompts. |
 | Claude AskUserQuestion is PreToolUse only | `claude_question_prompt_detection_uses_pretooluse_ask_user_question` returns question Prompt State only for `PreToolUse` with `tool_name: "AskUserQuestion"`. |
 | Claude Elicitation is its own Prompt State source | `claude_elicitation_prompt_detection_uses_elicitation_event` returns question Prompt State only for `Elicitation` payloads and does not treat `Notification` as elicitation fallback. |
+| Antigravity missing executable blocks preflight | `antigravity_preflight_reports_not_installed_when_agy_executable_is_missing` resolves no command, returns `not_installed`, and returns no launch plan. |
+| Antigravity readiness blockers are provider-owned | `antigravity_preflight_reports_auth_onboarding_directory_trust_and_plugin_bootstrap_blockers` returns the exact blocker kinds from Antigravity provider state without inferring readiness from Gemini wrapper behavior. |
+| Antigravity ready preflight builds start plan | `antigravity_ready_preflight_returns_hidden_pty_start_plan_with_plugin_mcp_hooks_and_terminal_env` returns `agy`, `TERM=xterm-256color`, `COLORTERM=truecolor`, and expected signal sources including Tide MCP. |
+| Antigravity resume uses provider conversation ref | `antigravity_resume_plan_uses_provider_native_conversation_ref` builds `agy --conversation <conversation-id>` from `ProviderSessionRef`. |
+| Antigravity launch plan keeps one runtime path | `antigravity_launch_plan_does_not_use_print_prompt_interactive_or_gemini_runtime` fails if the plan contains `--print`, `--prompt`, `--prompt-interactive`, Gemini commands, app-server, or stream-json runtime flags. |
+| Antigravity MCP bootstrap is plugin-owned | `antigravity_launch_plan_does_not_use_gemini_settings_for_mcp` proves the launch plan does not use `GEMINI_CLI_SYSTEM_DEFAULTS_PATH`, Gemini `settings.json`, or Gemini wrapper paths. |
+| Antigravity permission Prompt State is evidence-gated | `antigravity_permission_prompt_detection_uses_pretooluse_run_command_payload` returns Prompt State for AGY `PreToolUse` `run_command` payload and returns null for raw PTY prompt text. |
+| Antigravity provider-specific adapter location | `antigravity_provider_specific_agent_integration_stays_under_backend_adapters` fails if Antigravity integration code appears in Desktop or Shared Contracts. |
 
 ## Implementation Notes
 
@@ -419,3 +497,4 @@ Initial known reference:
 - Keep Provider Readiness blockers structured and visible.
 - Keep hook response paths as open provider facts until individually proven.
 - Do not use Codex `exec --json`, Claude print-mode JSON, Claude Remote Control, or Antigravity print mode as live runtime transports in this spec.
+- Do not copy the Gemini wrapper into Antigravity. Use AGY plugin/customization evidence for MCP and hooks.
