@@ -13,10 +13,11 @@ It covers:
 - raw fallback behavior.
 - prompt block behavior.
 - Workbench reference block behavior.
+- Desktop rendering contract shape for block updates.
 - Agent Session Cache as derived state.
 - reopen behavior without starting Agent Runtime.
 
-It does not define React components, visual styling, full provider parser grammar, persistence storage layout, or Workbench tool operation contracts.
+It does not define React components, visual styling, full provider parser grammar, persistence storage layout, PTY Transcript retention amount, provider launch, or Workbench tool operation contracts.
 
 ## Evidence
 
@@ -84,6 +85,18 @@ That block uses local provenance and is later linked to provider frames when the
 
 Opening an existing Thread renders cached or rebuilt Agent Session Blocks without starting Agent Runtime by default.
 
+### D10. Backend domain owns the product render model
+
+Backend application domain owns Raw Agent Frame, Agent Session Block, reader input, reader result, and block update types.
+
+Shared Contracts owns only the Desktop-facing Contract DTO shape for an Agent Session Block update.
+
+### D11. This slice uses a fixture reader
+
+The first implementation uses a provider-neutral fixture reader under Backend application services.
+
+Provider-specific readers remain Agent Integration work after fixture behavior proves ordering, fallback, prompt, and DTO mapping rules.
+
 ## Out Of Scope
 
 - Full visual Agent Chat design.
@@ -106,12 +119,13 @@ Raw Agent Frame fields:
 | `frameId` | Tide id for the observed frame. |
 | `threadId` | Owning Thread. |
 | `agentId` | Codex, Claude, or Antigravity. |
-| `lane` | Evidence lane such as PTY Transcript, Provider Signal, provider history, structured batch, stdout, or stderr. |
+| `source` | Evidence source such as PTY Transcript, Provider Signal, provider history, structured batch, stdout, or stderr. |
 | `sourceRef` | Provider session id, transcript path, rollout path, log path, PTY offset, or stream offset. |
 | `sequence` | Monotonic order in one Thread observation stream. |
 | `observedAt` | Tide observation time. |
 | `payloadKind` | json, text, ansi text, stdout, stderr, provider record, or binary summary. |
 | `payload` | Bounded raw payload. |
+| `body` | Compatibility text payload for existing raw frame append paths. |
 | `truncated` | Whether Tide bounded the payload. |
 
 ### Agent Session Block
@@ -202,6 +216,29 @@ type AgentSessionBlockUpdate =
   | { kind: "reset"; reason: "cache_rebuild" | "reader_repair"; blocks: AgentSessionBlock[] };
 ```
 
+Desktop rendering contract shape:
+
+```ts
+interface AgentSessionBlockDto {
+  blockId: string;
+  threadId: ThreadId;
+  agentId?: AgentId;
+  kind: string;
+  role?: "user" | "agent" | "tool" | "system" | "runtime";
+  sourceFrameIds?: string[];
+  localProvenance?: JsonObject;
+  status: "pending" | "streaming" | "complete" | "failed" | "needs_input";
+  title?: string;
+  body?: string;
+  data?: JsonObject;
+  rawFallback?: string;
+  createdAt?: string;
+  updatedAt: string;
+}
+```
+
+Backend emits `agentSessionBlock.upserted` BackendEvents with this DTO. Backend emits `agentSessionBlock.completed` BackendEvents with the Shared Contracts completion payload: `blockId`, `threadId`, `status`, `completedAt`, and optional `error`. Desktop renders the DTO and does not parse provider raw output as the normal path.
+
 ## Flow
 
 ### UC-1: Render structured provider evidence
@@ -239,7 +276,14 @@ type AgentSessionBlockUpdate =
 3. Backend rebuilds blocks from Raw Agent Session reference when cache is absent or stale and provider evidence is available.
 4. Agent Runtime remains not started.
 
-### UC-6: Link Workbench artifact
+### UC-6: Send Follow-Up
+
+1. Backend records the user message as an Agent Session Block.
+2. Agent Integration resumes or attaches to the Raw Agent Session when possible.
+3. New Raw Agent Frames stream into the reader.
+4. Reader appends or updates Agent Session Blocks.
+
+### UC-7: Link Workbench artifact
 
 1. Reader sees evidence for file, diff, browser, command, generated artifact, or link.
 2. Reader emits Workbench reference or related artifact block.
@@ -260,20 +304,31 @@ type AgentSessionBlockUpdate =
 
 ## Tests
 
-| Rule | Test expectation |
-|------|------------------|
-| Known structured messages render as conversation blocks | A fixture frame with known message type emits a user or agent message block. |
-| Unknown structured events render as raw blocks | A fixture frame with unknown event type emits raw block with payload visible. |
-| Reader output is stable | Same ordered frame list produces the same block ids and statuses. |
-| PTY output preserves raw fallback | ANSI/text PTY fixture retains raw fallback when not safely parsed. |
-| Partial output streams | Reader updates one streaming block by stable block id. |
-| Approval uses provider-native labels | Approval block choices keep provider-native values. |
-| Renderer cannot auto-approve | Reader/UI tests expose prompt state but no renderer-only approval mutation path. |
-| Question state survives reopen | Cached prompt block and Prompt State can be reconstructed from cache/provider evidence. |
-| Cache is derived | Rebuild test can discard cache and recover blocks from Raw Agent Session fixture. |
-| Reopen does not start runtime | Reopen path does not call AgentRuntimePort.start or resume. |
-| Follow-up user block precedes output | Local user message block sorts before frames caused by that input. |
-| Workbench reference is scoped | Workbench reference points to Thread-owned state or renders unavailable. |
+This slice adds the following executable expectations before implementation:
+
+| Use Case | Business Rule | Test expectation |
+|----------|---------------|------------------|
+| UC-1 | BR-1 | A structured fixture message frame emits a user or agent message block. |
+| UC-1 | BR-3 | A structured fixture frame with an unknown event type emits `raw_block` with the payload visible. |
+| UC-1 | BR-4 | The same ordered frame list produces the same block ids, statuses, and DTOs. |
+| UC-2 | BR-1 | ANSI/text PTY fixture output keeps `rawFallback` when it is not safely parsed. |
+| UC-2 | BR-2 | Partial output appends delta frames into one streaming block by stable block id. |
+| UC-2 | BR-2 | Completed block updates map to `agentSessionBlock.completed` completion payloads. |
+| UC-3 | BR-1 | Approval block choices keep provider-native values. |
+| UC-3 | BR-2 | The Desktop rendering contract carries prompt data but has no renderer-side approval mutation. |
+| UC-4 | BR-3 | A prompt block and Prompt State can be reconstructed from fixture frames. |
+| UC-5 | BR-1 | Re-reading raw fixture frames rebuilds blocks without depending on cached DTOs. |
+| UC-5 | BR-3 | Existing hydrate behavior does not call AgentRuntimePort start or resume. |
+| UC-6 | BR-3 | A local user input block sorts before subsequent provider output. |
+| UC-7 | BR-1 | A Workbench reference targeting the same Thread stays available. |
+| UC-7 | BR-2 | A Workbench reference targeting another Thread renders as unavailable. |
+
+Future slices keep these documented but do not implement them here:
+
+| Use Case | Business Rule | Deferred expectation |
+|----------|---------------|----------------------|
+| UC-6 | BR-1 | Real follow-up resume uses provider-native resume behavior. |
+| UC-6 | BR-2 | Real resume failure appears as Agent Chat recovery UI. |
 
 ## Implementation Notes
 
@@ -284,3 +339,20 @@ type AgentSessionBlockUpdate =
 - Keep raw payloads bounded.
 - Do not make Agent Session UI parse provider terminal output directly.
 - Do not hide raw fallback for unsupported provider behavior.
+
+This slice implementation locations:
+
+- Backend product model: `src/backend/application/domains/agent-session/`.
+- Fixture reader: `src/backend/application/services/`.
+- Desktop rendering contract DTO: `src/shared/contracts/agent-session-block.ts`.
+- Backend-to-Desktop contract adapter: `src/backend/adapters/outbound/desktop-contract/`.
+
+## Open Questions
+
+No user-blocking question remains for this slice.
+
+Deferred to later specs:
+
+1. Raw Agent Frame permanent storage policy belongs with Persistence.
+2. PTY Transcript retention amount belongs with Persistence or PTY Transcript implementation.
+3. The first real provider reader is selected after fixture behavior is stable and provider evidence is bounded.

@@ -19,6 +19,7 @@ import {
   type BackendEventId,
   type ContractVersion,
   type RequestId,
+  type ThreadId,
 } from "./ids.ts";
 import type { JsonObject } from "./json.ts";
 import { isJsonObject } from "./json.ts";
@@ -197,6 +198,36 @@ export function createAgentSessionBlockUpsertedEvent(options: {
     payload: {
       block: options.block,
     },
+  };
+}
+
+export function createAgentSessionBlockCompletedEvent(options: {
+  eventId: BackendEventId;
+  requestId?: RequestId;
+  emittedAt: string;
+  blockId: string;
+  threadId: ThreadId;
+  status: "complete" | "failed";
+  completedAt: string;
+  error?: ContractErrorPayload;
+}): BackendEventEnvelope<"agentSessionBlock.completed"> {
+  const payload: BackendEventPayloadByKind["agentSessionBlock.completed"] = {
+    blockId: options.blockId,
+    threadId: options.threadId,
+    status: options.status,
+    completedAt: options.completedAt,
+  };
+  if (options.error !== undefined) {
+    payload.error = options.error;
+  }
+
+  return {
+    contractVersion: CONTRACT_VERSION,
+    eventId: options.eventId,
+    requestId: options.requestId,
+    kind: "agentSessionBlock.completed",
+    emittedAt: options.emittedAt,
+    payload,
   };
 }
 

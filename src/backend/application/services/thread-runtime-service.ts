@@ -1,5 +1,6 @@
 import type {
   RawAgentFrame,
+  RawAgentFramePayloadKind,
   RawAgentFrameSource,
 } from "../domains/agent-session/raw-agent-frame.ts";
 import type {
@@ -32,6 +33,7 @@ import type { PtyTranscriptPort } from "../ports/outbound/pty-transcript-port.ts
 
 export type {
   RawAgentFrame,
+  RawAgentFramePayloadKind,
   RawAgentFrameSource,
   AgentRuntimeHandle,
   AgentRuntimePort,
@@ -161,7 +163,10 @@ export interface AppendRawAgentFrameInput {
   agentId: AgentId;
   source: RawAgentFrameSource;
   sourceRef?: string;
+  payloadKind?: RawAgentFramePayloadKind;
+  payload?: unknown;
   body?: string;
+  truncated?: boolean;
 }
 
 export interface TideMcpToolCallInput {
@@ -456,7 +461,10 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       sourceRef: input.sourceRef,
       sequence: thread.rawFrameSequence,
       observedAt: this.clock(),
+      payloadKind: input.payloadKind,
+      payload: input.payload,
       body: input.body,
+      truncated: input.truncated,
     };
 
     await this.ptyTranscriptPort.append(frame);
