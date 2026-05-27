@@ -324,7 +324,16 @@ export interface ProviderReadinessBlockerDto {
     | "hook_bootstrap_required"
     | "unknown";
   message: string;
+  scope?: "provider" | "execution_context" | "integration";
   action?: "open_terminal" | "open_provider" | "retry" | "none";
+  setup?: ProviderSetupSurfaceActionDto;
+}
+
+export interface ProviderSetupSurfaceActionDto {
+  command: string;
+  args: string[];
+  cwd: string;
+  expectedCompletion: "process_exit" | "retry_preflight";
 }
 ```
 

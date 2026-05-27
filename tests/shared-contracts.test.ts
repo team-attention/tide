@@ -14,6 +14,7 @@ import {
   validateBackendEventEnvelope,
   type AgentSessionBlockDto,
   type PromptChoiceDto,
+  type ProviderReadinessDto,
 } from "../src/shared/contracts/index.ts";
 
 const issuedAt = "2026-05-27T00:00:00.000Z";
@@ -228,6 +229,37 @@ test("Prompt choices preserve provider-native values", () => {
     JSON.parse(JSON.stringify(choice)).providerValue,
     choice.providerValue,
   );
+});
+
+test("Provider Readiness setup actions cross the boundary without launch env internals", () => {
+  const readiness: ProviderReadinessDto = {
+    agentId: "codex",
+    ready: false,
+    blockers: [
+      {
+        kind: "directory_trust_required",
+        scope: "execution_context",
+        message: "Codex Directory Trust is required.",
+        action: "open_terminal",
+        setup: {
+          command: "codex",
+          args: ["--no-alt-screen"],
+          cwd: "/repo",
+          expectedCompletion: "retry_preflight",
+        },
+      },
+    ],
+  };
+
+  const roundTripped = JSON.parse(JSON.stringify(readiness));
+
+  assert.deepEqual(roundTripped.blockers[0].setup, {
+    command: "codex",
+    args: ["--no-alt-screen"],
+    cwd: "/repo",
+    expectedCompletion: "retry_preflight",
+  });
+  assert.equal("env" in roundTripped.blockers[0].setup, false);
 });
 
 function findSourceMentions(relativeRoots: string[], pattern: RegExp): string[] {

@@ -2,13 +2,15 @@
 
 ## Scope
 
-This spec defines the first provider bootstrap contract for Codex CLI, Claude Code, and Antigravity CLI.
+This spec defines the first provider bootstrap contract and the first concrete Agent Integration implementation path.
+
+The first implementation provider is Codex CLI. Claude Code and Antigravity CLI remain supported design targets, but their concrete adapters stay out of this slice.
 
 It covers:
 
 - Agent Integration responsibilities.
 - hidden PTY as the single runtime transport.
-- provider-specific launch/resume bootstrap evidence gates.
+- Codex launch/resume bootstrap evidence gates.
 - Provider Readiness preflight.
 - Directory Trust and onboarding handling.
 - hook/bootstrap setup.
@@ -16,7 +18,7 @@ It covers:
 - provider-owned Raw Agent Session reference discovery.
 - prompt and permission signal collection.
 
-It does not implement full Agent Session readers, Workbench tool contracts, Desktop UI, or persistence storage.
+It does not implement Claude or Antigravity adapters, full Agent Session readers, Workbench tool contracts, Desktop UI, persistence storage, a real PTY process adapter, or provider smoke execution.
 
 ## Evidence
 
@@ -25,6 +27,7 @@ It does not implement full Agent Session readers, Workbench tool contracts, Desk
 - `docs_v2/research/agent-hidden-pty-provider-signal-smoke.md` says Codex, Claude, and Antigravity passed core hidden PTY launch/input/output/history/resume smoke with provider-specific follow-up work.
 - `docs_v2/research/agent-hidden-pty-provider-signal-smoke.md` says Provider Readiness must be satisfied before sending user input because setup screens can capture Composer bytes.
 - `docs_v2/research/agent-hidden-pty-provider-signal-smoke.md` records fresh-state Codex, Claude Code, and Antigravity CLI setup screens observed on 2026-05-27: authentication, onboarding/theme/safety/terms, and Directory Trust can all appear before the normal Composer.
+- User decision on 2026-05-27 selected Codex CLI as the first Provider Integration bootstrap provider.
 - `crates/tide-app/resources/bin/codex` injects Codex hooks, Tide MCP config, and a Tide skill into an overlay `CODEX_HOME`.
 - `crates/tide-app/resources/bin/claude` injects Claude MCP config with `--mcp-config`, hook settings with `--settings`, and a Tide context prompt.
 - `crates/tide-app/resources/bin/gemini` shows the existing wrapper pattern for a Gemini-like CLI using system defaults, MCP config, hooks, and context injection. Antigravity v2 must be researched and implemented as Antigravity-specific, not assumed to be the same binary.
@@ -96,6 +99,14 @@ The current v1 wrapper evidence covers `gemini`, while v2 target support include
 
 Antigravity bootstrap must be specified and smoked from `agy` behavior and local Antigravity state, not copied from Gemini wrapper behavior without verification.
 
+### D9. First implementation provider is Codex CLI
+
+This slice implements a Codex Agent Integration adapter only.
+
+The adapter builds Backend-internal Codex launch and resume plans, reports Provider Readiness blockers, exposes Codex capabilities, and keeps Tide MCP Tool Surface and hook/bootstrap configuration in the provider-specific adapter layer.
+
+Claude Code and Antigravity CLI must not be hidden behind the Codex adapter or genericized from Codex behavior.
+
 ## Out Of Scope
 
 - Full provider parser implementation.
@@ -104,7 +115,9 @@ Antigravity bootstrap must be specified and smoked from `agy` behavior and local
 - Electron process spawn implementation.
 - Persistence schema.
 - UI setup screens.
+- Claude Code or Antigravity CLI adapter implementation.
 - Batch runtime transports.
+- Running a real provider smoke as part of the default test suite.
 
 ## Domain Model
 
@@ -151,14 +164,14 @@ Provider bootstrap returns one of:
 
 ## Contracts
 
-Suggested Backend port:
+Backend port:
 
 ```ts
 interface AgentIntegrationPort {
   preflight(input: AgentPreflightInput): Promise<AgentPreflightResult>;
-  start(input: AgentStartInput): Promise<AgentRuntimeHandle>;
-  resume(input: AgentResumeInput): Promise<AgentRuntimeHandle>;
-  stop(handle: AgentRuntimeHandle): Promise<void>;
+  buildStartPlan(input: AgentStartPlanInput): Promise<ProviderLaunchPlan>;
+  buildResumePlan(input: AgentResumePlanInput): Promise<ProviderLaunchPlan>;
+  detectPromptState(input: AgentPromptSignalInput): PromptState | null;
 }
 ```
 
@@ -190,7 +203,7 @@ Provider Readiness blockers can include a Provider Setup Surface action:
 interface ProviderReadinessBlocker {
   kind:
     | "not_installed"
-    | "auth_required"
+    | "not_authenticated"
     | "onboarding_required"
     | "directory_trust_required"
     | "hook_bootstrap_required";
@@ -213,7 +226,7 @@ The setup action is not a Thread launch plan. It exists to complete provider-own
 
 ### Codex
 
-Must prove:
+First implementation must prove:
 
 - executable detection for `codex`.
 - interactive hidden PTY launch.
@@ -225,6 +238,20 @@ Must prove:
 - authentication readiness detection for ChatGPT, device code, and API key paths.
 - post-login safety/autonomy note handling.
 - Directory Trust readiness detection for the Execution Context.
+
+First implementation behavior:
+
+- `preflight` returns `not_installed` when the Codex executable cannot be resolved.
+- `preflight` returns `not_authenticated` when provider state says Codex auth is incomplete.
+- `preflight` returns `directory_trust_required` when the selected Execution Context cwd is not trusted by provider-owned Codex state.
+- `preflight` returns `hook_bootstrap_required` when Tide-owned Codex hook/bootstrap config is missing or not yet approved.
+- ready `preflight` returns a Backend-internal launch plan.
+- start launch plan uses `codex --no-alt-screen` with Codex hook and Tide MCP config arguments.
+- resume launch plan uses `codex resume --no-alt-screen <provider-native-session-ref>`.
+- launch and resume plans set `TERM=xterm-256color` and `COLORTERM=truecolor`.
+- launch and resume plans include expected Provider Signal sources for PTY Transcript, Codex hooks, and Codex rollout history.
+- Codex Prompt State bootstrap evidence recognizes `PermissionRequest` hook payloads as structured permission evidence.
+- Codex Prompt State bootstrap does not classify arbitrary PTY text as a structured Prompt State.
 
 Initial known reference:
 
@@ -277,35 +304,35 @@ Initial known reference:
 
 ## Flow
 
-### UC-1: Preflight provider before Thread start
+### UC-1: Preflight Codex before Thread start
 
 1. Backend receives `thread.start`.
-2. Backend asks selected Agent Integration to preflight.
-3. Agent Integration checks executable, auth/setup, Directory Trust for the selected Execution Context, hook/bootstrap, and MCP support.
+2. Backend asks Codex Agent Integration to preflight.
+3. Codex Agent Integration checks executable, auth/setup, Directory Trust for the selected Execution Context, hook/bootstrap, and MCP support.
 4. If ready, Backend proceeds to launch.
 5. If blocked, Backend emits Provider Readiness and preserves pending user input.
 6. Desktop shows a Provider Setup Surface action when the Agent Integration can provide one.
 7. After user setup completes or the user retries, Backend re-runs preflight.
 
-### UC-2: Launch hidden PTY session
+### UC-2: Build Codex hidden PTY launch plan
 
-1. Agent Integration builds provider-specific launch plan.
+1. Codex Agent Integration builds provider-specific launch plan.
 2. Backend Agent Runtime port starts hidden PTY with launch plan.
-3. Agent Integration attaches Provider Signal readers.
-4. Agent Integration discovers provider-owned Raw Agent Session reference.
+3. Codex Agent Integration attaches Provider Signal readers.
+4. Codex Agent Integration discovers provider-owned Raw Agent Session reference.
 5. Backend writes Composer input through terminal input semantics.
 
-### UC-3: Resume Raw Agent Session
+### UC-3: Build Codex Raw Agent Session resume plan
 
 1. Backend resolves provider session reference from Thread metadata.
-2. Agent Integration builds provider-specific resume command.
+2. Codex Agent Integration builds provider-specific resume command.
 3. Backend starts hidden PTY with resume command.
 4. Provider output and Provider Signals are tied back to the same Thread.
 
-### UC-4: Capture prompt or permission signal
+### UC-4: Capture Codex prompt or permission signal
 
-1. Provider emits hook payload, transcript record, log record, or PTY-visible prompt.
-2. Agent Integration classifies it only when evidence matches a known signature.
+1. Codex emits hook payload, rollout record, or PTY-visible text.
+2. Codex Agent Integration classifies it only when evidence matches a known signature.
 3. Backend creates Prompt State.
 4. User answer is routed through the same hidden PTY session unless a proven hook response path exists.
 
@@ -324,22 +351,21 @@ Initial known reference:
 
 | Rule | Test expectation |
 |------|------------------|
-| Preflight blocks missing executable | Fake integration reports `not_installed`; Backend does not start runtime. |
-| Preflight blocks readiness issue | Fake integration reports `directory_trust_required`; Backend preserves pending input and does not write to PTY. |
-| Directory Trust is Execution Context scoped | Fake provider trusted for cwd A still reports `directory_trust_required` for cwd B. |
-| Readiness exposes setup action | Fake integration reports `onboarding_required` with Provider Setup Surface action; Desktop event includes setup metadata but no Thread launch plan. |
-| Setup completion re-runs preflight | Fake setup completion triggers a new preflight before pending input can reach PTY. |
-| Ready preflight launches hidden PTY | Fake ready integration returns launch plan; Backend calls AgentRuntimePort.start. |
-| Provider launch plan stays internal | Desktop-facing events expose Provider Readiness and Agent Runtime state, not command env internals. |
-| Prompt detection is evidence-gated | Unknown PTY text does not create Prompt State; known fake hook payload does. |
-| Resume uses provider session ref | Resume command receives provider-native session reference from Thread metadata. |
-| One runtime transport per Agent | Integration test fails if one provider path starts PTY and batch runtime for the same live Thread. |
-| Antigravity is separate from Gemini | Antigravity integration tests use `agy` fixtures and do not import Gemini wrapper fixtures as proof. |
+| Codex missing executable blocks preflight | `codex_preflight_reports_not_installed_when_codex_executable_is_missing` resolves no command, returns `not_installed`, and returns no launch plan. |
+| Codex auth blocks preflight | `codex_preflight_reports_not_authenticated_before_launch_plan` marks auth incomplete, returns `not_authenticated`, and does not expose command env internals as Desktop DTOs. |
+| Codex Directory Trust is Execution Context scoped | `codex_directory_trust_is_checked_against_the_selected_execution_context` trusts cwd A, checks cwd B, and returns `directory_trust_required`. |
+| Codex hook bootstrap blocks preflight | `codex_preflight_requires_hook_bootstrap_before_ready_launch` marks hook/bootstrap incomplete and returns `hook_bootstrap_required`. |
+| Codex ready preflight builds start plan | `codex_ready_preflight_returns_hidden_pty_start_plan_with_hooks_mcp_and_terminal_env` returns `codex --no-alt-screen`, hook config, Tide MCP config, `TERM=xterm-256color`, `COLORTERM=truecolor`, and expected signal sources. |
+| Codex resume uses provider session ref | `codex_resume_plan_uses_provider_native_session_ref` builds `codex resume --no-alt-screen <session-id>` from `ProviderSessionRef`. |
+| Codex launch plan stays internal | `backend_application_does_not_import_codex_adapter_or_shared_contracts` proves Backend application depends on the Agent Integration port, not the Codex adapter or Shared Contracts. |
+| Codex Prompt State is evidence-gated | `codex_permission_prompt_detection_requires_permission_request_hook_payload` returns Prompt State for a Codex `PermissionRequest` hook payload and returns no Prompt State for unknown PTY text. |
+| One runtime transport per Agent | `codex_launch_plan_does_not_use_exec_json_app_server_or_remote_runtime` fails if the Codex plan contains `exec`, `app-server`, `--remote`, or print/batch runtime flags. |
+| Provider-specific adapter location | `provider_specific_agent_integrations_stay_under_backend_adapters` fails if Codex integration code appears in Desktop or Shared Contracts. |
 
 ## Implementation Notes
 
-- Start with fake provider integrations that model Codex, Claude, and Antigravity capabilities separately.
-- Add real provider smoke only after fake lifecycle tests pass.
+- Start with the Codex Agent Integration adapter and fake dependency readers. Do not run real Codex in unit tests.
+- Add real provider smoke only after fake lifecycle and adapter tests pass.
 - Keep provider-specific launch and parser logic inside Agent Integration adapters.
 - Keep Provider Readiness blockers structured and visible.
 - Keep hook response paths as open provider facts until individually proven.

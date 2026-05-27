@@ -1,0 +1,22 @@
+export type {
+  AgentIntegrationCapabilities,
+  AgentIntegrationPort,
+  AgentIntegrationPreflightInput,
+  AgentIntegrationPreflightResult,
+  AgentIntegrationReadinessBlocker,
+  AgentPromptSignalInput,
+  AgentResumePlanInput,
+  AgentStartPlanInput,
+  ProviderLaunchPlan,
+  ProviderReadinessBlockerKind,
+  ProviderReadinessBlockerScope,
+  ProviderSetupSurfaceAction,
+  ProviderSignalSource,
+  ProviderSignalSourceKind,
+} from "../../domains/agent-integration/agent-integration.ts";
+export type {
+  AgentBinding,
+  AgentId,
+  ProviderSessionRef,
+  ThreadScope,
+} from "../../domains/thread/thread.ts";

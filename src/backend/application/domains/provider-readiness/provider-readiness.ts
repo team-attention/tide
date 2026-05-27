@@ -8,10 +8,24 @@ export type ProviderReadinessBlockerKind =
   | "hook_bootstrap_required"
   | "unknown";
 
+export type ProviderReadinessBlockerScope =
+  | "provider"
+  | "execution_context"
+  | "integration";
+
+export interface ProviderSetupSurfaceAction {
+  command: string;
+  args: string[];
+  cwd: string;
+  expectedCompletion: "process_exit" | "retry_preflight";
+}
+
 export interface ProviderReadinessBlocker {
   kind: ProviderReadinessBlockerKind;
   message: string;
+  scope?: ProviderReadinessBlockerScope;
   action?: "open_terminal" | "open_provider" | "retry" | "none";
+  setup?: ProviderSetupSurfaceAction;
 }
 
 export interface ProviderReadinessResult {
