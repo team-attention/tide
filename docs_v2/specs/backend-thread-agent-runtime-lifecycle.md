@@ -17,6 +17,8 @@ It covers:
 
 It does not define provider-specific CLI launch details, Electron process lifecycle, Desktop UI layout, persistence format, or real Workbench tool DTOs.
 
+The first implementation covers an executable Backend application service with in-memory Thread records and fake outbound ports. It proves lifecycle behavior before real provider, PTY, persistence, Electron, or Desktop adapters are added.
+
 ## Evidence
 
 - `docs_v2/glossary.md` defines Thread as the user-facing work conversation and Agent Runtime as a hidden PTY-backed provider CLI process.
@@ -26,6 +28,8 @@ It does not define provider-specific CLI launch details, Electron process lifecy
 - `docs_v2/implementation/electron-node-architecture-decisions.md` says sending a message starts or resumes the Thread's Agent Runtime and keeps it alive until window close, explicit stop, provider exit, or visible recovery restart.
 - `docs_v2/implementation/concrete-design-backlog.md` selects a Backend hexagonal core and lists Thread lifecycle states, Agent Runtime lifecycle states, prompt states, Raw Agent Frame ordering, Agent Session Block identity, and Tide MCP tool routing as required details.
 - `docs_v2/research/agent-hidden-pty-provider-signal-smoke.md` says Provider Readiness must be satisfied before user input is sent to a real Thread turn because setup screens can capture Composer bytes before conversation input.
+- `src/shared/contracts/` already defines Shared Contract DTOs for Thread metadata, Agent Binding, Provider Readiness, Prompt State, Agent Runtime State, Agent Session Block, and Backend command/event envelopes.
+- `tests/shared-contracts.test.ts` uses Node's built-in test runner with `--experimental-strip-types` and already enforces Backend application independence from Shared Contracts.
 
 ## Decisions
 
@@ -87,7 +91,15 @@ Agent-specific readers use that sequence to produce Agent Session Block updates.
 
 Tide MCP Tool Surface calls enter Backend through an inbound adapter and call Backend services.
 
-They do not mutate Backend domain objects directly and do not create a second Agent Runtime.
+They call Backend services as the mutation path and share the existing Agent Runtime session.
+
+### D10. First implementation is service-local and fake-port backed
+
+This slice implements the Backend application service under `src/backend/application/`.
+
+The service keeps Thread records, active runtime handles, pending prompt state, and Raw Agent Frame sequence counters in memory. This is test scaffolding for the lifecycle model, not the persistence design.
+
+Tests provide fake Agent Runtime, Provider Readiness, and PTY Transcript ports. Real Agent Integrations, real hidden PTYs, Provider Signal readers, and Thread persistence belong to later specs.
 
 ## Out Of Scope
 
@@ -99,12 +111,16 @@ They do not mutate Backend domain objects directly and do not create a second Ag
 - React UI state and components.
 - Persistent storage format.
 - Browser Pane page map and action DTOs.
+- Backend/Desktop contract adapter wiring.
+- Electron utilityProcess startup and reconnect behavior.
 
 ## Domain Model
 
 ### Thread
 
 Thread is the aggregate that connects user-facing work identity to one Agent Binding and one provider-owned Raw Agent Session reference when available.
+
+The first implementation stores Thread metadata in a service-local map keyed by Thread id. A stored Thread has one Agent Binding after start, a lifecycle state, a Last Known State, optional cached Agent Session Blocks, optional active Prompt State, and optional active Agent Runtime handle.
 
 Backend Thread lifecycle states:
 
@@ -278,28 +294,35 @@ The first implementation may use fake ports. Real provider ports are specified b
 7. Prompt State is answered through the same Agent Runtime session unless a provider-supported hook response path is proven.
 8. Raw Agent Frame sequence increases monotonically per Thread observation stream.
 9. Agent Session Block updates retain provenance to Raw Agent Frames once the rendering spec defines full provenance fields.
-10. Tide MCP tool calls route through Backend services and do not mutate domain state directly.
+10. Tide MCP tool calls route through Backend services as the domain mutation path.
 
 ## Tests
 
+Test file:
+
+```text
+tests/backend-thread-agent-runtime-lifecycle.test.ts
+```
+
 | Rule | Test expectation |
 |------|------------------|
-| Hydration does not start runtime | Hydrating an existing Thread with fake ports returns metadata and never calls AgentRuntimePort.start or resume. |
-| Start checks readiness first | Starting a Thread with incomplete Provider Readiness emits readiness state and does not call AgentRuntimePort.writeInput. |
-| Start launches runtime when ready | Starting a Thread with ready provider calls AgentRuntimePort.start and then writeInput through terminal input. |
-| Follow-up resumes when needed | Sending Composer input to an open Thread with no active runtime calls AgentRuntimePort.resume before writeInput. |
-| Agent Binding is locked | Sending follow-up input with a different Agent id is rejected by the service. |
-| Prompt answer uses same runtime | Answering active Prompt State writes to the active runtime handle and clears Prompt State. |
-| Stop preserves Thread | Stopping Agent Runtime changes runtime state without deleting Thread metadata. |
-| Raw Agent Frame ordering is monotonic | Appending fake runtime frames assigns increasing sequence values for one Thread. |
-| MCP tool call uses service path | A fake MCP tool call reaches a service method and does not bypass domain/service APIs. |
+| Hydration keeps runtime inactive | `hydrating_an_existing_thread_does_not_start_or_resume_an_agent_runtime` seeds a Thread, hydrates it, returns metadata, and leaves AgentRuntimePort.start and resume unused. |
+| Start checks readiness first | `starting_a_thread_with_incomplete_provider_readiness_preserves_pending_input_without_writing_to_runtime` starts a Thread with incomplete Provider Readiness, records pending input, and leaves AgentRuntimePort.writeInput unused. |
+| Start launches runtime when ready | `starting_a_thread_with_ready_provider_starts_runtime_then_writes_terminal_input` starts a Thread with ready Provider Readiness, calls AgentRuntimePort.start, then writeInput through terminal input. |
+| Follow-up resumes when needed | `sending_follow_up_input_to_an_open_thread_resumes_before_writing` sends Composer input to an open Thread with no active runtime and calls AgentRuntimePort.resume before writeInput. |
+| Agent Binding is locked | `sending_follow_up_input_with_a_different_agent_binding_is_rejected` rejects follow-up input that attempts to use a different Agent id. |
+| Prompt answer uses same runtime | `answering_an_active_prompt_writes_to_the_same_runtime_and_clears_prompt_state` writes the answer to the active runtime handle and clears Prompt State. |
+| Stop preserves Thread | `stopping_agent_runtime_preserves_thread_metadata` stops the active handle and changes runtime state without deleting Thread metadata. |
+| Raw Agent Frame ordering is monotonic | `raw_agent_frames_receive_monotonic_thread_local_sequences` appends fake runtime frames and assigns increasing sequence values for one Thread. |
+| MCP tool call uses service path | `mcp_tool_calls_are_counted_by_the_service_without_creating_a_second_runtime` routes a fake MCP tool call through the service and leaves AgentRuntimePort.start and resume unused. |
+| Backend application stays inside its boundary | `backend_application_does_not_import_shared_contracts_or_adapters` verifies Backend application files stay independent from Shared Contracts, Backend adapters, Backend infrastructure, Electron, React, and Node IO modules. |
 
 ## Implementation Notes
 
 - Implement this slice with fake AgentRuntimePort, fake ProviderReadinessPort, and fake ProviderSignalPort first.
 - Keep Backend domain types separate from Shared Contracts DTOs.
 - Put Shared Contract mapping in Backend inbound/outbound adapters.
-- Use terminal input semantics for user input; do not implement runtime input as plain `text + "\r"` in the real provider path.
+- Use terminal input semantics for user input in the real provider path.
 - Keep Provider Readiness blockers visible to Desktop and preserve pending user input until the provider is ready.
 - Keep active runtime limits out of the first implementation.
-- Do not add a second runtime transport for the same Agent.
+- Use one runtime transport for each Agent in this lifecycle slice.
