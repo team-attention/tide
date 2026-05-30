@@ -91,6 +91,16 @@ For editable Editor Panes, both fields may carry the same content.
 Desktop can mark an Editor Pane draft dirty and keep unsaved text locally.
 Backend remains the only boundary that writes files.
 
+### D7. The Editor Pane uses a real code editor (CodeMirror 6)
+
+The Editor Pane renders CodeMirror 6 (`@uiw/react-codemirror`), not a plain
+textarea or a hand-rolled highlighter. This gives grammar-based syntax
+highlighting (Lezer), line numbers, and selection, with editing wired to the
+same draft/save handlers and read-only Panes rendered with editing disabled.
+CodeMirror and its language/parser packages are MIT-licensed, compatible with
+open-source distribution. Because CodeMirror mounts in a real DOM, its rendering
+is verified with jsdom-backed tests rather than the SSR snapshot path.
+
 ## Domain Model
 
 ```ts
@@ -201,6 +211,8 @@ Editor refs add:
 | Desktop dirty state | `editing_workbench_editor_pane_marks_draft_dirty` |
 | Desktop save command | `saving_workbench_editor_pane_emits_save_editor_file_command` |
 | Desktop read-only truncated state | `truncated_workbench_editor_pane_renders_read_only` |
+| Editor is a real CodeMirror editor (content + line numbers) | `workbench_editor_pane_mounts_codemirror_with_file_content_and_line_numbers` |
+| Editor applies grammar-based highlighting | `workbench_editor_pane_applies_grammar_highlighting_tokens` |
 
 ## Implementation Notes
 

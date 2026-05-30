@@ -1205,29 +1205,50 @@ button {
   color: var(--tide-text);
 }
 
-.workbench-editor-textarea {
+.workbench-editor-surface {
   min-width: 0;
   width: 100%;
-  min-height: 260px;
-  max-height: 520px;
-  resize: vertical;
-  overflow: auto;
   border: 1px solid var(--tide-line);
   border-radius: 8px;
-  padding: 10px;
+  overflow: hidden;
   background: var(--tide-bg);
-  color: var(--tide-text);
-  font: 12px/1.55 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-.workbench-editor-textarea:focus {
-  outline: none;
+.workbench-editor-surface:focus-within {
   border-color: color-mix(in srgb, var(--tide-action) 38%, var(--tide-line));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--tide-action) 10%, transparent);
 }
 
-.workbench-editor-textarea[readonly] {
+.workbench-editor-cm .cm-editor {
+  max-height: 520px;
+  font: 12px/1.55 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+}
+
+.workbench-editor-cm .cm-scroller {
+  min-height: 260px;
+  overflow: auto;
+}
+
+.workbench-editor-cm .cm-gutters {
+  background: var(--tide-surface);
+  border-right: 1px solid var(--tide-line);
   color: var(--tide-muted);
+}
+
+.workbench-editor-cm .cm-activeLine,
+.workbench-editor-cm .cm-activeLineGutter {
+  background: var(--tide-hover);
+}
+
+.workbench-editor-cm .cm-editor.cm-focused {
+  outline: none;
+}
+
+.workbench-editor-cm .cm-selectionBackground,
+.workbench-editor-cm .cm-content ::selection {
+  background: var(--tide-selection);
 }
 
 .workbench-editor-actions {

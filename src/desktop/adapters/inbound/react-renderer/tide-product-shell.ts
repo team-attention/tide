@@ -23,6 +23,12 @@ import {
   Terminal,
   Trash2,
 } from "lucide-react";
+import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
+import { EditorView, type ViewUpdate } from "@codemirror/view";
+import { javascript } from "@codemirror/lang-javascript";
+import { json as jsonLanguage } from "@codemirror/lang-json";
+import { rust } from "@codemirror/lang-rust";
+import { css as cssLanguage } from "@codemirror/lang-css";
 
 import {
   applyProductShellBackendEvent,
@@ -713,35 +719,6 @@ function WorkbenchEditorPane(props: {
 }): ReactElement {
   const readOnly = props.pane.truncated === true;
   const value = props.draft?.content ?? props.pane.bodyText ?? props.pane.bodyTextPreview ?? "";
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  useEffect(() => {
-    if (props.pane.navigationTarget === undefined || textareaRef.current === null) {
-      return;
-    }
-    const start = lineCharacterToOffset(
-      value,
-      props.pane.navigationTarget.line,
-      props.pane.navigationTarget.character,
-    );
-    if (start === undefined) {
-      return;
-    }
-    const end = start + Math.max(0, props.pane.navigationTarget.length ?? 0);
-    textareaRef.current.focus();
-    textareaRef.current.setSelectionRange(start, Math.min(end, value.length));
-  }, [
-    props.pane.navigationTarget?.line,
-    props.pane.navigationTarget?.character,
-    props.pane.navigationTarget?.length,
-    props.pane.revision,
-    value,
-  ]);
-  const updateCursor = (currentTarget: { selectionStart?: number }) => {
-    props.handlers.onEditorCursorChange(
-      props.pane.paneId,
-      currentTarget.selectionStart ?? 0,
-    );
-  };
   return createElement(
     "div",
     {
@@ -754,26 +731,15 @@ function WorkbenchEditorPane(props: {
       ["Size", formatByteCount(props.pane.byteLength)],
       ["Revision", props.pane.revision],
     ]),
-    createElement(
-      "textarea",
-      {
-        ref: textareaRef,
-        className: "workbench-editor-textarea",
-        "aria-label": "Editor Pane text",
-        "data-navigation-target": props.pane.navigationTarget?.label,
-        spellCheck: false,
-        readOnly,
-        value,
-        onChange: (event: { currentTarget: { value: string } }) =>
-          props.handlers.onEditorDraftChange(props.pane.paneId, event.currentTarget.value),
-        onClick: (event: { currentTarget: { selectionStart?: number } }) =>
-          updateCursor(event.currentTarget),
-        onKeyUp: (event: { currentTarget: { selectionStart?: number } }) =>
-          updateCursor(event.currentTarget),
-        onSelect: (event: { currentTarget: { selectionStart?: number } }) =>
-          updateCursor(event.currentTarget),
-      },
-    ),
+    createElement(WorkbenchCodeEditor, {
+      paneId: props.pane.paneId,
+      value,
+      readOnly,
+      language: inferEditorLanguage(props.pane.relativePath ?? props.pane.filePath),
+      revision: props.pane.revision,
+      navigationTarget: props.pane.navigationTarget,
+      handlers: props.handlers,
+    }),
     readOnly
       ? null
       : createElement(
@@ -851,23 +817,87 @@ function createWorkbenchEditorReferences(
   );
 }
 
-function lineCharacterToOffset(
-  value: string,
-  line: number,
-  character: number,
-): number | undefined {
-  if (line < 0 || character < 0) {
-    return undefined;
+function inferEditorLanguage(path: string | undefined): string {
+  const ext = (path ?? "").split(".").pop()?.toLowerCase() ?? "";
+  if (["ts", "tsx", "js", "jsx", "mts", "cts"].includes(ext)) return "ts";
+  if (ext === "json") return "json";
+  if (ext === "rs") return "rust";
+  if (ext === "css") return "css";
+  return "text";
+}
+
+function editorLanguageExtensions(language: string) {
+  switch (language) {
+    case "ts":
+      return [javascript({ jsx: true, typescript: true })];
+    case "json":
+      return [jsonLanguage()];
+    case "rust":
+      return [rust()];
+    case "css":
+      return [cssLanguage()];
+    default:
+      return [];
   }
-  const lines = value.split("\n");
-  if (line >= lines.length || character > lines[line].length) {
-    return undefined;
-  }
-  let offset = character;
-  for (let index = 0; index < line; index += 1) {
-    offset += lines[index].length + 1;
-  }
-  return offset;
+}
+
+// Real code editor: CodeMirror 6 (MIT). Grammar-based highlighting, line
+// numbers, selection, editing. Read-only Panes still render highlighted via
+// CodeMirror with editing disabled.
+function WorkbenchCodeEditor(props: {
+  paneId: string;
+  value: string;
+  readOnly: boolean;
+  language: string;
+  revision: string;
+  navigationTarget?: NonNullable<
+    ProductShellViewModel["appChrome"]["activeWorkbenchPane"]
+  >["navigationTarget"];
+  handlers: ProductShellHandlers;
+}): ReactElement {
+  const editorRef = useRef<ReactCodeMirrorRef>(null);
+  const nav = props.navigationTarget;
+  useEffect(() => {
+    const view = editorRef.current?.view;
+    if (nav === undefined || view === undefined) {
+      return;
+    }
+    const lineNumber = Math.min(Math.max(nav.line + 1, 1), view.state.doc.lines);
+    const lineInfo = view.state.doc.line(lineNumber);
+    const from = Math.min(lineInfo.from + Math.max(nav.character, 0), lineInfo.to);
+    const to = Math.min(from + Math.max(nav.length ?? 0, 0), view.state.doc.length);
+    view.dispatch({ selection: { anchor: from, head: to }, scrollIntoView: true });
+    view.focus();
+  }, [nav?.line, nav?.character, nav?.length, props.revision]);
+
+  return createElement(
+    "div",
+    {
+      className: "workbench-editor-surface",
+      "aria-label": "Editor Pane text",
+      "data-editor-language": props.language,
+      "data-navigation-target": nav?.label,
+    },
+    createElement(CodeMirror, {
+      ref: editorRef,
+      className: "workbench-editor-cm",
+      value: props.value,
+      editable: !props.readOnly,
+      readOnly: props.readOnly,
+      basicSetup: {
+        lineNumbers: true,
+        foldGutter: false,
+        highlightActiveLine: !props.readOnly,
+      },
+      extensions: [EditorView.lineWrapping, ...editorLanguageExtensions(props.language)],
+      onChange: (next: string) => props.handlers.onEditorDraftChange(props.paneId, next),
+      onUpdate: (update: ViewUpdate) => {
+        if (update.selectionSet) {
+          props.handlers.onEditorCursorChange(props.paneId, update.state.selection.main.head);
+        }
+      },
+    }),
+  );
 }
 
 function WorkbenchDiffPane(props: {

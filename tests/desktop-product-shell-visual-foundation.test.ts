@@ -592,7 +592,9 @@ test("workbench_editor_pane_renders_path_size_and_preview", () => {
   assert.match(html, /README\.md/);
   assert.match(html, /42 bytes/);
   assert.match(html, /readonly/);
-  assert.match(html, /Local coding Agent workbench/);
+  // The editor surface (CodeMirror) renders; the file body itself is rendered
+  // by CodeMirror on mount and is covered by the jsdom editor tests.
+  assert.match(html, /aria-label="Editor Pane text"/);
   assert.doesNotMatch(html, /Thread-bound Workbench Pane content appears here/);
 });
 
