@@ -61,6 +61,7 @@ export interface ProductShellState {
   fileTreeOpen: boolean;
   leftUiMenu: ProductShellLeftUiMenu | null;
   archiveConfirmThreadId: string | null;
+  renamingThreadId: string | null;
   projects: ProductShellProject[];
   threads: ProductShellThread[];
   agentChat: AgentChatShellState;
@@ -75,6 +76,7 @@ export type ProductShellBackendCommand =
   | { kind: "thread.hydrate"; payload: { threadId: string } }
   | { kind: "thread.archive"; payload: { threadId: string; archived: boolean } }
   | { kind: "thread.setPinned"; payload: { threadId: string; pinned: boolean } }
+  | { kind: "thread.rename"; payload: { threadId: string; title: string } }
   | {
       kind: "workbench.command";
       payload: {
@@ -160,6 +162,7 @@ export interface ProductShellUpdateResult {
 export interface ProductShellThreadView extends ProductShellThread {
   active: boolean;
   archiveConfirming: boolean;
+  renaming: boolean;
   contextMenuOpen: boolean;
 }
 
@@ -297,6 +300,7 @@ export function createProductShellState(
     fileTreeOpen: false,
     leftUiMenu: null,
     archiveConfirmThreadId: null,
+    renamingThreadId: null,
     projects: includeFixtureData ? initialProjects : [],
     threads: includeFixtureData ? initialThreads : [],
     agentChat: createStartAgentChatState(),
@@ -348,6 +352,7 @@ export function startNewProductShellThread(
     fileTreeOpen: false,
     leftUiMenu: null,
     archiveConfirmThreadId: null,
+    renamingThreadId: null,
     agentChat: createStartAgentChatState(),
     appChrome: createAppChromeState(),
     fileTree: null,
@@ -571,6 +576,7 @@ export function clearProductShellLeftUiTransientState(
     ...state,
     leftUiMenu: null,
     archiveConfirmThreadId: null,
+    renamingThreadId: null,
   };
 }
 
@@ -591,6 +597,55 @@ export function confirmProductShellThreadArchive(
       archiveConfirmThreadId: null,
     },
     command: { kind: "thread.archive", payload: { threadId, archived: true } },
+  };
+}
+
+export function startProductShellThreadRename(
+  state: ProductShellState,
+  threadId: string,
+): ProductShellState {
+  return { ...state, leftUiMenu: null, archiveConfirmThreadId: null, renamingThreadId: threadId };
+}
+
+export function cancelProductShellThreadRename(
+  state: ProductShellState,
+): ProductShellState {
+  return { ...state, renamingThreadId: null };
+}
+
+export function submitProductShellThreadRename(
+  state: ProductShellState,
+  threadId: string,
+  title: string,
+): ProductShellUpdateResult {
+  const trimmed = title.replace(/\s+/g, " ").trim();
+  const target = state.threads.find((thread) => thread.threadId === threadId);
+  if (!target || trimmed.length === 0 || trimmed === target.title) {
+    return { state: { ...state, renamingThreadId: null }, command: null };
+  }
+  const threads = state.threads.map((thread) =>
+    thread.threadId === threadId ? { ...thread, title: trimmed } : thread,
+  );
+  return {
+    state: { ...state, threads, renamingThreadId: null },
+    command: { kind: "thread.rename", payload: { threadId, title: trimmed } },
+  };
+}
+
+function applyProductShellThreadRenamedEvent(
+  state: ProductShellState,
+  event: AgentChatBackendEvent,
+): ProductShellState {
+  const payload = event.payload as { thread?: AgentChatThreadSummary };
+  const summary = payload.thread;
+  if (!summary) {
+    return state;
+  }
+  return {
+    ...state,
+    threads: state.threads.map((thread) =>
+      thread.threadId === summary.threadId ? { ...thread, title: summary.title } : thread,
+    ),
   };
 }
 
@@ -764,6 +819,8 @@ export function applyProductShellBackendEvent(
       return applyProductShellThreadArchivedEvent(nextState, event);
     case "thread.pinChanged":
       return applyProductShellThreadPinChangedEvent(nextState, event);
+    case "thread.renamed":
+      return applyProductShellThreadRenamedEvent(nextState, event);
     case "agentRuntime.stateChanged": {
       const payload = event.payload as { state?: string };
       if (!applyToActiveSurfaces) {
@@ -1431,6 +1488,7 @@ function toThreadView(
     ...thread,
     active: thread.threadId === state.activeThreadId,
     archiveConfirming: state.archiveConfirmThreadId === thread.threadId,
+    renaming: state.renamingThreadId === thread.threadId,
     contextMenuOpen:
       state.leftUiMenu?.kind === "thread" && state.leftUiMenu.threadId === thread.threadId,
   };

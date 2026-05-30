@@ -342,6 +342,23 @@ button {
   cursor: pointer;
 }
 
+.thread-row__rename-input {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 24px;
+  border: 1px solid var(--tide-line-strong);
+  border-radius: 6px;
+  padding: 0 6px;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  font: inherit;
+}
+
+.thread-row__rename-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--tide-action) 38%, var(--tide-line));
+}
+
 .thread-row__title {
   flex: 1 1 auto;
 }

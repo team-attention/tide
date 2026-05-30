@@ -204,6 +204,7 @@ export type ServiceErrorCode =
   | "prompt_not_found"
   | "agent_runtime_unavailable"
   | "invalid_workbench_command"
+  | "invalid_thread_title"
   | "workbench_target_not_found"
   | "workbench_stale_reference"
   | "unsupported_tide_mcp_tool"
@@ -251,6 +252,15 @@ export interface SetThreadPinnedInput {
 }
 
 export interface SetThreadPinnedResult {
+  thread: ThreadSnapshot;
+}
+
+export interface RenameThreadInput {
+  threadId: ThreadId;
+  title: string;
+}
+
+export interface RenameThreadResult {
   thread: ThreadSnapshot;
 }
 
@@ -564,6 +574,7 @@ export interface ThreadRuntimeService {
   listThreads(input: ListThreadsInput): Promise<ServiceResult<ListThreadsResult>>;
   archiveThread(input: ArchiveThreadInput): Promise<ServiceResult<ArchiveThreadResult>>;
   setThreadPinned(input: SetThreadPinnedInput): Promise<ServiceResult<SetThreadPinnedResult>>;
+  renameThread(input: RenameThreadInput): Promise<ServiceResult<RenameThreadResult>>;
   hydrateThread(input: HydrateThreadInput): Promise<ServiceResult<HydrateThreadResult>>;
   startThread(input: StartThreadInput): Promise<ServiceResult<StartThreadResult>>;
   sendComposerInput(
@@ -858,6 +869,26 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       return failure("thread_not_found", "Thread was not found.");
     }
     thread.pinned = input.pinned;
+    thread.updatedAt = this.clock();
+    return {
+      ok: true,
+      thread: snapshotThread(thread),
+    };
+  }
+
+  async renameThread(
+    input: RenameThreadInput,
+  ): Promise<ServiceResult<RenameThreadResult>> {
+    const thread = this.threads.get(input.threadId);
+    if (thread === undefined) {
+      return failure("thread_not_found", "Thread was not found.");
+    }
+    // Manual rename: trim and collapse whitespace; ignore an empty title.
+    const title = input.title.replace(/\s+/g, " ").trim();
+    if (title.length === 0) {
+      return failure("invalid_thread_title", "Thread title cannot be empty.");
+    }
+    thread.title = title;
     thread.updatedAt = this.clock();
     return {
       ok: true,

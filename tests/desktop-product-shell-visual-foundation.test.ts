@@ -21,6 +21,7 @@ import {
   focusProductShellWorkbenchPane,
   confirmProductShellThreadArchive,
   toggleProductShellThreadPin,
+  submitProductShellThreadRename,
   goToProductShellEditorDefinition,
   goToProductShellEditorReferences,
   moveProductShellEditorCursor,
@@ -200,6 +201,58 @@ test("thread_pin_changed_event_updates_thread_pinned_state", () => {
   assert.equal(
     next.threads.find((thread) => thread.threadId === "thread-keep")?.pinned,
     true,
+  );
+});
+
+test("submitting_thread_rename_emits_command_and_updates_title_optimistically", () => {
+  // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
+  const state = threadListState();
+  const result = submitProductShellThreadRename(state, "thread-keep", "  Renamed   Keep  ");
+
+  assert.deepEqual(result.command, {
+    kind: "thread.rename",
+    payload: { threadId: "thread-keep", title: "Renamed Keep" },
+  });
+  assert.equal(
+    result.state.threads.find((thread) => thread.threadId === "thread-keep")?.title,
+    "Renamed Keep",
+  );
+  assert.equal(result.state.renamingThreadId, null);
+});
+
+test("submitting_an_empty_thread_rename_emits_no_command", () => {
+  const state = threadListState();
+  const result = submitProductShellThreadRename(state, "thread-keep", "   ");
+  assert.equal(result.command, null);
+  assert.equal(result.state.renamingThreadId, null);
+});
+
+test("thread_renamed_event_updates_thread_title", () => {
+  // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
+  const state = threadListState();
+  const next = applyProductShellBackendEvent(state, {
+    kind: "thread.renamed",
+    payload: {
+      thread: {
+        threadId: "thread-keep",
+        title: "Server Renamed",
+        agentBinding: {
+          agentId: "codex",
+          runtimeSource: { kind: "provider_cli", integrationId: "codex" },
+        },
+        scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+        createdAt: "2026-05-29T00:00:00.000Z",
+        updatedAt: "2026-05-29T00:04:00.000Z",
+        pinned: false,
+        archived: false,
+        lastKnownState: "idle",
+      },
+    },
+  });
+
+  assert.equal(
+    next.threads.find((thread) => thread.threadId === "thread-keep")?.title,
+    "Server Renamed",
   );
 });
 

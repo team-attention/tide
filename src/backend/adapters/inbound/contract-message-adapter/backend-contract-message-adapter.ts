@@ -3,6 +3,7 @@ import type {
   ArchiveThreadResult,
   HydrateThreadResult,
   ListThreadsResult,
+  RenameThreadResult,
   ResumeAgentRuntimeResult,
   SendComposerInputResult,
   SetThreadPinnedResult,
@@ -147,6 +148,17 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           ],
         );
       }
+      case "thread.rename": {
+        const typedCommand = command as BackendCommandEnvelope<"thread.rename">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.renameThread(typedCommand.payload),
+          (result) => [
+            this.threadRenamedEvent(typedCommand, result),
+            this.commandCompletedEvent(typedCommand),
+          ],
+        );
+      }
       case "composer.sendInput": {
         const typedCommand = command as BackendCommandEnvelope<"composer.sendInput">;
         return this.handleServiceResult(
@@ -253,6 +265,22 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
       eventId: this.nextEventId(),
       requestId: command.requestId,
       kind: "thread.pinChanged",
+      emittedAt: this.clock(),
+      payload: {
+        thread: toThreadSummaryDto(result.thread),
+      },
+    };
+  }
+
+  private threadRenamedEvent(
+    command: BackendCommandEnvelope,
+    result: RenameThreadResult,
+  ): BackendEventEnvelope<"thread.renamed"> {
+    return {
+      contractVersion: CONTRACT_VERSION,
+      eventId: this.nextEventId(),
+      requestId: command.requestId,
+      kind: "thread.renamed",
       emittedAt: this.clock(),
       payload: {
         thread: toThreadSummaryDto(result.thread),
@@ -623,6 +651,7 @@ function contractCodeFromServiceError(error: ServiceError): ContractErrorCode {
     case "agent_binding_locked":
     case "prompt_not_found":
     case "invalid_workbench_command":
+    case "invalid_thread_title":
     case "workbench_target_not_found":
     case "workbench_stale_reference":
     case "unsupported_tide_mcp_tool":

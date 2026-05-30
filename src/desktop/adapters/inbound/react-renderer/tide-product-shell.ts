@@ -59,6 +59,9 @@ import {
   selectProductShellLauncherAction,
   setProductShellComposerActiveSurface,
   showProductShellThreadArchiveConfirm,
+  startProductShellThreadRename,
+  submitProductShellThreadRename,
+  cancelProductShellThreadRename,
   startNewProductShellThread,
   submitProductShellComposerDraft,
   saveProductShellWorkbenchEditorPane,
@@ -113,6 +116,9 @@ interface ProductShellHandlers {
   onThreadArchiveIntent: (threadId: string) => void;
   onThreadArchiveConfirm: (threadId: string) => void;
   onThreadPinToggle: (threadId: string) => void;
+  onThreadRenameStart: (threadId: string) => void;
+  onThreadRenameSubmit: (threadId: string, title: string) => void;
+  onThreadRenameCancel: () => void;
   onLeftUiTransientClear: () => void;
   onFocusWorkbenchPane: (paneId: string) => void;
   onCloseWorkbenchPane: (paneId: string) => void;
@@ -232,6 +238,16 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         dispatchBackendCommand(result.command);
         return result.state;
       }),
+    onThreadRenameStart: (threadId) =>
+      setShellState((state) => startProductShellThreadRename(state, threadId)),
+    onThreadRenameSubmit: (threadId, title) =>
+      setShellState((state) => {
+        const result = submitProductShellThreadRename(state, threadId, title);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onThreadRenameCancel: () =>
+      setShellState((state) => cancelProductShellThreadRename(state)),
     onLeftUiTransientClear: () =>
       setShellState((state) => clearProductShellLeftUiTransientState(state)),
     onFocusWorkbenchPane: (paneId) =>
@@ -1384,16 +1400,40 @@ function createThreadRow(
         "data-active": thread.active,
         onMouseLeave: thread.archiveConfirming ? handlers.onLeftUiTransientClear : undefined,
       },
-      createElement(
-        "button",
-        {
-          className: "thread-row__main",
-          type: "button",
-          "aria-pressed": thread.active,
-          onClick: () => handlers.onThreadSelect(thread.threadId),
-        },
-        createElement("span", { className: "thread-row__title" }, thread.title),
-      ),
+      thread.renaming
+        ? createElement("input", {
+            className: "thread-row__rename-input",
+            "aria-label": "Rename thread",
+            defaultValue: thread.title,
+            autoFocus: true,
+            onClick: (event: { stopPropagation: () => void }) => event.stopPropagation(),
+            onKeyDown: (event: {
+              key: string;
+              currentTarget: { value: string };
+              preventDefault: () => void;
+            }) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                handlers.onThreadRenameSubmit(thread.threadId, event.currentTarget.value);
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                handlers.onThreadRenameCancel();
+              }
+            },
+            onBlur: (event: { currentTarget: { value: string } }) =>
+              handlers.onThreadRenameSubmit(thread.threadId, event.currentTarget.value),
+          })
+        : createElement(
+            "button",
+            {
+              className: "thread-row__main",
+              type: "button",
+              "aria-pressed": thread.active,
+              onClick: () => handlers.onThreadSelect(thread.threadId),
+              onDoubleClick: () => handlers.onThreadRenameStart(thread.threadId),
+            },
+            createElement("span", { className: "thread-row__title" }, thread.title),
+          ),
       thread.archiveConfirming
         ? createElement(
             "button",

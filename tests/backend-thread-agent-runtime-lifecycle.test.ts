@@ -154,6 +154,32 @@ test("pinning_a_missing_thread_returns_thread_not_found", async () => {
   assert.equal(!result.ok && result.error.code, "thread_not_found");
 });
 
+test("renaming_a_thread_sets_a_trimmed_collapsed_title", async () => {
+  // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [threadSeed("thread-rename", { title: "Old title" })],
+  });
+
+  const renamed = await service.renameThread({
+    threadId: "thread-rename",
+    title: "  New    title  ",
+  });
+  assert.equal(renamed.ok, true);
+  assert.equal(renamed.ok && renamed.thread.title, "New title");
+
+  const empty = await service.renameThread({ threadId: "thread-rename", title: "   " });
+  assert.equal(empty.ok, false);
+  assert.equal(!empty.ok && empty.error.code, "invalid_thread_title");
+
+  const missing = await service.renameThread({ threadId: "missing", title: "x" });
+  assert.equal(missing.ok, false);
+  assert.equal(!missing.ok && missing.error.code, "thread_not_found");
+});
+
 test("thread_list_returns_visible_threads_sorted_by_updated_time", async () => {
   // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
   const fakes = createFakes();
