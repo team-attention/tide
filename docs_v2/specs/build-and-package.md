@@ -130,6 +130,23 @@ preload bundle therefore uses a CommonJS `.cjs` artifact while the app package
 can remain ESM. This keeps `contextIsolation` enabled and avoids relying on an
 ESM preload artifact that fails to expose `window.tide` in the built app.
 
+### D11. Backend bundle externalizes runtime node dependencies
+
+The Backend bundle (`backend-entrypoint`) must not inline heavy third-party Node
+packages. The code-intelligence port imports the TypeScript compiler
+(`import * as ts from "typescript"`). Bundling the TypeScript compiler into the
+Backend ESM artifact breaks Electron `utilityProcess` startup with
+`ERR_AMBIGUOUS_MODULE_SYNTAX`, because the bundled compiler mixes `__filename`
+with top-level await and the loader cannot pick a module format. When this
+happens the Backend never completes its handshake, `thread.start` returns
+`contract.error`, and no Agent Runtime starts in the built app.
+
+The main and preload builds therefore use electron-vite `externalizeDepsPlugin`
+so package `dependencies` are required from `node_modules` at runtime instead of
+inlined. App `.ts` source (relative imports) stays bundled. Any third-party Node
+package the Backend needs at runtime — `typescript` for code intelligence first —
+is a runtime `dependency`, not a dev-only tool, so electron-builder packages it.
+
 ## Out Of Scope
 
 - Dependency installation.
@@ -313,6 +330,7 @@ and exercises the real preload/Main/Backend transport.
 10. Package path uses electron-builder for macOS first.
 11. Electron smoke is opt-in and uses the product preload/Main transport.
 12. Built preload exposes `window.tide` from a CommonJS preload artifact.
+13. Built `backend-entrypoint` does not inline the TypeScript compiler; runtime node dependencies are externalized and packaged.
 
 ## Tests
 
@@ -334,6 +352,8 @@ and exercises the real preload/Main/Backend transport.
 | Renderer mounts React app | `renderer_entry_mounts_the_react_app_into_the_root_element` verifies Renderer mounts the initial React element into `#root`. |
 | Build command works | `npm_run_build_writes_v2_build_manifest` runs `npm run build` and verifies either a fallback build manifest or real electron-vite `out/` artifacts. |
 | Package command exists | `package_mac_script_targets_electron_builder_mac_package` verifies `package:mac` targets electron-builder mac packaging and includes real build output. |
+| Backend bundle externalizes node deps | `backend_bundle_externalizes_runtime_node_dependencies` verifies `electron.vite.config` uses `externalizeDepsPlugin` for main/preload and `typescript` is a runtime dependency. |
+| Built Backend does not inline the compiler | `npm_run_build_writes_v2_build_manifest` also verifies the built `backend-entrypoint` does not inline TypeScript compiler internals. |
 
 ## Implementation Notes
 

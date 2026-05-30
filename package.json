@@ -21,7 +21,8 @@
   "dependencies": {
     "lucide-react": "^1.16.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "typescript": "^6.0.3"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
@@ -30,7 +31,6 @@
     "electron": "^42.3.0",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
-    "typescript": "^6.0.3",
     "vite": "^7.3.3",
     "vitest": "^4.1.7"
   }

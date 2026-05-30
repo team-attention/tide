@@ -196,6 +196,23 @@ test("npm_run_typecheck_runs_scaffold_check", () => {
   assert.match(result.stdout, /typecheck/);
 });
 
+test("backend_bundle_externalizes_runtime_node_dependencies", () => {
+  const viteConfig = fs.readFileSync(path.join(repoRoot, "electron.vite.config.mjs"), "utf8");
+  // D11: main/preload builds externalize package dependencies so the Backend
+  // bundle does not inline the TypeScript compiler (which breaks Electron
+  // utilityProcess startup with ERR_AMBIGUOUS_MODULE_SYNTAX).
+  assert.match(viteConfig, /externalizeDepsPlugin/);
+
+  const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  assert.ok(
+    packageJson.dependencies?.typescript,
+    "typescript must be a runtime dependency so it is externalized and packaged.",
+  );
+});
+
 test("npm_run_build_writes_v2_build_manifest", () => {
   const manifestPath = path.join(repoRoot, "dist/v2-build-manifest.json");
   fs.rmSync(manifestPath, { force: true });
@@ -218,6 +235,18 @@ test("npm_run_build_writes_v2_build_manifest", () => {
   assert.ok(fs.existsSync(path.join(repoRoot, "out/main/backend-entrypoint.js")));
   assert.ok(fs.existsSync(path.join(repoRoot, "out/preload/index.cjs")));
   assert.ok(fs.existsSync(path.join(repoRoot, "out/renderer/index.html")));
+
+  // D11 / Invariant 13: the Backend bundle must not inline the TypeScript
+  // compiler. Its presence crashed Electron utilityProcess startup.
+  const backendBundle = fs.readFileSync(
+    path.join(repoRoot, "out/main/backend-entrypoint.js"),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    backendBundle,
+    /function createTypeChecker\b/,
+    "Backend bundle must externalize the TypeScript compiler, not inline it.",
+  );
 });
 
 test("package_mac_script_targets_electron_builder_mac_package", () => {
