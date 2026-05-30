@@ -582,6 +582,7 @@ function contractCodeFromServiceError(error: ServiceError): ContractErrorCode {
     case "workspace_command_outside_scope":
     case "workspace_code_intelligence_unavailable":
     case "workspace_code_definition_not_found":
+    case "workspace_code_references_not_found":
       return "invalid_command";
   }
 }

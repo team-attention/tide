@@ -77,6 +77,17 @@ The target Editor Pane ref may carry:
 
 Line and character are zero-based, matching LSP position conventions.
 
+### D5. Code intelligence also resolves all references
+
+The code intelligence port exposes `findReferences` alongside `findDefinition`.
+It returns every Thread-root-scoped use site of the symbol at the cursor as a
+bounded, ordered list of `WorkspaceCodeLocation`s (capped, with a `truncated`
+flag), each carrying its source-line text as a `label`. References outside the
+Thread root are excluded (D2). A position that resolves to no symbol returns
+`workspace_code_references_not_found`. This is the Backend capability behind the
+Editor Pane go-to-references feature; the `workbench.command` and references-list
+UI that consume it are wired in a following slice.
+
 ## Domain Model
 
 ```ts
@@ -160,6 +171,9 @@ Business Rules:
 | Definition not found does not mutate Workbench | `go_to_definition_without_result_returns_not_found_without_workbench_mutation` |
 | Desktop emits cursor-based command | `product_shell_go_to_definition_emits_cursor_position_command` |
 | Shared contract carries navigation target | `workbench_editor_pane_contract_carries_navigation_target` |
+| Code intelligence finds all references | `typescript_code_intelligence_finds_all_references_to_a_symbol` |
+| References not found for a non-symbol position | `typescript_code_intelligence_returns_not_found_for_a_non_symbol_position` |
+| References stay Thread-root scoped | `typescript_code_intelligence_rejects_references_outside_the_root` |
 
 ## Implementation Notes
 

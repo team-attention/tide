@@ -10,6 +10,8 @@ import * as ts from "typescript";
 import type {
   WorkspaceCodeDefinitionResult,
   WorkspaceCodeIntelligencePort,
+  WorkspaceCodeLocation,
+  WorkspaceCodeReferencesResult,
 } from "../../../application/ports/outbound/workspace-code-intelligence-port.ts";
 
 const SOURCE_EXTENSIONS = new Set([
@@ -21,6 +23,7 @@ const SOURCE_EXTENSIONS = new Set([
   ".cts",
 ]);
 const MAX_SOURCE_FILES = 2000;
+const MAX_REFERENCES = 200;
 const SKIPPED_DIRECTORIES = new Set([
   ".git",
   ".next",
@@ -121,6 +124,87 @@ class TypeScriptCodeIntelligencePort implements WorkspaceCodeIntelligencePort {
       },
     };
   }
+
+  async findReferences(input: {
+    root: string;
+    path: string;
+    line: number;
+    character: number;
+  }): Promise<WorkspaceCodeReferencesResult> {
+    const resolved = resolveInsideRoot(input.root, input.path);
+    if (!resolved.ok) {
+      return referencesError(resolved.error.message);
+    }
+    if (!SOURCE_EXTENSIONS.has(path.extname(resolved.path))) {
+      return referencesError(
+        "Reference lookup is only available for TypeScript and JavaScript files.",
+      );
+    }
+    if (!existsSync(resolved.path) || !statSync(resolved.path).isFile()) {
+      return referencesError("Reference source file was not found.");
+    }
+
+    const sourceFiles = collectSourceFiles(resolved.root);
+    if (!sourceFiles.includes(resolved.path)) {
+      sourceFiles.push(resolved.path);
+    }
+    const host = createLanguageServiceHost(resolved.root, sourceFiles);
+    const service = ts.createLanguageService(host);
+    const sourceText = readFileSync(resolved.path, "utf8");
+    const offset = lineCharacterToOffset(sourceText, input.line, input.character);
+    if (offset === undefined) {
+      service.dispose();
+      return referencesError("Reference source position is outside the file.");
+    }
+
+    const entries = service.getReferencesAtPosition(resolved.path, offset) ?? [];
+    const program = service.getProgram();
+    const locations: WorkspaceCodeLocation[] = [];
+    let truncated = false;
+    for (const entry of entries) {
+      if (locations.length >= MAX_REFERENCES) {
+        truncated = true;
+        break;
+      }
+      const target = resolveInsideRoot(resolved.root, entry.fileName);
+      if (!target.ok) {
+        continue;
+      }
+      const sourceFile = program?.getSourceFile(entry.fileName);
+      const targetText = sourceFile?.text ?? safeReadText(entry.fileName);
+      if (targetText === undefined) {
+        continue;
+      }
+      const position = offsetToLineCharacter(targetText, entry.textSpan.start);
+      locations.push({
+        root: target.root,
+        path: target.path,
+        relativePath: target.relativePath,
+        line: position.line,
+        character: position.character,
+        length: entry.textSpan.length,
+        label: lineTextAt(targetText, position.line),
+      });
+    }
+    service.dispose();
+
+    if (locations.length === 0) {
+      return referencesError("No references were found for the selected symbol.");
+    }
+    return { ok: true, locations, truncated };
+  }
+}
+
+function referencesError(message: string): WorkspaceCodeReferencesResult {
+  return {
+    ok: false,
+    error: { code: "workspace_code_references_not_found", message },
+  };
+}
+
+function lineTextAt(text: string, line: number): string {
+  const lines = text.split("\n");
+  return (lines[line] ?? "").trim().slice(0, 200);
 }
 
 function createLanguageServiceHost(

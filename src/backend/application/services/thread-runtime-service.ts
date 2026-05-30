@@ -3680,6 +3680,15 @@ function createUnavailableWorkspaceCodeIntelligencePort(): WorkspaceCodeIntellig
         },
       };
     },
+    async findReferences() {
+      return {
+        ok: false,
+        error: {
+          code: "workspace_code_intelligence_unavailable",
+          message: "Workspace code intelligence is not configured.",
+        },
+      };
+    },
   };
 }
 

@@ -29,6 +29,7 @@ import type {
   WorkspaceCodeDefinitionResult,
   WorkspaceCodeIntelligencePort,
   WorkspaceCodeLocation,
+  WorkspaceCodeReferencesResult,
 } from "../src/backend/application/ports/outbound/workspace-code-intelligence-port.ts";
 import type {
   WorkspaceFileEditResult,
@@ -2257,6 +2258,16 @@ class FakeWorkspaceCodeIntelligencePort implements WorkspaceCodeIntelligencePort
     return {
       ok: true,
       location: this.definition,
+    };
+  }
+
+  async findReferences(): Promise<WorkspaceCodeReferencesResult> {
+    return {
+      ok: false,
+      error: {
+        code: "workspace_code_references_not_found",
+        message: "No references were found for the selected symbol.",
+      },
     };
   }
 }
