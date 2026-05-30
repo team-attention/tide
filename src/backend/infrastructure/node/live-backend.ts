@@ -347,6 +347,21 @@ export function backendEventsFromThreadRuntimeAsyncEvent(
           },
         },
       ];
+    case "workbench_terminal_output":
+      return [
+        {
+          contractVersion: CONTRACT_VERSION,
+          eventId: nextEventId(),
+          kind: "workbench.terminalOutput",
+          emittedAt,
+          payload: {
+            threadId: event.threadId,
+            paneId: event.paneId,
+            source: event.source,
+            chunk: event.chunk,
+          },
+        },
+      ];
     case "provider_readiness_changed":
       return [
         {

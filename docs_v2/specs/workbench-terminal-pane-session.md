@@ -86,6 +86,7 @@ terminal grid state is deferred.
 | Launcher Terminal action emits command | `product_shell_launcher_terminal_action_emits_open_terminal_command` |
 | Real PTY terminal runs a live command and reports exit | `workbench_terminal_pty_port_runs_a_live_command_and_reports_exit` |
 | Real PTY terminal accepts interactive input | `workbench_terminal_pty_port_accepts_interactive_input` |
+| Terminal output streams as delta chunks to the renderer | `workbench_terminal_output_async_event_maps_to_a_streaming_contract_event` |
 
 ## Implementation Notes
 

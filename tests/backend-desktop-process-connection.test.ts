@@ -652,6 +652,29 @@ test("live_backend_projects_provider_setup_async_events_to_backend_events", asyn
   assert.equal(threadEvent?.payload.thread.launchOptions?.model, "GPT-5.5 High");
 });
 
+test("workbench_terminal_output_async_event_maps_to_a_streaming_contract_event", () => {
+  // Spec: docs_v2/specs/workbench-terminal-pane-session.md — live terminal stream.
+  const events = backendEventsFromThreadRuntimeAsyncEvent({
+    kind: "workbench_terminal_output",
+    threadId: "thread-term",
+    paneId: "pane-term",
+    source: "stdout",
+    chunk: "hello[31m world[0m\r\n",
+  });
+
+  assert.deepEqual(
+    events.map((event) => event.kind),
+    ["workbench.terminalOutput"],
+  );
+  assertBackendEventsAreContractEnvelopes(events);
+  const output = events[0] as BackendEventEnvelope<"workbench.terminalOutput">;
+  assert.equal(output.payload.threadId, "thread-term");
+  assert.equal(output.payload.paneId, "pane-term");
+  assert.equal(output.payload.source, "stdout");
+  // Escape sequences are preserved for the live terminal renderer.
+  assert.equal(output.payload.chunk, "hello[31m world[0m\r\n");
+});
+
 test("live_backend_records_runtime_output_blocks_before_hydrate_snapshots", () => {
   // Spec: docs_v2/specs/agent-session-block-rendering-path.md
   const source = readRepoFile("src/backend/infrastructure/node/live-backend.ts");

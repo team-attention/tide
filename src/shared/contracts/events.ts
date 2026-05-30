@@ -30,7 +30,8 @@ export type BackendEventKind =
   | "prompt.changed"
   | "agentSessionBlock.upserted"
   | "agentSessionBlock.completed"
-  | "workbench.changed";
+  | "workbench.changed"
+  | "workbench.terminalOutput";
 
 export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "backend.connectionChanged",
@@ -50,6 +51,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "agentSessionBlock.upserted",
   "agentSessionBlock.completed",
   "workbench.changed",
+  "workbench.terminalOutput",
 ];
 
 export interface BackendEventPayloadByKind {
@@ -113,5 +115,11 @@ export interface BackendEventPayloadByKind {
     panes: WorkbenchPaneRefDto[];
     activePaneId?: string;
     fileTree?: WorkbenchFileTreeDto;
+  };
+  "workbench.terminalOutput": {
+    threadId: ThreadId;
+    paneId: string;
+    source: "stdout" | "stderr";
+    chunk: string;
   };
 }

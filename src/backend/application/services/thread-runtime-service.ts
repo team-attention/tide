@@ -188,6 +188,13 @@ export type ThreadRuntimeAsyncEvent =
       thread: ThreadSnapshot;
       runtimeState: AgentRuntimeState;
       blocks: AgentSessionBlockReference[];
+    }
+  | {
+      kind: "workbench_terminal_output";
+      threadId: ThreadId;
+      paneId: WorkbenchPaneId;
+      source: "stdout" | "stderr";
+      chunk: string;
     };
 
 export type ServiceErrorCode =
@@ -1976,6 +1983,16 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     );
     pane.revision = this.idGenerator();
     pane.updatedAt = this.clock();
+    // Stream the delta chunk so a live terminal renderer can write it directly,
+    // preserving escape sequences and cursor state (the bounded transcript
+    // preview remains a fallback snapshot).
+    this.emitAsyncEvent({
+      kind: "workbench_terminal_output",
+      threadId,
+      paneId,
+      source: output.source,
+      chunk: output.body,
+    });
     this.emitAsyncEvent({
       kind: "workbench_changed",
       thread: snapshotThread(thread),

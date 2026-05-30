@@ -67,8 +67,12 @@ test("workbench_terminal_pty_port_accepts_interactive_input", async () => {
   });
 
   await handle.write("tide-input-roundtrip\n");
-  // Give the PTY a moment to echo input back.
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  // Poll for the echoed input instead of a fixed sleep (avoids flakiness under
+  // load); the live PTY echoes typed input back.
+  const deadline = Date.now() + 5000;
+  while (!output.includes("tide-input-roundtrip") && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
   await handle.stop();
 
   assert.ok(
