@@ -11,6 +11,7 @@ import {
   type BackendCommandEnvelope,
   type BackendEventEnvelope,
 } from "../../shared/contracts/index.ts";
+import "@xterm/xterm/css/xterm.css";
 import "./tide-product-shell.css";
 
 export function createInitialRendererElement() {

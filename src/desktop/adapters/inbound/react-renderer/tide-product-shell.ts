@@ -25,6 +25,15 @@ import {
 } from "lucide-react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView, type ViewUpdate } from "@codemirror/view";
+// xterm core is CommonJS and safe to import in any environment (it does not
+// touch browser globals at load). default-import the module namespace so both
+// the Vite build and Node's ESM test loader resolve it. The fit/webgl addons
+// are UMD bundles that reference `self` at load, so they are browser-only and
+// are dynamically imported inside the mount effect (and gracefully skipped when
+// unavailable, e.g. headless/jsdom/no-GPU).
+import xtermModule from "@xterm/xterm";
+
+const { Terminal: XtermTerminal } = xtermModule;
 import { javascript } from "@codemirror/lang-javascript";
 import { json as jsonLanguage } from "@codemirror/lang-json";
 import { rust } from "@codemirror/lang-rust";
@@ -126,6 +135,15 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   );
   useEffect(() => {
     return props.onBackendEvent?.((event) => {
+      // Terminal output is a hot path: write it straight to the GPU terminal and
+      // skip the React reducer so streaming bytes never re-render the shell.
+      if (event.kind === "workbench.terminalOutput") {
+        const payload = event.payload as { paneId?: unknown; chunk?: unknown };
+        if (typeof payload.paneId === "string" && typeof payload.chunk === "string") {
+          routeProductShellTerminalOutput(payload.paneId, payload.chunk);
+        }
+        return;
+      }
       setShellState((state) => applyProductShellBackendEvent(state, event));
     });
   }, [props.onBackendEvent]);
@@ -1029,6 +1047,111 @@ function formatBeforeAfterBytes(before: number | undefined, after: number | unde
     : undefined;
 }
 
+// Live terminal byte sinks keyed by paneId. Terminal output is a hot path, so
+// it is written straight to the GPU terminal and never funneled through React
+// state (which would re-render the whole shell per chunk).
+const terminalOutputSinks = new Map<string, (chunk: string) => void>();
+
+function routeProductShellTerminalOutput(paneId: string, chunk: string): boolean {
+  const sink = terminalOutputSinks.get(paneId);
+  if (sink === undefined) {
+    return false;
+  }
+  sink(chunk);
+  return true;
+}
+
+// Real GPU-accelerated terminal: xterm.js with the WebGL addon (MIT). Drawing
+// many cells is a simple, parallel job — like v1's WGPU cell rendering — so it
+// belongs on the GPU, not per-cell DOM. Falls back to xterm's default renderer
+// when WebGL is unavailable (headless/jsdom/no-GPU).
+function WorkbenchTerminalView(props: {
+  paneId: string;
+  initialText: string;
+  onInput: (paneId: string, bytes: string) => void;
+}): ReactElement {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (host === null) {
+      return;
+    }
+    // xterm core mounts synchronously so the terminal is visible immediately.
+    const term = new XtermTerminal({
+      convertEol: true,
+      fontSize: 12,
+      fontFamily: '"Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+      scrollback: 5000,
+      theme: { background: "#fcfcfb", foreground: "#242424", cursor: "#343038" },
+    });
+    term.open(host);
+    if (props.initialText.length > 0) {
+      term.write(props.initialText);
+    }
+    const dataSub = term.onData((data) => props.onInput(props.paneId, data));
+    terminalOutputSinks.set(props.paneId, (chunk) => term.write(chunk));
+
+    let active = true;
+    let fitAddon: { fit: () => void } | undefined;
+    let observer: ResizeObserver | undefined;
+    // Attach the fit + GPU (WebGL) addons asynchronously; they only upgrade an
+    // already-visible terminal, so there is no first-open delay.
+    void (async () => {
+      try {
+        const fitMod = (await import("@xterm/addon-fit")) as {
+          FitAddon?: new () => { fit: () => void };
+          default?: { FitAddon: new () => { fit: () => void } };
+        };
+        const FitAddonCtor = fitMod.FitAddon ?? fitMod.default?.FitAddon;
+        if (active && FitAddonCtor !== undefined) {
+          fitAddon = new FitAddonCtor();
+          term.loadAddon(fitAddon as never);
+          fitAddon.fit();
+          if (typeof ResizeObserver !== "undefined" && hostRef.current !== null) {
+            observer = new ResizeObserver(() => {
+              try {
+                fitAddon?.fit();
+              } catch {
+                // measurement unavailable
+              }
+            });
+            observer.observe(hostRef.current);
+          }
+        }
+      } catch {
+        // fit addon unavailable (headless/jsdom) — terminal still renders.
+      }
+      try {
+        const webglMod = (await import("@xterm/addon-webgl")) as {
+          WebglAddon?: new () => { onContextLoss: (cb: () => void) => void; dispose: () => void };
+          default?: { WebglAddon: new () => { onContextLoss: (cb: () => void) => void; dispose: () => void } };
+        };
+        const WebglAddonCtor = webglMod.WebglAddon ?? webglMod.default?.WebglAddon;
+        if (active && WebglAddonCtor !== undefined) {
+          const webgl = new WebglAddonCtor();
+          webgl.onContextLoss(() => webgl.dispose());
+          term.loadAddon(webgl as never);
+        }
+      } catch {
+        // No WebGL (headless/jsdom/no-GPU) — xterm uses its default renderer.
+      }
+    })();
+
+    return () => {
+      active = false;
+      terminalOutputSinks.delete(props.paneId);
+      dataSub.dispose();
+      observer?.disconnect();
+      term.dispose();
+    };
+  }, [props.paneId]);
+  return createElement("div", {
+    className: "workbench-terminal-xterm",
+    "data-terminal-xterm": props.paneId,
+    ref: hostRef,
+  });
+}
+
 function WorkbenchTerminalPane(props: {
   pane: NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>;
   handlers: ProductShellHandlers;
@@ -1070,6 +1193,11 @@ function WorkbenchTerminalPane(props: {
           ]
         : null,
     ),
+    createElement(WorkbenchTerminalView, {
+      paneId: props.pane.paneId,
+      initialText: props.pane.transcriptPreview ?? "",
+      onInput: props.handlers.onTerminalInput,
+    }),
     createElement(
       "pre",
       { className: "workbench-terminal__preview", "aria-label": "Terminal transcript preview" },

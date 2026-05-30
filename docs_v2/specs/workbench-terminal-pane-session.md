@@ -49,8 +49,26 @@ the Backend uses a configured default shell command.
 
 ### D3. Transcript is bounded preview state
 
-This slice stores only a bounded `transcriptPreview` on the Terminal Pane. Full
-terminal grid state is deferred.
+The Backend stores only a bounded `transcriptPreview` snapshot on the Terminal
+Pane as a fallback. The live terminal grid is rendered on the Desktop from the
+streaming output (D5), not reconstructed from the snapshot.
+
+### D4. The Desktop renders a real GPU-accelerated terminal
+
+The Terminal Pane renders xterm.js (MIT) with the WebGL addon. Drawing many
+terminal cells is a simple, parallel job — like v1's WGPU cell rendering — so it
+belongs on the GPU, not per-cell DOM. xterm core mounts synchronously (no
+first-open delay); the fit and WebGL addons attach asynchronously (they are
+browser-only UMD bundles) and gracefully fall back to xterm's default renderer
+when WebGL is unavailable (headless/no-GPU). The bounded transcript preview
+stays in the DOM as a fallback snapshot only.
+
+### D5. Terminal output streams as delta chunks off the React hot path
+
+Backend PTY output is emitted as a `workbench.terminalOutput` event carrying the
+raw delta chunk (escape sequences preserved). The Desktop writes these chunks
+straight to the xterm instance via a paneId-keyed sink, bypassing React state so
+streaming bytes never re-render the shell.
 
 ## Flow
 
@@ -87,6 +105,7 @@ terminal grid state is deferred.
 | Real PTY terminal runs a live command and reports exit | `workbench_terminal_pty_port_runs_a_live_command_and_reports_exit` |
 | Real PTY terminal accepts interactive input | `workbench_terminal_pty_port_accepts_interactive_input` |
 | Terminal output streams as delta chunks to the renderer | `workbench_terminal_output_async_event_maps_to_a_streaming_contract_event` |
+| Terminal Pane mounts a real xterm.js terminal | `workbench_terminal_pane_mounts_an_xterm_terminal` |
 
 ## Implementation Notes
 

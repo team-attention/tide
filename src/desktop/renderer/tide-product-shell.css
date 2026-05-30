@@ -1374,18 +1374,27 @@ button {
   color: var(--tide-text);
 }
 
-.workbench-terminal__preview {
-  min-height: 168px;
-  max-height: 320px;
-  overflow: auto;
-  margin: 0;
+.workbench-terminal-xterm {
+  min-height: 220px;
+  max-height: 440px;
+  height: 44vh;
+  overflow: hidden;
   border: 1px solid var(--tide-line);
   border-radius: 8px;
-  padding: 10px;
+  padding: 6px;
   background: var(--tide-bg);
-  color: var(--tide-text);
-  font: 12px/1.55 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  white-space: pre-wrap;
+}
+
+.workbench-terminal-xterm .xterm,
+.workbench-terminal-xterm .xterm-viewport,
+.workbench-terminal-xterm .xterm-screen {
+  height: 100%;
+}
+
+/* The live GPU terminal (.workbench-terminal-xterm) is the visible surface; the
+   bounded transcript preview stays in the DOM as a fallback/snapshot only. */
+.workbench-terminal__preview {
+  display: none;
 }
 
 .workbench-terminal__input {
