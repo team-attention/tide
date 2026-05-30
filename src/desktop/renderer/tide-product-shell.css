@@ -1146,6 +1146,65 @@ button {
   color: var(--tide-text);
 }
 
+.workbench-diff {
+  min-height: 168px;
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: var(--tide-bg);
+  font: 12px/1.55 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.workbench-diff-line {
+  display: flex;
+  gap: 8px;
+  padding: 0 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.workbench-diff-line__marker {
+  flex: 0 0 auto;
+  width: 1ch;
+  color: var(--tide-muted);
+  user-select: none;
+}
+
+.workbench-diff-line__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.workbench-diff-line--header {
+  color: var(--tide-muted);
+}
+
+.workbench-diff-line--hunk {
+  color: var(--tide-action);
+  background: var(--tide-surface);
+}
+
+.workbench-diff-line--added {
+  background: color-mix(in srgb, #2f9e44 14%, transparent);
+}
+
+.workbench-diff-line--added .workbench-diff-line__marker {
+  color: #2f7a3a;
+}
+
+.workbench-diff-line--removed {
+  background: color-mix(in srgb, var(--tide-danger) 12%, transparent);
+}
+
+.workbench-diff-line--removed .workbench-diff-line__marker {
+  color: var(--tide-danger);
+}
+
+.workbench-diff-line--context {
+  color: var(--tide-text);
+}
+
 .workbench-editor-textarea {
   min-width: 0;
   width: 100%;

@@ -825,9 +825,54 @@ function WorkbenchDiffPane(props: {
       ["Bytes", formatBeforeAfterBytes(props.pane.beforeByteLength, props.pane.afterByteLength)],
       ["Revision", props.pane.revision],
     ]),
-    props.pane.diffText
-      ? createPreviewBlock("Diff preview", props.pane.diffText, "workbench-preview--diff")
-      : null,
+    props.pane.diffText ? createDiffView(props.pane.diffText) : null,
+  );
+}
+
+type DiffLineKind = "header" | "hunk" | "added" | "removed" | "context";
+
+function classifyDiffLine(line: string): DiffLineKind {
+  if (line.startsWith("+++") || line.startsWith("---")) {
+    return "header";
+  }
+  if (line.startsWith("@@")) {
+    return "hunk";
+  }
+  if (line.startsWith("+")) {
+    return "added";
+  }
+  if (line.startsWith("-")) {
+    return "removed";
+  }
+  return "context";
+}
+
+// D4: render the bounded unified diff as change-type-tagged lines so added and
+// removed lines read distinctly. Unknown markers fall back to context so no
+// diff content (including a trailing "[diff truncated]" notice) is hidden.
+function createDiffView(diffText: string): ReactElement {
+  const lines = diffText.split("\n");
+  return createElement(
+    "div",
+    { className: "workbench-diff", "aria-label": "Diff view", role: "group" },
+    lines.map((line, index) => {
+      const kind = classifyDiffLine(line);
+      const marker = kind === "added" ? "+" : kind === "removed" ? "-" : kind === "context" ? " " : "";
+      const text =
+        kind === "added" || kind === "removed" || (kind === "context" && line.startsWith(" "))
+          ? line.slice(1)
+          : line;
+      return createElement(
+        "div",
+        { key: index, className: `workbench-diff-line workbench-diff-line--${kind}` },
+        createElement(
+          "span",
+          { className: "workbench-diff-line__marker", "aria-hidden": "true" },
+          marker,
+        ),
+        createElement("span", { className: "workbench-diff-line__text" }, text),
+      );
+    }),
   );
 }
 

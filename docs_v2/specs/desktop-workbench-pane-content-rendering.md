@@ -54,6 +54,15 @@ remain only for unknown future data, not for Browser, Editor, Diff, or Terminal.
 Editor, Diff, Browser, and Terminal content is read-only in this slice except
 for the already-specified running Provider Setup Surface terminal input.
 
+### D4. Diff Pane renders structured unified-diff lines
+
+The Diff Pane parses the bounded unified diff text (`--- `/`+++ ` headers,
+`@@` hunk markers, `+` added, `-` removed, leading-space context) into lines and
+renders each line tagged with its change type instead of one flat preview block,
+so added and removed lines read distinctly. Rendering stays read-only and bounded
+(D1, D3). Any line that does not match a known marker — including a trailing
+`[diff truncated]` notice — renders as context so no diff content is hidden.
+
 ## Contracts
 
 No Shared Contract shape changes are required. Desktop must preserve the
@@ -114,6 +123,7 @@ model:
 | Browser content renders | `workbench_browser_pane_renders_url_loading_and_preview` proves Product Shell renders Browser metadata from `workbench.changed`. |
 | Editor content renders | `workbench_editor_pane_renders_path_size_and_preview` proves Product Shell renders Editor metadata without a placeholder. |
 | Diff content renders | `workbench_diff_pane_renders_diff_metadata_and_text` proves Product Shell renders Diff metadata and bounded diff text. |
+| Diff renders structured lines | `workbench_diff_pane_renders_structured_unified_diff_lines` proves added/removed/header/context lines render with distinct change-type tags. |
 | Terminal evidence renders | `provider_setup_terminal_pane_renders_preview_and_input_controls` continues to prove Terminal metadata and input controls render for running setup Panes. |
 
 ## Implementation Notes

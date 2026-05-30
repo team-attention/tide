@@ -804,6 +804,49 @@ test("workbench_diff_pane_renders_diff_metadata_and_text", () => {
   assert.doesNotMatch(html, /Thread-bound Workbench Pane content appears here/);
 });
 
+test("workbench_diff_pane_renders_structured_unified_diff_lines", () => {
+  // Spec: docs_v2/specs/desktop-workbench-pane-content-rendering.md (D4)
+  const state = applyProductShellBackendEvent(
+    openProductShellThread(createProductShellState(), "thread-workbench"),
+    {
+      kind: "workbench.changed",
+      payload: {
+        threadId: "thread-workbench",
+        activePaneId: "pane-diff",
+        panes: [
+          {
+            paneId: "pane-diff",
+            kind: "diff",
+            title: "README.md diff",
+            visible: true,
+            revision: "pane-diff:rev",
+            updatedAt: "2026-05-28T00:00:00.000Z",
+            filePath: "/Users/eatnug/Workspace/tide/README.md",
+            relativePath: "README.md",
+            diffText:
+              "--- README.md\n+++ README.md\n@@ -1,2 +1,2 @@\n Title\n-Old Tide\n+New Tide\n[diff truncated]",
+            beforeByteLength: 20,
+            afterByteLength: 20,
+            truncated: true,
+          },
+        ],
+      },
+    },
+  );
+  const html = renderProductShell(state);
+
+  // D4: each diff line carries a change-type tag instead of one flat <pre> block.
+  assert.match(html, /workbench-diff-line--header[\s\S]*?\+\+\+ README\.md/);
+  assert.match(html, /workbench-diff-line--hunk[\s\S]*?@@ -1,2 \+1,2 @@/);
+  assert.match(html, /workbench-diff-line--removed[\s\S]*?Old Tide/);
+  assert.match(html, /workbench-diff-line--added[\s\S]*?New Tide/);
+  assert.match(html, /workbench-diff-line--context[\s\S]*?Title/);
+  // Truncation notice stays visible as context, never hidden.
+  assert.match(html, /\[diff truncated\]/);
+  // No flat single-block preview for a known diff anymore.
+  assert.doesNotMatch(html, /aria-label="Diff preview"/);
+});
+
 test("provider_setup_terminal_pane_renders_preview_and_input_controls", () => {
   // Spec: docs_v2/specs/provider-setup-surface-input-and-retry.md
   const state = applyProductShellBackendEvent(
