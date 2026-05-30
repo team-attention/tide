@@ -11,11 +11,12 @@ Included:
 - Backend service listing of current non-archived Threads, sorted by updated time descending.
 - Product Shell startup that requests the Backend Thread list instead of using fixture Threads in the real renderer path.
 - Product Shell state update from `thread.listed`.
+- A `thread.archive` BackendCommand and `thread.archived` BackendEvent that toggle a Thread's archived state, persist it (event-driven), and update the Left UI (the inline archive-confirm button drops the Thread from the visible list).
 
 Out of scope:
 
 - Persistent storage loading from disk.
-- Search, rename, archive, project creation, worktree creation, or branch creation commands.
+- Search, rename, project creation, worktree creation, or branch creation commands.
 - Project list persistence independent from Threads.
 
 ## Evidence
@@ -98,6 +99,10 @@ BackendEventPayloadByKind["thread.listed"] = {
 | Contract adapter emits accepted, listed, and completed events | `thread_list_contract_events_return_backend_thread_summaries` |
 | Product Shell applies Backend Thread list to Left UI | `product_shell_applies_thread_listed_event_to_left_ui` |
 | Real renderer starts Product Shell without fixture Threads and requests list | `product_shell_requests_backend_thread_list_on_mount_without_fixture_threads` |
+| Backend archives a Thread and keeps it retrievable | `archiving_a_thread_excludes_it_from_the_default_list_but_keeps_it_retrievable` |
+| Archiving a missing Thread is rejected | `archiving_a_missing_thread_returns_thread_not_found` |
+| Product Shell archive confirm emits the command and drops the Thread | `confirming_thread_archive_emits_command_and_drops_it_from_the_list` |
+| Product Shell applies the archived event | `thread_archived_event_removes_the_thread_from_the_list` |
 
 ## Implementation Notes
 

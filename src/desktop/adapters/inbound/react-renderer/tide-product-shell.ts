@@ -34,6 +34,7 @@ import {
   applyProductShellBackendEvent,
   closeProductShellWorkbenchPane,
   clearProductShellLeftUiTransientState,
+  confirmProductShellThreadArchive,
   createProductShellState,
   createProductShellViewModel,
   editProductShellWorkbenchEditorPane,
@@ -100,6 +101,7 @@ interface ProductShellHandlers {
   onLauncherAction: (actionId: string) => void;
   onLeftUiMenuOpen: (menu: ProductShellLeftUiMenu | null) => void;
   onThreadArchiveIntent: (threadId: string) => void;
+  onThreadArchiveConfirm: (threadId: string) => void;
   onLeftUiTransientClear: () => void;
   onFocusWorkbenchPane: (paneId: string) => void;
   onCloseWorkbenchPane: (paneId: string) => void;
@@ -198,6 +200,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     onLeftUiMenuOpen: (menu) => setShellState((state) => openProductShellLeftUiMenu(state, menu)),
     onThreadArchiveIntent: (threadId) =>
       setShellState((state) => showProductShellThreadArchiveConfirm(state, threadId)),
+    onThreadArchiveConfirm: (threadId) =>
+      setShellState((state) => {
+        const result = confirmProductShellThreadArchive(state, threadId);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
     onLeftUiTransientClear: () =>
       setShellState((state) => clearProductShellLeftUiTransientState(state)),
     onFocusWorkbenchPane: (paneId) =>
@@ -1257,6 +1265,7 @@ function createThreadRow(
               className: "thread-row__confirm",
               type: "button",
               "aria-label": "Confirm Archive Thread",
+              onClick: () => handlers.onThreadArchiveConfirm(thread.threadId),
             },
             "Confirm",
           )

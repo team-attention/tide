@@ -1,5 +1,6 @@
 import type {
   AnswerPromptResult,
+  ArchiveThreadResult,
   HydrateThreadResult,
   ListThreadsResult,
   ResumeAgentRuntimeResult,
@@ -123,6 +124,17 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           (result) => this.threadStartedEvents(typedCommand, result),
         );
       }
+      case "thread.archive": {
+        const typedCommand = command as BackendCommandEnvelope<"thread.archive">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.archiveThread(typedCommand.payload),
+          (result) => [
+            this.threadArchivedEvent(typedCommand, result),
+            this.commandCompletedEvent(typedCommand),
+          ],
+        );
+      }
       case "composer.sendInput": {
         const typedCommand = command as BackendCommandEnvelope<"composer.sendInput">;
         return this.handleServiceResult(
@@ -200,6 +212,22 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
       emittedAt: this.clock(),
       payload: {
         threads: result.threads.map(toThreadSummaryDto),
+      },
+    };
+  }
+
+  private threadArchivedEvent(
+    command: BackendCommandEnvelope,
+    result: ArchiveThreadResult,
+  ): BackendEventEnvelope<"thread.archived"> {
+    return {
+      contractVersion: CONTRACT_VERSION,
+      eventId: this.nextEventId(),
+      requestId: command.requestId,
+      kind: "thread.archived",
+      emittedAt: this.clock(),
+      payload: {
+        thread: toThreadSummaryDto(result.thread),
       },
     };
   }

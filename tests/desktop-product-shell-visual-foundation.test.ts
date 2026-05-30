@@ -19,6 +19,7 @@ import {
   closeProductShellWorkbenchPane,
   editProductShellWorkbenchEditorPane,
   focusProductShellWorkbenchPane,
+  confirmProductShellThreadArchive,
   goToProductShellEditorDefinition,
   goToProductShellEditorReferences,
   moveProductShellEditorCursor,
@@ -118,6 +119,74 @@ test("product_shell_requests_backend_thread_list_on_mount_without_fixture_thread
 
   assert.match(source, /kind:\s*"thread\.list"/);
   assert.match(source, /includeFixtureData:\s*false/);
+});
+
+function threadListState() {
+  function summary(threadId: string, title: string) {
+    return {
+      threadId,
+      title,
+      agentBinding: {
+        agentId: "codex",
+        runtimeSource: { kind: "provider_cli", integrationId: "codex" },
+      },
+      scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+      createdAt: "2026-05-29T00:00:00.000Z",
+      updatedAt: "2026-05-29T00:01:00.000Z",
+      pinned: false,
+      archived: false,
+      lastKnownState: "idle",
+    };
+  }
+  return applyProductShellBackendEvent(createProductShellState(), {
+    kind: "thread.listed",
+    payload: { threads: [summary("thread-keep", "Keep"), summary("thread-archive", "Archive me")] },
+  });
+}
+
+test("confirming_thread_archive_emits_command_and_drops_it_from_the_list", () => {
+  // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
+  const state = threadListState();
+  const result = confirmProductShellThreadArchive(state, "thread-archive");
+
+  assert.deepEqual(result.command, {
+    kind: "thread.archive",
+    payload: { threadId: "thread-archive", archived: true },
+  });
+  assert.deepEqual(
+    result.state.threads.map((thread) => thread.threadId),
+    ["thread-keep"],
+  );
+  assert.equal(result.state.archiveConfirmThreadId, null);
+});
+
+test("thread_archived_event_removes_the_thread_from_the_list", () => {
+  // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
+  const state = threadListState();
+  const next = applyProductShellBackendEvent(state, {
+    kind: "thread.archived",
+    payload: {
+      thread: {
+        threadId: "thread-archive",
+        title: "Archive me",
+        agentBinding: {
+          agentId: "codex",
+          runtimeSource: { kind: "provider_cli", integrationId: "codex" },
+        },
+        scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+        createdAt: "2026-05-29T00:00:00.000Z",
+        updatedAt: "2026-05-29T00:02:00.000Z",
+        pinned: false,
+        archived: true,
+        lastKnownState: "idle",
+      },
+    },
+  });
+
+  assert.deepEqual(
+    next.threads.map((thread) => thread.threadId),
+    ["thread-keep"],
+  );
 });
 
 test("thread_rows_use_list_style_selection_not_card_blocks", () => {

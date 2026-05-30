@@ -7,6 +7,7 @@ export type BackendCommandKind =
   | "thread.list"
   | "thread.hydrate"
   | "thread.start"
+  | "thread.archive"
   | "agentRuntime.resume"
   | "composer.sendInput"
   | "prompt.answer"
@@ -17,6 +18,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "thread.list",
   "thread.hydrate",
   "thread.start",
+  "thread.archive",
   "agentRuntime.resume",
   "composer.sendInput",
   "prompt.answer",
@@ -33,6 +35,7 @@ export interface BackendCommandPayloadByKind {
     scope?: ThreadScopeDto;
     launchOptions?: JsonObject;
   };
+  "thread.archive": { threadId: ThreadId; archived: boolean };
   "agentRuntime.resume": { threadId: ThreadId };
   "composer.sendInput": { threadId: ThreadId; input: string };
   "prompt.answer": {

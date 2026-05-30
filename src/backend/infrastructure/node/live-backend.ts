@@ -302,7 +302,11 @@ async function persistThreadEvents(
   events: BackendEventEnvelope[],
 ): Promise<void> {
   for (const event of events) {
-    if (event.kind !== "thread.started" && event.kind !== "thread.hydrated") {
+    if (
+      event.kind !== "thread.started" &&
+      event.kind !== "thread.hydrated" &&
+      event.kind !== "thread.archived"
+    ) {
       continue;
     }
     const payload = event.payload as { thread?: ThreadSummaryDto };

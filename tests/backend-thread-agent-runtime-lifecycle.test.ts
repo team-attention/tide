@@ -70,6 +70,55 @@ test("hydrating_an_existing_thread_does_not_start_or_resume_an_agent_runtime", a
   assert.deepEqual(fakes.runtime.events, []);
 });
 
+test("archiving_a_thread_excludes_it_from_the_default_list_but_keeps_it_retrievable", async () => {
+  // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [threadSeed("thread-keep"), threadSeed("thread-archive")],
+  });
+
+  const archived = await service.archiveThread({ threadId: "thread-archive", archived: true });
+  assert.equal(archived.ok, true);
+  assert.equal(archived.ok && archived.thread.lifecycleState, "archived");
+
+  const visible = await service.listThreads({});
+  assert.deepEqual(
+    (visible.ok ? visible.threads : []).map((thread) => thread.threadId),
+    ["thread-keep"],
+  );
+
+  const all = await service.listThreads({ includeArchived: true });
+  assert.equal(
+    all.ok && all.threads.some((thread) => thread.threadId === "thread-archive"),
+    true,
+  );
+
+  // Unarchiving restores it to the default list.
+  const restored = await service.archiveThread({ threadId: "thread-archive", archived: false });
+  assert.equal(restored.ok, true);
+  const visibleAgain = await service.listThreads({});
+  assert.equal(
+    visibleAgain.ok && visibleAgain.threads.some((thread) => thread.threadId === "thread-archive"),
+    true,
+  );
+});
+
+test("archiving_a_missing_thread_returns_thread_not_found", async () => {
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [threadSeed("thread-only")],
+  });
+  const result = await service.archiveThread({ threadId: "missing", archived: true });
+  assert.equal(result.ok, false);
+  assert.equal(!result.ok && result.error.code, "thread_not_found");
+});
+
 test("thread_list_returns_visible_threads_sorted_by_updated_time", async () => {
   // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
   const fakes = createFakes();

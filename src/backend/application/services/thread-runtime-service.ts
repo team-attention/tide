@@ -228,6 +228,15 @@ export interface ListThreadsResult {
   threads: ThreadSnapshot[];
 }
 
+export interface ArchiveThreadInput {
+  threadId: ThreadId;
+  archived: boolean;
+}
+
+export interface ArchiveThreadResult {
+  thread: ThreadSnapshot;
+}
+
 export interface RestoreThreadsInput {
   threads: ThreadSeed[];
 }
@@ -536,6 +545,7 @@ export interface TideMcpToolCallResult {
 export interface ThreadRuntimeService {
   restoreThreads(input: RestoreThreadsInput): Promise<ServiceResult<RestoreThreadsResult>>;
   listThreads(input: ListThreadsInput): Promise<ServiceResult<ListThreadsResult>>;
+  archiveThread(input: ArchiveThreadInput): Promise<ServiceResult<ArchiveThreadResult>>;
   hydrateThread(input: HydrateThreadInput): Promise<ServiceResult<HydrateThreadResult>>;
   startThread(input: StartThreadInput): Promise<ServiceResult<StartThreadResult>>;
   sendComposerInput(
@@ -804,6 +814,21 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     return {
       ok: true,
       threads,
+    };
+  }
+
+  async archiveThread(
+    input: ArchiveThreadInput,
+  ): Promise<ServiceResult<ArchiveThreadResult>> {
+    const thread = this.threads.get(input.threadId);
+    if (thread === undefined) {
+      return failure("thread_not_found", "Thread was not found.");
+    }
+    thread.lifecycleState = input.archived ? "archived" : "open";
+    thread.updatedAt = this.clock();
+    return {
+      ok: true,
+      thread: snapshotThread(thread),
     };
   }
 

@@ -73,6 +73,7 @@ export interface ProductShellState {
 export type ProductShellBackendCommand =
   | { kind: "thread.list"; payload: { includeArchived?: boolean } }
   | { kind: "thread.hydrate"; payload: { threadId: string } }
+  | { kind: "thread.archive"; payload: { threadId: string; archived: boolean } }
   | {
       kind: "workbench.command";
       payload: {
@@ -572,6 +573,50 @@ export function clearProductShellLeftUiTransientState(
   };
 }
 
+export function confirmProductShellThreadArchive(
+  state: ProductShellState,
+  threadId: string,
+): ProductShellUpdateResult {
+  // Optimistically drop the archived Thread from the visible list; the backend
+  // thread.archived event confirms and persists it.
+  const threads = state.threads.filter((thread) => thread.threadId !== threadId);
+  return {
+    state: {
+      ...state,
+      threads,
+      projects: projectsFromThreads(threads),
+      activeThreadId: state.activeThreadId === threadId ? null : state.activeThreadId,
+      leftUiMenu: null,
+      archiveConfirmThreadId: null,
+    },
+    command: { kind: "thread.archive", payload: { threadId, archived: true } },
+  };
+}
+
+function applyProductShellThreadArchivedEvent(
+  state: ProductShellState,
+  event: AgentChatBackendEvent,
+): ProductShellState {
+  const payload = event.payload as { thread?: AgentChatThreadSummary };
+  const summary = payload.thread;
+  if (!summary) {
+    return { ...state, archiveConfirmThreadId: null };
+  }
+  const threads = summary.archived
+    ? state.threads.filter((thread) => thread.threadId !== summary.threadId)
+    : state.threads;
+  return {
+    ...state,
+    threads,
+    projects: projectsFromThreads(threads),
+    activeThreadId:
+      summary.archived && state.activeThreadId === summary.threadId
+        ? null
+        : state.activeThreadId,
+    archiveConfirmThreadId: null,
+  };
+}
+
 export function applyProductShellPromptState(
   state: ProductShellState,
   prompt: AgentChatPromptState | null,
@@ -677,6 +722,8 @@ export function applyProductShellBackendEvent(
     case "thread.started":
     case "thread.hydrated":
       return applyProductShellThreadEvent(nextState, event);
+    case "thread.archived":
+      return applyProductShellThreadArchivedEvent(nextState, event);
     case "agentRuntime.stateChanged": {
       const payload = event.payload as { state?: string };
       if (!applyToActiveSurfaces) {
