@@ -169,6 +169,11 @@ class NodeTideMcpSocketServer implements TideMcpSocketServer {
   private handleConnection(socket: net.Socket): void {
     let buffer = "";
     socket.setEncoding("utf8");
+    // A broken client connection (EPIPE/ECONNRESET on write, abrupt close) must
+    // not become an uncaught exception that crashes the Backend utilityProcess.
+    socket.on("error", () => {
+      socket.destroy();
+    });
     socket.on("data", (chunk) => {
       buffer += chunk;
       const lines = buffer.split("\n");

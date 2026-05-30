@@ -132,6 +132,7 @@ interface TideMcpRuntimeEnv {
 | Socket bridge forwards JSON-RPC requests to a live adapter | `mcp_socket_request_handler_routes_tools_call_to_adapter` |
 | Stdio entrypoint requires the live Backend socket | `mcp_stdio_entrypoint_requires_tide_socket` |
 | Provider bootstrap creates wrapper-backed MCP configs | `provider_bootstrap_artifacts_create_provider_native_files` |
+| A broken client connection does not crash the Backend | `tide_mcp_socket_server_survives_a_broken_client_connection` |
 
 ## Implementation Notes
 

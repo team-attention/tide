@@ -2,11 +2,16 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import net from "node:net";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { createTideMcpToolSurfaceAdapter } from "../src/backend/adapters/inbound/tide-mcp-tool-surface/tide-mcp-tool-surface-adapter.ts";
 import {
   createTideMcpSocketRequestHandler,
+  createTideMcpSocketServer,
 } from "../src/backend/adapters/inbound/tide-mcp-server/tide-mcp-socket-bridge.ts";
 import {
   createTideMcpJsonRpcHandler,
@@ -101,6 +106,55 @@ test("mcp_tools_list_returns_backend_tool_definitions", async () => {
   assert.ok(toolNames?.includes("tide_observe_thread"));
   assert.ok(toolNames?.includes("tide_open_terminal"));
   assert.ok(toolNames?.includes("tide_run_terminal_command"));
+});
+
+test("tide_mcp_socket_server_survives_a_broken_client_connection", async () => {
+  // A broken provider MCP client must not crash the Backend with an unhandled
+  // socket error (EPIPE) on write.
+  const service = serviceWithActiveThread();
+  const adapter = createTideMcpToolSurfaceAdapter({ service });
+  const socketPath = path.join(mkdtempSync(path.join(tmpdir(), "tide-mcp-sock-")), "mcp.sock");
+  const server = createTideMcpSocketServer({ socketPath, adapter });
+  await server.listen();
+
+  try {
+    // Send a request then abruptly drop the connection so the server's response
+    // write targets a dead peer.
+    await new Promise<void>((resolve) => {
+      const client = net.connect(socketPath, () => {
+        client.write(`${JSON.stringify({ id: "1", method: "tide_mcp/list_tools" })}\n`);
+        client.destroy();
+        resolve();
+      });
+      client.on("error", () => {});
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // The server must still be alive and serve a fresh client.
+    const response = await new Promise<{ id: string; result: { tools: unknown[] } }>(
+      (resolve, reject) => {
+        const client = net.connect(socketPath, () => {
+          client.write(`${JSON.stringify({ id: "2", method: "tide_mcp/list_tools" })}\n`);
+        });
+        let buffer = "";
+        client.setEncoding("utf8");
+        client.on("data", (chunk) => {
+          buffer += chunk;
+          const newline = buffer.indexOf("\n");
+          if (newline >= 0) {
+            client.destroy();
+            resolve(JSON.parse(buffer.slice(0, newline)));
+          }
+        });
+        client.on("error", reject);
+      },
+    );
+
+    assert.equal(response.id, "2");
+    assert.ok(Array.isArray(response.result.tools));
+  } finally {
+    await server.close();
+  }
 });
 
 test("mcp_tools_call_routes_to_thread_runtime_service", async () => {
