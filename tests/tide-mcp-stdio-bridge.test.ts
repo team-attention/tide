@@ -208,6 +208,66 @@ test("tide_mcp_stdio_socket_round_trip_lets_an_agent_observe_the_thread", async 
   assert.equal(call?.result.structuredContent.threadId, "thread-mcp");
 });
 
+test("tide_mcp_stdio_socket_round_trip_lets_an_agent_operate_the_workbench", async () => {
+  // End-to-end: the agent opens a Browser Pane through MCP and a follow-up
+  // observation reflects the mutation, proving operate (not just observe).
+  const service = serviceWithActiveThread();
+  const adapter = createTideMcpToolSurfaceAdapter({ service });
+  const socketPath = path.join(mkdtempSync(path.join(tmpdir(), "tide-mcp-op-")), "mcp.sock");
+  const server = createTideMcpSocketServer({ socketPath, adapter });
+  await server.listen();
+
+  const responses: string[] = [];
+  try {
+    await runTideMcpSocketBackedLineDelimitedStdio({
+      socketPath,
+      env: {
+        TIDE_RUNTIME_ID: "runtime-mcp",
+        TIDE_AGENT_ID: "codex",
+        TIDE_THREAD_ID: "thread-mcp",
+      },
+      input: [
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: "tide_open_browser",
+            arguments: { url: "https://example.test/agent-opened" },
+          },
+        }),
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: { name: "tide_observe_workbench", arguments: {} },
+        }),
+      ],
+      writeLine: (line) => {
+        responses.push(line);
+      },
+    });
+  } finally {
+    await server.close();
+  }
+
+  const parsed = responses.map((line) => JSON.parse(line));
+  const open = parsed.find((entry) => entry.id === 1);
+  const observe = parsed.find((entry) => entry.id === 2);
+
+  assert.equal(open?.result.isError, undefined);
+  assert.equal(open?.result.structuredContent.kind, "open_browser");
+  assert.equal(open?.result.structuredContent.pane.kind, "browser");
+  assert.equal(open?.result.structuredContent.pane.url, "https://example.test/agent-opened");
+
+  assert.equal(observe?.result.structuredContent.kind, "observe_workbench");
+  const browserPanes = observe?.result.structuredContent.panes.filter(
+    (pane: { kind: string }) => pane.kind === "browser",
+  );
+  assert.equal(browserPanes?.length, 1);
+  assert.equal(browserPanes[0].url, "https://example.test/agent-opened");
+});
+
 test("mcp_tools_call_routes_to_thread_runtime_service", async () => {
   const service = serviceWithActiveThread();
   const adapter = createTideMcpToolSurfaceAdapter({ service });
