@@ -1524,6 +1524,7 @@ test("go_to_definition_without_result_returns_not_found_without_workbench_mutati
         byteLength: 25,
         truncated: false,
         navigationTarget: undefined,
+        references: undefined,
       },
     ],
   };
@@ -1550,6 +1551,90 @@ test("go_to_definition_without_result_returns_not_found_without_workbench_mutati
   assert.equal(!result.ok && result.error.code, "workspace_code_definition_not_found");
   const hydrated = await service.hydrateThread({ threadId: "thread-goto-missing" });
   assert.deepEqual(hydrated.ok && hydrated.thread.workbench.panes, initialWorkbench.panes);
+  assert.equal(hydrated.ok && hydrated.thread.workbench.activePaneId, "pane-source");
+});
+
+test("go_to_references_lists_use_sites_on_the_source_editor_pane", async () => {
+  // Spec: docs_v2/specs/workbench-editor-code-navigation.md (D5)
+  const fakes = createFakes({
+    files: { "src/app.ts": "export const value = 1;\nconst a = value;\n" },
+    references: [
+      {
+        root: "/repo/tide",
+        path: "/repo/tide/src/app.ts",
+        relativePath: "src/app.ts",
+        line: 0,
+        character: 13,
+        length: 5,
+        label: "export const value = 1;",
+      },
+      {
+        root: "/repo/tide",
+        path: "/repo/tide/src/app.ts",
+        relativePath: "src/app.ts",
+        line: 1,
+        character: 10,
+        length: 5,
+        label: "const a = value;",
+      },
+    ],
+  });
+  const initialWorkbench = {
+    activePaneId: "pane-source",
+    focusOwner: "workbench" as const,
+    panes: [
+      {
+        paneId: "pane-source",
+        kind: "editor" as const,
+        title: "app.ts",
+        filePath: "/repo/tide/src/app.ts",
+        relativePath: "src/app.ts",
+        visible: true,
+        revision: "rev-source",
+        updatedAt: now,
+        bodyText: "export const value = 1;\nconst a = value;\n",
+        bodyTextPreview: "export const value = 1;\nconst a = value;\n",
+        byteLength: 40,
+        truncated: false,
+      },
+    ],
+  };
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-refs", {
+        scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+        workbench: initialWorkbench,
+      }),
+    ],
+  });
+
+  const result = await service.handleWorkbenchCommand({
+    threadId: "thread-refs",
+    command: "go_to_references",
+    targetPaneId: "pane-source",
+    data: { line: 0, character: 13 },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(fakes.codeIntelligence.referenceCalls[0], {
+    root: "/repo/tide",
+    path: "/repo/tide/src/app.ts",
+    line: 0,
+    character: 13,
+  });
+  const hydrated = await service.hydrateThread({ threadId: "thread-refs" });
+  const sourcePane =
+    hydrated.ok && hydrated.thread.workbench.panes.find((pane) => pane.paneId === "pane-source");
+  assert.ok(sourcePane && sourcePane.kind === "editor");
+  assert.equal(sourcePane.references?.items.length, 2);
+  assert.equal(sourcePane.references?.truncated, false);
+  assert.deepEqual(
+    sourcePane.references?.items.map((item) => item.line),
+    [0, 1],
+  );
   assert.equal(hydrated.ok && hydrated.thread.workbench.activePaneId, "pane-source");
 });
 
@@ -2000,6 +2085,7 @@ function createFakes(options: {
     code: "workspace_code_intelligence_unavailable" | "workspace_code_definition_not_found";
     message: string;
   };
+  references?: WorkspaceCodeLocation[];
 } = {}) {
   const runtime = new FakeAgentRuntimePort();
   const readiness = new FakeProviderReadinessPort(
@@ -2020,6 +2106,7 @@ function createFakes(options: {
   const codeIntelligence = new FakeWorkspaceCodeIntelligencePort(
     options.definition,
     options.definitionError,
+    options.references,
   );
 
   return {
@@ -2220,6 +2307,14 @@ class FakeWorkspaceCodeIntelligencePort implements WorkspaceCodeIntelligencePort
       }
     | undefined;
 
+  readonly referenceCalls: Array<{
+    root: string;
+    path: string;
+    line: number;
+    character: number;
+  }> = [];
+  private readonly references: WorkspaceCodeLocation[] | undefined;
+
   constructor(
     definition: WorkspaceCodeLocation | undefined,
     definitionError:
@@ -2228,9 +2323,11 @@ class FakeWorkspaceCodeIntelligencePort implements WorkspaceCodeIntelligencePort
           message: string;
         }
       | undefined,
+    references?: WorkspaceCodeLocation[],
   ) {
     this.definition = definition;
     this.definitionError = definitionError;
+    this.references = references;
   }
 
   async findDefinition(input: {
@@ -2261,14 +2358,23 @@ class FakeWorkspaceCodeIntelligencePort implements WorkspaceCodeIntelligencePort
     };
   }
 
-  async findReferences(): Promise<WorkspaceCodeReferencesResult> {
-    return {
-      ok: false,
-      error: {
-        code: "workspace_code_references_not_found",
-        message: "No references were found for the selected symbol.",
-      },
-    };
+  async findReferences(input: {
+    root: string;
+    path: string;
+    line: number;
+    character: number;
+  }): Promise<WorkspaceCodeReferencesResult> {
+    this.referenceCalls.push(input);
+    if (this.references === undefined || this.references.length === 0) {
+      return {
+        ok: false,
+        error: {
+          code: "workspace_code_references_not_found",
+          message: "No references were found for the selected symbol.",
+        },
+      };
+    }
+    return { ok: true, locations: this.references, truncated: false };
   }
 }
 

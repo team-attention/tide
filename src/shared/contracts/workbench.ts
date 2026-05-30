@@ -44,6 +44,7 @@ export interface NonBrowserWorkbenchPaneRefDto extends BaseWorkbenchPaneRefDto {
   byteLength?: number;
   truncated?: boolean;
   navigationTarget?: WorkbenchEditorNavigationTargetDto;
+  references?: WorkbenchEditorReferenceListDto;
   diffText?: string;
   beforeByteLength?: number;
   afterByteLength?: number;
@@ -67,6 +68,20 @@ export interface WorkbenchEditorNavigationTargetDto {
   length?: number;
   label?: string;
   sourcePaneId?: WorkbenchPaneId;
+}
+
+export interface WorkbenchEditorReferenceDto {
+  relativePath: string;
+  line: number;
+  character: number;
+  length?: number;
+  label?: string;
+}
+
+export interface WorkbenchEditorReferenceListDto {
+  query?: string;
+  items: WorkbenchEditorReferenceDto[];
+  truncated: boolean;
 }
 
 export interface LauncherPaneActionDto {

@@ -684,6 +684,13 @@ export function toWorkbenchPaneRefDto(
     if (pane.navigationTarget !== undefined) {
       dto.navigationTarget = { ...pane.navigationTarget };
     }
+    if (pane.references !== undefined) {
+      dto.references = {
+        query: pane.references.query,
+        truncated: pane.references.truncated,
+        items: pane.references.items.map((item) => ({ ...item })),
+      };
+    }
   }
   if (pane.kind === "diff") {
     if (pane.diffText !== undefined) {

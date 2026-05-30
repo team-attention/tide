@@ -84,9 +84,13 @@ It returns every Thread-root-scoped use site of the symbol at the cursor as a
 bounded, ordered list of `WorkspaceCodeLocation`s (capped, with a `truncated`
 flag), each carrying its source-line text as a `label`. References outside the
 Thread root are excluded (D2). A position that resolves to no symbol returns
-`workspace_code_references_not_found`. This is the Backend capability behind the
-Editor Pane go-to-references feature; the `workbench.command` and references-list
-UI that consume it are wired in a following slice.
+`workspace_code_references_not_found`.
+
+The `go_to_references` `workbench.command` and the `tide_go_to_references` Tide
+MCP tool both resolve references for the cursor position and attach the bounded
+list to the **source** Editor Pane as `references` (`{ query, items[], truncated }`),
+keeping that Pane active. The references-list UI that renders and navigates this
+list is wired in a following slice.
 
 ## Domain Model
 
@@ -174,6 +178,8 @@ Business Rules:
 | Code intelligence finds all references | `typescript_code_intelligence_finds_all_references_to_a_symbol` |
 | References not found for a non-symbol position | `typescript_code_intelligence_returns_not_found_for_a_non_symbol_position` |
 | References stay Thread-root scoped | `typescript_code_intelligence_rejects_references_outside_the_root` |
+| go_to_references attaches the list to the source Pane | `go_to_references_lists_use_sites_on_the_source_editor_pane` |
+| Tide MCP exposes the references tool | `tide_mcp_tool_surface_lists_bounded_workbench_tools` |
 
 ## Implementation Notes
 

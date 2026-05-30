@@ -102,6 +102,7 @@ test("tide_mcp_tool_surface_lists_bounded_workbench_tools", () => {
       "tide_open_file",
       "tide_edit_file",
       "tide_go_to_definition",
+      "tide_go_to_references",
       "tide_open_terminal",
       "tide_run_terminal_command",
     ],

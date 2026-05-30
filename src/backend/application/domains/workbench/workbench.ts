@@ -19,6 +19,7 @@ export type TideMcpToolName =
   | "tide_open_file"
   | "tide_edit_file"
   | "tide_go_to_definition"
+  | "tide_go_to_references"
   | "tide_open_terminal"
   | "tide_run_terminal_command";
 
@@ -32,6 +33,7 @@ export const TIDE_MCP_WORKBENCH_TOOL_NAMES: TideMcpToolName[] = [
   "tide_open_file",
   "tide_edit_file",
   "tide_go_to_definition",
+  "tide_go_to_references",
   "tide_open_terminal",
   "tide_run_terminal_command",
 ];
@@ -111,6 +113,7 @@ export interface EditorPaneState {
   byteLength: number;
   truncated: boolean;
   navigationTarget?: WorkbenchEditorNavigationTarget;
+  references?: WorkbenchEditorReferenceList;
 }
 
 export interface WorkbenchEditorNavigationTarget {
@@ -119,6 +122,20 @@ export interface WorkbenchEditorNavigationTarget {
   length?: number;
   label?: string;
   sourcePaneId?: WorkbenchPaneId;
+}
+
+export interface WorkbenchEditorReference {
+  relativePath: string;
+  line: number;
+  character: number;
+  length?: number;
+  label?: string;
+}
+
+export interface WorkbenchEditorReferenceList {
+  query?: string;
+  items: WorkbenchEditorReference[];
+  truncated: boolean;
 }
 
 export interface DiffPaneState {
@@ -186,6 +203,7 @@ export interface NonBrowserWorkbenchPaneRef extends WorkbenchPaneRef {
   byteLength?: number;
   truncated?: boolean;
   navigationTarget?: WorkbenchEditorNavigationTarget;
+  references?: WorkbenchEditorReferenceList;
   diffText?: string;
   beforeByteLength?: number;
   afterByteLength?: number;

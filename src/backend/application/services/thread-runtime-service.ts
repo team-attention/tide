@@ -391,6 +391,7 @@ export type TideMcpToolOutput =
   | TideOpenFileOutput
   | TideEditFileOutput
   | TideGoToDefinitionOutput
+  | TideGoToReferencesOutput
   | TideOpenTerminalOutput
   | TideRunTerminalCommandOutput;
 
@@ -480,6 +481,21 @@ export interface TideGoToDefinitionOutput {
     length?: number;
     label?: string;
   };
+}
+
+export interface TideGoToReferencesOutput {
+  kind: "go_to_references";
+  threadId: ThreadId;
+  pane: WorkbenchPaneSnapshotRef & { kind: "editor" };
+  sourcePaneId: WorkbenchPaneId;
+  references: {
+    relativePath: string;
+    line: number;
+    character: number;
+    length?: number;
+    label?: string;
+  }[];
+  truncated: boolean;
 }
 
 export interface TideOpenTerminalOutput {
@@ -663,6 +679,19 @@ const TIDE_MCP_TOOL_DEFINITIONS: TideMcpToolDefinition[] = [
   {
     name: "tide_go_to_definition",
     description: "Navigate from an existing Editor Pane cursor position to a visible definition Editor Pane.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        paneId: { type: "string" },
+        line: { type: "number" },
+        character: { type: "number" },
+      },
+      required: ["paneId", "line", "character"],
+    },
+  },
+  {
+    name: "tide_go_to_references",
+    description: "List every Thread-root use site of the symbol at an Editor Pane cursor position as a visible references list on that Pane.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1569,6 +1598,61 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
           workbench: snapshotWorkbench(thread.workbench),
         };
       }
+      case "go_to_references": {
+        const pane = workbenchPaneById(thread.workbench, input.targetPaneId);
+        if (pane === undefined || pane.kind !== "editor") {
+          return failure(
+            "workbench_target_not_found",
+            "Editor Pane target was not found.",
+          );
+        }
+        const position = editorPanePositionFromData(input.data);
+        if (position === undefined) {
+          return failure(
+            "invalid_workbench_command",
+            "Go to references requires line and character.",
+          );
+        }
+        const root = threadRoot(thread);
+        if (root === undefined) {
+          return failure(
+            "workspace_code_intelligence_unavailable",
+            "Thread does not have an Execution Context root for code navigation.",
+          );
+        }
+        const references = await this.workspaceCodeIntelligencePort.findReferences({
+          root,
+          path: pane.filePath,
+          line: position.line,
+          character: position.character,
+        });
+        if (!references.ok) {
+          return failure(references.error.code, references.error.message);
+        }
+        pane.references = {
+          query: pane.relativePath,
+          truncated: references.truncated,
+          items: references.locations.map((location) => ({
+            relativePath: location.relativePath,
+            line: location.line,
+            character: location.character,
+            length: location.length,
+            label: location.label,
+          })),
+        };
+        pane.visible = true;
+        pane.revision = this.idGenerator();
+        pane.updatedAt = this.clock();
+        thread.workbench.activePaneId = pane.paneId;
+        thread.workbench.focusOwner = "workbench";
+        thread.updatedAt = this.clock();
+        return {
+          ok: true,
+          handled: true,
+          thread: snapshotThread(thread),
+          workbench: snapshotWorkbench(thread.workbench),
+        };
+      }
       case "refresh_file_tree": {
         const root = threadRoot(thread);
         if (root === undefined) {
@@ -2188,6 +2272,8 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
         return this.editFileOutput(thread, input.input);
       case "tide_go_to_definition":
         return this.goToDefinitionOutput(thread, input.input);
+      case "tide_go_to_references":
+        return this.goToReferencesOutput(thread, input.input);
       case "tide_open_terminal":
         return this.openTerminalOutput(thread, input.input);
       case "tide_run_terminal_command":
@@ -2615,6 +2701,74 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
           length: definition.location.length,
           label: definition.location.label,
         },
+      },
+    };
+  }
+
+  private async goToReferencesOutput(
+    thread: ThreadRecord,
+    input: Record<string, unknown> | undefined,
+  ): Promise<ServiceResult<{ value: TideGoToReferencesOutput }>> {
+    const paneId = optionalString(input?.paneId);
+    const position = editorPanePositionFromData(input);
+    if (paneId === undefined || position === undefined) {
+      return failure(
+        "invalid_workbench_command",
+        "Go to references requires paneId, line, and character.",
+      );
+    }
+    const sourcePane = workbenchPaneById(thread.workbench, paneId);
+    if (sourcePane === undefined || sourcePane.kind !== "editor") {
+      return failure(
+        "workbench_target_not_found",
+        "Editor Pane target was not found.",
+      );
+    }
+    const root = threadRoot(thread);
+    if (root === undefined) {
+      return failure(
+        "workspace_code_intelligence_unavailable",
+        "Thread does not have an Execution Context root for code navigation.",
+      );
+    }
+
+    const references = await this.workspaceCodeIntelligencePort.findReferences({
+      root,
+      path: sourcePane.filePath,
+      line: position.line,
+      character: position.character,
+    });
+    if (!references.ok) {
+      return failure(references.error.code, references.error.message);
+    }
+
+    const items = references.locations.map((location) => ({
+      relativePath: location.relativePath,
+      line: location.line,
+      character: location.character,
+      length: location.length,
+      label: location.label,
+    }));
+    sourcePane.references = {
+      query: sourcePane.relativePath,
+      truncated: references.truncated,
+      items,
+    };
+    sourcePane.visible = true;
+    sourcePane.revision = this.idGenerator();
+    sourcePane.updatedAt = this.clock();
+    thread.workbench.activePaneId = sourcePane.paneId;
+    thread.updatedAt = this.clock();
+
+    return {
+      ok: true,
+      value: {
+        kind: "go_to_references",
+        threadId: thread.threadId,
+        pane: editorPaneRef(sourcePane) as WorkbenchPaneSnapshotRef & { kind: "editor" },
+        sourcePaneId: sourcePane.paneId,
+        references: items,
+        truncated: references.truncated,
       },
     };
   }
@@ -3191,6 +3345,14 @@ function editorPaneRef(pane: EditorPaneState): WorkbenchPaneSnapshotRef {
     truncated: pane.truncated,
     navigationTarget:
       pane.navigationTarget === undefined ? undefined : { ...pane.navigationTarget },
+    references:
+      pane.references === undefined
+        ? undefined
+        : {
+            query: pane.references.query,
+            truncated: pane.references.truncated,
+            items: pane.references.items.map((item) => ({ ...item })),
+          },
   };
 }
 
@@ -3518,6 +3680,7 @@ function isWorkbenchMutatingTideMcpTool(toolName: TideMcpToolName): boolean {
     case "tide_open_file":
     case "tide_edit_file":
     case "tide_go_to_definition":
+    case "tide_go_to_references":
     case "tide_open_terminal":
     case "tide_run_terminal_command":
       return true;
