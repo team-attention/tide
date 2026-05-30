@@ -965,11 +965,17 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     thread.lastKnownState = "running";
     thread.updatedAt = this.clock();
 
+    // Provider CLIs receive the first message as the launch-time initial prompt
+    // (positional/flag), which reliably starts a turn. Tide API Agents have no
+    // launch argv, so they still receive it via writeInput.
+    const deliverPromptViaLaunch =
+      thread.agentBinding.runtimeSource?.kind === "provider_cli";
     const handle = await this.agentRuntimePort.start({
       threadId,
       agentBinding: cloneAgentBinding(thread.agentBinding),
       scope: cloneScope(thread.scope),
       launchOptions: thread.launchOptions,
+      initialPrompt: deliverPromptViaLaunch ? input.initialMessage : undefined,
     });
     const submittedBlock = this.appendLocalUserMessageBlock(
       thread,
@@ -980,11 +986,13 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     thread.runtimeState = "running";
     thread.updatedAt = this.clock();
 
-    await this.agentRuntimePort.writeInput(handle, {
-      kind: "composer_input",
-      value: input.initialMessage,
-      submittedAt: this.clock(),
-    });
+    if (!deliverPromptViaLaunch) {
+      await this.agentRuntimePort.writeInput(handle, {
+        kind: "composer_input",
+        value: input.initialMessage,
+        submittedAt: this.clock(),
+      });
+    }
 
     return {
       ok: true,

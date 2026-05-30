@@ -192,6 +192,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       codexHome: providerState.codexHome,
       resumeRef: undefined,
       launchOptions: input.launchOptions,
+      initialPrompt: input.initialPrompt,
     });
   }
 
@@ -249,6 +250,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
     codexHome?: string;
     resumeRef?: string;
     launchOptions?: Record<string, unknown>;
+    initialPrompt?: string;
   }): ProviderLaunchPlan {
     const env: Record<string, string> = {
       TERM: "xterm-256color",
@@ -259,6 +261,12 @@ class CodexAgentIntegration implements AgentIntegrationPort {
     }
 
     const launchOptionArgs = codexLaunchOptionArgs(input.launchOptions);
+    // Deliver the first user message as Codex's positional [PROMPT] so the
+    // session starts a turn immediately, instead of typing it into the TUI.
+    const promptArgs =
+      input.initialPrompt !== undefined && input.initialPrompt.length > 0
+        ? [input.initialPrompt]
+        : [];
     const args =
       input.resumeRef === undefined
         ? [
@@ -266,6 +274,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
             ...launchOptionArgs,
             "--dangerously-bypass-hook-trust",
             ...codexConfigArgs(this.tideMcp),
+            ...promptArgs,
           ]
         : [
             "resume",
@@ -274,6 +283,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
             ...launchOptionArgs,
             "--dangerously-bypass-hook-trust",
             ...codexConfigArgs(this.tideMcp),
+            ...promptArgs,
           ];
 
     return {

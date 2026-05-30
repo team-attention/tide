@@ -60,7 +60,28 @@ Composer input is written to the runtime process with the provider's required su
 
 Codex can use carriage return. Claude Code uses CSI-u Enter based on the hidden PTY evidence. Antigravity uses carriage return until a stronger Antigravity-specific input protocol is added.
 
-Provider Launch Plans may also specify startup and pre-submit timing. The runtime waits for the selected provider's startup window before the first write after launch or resume, then writes Composer text and the provider-specific submit key separately. This preserves the Provider Evidence Harness finding that provider TUIs sometimes need a short settle window before submit.
+Provider Launch Plans may also specify startup and pre-submit timing. The runtime waits for the selected provider's startup window before a write after launch or resume, then writes Composer text and the provider-specific submit key separately. This preserves the Provider Evidence Harness finding that provider TUIs sometimes need a short settle window before submit.
+
+### D6. The first message is delivered as the launch-time initial prompt
+
+Typing the first message into a provider TUI after launch is unreliable (the TUI
+may not be ready, and no turn starts). Instead, the first user message is passed
+to the provider CLI as its launch-time initial prompt, so the session starts a
+turn immediately:
+
+- Codex: positional `[PROMPT]` argument.
+- Claude Code: positional `[prompt]` argument.
+- Antigravity: `--prompt-interactive <prompt>`.
+
+`AgentRuntimeStartInput.initialPrompt` carries the message into `buildStartPlan`.
+For Provider CLI Agents the Backend therefore does NOT also type the first
+message via `writeInput`; follow-up Composer messages still use `writeInput`
+(submit sequence per above). Tide API Agents have no launch argv, so they
+receive the first message via `writeInput`.
+
+Note: the provider must also be authenticated and the Execution Context
+directory trusted for a turn to actually produce an answer (Provider Readiness);
+a launched-but-unauthenticated CLI returns provider auth errors, not an answer.
 
 ### D6. PTY output returns with runtime context
 

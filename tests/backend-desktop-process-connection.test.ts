@@ -248,7 +248,10 @@ test("product_shell_thread_start_command_reaches_backend_with_selected_agent_bin
     worktree: "current folder",
     branch: "main",
   });
-  assert.equal(fakes.runtime.writes[0]?.input.value, "Run Antigravity through the Backend");
+  // Provider CLIs receive the first message as the launch-time initial prompt
+  // (reliably starts a turn), not by typing it into the TUI after launch.
+  assert.equal(fakes.runtime.starts[0]?.initialPrompt, "Run Antigravity through the Backend");
+  assert.equal(fakes.runtime.writes.length, 0);
   assert.equal(events[2].kind, "thread.started");
   assert.equal(events[2].payload.thread.agentBinding.agentId, "antigravity");
   assert.equal(events[2].payload.thread.launchOptions?.model, "Antigravity default");

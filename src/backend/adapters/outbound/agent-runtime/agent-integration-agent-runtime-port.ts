@@ -152,6 +152,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       agentBinding: input.agentBinding,
       scope: input.scope,
       launchOptions: input.launchOptions,
+      initialPrompt: input.initialPrompt,
     });
     traceAgentRuntime(`plan ${input.agentBinding.agentId} command=${plan.command}`);
 

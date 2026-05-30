@@ -76,6 +76,10 @@ export interface AgentStartPlanInput {
   agentBinding?: AgentBinding;
   scope?: ThreadScope;
   launchOptions?: Record<string, unknown>;
+  // The first user message, embedded into the launch as the provider's initial
+  // prompt so the session starts a turn immediately (typing it into the TUI
+  // after launch is unreliable).
+  initialPrompt?: string;
 }
 
 export interface AgentResumePlanInput {

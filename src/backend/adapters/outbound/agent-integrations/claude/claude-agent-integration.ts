@@ -187,6 +187,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       cwd,
       resumeRef: undefined,
       launchOptions: input.launchOptions,
+      initialPrompt: input.initialPrompt,
     });
   }
 
@@ -300,6 +301,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     cwd: string;
     resumeRef?: string;
     launchOptions?: Record<string, unknown>;
+    initialPrompt?: string;
   }): ProviderLaunchPlan {
     const args = [
       "--mcp-config",
@@ -313,6 +315,12 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
 
     if (input.resumeRef !== undefined) {
       args.push("--resume", input.resumeRef);
+    }
+
+    // Deliver the first user message as Claude's positional [prompt] so the
+    // session starts a turn immediately.
+    if (input.initialPrompt !== undefined && input.initialPrompt.length > 0) {
+      args.push(input.initialPrompt);
     }
 
     return {

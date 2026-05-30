@@ -193,6 +193,7 @@ class AntigravityAgentIntegration implements AgentIntegrationPort {
       cwd,
       conversationRef: undefined,
       launchOptions: input.launchOptions,
+      initialPrompt: input.initialPrompt,
     });
   }
 
@@ -245,12 +246,18 @@ class AntigravityAgentIntegration implements AgentIntegrationPort {
     cwd: string;
     conversationRef?: string;
     launchOptions?: Record<string, unknown>;
+    initialPrompt?: string;
   }): ProviderLaunchPlan {
     const args = [
       ...antigravityLaunchOptionArgs(input.launchOptions),
       ...(input.conversationRef === undefined
         ? []
         : ["--conversation", input.conversationRef]),
+      // Deliver the first user message via --prompt-interactive so the session
+      // starts a turn immediately and stays interactive.
+      ...(input.initialPrompt !== undefined && input.initialPrompt.length > 0
+        ? ["--prompt-interactive", input.initialPrompt]
+        : []),
     ];
 
     return {

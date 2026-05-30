@@ -30,6 +30,9 @@ export interface AgentRuntimeStartInput {
   agentBinding: AgentBinding;
   scope?: ThreadScope;
   launchOptions?: Record<string, unknown>;
+  // First user message, delivered to provider CLIs as the launch-time initial
+  // prompt (see AgentStartPlanInput.initialPrompt).
+  initialPrompt?: string;
 }
 
 export interface AgentRuntimeResumeInput {
