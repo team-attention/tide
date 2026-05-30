@@ -18,14 +18,15 @@ It covers:
 
 It does not define Backend domain lifecycle, provider launch details, Shared Contract payload internals, React UI, or packaging.
 
-The first implementation covers the minimum testable connection path before the Electron build scaffold exists:
+The implemented path covers the process boundary in two layers:
 
 - Shared Contract connection DTOs.
 - a Backend inbound Contract Message Adapter for BackendCommand envelopes.
-- a Desktop outbound MessagePort-compatible Backend client.
+- a Desktop outbound MessagePort-compatible Backend client for testable transport seams.
 - a Desktop Main supervisor state machine with fake Backend process seams.
-
-It does not import Electron or spawn a real utilityProcess yet.
+- Electron Main spawning the built Backend entrypoint with `utilityProcess.fork`.
+- Electron Main brokering Renderer IPC commands to Backend utilityProcess messages.
+- Electron Main forwarding unprompted BackendEvent envelopes, such as Agent Session Block stream updates, to Renderer windows.
 
 ## Evidence
 
@@ -97,13 +98,19 @@ Backend does not keep unbounded event history in memory.
 
 Raw PTY evidence belongs to PTY Transcript and provider history, not Renderer replay buffers.
 
-### D9. First implementation uses process seams, not Electron imports
+### D9. Process seams stay testable, product Main uses utilityProcess
 
-The first code slice implements the process connection seam with fake Backend process handles and MessagePort-compatible ports.
+The code keeps fake Backend process handles and MessagePort-compatible ports for state-machine tests.
 
 This proves the command/event path, handshake validation, reconnect snapshot, crash visibility, and shutdown ordering under Node tests.
 
-Real Electron utilityProcess spawning and packaging are deferred to the Build and Package slice because the current scaffold does not include Electron runtime dependencies.
+The product Electron Main path also starts the built Backend entrypoint with `utilityProcess.fork`, validates the Backend handshake, posts BackendCommand envelopes, collects command-scoped BackendEvent envelopes, and resolves the Renderer IPC request when the Backend emits `command.completed` or `contract.error`.
+
+BackendEvent envelopes that are not scoped to the current IPC request are pushed to Renderer windows over the `tide:backend-event` channel so Agent Runtime stream updates remain visible after the command returns.
+
+If Backend emits an unscoped event while an IPC command is still being handled, the Backend entrypoint buffers that event until after the command-scoped events are posted. Main also keeps request-independent events on the pushed event channel. This preserves the push channel for runtimes that produce their first Agent output inside the command path, without requiring Desktop to recover the update through a later hydrate.
+
+Desktop Main still does not import Backend internals. The backend entrypoint path is a process target string and a built JS file path, not a source import.
 
 ## Out Of Scope
 
@@ -254,6 +261,8 @@ First implementation contract additions:
 7. Backend crash results in visible recovery state.
 8. App close asks Backend for graceful shutdown before termination.
 9. Event buffering is bounded and state-oriented.
+10. Browser-only Renderer previews must surface missing Backend transport instead of silently dropping commands.
+11. Unscoped Backend events emitted during a pending command must still reach Renderer through the pushed event channel after the command resolves.
 
 ## Tests
 
@@ -263,11 +272,17 @@ First implementation contract additions:
 | UC-1 BR-2: Contract mismatch fails handshake | `unsupported_contract_version_fails_handshake_before_command_handling` marks Backend disconnected and posts a Contract Error before any command handling. |
 | UC-2 BR-1: Renderer sends only BackendCommand envelopes | `message_port_backend_client_rejects_non_envelope_payloads` rejects non-envelope payloads before transport post. |
 | UC-2 BR-2: Commands cross through Shared Contracts | `renderer_command_reaches_backend_adapter_and_returns_backend_events` posts a BackendCommand envelope and receives BackendEvent envelopes with the same RequestId. |
+| UC-2 BR-3: Product Shell selections reach Backend runtime unchanged | `product_shell_thread_start_command_reaches_backend_with_selected_agent_binding` submits the Product Shell Antigravity start command through the Backend Contract adapter and verifies Provider Readiness, Agent Runtime start, and terminal input all use the selected Agent Binding and Launch Options. |
 | UC-3 BR-1: Renderer reconnect gets snapshot | `renderer_reconnect_receives_active_thread_snapshot` reconnects with active Thread id and receives snapshot lifecycle plus Thread hydration events. |
 | UC-3 BR-2: Backend continues while Renderer reloads | `backend_keeps_runtime_events_while_renderer_is_disconnected` records Backend runtime observations during disconnect and sends current snapshot on reconnect. |
 | UC-4 BR-1: Backend crash is visible | `backend_crash_emits_disconnected_state_without_survived_runtime_claim` emits Backend disconnected state and marks runtime handles as lost. |
 | UC-5 BR-1: App close requests shutdown | `app_close_requests_backend_shutdown_before_terminate_path` sends graceful shutdown before terminate fallback. |
 | Architecture BR-1: Main has no runtime logic | `desktop_main_supervisor_does_not_import_provider_or_pty_modules` prevents provider/PTY modules from being imported by Desktop Main runtime supervisor. |
+| Architecture BR-2: Product Main uses process boundary | `electron_main_uses_utility_process_for_backend_without_importing_backend_internals` proves Electron Main forks the Backend entrypoint, validates Shared Contract messages, and does not import Backend internals. |
+| UC-2 BR-4: Runtime events stream after command return | `electron_main_and_preload_expose_backend_event_push_channel` proves Main sends unprompted BackendEvents and Preload exposes a subscription API. |
+| UC-2 BR-4a: Runtime events emitted during command handling still push | `backend_entrypoint_buffers_unscoped_backend_events_emitted_during_command_handling` proves Backend entrypoint posts unscoped BackendEvents after command-scoped events instead of reentrantly posting them during command handling. |
+| UC-2 BR-4b: Main keeps pending unscoped events on push channel | `electron_main_defers_unscoped_backend_events_emitted_during_pending_command` proves Main buffers unscoped BackendEvents while a command is pending and flushes them through `tide:backend-event` after command resolution. |
+| UC-2 BR-5: Missing Renderer transport is visible | `renderer_entry_surfaces_missing_backend_transport` verifies browser-only previews return a Contract Error instead of silently ignoring Product Shell commands. |
 
 ## Implementation Notes
 

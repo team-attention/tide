@@ -173,6 +173,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
         executablePath,
         cwd,
         resumeRef: undefined,
+        launchOptions: input.launchOptions,
       }),
     };
   }
@@ -185,6 +186,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       executablePath,
       cwd,
       resumeRef: undefined,
+      launchOptions: input.launchOptions,
     });
   }
 
@@ -196,6 +198,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       executablePath,
       cwd,
       resumeRef: input.providerSessionRef.value,
+      launchOptions: input.launchOptions,
     });
   }
 
@@ -296,6 +299,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
     executablePath: string;
     cwd: string;
     resumeRef?: string;
+    launchOptions?: Record<string, unknown>;
   }): ProviderLaunchPlan {
     const args = [
       "--mcp-config",
@@ -304,6 +308,7 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
       this.settingsPath,
       "--append-system-prompt",
       this.tideContextPrompt,
+      ...claudeLaunchOptionArgs(input.launchOptions),
     ];
 
     if (input.resumeRef !== undefined) {
@@ -318,6 +323,10 @@ class ClaudeAgentIntegration implements AgentIntegrationPort {
         COLORTERM: "truecolor",
       },
       cwd: input.cwd,
+      inputTiming: {
+        startupDelayMs: 5000,
+        preSubmitDelayMs: 350,
+      },
       expectedSignalSources: expectedSignalSources.map((source) => ({
         ...source,
       })),
@@ -342,6 +351,30 @@ function cwdFromScope(scope: ThreadScope | undefined, fallback: string): string 
     return fallback;
   }
   return scope.kind === "project" ? scope.cwd : scope.scratchCwd;
+}
+
+function claudeLaunchOptionArgs(
+  launchOptions: Record<string, unknown> | undefined,
+): string[] {
+  const args: string[] = [];
+  const model = stringValue(launchOptions?.model);
+  if (model !== undefined && model !== "Claude default") {
+    args.push("--model", model);
+  }
+
+  const permission = stringValue(launchOptions?.permission);
+  if (
+    permission === "acceptEdits" ||
+    permission === "auto" ||
+    permission === "bypassPermissions" ||
+    permission === "default" ||
+    permission === "dontAsk" ||
+    permission === "plan"
+  ) {
+    args.push("--permission-mode", permission);
+  }
+
+  return args;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

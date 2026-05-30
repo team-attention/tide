@@ -5,6 +5,7 @@ export type ProviderReadinessBlockerKind =
   | "not_authenticated"
   | "onboarding_required"
   | "directory_trust_required"
+  | "provider_account_required"
   | "hook_bootstrap_required"
   | "unknown";
 
@@ -16,6 +17,7 @@ export type ProviderReadinessBlockerScope =
 export interface ProviderSetupSurfaceAction {
   command: string;
   args: string[];
+  env?: Record<string, string>;
   cwd: string;
   expectedCompletion: "process_exit" | "retry_preflight";
 }

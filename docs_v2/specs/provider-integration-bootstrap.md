@@ -41,6 +41,9 @@ It does not implement full Agent Session readers, Workbench tool contracts, Desk
 - Official Antigravity migration docs say Antigravity CLI stores MCP servers in `~/.gemini/antigravity-cli/mcp_config.json` globally or `.agents/mcp_config.json` per workspace, not inline in Gemini `settings.json`.
 - Local validation on 2026-05-27 with installed `agy` processed one MCP server from `/private/tmp/tide-agy-plugin-mcp/tide-bootstrap/mcp_config.json` using `agy plugin validate`.
 - Local validation on 2026-05-27 with installed `agy` processed one hook file when the temporary plugin included `hooks/tide-hooks.json`; prior runtime smoke remains the proof that installed global plugin root `hooks.json` is loaded during execution.
+- Local `codex --help` on 2026-05-29 shows interactive launch supports `--model`, `--sandbox`, `--ask-for-approval`, and `--dangerously-bypass-approvals-and-sandbox`.
+- Local `claude --help` on 2026-05-29 shows interactive launch supports `--model` and `--permission-mode`.
+- Local `agy --help` on 2026-05-29 shows interactive launch supports `--sandbox`, `--dangerously-skip-permissions`, and `--conversation`, and does not show an interactive model flag.
 
 ## Decisions
 
@@ -146,6 +149,50 @@ The Antigravity Agent Integration marks Tide MCP support true only when plugin/b
 
 The Antigravity launch plan remains the normal interactive `agy` hidden PTY session. Resume uses `agy --conversation <conversation-id>`.
 
+### D13. Launch Options become provider-native launch args only when proven
+
+Start Composer values are Launch Options for the selected Agent Integration.
+
+The Agent Integration maps Launch Options to provider-native launch args only when local provider help or other evidence proves the flag exists for the interactive runtime path.
+
+- Codex maps `model` to `--model <value>`, `read-only` / `workspace-write` / `danger-full-access` to `--sandbox <value>`, `untrusted` / `on-request` / `never` / `on-failure` to `--ask-for-approval <value>`, and `dangerously-bypass-approvals-and-sandbox` to `--dangerously-bypass-approvals-and-sandbox`.
+- Claude maps non-default `model` values to `--model <value>` and `acceptEdits` / `auto` / `bypassPermissions` / `default` / `dontAsk` / `plan` to `--permission-mode <value>`.
+- Antigravity maps `sandbox` to `--sandbox` and `dangerously-skip-permissions` to `--dangerously-skip-permissions`.
+
+Default labels and unsupported provider values are not fabricated into launch args.
+
+### D14. Codex input waits for the initial TUI render window
+
+Live hidden PTY evidence showed that writing a Composer message immediately after spawning `codex --no-alt-screen` can place the user text before Codex finishes its update notice and hook-trust warning render.
+
+Codex launch and resume plans therefore include a Codex-specific startup delay before the first Composer input is written. This is provider-specific Agent Integration timing, not a generic Agent Runtime rule.
+
+### D14a. Claude input waits for the initial TUI render window
+
+Live Claude hidden PTY evidence showed that a normal `claude` PTY run submits with CSI-u Enter after the initial TUI is rendered, while the Tide live launch path without a startup delay echoed `ESC[13u` as literal raw output and did not create an Agent message.
+
+Claude launch and resume plans therefore include a Claude-specific startup delay before the first Composer input is written. The submit key remains CSI-u Enter; the startup delay only waits for the provider TUI to enter its Composer-ready state.
+
+### D15. Hidden PTY launch provides basic terminal identity
+
+Live Codex hidden PTY diagnostics showed one-character-per-line TUI rendering when the PTY bridge opened a pseudo-terminal without setting rows and columns.
+
+The Backend PTY launcher therefore sets an explicit default terminal window size before spawning provider CLIs. Provider TUIs must not depend on the operating system's unspecified PTY size default.
+
+The Backend PTY launcher also replies to the basic terminal capability queries observed in provider evidence runs: cursor position report, foreground/background color query, primary device attributes, and keyboard protocol query. These replies are hidden PTY transport behavior, not a user-visible terminal renderer.
+
+### D16. Codex hook trust is Provider Readiness
+
+Live Codex hidden PTY diagnostics showed `PermissionRequest hooks ... hook needs review` blocking Composer input even when the launch included `--dangerously-bypass-hook-trust`.
+
+Codex hook trust is therefore a Provider Readiness gate. Tide must preserve provider-written `hooks.state` trust entries in the generated Codex overlay config, and must not launch a real Thread turn until the generated Tide hooks are trusted for the overlay `hooks.json`.
+
+The Codex hook setup action may run the provider setup surface with the overlay `CODEX_HOME`, while authentication, onboarding, and Directory Trust setup stay provider-native against the user's real Codex home.
+
+The generated Codex hook command must point at a stable Tide-owned provider signal runner script, not directly at whichever Node, Electron Main, or Electron utilityProcess executable happened to create the bootstrap files. Otherwise the hook command changes between Backend-only smoke and Electron smoke, making previously trusted Codex hook entries stale while still looking present in the overlay config.
+
+When Tide rewrites the Codex overlay, it may preserve existing `hooks.state` entries only if the previous `hooks.json` content matches the next generated `hooks.json` content. If the hook definition changes, Backend must treat hook trust as incomplete and return Provider Readiness instead of starting the Thread turn.
+
 ## Out Of Scope
 
 - Full provider parser implementation.
@@ -229,11 +276,16 @@ interface ProviderLaunchPlan {
   args: string[];
   env: Record<string, string>;
   cwd: string;
+  inputTiming?: {
+    startupDelayMs?: number;
+    preSubmitDelayMs?: number;
+  };
   expectedSignalSources: ProviderSignalSource[];
 }
 ```
 
 The launch plan is Backend-internal. It does not cross to Desktop as a user-facing Contract DTO.
+Provider Launch Plans may carry provider-specific input timing so the hidden PTY runtime can wait for startup/auth readiness and split Composer text from the submit key when provider TUIs need a settle window.
 
 Provider Readiness blockers can include a Provider Setup Surface action:
 
@@ -284,9 +336,11 @@ First implementation behavior:
 - `preflight` returns `directory_trust_required` when the selected Execution Context cwd is not trusted by provider-owned Codex state.
 - `preflight` returns `hook_bootstrap_required` when Tide-owned Codex hook/bootstrap config is missing or not yet approved.
 - ready `preflight` returns a Backend-internal launch plan.
-- start launch plan uses `codex --no-alt-screen` with Codex hook and Tide MCP config arguments.
+- start launch plan uses `codex --no-alt-screen --dangerously-bypass-hook-trust` with Codex hook and Tide MCP config arguments.
+- start and resume launch plans apply proven Codex Launch Options as provider-native flags.
 - resume launch plan uses `codex resume --no-alt-screen <provider-native-session-ref>`.
 - launch and resume plans set `TERM=xterm-256color` and `COLORTERM=truecolor`.
+- launch and resume plans include a short pre-submit input timing window so Composer text and Enter are written separately.
 - launch and resume plans include expected Provider Signal sources for PTY Transcript, Codex hooks, and Codex rollout history.
 - Codex Prompt State bootstrap evidence recognizes `PermissionRequest` hook payloads as structured permission evidence.
 - Codex Prompt State bootstrap does not classify arbitrary PTY text as a structured Prompt State.
@@ -330,8 +384,10 @@ First implementation behavior:
 - `preflight` returns `hook_bootstrap_required` when Tide-owned Claude hook/bootstrap config is missing.
 - ready `preflight` returns a Backend-internal launch plan.
 - start launch plan uses `claude` with provider-supported `--settings`, `--mcp-config`, and `--append-system-prompt` arguments.
+- start and resume launch plans apply proven Claude Launch Options as provider-native flags.
 - resume launch plan uses `claude --resume <provider-native-session-ref>` with the same `--settings`, `--mcp-config`, and `--append-system-prompt` bootstrap arguments.
 - launch and resume plans set `TERM=xterm-256color` and `COLORTERM=truecolor`.
+- launch and resume plans include a startup input timing window and a short pre-submit input timing window so Composer text and CSI-u Enter are written after the Claude TUI is Composer-ready.
 - launch and resume plans include expected Provider Signal sources for PTY Transcript, Claude hooks, Claude transcript JSONL, and Tide MCP.
 - Claude capabilities mark `requiresTerminalKeyProtocol` true because CSI-u Enter is required for submitted turns in observed hidden PTY evidence.
 - Claude permission Prompt State is created only from `PermissionRequest`.
@@ -369,8 +425,10 @@ First implementation behavior:
 - `preflight` returns `hook_bootstrap_required` when Tide-owned Antigravity plugin/bootstrap config is missing or not verified.
 - ready `preflight` returns a Backend-internal launch plan.
 - start launch plan uses `agy` with terminal env and no print/batch runtime flag.
+- start and resume launch plans apply proven Antigravity Launch Options as provider-native flags.
 - resume launch plan uses `agy --conversation <conversation-id>`.
 - launch and resume plans set `TERM=xterm-256color` and `COLORTERM=truecolor`.
+- launch and resume plans include startup and pre-submit input timing windows so auth/model readiness can settle before the first Composer submit.
 - launch and resume plans include expected Provider Signal sources for PTY Transcript, Antigravity hooks, Antigravity readable transcript history, and Tide MCP.
 - Antigravity capabilities mark `requiresTerminalKeyProtocol` true because observed setup and provider TUI screens require arrows, checkbox toggles, and provider-native focus movement.
 - Antigravity permission Prompt State is created from `PreToolUse` hook payloads for `toolCall.name: "run_command"` using `toolCall.args.CommandLine`.
@@ -457,6 +515,8 @@ First implementation behavior:
 10. Claude launch and resume bootstrap includes provider-native Tide context guidance to match Codex's Tide skill bootstrap pattern.
 11. Antigravity Tide MCP bootstrap uses Antigravity plugin/customization `mcp_config.json`, not Gemini inline settings.
 12. Antigravity Prompt State classification uses AGY Provider Signal evidence; direct user shell-mode PTY text stays raw unless separately proven.
+13. Launch Options become provider-native launch args only for flags proven by each selected Agent Integration.
+14. Codex first input waits for Codex-specific startup timing before write/submit.
 
 ## Tests
 
@@ -466,7 +526,8 @@ First implementation behavior:
 | Codex auth blocks preflight | `codex_preflight_reports_not_authenticated_before_launch_plan` marks auth incomplete, returns `not_authenticated`, and does not expose command env internals as Desktop DTOs. |
 | Codex Directory Trust is Execution Context scoped | `codex_directory_trust_is_checked_against_the_selected_execution_context` trusts cwd A, checks cwd B, and returns `directory_trust_required`. |
 | Codex hook bootstrap blocks preflight | `codex_preflight_requires_hook_bootstrap_before_ready_launch` marks hook/bootstrap incomplete and returns `hook_bootstrap_required`. |
-| Codex ready preflight builds start plan | `codex_ready_preflight_returns_hidden_pty_start_plan_with_hooks_mcp_and_terminal_env` returns `codex --no-alt-screen`, hook config, Tide MCP config, `TERM=xterm-256color`, `COLORTERM=truecolor`, and expected signal sources. |
+| Codex ready preflight builds start plan | `codex_ready_preflight_returns_hidden_pty_start_plan_with_hooks_mcp_and_terminal_env` returns `codex --no-alt-screen --dangerously-bypass-hook-trust`, hook config, Tide MCP config, `TERM=xterm-256color`, `COLORTERM=truecolor`, Codex startup/input timing, and expected signal sources. |
+| Codex Launch Options become args | `codex_launch_plan_applies_provider_native_model_sandbox_and_approval_options` proves Codex model, sandbox, and approval Launch Options are included as provider-native flags. |
 | Codex resume uses provider session ref | `codex_resume_plan_uses_provider_native_session_ref` builds `codex resume --no-alt-screen <session-id>` from `ProviderSessionRef`. |
 | Codex launch plan stays internal | `backend_application_does_not_import_codex_adapter_or_shared_contracts` proves Backend application depends on the Agent Integration port, not the Codex adapter or Shared Contracts. |
 | Codex Prompt State is evidence-gated | `codex_permission_prompt_detection_requires_permission_request_hook_payload` returns Prompt State for a Codex `PermissionRequest` hook payload and returns no Prompt State for unknown PTY text. |
@@ -474,7 +535,8 @@ First implementation behavior:
 | Provider-specific adapter location | `provider_specific_agent_integrations_stay_under_backend_adapters` fails if Codex integration code appears in Desktop or Shared Contracts. |
 | Claude missing executable blocks preflight | `claude_preflight_reports_not_installed_when_claude_executable_is_missing` resolves no command, returns `not_installed`, and returns no launch plan. |
 | Claude readiness blockers are provider-owned | `claude_preflight_reports_auth_onboarding_directory_trust_and_hook_bootstrap_blockers` returns the exact blocker kinds from Claude provider state without inferring readiness from generic CLI text. |
-| Claude ready preflight builds start plan | `claude_ready_preflight_returns_hidden_pty_start_plan_with_settings_mcp_context_and_terminal_env` returns `claude`, `--settings`, `--mcp-config`, `--append-system-prompt`, `TERM=xterm-256color`, `COLORTERM=truecolor`, and expected signal sources. |
+| Claude ready preflight builds start plan | `claude_ready_preflight_returns_hidden_pty_start_plan_with_settings_mcp_context_and_terminal_env` returns `claude`, `--settings`, `--mcp-config`, `--append-system-prompt`, `TERM=xterm-256color`, `COLORTERM=truecolor`, input timing, and expected signal sources. |
+| Claude Launch Options become args | `claude_launch_plan_applies_provider_native_model_and_permission_mode` proves Claude model and permission Launch Options are included as provider-native flags. |
 | Claude resume uses provider session ref | `claude_resume_plan_uses_provider_native_session_ref` builds `claude --resume <session-id>` from `ProviderSessionRef`. |
 | Claude launch plan keeps one runtime path | `claude_launch_plan_does_not_use_print_stream_json_or_remote_control_runtime` fails if the plan contains `--print`, stream-json runtime flags, or Remote Control flags. |
 | Claude permission Prompt State is single-source | `claude_permission_prompt_detection_uses_permission_request_not_notification` returns Prompt State for `PermissionRequest` and returns null for `Notification` permission prompts. |
@@ -482,7 +544,8 @@ First implementation behavior:
 | Claude Elicitation is its own Prompt State source | `claude_elicitation_prompt_detection_uses_elicitation_event` returns question Prompt State only for `Elicitation` payloads and does not treat `Notification` as elicitation fallback. |
 | Antigravity missing executable blocks preflight | `antigravity_preflight_reports_not_installed_when_agy_executable_is_missing` resolves no command, returns `not_installed`, and returns no launch plan. |
 | Antigravity readiness blockers are provider-owned | `antigravity_preflight_reports_auth_onboarding_directory_trust_and_plugin_bootstrap_blockers` returns the exact blocker kinds from Antigravity provider state without inferring readiness from Gemini wrapper behavior. |
-| Antigravity ready preflight builds start plan | `antigravity_ready_preflight_returns_hidden_pty_start_plan_with_plugin_mcp_hooks_and_terminal_env` returns `agy`, `TERM=xterm-256color`, `COLORTERM=truecolor`, and expected signal sources including Tide MCP. |
+| Antigravity ready preflight builds start plan | `antigravity_ready_preflight_returns_hidden_pty_start_plan_with_plugin_mcp_hooks_and_terminal_env` returns `agy`, `TERM=xterm-256color`, `COLORTERM=truecolor`, startup/pre-submit input timing, and expected signal sources including Tide MCP. |
+| Antigravity Launch Options become args | `antigravity_launch_plan_applies_provider_native_permission_flags` proves Antigravity sandbox Launch Options are included as provider-native flags and unsupported model values are not fabricated. |
 | Antigravity resume uses provider conversation ref | `antigravity_resume_plan_uses_provider_native_conversation_ref` builds `agy --conversation <conversation-id>` from `ProviderSessionRef`. |
 | Antigravity launch plan keeps one runtime path | `antigravity_launch_plan_does_not_use_print_prompt_interactive_or_gemini_runtime` fails if the plan contains `--print`, `--prompt`, `--prompt-interactive`, Gemini commands, app-server, or stream-json runtime flags. |
 | Antigravity MCP bootstrap is plugin-owned | `antigravity_launch_plan_does_not_use_gemini_settings_for_mcp` proves the launch plan does not use `GEMINI_CLI_SYSTEM_DEFAULTS_PATH`, Gemini `settings.json`, or Gemini wrapper paths. |

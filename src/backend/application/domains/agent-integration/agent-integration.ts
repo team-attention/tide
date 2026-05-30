@@ -6,7 +6,7 @@ import type {
 } from "../provider-readiness/provider-readiness.ts";
 import type {
   AgentBinding,
-  AgentId,
+  ProviderCliAgentId,
   ProviderSessionRef,
   ThreadId,
   ThreadScope,
@@ -37,6 +37,10 @@ export interface ProviderLaunchPlan {
   args: string[];
   env: Record<string, string>;
   cwd: string;
+  inputTiming?: {
+    startupDelayMs?: number;
+    preSubmitDelayMs?: number;
+  };
   expectedSignalSources: ProviderSignalSource[];
 }
 
@@ -54,13 +58,13 @@ export type {
 } from "../provider-readiness/provider-readiness.ts";
 
 export interface AgentIntegrationPreflightInput {
-  agentId: AgentId;
+  agentId: ProviderCliAgentId;
   scope?: ThreadScope;
   launchOptions?: Record<string, unknown>;
 }
 
 export interface AgentIntegrationPreflightResult {
-  agentId: AgentId;
+  agentId: ProviderCliAgentId;
   ready: boolean;
   blockers: AgentIntegrationReadinessBlocker[];
   capabilities: AgentIntegrationCapabilities;
@@ -68,14 +72,14 @@ export interface AgentIntegrationPreflightResult {
 }
 
 export interface AgentStartPlanInput {
-  agentId: AgentId;
+  agentId: ProviderCliAgentId;
   agentBinding?: AgentBinding;
   scope?: ThreadScope;
   launchOptions?: Record<string, unknown>;
 }
 
 export interface AgentResumePlanInput {
-  agentId: AgentId;
+  agentId: ProviderCliAgentId;
   providerSessionRef: ProviderSessionRef;
   scope?: ThreadScope;
   launchOptions?: Record<string, unknown>;

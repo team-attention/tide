@@ -26,6 +26,22 @@ Violations include:
 
 This applies to everything: how code works, what a function does, whether something is used, side effects of a change, external library APIs and their behavior, and similar claims.
 
+## Bounded Evidence Gathering (Blocking)
+
+Evidence gathering MUST keep the conversation usable. Collect the smallest evidence that can answer the question, then expand only when the first sample proves more scope is needed.
+
+How to apply:
+1. Before reading large or unknown surfaces, inspect shape first: `file`, `wc -l`, `du -h`, `sqlite3 .tables`, narrow `rg --files`, or a small `jq` type/count query.
+2. For logs, session files, generated artifacts, app bundles, vendor caches, home-directory state, binary files, and database dumps, use explicit bounds such as `tail -n 80`, `sed -n '1,160p'`, `rg -m 50`, `find -maxdepth`, or SQL `limit`.
+3. For binary files and packaged apps, prefer official help, docs, manifest metadata, structured logs, and targeted string searches with caps. Record the path and exact query used.
+4. Summarize evidence in the response instead of pasting raw bulk output.
+5. If a command returns unexpectedly large output, stop using that output as context, state that it was too broad, and rerun a narrower query.
+
+Default command posture:
+- Search source files with `rg` or `rg --files` in a scoped path.
+- Treat `strings`, `rg -a`, broad `find`, recursive home-directory searches, and full JSONL/database dumps as large-surface tools that require bounds first.
+- Keep `max_output_tokens` low for exploratory commands, then raise it only for a known-small result.
+
 ## Domain Language (Required)
 
 All code, commits, PRs, and discussions MUST use the terms defined in `docs/glossary.md`.

@@ -1,7 +1,21 @@
-export type AgentId = "codex" | "claude" | "antigravity";
+export type ProviderCliAgentId = "codex" | "claude" | "antigravity";
+export type TideApiAgentId = "openai_api";
+export type AgentId = ProviderCliAgentId | TideApiAgentId;
+
+export type AgentRuntimeSourceDto =
+  | {
+      kind: "provider_cli";
+      integrationId: ProviderCliAgentId;
+    }
+  | {
+      kind: "tide_api";
+      provider: "openai";
+      accountId?: string;
+    };
 
 export interface AgentBindingDto {
   agentId: AgentId;
+  runtimeSource?: AgentRuntimeSourceDto;
   providerSessionRef?: ProviderSessionRefDto;
 }
 

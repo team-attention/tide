@@ -179,6 +179,7 @@ class AntigravityAgentIntegration implements AgentIntegrationPort {
         executablePath,
         cwd,
         conversationRef: undefined,
+        launchOptions: input.launchOptions,
       }),
     };
   }
@@ -191,6 +192,7 @@ class AntigravityAgentIntegration implements AgentIntegrationPort {
       executablePath,
       cwd,
       conversationRef: undefined,
+      launchOptions: input.launchOptions,
     });
   }
 
@@ -202,6 +204,7 @@ class AntigravityAgentIntegration implements AgentIntegrationPort {
       executablePath,
       cwd,
       conversationRef: input.providerSessionRef.value,
+      launchOptions: input.launchOptions,
     });
   }
 
@@ -241,11 +244,14 @@ class AntigravityAgentIntegration implements AgentIntegrationPort {
     executablePath: string;
     cwd: string;
     conversationRef?: string;
+    launchOptions?: Record<string, unknown>;
   }): ProviderLaunchPlan {
-    const args =
-      input.conversationRef === undefined
+    const args = [
+      ...antigravityLaunchOptionArgs(input.launchOptions),
+      ...(input.conversationRef === undefined
         ? []
-        : ["--conversation", input.conversationRef];
+        : ["--conversation", input.conversationRef]),
+    ];
 
     return {
       command: input.executablePath,
@@ -255,6 +261,10 @@ class AntigravityAgentIntegration implements AgentIntegrationPort {
         COLORTERM: "truecolor",
       },
       cwd: input.cwd,
+      inputTiming: {
+        startupDelayMs: 7000,
+        preSubmitDelayMs: 500,
+      },
       expectedSignalSources: expectedSignalSources.map((source) => ({
         ...source,
       })),
@@ -296,6 +306,19 @@ function cwdFromScope(scope: ThreadScope | undefined, fallback: string): string 
     return fallback;
   }
   return scope.kind === "project" ? scope.cwd : scope.scratchCwd;
+}
+
+function antigravityLaunchOptionArgs(
+  launchOptions: Record<string, unknown> | undefined,
+): string[] {
+  const permission = stringValue(launchOptions?.permission);
+  if (permission === "sandbox") {
+    return ["--sandbox"];
+  }
+  if (permission === "dangerously-skip-permissions") {
+    return ["--dangerously-skip-permissions"];
+  }
+  return [];
 }
 
 function cloneTidePluginConfig(

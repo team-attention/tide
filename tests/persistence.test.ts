@@ -50,6 +50,11 @@ test("provider_session_reference_attaches_after_thread_creation", async () => {
   assert.equal(loaded.ok, true);
   assert.equal(loaded.ok && loaded.value.providerSessionRef?.kind, "codex_rollout");
   assert.equal(loaded.ok && loaded.value.providerSessionRef?.value, "/provider/rollout.jsonl");
+  assert.deepEqual(loaded.ok && loaded.value.agentBinding.providerSessionRef, {
+    kind: "codex_rollout",
+    value: "/provider/rollout.jsonl",
+    transcriptPath: "/provider/transcript.jsonl",
+  });
 });
 
 test("deleting_agent_session_cache_preserves_thread_metadata_and_provider_ref", async () => {
@@ -186,6 +191,31 @@ test("thread_index_rebuilds_from_thread_json_files", async () => {
     (indexJson as { threads: { threadId: string }[] }).threads.map((thread) => thread.threadId),
     ["thread-one", "thread-two"],
   );
+});
+
+test("listing_thread_metadata_reads_thread_json_records", async () => {
+  // Spec: docs_v2/specs/live-backend-persistence-bootstrap.md
+  const { service } = await createService();
+  await service.saveThreadMetadata(threadRecord("thread-older", {
+    title: "Older",
+    updatedAt: now,
+  }));
+  await service.saveThreadMetadata(threadRecord("thread-newer", {
+    title: "Newer",
+    updatedAt: later,
+    scope: { kind: "scratch", scratchCwd: "/tmp/scratch" },
+  }));
+
+  const listed = await service.listThreadMetadata();
+
+  assert.equal(listed.ok, true);
+  assert.deepEqual(
+    listed.ok && listed.value.map((thread) => thread.threadId),
+    ["thread-newer", "thread-older"],
+  );
+  assert.equal(listed.ok && listed.value[0]?.scope.kind, "scratch");
+  assert.equal(listed.ok && listed.value[1]?.scope.kind, "project");
+  assert.equal(listed.ok && listed.value[1]?.scope.kind === "project" && listed.value[1].scope.cwd, "/repo/tide");
 });
 
 async function createService() {

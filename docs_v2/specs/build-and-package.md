@@ -19,6 +19,7 @@ It covers:
 - fake provider harness.
 - fake PTY harness.
 - minimal CI gates.
+- opt-in Electron runtime smoke.
 
 It does not implement the scaffold, install dependencies, publish releases, or define production update channels.
 
@@ -93,6 +94,42 @@ The scaffold includes fake provider and fake PTY harnesses so lifecycle, contrac
 
 Real provider smoke tests are opt-in and documented separately.
 
+The opt-in smoke command must run the same Product Shell `thread.start` path used
+by the Renderer, then verify the live Backend creates or hydrates a real Agent
+Session for the selected provider. It must not remain a placeholder once live
+provider integrations exist.
+
+### D9. Electron runtime smoke proves the app transport path
+
+The provider smoke proves Product Shell state and the live Backend adapter
+without launching Electron. A second opt-in Electron smoke must launch the built
+Electron Main, use the preload-exposed `window.tide` surface from the Renderer,
+send the Product Shell-generated `thread.start` command through Main IPC, and
+verify the same selected Agent Binding and Launch Options survive into a
+hydrated Thread.
+
+The smoke result printed to stdout must be a compact structured summary. It
+must not print full BackendEvent arrays, because real Provider CLI raw PTY
+frames can be very large and can make the smoke output impossible to parse
+reliably. Diagnostic event data stays at event-kind/count granularity unless a
+human reruns the provider with tracing.
+
+Like the provider smoke, Electron smoke can be run in an expected
+Provider Readiness blocked mode. In that mode, `providerReadiness.changed` is a
+successful result, and the smoke may open the Provider Setup Surface through the
+same `workbench.command` path without sending the pending Composer input to the
+provider-native setup process.
+
+This smoke is not a default CI gate because it opens Electron and can start real
+provider CLIs.
+
+### D10. Preload bundle is CommonJS
+
+Electron Main loads the preload script through `webPreferences.preload`. The
+preload bundle therefore uses a CommonJS `.cjs` artifact while the app package
+can remain ESM. This keeps `contextIsolation` enabled and avoids relying on an
+ESM preload artifact that fails to expose `window.tide` in the built app.
+
 ## Out Of Scope
 
 - Dependency installation.
@@ -163,6 +200,10 @@ Initial package scripts:
 
 `test:smoke:providers` is opt-in and may require local provider CLIs and authentication.
 
+`test:smoke:electron` is opt-in and may require a local GUI session, provider CLIs,
+and authentication. It runs against built `out/` artifacts, so `npm run build`
+must succeed first.
+
 ## Test Harnesses
 
 ### Fake Provider
@@ -218,6 +259,9 @@ npm run build
 
 Provider smoke is not part of normal CI because it depends on local provider installation/authentication.
 
+Electron smoke is also not part of normal CI because it launches the Electron app
+and exercises the real preload/Main/Backend transport.
+
 ## Flow
 
 ### UC-1: Developer runs app
@@ -244,6 +288,17 @@ Provider smoke is not part of normal CI because it depends on local provider ins
 2. Developer runs `npm run package:mac`.
 3. electron-builder packages the Electron app and Backend bundle.
 
+### UC-5: Developer smokes the Electron runtime path
+
+1. Developer runs `npm run build`.
+2. Developer runs `npm run test:smoke:electron -- --agent antigravity`.
+3. The smoke launches the built Electron Main.
+4. The Renderer uses `window.tide.sendBackendCommand`.
+5. Main IPC brokers the command to the Backend utilityProcess.
+6. Backend starts the selected Agent Runtime and hydrates the Thread.
+7. The smoke may extend the Main command timeout because real provider CLI
+   startup can exceed a short IPC request timeout.
+
 ## Invariants
 
 1. Electron + Node scaffold is the v2 product scaffold.
@@ -256,6 +311,8 @@ Provider smoke is not part of normal CI because it depends on local provider ins
 8. Provider smoke is opt-in.
 9. Build scaffold stays one app source tree at first.
 10. Package path uses electron-builder for macOS first.
+11. Electron smoke is opt-in and uses the product preload/Main transport.
+12. Built preload exposes `window.tide` from a CommonJS preload artifact.
 
 ## Tests
 
@@ -266,10 +323,17 @@ Provider smoke is not part of normal CI because it depends on local provider ins
 | Backend domain boundary holds | `build_scaffold_declares_architecture_test_script` keeps Backend boundary tests in the normal architecture gate. |
 | Shared boundary holds | `build_scaffold_declares_architecture_test_script` keeps Shared Contract boundary tests in the normal architecture gate. |
 | Fake provider supports readiness | Existing provider integration tests remain part of `test:v2`; package scripts keep provider smoke opt-in. |
+| Provider smoke exercises the real Product Shell path | `provider_smoke_script_is_opt_in` verifies the smoke script is still outside default tests but calls the live Backend adapter and accepts a selected Agent argument. |
+| Electron smoke exercises the app transport path | `electron_runtime_smoke_script_is_opt_in` verifies the Electron smoke script is outside default tests, runs built Electron, passes a Product Shell-generated command through `window.tide`, and accepts a selected Agent argument. |
+| Electron Main exposes a smoke-only product path | `electron_main_has_opt_in_runtime_smoke_hook` verifies the smoke hook is guarded by `TIDE_ELECTRON_SMOKE_COMMAND`, uses Renderer `window.tide.sendBackendCommand`, and logs structured smoke results. |
+| Electron smoke prints compact runtime evidence | `electron_main_smoke_result_is_compact_enough_for_raw_pty_output` verifies the smoke result keeps event kind/count diagnostics instead of serializing full BackendEvent arrays. |
+| Electron smoke can verify setup Pane path | `electron_runtime_smoke_can_expect_provider_not_ready_and_open_setup_surface` verifies Electron smoke can treat Provider Readiness blockers as expected and open the Provider Setup Surface. |
 | Fake PTY supports terminal input | Existing runtime tests remain part of `test:v2`. |
 | Contract fixtures serialize | Existing Shared Contract tests remain part of `test:v2`. |
-| Build command works | `npm_run_build_writes_v2_build_manifest` runs `npm run build` and produces a v2 scaffold build manifest. |
-| Package command exists | `package_mac_script_targets_electron_builder_mac_package` verifies `package:mac` targets electron-builder mac packaging through the scaffold wrapper. |
+| Developer app opens a window | `electron_main_creates_a_browser_window_and_loads_the_renderer` verifies Electron Main creates a BrowserWindow and loads dev or packaged Renderer. |
+| Renderer mounts React app | `renderer_entry_mounts_the_react_app_into_the_root_element` verifies Renderer mounts the initial React element into `#root`. |
+| Build command works | `npm_run_build_writes_v2_build_manifest` runs `npm run build` and verifies either a fallback build manifest or real electron-vite `out/` artifacts. |
+| Package command exists | `package_mac_script_targets_electron_builder_mac_package` verifies `package:mac` targets electron-builder mac packaging and includes real build output. |
 
 ## Implementation Notes
 
@@ -279,3 +343,4 @@ Provider smoke is not part of normal CI because it depends on local provider ins
 - Keep tests deterministic by default.
 - Keep Backend process entry testable without launching full Electron where possible.
 - Add scripts before implementation specs start depending on them.
+- When real electron-vite is installed, renderer input must point at `src/desktop/renderer/index.html` because Tide v2 keeps Desktop source under `src/desktop`, not electron-vite's default `src/renderer`.

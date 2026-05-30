@@ -48,6 +48,7 @@ test("codex_preflight_reports_not_authenticated_before_launch_plan", async () =>
   assert.equal(result.ready, false);
   assert.equal(result.blockers[0]?.kind, "not_authenticated");
   assert.equal(result.blockers[0]?.scope, "provider");
+  assert.equal(result.blockers[0]?.setup?.env, undefined);
   assert.equal(result.launchPlan, undefined);
 });
 
@@ -62,6 +63,7 @@ test("codex_directory_trust_is_checked_against_the_selected_execution_context", 
   assert.equal(result.blockers[0]?.kind, "directory_trust_required");
   assert.equal(result.blockers[0]?.scope, "execution_context");
   assert.equal(result.blockers[0]?.setup?.cwd, "/repo");
+  assert.equal(result.blockers[0]?.setup?.env, undefined);
 });
 
 test("codex_preflight_requires_hook_bootstrap_before_ready_launch", async () => {
@@ -74,6 +76,9 @@ test("codex_preflight_requires_hook_bootstrap_before_ready_launch", async () => 
   assert.equal(result.ready, false);
   assert.equal(result.blockers[0]?.kind, "hook_bootstrap_required");
   assert.equal(result.blockers[0]?.scope, "integration");
+  assert.deepEqual(result.blockers[0]?.setup?.env, {
+    CODEX_HOME: "/tmp/tide-codex-home",
+  });
   assert.equal(result.launchPlan, undefined);
 });
 
@@ -87,7 +92,15 @@ test("codex_ready_preflight_returns_hidden_pty_start_plan_with_hooks_mcp_and_ter
   assert.equal(result.launchPlan?.cwd, "/repo");
   assert.equal(result.launchPlan?.env.TERM, "xterm-256color");
   assert.equal(result.launchPlan?.env.COLORTERM, "truecolor");
+  assert.deepEqual(result.launchPlan?.inputTiming, {
+    startupDelayMs: 5000,
+    preSubmitDelayMs: 350,
+  });
   assert.deepEqual(result.launchPlan?.args.slice(0, 1), ["--no-alt-screen"]);
+  assert.ok(
+    result.launchPlan?.args.includes("--dangerously-bypass-hook-trust"),
+    "Tide-generated Codex hooks must not stop the hidden PTY Thread at hook review.",
+  );
   assert.ok(result.launchPlan?.args.includes("-c"));
   assert.ok(
     result.launchPlan?.args.includes("features.hooks=true"),
@@ -95,14 +108,45 @@ test("codex_ready_preflight_returns_hidden_pty_start_plan_with_hooks_mcp_and_ter
   );
   assert.ok(
     result.launchPlan?.args.some((arg) =>
-      arg.startsWith("mcp_servers.tide.command="),
+      arg === 'mcp_servers.tide.command="/tmp/tide-mcp-stdio"',
     ),
     "Tide MCP Tool Surface command must be attached to the Codex session.",
+  );
+  assert.ok(result.launchPlan?.args.includes("mcp_servers.tide.args=[]"));
+  assert.ok(
+    result.launchPlan?.args.includes(
+      'mcp_servers.tide.env.TIDE_SOCKET="/tmp/tide.sock"',
+    ),
   );
   assert.deepEqual(
     result.launchPlan?.expectedSignalSources.map((source) => source.kind),
     ["pty_transcript", "provider_hook", "provider_history", "tide_mcp"],
   );
+});
+
+test("codex_launch_plan_applies_provider_native_model_sandbox_and_approval_options", async () => {
+  const integration = codexIntegration();
+
+  const sandboxPlan = await integration.buildStartPlan({
+    agentId: "codex",
+    scope: projectScope,
+    launchOptions: {
+      model: "gpt-5.5-high",
+      permission: "workspace-write",
+    },
+  });
+  const approvalPlan = await integration.buildStartPlan({
+    agentId: "codex",
+    scope: projectScope,
+    launchOptions: {
+      model: "gpt-5.5-high",
+      permission: "on-request",
+    },
+  });
+
+  assert.equal(sandboxPlan.args[sandboxPlan.args.indexOf("--model") + 1], "gpt-5.5-high");
+  assert.equal(sandboxPlan.args[sandboxPlan.args.indexOf("--sandbox") + 1], "workspace-write");
+  assert.equal(approvalPlan.args[approvalPlan.args.indexOf("--ask-for-approval") + 1], "on-request");
 });
 
 test("codex_resume_plan_uses_provider_native_session_ref", async () => {
@@ -201,8 +245,8 @@ function codexIntegration(options: {
     resolveExecutable: async () => executablePath,
     readProviderState: async () => options.providerState ?? readyCodexState(),
     tideMcp: {
-      command: "/Applications/Tide.app/Contents/MacOS/tide",
-      args: ["mcp"],
+      command: "/tmp/tide-mcp-stdio",
+      args: [],
       env: {
         TIDE_SOCKET: "/tmp/tide.sock",
       },

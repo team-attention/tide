@@ -3,12 +3,16 @@
 .claude/
 .codex/
 .codex-hook-debug/
+.antigravitycli/
 .gemini/
 .spets/
 .krow/
 .env
+__pycache__/
+*.pyc
 *.p12
 node_modules/
 dist/
+out/
 .vite/
 *.pen

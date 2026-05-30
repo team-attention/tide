@@ -4,6 +4,7 @@ import type { JsonObject } from "./json.ts";
 import type { ThreadScopeDto } from "./thread.ts";
 
 export type BackendCommandKind =
+  | "thread.list"
   | "thread.hydrate"
   | "thread.start"
   | "agentRuntime.resume"
@@ -13,6 +14,7 @@ export type BackendCommandKind =
   | "workbench.command";
 
 export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
+  "thread.list",
   "thread.hydrate",
   "thread.start",
   "agentRuntime.resume",
@@ -23,6 +25,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
 ];
 
 export interface BackendCommandPayloadByKind {
+  "thread.list": { includeArchived?: boolean };
   "thread.hydrate": { threadId: ThreadId };
   "thread.start": {
     initialMessage: string;

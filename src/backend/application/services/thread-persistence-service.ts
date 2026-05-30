@@ -20,6 +20,7 @@ export interface ThreadStorageRecord {
   updatedAt: string;
   agentBinding: AgentBinding;
   scope: ThreadScope;
+  launchOptions?: Record<string, unknown>;
   executionContext: ExecutionContextRecord;
   providerSessionRef?: ProviderSessionRefRecord;
   lastKnownState: LastKnownState;
@@ -106,6 +107,7 @@ export type PersistenceResult<T> =
   | { ok: false; error: PersistenceError };
 
 export interface ThreadPersistenceService {
+  listThreadMetadata(): Promise<PersistenceResult<ThreadStorageRecord[]>>;
   saveThreadMetadata(
     record: ThreadStorageRecord,
   ): Promise<PersistenceResult<ThreadStorageRecord>>;
@@ -192,6 +194,25 @@ class FileBackedThreadPersistenceService implements ThreadPersistenceService {
     this.readerVersion = input.readerVersion;
   }
 
+  async listThreadMetadata(): Promise<PersistenceResult<ThreadStorageRecord[]>> {
+    const threadIds = await this.storage.listDirectories("threads");
+    const records: ThreadStorageRecord[] = [];
+
+    for (const threadId of threadIds) {
+      const loaded = await this.loadThreadMetadata(threadId);
+      if (!loaded.ok) {
+        if (loaded.error.code === "thread_not_found") {
+          continue;
+        }
+        return loaded;
+      }
+      records.push(loaded.value);
+    }
+
+    records.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    return { ok: true, value: records };
+  }
+
   async saveThreadMetadata(
     record: ThreadStorageRecord,
   ): Promise<PersistenceResult<ThreadStorageRecord>> {
@@ -233,6 +254,15 @@ class FileBackedThreadPersistenceService implements ThreadPersistenceService {
 
     return this.saveThreadMetadata({
       ...loaded.value,
+      agentBinding: {
+        ...loaded.value.agentBinding,
+        providerSessionRef: {
+          kind: providerSessionRef.kind,
+          value: providerSessionRef.value,
+          transcriptPath: providerSessionRef.transcriptPath,
+          logPath: providerSessionRef.logPath,
+        },
+      },
       providerSessionRef,
       updatedAt: this.clock(),
     });

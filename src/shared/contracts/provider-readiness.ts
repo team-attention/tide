@@ -12,6 +12,7 @@ export interface ProviderReadinessBlockerDto {
     | "not_authenticated"
     | "onboarding_required"
     | "directory_trust_required"
+    | "provider_account_required"
     | "hook_bootstrap_required"
     | "unknown";
   message: string;
@@ -23,6 +24,7 @@ export interface ProviderReadinessBlockerDto {
 export interface ProviderSetupSurfaceActionDto {
   command: string;
   args: string[];
+  env?: Record<string, string>;
   cwd: string;
   expectedCompletion: "process_exit" | "retry_preflight";
 }

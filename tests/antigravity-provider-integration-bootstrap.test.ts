@@ -83,10 +83,38 @@ test("antigravity_ready_preflight_returns_hidden_pty_start_plan_with_plugin_mcp_
   assert.equal(result.launchPlan?.cwd, "/repo");
   assert.equal(result.launchPlan?.env.TERM, "xterm-256color");
   assert.equal(result.launchPlan?.env.COLORTERM, "truecolor");
+  assert.deepEqual(result.launchPlan?.inputTiming, {
+    startupDelayMs: 7000,
+    preSubmitDelayMs: 500,
+  });
   assert.deepEqual(
     result.launchPlan?.expectedSignalSources.map((source) => source.kind),
     ["pty_transcript", "provider_hook", "provider_history", "tide_mcp"],
   );
+});
+
+test("antigravity_launch_plan_applies_provider_native_permission_flags", async () => {
+  const integration = antigravityIntegration();
+
+  const sandboxPlan = await integration.buildStartPlan({
+    agentId: "antigravity",
+    scope: projectScope,
+    launchOptions: {
+      model: "Antigravity default",
+      permission: "sandbox",
+    },
+  });
+  const unsafePlan = await integration.buildStartPlan({
+    agentId: "antigravity",
+    scope: projectScope,
+    launchOptions: {
+      model: "Antigravity default",
+      permission: "dangerously-skip-permissions",
+    },
+  });
+
+  assert.deepEqual(sandboxPlan.args, ["--sandbox"]);
+  assert.deepEqual(unsafePlan.args, ["--dangerously-skip-permissions"]);
 });
 
 test("antigravity_resume_plan_uses_provider_native_conversation_ref", async () => {

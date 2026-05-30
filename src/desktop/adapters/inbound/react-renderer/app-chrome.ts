@@ -9,6 +9,8 @@ import type {
 
 export interface AppChromeProps {
   viewModel: AppChromeViewModel;
+  onFocusWorkbenchPane?: (paneId: string) => void;
+  onCloseWorkbenchPane?: (paneId: string) => void;
 }
 
 export function AppChrome(props: AppChromeProps): ReactElement {
@@ -19,7 +21,7 @@ export function AppChrome(props: AppChromeProps): ReactElement {
     { className: "app-chrome", "aria-label": "App Chrome" },
     createStatusBar(viewModel.statusBar),
     viewModel.workbenchTabStrip.visible
-      ? createWorkbenchTabStrip(viewModel.workbenchTabStrip.visibleTabs)
+      ? createWorkbenchTabStrip(viewModel.workbenchTabStrip.visibleTabs, props)
       : null,
     viewModel.workbenchTabStrip.overflowTabs.length > 0
       ? createWorkbenchOverflow(viewModel.workbenchTabStrip.overflowTabs)
@@ -53,18 +55,24 @@ function createStatusBar(statusBar: AppChromeStatusBarView): ReactElement {
   );
 }
 
-function createWorkbenchTabStrip(tabs: WorkbenchTabView[]): ReactElement {
+function createWorkbenchTabStrip(
+  tabs: WorkbenchTabView[],
+  handlers: Pick<AppChromeProps, "onFocusWorkbenchPane" | "onCloseWorkbenchPane">,
+): ReactElement {
   return createElement(
     "nav",
     {
       className: "workbench-tab-strip",
       "aria-label": "Workbench Tab Strip",
     },
-    tabs.map(createWorkbenchTab),
+    tabs.map((tab) => createWorkbenchTab(tab, handlers)),
   );
 }
 
-function createWorkbenchTab(tab: WorkbenchTabView): ReactElement {
+function createWorkbenchTab(
+  tab: WorkbenchTabView,
+  handlers: Pick<AppChromeProps, "onFocusWorkbenchPane" | "onCloseWorkbenchPane">,
+): ReactElement {
   return createElement(
     "div",
     {
@@ -75,8 +83,12 @@ function createWorkbenchTab(tab: WorkbenchTabView): ReactElement {
       "data-active": String(tab.active),
       "data-loading": String(tab.loading),
     },
-    createChromeButton(tab.focusAction, tab.title),
-    createChromeButton(tab.closeAction),
+    createChromeButton(tab.focusAction, tab.title, () =>
+      handlers.onFocusWorkbenchPane?.(tab.paneId),
+    ),
+    createChromeButton(tab.closeAction, undefined, () =>
+      handlers.onCloseWorkbenchPane?.(tab.paneId),
+    ),
   );
 }
 
@@ -106,6 +118,7 @@ function createWorkbenchOverflow(tabs: WorkbenchTabView[]): ReactElement {
 function createChromeButton(
   action: ChromeActionView,
   label?: string,
+  onClick?: () => void,
 ): ReactElement {
   return createElement(
     "button",
@@ -116,6 +129,7 @@ function createChromeButton(
       "data-action-id": action.id,
       "data-action-state": action.state,
       disabled: action.disabled,
+      onClick,
     },
     label ?? action.icon,
   );

@@ -11,7 +11,7 @@ import type { JsonObject } from "./json.ts";
 import type { PromptStateDto } from "./prompt.ts";
 import type { ProviderReadinessDto } from "./provider-readiness.ts";
 import type { ThreadSummaryDto } from "./thread.ts";
-import type { WorkbenchPaneRefDto } from "./workbench.ts";
+import type { WorkbenchFileTreeDto, WorkbenchPaneRefDto } from "./workbench.ts";
 
 export type BackendEventKind =
   | "backend.connectionChanged"
@@ -20,6 +20,7 @@ export type BackendEventKind =
   | "command.accepted"
   | "command.completed"
   | "contract.error"
+  | "thread.listed"
   | "thread.hydrated"
   | "thread.started"
   | "agentRuntime.stateChanged"
@@ -36,6 +37,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "command.accepted",
   "command.completed",
   "contract.error",
+  "thread.listed",
   "thread.hydrated",
   "thread.started",
   "agentRuntime.stateChanged",
@@ -58,12 +60,16 @@ export interface BackendEventPayloadByKind {
     result?: JsonObject;
   };
   "contract.error": ContractErrorPayload;
+  "thread.listed": {
+    threads: ThreadSummaryDto[];
+  };
   "thread.hydrated": {
     thread: ThreadSummaryDto;
     blocks?: AgentSessionBlockDto[];
     providerReadiness?: ProviderReadinessDto;
     runtimeState?: AgentRuntimeStateDto;
     workbenchPanes?: WorkbenchPaneRefDto[];
+    fileTree?: WorkbenchFileTreeDto;
   };
   "thread.started": {
     thread: ThreadSummaryDto;
@@ -95,5 +101,7 @@ export interface BackendEventPayloadByKind {
   "workbench.changed": {
     threadId: ThreadId;
     panes: WorkbenchPaneRefDto[];
+    activePaneId?: string;
+    fileTree?: WorkbenchFileTreeDto;
   };
 }

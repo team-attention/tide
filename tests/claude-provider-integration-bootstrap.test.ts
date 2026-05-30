@@ -76,6 +76,10 @@ test("claude_ready_preflight_returns_hidden_pty_start_plan_with_settings_mcp_con
   assert.equal(result.launchPlan?.cwd, "/repo");
   assert.equal(result.launchPlan?.env.TERM, "xterm-256color");
   assert.equal(result.launchPlan?.env.COLORTERM, "truecolor");
+  assert.deepEqual(result.launchPlan?.inputTiming, {
+    startupDelayMs: 5000,
+    preSubmitDelayMs: 350,
+  });
   assert.deepEqual(result.launchPlan?.args.slice(0, 6), [
     "--mcp-config",
     "/tmp/tide-claude-mcp.json",
@@ -88,6 +92,22 @@ test("claude_ready_preflight_returns_hidden_pty_start_plan_with_settings_mcp_con
     result.launchPlan?.expectedSignalSources.map((source) => source.kind),
     ["pty_transcript", "provider_hook", "provider_history", "tide_mcp"],
   );
+});
+
+test("claude_launch_plan_applies_provider_native_model_and_permission_mode", async () => {
+  const integration = claudeIntegration();
+
+  const plan = await integration.buildStartPlan({
+    agentId: "claude",
+    scope: projectScope,
+    launchOptions: {
+      model: "claude-sonnet-4-6",
+      permission: "acceptEdits",
+    },
+  });
+
+  assert.equal(plan.args[plan.args.indexOf("--model") + 1], "claude-sonnet-4-6");
+  assert.equal(plan.args[plan.args.indexOf("--permission-mode") + 1], "acceptEdits");
 });
 
 test("claude_resume_plan_uses_provider_native_session_ref", async () => {

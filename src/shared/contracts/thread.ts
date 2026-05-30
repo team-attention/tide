@@ -1,11 +1,13 @@
 import type { AgentBindingDto } from "./agent.ts";
 import type { ProjectId, ThreadId } from "./ids.ts";
+import type { JsonObject } from "./json.ts";
 
 export interface ThreadSummaryDto {
   threadId: ThreadId;
   title: string;
   agentBinding: AgentBindingDto;
   scope: ThreadScopeDto;
+  launchOptions?: JsonObject;
   createdAt: string;
   updatedAt: string;
   pinned: boolean;

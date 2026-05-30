@@ -117,6 +117,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       launchOptions: input.launchOptions,
     });
     const setup = codexSetupAction(executablePath, cwd);
+    const hookSetup = codexSetupAction(executablePath, cwd, providerState.codexHome);
     const blockers: AgentIntegrationReadinessBlocker[] = [];
 
     if (!providerState.authenticated) {
@@ -148,7 +149,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
         kind: "hook_bootstrap_required" as const,
         scope: "integration" as const,
         message: "Tide Codex hook/bootstrap setup is required.",
-        setup,
+        setup: hookSetup,
       });
     }
 
@@ -171,6 +172,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
         cwd,
         codexHome: providerState.codexHome,
         resumeRef: undefined,
+        launchOptions: input.launchOptions,
       }),
     };
   }
@@ -189,6 +191,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       cwd,
       codexHome: providerState.codexHome,
       resumeRef: undefined,
+      launchOptions: input.launchOptions,
     });
   }
 
@@ -206,6 +209,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       cwd,
       codexHome: providerState.codexHome,
       resumeRef: input.providerSessionRef.value,
+      launchOptions: input.launchOptions,
     });
   }
 
@@ -244,6 +248,7 @@ class CodexAgentIntegration implements AgentIntegrationPort {
     cwd: string;
     codexHome?: string;
     resumeRef?: string;
+    launchOptions?: Record<string, unknown>;
   }): ProviderLaunchPlan {
     const env: Record<string, string> = {
       TERM: "xterm-256color",
@@ -253,13 +258,21 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       env.CODEX_HOME = input.codexHome;
     }
 
+    const launchOptionArgs = codexLaunchOptionArgs(input.launchOptions);
     const args =
       input.resumeRef === undefined
-        ? ["--no-alt-screen", ...codexConfigArgs(this.tideMcp)]
+        ? [
+            "--no-alt-screen",
+            ...launchOptionArgs,
+            "--dangerously-bypass-hook-trust",
+            ...codexConfigArgs(this.tideMcp),
+          ]
         : [
             "resume",
             "--no-alt-screen",
             input.resumeRef,
+            ...launchOptionArgs,
+            "--dangerously-bypass-hook-trust",
             ...codexConfigArgs(this.tideMcp),
           ];
 
@@ -268,6 +281,10 @@ class CodexAgentIntegration implements AgentIntegrationPort {
       args,
       env,
       cwd: input.cwd,
+      inputTiming: {
+        startupDelayMs: 5000,
+        preSubmitDelayMs: 350,
+      },
       expectedSignalSources: expectedSignalSources.map((source) => ({ ...source })),
     };
   }
@@ -276,13 +293,18 @@ class CodexAgentIntegration implements AgentIntegrationPort {
 function codexSetupAction(
   executablePath: string,
   cwd: string,
+  codexHome?: string,
 ): ProviderSetupSurfaceAction {
-  return {
+  const action: ProviderSetupSurfaceAction = {
     command: executablePath,
     args: ["--no-alt-screen"],
     cwd,
     expectedCompletion: "retry_preflight",
   };
+  if (codexHome !== undefined) {
+    action.env = { CODEX_HOME: codexHome };
+  }
+  return action;
 }
 
 function codexConfigArgs(tideMcp: CodexTideMcpConfig | undefined): string[] {
@@ -308,6 +330,36 @@ function codexConfigArgs(tideMcp: CodexTideMcpConfig | undefined): string[] {
 
 function codexConfigString(value: string): string {
   return JSON.stringify(value);
+}
+
+function codexLaunchOptionArgs(
+  launchOptions: Record<string, unknown> | undefined,
+): string[] {
+  const args: string[] = [];
+  const model = stringValue(launchOptions?.model);
+  if (model !== undefined) {
+    args.push("--model", model);
+  }
+
+  const permission = stringValue(launchOptions?.permission);
+  if (
+    permission === "read-only" ||
+    permission === "workspace-write" ||
+    permission === "danger-full-access"
+  ) {
+    args.push("--sandbox", permission);
+  } else if (
+    permission === "untrusted" ||
+    permission === "on-request" ||
+    permission === "never" ||
+    permission === "on-failure"
+  ) {
+    args.push("--ask-for-approval", permission);
+  } else if (permission === "dangerously-bypass-approvals-and-sandbox") {
+    args.push("--dangerously-bypass-approvals-and-sandbox");
+  }
+
+  return args;
 }
 
 function cwdFromScope(scope: ThreadScope | undefined, fallback: string): string {

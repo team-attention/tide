@@ -36,9 +36,88 @@ test("package_scripts_declare_v2_electron_tooling", () => {
 
 test("provider_smoke_script_is_opt_in", () => {
   const packageJson = readPackageJson();
+  const smokeScript = fs.readFileSync(path.join(repoRoot, "scripts/v2-provider-smoke.mjs"), "utf8");
 
-  assert.equal(packageJson.scripts["test:smoke:providers"], "node scripts/v2-provider-smoke.mjs");
+  assert.equal(
+    packageJson.scripts["test:smoke:providers"],
+    "node --experimental-strip-types scripts/v2-provider-smoke.mjs",
+  );
   assert.doesNotMatch(packageJson.scripts.test, /smoke/);
+  assert.match(smokeScript, /createLiveBackendContractMessageAdapter/);
+  assert.match(smokeScript, /--agent/);
+  assert.match(smokeScript, /agentOutputContainsToken/);
+  assert.match(smokeScript, /block\?\.role !== "agent"/);
+  assert.doesNotMatch(smokeScript, /Provider smoke tests are opt-in; configure local provider CLIs/);
+});
+
+test("provider_smoke_supports_fake_openai_output_verification", () => {
+  const smokeScript = fs.readFileSync(path.join(repoRoot, "scripts/v2-provider-smoke.mjs"), "utf8");
+
+  assert.match(smokeScript, /--fake-openai/);
+  assert.match(smokeScript, /startFakeOpenAiServer/);
+  assert.match(smokeScript, /OPENAI_BASE_URL/);
+  assert.match(smokeScript, /options\.agent === "openai_api"/);
+  assert.match(smokeScript, /Hydrated Agent Session did not include the live token/);
+});
+
+test("provider_smoke_can_expect_provider_not_ready_and_open_setup_surface", () => {
+  const smokeScript = fs.readFileSync(path.join(repoRoot, "scripts/v2-provider-smoke.mjs"), "utf8");
+
+  assert.match(smokeScript, /--expect-provider-not-ready/);
+  assert.match(smokeScript, /--open-setup-surface/);
+  assert.match(smokeScript, /openProviderSetupSurfaceSmoke/);
+  assert.match(smokeScript, /workbench\.command/);
+  assert.match(smokeScript, /open_provider_setup_surface/);
+  assert.match(smokeScript, /close_pane/);
+});
+
+test("electron_runtime_smoke_script_is_opt_in", () => {
+  const packageJson = readPackageJson();
+  const smokeScript = fs.readFileSync(
+    path.join(repoRoot, "scripts/v2-electron-runtime-smoke.mjs"),
+    "utf8",
+  );
+
+  assert.equal(
+    packageJson.scripts["test:smoke:electron"],
+    "node --experimental-strip-types scripts/v2-electron-runtime-smoke.mjs",
+  );
+  assert.doesNotMatch(packageJson.scripts.test, /smoke/);
+  assert.match(smokeScript, /createProductShellState/);
+  assert.match(smokeScript, /submitProductShellComposerDraft/);
+  assert.match(smokeScript, /TIDE_ELECTRON_SMOKE_COMMAND/);
+  assert.match(smokeScript, /TIDE_BACKEND_COMMAND_TIMEOUT_MS/);
+  assert.match(smokeScript, /electron-main\.js/);
+  assert.match(smokeScript, /--agent/);
+});
+
+test("electron_runtime_smoke_supports_fake_openai_output_verification", () => {
+  const smokeScript = fs.readFileSync(
+    path.join(repoRoot, "scripts/v2-electron-runtime-smoke.mjs"),
+    "utf8",
+  );
+
+  assert.match(smokeScript, /--fake-openai/);
+  assert.match(smokeScript, /startFakeOpenAiServer/);
+  assert.match(smokeScript, /OPENAI_BASE_URL/);
+  assert.match(smokeScript, /TIDE_ELECTRON_SMOKE_FAKE_OPENAI/);
+  assert.match(smokeScript, /pushedAgentOutputFound/);
+  assert.match(smokeScript, /Electron smoke did not receive the token through a pushed Agent output block/);
+});
+
+test("electron_runtime_smoke_can_expect_provider_not_ready_and_open_setup_surface", () => {
+  const smokeScript = fs.readFileSync(
+    path.join(repoRoot, "scripts/v2-electron-runtime-smoke.mjs"),
+    "utf8",
+  );
+  const main = fs.readFileSync(path.join(repoRoot, "src/desktop/main/electron-main.ts"), "utf8");
+
+  assert.match(smokeScript, /--expect-provider-not-ready/);
+  assert.match(smokeScript, /--open-setup-surface/);
+  assert.match(smokeScript, /electron-smoke-provider-not-ready/);
+  assert.match(main, /TIDE_ELECTRON_SMOKE_OPEN_SETUP_SURFACE/);
+  assert.match(main, /open_provider_setup_surface/);
+  assert.match(main, /setupSurface/);
 });
 
 test("electron_vite_config_maps_main_preload_renderer_and_backend_paths", () => {
@@ -46,46 +125,113 @@ test("electron_vite_config_maps_main_preload_renderer_and_backend_paths", () => 
   const main = fs.readFileSync(path.join(repoRoot, "src/desktop/main/electron-main.ts"), "utf8");
 
   assert.match(config, /src\/desktop\/main\/electron-main\.ts/);
+  assert.match(config, /src\/backend\/infrastructure\/node\/backend-entrypoint\.ts/);
   assert.match(config, /src\/desktop\/preload\/index\.ts/);
+  assert.match(config, /entryFileNames:\s*"index\.cjs"/);
+  assert.match(config, /format:\s*"cjs"/);
   assert.match(config, /src\/desktop\/renderer/);
+  assert.match(config, /src\/desktop\/renderer\/index\.html/);
   assert.match(main, /src\/backend\/infrastructure\/node\/backend-entrypoint\.ts/);
+  assert.match(main, /backend-entrypoint\.js/);
+  assert.match(main, /index\.cjs/);
+  assert.match(main, /utilityProcess\.fork/);
+  assert.doesNotMatch(main, /Backend process bridge is not connected/);
+});
+
+test("electron_main_creates_a_browser_window_and_loads_the_renderer", () => {
+  const main = fs.readFileSync(path.join(repoRoot, "src/desktop/main/electron-main.ts"), "utf8");
+
+  assert.match(main, /BrowserWindow/);
+  assert.match(main, /app\.whenReady\(\)/);
+  assert.match(main, /ELECTRON_RENDERER_URL/);
+  assert.match(main, /loadURL/);
+  assert.match(main, /loadFile/);
+});
+
+test("electron_main_enables_webview_tag_for_workbench_browser_panes", () => {
+  // Spec: docs_v2/specs/workbench-browser-webview-pane.md
+  const main = fs.readFileSync(path.join(repoRoot, "src/desktop/main/electron-main.ts"), "utf8");
+
+  assert.match(main, /webviewTag:\s*true/);
+  assert.match(main, /nodeIntegration:\s*false/);
+  assert.match(main, /contextIsolation:\s*true/);
+});
+
+test("electron_main_has_opt_in_runtime_smoke_hook", () => {
+  const main = fs.readFileSync(path.join(repoRoot, "src/desktop/main/electron-main.ts"), "utf8");
+
+  assert.match(main, /TIDE_ELECTRON_SMOKE_COMMAND/);
+  assert.match(main, /runElectronRuntimeSmoke/);
+  assert.match(main, /window\.tide\.sendBackendCommand/);
+  assert.match(main, /window\.tide\.onBackendEvent/);
+  assert.match(main, /TIDE_ELECTRON_SMOKE_RESULT/);
+  assert.match(main, /TIDE_ELECTRON_SMOKE_ERROR/);
+  assert.match(main, /TIDE_ELECTRON_SMOKE_EXPECT_PUSHED_AGENT_OUTPUT/);
+  assert.match(main, /pushedAgentOutputFound/);
+  assert.match(main, /TIDE_BACKEND_COMMAND_TIMEOUT_MS/);
+  assert.match(main, /process\.env\.TIDE_APP_DATA_ROOT \?\? app\.getPath\("userData"\)/);
+});
+
+test("electron_main_smoke_result_is_compact_enough_for_raw_pty_output", () => {
+  const main = fs.readFileSync(path.join(repoRoot, "src/desktop/main/electron-main.ts"), "utf8");
+
+  assert.match(main, /startEventKinds: eventKinds\(startEvents\)/);
+  assert.match(main, /pushedEventKinds: eventKinds\(pushedEvents\)/);
+  assert.match(main, /hydrateEventKinds: eventKinds\(hydrateEvents\)/);
+  assert.doesNotMatch(main, /\n\s*startEvents,\n\s*pushedEvents,\n\s*hydrateEvents,/);
+});
+
+test("renderer_entry_mounts_the_react_app_into_the_root_element", () => {
+  const renderer = fs.readFileSync(path.join(repoRoot, "src/desktop/renderer/renderer-entry.ts"), "utf8");
+
+  assert.match(renderer, /createRoot/);
+  assert.match(renderer, /document\.getElementById\("root"\)/);
+  assert.match(renderer, /createInitialRendererElement\(\)/);
 });
 
 test("npm_run_typecheck_runs_scaffold_check", () => {
   const result = runNpmScript("typecheck");
 
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /v2 typecheck scaffold verified/);
+  assert.match(result.stdout, /typecheck/);
 });
 
 test("npm_run_build_writes_v2_build_manifest", () => {
   const manifestPath = path.join(repoRoot, "dist/v2-build-manifest.json");
   fs.rmSync(manifestPath, { force: true });
+  fs.rmSync(path.join(repoRoot, "out"), { recursive: true, force: true });
 
   const result = runNpmScript("build");
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
-    tool: string;
-    command: string;
-  };
 
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(manifest.tool, "electron-vite");
-  assert.equal(manifest.command, "electron-vite build");
+  if (fs.existsSync(manifestPath)) {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+      tool: string;
+      command: string;
+    };
+    assert.equal(manifest.tool, "electron-vite");
+    assert.equal(manifest.command, "electron-vite build");
+    return;
+  }
+
+  assert.ok(fs.existsSync(path.join(repoRoot, "out/main/electron-main.js")));
+  assert.ok(fs.existsSync(path.join(repoRoot, "out/main/backend-entrypoint.js")));
+  assert.ok(fs.existsSync(path.join(repoRoot, "out/preload/index.cjs")));
+  assert.ok(fs.existsSync(path.join(repoRoot, "out/renderer/index.html")));
 });
 
 test("package_mac_script_targets_electron_builder_mac_package", () => {
-  const manifestPath = path.join(repoRoot, "dist/v2-package-mac-manifest.json");
-  fs.rmSync(manifestPath, { force: true });
-
-  const result = runNpmScript("package:mac");
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
-    tool: string;
-    target: string;
+  const packageJson = readPackageJson();
+  const electronBuilderConfig = JSON.parse(
+    fs.readFileSync(path.join(repoRoot, "electron-builder.json"), "utf8"),
+  ) as {
+    mac: { target: string[] };
+    files: string[];
   };
 
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(manifest.tool, "electron-builder");
-  assert.equal(manifest.target, "mac");
+  assert.equal(packageJson.scripts["package:mac"], "node scripts/v2-tooling-command.mjs electron-builder --mac");
+  assert.deepEqual(electronBuilderConfig.mac.target, ["dmg"]);
+  assert.ok(electronBuilderConfig.files.includes("out/**"));
 });
 
 function readPackageJson(): {

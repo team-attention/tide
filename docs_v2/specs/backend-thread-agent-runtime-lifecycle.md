@@ -200,6 +200,7 @@ interface ThreadRuntimeService {
   startThread(input: StartThreadInput): Promise<StartThreadResult>;
   sendComposerInput(input: SendComposerInput): Promise<SendComposerInputResult>;
   answerPrompt(input: AnswerPromptInput): Promise<AnswerPromptResult>;
+  resumeAgentRuntime(input: ResumeAgentRuntimeInput): Promise<ResumeAgentRuntimeResult>;
   stopAgentRuntime(input: StopAgentRuntimeInput): Promise<StopAgentRuntimeResult>;
   handleTideMcpToolCall(input: TideMcpToolCallInput): Promise<TideMcpToolCallResult>;
 }
@@ -267,7 +268,15 @@ The first implementation may use fake ports. Real provider ports are specified b
 4. Backend clears Prompt State after provider acceptance.
 5. Backend emits `prompt.changed` and Agent Session Block updates.
 
-### UC-5: Stop Agent Runtime
+### UC-5: Resume Agent Runtime without new input
+
+1. Desktop sends `agentRuntime.resume`.
+2. Backend resolves the Thread and Agent Binding.
+3. Backend resumes the provider-owned Raw Agent Session if no active handle exists.
+4. Backend does not write Composer input.
+5. Backend emits Agent Runtime State and command completion.
+
+### UC-6: Stop Agent Runtime
 
 1. Desktop sends `agentRuntime.stop`.
 2. Backend asks AgentRuntimePort to stop the active handle.
@@ -275,7 +284,7 @@ The first implementation may use fake ports. Real provider ports are specified b
 4. Backend updates Agent Runtime State to `stopped` or `failed`.
 5. Thread remains reopenable.
 
-### UC-6: Route Tide MCP tool call
+### UC-7: Route Tide MCP tool call
 
 1. Agent calls a Tide MCP tool attached to the same provider CLI session.
 2. Backend MCP inbound adapter validates the tool call and Thread identity.
@@ -310,6 +319,7 @@ tests/backend-thread-agent-runtime-lifecycle.test.ts
 | Start checks readiness first | `starting_a_thread_with_incomplete_provider_readiness_preserves_pending_input_without_writing_to_runtime` starts a Thread with incomplete Provider Readiness, records pending input, and leaves AgentRuntimePort.writeInput unused. |
 | Start launches runtime when ready | `starting_a_thread_with_ready_provider_starts_runtime_then_writes_terminal_input` starts a Thread with ready Provider Readiness, calls AgentRuntimePort.start, then writeInput through terminal input. |
 | Follow-up resumes when needed | `sending_follow_up_input_to_an_open_thread_resumes_before_writing` sends Composer input to an open Thread with no active runtime and calls AgentRuntimePort.resume before writeInput. |
+| Explicit resume does not write input | `resuming_agent_runtime_without_input_resumes_provider_session_without_writing` resumes a Thread with a provider session reference and leaves AgentRuntimePort.writeInput unused. |
 | Agent Binding is locked | `sending_follow_up_input_with_a_different_agent_binding_is_rejected` rejects follow-up input that attempts to use a different Agent id. |
 | Prompt answer uses same runtime | `answering_an_active_prompt_writes_to_the_same_runtime_and_clears_prompt_state` writes the answer to the active runtime handle and clears Prompt State. |
 | Stop preserves Thread | `stopping_agent_runtime_preserves_thread_metadata` stops the active handle and changes runtime state without deleting Thread metadata. |

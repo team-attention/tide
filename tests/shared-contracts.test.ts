@@ -6,14 +6,18 @@ import { fileURLToPath } from "node:url";
 
 import {
   CONTRACT_VERSION,
+  createAgentSessionBlockCompletedEvent,
   createAgentSessionBlockUpsertedEvent,
   createCommandAcceptedEvent,
   createCommandCompletedEvent,
+  createContractErrorEvent,
   createContractErrorPayload,
   validateBackendCommandEnvelope,
   validateBackendEventEnvelope,
+  type AgentBindingDto,
   type AgentSessionBlockDto,
   type BrowserPaneRefDto,
+  type WorkbenchPaneRefDto,
   type PromptChoiceDto,
   type ProviderReadinessDto,
 } from "../src/shared/contracts/index.ts";
@@ -71,6 +75,103 @@ test("BackendEventEnvelope rejects events without eventId", () => {
   assert.equal(result.error.code, "invalid_event");
 });
 
+test("thread_list_contracts_round_trip_thread_summaries", () => {
+  const command = {
+    contractVersion: CONTRACT_VERSION,
+    requestId: "req-thread-list",
+    kind: "thread.list",
+    issuedAt,
+    payload: { includeArchived: false },
+  };
+  const eventEnvelope = {
+    contractVersion: CONTRACT_VERSION,
+    eventId: "evt-thread-listed",
+    requestId: command.requestId,
+    kind: "thread.listed",
+    emittedAt,
+    payload: {
+      threads: [
+        {
+          threadId: "thread-listed",
+          title: "Listed Thread",
+          agentBinding: {
+            agentId: "codex",
+            runtimeSource: { kind: "provider_cli", integrationId: "codex" },
+          },
+          scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+          launchOptions: {
+            model: "Antigravity default",
+            permission: "default",
+          },
+          createdAt: issuedAt,
+          updatedAt: emittedAt,
+          pinned: false,
+          archived: false,
+          lastKnownState: "idle",
+        },
+      ],
+    },
+  };
+
+  assert.equal(validateBackendCommandEnvelope(command).ok, true);
+  assert.equal(validateBackendEventEnvelope(eventEnvelope).ok, true);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(eventEnvelope)).payload.threads[0].scope,
+    { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(eventEnvelope)).payload.threads[0].launchOptions,
+    { model: "Antigravity default", permission: "default" },
+  );
+});
+
+test("workbench_editor_pane_contract_carries_editable_body_text", () => {
+  // Spec: docs_v2/specs/workbench-editor-pane-editing.md
+  const pane: WorkbenchPaneRefDto = {
+    paneId: "pane-editor",
+    kind: "editor",
+    title: "README.md",
+    visible: true,
+    revision: "rev-1",
+    updatedAt: emittedAt,
+    filePath: "/repo/README.md",
+    relativePath: "README.md",
+    bodyText: "# Tide\n\nEditable body\n",
+    bodyTextPreview: "# Tide\n\nEditable body\n",
+    byteLength: 22,
+    truncated: false,
+  };
+
+  assert.deepEqual(JSON.parse(JSON.stringify(pane)), pane);
+});
+
+test("workbench_editor_pane_contract_carries_navigation_target", () => {
+  // Spec: docs_v2/specs/workbench-editor-code-navigation.md
+  const pane: WorkbenchPaneRefDto = {
+    paneId: "pane-editor",
+    kind: "editor",
+    title: "answer.ts",
+    visible: true,
+    revision: "rev-2",
+    updatedAt: emittedAt,
+    filePath: "/repo/src/answer.ts",
+    relativePath: "src/answer.ts",
+    bodyText: "export const answer = 42;\n",
+    bodyTextPreview: "export const answer = 42;\n",
+    byteLength: 26,
+    truncated: false,
+    navigationTarget: {
+      line: 0,
+      character: 13,
+      length: 6,
+      label: "answer",
+      sourcePaneId: "pane-source",
+    },
+  };
+
+  assert.deepEqual(JSON.parse(JSON.stringify(pane)), pane);
+});
+
 test("command-scoped events preserve RequestId", () => {
   const block: AgentSessionBlockDto = {
     blockId: "block-1",
@@ -104,6 +205,47 @@ test("command-scoped events preserve RequestId", () => {
       commandEnvelope.requestId,
     ],
   );
+});
+
+test("pushed events omit absent RequestId instead of serializing undefined", () => {
+  const block: AgentSessionBlockDto = {
+    blockId: "block-push",
+    threadId: "thread-1",
+    kind: "agent_message",
+    role: "agent",
+    status: "complete",
+    body: "done",
+    updatedAt: emittedAt,
+  };
+
+  const upserted = createAgentSessionBlockUpsertedEvent({
+    eventId: "evt-pushed-upsert",
+    emittedAt,
+    block,
+  });
+  const completed = createAgentSessionBlockCompletedEvent({
+    eventId: "evt-pushed-complete",
+    emittedAt,
+    blockId: block.blockId,
+    threadId: block.threadId,
+    status: "complete",
+    completedAt: emittedAt,
+  });
+  const error = createContractErrorEvent({
+    eventId: "evt-pushed-error",
+    emittedAt,
+    error: createContractErrorPayload({
+      code: "internal_error",
+      message: "failed",
+      severity: "error",
+      retryable: false,
+    }),
+  });
+
+  for (const event of [upserted, completed, error]) {
+    assert.equal(Object.hasOwn(event, "requestId"), false);
+    assert.equal(validateBackendEventEnvelope(event).ok, true);
+  }
 });
 
 test("Contract Error payloads round-trip through JSON without Error objects or stack traces", () => {
@@ -232,7 +374,70 @@ test("Prompt choices preserve provider-native values", () => {
   );
 });
 
-test("Provider Readiness setup actions cross the boundary without launch env internals", () => {
+test("Agent Binding preserves source-aware Provider CLI and Tide API runtime sources", () => {
+  const codexBinding: AgentBindingDto = {
+    agentId: "codex",
+    runtimeSource: { kind: "provider_cli", integrationId: "codex" },
+  };
+  const openAiBinding: AgentBindingDto = {
+    agentId: "openai_api",
+    runtimeSource: { kind: "tide_api", provider: "openai", accountId: "acct-1" },
+  };
+
+  assert.deepEqual(JSON.parse(JSON.stringify(codexBinding)), codexBinding);
+  assert.deepEqual(JSON.parse(JSON.stringify(openAiBinding)), openAiBinding);
+});
+
+test("thread_start_rejects_fake_vendor_api_runtime_branch", () => {
+  const result = validateBackendCommandEnvelope({
+    contractVersion: CONTRACT_VERSION,
+    requestId: "req-invalid-agent-source",
+    kind: "thread.start",
+    issuedAt,
+    payload: {
+      initialMessage: "hello",
+      agentBinding: {
+        agentId: "codex",
+        runtimeSource: { kind: "vendor_api_key", provider: "openai" },
+      },
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "invalid_command");
+});
+
+test("thread_start_accepts_openai_api_only_with_tide_api_runtime_source", () => {
+  const accepted = validateBackendCommandEnvelope({
+    contractVersion: CONTRACT_VERSION,
+    requestId: "req-openai-source",
+    kind: "thread.start",
+    issuedAt,
+    payload: {
+      initialMessage: "hello",
+      agentBinding: {
+        agentId: "openai_api",
+        runtimeSource: { kind: "tide_api", provider: "openai" },
+      },
+    },
+  });
+  const rejected = validateBackendCommandEnvelope({
+    contractVersion: CONTRACT_VERSION,
+    requestId: "req-openai-source-missing",
+    kind: "thread.start",
+    issuedAt,
+    payload: {
+      initialMessage: "hello",
+      agentBinding: { agentId: "openai_api" },
+    },
+  });
+
+  assert.equal(accepted.ok, true);
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.error.code, "invalid_command");
+});
+
+test("Provider Readiness setup actions can carry provider setup env", () => {
   const readiness: ProviderReadinessDto = {
     agentId: "codex",
     ready: false,
@@ -245,6 +450,7 @@ test("Provider Readiness setup actions cross the boundary without launch env int
         setup: {
           command: "codex",
           args: ["--no-alt-screen"],
+          env: { CODEX_HOME: "/tmp/tide-codex-home" },
           cwd: "/repo",
           expectedCompletion: "retry_preflight",
         },
@@ -257,10 +463,10 @@ test("Provider Readiness setup actions cross the boundary without launch env int
   assert.deepEqual(roundTripped.blockers[0].setup, {
     command: "codex",
     args: ["--no-alt-screen"],
+    env: { CODEX_HOME: "/tmp/tide-codex-home" },
     cwd: "/repo",
     expectedCompletion: "retry_preflight",
   });
-  assert.equal("env" in roundTripped.blockers[0].setup, false);
 });
 
 test("Browser Pane refs preserve revision and browser metadata", () => {
@@ -272,14 +478,140 @@ test("Browser Pane refs preserve revision and browser metadata", () => {
     revision: "rev-1",
     updatedAt: emittedAt,
     url: "http://localhost:3000",
+    pageTitle: "Local preview",
+    bodyTextPreview: "Loaded local app",
     loading: false,
+    pendingAction: {
+      actionId: "action-1",
+      kind: "click",
+      selector: "button.primary",
+      requestedAt: issuedAt,
+    },
+    lastAction: {
+      actionId: "action-0",
+      kind: "type_text",
+      selector: "input[name=q]",
+      text: "tide",
+      requestedAt: issuedAt,
+      status: "completed",
+      message: "Typed input[name=q]",
+      completedAt: emittedAt,
+    },
   };
 
   const roundTripped = JSON.parse(JSON.stringify(pane));
 
   assert.equal(roundTripped.revision, "rev-1");
   assert.equal(roundTripped.url, "http://localhost:3000");
+  assert.equal(roundTripped.pageTitle, "Local preview");
+  assert.equal(roundTripped.bodyTextPreview, "Loaded local app");
   assert.equal(roundTripped.loading, false);
+  assert.equal(roundTripped.pendingAction.actionId, "action-1");
+  assert.equal(roundTripped.pendingAction.kind, "click");
+  assert.equal(roundTripped.lastAction.status, "completed");
+  assert.equal(roundTripped.lastAction.text, "tide");
+});
+
+test("Terminal Workbench Pane refs preserve Provider Setup Surface metadata", () => {
+  const pane: WorkbenchPaneRefDto = {
+    paneId: "pane-provider-setup",
+    kind: "terminal",
+    title: "Provider setup: codex",
+    visible: true,
+    revision: "rev-setup",
+    updatedAt: issuedAt,
+    command: "/usr/local/bin/codex",
+    args: [],
+    env: { CODEX_HOME: "/tmp/tide-codex-home" },
+    cwd: "/repo",
+    status: "ready",
+    expectedCompletion: "retry_preflight",
+  };
+
+  const roundTripped = JSON.parse(JSON.stringify(pane));
+
+  assert.equal(roundTripped.kind, "terminal");
+  assert.equal(roundTripped.command, "/usr/local/bin/codex");
+  assert.deepEqual(roundTripped.env, { CODEX_HOME: "/tmp/tide-codex-home" });
+  assert.equal(roundTripped.cwd, "/repo");
+  assert.equal(roundTripped.status, "ready");
+});
+
+test("workbench_launcher_pane_contract_round_trips", () => {
+  // Spec: docs_v2/specs/workbench-launcher-pane.md
+  const pane: WorkbenchPaneRefDto = {
+    paneId: "pane-launcher",
+    kind: "launcher",
+    title: "Workbench launcher",
+    visible: true,
+    revision: "rev-launcher",
+    updatedAt: emittedAt,
+    actions: [
+      {
+        actionId: "open_browser",
+        label: "Browser",
+        description: "Open a Browser Pane",
+        enabled: true,
+      },
+      {
+        actionId: "open_file_tree",
+        label: "FileTree",
+        description: "Show the Thread FileTree",
+        enabled: true,
+      },
+    ],
+  };
+
+  const roundTripped = JSON.parse(JSON.stringify(pane));
+
+  assert.equal(roundTripped.kind, "launcher");
+  assert.equal(roundTripped.actions[0].actionId, "open_browser");
+  assert.equal(roundTripped.actions[1].label, "FileTree");
+});
+
+test("Workbench FileTree View refs preserve root label entries and truncation", () => {
+  // Spec: docs_v2/specs/workbench-filetree-view.md
+  const eventEnvelope = {
+    contractVersion: CONTRACT_VERSION,
+    eventId: "evt-file-tree",
+    kind: "workbench.changed",
+    emittedAt,
+    payload: {
+      threadId: "thread-file-tree",
+      panes: [],
+      fileTree: {
+        root: "/repo/tide",
+        cwdLabel: "tide",
+        revision: "tree-rev-1",
+        updatedAt: emittedAt,
+        truncated: false,
+        entries: [
+          {
+            id: "src",
+            name: "src",
+            relativePath: "src",
+            depth: 0,
+            kind: "folder",
+          },
+          {
+            id: "package.json",
+            name: "package.json",
+            relativePath: "package.json",
+            depth: 0,
+            kind: "file",
+          },
+        ],
+      },
+    },
+  };
+
+  assert.equal(validateBackendEventEnvelope(eventEnvelope).ok, true);
+
+  const roundTripped = JSON.parse(JSON.stringify(eventEnvelope)).payload.fileTree;
+  assert.equal(roundTripped.root, "/repo/tide");
+  assert.equal(roundTripped.cwdLabel, "tide");
+  assert.equal(roundTripped.entries[0].relativePath, "src");
+  assert.equal(roundTripped.truncated, false);
 });
 
 function findSourceMentions(relativeRoots: string[], pattern: RegExp): string[] {

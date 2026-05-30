@@ -29,13 +29,15 @@ class FixtureAgentSessionReader implements AgentSessionReader {
     let promptState: PromptState | undefined;
 
     for (const frame of [...input.frames].sort(compareFrames)) {
-      const block = blockFromFrame(input, frame, existingBlocks);
-      existingBlocks.set(block.blockId, block);
-      blockUpdates.push({ kind: "upsert", block });
+      const blocks = blocksFromFrame(input, frame, existingBlocks);
+      for (const block of blocks) {
+        existingBlocks.set(block.blockId, block);
+        blockUpdates.push({ kind: "upsert", block });
 
-      const prompt = promptStateFromBlock(block, frame);
-      if (prompt !== undefined) {
-        promptState = prompt;
+        const prompt = promptStateFromBlock(block, frame);
+        if (prompt !== undefined) {
+          promptState = prompt;
+        }
       }
     }
 
@@ -48,34 +50,61 @@ class FixtureAgentSessionReader implements AgentSessionReader {
   }
 }
 
-function blockFromFrame(
+function blocksFromFrame(
   input: AgentSessionReadInput,
   frame: RawAgentFrame,
   existingBlocks: Map<string, AgentSessionBlock>,
-): AgentSessionBlock {
+): AgentSessionBlock[] {
   if (isPtyTextFrame(frame)) {
-    return ptyBlockFromFrame(input.thread.threadId, frame, existingBlocks);
+    return [ptyBlockFromFrame(input.thread.threadId, frame, existingBlocks)];
   }
 
   const payload = payloadObject(frame);
   if (payload === undefined) {
-    return rawBlockFromFrame(input.thread.threadId, frame);
+    return [rawBlockFromFrame(input.thread.threadId, frame)];
   }
 
   switch (payload.type) {
     case "message":
-      return messageBlockFromFrame(input.thread.threadId, frame, payload);
+      return [messageBlockFromFrame(input.thread.threadId, frame, payload)];
+    case "tool_call":
+      return [toolBlockFromFrame(input.thread.threadId, frame, payload, "tool_call")];
+    case "tool_result":
+      return blocksFromToolResult(input.thread.threadId, frame, payload);
     case "approval_prompt":
-      return promptBlockFromFrame(input.thread.threadId, frame, payload, "approval_prompt");
+      return [promptBlockFromFrame(input.thread.threadId, frame, payload, "approval_prompt")];
     case "question_prompt":
-      return promptBlockFromFrame(input.thread.threadId, frame, payload, "question_prompt");
+      return [promptBlockFromFrame(input.thread.threadId, frame, payload, "question_prompt")];
     case "choice_prompt":
-      return promptBlockFromFrame(input.thread.threadId, frame, payload, "choice_prompt");
+      return [promptBlockFromFrame(input.thread.threadId, frame, payload, "choice_prompt")];
     case "workbench_reference":
-      return workbenchReferenceBlockFromFrame(input.thread.threadId, frame, payload);
+      return [workbenchReferenceBlockFromFrame(input.thread.threadId, frame, payload)];
     default:
-      return rawBlockFromFrame(input.thread.threadId, frame);
+      return [rawBlockFromFrame(input.thread.threadId, frame)];
   }
+}
+
+function blocksFromToolResult(
+  threadId: ThreadId,
+  frame: RawAgentFrame,
+  payload: Record<string, unknown>,
+): AgentSessionBlock[] {
+  const output = recordField(payload.output);
+  if (
+    payload.toolName === "tide_edit_file" &&
+    payload.ok === true &&
+    output?.kind === "edit_file"
+  ) {
+    return fileEditBlocksFromFrame(threadId, frame, payload, output);
+  }
+  if (
+    payload.toolName === "tide_run_terminal_command" &&
+    payload.ok === true &&
+    output?.kind === "run_terminal_command"
+  ) {
+    return [commandRunBlockFromFrame(threadId, frame, payload, output)];
+  }
+  return [toolBlockFromFrame(threadId, frame, payload, "tool_result")];
 }
 
 function messageBlockFromFrame(
@@ -96,6 +125,148 @@ function messageBlockFromFrame(
     sourceFrameIds: [frame.frameId],
     status,
     body,
+    createdAt: frame.observedAt,
+    updatedAt: frame.observedAt,
+  };
+}
+
+function toolBlockFromFrame(
+  threadId: ThreadId,
+  frame: RawAgentFrame,
+  payload: Record<string, unknown>,
+  kind: Extract<AgentSessionBlockKind, "tool_call" | "tool_result">,
+): AgentSessionBlock {
+  const toolName = stringField(payload.toolName) ?? "tool";
+  const callId = stringField(payload.callId) ?? frame.frameId;
+  const body = stringField(payload.body) ?? rawText(frame);
+  const status = blockStatus(payload.status, kind === "tool_result" ? "complete" : "pending");
+  const data: Record<string, unknown> = {
+    toolName,
+    callId,
+  };
+
+  if ("arguments" in payload) {
+    data.arguments = payload.arguments;
+  }
+  if ("ok" in payload) {
+    data.ok = payload.ok;
+  }
+  if ("output" in payload) {
+    data.output = payload.output;
+  }
+  if ("error" in payload) {
+    data.error = payload.error;
+  }
+
+  return {
+    blockId: stringField(payload.blockId) ?? `${kind}:${threadId}:${callId}`,
+    threadId,
+    agentId: frame.agentId,
+    kind,
+    role: "tool",
+    sourceFrameIds: [frame.frameId],
+    status,
+    title: toolName,
+    body,
+    data,
+    rawFallback: rawText(frame),
+    createdAt: frame.observedAt,
+    updatedAt: frame.observedAt,
+  };
+}
+
+function fileEditBlocksFromFrame(
+  threadId: ThreadId,
+  frame: RawAgentFrame,
+  payload: Record<string, unknown>,
+  output: Record<string, unknown>,
+): AgentSessionBlock[] {
+  const callId = stringField(payload.callId) ?? frame.frameId;
+  const relativePath = stringField(output.relativePath) ?? "file";
+  const replacementCount = numberField(output.replacementCount) ?? 0;
+  const beforeByteLength = numberField(output.beforeByteLength) ?? 0;
+  const afterByteLength = numberField(output.afterByteLength) ?? 0;
+  const diff = stringField(output.diff) ?? "";
+
+  return [
+    {
+      blockId: `file-edit:${threadId}:${callId}`,
+      threadId,
+      agentId: frame.agentId,
+      kind: "file_edit",
+      role: "tool",
+      sourceFrameIds: [frame.frameId],
+      status: "complete",
+      title: relativePath,
+      body: `${replacementCount} replacement${replacementCount === 1 ? "" : "s"} in ${relativePath}`,
+      data: {
+        toolName: "tide_edit_file",
+        callId,
+        relativePath,
+        replacementCount,
+        beforeByteLength,
+        afterByteLength,
+      },
+      rawFallback: rawText(frame),
+      createdAt: frame.observedAt,
+      updatedAt: frame.observedAt,
+    },
+    {
+      blockId: `diff-summary:${threadId}:${callId}`,
+      threadId,
+      agentId: frame.agentId,
+      kind: "diff_summary",
+      role: "tool",
+      sourceFrameIds: [frame.frameId],
+      status: "complete",
+      title: `Diff: ${relativePath}`,
+      body: diff,
+      data: {
+        toolName: "tide_edit_file",
+        callId,
+        relativePath,
+      },
+      rawFallback: rawText(frame),
+      createdAt: frame.observedAt,
+      updatedAt: frame.observedAt,
+    },
+  ];
+}
+
+function commandRunBlockFromFrame(
+  threadId: ThreadId,
+  frame: RawAgentFrame,
+  payload: Record<string, unknown>,
+  output: Record<string, unknown>,
+): AgentSessionBlock {
+  const callId = stringField(payload.callId) ?? frame.frameId;
+  const command = stringField(output.command) ?? "command";
+  const args = stringArrayField(output.args);
+  const title = [command, ...args].join(" ");
+  const status = output.status === "failed" ? "failed" : "complete";
+
+  return {
+    blockId: `command-run:${threadId}:${callId}`,
+    threadId,
+    agentId: frame.agentId,
+    kind: "command_run",
+    role: "tool",
+    sourceFrameIds: [frame.frameId],
+    status,
+    title,
+    body: stringField(output.transcript) ?? stringField(payload.body) ?? rawText(frame),
+    data: {
+      toolName: "tide_run_terminal_command",
+      callId,
+      command,
+      args,
+      cwd: stringField(output.cwd) ?? "",
+      exitCode: nullableNumberField(output.exitCode),
+      signal: nullableStringField(output.signal),
+      timedOut: booleanField(output.timedOut) ?? false,
+      truncated: booleanField(output.truncated) ?? false,
+    },
+    rawFallback: rawText(frame),
     createdAt: frame.observedAt,
     updatedAt: frame.observedAt,
   };
@@ -333,6 +504,41 @@ function rawText(frame: RawAgentFrame): string {
 
 function stringField(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function numberField(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function nullableNumberField(value: unknown): number | null {
+  return value === null ? null : numberField(value) ?? null;
+}
+
+function nullableStringField(value: unknown): string | null {
+  return value === null ? null : stringField(value) ?? null;
+}
+
+function booleanField(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function stringArrayField(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function recordField(value: unknown): Record<string, unknown> | undefined {
+  if (
+    value === undefined ||
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
 }
 
 function appendUnique(values: string[], value: string): string[] {

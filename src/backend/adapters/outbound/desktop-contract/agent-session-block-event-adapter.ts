@@ -19,23 +19,41 @@ export function toAgentSessionBlockDto(
 ): AgentSessionBlockDto {
   const data = toJsonObject(block.data);
   const localProvenance = toJsonObject(block.localProvenance);
-
-  return {
+  const dto: AgentSessionBlockDto = {
     blockId: block.blockId,
     threadId: block.threadId,
-    agentId: block.agentId,
     kind: block.kind,
-    role: block.role,
-    sourceFrameIds: [...block.sourceFrameIds],
-    localProvenance,
     status: block.status,
-    title: block.title,
-    body: block.body,
-    data,
-    rawFallback: block.rawFallback,
-    createdAt: block.createdAt,
     updatedAt: block.updatedAt,
   };
+  if (block.agentId !== undefined) {
+    dto.agentId = block.agentId;
+  }
+  if (block.role !== undefined) {
+    dto.role = block.role;
+  }
+  if (block.sourceFrameIds.length > 0) {
+    dto.sourceFrameIds = [...block.sourceFrameIds];
+  }
+  if (localProvenance !== undefined) {
+    dto.localProvenance = localProvenance;
+  }
+  if (block.title !== undefined) {
+    dto.title = block.title;
+  }
+  if (block.body !== undefined) {
+    dto.body = block.body;
+  }
+  if (data !== undefined) {
+    dto.data = data;
+  }
+  if (block.rawFallback !== undefined) {
+    dto.rawFallback = block.rawFallback;
+  }
+  if (block.createdAt !== undefined) {
+    dto.createdAt = block.createdAt;
+  }
+  return dto;
 }
 
 export function createAgentSessionBlockUpsertedEventFromBlock(options: {

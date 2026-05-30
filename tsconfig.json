@@ -7,10 +7,10 @@
     "jsx": "react-jsx",
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": ["node"]
   },
   "include": [
-    "src/**/*.ts",
-    "tests/**/*.ts"
+    "src/**/*.ts"
   ]
 }

@@ -98,8 +98,12 @@ export function validateBackendCommandEnvelope(
       "BackendCommandEnvelope payload must be a JSON object.",
     );
   }
+  const payloadResult = validateCommandPayload(value.kind, value.payload);
+  if (!payloadResult.ok) {
+    return payloadResult;
+  }
 
-  return { ok: true, value: value as BackendCommandEnvelope };
+  return { ok: true, value: value as unknown as BackendCommandEnvelope };
 }
 
 export function validateBackendEventEnvelope(
@@ -157,7 +161,7 @@ export function validateBackendEventEnvelope(
     );
   }
 
-  return { ok: true, value: value as BackendEventEnvelope };
+  return { ok: true, value: value as unknown as BackendEventEnvelope };
 }
 
 export function createCommandAcceptedEvent(
@@ -205,7 +209,7 @@ export function createContractErrorEvent(options: {
   return {
     contractVersion: CONTRACT_VERSION,
     eventId: options.eventId,
-    requestId: options.requestId,
+    ...(options.requestId === undefined ? {} : { requestId: options.requestId }),
     kind: "contract.error",
     emittedAt: options.emittedAt,
     payload: options.error,
@@ -285,7 +289,7 @@ export function createAgentSessionBlockUpsertedEvent(options: {
   return {
     contractVersion: CONTRACT_VERSION,
     eventId: options.eventId,
-    requestId: options.requestId,
+    ...(options.requestId === undefined ? {} : { requestId: options.requestId }),
     kind: "agentSessionBlock.upserted",
     emittedAt: options.emittedAt,
     payload: {
@@ -317,7 +321,7 @@ export function createAgentSessionBlockCompletedEvent(options: {
   return {
     contractVersion: CONTRACT_VERSION,
     eventId: options.eventId,
-    requestId: options.requestId,
+    ...(options.requestId === undefined ? {} : { requestId: options.requestId }),
     kind: "agentSessionBlock.completed",
     emittedAt: options.emittedAt,
     payload,
@@ -337,6 +341,95 @@ function contractValidationFailure(
       retryable: false,
     }),
   };
+}
+
+function validateCommandPayload(
+  kind: string,
+  payload: JsonObject,
+): ContractValidationResult<void> {
+  if (kind !== "thread.start") {
+    return { ok: true, value: undefined };
+  }
+
+  const agentBinding = payload.agentBinding;
+  if (!isJsonObject(agentBinding)) {
+    return contractValidationFailure(
+      "invalid_command",
+      "thread.start requires an Agent Binding.",
+    );
+  }
+
+  return validateAgentBinding(agentBinding);
+}
+
+function validateAgentBinding(binding: JsonObject): ContractValidationResult<void> {
+  if (!isNonEmptyString(binding.agentId)) {
+    return contractValidationFailure(
+      "invalid_command",
+      "Agent Binding requires agentId.",
+    );
+  }
+
+  if (!isKnownAgentId(binding.agentId)) {
+    return contractValidationFailure("invalid_command", "Unknown Agent Binding agentId.");
+  }
+
+  if (binding.runtimeSource === undefined) {
+    if (binding.agentId === "openai_api") {
+      return contractValidationFailure(
+        "invalid_command",
+        "OpenAI API Agent Binding requires tide_api runtimeSource.",
+      );
+    }
+    return { ok: true, value: undefined };
+  }
+
+  if (!isJsonObject(binding.runtimeSource)) {
+    return contractValidationFailure(
+      "invalid_command",
+      "Agent Binding runtimeSource must be a JSON object.",
+    );
+  }
+
+  const runtimeSource = binding.runtimeSource;
+  if (runtimeSource.kind === "provider_cli") {
+    if (!isProviderCliAgentId(binding.agentId)) {
+      return contractValidationFailure(
+        "invalid_command",
+        "provider_cli runtimeSource requires a Provider CLI agentId.",
+      );
+    }
+    if (runtimeSource.integrationId !== binding.agentId) {
+      return contractValidationFailure(
+        "invalid_command",
+        "provider_cli runtimeSource integrationId must match agentId.",
+      );
+    }
+    return { ok: true, value: undefined };
+  }
+
+  if (runtimeSource.kind === "tide_api") {
+    if (binding.agentId !== "openai_api" || runtimeSource.provider !== "openai") {
+      return contractValidationFailure(
+        "invalid_command",
+        "tide_api runtimeSource requires OpenAI API agentId and provider.",
+      );
+    }
+    return { ok: true, value: undefined };
+  }
+
+  return contractValidationFailure(
+    "invalid_command",
+    "Unknown Agent Binding runtimeSource.",
+  );
+}
+
+function isKnownAgentId(value: string): boolean {
+  return isProviderCliAgentId(value) || value === "openai_api";
+}
+
+function isProviderCliAgentId(value: string): boolean {
+  return value === "codex" || value === "claude" || value === "antigravity";
 }
 
 function isNonEmptyString(value: unknown): value is string {

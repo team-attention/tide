@@ -1,6 +1,8 @@
 import type {
   AnswerPromptResult,
   HydrateThreadResult,
+  ListThreadsResult,
+  ResumeAgentRuntimeResult,
   SendComposerInputResult,
   ServiceError,
   ServiceResult,
@@ -17,17 +19,21 @@ import {
   createContractErrorEvent,
   createContractErrorPayload,
   type AgentBindingDto,
+  type AgentRuntimeSourceDto,
   type AgentRuntimeStateDto,
   type AgentSessionBlockDto,
   type BackendCommandEnvelope,
   type BackendEventEnvelope,
   type ContractErrorCode,
+  type JsonObject,
   type LastKnownStateDto,
   type ProviderReadinessDto,
   type PromptStateDto,
   type ThreadScopeDto,
   type ThreadSummaryDto,
+  type WorkbenchFileTreeDto,
   type WorkbenchPaneRefDto,
+  sanitizeJsonValue,
   validateBackendCommandEnvelope,
 } from "../../../../shared/contracts/index.ts";
 
@@ -87,59 +93,79 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
     command: BackendCommandEnvelope,
   ): Promise<BackendEventEnvelope[]> {
     switch (command.kind) {
-      case "thread.hydrate":
+      case "thread.list": {
+        const typedCommand = command as BackendCommandEnvelope<"thread.list">;
         return this.handleServiceResult(
-          command,
-          await this.service.hydrateThread(command.payload),
+          typedCommand,
+          await this.service.listThreads(typedCommand.payload),
           (result) => [
-            this.threadHydratedEvent(command, result),
-            this.commandCompletedEvent(command),
+            this.threadListedEvent(typedCommand, result),
+            this.commandCompletedEvent(typedCommand),
           ],
         );
-      case "thread.start":
+      }
+      case "thread.hydrate": {
+        const typedCommand = command as BackendCommandEnvelope<"thread.hydrate">;
         return this.handleServiceResult(
-          command,
-          await this.service.startThread(command.payload),
-          (result) => this.threadStartedEvents(command, result),
+          typedCommand,
+          await this.service.hydrateThread(typedCommand.payload),
+          (result) => [
+            this.threadHydratedEvent(typedCommand, result),
+            this.commandCompletedEvent(typedCommand),
+          ],
         );
-      case "composer.sendInput":
+      }
+      case "thread.start": {
+        const typedCommand = command as BackendCommandEnvelope<"thread.start">;
         return this.handleServiceResult(
-          command,
-          await this.service.sendComposerInput(command.payload),
-          (result) => this.composerInputEvents(command, result),
+          typedCommand,
+          await this.service.startThread(typedCommand.payload),
+          (result) => this.threadStartedEvents(typedCommand, result),
         );
-      case "prompt.answer":
+      }
+      case "composer.sendInput": {
+        const typedCommand = command as BackendCommandEnvelope<"composer.sendInput">;
         return this.handleServiceResult(
-          command,
-          await this.service.answerPrompt(command.payload),
-          (result) => this.promptAnswerEvents(command, result),
+          typedCommand,
+          await this.service.sendComposerInput(typedCommand.payload),
+          (result) => this.composerInputEvents(typedCommand, result),
         );
-      case "agentRuntime.stop":
+      }
+      case "prompt.answer": {
+        const typedCommand = command as BackendCommandEnvelope<"prompt.answer">;
         return this.handleServiceResult(
-          command,
-          await this.service.stopAgentRuntime(command.payload),
-          (result) => this.stopRuntimeEvents(command, result),
+          typedCommand,
+          await this.service.answerPrompt(typedCommand.payload),
+          (result) => this.promptAnswerEvents(typedCommand, result),
         );
-      case "agentRuntime.resume":
-        return [
-          this.contractErrorEvent({
-            requestId: command.requestId,
-            code: "agent_runtime_unavailable",
-            message: "Agent Runtime resume command is not implemented in this slice.",
-            retryable: true,
-          }),
-        ];
-      case "workbench.command":
-        return [
-          createCommandCompletedEvent(command, {
-            eventId: this.nextEventId(),
-            emittedAt: this.clock(),
-            result: {
-              handled: false,
-              reason: "Workbench command handling is out of scope for this slice.",
-            },
-          }),
-        ];
+      }
+      case "agentRuntime.stop": {
+        const typedCommand = command as BackendCommandEnvelope<"agentRuntime.stop">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.stopAgentRuntime(typedCommand.payload),
+          (result) => this.stopRuntimeEvents(typedCommand, result),
+        );
+      }
+      case "agentRuntime.resume": {
+        const typedCommand = command as BackendCommandEnvelope<"agentRuntime.resume">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.resumeAgentRuntime(typedCommand.payload),
+          (result) => this.resumeRuntimeEvents(typedCommand, result),
+        );
+      }
+      case "workbench.command": {
+        const typedCommand = command as BackendCommandEnvelope<"workbench.command">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.handleWorkbenchCommand(typedCommand.payload),
+          (result) => [
+            this.workbenchChangedEvent(typedCommand, result.thread),
+            this.commandCompletedEvent(typedCommand, { handled: result.handled }),
+          ],
+        );
+      }
     }
   }
 
@@ -162,6 +188,22 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
     return onSuccess(result);
   }
 
+  private threadListedEvent(
+    command: BackendCommandEnvelope,
+    result: ListThreadsResult,
+  ): BackendEventEnvelope<"thread.listed"> {
+    return {
+      contractVersion: CONTRACT_VERSION,
+      eventId: this.nextEventId(),
+      requestId: command.requestId,
+      kind: "thread.listed",
+      emittedAt: this.clock(),
+      payload: {
+        threads: result.threads.map(toThreadSummaryDto),
+      },
+    };
+  }
+
   private threadHydratedEvent(
     command: BackendCommandEnvelope,
     result: HydrateThreadResult,
@@ -173,12 +215,18 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
       kind: "thread.hydrated",
       emittedAt: this.clock(),
       payload: {
-        thread: toThreadSummaryDto(result.thread),
-        blocks: result.blocks.map((block) =>
-          toAgentSessionBlockDto(result.thread, block),
-        ),
-        runtimeState: result.runtimeState,
-        workbenchPanes: result.thread.workbench.panes.map(toWorkbenchPaneRefDto),
+        ...omitUndefinedProperties({
+          thread: toThreadSummaryDto(result.thread),
+          blocks: result.blocks.map((block) =>
+            toAgentSessionBlockDto(result.thread, block),
+          ),
+          runtimeState: result.runtimeState,
+          workbenchPanes: result.thread.workbench.panes.map(toWorkbenchPaneRefDto),
+          fileTree:
+            result.thread.workbench.fileTree === undefined
+              ? undefined
+              : toWorkbenchFileTreeDto(result.thread.workbench.fileTree),
+        }),
       },
     };
   }
@@ -200,6 +248,9 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
     }
 
     return [
+      ...(result.submittedBlock === undefined
+        ? []
+        : [this.agentSessionBlockUpsertedEvent(command, result.thread, result.submittedBlock)]),
       {
         contractVersion: CONTRACT_VERSION,
         eventId: this.nextEventId(),
@@ -227,6 +278,9 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
     }
 
     return [
+      ...(result.submittedBlock === undefined
+        ? []
+        : [this.agentSessionBlockUpsertedEvent(command, result.thread, result.submittedBlock)]),
       this.agentRuntimeStateChangedEvent(command, result.thread, result.runtimeState),
       this.commandCompletedEvent(command),
     ];
@@ -251,6 +305,38 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
       this.agentRuntimeStateChangedEvent(command, result.thread, result.runtimeState),
       this.commandCompletedEvent(command),
     ];
+  }
+
+  private resumeRuntimeEvents(
+    command: BackendCommandEnvelope,
+    result: ResumeAgentRuntimeResult,
+  ): BackendEventEnvelope[] {
+    return [
+      this.agentRuntimeStateChangedEvent(command, result.thread, result.runtimeState),
+      this.commandCompletedEvent(command),
+    ];
+  }
+
+  private workbenchChangedEvent(
+    command: BackendCommandEnvelope,
+    thread: ThreadSnapshot,
+  ): BackendEventEnvelope<"workbench.changed"> {
+    return {
+      contractVersion: CONTRACT_VERSION,
+      eventId: this.nextEventId(),
+      requestId: command.requestId,
+      kind: "workbench.changed",
+      emittedAt: this.clock(),
+      payload: omitUndefinedProperties({
+        threadId: thread.threadId,
+        panes: thread.workbench.panes.map(toWorkbenchPaneRefDto),
+        activePaneId: thread.workbench.activePaneId,
+        fileTree:
+          thread.workbench.fileTree === undefined
+            ? undefined
+            : toWorkbenchFileTreeDto(thread.workbench.fileTree),
+      }),
+    };
   }
 
   private stopRuntimeEvents(
@@ -302,11 +388,30 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
 
   private commandCompletedEvent(
     command: BackendCommandEnvelope,
+    result?: JsonObject,
   ): BackendEventEnvelope<"command.completed"> {
     return createCommandCompletedEvent(command, {
       eventId: this.nextEventId(),
       emittedAt: this.clock(),
+      result,
     });
+  }
+
+  private agentSessionBlockUpsertedEvent(
+    command: BackendCommandEnvelope,
+    thread: ThreadSnapshot,
+    block: ThreadSnapshot["cachedBlocks"][number],
+  ): BackendEventEnvelope<"agentSessionBlock.upserted"> {
+    return {
+      contractVersion: CONTRACT_VERSION,
+      eventId: this.nextEventId(),
+      requestId: command.requestId,
+      kind: "agentSessionBlock.upserted",
+      emittedAt: this.clock(),
+      payload: {
+        block: toAgentSessionBlockDto(thread, block),
+      },
+    };
   }
 
   private contractErrorEvent(input: {
@@ -333,8 +438,9 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
   }
 }
 
-function toThreadSummaryDto(thread: ThreadSnapshot): ThreadSummaryDto {
-  return {
+export function toThreadSummaryDto(thread: ThreadSnapshot): ThreadSummaryDto {
+  const launchOptions = jsonObject(thread.launchOptions);
+  const summary: ThreadSummaryDto = {
     threadId: thread.threadId,
     title: thread.title,
     agentBinding: toAgentBindingDto(thread.agentBinding),
@@ -345,16 +451,54 @@ function toThreadSummaryDto(thread: ThreadSnapshot): ThreadSummaryDto {
     archived: thread.lifecycleState === "archived",
     lastKnownState: thread.lastKnownState as LastKnownStateDto,
   };
+  if (launchOptions !== undefined) {
+    summary.launchOptions = launchOptions;
+  }
+  return summary;
 }
 
 function toAgentBindingDto(binding: ThreadSnapshot["agentBinding"]): AgentBindingDto {
   const dto: AgentBindingDto = {
     agentId: binding.agentId,
+    runtimeSource: toAgentRuntimeSourceDto(
+      binding.runtimeSource ?? defaultRuntimeSourceForAgent(binding.agentId),
+    ),
   };
   if (binding.providerSessionRef !== undefined) {
-    dto.providerSessionRef = { ...binding.providerSessionRef };
+    dto.providerSessionRef = {
+      kind: binding.providerSessionRef.kind,
+      value: binding.providerSessionRef.value,
+    };
+    if (binding.providerSessionRef.transcriptPath !== undefined) {
+      dto.providerSessionRef.transcriptPath = binding.providerSessionRef.transcriptPath;
+    }
+    if (binding.providerSessionRef.logPath !== undefined) {
+      dto.providerSessionRef.logPath = binding.providerSessionRef.logPath;
+    }
   }
   return dto;
+}
+
+function toAgentRuntimeSourceDto(
+  source: AgentRuntimeSourceDto,
+): AgentRuntimeSourceDto {
+  if (source.kind === "provider_cli") {
+    return { kind: "provider_cli", integrationId: source.integrationId };
+  }
+  const dto: AgentRuntimeSourceDto = { kind: "tide_api", provider: source.provider };
+  if (source.accountId !== undefined) {
+    dto.accountId = source.accountId;
+  }
+  return dto;
+}
+
+function defaultRuntimeSourceForAgent(
+  agentId: ThreadSnapshot["agentBinding"]["agentId"],
+): AgentRuntimeSourceDto {
+  if (agentId === "openai_api") {
+    return { kind: "tide_api", provider: "openai" };
+  }
+  return { kind: "provider_cli", integrationId: agentId };
 }
 
 function toThreadScopeDto(scope: ThreadSnapshot["scope"]): ThreadScopeDto {
@@ -364,21 +508,40 @@ function toThreadScopeDto(scope: ThreadSnapshot["scope"]): ThreadScopeDto {
   return { ...scope };
 }
 
-function toAgentSessionBlockDto(
+export function toAgentSessionBlockDto(
   thread: ThreadSnapshot,
   block: ThreadSnapshot["cachedBlocks"][number],
 ): AgentSessionBlockDto {
-  return {
+  return omitUndefinedProperties({
     blockId: block.blockId,
     threadId: thread.threadId,
-    agentId: thread.agentBinding.agentId,
+    agentId: block.agentId ?? thread.agentBinding.agentId,
     kind: block.kind,
+    role: block.role,
+    sourceFrameIds: block.sourceFrameIds?.map((frameId) => frameId),
+    localProvenance: jsonObject(block.localProvenance),
     status: block.status,
+    title: block.title,
+    body: block.body,
+    data: jsonObject(block.data),
+    rawFallback: block.rawFallback,
+    createdAt: block.createdAt,
     updatedAt: block.updatedAt,
-  };
+  });
 }
 
-function toProviderReadinessDto(
+function jsonObject(value: Record<string, unknown> | undefined): AgentSessionBlockDto["data"] {
+  if (value === undefined) {
+    return undefined;
+  }
+  const sanitized = sanitizeJsonValue(value);
+  if (sanitized === undefined || sanitized === null || Array.isArray(sanitized) || typeof sanitized !== "object") {
+    return undefined;
+  }
+  return sanitized;
+}
+
+export function toProviderReadinessDto(
   readiness: ProviderReadinessResult,
 ): ProviderReadinessDto {
   return {
@@ -403,9 +566,22 @@ function contractCodeFromServiceError(error: ServiceError): ContractErrorCode {
       return error.code;
     case "agent_binding_locked":
     case "prompt_not_found":
+    case "invalid_workbench_command":
     case "workbench_target_not_found":
     case "workbench_stale_reference":
     case "unsupported_tide_mcp_tool":
+    case "workspace_file_unavailable":
+    case "workspace_file_not_found":
+    case "workspace_file_outside_scope":
+    case "workspace_file_not_text":
+    case "workspace_file_unreadable":
+    case "workspace_file_too_large":
+    case "workspace_file_edit_conflict":
+    case "workspace_command_unavailable":
+    case "workspace_command_invalid":
+    case "workspace_command_outside_scope":
+    case "workspace_code_intelligence_unavailable":
+    case "workspace_code_definition_not_found":
       return "invalid_command";
   }
 }
@@ -436,23 +612,49 @@ function defaultIdGenerator(): string {
   return `evt-${Math.random().toString(36).slice(2)}`;
 }
 
-function toWorkbenchPaneRefDto(
+export function toWorkbenchPaneRefDto(
   pane: ThreadSnapshot["workbench"]["panes"][number],
 ): WorkbenchPaneRefDto {
   if (pane.kind === "browser") {
-    return {
+    const dto: WorkbenchPaneRefDto = {
       paneId: pane.paneId,
       kind: "browser",
       title: pane.title,
       visible: pane.visible,
       revision: pane.revision,
       updatedAt: pane.updatedAt,
-      url: pane.url,
-      pageTitle: pane.pageTitle,
       loading: pane.loading,
     };
+    if (pane.url !== undefined) {
+      dto.url = pane.url;
+    }
+    if (pane.pageTitle !== undefined) {
+      dto.pageTitle = pane.pageTitle;
+    }
+    if (pane.bodyTextPreview !== undefined) {
+      dto.bodyTextPreview = pane.bodyTextPreview;
+    }
+    if (pane.pendingAction !== undefined) {
+      dto.pendingAction = { ...pane.pendingAction };
+    }
+    if (pane.lastAction !== undefined) {
+      dto.lastAction = { ...pane.lastAction };
+    }
+    return dto;
   }
-  return {
+  if (pane.kind === "launcher") {
+    return {
+      paneId: pane.paneId,
+      kind: "launcher",
+      title: pane.title,
+      visible: pane.visible,
+      revision: pane.revision,
+      updatedAt: pane.updatedAt,
+      actions: pane.actions.map((action) => ({ ...action })),
+    };
+  }
+
+  const dto: WorkbenchPaneRefDto = {
     paneId: pane.paneId,
     kind: pane.kind,
     title: pane.title,
@@ -460,4 +662,99 @@ function toWorkbenchPaneRefDto(
     revision: pane.revision,
     updatedAt: pane.updatedAt,
   };
+  if (pane.kind === "editor" || pane.kind === "diff") {
+    if (pane.filePath !== undefined) {
+      dto.filePath = pane.filePath;
+    }
+    if (pane.relativePath !== undefined) {
+      dto.relativePath = pane.relativePath;
+    }
+    if (pane.truncated !== undefined) {
+      dto.truncated = pane.truncated;
+    }
+  }
+  if (pane.kind === "editor") {
+    if (pane.bodyTextPreview !== undefined) {
+      dto.bodyTextPreview = pane.bodyTextPreview;
+    }
+    if (pane.byteLength !== undefined) {
+      dto.byteLength = pane.byteLength;
+    }
+    if (pane.navigationTarget !== undefined) {
+      dto.navigationTarget = { ...pane.navigationTarget };
+    }
+  }
+  if (pane.kind === "diff") {
+    if (pane.diffText !== undefined) {
+      dto.diffText = pane.diffText;
+    }
+    if (pane.beforeByteLength !== undefined) {
+      dto.beforeByteLength = pane.beforeByteLength;
+    }
+    if (pane.afterByteLength !== undefined) {
+      dto.afterByteLength = pane.afterByteLength;
+    }
+  }
+  if (pane.kind === "terminal") {
+    if (pane.command !== undefined) {
+      dto.command = pane.command;
+    }
+    if (pane.args !== undefined) {
+      dto.args = pane.args.map((arg) => arg);
+    }
+    if (pane.cwd !== undefined) {
+      dto.cwd = pane.cwd;
+    }
+    if (pane.status !== undefined) {
+      dto.status = pane.status;
+    }
+    if (pane.expectedCompletion !== undefined) {
+      dto.expectedCompletion = pane.expectedCompletion;
+    }
+    if (pane.transcriptPreview !== undefined) {
+      dto.transcriptPreview = pane.transcriptPreview;
+    }
+    if (pane.exitCode !== undefined) {
+      dto.exitCode = pane.exitCode;
+    }
+    if (pane.signal !== undefined) {
+      dto.signal = pane.signal;
+    }
+    if (pane.timedOut !== undefined) {
+      dto.timedOut = pane.timedOut;
+    }
+    if (pane.startedAt !== undefined) {
+      dto.startedAt = pane.startedAt;
+    }
+    if (pane.completedAt !== undefined) {
+      dto.completedAt = pane.completedAt;
+    }
+  }
+  return dto;
+}
+
+function toWorkbenchFileTreeDto(
+  fileTree: NonNullable<ThreadSnapshot["workbench"]["fileTree"]>,
+): WorkbenchFileTreeDto {
+  return {
+    root: fileTree.root,
+    cwdLabel: fileTree.cwdLabel,
+    revision: fileTree.revision,
+    updatedAt: fileTree.updatedAt,
+    truncated: fileTree.truncated,
+    entries: fileTree.entries.map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      relativePath: entry.relativePath,
+      depth: entry.depth,
+      kind: entry.kind,
+      ...(entry.active === undefined ? {} : { active: entry.active }),
+    })),
+  };
+}
+
+function omitUndefinedProperties<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, child]) => child !== undefined),
+  ) as T;
 }

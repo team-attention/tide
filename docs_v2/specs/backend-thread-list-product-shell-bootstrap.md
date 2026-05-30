@@ -1,0 +1,106 @@
+# Spec: Backend Thread List Product Shell Bootstrap
+
+## Scope
+
+This spec connects the Desktop Product Shell Left UI to Backend-owned Thread state.
+
+Included:
+
+- A `thread.list` BackendCommand for requesting visible Threads.
+- A `thread.listed` BackendEvent carrying Thread summaries.
+- Backend service listing of current non-archived Threads, sorted by updated time descending.
+- Product Shell startup that requests the Backend Thread list instead of using fixture Threads in the real renderer path.
+- Product Shell state update from `thread.listed`.
+
+Out of scope:
+
+- Persistent storage loading from disk.
+- Search, rename, archive, project creation, worktree creation, or branch creation commands.
+- Project list persistence independent from Threads.
+
+## Evidence
+
+- `docs_v2/master-plan.md` says Left UI is work history and shows existing Threads grouped by Project and Scratch.
+- `docs_v2/master-plan.md` says Thread is the primary product object and Project organizes Threads and provides Execution Context.
+- `src/desktop/application/domains/product-shell/product-shell-state.ts` currently creates fixture `initialThreads` in `createProductShellState`.
+- `src/shared/contracts/commands.ts` currently has `thread.hydrate` and `thread.start`, but no Thread list command.
+- `src/shared/contracts/events.ts` currently has `thread.hydrated` and `thread.started`, but no Thread list event.
+- `src/backend/application/services/thread-runtime-service.ts` owns in-memory Thread records and exposes hydrate/start/resume operations.
+
+## Decisions
+
+### D1. Thread list is a Backend-owned snapshot
+
+Desktop asks Backend for the visible Thread list with `thread.list`.
+
+Backend replies with `thread.listed`, not with fixture data in Desktop.
+
+### D2. Default list excludes archived Threads
+
+The default `thread.list` payload omits archived Threads because archived Threads are hidden from the default Left UI.
+
+An `includeArchived` boolean may be sent for future archived views.
+
+### D3. Product Shell can still use fixtures in tests and design previews
+
+`createProductShellState` can create fixture state for tests or design previews, but the real renderer-created Product Shell starts without fixture Threads and asks Backend for `thread.list`.
+
+## Domain Model
+
+### Thread List Snapshot
+
+A bounded Backend snapshot containing `ThreadSummaryDto[]`.
+
+It is not an Agent Session hydration event and does not start or resume an Agent Runtime.
+
+## Contracts
+
+```ts
+BackendCommandPayloadByKind["thread.list"] = {
+  includeArchived?: boolean;
+}
+
+BackendEventPayloadByKind["thread.listed"] = {
+  threads: ThreadSummaryDto[];
+}
+```
+
+## Flow
+
+### UC-1: Product Shell starts
+
+1. Desktop creates Product Shell state without fixture Threads.
+2. Desktop sends `thread.list`.
+3. Backend returns `command.accepted`, `thread.listed`, and `command.completed`.
+4. Product Shell replaces its Thread list with the listed Threads.
+
+### UC-2: Thread list command
+
+1. Backend receives `thread.list`.
+2. Backend reads current Thread records.
+3. Backend filters archived Threads unless `includeArchived` is true.
+4. Backend sorts by updated time descending.
+5. Backend emits `thread.listed`.
+
+## Invariants
+
+- Listing Threads must not start, resume, or write to an Agent Runtime.
+- Product Shell must not show fixture Threads in the real renderer default path.
+- `thread.listed` uses `ThreadSummaryDto` so Desktop does not import Backend domain types.
+- Backend domain and application services must not import Shared Contracts.
+
+## Tests
+
+| Behavior | Test |
+|----------|------|
+| Shared Contracts accept Thread list command and event | `thread_list_contracts_round_trip_thread_summaries` |
+| Backend lists non-archived Threads sorted by updated time | `thread_list_returns_visible_threads_sorted_by_updated_time` |
+| Contract adapter emits accepted, listed, and completed events | `thread_list_contract_events_return_backend_thread_summaries` |
+| Product Shell applies Backend Thread list to Left UI | `product_shell_applies_thread_listed_event_to_left_ui` |
+| Real renderer starts Product Shell without fixture Threads and requests list | `product_shell_requests_backend_thread_list_on_mount_without_fixture_threads` |
+
+## Implementation Notes
+
+- Keep Thread summary conversion in the Backend contract adapter.
+- Keep Product Shell fixture state opt-in for tests and design snapshots.
+- Do not connect persistence in this slice; a later persistence bootstrap slice can seed Backend Thread records from `ThreadPersistenceService`.

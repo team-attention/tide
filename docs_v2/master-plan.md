@@ -25,7 +25,8 @@ Agent Chat owns the conversation narrative, its Composer, and the visible Agent 
 
 The Tide difference is local, open, and multi-agent:
 
-- Codex CLI, Claude Code, and Antigravity CLI are first-class.
+- Codex CLI, Claude Code, and Antigravity CLI are first-class Provider CLI Agents.
+- OpenAI API is represented as an API-backed Tide Agent when direct API runtime support is enabled.
 - A Thread can be powered by any supported Agent.
 - The Agent Runtime is a hidden PTY-backed provider CLI session, but the user sees it through the visible Agent Session by default.
 - Project folders organize Threads and provide Execution Context.
@@ -567,7 +568,7 @@ Control meanings:
 | Permission | Chooses the provider-native permission or approval setting used at launch, unless the provider supports changing it in-session. |
 | Model | Chooses the initial provider-native model at launch. After launch, the same chip can open the provider-native model command when supported. |
 | Add/context | Opens attach/context controls and less-common supported Agent features. |
-| Agent | Chooses Codex CLI, Claude Code, or Antigravity CLI for the Thread. |
+| Agent | Chooses the Thread's Agent Binding. Visible choices can include Provider CLI Agents such as Codex CLI, Claude Code, and Antigravity CLI, plus API-backed Tide Agents such as OpenAI API. |
 | Project | Chooses a Project or Scratch for the Thread. |
 | Worktree | Chooses whether the Thread runs in the current folder, a new worktree, or an existing worktree. |
 | Branch | Chooses or creates the git branch for the Thread. |
@@ -706,6 +707,7 @@ Model menus:
 - Codex model choices come from the Codex Agent Integration.
 - Claude model choices come from the Claude Agent Integration.
 - Antigravity model choices come from the Antigravity Agent Integration when the installed CLI exposes model selection.
+- OpenAI API model choices come from the Tide API Agent's OpenAI Provider Account and model catalog, not from Codex CLI.
 - Each model menu supports a custom model id when the provider accepts one.
 
 Project menu:
@@ -976,15 +978,22 @@ Possible values:
 - Codex CLI.
 - Claude Code.
 - Antigravity CLI.
+- OpenAI API, when API-backed Tide Agent support is enabled.
 
 Binding rules:
 
+- The Agent chip has one visible selected value, but Agent Binding stores the Agent Runtime Source.
+- Codex CLI, Claude Code, and Antigravity CLI use `provider_cli` Agent Runtime Source.
+- OpenAI API uses `tide_api` Agent Runtime Source.
 - The selected Agent controls default launch command and wrapper behavior.
 - The Agent Icon shown in the Left UI comes from the Thread's Agent Binding.
 - Runtime lifecycle comes from the wrapped runtime when a terminal-backed Agent is active.
+- Runtime lifecycle comes from Tide's API runtime when an API-backed Tide Agent is active.
 - Agent Binding is chosen before the Thread starts.
 - A started Thread does not change Agent Binding. Changing Agent means starting or forking a different Thread.
 - Agent-specific capabilities determine which Permission, Model, usage, plugin, extension, skill, and MCP controls appear.
+- The Model Chip uses one visual component, but its Model Source follows the Agent Runtime Source. `Codex CLI > Model` comes from Codex Agent Integration. `OpenAI API > Model` comes from the OpenAI Provider Account and API model catalog.
+- API key setup is Provider Account readiness for the API-backed Tide Agent. It is not a `vendor_api_key` branch inside Codex CLI, Claude Code, or Antigravity CLI unless that provider's own CLI explicitly owns that behavior.
 
 ### Agent Runtime
 
@@ -1191,9 +1200,9 @@ Resolved decisions are recorded in the relevant sections above and in the focuse
 | Decision | Current proposal | Status |
 |----------|------------------|--------|
 | Agent Runtime path | All supported Agent Integrations use one hidden PTY-backed interactive CLI session as the runtime transport. Provider-specific hooks, logs, transcripts, and history files are Provider Signals tied to that PTY session, not separate live control paths. | Decided; covered by [Backend Thread and Agent Runtime Lifecycle](specs/backend-thread-agent-runtime-lifecycle.md) and [Provider Integration Bootstrap](specs/provider-integration-bootstrap.md). |
-| Provider Signal coverage | Each Agent Integration must prove which Provider Signals it can rely on for attention, snippets, history, and richer Agent Session Blocks while preserving PTY Transcript as the baseline evidence. | Evidence-gated; Codex rollout JSONL, Claude transcript JSONL, Antigravity hook transcript JSONL, Codex/Claude permission hook payloads, and Antigravity model-driven `PreToolUse` plus PTY permission prompt were observed. Provider question/elicitation payloads and production bootstrap remain. |
+| Provider Signal coverage | Each Agent Integration must prove which Provider Signals it can rely on for attention, snippets, history, and richer Agent Session Blocks while preserving PTY Transcript as the baseline evidence. | Evidence-gated; Codex rollout JSONL, Claude transcript JSONL, Antigravity hook transcript JSONL, Codex/Claude permission hook payloads, Claude question/elicitation payloads, and Antigravity model-driven `PreToolUse` plus PTY permission prompt were observed. Initial Prompt State ingress records provider-observed prompts and emits `prompt.changed`; Backend now generates Tide-owned bootstrap artifacts and reads runtime-scoped Provider Signal spool records. Exhaustive provider hook grammar and native file watching remain evidence-gated work. |
 | Provider history source | Tide uses provider-local Raw Agent Session history as the conversation source of truth. Tide stores only Thread metadata, provider-native references, and derived Agent Session Cache metadata. | Decided; covered by [Persistence](specs/persistence.md). |
-| Provider Readiness | Each Agent Integration must check or surface provider-owned setup gates before sending Thread input into the hidden PTY. Directory Trust is provider-owned state for the Thread Execution Context. | Evidence-gated; fresh-state setup and Directory Trust screens were observed for Codex, Claude, and Antigravity. The remaining work is provider-specific preflight/detection and Provider Setup Surface behavior. |
+| Provider Readiness | Each Agent Integration must check or surface provider-owned setup gates before sending Thread input into the hidden PTY. Directory Trust is provider-owned state for the Thread Execution Context. | Initial implementation covers provider-specific preflight/detection, Backend-owned bootstrap artifact generation, Provider Setup Surface Terminal lifecycle, setup terminal-byte routing, and pending-input replay after setup readiness succeeds. Full terminal screen rendering and exhaustive Provider Signal grammar remain separate evidence-gated work. |
 | Desktop and Backend architecture | Tide v2 is Electron + React Desktop, process-separated Node Backend, and Shared Contracts under `src/shared/contracts`. Existing Rust/WGPU Tide is archive/reference, not the v2 code foundation. | Decided; covered by [Shared Contracts](specs/shared-contracts.md), [Backend/Desktop Process Connection](specs/backend-desktop-process-connection.md), and [Build and Package](specs/build-and-package.md). |
 | Agent Chat UI surface | Agent Chat and Composer use the Electron + React Desktop path first. Agent Session Blocks remain renderer-agnostic product data. | Decided; covered by [Desktop Agent Chat and Composer Shell](specs/desktop-agent-chat-composer-shell.md). |
 | WGPU renderer scope | The archived WGPU renderer is not part of the initial v2 UI implementation. If Rust or WGPU returns, it must enter as a focused helper or surface with a concrete product reason. | Decided for v2 initial implementation; no WGPU implementation slice is planned. |

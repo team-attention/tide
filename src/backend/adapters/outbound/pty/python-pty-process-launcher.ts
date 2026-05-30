@@ -1,0 +1,179 @@
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ProviderLaunchPlan } from "../../../application/ports/outbound/agent-integration-port.ts";
+import type {
+  PtyProcessHandle,
+  PtyProcessLauncher,
+  PtyProcessSpawnInput,
+} from "../agent-runtime/agent-integration-agent-runtime-port.ts";
+
+export function createPythonPtyProcessLauncher(): PtyProcessLauncher {
+  return new PythonPtyProcessLauncher();
+}
+
+class PythonPtyProcessLauncher implements PtyProcessLauncher {
+  async spawn(input: PtyProcessSpawnInput): Promise<PtyProcessHandle> {
+    const child = spawnProcess(input.plan);
+    tracePtyLauncher(`spawned runtime=${input.runtimeId} command=${input.plan.command}`);
+    child.stdout.on("data", (chunk: Buffer) => {
+      tracePtyLauncher(`stdout runtime=${input.runtimeId} bytes=${chunk.byteLength}`);
+      input.onOutput?.({ source: "stdout", body: chunk.toString("utf8") });
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      tracePtyLauncher(`stderr runtime=${input.runtimeId} bytes=${chunk.byteLength}`);
+      input.onOutput?.({ source: "stderr", body: chunk.toString("utf8") });
+    });
+    child.on("exit", (exitCode, signal) => {
+      tracePtyLauncher(`exit runtime=${input.runtimeId} code=${exitCode} signal=${signal}`);
+      input.onExit?.({ exitCode, signal });
+    });
+    return new ChildProcessPtyHandle(input.runtimeId, child);
+  }
+}
+
+class ChildProcessPtyHandle implements PtyProcessHandle {
+  readonly runtimeId: string;
+  private readonly child: ChildProcessWithoutNullStreams;
+
+  constructor(
+    runtimeId: string,
+    child: ChildProcessWithoutNullStreams,
+  ) {
+    this.runtimeId = runtimeId;
+    this.child = child;
+  }
+
+  write(data: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.child.stdin.write(data, (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  }
+
+  stop(): Promise<void> {
+    this.child.kill("SIGTERM");
+    return Promise.resolve();
+  }
+}
+
+function spawnProcess(plan: ProviderLaunchPlan): ChildProcessWithoutNullStreams {
+  const env = {
+    ...process.env,
+    ...plan.env,
+  };
+
+  return spawn("python3", ["-c", pythonPtyBridgeSource, plan.command, ...plan.args], {
+    cwd: plan.cwd,
+    env,
+    stdio: "pipe",
+  });
+}
+
+const pythonPtyBridgeSource = String.raw`
+import errno
+import fcntl
+import os
+import selectors
+import signal
+import struct
+import subprocess
+import sys
+import termios
+
+command = sys.argv[1:]
+if not command:
+    sys.stderr.write("missing pty command\n")
+    sys.exit(2)
+
+master_fd, slave_fd = os.openpty()
+fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+child = subprocess.Popen(
+    command,
+    stdin=slave_fd,
+    stdout=slave_fd,
+    stderr=slave_fd,
+    close_fds=True,
+    start_new_session=True,
+)
+os.close(slave_fd)
+selector = selectors.DefaultSelector()
+selector.register(master_fd, selectors.EVENT_READ, "pty")
+selector.register(sys.stdin.buffer, selectors.EVENT_READ, "stdin")
+
+def write_terminal_query_replies(master_fd, data):
+    responses = []
+    if b"\x1b[6n" in data:
+        responses.append(b"\x1b[1;1R")
+    if b"\x1b]10;?\x1b\\" in data or b"\x1b]10;?\x07" in data:
+        responses.append(b"\x1b]10;rgb:ffff/ffff/ffff\x1b\\")
+    if b"\x1b]11;?\x1b\\" in data or b"\x1b]11;?\x07" in data:
+        responses.append(b"\x1b]11;rgb:0000/0000/0000\x1b\\")
+    if b"\x1b[c" in data:
+        responses.append(b"\x1b[?1;2c")
+    if b"\x1b[?u" in data:
+        responses.append(b"\x1b[?0u")
+
+    for response in responses:
+        os.write(master_fd, response)
+
+def terminate_child(signum, frame):
+    try:
+        child.terminate()
+    except ProcessLookupError:
+        pass
+
+signal.signal(signal.SIGTERM, terminate_child)
+signal.signal(signal.SIGINT, terminate_child)
+
+stdin_open = True
+while True:
+    if child.poll() is not None:
+        break
+
+    for key, _events in selector.select(timeout=0.1):
+        if key.data == "pty":
+            try:
+                data = os.read(master_fd, 4096)
+            except OSError as error:
+                if error.errno in (errno.EIO, errno.EBADF):
+                    data = b""
+                else:
+                    raise
+            if data:
+                write_terminal_query_replies(master_fd, data)
+                sys.stdout.buffer.write(data)
+                sys.stdout.buffer.flush()
+        elif key.data == "stdin" and stdin_open:
+            data = sys.stdin.buffer.read1(4096)
+            if data:
+                os.write(master_fd, data)
+            else:
+                selector.unregister(sys.stdin.buffer)
+                stdin_open = False
+
+try:
+    while True:
+        data = os.read(master_fd, 4096)
+        if not data:
+            break
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
+except OSError as error:
+    if error.errno not in (errno.EIO, errno.EBADF):
+        raise
+finally:
+    os.close(master_fd)
+
+sys.exit(child.returncode if child.returncode is not None else 0)
+`;
+
+function tracePtyLauncher(message: string): void {
+  if (process.env.TIDE_BACKEND_TRACE !== "1") {
+    return;
+  }
+  process.stdout.write(`[tide-pty] ${message}\n`);
+}

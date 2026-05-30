@@ -5,7 +5,7 @@
     "output": "dist/package-mac"
   },
   "files": [
-    "dist/**",
+    "out/**",
     "package.json"
   ],
   "mac": {

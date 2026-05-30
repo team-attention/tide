@@ -16,6 +16,7 @@ import {
   createAgentSessionBlockUpsertedEventFromBlock,
   toAgentSessionBlockDto,
 } from "../src/backend/adapters/outbound/desktop-contract/agent-session-block-event-adapter.ts";
+import { validateBackendEventEnvelope } from "../src/shared/contracts/index.ts";
 
 const now = "2026-05-27T00:00:00.000Z";
 const later = "2026-05-27T00:00:01.000Z";
@@ -55,6 +56,7 @@ test("structured_message_events_render_as_conversation_blocks", () => {
   });
 
   assert.equal(event.kind, "agentSessionBlock.upserted");
+  assert.equal(validateBackendEventEnvelope(event).ok, true);
   assert.equal(event.payload.block.agentId, "codex");
   assert.deepEqual(event.payload.block.sourceFrameIds, ["frame-message"]);
 });
@@ -80,6 +82,159 @@ test("unknown_structured_events_render_as_raw_blocks", () => {
   assert.equal(block.kind, "raw_block");
   assert.equal(block.role, "runtime");
   assert.match(block.rawFallback ?? "", /keep this provider output/);
+});
+
+test("structured_tool_events_render_as_tool_blocks", () => {
+  // UC-1 BR-2: Known tool events become tool/action blocks.
+  const reader = createFixtureAgentSessionReader();
+  const result = reader.read({
+    thread,
+    agentBinding: thread.agentBinding,
+    frames: [
+      frame("frame-tool-call", {
+        payload: {
+          type: "tool_call",
+          toolName: "tide_observe_thread",
+          callId: "call-1",
+          arguments: { detail: "compact" },
+          body: "tide_observe_thread {\"detail\":\"compact\"}",
+        },
+      }),
+      frame("frame-tool-result", {
+        sequence: 2,
+        payload: {
+          type: "tool_result",
+          toolName: "tide_observe_thread",
+          callId: "call-1",
+          ok: true,
+          output: { kind: "observe_thread", threadId: thread.threadId },
+          body: "{\"ok\":true}",
+        },
+      }),
+    ],
+    existingBlocks: [],
+  });
+
+  const blocks = upsertedBlocks(result.blockUpdates);
+  assert.equal(blocks[0].kind, "tool_call");
+  assert.equal(blocks[0].role, "tool");
+  assert.equal(blocks[0].title, "tide_observe_thread");
+  assert.deepEqual(blocks[0].data, {
+    toolName: "tide_observe_thread",
+    callId: "call-1",
+    arguments: { detail: "compact" },
+  });
+
+  assert.equal(blocks[1].kind, "tool_result");
+  assert.equal(blocks[1].role, "tool");
+  assert.equal(blocks[1].status, "complete");
+  assert.equal(blocks[1].title, "tide_observe_thread");
+  assert.deepEqual(blocks[1].data, {
+    toolName: "tide_observe_thread",
+    callId: "call-1",
+    ok: true,
+    output: { kind: "observe_thread", threadId: thread.threadId },
+  });
+});
+
+test("structured_file_edit_tool_result_renders_file_edit_and_diff_blocks", () => {
+  // Spec: docs_v2/specs/tide-mcp-file-edit-diff-tools.md
+  const reader = createFixtureAgentSessionReader();
+  const result = reader.read({
+    thread,
+    agentBinding: thread.agentBinding,
+    frames: [
+      frame("frame-edit-result", {
+        payload: {
+          type: "tool_result",
+          toolName: "tide_edit_file",
+          callId: "call-edit-1",
+          ok: true,
+          output: {
+            kind: "edit_file",
+            relativePath: "src/app.ts",
+            replacementCount: 1,
+            beforeByteLength: 25,
+            afterByteLength: 25,
+            diff: "--- src/app.ts\n+++ src/app.ts\n-export const version = 1;\n+export const version = 2;",
+          },
+          body: "{\"ok\":true}",
+        },
+      }),
+    ],
+    existingBlocks: [],
+  });
+
+  const blocks = upsertedBlocks(result.blockUpdates);
+  assert.equal(blocks.length, 2);
+  assert.equal(blocks[0].kind, "file_edit");
+  assert.equal(blocks[0].role, "tool");
+  assert.equal(blocks[0].title, "src/app.ts");
+  assert.deepEqual(blocks[0].data, {
+    toolName: "tide_edit_file",
+    callId: "call-edit-1",
+    relativePath: "src/app.ts",
+    replacementCount: 1,
+    beforeByteLength: 25,
+    afterByteLength: 25,
+  });
+  assert.equal(blocks[1].kind, "diff_summary");
+  assert.equal(blocks[1].role, "tool");
+  assert.equal(blocks[1].title, "Diff: src/app.ts");
+  assert.match(blocks[1].body ?? "", /\+export const version = 2;/);
+});
+
+test("structured_command_tool_result_renders_command_run_block", () => {
+  // Spec: docs_v2/specs/tide-mcp-terminal-command-tool.md
+  const reader = createFixtureAgentSessionReader();
+  const result = reader.read({
+    thread,
+    agentBinding: thread.agentBinding,
+    frames: [
+      frame("frame-command-result", {
+        payload: {
+          type: "tool_result",
+          toolName: "tide_run_terminal_command",
+          callId: "call-command-1",
+          ok: true,
+          output: {
+            kind: "run_terminal_command",
+            command: "npm",
+            args: ["run", "test:v2"],
+            cwd: "/tmp/thread",
+            status: "completed",
+            exitCode: 0,
+            signal: null,
+            stdout: "ok\n",
+            stderr: "",
+            transcript: "$ npm run test:v2\nok\n[exit 0]\n",
+            truncated: false,
+            timedOut: false,
+          },
+          body: "{\"ok\":true}",
+        },
+      }),
+    ],
+    existingBlocks: [],
+  });
+
+  const block = onlyUpsertedBlock(result.blockUpdates);
+  assert.equal(block.kind, "command_run");
+  assert.equal(block.role, "tool");
+  assert.equal(block.status, "complete");
+  assert.equal(block.title, "npm run test:v2");
+  assert.match(block.body ?? "", /ok/);
+  assert.deepEqual(block.data, {
+    toolName: "tide_run_terminal_command",
+    callId: "call-command-1",
+    command: "npm",
+    args: ["run", "test:v2"],
+    cwd: "/tmp/thread",
+    exitCode: 0,
+    signal: null,
+    timedOut: false,
+    truncated: false,
+  });
 });
 
 test("reader_output_is_stable_for_same_frame_sequence", () => {
@@ -451,6 +606,12 @@ function onlyUpsertedBlock(updates: AgentSessionBlockUpdateLike[]): AgentSession
   const upserts = updates.filter((update) => update.kind === "upsert");
   assert.equal(upserts.length, 1);
   return upserts[0].block;
+}
+
+function upsertedBlocks(updates: AgentSessionBlockUpdateLike[]): AgentSessionBlock[] {
+  return updates
+    .filter((update) => update.kind === "upsert")
+    .map((update) => update.block);
 }
 
 type AgentSessionBlockUpdateLike = { kind: "upsert"; block: AgentSessionBlock };

@@ -1,6 +1,7 @@
 import type {
   BackendCommandPayloadByKind,
   BackendEventEnvelope,
+  JsonObject,
 } from "../../../../shared/contracts/index.ts";
 import {
   applyAgentChatBackendEvent,
@@ -17,6 +18,9 @@ export type AgentChatBackendCommandDraft = {
 } | {
   kind: "prompt.answer";
   payload: BackendCommandPayloadByKind["prompt.answer"];
+} | {
+  kind: "workbench.command";
+  payload: BackendCommandPayloadByKind["workbench.command"];
 };
 
 export function applyBackendEventToAgentChatShell(
@@ -36,7 +40,7 @@ export function toBackendCommandDraft(
     case "thread.start":
       return {
         kind: "thread.start",
-        payload: command.payload,
+        payload: command.payload as BackendCommandPayloadByKind["thread.start"],
       };
     case "composer.sendInput":
       return {
@@ -48,5 +52,37 @@ export function toBackendCommandDraft(
         kind: "prompt.answer",
         payload: command.payload,
       };
+    case "workbench.command":
+      const setup = command.payload.data.setup;
+      const setupPayload: JsonObject = {
+        command: setup.command,
+        args: [...setup.args],
+        cwd: setup.cwd,
+        expectedCompletion: setup.expectedCompletion,
+      };
+      if (setup.env !== undefined) {
+        setupPayload.env = cloneStringRecord(setup.env);
+      }
+      return {
+        kind: "workbench.command",
+        payload: {
+          threadId: command.payload.threadId,
+          command: command.payload.command,
+          data: {
+            blockerKind: command.payload.data.blockerKind,
+            setup: setupPayload,
+          },
+        },
+      };
   }
+}
+
+function cloneStringRecord(
+  value: Record<string, string>,
+): JsonObject {
+  const clone: JsonObject = {};
+  for (const [key, entry] of Object.entries(value)) {
+    clone[key] = entry;
+  }
+  return clone;
 }

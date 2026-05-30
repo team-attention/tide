@@ -77,7 +77,7 @@ Cache invalidation and storage layout are specified by the Persistence spec.
 
 ### D8. Local user input gets local provenance
 
-When the user sends Composer input, Backend may create a local user message block before provider output exists.
+When the user sends Composer input and the input is actually submitted to the selected Agent Runtime, Backend creates a local user message block before provider output exists.
 
 That block uses local provenance and is later linked to provider frames when the provider history exposes the submitted input.
 

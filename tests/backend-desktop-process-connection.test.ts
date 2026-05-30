@@ -2,11 +2,20 @@
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { createFileAppStorage } from "../src/backend/adapters/outbound/app-storage/file-app-storage.ts";
 import { createBackendContractMessageAdapter } from "../src/backend/adapters/inbound/contract-message-adapter/backend-contract-message-adapter.ts";
+import {
+  backendEventsFromThreadRuntimeAsyncEvent,
+  createLiveBackendContractMessageAdapter,
+  threadSeedFromStorageRecord,
+  threadStorageRecordFromThreadSummary,
+} from "../src/backend/infrastructure/node/live-backend.ts";
+import { createThreadPersistenceService } from "../src/backend/application/services/thread-persistence-service.ts";
 import {
   createThreadRuntimeService,
   type AgentRuntimeHandle,
@@ -20,8 +29,16 @@ import {
   type RawAgentFrame,
   type TerminalInput,
   type ThreadSeed,
+  type ThreadRuntimeAsyncEvent,
 } from "../src/backend/application/services/thread-runtime-service.ts";
 import { createMessagePortBackendClient } from "../src/desktop/adapters/outbound/backend-client/message-port-backend-client.ts";
+import {
+  createProductShellState,
+  selectProductShellChoiceSurfaceRow,
+  setProductShellComposerActiveSurface,
+  submitProductShellComposerDraft,
+  updateProductShellComposerDraft,
+} from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
 import {
   createBackendProcessSupervisor,
   type BackendProcessExit,
@@ -36,6 +53,7 @@ import {
   type BackendEventEnvelope,
   type BackendHandshake,
   type RendererHandshake,
+  validateBackendEventEnvelope,
 } from "../src/shared/contracts/index.ts";
 
 const now = "2026-05-27T00:00:00.000Z";
@@ -133,11 +151,263 @@ test("renderer_command_reaches_backend_adapter_and_returns_backend_events", asyn
     received.map((event) => event.kind),
     ["command.accepted", "thread.hydrated", "command.completed"],
   );
+  assertBackendEventsAreContractEnvelopes(received);
   assert.deepEqual(
     received.map((event) => event.requestId),
     ["req-thread.hydrate", "req-thread.hydrate", "req-thread.hydrate"],
   );
   assert.equal(received[1].payload.thread.threadId, "thread-process");
+});
+
+test("thread_start_contract_events_include_local_user_message_block_before_completion", async () => {
+  // Spec: docs_v2/specs/thread-launch-options-contract.md
+  const service = createThreadRuntimeService({
+    ...createFakes().ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+  const adapter = createBackendContractMessageAdapter({
+    service,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("evt"),
+  });
+
+  const events = await adapter.handleMessage(
+    commandEnvelope("thread.start", {
+      initialMessage: "Start a real runtime path",
+      agentBinding: { agentId: "codex" },
+      scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+      launchOptions: { model: "GPT-5.5 High", permission: "workspace-write" },
+    }),
+  );
+
+  assert.deepEqual(
+    events.map((event) => event.kind),
+    ["command.accepted", "agentSessionBlock.upserted", "thread.started", "command.completed"],
+  );
+  assertBackendEventsAreContractEnvelopes(events);
+  assert.equal(events[1].payload.block.kind, "user_message");
+  assert.equal(events[1].payload.block.role, "user");
+  assert.equal(events[1].payload.block.body, "Start a real runtime path");
+  assert.deepEqual(events[2].payload.thread.launchOptions, {
+    model: "GPT-5.5 High",
+    permission: "workspace-write",
+  });
+});
+
+test("product_shell_thread_start_command_reaches_backend_with_selected_agent_binding", async () => {
+  // Spec: docs_v2/specs/backend-desktop-process-connection.md
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+  const adapter = createBackendContractMessageAdapter({
+    service,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("evt"),
+  });
+  const withAgentMenu = setProductShellComposerActiveSurface(
+    createProductShellState({ includeFixtureData: false }),
+    "agent_menu",
+  );
+  const selected = selectProductShellChoiceSurfaceRow(
+    withAgentMenu,
+    "agent_menu",
+    "antigravity",
+  );
+  const withDraft = updateProductShellComposerDraft(
+    selected.state,
+    "Run Antigravity through the Backend",
+  );
+  const submitted = submitProductShellComposerDraft(withDraft);
+
+  assert.equal(submitted.command?.kind, "thread.start");
+
+  const events = await adapter.handleMessage(
+    commandEnvelope("thread.start", submitted.command.payload),
+  );
+
+  assertBackendEventsAreContractEnvelopes(events);
+  assert.equal(fakes.readiness.checks[0]?.agentId, "antigravity");
+  assert.deepEqual(fakes.readiness.checks[0]?.launchOptions, {
+    model: "Antigravity default",
+    permission: "default",
+    worktree: "current folder",
+    branch: "main",
+  });
+  assert.equal(fakes.runtime.starts[0]?.agentBinding.agentId, "antigravity");
+  assert.deepEqual(fakes.runtime.starts[0]?.agentBinding.runtimeSource, {
+    kind: "provider_cli",
+    integrationId: "antigravity",
+  });
+  assert.deepEqual(fakes.runtime.starts[0]?.launchOptions, {
+    model: "Antigravity default",
+    permission: "default",
+    worktree: "current folder",
+    branch: "main",
+  });
+  assert.equal(fakes.runtime.writes[0]?.input.value, "Run Antigravity through the Backend");
+  assert.equal(events[2].kind, "thread.started");
+  assert.equal(events[2].payload.thread.agentBinding.agentId, "antigravity");
+  assert.equal(events[2].payload.thread.launchOptions?.model, "Antigravity default");
+});
+
+test("thread_list_contract_events_return_backend_thread_summaries", async () => {
+  // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
+  const service = createThreadRuntimeService({
+    ...createFakes().ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+    initialThreads: [
+      threadSeed("thread-visible", {
+        title: "Visible thread",
+        scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+      }),
+      threadSeed("thread-archived", {
+        lifecycleState: "archived",
+        lastKnownState: "archived",
+      }),
+    ],
+  });
+  const adapter = createBackendContractMessageAdapter({
+    service,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("evt"),
+  });
+
+  const events = await adapter.handleMessage(
+    commandEnvelope("thread.list", {}),
+  );
+
+  assert.deepEqual(
+    events.map((event) => event.kind),
+    ["command.accepted", "thread.listed", "command.completed"],
+  );
+  assert.equal(events[1].payload.threads.length, 1);
+  assert.equal(events[1].payload.threads[0]?.threadId, "thread-visible");
+  assert.equal(events[1].payload.threads[0]?.scope.kind, "project");
+  assert.equal(events[1].payload.threads[0]?.agentBinding.runtimeSource?.kind, "provider_cli");
+});
+
+test("thread_hydrate_contract_omits_undefined_provider_session_ref_fields", async () => {
+  // Spec: docs_v2/specs/backend-desktop-process-connection.md
+  const service = createThreadRuntimeService({
+    ...createFakes().ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+    initialThreads: [
+      threadSeed("thread-provider-ref", {
+        agentBinding: {
+          agentId: "antigravity",
+          runtimeSource: { kind: "provider_cli", integrationId: "antigravity" },
+          providerSessionRef: {
+            kind: "antigravity_conversation",
+            value: "conversation-1",
+            transcriptPath: undefined,
+            logPath: undefined,
+          },
+        },
+      }),
+    ],
+  });
+  const adapter = createBackendContractMessageAdapter({
+    service,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("evt"),
+  });
+
+  const events = await adapter.handleMessage(
+    commandEnvelope("thread.hydrate", { threadId: "thread-provider-ref" }),
+  );
+
+  assertBackendEventsAreContractEnvelopes(events);
+  const ref = events[1].payload.thread.agentBinding.providerSessionRef;
+  assert.deepEqual(ref, {
+    kind: "antigravity_conversation",
+    value: "conversation-1",
+  });
+});
+
+test("agent_runtime_resume_contract_events_resume_without_input_write", async () => {
+  // Spec: docs_v2/specs/backend-thread-agent-runtime-lifecycle.md
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+    initialThreads: [
+      threadSeed("thread-resume", {
+        agentBinding: {
+          agentId: "codex",
+          providerSessionRef: {
+            kind: "codex_rollout",
+            value: "rollout-1",
+          },
+        },
+      }),
+    ],
+  });
+  const adapter = createBackendContractMessageAdapter({
+    service,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("evt"),
+  });
+
+  const events = await adapter.handleMessage(
+    commandEnvelope("agentRuntime.resume", { threadId: "thread-resume" }),
+  );
+
+  assert.deepEqual(
+    events.map((event) => event.kind),
+    ["command.accepted", "agentRuntime.stateChanged", "command.completed"],
+  );
+  assert.equal(events[1].payload.threadId, "thread-resume");
+  assert.equal(events[1].payload.state, "running");
+  assert.equal(fakes.runtime.resumes[0]?.threadId, "thread-resume");
+  assert.equal(fakes.runtime.writes.length, 0);
+});
+
+test("workbench_command_open_provider_setup_surface_emits_workbench_changed", async () => {
+  // Spec: docs_v2/specs/provider-setup-surface-workbench-command.md
+  const service = createThreadRuntimeService({
+    ...createFakes().ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [threadSeed("thread-setup-surface")],
+  });
+  const adapter = createBackendContractMessageAdapter({
+    service,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("evt"),
+  });
+
+  const events = await adapter.handleMessage(
+    commandEnvelope("workbench.command", {
+      threadId: "thread-setup-surface",
+      command: "open_provider_setup_surface",
+      data: {
+        setup: {
+          command: "/usr/local/bin/codex",
+          args: [],
+          cwd: "/repo",
+          expectedCompletion: "retry_preflight",
+        },
+      },
+    }),
+  );
+
+  assert.deepEqual(
+    events.map((event) => event.kind),
+    ["command.accepted", "workbench.changed", "command.completed"],
+  );
+  assertBackendEventsAreContractEnvelopes(events);
+  assert.equal(events[1].payload.activePaneId, "id-1");
+  assert.equal(events[1].payload.panes[0]?.kind, "terminal");
+  assert.equal(events[1].payload.panes[0]?.title, "Provider setup: codex");
+  assert.equal(events[1].payload.panes[0]?.command, "/usr/local/bin/codex");
+  assert.equal(events[2].payload.result?.handled, true);
 });
 
 test("renderer_reconnect_receives_active_thread_snapshot", async () => {
@@ -235,12 +505,308 @@ test("desktop_main_supervisor_does_not_import_provider_or_pty_modules", () => {
   assert.doesNotMatch(source, /backend\/adapters\/outbound/);
 });
 
+test("electron_main_uses_utility_process_for_backend_without_importing_backend_internals", () => {
+  const source = readRepoFile("src/desktop/main/electron-main.ts");
+
+  assert.match(source, /utilityProcess\.fork/);
+  assert.match(source, /backend-entrypoint\.js/);
+  assert.match(source, /validateBackendHandshake/);
+  assert.match(source, /validateBackendEventEnvelope/);
+  assert.match(source, /ipcMain\.handle\("tide:backend-command"/);
+  assert.match(source, /unwrapPortMessage/);
+  assert.match(source, /stdio:\s*"pipe"/);
+  assert.match(source, /rejectBackendHandshake\?\.\(new Error\(message\)\)/);
+  assert.doesNotMatch(source, /from\s+["'][^"']*src\/backend/);
+  assert.doesNotMatch(source, /createLiveBackendContractMessageAdapter/);
+  assert.doesNotMatch(source, /Backend process bridge is not connected/);
+});
+
+test("backend_entrypoint_reads_utility_process_parent_port", () => {
+  const source = readRepoFile("src/backend/infrastructure/node/backend-entrypoint.ts");
+
+  assert.match(source, /process[\s\S]*parentPort/);
+  assert.match(source, /processParentPort !== undefined/);
+  assert.match(source, /unwrapPortMessage/);
+  assert.match(source, /await import\("electron"\)/);
+});
+
+test("backend_entrypoint_buffers_unscoped_backend_events_emitted_during_command_handling", () => {
+  // Spec: docs_v2/specs/backend-desktop-process-connection.md
+  const source = readRepoFile("src/backend/infrastructure/node/backend-entrypoint.ts");
+
+  assert.match(source, /onEvent:\s*postOrBufferBackendEvent/);
+  assert.match(source, /activeParentCommandCount/);
+  assert.match(source, /bufferedBackendEvents/);
+  assert.match(source, /event\.requestId === undefined/);
+  assert.match(source, /flushBufferedBackendEvents\(\)/);
+});
+
+test("electron_main_passes_app_data_root_to_backend_process", () => {
+  // Spec: docs_v2/specs/live-backend-persistence-bootstrap.md
+  const source = readRepoFile("src/desktop/main/electron-main.ts");
+
+  assert.match(source, /app\.getPath\("userData"\)/);
+  assert.match(source, /TIDE_APP_DATA_ROOT/);
+  assert.match(source, /utilityProcess\.fork\(resolveBackendEntrypointPath\(\),\s*\[\],\s*{/s);
+});
+
+test("live_backend_wires_file_storage_restore_and_thread_event_persistence", () => {
+  // Spec: docs_v2/specs/live-backend-persistence-bootstrap.md
+  const source = readRepoFile("src/backend/infrastructure/node/live-backend.ts");
+
+  assert.match(source, /createFileAppStorage/);
+  assert.match(source, /createThreadPersistenceService/);
+  assert.match(source, /restoreThreads/);
+  assert.match(source, /listThreadMetadata/);
+  assert.match(source, /persistThreadEvents/);
+});
+
+test("live_backend_projects_provider_setup_async_events_to_backend_events", async () => {
+  // Spec: docs_v2/specs/provider-setup-surface-input-and-retry.md
+  const service = createThreadRuntimeService({
+    ...createFakes().ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-provider-setup-async", {
+        launchOptions: { model: "GPT-5.5 High", permission: "workspace-write" },
+      }),
+    ],
+  });
+  const hydrated = await service.hydrateThread({
+    threadId: "thread-provider-setup-async",
+  });
+  assert.equal(hydrated.ok, true);
+  if (!hydrated.ok) {
+    throw new Error("Expected hydrated Thread.");
+  }
+  const block = {
+    blockId: "local-user-1",
+    kind: "user_message",
+    role: "user" as const,
+    status: "complete" as const,
+    body: "Run after setup",
+    updatedAt: now,
+  };
+  const asyncEvents: ThreadRuntimeAsyncEvent[] = [
+    { kind: "workbench_changed", thread: hydrated.thread },
+    {
+      kind: "provider_readiness_changed",
+      threadId: hydrated.thread.threadId,
+      readiness: {
+        ready: false,
+        agentId: "codex",
+        blockers: [
+          {
+            kind: "directory_trust_required",
+            message: "Directory Trust is still required.",
+          },
+        ],
+      },
+    },
+    {
+      kind: "agent_session_block_upserted",
+      thread: hydrated.thread,
+      block,
+    },
+    {
+      kind: "agent_runtime_state_changed",
+      thread: hydrated.thread,
+      runtimeState: "running",
+    },
+    {
+      kind: "thread_hydrated",
+      thread: hydrated.thread,
+      runtimeState: "running",
+      blocks: [block],
+    },
+  ];
+
+  const events = asyncEvents.flatMap(backendEventsFromThreadRuntimeAsyncEvent);
+
+  assert.deepEqual(
+    events.map((event) => event.kind),
+    [
+      "workbench.changed",
+      "providerReadiness.changed",
+      "agentSessionBlock.upserted",
+      "agentRuntime.stateChanged",
+      "thread.hydrated",
+    ],
+  );
+  assertBackendEventsAreContractEnvelopes(events);
+  const readinessEvent = events.find(
+    (event): event is BackendEventEnvelope<"providerReadiness.changed"> =>
+      event.kind === "providerReadiness.changed",
+  );
+  const blockEvent = events.find(
+    (event): event is BackendEventEnvelope<"agentSessionBlock.upserted"> =>
+      event.kind === "agentSessionBlock.upserted",
+  );
+  const threadEvent = events.find(
+    (event): event is BackendEventEnvelope<"thread.hydrated"> =>
+      event.kind === "thread.hydrated",
+  );
+  assert.equal(readinessEvent?.payload.readiness.blockers[0]?.kind, "directory_trust_required");
+  assert.equal(blockEvent?.payload.block.body, "Run after setup");
+  assert.equal(threadEvent?.payload.thread.launchOptions?.model, "GPT-5.5 High");
+});
+
+test("live_backend_records_runtime_output_blocks_before_hydrate_snapshots", () => {
+  // Spec: docs_v2/specs/agent-session-block-rendering-path.md
+  const source = readRepoFile("src/backend/infrastructure/node/live-backend.ts");
+
+  assert.match(source, /const appendFrameAndEmit = async/);
+  assert.match(source, /await recordBlockUpdateInThreadCache\(service,\s*update\)/);
+});
+
+test("live_backend_awaits_tide_api_structured_frame_projection_for_push_events", () => {
+  // Spec: docs_v2/specs/tide-api-agent-runtime.md
+  const source = readRepoFile("src/backend/infrastructure/node/live-backend.ts");
+
+  assert.match(source, /onRawFrame:\s*\(frame\)\s*=>\s*{\s*return projector\.ingestStructuredFrame\(frame\);\s*}/s);
+  assert.doesNotMatch(source, /onRawFrame:\s*\(frame\)\s*=>\s*{\s*void projector\.ingestStructuredFrame\(frame\);/s);
+});
+
+test("thread_summary_storage_record_preserves_scope_and_agent_binding", () => {
+  // Spec: docs_v2/specs/thread-launch-options-contract.md
+  const record = threadStorageRecordFromThreadSummary({
+    threadId: "thread-summary",
+    title: "Summary Thread",
+    agentBinding: {
+      agentId: "codex",
+      runtimeSource: { kind: "provider_cli", integrationId: "codex" },
+      providerSessionRef: {
+        kind: "codex_rollout",
+        value: "rollout-1",
+        transcriptPath: "/provider/transcript.jsonl",
+      },
+    },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+    launchOptions: { model: "GPT-5.5 High", permission: "workspace-write" },
+    createdAt: now,
+    updatedAt: later,
+    pinned: true,
+    archived: false,
+    lastKnownState: "idle",
+  });
+  const seed = threadSeedFromStorageRecord(record);
+
+  assert.equal(record.storageVersion, 1);
+  assert.equal(record.executionContext.cwd, "/repo/tide");
+  assert.equal(record.providerSessionRef?.observedAt, later);
+  assert.equal(seed.threadId, "thread-summary");
+  assert.equal(seed.agentBinding.providerSessionRef?.value, "rollout-1");
+  assert.deepEqual(seed.scope, { kind: "project", projectId: "tide", cwd: "/repo/tide" });
+  assert.deepEqual(record.launchOptions, {
+    model: "GPT-5.5 High",
+    permission: "workspace-write",
+  });
+  assert.deepEqual(seed.launchOptions, {
+    model: "GPT-5.5 High",
+    permission: "workspace-write",
+  });
+});
+
+test("live_backend_restores_persisted_threads_before_thread_list", async () => {
+  // Spec: docs_v2/specs/thread-launch-options-contract.md
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tide-live-backend-"));
+  const storage = createFileAppStorage({ appDataRoot: root });
+  const persistence = createThreadPersistenceService({
+    storage,
+    clock: fixedClock,
+    readerVersion: "reader-v1",
+  });
+  await persistence.saveThreadMetadata(threadStorageRecordFromThreadSummary({
+    threadId: "thread-persisted-live",
+    title: "Persisted Live",
+    agentBinding: {
+      agentId: "codex",
+      runtimeSource: { kind: "provider_cli", integrationId: "codex" },
+    },
+    scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+    launchOptions: { model: "GPT-5.5 High", permission: "workspace-write" },
+    createdAt: now,
+    updatedAt: later,
+    pinned: false,
+    archived: false,
+    lastKnownState: "idle",
+  }));
+  const adapter = createLiveBackendContractMessageAdapter({
+    appDataRoot: root,
+    env: {
+      HOME: root,
+      TIDE_SOCKET: path.join(root, "mcp.sock"),
+      TIDE_MCP_ENTRYPOINT: path.join(root, "backend-entrypoint.js"),
+    },
+    startMcpSocket: false,
+  });
+
+  const events = await adapter.handleMessage(commandEnvelope("thread.list", {}));
+
+  assert.deepEqual(
+    events.map((event) => event.kind),
+    ["command.accepted", "thread.listed", "command.completed"],
+  );
+  assert.equal(events[1].payload.threads[0]?.threadId, "thread-persisted-live");
+  assert.equal(events[1].payload.threads[0]?.scope.kind, "project");
+  assert.deepEqual(events[1].payload.threads[0]?.launchOptions, {
+    model: "GPT-5.5 High",
+    permission: "workspace-write",
+  });
+});
+
+test("electron_main_and_preload_expose_backend_event_push_channel", () => {
+  const mainSource = readRepoFile("src/desktop/main/electron-main.ts");
+  const preloadSource = readRepoFile("src/desktop/preload/index.ts");
+  const rendererSource = readRepoFile("src/desktop/renderer/renderer-entry.ts");
+
+  assert.match(mainSource, /webContents\.send\("tide:backend-event"/);
+  assert.match(preloadSource, /onBackendEvent/);
+  assert.match(preloadSource, /ipcRenderer\.on\("tide:backend-event"/);
+  assert.match(rendererSource, /subscribeBackendEvents/);
+  assert.match(rendererSource, /onBackendEvent/);
+});
+
+test("electron_main_defers_unscoped_backend_events_emitted_during_pending_command", () => {
+  // Spec: docs_v2/specs/backend-desktop-process-connection.md
+  const mainSource = readRepoFile("src/desktop/main/electron-main.ts");
+
+  assert.match(mainSource, /deferredBackendBroadcastEvents/);
+  assert.match(mainSource, /function deferBackendEventBroadcast/);
+  assert.match(mainSource, /pendingBackendRequests\.size > 0/s);
+  assert.match(mainSource, /scheduleDeferredBackendBroadcastFlush\(\)/);
+  assert.match(mainSource, /setTimeout\(\(\) =>/);
+});
+
+test("renderer_entry_surfaces_missing_backend_transport", () => {
+  const rendererSource = readRepoFile("src/desktop/renderer/renderer-entry.ts");
+
+  assert.match(rendererSource, /backend_transport_unavailable/);
+  assert.match(rendererSource, /Run Tide through the Electron app to start Agents/);
+  assert.match(
+    rendererSource,
+    /function dispatchBackendCommand[\s\S]*if\s*\(window\.tide === undefined\)\s*{\s*return \[/,
+  );
+});
+
 function collectSupervisorEvents(
   supervisor: ReturnType<typeof createBackendProcessSupervisor>,
 ): BackendEventEnvelope[] {
   const events: BackendEventEnvelope[] = [];
   supervisor.onEvent((event) => events.push(event));
   return events;
+}
+
+function assertBackendEventsAreContractEnvelopes(events: BackendEventEnvelope[]): void {
+  for (const event of events) {
+    const validated = validateBackendEventEnvelope(event);
+    assert.equal(
+      validated.ok,
+      true,
+      validated.ok ? undefined : `${event.kind}: ${validated.error.message}`,
+    );
+  }
 }
 
 function commandEnvelope<TKind extends BackendCommandKind>(
@@ -300,9 +866,12 @@ function createFakes(options: { readiness?: ProviderReadinessResult } = {}) {
 }
 
 class FakeAgentRuntimePort implements AgentRuntimePort {
+  starts: AgentRuntimeStartInput[] = [];
+  resumes: AgentRuntimeResumeInput[] = [];
   writes: { handle: AgentRuntimeHandle; input: TerminalInput }[] = [];
 
   async start(input: AgentRuntimeStartInput): Promise<AgentRuntimeHandle> {
+    this.starts.push(input);
     return {
       runtimeId: "runtime-start-1",
       threadId: input.threadId,
@@ -311,6 +880,7 @@ class FakeAgentRuntimePort implements AgentRuntimePort {
   }
 
   async resume(input: AgentRuntimeResumeInput): Promise<AgentRuntimeHandle> {
+    this.resumes.push(input);
     return {
       runtimeId: "runtime-resume-1",
       threadId: input.threadId,
@@ -330,6 +900,7 @@ class FakeAgentRuntimePort implements AgentRuntimePort {
 
 class FakeProviderReadinessPort implements ProviderReadinessPort {
   private readonly result: ProviderReadinessResult;
+  checks: ProviderReadinessCheckInput[] = [];
 
   constructor(result: ProviderReadinessResult) {
     this.result = result;
@@ -338,6 +909,7 @@ class FakeProviderReadinessPort implements ProviderReadinessPort {
   async check(
     input: ProviderReadinessCheckInput,
   ): Promise<ProviderReadinessResult> {
+    this.checks.push(input);
     return {
       ...this.result,
       agentId: input.agentId,

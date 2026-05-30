@@ -7,9 +7,22 @@ import type {
   WorkbenchState,
 } from "../workbench/workbench.ts";
 
-export type AgentId = "codex" | "claude" | "antigravity";
+export type ProviderCliAgentId = "codex" | "claude" | "antigravity";
+export type TideApiAgentId = "openai_api";
+export type AgentId = ProviderCliAgentId | TideApiAgentId;
 export type ThreadId = string;
 export type ProjectId = string;
+
+export type AgentRuntimeSource =
+  | {
+      kind: "provider_cli";
+      integrationId: ProviderCliAgentId;
+    }
+  | {
+      kind: "tide_api";
+      provider: "openai";
+      accountId?: string;
+    };
 
 export interface ProviderSessionRef {
   kind:
@@ -24,6 +37,7 @@ export interface ProviderSessionRef {
 
 export interface AgentBinding {
   agentId: AgentId;
+  runtimeSource?: AgentRuntimeSource;
   providerSessionRef?: ProviderSessionRef;
 }
 
@@ -77,12 +91,22 @@ export interface PendingInput {
   kind: "composer_input";
   value: string;
   capturedAt: string;
+  launchOptions?: Record<string, unknown>;
 }
 
 export interface AgentSessionBlockReference {
   blockId: string;
+  agentId?: AgentId;
   kind: string;
+  role?: "user" | "agent" | "tool" | "system" | "runtime";
+  sourceFrameIds?: string[];
+  localProvenance?: Record<string, unknown>;
   status: "pending" | "streaming" | "complete" | "failed" | "needs_input";
+  title?: string;
+  body?: string;
+  data?: Record<string, unknown>;
+  rawFallback?: string;
+  createdAt?: string;
   updatedAt: string;
 }
 
@@ -91,6 +115,7 @@ export interface ThreadRecord {
   title: string;
   agentBinding: AgentBinding;
   scope?: ThreadScope;
+  launchOptions?: Record<string, unknown>;
   lifecycleState: ThreadLifecycleState;
   runtimeState: AgentRuntimeState;
   lastKnownState: LastKnownState;
@@ -110,6 +135,7 @@ export interface ThreadSnapshot {
   title: string;
   agentBinding: AgentBinding;
   scope?: ThreadScope;
+  launchOptions?: Record<string, unknown>;
   lifecycleState: ThreadLifecycleState;
   runtimeState: AgentRuntimeState;
   lastKnownState: LastKnownState;

@@ -20,7 +20,8 @@ export type AppChromeWorkbenchPaneKind =
   | "browser"
   | "diff"
   | "editor"
-  | "terminal";
+  | "terminal"
+  | "launcher";
 
 export interface AppChromeThreadSummary {
   threadId: string;
@@ -38,6 +39,59 @@ export interface AppChromeWorkbenchPaneRef {
   revision: string;
   updatedAt: string;
   loading?: boolean;
+  url?: string;
+  pageTitle?: string;
+  pendingAction?: AppChromeBrowserPaneAction;
+  lastAction?: AppChromeBrowserPaneActionResult;
+  filePath?: string;
+  relativePath?: string;
+  bodyText?: string;
+  bodyTextPreview?: string;
+  byteLength?: number;
+  truncated?: boolean;
+  navigationTarget?: AppChromeEditorNavigationTarget;
+  diffText?: string;
+  beforeByteLength?: number;
+  afterByteLength?: number;
+  command?: string;
+  args?: string[];
+  cwd?: string;
+  status?: "ready" | "running" | "completed" | "failed";
+  expectedCompletion?: "process_exit" | "retry_preflight";
+  transcriptPreview?: string;
+  exitCode?: number | null;
+  signal?: string | null;
+  timedOut?: boolean;
+  actions?: AppChromeLauncherPaneAction[];
+}
+
+export interface AppChromeBrowserPaneAction {
+  actionId: string;
+  kind: "click" | "type_text";
+  selector: string;
+  text?: string;
+  requestedAt: string;
+}
+
+export interface AppChromeBrowserPaneActionResult extends AppChromeBrowserPaneAction {
+  status: "completed" | "failed";
+  message: string;
+  completedAt: string;
+}
+
+export interface AppChromeEditorNavigationTarget {
+  line: number;
+  character: number;
+  length?: number;
+  label?: string;
+  sourcePaneId?: string;
+}
+
+export interface AppChromeLauncherPaneAction {
+  actionId: "open_browser" | "open_editor" | "open_terminal" | "open_diff" | "open_file_tree";
+  label: string;
+  description: string;
+  enabled: boolean;
 }
 
 export interface AppChromeState {
@@ -55,6 +109,7 @@ export interface AppChromeState {
 export interface AppChromeViewModel {
   statusBar: AppChromeStatusBarView;
   workbenchTabStrip: WorkbenchTabStripView;
+  activeWorkbenchPane?: AppChromeWorkbenchPaneRef;
   errorMessage?: string;
 }
 
@@ -101,11 +156,18 @@ export interface ChromeActionView {
 
 export type AppChromeBackendCommand = {
   kind: "workbench.command";
-  payload: {
-    threadId: string;
-    command: "focus_pane" | "close_pane";
-    targetPaneId: string;
-  };
+  payload:
+    | {
+        threadId: string;
+        command: "focus_pane" | "close_pane";
+        targetPaneId: string;
+      }
+    | {
+        threadId: string;
+        command: "write_terminal_input";
+        targetPaneId: string;
+        data: { bytes: string };
+      };
 };
 
 export interface AppChromeUpdateResult {
@@ -204,6 +266,7 @@ export function applyAppChromeBackendEvent(
       const payload = event.payload as {
         threadId?: string;
         panes?: AppChromeWorkbenchPaneRef[];
+        activePaneId?: string;
       };
       if (state.thread && payload.threadId !== state.thread.threadId) {
         return state;
@@ -213,7 +276,9 @@ export function applyAppChromeBackendEvent(
         ...state,
         workbenchPanes: panes,
         activeWorkbenchPaneId:
-          state.activeWorkbenchPaneId && paneExists(panes, state.activeWorkbenchPaneId)
+          payload.activePaneId && paneExists(panes, payload.activePaneId)
+            ? payload.activePaneId
+            : state.activeWorkbenchPaneId && paneExists(panes, state.activeWorkbenchPaneId)
             ? state.activeWorkbenchPaneId
             : firstVisiblePaneId(panes),
       };
@@ -235,9 +300,11 @@ export function createAppChromeViewModel(
   options: AppChromeViewOptions = {},
 ): AppChromeViewModel {
   const maxVisibleTabs = options.maxVisibleTabs ?? DEFAULT_MAX_VISIBLE_TABS;
-  const tabs = state.workbenchPanes
-    .filter((pane) => pane.visible)
-    .map((pane) => toWorkbenchTabView(pane, state));
+  const visiblePanes = state.workbenchPanes.filter((pane) => pane.visible);
+  const tabs = visiblePanes.map((pane) => toWorkbenchTabView(pane, state));
+  const activeWorkbenchPane =
+    visiblePanes.find((pane) => pane.paneId === state.activeWorkbenchPaneId) ??
+    visiblePanes[0];
 
   return {
     statusBar: {
@@ -254,6 +321,7 @@ export function createAppChromeViewModel(
       visibleTabs: tabs.slice(0, maxVisibleTabs),
       overflowTabs: tabs.slice(maxVisibleTabs),
     },
+    activeWorkbenchPane,
     errorMessage: state.errorMessage,
   };
 }
@@ -296,6 +364,35 @@ export function closeWorkbenchPane(
         threadId: state.thread.threadId,
         command: "close_pane",
         targetPaneId: paneId,
+      },
+    },
+  };
+}
+
+export function writeWorkbenchTerminalInput(
+  state: AppChromeState,
+  paneId: string,
+  bytes: string,
+): AppChromeUpdateResult {
+  const pane = state.workbenchPanes.find(
+    (candidate) => candidate.paneId === paneId && candidate.visible,
+  );
+  if (!state.thread || pane?.kind !== "terminal" || pane.status !== "running" || bytes.length === 0) {
+    return { state, command: null };
+  }
+
+  return {
+    state: {
+      ...state,
+      activeWorkbenchPaneId: paneId,
+    },
+    command: {
+      kind: "workbench.command",
+      payload: {
+        threadId: state.thread.threadId,
+        command: "write_terminal_input",
+        targetPaneId: paneId,
+        data: { bytes },
       },
     },
   };
