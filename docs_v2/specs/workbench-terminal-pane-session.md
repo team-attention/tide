@@ -84,6 +84,8 @@ terminal grid state is deferred.
 | Backend opens visible terminal | `opening_workbench_terminal_starts_thread_scoped_terminal_pane` |
 | Terminal input routes to Workbench Terminal handle | `workbench_terminal_input_writes_to_visible_terminal_handle` |
 | Launcher Terminal action emits command | `product_shell_launcher_terminal_action_emits_open_terminal_command` |
+| Real PTY terminal runs a live command and reports exit | `workbench_terminal_pty_port_runs_a_live_command_and_reports_exit` |
+| Real PTY terminal accepts interactive input | `workbench_terminal_pty_port_accepts_interactive_input` |
 
 ## Implementation Notes
 
