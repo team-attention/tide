@@ -5,6 +5,7 @@ import type {
   ListThreadsResult,
   ResumeAgentRuntimeResult,
   SendComposerInputResult,
+  SetThreadPinnedResult,
   ServiceError,
   ServiceResult,
   StartThreadResult,
@@ -135,6 +136,17 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           ],
         );
       }
+      case "thread.setPinned": {
+        const typedCommand = command as BackendCommandEnvelope<"thread.setPinned">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.setThreadPinned(typedCommand.payload),
+          (result) => [
+            this.threadPinChangedEvent(typedCommand, result),
+            this.commandCompletedEvent(typedCommand),
+          ],
+        );
+      }
       case "composer.sendInput": {
         const typedCommand = command as BackendCommandEnvelope<"composer.sendInput">;
         return this.handleServiceResult(
@@ -225,6 +237,22 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
       eventId: this.nextEventId(),
       requestId: command.requestId,
       kind: "thread.archived",
+      emittedAt: this.clock(),
+      payload: {
+        thread: toThreadSummaryDto(result.thread),
+      },
+    };
+  }
+
+  private threadPinChangedEvent(
+    command: BackendCommandEnvelope,
+    result: SetThreadPinnedResult,
+  ): BackendEventEnvelope<"thread.pinChanged"> {
+    return {
+      contractVersion: CONTRACT_VERSION,
+      eventId: this.nextEventId(),
+      requestId: command.requestId,
+      kind: "thread.pinChanged",
       emittedAt: this.clock(),
       payload: {
         thread: toThreadSummaryDto(result.thread),
@@ -475,7 +503,7 @@ export function toThreadSummaryDto(thread: ThreadSnapshot): ThreadSummaryDto {
     scope: toThreadScopeDto(thread.scope),
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
-    pinned: false,
+    pinned: thread.pinned ?? false,
     archived: thread.lifecycleState === "archived",
     lastKnownState: thread.lastKnownState as LastKnownStateDto,
   };

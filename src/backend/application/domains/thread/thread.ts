@@ -119,6 +119,7 @@ export interface ThreadRecord {
   lifecycleState: ThreadLifecycleState;
   runtimeState: AgentRuntimeState;
   lastKnownState: LastKnownState;
+  pinned?: boolean;
   createdAt: string;
   updatedAt: string;
   cachedBlocks: AgentSessionBlockReference[];
@@ -139,6 +140,7 @@ export interface ThreadSnapshot {
   lifecycleState: ThreadLifecycleState;
   runtimeState: AgentRuntimeState;
   lastKnownState: LastKnownState;
+  pinned?: boolean;
   createdAt: string;
   updatedAt: string;
   cachedBlocks: AgentSessionBlockReference[];

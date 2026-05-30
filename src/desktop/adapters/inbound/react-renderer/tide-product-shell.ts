@@ -55,6 +55,7 @@ import {
   saveProductShellWorkbenchEditorPane,
   toggleProductShellFileTreeWithRefresh,
   toggleProductShellLeftUi,
+  toggleProductShellThreadPin,
   toggleProductShellWorkbenchWithLauncher,
   updateProductShellBrowserActionResult,
   updateProductShellBrowserSnapshot,
@@ -102,6 +103,7 @@ interface ProductShellHandlers {
   onLeftUiMenuOpen: (menu: ProductShellLeftUiMenu | null) => void;
   onThreadArchiveIntent: (threadId: string) => void;
   onThreadArchiveConfirm: (threadId: string) => void;
+  onThreadPinToggle: (threadId: string) => void;
   onLeftUiTransientClear: () => void;
   onFocusWorkbenchPane: (paneId: string) => void;
   onCloseWorkbenchPane: (paneId: string) => void;
@@ -203,6 +205,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     onThreadArchiveConfirm: (threadId) =>
       setShellState((state) => {
         const result = confirmProductShellThreadArchive(state, threadId);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onThreadPinToggle: (threadId) =>
+      setShellState((state) => {
+        const result = toggleProductShellThreadPin(state, threadId);
         dispatchBackendCommand(result.command);
         return result.state;
       }),
@@ -1280,7 +1288,7 @@ function createThreadRow(
                 thread.pinned
                   ? createElement(PinOff, { size: 14, strokeWidth: 1.9 })
                   : createElement(Pin, { size: 14, strokeWidth: 1.9 }),
-                undefined,
+                () => handlers.onThreadPinToggle(thread.threadId),
                 "thread-row__action",
               ),
               createIconButton(

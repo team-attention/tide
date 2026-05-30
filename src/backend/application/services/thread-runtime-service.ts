@@ -135,6 +135,7 @@ export interface ThreadSeed {
   lifecycleState: ThreadLifecycleState;
   runtimeState: AgentRuntimeState;
   lastKnownState: LastKnownState;
+  pinned?: boolean;
   createdAt: string;
   updatedAt: string;
   cachedBlocks?: AgentSessionBlockReference[];
@@ -234,6 +235,15 @@ export interface ArchiveThreadInput {
 }
 
 export interface ArchiveThreadResult {
+  thread: ThreadSnapshot;
+}
+
+export interface SetThreadPinnedInput {
+  threadId: ThreadId;
+  pinned: boolean;
+}
+
+export interface SetThreadPinnedResult {
   thread: ThreadSnapshot;
 }
 
@@ -546,6 +556,7 @@ export interface ThreadRuntimeService {
   restoreThreads(input: RestoreThreadsInput): Promise<ServiceResult<RestoreThreadsResult>>;
   listThreads(input: ListThreadsInput): Promise<ServiceResult<ListThreadsResult>>;
   archiveThread(input: ArchiveThreadInput): Promise<ServiceResult<ArchiveThreadResult>>;
+  setThreadPinned(input: SetThreadPinnedInput): Promise<ServiceResult<SetThreadPinnedResult>>;
   hydrateThread(input: HydrateThreadInput): Promise<ServiceResult<HydrateThreadResult>>;
   startThread(input: StartThreadInput): Promise<ServiceResult<StartThreadResult>>;
   sendComposerInput(
@@ -825,6 +836,21 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       return failure("thread_not_found", "Thread was not found.");
     }
     thread.lifecycleState = input.archived ? "archived" : "open";
+    thread.updatedAt = this.clock();
+    return {
+      ok: true,
+      thread: snapshotThread(thread),
+    };
+  }
+
+  async setThreadPinned(
+    input: SetThreadPinnedInput,
+  ): Promise<ServiceResult<SetThreadPinnedResult>> {
+    const thread = this.threads.get(input.threadId);
+    if (thread === undefined) {
+      return failure("thread_not_found", "Thread was not found.");
+    }
+    thread.pinned = input.pinned;
     thread.updatedAt = this.clock();
     return {
       ok: true,
@@ -3096,6 +3122,7 @@ function normalizeThreadSeed(seed: ThreadSeed): ThreadRecord {
     lifecycleState: seed.lifecycleState,
     runtimeState: seed.runtimeState,
     lastKnownState: seed.lastKnownState,
+    pinned: seed.pinned ?? false,
     createdAt: seed.createdAt,
     updatedAt: seed.updatedAt,
     cachedBlocks: cloneBlocks(seed.cachedBlocks ?? []),
@@ -3139,6 +3166,7 @@ function snapshotThread(thread: ThreadRecord): ThreadSnapshot {
     lifecycleState: thread.lifecycleState,
     runtimeState: thread.runtimeState,
     lastKnownState: thread.lastKnownState,
+    pinned: thread.pinned ?? false,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
     cachedBlocks: cloneBlocks(thread.cachedBlocks),

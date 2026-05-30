@@ -119,6 +119,41 @@ test("archiving_a_missing_thread_returns_thread_not_found", async () => {
   assert.equal(!result.ok && result.error.code, "thread_not_found");
 });
 
+test("pinning_a_thread_sets_pinned_on_its_summary_and_can_be_unset", async () => {
+  // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [threadSeed("thread-pin")],
+  });
+
+  const pinned = await service.setThreadPinned({ threadId: "thread-pin", pinned: true });
+  assert.equal(pinned.ok, true);
+  assert.equal(pinned.ok && pinned.thread.pinned, true);
+
+  const listed = await service.listThreads({});
+  const row = listed.ok ? listed.threads.find((thread) => thread.threadId === "thread-pin") : undefined;
+  assert.equal(row?.pinned, true);
+
+  const unpinned = await service.setThreadPinned({ threadId: "thread-pin", pinned: false });
+  assert.equal(unpinned.ok && unpinned.thread.pinned, false);
+});
+
+test("pinning_a_missing_thread_returns_thread_not_found", async () => {
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [threadSeed("thread-only")],
+  });
+  const result = await service.setThreadPinned({ threadId: "missing", pinned: true });
+  assert.equal(result.ok, false);
+  assert.equal(!result.ok && result.error.code, "thread_not_found");
+});
+
 test("thread_list_returns_visible_threads_sorted_by_updated_time", async () => {
   // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
   const fakes = createFakes();

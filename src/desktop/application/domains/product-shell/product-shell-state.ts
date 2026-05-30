@@ -74,6 +74,7 @@ export type ProductShellBackendCommand =
   | { kind: "thread.list"; payload: { includeArchived?: boolean } }
   | { kind: "thread.hydrate"; payload: { threadId: string } }
   | { kind: "thread.archive"; payload: { threadId: string; archived: boolean } }
+  | { kind: "thread.setPinned"; payload: { threadId: string; pinned: boolean } }
   | {
       kind: "workbench.command";
       payload: {
@@ -593,6 +594,43 @@ export function confirmProductShellThreadArchive(
   };
 }
 
+export function toggleProductShellThreadPin(
+  state: ProductShellState,
+  threadId: string,
+): ProductShellUpdateResult {
+  const target = state.threads.find((thread) => thread.threadId === threadId);
+  if (!target) {
+    return { state, command: null };
+  }
+  const nextPinned = !target.pinned;
+  const threads = state.threads.map((thread) =>
+    thread.threadId === threadId ? { ...thread, pinned: nextPinned } : thread,
+  );
+  return {
+    state: { ...state, threads, leftUiMenu: null },
+    command: { kind: "thread.setPinned", payload: { threadId, pinned: nextPinned } },
+  };
+}
+
+function applyProductShellThreadPinChangedEvent(
+  state: ProductShellState,
+  event: AgentChatBackendEvent,
+): ProductShellState {
+  const payload = event.payload as { thread?: AgentChatThreadSummary };
+  const summary = payload.thread;
+  if (!summary) {
+    return state;
+  }
+  return {
+    ...state,
+    threads: state.threads.map((thread) =>
+      thread.threadId === summary.threadId
+        ? { ...thread, pinned: summary.pinned }
+        : thread,
+    ),
+  };
+}
+
 function applyProductShellThreadArchivedEvent(
   state: ProductShellState,
   event: AgentChatBackendEvent,
@@ -724,6 +762,8 @@ export function applyProductShellBackendEvent(
       return applyProductShellThreadEvent(nextState, event);
     case "thread.archived":
       return applyProductShellThreadArchivedEvent(nextState, event);
+    case "thread.pinChanged":
+      return applyProductShellThreadPinChangedEvent(nextState, event);
     case "agentRuntime.stateChanged": {
       const payload = event.payload as { state?: string };
       if (!applyToActiveSurfaces) {

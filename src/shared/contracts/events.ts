@@ -24,6 +24,7 @@ export type BackendEventKind =
   | "thread.hydrated"
   | "thread.started"
   | "thread.archived"
+  | "thread.pinChanged"
   | "agentRuntime.stateChanged"
   | "providerReadiness.changed"
   | "prompt.changed"
@@ -42,6 +43,7 @@ export const BACKEND_EVENT_KINDS: BackendEventKind[] = [
   "thread.hydrated",
   "thread.started",
   "thread.archived",
+  "thread.pinChanged",
   "agentRuntime.stateChanged",
   "providerReadiness.changed",
   "prompt.changed",
@@ -78,6 +80,9 @@ export interface BackendEventPayloadByKind {
     runtimeState: AgentRuntimeStateDto;
   };
   "thread.archived": {
+    thread: ThreadSummaryDto;
+  };
+  "thread.pinChanged": {
     thread: ThreadSummaryDto;
   };
   "agentRuntime.stateChanged": {

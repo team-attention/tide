@@ -12,6 +12,7 @@ Included:
 - Product Shell startup that requests the Backend Thread list instead of using fixture Threads in the real renderer path.
 - Product Shell state update from `thread.listed`.
 - A `thread.archive` BackendCommand and `thread.archived` BackendEvent that toggle a Thread's archived state, persist it (event-driven), and update the Left UI (the inline archive-confirm button drops the Thread from the visible list).
+- A `thread.setPinned` BackendCommand and `thread.pinChanged` BackendEvent that toggle a Thread's pinned state, persist it (event-driven), and update the Left UI (the hover pin button flips pin state and the Pinned shortcuts list). The Thread record carries a real `pinned` flag instead of a hardcoded `false`.
 
 Out of scope:
 
@@ -103,6 +104,10 @@ BackendEventPayloadByKind["thread.listed"] = {
 | Archiving a missing Thread is rejected | `archiving_a_missing_thread_returns_thread_not_found` |
 | Product Shell archive confirm emits the command and drops the Thread | `confirming_thread_archive_emits_command_and_drops_it_from_the_list` |
 | Product Shell applies the archived event | `thread_archived_event_removes_the_thread_from_the_list` |
+| Backend pins a Thread (real pinned flag) | `pinning_a_thread_sets_pinned_on_its_summary_and_can_be_unset` |
+| Pinning a missing Thread is rejected | `pinning_a_missing_thread_returns_thread_not_found` |
+| Product Shell pin toggle emits the command optimistically | `toggling_thread_pin_emits_set_pinned_command_and_updates_optimistically` |
+| Product Shell applies the pinChanged event | `thread_pin_changed_event_updates_thread_pinned_state` |
 
 ## Implementation Notes
 

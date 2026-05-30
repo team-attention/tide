@@ -20,6 +20,7 @@ import {
   editProductShellWorkbenchEditorPane,
   focusProductShellWorkbenchPane,
   confirmProductShellThreadArchive,
+  toggleProductShellThreadPin,
   goToProductShellEditorDefinition,
   goToProductShellEditorReferences,
   moveProductShellEditorCursor,
@@ -158,6 +159,48 @@ test("confirming_thread_archive_emits_command_and_drops_it_from_the_list", () =>
     ["thread-keep"],
   );
   assert.equal(result.state.archiveConfirmThreadId, null);
+});
+
+test("toggling_thread_pin_emits_set_pinned_command_and_updates_optimistically", () => {
+  // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
+  const state = threadListState();
+  const result = toggleProductShellThreadPin(state, "thread-archive");
+
+  assert.deepEqual(result.command, {
+    kind: "thread.setPinned",
+    payload: { threadId: "thread-archive", pinned: true },
+  });
+  const pinnedThread = result.state.threads.find((thread) => thread.threadId === "thread-archive");
+  assert.equal(pinnedThread?.pinned, true);
+});
+
+test("thread_pin_changed_event_updates_thread_pinned_state", () => {
+  // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
+  const state = threadListState();
+  const next = applyProductShellBackendEvent(state, {
+    kind: "thread.pinChanged",
+    payload: {
+      thread: {
+        threadId: "thread-keep",
+        title: "Keep",
+        agentBinding: {
+          agentId: "codex",
+          runtimeSource: { kind: "provider_cli", integrationId: "codex" },
+        },
+        scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+        createdAt: "2026-05-29T00:00:00.000Z",
+        updatedAt: "2026-05-29T00:03:00.000Z",
+        pinned: true,
+        archived: false,
+        lastKnownState: "idle",
+      },
+    },
+  });
+
+  assert.equal(
+    next.threads.find((thread) => thread.threadId === "thread-keep")?.pinned,
+    true,
+  );
 });
 
 test("thread_archived_event_removes_the_thread_from_the_list", () => {
