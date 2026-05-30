@@ -133,6 +133,7 @@ interface TideMcpRuntimeEnv {
 | Stdio entrypoint requires the live Backend socket | `mcp_stdio_entrypoint_requires_tide_socket` |
 | Provider bootstrap creates wrapper-backed MCP configs | `provider_bootstrap_artifacts_create_provider_native_files` |
 | A broken client connection does not crash the Backend | `tide_mcp_socket_server_survives_a_broken_client_connection` |
+| Agent observes the thread end-to-end over stdio+socket | `tide_mcp_stdio_socket_round_trip_lets_an_agent_observe_the_thread` |
 
 ## Implementation Notes
 

@@ -12,6 +12,7 @@ import { createTideMcpToolSurfaceAdapter } from "../src/backend/adapters/inbound
 import {
   createTideMcpSocketRequestHandler,
   createTideMcpSocketServer,
+  runTideMcpSocketBackedLineDelimitedStdio,
 } from "../src/backend/adapters/inbound/tide-mcp-server/tide-mcp-socket-bridge.ts";
 import {
   createTideMcpJsonRpcHandler,
@@ -155,6 +156,56 @@ test("tide_mcp_socket_server_survives_a_broken_client_connection", async () => {
   } finally {
     await server.close();
   }
+});
+
+test("tide_mcp_stdio_socket_round_trip_lets_an_agent_observe_the_thread", async () => {
+  // End-to-end: a provider MCP client speaks JSON-RPC over stdio, which is
+  // backed by the real unix socket to the live Backend adapter and service.
+  const service = serviceWithActiveThread();
+  const adapter = createTideMcpToolSurfaceAdapter({ service });
+  const socketPath = path.join(mkdtempSync(path.join(tmpdir(), "tide-mcp-e2e-")), "mcp.sock");
+  const server = createTideMcpSocketServer({ socketPath, adapter });
+  await server.listen();
+
+  const responses: string[] = [];
+  try {
+    await runTideMcpSocketBackedLineDelimitedStdio({
+      socketPath,
+      env: {
+        TIDE_RUNTIME_ID: "runtime-mcp",
+        TIDE_AGENT_ID: "codex",
+        TIDE_THREAD_ID: "thread-mcp",
+      },
+      input: [
+        JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+        JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 3,
+          method: "tools/call",
+          params: { name: "tide_observe_thread", arguments: {} },
+        }),
+      ],
+      writeLine: (line) => {
+        responses.push(line);
+      },
+    });
+  } finally {
+    await server.close();
+  }
+
+  const parsed = responses.map((line) => JSON.parse(line));
+  const initialize = parsed.find((entry) => entry.id === 1);
+  const list = parsed.find((entry) => entry.id === 2);
+  const call = parsed.find((entry) => entry.id === 3);
+
+  assert.equal(initialize?.result.serverInfo.name, "tide");
+  const toolNames = list?.result.tools.map((tool: { name: string }) => tool.name);
+  assert.ok(toolNames?.includes("tide_observe_thread"));
+  assert.ok(toolNames?.includes("tide_go_to_references"));
+  assert.equal(call?.result.isError, undefined);
+  assert.equal(call?.result.structuredContent.kind, "observe_thread");
+  assert.equal(call?.result.structuredContent.threadId, "thread-mcp");
 });
 
 test("mcp_tools_call_routes_to_thread_runtime_service", async () => {
