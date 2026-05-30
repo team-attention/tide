@@ -43,13 +43,25 @@ smoke reaches `ok:true`).
 These are the only items left for "everything actually works", and each needs a
 human/environment step that cannot be done headlessly.
 
-### Gate A — Multi-agent real answers (Provider Readiness login)
-The routing, hidden-PTY launch, readiness preflight, and Setup Surface are done.
-A provider CLI must actually be logged in to produce a real answer.
-- **Action:** in the project terminal, run `! codex login` (and/or the Claude
-  login). Antigravity was already authenticated in earlier smoke runs.
-- **Then:** re-run `npm run test:smoke:electron -- --agent codex` (or claude) to
-  verify a real Agent Session answer end-to-end.
+### Gate A — Multi-agent real answers (Provider auth + directory trust)
+Routing, hidden-PTY launch, readiness preflight, and Setup Surface are done.
+Fixed (commit "Deliver first message as provider launch-time prompt"): the first
+message is now delivered as the provider CLI's launch-time prompt (codex/claude
+positional, antigravity `--prompt-interactive`) so a turn starts immediately —
+the old type-into-TUI-after-launch did not reliably start a turn.
+
+Real-answer verification is still blocked by two non-code conditions found while
+testing with a live codex login:
+- **Auth token invalidated:** codex returned `token_invalidated` /
+  `refresh_token_reused` / 401. The login got invalidated (running codex
+  concurrently can rotate/reuse the refresh token). **Action:** run a fresh
+  `codex login` and do NOT run other codex processes meanwhile.
+- **Directory trust:** codex refuses to run in an untrusted dir ("Not inside a
+  trusted directory"). The Thread Execution Context cwd must be a trusted codex
+  directory (this is provider-owned trust state, surfaced via Provider Readiness
+  / Setup Surface).
+- **Then:** `npm run test:smoke:electron -- --agent codex` should report
+  `agentOutputFound:true` once auth + trust hold.
 
 ### Gate B — Browser pane live page-load (GUI)
 The `<webview>` + snapshot/action evidence loop is wired and unit-tested. The
