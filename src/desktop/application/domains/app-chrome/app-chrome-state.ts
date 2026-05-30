@@ -50,6 +50,7 @@ export interface AppChromeWorkbenchPaneRef {
   byteLength?: number;
   truncated?: boolean;
   navigationTarget?: AppChromeEditorNavigationTarget;
+  references?: AppChromeEditorReferenceList;
   diffText?: string;
   beforeByteLength?: number;
   afterByteLength?: number;
@@ -85,6 +86,20 @@ export interface AppChromeEditorNavigationTarget {
   length?: number;
   label?: string;
   sourcePaneId?: string;
+}
+
+export interface AppChromeEditorReference {
+  relativePath: string;
+  line: number;
+  character: number;
+  length?: number;
+  label?: string;
+}
+
+export interface AppChromeEditorReferenceList {
+  query?: string;
+  items: AppChromeEditorReference[];
+  truncated: boolean;
 }
 
 export interface AppChromeLauncherPaneAction {

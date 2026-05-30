@@ -20,6 +20,7 @@ import {
   editProductShellWorkbenchEditorPane,
   focusProductShellWorkbenchPane,
   goToProductShellEditorDefinition,
+  goToProductShellEditorReferences,
   moveProductShellEditorCursor,
   openProductShellLeftUiMenu,
   openProductShellThread,
@@ -729,6 +730,101 @@ test("product_shell_go_to_definition_emits_cursor_position_command", () => {
     },
   });
   assert.equal(result.state.appChrome.activeWorkbenchPaneId, "pane-editor");
+});
+
+test("product_shell_find_references_emits_go_to_references_command", () => {
+  // Spec: docs_v2/specs/workbench-editor-code-navigation.md (D5)
+  const opened = applyProductShellBackendEvent(
+    openProductShellThread(createProductShellState(), "thread-workbench"),
+    {
+      kind: "workbench.changed",
+      payload: {
+        threadId: "thread-workbench",
+        activePaneId: "pane-editor",
+        panes: [
+          {
+            paneId: "pane-editor",
+            kind: "editor",
+            title: "app.ts",
+            visible: true,
+            revision: "pane-editor:rev",
+            updatedAt: "2026-05-28T00:00:00.000Z",
+            filePath: "/Users/eatnug/Workspace/tide/src/app.ts",
+            relativePath: "src/app.ts",
+            bodyText: "const local = 1;\nconsole.log(local);\n",
+            bodyTextPreview: "const local = 1;\nconsole.log(local);\n",
+            byteLength: 36,
+            truncated: false,
+          },
+        ],
+      },
+    },
+  );
+  const cursorOffset = "const lo".length;
+  const moved = moveProductShellEditorCursor(opened, "pane-editor", cursorOffset);
+
+  const result = goToProductShellEditorReferences(moved, "pane-editor");
+
+  assert.deepEqual(result.command, {
+    kind: "workbench.command",
+    payload: {
+      threadId: "thread-workbench",
+      command: "go_to_references",
+      targetPaneId: "pane-editor",
+      data: {
+        line: 0,
+        character: 8,
+      },
+    },
+  });
+  assert.equal(result.state.appChrome.activeWorkbenchPaneId, "pane-editor");
+});
+
+test("workbench_editor_pane_renders_references_list", () => {
+  // Spec: docs_v2/specs/workbench-editor-code-navigation.md (D5)
+  const state = applyProductShellBackendEvent(
+    openProductShellThread(createProductShellState(), "thread-workbench"),
+    {
+      kind: "workbench.changed",
+      payload: {
+        threadId: "thread-workbench",
+        activePaneId: "pane-editor",
+        panes: [
+          {
+            paneId: "pane-editor",
+            kind: "editor",
+            title: "app.ts",
+            visible: true,
+            revision: "pane-editor:rev",
+            updatedAt: "2026-05-28T00:00:00.000Z",
+            filePath: "/Users/eatnug/Workspace/tide/src/app.ts",
+            relativePath: "src/app.ts",
+            bodyText: "export const value = 1;\nconst a = value;\n",
+            bodyTextPreview: "export const value = 1;\nconst a = value;\n",
+            byteLength: 40,
+            truncated: false,
+            references: {
+              query: "src/app.ts",
+              truncated: false,
+              items: [
+                { relativePath: "src/app.ts", line: 0, character: 13, length: 5, label: "export const value = 1;" },
+                { relativePath: "src/lib.ts", line: 7, character: 2, length: 5, label: "return value;" },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  );
+  const html = renderProductShell(state);
+
+  assert.match(html, /aria-label="References"/);
+  assert.match(html, /References to src\/app\.ts \(2\)/);
+  assert.match(html, /Find references/);
+  // Locations render as relativePath:line+1:character+1.
+  assert.match(html, /src\/app\.ts:1:14/);
+  assert.match(html, /src\/lib\.ts:8:3/);
+  assert.match(html, /return value;/);
 });
 
 test("truncated_workbench_editor_pane_renders_read_only", () => {

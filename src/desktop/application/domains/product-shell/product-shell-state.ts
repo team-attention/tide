@@ -117,7 +117,7 @@ export type ProductShellBackendCommand =
       kind: "workbench.command";
       payload: {
         threadId: string;
-        command: "go_to_definition";
+        command: "go_to_definition" | "go_to_references";
         targetPaneId: string;
         data: {
           line: number;
@@ -918,6 +918,40 @@ export function goToProductShellEditorDefinition(
       payload: {
         threadId: state.activeThreadId,
         command: "go_to_definition",
+        targetPaneId: paneId,
+        data: position,
+      },
+    },
+  };
+}
+
+export function goToProductShellEditorReferences(
+  state: ProductShellState,
+  paneId: string,
+): ProductShellUpdateResult {
+  const pane = state.appChrome.workbenchPanes.find(
+    (candidate) => candidate.paneId === paneId && candidate.kind === "editor",
+  );
+  if (state.activeThreadId === null || pane === undefined || pane.truncated === true) {
+    return { state, command: null };
+  }
+  const draft = state.editorDrafts[paneId];
+  const content = draft?.content ?? pane.bodyText ?? pane.bodyTextPreview ?? "";
+  const position = offsetToLineCharacter(content, draft?.cursorOffset ?? 0);
+
+  return {
+    state: {
+      ...state,
+      appChrome: {
+        ...state.appChrome,
+        activeWorkbenchPaneId: paneId,
+      },
+    },
+    command: {
+      kind: "workbench.command",
+      payload: {
+        threadId: state.activeThreadId,
+        command: "go_to_references",
         targetPaneId: paneId,
         data: position,
       },

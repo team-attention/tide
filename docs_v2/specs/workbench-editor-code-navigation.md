@@ -89,8 +89,9 @@ Thread root are excluded (D2). A position that resolves to no symbol returns
 The `go_to_references` `workbench.command` and the `tide_go_to_references` Tide
 MCP tool both resolve references for the cursor position and attach the bounded
 list to the **source** Editor Pane as `references` (`{ query, items[], truncated }`),
-keeping that Pane active. The references-list UI that renders and navigates this
-list is wired in a following slice.
+keeping that Pane active. The Product Shell Editor Pane renders a "Find references"
+action that emits `go_to_references` for the current cursor, and a references list
+showing each `relativePath:line:character` plus its source-line label.
 
 ## Domain Model
 
@@ -180,6 +181,8 @@ Business Rules:
 | References stay Thread-root scoped | `typescript_code_intelligence_rejects_references_outside_the_root` |
 | go_to_references attaches the list to the source Pane | `go_to_references_lists_use_sites_on_the_source_editor_pane` |
 | Tide MCP exposes the references tool | `tide_mcp_tool_surface_lists_bounded_workbench_tools` |
+| Desktop emits the references command | `product_shell_find_references_emits_go_to_references_command` |
+| Editor Pane renders the references list | `workbench_editor_pane_renders_references_list` |
 
 ## Implementation Notes
 

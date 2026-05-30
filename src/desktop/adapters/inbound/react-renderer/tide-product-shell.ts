@@ -33,6 +33,7 @@ import {
   editProductShellWorkbenchEditorPane,
   focusProductShellWorkbenchPane,
   goToProductShellEditorDefinition,
+  goToProductShellEditorReferences,
   moveProductShellEditorCursor,
   openProductShellLeftUiMenu,
   openProductShellThread,
@@ -102,6 +103,7 @@ interface ProductShellHandlers {
   onEditorCursorChange: (paneId: string, cursorOffset: number) => void;
   onEditorSave: (paneId: string) => void;
   onEditorGoToDefinition: (paneId: string) => void;
+  onEditorGoToReferences: (paneId: string) => void;
   onBrowserSnapshot: (paneId: string, snapshot: ProductShellBrowserSnapshot) => void;
   onBrowserActionResult: (paneId: string, result: ProductShellBrowserActionResult) => void;
 }
@@ -229,6 +231,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     onEditorGoToDefinition: (paneId) =>
       setShellState((state) => {
         const result = goToProductShellEditorDefinition(state, paneId);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onEditorGoToReferences: (paneId) =>
+      setShellState((state) => {
+        const result = goToProductShellEditorReferences(state, paneId);
         dispatchBackendCommand(result.command);
         return result.state;
       }),
@@ -785,10 +793,59 @@ function WorkbenchEditorPane(props: {
             {
               className: "workbench-editor-save",
               type: "button",
+              onClick: () => props.handlers.onEditorGoToReferences(props.pane.paneId),
+            },
+            "Find references",
+          ),
+          createElement(
+            "button",
+            {
+              className: "workbench-editor-save",
+              type: "button",
               disabled: props.draft?.dirty !== true,
               onClick: () => props.handlers.onEditorSave(props.pane.paneId),
             },
             "Save file",
+          ),
+        ),
+    createWorkbenchEditorReferences(props.pane.references),
+  );
+}
+
+function createWorkbenchEditorReferences(
+  references: NonNullable<
+    ProductShellViewModel["appChrome"]["activeWorkbenchPane"]
+  >["references"],
+): ReactElement | null {
+  if (references === undefined) {
+    return null;
+  }
+  const heading = `References${references.query ? ` to ${references.query}` : ""} (${references.items.length}${references.truncated ? "+" : ""})`;
+  return createElement(
+    "div",
+    { className: "workbench-editor-references", "aria-label": "References" },
+    createElement("div", { className: "workbench-editor-references__heading" }, heading),
+    references.items.length === 0
+      ? createElement("div", { className: "workbench-editor-references__empty" }, "No references found.")
+      : createElement(
+          "ul",
+          { className: "workbench-editor-references__list" },
+          references.items.map((item, index) =>
+            createElement(
+              "li",
+              {
+                key: `${item.relativePath}:${item.line}:${item.character}:${index}`,
+                className: "workbench-editor-references__item",
+              },
+              createElement(
+                "span",
+                { className: "workbench-editor-references__location" },
+                `${item.relativePath}:${item.line + 1}:${item.character + 1}`,
+              ),
+              item.label
+                ? createElement("span", { className: "workbench-editor-references__label" }, item.label)
+                : null,
+            ),
           ),
         ),
   );
