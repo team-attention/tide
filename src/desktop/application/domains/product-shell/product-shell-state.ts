@@ -62,6 +62,7 @@ export interface ProductShellState {
   leftUiMenu: ProductShellLeftUiMenu | null;
   archiveConfirmThreadId: string | null;
   renamingThreadId: string | null;
+  searchQuery: string;
   projects: ProductShellProject[];
   threads: ProductShellThread[];
   agentChat: AgentChatShellState;
@@ -179,6 +180,7 @@ export interface ProductShellViewModel {
   leftUiOpen: boolean;
   workbenchOpen: boolean;
   fileTreeOpen: boolean;
+  searchQuery: string;
   pinnedThreads: ProductShellThreadView[];
   projectGroups: ProductShellProjectGroupView[];
   scratchThreads: ProductShellThreadView[];
@@ -301,6 +303,7 @@ export function createProductShellState(
     leftUiMenu: null,
     archiveConfirmThreadId: null,
     renamingThreadId: null,
+    searchQuery: "",
     projects: includeFixtureData ? initialProjects : [],
     threads: includeFixtureData ? initialThreads : [],
     agentChat: createStartAgentChatState(),
@@ -314,25 +317,36 @@ export function createProductShellState(
 export function createProductShellViewModel(
   state: ProductShellState,
 ): ProductShellViewModel {
+  const query = state.searchQuery.trim().toLowerCase();
+  const matchesSearch = (thread: ProductShellThread): boolean =>
+    query.length === 0 || thread.title.toLowerCase().includes(query);
+  const searching = query.length > 0;
+  const visibleThreads = state.threads.filter(matchesSearch);
   return {
     activeThreadId: state.activeThreadId,
     leftUiOpen: state.leftUiOpen,
     workbenchOpen: state.workbenchOpen,
     fileTreeOpen: state.fileTreeOpen,
-    pinnedThreads: state.threads
+    searchQuery: state.searchQuery,
+    pinnedThreads: visibleThreads
       .filter((thread) => thread.pinned)
       .map((thread) => toThreadView(thread, state)),
-    projectGroups: state.projects.map((project, index) => ({
-      ...project,
-      expanded: index === 0,
-      contextMenuOpen:
-        state.leftUiMenu?.kind === "project" && state.leftUiMenu.projectId === project.projectId,
-      threads: state.threads
-        .filter((thread) => thread.scope.kind === "project")
-        .filter((thread) => thread.scope.kind === "project" && thread.scope.projectId === project.projectId)
-        .map((thread) => toThreadView(thread, state)),
-    })),
-    scratchThreads: state.threads
+    projectGroups: state.projects
+      .map((project, index) => ({
+        ...project,
+        // Expand the first group, and every group while searching so matches
+        // are visible without manual expansion.
+        expanded: index === 0 || searching,
+        contextMenuOpen:
+          state.leftUiMenu?.kind === "project" && state.leftUiMenu.projectId === project.projectId,
+        threads: visibleThreads
+          .filter((thread) => thread.scope.kind === "project")
+          .filter((thread) => thread.scope.kind === "project" && thread.scope.projectId === project.projectId)
+          .map((thread) => toThreadView(thread, state)),
+      }))
+      // While searching, hide project groups with no matching threads.
+      .filter((group) => !searching || group.threads.length > 0),
+    scratchThreads: visibleThreads
       .filter((thread) => thread.scope.kind === "scratch")
       .map((thread) => toThreadView(thread, state)),
     agentChat: createAgentChatShellViewModel(state.agentChat),
@@ -340,6 +354,13 @@ export function createProductShellViewModel(
     fileTree: createFileTreeView(state),
     editorDrafts: state.editorDrafts,
   };
+}
+
+export function setProductShellSearchQuery(
+  state: ProductShellState,
+  query: string,
+): ProductShellState {
+  return { ...state, searchQuery: query };
 }
 
 export function startNewProductShellThread(

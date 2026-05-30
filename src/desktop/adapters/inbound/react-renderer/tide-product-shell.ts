@@ -55,6 +55,7 @@ import {
   openProductShellThread,
   openProductShellThreadFromLeftUi,
   selectProductShellFileTreeEntry,
+  setProductShellSearchQuery,
   selectProductShellChoiceSurfaceRow,
   selectProductShellLauncherAction,
   setProductShellComposerActiveSurface,
@@ -119,6 +120,7 @@ interface ProductShellHandlers {
   onThreadRenameStart: (threadId: string) => void;
   onThreadRenameSubmit: (threadId: string, title: string) => void;
   onThreadRenameCancel: () => void;
+  onSearchQueryChange: (query: string) => void;
   onLeftUiTransientClear: () => void;
   onFocusWorkbenchPane: (paneId: string) => void;
   onCloseWorkbenchPane: (paneId: string) => void;
@@ -248,6 +250,8 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       }),
     onThreadRenameCancel: () =>
       setShellState((state) => cancelProductShellThreadRename(state)),
+    onSearchQueryChange: (query) =>
+      setShellState((state) => setProductShellSearchQuery(state, query)),
     onLeftUiTransientClear: () =>
       setShellState((state) => clearProductShellLeftUiTransientState(state)),
     onFocusWorkbenchPane: (paneId) =>
@@ -369,7 +373,20 @@ function createLeftUi(
       "nav",
       { className: "left-ui__nav", "aria-label": "Left UI actions" },
       createLeftNavRow("New thread", createElement(MessageSquarePlus, { size: 16, strokeWidth: 1.9 }), handlers.onNewThread),
-      createLeftNavRow("Search", createElement(Search, { size: 16, strokeWidth: 1.9 })),
+      createElement(
+        "div",
+        { className: "left-ui-search" },
+        createElement(Search, { size: 16, strokeWidth: 1.9, "aria-hidden": true }),
+        createElement("input", {
+          className: "left-ui-search__input",
+          type: "search",
+          "aria-label": "Search threads",
+          placeholder: "Search",
+          value: viewModel.searchQuery,
+          onChange: (event: { currentTarget: { value: string } }) =>
+            handlers.onSearchQueryChange(event.currentTarget.value),
+        }),
+      ),
       createLeftNavRow("Plugins", createElement(Square, { size: 15, strokeWidth: 1.9 })),
       createLeftNavRow("Automations", createElement(Settings, { size: 15, strokeWidth: 1.9 })),
     ),

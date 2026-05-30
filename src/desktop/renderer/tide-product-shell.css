@@ -217,6 +217,38 @@ button {
   padding: 0 10px;
 }
 
+.left-ui-search {
+  width: 100%;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--tide-muted);
+}
+
+.left-ui-search:focus-within {
+  background: var(--tide-selection);
+}
+
+.left-ui-search__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tide-text);
+  font: inherit;
+}
+
+.left-ui-search__input::placeholder {
+  color: var(--tide-muted);
+}
+
+.left-ui-search__input:focus {
+  outline: none;
+}
+
 .left-ui-nav-row,
 .thread-row,
 .project-row {

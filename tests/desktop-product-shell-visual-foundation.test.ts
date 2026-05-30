@@ -22,6 +22,7 @@ import {
   confirmProductShellThreadArchive,
   toggleProductShellThreadPin,
   submitProductShellThreadRename,
+  setProductShellSearchQuery,
   goToProductShellEditorDefinition,
   goToProductShellEditorReferences,
   moveProductShellEditorCursor,
@@ -253,6 +254,30 @@ test("thread_renamed_event_updates_thread_title", () => {
   assert.equal(
     next.threads.find((thread) => thread.threadId === "thread-keep")?.title,
     "Server Renamed",
+  );
+});
+
+test("search_query_filters_threads_by_title_in_the_left_ui", () => {
+  // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
+  const state = threadListState(); // threads titled "Keep" and "Archive me"
+
+  const all = createProductShellViewModel(state);
+  const allTitles = all.projectGroups.flatMap((group) => group.threads.map((t) => t.title));
+  assert.deepEqual(allTitles.sort(), ["Archive me", "Keep"]);
+
+  const searched = createProductShellViewModel(setProductShellSearchQuery(state, "archive"));
+  const searchedTitles = searched.projectGroups.flatMap((group) =>
+    group.threads.map((t) => t.title),
+  );
+  assert.deepEqual(searchedTitles, ["Archive me"]);
+  assert.equal(searched.searchQuery, "archive");
+  // Project groups with no matching thread are hidden while searching.
+  assert.ok(searched.projectGroups.every((group) => group.threads.length > 0));
+
+  const noMatch = createProductShellViewModel(setProductShellSearchQuery(state, "zzz-nomatch"));
+  assert.equal(
+    noMatch.projectGroups.flatMap((group) => group.threads).length,
+    0,
   );
 });
 

@@ -14,6 +14,7 @@ Included:
 - A `thread.archive` BackendCommand and `thread.archived` BackendEvent that toggle a Thread's archived state, persist it (event-driven), and update the Left UI (the inline archive-confirm button drops the Thread from the visible list).
 - A `thread.setPinned` BackendCommand and `thread.pinChanged` BackendEvent that toggle a Thread's pinned state, persist it (event-driven), and update the Left UI (the hover pin button flips pin state and the Pinned shortcuts list). The Thread record carries a real `pinned` flag instead of a hardcoded `false`.
 - A `thread.rename` BackendCommand and `thread.renamed` BackendEvent that set a manual Thread title (trimmed + whitespace-collapsed; empty rejected), persist it (event-driven), and update the Left UI (double-click a Thread row to inline-rename).
+- Left UI search: a Product Shell `searchQuery` that filters the loaded Threads by title (case-insensitive substring) across Pinned, Projects, and Scratch, hiding empty Project groups while searching. This is a client-side filter over already-loaded Threads; searching archived Threads via Backend is a later slice.
 
 Out of scope:
 
@@ -113,6 +114,7 @@ BackendEventPayloadByKind["thread.listed"] = {
 | Product Shell rename submit emits the command optimistically | `submitting_thread_rename_emits_command_and_updates_title_optimistically` |
 | Empty rename emits no command | `submitting_an_empty_thread_rename_emits_no_command` |
 | Product Shell applies the renamed event | `thread_renamed_event_updates_thread_title` |
+| Left UI search filters Threads by title | `search_query_filters_threads_by_title_in_the_left_ui` |
 
 ## Implementation Notes
 
