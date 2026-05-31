@@ -276,8 +276,11 @@ test("reader_output_is_stable_for_same_frame_sequence", () => {
 
 // --- UC-2: Render interactive PTY output ---
 
-test("interactive_pty_output_preserves_raw_fallback", () => {
-  // UC-2 BR-1: PTY output remains available as raw fallback.
+test("interactive_pty_output_is_transport_not_a_visible_block", () => {
+  // UC-2 BR-1: the hidden PTY is runtime transport, not a visible terminal
+  // renderer. A provider TUI (cursor redraws/spinners) is unreadable as text and
+  // must NOT become a visible Agent Session block; the raw frame is retained as
+  // evidence and visible content comes from provider history / structured blocks.
   const reader = createFixtureAgentSessionReader();
   const result = reader.read({
     thread,
@@ -286,59 +289,32 @@ test("interactive_pty_output_preserves_raw_fallback", () => {
       frame("frame-pty", {
         source: "pty_transcript",
         payloadKind: "ansi_text",
-        payload: "\u001b[31mraw provider text\u001b[0m\n",
+        payload: "SStStaStarStarting MCP servers tidetide",
       }),
     ],
     existingBlocks: [],
   });
 
-  const block = onlyUpsertedBlock(result.blockUpdates);
-  assert.equal(block.kind, "raw_block");
-  assert.equal(block.status, "complete");
-  // ANSI/control escapes are stripped so the Raw Block is legible; text kept.
-  assert.equal(block.rawFallback, "raw provider text\n");
+  assert.deepEqual(result.blockUpdates, []);
 });
 
-test("partial_pty_output_renders_as_streaming_block", () => {
-  // UC-2 BR-2: Partial output updates one streaming block by stable block id.
+test("pty_stream_chunks_produce_no_visible_blocks", () => {
+  // UC-2 BR-2: a stream of PTY chunks (TUI redraws) produces no visible blocks.
   const reader = createFixtureAgentSessionReader();
   const first = reader.read({
     thread,
     agentBinding: thread.agentBinding,
-    frames: [
-      frame("frame-pty-1", {
-        source: "pty_transcript",
-        sourceRef: "pty-stream-1",
-        payloadKind: "text",
-        payload: "hel",
-      }),
-    ],
+    frames: [frame("frame-pty-1", { source: "pty_transcript", sourceRef: "pty-stream-1", payloadKind: "text", payload: "hel" })],
     existingBlocks: [],
   });
-  const firstBlock = onlyUpsertedBlock(first.blockUpdates);
+  assert.deepEqual(first.blockUpdates, []);
   const second = reader.read({
     thread,
     agentBinding: thread.agentBinding,
-    frames: [
-      frame("frame-pty-2", {
-        source: "pty_transcript",
-        sourceRef: "pty-stream-1",
-        sequence: 2,
-        payloadKind: "text",
-        payload: "lo\n",
-        observedAt: later,
-      }),
-    ],
-    existingBlocks: [firstBlock],
+    frames: [frame("frame-pty-2", { source: "pty_transcript", sourceRef: "pty-stream-1", sequence: 2, payloadKind: "text", payload: "lo", observedAt: later })],
+    existingBlocks: [],
   });
-  const secondBlock = onlyUpsertedBlock(second.blockUpdates);
-
-  assert.equal(firstBlock.blockId, secondBlock.blockId);
-  assert.equal(firstBlock.status, "streaming");
-  assert.equal(secondBlock.status, "complete");
-  assert.equal(secondBlock.body, "hello\n");
-  assert.equal(secondBlock.rawFallback, "hello\n");
-  assert.deepEqual(secondBlock.sourceFrameIds, ["frame-pty-1", "frame-pty-2"]);
+  assert.deepEqual(second.blockUpdates, []);
 });
 
 test("completed_block_update_maps_to_completed_contract_event", () => {

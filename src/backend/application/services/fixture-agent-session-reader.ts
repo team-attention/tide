@@ -56,7 +56,13 @@ function blocksFromFrame(
   existingBlocks: Map<string, AgentSessionBlock>,
 ): AgentSessionBlock[] {
   if (isPtyTextFrame(frame)) {
-    return [ptyBlockFromFrame(input.thread.threadId, frame, existingBlocks)];
+    // The hidden PTY is runtime transport, not a visible terminal renderer:
+    // provider CLIs stream a full TUI (cursor redraws, spinners) that is
+    // unreadable as text. Keep the raw frame as evidence but do NOT render it
+    // as a visible Agent Session block — the answer comes from provider history
+    // (agent_message), tool/diff blocks, and prompt blocks from hook/signal
+    // sources. See docs_v2 master-plan: "hidden PTY is transport".
+    return [];
   }
 
   const payload = payloadObject(frame);
