@@ -5,7 +5,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { ArrowUp, Mic, Plus } from "lucide-react";
+import { ArrowUp, ChevronDown, Mic, Plus, ShieldCheck } from "lucide-react";
 
 import type {
   AgentChatBlockView,
@@ -290,8 +290,10 @@ function createComposer(
             "aria-label": "Permission",
             onClick: () => handlers.onComposerSurfaceChange?.("permission_menu"),
           },
-          createElement("span", { className: "composer-shell__chip-icon", "aria-hidden": true }, "◇"),
+          // Figma: shield-check icon + label + chevron-down.
+          createElement(ShieldCheck, { size: 14, strokeWidth: 1.9, className: "composer-shell__chip-icon", "aria-hidden": true }),
           createElement("span", null, viewModel.composer.permissionLabel),
+          createElement(ChevronDown, { size: 13, strokeWidth: 1.9, className: "composer-shell__chip-chevron", "aria-hidden": true }),
         ),
         createElement("span", { className: "composer-shell__toolbar-spacer" }),
         createElement(
@@ -303,8 +305,9 @@ function createComposer(
             "aria-label": "Model",
             onClick: () => handlers.onComposerSurfaceChange?.("model_menu"),
           },
-          createElement("span", { className: "composer-shell__chip-icon", "aria-hidden": true }, "◈"),
+          // Figma: label + chevron-down (no leading icon).
           createElement("span", null, viewModel.composer.modelLabel),
+          createElement(ChevronDown, { size: 13, strokeWidth: 1.9, className: "composer-shell__chip-chevron", "aria-hidden": true }),
         ),
         createElement(
           "button",

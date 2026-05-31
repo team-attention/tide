@@ -918,6 +918,14 @@ button {
   color: var(--tide-muted);
 }
 
+/* Trailing chevron on the permission/model chips (Figma chevron-down). */
+.composer-shell__chip-chevron {
+  flex: 0 0 auto;
+  margin-left: 2px;
+  color: var(--tide-muted);
+  opacity: 0.8;
+}
+
 .composer-shell__choice-chip {
   padding: 0 12px;
   cursor: pointer;
