@@ -172,7 +172,28 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         }
         return;
       }
-      setShellState((state) => applyProductShellBackendEvent(state, event));
+      setShellState((state) => {
+        const next = applyProductShellBackendEvent(state, event);
+        // When a thread becomes active (started/hydrated) with the FileTree
+        // shown, populate it — covers the new-thread first message and any
+        // thread activation, not just manual toggle. refresh_file_tree is
+        // idempotent, so a duplicate dispatch is harmless.
+        if (
+          (event.kind === "thread.started" || event.kind === "thread.hydrated") &&
+          next.fileTreeOpen &&
+          next.activeThreadId
+        ) {
+          dispatchBackendCommand({
+            kind: "workbench.command",
+            payload: {
+              threadId: next.activeThreadId,
+              command: "refresh_file_tree",
+              data: { maxDepth: 2, maxEntries: 200 },
+            },
+          });
+        }
+        return next;
+      });
     });
   }, [props.onBackendEvent]);
   const viewModel = createProductShellViewModel(shellState);
