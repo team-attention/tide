@@ -209,6 +209,18 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
           backendTransportAvailable: props.onBackendCommand !== undefined,
         });
         dispatchBackendCommand(result.command);
+        // Populate the FileTree for the newly active thread (the refresh path
+        // only fired on manual toggle before, leaving the tree empty on open).
+        if (result.state.fileTreeOpen && result.state.activeThreadId) {
+          dispatchBackendCommand({
+            kind: "workbench.command",
+            payload: {
+              threadId: result.state.activeThreadId,
+              command: "refresh_file_tree",
+              data: { maxDepth: 2, maxEntries: 200 },
+            },
+          });
+        }
         return result.state;
       }),
     onLeftUiToggle: () => setShellState((state) => toggleProductShellLeftUi(state)),

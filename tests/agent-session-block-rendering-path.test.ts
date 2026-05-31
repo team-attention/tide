@@ -295,7 +295,8 @@ test("interactive_pty_output_preserves_raw_fallback", () => {
   const block = onlyUpsertedBlock(result.blockUpdates);
   assert.equal(block.kind, "raw_block");
   assert.equal(block.status, "complete");
-  assert.equal(block.rawFallback, "\u001b[31mraw provider text\u001b[0m\n");
+  // ANSI/control escapes are stripped so the Raw Block is legible; text kept.
+  assert.equal(block.rawFallback, "raw provider text\n");
 });
 
 test("partial_pty_output_renders_as_streaming_block", () => {

@@ -491,15 +491,30 @@ function blockStatus(value: unknown, fallback: AgentSessionBlockStatus): AgentSe
 
 function rawText(frame: RawAgentFrame): string {
   if (typeof frame.payload === "string") {
-    return frame.payload;
+    return cleanTerminalText(frame.payload);
   }
   if (frame.body !== undefined) {
-    return frame.body;
+    return cleanTerminalText(frame.body);
   }
   if (frame.payload !== undefined) {
     return JSON.stringify(frame.payload);
   }
   return "";
+}
+
+// Provider CLIs emit a full TUI over the PTY: ANSI/CSI escape sequences, OSC
+// sequences, cursor moves, bracketed-paste markers, and C0 control bytes.
+// Showing that verbatim in a Raw Block is unreadable (e.g.
+// "[?2004h [>4;0m … Hooks need review"). Strip the escape/control noise so the
+// underlying text is legible.
+function cleanTerminalText(text: string): string {
+  // Strip terminal control output so provider TUI dumps are legible in a
+  // Raw Block (OSC, CSI/SGR, cursor moves, bracketed-paste, C0 controls).
+  return text
+    .replace(/\u001B\][\s\S]*?(?:\u0007|\u001B\\)/g, "")
+    .replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\u001B[@-Z\\-_=>()#][0-9A-Za-z]?/g, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
 }
 
 function stringField(value: unknown): string | undefined {

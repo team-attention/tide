@@ -277,7 +277,9 @@ export function createAgentChatShellState(input?: {
           agentId: "codex",
           runtimeSource: runtimeSourceForAgent("codex"),
         },
-        scope: { kind: "scratch", scratchCwd: "" },
+        // A new thread must start in a real working directory, or the Agent has
+        // no cwd and the FileTree has no root (empty tree, failed refresh).
+        scope: defaultThreadScope(),
         launchOptions: {},
       },
     },
@@ -1061,6 +1063,13 @@ function permissionForRow(rowId: string): string | undefined {
     default:
       return undefined;
   }
+}
+
+// Default working directory for a brand-new thread. Hardcoded to the primary
+// project today (projects are not yet backend-provided); a new thread must have
+// a real root so the Agent runs somewhere and the FileTree can list files.
+function defaultThreadScope(): AgentChatThreadScope {
+  return { kind: "project", projectId: "tide", cwd: "/Users/eatnug/Workspace/tide" };
 }
 
 function scopeForProjectRow(rowId: string): AgentChatThreadScope | null {
