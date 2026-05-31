@@ -704,13 +704,17 @@ button {
   color: var(--tide-text);
 }
 
+/* Structured/event blocks are cards (canonical 1338): white, bordered, soft
+   shadow, radius 14 — distinct from the flat user/agent transcript text. */
 .agent-session-turn--event {
-  align-self: flex-start;
-  max-width: min(680px, 100%);
-  padding: 9px 11px;
+  align-self: stretch;
+  max-width: min(800px, 100%);
+  gap: 8px;
+  padding: 10px 12px;
   border: 1px solid var(--tide-line);
-  border-radius: 8px;
-  background: var(--tide-surface);
+  border-radius: 14px;
+  background: var(--tide-bg);
+  box-shadow: 0 8px 9px -6px rgba(52, 48, 56, 0.12);
 }
 
 .agent-session-turn__label {
@@ -732,11 +736,11 @@ button {
   max-width: 100%;
   overflow: auto;
   margin: 4px 0 0;
-  padding: 10px;
-  border: 1px solid var(--tide-line);
-  border-radius: 8px;
+  padding: 8px 10px;
+  border-radius: 7px;
   color: var(--tide-text);
-  background: var(--tide-surface);
+  background: var(--tide-selection);
+  font: 12px/1.5 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .agent-chat-shell__composer-stack {
