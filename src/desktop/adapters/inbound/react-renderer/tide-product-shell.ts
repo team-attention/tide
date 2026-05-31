@@ -1810,14 +1810,11 @@ function rightActionOwner(viewModel: ProductShellViewModel): RightActionOwner {
   return "agent-chat";
 }
 
+// The window is frameless (titleBarStyle: "hidden") and the macOS traffic lights
+// are positioned by Electron inside this top row. Reserve their footprint with a
+// drag-region spacer instead of drawing our own dots (which would double them).
 function createTrafficControls(): ReactElement {
-  return createElement(
-    "div",
-    { className: "traffic-controls", "aria-hidden": "true" },
-    createElement("span", { className: "traffic-dot traffic-dot--close" }),
-    createElement("span", { className: "traffic-dot traffic-dot--minimize" }),
-    createElement("span", { className: "traffic-dot traffic-dot--zoom" }),
-  );
+  return createElement("div", { className: "traffic-controls", "aria-hidden": "true" });
 }
 
 function createIconButton(

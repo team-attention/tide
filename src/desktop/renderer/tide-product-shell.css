@@ -113,6 +113,17 @@ button {
   gap: 12px;
   border-bottom: 1px solid var(--tide-line);
   background: var(--tide-bg);
+  /* Frameless window: the top rows are the drag region. */
+  -webkit-app-region: drag;
+}
+
+/* Interactive elements in the top row must stay clickable, not draggable. */
+.column-top-row button,
+.column-top-row input,
+.column-top-row a,
+.column-top-row [role="tab"],
+.column-top-row [role="button"] {
+  -webkit-app-region: no-drag;
 }
 
 .column-top-row__leading,
@@ -143,27 +154,12 @@ button {
   white-space: nowrap;
 }
 
+/* Reserves the footprint of the native macOS traffic lights (positioned by
+   Electron via trafficLightPosition) so adjacent controls don't sit under them. */
 .traffic-controls {
-  gap: 8px;
-}
-
-.traffic-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  box-shadow: inset 0 0 0 1px rgb(52 48 56 / 12%);
-}
-
-.traffic-dot--close {
-  background: #ff6159;
-}
-
-.traffic-dot--minimize {
-  background: #ffbd2f;
-}
-
-.traffic-dot--zoom {
-  background: #28c840;
+  flex: 0 0 auto;
+  width: 54px;
+  height: 100%;
 }
 
 .top-row-button,

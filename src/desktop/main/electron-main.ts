@@ -315,6 +315,11 @@ function createMainWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 640,
     title: tideDesktopMainEntrypoint.productName,
+    // Frameless: no native title bar so the app's own top row is the chrome.
+    // Keep the native traffic lights (functional) and place them inside the
+    // Left UI Top Row to match the canonical Figma (one set of controls, not two).
+    titleBarStyle: "hidden",
+    trafficLightPosition: { x: 19, y: 19 },
     webPreferences: {
       preload: join(mainDir, "../preload/index.cjs"),
       contextIsolation: true,
