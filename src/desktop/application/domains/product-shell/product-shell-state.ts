@@ -63,6 +63,7 @@ export interface ProductShellState {
   archiveConfirmThreadId: string | null;
   renamingThreadId: string | null;
   searchQuery: string;
+  searchActive: boolean;
   projects: ProductShellProject[];
   threads: ProductShellThread[];
   agentChat: AgentChatShellState;
@@ -181,6 +182,7 @@ export interface ProductShellViewModel {
   workbenchOpen: boolean;
   fileTreeOpen: boolean;
   searchQuery: string;
+  searchActive: boolean;
   pinnedThreads: ProductShellThreadView[];
   projectGroups: ProductShellProjectGroupView[];
   scratchThreads: ProductShellThreadView[];
@@ -304,6 +306,7 @@ export function createProductShellState(
     archiveConfirmThreadId: null,
     renamingThreadId: null,
     searchQuery: "",
+    searchActive: false,
     projects: includeFixtureData ? initialProjects : [],
     threads: includeFixtureData ? initialThreads : [],
     agentChat: createStartAgentChatState(),
@@ -328,6 +331,7 @@ export function createProductShellViewModel(
     workbenchOpen: state.workbenchOpen,
     fileTreeOpen: state.fileTreeOpen,
     searchQuery: state.searchQuery,
+    searchActive: state.searchActive,
     pinnedThreads: visibleThreads
       .filter((thread) => thread.pinned)
       .map((thread) => toThreadView(thread, state)),
@@ -360,7 +364,19 @@ export function setProductShellSearchQuery(
   state: ProductShellState,
   query: string,
 ): ProductShellState {
-  return { ...state, searchQuery: query };
+  return { ...state, searchQuery: query, searchActive: true };
+}
+
+// The Left UI "Search" entry is a nav row by default (matching the canonical
+// Figma frame); activating it reveals the inline filter input. Closing it
+// clears any in-progress query so the row returns to its resting state.
+export function toggleProductShellSearch(
+  state: ProductShellState,
+): ProductShellState {
+  if (state.searchActive) {
+    return { ...state, searchActive: false, searchQuery: "" };
+  }
+  return { ...state, searchActive: true };
 }
 
 export function startNewProductShellThread(

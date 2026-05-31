@@ -23,6 +23,7 @@ import {
   toggleProductShellThreadPin,
   submitProductShellThreadRename,
   setProductShellSearchQuery,
+  toggleProductShellSearch,
   goToProductShellEditorDefinition,
   goToProductShellEditorReferences,
   moveProductShellEditorCursor,
@@ -279,6 +280,26 @@ test("search_query_filters_threads_by_title_in_the_left_ui", () => {
     noMatch.projectGroups.flatMap((group) => group.threads).length,
     0,
   );
+});
+
+test("left_ui_search_is_a_nav_row_until_activated", () => {
+  // Spec: docs_v2/specs/desktop-product-shell-visual-foundation.md
+  // Canonical Figma workbench frame (1223:2): the Left UI "Search" entry is a
+  // nav row (icon + "Search"), like "New thread". The inline filter input
+  // belongs only to the FileTree. Activating Search reveals the inline input.
+  const resting = renderProductShell();
+  assert.match(resting, /<span>Search<\/span>/);
+  assert.doesNotMatch(resting, /aria-label="Search threads"/);
+
+  const activeState = toggleProductShellSearch(createProductShellState());
+  assert.equal(activeState.searchActive, true);
+  const active = renderProductShell(activeState);
+  assert.match(active, /aria-label="Search threads"/);
+
+  // Toggling again closes the input and clears any in-progress query.
+  const reclosed = toggleProductShellSearch(setProductShellSearchQuery(activeState, "abc"));
+  assert.equal(reclosed.searchActive, false);
+  assert.equal(reclosed.searchQuery, "");
 });
 
 test("thread_archived_event_removes_the_thread_from_the_list", () => {

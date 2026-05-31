@@ -56,6 +56,7 @@ import {
   openProductShellThreadFromLeftUi,
   selectProductShellFileTreeEntry,
   setProductShellSearchQuery,
+  toggleProductShellSearch,
   selectProductShellChoiceSurfaceRow,
   selectProductShellLauncherAction,
   setProductShellComposerActiveSurface,
@@ -121,6 +122,7 @@ interface ProductShellHandlers {
   onThreadRenameSubmit: (threadId: string, title: string) => void;
   onThreadRenameCancel: () => void;
   onSearchQueryChange: (query: string) => void;
+  onSearchToggle: () => void;
   onLeftUiTransientClear: () => void;
   onFocusWorkbenchPane: (paneId: string) => void;
   onCloseWorkbenchPane: (paneId: string) => void;
@@ -252,6 +254,8 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       setShellState((state) => cancelProductShellThreadRename(state)),
     onSearchQueryChange: (query) =>
       setShellState((state) => setProductShellSearchQuery(state, query)),
+    onSearchToggle: () =>
+      setShellState((state) => toggleProductShellSearch(state)),
     onLeftUiTransientClear: () =>
       setShellState((state) => clearProductShellLeftUiTransientState(state)),
     onFocusWorkbenchPane: (paneId) =>
@@ -373,20 +377,28 @@ function createLeftUi(
       "nav",
       { className: "left-ui__nav", "aria-label": "Left UI actions" },
       createLeftNavRow("New thread", createElement(MessageSquarePlus, { size: 16, strokeWidth: 1.9 }), handlers.onNewThread),
-      createElement(
-        "div",
-        { className: "left-ui-search" },
-        createElement(Search, { size: 16, strokeWidth: 1.9, "aria-hidden": true }),
-        createElement("input", {
-          className: "left-ui-search__input",
-          type: "search",
-          "aria-label": "Search threads",
-          placeholder: "Search",
-          value: viewModel.searchQuery,
-          onChange: (event: { currentTarget: { value: string } }) =>
-            handlers.onSearchQueryChange(event.currentTarget.value),
-        }),
-      ),
+      viewModel.searchActive
+        ? createElement(
+            "div",
+            { className: "left-ui-search" },
+            createElement(Search, { size: 16, strokeWidth: 1.9, "aria-hidden": true }),
+            createElement("input", {
+              className: "left-ui-search__input",
+              type: "search",
+              "aria-label": "Search threads",
+              placeholder: "Search",
+              autoFocus: true,
+              value: viewModel.searchQuery,
+              onChange: (event: { currentTarget: { value: string } }) =>
+                handlers.onSearchQueryChange(event.currentTarget.value),
+              onKeyDown: (event: { key: string }) => {
+                if (event.key === "Escape") {
+                  handlers.onSearchToggle();
+                }
+              },
+            }),
+          )
+        : createLeftNavRow("Search", createElement(Search, { size: 16, strokeWidth: 1.9 }), handlers.onSearchToggle),
       createLeftNavRow("Plugins", createElement(Square, { size: 15, strokeWidth: 1.9 })),
       createLeftNavRow("Automations", createElement(Settings, { size: 15, strokeWidth: 1.9 })),
     ),
