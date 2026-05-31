@@ -1236,13 +1236,61 @@ button {
   font-size: 12px;
 }
 
+/* Browser pane is flat like the editor: a slim address bar, then the page
+   filling the pane (no file-info panel, no card). */
+.workbench-pane-content--browser {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.workbench-browser-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--tide-line);
+  font: 12px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--tide-muted);
+}
+
+.workbench-browser-bar__title {
+  flex: 0 0 auto;
+  color: var(--tide-text);
+  font: 500 12px/1.4 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.workbench-browser-bar__url {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-browser-bar__status {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+}
+
 .workbench-browser-webview {
   display: block;
+  flex: 1 1 auto;
   width: 100%;
-  min-height: 360px;
-  border: 1px solid var(--tide-line);
-  border-radius: 8px;
+  min-height: 0;
   background: var(--tide-bg);
+}
+
+.workbench-browser-empty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tide-muted);
 }
 
 .workbench-preview {

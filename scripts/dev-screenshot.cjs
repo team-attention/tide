@@ -15,7 +15,7 @@ app.whenReady().then(async () => {
     width,
     height,
     show: false,
-    webPreferences: { offscreen: true },
+    webPreferences: { offscreen: true, webviewTag: true },
   });
   win.webContents.setFrameRate(2);
   await win.loadURL(url);

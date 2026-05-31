@@ -130,6 +130,34 @@ function figmaFixtureState() {
   });
 }
 
+// Browser-pane fixture: a Workbench Browser pane pointing at a visible page so
+// the live <webview> load can be verified headlessly via offscreen Electron.
+function browserFixtureState() {
+  const opened = openProductShellThread(
+    createProductShellState({ includeFixtureData: true }),
+    "thread-master-plan",
+  );
+  return applyProductShellBackendEvent(opened, {
+    kind: "workbench.changed",
+    payload: {
+      threadId: "thread-master-plan",
+      activePaneId: "pane-browser",
+      panes: [
+        {
+          paneId: "pane-browser",
+          kind: "browser",
+          title: "Browser",
+          visible: true,
+          revision: "pane-browser:rev",
+          updatedAt: "2026-05-31T00:00:00.000Z",
+          url: "data:text/html,%3Cbody%20style%3D%22margin%3A0%3Bbackground%3A%23123456%3Bcolor%3A%23fff%3Bfont%3A40px%20sans-serif%3Bdisplay%3Aflex%3Balign-items%3Acenter%3Bjustify-content%3Acenter%3Bheight%3A100vh%22%3EBROWSER%20PANE%20LIVE%3C%2Fbody%3E",
+          loading: false,
+        },
+      ],
+    },
+  });
+}
+
 // Measurements are reported via document.title because the Tide Browser Pane
 // snapshot extractor does not surface this CSS-grid DOM as readable text, but
 // capture_pane reliably returns the title.
@@ -171,8 +199,11 @@ function measure(): void {
 const root = document.getElementById("root");
 if (root) {
   try {
+    const wantsBrowser = new URLSearchParams(location.search).get("pane") === "browser";
     // FileTree column is gated by fileTreeOpen; flip it on for the fixture.
-    const state = { ...figmaFixtureState(), fileTreeOpen: true };
+    const state = wantsBrowser
+      ? browserFixtureState()
+      : { ...figmaFixtureState(), fileTreeOpen: true };
     createRoot(root).render(createElement(TideProductShell, { initialState: state }));
     const fonts = (document as unknown as { fonts?: { ready?: Promise<unknown> } }).fonts;
     if (fonts?.ready) {

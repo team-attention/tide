@@ -620,10 +620,13 @@ test("workbench_browser_pane_renders_url_loading_and_preview", () => {
   const html = renderProductShell(state);
 
   assert.match(html, /data-pane-kind="browser"/);
+  // Flat browser pane: address bar (title + url + loading) then the live page.
   assert.match(html, /Example Docs/);
   assert.match(html, /https:\/\/example\.test\/docs/);
   assert.match(html, /loading/);
-  assert.match(html, /Install Tide and run the local Agent/);
+  // The live <webview> renders the page (the human view); the text snapshot is
+  // the Agent's evidence, not a human-facing preview panel.
+  assert.match(html, /data-browser-pane-webview="pane-browser"/);
   assert.doesNotMatch(html, /Thread-bound Workbench Pane content appears here/);
 });
 

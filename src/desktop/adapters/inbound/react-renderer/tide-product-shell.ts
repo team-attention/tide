@@ -758,11 +758,22 @@ function WorkbenchBrowserPane(props: {
   return createElement(
     "div",
     { className: "workbench-pane-content workbench-pane-content--browser" },
-    createWorkbenchPaneHeading("browser", title, props.pane.loading ? "loading" : "ready"),
-    createWorkbenchPaneMeta([
-      ["URL", props.pane.url],
-      ["Revision", props.pane.revision],
-    ]),
+    // Slim address bar (no file-info panel) — the page fills the pane below it.
+    createElement(
+      "div",
+      { className: "workbench-browser-bar", "aria-label": "Browser address" },
+      createElement("span", { className: "workbench-browser-bar__title" }, title),
+      props.pane.url
+        ? createElement(
+            "span",
+            { className: "workbench-browser-bar__url", title: props.pane.url },
+            props.pane.url,
+          )
+        : null,
+      props.pane.loading
+        ? createElement("span", { className: "workbench-browser-bar__status" }, "loading")
+        : null,
+    ),
     props.pane.url
       ? createElement("webview", {
           ref: webviewRef,
@@ -771,10 +782,11 @@ function WorkbenchBrowserPane(props: {
           src: props.pane.url,
           partition: "persist:tide-workbench-browser",
         })
-      : null,
-    props.pane.bodyTextPreview
-      ? createPreviewBlock("Browser text preview", props.pane.bodyTextPreview)
-      : null,
+      : createElement(
+          "div",
+          { className: "workbench-browser-empty" },
+          "No page loaded.",
+        ),
   );
 }
 
