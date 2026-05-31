@@ -24,7 +24,7 @@ import {
   Trash2,
 } from "lucide-react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
-import { EditorView, type ViewUpdate } from "@codemirror/view";
+import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 // xterm core is CommonJS and safe to import in any environment (it does not
 // touch browser globals at load). default-import the module namespace so both
 // the Vite build and Node's ESM test loader resolve it. The fit/webgl addons
@@ -809,61 +809,47 @@ function WorkbenchEditorPane(props: {
 }): ReactElement {
   const readOnly = props.pane.truncated === true;
   const value = props.draft?.content ?? props.pane.bodyText ?? props.pane.bodyTextPreview ?? "";
+  // A real code editor: a breadcrumb path bar, then the CodeMirror surface
+  // filling the pane. No file-info panel and no LSP action buttons — Go to
+  // Definition / Find References live on the right-click context menu (like any
+  // editor), and saving is Cmd/Ctrl+S. Find References results appear as a peek
+  // panel below the code only after the action is invoked.
   return createElement(
     "div",
     {
       className: "workbench-pane-content workbench-pane-content--editor",
       "data-editor-readonly": readOnly ? "readonly" : "editable",
     },
-    createWorkbenchPaneHeading("editor", props.pane.title, readOnly ? "readonly" : props.draft?.dirty ? "edited" : "saved"),
-    createWorkbenchPaneMeta([
-      ["Path", props.pane.relativePath ?? props.pane.filePath],
-      ["Size", formatByteCount(props.pane.byteLength)],
-      ["Revision", props.pane.revision],
-    ]),
+    createElement(
+      "div",
+      { className: "workbench-editor-breadcrumb", "aria-label": "Editor breadcrumb" },
+      ...(props.pane.relativePath ?? props.pane.filePath ?? props.pane.title)
+        .split("/")
+        .filter((segment) => segment.length > 0)
+        .flatMap((segment, index, segments) => {
+          const crumb = createElement(
+            "span",
+            { key: `crumb-${index}`, className: "workbench-editor-breadcrumb__crumb" },
+            segment,
+          );
+          return index < segments.length - 1
+            ? [crumb, createElement("span", { key: `sep-${index}`, className: "workbench-editor-breadcrumb__sep" }, "›")]
+            : [crumb];
+        }),
+      props.draft?.dirty
+        ? createElement("span", { className: "workbench-editor-breadcrumb__dirty", title: "Unsaved changes" }, "●")
+        : null,
+    ),
     createElement(WorkbenchCodeEditor, {
       paneId: props.pane.paneId,
       value,
       readOnly,
+      dirty: props.draft?.dirty === true,
       language: inferEditorLanguage(props.pane.relativePath ?? props.pane.filePath),
       revision: props.pane.revision,
       navigationTarget: props.pane.navigationTarget,
       handlers: props.handlers,
     }),
-    readOnly
-      ? null
-      : createElement(
-          "div",
-          { className: "workbench-editor-actions" },
-          createElement(
-            "button",
-            {
-              className: "workbench-editor-save",
-              type: "button",
-              onClick: () => props.handlers.onEditorGoToDefinition(props.pane.paneId),
-            },
-            "Go to definition",
-          ),
-          createElement(
-            "button",
-            {
-              className: "workbench-editor-save",
-              type: "button",
-              onClick: () => props.handlers.onEditorGoToReferences(props.pane.paneId),
-            },
-            "Find references",
-          ),
-          createElement(
-            "button",
-            {
-              className: "workbench-editor-save",
-              type: "button",
-              disabled: props.draft?.dirty !== true,
-              onClick: () => props.handlers.onEditorSave(props.pane.paneId),
-            },
-            "Save file",
-          ),
-        ),
     createWorkbenchEditorReferences(props.pane.references),
   );
 }
@@ -938,6 +924,7 @@ function WorkbenchCodeEditor(props: {
   paneId: string;
   value: string;
   readOnly: boolean;
+  dirty: boolean;
   language: string;
   revision: string;
   navigationTarget?: NonNullable<
@@ -946,6 +933,7 @@ function WorkbenchCodeEditor(props: {
   handlers: ProductShellHandlers;
 }): ReactElement {
   const editorRef = useRef<ReactCodeMirrorRef>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const nav = props.navigationTarget;
   useEffect(() => {
     const view = editorRef.current?.view;
@@ -960,6 +948,54 @@ function WorkbenchCodeEditor(props: {
     view.focus();
   }, [nav?.line, nav?.character, nav?.length, props.revision]);
 
+  // Cmd/Ctrl+S saves — like a real editor, instead of a Save button.
+  const saveKeymap = keymap.of([
+    {
+      key: "Mod-s",
+      preventDefault: true,
+      run: () => {
+        props.handlers.onEditorSave(props.paneId);
+        return true;
+      },
+    },
+  ]);
+
+  // Right-click targets the symbol under the pointer (move the caret there so
+  // the LSP query resolves the clicked identifier), then opens the editor
+  // context menu with Go to Definition / Find References.
+  const openContextMenu = (event: {
+    preventDefault: () => void;
+    clientX: number;
+    clientY: number;
+  }) => {
+    event.preventDefault();
+    const view = editorRef.current?.view;
+    if (view) {
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+      if (pos !== null && pos !== undefined) {
+        view.dispatch({ selection: { anchor: pos } });
+        props.handlers.onEditorCursorChange(props.paneId, pos);
+      }
+    }
+    setContextMenu({ x: event.clientX, y: event.clientY });
+  };
+  const closeMenu = () => setContextMenu(null);
+
+  const menuItem = (label: string, onSelect: () => void, disabled = false) =>
+    createElement(
+      "button",
+      {
+        type: "button",
+        className: "workbench-editor-menu__item",
+        disabled,
+        onClick: () => {
+          onSelect();
+          closeMenu();
+        },
+      },
+      label,
+    );
+
   return createElement(
     "div",
     {
@@ -967,6 +1003,7 @@ function WorkbenchCodeEditor(props: {
       "aria-label": "Editor Pane text",
       "data-editor-language": props.language,
       "data-navigation-target": nav?.label,
+      onContextMenu: openContextMenu,
     },
     createElement(CodeMirror, {
       ref: editorRef,
@@ -979,7 +1016,7 @@ function WorkbenchCodeEditor(props: {
         foldGutter: false,
         highlightActiveLine: !props.readOnly,
       },
-      extensions: [EditorView.lineWrapping, ...editorLanguageExtensions(props.language)],
+      extensions: [saveKeymap, EditorView.lineWrapping, ...editorLanguageExtensions(props.language)],
       onChange: (next: string) => props.handlers.onEditorDraftChange(props.paneId, next),
       onUpdate: (update: ViewUpdate) => {
         if (update.selectionSet) {
@@ -987,6 +1024,33 @@ function WorkbenchCodeEditor(props: {
         }
       },
     }),
+    contextMenu === null
+      ? null
+      : createElement(
+          "div",
+          {
+            className: "workbench-editor-menu-backdrop",
+            onClick: closeMenu,
+            onContextMenu: (event: { preventDefault: () => void }) => {
+              event.preventDefault();
+              closeMenu();
+            },
+          },
+          createElement(
+            "div",
+            {
+              className: "workbench-editor-menu",
+              role: "menu",
+              "aria-label": "Editor actions",
+              style: { left: `${contextMenu.x}px`, top: `${contextMenu.y}px` } as CSSProperties,
+            },
+            menuItem("Go to Definition", () => props.handlers.onEditorGoToDefinition(props.paneId)),
+            menuItem("Find References", () => props.handlers.onEditorGoToReferences(props.paneId)),
+            props.readOnly
+              ? null
+              : menuItem("Save", () => props.handlers.onEditorSave(props.paneId), !props.dirty),
+          ),
+        ),
   );
 }
 
@@ -1091,10 +1155,6 @@ function createPreviewBlock(label: string, text: string, extraClassName = ""): R
     },
     text,
   );
-}
-
-function formatByteCount(bytes: number | undefined): string | undefined {
-  return typeof bytes === "number" ? `${bytes} bytes` : undefined;
 }
 
 function formatBeforeAfterBytes(before: number | undefined, after: number | undefined): string | undefined {

@@ -770,7 +770,7 @@ test("product_shell_browser_action_result_emits_workbench_command", () => {
   });
 });
 
-test("workbench_editor_pane_renders_path_size_and_preview", () => {
+test("workbench_editor_pane_renders_as_a_code_editor_not_a_viewer", () => {
   // Spec: docs_v2/specs/desktop-workbench-pane-content-rendering.md
   const state = applyProductShellBackendEvent(
     openProductShellThread(createProductShellState(), "thread-workbench"),
@@ -800,13 +800,20 @@ test("workbench_editor_pane_renders_path_size_and_preview", () => {
   const html = renderProductShell(state);
 
   assert.match(html, /data-pane-kind="editor"/);
+  // Path shows as a breadcrumb, not a file-info panel.
+  assert.match(html, /workbench-editor-breadcrumb/);
   assert.match(html, /README\.md/);
-  assert.match(html, /42 bytes/);
   assert.match(html, /readonly/);
   // The editor surface (CodeMirror) renders; the file body itself is rendered
   // by CodeMirror on mount and is covered by the jsdom editor tests.
   assert.match(html, /aria-label="Editor Pane text"/);
   assert.doesNotMatch(html, /Thread-bound Workbench Pane content appears here/);
+  // It is a code editor, not a viewer: no Size/byte panel and no LSP/save
+  // action buttons (Go to Definition / Find References / Save live on the
+  // right-click context menu, which is not rendered in static markup).
+  assert.doesNotMatch(html, /42 bytes/);
+  assert.doesNotMatch(html, /workbench-editor-actions/);
+  assert.doesNotMatch(html, /Save file/);
 });
 
 test("editing_workbench_editor_pane_marks_draft_dirty", () => {
@@ -1033,7 +1040,6 @@ test("workbench_editor_pane_renders_references_list", () => {
 
   assert.match(html, /aria-label="References"/);
   assert.match(html, /References to src\/app\.ts \(2\)/);
-  assert.match(html, /Find references/);
   // Locations render as relativePath:line+1:character+1.
   assert.match(html, /src\/app\.ts:1:14/);
   assert.match(html, /src\/lib\.ts:8:3/);

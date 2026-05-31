@@ -111,6 +111,43 @@ test("workbench_editor_pane_mounts_codemirror_with_file_content_and_line_numbers
   }
 });
 
+test("workbench_editor_pane_opens_lsp_actions_on_right_click_not_buttons", async () => {
+  // Spec: docs_v2/specs/workbench-editor-code-navigation.md
+  // A real code editor exposes Go to Definition / Find References on the
+  // right-click context menu, not as a row of buttons below the code.
+  const root = await mountShell(editorState("export const value = 1;\n", "src/app.ts"));
+  try {
+    // No LSP/save action button bar in the editor chrome.
+    assert.equal(dom.window.document.querySelector(".workbench-editor-actions"), null);
+
+    const surface = dom.window.document.querySelector(".workbench-editor-surface");
+    assert.ok(surface, "editor surface should mount");
+
+    await act(async () => {
+      surface.dispatchEvent(
+        new dom.window.MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 40,
+          clientY: 40,
+        }),
+      );
+    });
+
+    const menu = dom.window.document.querySelector('.workbench-editor-menu[role="menu"]');
+    assert.ok(menu, "right-click should open the editor context menu");
+    const labels = Array.from(menu.querySelectorAll(".workbench-editor-menu__item")).map(
+      (el) => (el.textContent ?? "").trim(),
+    );
+    assert.ok(labels.includes("Go to Definition"), `menu items were ${JSON.stringify(labels)}`);
+    assert.ok(labels.includes("Find References"), `menu items were ${JSON.stringify(labels)}`);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
 test("workbench_editor_pane_applies_grammar_highlighting_tokens", async () => {
   const code = 'const greeting = "hello";\n';
   const root = await mountShell(editorState(code, "src/greet.ts"));

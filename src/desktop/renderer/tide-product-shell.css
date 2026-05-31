@@ -88,19 +88,19 @@ button {
 }
 
 .tide-product-shell--file-tree-open .tide-product-shell__body {
-  grid-template-columns: 256px minmax(420px, 1fr) minmax(320px, 38vw);
+  grid-template-columns: 256px minmax(420px, 1fr) minmax(344px, 38vw);
 }
 
 .tide-product-shell--workbench-open.tide-product-shell--file-tree-open .tide-product-shell__body {
-  grid-template-columns: 256px minmax(390px, 0.95fr) minmax(360px, 0.9fr) 320px;
+  grid-template-columns: 256px minmax(390px, 0.95fr) minmax(360px, 0.9fr) 344px;
 }
 
 .tide-product-shell--left-closed.tide-product-shell--file-tree-open .tide-product-shell__body {
-  grid-template-columns: minmax(500px, 1fr) 320px;
+  grid-template-columns: minmax(500px, 1fr) 344px;
 }
 
 .tide-product-shell--left-closed.tide-product-shell--workbench-open.tide-product-shell--file-tree-open .tide-product-shell__body {
-  grid-template-columns: minmax(390px, 0.95fr) minmax(360px, 0.9fr) 320px;
+  grid-template-columns: minmax(390px, 0.95fr) minmax(360px, 0.9fr) 344px;
 }
 
 .column-top-row {
@@ -983,7 +983,7 @@ button {
 
 .workbench-tab {
   max-width: 168px;
-  height: 32px;
+  height: 30px;
   border: 0;
   border-radius: 8px;
   padding: 0 10px;
@@ -1254,30 +1254,105 @@ button {
   color: var(--tide-text);
 }
 
+/* Editor pane is a real code editor: a thin breadcrumb path bar, then the
+   CodeMirror surface filling the remaining height. No file-info panel. */
+.workbench-pane-content--editor {
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.workbench-editor-breadcrumb {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font: 12px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--tide-muted);
+  border-bottom: 1px solid var(--tide-line);
+}
+
+.workbench-editor-breadcrumb__crumb:last-of-type {
+  color: var(--tide-text);
+}
+
+.workbench-editor-breadcrumb__sep {
+  color: var(--tide-muted);
+  opacity: 0.7;
+}
+
+.workbench-editor-breadcrumb__dirty {
+  margin-left: 6px;
+  color: var(--tide-action);
+  font-size: 10px;
+}
+
 .workbench-editor-surface {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   min-width: 0;
   width: 100%;
-  border: 1px solid var(--tide-line);
-  border-radius: 8px;
   overflow: hidden;
   background: var(--tide-bg);
 }
 
-.workbench-editor-surface:focus-within {
-  border-color: color-mix(in srgb, var(--tide-action) 38%, var(--tide-line));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tide-action) 10%, transparent);
+.workbench-editor-cm,
+.workbench-editor-cm .cm-editor {
+  height: 100%;
 }
 
 .workbench-editor-cm .cm-editor {
-  max-height: 520px;
   font: 12px/1.55 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   background: var(--tide-bg);
   color: var(--tide-text);
 }
 
 .workbench-editor-cm .cm-scroller {
-  min-height: 260px;
   overflow: auto;
+}
+
+/* Right-click context menu (Go to Definition / Find References / Save). */
+.workbench-editor-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.workbench-editor-menu {
+  position: fixed;
+  min-width: 184px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--tide-bg);
+  border: 1px solid var(--tide-line-strong, var(--tide-line));
+  border-radius: 8px;
+  box-shadow: 0 10px 30px -10px rgb(20 18 24 / 28%);
+}
+
+.workbench-editor-menu__item {
+  text-align: left;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-text);
+  font: 13px/1 -apple-system, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.workbench-editor-menu__item:hover:not(:disabled) {
+  background: var(--tide-selection);
+}
+
+.workbench-editor-menu__item:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .workbench-editor-cm .cm-gutters {
@@ -1300,17 +1375,14 @@ button {
   background: var(--tide-selection);
 }
 
-.workbench-editor-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
 .workbench-editor-references {
-  margin-top: 10px;
-  border: 1px solid var(--tide-line);
-  border-radius: 8px;
+  flex: 0 0 auto;
+  max-height: 40%;
+  margin: 0;
+  border-top: 1px solid var(--tide-line);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .workbench-editor-references__heading {
@@ -1358,20 +1430,6 @@ button {
   color: var(--tide-text);
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.workbench-editor-save {
-  height: 28px;
-  border: 1px solid var(--tide-line);
-  border-radius: 7px;
-  padding: 0 10px;
-  background: var(--tide-selection);
-  color: var(--tide-text);
-  font: inherit;
-}
-
-.workbench-editor-save:disabled {
-  opacity: 0.45;
 }
 
 .workbench-terminal__heading {
@@ -1487,7 +1545,7 @@ button {
 }
 
 .file-tree-column__search {
-  height: 30px;
+  height: 32px;
   display: flex;
   align-items: center;
   gap: 8px;
