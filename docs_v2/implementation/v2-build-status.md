@@ -78,15 +78,27 @@ to the Product Shell that mounts the webview).
 - **Action:** `npm run dev`, open a Thread, open a Browser pane, confirm a page
   loads and the title/text snapshot returns. Report any visual issue.
 
-### Gate C — Figma-exact reproduction
-The canonical 8-color palette and type roles are already applied. Pixel-exact
-reproduction needs the real design frames.
-- **Blocked because:** no Figma MCP is connected, and the Pencil app is not
-  connected (`docs_v2/designs/tide-codex-workbench.pen` can't be read via MCP).
-- **Action:** open `docs_v2/designs/tide-codex-workbench.pen` in Pencil (so the
-  pencil MCP can read it), or export the Figma frames (PNG/JSON). Then the shell
-  CSS/layout can be conformed frame-by-frame. (Do not guess-restyle without the
-  frames — it risks regressing the current intentional styling.)
+### Gate C — Figma-exact reproduction (UNBLOCKED — reading Figma via curl)
+The Figma Dev Mode MCP server (Figma desktop, 127.0.0.1:3845/mcp) is drivable by
+manual JSON-RPC over curl WITHOUT a Claude Code restart: initialize →
+notifications/initialized → tools/list → tools/call, reusing the `mcp-session-id`
+header. Tools: get_metadata, get_design_context, get_variable_defs (the design
+uses inline values, returns {}), get_screenshot. Pass an explicit `nodeId`
+(e.g. workbench `1223:2`); without one the tools act on the current selection
+("Nothing is selected").
+
+Ground truth extracted (workbench frame 1223:2, 1920x1080): 4 columns —
+Left Rail (256) | Agent Chat + Composer | Workbench editor (tabs + breadcrumb) |
+FileTree ("Filter files…"). Top Row 52. Palette + type roles already match. The
+current Product Shell already matches this structure closely.
+
+Known divergence to fix: the Left UI "Search" is a nav row (icon + "Search"),
+not an inline input — the inline input belongs only to the FileTree filter.
+
+Remaining for pixel-exact: conform per-frame spacing/styling. Verification of
+the *rendered* result needs the running app (`npm run dev`) since rendering
+fidelity (not structure) is GUI-only; conform CSS to Figma values, then confirm
+visually. (Earlier "Pencil not connected" no longer blocks — Figma MCP works.)
 
 ## Deferred (evidence-gated, intentionally not done)
 
