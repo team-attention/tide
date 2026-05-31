@@ -2,6 +2,7 @@ import { createElement, useEffect, useRef, useState, type CSSProperties, type Re
 import {
   Archive,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   ExternalLink,
   FileText,
@@ -1541,22 +1542,30 @@ function createFileTreeColumn(
         { className: "file-tree-column__entries" },
         viewModel.fileTree.entries.map((entry) =>
           createElement(
-            entry.kind === "file" ? "button" : "div",
+            "button",
             {
               key: entry.id,
+              type: "button",
               className: `file-tree-row${entry.active ? " file-tree-row--active" : ""}`,
               "data-depth": entry.depth,
               "data-file-kind": entry.kind,
+              "data-expanded": entry.kind === "folder" ? String(entry.expanded ?? true) : undefined,
+              "aria-expanded": entry.kind === "folder" ? (entry.expanded ?? true) : undefined,
               style: { "--file-tree-depth": entry.depth } as CSSProperties,
-              ...(entry.kind === "file"
-                ? {
-                    type: "button",
-                    onClick: () => handlers.onFileTreeEntryOpen(entry.id),
-                  }
-                : {}),
+              onClick: () => handlers.onFileTreeEntryOpen(entry.id),
             },
+            // Folders show a disclosure chevron + open/closed folder icon; both
+            // are clickable to toggle. Files open in the editor.
             entry.kind === "folder"
-              ? createElement(Folder, { size: 14, strokeWidth: 1.8, "aria-hidden": true })
+              ? createElement(ChevronRight, {
+                  size: 12,
+                  strokeWidth: 2,
+                  className: `file-tree-row__chevron${entry.expanded === false ? "" : " file-tree-row__chevron--expanded"}`,
+                  "aria-hidden": true,
+                })
+              : createElement("span", { className: "file-tree-row__chevron-spacer", "aria-hidden": true }),
+            entry.kind === "folder"
+              ? createElement(entry.expanded === false ? Folder : FolderOpen, { size: 14, strokeWidth: 1.8, "aria-hidden": true })
               : createElement(FileText, { size: 14, strokeWidth: 1.8, "aria-hidden": true }),
             createElement("span", null, entry.name),
           ),

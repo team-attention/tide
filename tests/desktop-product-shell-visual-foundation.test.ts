@@ -302,6 +302,66 @@ test("left_ui_search_is_a_nav_row_until_activated", () => {
   assert.equal(reclosed.searchQuery, "");
 });
 
+test("clicking_a_file_tree_folder_collapses_and_expands_its_descendants", () => {
+  // Spec: docs_v2/specs/workbench-filetree-view.md
+  const state = applyProductShellBackendEvent(
+    openProductShellThread(createProductShellState(), "thread-workbench"),
+    {
+      kind: "workbench.changed",
+      payload: {
+        threadId: "thread-workbench",
+        panes: [],
+        fileTree: {
+          cwdLabel: "tide",
+          entries: [
+            { id: "d-src", name: "src", relativePath: "src", depth: 0, kind: "folder" },
+            { id: "f-app", name: "app.ts", relativePath: "src/app.ts", depth: 1, kind: "file" },
+            { id: "f-readme", name: "README.md", relativePath: "README.md", depth: 0, kind: "file" },
+          ],
+        },
+      },
+    },
+  );
+  const visible = (s: typeof state) =>
+    createProductShellViewModel(s).fileTree.entries.map((e) => e.relativePath);
+
+  assert.ok(visible(state).includes("src/app.ts"), "descendant visible initially");
+
+  const collapsed = selectProductShellFileTreeEntry(state, "d-src");
+  assert.equal(collapsed.command, null);
+  assert.ok(!visible(collapsed.state).includes("src/app.ts"), "descendant hidden when collapsed");
+  assert.ok(visible(collapsed.state).includes("src"), "folder itself stays visible");
+  const folder = createProductShellViewModel(collapsed.state).fileTree.entries.find(
+    (e) => e.relativePath === "src",
+  );
+  assert.equal(folder?.expanded, false);
+
+  const expanded = selectProductShellFileTreeEntry(collapsed.state, "d-src");
+  assert.ok(visible(expanded.state).includes("src/app.ts"), "descendant visible again when expanded");
+});
+
+test("clicking_a_file_tree_file_opens_it_in_the_editor", () => {
+  // Spec: docs_v2/specs/workbench-filetree-view.md
+  const state = applyProductShellBackendEvent(
+    openProductShellThread(createProductShellState(), "thread-workbench"),
+    {
+      kind: "workbench.changed",
+      payload: {
+        threadId: "thread-workbench",
+        panes: [],
+        fileTree: {
+          cwdLabel: "tide",
+          entries: [{ id: "f-readme", name: "README.md", relativePath: "README.md", depth: 0, kind: "file" }],
+        },
+      },
+    },
+  );
+  const result = selectProductShellFileTreeEntry(state, "f-readme");
+  assert.equal(result.command?.kind, "workbench.command");
+  assert.equal(result.command?.payload.command, "open_editor");
+  assert.equal((result.command?.payload.data as { path?: string })?.path, "README.md");
+});
+
 test("thread_archived_event_removes_the_thread_from_the_list", () => {
   // Spec: docs_v2/specs/backend-thread-list-product-shell-bootstrap.md
   const state = threadListState();

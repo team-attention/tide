@@ -1870,6 +1870,21 @@ button.file-tree-row {
   cursor: pointer;
 }
 
+.file-tree-row__chevron {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+  transition: transform 0.12s ease;
+}
+
+.file-tree-row__chevron--expanded {
+  transform: rotate(90deg);
+}
+
+.file-tree-row__chevron-spacer {
+  flex: 0 0 auto;
+  width: 12px;
+}
+
 .file-tree-row svg {
   flex: 0 0 auto;
   color: var(--tide-muted);

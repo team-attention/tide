@@ -64,6 +64,7 @@ export interface ProductShellState {
   renamingThreadId: string | null;
   searchQuery: string;
   searchActive: boolean;
+  collapsedFolderPaths: string[];
   projects: ProductShellProject[];
   threads: ProductShellThread[];
   agentChat: AgentChatShellState;
@@ -230,6 +231,7 @@ export interface ProductShellFileTreeEntryView {
   depth: number;
   kind: "folder" | "file";
   active?: boolean;
+  expanded?: boolean;
 }
 
 const shellTimestamp = "2026-05-28T00:00:00.000Z";
@@ -307,6 +309,7 @@ export function createProductShellState(
     renamingThreadId: null,
     searchQuery: "",
     searchActive: false,
+    collapsedFolderPaths: [],
     projects: includeFixtureData ? initialProjects : [],
     threads: includeFixtureData ? initialThreads : [],
     agentChat: createStartAgentChatState(),
@@ -562,8 +565,19 @@ export function selectProductShellFileTreeEntry(
   const entry = state.fileTree.entries.find(
     (candidate) => candidate.id === entryId || candidate.relativePath === entryId,
   );
-  if (entry === undefined || entry.kind !== "file") {
+  if (entry === undefined) {
     return { state, command: null };
+  }
+
+  // Folders toggle expansion (collapse/expand their descendants); files open.
+  if (entry.kind === "folder") {
+    const collapsed = new Set(state.collapsedFolderPaths);
+    if (collapsed.has(entry.relativePath)) {
+      collapsed.delete(entry.relativePath);
+    } else {
+      collapsed.add(entry.relativePath);
+    }
+    return { state: { ...state, collapsedFolderPaths: [...collapsed] }, command: null };
   }
 
   return {
@@ -582,6 +596,19 @@ export function selectProductShellFileTreeEntry(
       },
     },
   };
+}
+
+function fileTreePathHasCollapsedAncestor(
+  relativePath: string,
+  collapsed: ReadonlySet<string>,
+): boolean {
+  const parts = relativePath.split("/");
+  for (let i = 1; i < parts.length; i += 1) {
+    if (collapsed.has(parts.slice(0, i).join("/"))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function openProductShellLeftUiMenu(
@@ -1363,7 +1390,16 @@ function hydrateProductShellThread(
 
 function createFileTreeView(state: ProductShellState): ProductShellFileTreeView {
   if (state.fileTree !== null) {
-    return cloneProductShellFileTree(state.fileTree);
+    const cloned = cloneProductShellFileTree(state.fileTree);
+    const collapsed = new Set(state.collapsedFolderPaths);
+    cloned.entries = cloned.entries
+      .filter((entry) => !fileTreePathHasCollapsedAncestor(entry.relativePath, collapsed))
+      .map((entry) =>
+        entry.kind === "folder"
+          ? { ...entry, expanded: !collapsed.has(entry.relativePath) }
+          : entry,
+      );
+    return cloned;
   }
 
   const thread = state.threads.find((candidate) => candidate.threadId === state.activeThreadId);
