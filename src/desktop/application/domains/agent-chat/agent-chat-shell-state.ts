@@ -364,6 +364,7 @@ export function selectAgentChatChoiceSurfaceRow(
   state: AgentChatShellState,
   surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
   rowId: string,
+  activeThreadId?: string,
 ): AgentChatShellUpdateResult {
   if (surfaceKind === "prompt_state" && state.promptState) {
     const choice = state.promptState.choices?.find((candidate) => candidate.choiceId === rowId);
@@ -392,7 +393,11 @@ export function selectAgentChatChoiceSurfaceRow(
     const blocker = state.providerReadiness?.blockers.find(
       (candidate) => `${candidate.kind}:setup` === rowId,
     );
-    if (blocker?.setup === undefined || state.thread === null) {
+    // Readiness can block before the agent-chat thread is hydrated, so fall back
+    // to the active thread id the shell provides — otherwise "Open provider
+    // setup" is a dead row.
+    const threadId = state.thread?.threadId ?? activeThreadId;
+    if (blocker?.setup === undefined || threadId === undefined) {
       return { state, command: null };
     }
     return {
@@ -400,7 +405,7 @@ export function selectAgentChatChoiceSurfaceRow(
       command: {
         kind: "workbench.command",
         payload: {
-          threadId: state.thread.threadId,
+          threadId,
           command: "open_provider_setup_surface",
           data: {
             blockerKind: blocker.kind,

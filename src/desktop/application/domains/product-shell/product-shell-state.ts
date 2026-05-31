@@ -485,7 +485,12 @@ export function selectProductShellChoiceSurfaceRow(
   surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
   rowId: string,
 ): ProductShellUpdateResult {
-  const result = selectAgentChatChoiceSurfaceRow(state.agentChat, surfaceKind, rowId);
+  const result = selectAgentChatChoiceSurfaceRow(
+    state.agentChat,
+    surfaceKind,
+    rowId,
+    state.activeThreadId ?? undefined,
+  );
   return {
     state: {
       ...state,
