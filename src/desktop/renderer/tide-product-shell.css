@@ -72,7 +72,7 @@ button {
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(246px, 270px) minmax(460px, 1fr);
+  grid-template-columns: 256px minmax(460px, 1fr);
 }
 
 .tide-product-shell--left-closed .tide-product-shell__body {
@@ -80,7 +80,7 @@ button {
 }
 
 .tide-product-shell--workbench-open .tide-product-shell__body {
-  grid-template-columns: minmax(246px, 270px) minmax(440px, 1fr) minmax(360px, 44vw);
+  grid-template-columns: 256px minmax(440px, 1fr) minmax(360px, 44vw);
 }
 
 .tide-product-shell--left-closed.tide-product-shell--workbench-open .tide-product-shell__body {
@@ -88,11 +88,11 @@ button {
 }
 
 .tide-product-shell--file-tree-open .tide-product-shell__body {
-  grid-template-columns: minmax(246px, 270px) minmax(420px, 1fr) minmax(320px, 38vw);
+  grid-template-columns: 256px minmax(420px, 1fr) minmax(320px, 38vw);
 }
 
 .tide-product-shell--workbench-open.tide-product-shell--file-tree-open .tide-product-shell__body {
-  grid-template-columns: minmax(246px, 270px) minmax(390px, 0.95fr) minmax(360px, 0.9fr) 320px;
+  grid-template-columns: 256px minmax(390px, 0.95fr) minmax(360px, 0.9fr) 320px;
 }
 
 .tide-product-shell--left-closed.tide-product-shell--file-tree-open .tide-product-shell__body {

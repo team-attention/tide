@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tide — Figma Conformance Harness</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <pre id="harness-errors" style="position:fixed;bottom:0;left:0;right:0;max-height:40vh;overflow:auto;margin:0;padding:8px;background:#300;color:#fdd;font:12px monospace;white-space:pre-wrap;z-index:99999;display:none"></pre>
+    <script>
+      (function () {
+        var box = document.getElementById("harness-errors");
+        function show(msg) {
+          box.style.display = "block";
+          box.textContent += msg + "\n";
+        }
+        window.addEventListener("error", function (e) {
+          show("ERROR: " + (e.message || "") + "\n" + ((e.error && e.error.stack) || ""));
+        });
+        window.addEventListener("unhandledrejection", function (e) {
+          show("REJECTION: " + ((e.reason && e.reason.stack) || e.reason));
+        });
+        var origErr = console.error;
+        console.error = function () {
+          show("CONSOLE: " + Array.prototype.slice.call(arguments).map(String).join(" "));
+          return origErr.apply(console, arguments);
+        };
+      })();
+    </script>
+    <script type="module" src="./dev-harness.ts"></script>
+  </body>
+</html>
