@@ -997,13 +997,12 @@ button {
 .workbench-tab {
   max-width: 168px;
   height: 30px;
-  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border-radius: 8px;
-  padding: 0 10px;
-  background: transparent;
+  padding: 0 6px 0 10px;
   color: var(--tide-muted);
-  font-size: 14px;
-  cursor: pointer;
 }
 
 .workbench-tab[data-active="true"] {
@@ -1011,19 +1010,51 @@ button {
   color: var(--tide-text);
 }
 
-.workbench-column__pane,
+.workbench-tab__label {
+  min-width: 0;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.workbench-tab__close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+}
+
+.workbench-tab__close:hover {
+  background: var(--tide-hover);
+  color: var(--tide-text);
+}
+
 .workbench-column__empty {
   margin: 14px;
 }
 
+/* The active pane fills the column flat — no floating tan card (Figma editor
+   body sits directly on the pane). Pane content manages its own padding. */
 .workbench-column__pane {
-  display: grid;
-  align-content: start;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid var(--tide-line);
-  border-radius: 10px;
-  background: var(--tide-surface);
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--tide-bg);
 }
 
 .workbench-column__kind {
@@ -1057,8 +1088,16 @@ button {
 .workbench-pane-content,
 .workbench-terminal {
   min-width: 0;
+  min-height: 0;
   display: grid;
   gap: 10px;
+  padding: 14px;
+}
+
+/* Editor manages its own layout/padding (breadcrumb + content), so it fills the
+   pane flush with no card padding. */
+.workbench-pane-content--editor {
+  padding: 0;
 }
 
 .workbench-pane-heading {
@@ -1270,26 +1309,27 @@ button {
 /* Editor pane is a real code editor: a thin breadcrumb path bar, then the
    CodeMirror surface filling the remaining height. No file-info panel. */
 .workbench-pane-content--editor {
+  flex: 1 1 auto;
   min-height: 0;
-  height: 100%;
+  height: auto;
   display: flex;
   flex-direction: column;
   gap: 0;
 }
 
+/* Figma breadcrumb: Inter Medium 13px, muted, 32px gutter, no rule. */
 .workbench-editor-breadcrumb {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  font: 12px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  gap: 8px;
+  padding: 16px 32px 0;
+  font: 500 13px/16px Inter, ui-sans-serif, system-ui, sans-serif;
   color: var(--tide-muted);
-  border-bottom: 1px solid var(--tide-line);
 }
 
 .workbench-editor-breadcrumb__crumb:last-of-type {
-  color: var(--tide-text);
+  color: var(--tide-muted);
 }
 
 .workbench-editor-breadcrumb__sep {

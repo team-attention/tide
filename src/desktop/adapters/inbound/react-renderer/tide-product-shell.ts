@@ -22,6 +22,7 @@ import {
   Square,
   Terminal,
   Trash2,
+  X,
 } from "lucide-react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
@@ -497,17 +498,36 @@ function createWorkbenchColumn(
           ? createElement("span", { className: "workbench-tabs__empty" }, "Workbench")
           : tabs.map((tab) =>
               createElement(
-                "button",
+                "div",
                 {
                   key: tab.paneId,
                   className: "workbench-tab",
                   "data-active": tab.active,
-                  type: "button",
                   role: "tab",
                   "aria-selected": tab.active,
-                  onClick: () => handlers.onFocusWorkbenchPane(tab.paneId),
                 },
-                tab.title,
+                createElement(
+                  "button",
+                  {
+                    className: "workbench-tab__label",
+                    type: "button",
+                    onClick: () => handlers.onFocusWorkbenchPane(tab.paneId),
+                  },
+                  tab.title,
+                ),
+                tab.active
+                  ? createElement(
+                      "button",
+                      {
+                        className: "workbench-tab__close",
+                        type: "button",
+                        title: "Close Pane",
+                        "aria-label": "Close Pane",
+                        onClick: () => handlers.onCloseWorkbenchPane(tab.paneId),
+                      },
+                      createElement(X, { size: 12, strokeWidth: 2.2, "aria-hidden": true }),
+                    )
+                  : null,
               ),
             ),
       ),
@@ -531,7 +551,6 @@ function createWorkbenchColumn(
             handlers,
             viewModel.editorDrafts[activePane.paneId],
           ),
-          createIconButton("Close Pane", createElement(PanelRightClose, { size: 15, strokeWidth: 1.9 }), () => handlers.onCloseWorkbenchPane(activeTab.paneId), "workbench-column__pane-action"),
         )
       : createElement("div", { className: "workbench-column__empty" }, "No visible Workbench Pane."),
   );
