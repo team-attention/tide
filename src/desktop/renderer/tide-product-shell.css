@@ -689,23 +689,18 @@ button {
   padding: 2px 0 10px;
 }
 
+/* Canonical (1338): default user and agent text is a flat transcript, not
+   boxed into cards. Only structured/event blocks get cards. */
 .agent-session-turn {
   max-width: min(760px, 100%);
+  align-self: stretch;
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
-.agent-session-turn--user {
-  align-self: flex-end;
-  max-width: min(620px, 78%);
-  padding: 10px 13px;
-  border-radius: 14px;
-  background: var(--tide-surface);
-  color: var(--tide-text);
-}
-
+.agent-session-turn--user,
 .agent-session-turn--agent {
-  align-self: flex-start;
+  align-self: stretch;
   color: var(--tide-text);
 }
 
@@ -721,7 +716,8 @@ button {
 .agent-session-turn__label {
   color: var(--tide-muted);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
+  line-height: 18px;
 }
 
 .agent-session-turn__body {

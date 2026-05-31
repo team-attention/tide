@@ -206,7 +206,11 @@ function createAgentSessionTurn(block: AgentChatBlockView): ReactElement {
     },
     role === "event"
       ? createElement("span", { className: "agent-session-turn__label" }, block.title)
-      : null,
+      : createElement(
+          "span",
+          { className: "agent-session-turn__label" },
+          role === "user" ? "You" : "Agent",
+        ),
     createElement("p", { className: "agent-session-turn__body" }, block.body),
     block.rawFallback && block.rawFallback !== block.body
       ? createElement("pre", { className: "agent-session-turn__raw" }, block.rawFallback)
