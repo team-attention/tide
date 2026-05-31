@@ -239,13 +239,6 @@ function createComposer(
         handlers.onSubmit?.();
       },
     },
-    isStartComposer
-      ? null
-      : createElement(
-          "dl",
-          { className: "composer-shell__context" },
-          viewModel.composer.contextItems.map(createContextItem),
-        ),
     createElement(
       "div",
       { className: "composer-shell__body" },
@@ -510,10 +503,6 @@ function contextItemIcon(item: AgentChatContextItem): string {
     case "Branch":
       return "⌙";
   }
-}
-
-function createContextItem(item: AgentChatContextItem): ReactElement {
-  return createDescription(item.label, item.value, `${item.label}:${item.value}`);
 }
 
 function startSurfaceTarget(viewModel: AgentChatShellViewModel): string {

@@ -238,7 +238,9 @@ test("provider_readiness_setup_row_emits_workbench_command_and_preserves_draft",
   });
 });
 
-test("follow_up_shell_displays_thread_context_without_inline_edit_controls", () => {
+test("follow_up_composer_has_no_thread_context_block", () => {
+  // Canonical board (1303:1866): the follow-up composer is just the input +
+  // chips — no read-only Agent/Project context block, no inline edit controls.
   const state = applyBackendEventToAgentChatShell(
     createAgentChatShellState(),
     backendEvent("thread.hydrated", {
@@ -251,12 +253,11 @@ test("follow_up_shell_displays_thread_context_without_inline_edit_controls", () 
 
   assert.equal(view.composer.mode, "follow_up");
   assert.equal(view.composer.contextControlsEditable, false);
-  assert.deepEqual(
-    view.composer.contextItems.map((item) => item.label),
-    ["Agent", "Project"],
-  );
-  assert.match(renderShell(state), /Codex CLI/);
-  assert.doesNotMatch(renderShell(state), /name="agent"/);
+  const html = renderShell(state);
+  assert.doesNotMatch(html, /composer-shell__context\b/);
+  assert.doesNotMatch(html, /data-context-kind="agent"/);
+  assert.doesNotMatch(html, /name="agent"/);
+  assert.match(html, /Ask for follow-up changes/);
 });
 
 test("follow_up_shell_does_not_fabricate_worktree_or_branch_when_thread_contract_omits_them", () => {

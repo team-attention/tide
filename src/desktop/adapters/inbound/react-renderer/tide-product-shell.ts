@@ -417,12 +417,19 @@ function createLeftUi(
             }),
           )
         : createLeftNavRow("Search", createElement(Search, { size: 16, strokeWidth: 1.9 }), handlers.onSearchToggle),
-      createLeftNavRow("Plugins", createElement(Square, { size: 15, strokeWidth: 1.9 })),
-      createLeftNavRow("Automations", createElement(Settings, { size: 15, strokeWidth: 1.9 })),
     ),
-    createThreadSection("Pinned", viewModel.pinnedThreads, handlers),
-    createProjectSection(viewModel.projectGroups, handlers),
-    createThreadSection("Scratch", viewModel.scratchThreads, handlers),
+    createElement(
+      "div",
+      { className: "left-ui__sections" },
+      createThreadSection("Pinned", viewModel.pinnedThreads, handlers),
+      createProjectSection(viewModel.projectGroups, handlers),
+      createThreadSection("Scratch", viewModel.scratchThreads, handlers),
+    ),
+    createElement(
+      "div",
+      { className: "left-ui__footer" },
+      createLeftNavRow("Settings", createElement(Settings, { size: 16, strokeWidth: 1.9 })),
+    ),
   );
 }
 

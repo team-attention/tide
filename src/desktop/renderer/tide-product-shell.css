@@ -218,6 +218,22 @@ button {
   padding: 0 10px;
 }
 
+/* Thread/project/scratch sections fill the rail and scroll; Settings pins to
+   the bottom (canonical left rail). */
+.left-ui__sections {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.left-ui__footer {
+  flex: 0 0 auto;
+  padding: 0 10px 6px;
+}
+
 .left-ui-search {
   width: 100%;
   height: 32px;
