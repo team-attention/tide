@@ -31,9 +31,20 @@ import { EditorView, type ViewUpdate } from "@codemirror/view";
 // are UMD bundles that reference `self` at load, so they are browser-only and
 // are dynamically imported inside the mount effect (and gracefully skipped when
 // unavailable, e.g. headless/jsdom/no-GPU).
-import xtermModule from "@xterm/xterm";
+import * as xtermModule from "@xterm/xterm";
 
-const { Terminal: XtermTerminal } = xtermModule;
+// `@xterm/xterm` is CommonJS, and its export shape differs across loaders: the
+// `Terminal` class is a named export under Vite's ESM interop and Node's ESM
+// loader, but lives under `.default` in some bundling paths. Default-importing
+// the module gave `undefined` under Vite (dev optimizeDeps), white-screening
+// the whole shell. Resolve the constructor defensively so the same source works
+// in the Vite dev server, the Vite/rollup production build, and Node ESM tests.
+const xtermNamespace = xtermModule as unknown as {
+  Terminal?: typeof import("@xterm/xterm").Terminal;
+  default?: { Terminal?: typeof import("@xterm/xterm").Terminal };
+};
+const XtermTerminal =
+  xtermNamespace.Terminal ?? xtermNamespace.default?.Terminal;
 import { javascript } from "@codemirror/lang-javascript";
 import { json as jsonLanguage } from "@codemirror/lang-json";
 import { rust } from "@codemirror/lang-rust";
@@ -1118,7 +1129,7 @@ function WorkbenchTerminalView(props: {
   const hostRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const host = hostRef.current;
-    if (host === null) {
+    if (host === null || XtermTerminal === undefined) {
       return;
     }
     // xterm core mounts synchronously so the terminal is visible immediately.
