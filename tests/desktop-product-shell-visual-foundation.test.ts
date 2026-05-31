@@ -383,10 +383,12 @@ test("visual_foundation_css_uses_tide_icon_key_colors_without_pure_black_shell",
     "utf8",
   );
 
-  assert.match(css, /--tide-bg:\s*#fcfcfb/i);
-  assert.match(css, /--tide-surface:\s*#f7f7f5/i);
+  // Palette conformed to exact Figma values (frame 1223:2 / composer 1223:91).
+  assert.match(css, /--tide-bg:\s*#fdfdfc/i);
+  assert.match(css, /--tide-surface:\s*#f4f3f0/i);
   assert.match(css, /--tide-selection:\s*#eeedea/i);
   assert.match(css, /--tide-line:\s*#e4e2de/i);
+  assert.match(css, /--tide-line-strong:\s*#d9d6cf/i);
   assert.match(css, /--tide-text:\s*#242424/i);
   assert.match(css, /--tide-muted:\s*#8a8781/i);
   assert.match(css, /--tide-action:\s*#343038/i);

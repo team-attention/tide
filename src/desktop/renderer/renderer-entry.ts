@@ -11,6 +11,12 @@ import {
   type BackendCommandEnvelope,
   type BackendEventEnvelope,
 } from "../../shared/contracts/index.ts";
+// Inter (OFL-1.1, self-hosted) is the canonical Figma typeface; load the weights
+// the design uses (regular / medium / semibold) so the UI does not fall back to
+// the platform system font.
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
 import "@xterm/xterm/css/xterm.css";
 import "./tide-product-shell.css";
 

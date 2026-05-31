@@ -258,7 +258,7 @@ function createComposer(
         value: viewModel.composer.draft,
         onChange: (event: ChangeEvent<HTMLTextAreaElement>) =>
           handlers.onDraftChange?.(event.currentTarget.value),
-        placeholder: isStartComposer ? "Do anything" : "Ask for follow-up changes...",
+        placeholder: isStartComposer ? "Do anything" : "Ask for follow-up changes",
       }),
       isStartComposer
         ? createElement(

@@ -13,6 +13,9 @@ import {
   createProductShellState,
   openProductShellThread,
 } from "../application/domains/product-shell/product-shell-state.ts";
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
 import "@xterm/xterm/css/xterm.css";
 import "./tide-product-shell.css";
 
@@ -145,6 +148,9 @@ function pxH(selector: string): number | null {
 
 function measure(): void {
   setTitle({
+    interLoaded: (document as unknown as { fonts?: { check(f: string): boolean } }).fonts?.check(
+      "500 12px Inter",
+    ),
     leftRailW: px('[data-column="left-ui"]'), // Figma 256
     topRowH: pxH(".left-ui__top-row"), // Figma 52
     fileTreeW: px('[aria-label="FileTree"]'), // Figma 344
@@ -168,7 +174,12 @@ if (root) {
     // FileTree column is gated by fileTreeOpen; flip it on for the fixture.
     const state = { ...figmaFixtureState(), fileTreeOpen: true };
     createRoot(root).render(createElement(TideProductShell, { initialState: state }));
-    setTimeout(measure, 400);
+    const fonts = (document as unknown as { fonts?: { ready?: Promise<unknown> } }).fonts;
+    if (fonts?.ready) {
+      fonts.ready.then(() => setTimeout(measure, 150));
+    } else {
+      setTimeout(measure, 400);
+    }
   } catch (error) {
     setTitle({ harnessError: (error as Error)?.stack ?? String(error) });
   }

@@ -1,17 +1,18 @@
 :root {
   color-scheme: light;
-  --tide-bg: #fcfcfb;
-  --tide-surface: #f7f7f5;
+  /* Palette conformed to exact Figma values (frame 1223:2 / composer 1223:91). */
+  --tide-bg: #fdfdfc;
+  --tide-surface: #f4f3f0;
   --tide-selection: #eeedea;
   --tide-line: #e4e2de;
   --tide-text: #242424;
   --tide-muted: #8a8781;
   --tide-action: #343038;
   --tide-danger: #ba322f;
-  --tide-line-strong: color-mix(in srgb, var(--tide-line) 72%, var(--tide-action));
+  --tide-line-strong: #d9d6cf;
   --tide-hover: color-mix(in srgb, var(--tide-selection) 72%, transparent);
   --tide-shadow-popover: 0 8px 18px -10px rgb(52 48 56 / 12%);
-  --tide-shadow-composer: 0 6px 14px -12px rgb(52 48 56 / 6%);
+  --tide-shadow-composer: 0 8px 11px rgba(52, 48, 56, 0.13);
   --agent-codex: var(--tide-action);
   --agent-codex-bg: var(--tide-selection);
   --agent-claude: var(--tide-action);
@@ -836,7 +837,7 @@ button {
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--tide-line);
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--tide-bg);
   box-shadow: var(--tide-shadow-composer);
 }
@@ -893,8 +894,8 @@ button {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: 1px solid var(--tide-line);
-  border-radius: 7px;
+  border: 1px solid var(--tide-line-strong);
+  border-radius: 8px;
   background: var(--tide-surface);
   color: var(--tide-text);
   font-size: 12px;
