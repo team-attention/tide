@@ -834,7 +834,7 @@ button {
   margin: 0 auto;
   display: grid;
   gap: 12px;
-  padding: 14px;
+  padding: 12px;
   border: 1px solid var(--tide-line);
   border-radius: 16px;
   background: var(--tide-bg);
@@ -860,7 +860,11 @@ button {
 }
 
 .composer-shell[data-composer-mode="follow_up"] .composer-shell__input {
-  min-height: 54px;
+  /* Canonical follow-up composer (Figma) rests at one line and grows with
+     content (Chromium field-sizing); engines without it keep the min-height. */
+  min-height: 22px;
+  max-height: 200px;
+  field-sizing: content;
   font-size: 14px;
 }
 

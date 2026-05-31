@@ -44,7 +44,47 @@ function figmaFixtureState() {
     createProductShellState({ includeFixtureData: true }),
     "thread-master-plan",
   );
-  return applyProductShellBackendEvent(opened, {
+  // Hydrate the thread so the composer renders in its follow-up state (the 90px
+  // canonical Figma composer), not the start composer with the launch-context
+  // block.
+  const hydrated = applyProductShellBackendEvent(opened, {
+    kind: "thread.hydrated",
+    payload: {
+      thread: {
+        threadId: "thread-master-plan",
+        title: "v2 master plan implementation",
+        agentBinding: { agentId: "codex" },
+        scope: { kind: "project", projectId: "tide", cwd: "/Users/eatnug/Workspace/tide" },
+        createdAt: "2026-05-31T00:00:00.000Z",
+        updatedAt: "2026-05-31T00:00:00.000Z",
+        pinned: false,
+        archived: false,
+        lastKnownState: "idle",
+      },
+      runtimeState: "idle",
+      blocks: [
+        {
+          blockId: "b-user-1",
+          threadId: "thread-master-plan",
+          kind: "message",
+          role: "user",
+          status: "complete",
+          body: "Reproduce the Figma workbench layout exactly.",
+          updatedAt: "2026-05-31T00:00:00.000Z",
+        },
+        {
+          blockId: "b-agent-1",
+          threadId: "thread-master-plan",
+          kind: "message",
+          role: "agent",
+          status: "complete",
+          body: "Conforming the shell to the canonical frame now.",
+          updatedAt: "2026-05-31T00:00:01.000Z",
+        },
+      ],
+    },
+  });
+  return applyProductShellBackendEvent(hydrated, {
     kind: "workbench.changed",
     payload: {
       threadId: "thread-master-plan",
@@ -105,16 +145,20 @@ function pxH(selector: string): number | null {
 
 function measure(): void {
   setTitle({
-    rootChildren: document.getElementById("root")?.children.length ?? -1,
-    columns: Array.from(document.querySelectorAll("[data-column]")).map(
-      (el) => (el as HTMLElement).dataset.column,
-    ),
-    leftRailW: px('[data-column="left-ui"]'),
-    topRowH: pxH(".left-ui__top-row"),
-    fileTreeW: px('[aria-label="FileTree"]'),
-    hasEditor: document.querySelector('[data-pane-kind="editor"]') !== null,
-    hasComposer: document.querySelector('[aria-label="Composer draft"]') !== null,
-    bodyW: Math.round(document.body.getBoundingClientRect().width),
+    leftRailW: px('[data-column="left-ui"]'), // Figma 256
+    topRowH: pxH(".left-ui__top-row"), // Figma 52
+    fileTreeW: px('[aria-label="FileTree"]'), // Figma 344
+    fileTreeSearchH: pxH(".file-tree-column__search"), // Figma 32
+    fileRowH: pxH(".file-tree-row"), // Figma 30
+    composerMode: (document.querySelector(".composer-shell") as HTMLElement | null)?.dataset
+      .composerMode,
+    composerH: pxH(".composer-shell"), // Figma 90
+    composerInputH: pxH(".composer-shell__input"),
+    composerToolbarH: pxH(".composer-shell__toolbar"),
+    composerBodyH: pxH(".composer-shell__body"),
+    composerChipH: pxH(".composer-shell__choice-chip"), // Figma 28
+    tabH: pxH(".workbench-tab"), // Figma 30
+    tabBarH: pxH('[data-column="workbench"] .column-top-row'), // Figma 52
   });
 }
 

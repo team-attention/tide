@@ -252,6 +252,9 @@ function createComposer(
       createElement("textarea", {
         "aria-label": "Composer draft",
         className: "composer-shell__input",
+        // One row at rest (CSS min-height sets the floor per mode); the input
+        // grows with content via CSS field-sizing in Chromium.
+        rows: 1,
         value: viewModel.composer.draft,
         onChange: (event: ChangeEvent<HTMLTextAreaElement>) =>
           handlers.onDraftChange?.(event.currentTarget.value),
