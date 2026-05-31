@@ -49,6 +49,7 @@ interface RuntimeProcessState {
   agentId: ProviderCliAgentId;
   inputTiming?: ProviderLaunchPlan["inputTiming"];
   startupDelayConsumed: boolean;
+  hookTrustPromptHandled: boolean;
 }
 
 export interface CreateAgentIntegrationRuntimePortInput {
@@ -233,6 +234,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       runtimeId,
       plan: runtimePlan,
       onOutput: (output) => {
+        maybeAutoTrustCodexHooks(this.processes.get(runtimeId), output.body);
         void this.onOutputFrame?.({
           threadId,
           agentId,
@@ -248,6 +250,7 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       agentId,
       inputTiming: plan.inputTiming,
       startupDelayConsumed: false,
+      hookTrustPromptHandled: false,
     });
     void this.onRuntimeStarted?.({
       threadId,
@@ -261,6 +264,34 @@ class AgentIntegrationAgentRuntimePort implements AgentRuntimePort {
       agentId,
     };
   }
+}
+
+// Codex shows an interactive "Hooks need review" trust prompt the first time it
+// sees Tide's generated hooks (the --dangerously-bypass-hook-trust flag only
+// applies to `codex exec`, not the TUI). Auto-select "Trust all and continue"
+// (ArrowDown to option 2, then Enter); Codex persists the trust in config.toml
+// keyed by the hooks path, so this only happens once per hooks file. Without
+// this the hidden PTY blocks here forever and the Agent never answers.
+const CODEX_HOOK_TRUST_PROMPT = /Hooks need review|Trust all and continue/;
+function maybeAutoTrustCodexHooks(
+  processState: RuntimeProcessState | undefined,
+  body: string,
+): void {
+  if (
+    processState === undefined ||
+    processState.hookTrustPromptHandled ||
+    processState.agentId !== "codex" ||
+    !CODEX_HOOK_TRUST_PROMPT.test(body)
+  ) {
+    return;
+  }
+  processState.hookTrustPromptHandled = true;
+  void (async () => {
+    // Move cursor from "1. Review hooks" to "2. Trust all and continue".
+    await processState.handle.write("\x1b[B");
+    await sleep(150);
+    await processState.handle.write("\r");
+  })();
 }
 
 async function waitForStartupWindow(processState: RuntimeProcessState): Promise<void> {
