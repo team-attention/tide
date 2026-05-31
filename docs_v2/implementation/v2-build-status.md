@@ -110,9 +110,34 @@ default import resolved to `undefined` under Vite, throwing at module load; and
 top row 52 and 4-column order match. The production build (`vite preview
 --outDir out/renderer`) also renders, confirming the fix ships.
 
-Remaining for pixel-exact: conform remaining per-frame numbers (FileTree column
-width, composer spacing, chip styling) by pulling each value from Figma
-get_metadata and measuring via the harness.
+Conformed dimensions (measured in the harness against Figma frame 1223:2):
+
+| Element | Figma | Now |
+|---|---|---|
+| Left Rail width | 256 | 256 ✓ |
+| Top rows (rail / chat / tab bar / filetree) | 52 | 52 ✓ |
+| FileTree column width | 344 | 344 ✓ |
+| FileTree search height | 32 | 32 ✓ |
+| File row height | 30 | 30 ✓ |
+| Workbench tab height | 30 | 30 ✓ |
+| Composer chips | 28 | 28 ✓ |
+| Composer padding | 12 | 12 ✓ |
+| Left UI Search | nav row | nav row ✓ |
+
+Editor pane is now a real code editor (not a viewer): breadcrumb + CodeMirror
+filling the pane; Go to Definition / Find References on the right-click context
+menu; Cmd/Ctrl+S to save. No file-info (Path/Size/Revision) panel, no action
+button bar.
+
+Composer: the follow-up input now rests at one line and auto-grows
+(field-sizing). The follow-up composer is intentionally taller than Figma's bare
+90px because it shows the thread's read-only context block (spec:
+follow_up_shell_displays_thread_context_without_inline_edit_controls) — a
+deliberate Tide feature, an accepted divergence, not chrome to strip.
+
+Remaining for finer fidelity: chip/icon glyph styling, exact gaps/colors within
+rows. Conform each by pulling the value from Figma get_metadata and measuring
+via the harness, the same loop.
 
 ## Deferred (evidence-gated, intentionally not done)
 
