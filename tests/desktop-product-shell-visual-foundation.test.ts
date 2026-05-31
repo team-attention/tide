@@ -772,9 +772,8 @@ test("product_shell_browser_action_result_emits_workbench_command", () => {
   });
 });
 
-test("workbench_editor_pane_renders_as_a_code_editor_not_a_viewer", () => {
-  // Spec: docs_v2/specs/desktop-workbench-pane-content-rendering.md
-  const state = applyProductShellBackendEvent(
+function editorPaneState(pane: Record<string, unknown>) {
+  return applyProductShellBackendEvent(
     openProductShellThread(createProductShellState(), "thread-workbench"),
     {
       kind: "workbench.changed",
@@ -785,37 +784,101 @@ test("workbench_editor_pane_renders_as_a_code_editor_not_a_viewer", () => {
           {
             paneId: "pane-editor",
             kind: "editor",
-            title: "README.md",
             visible: true,
             revision: "pane-editor:rev",
             updatedAt: "2026-05-28T00:00:00.000Z",
-            filePath: "/Users/eatnug/Workspace/tide/README.md",
-            relativePath: "README.md",
-            bodyTextPreview: "# Tide\n\nLocal coding Agent workbench.",
-            byteLength: 42,
-            truncated: true,
+            ...pane,
           },
         ],
       },
     },
   );
+}
+
+test("workbench_editor_pane_renders_as_a_code_editor_not_a_viewer", () => {
+  // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (UC-3)
+  const state = editorPaneState({
+    title: "app.ts",
+    filePath: "/Users/eatnug/Workspace/tide/src/app.ts",
+    relativePath: "src/app.ts",
+    bodyText: "export const value = 1;\n",
+    bodyTextPreview: "export const value = 1;\n",
+    byteLength: 24,
+    truncated: false,
+  });
   const html = renderProductShell(state);
 
   assert.match(html, /data-pane-kind="editor"/);
-  // Path shows as a breadcrumb, not a file-info panel.
+  // Path shows as a breadcrumb (with workspace root), not a file-info panel.
   assert.match(html, /workbench-editor-breadcrumb/);
-  assert.match(html, /README\.md/);
-  assert.match(html, /readonly/);
-  // The editor surface (CodeMirror) renders; the file body itself is rendered
-  // by CodeMirror on mount and is covered by the jsdom editor tests.
+  assert.match(html, /src/);
+  assert.match(html, /app\.ts/);
+  // Real code editor surface (CodeMirror), no markdown preview toggle.
   assert.match(html, /aria-label="Editor Pane text"/);
-  assert.doesNotMatch(html, /Thread-bound Workbench Pane content appears here/);
-  // It is a code editor, not a viewer: no Size/byte panel and no LSP/save
-  // action buttons (Go to Definition / Find References / Save live on the
-  // right-click context menu, which is not rendered in static markup).
-  assert.doesNotMatch(html, /42 bytes/);
+  assert.doesNotMatch(html, /Markdown view mode/);
+  // Not a viewer: no Size/byte panel and no LSP/save action buttons.
+  assert.doesNotMatch(html, /24 bytes/);
   assert.doesNotMatch(html, /workbench-editor-actions/);
   assert.doesNotMatch(html, /Save file/);
+});
+
+test("code_editor_pane_has_no_markdown_preview_toggle", () => {
+  // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (UC-3)
+  const html = renderProductShell(
+    editorPaneState({
+      title: "lib.rs",
+      filePath: "/Users/eatnug/Workspace/tide/src/lib.rs",
+      relativePath: "src/lib.rs",
+      bodyText: "fn main() {}\n",
+      bodyTextPreview: "fn main() {}\n",
+      byteLength: 13,
+      truncated: false,
+    }),
+  );
+  assert.doesNotMatch(html, /Markdown view mode/);
+  assert.match(html, /aria-label="Editor Pane text"/);
+});
+
+test("markdown_editor_pane_renders_preview_with_rendered_headings", () => {
+  // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (UC-1)
+  const html = renderProductShell(
+    editorPaneState({
+      title: "CLAUDE.md",
+      filePath: "/Users/eatnug/Workspace/tide/CLAUDE.md",
+      relativePath: "CLAUDE.md",
+      bodyText: "# Tide — Project Rules\n\n## Evidence-First\n\nEvery claim needs evidence.\n",
+      bodyTextPreview: "# Tide — Project Rules\n\n## Evidence-First\n\nEvery claim needs evidence.\n",
+      byteLength: 70,
+      truncated: false,
+    }),
+  );
+  // Markdown renders to a Preview (rendered headings), not raw "# " source.
+  assert.match(html, /aria-label="Markdown preview"/);
+  assert.match(html, /<h1>Tide — Project Rules<\/h1>/);
+  assert.match(html, /<h2>Evidence-First<\/h2>/);
+  assert.doesNotMatch(html, /# Tide — Project Rules/);
+  // A Preview/Edit toggle is present for markdown.
+  assert.match(html, /Markdown view mode/);
+  // Breadcrumb includes the workspace root, like the Figma (`tide › CLAUDE.md`).
+  assert.match(html, /workbench-editor-breadcrumb/);
+});
+
+test("markdown_preview_escapes_raw_html", () => {
+  // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (D1)
+  const html = renderProductShell(
+    editorPaneState({
+      title: "evil.md",
+      filePath: "/Users/eatnug/Workspace/tide/evil.md",
+      relativePath: "evil.md",
+      bodyText: "# Hi\n\n<img src=x onerror=alert(1)>\n",
+      bodyTextPreview: "# Hi\n\n<img src=x onerror=alert(1)>\n",
+      byteLength: 36,
+      truncated: false,
+    }),
+  );
+  // Raw HTML in the file is escaped, never emitted as a live element.
+  assert.doesNotMatch(html, /<img src=x onerror/);
+  assert.match(html, /&lt;img/);
 });
 
 test("editing_workbench_editor_pane_marks_draft_dirty", () => {

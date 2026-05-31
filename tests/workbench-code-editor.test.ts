@@ -111,6 +111,37 @@ test("workbench_editor_pane_mounts_codemirror_with_file_content_and_line_numbers
   }
 });
 
+test("markdown_editor_pane_toggle_shows_source_editor", async () => {
+  // Spec: docs_v2/specs/workbench-markdown-preview-editor.md (UC-1, UC-2)
+  const root = await mountShell(editorState("# Title\n\nSome body text.\n", "notes.md"));
+  try {
+    // Default: rendered Preview (a real <h1>), no CodeMirror source surface.
+    assert.ok(dom.window.document.querySelector(".workbench-md-preview"), "preview renders by default");
+    assert.ok(dom.window.document.querySelector(".workbench-md-preview h1"), "heading is rendered");
+    assert.equal(dom.window.document.querySelector(".workbench-editor-cm .cm-editor"), null);
+
+    const editButton = Array.from(
+      dom.window.document.querySelectorAll(".workbench-md-toggle__option"),
+    ).find((button) => (button.textContent ?? "").trim() === "Edit");
+    assert.ok(editButton, "Edit toggle present");
+
+    await act(async () => {
+      editButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    // Edit mode shows the real source editor.
+    assert.ok(
+      dom.window.document.querySelector(".workbench-editor-cm .cm-editor"),
+      "source editor appears after toggling to Edit",
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+});
+
 test("workbench_editor_pane_opens_lsp_actions_on_right_click_not_buttons", async () => {
   // Spec: docs_v2/specs/workbench-editor-code-navigation.md
   // A real code editor exposes Go to Definition / Find References on the

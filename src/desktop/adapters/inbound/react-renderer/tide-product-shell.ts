@@ -49,6 +49,12 @@ import { javascript } from "@codemirror/lang-javascript";
 import { json as jsonLanguage } from "@codemirror/lang-json";
 import { rust } from "@codemirror/lang-rust";
 import { css as cssLanguage } from "@codemirror/lang-css";
+import { markdown as markdownLang } from "@codemirror/lang-markdown";
+import MarkdownIt from "markdown-it";
+
+// Markdown rendering for the Editor Pane Preview. `html: false` escapes raw HTML
+// in file content so rendering local/agent-authored files cannot execute markup.
+const markdownRenderer = new MarkdownIt({ html: false, linkify: true, typographer: true });
 
 import {
   applyProductShellBackendEvent,
@@ -809,48 +815,122 @@ function WorkbenchEditorPane(props: {
 }): ReactElement {
   const readOnly = props.pane.truncated === true;
   const value = props.draft?.content ?? props.pane.bodyText ?? props.pane.bodyTextPreview ?? "";
-  // A real code editor: a breadcrumb path bar, then the CodeMirror surface
-  // filling the pane. No file-info panel and no LSP action buttons — Go to
-  // Definition / Find References live on the right-click context menu (like any
-  // editor), and saving is Cmd/Ctrl+S. Find References results appear as a peek
-  // panel below the code only after the action is invoked.
+  const language = inferEditorLanguage(props.pane.relativePath ?? props.pane.filePath);
+  const isMarkdown = language === "markdown";
   return createElement(
     "div",
     {
       className: "workbench-pane-content workbench-pane-content--editor",
       "data-editor-readonly": readOnly ? "readonly" : "editable",
     },
+    createEditorBreadcrumb(props.pane, props.draft?.dirty === true),
+    isMarkdown
+      ? createElement(WorkbenchMarkdownView, {
+          paneId: props.pane.paneId,
+          value,
+          readOnly,
+          dirty: props.draft?.dirty === true,
+          revision: props.pane.revision,
+          handlers: props.handlers,
+        })
+      : createElement(
+          "div",
+          { className: "workbench-editor-stack" },
+          createElement(WorkbenchCodeEditor, {
+            paneId: props.pane.paneId,
+            value,
+            readOnly,
+            dirty: props.draft?.dirty === true,
+            language,
+            revision: props.pane.revision,
+            navigationTarget: props.pane.navigationTarget,
+            handlers: props.handlers,
+          }),
+          createWorkbenchEditorReferences(props.pane.references),
+        ),
+  );
+}
+
+// Breadcrumb path bar matching the Figma editor (`tide › CLAUDE.md`): the
+// workspace root name followed by the file's path segments.
+function createEditorBreadcrumb(
+  pane: NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>,
+  dirty: boolean,
+): ReactElement {
+  const relativePath = pane.relativePath ?? pane.title;
+  const segments = relativePath.split("/").filter((segment) => segment.length > 0);
+  if (pane.filePath && pane.relativePath && pane.filePath.endsWith(pane.relativePath)) {
+    const root = pane.filePath.slice(0, pane.filePath.length - pane.relativePath.length);
+    const rootName = root.replace(/\/+$/, "").split("/").pop();
+    if (rootName) {
+      segments.unshift(rootName);
+    }
+  }
+  return createElement(
+    "div",
+    { className: "workbench-editor-breadcrumb", "aria-label": "Editor breadcrumb" },
+    ...segments.flatMap((segment, index) =>
+      index < segments.length - 1
+        ? [
+            createElement("span", { key: `crumb-${index}`, className: "workbench-editor-breadcrumb__crumb" }, segment),
+            createElement("span", { key: `sep-${index}`, className: "workbench-editor-breadcrumb__sep" }, "›"),
+          ]
+        : [createElement("span", { key: `crumb-${index}`, className: "workbench-editor-breadcrumb__crumb" }, segment)],
+    ),
+    dirty
+      ? createElement("span", { className: "workbench-editor-breadcrumb__dirty", title: "Unsaved changes" }, "●")
+      : null,
+  );
+}
+
+// Markdown Editor Pane: a pretty rendered Preview (Obsidian-style reading view)
+// by default, toggleable to a raw-source Edit mode that saves on Cmd/Ctrl+S.
+function WorkbenchMarkdownView(props: {
+  paneId: string;
+  value: string;
+  readOnly: boolean;
+  dirty: boolean;
+  revision: string;
+  handlers: ProductShellHandlers;
+}): ReactElement {
+  const [mode, setMode] = useState<"preview" | "edit">("preview");
+  const toggle = (target: "preview" | "edit", label: string) =>
+    createElement(
+      "button",
+      {
+        type: "button",
+        className: "workbench-md-toggle__option",
+        "data-active": mode === target ? "true" : "false",
+        "aria-pressed": mode === target,
+        onClick: () => setMode(target),
+      },
+      label,
+    );
+  return createElement(
+    "div",
+    { className: "workbench-md", "data-md-mode": mode },
     createElement(
       "div",
-      { className: "workbench-editor-breadcrumb", "aria-label": "Editor breadcrumb" },
-      ...(props.pane.relativePath ?? props.pane.filePath ?? props.pane.title)
-        .split("/")
-        .filter((segment) => segment.length > 0)
-        .flatMap((segment, index, segments) => {
-          const crumb = createElement(
-            "span",
-            { key: `crumb-${index}`, className: "workbench-editor-breadcrumb__crumb" },
-            segment,
-          );
-          return index < segments.length - 1
-            ? [crumb, createElement("span", { key: `sep-${index}`, className: "workbench-editor-breadcrumb__sep" }, "›")]
-            : [crumb];
-        }),
-      props.draft?.dirty
-        ? createElement("span", { className: "workbench-editor-breadcrumb__dirty", title: "Unsaved changes" }, "●")
-        : null,
+      { className: "workbench-md-toggle", role: "group", "aria-label": "Markdown view mode" },
+      toggle("preview", "Preview"),
+      props.readOnly ? null : toggle("edit", "Edit"),
     ),
-    createElement(WorkbenchCodeEditor, {
-      paneId: props.pane.paneId,
-      value,
-      readOnly,
-      dirty: props.draft?.dirty === true,
-      language: inferEditorLanguage(props.pane.relativePath ?? props.pane.filePath),
-      revision: props.pane.revision,
-      navigationTarget: props.pane.navigationTarget,
-      handlers: props.handlers,
-    }),
-    createWorkbenchEditorReferences(props.pane.references),
+    mode === "preview" || props.readOnly
+      ? createElement("div", {
+          className: "workbench-md-preview markdown-body",
+          "aria-label": "Markdown preview",
+          dangerouslySetInnerHTML: { __html: markdownRenderer.render(props.value) },
+        })
+      : createElement(WorkbenchCodeEditor, {
+          paneId: props.paneId,
+          value: props.value,
+          readOnly: props.readOnly,
+          dirty: props.dirty,
+          language: "markdown",
+          revision: props.revision,
+          navigationTarget: undefined,
+          handlers: props.handlers,
+        }),
   );
 }
 
@@ -899,6 +979,7 @@ function inferEditorLanguage(path: string | undefined): string {
   if (ext === "json") return "json";
   if (ext === "rs") return "rust";
   if (ext === "css") return "css";
+  if (["md", "markdown", "mdx"].includes(ext)) return "markdown";
   return "text";
 }
 
@@ -912,6 +993,8 @@ function editorLanguageExtensions(language: string) {
       return [rust()];
     case "css":
       return [cssLanguage()];
+    case "markdown":
+      return [markdownLang()];
     default:
       return [];
   }
