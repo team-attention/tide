@@ -765,7 +765,8 @@ button {
   border: 1px solid var(--tide-line);
   border-radius: 14px;
   background: var(--tide-bg);
-  box-shadow: var(--tide-shadow-popover);
+  /* Canonical ChoiceSurface shadow (1357). */
+  box-shadow: 0 8px 9px -3px rgba(52, 48, 56, 0.12);
 }
 
 .choice-surface__header {
