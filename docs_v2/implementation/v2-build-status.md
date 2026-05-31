@@ -135,9 +135,21 @@ Composer: the follow-up input now rests at one line and auto-grows
 follow_up_shell_displays_thread_context_without_inline_edit_controls) — a
 deliberate Tide feature, an accepted divergence, not chrome to strip.
 
-Remaining for finer fidelity: chip/icon glyph styling, exact gaps/colors within
-rows. Conform each by pulling the value from Figma get_metadata and measuring
-via the harness, the same loop.
+Exact-value conformance (pulled from Figma get_design_context, frame 1223:2 /
+composer 1223:91), not estimates:
+- Palette: bg #fdfdfc, surface #f4f3f0, line #e4e2de, line-strong #d9d6cf,
+  text #242424, muted #8a8781, action #343038 — all matched to Figma hex.
+- Composer: radius 14, shadow 0 8px 11px rgba(52,48,56,0.13); chips border
+  #d9d6cf, radius 8, height 28; placeholder "Ask for follow-up changes".
+- Composer chip icons: real lucide shield-check + chevron-down (permission),
+  chevron-down (model) — were placeholder glyphs.
+- Typography: Inter (OFL-1.1) self-hosted via @fontsource and loaded in the
+  renderer entry; build emits the woff2. (Font load is only confirmable in the
+  Electron/Chromium app — the WebKit harness does not register it.)
+
+Remaining is true fine-grain (per-icon insets, individual row paddings/colors)
+with diminishing returns; conform via the same get_design_context + harness loop
+as needed.
 
 ## Deferred (evidence-gated, intentionally not done)
 
