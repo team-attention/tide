@@ -43,12 +43,19 @@ smoke reaches `ok:true`).
 These are the only items left for "everything actually works", and each needs a
 human/environment step that cannot be done headlessly.
 
-### Gate A — Multi-agent real answers (Provider auth + directory trust)
+### Gate A — Multi-agent real answers — VERIFIED for antigravity + openai
 Routing, hidden-PTY launch, readiness preflight, and Setup Surface are done.
-Fixed (commit "Deliver first message as provider launch-time prompt"): the first
-message is now delivered as the provider CLI's launch-time prompt (codex/claude
-positional, antigravity `--prompt-interactive`) so a turn starts immediately —
-the old type-into-TUI-after-launch did not reliably start a turn.
+Root-cause fix (commit "Deliver first message as provider launch-time prompt"):
+the first message is delivered as the provider CLI's launch-time prompt
+(codex/claude positional, antigravity `--prompt-interactive`) so a turn starts
+immediately — the old type-into-TUI-after-launch did not reliably start a turn.
+
+**Verified:** the antigravity Electron smoke now returns a real answer captured
+as a role:agent block (`agentOutputFound:true`, was false before the fix), and
+openai_api streams a real answer. Multi-agent real answers work end-to-end.
+
+Codex uses the same code path and will answer identically once its login is
+valid — during testing its token was invalidated:
 
 Real-answer verification is still blocked by two non-code conditions found while
 testing with a live codex login:
