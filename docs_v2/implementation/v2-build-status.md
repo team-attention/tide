@@ -95,10 +95,24 @@ current Product Shell already matches this structure closely.
 Known divergence to fix: the Left UI "Search" is a nav row (icon + "Search"),
 not an inline input — the inline input belongs only to the FileTree filter.
 
-Remaining for pixel-exact: conform per-frame spacing/styling. Verification of
-the *rendered* result needs the running app (`npm run dev`) since rendering
-fidelity (not structure) is GUI-only; conform CSS to Figma values, then confirm
-visually. (Earlier "Pencil not connected" no longer blocks — Figma MCP works.)
+Headless conformance loop (no Electron GUI needed): a dev-only harness
+(`src/desktop/renderer/dev-harness.html`/`.ts`, not in the production build
+input) mounts the real Product Shell with a Figma-matching fixture. Serve it
+with `npx vite src/desktop/renderer --port 5199` and open
+`/dev-harness.html?probe=N` (bump N to bust the snapshot cache). The harness
+reports layout (column order, rail width, top-row height, editor/composer
+presence) via `document.title` because the Browser Pane snapshot extractor does
+not surface the CSS-grid DOM as text — read it with capture_pane's `title`.
+
+This loop already (a) caught and fixed a real white-screen bug — the xterm
+default import resolved to `undefined` under Vite, throwing at module load; and
+(b) conformed the Left Rail to Figma's 256px (was minmax(246,270)→246). Verified
+top row 52 and 4-column order match. The production build (`vite preview
+--outDir out/renderer`) also renders, confirming the fix ships.
+
+Remaining for pixel-exact: conform remaining per-frame numbers (FileTree column
+width, composer spacing, chip styling) by pulling each value from Figma
+get_metadata and measuring via the harness.
 
 ## Deferred (evidence-gated, intentionally not done)
 
