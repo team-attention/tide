@@ -8,6 +8,9 @@ import {
   interruptComposer,
   submitComposer,
   updateComposerDraft,
+  addComposerAttachment,
+  removeComposerAttachment,
+  type AgentChatComposerAttachment,
   type AgentChatBackendCommand,
   type AgentChatComposerSurfaceKind,
   type AgentChatBlock,
@@ -1108,11 +1111,32 @@ export function sendProductShellComposerDraft(
   return submitProductShellComposerDraft(state).state;
 }
 
+export function addProductShellComposerAttachment(
+  state: ProductShellState,
+  attachment: AgentChatComposerAttachment,
+): ProductShellState {
+  return {
+    ...state,
+    agentChat: addComposerAttachment(state.agentChat, attachment).state,
+  };
+}
+
+export function removeProductShellComposerAttachment(
+  state: ProductShellState,
+  attachmentId: string,
+): ProductShellState {
+  return {
+    ...state,
+    agentChat: removeComposerAttachment(state.agentChat, attachmentId).state,
+  };
+}
+
 export function submitProductShellComposerDraft(
   state: ProductShellState,
 ): ProductShellUpdateResult {
   const input = state.agentChat.composer.draft.trim();
-  if (input.length === 0) {
+  // A message with no text but with pasted images is still a valid send.
+  if (input.length === 0 && state.agentChat.composer.attachments.length === 0) {
     return { state, command: null };
   }
 

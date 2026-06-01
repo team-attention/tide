@@ -23,6 +23,8 @@ import {
   type TerminalInput,
   type ThreadSeed,
   type ThreadRuntimeAsyncEvent,
+  type ComposerAttachmentInput,
+  type ComposerAttachmentStorePort,
 } from "../src/backend/application/services/thread-runtime-service.ts";
 import type { AgentSessionBlock } from "../src/backend/application/domains/agent-session/agent-session-block.ts";
 import type {
@@ -308,6 +310,85 @@ test("starting_a_thread_with_ready_provider_starts_runtime_then_writes_terminal_
   assert.deepEqual(fakes.runtime.events, ["start", "writeInput"]);
   assert.equal(fakes.runtime.writes[0].input.kind, "composer_input");
   assert.equal(fakes.runtime.writes[0].input.value, "Implement the backend lifecycle");
+});
+
+// --- UC-1: Materialize Composer Attachments ---
+// Spec: docs_v2/specs/composer-image-attachments.md
+
+test("materializes_pasted_images_into_the_thread_workspace", async () => {
+  // UC-1 BR-1: each image is written under <cwd>/.tide/attachments/.
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+
+  await service.startThread({
+    initialMessage: "Look at this",
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "project", projectId: "project-1", cwd: "/repo" },
+    attachments: [{ name: "shot.png", mediaType: "image/png", dataBase64: "AAAA" }],
+  });
+
+  assert.equal(fakes.composerAttachments.calls.length, 1);
+  assert.equal(fakes.composerAttachments.calls[0].cwd, "/repo");
+  assert.equal(fakes.composerAttachments.calls[0].attachments[0].name, "shot.png");
+});
+
+test("appends_attachment_path_references_to_the_message_text", async () => {
+  // UC-1 BR-2: one path line per attachment is appended to the message the Agent receives.
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("thread"),
+  });
+
+  await service.startThread({
+    initialMessage: "Compare these",
+    agentBinding: { agentId: "codex" },
+    scope: { kind: "project", projectId: "project-1", cwd: "/repo" },
+    attachments: [
+      { name: "a.png", mediaType: "image/png", dataBase64: "AAAA" },
+      { name: "b.png", mediaType: "image/png", dataBase64: "BBBB" },
+    ],
+  });
+
+  assert.equal(
+    fakes.runtime.writes[0]?.input.value,
+    "Compare these\n\n[Attached image: /repo/.tide/attachments/0-a.png]\n[Attached image: /repo/.tide/attachments/1-b.png]",
+  );
+});
+
+test("sends_attachment_paths_when_the_message_text_is_empty", async () => {
+  // UC-1 BR-3: a text-empty message still carries the path lines.
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-img", {
+        agentBinding: {
+          agentId: "codex",
+          providerSessionRef: { kind: "codex_rollout", value: "rollout-1" },
+        },
+        scope: { kind: "project", projectId: "project-1", cwd: "/repo" },
+      }),
+    ],
+  });
+
+  await service.sendComposerInput({
+    threadId: "thread-img",
+    input: "",
+    attachments: [{ name: "only.png", mediaType: "image/png", dataBase64: "AAAA" }],
+  });
+
+  assert.equal(
+    fakes.runtime.writes[0]?.input.value,
+    "[Attached image: /repo/.tide/attachments/0-only.png]",
+  );
 });
 
 test("starting_ready_thread_records_local_user_message_block_before_runtime_output", async () => {
@@ -2301,6 +2382,7 @@ function createFakes(options: {
     options.definitionError,
     options.references,
   );
+  const composerAttachments = new FakeComposerAttachmentStorePort();
 
   return {
     runtime,
@@ -2311,6 +2393,7 @@ function createFakes(options: {
     workbenchTerminal,
     workspaceFiles,
     codeIntelligence,
+    composerAttachments,
     ports: {
       agentRuntimePort: runtime,
       providerReadinessPort: readiness,
@@ -2320,8 +2403,24 @@ function createFakes(options: {
       workspaceCommandPort: workspaceCommand,
       workspaceFilePort: workspaceFiles,
       workspaceCodeIntelligencePort: codeIntelligence,
+      composerAttachmentStorePort: composerAttachments,
     },
   };
+}
+
+class FakeComposerAttachmentStorePort implements ComposerAttachmentStorePort {
+  calls: { cwd: string; attachments: ComposerAttachmentInput[] }[] = [];
+
+  async materialize(input: {
+    cwd: string;
+    attachments: ComposerAttachmentInput[];
+  }): Promise<string[]> {
+    this.calls.push(input);
+    return input.attachments.map(
+      (attachment, index) =>
+        `${input.cwd}/.tide/attachments/${index}-${attachment.name}`,
+    );
+  }
 }
 
 class FakeAgentRuntimePort implements AgentRuntimePort {

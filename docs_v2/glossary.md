@@ -21,6 +21,7 @@ Use implementation terms only when describing the current code boundary that bac
 | **Start Composer** | The Composer state shown before a Thread starts. It creates the initial Thread request, initial Execution Context, and Launch Options. |
 | **Follow-up Composer** | The Composer state shown inside an existing Thread. It inherits the active Thread's Agent, Project, Worktree, and Branch. The Agent is locked after the Thread starts. |
 | **Composer Options** | The searchable options menu opened from the Composer. Before a Thread starts, it contains Launch Options. After an Agent Runtime starts, it can also expose In-Session Commands and attach/context controls without making every option a permanent chip. |
+| **Composer Attachment** | An image the user attaches to the next Composer message via paste, shown as a preview chip. On send, Tide materializes it to a file in the Thread workspace and references its absolute path in the message text so the Agent can read it. |
 | **Agent** | The coding worker selected for a Thread. Current visible choices include Codex CLI, Claude Code, Antigravity CLI, and API-backed Tide Agents such as OpenAI API. |
 | **Agent Icon** | A compact visual identity shown in a Thread row to indicate which Agent owns or last ran that Thread. |
 | **Agent Binding** | The selected Agent identity and Agent Runtime Source attached to a Thread. It controls default launch behavior, model source, readiness path, and sidebar identity. |

@@ -67,6 +67,10 @@ import type {
 } from "../ports/outbound/provider-setup-surface-terminal-port.ts";
 import type { PtyTranscriptPort } from "../ports/outbound/pty-transcript-port.ts";
 import type {
+  ComposerAttachmentInput,
+  ComposerAttachmentStorePort,
+} from "../ports/outbound/composer-attachment-store-port.ts";
+import type {
   WorkspaceCommandErrorCode,
   WorkspaceCommandPort,
   WorkspaceCommandRun,
@@ -110,6 +114,8 @@ export type {
   WorkspaceCommandPort,
   WorkspaceCodeIntelligencePort,
   WorkspaceFilePort,
+  ComposerAttachmentInput,
+  ComposerAttachmentStorePort,
   AgentBinding,
   AgentId,
   LastKnownState,
@@ -156,6 +162,7 @@ export interface CreateThreadRuntimeServiceInput {
   workspaceCommandPort?: WorkspaceCommandPort;
   workspaceFilePort?: WorkspaceFilePort;
   workspaceCodeIntelligencePort?: WorkspaceCodeIntelligencePort;
+  composerAttachmentStorePort?: ComposerAttachmentStorePort;
   defaultWorkbenchTerminalCommand?: string;
   clock?: () => string;
   idGenerator?: () => string;
@@ -278,6 +285,7 @@ export interface StartThreadInput {
   agentBinding: AgentBinding;
   scope?: ThreadScope;
   launchOptions?: Record<string, unknown>;
+  attachments?: ComposerAttachmentInput[];
 }
 
 export interface StartThreadResult {
@@ -293,6 +301,7 @@ export interface SendComposerInput {
   input: string;
   agentId?: AgentId;
   launchOptions?: Record<string, unknown>;
+  attachments?: ComposerAttachmentInput[];
 }
 
 export interface SendComposerInputResult {
@@ -801,6 +810,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
   workspaceCommandPort: WorkspaceCommandPort;
   workspaceFilePort: WorkspaceFilePort;
   workspaceCodeIntelligencePort: WorkspaceCodeIntelligencePort;
+  composerAttachmentStorePort?: ComposerAttachmentStorePort;
   defaultWorkbenchTerminalCommand: string;
   clock: () => string;
   idGenerator: () => string;
@@ -819,6 +829,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     this.workspaceFilePort = input.workspaceFilePort ?? createUnavailableWorkspaceFilePort();
     this.workspaceCodeIntelligencePort =
       input.workspaceCodeIntelligencePort ?? createUnavailableWorkspaceCodeIntelligencePort();
+    this.composerAttachmentStorePort = input.composerAttachmentStorePort;
     this.defaultWorkbenchTerminalCommand =
       input.defaultWorkbenchTerminalCommand ?? DEFAULT_WORKBENCH_TERMINAL_COMMAND;
     this.clock = input.clock ?? defaultClock;
@@ -951,6 +962,15 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     };
     this.threads.set(threadId, thread);
 
+    // Materialize any pasted images and fold their paths into the message so the
+    // Agent can read them. Done before readiness so a deferred (not-ready) send
+    // still carries the references. See composer-image-attachments spec.
+    const message = await this.composeMessageWithAttachments(
+      thread,
+      input.initialMessage,
+      input.attachments,
+    );
+
     const readiness = await this.providerReadinessPort.check({
       agentId: thread.agentBinding.agentId,
       scope: thread.scope,
@@ -961,7 +981,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       thread.lifecycleState = "open";
       thread.pendingInput = {
         kind: "composer_input",
-        value: input.initialMessage,
+        value: message,
         capturedAt,
         launchOptions: cloneLaunchOptions(input.launchOptions),
       };
@@ -991,12 +1011,9 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       agentBinding: cloneAgentBinding(thread.agentBinding),
       scope: cloneScope(thread.scope),
       launchOptions: thread.launchOptions,
-      initialPrompt: deliverPromptViaLaunch ? input.initialMessage : undefined,
+      initialPrompt: deliverPromptViaLaunch ? message : undefined,
     });
-    const submittedBlock = this.appendLocalUserMessageBlock(
-      thread,
-      input.initialMessage,
-    );
+    const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
 
     thread.activeRuntimeHandle = cloneRuntimeHandle(handle);
     thread.runtimeState = "running";
@@ -1005,7 +1022,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     if (!deliverPromptViaLaunch) {
       await this.agentRuntimePort.writeInput(handle, {
         kind: "composer_input",
-        value: input.initialMessage,
+        value: message,
         submittedAt: this.clock(),
       });
     }
@@ -1018,6 +1035,33 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       providerReadiness: readiness,
       submittedBlock,
     };
+  }
+
+  private async composeMessageWithAttachments(
+    thread: ThreadRecord,
+    text: string,
+    attachments: ComposerAttachmentInput[] | undefined,
+  ): Promise<string> {
+    if (
+      attachments === undefined ||
+      attachments.length === 0 ||
+      this.composerAttachmentStorePort === undefined
+    ) {
+      return text;
+    }
+    const cwd = threadRoot(thread);
+    if (cwd === undefined) {
+      return text;
+    }
+    const paths = await this.composerAttachmentStorePort.materialize({
+      cwd,
+      attachments,
+    });
+    const lines = paths.map((p) => `[Attached image: ${p}]`);
+    if (lines.length === 0) {
+      return text;
+    }
+    return text.length > 0 ? `${text}\n\n${lines.join("\n")}` : lines.join("\n");
   }
 
   async sendComposerInput(
@@ -1037,6 +1081,14 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       );
     }
 
+    // Materialize pasted images and fold their paths into the message before any
+    // readiness/busy branch, so a queued or deferred send still carries them.
+    const message = await this.composeMessageWithAttachments(
+      thread,
+      input.input,
+      input.attachments,
+    );
+
     const readiness = await this.providerReadinessPort.check({
       agentId: thread.agentBinding.agentId,
       scope: thread.scope,
@@ -1046,7 +1098,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     if (!readiness.ready) {
       thread.pendingInput = {
         kind: "composer_input",
-        value: input.input,
+        value: message,
         capturedAt: this.clock(),
         launchOptions: cloneLaunchOptions(input.launchOptions ?? thread.launchOptions),
       };
@@ -1071,7 +1123,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     if (busy) {
       thread.pendingInput = {
         kind: "composer_input",
-        value: input.input,
+        value: message,
         capturedAt: this.clock(),
         launchOptions: cloneLaunchOptions(input.launchOptions ?? thread.launchOptions),
       };
@@ -1086,7 +1138,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     }
 
     const handle = await this.activeOrResumedHandle(thread);
-    const submittedBlock = this.appendLocalUserMessageBlock(thread, input.input);
+    const submittedBlock = this.appendLocalUserMessageBlock(thread, message);
     thread.runtimeState = "running";
     thread.lifecycleState = "running";
     thread.lastKnownState = "running";
@@ -1094,7 +1146,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
 
     await this.agentRuntimePort.writeInput(handle, {
       kind: "composer_input",
-      value: input.input,
+      value: message,
       submittedAt: this.clock(),
     });
 

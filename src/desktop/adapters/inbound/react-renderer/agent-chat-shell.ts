@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type ClipboardEvent,
   type CSSProperties,
   type FormEvent,
   type ReactElement,
@@ -28,6 +29,7 @@ import {
   ShieldCheck,
   Square,
   Wrench,
+  X,
 } from "lucide-react";
 
 import { fileIconFor } from "./file-icons.ts";
@@ -54,6 +56,13 @@ export interface AgentChatShellProps {
   ) => void;
   // Opens a file (from a Read tool's file chip) in the Workbench editor.
   onOpenFile?: (path: string) => void;
+  // A pasted image attachment: name, mediaType, and base64 of the image bytes.
+  onAddAttachment?: (attachment: {
+    name: string;
+    mediaType: string;
+    dataBase64: string;
+  }) => void;
+  onRemoveAttachment?: (attachmentId: string) => void;
 }
 
 // A chip's screen rectangle, captured when it is clicked so the dropdown can
@@ -98,6 +107,8 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
     onComposerSurfaceChange: props.onComposerSurfaceChange,
     onOpenSurface: openSurface,
     onChoiceSurfaceRowSelect: props.onChoiceSurfaceRowSelect,
+    onAddAttachment: props.onAddAttachment,
+    onRemoveAttachment: props.onRemoveAttachment,
     inputRef: composerInputRef,
   };
 
@@ -203,6 +214,56 @@ function createChipPopover(input: {
   );
 }
 
+// Read any image/* items from a clipboard paste and hand them to the composer
+// as base64 attachments. Non-image pastes fall through to the default (text).
+function handleComposerPaste(
+  event: ClipboardEvent,
+  onAddAttachment?: (attachment: {
+    name: string;
+    mediaType: string;
+    dataBase64: string;
+  }) => void,
+): void {
+  if (onAddAttachment === undefined) {
+    return;
+  }
+  const items = event.clipboardData?.items;
+  if (items === undefined) {
+    return;
+  }
+  const images: File[] = [];
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (item.kind === "file" && item.type.startsWith("image/")) {
+      const file = item.getAsFile();
+      if (file !== null) {
+        images.push(file);
+      }
+    }
+  }
+  if (images.length === 0) {
+    return;
+  }
+  // Pasting an image should attach it, not insert the OS clipboard text path.
+  event.preventDefault();
+  for (const file of images) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        return;
+      }
+      const base64 = result.includes(",") ? result.slice(result.indexOf(",") + 1) : result;
+      onAddAttachment({
+        name: file.name.length > 0 ? file.name : "pasted-image.png",
+        mediaType: file.type.length > 0 ? file.type : "image/png",
+        dataBase64: base64,
+      });
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
 interface ComposerHandlers {
   onDraftChange?: (draft: string) => void;
   onSubmit?: () => void;
@@ -213,6 +274,12 @@ interface ComposerHandlers {
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
     rowId: string,
   ) => void;
+  onAddAttachment?: (attachment: {
+    name: string;
+    mediaType: string;
+    dataBase64: string;
+  }) => void;
+  onRemoveAttachment?: (attachmentId: string) => void;
   // The composer textarea, so slash (/) command suggestions can anchor to it.
   inputRef?: { current: HTMLTextAreaElement | null };
 }
@@ -970,8 +1037,38 @@ function createComposer(
         value: viewModel.composer.draft,
         onChange: (event: ChangeEvent<HTMLTextAreaElement>) =>
           handlers.onDraftChange?.(event.currentTarget.value),
+        onPaste: (event: ClipboardEvent) =>
+          handleComposerPaste(event, handlers.onAddAttachment),
         placeholder: isStartComposer ? "Do anything" : "Ask for follow-up changes",
       }),
+      viewModel.composer.attachments.length > 0
+        ? createElement(
+            "div",
+            { className: "composer-shell__attachments" },
+            viewModel.composer.attachments.map((attachment) =>
+              createElement(
+                "div",
+                { key: attachment.id, className: "composer-shell__attachment" },
+                createElement("img", {
+                  className: "composer-shell__attachment-thumb",
+                  src: attachment.previewUrl,
+                  alt: attachment.name,
+                }),
+                createElement(
+                  "button",
+                  {
+                    type: "button",
+                    className: "composer-shell__attachment-remove",
+                    title: "Remove attachment",
+                    "aria-label": `Remove ${attachment.name}`,
+                    onClick: () => handlers.onRemoveAttachment?.(attachment.id),
+                  },
+                  createElement(X, { size: 12, strokeWidth: 2.2, "aria-hidden": true }),
+                ),
+              ),
+            ),
+          )
+        : null,
       isStartComposer
         ? createElement(
             "dl",

@@ -98,6 +98,8 @@ import {
   openProductShellWorkbenchLauncher,
   interruptProductShellRuntime,
   submitProductShellComposerDraft,
+  addProductShellComposerAttachment,
+  removeProductShellComposerAttachment,
   saveProductShellWorkbenchEditorPane,
   toggleProductShellFileTreeWithRefresh,
   toggleProductShellLeftUi,
@@ -194,6 +196,12 @@ interface ProductShellHandlers {
     rowId: string,
   ) => void;
   onOpenFile: (path: string) => void;
+  onAddAttachment: (attachment: {
+    name: string;
+    mediaType: string;
+    dataBase64: string;
+  }) => void;
+  onRemoveAttachment: (attachmentId: string) => void;
   onLauncherAction: (actionId: string) => void;
   onLeftUiMenuOpen: (menu: ProductShellLeftUiMenu | null, rect?: MenuAnchorRect) => void;
   isSectionCollapsed: (title: string) => boolean;
@@ -597,6 +605,18 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         dispatchBackendCommand(result.command);
         return result.state;
       }),
+    onAddAttachment: (attachment) =>
+      setShellState((state) => {
+        const id =
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `attachment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        return addProductShellComposerAttachment(state, { id, ...attachment });
+      }),
+    onRemoveAttachment: (attachmentId) =>
+      setShellState((state) =>
+        removeProductShellComposerAttachment(state, attachmentId),
+      ),
     onLauncherAction: (actionId) =>
       setShellState((state) => {
         const result = selectProductShellLauncherAction(state, actionId);
@@ -999,6 +1019,8 @@ function createAgentChatColumn(
       onComposerSurfaceChange: handlers.onComposerSurfaceChange,
       onChoiceSurfaceRowSelect: handlers.onChoiceSurfaceRowSelect,
       onOpenFile: handlers.onOpenFile,
+      onAddAttachment: handlers.onAddAttachment,
+      onRemoveAttachment: handlers.onRemoveAttachment,
     }),
   );
 }

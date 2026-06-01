@@ -18,6 +18,8 @@ import {
   setComposerActiveSurface,
   submitComposer,
   updateComposerDraft,
+  addComposerAttachment,
+  removeComposerAttachment,
   type AgentChatShellState,
 } from "../src/desktop/application/domains/agent-chat/agent-chat-shell-state.ts";
 import {
@@ -87,6 +89,46 @@ test("sending_an_empty_start_composer_draft_emits_no_command", () => {
   const result = submitComposer(state);
 
   assert.equal(result.command, null);
+});
+
+// --- UC-2: Compose Composer Attachments ---
+// Spec: docs_v2/specs/composer-image-attachments.md
+
+test("adds_and_removes_composer_image_attachments", () => {
+  // UC-2 BR-4: an attachment can be added to and removed from the Composer draft.
+  const attachment = {
+    id: "att-1",
+    name: "shot.png",
+    mediaType: "image/png",
+    dataBase64: "AAAA",
+  };
+  const added = addComposerAttachment(createAgentChatShellState(), attachment).state;
+  assert.equal(added.composer.attachments.length, 1);
+  assert.equal(added.composer.attachments[0].id, "att-1");
+
+  const removed = removeComposerAttachment(added, "att-1").state;
+  assert.equal(removed.composer.attachments.length, 0);
+});
+
+test("clears_composer_attachments_after_send", () => {
+  // UC-2 BR-5: a successful send clears the Composer attachments and carries them
+  // on the command (text-empty send is still valid when an image is attached).
+  const withAttachment = addComposerAttachment(createAgentChatShellState(), {
+    id: "att-1",
+    name: "shot.png",
+    mediaType: "image/png",
+    dataBase64: "AAAA",
+  }).state;
+
+  const result = submitComposer(withAttachment);
+
+  assert.equal(result.command?.kind, "thread.start");
+  assert.equal(
+    result.command?.kind === "thread.start" &&
+      result.command.payload.attachments?.length,
+    1,
+  );
+  assert.equal(result.state.composer.attachments.length, 0);
 });
 
 test("new_thread_start_screen_renders_start_composer_without_fake_cues", () => {

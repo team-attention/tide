@@ -59,6 +59,7 @@ import { createPtyProviderSetupSurfaceTerminalPort } from "../../adapters/outbou
 import { createPtyWorkbenchTerminalPort } from "../../adapters/outbound/pty/workbench-terminal-pty-port.ts";
 import { createNodeWorkspaceCommandPort } from "../../adapters/outbound/workspace-command/node-workspace-command-port.ts";
 import { createNodeWorkspaceFilePort } from "../../adapters/outbound/workspace-file/node-workspace-file-port.ts";
+import { createNodeComposerAttachmentStorePort } from "../../adapters/outbound/composer-attachment-store/node-composer-attachment-store.ts";
 import {
   ensureProviderBootstrapArtifacts,
   isAntigravityPluginBootstrapReady,
@@ -238,6 +239,7 @@ export function createLiveBackendContractMessageAdapter(
     ptyTranscriptPort: createMemoryPtyTranscriptPort(),
     workspaceCommandPort: createNodeWorkspaceCommandPort(),
     workspaceFilePort: createNodeWorkspaceFilePort(),
+    composerAttachmentStorePort: createNodeComposerAttachmentStorePort(),
     workspaceCodeIntelligencePort: createTypeScriptCodeIntelligencePort(),
     defaultWorkbenchTerminalCommand: env.SHELL ?? "sh",
     onAsyncEvent: (event) => {

@@ -73,6 +73,24 @@ export interface AgentChatComposerState {
   draft: string;
   activeSurface: AgentChatComposerSurfaceKind | null;
   startOptions: AgentChatStartOptions;
+  // Images pasted into the Composer, shown as preview chips and sent with the
+  // next message. See docs_v2/specs/composer-image-attachments.md.
+  attachments: AgentChatComposerAttachment[];
+}
+
+export interface AgentChatComposerAttachment {
+  id: string;
+  name: string;
+  mediaType: string;
+  dataBase64: string;
+}
+
+// The wire shape carried in a BackendCommand (no renderer-only `id`). Matches the
+// contract ComposerAttachment so the contract adapter can cast it through.
+export interface AgentChatComposerMessageAttachment {
+  name: string;
+  mediaType: string;
+  dataBase64: string;
 }
 
 export interface AgentChatStartOptions {
@@ -200,11 +218,17 @@ export type AgentChatBackendCommand =
         agentBinding: AgentChatAgentBinding;
         scope?: AgentChatThreadScope;
         launchOptions?: Record<string, unknown>;
+        attachments?: AgentChatComposerMessageAttachment[];
       };
     }
   | {
       kind: "composer.sendInput";
-      payload: { threadId: string; input: string; launchOptions?: Record<string, unknown> };
+      payload: {
+        threadId: string;
+        input: string;
+        launchOptions?: Record<string, unknown>;
+        attachments?: AgentChatComposerMessageAttachment[];
+      };
     }
   | {
       kind: "agentRuntime.stop";
@@ -274,6 +298,14 @@ export interface AgentChatComposerView {
   activeSurface: AgentChatChoiceSurfaceView | null;
   contextControlsEditable: boolean;
   contextItems: AgentChatContextItem[];
+  attachments: AgentChatComposerAttachmentView[];
+}
+
+export interface AgentChatComposerAttachmentView {
+  id: string;
+  name: string;
+  // A data: URL the renderer can use directly as an <img> src for the thumbnail.
+  previewUrl: string;
 }
 
 export interface AgentChatContextItem {
@@ -319,6 +351,7 @@ export function createAgentChatShellState(input?: {
     composer: {
       draft: "",
       activeSurface: null,
+      attachments: [],
       startOptions: input?.startOptions ?? {
         agentBinding: {
           agentId: "codex",
@@ -350,6 +383,40 @@ export function updateComposerDraft(
           (state.composer.activeSurface === "command_suggestions"
             ? null
             : state.composer.activeSurface),
+      },
+    },
+    command: null,
+  };
+}
+
+export function addComposerAttachment(
+  state: AgentChatShellState,
+  attachment: AgentChatComposerAttachment,
+): AgentChatShellUpdateResult {
+  return {
+    state: {
+      ...state,
+      composer: {
+        ...state.composer,
+        attachments: [...state.composer.attachments, attachment],
+      },
+    },
+    command: null,
+  };
+}
+
+export function removeComposerAttachment(
+  state: AgentChatShellState,
+  attachmentId: string,
+): AgentChatShellUpdateResult {
+  return {
+    state: {
+      ...state,
+      composer: {
+        ...state.composer,
+        attachments: state.composer.attachments.filter(
+          (attachment) => attachment.id !== attachmentId,
+        ),
       },
     },
     command: null,
@@ -547,7 +614,9 @@ export function submitComposer(
   state: AgentChatShellState,
 ): AgentChatShellUpdateResult {
   const input = state.composer.draft.trim();
-  if (input.length === 0) {
+  const attachments = state.composer.attachments;
+  // A message with no text but with pasted images is still a valid send.
+  if (input.length === 0 && attachments.length === 0) {
     return { state, command: null };
   }
 
@@ -565,15 +634,19 @@ export function submitComposer(
     };
   }
 
+  const messageAttachments = attachmentsForMessage(attachments);
+  const composerAfterSend = { ...state.composer, attachments: [] };
+
   if (state.thread) {
     // Submitting during a live turn: the backend queues it. Reflect that
     // optimistically as a "queued" row and clear the draft so the user can keep
-    // typing; it clears when the flushed user block arrives.
+    // typing; it clears when the flushed user block arrives. Attachments always
+    // clear on send so they aren't re-attached to the next message.
     const busy = state.runtimeState === "running" || state.runtimeState === "starting";
     return {
       state: busy
-        ? { ...state, queuedInput: input, composer: { ...state.composer, draft: "" } }
-        : state,
+        ? { ...state, queuedInput: input, composer: { ...composerAfterSend, draft: "" } }
+        : { ...state, composer: composerAfterSend },
       command: {
         kind: "composer.sendInput",
         payload: {
@@ -582,13 +655,14 @@ export function submitComposer(
           // Carry the current composer launch options (e.g. a changed model /
           // reasoning) so follow-ups honor them, not just the thread's original.
           launchOptions: launchOptionsForState(state),
+          ...(messageAttachments ? { attachments: messageAttachments } : {}),
         },
       },
     };
   }
 
   return {
-    state,
+    state: { ...state, composer: composerAfterSend },
     command: {
       kind: "thread.start",
       payload: {
@@ -596,9 +670,23 @@ export function submitComposer(
         agentBinding: state.composer.startOptions.agentBinding,
         scope: state.composer.startOptions.scope,
         launchOptions: state.composer.startOptions.launchOptions,
+        ...(messageAttachments ? { attachments: messageAttachments } : {}),
       },
     },
   };
+}
+
+function attachmentsForMessage(
+  attachments: AgentChatComposerAttachment[],
+): AgentChatComposerMessageAttachment[] | null {
+  if (attachments.length === 0) {
+    return null;
+  }
+  return attachments.map((attachment) => ({
+    name: attachment.name,
+    mediaType: attachment.mediaType,
+    dataBase64: attachment.dataBase64,
+  }));
 }
 
 export function applyAgentChatBackendEvent(
@@ -733,6 +821,11 @@ export function createAgentChatShellViewModel(
       contextItems: state.thread
         ? readOnlyThreadContextItems(state.thread)
         : startContextItems(state.composer.startOptions),
+      attachments: state.composer.attachments.map((attachment) => ({
+        id: attachment.id,
+        name: attachment.name,
+        previewUrl: `data:${attachment.mediaType};base64,${attachment.dataBase64}`,
+      })),
     },
     workbenchOpen: state.workbenchOpen,
     queuedInput: state.queuedInput,
