@@ -460,9 +460,48 @@ function createToolLogTurn(block: AgentChatBlockView): ReactElement {
       createElement("span", { className: "agent-session-turn__tool-name" }, block.title),
     ),
     block.body.length > 0
-      ? createElement("pre", { className: "agent-session-turn__tool-body" }, block.body)
+      ? createElement(
+          "pre",
+          { className: "agent-session-turn__tool-body" },
+          toolBodyText(block.title, block.body),
+        )
       : null,
   );
+}
+
+// Tool args arrive as a JSON string (e.g. {"command":"cd …\npkill …"}), which
+// renders with ugly escaped \n / \". Extract the meaningful payload: the shell
+// command for run tools, otherwise pretty-print the args object.
+export function toolBodyText(toolName: string, body: string): string {
+  const trimmed = body.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return body;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    // Bounded args may be truncated past valid JSON; show as-is.
+    return body;
+  }
+  if (typeof parsed !== "object" || parsed === null) {
+    return body;
+  }
+  const record = parsed as Record<string, unknown>;
+  const command = record.command ?? record.cmd ?? record.CommandLine;
+  if (typeof command === "string") {
+    return command;
+  }
+  if (Array.isArray(command)) {
+    return command.map((part) => String(part)).join(" ");
+  }
+  // Edit/other tools: surface the single human-readable field if there is one,
+  // else a pretty-printed object (real newlines, no escape noise).
+  const single = record.description ?? record.query ?? record.prompt;
+  if (typeof single === "string" && Object.keys(record).length === 1) {
+    return single;
+  }
+  return JSON.stringify(record, null, 2);
 }
 
 // A run of tool calls/results renders as ONE muted Codex-style summary line
@@ -851,19 +890,33 @@ function createChoiceRows(
 // Choice-surface rows carry a semantic icon key (e.g. "folder", "check") which
 // the renderer maps to a lucide icon. Unknown values render as the literal glyph
 // (legacy menus still pass glyph strings until they migrate to keys).
+// Two-letter provider monogram (Codex/Claude both start with C, hence distinct
+// 2-char codes). Mirrors agentMonogram() in tide-product-shell.
+function agentMonogramFor(agentId: string): string {
+  switch (agentId) {
+    case "claude":
+      return "Cl";
+    case "antigravity":
+      return "Ag";
+    case "openai_api":
+      return "AI";
+    default:
+      return "Co";
+  }
+}
+
 function choiceRowIcon(icon: string | undefined): ReactNode {
   if (icon === undefined || icon === "") {
     return null;
   }
-  // Per-agent identity badge (same orbit/core mark used in Thread rows and the
+  // Per-agent identity monogram badge (same mark used in Thread rows and the
   // composer agent chip), keyed as "identity:<agentId>".
   if (icon.startsWith("identity:")) {
     const agentId = icon.slice("identity:".length) || "codex";
     return createElement(
       "span",
       { className: `agent-identity-icon agent-identity-icon--${agentId}`, "aria-hidden": true },
-      createElement("span", { className: "agent-identity-icon__core" }),
-      createElement("span", { className: "agent-identity-icon__orbit" }),
+      agentMonogramFor(agentId),
     );
   }
   const lucide: Record<string, ReactNode> = {
@@ -916,15 +969,14 @@ function contextItemIcon(item: AgentChatContextItem): ReactNode {
   const props = { size: 13, strokeWidth: 1.85, "aria-hidden": true } as const;
   switch (item.label) {
     case "Agent":
-      // Use the same per-agent identity icon shown in Thread rows.
+      // Use the same per-agent identity monogram badge shown in Thread rows.
       return createElement(
         "span",
         {
           className: `agent-identity-icon agent-identity-icon--${item.agentId ?? "codex"}`,
           "aria-hidden": true,
         },
-        createElement("span", { className: "agent-identity-icon__core" }),
-        createElement("span", { className: "agent-identity-icon__orbit" }),
+        agentMonogramFor(item.agentId ?? "codex"),
       );
     case "Project":
       return createElement(Folder, props);

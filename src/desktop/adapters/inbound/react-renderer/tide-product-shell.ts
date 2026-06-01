@@ -740,6 +740,21 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   );
 }
 
+// Two-letter monogram per provider (Codex/Claude both start with C, so we use
+// a distinct 2-char code for each). Rendered as a small rounded text badge.
+export function agentMonogram(agentId: ProductShellAgentIdentity): string {
+  switch (agentId) {
+    case "codex":
+      return "Co";
+    case "claude":
+      return "Cl";
+    case "antigravity":
+      return "Ag";
+    case "openai_api":
+      return "AI";
+  }
+}
+
 export function AgentIdentityIcon(props: { agentId: ProductShellAgentIdentity | string }): ReactElement {
   const agentId = normalizeAgentId(props.agentId);
 
@@ -751,8 +766,7 @@ export function AgentIdentityIcon(props: { agentId: ProductShellAgentIdentity | 
       "aria-label": agentLabel(agentId),
       role: "img",
     },
-    createElement("span", { className: "agent-identity-icon__core" }),
-    createElement("span", { className: "agent-identity-icon__orbit" }),
+    agentMonogram(agentId),
   );
 }
 
@@ -1970,98 +1984,150 @@ function createProjectSection(
       () => handlers.onToggleSection("Projects"),
       { label: "Add project", onClick: handlers.onAddProject },
     ),
-    collapsed
-      ? null
-      : projectGroups.map((project) =>
+    collapsed ? null : projectGroups.map((project) => createProjectGroup(project, handlers)),
+  );
+}
+
+// One expandable Project group: the project row (toggle + folder + actions) and,
+// when expanded, its Thread rows. Shared by the Projects and Pinned sections.
+function createProjectGroup(
+  project: ProductShellProjectGroupView,
+  handlers: ProductShellHandlers,
+): ReactElement {
+  return createElement(
+    "div",
+    { key: project.projectId, className: "project-group" },
+    createElement(
+      "div",
+      { className: "project-row-wrap" },
       createElement(
         "div",
-        { key: project.projectId, className: "project-group" },
+        {
+          className: `project-row${project.contextMenuOpen ? " project-row--menu-open" : ""}`,
+          "data-left-row-kind": "project",
+          "data-project-row": project.projectId,
+          "data-expanded": project.expanded,
+        },
         createElement(
-          "div",
-          { className: "project-row-wrap" },
-          createElement(
-            "div",
-            {
-              className: `project-row${project.contextMenuOpen ? " project-row--menu-open" : ""}`,
-              "data-left-row-kind": "project",
-              "data-project-row": project.projectId,
-              "data-expanded": project.expanded,
-            },
-            createElement(
-              "button",
-              {
-                className: "project-row__toggle",
-                type: "button",
-                "aria-label": project.expanded ? "Collapse project" : "Expand project",
-                "aria-expanded": project.expanded,
-                onClick: () => handlers.onProjectToggle(project.projectId),
-              },
-              createElement(ChevronRight, {
-                size: 13,
-                strokeWidth: 2,
-                className: `project-row__chevron${project.expanded ? " project-row__chevron--expanded" : ""}`,
-                "aria-hidden": true,
-              }),
-              project.expanded
-                ? createElement(FolderOpen, { size: 16, strokeWidth: 1.85, "aria-hidden": true })
-                : createElement(Folder, { size: 16, strokeWidth: 1.85, "aria-hidden": true }),
-              project.renaming
-                ? createElement("input", {
-                    className: "project-row__rename-input",
-                    "aria-label": "Rename project",
-                    defaultValue: project.name,
-                    autoFocus: true,
-                    onClick: (event: { stopPropagation: () => void }) => event.stopPropagation(),
-                    onKeyDown: (event: {
-                      key: string;
-                      currentTarget: { value: string };
-                      preventDefault: () => void;
-                    }) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        handlers.onProjectRenameSubmit(project.projectId, event.currentTarget.value);
-                      } else if (event.key === "Escape") {
-                        handlers.onProjectRenameCancel();
-                      }
-                    },
-                    onBlur: (event: { currentTarget: { value: string } }) =>
-                      handlers.onProjectRenameSubmit(project.projectId, event.currentTarget.value),
-                  })
-                : createElement("span", { className: "project-row__title" }, project.name),
-            ),
-            createElement(
-              "span",
-              { className: "project-row__actions" },
-              createIconButton(
-                "Project menu",
-                createElement(MoreHorizontal, { size: 15, strokeWidth: 1.9 }),
-                (event) =>
-                  handlers.onLeftUiMenuOpen(
-                    { kind: "project", projectId: project.projectId },
-                    menuAnchorFromEvent(event),
-                  ),
-                "project-row__action",
+          "button",
+          {
+            className: "project-row__toggle",
+            type: "button",
+            "aria-label": project.expanded ? "Collapse project" : "Expand project",
+            "aria-expanded": project.expanded,
+            onClick: () => handlers.onProjectToggle(project.projectId),
+          },
+          createElement(ChevronRight, {
+            size: 13,
+            strokeWidth: 2,
+            className: `project-row__chevron${project.expanded ? " project-row__chevron--expanded" : ""}`,
+            "aria-hidden": true,
+          }),
+          project.expanded
+            ? createElement(FolderOpen, { size: 16, strokeWidth: 1.85, "aria-hidden": true })
+            : createElement(Folder, { size: 16, strokeWidth: 1.85, "aria-hidden": true }),
+          project.renaming
+            ? createElement("input", {
+                className: "project-row__rename-input",
+                "aria-label": "Rename project",
+                defaultValue: project.name,
+                autoFocus: true,
+                onClick: (event: { stopPropagation: () => void }) => event.stopPropagation(),
+                onKeyDown: (event: {
+                  key: string;
+                  currentTarget: { value: string };
+                  preventDefault: () => void;
+                }) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    handlers.onProjectRenameSubmit(project.projectId, event.currentTarget.value);
+                  } else if (event.key === "Escape") {
+                    handlers.onProjectRenameCancel();
+                  }
+                },
+                onBlur: (event: { currentTarget: { value: string } }) =>
+                  handlers.onProjectRenameSubmit(project.projectId, event.currentTarget.value),
+              })
+            : createElement("span", { className: "project-row__title" }, project.name),
+        ),
+        createElement(
+          "span",
+          { className: "project-row__actions" },
+          createIconButton(
+            "Project menu",
+            createElement(MoreHorizontal, { size: 15, strokeWidth: 1.9 }),
+            (event) =>
+              handlers.onLeftUiMenuOpen(
+                { kind: "project", projectId: project.projectId },
+                menuAnchorFromEvent(event),
               ),
-              createIconButton(
-                "New thread in project",
-                createElement(MessageSquarePlus, { size: 15, strokeWidth: 1.9 }),
-                () => handlers.onNewThreadInProject(project.projectId),
-                "project-row__action",
-              ),
-            ),
+            "project-row__action",
+          ),
+          createIconButton(
+            "New thread in project",
+            createElement(MessageSquarePlus, { size: 15, strokeWidth: 1.9 }),
+            () => handlers.onNewThreadInProject(project.projectId),
+            "project-row__action",
           ),
         ),
-        project.expanded
-          ? createElement(
-              "div",
-              { className: "project-group__threads" },
-              project.threads.length === 0
-                ? createElement("p", { className: "project-group__empty" }, "No threads yet")
-                : project.threads.map((thread) => createThreadRow(thread, handlers)),
-            )
-          : null,
       ),
     ),
+    project.expanded
+      ? createElement(ProjectThreadList, { threads: project.threads, handlers })
+      : null,
+  );
+}
+
+// How many threads a project shows before collapsing the rest behind "Show more"
+// (projects can accumulate many adopted local sessions).
+const THREAD_PREVIEW_LIMIT = 8;
+
+// The thread list under a project: shows the first N, with a "Show N more"
+// toggle to reveal the rest (and "Show less" to re-collapse).
+function ProjectThreadList({
+  threads,
+  handlers,
+}: {
+  threads: ProductShellThreadView[];
+  handlers: ProductShellHandlers;
+}): ReactElement {
+  const [showAll, setShowAll] = useState(false);
+  if (threads.length === 0) {
+    return createElement(
+      "div",
+      { className: "project-group__threads" },
+      createElement("p", { className: "project-group__empty" }, "No threads yet"),
+    );
+  }
+  const visible = showAll ? threads : threads.slice(0, THREAD_PREVIEW_LIMIT);
+  const hidden = threads.length - visible.length;
+  return createElement(
+    "div",
+    { className: "project-group__threads" },
+    ...visible.map((thread) => createThreadRow(thread, handlers)),
+    hidden > 0
+      ? createElement(
+          "button",
+          {
+            key: "show-more",
+            type: "button",
+            className: "project-group__show-more",
+            onClick: () => setShowAll(true),
+          },
+          `Show ${hidden} more`,
+        )
+      : showAll && threads.length > THREAD_PREVIEW_LIMIT
+        ? createElement(
+            "button",
+            {
+              key: "show-less",
+              type: "button",
+              className: "project-group__show-more",
+              onClick: () => setShowAll(false),
+            },
+            "Show less",
+          )
+        : null,
   );
 }
 
@@ -2084,23 +2150,7 @@ function createPinnedSection(
     collapsed
       ? null
       : [
-          ...pinnedProjects.map((project) =>
-            createElement(
-              "div",
-              { key: `pinned-project-${project.projectId}`, className: "thread-row-wrap" },
-              createElement(
-                "button",
-                {
-                  className: "thread-row thread-row--pinned-project",
-                  type: "button",
-                  "data-pinned-project": project.projectId,
-                  onClick: () => handlers.onPinnedProjectSelect(project.projectId),
-                },
-                createElement(Folder, { size: 14, strokeWidth: 1.85, "aria-hidden": true }),
-                createElement("span", { className: "thread-row__title" }, project.name),
-              ),
-            ),
-          ),
+          ...pinnedProjects.map((project) => createProjectGroup(project, handlers)),
           ...pinnedThreads.map((thread) => createThreadRow(thread, handlers)),
         ],
   );

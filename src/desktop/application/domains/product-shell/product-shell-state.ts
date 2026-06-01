@@ -202,11 +202,9 @@ export interface ProductShellProjectGroupView {
   threads: ProductShellThreadView[];
 }
 
-export interface ProductShellPinnedProjectView {
-  projectId: string;
-  name: string;
-  cwd: string;
-}
+// Pinned projects render as full expandable groups, identical to the Projects
+// section, so the shortcut can be expanded to reach its Threads.
+export type ProductShellPinnedProjectView = ProductShellProjectGroupView;
 
 export interface ProductShellViewModel {
   activeThreadId: string | null;
@@ -366,6 +364,22 @@ export function createProductShellViewModel(
     query.length === 0 || thread.title.toLowerCase().includes(query);
   const searching = query.length > 0;
   const visibleThreads = state.threads.filter(matchesSearch);
+  const toGroup = (project: ProductShellProject): ProductShellProjectGroupView => ({
+    projectId: project.projectId,
+    name: project.name,
+    cwd: project.cwd,
+    // Projects are expanded by default. Searching force-expands every group so
+    // matches are visible without manual expansion. Expand state is keyed by
+    // projectId, so a project pinned + listed expands consistently in both.
+    expanded: searching || !state.collapsedProjectIds.includes(project.projectId),
+    contextMenuOpen:
+      state.leftUiMenu?.kind === "project" && state.leftUiMenu.projectId === project.projectId,
+    pinned: state.pinnedProjectIds.includes(project.projectId),
+    renaming: state.renamingProjectId === project.projectId,
+    threads: visibleThreads
+      .filter((thread) => thread.scope.kind === "project" && thread.scope.projectId === project.projectId)
+      .map((thread) => toThreadView(thread, state)),
+  });
   return {
     activeThreadId: state.activeThreadId,
     leftUiOpen: state.leftUiOpen,
@@ -376,24 +390,14 @@ export function createProductShellViewModel(
     pinnedThreads: visibleThreads
       .filter((thread) => thread.pinned)
       .map((thread) => toThreadView(thread, state)),
+    // Pinned projects render as full expandable groups (same component as the
+    // Projects section), so their Threads are reachable from the Pinned shortcut.
     pinnedProjects: displayedProjects(state)
       .filter((project) => state.pinnedProjectIds.includes(project.projectId))
-      .map((project) => ({ projectId: project.projectId, name: project.name, cwd: project.cwd })),
+      .map(toGroup)
+      .filter((group) => !searching || group.threads.length > 0),
     projectGroups: displayedProjects(state)
-      .map((project) => ({
-        ...project,
-        // Projects are expanded by default. Searching force-expands every group
-        // so matches are visible without manual expansion.
-        expanded: searching || !state.collapsedProjectIds.includes(project.projectId),
-        contextMenuOpen:
-          state.leftUiMenu?.kind === "project" && state.leftUiMenu.projectId === project.projectId,
-        pinned: state.pinnedProjectIds.includes(project.projectId),
-        renaming: state.renamingProjectId === project.projectId,
-        threads: visibleThreads
-          .filter((thread) => thread.scope.kind === "project")
-          .filter((thread) => thread.scope.kind === "project" && thread.scope.projectId === project.projectId)
-          .map((thread) => toThreadView(thread, state)),
-      }))
+      .map(toGroup)
       // While searching, hide project groups with no matching threads.
       .filter((group) => !searching || group.threads.length > 0),
     scratchThreads: visibleThreads

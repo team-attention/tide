@@ -73,6 +73,11 @@ import type {
 import type { AgentId, PromptState } from "../../application/domains/thread/thread.ts";
 import { createFixtureAgentSessionReader } from "../../application/services/fixture-agent-session-reader.ts";
 import {
+  adoptedThreadSeedsFromSessions,
+  discoverLocalSessions,
+  type DiscoveryFs,
+} from "../../application/services/provider-session-discovery.ts";
+import {
   createThreadPersistenceService,
   THREAD_STORAGE_VERSION,
   type ProviderSessionRefRecord,
@@ -257,6 +262,8 @@ export function createLiveBackendContractMessageAdapter(
     adapter: createBackendContractMessageAdapter({ service }),
     service,
     persistence,
+    homeDir,
+    appDataRoot,
   });
 }
 
@@ -264,6 +271,8 @@ function createPersistentLiveBackendAdapter(input: {
   adapter: ReturnType<typeof createBackendContractMessageAdapter>;
   service: ThreadRuntimeService;
   persistence: ThreadPersistenceService;
+  homeDir: string;
+  appDataRoot: string;
 }) {
   let restorePromise: Promise<void> | null = null;
 
@@ -296,7 +305,21 @@ function createPersistentLiveBackendAdapter(input: {
         return seed;
       }),
     );
-    const restored = await input.service.restoreThreads({ threads: seeds });
+    // Adopt provider sessions that exist in local history (started outside Tide)
+    // for known project cwds, so the thread list reflects real local sessions.
+    const adopted = discoverAdoptedThreadSeeds({
+      homeDir: input.homeDir,
+      appDataRoot: input.appDataRoot,
+      persistedRecords: listed.value,
+    });
+    for (const seed of adopted) {
+      const blocks = rebuildAdoptedConversation(seed);
+      if (blocks.length > 0) {
+        seed.cachedBlocks = blocks;
+      }
+    }
+
+    const restored = await input.service.restoreThreads({ threads: [...seeds, ...adopted] });
     if (!restored.ok) {
       process.emitWarning(restored.error.message, {
         type: "TidePersistenceRestoreWarning",
@@ -2753,6 +2776,181 @@ function readBoundedTail(path: string, maxBytes: number): string | undefined {
       closeSync(fileDescriptor);
     }
   }
+}
+
+// Reads the leading bytes of a file (codex session_meta and the first user turn
+// live near the top), bounded so large transcripts stay cheap to scan.
+function readBoundedHead(path: string, maxBytes: number): string | undefined {
+  let fileDescriptor: number | undefined;
+  try {
+    const stat = statSync(path);
+    const bytesToRead = Math.min(maxBytes, stat.size);
+    const buffer = Buffer.alloc(bytesToRead);
+    fileDescriptor = openSync(path, "r");
+    readSync(fileDescriptor, buffer, 0, bytesToRead, 0);
+    return buffer.toString("utf8");
+  } catch {
+    return undefined;
+  } finally {
+    if (fileDescriptor !== undefined) {
+      closeSync(fileDescriptor);
+    }
+  }
+}
+
+// Encodes a cwd into Claude's project directory name (path separators and dots
+// become dashes, e.g. /Users/x/tide -> -Users-x-tide).
+function claudeProjectDirName(cwd: string): string {
+  return cwd.replace(/[/.]/g, "-");
+}
+
+interface RegisteredProjectEntry {
+  projectId: string;
+  name: string;
+  cwd: string;
+}
+
+function readRegisteredProjects(appDataRoot: string): RegisteredProjectEntry[] {
+  const raw = readTextFile(join(appDataRoot, "project-registry.json"));
+  if (raw === undefined) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.flatMap((entry) => {
+      const cwd = typeof entry?.cwd === "string" ? entry.cwd : undefined;
+      const projectId = typeof entry?.projectId === "string" ? entry.projectId : undefined;
+      if (cwd === undefined || projectId === undefined) {
+        return [];
+      }
+      return [{ projectId, name: typeof entry?.name === "string" ? entry.name : projectId, cwd }];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function createDiscoveryFs(homeDir: string): DiscoveryFs {
+  return {
+    listClaudeTranscripts: (cwd) => {
+      const dir = join(homeDir, ".claude", "projects", claudeProjectDirName(cwd));
+      let entries;
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return [];
+      }
+      const out: { path: string; sessionId: string; mtimeMs: number }[] = [];
+      for (const entry of entries) {
+        if (!entry.isFile() || !/^[0-9a-f-]+\.jsonl$/i.test(entry.name)) {
+          continue;
+        }
+        const path = join(dir, entry.name);
+        try {
+          out.push({ path, sessionId: entry.name.replace(/\.jsonl$/i, ""), mtimeMs: statSync(path).mtimeMs });
+        } catch {
+          // Skip transcripts that vanished between listing and stat.
+        }
+      }
+      return out;
+    },
+    listCodexRollouts: () =>
+      recentCodexRollouts(homeDir, 0).flatMap((path) => {
+        try {
+          return [{ path, mtimeMs: statSync(path).mtimeMs }];
+        } catch {
+          return [];
+        }
+      }),
+    antigravityConversationForCwd: (cwd) => {
+      const cache = readJsonFile(join(homeDir, ".gemini", "antigravity-cli", "cache", "last_conversations.json"));
+      const conversationId = cache !== undefined && typeof cache[cwd] === "string" ? (cache[cwd] as string) : undefined;
+      if (conversationId === undefined) {
+        return undefined;
+      }
+      const transcriptPath = join(
+        homeDir,
+        ".gemini",
+        "antigravity-cli",
+        "brain",
+        conversationId,
+        ".system_generated",
+        "logs",
+        "transcript.jsonl",
+      );
+      try {
+        return { conversationId, transcriptPath, mtimeMs: statSync(transcriptPath).mtimeMs };
+      } catch {
+        return undefined;
+      }
+    },
+    readText: (path) => readBoundedHead(path, 256 * 1024),
+  };
+}
+
+function discoverAdoptedThreadSeeds(input: {
+  homeDir: string;
+  appDataRoot: string;
+  persistedRecords: ThreadStorageRecord[];
+}): ThreadSeed[] {
+  const registry = readRegisteredProjects(input.appDataRoot);
+  const projectIdByCwd = new Map(registry.map((entry) => [entry.cwd, entry.projectId]));
+  const cwds = new Set<string>(registry.map((entry) => entry.cwd));
+  for (const record of input.persistedRecords) {
+    if (record.scope.kind === "project") {
+      cwds.add(record.scope.cwd);
+      projectIdByCwd.set(record.scope.cwd, record.scope.projectId);
+    }
+  }
+  if (cwds.size === 0) {
+    return [];
+  }
+
+  const existingRefValues = new Set<string>();
+  for (const record of input.persistedRecords) {
+    const value = record.providerSessionRef?.value ?? record.agentBinding.providerSessionRef?.value;
+    if (value !== undefined) {
+      existingRefValues.add(value);
+    }
+  }
+  const existingThreadIds = new Set(input.persistedRecords.map((record) => record.threadId));
+
+  const sessions = discoverLocalSessions({
+    cwds: [...cwds],
+    fs: createDiscoveryFs(input.homeDir),
+  });
+  return adoptedThreadSeedsFromSessions({
+    sessions,
+    projectIdForCwd: (cwd) => projectIdByCwd.get(cwd) ?? basename(cwd),
+    existingRefValues,
+    existingThreadIds,
+  });
+}
+
+function rebuildAdoptedConversation(seed: ThreadSeed): AgentSessionBlock[] {
+  const ref = seed.agentBinding.providerSessionRef;
+  const filePath = ref?.transcriptPath;
+  if (ref === undefined || filePath === undefined) {
+    return [];
+  }
+  const text = readBoundedTail(filePath, 1024 * 1024);
+  if (text === undefined) {
+    return [];
+  }
+  const agentId = seed.agentBinding.agentId;
+  if (ref.kind === "codex_rollout") {
+    return rebuildCodexConversation(text, seed.threadId, ref.value, agentId);
+  }
+  if (ref.kind === "claude_transcript") {
+    return rebuildClaudeConversation(text, seed.threadId, ref.value, agentId);
+  }
+  if (ref.kind === "antigravity_conversation") {
+    return rebuildAntigravityConversation(text, seed.threadId, ref.value, agentId);
+  }
+  return [];
 }
 
 function latestUserMessageForProviderHistory(

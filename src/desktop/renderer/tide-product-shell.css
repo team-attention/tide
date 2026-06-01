@@ -175,13 +175,15 @@ button {
 
 /* The agent identity icon, sized down to fit a composer chip. */
 .composer-shell__chip-icon .agent-identity-icon {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 5px;
+  font-size: 8.5px;
 }
 
 .top-row-button,
 .project-row__action,
+.left-ui-section__action,
 .workbench-column__pane-action,
 .composer-shell__icon-button,
 .composer-shell__send {
@@ -358,6 +360,8 @@ button {
 .left-ui-section__toggle {
   flex: 1 1 auto;
   min-width: 0;
+  /* Fill the header height so it reads as a row, not a thin text-height strip. */
+  align-self: stretch;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -366,7 +370,10 @@ button {
   cursor: pointer;
   border-radius: 6px;
   text-align: left;
-  padding: 0;
+  /* Negative-then-positive inset keeps the title aligned with rows below while
+     giving the hover highlight breathing room. */
+  margin-left: -6px;
+  padding: 0 6px;
 }
 
 .left-ui-section__toggle:hover {
@@ -376,8 +383,10 @@ button {
 /* + button on Projects/Scratch headers, revealed on section hover. */
 .left-ui-section__action {
   flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
   opacity: 0;
-  color: var(--tide-muted);
 }
 
 .left-ui-section:hover .left-ui-section__action {
@@ -385,7 +394,8 @@ button {
 }
 
 .left-ui-section__action:hover {
-  color: var(--tide-text);
+  background: var(--tide-selection);
+  color: var(--tide-action);
 }
 
 /* Chevron points down when expanded, right when collapsed. */
@@ -513,6 +523,25 @@ button {
   font-size: 12px;
 }
 
+.project-group__show-more {
+  align-self: flex-start;
+  margin: 2px 0 2px;
+  padding: 2px 8px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tide-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.project-group__show-more:hover {
+  background: var(--tide-selection);
+  color: var(--tide-action);
+}
+
 /* Canonical thread row (1288): 13px/16, default #4e4c49, selected Medium
    #343038, selection background when active. */
 .thread-row {
@@ -551,19 +580,10 @@ button {
 }
 
 .thread-row__main .agent-identity-icon {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   border-radius: 5px;
-}
-
-.thread-row__main .agent-identity-icon__core {
-  width: 5px;
-  height: 5px;
-}
-
-.thread-row__main .agent-identity-icon__orbit {
-  width: 11px;
-  height: 7px;
+  font-size: 8.5px;
 }
 
 .thread-row__rename-input {
@@ -749,8 +769,9 @@ button {
   color: var(--tide-danger);
 }
 
+/* Provider identity badge: a small rounded tile with a 2-letter monogram
+   (Co/Cl/Ag/AI). Monochrome so it sits quietly in the neutral UI. */
 .agent-identity-icon {
-  position: relative;
   width: 18px;
   height: 18px;
   display: inline-flex;
@@ -758,36 +779,15 @@ button {
   justify-content: center;
   flex: 0 0 auto;
   border-radius: 6px;
-  background: var(--agent-codex-bg);
-  color: var(--agent-codex);
+  background: var(--tide-selection);
+  color: var(--tide-muted);
   box-shadow: inset 0 0 0 1px var(--tide-line);
-}
-
-.agent-identity-icon__core {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: currentColor;
-}
-
-.agent-identity-icon__orbit {
-  position: absolute;
-  width: 13px;
-  height: 8px;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  opacity: 0.42;
-  transform: rotate(-28deg);
-}
-
-.agent-identity-icon--claude {
-  background: var(--agent-claude-bg);
-  color: var(--agent-claude);
-}
-
-.agent-identity-icon--antigravity {
-  background: var(--agent-antigravity-bg);
-  color: var(--agent-antigravity);
+  font-size: 9.5px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  text-transform: none;
+  user-select: none;
 }
 
 .tide-product-shell__stage {

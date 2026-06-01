@@ -21,6 +21,7 @@ import {
   focusProductShellWorkbenchPane,
   confirmProductShellThreadArchive,
   toggleProductShellThreadPin,
+  toggleProductShellProjectPin,
   submitProductShellThreadRename,
   setProductShellSearchQuery,
   toggleProductShellSearch,
@@ -2274,6 +2275,49 @@ test("project_menu_offers_a_single_open_folder_action", () => {
   assert.match(html, /Open folder/);
   assert.doesNotMatch(html, /Create new project/);
   assert.doesNotMatch(html, /Use existing folder/);
+});
+
+test("project_limits_visible_threads_and_offers_show_more", () => {
+  // A project with many threads shows only the first N, with a "Show more"
+  // affordance for the rest (projects accumulate many adopted local sessions).
+  const threads = Array.from({ length: 11 }, (_unused, index) => ({
+    threadId: `t-${index}`,
+    title: `Session ${index}`,
+    agentBinding: { agentId: "claude" as const, runtimeSource: { kind: "provider_cli" as const, integrationId: "claude" } },
+    scope: { kind: "project" as const, projectId: "tide", cwd: "/repo/tide" },
+    createdAt: "2026-05-29T00:00:00.000Z",
+    updatedAt: `2026-05-29T00:${String(index).padStart(2, "0")}:00.000Z`,
+    archived: false,
+    lastKnownState: "idle" as const,
+  }));
+  const state = applyProductShellBackendEvent(
+    createProductShellState({ includeFixtureData: false }),
+    { kind: "thread.listed", payload: { threads } },
+  );
+  const html = renderProductShell(state);
+
+  // Collapsed (static) render shows 8 thread rows and a "Show 3 more" button.
+  const rowCount = (html.match(/data-left-row-kind="thread"/g) ?? []).length;
+  assert.equal(rowCount, 8);
+  assert.match(html, /Show 3 more/);
+});
+
+test("pinned_project_renders_as_expandable_group_with_its_threads", () => {
+  // A pinned project is a full expandable group (not a flat shortcut), so its
+  // Threads are reachable from the Pinned section.
+  const pinned = toggleProductShellProjectPin(createProductShellState(), "tide");
+  const view = createProductShellViewModel(pinned);
+  const tidePinned = view.pinnedProjects.find((p) => p.projectId === "tide");
+  assert.ok(tidePinned, "tide appears in the Pinned section");
+  assert.equal(tidePinned?.expanded, true, "expanded by default");
+  assert.ok((tidePinned?.threads.length ?? 0) > 0, "pinned project carries its threads");
+
+  // It renders with the expandable project-row toggle (chevron), like Projects.
+  const html = renderProductShell(pinned);
+  assert.match(
+    html,
+    /aria-label="Pinned"[\s\S]*?data-left-row-kind="project"[\s\S]*?project-row__chevron/,
+  );
 });
 
 test("chip_open_folder_scopes_composer_without_registering_a_left_list_project", () => {
