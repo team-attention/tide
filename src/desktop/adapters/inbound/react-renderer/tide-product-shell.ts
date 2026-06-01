@@ -20,7 +20,6 @@ import {
   PinOff,
   Plus,
   Search,
-  Settings,
   SlidersHorizontal,
   Square,
   Terminal,
@@ -991,45 +990,53 @@ function createLeftUi(
       "nav",
       { className: "left-ui__nav", "aria-label": "Left UI actions" },
       createLeftNavRow("New thread", createElement(MessageSquarePlus, { size: 16, strokeWidth: 1.9 }), handlers.onNewThread),
-      viewModel.searchActive
-        ? createElement(
-            "div",
-            { className: "left-ui-search" },
-            createElement(Search, { size: 16, strokeWidth: 1.9, "aria-hidden": true }),
-            createElement("input", {
-              className: "left-ui-search__input",
-              type: "search",
-              "aria-label": "Search threads",
-              placeholder: "Search",
-              autoFocus: true,
-              value: viewModel.searchQuery,
-              onChange: (event: { currentTarget: { value: string } }) =>
-                handlers.onSearchQueryChange(event.currentTarget.value),
-              onKeyDown: (event: { key: string }) => {
-                if (event.key === "Escape") {
-                  handlers.onSearchToggle();
-                }
-              },
-            }),
-          )
-        : createLeftNavRow("Search", createElement(Search, { size: 16, strokeWidth: 1.9 }), handlers.onSearchToggle),
+      createElement(
+        "div",
+        { className: "left-ui__search-row" },
+        viewModel.searchActive
+          ? createElement(
+              "div",
+              { className: "left-ui-search" },
+              createElement(Search, { size: 16, strokeWidth: 1.9, "aria-hidden": true }),
+              createElement("input", {
+                className: "left-ui-search__input",
+                type: "search",
+                "aria-label": "Search threads",
+                placeholder: "Search",
+                autoFocus: true,
+                value: viewModel.searchQuery,
+                onChange: (event: { currentTarget: { value: string } }) =>
+                  handlers.onSearchQueryChange(event.currentTarget.value),
+                onKeyDown: (event: { key: string }) => {
+                  if (event.key === "Escape") {
+                    handlers.onSearchToggle();
+                  }
+                },
+              }),
+            )
+          : createLeftNavRow("Search", createElement(Search, { size: 16, strokeWidth: 1.9 }), handlers.onSearchToggle),
+        createListSettingsButton(handlers),
+      ),
     ),
-    createListSettingsBar(handlers),
     createElement(
       "div",
       { className: "left-ui__sections" },
       ...(viewModel.listSettings.groupBy === "thread"
-        ? [createThreadSection("Threads", viewModel.flatThreads, handlers)]
+        ? [
+            // Thread mode still surfaces pinned threads in a Pinned section (no
+            // project groups); the flat list then excludes them to avoid dupes.
+            createPinnedSection([], viewModel.pinnedThreads, handlers),
+            createThreadSection(
+              "Threads",
+              viewModel.flatThreads.filter((thread) => !thread.pinned),
+              handlers,
+            ),
+          ]
         : [
             createPinnedSection(viewModel.pinnedProjects, viewModel.pinnedThreads, handlers),
             createProjectSection(viewModel.projectGroups, handlers),
             createThreadSection("Scratch", viewModel.scratchThreads, handlers),
           ]),
-    ),
-    createElement(
-      "div",
-      { className: "left-ui__footer" },
-      createLeftNavRow("Settings", createElement(Settings, { size: 16, strokeWidth: 1.9 })),
     ),
   );
 }
@@ -2391,24 +2398,21 @@ function createPinnedSection(
   );
 }
 
-// A thin bar with a single right-aligned icon button that opens the list-display
-// settings dropdown (group + sort). See docs_v2/specs/thread-list-display-settings.md.
-function createListSettingsBar(handlers: ProductShellHandlers): ReactElement {
+// A single icon button (sits inline at the right of the Search row) that opens
+// the list-display settings dropdown (group + sort). See
+// docs_v2/specs/thread-list-display-settings.md.
+function createListSettingsButton(handlers: ProductShellHandlers): ReactElement {
   return createElement(
-    "div",
-    { className: "list-settings-bar" },
-    createElement(
-      "button",
-      {
-        type: "button",
-        className: "list-settings-bar__button",
-        title: "List display settings",
-        "aria-label": "List display settings",
-        onClick: (event: { currentTarget: HTMLElement }) =>
-          handlers.onLeftUiMenuOpen({ kind: "list_settings" }, menuAnchorFromEvent(event)),
-      },
-      createElement(SlidersHorizontal, { size: 14, strokeWidth: 1.9, "aria-hidden": true }),
-    ),
+    "button",
+    {
+      type: "button",
+      className: "list-settings-bar__button",
+      title: "List display settings",
+      "aria-label": "List display settings",
+      onClick: (event: { currentTarget: HTMLElement }) =>
+        handlers.onLeftUiMenuOpen({ kind: "list_settings" }, menuAnchorFromEvent(event)),
+    },
+    createElement(SlidersHorizontal, { size: 15, strokeWidth: 1.9, "aria-hidden": true }),
   );
 }
 
