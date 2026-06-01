@@ -36,9 +36,12 @@ In scope:
   by a `base_dir_pattern` setting; `copy_files` supported. (User: "just as v1, with
   a configuration option to change that rule.")
 - Location: sibling of the repo (v1 default already is). (User choice.)
-- Thread-list grouping: a worktree Thread groups under its parent repo's project
-  with a branch/worktree badge — keeps the list from fragmenting into one group per
-  worktree. (Recommended answer to the user's open question.)
+- Thread-list grouping: a worktree Thread is its OWN Project at the same level as
+  other Projects (cwd = worktree path). Whether worktrees of one repo are visually
+  collected together is a list-display setting, not hardcoded. (User decision; see
+  docs_v2/specs/thread-list-display-settings.md.)
+- The single "New worktree" name input drives the worktree name, branch name, and
+  directory name together (v1 behavior).
 
 ## Out Of Scope
 

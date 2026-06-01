@@ -55,7 +55,27 @@ export interface ProductShellThread {
   workbenchPanes: AppChromeWorkbenchPaneRef[];
   pinned?: boolean;
   attention?: boolean;
+  // Absolute timestamps for list sorting (the `time` field is a display string).
+  createdAt?: string;
+  updatedAt?: string;
 }
+
+export type ProductShellListGroupBy = "project" | "thread";
+export type ProductShellListSortBy = "recent" | "created" | "name";
+
+// User prefs for how the Left UI thread list is grouped and sorted.
+// See docs_v2/specs/thread-list-display-settings.md.
+export interface ProductShellListSettings {
+  groupBy: ProductShellListGroupBy;
+  sortBy: ProductShellListSortBy;
+  groupWorktreesByRepo: boolean;
+}
+
+export const DEFAULT_PRODUCT_SHELL_LIST_SETTINGS: ProductShellListSettings = {
+  groupBy: "project",
+  sortBy: "recent",
+  groupWorktreesByRepo: false,
+};
 
 export interface ProductShellProject {
   projectId: string;
@@ -99,6 +119,8 @@ export interface ProductShellState {
   fileTree: ProductShellFileTreeView | null;
   editorDrafts: Record<string, ProductShellEditorDraft>;
   nextLocalThreadNumber: number;
+  // How the Left UI thread list is grouped/sorted (persisted in the renderer).
+  listSettings: ProductShellListSettings;
 }
 
 export type ProductShellBackendCommand =
@@ -183,6 +205,8 @@ export type ProductShellBackendCommand =
 
 export interface CreateProductShellStateInput {
   includeFixtureData?: boolean;
+  // Seed the persisted list-display settings (renderer loads from localStorage).
+  listSettings?: ProductShellListSettings;
 }
 
 export interface ProductShellUpdateResult {
@@ -226,6 +250,11 @@ export interface ProductShellViewModel {
   pinnedProjects: ProductShellPinnedProjectView[];
   projectGroups: ProductShellProjectGroupView[];
   scratchThreads: ProductShellThreadView[];
+  // The active list-display settings + a flat sorted thread list for "thread"
+  // group mode (project + scratch threads together). In "project" mode the
+  // renderer uses projectGroups/scratchThreads; in "thread" mode it uses flatThreads.
+  listSettings: ProductShellListSettings;
+  flatThreads: ProductShellThreadView[];
   agentChat: AgentChatShellViewModel;
   appChrome: AppChromeViewModel;
   fileTree: ProductShellFileTreeView;
@@ -363,7 +392,15 @@ export function createProductShellState(
     fileTree: null,
     editorDrafts: {},
     nextLocalThreadNumber: 1,
+    listSettings: input.listSettings ?? { ...DEFAULT_PRODUCT_SHELL_LIST_SETTINGS },
   };
+}
+
+export function setProductShellListSettings(
+  state: ProductShellState,
+  patch: Partial<ProductShellListSettings>,
+): ProductShellState {
+  return { ...state, listSettings: { ...state.listSettings, ...patch } };
 }
 
 export function createProductShellViewModel(
@@ -373,7 +410,9 @@ export function createProductShellViewModel(
   const matchesSearch = (thread: ProductShellThread): boolean =>
     query.length === 0 || thread.title.toLowerCase().includes(query);
   const searching = query.length > 0;
-  const visibleThreads = state.threads.filter(matchesSearch);
+  const sortThreads = (threads: ProductShellThread[]): ProductShellThread[] =>
+    sortProductShellThreads(threads, state.listSettings.sortBy);
+  const visibleThreads = sortThreads(state.threads.filter(matchesSearch));
   const toGroup = (project: ProductShellProject): ProductShellProjectGroupView => ({
     projectId: project.projectId,
     name: project.name,
@@ -419,6 +458,9 @@ export function createProductShellViewModel(
     scratchThreads: visibleThreads
       .filter((thread) => thread.scope.kind === "scratch")
       .map((thread) => toThreadView(thread, state)),
+    listSettings: state.listSettings,
+    // "thread" group mode: one flat, already-sorted list of every visible thread.
+    flatThreads: visibleThreads.map((thread) => toThreadView(thread, state)),
     agentChat: createAgentChatShellViewModel(agentChatWithProjects(state)),
     appChrome: createAppChromeViewModel(state.appChrome),
     fileTree: createFileTreeView(state),
@@ -1578,7 +1620,37 @@ function toProductShellThreadFromSummary(
     attention:
       threadSummary.lastKnownState === "waiting_for_input" ||
       threadSummary.lastKnownState === "waiting_for_approval",
+    createdAt: threadSummary.createdAt,
+    updatedAt: threadSummary.updatedAt,
   };
+}
+
+// Sort threads for the Left UI list. "recent"/"created" newest-first by the
+// matching timestamp (missing timestamps sort last, preserving stable order);
+// "name" is title A–Z. See docs_v2/specs/thread-list-display-settings.md.
+function sortProductShellThreads(
+  threads: ProductShellThread[],
+  sortBy: ProductShellListSortBy,
+): ProductShellThread[] {
+  const indexed = threads.map((thread, index) => ({ thread, index }));
+  const timeOf = (thread: ProductShellThread, iso: string | undefined): number => {
+    const parsed = iso === undefined ? NaN : Date.parse(iso);
+    return Number.isNaN(parsed) ? -Infinity : parsed;
+  };
+  indexed.sort((a, b) => {
+    let cmp = 0;
+    if (sortBy === "name") {
+      cmp = a.thread.title.localeCompare(b.thread.title, undefined, {
+        sensitivity: "base",
+      });
+    } else {
+      const key = sortBy === "created" ? "createdAt" : "updatedAt";
+      cmp = timeOf(b.thread, b.thread[key]) - timeOf(a.thread, a.thread[key]);
+    }
+    // Stable: fall back to original order on ties.
+    return cmp !== 0 ? cmp : a.index - b.index;
+  });
+  return indexed.map((entry) => entry.thread);
 }
 
 // Compact relative timestamp for thread rows ("now", "5m", "2h", "3d").

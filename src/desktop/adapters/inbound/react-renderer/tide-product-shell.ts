@@ -1,4 +1,4 @@
-import { createElement, useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { createElement, useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import {
   Archive,
   ChevronRight,
@@ -110,6 +110,11 @@ import {
   updateProductShellBrowserSnapshot,
   updateProductShellComposerDraft,
   writeProductShellTerminalInput,
+  setProductShellListSettings,
+  DEFAULT_PRODUCT_SHELL_LIST_SETTINGS,
+  type ProductShellListSettings,
+  type ProductShellListGroupBy,
+  type ProductShellListSortBy,
   type ProductShellBackendCommand,
   type ProductShellAgentIdentity,
   type ProductShellBrowserActionResult,
@@ -128,6 +133,37 @@ import type {
   AgentChatCommandOption,
   AgentChatComposerSurfaceKind,
 } from "../../../application/domains/agent-chat/agent-chat-shell-state.ts";
+
+const LIST_SETTINGS_STORAGE_KEY = "tide.listSettings";
+
+// List-display settings are a renderer-local pref (no backend contract); persist
+// them in localStorage so the grouping/sort choice survives reloads.
+function loadListSettings(): ProductShellListSettings {
+  if (typeof localStorage === "undefined") {
+    return { ...DEFAULT_PRODUCT_SHELL_LIST_SETTINGS };
+  }
+  try {
+    const raw = localStorage.getItem(LIST_SETTINGS_STORAGE_KEY);
+    if (raw === null) {
+      return { ...DEFAULT_PRODUCT_SHELL_LIST_SETTINGS };
+    }
+    const parsed = JSON.parse(raw) as Partial<ProductShellListSettings>;
+    return { ...DEFAULT_PRODUCT_SHELL_LIST_SETTINGS, ...parsed };
+  } catch {
+    return { ...DEFAULT_PRODUCT_SHELL_LIST_SETTINGS };
+  }
+}
+
+function persistListSettings(settings: ProductShellListSettings): void {
+  if (typeof localStorage === "undefined") {
+    return;
+  }
+  try {
+    localStorage.setItem(LIST_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // Best-effort; ignore quota/serialization errors.
+  }
+}
 
 export interface ProjectRegistryEntry {
   projectId: string;
@@ -206,6 +242,7 @@ interface ProductShellHandlers {
   onLeftUiMenuOpen: (menu: ProductShellLeftUiMenu | null, rect?: MenuAnchorRect) => void;
   isSectionCollapsed: (title: string) => boolean;
   onToggleSection: (title: string) => void;
+  onListSettingsChange: (patch: Partial<ProductShellListSettings>) => void;
   onProjectRevealInFinder: (projectId: string) => void;
   onProjectArchiveChats: (projectId: string) => void;
   onProjectRemove: (projectId: string) => void;
@@ -243,7 +280,11 @@ type RightActionOwner = "agent-chat" | "workbench" | "file-tree";
 
 export function TideProductShell(props: TideProductShellProps): ReactElement {
   const [shellState, setShellState] = useState(() =>
-    props.initialState ?? createProductShellState({ includeFixtureData: false }),
+    props.initialState ??
+      createProductShellState({
+        includeFixtureData: false,
+        listSettings: loadListSettings(),
+      }),
   );
   // Resizable column widths (agent chat is the flexible middle track). Drag
   // handles on column edges update these via pointer capture.
@@ -630,6 +671,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     isSectionCollapsed: (title) => collapsedSections[title] === true,
     onToggleSection: (title) =>
       setCollapsedSections((current) => ({ ...current, [title]: !current[title] })),
+    onListSettingsChange: (patch) =>
+      setShellState((state) => {
+        const next = setProductShellListSettings(state, patch);
+        persistListSettings(next.listSettings);
+        return next;
+      }),
     onProjectRevealInFinder: (projectId) => {
       const cwd = projectCwdById(shellState, projectId);
       if (cwd !== undefined) {
@@ -958,9 +1005,14 @@ function createLeftUi(
     createElement(
       "div",
       { className: "left-ui__sections" },
-      createPinnedSection(viewModel.pinnedProjects, viewModel.pinnedThreads, handlers),
-      createProjectSection(viewModel.projectGroups, handlers),
-      createThreadSection("Scratch", viewModel.scratchThreads, handlers),
+      createListSettingsControl(viewModel.listSettings, handlers),
+      ...(viewModel.listSettings.groupBy === "thread"
+        ? [createThreadSection("Threads", viewModel.flatThreads, handlers)]
+        : [
+            createPinnedSection(viewModel.pinnedProjects, viewModel.pinnedThreads, handlers),
+            createProjectSection(viewModel.projectGroups, handlers),
+            createThreadSection("Scratch", viewModel.scratchThreads, handlers),
+          ]),
     ),
     createElement(
       "div",
@@ -2300,6 +2352,60 @@ function createPinnedSection(
           ...pinnedProjects.map((project) => createProjectGroup(project, handlers)),
           ...pinnedThreads.map((thread) => createThreadRow(thread, handlers)),
         ],
+  );
+}
+
+// Compact Left UI list-display controls: group mode, sort, and (project mode
+// only) whether to collect worktrees under their repo. See
+// docs_v2/specs/thread-list-display-settings.md.
+function createListSettingsControl(
+  settings: ProductShellListSettings,
+  handlers: ProductShellHandlers,
+): ReactElement {
+  const select = (
+    ariaLabel: string,
+    value: string,
+    options: { value: string; label: string }[],
+    onChange: (value: string) => void,
+  ): ReactElement =>
+    createElement(
+      "select",
+      {
+        className: "list-settings__select",
+        "aria-label": ariaLabel,
+        value,
+        onChange: (event: ChangeEvent<HTMLSelectElement>) => onChange(event.currentTarget.value),
+      },
+      options.map((option) =>
+        createElement("option", { key: option.value, value: option.value }, option.label),
+      ),
+    );
+
+  return createElement(
+    "div",
+    { className: "list-settings", "aria-label": "List display settings" },
+    select(
+      "Group threads by",
+      settings.groupBy,
+      [
+        { value: "project", label: "By project" },
+        { value: "thread", label: "By thread" },
+      ],
+      (value) => handlers.onListSettingsChange({ groupBy: value as ProductShellListGroupBy }),
+    ),
+    select(
+      "Sort threads by",
+      settings.sortBy,
+      [
+        { value: "recent", label: "Recent" },
+        { value: "created", label: "Created" },
+        { value: "name", label: "Name" },
+      ],
+      (value) => handlers.onListSettingsChange({ sortBy: value as ProductShellListSortBy }),
+    ),
+    // The "Group worktrees under their repo" toggle lands with the worktree-create
+    // desktop slice (no worktree Projects exist yet to collect). Field is kept on
+    // state so the setting persists once wired.
   );
 }
 
