@@ -9,6 +9,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
+import MarkdownIt from "markdown-it";
 import {
   ArrowUp,
   Bot,
@@ -417,6 +418,18 @@ function AgentWorkingIndicator(): ReactElement {
   );
 }
 
+// Agent answers are markdown (headings, lists, code, links, bold). Render them
+// with markdown-it (html:false escapes raw HTML, so this is injection-safe for
+// provider text); linkify makes bare URLs clickable, breaks honors soft breaks.
+const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true });
+
+function renderAgentMarkdown(body: string): ReactElement {
+  return createElement("div", {
+    className: "agent-session-turn__body agent-session-turn__body--md",
+    dangerouslySetInnerHTML: { __html: markdown.render(body) },
+  });
+}
+
 function createAgentSessionTurn(block: AgentChatBlockView): ReactElement {
   if (block.role === "tool") {
     return createToolLogTurn(block);
@@ -439,7 +452,9 @@ function createAgentSessionTurn(block: AgentChatBlockView): ReactElement {
     role === "event"
       ? createElement("span", { className: "agent-session-turn__label" }, block.title)
       : null,
-    createElement("p", { className: "agent-session-turn__body" }, block.body),
+    role === "agent"
+      ? renderAgentMarkdown(block.body)
+      : createElement("p", { className: "agent-session-turn__body" }, block.body),
     block.rawFallback && block.rawFallback !== block.body
       ? createElement("pre", { className: "agent-session-turn__raw" }, block.rawFallback)
       : null,

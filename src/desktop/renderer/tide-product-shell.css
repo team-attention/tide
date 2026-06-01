@@ -975,6 +975,113 @@ button {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Rendered markdown (agent answers): flat prose with real headings, lists,
+   code, and links — not raw markdown source. */
+.agent-session-turn__body--md {
+  white-space: normal;
+}
+
+.agent-session-turn__body--md > :first-child {
+  margin-top: 0;
+}
+
+.agent-session-turn__body--md > :last-child {
+  margin-bottom: 0;
+}
+
+.agent-session-turn__body--md p {
+  margin: 0 0 10px;
+}
+
+.agent-session-turn__body--md h1,
+.agent-session-turn__body--md h2,
+.agent-session-turn__body--md h3,
+.agent-session-turn__body--md h4 {
+  margin: 16px 0 8px;
+  font-weight: 620;
+  line-height: 1.3;
+}
+
+.agent-session-turn__body--md h1 { font-size: 19px; }
+.agent-session-turn__body--md h2 { font-size: 17px; }
+.agent-session-turn__body--md h3 { font-size: 15.5px; }
+.agent-session-turn__body--md h4 { font-size: 15px; }
+
+.agent-session-turn__body--md ul,
+.agent-session-turn__body--md ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+
+.agent-session-turn__body--md li {
+  margin: 3px 0;
+}
+
+.agent-session-turn__body--md li > ul,
+.agent-session-turn__body--md li > ol {
+  margin: 3px 0;
+}
+
+.agent-session-turn__body--md a {
+  color: var(--tide-action);
+  text-decoration: none;
+}
+
+.agent-session-turn__body--md a:hover {
+  text-decoration: underline;
+}
+
+.agent-session-turn__body--md code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--tide-selection);
+  font: 13px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.agent-session-turn__body--md pre {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  overflow: auto;
+  background: var(--tide-selection);
+}
+
+.agent-session-turn__body--md pre code {
+  padding: 0;
+  background: none;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.agent-session-turn__body--md blockquote {
+  margin: 0 0 10px;
+  padding-left: 12px;
+  border-left: 3px solid var(--tide-line);
+  color: var(--tide-muted);
+}
+
+.agent-session-turn__body--md strong {
+  font-weight: 620;
+}
+
+.agent-session-turn__body--md hr {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--tide-line);
+}
+
+.agent-session-turn__body--md table {
+  margin: 0 0 10px;
+  border-collapse: collapse;
+}
+
+.agent-session-turn__body--md th,
+.agent-session-turn__body--md td {
+  padding: 4px 10px;
+  border: 1px solid var(--tide-line);
+  text-align: left;
+}
+
 /* Live "working" indicator while the runtime is responding (thinking/streaming),
    so progress is visible instead of only the final result. */
 .agent-session-working {
