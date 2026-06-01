@@ -38,6 +38,7 @@ import {
   type AppChromeState,
   type AppChromeViewModel,
 } from "../app-chrome/app-chrome-state.ts";
+import { worktreeRepoRootForCwd } from "../../../../shared/worktree-path.ts";
 
 export type ProductShellAgentIdentity = "codex" | "claude" | "antigravity" | "openai_api";
 
@@ -436,6 +437,28 @@ export function createProductShellViewModel(
   const sortThreads = (threads: ProductShellThread[]): ProductShellThread[] =>
     sortProductShellThreads(threads, state.listSettings.sortBy);
   const visibleThreads = sortThreads(state.threads.filter(matchesSearch));
+
+  // When "group worktrees by repo" is on, a worktree Project (cwd
+  // `<repo>.worktree/<branch>`) is folded into its repo Project: its threads
+  // bucket under the repo and the worktree Project is hidden from the top level.
+  const projects = displayedProjects(state);
+  const worktreeRemap = new Map<string, string>();
+  if (state.listSettings.groupWorktreesByRepo) {
+    const projectIdByCwd = new Map(projects.map((project) => [project.cwd, project.projectId]));
+    for (const project of projects) {
+      const repoRoot = worktreeRepoRootForCwd(project.cwd);
+      const repoProjectId = repoRoot === null ? undefined : projectIdByCwd.get(repoRoot);
+      if (repoProjectId !== undefined && repoProjectId !== project.projectId) {
+        worktreeRemap.set(project.projectId, repoProjectId);
+      }
+    }
+  }
+  const groupingProjectId = (projectId: string): string =>
+    worktreeRemap.get(projectId) ?? projectId;
+  const inGroup = (thread: ProductShellThread, project: ProductShellProject): boolean =>
+    thread.scope.kind === "project" &&
+    groupingProjectId(thread.scope.projectId) === project.projectId;
+
   const toGroup = (project: ProductShellProject): ProductShellProjectGroupView => ({
     projectId: project.projectId,
     name: project.name,
@@ -450,15 +473,14 @@ export function createProductShellViewModel(
     renaming: state.renamingProjectId === project.projectId,
     creatingWorktree: state.creatingWorktreeForProjectId === project.projectId,
     threads: visibleThreads
-      .filter((thread) => thread.scope.kind === "project" && thread.scope.projectId === project.projectId)
+      .filter((thread) => inGroup(thread, project))
       .map((thread) => toThreadView(thread, state)),
     attention: state.threads.some(
-      (thread) =>
-        thread.scope.kind === "project" &&
-        thread.scope.projectId === project.projectId &&
-        thread.attention === true,
+      (thread) => inGroup(thread, project) && thread.attention === true,
     ),
   });
+  // Worktree Projects folded into a repo no longer appear as their own group.
+  const topLevelProjects = projects.filter((project) => !worktreeRemap.has(project.projectId));
   return {
     activeThreadId: state.activeThreadId,
     leftUiOpen: state.leftUiOpen,
@@ -471,11 +493,11 @@ export function createProductShellViewModel(
       .map((thread) => toThreadView(thread, state)),
     // Pinned projects render as full expandable groups (same component as the
     // Projects section), so their Threads are reachable from the Pinned shortcut.
-    pinnedProjects: displayedProjects(state)
+    pinnedProjects: topLevelProjects
       .filter((project) => state.pinnedProjectIds.includes(project.projectId))
       .map(toGroup)
       .filter((group) => !searching || group.threads.length > 0),
-    projectGroups: displayedProjects(state)
+    projectGroups: topLevelProjects
       .map(toGroup)
       // While searching, hide project groups with no matching threads.
       .filter((group) => !searching || group.threads.length > 0),

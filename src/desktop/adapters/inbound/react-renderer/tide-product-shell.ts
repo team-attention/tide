@@ -2523,6 +2523,17 @@ function createListSettingsMenu(
     optionRow("Name", settings.sortBy === "name", () =>
       handlers.onListSettingsChange({ sortBy: "name" }),
     ),
+    // Worktree grouping only applies to project mode (no project groups in thread mode).
+    ...(settings.groupBy === "project"
+      ? [
+          sectionLabel("Worktrees"),
+          optionRow("Group under repo", settings.groupWorktreesByRepo, () =>
+            handlers.onListSettingsChange({
+              groupWorktreesByRepo: !settings.groupWorktreesByRepo,
+            }),
+          ),
+        ]
+      : []),
   );
 }
 

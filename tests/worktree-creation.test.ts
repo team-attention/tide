@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   computeWorktreePath,
   sanitizeWorktreeBranch,
+  worktreeRepoRootForCwd,
 } from "../src/shared/worktree-path.ts";
 import {
   createProductShellState,
@@ -37,6 +38,12 @@ test("applies_configured_worktree_path_pattern", () => {
     }),
     "/Users/me/repo/.worktrees/feature-login",
   );
+});
+
+test("derives_repo_root_from_a_worktree_cwd", () => {
+  // Inverse of the default rule, used to group worktree Projects under their repo.
+  assert.equal(worktreeRepoRootForCwd("/Users/me/repo.worktree/feature-login"), "/Users/me/repo");
+  assert.equal(worktreeRepoRootForCwd("/Users/me/repo"), null);
 });
 
 // --- UC-3: Inline worktree name input (Desktop) ---

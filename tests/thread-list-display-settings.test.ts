@@ -110,6 +110,43 @@ test("name_sort_orders_threads_alphabetically", () => {
   assert.deepEqual(vm.flatThreads.map((t) => t.threadId), ["a", "b", "c"]);
 });
 
+// --- UC-3: Group worktrees by repo ---
+
+test("worktree_projects_group_under_their_repo_when_enabled", () => {
+  // UC-3 BR-5: with groupWorktreesByRepo on, a worktree Project's threads bucket
+  // under its repo Project and the worktree Project is hidden from the top level.
+  const base = createProductShellState({ includeFixtureData: false });
+  const state: ProductShellState = {
+    ...base,
+    projects: [
+      { projectId: "repo", name: "repo", cwd: "/repo" },
+      { projectId: "wt", name: "feature", cwd: "/repo.worktree/feature" },
+    ],
+    threads: [
+      thread("t-repo", "Repo thread", {
+        scope: { kind: "project", projectId: "repo", cwd: "/repo" },
+      }),
+      thread("t-wt", "Worktree thread", {
+        scope: { kind: "project", projectId: "wt", cwd: "/repo.worktree/feature" },
+      }),
+    ],
+    listSettings: { ...base.listSettings, groupWorktreesByRepo: true },
+  };
+
+  const vm = createProductShellViewModel(state);
+  // Only the repo Project shows at top level (the worktree Project is folded in).
+  assert.deepEqual(vm.projectGroups.map((g) => g.projectId), ["repo"]);
+  const repo = vm.projectGroups.find((g) => g.projectId === "repo");
+  assert.deepEqual(repo?.threads.map((t) => t.threadId).sort(), ["t-repo", "t-wt"]);
+
+  // With the setting off, the worktree Project is its own top-level group.
+  const off = createProductShellViewModel({
+    ...state,
+    listSettings: { ...state.listSettings, groupWorktreesByRepo: false },
+  });
+  assert.deepEqual(off.projectGroups.map((g) => g.projectId).sort(), ["repo", "wt"]);
+});
+
 test("setting_list_settings_patches_only_given_fields", () => {
   const state = stateWith([thread("t1", "A")]);
   const next = setProductShellListSettings(state, { sortBy: "name" });

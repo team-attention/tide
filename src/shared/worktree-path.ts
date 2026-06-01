@@ -33,3 +33,11 @@ export function computeWorktreePath(
   const trimmedRoot = repoRoot.replace(/\/+$/, "");
   return `${trimmedRoot}.worktree/${sanitized}`;
 }
+
+// Inverse of the default rule: given a cwd, return the repo root it is a worktree
+// of (`<repo>.worktree/<branch>` -> `<repo>`), or null if it is not a Tide
+// default-rule worktree path. Used to group worktree Projects under their repo.
+export function worktreeRepoRootForCwd(cwd: string): string | null {
+  const match = cwd.replace(/\/+$/, "").match(/^(.*)\.worktree\/[^/]+$/);
+  return match === null ? null : match[1];
+}
