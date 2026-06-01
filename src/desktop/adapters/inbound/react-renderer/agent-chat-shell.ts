@@ -1,6 +1,7 @@
 import {
   createElement,
   useEffect,
+  useRef,
   useState,
   type ChangeEvent,
   type CSSProperties,
@@ -61,6 +62,7 @@ interface AnchorRect {
 export function AgentChatShell(props: AgentChatShellProps): ReactElement {
   const viewModel = props.viewModel;
   const [anchor, setAnchor] = useState<AnchorRect | null>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const isNewThreadStart =
     viewModel.composer.mode === "start" &&
     viewModel.blocks.length === 0 &&
@@ -82,16 +84,27 @@ export function AgentChatShell(props: AgentChatShellProps): ReactElement {
     onComposerSurfaceChange: props.onComposerSurfaceChange,
     onOpenSurface: openSurface,
     onChoiceSurfaceRowSelect: props.onChoiceSurfaceRowSelect,
+    inputRef: composerInputRef,
   };
 
   // The chip dropdown is a fixed-position popover anchored to its chip — never
   // an in-flow card that pushes the composer down. When opened without a chip
   // rect (programmatically / in tests), fall back to a sensible position.
   const fallbackTop = (typeof window === "undefined" ? 800 : window.innerHeight) - 180;
+  // Slash (/) command suggestions anchor to the composer input (they aren't
+  // opened from a chip), opening upward just above it. Chip surfaces keep their
+  // captured chip rect.
+  const inputRect =
+    viewModel.composer.activeSurface?.surfaceKind === "command_suggestions"
+      ? composerInputRef.current?.getBoundingClientRect()
+      : undefined;
+  const popoverAnchor: AnchorRect = inputRect
+    ? { left: inputRect.left, top: inputRect.top, bottom: inputRect.bottom }
+    : anchor ?? { left: 120, top: fallbackTop, bottom: fallbackTop + 30 };
   const popover = viewModel.composer.activeSurface
     ? createChipPopover({
         surface: viewModel.composer.activeSurface,
-        anchor: anchor ?? { left: 120, top: fallbackTop, bottom: fallbackTop + 30 },
+        anchor: popoverAnchor,
         onRowSelect: props.onChoiceSurfaceRowSelect,
         onClose: closeSurface,
       })
@@ -186,6 +199,8 @@ interface ComposerHandlers {
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
     rowId: string,
   ) => void;
+  // The composer textarea, so slash (/) command suggestions can anchor to it.
+  inputRef?: { current: HTMLTextAreaElement | null };
 }
 
 function createNewThreadStartSurface(
@@ -458,13 +473,50 @@ function createToolLogTurn(block: AgentChatBlockView): ReactElement {
       ),
       createElement("span", { className: "agent-session-turn__tool-name" }, block.title),
     ),
-    block.body.length > 0
-      ? createElement(
-          "pre",
-          { className: "agent-session-turn__tool-body" },
-          toolBodyText(block.title, block.body),
-        )
-      : null,
+    renderToolBody(block),
+  );
+}
+
+function renderToolBody(block: AgentChatBlockView): ReactNode {
+  if (block.body.length === 0) {
+    return null;
+  }
+  // Edits render as a +/- diff (Codex/Claude-app style) when we can derive one.
+  const diff = block.kind === "tool_call" ? editDiffLines(block.title, block.body) : null;
+  if (diff !== null && diff.length > 0) {
+    const adds = diff.filter((line) => line.kind === "add").length;
+    const dels = diff.filter((line) => line.kind === "del").length;
+    return createElement(
+      "div",
+      { className: "agent-session-turn__diff" },
+      createElement(
+        "div",
+        { className: "agent-session-turn__diff-stat" },
+        adds > 0 ? createElement("span", { className: "diff-stat--add" }, `+${adds}`) : null,
+        dels > 0 ? createElement("span", { className: "diff-stat--del" }, `-${dels}`) : null,
+      ),
+      createElement(
+        "div",
+        { className: "agent-session-turn__diff-body" },
+        diff.map((line, index) =>
+          createElement(
+            "div",
+            { key: index, className: `diff-line diff-line--${line.kind}` },
+            createElement(
+              "span",
+              { className: "diff-line__sign", "aria-hidden": true },
+              line.kind === "add" ? "+" : line.kind === "del" ? "-" : " ",
+            ),
+            createElement("span", { className: "diff-line__text" }, line.text),
+          ),
+        ),
+      ),
+    );
+  }
+  return createElement(
+    "pre",
+    { className: "agent-session-turn__tool-body" },
+    toolBodyText(block.title, block.body),
   );
 }
 
@@ -512,6 +564,97 @@ export function toolBodyText(toolName: string, body: string): string {
   return entries
     .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
     .join("\n");
+}
+
+interface DiffLine {
+  kind: "add" | "del" | "ctx";
+  text: string;
+}
+
+// Builds a +/- diff for an edit tool from its JSON args, so edits render like a
+// real diff instead of a wall of new text. Returns null for non-edit tools or
+// args too large to diff cheaply.
+export function editDiffLines(toolName: string, body: string): DiffLine[] | null {
+  const trimmed = body.trim();
+  // codex apply_patch: the body is (or contains) a unified-ish patch already.
+  if ((/patch/i.test(toolName) || trimmed.includes("*** ")) && trimmed.includes("\n")) {
+    return parsePatchLines(trimmed);
+  }
+  if (!trimmed.startsWith("{")) {
+    return null;
+  }
+  let record: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    record = parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const patch = pickStringField(record, ["patch", "diff"]);
+  if (patch !== undefined) {
+    return parsePatchLines(patch);
+  }
+  const oldText = pickStringField(record, ["old_string", "oldString", "old"]);
+  const newText = pickStringField(record, ["new_string", "newString", "new"]);
+  if (oldText !== undefined && newText !== undefined) {
+    return lineDiff(oldText, newText);
+  }
+  // Write/create: all-additions.
+  const content = pickStringField(record, ["content", "file_text", "contents"]);
+  if (content !== undefined && pickStringField(record, ["file_path", "filePath", "path"]) !== undefined) {
+    return content.split("\n").map((text) => ({ kind: "add" as const, text }));
+  }
+  return null;
+}
+
+function parsePatchLines(patch: string): DiffLine[] {
+  const lines: DiffLine[] = [];
+  for (const raw of patch.split("\n")) {
+    if (raw.startsWith("+++") || raw.startsWith("---") || raw.startsWith("@@") || raw.startsWith("*** ")) {
+      continue;
+    }
+    if (raw.startsWith("+")) lines.push({ kind: "add", text: raw.slice(1) });
+    else if (raw.startsWith("-")) lines.push({ kind: "del", text: raw.slice(1) });
+    else lines.push({ kind: "ctx", text: raw.startsWith(" ") ? raw.slice(1) : raw });
+  }
+  return lines;
+}
+
+// LCS line diff. Bounded: very large inputs fall back to null (plain render).
+function lineDiff(oldText: string, newText: string): DiffLine[] | null {
+  const a = oldText.split("\n");
+  const b = newText.split("\n");
+  if (a.length > 600 || b.length > 600) {
+    return null;
+  }
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i -= 1) {
+    for (let j = n - 1; j >= 0; j -= 1) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const out: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < m && j < n) {
+    if (a[i] === b[j]) {
+      out.push({ kind: "ctx", text: a[i] });
+      i += 1;
+      j += 1;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      out.push({ kind: "del", text: a[i] });
+      i += 1;
+    } else {
+      out.push({ kind: "add", text: b[j] });
+      j += 1;
+    }
+  }
+  while (i < m) out.push({ kind: "del", text: a[i++] });
+  while (j < n) out.push({ kind: "add", text: b[j++] });
+  return out;
 }
 
 function pickStringField(record: Record<string, unknown>, keys: string[]): string | undefined {
@@ -689,6 +832,7 @@ function createComposer(
       createElement("textarea", {
         "aria-label": "Composer draft",
         className: "composer-shell__input",
+        ref: handlers.inputRef,
         // One row at rest (CSS min-height sets the floor per mode); the input
         // grows with content via CSS field-sizing in Chromium.
         rows: 1,

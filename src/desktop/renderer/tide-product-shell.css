@@ -1106,6 +1106,71 @@ button {
   white-space: pre-wrap;
 }
 
+/* Edit tools render as a +/- diff (Codex/Claude-app style). */
+.agent-session-turn__diff {
+  margin: 2px 0 0;
+  border: 1px solid var(--tide-line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.agent-session-turn__diff-stat {
+  display: flex;
+  gap: 8px;
+  padding: 4px 9px;
+  border-bottom: 1px solid var(--tide-line);
+  background: var(--tide-surface);
+  font: 11px/1 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.diff-stat--add {
+  color: #1a7f37;
+}
+
+.diff-stat--del {
+  color: #cf222e;
+}
+
+.agent-session-turn__diff-body {
+  max-height: 260px;
+  overflow: auto;
+  font: 12px/1.5 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.diff-line {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diff-line__sign {
+  text-align: center;
+  color: var(--tide-muted);
+  user-select: none;
+}
+
+.diff-line__text {
+  min-width: 0;
+  padding-right: 8px;
+}
+
+.diff-line--add {
+  background: rgba(26, 127, 55, 0.12);
+}
+
+.diff-line--add .diff-line__sign {
+  color: #1a7f37;
+}
+
+.diff-line--del {
+  background: rgba(207, 34, 46, 0.12);
+}
+
+.diff-line--del .diff-line__sign {
+  color: #cf222e;
+}
+
 /* Codex-style collapsed tool-activity summary: a quiet one-line row that
    aggregates a run of tool calls, expandable to the per-tool detail. */
 .agent-session-tools {
