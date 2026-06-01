@@ -17,6 +17,14 @@ export interface GitContext {
   worktrees: { path: string; branch: string | null; current: boolean }[];
 }
 
+export interface ProviderCommandSuggestion {
+  name: string;
+  description: string;
+  trigger: "/" | "$";
+  source: "project" | "user";
+  agentId: "codex" | "claude" | "antigravity";
+}
+
 export interface TidePreloadSurface {
   contractVersion: 1;
   transport: "message_port";
@@ -31,6 +39,7 @@ export interface TidePreloadSurface {
   revealInFinder(cwd: string): Promise<void>;
   createWorktree(cwd: string): Promise<{ entries: ProjectRegistryEntry[]; createdCwd: string | null }>;
   gitContext(cwd: string): Promise<GitContext>;
+  listCommands(cwd: string, agentId: string): Promise<ProviderCommandSuggestion[]>;
 }
 
 export const tidePreloadSurface: TidePreloadSurface = {
@@ -74,6 +83,9 @@ export const tidePreloadSurface: TidePreloadSurface = {
   },
   gitContext(cwd) {
     return ipcRenderer.invoke("tide:git-context", cwd) as Promise<GitContext>;
+  },
+  listCommands(cwd, agentId) {
+    return ipcRenderer.invoke("tide:list-commands", cwd, agentId) as Promise<ProviderCommandSuggestion[]>;
   },
 };
 

@@ -21,6 +21,7 @@ import {
   type AgentChatChoiceSurfaceView,
   type AgentChatBranchOption,
   type AgentChatWorktreeOption,
+  type AgentChatCommandOption,
 } from "../agent-chat/agent-chat-shell-state.ts";
 import {
   applyAppChromeBackendEvent,
@@ -83,6 +84,8 @@ export interface ProductShellState {
   // Real git branches/worktrees for the active Project cwd (fetched via Main IPC).
   gitBranches: AgentChatBranchOption[];
   gitWorktrees: AgentChatWorktreeOption[];
+  // Real provider slash-commands/skills for the active cwd+agent (Main IPC).
+  providerCommands: AgentChatCommandOption[];
   // Pinned projects (shown as shortcuts in the Pinned section) and the project
   // currently being inline-renamed.
   pinnedProjectIds: string[];
@@ -345,6 +348,7 @@ export function createProductShellState(
     registeredProjects: [],
     gitBranches: [],
     gitWorktrees: [],
+    providerCommands: [],
     pinnedProjectIds: [],
     renamingProjectId: null,
     threads: includeFixtureData ? initialThreads : [],
@@ -650,7 +654,15 @@ function agentChatWithProjects(state: ProductShellState): AgentChatShellState {
     })),
     availableBranches: state.gitBranches,
     availableWorktrees: state.gitWorktrees,
+    availableCommands: state.providerCommands,
   };
+}
+
+export function setProductShellProviderCommands(
+  state: ProductShellState,
+  commands: AgentChatCommandOption[],
+): ProductShellState {
+  return { ...state, providerCommands: commands };
 }
 
 export function setProductShellComposerActiveSurface(

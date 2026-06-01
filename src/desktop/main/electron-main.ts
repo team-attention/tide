@@ -1,7 +1,12 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, utilityProcess, type UtilityProcess } from "electron";
 import { basename, dirname, join } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
+import { readdirSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
+import {
+  discoverProviderCommands,
+  type CommandFs,
+} from "./provider-command-discovery.ts";
 import { fileURLToPath } from "node:url";
 import {
   CONTRACT_VERSION,
@@ -217,6 +222,44 @@ ipcMain.handle("tide:git-context", async (_event, cwd: unknown): Promise<GitCont
   }
   if (pending) worktrees.push({ ...pending, current: pending.path === cwd });
   return { isGitRepo: true, currentBranch, branches, worktrees };
+});
+
+// Real provider slash-commands/skills for a cwd, read from the providers' files
+// (no provider spawn). See docs_v2/specs/provider-command-discovery.md.
+const commandDiscoveryFs: CommandFs = {
+  listFiles: (dir) => {
+    try {
+      return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name);
+    } catch {
+      return [];
+    }
+  },
+  listDirs: (dir) => {
+    try {
+      return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+    } catch {
+      return [];
+    }
+  },
+  readText: (path) => {
+    try {
+      return readFileSync(path, "utf8");
+    } catch {
+      return undefined;
+    }
+  },
+};
+
+ipcMain.handle("tide:list-commands", (_event, cwd: unknown, agentId: unknown) => {
+  if (typeof cwd !== "string" || cwd.length === 0 || typeof agentId !== "string") {
+    return [];
+  }
+  return discoverProviderCommands({
+    cwd,
+    homeDir: app.getPath("home"),
+    agentId,
+    fs: commandDiscoveryFs,
+  });
 });
 
 ipcMain.handle("tide:backend-command", async (_event, command: BackendCommandEnvelope) => {

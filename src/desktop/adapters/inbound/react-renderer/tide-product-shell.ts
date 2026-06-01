@@ -84,6 +84,7 @@ import {
   setProductShellComposerActiveSurface,
   setProductShellComposerFolderScope,
   setProductShellGitContext,
+  setProductShellProviderCommands,
   setProductShellRegisteredProjects,
   startProductShellProjectRename,
   startNewProductShellScratchThread,
@@ -121,6 +122,7 @@ import { AgentChatShell } from "./agent-chat-shell.ts";
 import type {
   AgentChatBackendEvent,
   AgentChatChoiceSurfaceView,
+  AgentChatCommandOption,
   AgentChatComposerSurfaceKind,
 } from "../../../application/domains/agent-chat/agent-chat-shell-state.ts";
 
@@ -148,6 +150,7 @@ export interface ProjectRegistryBridge {
   revealInFinder(cwd: string): Promise<void>;
   createWorktree(cwd: string): Promise<{ entries: ProjectRegistryEntry[]; createdCwd: string | null }>;
   gitContext(cwd: string): Promise<GitContextResult>;
+  listCommands(cwd: string, agentId: string): Promise<AgentChatCommandOption[]>;
 }
 
 export interface TideProductShellProps {
@@ -342,6 +345,31 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       cancelled = true;
     };
   }, [props.projectBridge, activeProjectCwd]);
+
+  // Fetch real provider commands/skills whenever the active cwd or agent changes,
+  // so the composer's / (and $) menu reflects this directory's actual commands.
+  const activeAgentId =
+    shellState.agentChat.thread?.agentBinding.agentId ??
+    shellState.agentChat.composer.startOptions.agentBinding.agentId;
+  useEffect(() => {
+    const bridge = props.projectBridge;
+    if (bridge === undefined || activeProjectCwd === null) {
+      setShellState((state) => setProductShellProviderCommands(state, []));
+      return;
+    }
+    let cancelled = false;
+    bridge
+      .listCommands(activeProjectCwd, activeAgentId)
+      .then((commands) => {
+        if (!cancelled) {
+          setShellState((state) => setProductShellProviderCommands(state, commands));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [props.projectBridge, activeProjectCwd, activeAgentId]);
 
   // The agent-chat column never shrinks below the composer's usable width.
   const CHAT_MIN = 440;

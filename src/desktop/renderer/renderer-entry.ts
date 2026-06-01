@@ -36,6 +36,7 @@ export function createInitialRendererElement() {
             revealInFinder: (cwd: string) => window.tide!.revealInFinder(cwd),
             createWorktree: (cwd: string) => window.tide!.createWorktree(cwd),
             gitContext: (cwd: string) => window.tide!.gitContext(cwd),
+            listCommands: (cwd: string, agentId: string) => window.tide!.listCommands(cwd, agentId),
           },
   });
 }
@@ -70,6 +71,13 @@ declare global {
         branches: { name: string; kind: "local" | "remote"; current: boolean }[];
         worktrees: { path: string; branch: string | null; current: boolean }[];
       }>;
+      listCommands(cwd: string, agentId: string): Promise<{
+        name: string;
+        description: string;
+        trigger: "/" | "$";
+        source: "project" | "user";
+        agentId: "codex" | "claude" | "antigravity";
+      }[]>;
     };
   }
 }

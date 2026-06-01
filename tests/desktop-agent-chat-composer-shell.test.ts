@@ -666,7 +666,14 @@ test("composer_options_and_command_prefix_render_as_transient_choice_surfaces", 
   const optionsHtml = renderShell(
     setComposerActiveSurface(createAgentChatShellState(), "composer_options").state,
   );
-  const slashHtml = renderShell(updateComposerDraft(createAgentChatShellState(), "/").state);
+  // Typing / shows the real provider commands injected for the cwd+agent.
+  const slashHtml = renderShell({
+    ...updateComposerDraft(createAgentChatShellState(), "/").state,
+    availableCommands: [
+      { name: "check", description: "Check repo evidence", trigger: "/" as const },
+      { name: "work", description: "Run actionable work", trigger: "/" as const },
+    ],
+  });
 
   // The chip dropdown now renders as an anchored popover (fixed-position), so it
   // no longer needs to precede the composer in the DOM — just that it renders.
@@ -676,9 +683,9 @@ test("composer_options_and_command_prefix_render_as_transient_choice_surfaces", 
   assert.match(optionsHtml, /Current file or selection/);
   assert.match(optionsHtml, /Agent tools/);
   assert.doesNotMatch(optionsHtml, /This popover never shows/i);
-  assert.match(slashHtml, /Command suggestions/);
-  assert.match(slashHtml, /Code review/);
-  assert.match(slashHtml, /Context mention/);
+  assert.match(slashHtml, /Commands/);
+  assert.match(slashHtml, /\/check/);
+  assert.match(slashHtml, /\/work/);
 });
 
 test("openai_api_readiness_mentions_provider_account_not_hidden_pty", () => {

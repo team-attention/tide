@@ -39,6 +39,12 @@ export interface AgentChatWorktreeOption {
   current: boolean;
 }
 
+export interface AgentChatCommandOption {
+  name: string;
+  description: string;
+  trigger: "/" | "$";
+}
+
 export interface AgentChatShellState {
   thread: AgentChatThreadSummary | null;
   runtimeState: AgentRuntimeStateName;
@@ -54,6 +60,9 @@ export interface AgentChatShellState {
   // product shell. Empty for Scratch / non-git scopes (menus fall back).
   availableBranches?: AgentChatBranchOption[];
   availableWorktrees?: AgentChatWorktreeOption[];
+  // Real provider slash-commands/skills for the active cwd+agent, injected by
+  // the product shell (discovered from provider files). Empty until provided.
+  availableCommands?: AgentChatCommandOption[];
   // Composer input submitted during a live turn: held (queued) and shown as a
   // "queued" row until the turn ends and the backend flushes it as a real block.
   queuedInput: string | null;
@@ -492,8 +501,22 @@ export function selectAgentChatChoiceSurfaceRow(
       const branch = branchForRow(rowId);
       return branch ? updateComposerLaunchOptions(state, { branch }) : { state, command: null };
     }
+    case "command_suggestions": {
+      // Selecting a command/skill row (rowId "command:/name" or "command:$name")
+      // inserts the token into the draft and closes the surface.
+      if (rowId.startsWith("command:")) {
+        const token = rowId.slice("command:".length);
+        return {
+          state: {
+            ...state,
+            composer: { ...state.composer, draft: `${token} `, activeSurface: null },
+          },
+          command: null,
+        };
+      }
+      return setComposerActiveSurface(state, null);
+    }
     case "composer_options":
-    case "command_suggestions":
       return setComposerActiveSurface(state, null);
   }
 }
@@ -969,18 +992,30 @@ function createActiveComposerSurface(
           row("agent-tools", "Agent tools", "selected Agent features", undefined, "tool"),
         ],
       };
-    case "command_suggestions":
+    case "command_suggestions": {
+      // Real provider commands/skills for the active cwd+agent (discovered from
+      // provider files, injected by the product shell), filtered by what the
+      // user has typed after the leading / or $.
+      const draft = state.composer.draft;
+      const trigger = draft.startsWith("$") ? "$" : "/";
+      const query = draft.slice(1).trim().toLowerCase();
+      const commands = (state.availableCommands ?? []).filter(
+        (command) =>
+          command.trigger === trigger &&
+          (query.length === 0 || command.name.toLowerCase().includes(query)),
+      );
       return {
         surfaceKind,
-        title: "Command suggestions",
-        sourceLabel: "selected Agent",
-        rows: [
-          row("code-review", "Code review", "Review unstaged changes or compare against a branch", agentLabel, "/"),
-          row("compact", "Compact", "Compact this Thread context", agentLabel, "/"),
-          row("context-mention", "Context mention", "files / panes / artifacts", "Tide", "@"),
-          row("provider-command", "Provider command", "pass through when meaningful", "Agent", "$"),
-        ],
+        title: trigger === "$" ? "Skills" : "Commands",
+        sourceLabel: agentLabel,
+        rows:
+          commands.length === 0
+            ? [row("no-commands", `No ${trigger === "$" ? "skills" : "commands"} found`, "for this directory", agentLabel)]
+            : commands.map((command) =>
+                row(`command:${command.trigger}${command.name}`, `${command.trigger}${command.name}`, command.description, agentLabel),
+              ),
       };
+    }
   }
 }
 

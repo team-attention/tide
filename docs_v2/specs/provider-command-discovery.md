@@ -92,7 +92,7 @@ change.
 
 ## Location
 
-- `src/backend/application/services/provider-command-discovery.ts` — pure
+- `src/desktop/main/provider-command-discovery.ts` — pure
   parsers + orchestrator (injected fs).
 - `src/desktop/main/electron-main.ts` — `tide:list-commands` wiring.
 - `src/desktop/.../tide-product-shell.ts` + `agent-chat-shell-state.ts` —
