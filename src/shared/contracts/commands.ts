@@ -15,7 +15,6 @@ export type BackendCommandKind =
   | "prompt.answer"
   | "agentRuntime.stop"
   | "provider.trustWorkspace"
-  | "worktree.create"
   | "workbench.command";
 
 export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
@@ -30,7 +29,6 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "prompt.answer",
   "agentRuntime.stop",
   "provider.trustWorkspace",
-  "worktree.create",
   "workbench.command",
 ];
 
@@ -74,7 +72,6 @@ export interface BackendCommandPayloadByKind {
   };
   "agentRuntime.stop": { threadId: ThreadId };
   "provider.trustWorkspace": { threadId: ThreadId };
-  "worktree.create": { projectCwd: string; name: string };
   "workbench.command": {
     threadId: ThreadId;
     command: string;

@@ -1,5 +1,6 @@
-// Pure rule for where a new git worktree lives, mirroring Tide v1's
-// compute_worktree_path. See docs_v2/specs/worktree-creation.md.
+// Pure rule for a new git worktree's branch + path, mirroring Tide v1's
+// compute_worktree_path. Process-agnostic (used by Electron Main).
+// See docs_v2/specs/worktree-creation.md.
 
 export interface WorktreePathSettings {
   // Pattern with {repo_root} and {branch} placeholders. When unset, the default
@@ -7,8 +8,13 @@ export interface WorktreePathSettings {
   baseDirPattern?: string;
 }
 
-export function sanitizeWorktreeBranch(branch: string): string {
-  return branch.replace(/\//g, "-");
+// A single name drives the worktree branch + directory: slashes and whitespace
+// become dashes so it is a safe branch + path segment.
+export function sanitizeWorktreeBranch(name: string): string {
+  return name
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/\//g, "-");
 }
 
 export function computeWorktreePath(

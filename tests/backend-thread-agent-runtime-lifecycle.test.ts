@@ -392,58 +392,6 @@ test("sends_attachment_paths_when_the_message_text_is_empty", async () => {
   );
 });
 
-// --- UC-2: Create Worktree ---
-// Spec: docs_v2/specs/worktree-creation.md
-
-test("creating_a_worktree_runs_git_worktree_add", async () => {
-  // UC-2 BR-3: runs `git worktree add <path> -b <name>` in the project cwd.
-  const fakes = createFakes();
-  const commandPort = new RecordingWorkspaceCommandPort();
-  const service = createThreadRuntimeService({
-    ...fakes.ports,
-    workspaceCommandPort: commandPort,
-    clock: fixedClock,
-    idGenerator: sequentialIdGenerator("id"),
-  });
-
-  const result = await service.createWorktree({
-    projectCwd: "/Users/me/repo",
-    name: "feature/login",
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(commandPort.runs.length, 1);
-  assert.equal(commandPort.runs[0].command, "git");
-  assert.deepEqual(commandPort.runs[0].args, [
-    "worktree",
-    "add",
-    "/Users/me/repo.worktree/feature-login",
-    "-b",
-    "feature-login",
-  ]);
-  assert.equal(commandPort.runs[0].cwd, "/Users/me/repo");
-});
-
-test("creating_a_worktree_returns_its_path_and_branch", async () => {
-  // UC-2 BR-4: returns the computed worktree path + sanitized branch.
-  const fakes = createFakes();
-  const service = createThreadRuntimeService({
-    ...fakes.ports,
-    workspaceCommandPort: new RecordingWorkspaceCommandPort(),
-    clock: fixedClock,
-    idGenerator: sequentialIdGenerator("id"),
-  });
-
-  const result = await service.createWorktree({
-    projectCwd: "/Users/me/repo",
-    name: "fix/bug",
-  });
-
-  assert.equal(result.ok, true);
-  assert.equal(result.ok && result.worktreePath, "/Users/me/repo.worktree/fix-bug");
-  assert.equal(result.ok && result.branch, "fix-bug");
-});
-
 // --- UC-1: Grant Workspace Trust ---
 // Spec: docs_v2/specs/workspace-trust-grant.md
 
@@ -2536,41 +2484,6 @@ class FakeProviderTrustPort implements ProviderTrustPort {
 
   async trust(input: { agentId: string; cwd: string }): Promise<void> {
     this.calls.push(input);
-  }
-}
-
-class RecordingWorkspaceCommandPort implements WorkspaceCommandPort {
-  runs: { command: string; args: string[]; cwd: string }[] = [];
-
-  async resolveCwd(input: { root: string; cwd?: string }): Promise<WorkspaceCommandCwdResult> {
-    const cwd = input.cwd ?? input.root;
-    return { ok: true, cwd: { root: input.root, cwd, relativeCwd: "." } };
-  }
-
-  async run(input: {
-    command: string;
-    args: string[];
-    cwd: string;
-    startedAt: string;
-  }): Promise<WorkspaceCommandRunResult> {
-    this.runs.push({ command: input.command, args: input.args, cwd: input.cwd });
-    return {
-      ok: true,
-      run: {
-        command: input.command,
-        args: input.args,
-        cwd: input.cwd,
-        exitCode: 0,
-        signal: null,
-        stdout: "",
-        stderr: "",
-        transcript: "",
-        truncated: false,
-        timedOut: false,
-        startedAt: input.startedAt,
-        completedAt: input.startedAt,
-      },
-    };
   }
 }
 

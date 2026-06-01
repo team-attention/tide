@@ -5,7 +5,7 @@ import test from "node:test";
 import {
   computeWorktreePath,
   sanitizeWorktreeBranch,
-} from "../src/backend/application/domains/worktree/worktree-path.ts";
+} from "../src/shared/worktree-path.ts";
 import {
   createProductShellState,
   createProductShellViewModel,

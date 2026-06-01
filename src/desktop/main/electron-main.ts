@@ -8,6 +8,7 @@ import {
   type CommandFs,
 } from "./provider-command-discovery.ts";
 import { fileURLToPath } from "node:url";
+import { computeWorktreePath, sanitizeWorktreeBranch } from "../../shared/worktree-path.ts";
 import {
   CONTRACT_VERSION,
   createContractErrorEvent,
@@ -150,10 +151,10 @@ ipcMain.handle("tide:create-worktree", async (_event, cwd: unknown, name: unknow
     return { entries: current, createdCwd: null };
   }
   const rawName = typeof name === "string" ? name.trim() : "";
-  const branch = (rawName.length > 0 ? rawName : `${basename(cwd) || "tide"}-wt`)
-    .replace(/\//g, "-")
-    .replace(/\s+/g, "-");
-  const worktreePath = join(`${cwd.replace(/\/+$/, "")}.worktree`, branch);
+  const branch = sanitizeWorktreeBranch(
+    rawName.length > 0 ? rawName : `${basename(cwd) || "tide"}-wt`,
+  );
+  const worktreePath = computeWorktreePath(cwd, branch);
   const created = await new Promise<boolean>((resolve) => {
     execFile(
       "git",
