@@ -1558,7 +1558,8 @@ button {
 }
 
 .agent-chat-shell__composer-stack {
-  width: min(760px, 100%);
+  /* Same width basis as the content turns so the composer lines up exactly. */
+  width: min(760px, calc(100% - 32px));
   display: grid;
   gap: 16px;
   margin: 0 auto;
@@ -1709,8 +1710,9 @@ button {
 }
 
 .composer-shell {
-  /* Same width as the content column so they line up. */
-  width: min(760px, calc(100% - 32px));
+  /* Fill the composer-stack / start surface (which carry the column width), so
+     the composer matches the content turns exactly. */
+  width: 100%;
   margin: 0 auto;
   display: grid;
   gap: 12px;
