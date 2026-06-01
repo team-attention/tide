@@ -2238,7 +2238,9 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     }
 
     pane.status = "running";
-    pane.transcriptPreview = terminalLaunchPreview(pane.command, pane.args ?? [], pane.cwd);
+    // The PTY spawns the shell directly in `cwd`; don't seed a synthetic
+    // `$ cd ...\n$ <shell>` banner — the live xterm should show only real output.
+    pane.transcriptPreview = "";
     pane.revision = this.idGenerator();
     pane.updatedAt = this.clock();
 
@@ -4011,10 +4013,6 @@ function commandName(command: string): string {
 }
 
 function setupLaunchPreview(command: string, args: string[], cwd: string): string {
-  return `$ cd ${cwd}\n$ ${[command, ...args].join(" ")}\n`;
-}
-
-function terminalLaunchPreview(command: string, args: string[], cwd: string): string {
   return `$ cd ${cwd}\n$ ${[command, ...args].join(" ")}\n`;
 }
 
