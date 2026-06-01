@@ -351,6 +351,12 @@ function codexLaunchOptionArgs(
     args.push("--model", model);
   }
 
+  // Reasoning effort maps to codex's `model_reasoning_effort` config override.
+  const reasoning = stringValue(launchOptions?.reasoning);
+  if (reasoning === "low" || reasoning === "medium" || reasoning === "high" || reasoning === "xhigh") {
+    args.push("-c", `model_reasoning_effort=${codexConfigString(reasoning)}`);
+  }
+
   const permission = stringValue(launchOptions?.permission);
   if (
     permission === "read-only" ||

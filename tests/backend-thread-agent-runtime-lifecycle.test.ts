@@ -392,6 +392,89 @@ test("sending_follow_up_input_to_an_open_thread_resumes_before_writing", async (
   assert.equal(fakes.runtime.writes[0].input.value, "Continue from the prior work");
 });
 
+test("sending_input_to_a_thread_without_a_provider_session_starts_a_new_runtime", async () => {
+  // A hydrated/seeded thread that has never run has no providerSessionRef, so
+  // follow-up input must START a fresh runtime rather than fail to resume.
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-never-run", {
+        agentBinding: { agentId: "claude" },
+      }),
+    ],
+  });
+
+  const result = await service.sendComposerInput({
+    threadId: "thread-never-run",
+    input: "First message to a never-run thread",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status, "sent");
+  assert.equal(result.runtimeState, "running");
+  assert.deepEqual(fakes.runtime.events, ["start", "writeInput"]);
+  assert.equal(fakes.runtime.starts[0]?.threadId, "thread-never-run");
+  assert.equal(fakes.runtime.writes[0]?.input.value, "First message to a never-run thread");
+});
+
+function busyThreadService() {
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-busy", {
+        agentBinding: {
+          agentId: "codex",
+          providerSessionRef: { kind: "codex_rollout", value: "rollout-busy" },
+        },
+      }),
+    ],
+  });
+  return { fakes, service };
+}
+
+test("input_sent_while_a_turn_is_running_is_queued_not_sent", async () => {
+  // Default behaviour: a second input during a live turn queues Tide-side.
+  const { fakes, service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+  const queued = await service.sendComposerInput({ threadId: "thread-busy", input: "second" });
+
+  assert.equal(queued.ok, true);
+  assert.equal(queued.status, "queued");
+  // Only the first input reached the runtime; the second is held.
+  assert.deepEqual(fakes.runtime.events, ["resume", "writeInput"]);
+  assert.equal(fakes.runtime.writes.length, 1);
+});
+
+test("recording_turn_complete_flushes_the_queued_input_into_the_next_turn", async () => {
+  const { fakes, service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+  await service.sendComposerInput({ threadId: "thread-busy", input: "second" });
+  const done = await service.recordTurnComplete({ threadId: "thread-busy" });
+
+  assert.equal(done.ok, true);
+  assert.equal(done.flushedInput, "second");
+  assert.equal(done.runtimeState, "running");
+  assert.deepEqual(fakes.runtime.events, ["resume", "writeInput", "writeInput"]);
+  assert.equal(fakes.runtime.writes[1]?.input.value, "second");
+});
+
+test("recording_turn_complete_with_no_queue_returns_the_runtime_to_idle", async () => {
+  // The lingering-loading fix: a turn ending with no queued input goes idle.
+  const { service } = busyThreadService();
+  await service.sendComposerInput({ threadId: "thread-busy", input: "first" });
+  const done = await service.recordTurnComplete({ threadId: "thread-busy" });
+
+  assert.equal(done.ok, true);
+  assert.equal(done.runtimeState, "idle");
+  assert.equal(done.flushedInput, undefined);
+});
+
 test("resuming_agent_runtime_without_input_resumes_provider_session_without_writing", async () => {
   const fakes = createFakes();
   const service = createThreadRuntimeService({
@@ -1782,7 +1865,7 @@ test("opening_workbench_launcher_creates_or_reveals_single_launcher_pane", async
   assert.deepEqual(
     opened.ok &&
       opened.thread.workbench.panes[0]?.actions.map((action) => action.actionId),
-    ["open_browser", "open_editor", "open_terminal", "open_diff", "open_file_tree"],
+    ["open_browser", "open_editor", "open_terminal", "open_diff"],
   );
   assert.equal(openedAgain.ok, true);
   assert.equal(openedAgain.ok && openedAgain.thread.workbench.panes.length, 1);

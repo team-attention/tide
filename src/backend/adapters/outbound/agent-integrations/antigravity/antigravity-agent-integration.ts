@@ -318,14 +318,20 @@ function cwdFromScope(scope: ThreadScope | undefined, fallback: string): string 
 function antigravityLaunchOptionArgs(
   launchOptions: Record<string, unknown> | undefined,
 ): string[] {
+  const args: string[] = [];
+  // Antigravity/Gemini CLI takes `-m, --model`. "Antigravity default" passes
+  // nothing (uses the CLI's own default).
+  const model = stringValue(launchOptions?.model);
+  if (model !== undefined && model !== "Antigravity default") {
+    args.push("--model", model);
+  }
   const permission = stringValue(launchOptions?.permission);
   if (permission === "sandbox") {
-    return ["--sandbox"];
+    args.push("--sandbox");
+  } else if (permission === "dangerously-skip-permissions") {
+    args.push("--dangerously-skip-permissions");
   }
-  if (permission === "dangerously-skip-permissions") {
-    return ["--dangerously-skip-permissions"];
-  }
-  return [];
+  return args;
 }
 
 function cloneTidePluginConfig(

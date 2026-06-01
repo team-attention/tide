@@ -24,6 +24,19 @@ export function createInitialRendererElement() {
   return createElement(TideProductShell, {
     onBackendCommand: dispatchBackendCommand,
     onBackendEvent: subscribeBackendEvents,
+    projectBridge:
+      window.tide === undefined
+        ? undefined
+        : {
+            openDirectory: () => window.tide!.openDirectory(),
+            listProjects: () => window.tide!.listProjects(),
+            registerProject: (cwd: string) => window.tide!.registerProject(cwd),
+            unregisterProject: (cwd: string) => window.tide!.unregisterProject(cwd),
+            renameProject: (cwd: string, name: string) => window.tide!.renameProject(cwd, name),
+            revealInFinder: (cwd: string) => window.tide!.revealInFinder(cwd),
+            createWorktree: (cwd: string) => window.tide!.createWorktree(cwd),
+            gitContext: (cwd: string) => window.tide!.gitContext(cwd),
+          },
   });
 }
 
@@ -44,6 +57,19 @@ declare global {
       transport: "message_port";
       sendBackendCommand(command: BackendCommandEnvelope): Promise<BackendEventEnvelope[]>;
       onBackendEvent(listener: (event: BackendEventEnvelope) => void): () => void;
+      openDirectory(): Promise<string | null>;
+      listProjects(): Promise<{ projectId: string; name: string; cwd: string }[]>;
+      registerProject(cwd: string): Promise<{ projectId: string; name: string; cwd: string }[]>;
+      unregisterProject(cwd: string): Promise<{ projectId: string; name: string; cwd: string }[]>;
+      renameProject(cwd: string, name: string): Promise<{ projectId: string; name: string; cwd: string }[]>;
+      revealInFinder(cwd: string): Promise<void>;
+      createWorktree(cwd: string): Promise<{ entries: { projectId: string; name: string; cwd: string }[]; createdCwd: string | null }>;
+      gitContext(cwd: string): Promise<{
+        isGitRepo: boolean;
+        currentBranch: string | null;
+        branches: { name: string; kind: "local" | "remote"; current: boolean }[];
+        worktrees: { path: string; branch: string | null; current: boolean }[];
+      }>;
     };
   }
 }

@@ -19,6 +19,26 @@ export type AgentRuntimeStateName =
   | "stopped"
   | "failed";
 
+// A real project the composer can scope a new Thread to (sourced from the
+// product shell's known projects — never hardcoded).
+export interface AgentChatProjectOption {
+  projectId: string;
+  name: string;
+  cwd: string;
+}
+
+export interface AgentChatBranchOption {
+  name: string;
+  kind: "local" | "remote";
+  current: boolean;
+}
+
+export interface AgentChatWorktreeOption {
+  path: string;
+  branch: string | null;
+  current: boolean;
+}
+
 export interface AgentChatShellState {
   thread: AgentChatThreadSummary | null;
   runtimeState: AgentRuntimeStateName;
@@ -27,6 +47,16 @@ export interface AgentChatShellState {
   blocks: AgentChatBlock[];
   composer: AgentChatComposerState;
   workbenchOpen: boolean;
+  // Projects the Project menu lists, injected by the product shell from its real
+  // project set. Empty until provided (then the menu shows only the current scope).
+  availableProjects?: AgentChatProjectOption[];
+  // Real git branches/worktrees for the active Project cwd, injected by the
+  // product shell. Empty for Scratch / non-git scopes (menus fall back).
+  availableBranches?: AgentChatBranchOption[];
+  availableWorktrees?: AgentChatWorktreeOption[];
+  // Composer input submitted during a live turn: held (queued) and shown as a
+  // "queued" row until the turn ends and the backend flushes it as a real block.
+  queuedInput: string | null;
   errorMessage?: string;
 }
 
@@ -168,6 +198,10 @@ export type AgentChatBackendCommand =
       payload: { threadId: string; input: string };
     }
   | {
+      kind: "agentRuntime.stop";
+      payload: { threadId: string };
+    }
+  | {
       kind: "prompt.answer";
       payload: {
         threadId: string;
@@ -202,6 +236,7 @@ export interface AgentChatShellViewModel {
   blocks: AgentChatBlockView[];
   composer: AgentChatComposerView;
   workbenchOpen: boolean;
+  queuedInput: string | null;
   errorMessage?: string;
 }
 
@@ -236,6 +271,9 @@ export interface AgentChatContextItem {
   label: "Agent" | "Project" | "Scratch" | "Worktree" | "Branch";
   value: string;
   runtimeSourceKind?: AgentChatAgentRuntimeSource["kind"];
+  // For the Agent chip: the agent id, so the renderer can show the per-agent
+  // identity icon (the same one used in Thread rows).
+  agentId?: string;
 }
 
 export interface AgentChatChoiceSurfaceView {
@@ -284,6 +322,7 @@ export function createAgentChatShellState(input?: {
       },
     },
     workbenchOpen: false,
+    queuedInput: null,
   };
 }
 
@@ -430,6 +469,10 @@ export function selectAgentChatChoiceSurfaceRow(
       return agentId ? selectComposerAgent(state, agentId) : { state, command: null };
     }
     case "model_menu": {
+      const reasoning = reasoningForRow(rowId);
+      if (reasoning !== undefined) {
+        return updateComposerLaunchOptions(state, { reasoning });
+      }
       const model = modelForRow(rowId, runtimeSourceForBinding(state.composer.startOptions.agentBinding).kind);
       return model ? updateComposerLaunchOptions(state, { model }) : { state, command: null };
     }
@@ -438,7 +481,7 @@ export function selectAgentChatChoiceSurfaceRow(
       return permission ? updateComposerLaunchOptions(state, { permission }) : { state, command: null };
     }
     case "project_menu": {
-      const scope = scopeForProjectRow(rowId);
+      const scope = scopeForProjectRow(rowId, state);
       return scope ? updateComposerScope(state, scope) : { state, command: null };
     }
     case "worktree_menu": {
@@ -453,6 +496,28 @@ export function selectAgentChatChoiceSurfaceRow(
     case "command_suggestions":
       return setComposerActiveSurface(state, null);
   }
+}
+
+// Explicit interrupt: stop the in-flight turn. The session stays resumable, so
+// the next message continues via the agent's native resume. Any queued input is
+// dropped (the user chose to interrupt).
+export function interruptComposer(
+  state: AgentChatShellState,
+): AgentChatShellUpdateResult {
+  if (state.thread === null) {
+    return { state, command: null };
+  }
+  const busy = state.runtimeState === "running" || state.runtimeState === "starting";
+  if (!busy) {
+    return { state, command: null };
+  }
+  return {
+    state: { ...state, queuedInput: null },
+    command: {
+      kind: "agentRuntime.stop",
+      payload: { threadId: state.thread.threadId },
+    },
+  };
 }
 
 export function submitComposer(
@@ -478,8 +543,14 @@ export function submitComposer(
   }
 
   if (state.thread) {
+    // Submitting during a live turn: the backend queues it. Reflect that
+    // optimistically as a "queued" row and clear the draft so the user can keep
+    // typing; it clears when the flushed user block arrives.
+    const busy = state.runtimeState === "running" || state.runtimeState === "starting";
     return {
-      state,
+      state: busy
+        ? { ...state, queuedInput: input, composer: { ...state.composer, draft: "" } }
+        : state,
       command: {
         kind: "composer.sendInput",
         payload: {
@@ -563,9 +634,13 @@ export function applyAgentChatBackendEvent(
     }
     case "agentSessionBlock.upserted": {
       const payload = event.payload as { block: AgentChatBlock };
+      // A real user block means a queued input was flushed — drop the optimistic
+      // "queued" row so it isn't shown twice.
+      const clearsQueue = payload.block.role === "user" && state.queuedInput !== null;
       return {
         ...state,
         blocks: upsertBlock(state.blocks, payload.block),
+        queuedInput: clearsQueue ? null : state.queuedInput,
       };
     }
     case "agentSessionBlock.completed": {
@@ -634,6 +709,7 @@ export function createAgentChatShellViewModel(
         : startContextItems(state.composer.startOptions),
     },
     workbenchOpen: state.workbenchOpen,
+    queuedInput: state.queuedInput,
     errorMessage: state.errorMessage,
   };
 }
@@ -646,10 +722,38 @@ function launchOptionsForState(
 
 function modelLabelForState(state: AgentChatShellState): string {
   const binding = state.thread?.agentBinding ?? state.composer.startOptions.agentBinding;
-  const model = String(
-    launchOptionsForState(state)?.model ?? defaultModelValueForAgent(binding.agentId),
-  );
+  const launchOptions = launchOptionsForState(state);
+  const model = String(launchOptions?.model ?? defaultModelValueForAgent(binding.agentId));
+  // codex exposes a reasoning effort; show it next to the model so the chip
+  // reflects the real setting (not a hardcoded level).
+  if (binding.agentId === "codex") {
+    const reasoning = String(launchOptions?.reasoning ?? "medium");
+    return `${codexModelLabel(model)} · ${reasoningLabel(reasoning)}`;
+  }
   return modelLabelForAgent(binding.agentId, model);
+}
+
+function reasoningLabel(reasoning: string): string {
+  return reasoning === "xhigh" ? "Extra High" : capitalize(reasoning);
+}
+
+// Codex models, read from the installed codex binary (matches the Codex app
+// picker). codex's --model is free-form, so "Custom model id..." stays too.
+const CODEX_MODELS: CliModelOption[] = [
+  { value: "gpt-5.5", label: "GPT-5.5" },
+  { value: "gpt-5.4", label: "GPT-5.4" },
+  { value: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
+  { value: "gpt-5.3-codex", label: "GPT-5.3-Codex" },
+  { value: "gpt-5.3-codex-spark", label: "GPT-5.3-Codex-Spark" },
+  { value: "gpt-5.2", label: "GPT-5.2" },
+];
+
+function codexModelLabel(model: string): string {
+  return CODEX_MODELS.find((m) => m.value === model)?.label ?? model;
+}
+
+function capitalize(value: string): string {
+  return value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
 }
 
 function permissionLabelForState(state: AgentChatShellState): string {
@@ -725,6 +829,7 @@ function readOnlyThreadContextItems(
       label: "Agent",
       value: formatAgentLabel(thread.agentBinding.agentId),
       runtimeSourceKind: runtimeSourceForBinding(thread.agentBinding).kind,
+      agentId: thread.agentBinding.agentId,
     },
     projectOrScratch,
   ];
@@ -751,6 +856,7 @@ function startContextItems(options: AgentChatStartOptions): AgentChatContextItem
       label: "Agent",
       value: formatAgentLabel(options.agentBinding.agentId),
       runtimeSourceKind: runtimeSourceForBinding(options.agentBinding).kind,
+      agentId: options.agentBinding.agentId,
     },
     projectOrScratch,
     {
@@ -799,12 +905,12 @@ function createActiveComposerSurface(
         title: "Agent",
         sourceLabel: "Agent Binding",
         rows: [
-          row("provider-cli", "Provider CLI Agents", "hidden PTY", "source", "◆"),
-          row("codex", "Codex CLI", "Agent Integration", "ready", "✓", binding.agentId === "codex"),
-          row("claude", "Claude Code", "Agent Integration", "ready", "", binding.agentId === "claude"),
-          row("antigravity", "Antigravity CLI", "Agent Integration", "ready", "", binding.agentId === "antigravity"),
-          row("tide-api", "Tide API Agents", "Provider Account", "source", "◆"),
-          row("openai-api", "OpenAI API", "Tide API runtime", "setup", "", binding.agentId === "openai_api"),
+          row("provider-cli", "Provider CLI Agents", "hidden PTY", "source", "source"),
+          row("codex", "Codex CLI", "Agent Integration", "ready", binding.agentId === "codex" ? "check" : "identity:codex", binding.agentId === "codex"),
+          row("claude", "Claude Code", "Agent Integration", "ready", binding.agentId === "claude" ? "check" : "identity:claude", binding.agentId === "claude"),
+          row("antigravity", "Antigravity CLI", "Agent Integration", "ready", binding.agentId === "antigravity" ? "check" : "identity:antigravity", binding.agentId === "antigravity"),
+          row("tide-api", "Tide API Agents", "Provider Account", "source", "source"),
+          row("openai-api", "OpenAI API", "Tide API runtime", "setup", binding.agentId === "openai_api" ? "check" : "identity:openai_api", binding.agentId === "openai_api"),
         ],
       };
     case "model_menu":
@@ -815,22 +921,13 @@ function createActiveComposerSurface(
         rows:
           source.kind === "tide_api"
             ? [
-                row("gpt-55-high", "gpt-5.5", "OpenAI Provider Account", undefined, "✓", selectedModel === "gpt-5.5"),
+                row("gpt-55-high", "gpt-5.5", "OpenAI Provider Account", undefined, "check", selectedModel === "gpt-5.5"),
                 row("provider-model-catalog", "Provider model catalog", "from Tide API runtime"),
-                row("custom-model", "Custom model id...", "API model id", undefined, "+"),
+                row("custom-model", "Custom model id...", "API model id", undefined, "plus"),
               ]
-            : [
-                row(
-                  modelRowIdForAgent(binding.agentId),
-                  defaultModelLabelForAgent(binding.agentId),
-                  binding.agentId === "codex" ? "Codex Agent Integration" : `${agentLabel} Agent Integration`,
-                  undefined,
-                  "✓",
-                  selectedModel === defaultModelValueForAgent(binding.agentId),
-                ),
-                row("provider-model-list", "Provider model list", "from selected CLI"),
-                row("custom-model", "Custom model id...", "if provider accepts it", undefined, "+"),
-              ],
+            : binding.agentId === "codex"
+              ? codexModelMenuRows(state, selectedModel)
+              : cliModelMenuRows(binding.agentId, agentLabel, selectedModel),
       };
     case "permission_menu":
       return {
@@ -844,39 +941,21 @@ function createActiveComposerSurface(
         surfaceKind,
         title: "Project",
         sourceLabel: "Execution Context",
-        rows: [
-          row("project-tide", "tide", "current", undefined, "✓", true),
-          row("project-slice", "slice", undefined, undefined, "⌘"),
-          row("scratch", "Scratch", undefined, undefined, "□"),
-          row("create-project", "Create new project", undefined, undefined, "+"),
-          row("use-existing-folder", "Use existing folder", undefined, undefined, "□"),
-        ],
+        rows: projectMenuRows(state),
       };
     case "worktree_menu":
       return {
         surfaceKind,
         title: "Worktree",
         sourceLabel: "Execution Context",
-        rows: [
-          row("current-folder", "current folder", "selected", undefined, "✓", true),
-          row("new-worktree", "new worktree", undefined, undefined, "+"),
-          row("existing-worktree", "existing worktree", undefined, undefined, "□"),
-        ],
+        rows: worktreeMenuRows(state),
       };
     case "branch_menu":
       return {
         surfaceKind,
         title: "Branch",
         sourceLabel: "Execution Context",
-        rows: [
-          row("filter-branches", "Filter branches...", undefined, undefined, "⌕"),
-          row("main", "main", "current", undefined, "✓", true),
-          row("feature-sidebar", "feature/sidebar", "local", undefined, "⌙"),
-          row("codex-v2-shell", "codex/v2-shell", "local", undefined, "⌙"),
-          row("origin-main", "origin/main", "remote", undefined, "⌙"),
-          row("release-2026-05", "release/2026-05", "remote", undefined, "⌙"),
-          row("create-branch", "Create new branch", undefined, undefined, "+"),
-        ],
+        rows: branchMenuRows(state),
       };
     case "composer_options":
       return {
@@ -884,10 +963,10 @@ function createActiveComposerSurface(
         title: "Composer menu",
         sourceLabel: agentLabel,
         rows: [
-          row("files-images", "Files and images", "Attach file or image", undefined, "+"),
-          row("current-selection", "Current file or selection", "when available", undefined, "□"),
-          row("context", "Browser, Diff, Terminal, or FileTree context", "when available", undefined, "─"),
-          row("agent-tools", "Agent tools", "selected Agent features", undefined, "◆"),
+          row("files-images", "Files and images", "Attach file or image", undefined, "attach"),
+          row("current-selection", "Current file or selection", "when available", undefined, "file"),
+          row("context", "Browser, Diff, Terminal, or FileTree context", "when available", undefined, "panel"),
+          row("agent-tools", "Agent tools", "selected Agent features", undefined, "tool"),
         ],
       };
     case "command_suggestions":
@@ -909,13 +988,13 @@ function permissionRowsForAgent(agentId: string): AgentChatChoiceSurfaceRowView[
   switch (agentId) {
     case "openai_api":
       return [
-        row("tide-auto-review", "Auto-review", "Tide tool policy", "Tide API", "✓", true),
+        row("tide-auto-review", "Auto-review", "Tide tool policy", "Tide API", "check", true),
         row("tide-ask-first", "Ask before tools", "Tide tool policy", "Tide API"),
         row("tide-read-only", "Read-only", "Tide workspace policy", "Tide API"),
       ];
     case "claude":
       return [
-        row("default", "default", "provider-native", undefined, "✓", true),
+        row("default", "default", "provider-native", undefined, "check", true),
         row("accept-edits", "acceptEdits", "provider-native"),
         row("auto", "auto", "provider-native"),
         row("dont-ask", "dontAsk", "provider-native"),
@@ -924,17 +1003,17 @@ function permissionRowsForAgent(agentId: string): AgentChatChoiceSurfaceRowView[
       ];
     case "antigravity":
       return [
-        row("default", "default", "provider-native", undefined, "✓", true),
+        row("default", "default", "provider-native", undefined, "check", true),
         row("sandbox", "sandbox", "provider-native"),
         row("dangerously-skip-permissions", "dangerously-skip-permissions", "provider-native", undefined, "!", false, true),
       ];
     default:
       return [
         row("read-only", "read-only", "Access"),
-        row("workspace-write", "workspace-write", "Access", undefined, "✓", true),
+        row("workspace-write", "workspace-write", "Access", undefined, "check", true),
         row("danger-full-access", "danger-full-access", "Access", undefined, "!", false, true),
         row("untrusted", "untrusted", "Approval"),
-        row("on-request", "on-request", "Approval", undefined, "◇"),
+        row("on-request", "on-request", "Approval", undefined, ""),
         row("never", "never", "Approval", undefined, "!", false, true),
       ];
   }
@@ -999,6 +1078,20 @@ function updateComposerScope(
   };
 }
 
+// Scopes the Start Composer to a folder picked via the chip's "Open folder"
+// action WITHOUT registering it as a persisted project. The folder only becomes
+// a left-list Project once a Thread is actually started in it (thread-derived).
+export function setComposerFolderScope(
+  state: AgentChatShellState,
+  cwd: string,
+): AgentChatShellUpdateResult {
+  return updateComposerScope(state, {
+    kind: "project",
+    projectId: basenameOf(cwd),
+    cwd,
+  });
+}
+
 function composerAgentIdForRow(
   rowId: string,
 ): AgentChatAgentId | null {
@@ -1020,8 +1113,13 @@ function modelForRow(
   rowId: string,
   sourceKind: AgentChatAgentRuntimeSource["kind"] = "provider_cli",
 ): string | undefined {
+  // CLI model rows carry their provider-native value as `model:<value>`.
+  if (rowId.startsWith("model:")) {
+    return rowId.slice("model:".length);
+  }
   switch (rowId) {
     case "gpt-55-high":
+    case "codex-model":
       return "gpt-5.5";
     case "claude-default":
       return "Claude default";
@@ -1030,6 +1128,106 @@ function modelForRow(
     default:
       return undefined;
   }
+}
+
+interface CliModelOption {
+  value: string;
+  label: string;
+  detail?: string;
+}
+
+// A maintained, provider-native model list per CLI agent (models change rarely).
+// Claude values are the real `--model` aliases (verified via `/model`); "Claude
+// default" passes no --model (uses the CLI's own default).
+function cliModelOptionsForAgent(agentId: string): CliModelOption[] {
+  switch (agentId) {
+    case "claude":
+      return [
+        { value: "Claude default", label: "Default", detail: "Sonnet 4.6" },
+        { value: "sonnet", label: "Sonnet", detail: "everyday tasks" },
+        { value: "opus", label: "Opus", detail: "most capable" },
+        { value: "haiku", label: "Haiku", detail: "fastest" },
+      ];
+    case "antigravity":
+      // gemini models from the local Gemini/Antigravity CLI (`-m, --model`).
+      return [
+        { value: "Antigravity default", label: "Default" },
+        { value: "gemini-3-flash-preview", label: "Gemini 3 Flash", detail: "preview" },
+        { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro", detail: "most capable" },
+        { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash", detail: "fast" },
+        { value: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash-Lite", detail: "fastest" },
+      ];
+    default:
+      return [];
+  }
+}
+
+function cliModelMenuRows(
+  agentId: string,
+  agentLabel: string,
+  selectedModel: string,
+): AgentChatChoiceSurfaceRowView[] {
+  const rows = cliModelOptionsForAgent(agentId).map((option) =>
+    row(
+      `model:${option.value}`,
+      option.label,
+      option.detail ?? `${agentLabel} Agent Integration`,
+      undefined,
+      option.value === selectedModel ? "check" : "",
+      option.value === selectedModel,
+    ),
+  );
+  rows.push(row("custom-model", "Custom model id...", "if provider accepts it", undefined, "plus"));
+  return rows;
+}
+
+// codex reasoning effort rows map to the `model_reasoning_effort` config knob.
+function reasoningForRow(rowId: string): "low" | "medium" | "high" | "xhigh" | undefined {
+  switch (rowId) {
+    case "reasoning-low":
+      return "low";
+    case "reasoning-medium":
+      return "medium";
+    case "reasoning-high":
+      return "high";
+    case "reasoning-xhigh":
+      return "xhigh";
+    default:
+      return undefined;
+  }
+}
+
+// Codex has no enumerable model list (free-form `--model`); the real tuning knob
+// is reasoning effort. Surface the active model plus the three effort levels.
+function codexModelMenuRows(
+  state: AgentChatShellState,
+  selectedModel: string,
+): AgentChatChoiceSurfaceRowView[] {
+  const reasoning = String(launchOptionsForState(state)?.reasoning ?? "medium");
+  const rows: AgentChatChoiceSurfaceRowView[] = [
+    row("model-section", "Model", "Codex Agent Integration", "source", "source"),
+  ];
+  for (const model of CODEX_MODELS) {
+    rows.push(
+      row(
+        `model:${model.value}`,
+        model.label,
+        undefined,
+        undefined,
+        model.value === selectedModel ? "check" : "",
+        model.value === selectedModel,
+      ),
+    );
+  }
+  rows.push(
+    row("custom-model", "Custom model id...", "if provider accepts it", undefined, "plus"),
+    row("reasoning-section", "Reasoning effort", "model_reasoning_effort", "source", "source"),
+    row("reasoning-low", "Low", "fastest, least thorough", undefined, reasoning === "low" ? "check" : ""),
+    row("reasoning-medium", "Medium", "balanced (default)", undefined, reasoning === "medium" ? "check" : ""),
+    row("reasoning-high", "High", "slower, more thorough", undefined, reasoning === "high" ? "check" : ""),
+    row("reasoning-xhigh", "Extra High", "slowest, most thorough", undefined, reasoning === "xhigh" ? "check" : ""),
+  );
+  return rows;
 }
 
 function permissionForRow(rowId: string): string | undefined {
@@ -1077,47 +1275,123 @@ function defaultThreadScope(): AgentChatThreadScope {
   return { kind: "project", projectId: "tide", cwd: "/Users/eatnug/Workspace/tide" };
 }
 
-function scopeForProjectRow(rowId: string): AgentChatThreadScope | null {
-  switch (rowId) {
-    case "project-tide":
-      return { kind: "project", projectId: "tide", cwd: "/Users/eatnug/Workspace/tide" };
-    case "project-slice":
-      return { kind: "project", projectId: "slice", cwd: "/Users/eatnug/Workspace/slice" };
-    case "scratch":
-      return { kind: "scratch", scratchCwd: "Scratch" };
-    default:
-      return null;
+// The real projects the Project menu lists: those injected from the product
+// shell, plus the composer's current project if not already among them (so the
+// active scope is always selectable). No hardcoded project list.
+function projectOptionsForState(state: AgentChatShellState): AgentChatProjectOption[] {
+  const options = [...(state.availableProjects ?? [])];
+  const scope = state.thread?.scope ?? state.composer.startOptions.scope;
+  if (scope?.kind === "project" && !options.some((option) => option.projectId === scope.projectId)) {
+    options.unshift({ projectId: scope.projectId, name: scope.projectId, cwd: scope.cwd });
   }
+  return options;
+}
+
+function projectMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRowView[] {
+  const scope = state.thread?.scope ?? state.composer.startOptions.scope;
+  const activeProjectId = scope?.kind === "project" ? scope.projectId : undefined;
+  const projectRows = projectOptionsForState(state).map((project) => {
+    const selected = project.projectId === activeProjectId;
+    return row(
+      `project:${project.projectId}`,
+      project.name,
+      selected ? "current" : project.cwd,
+      undefined,
+      selected ? "check" : "folder",
+      selected,
+    );
+  });
+  return [
+    ...projectRows,
+    row("scratch", "Scratch", "scratch workspace", undefined, "scratch", scope?.kind === "scratch"),
+    // Single registration action — opens the native directory picker (Codex flow).
+    row("open-folder", "Open folder", "add a project directory", undefined, "folder-plus"),
+  ];
+}
+
+// Real worktrees for the active scope: "current folder" (the main worktree)
+// plus any additional git worktrees, then a "new worktree" affordance. Falls
+// back to just "current folder" for Scratch / non-git scopes.
+function worktreeMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRowView[] {
+  const selected = String(launchOptionsForState(state)?.worktree ?? "current folder");
+  const worktrees = state.availableWorktrees ?? [];
+  const rows: AgentChatChoiceSurfaceRowView[] = [
+    row("worktree:current", "current folder", "main worktree", undefined, "folder", selected === "current folder"),
+  ];
+  for (const worktree of worktrees.filter((entry) => !entry.current)) {
+    const label = worktree.branch ?? basenameOf(worktree.path);
+    rows.push(
+      row(`worktree:${worktree.path}`, label, worktree.path, undefined, "folder", selected === worktree.path),
+    );
+  }
+  rows.push(row("new-worktree", "New worktree", "create a git worktree", undefined, "folder-plus"));
+  return rows;
+}
+
+// Real git branches (local before remote, current marked); falls back to just
+// the current launch value when no git data is available.
+function branchMenuRows(state: AgentChatShellState): AgentChatChoiceSurfaceRowView[] {
+  const selected = String(launchOptionsForState(state)?.branch ?? "main");
+  const branches = state.availableBranches ?? [];
+  const rows: AgentChatChoiceSurfaceRowView[] = [];
+  if (branches.length === 0) {
+    rows.push(row(`branch:${selected}`, selected, "current", undefined, "check", true));
+  } else {
+    const ordered = [...branches].sort((a, b) => Number(a.kind === "remote") - Number(b.kind === "remote"));
+    for (const branch of ordered) {
+      const isSelected = branch.name === selected;
+      rows.push(
+        row(
+          `branch:${branch.name}`,
+          branch.name,
+          branch.current ? "current" : branch.kind,
+          undefined,
+          isSelected ? "check" : "branch",
+          isSelected,
+        ),
+      );
+    }
+  }
+  rows.push(row("create-branch", "Create new branch", undefined, undefined, "plus"));
+  return rows;
+}
+
+function basenameOf(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  const slash = trimmed.lastIndexOf("/");
+  return slash === -1 ? trimmed : trimmed.slice(slash + 1);
+}
+
+function scopeForProjectRow(
+  rowId: string,
+  state: AgentChatShellState,
+): AgentChatThreadScope | null {
+  if (rowId === "scratch") {
+    return { kind: "scratch", scratchCwd: "Scratch" };
+  }
+  if (rowId.startsWith("project:")) {
+    const projectId = rowId.slice("project:".length);
+    const project = projectOptionsForState(state).find((option) => option.projectId === projectId);
+    return project ? { kind: "project", projectId: project.projectId, cwd: project.cwd } : null;
+  }
+  // create-project / use-existing-folder are folder-picker actions, wired later.
+  return null;
 }
 
 function worktreeForRow(rowId: string): string | undefined {
-  switch (rowId) {
-    case "current-folder":
-      return "current folder";
-    case "new-worktree":
-      return "new worktree";
-    case "existing-worktree":
-      return "existing worktree";
-    default:
-      return undefined;
+  if (rowId === "worktree:current") {
+    return "current folder";
   }
+  if (rowId.startsWith("worktree:")) {
+    return rowId.slice("worktree:".length);
+  }
+  // "new-worktree" is a create affordance, wired later.
+  return undefined;
 }
 
 function branchForRow(rowId: string): string | undefined {
-  switch (rowId) {
-    case "main":
-      return "main";
-    case "feature-sidebar":
-      return "feature/sidebar";
-    case "codex-v2-shell":
-      return "codex/v2-shell";
-    case "origin-main":
-      return "origin/main";
-    case "release-2026-05":
-      return "release/2026-05";
-    default:
-      return undefined;
-  }
+  // "create-branch" is a create affordance, wired later.
+  return rowId.startsWith("branch:") ? rowId.slice("branch:".length) : undefined;
 }
 
 function runtimeSourceForBinding(binding: AgentChatAgentBinding): AgentChatAgentRuntimeSource {
@@ -1158,8 +1432,10 @@ function defaultModelLabelForAgent(agentId: string): string {
 }
 
 function modelLabelForAgent(agentId: string, model: string): string {
-  if (agentId === "codex" && model === "gpt-5.5") {
-    return "GPT-5.5 High";
+  // Show the friendly label for a known CLI model (e.g. "sonnet" -> "Sonnet").
+  const option = cliModelOptionsForAgent(agentId).find((candidate) => candidate.value === model);
+  if (option !== undefined) {
+    return option.label;
   }
   return model;
 }

@@ -149,6 +149,36 @@ test("codex_launch_plan_applies_provider_native_model_sandbox_and_approval_optio
   assert.equal(approvalPlan.args[approvalPlan.args.indexOf("--ask-for-approval") + 1], "on-request");
 });
 
+test("codex_launch_plan_maps_reasoning_effort_to_config_override", async () => {
+  const integration = codexIntegration();
+
+  const plan = await integration.buildStartPlan({
+    agentId: "codex",
+    scope: projectScope,
+    launchOptions: {
+      model: "gpt-5.5",
+      reasoning: "high",
+    },
+  });
+
+  // Reasoning maps to the codex `-c model_reasoning_effort=...` override.
+  const overrideIndex = plan.args.findIndex(
+    (arg) => arg === 'model_reasoning_effort="high"',
+  );
+  assert.ok(overrideIndex > 0, "expected model_reasoning_effort override");
+  assert.equal(plan.args[overrideIndex - 1], "-c");
+
+  const ignored = await integration.buildStartPlan({
+    agentId: "codex",
+    scope: projectScope,
+    launchOptions: { model: "gpt-5.5", reasoning: "turbo" },
+  });
+  assert.ok(
+    !ignored.args.some((arg) => arg.startsWith("model_reasoning_effort=")),
+    "unknown reasoning effort must not produce an override",
+  );
+});
+
 test("codex_resume_plan_uses_provider_native_session_ref", async () => {
   const integration = codexIntegration();
   const providerSessionRef: ProviderSessionRef = {

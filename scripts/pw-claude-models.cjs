@@ -1,0 +1,20 @@
+const { _electron } = require("playwright");
+const { spawnSync } = require("node:child_process");
+const path=require("node:path"),os=require("node:os"),fs=require("node:fs");
+const repo="/Users/eatnug/Workspace/tide";
+(async()=>{const dr=fs.mkdtempSync(path.join(os.tmpdir(),"tide-cm-"));
+spawnSync("node",[path.join(repo,"scripts/seed-thread.cjs"),dr,"claude"],{cwd:repo,stdio:"ignore"});
+const app=await _electron.launch({args:[path.join(repo,"out/main/electron-main.js")],env:{...process.env,TIDE_APP_DATA_ROOT:dr}});
+const page=await app.firstWindow();await page.waitForSelector(".tide-product-shell",{timeout:20000});await page.waitForTimeout(900);
+// Select Claude in the START composer (avoid codex), then open model menu.
+await page.locator('.composer-shell__context-chip[data-context-kind="agent"]').first().click();
+await page.waitForSelector('[data-choice-surface="agent_menu"]',{timeout:5000});
+await page.locator('[data-choice-surface="agent_menu"] .choice-surface__row',{hasText:"Claude Code"}).click();
+await page.waitForTimeout(400);
+await page.locator('.composer-shell__choice-chip--model').first().click();
+await page.waitForSelector('[data-choice-surface="model_menu"]',{timeout:5000});
+const rows=await page.locator('[data-choice-surface="model_menu"] .choice-surface__row-label').allInnerTexts();
+await app.close();
+console.log("claude model rows:",JSON.stringify(rows));
+console.log("OK?", ["Default","Sonnet","Opus","Haiku"].every(m=>rows.includes(m))&&!rows.some(r=>/Provider model list|Reasoning/.test(r)));
+console.log("DONE");})().catch(e=>{console.error(e);process.exit(1)});

@@ -84,6 +84,33 @@ test("unknown_structured_events_render_as_raw_blocks", () => {
   assert.match(block.rawFallback ?? "", /keep this provider output/);
 });
 
+test("consumed_hook_signal_frames_do_not_render_as_raw_blocks", () => {
+  // UC-1 BR-3b: a hook_payload frame with no resolved prompt is carried as a
+  // consumed `provider_signal` envelope and must NOT render as a visible block.
+  const reader = createFixtureAgentSessionReader();
+  const result = reader.read({
+    thread,
+    agentBinding: thread.agentBinding,
+    frames: [
+      frame("frame-hook-signal", {
+        source: "hook_payload",
+        payload: {
+          type: "provider_signal",
+          eventName: "UserPromptSubmit",
+          payload: {
+            session_id: "abc",
+            transcript_path: "/tmp/x.jsonl",
+            hook_event_name: "UserPromptSubmit",
+          },
+        },
+      }),
+    ],
+    existingBlocks: [],
+  });
+
+  assert.equal(result.blockUpdates.length, 0, "consumed signal frame emits no block");
+});
+
 test("structured_tool_events_render_as_tool_blocks", () => {
   // UC-1 BR-2: Known tool events become tool/action blocks.
   const reader = createFixtureAgentSessionReader();

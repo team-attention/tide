@@ -85,6 +85,12 @@ function blocksFromFrame(
       return [promptBlockFromFrame(input.thread.threadId, frame, payload, "choice_prompt")];
     case "workbench_reference":
       return [workbenchReferenceBlockFromFrame(input.thread.threadId, frame, payload)];
+    case "provider_signal":
+      // A consumed control signal (a hook payload that did not resolve into a
+      // renderable prompt). It is runtime transport, not agent output, so it is
+      // used for Prompt State / session bookkeeping and never rendered as a
+      // visible block. See spec D4 exception / BR-3b.
+      return [];
     default:
       return [rawBlockFromFrame(input.thread.threadId, frame)];
   }

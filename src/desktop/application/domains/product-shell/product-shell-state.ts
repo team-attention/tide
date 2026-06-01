@@ -4,6 +4,8 @@ import {
   createAgentChatShellViewModel,
   selectAgentChatChoiceSurfaceRow,
   setComposerActiveSurface,
+  setComposerFolderScope,
+  interruptComposer,
   submitComposer,
   updateComposerDraft,
   type AgentChatBackendCommand,
@@ -17,6 +19,8 @@ import {
   type AgentChatThreadScope,
   type AgentChatThreadSummary,
   type AgentChatChoiceSurfaceView,
+  type AgentChatBranchOption,
+  type AgentChatWorktreeOption,
 } from "../agent-chat/agent-chat-shell-state.ts";
 import {
   applyAppChromeBackendEvent,
@@ -52,6 +56,7 @@ export interface ProductShellThread {
 export interface ProductShellProject {
   projectId: string;
   name: string;
+  cwd: string;
 }
 
 export interface ProductShellState {
@@ -64,8 +69,24 @@ export interface ProductShellState {
   renamingThreadId: string | null;
   searchQuery: string;
   searchActive: boolean;
-  collapsedFolderPaths: string[];
+  // Project rows the user has collapsed. Projects are expanded by default; a
+  // collapsed project hides its thread rows in the Left UI.
+  collapsedProjectIds: string[];
+  // Folder paths the user has expanded. Folders are collapsed by default. The
+  // full tree is loaded upfront, so expanding only reveals loaded children.
+  expandedFolderPaths: string[];
+  // Projects derived from existing threads (implicit).
   projects: ProductShellProject[];
+  // Projects the user explicitly opened/registered via the folder picker. These
+  // persist (Main-owned registry) and appear even with no threads (Codex flow).
+  registeredProjects: ProductShellProject[];
+  // Real git branches/worktrees for the active Project cwd (fetched via Main IPC).
+  gitBranches: AgentChatBranchOption[];
+  gitWorktrees: AgentChatWorktreeOption[];
+  // Pinned projects (shown as shortcuts in the Pinned section) and the project
+  // currently being inline-renamed.
+  pinnedProjectIds: string[];
+  renamingProjectId: string | null;
   threads: ProductShellThread[];
   agentChat: AgentChatShellState;
   appChrome: AppChromeState;
@@ -103,6 +124,7 @@ export type ProductShellBackendCommand =
         threadId: string;
         command: "refresh_file_tree";
         data: {
+          path?: string;
           maxDepth: number;
           maxEntries: number;
         };
@@ -172,9 +194,18 @@ export interface ProductShellThreadView extends ProductShellThread {
 export interface ProductShellProjectGroupView {
   projectId: string;
   name: string;
+  cwd: string;
   expanded: boolean;
   contextMenuOpen: boolean;
+  pinned: boolean;
+  renaming: boolean;
   threads: ProductShellThreadView[];
+}
+
+export interface ProductShellPinnedProjectView {
+  projectId: string;
+  name: string;
+  cwd: string;
 }
 
 export interface ProductShellViewModel {
@@ -185,6 +216,7 @@ export interface ProductShellViewModel {
   searchQuery: string;
   searchActive: boolean;
   pinnedThreads: ProductShellThreadView[];
+  pinnedProjects: ProductShellPinnedProjectView[];
   projectGroups: ProductShellProjectGroupView[];
   scratchThreads: ProductShellThreadView[];
   agentChat: AgentChatShellViewModel;
@@ -237,8 +269,8 @@ export interface ProductShellFileTreeEntryView {
 const shellTimestamp = "2026-05-28T00:00:00.000Z";
 
 const initialProjects: ProductShellProject[] = [
-  { projectId: "tide", name: "tide" },
-  { projectId: "slice", name: "slice" },
+  { projectId: "tide", name: "tide", cwd: "/Users/eatnug/Workspace/tide" },
+  { projectId: "slice", name: "slice", cwd: "/Users/eatnug/Workspace/slice" },
 ];
 
 const initialThreads: ProductShellThread[] = [
@@ -309,8 +341,14 @@ export function createProductShellState(
     renamingThreadId: null,
     searchQuery: "",
     searchActive: false,
-    collapsedFolderPaths: [],
+    collapsedProjectIds: [],
+    expandedFolderPaths: [],
     projects: includeFixtureData ? initialProjects : [],
+    registeredProjects: [],
+    gitBranches: [],
+    gitWorktrees: [],
+    pinnedProjectIds: [],
+    renamingProjectId: null,
     threads: includeFixtureData ? initialThreads : [],
     agentChat: createStartAgentChatState(),
     appChrome: createAppChromeState(),
@@ -338,14 +376,19 @@ export function createProductShellViewModel(
     pinnedThreads: visibleThreads
       .filter((thread) => thread.pinned)
       .map((thread) => toThreadView(thread, state)),
-    projectGroups: state.projects
-      .map((project, index) => ({
+    pinnedProjects: displayedProjects(state)
+      .filter((project) => state.pinnedProjectIds.includes(project.projectId))
+      .map((project) => ({ projectId: project.projectId, name: project.name, cwd: project.cwd })),
+    projectGroups: displayedProjects(state)
+      .map((project) => ({
         ...project,
-        // Expand the first group, and every group while searching so matches
-        // are visible without manual expansion.
-        expanded: index === 0 || searching,
+        // Projects are expanded by default. Searching force-expands every group
+        // so matches are visible without manual expansion.
+        expanded: searching || !state.collapsedProjectIds.includes(project.projectId),
         contextMenuOpen:
           state.leftUiMenu?.kind === "project" && state.leftUiMenu.projectId === project.projectId,
+        pinned: state.pinnedProjectIds.includes(project.projectId),
+        renaming: state.renamingProjectId === project.projectId,
         threads: visibleThreads
           .filter((thread) => thread.scope.kind === "project")
           .filter((thread) => thread.scope.kind === "project" && thread.scope.projectId === project.projectId)
@@ -356,7 +399,7 @@ export function createProductShellViewModel(
     scratchThreads: visibleThreads
       .filter((thread) => thread.scope.kind === "scratch")
       .map((thread) => toThreadView(thread, state)),
-    agentChat: createAgentChatShellViewModel(state.agentChat),
+    agentChat: createAgentChatShellViewModel(agentChatWithProjects(state)),
     appChrome: createAppChromeViewModel(state.appChrome),
     fileTree: createFileTreeView(state),
     editorDrafts: state.editorDrafts,
@@ -382,9 +425,8 @@ export function toggleProductShellSearch(
   return { ...state, searchActive: true };
 }
 
-export function startNewProductShellThread(
-  state: ProductShellState,
-): ProductShellState {
+// Starts a new Thread pre-scoped to Scratch (Tide-managed working dir).
+export function startNewProductShellScratchThread(state: ProductShellState): ProductShellState {
   return {
     ...state,
     activeThreadId: null,
@@ -393,7 +435,34 @@ export function startNewProductShellThread(
     leftUiMenu: null,
     archiveConfirmThreadId: null,
     renamingThreadId: null,
-    agentChat: createStartAgentChatState(),
+    agentChat: createStartAgentChatState({ kind: "scratch", scratchCwd: "Scratch" }),
+    appChrome: createAppChromeState(),
+    fileTree: null,
+    editorDrafts: {},
+  };
+}
+
+export function startNewProductShellThread(
+  state: ProductShellState,
+  projectId?: string,
+): ProductShellState {
+  // Starting from a Project Row pre-scopes the Start Composer to that Project's
+  // cwd, so the resulting Thread groups under the same Project Row (UC-6b).
+  const project = projectId
+    ? state.projects.find((candidate) => candidate.projectId === projectId)
+    : undefined;
+  const scope: AgentChatThreadScope | undefined = project
+    ? { kind: "project", projectId: project.projectId, cwd: project.cwd }
+    : undefined;
+  return {
+    ...state,
+    activeThreadId: null,
+    workbenchOpen: false,
+    fileTreeOpen: false,
+    leftUiMenu: null,
+    archiveConfirmThreadId: null,
+    renamingThreadId: null,
+    agentChat: createStartAgentChatState(scope),
     appChrome: createAppChromeState(),
     fileTree: null,
     editorDrafts: {},
@@ -405,6 +474,19 @@ export function toggleProductShellLeftUi(state: ProductShellState): ProductShell
     ...state,
     leftUiOpen: !state.leftUiOpen,
   };
+}
+
+export function toggleProductShellProject(
+  state: ProductShellState,
+  projectId: string,
+): ProductShellState {
+  const collapsed = new Set(state.collapsedProjectIds);
+  if (collapsed.has(projectId)) {
+    collapsed.delete(projectId);
+  } else {
+    collapsed.add(projectId);
+  }
+  return { ...state, collapsedProjectIds: [...collapsed] };
 }
 
 export function toggleProductShellWorkbench(state: ProductShellState): ProductShellState {
@@ -439,6 +521,27 @@ export function toggleProductShellWorkbenchWithLauncher(
   };
 }
 
+// Opens the Workbench (if needed) and asks Backend to open the Launcher Pane,
+// the entry point for creating Browser/Terminal/Editor/Diff Panes. This is the
+// "New Pane" Tab Strip action; it never closes an already-open Workbench.
+export function openProductShellWorkbenchLauncher(
+  state: ProductShellState,
+): ProductShellUpdateResult {
+  if (state.activeThreadId === null) {
+    return { state, command: null };
+  }
+  return {
+    state: { ...state, workbenchOpen: true },
+    command: {
+      kind: "workbench.command",
+      payload: {
+        threadId: state.activeThreadId,
+        command: "open_launcher",
+      },
+    },
+  };
+}
+
 export function toggleProductShellFileTree(state: ProductShellState): ProductShellState {
   return {
     ...state,
@@ -462,11 +565,87 @@ export function toggleProductShellFileTreeWithRefresh(
         threadId: state.activeThreadId,
         command: "refresh_file_tree",
         data: {
-          maxDepth: 2,
-          maxEntries: 160,
+          maxDepth: 12,
+          maxEntries: 4000,
         },
       },
     },
+  };
+}
+
+// The Projects shown in the Left UI and Project menu: the union of explicitly
+// registered projects and thread-derived projects, deduped by projectId.
+function displayedProjects(state: ProductShellState): ProductShellProject[] {
+  const byId = new Map<string, ProductShellProject>();
+  for (const project of [...state.registeredProjects, ...state.projects]) {
+    if (!byId.has(project.projectId)) {
+      byId.set(project.projectId, project);
+    }
+  }
+  return [...byId.values()];
+}
+
+// Archives every thread in a project (optimistically drops them; the backend
+// thread.archived events confirm). Returns one thread.archive command per thread.
+export function archiveProductShellProjectChats(
+  state: ProductShellState,
+  projectId: string,
+): { state: ProductShellState; commands: { kind: "thread.archive"; payload: { threadId: string; archived: boolean } }[] } {
+  const inProject = (thread: ProductShellThread) =>
+    thread.scope.kind === "project" && thread.scope.projectId === projectId;
+  const archived = state.threads.filter(inProject);
+  const remaining = state.threads.filter((thread) => !inProject(thread));
+  return {
+    state: {
+      ...state,
+      threads: remaining,
+      projects: projectsFromThreads(remaining),
+      leftUiMenu: null,
+      activeThreadId: archived.some((thread) => thread.threadId === state.activeThreadId)
+        ? null
+        : state.activeThreadId,
+    },
+    commands: archived.map((thread) => ({
+      kind: "thread.archive" as const,
+      payload: { threadId: thread.threadId, archived: true },
+    })),
+  };
+}
+
+// Replaces the registered-project set (from the Main-owned registry) and keeps
+// it deduped by projectId.
+export function setProductShellRegisteredProjects(
+  state: ProductShellState,
+  entries: ProductShellProject[],
+): ProductShellState {
+  const byId = new Map<string, ProductShellProject>();
+  for (const entry of entries) {
+    byId.set(entry.projectId, { projectId: entry.projectId, name: entry.name, cwd: entry.cwd });
+  }
+  return { ...state, registeredProjects: [...byId.values()] };
+}
+
+// Replaces the real git branches/worktrees for the active Project cwd (fetched
+// from the Main process). Cleared when the scope is non-git/Scratch.
+export function setProductShellGitContext(
+  state: ProductShellState,
+  context: { branches: AgentChatBranchOption[]; worktrees: AgentChatWorktreeOption[] },
+): ProductShellState {
+  return { ...state, gitBranches: context.branches, gitWorktrees: context.worktrees };
+}
+
+// Injects the product shell's real projects/branches/worktrees into the
+// agent-chat state so the composer menus list actual data (never hardcoded).
+function agentChatWithProjects(state: ProductShellState): AgentChatShellState {
+  return {
+    ...state.agentChat,
+    availableProjects: displayedProjects(state).map((project) => ({
+      projectId: project.projectId,
+      name: project.name,
+      cwd: project.cwd,
+    })),
+    availableBranches: state.gitBranches,
+    availableWorktrees: state.gitWorktrees,
   };
 }
 
@@ -480,13 +659,26 @@ export function setProductShellComposerActiveSurface(
   };
 }
 
+// Scopes the Start Composer to a chip-picked folder without registering it as a
+// persisted project. It surfaces in the left Projects list only once a Thread is
+// started in it (thread-derived).
+export function setProductShellComposerFolderScope(
+  state: ProductShellState,
+  cwd: string,
+): ProductShellState {
+  return {
+    ...state,
+    agentChat: setComposerFolderScope(state.agentChat, cwd).state,
+  };
+}
+
 export function selectProductShellChoiceSurfaceRow(
   state: ProductShellState,
   surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
   rowId: string,
 ): ProductShellUpdateResult {
   const result = selectAgentChatChoiceSurfaceRow(
-    state.agentChat,
+    agentChatWithProjects(state),
     surfaceKind,
     rowId,
     state.activeThreadId ?? undefined,
@@ -538,7 +730,10 @@ export function selectProductShellLauncherAction(
       },
     };
   }
-  if (action.actionId === "open_file_tree") {
+  if (action.actionId === "open_editor") {
+    // The Editor launcher entry is a file picker: open the FileTree column so the
+    // user can choose which file to open in an Editor Pane (clicking a file row
+    // dispatches open_editor for that path).
     return {
       state: {
         ...state,
@@ -550,8 +745,8 @@ export function selectProductShellLauncherAction(
           threadId: state.activeThreadId,
           command: "refresh_file_tree",
           data: {
-            maxDepth: 2,
-            maxEntries: 160,
+            maxDepth: 12,
+            maxEntries: 4000,
           },
         },
       },
@@ -574,15 +769,17 @@ export function selectProductShellFileTreeEntry(
     return { state, command: null };
   }
 
-  // Folders toggle expansion (collapse/expand their descendants); files open.
+  // Folders toggle expansion; files open. The whole tree is already loaded, so
+  // expanding only reveals already-fetched children — no backend round-trip.
   if (entry.kind === "folder") {
-    const collapsed = new Set(state.collapsedFolderPaths);
-    if (collapsed.has(entry.relativePath)) {
-      collapsed.delete(entry.relativePath);
+    const expanded = new Set(state.expandedFolderPaths);
+    if (expanded.has(entry.relativePath)) {
+      expanded.delete(entry.relativePath);
     } else {
-      collapsed.add(entry.relativePath);
+      expanded.add(entry.relativePath);
     }
-    return { state: { ...state, collapsedFolderPaths: [...collapsed] }, command: null };
+    const nextState = { ...state, expandedFolderPaths: [...expanded] };
+    return { state: nextState, command: null };
   }
 
   return {
@@ -603,13 +800,14 @@ export function selectProductShellFileTreeEntry(
   };
 }
 
+// An entry is visible only when every ancestor folder on its path is expanded.
 function fileTreePathHasCollapsedAncestor(
   relativePath: string,
-  collapsed: ReadonlySet<string>,
+  expanded: ReadonlySet<string>,
 ): boolean {
   const parts = relativePath.split("/");
   for (let i = 1; i < parts.length; i += 1) {
-    if (collapsed.has(parts.slice(0, i).join("/"))) {
+    if (!expanded.has(parts.slice(0, i).join("/"))) {
       return true;
     }
   }
@@ -667,6 +865,27 @@ export function confirmProductShellThreadArchive(
     },
     command: { kind: "thread.archive", payload: { threadId, archived: true } },
   };
+}
+
+export function startProductShellProjectRename(
+  state: ProductShellState,
+  projectId: string,
+): ProductShellState {
+  return { ...state, leftUiMenu: null, renamingProjectId: projectId };
+}
+
+export function cancelProductShellProjectRename(state: ProductShellState): ProductShellState {
+  return { ...state, renamingProjectId: null };
+}
+
+export function toggleProductShellProjectPin(
+  state: ProductShellState,
+  projectId: string,
+): ProductShellState {
+  const pinned = state.pinnedProjectIds.includes(projectId)
+    ? state.pinnedProjectIds.filter((id) => id !== projectId)
+    : [...state.pinnedProjectIds, projectId];
+  return { ...state, leftUiMenu: null, pinnedProjectIds: pinned };
 }
 
 export function startProductShellThreadRename(
@@ -855,6 +1074,16 @@ export function submitProductShellComposerDraft(
   }
 
   const result = submitComposer(state.agentChat);
+  return {
+    state: result.state === state.agentChat ? state : { ...state, agentChat: result.state },
+    command: result.command,
+  };
+}
+
+export function interruptProductShellRuntime(
+  state: ProductShellState,
+): ProductShellUpdateResult {
+  const result = interruptComposer(state.agentChat);
   return {
     state: result.state === state.agentChat ? state : { ...state, agentChat: result.state },
     command: result.command,
@@ -1274,7 +1503,7 @@ function toProductShellThreadFromSummary(
     threadId: threadSummary.threadId,
     title: threadSummary.title,
     agentId: normalizeAgentId(threadSummary.agentBinding.agentId),
-    time: "now",
+    time: formatRelativeThreadTime(threadSummary.updatedAt),
     scope: threadSummary.scope,
     launchOptions: cloneLaunchOptions(threadSummary.launchOptions),
     workbenchPanes: [],
@@ -1283,6 +1512,28 @@ function toProductShellThreadFromSummary(
       threadSummary.lastKnownState === "waiting_for_input" ||
       threadSummary.lastKnownState === "waiting_for_approval",
   };
+}
+
+// Compact relative timestamp for thread rows ("now", "5m", "2h", "3d").
+function formatRelativeThreadTime(iso: string | undefined): string {
+  if (iso === undefined) {
+    return "now";
+  }
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) {
+    return "now";
+  }
+  const seconds = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (seconds < 45) {
+    return "now";
+  }
+  if (seconds < 3600) {
+    return `${Math.floor(seconds / 60)}m`;
+  }
+  if (seconds < 86400) {
+    return `${Math.floor(seconds / 3600)}h`;
+  }
+  return `${Math.floor(seconds / 86400)}d`;
 }
 
 function projectsFromThreads(threads: ProductShellThread[]): ProductShellProject[] {
@@ -1295,6 +1546,7 @@ function projectsFromThreads(threads: ProductShellThread[]): ProductShellProject
       projects.set(thread.scope.projectId, {
         projectId: thread.scope.projectId,
         name: thread.scope.projectId,
+        cwd: thread.scope.cwd,
       });
     }
   }
@@ -1396,12 +1648,12 @@ function hydrateProductShellThread(
 function createFileTreeView(state: ProductShellState): ProductShellFileTreeView {
   if (state.fileTree !== null) {
     const cloned = cloneProductShellFileTree(state.fileTree);
-    const collapsed = new Set(state.collapsedFolderPaths);
+    const expanded = new Set(state.expandedFolderPaths);
     cloned.entries = cloned.entries
-      .filter((entry) => !fileTreePathHasCollapsedAncestor(entry.relativePath, collapsed))
+      .filter((entry) => !fileTreePathHasCollapsedAncestor(entry.relativePath, expanded))
       .map((entry) =>
         entry.kind === "folder"
-          ? { ...entry, expanded: !collapsed.has(entry.relativePath) }
+          ? { ...entry, expanded: expanded.has(entry.relativePath) }
           : entry,
       );
     return cloned;
@@ -1512,7 +1764,7 @@ function applyProductShellThreadEvent(
     threadId: threadSummary.threadId,
     title: threadSummary.title,
     agentId: normalizeAgentId(threadSummary.agentBinding.agentId),
-    time: "now",
+    time: formatRelativeThreadTime(threadSummary.updatedAt),
     scope: threadSummary.scope,
     launchOptions: cloneLaunchOptions(threadSummary.launchOptions),
     workbenchPanes: payload.workbenchPanes ?? [],
@@ -1534,6 +1786,9 @@ function applyProductShellThreadEvent(
     ...state,
     activeThreadId: threadSummary.threadId,
     threads,
+    // Recompute projects so a thread started in a not-yet-listed project (e.g.
+    // slice) appears in the rail immediately.
+    projects: projectsFromThreads(threads),
     agentChat: updateComposerDraft(state.agentChat, "").state,
     workbenchOpen: shellThread.workbenchPanes.some((pane) => pane.visible),
     fileTree:
@@ -1543,11 +1798,11 @@ function applyProductShellThreadEvent(
   };
 }
 
-function createStartAgentChatState(): AgentChatShellState {
+function createStartAgentChatState(scope?: AgentChatThreadScope): AgentChatShellState {
   return createAgentChatShellState({
     startOptions: {
       agentBinding: agentBindingForShellAgent("codex"),
-      scope: { kind: "project", projectId: "tide", cwd: "/Users/eatnug/Workspace/tide" },
+      scope: scope ?? { kind: "project", projectId: "tide", cwd: "/Users/eatnug/Workspace/tide" },
       launchOptions: {
         model: "gpt-5.5",
         permission: "Auto-review",

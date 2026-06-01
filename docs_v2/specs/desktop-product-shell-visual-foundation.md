@@ -232,6 +232,14 @@ This slice consumes existing Desktop view models and fixture Left UI data. Compo
 6. Product Shell emits a `thread.start` BackendCommand draft with the Start Composer Agent Binding, Execution Context, and Launch Options.
 7. Product Shell switches to a real Thread only when Backend emits `thread.started` or `thread.hydrated`.
 
+### UC-6b: User starts a Thread from a Project Row
+
+1. User clicks the Project Row's `New thread in project` action.
+2. Product Shell clears the active Thread (like UC-6) but pre-scopes the Start
+   Composer Execution Context to that Project's `cwd`.
+3. When the draft is sent, the `thread.start` Execution Context is that Project,
+   so the resulting Thread is grouped under the same Project Row.
+
 ### UC-7: Active Thread exposes a right Workbench Dock surface
 
 1. User opens a Thread that has visible Workbench context.
@@ -275,6 +283,7 @@ This slice consumes existing Desktop view models and fixture Left UI data. Compo
 15. Choice Surfaces use the canonical palette and sit above Composer with a visible gap.
 16. Product Shell submit does not create `local-thread-*` previews or "Local preview" Agent Session Blocks.
 17. Backend `thread.started` and `thread.hydrated` events preserve the selected Agent Binding and provider-native Launch Options in the active Agent Chat and Composer chrome.
+18. A Thread started from a Project Row's `New thread in project` action is scoped to that Project's Execution Context, so it groups under the same Project Row.
 
 ## Tests
 
@@ -293,6 +302,7 @@ This slice consumes existing Desktop view models and fixture Left UI data. Compo
 | Opening a Thread updates shell state | `opening_thread_from_left_ui_marks_it_active_and_hydrates_follow_up_composer` verifies fixture Product Shell state changes for a Thread Row. |
 | Opening a Backend Thread hydrates through Backend | `product_shell_thread_selection_emits_thread_hydrate_when_backend_transport_exists` verifies a Thread Row click emits `thread.hydrate` instead of using local preview when command transport exists. |
 | Sending the start Composer emits BackendCommand | `sending_start_composer_from_product_shell_emits_thread_start_without_local_preview` verifies `thread.start` is emitted and no local preview Thread is created. |
+| New thread in project pre-scopes Composer | `new_thread_in_project_prescopes_start_composer_to_that_project` verifies the Start Composer Execution Context matches the selected Project's cwd and `thread.start` carries that scope. |
 | Right Workbench follows the active Thread | `opening_thread_with_workbench_context_renders_right_workbench_tabs` verifies visible Workbench tabs and right Workbench state. |
 | Right Workbench tab actions use Backend commands | `right_workbench_tab_actions_emit_backend_commands_and_apply_workbench_events` verifies focus and close emit `workbench.command` and visible tabs update from `workbench.changed`. |
 | Background Thread events do not leak into active Thread | `product_shell_ignores_thread_scoped_events_for_inactive_threads` verifies runtime and Agent Session updates for another Thread do not mutate the active Agent Chat. |

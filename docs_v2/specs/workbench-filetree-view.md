@@ -13,9 +13,10 @@ It covers:
 - Desktop rendering of the latest Backend-provided FileTree View.
 - Opening an Editor Pane from a FileTree file row through Backend.
 
-It does not implement folder expand/collapse-on-click, rename, delete,
-drag/drop, live file watching, ignored-file preferences, or a full IDE tree
-model.
+It covers folder expand/collapse-on-click over a fully-loaded tree.
+
+It does not implement rename, delete, drag/drop, live file watching,
+ignored-file preferences, or a full IDE tree model.
 
 ## Evidence
 
@@ -46,9 +47,30 @@ consume a `WorkbenchPaneId`.
 
 ### D3. Listing is bounded and root-scoped
 
-Backend lists only paths inside the active Thread root. The first slice uses a
-bounded depth and entry count, includes root-level directories as entries, and
-does not descend into heavy vendor/build directories.
+Backend lists only paths inside the active Thread root, includes root-level
+directories as entries, and does not descend into heavy vendor/build
+directories. Bounds are generous (depth 12, 4000 entries) so a normal source
+tree loads in full; the bounds exist only as a safety ceiling for pathological
+repositories. Lazy per-folder fetching is explicitly rejected — the whole tree
+is loaded once.
+
+### D7. FileTree respects the thread root `.gitignore`
+
+The FileTree hides entries ignored by the thread root's `.gitignore`, in addition
+to the always-hidden heavy dirs. The matcher supports the common pattern subset
+(blank/comment lines, trailing-slash directory patterns, leading-slash anchors,
+basename matches, and `*` globs). It is conservative: negation (`!`) and nested
+`.gitignore` files are out of scope for this slice, and any pattern the matcher
+does not understand is ignored rather than risking hiding a wanted file (e.g.
+`src`). A root without a `.gitignore` lists everything except the heavy dirs.
+
+### D6. Full load, collapse-by-default rendering
+
+The entire tree is loaded upfront. Folders are collapsed by default: an entry
+is visible only when every ancestor folder on its path is expanded. Clicking a
+folder toggles its expansion locally with no Backend round-trip, since its
+children are already loaded. This keeps the rendered DOM light while guaranteeing
+top-level directories (e.g. `src`) are always present.
 
 ### D4. Desktop opens the column before refresh completes
 
@@ -84,8 +106,8 @@ No new BackendCommand kind is required. Use `workbench.command` with:
   "threadId": "...",
   "command": "refresh_file_tree",
   "data": {
-    "maxDepth": 2,
-    "maxEntries": 160
+    "maxDepth": 12,
+    "maxEntries": 4000
   }
 }
 ```
@@ -126,6 +148,10 @@ No new BackendCommand kind is required. Use `workbench.command` with:
 4. FileTree View does not create a Workbench Pane tab.
 5. FileTree listing is bounded by depth and count.
 6. File row open uses Backend file access, not Desktop filesystem access.
+7. Folders are collapsed by default; a descendant is visible only when every
+   ancestor folder is expanded. Folder toggle emits no Backend command.
+8. FileTree listing never returns entries matched by the root `.gitignore`
+   (common-pattern subset) or the always-hidden heavy dirs.
 
 ## Tests
 

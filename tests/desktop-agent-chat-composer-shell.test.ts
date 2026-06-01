@@ -295,6 +295,93 @@ test("agent_session_block_upserts_render_one_visible_block_per_block_id", () => 
   assert.match(renderShell(withUpdatedBlock), /hello/);
 });
 
+function withToolBlocks(
+  ...specs: { id: string; kind: "tool_call" | "tool_result"; title: string; body: string }[]
+): AgentChatShellState {
+  let state = createAgentChatShellState();
+  for (const spec of specs) {
+    state = applyBackendEventToAgentChatShell(
+      state,
+      backendEvent("agentSessionBlock.upserted", {
+        block: {
+          blockId: spec.id,
+          threadId: "thread-shell",
+          agentId: "codex",
+          kind: spec.kind,
+          role: "tool",
+          status: "complete",
+          title: spec.title,
+          body: spec.body,
+          updatedAt: later,
+        },
+      }),
+    );
+  }
+  return state;
+}
+
+test("consecutive_tool_blocks_collapse_into_a_codex_style_activity_summary", () => {
+  // Spec: docs_v2/specs/agent-session-block-rendering-path.md D13
+  const state = withToolBlocks(
+    { id: "t1", kind: "tool_call", title: "apply_patch", body: "*** patch" },
+    { id: "t2", kind: "tool_result", title: "apply_patch", body: "ok" },
+    { id: "t3", kind: "tool_call", title: "exec_command", body: "ls" },
+    { id: "t4", kind: "tool_result", title: "exec_command", body: "a.txt" },
+    { id: "t5", kind: "tool_call", title: "exec_command", body: "pwd" },
+    { id: "t6", kind: "tool_result", title: "exec_command", body: "/tmp" },
+  );
+  const html = renderShell(state);
+
+  // One muted summary row aggregating the calls by category, distinct tool role.
+  assert.match(html, /data-block-role="tool"/);
+  assert.match(html, /Edited 1 file, ran 2 commands/);
+  // Collapsed by default: the per-tool monospace detail is not rendered yet.
+  assert.doesNotMatch(html, /agent-session-turn__tool-body/);
+});
+
+test("tool_activity_summary_categorizes_read_and_search_tools", () => {
+  // Spec: docs_v2/specs/agent-session-block-rendering-path.md D13
+  const state = withToolBlocks(
+    { id: "r1", kind: "tool_call", title: "Read", body: "file.ts" },
+    { id: "r2", kind: "tool_result", title: "Read", body: "..." },
+    { id: "g1", kind: "tool_call", title: "Grep", body: "needle" },
+    { id: "g2", kind: "tool_result", title: "Grep", body: "3 matches" },
+  );
+  assert.match(renderShell(state), /Read 1 file, 1 search/);
+});
+
+test("edit_tool_calls_surface_a_files_changed_list", () => {
+  // Spec: docs_v2/specs/agent-session-block-rendering-path.md D14
+  const state = withToolBlocks(
+    { id: "e1", kind: "tool_call", title: "Edit", body: '{"file_path":"src/desktop/app.ts","old_string":"a"}' },
+    { id: "e2", kind: "tool_result", title: "Edit", body: "ok" },
+    { id: "w1", kind: "tool_call", title: "Write", body: '{"file_path":"README.md"}' },
+    { id: "w2", kind: "tool_result", title: "Write", body: "ok" },
+  );
+  const html = renderShell(state);
+
+  // Distinct edited files surface with filename + muted parent dir, display-only.
+  assert.match(html, /agent-session-tools__files/);
+  assert.match(html, /app\.ts/);
+  assert.match(html, /README\.md/);
+});
+
+test("codex_apply_patch_files_changed_list_parses_patch_headers", () => {
+  // Spec: docs_v2/specs/agent-session-block-rendering-path.md D14
+  const state = withToolBlocks(
+    {
+      id: "p1",
+      kind: "tool_call",
+      title: "apply_patch",
+      body: "*** Begin Patch\n*** Update File: docs/glossary.md\n@@\n+x\n*** Add File: docs/new.md\n",
+    },
+    { id: "p2", kind: "tool_result", title: "apply_patch", body: "ok" },
+  );
+  const html = renderShell(state);
+  assert.match(html, /glossary\.md/);
+  assert.match(html, /new\.md/);
+});
+
 test("agent_session_text_blocks_render_as_transcript_turns_not_status_cards", () => {
   const state = applyBackendEventToAgentChatShell(
     createAgentChatShellState(),
@@ -385,7 +472,9 @@ test("composer_shell_command_adapter_only_claims_shell_owned_backend_command_kin
   assert.match(source, /"composer\.sendInput"/);
   assert.match(source, /"prompt\.answer"/);
   assert.match(source, /"workbench\.command"/);
-  assert.doesNotMatch(source, /"agentRuntime\.stop"/);
+  // The composer's interrupt action emits agentRuntime.stop (a runtime-lifecycle
+  // command the agent chat owns, alongside thread.start / composer.sendInput).
+  assert.match(source, /"agentRuntime\.stop"/);
 });
 
 test("agent_chip_renders_one_visible_value_for_provider_cli_and_tide_api_sources", () => {
@@ -419,7 +508,7 @@ test("model_chip_routes_menu_data_by_agent_runtime_source", () => {
 });
 
 test("codex_model_chip_renders_polished_label_but_stores_provider_native_value", () => {
-  // Spec: docs_v2/specs/composer-agent-runtime-source.md
+  // Spec: docs_v2/specs/composer-agent-runtime-source.md D5/D5a
   const withModelMenu = setComposerActiveSurface(
     createAgentChatShellState(),
     "model_menu",
@@ -427,12 +516,30 @@ test("codex_model_chip_renders_polished_label_but_stores_provider_native_value",
   const selected = selectAgentChatChoiceSurfaceRow(
     withModelMenu,
     "model_menu",
-    "gpt-55-high",
+    "model:gpt-5.5",
   ).state;
   const view = createAgentChatShellViewModel(selected);
 
   assert.equal(selected.composer.startOptions.launchOptions?.model, "gpt-5.5");
-  assert.equal(view.composer.modelLabel, "GPT-5.5 High");
+  // Reasoning defaults to Medium when unset; the label shows model + effort.
+  assert.equal(view.composer.modelLabel, "GPT-5.5 · Medium");
+});
+
+test("codex_reasoning_effort_row_sets_launch_option_and_updates_chip_label", () => {
+  // Spec: docs_v2/specs/composer-agent-runtime-source.md D5a
+  const withModelMenu = setComposerActiveSurface(
+    createAgentChatShellState(),
+    "model_menu",
+  ).state;
+  const high = selectAgentChatChoiceSurfaceRow(
+    withModelMenu,
+    "model_menu",
+    "reasoning-high",
+  ).state;
+  const view = createAgentChatShellViewModel(high);
+
+  assert.equal(high.composer.startOptions.launchOptions?.reasoning, "high");
+  assert.equal(view.composer.modelLabel, "GPT-5.5 · High");
 });
 
 test("selecting_antigravity_updates_visible_model_and_permission_defaults_away_from_codex_gpt", () => {
@@ -441,7 +548,7 @@ test("selecting_antigravity_updates_visible_model_and_permission_defaults_away_f
 
   assert.equal(selected.composer.startOptions.agentBinding.agentId, "antigravity");
   assert.equal(selected.composer.startOptions.agentBinding.runtimeSource?.kind, "provider_cli");
-  assert.equal(view.composer.modelLabel, "Antigravity default");
+  assert.equal(view.composer.modelLabel, "Default");
   assert.equal(view.composer.permissionLabel, "default");
   assert.notEqual(view.composer.modelLabel, "GPT-5.5 High");
 });
@@ -483,7 +590,7 @@ test("follow_up_composer_model_label_uses_active_thread_launch_options", () => {
   const view = createAgentChatShellViewModel(hydrated);
 
   assert.equal(view.composer.mode, "follow_up");
-  assert.equal(view.composer.modelLabel, "Antigravity default");
+  assert.equal(view.composer.modelLabel, "Default");
   assert.equal(view.composer.permissionLabel, "default");
 });
 
@@ -512,7 +619,7 @@ test("follow_up_composer_model_label_falls_back_to_active_agent_default", () => 
   );
   const view = createAgentChatShellViewModel(hydrated);
 
-  assert.equal(view.composer.modelLabel, "Antigravity default");
+  assert.equal(view.composer.modelLabel, "Default");
   assert.equal(view.composer.permissionLabel, "default");
 });
 
@@ -561,12 +668,15 @@ test("composer_options_and_command_prefix_render_as_transient_choice_surfaces", 
   );
   const slashHtml = renderShell(updateComposerDraft(createAgentChatShellState(), "/").state);
 
-  assert.ok(optionsHtml.indexOf('aria-label="Choice Surface"') < optionsHtml.indexOf('aria-label="Composer"'));
+  // The chip dropdown now renders as an anchored popover (fixed-position), so it
+  // no longer needs to precede the composer in the DOM — just that it renders.
+  assert.match(optionsHtml, /aria-label="Choice Surface"/);
+  assert.match(optionsHtml, /chip-popover/);
   assert.match(optionsHtml, /Files and images/);
   assert.match(optionsHtml, /Current file or selection/);
   assert.match(optionsHtml, /Agent tools/);
   assert.doesNotMatch(optionsHtml, /This popover never shows/i);
-  assert.ok(slashHtml.indexOf("Command suggestions") < slashHtml.indexOf('aria-label="Composer"'));
+  assert.match(slashHtml, /Command suggestions/);
   assert.match(slashHtml, /Code review/);
   assert.match(slashHtml, /Context mention/);
 });
@@ -601,15 +711,23 @@ test("openai_api_readiness_mentions_provider_account_not_hidden_pty", () => {
 });
 
 test("composer_menu_rows_update_start_context_and_close_the_surface", () => {
+  // The Project menu lists real injected projects (not a hardcoded set).
+  const base: AgentChatShellState = {
+    ...createAgentChatShellState(),
+    availableProjects: [
+      { projectId: "tide", name: "tide", cwd: "/Users/eatnug/Workspace/tide" },
+      { projectId: "slice", name: "slice", cwd: "/Users/eatnug/Workspace/slice" },
+    ],
+  };
   const agentSelected = selectAgentChatChoiceSurfaceRow(
-    setComposerActiveSurface(createAgentChatShellState(), "agent_menu").state,
+    setComposerActiveSurface(base, "agent_menu").state,
     "agent_menu",
     "openai-api",
   ).state;
   const projectSelected = selectAgentChatChoiceSurfaceRow(
     setComposerActiveSurface(agentSelected, "project_menu").state,
     "project_menu",
-    "project-slice",
+    "project:slice",
   ).state;
   const permissionSelected = selectAgentChatChoiceSurfaceRow(
     setComposerActiveSurface(projectSelected, "permission_menu").state,
@@ -630,6 +748,116 @@ test("composer_menu_rows_update_start_context_and_close_the_surface", () => {
   assert.match(html, /What should we build in slice/);
   assert.match(html, /composer-shell__chip-label">slice/);
   assert.doesNotMatch(html, /data-choice-surface/);
+});
+
+test("project_menu_lists_real_injected_projects_not_a_hardcoded_set", () => {
+  const base: AgentChatShellState = {
+    ...createAgentChatShellState(),
+    availableProjects: [
+      { projectId: "tide", name: "tide", cwd: "/Users/eatnug/Workspace/tide" },
+      { projectId: "money", name: "money", cwd: "/Users/eatnug/Workspace/money" },
+    ],
+  };
+  const html = renderShell(setComposerActiveSurface(base, "project_menu").state);
+
+  // Real projects appear; the old hardcoded "slice" placeholder does not.
+  assert.match(html, /data-choice-surface="project_menu"/);
+  assert.match(html, /money/);
+  assert.match(html, /Scratch/);
+  assert.match(html, /Open folder/);
+  assert.doesNotMatch(html, /slice/);
+  // Menu rows render lucide SVGs (semantic icon keys), not stray glyphs like □;
+  // the literal "folder"/"check" key strings must not leak as text either.
+  assert.match(html, /lucide-folder/);
+  assert.match(html, /lucide-check/);
+  assert.doesNotMatch(html, /□/);
+  assert.doesNotMatch(html, /row-icon" aria-hidden="true">folder</);
+});
+
+test("branch_menu_lists_real_git_branches_not_placeholders", () => {
+  // Spec: docs_v2/specs/git-backed-worktree-branch-menus.md UC-1
+  const base: AgentChatShellState = {
+    ...createAgentChatShellState(),
+    availableBranches: [
+      { name: "main", kind: "local", current: true },
+      { name: "feature/x", kind: "local", current: false },
+      { name: "origin/main", kind: "remote", current: false },
+    ],
+  };
+  const html = renderShell(setComposerActiveSurface(base, "branch_menu").state);
+
+  assert.match(html, /feature\/x/);
+  assert.match(html, /origin\/main/);
+  assert.match(html, /Create new branch/);
+  // The old fabricated placeholders are gone.
+  assert.doesNotMatch(html, /feature\/sidebar/);
+  assert.doesNotMatch(html, /release\/2026-05/);
+});
+
+test("branch_menu_falls_back_to_current_value_when_no_git_data", () => {
+  // Spec: docs_v2/specs/git-backed-worktree-branch-menus.md UC-3
+  const html = renderShell(setComposerActiveSurface(createAgentChatShellState(), "branch_menu").state);
+  assert.match(html, /Create new branch/);
+  assert.doesNotMatch(html, /feature\/sidebar/);
+  assert.doesNotMatch(html, /codex\/v2-shell/);
+});
+
+test("worktree_menu_lists_real_worktrees", () => {
+  // Spec: docs_v2/specs/git-backed-worktree-branch-menus.md UC-2
+  const base: AgentChatShellState = {
+    ...createAgentChatShellState(),
+    availableWorktrees: [
+      { path: "/Users/eatnug/Workspace/tide", branch: "main", current: true },
+      { path: "/Users/eatnug/Workspace/tide-wt", branch: "feature/x", current: false },
+    ],
+  };
+  const html = renderShell(setComposerActiveSurface(base, "worktree_menu").state);
+  assert.match(html, /current folder/);
+  assert.match(html, /feature\/x/);
+  assert.match(html, /New worktree/);
+  assert.doesNotMatch(html, /existing worktree/);
+});
+
+test("open_provider_setup_row_dispatches_the_setup_surface_command", () => {
+  // Spec: docs_v2/specs/provider-setup-surface-input-and-retry.md
+  // Regression: the readiness surface rows were rendered without onRowSelect, so
+  // "Open provider setup" was a dead click. Selecting it must emit the command.
+  const blocked = applyBackendEventToAgentChatShell(
+    applyBackendEventToAgentChatShell(
+      createAgentChatShellState(),
+      backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+    ),
+    backendEvent("providerReadiness.changed", {
+      readiness: {
+        agentId: "codex",
+        ready: false,
+        blockers: [
+          {
+            kind: "directory_trust_required",
+            scope: "execution_context",
+            message: "Codex Directory Trust is required for this Execution Context.",
+            setup: {
+              command: "codex",
+              args: ["--no-alt-screen"],
+              cwd: "/Users/eatnug/Workspace/tide",
+              expectedCompletion: "retry_preflight",
+            },
+          },
+        ],
+      },
+    }),
+  );
+  // The rendered surface wires onRowSelect (no longer a dead row).
+  assert.match(renderShell(blocked), /Open provider setup/);
+
+  const result = selectAgentChatChoiceSurfaceRow(
+    blocked,
+    "provider_readiness",
+    "directory_trust_required:setup",
+    "thread-shell",
+  );
+  assert.equal(result.command?.kind, "workbench.command");
+  assert.equal(result.command?.payload.command, "open_provider_setup_surface");
 });
 
 test("prompt_choice_surface_row_emits_prompt_answer", () => {

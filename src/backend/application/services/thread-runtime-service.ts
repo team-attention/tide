@@ -296,7 +296,7 @@ export interface SendComposerInput {
 }
 
 export interface SendComposerInputResult {
-  status: "sent" | "provider_not_ready";
+  status: "sent" | "queued" | "provider_not_ready";
   thread: ThreadSnapshot;
   runtimeState: AgentRuntimeState;
   providerReadiness: ProviderReadinessResult;
@@ -365,6 +365,19 @@ export interface StopAgentRuntimeInput {
 export interface StopAgentRuntimeResult {
   thread: ThreadSnapshot;
   runtimeState: AgentRuntimeState;
+}
+
+export interface RecordTurnCompleteInput {
+  threadId: ThreadId;
+}
+
+export interface RecordTurnCompleteResult {
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+  /** A queued Composer input flushed to the now-idle runtime, if any. */
+  flushedInput?: string;
+  /** The local user-message block created for a flushed queued input, if any. */
+  submittedBlock?: AgentSessionBlockReference;
 }
 
 export interface WorkbenchCommandInput {
@@ -596,6 +609,9 @@ export interface ThreadRuntimeService {
   stopAgentRuntime(
     input: StopAgentRuntimeInput,
   ): Promise<ServiceResult<StopAgentRuntimeResult>>;
+  recordTurnComplete(
+    input: RecordTurnCompleteInput,
+  ): Promise<ServiceResult<RecordTurnCompleteResult>>;
   handleWorkbenchCommand(
     input: WorkbenchCommandInput,
   ): Promise<ServiceResult<WorkbenchCommandResult>>;
@@ -1045,6 +1061,30 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       };
     }
 
+    // Default behaviour while a turn is in flight: queue the input Tide-side and
+    // flush it when the turn completes (recordTurnComplete). The user can
+    // explicitly interrupt to end the turn early and send sooner. This is
+    // agent-agnostic — Tide never relies on the CLI's own mid-turn input.
+    const busy =
+      thread.activeRuntimeHandle !== undefined &&
+      (thread.runtimeState === "running" || thread.runtimeState === "starting");
+    if (busy) {
+      thread.pendingInput = {
+        kind: "composer_input",
+        value: input.input,
+        capturedAt: this.clock(),
+        launchOptions: cloneLaunchOptions(input.launchOptions ?? thread.launchOptions),
+      };
+      thread.updatedAt = this.clock();
+      return {
+        ok: true,
+        status: "queued",
+        thread: snapshotThread(thread),
+        runtimeState: thread.runtimeState,
+        providerReadiness: readiness,
+      };
+    }
+
     const handle = await this.activeOrResumedHandle(thread);
     const submittedBlock = this.appendLocalUserMessageBlock(thread, input.input);
     thread.runtimeState = "running";
@@ -1270,8 +1310,65 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     thread.runtimeState = "stopped";
     thread.lifecycleState = "open";
     thread.lastKnownState = "idle";
+    // An interrupt drops the in-flight turn; don't resurrect a queued input.
+    thread.pendingInput = undefined;
     thread.updatedAt = this.clock();
 
+    return {
+      ok: true,
+      thread: snapshotThread(thread),
+      runtimeState: thread.runtimeState,
+    };
+  }
+
+  // Called when a provider Stop signal ends the current turn. The runtime
+  // session stays alive (this is not stopAgentRuntime). If the user queued input
+  // during the turn, flush it now and begin the next turn; otherwise go idle so
+  // the UI stops showing "working".
+  async recordTurnComplete(
+    input: RecordTurnCompleteInput,
+  ): Promise<ServiceResult<RecordTurnCompleteResult>> {
+    const thread = this.threads.get(input.threadId);
+    if (thread === undefined) {
+      return failure("thread_not_found", "Thread was not found.");
+    }
+
+    // Only react to a turn ending while busy; ignore duplicate/late Stop signals.
+    if (thread.runtimeState !== "running" && thread.runtimeState !== "starting") {
+      return {
+        ok: true,
+        thread: snapshotThread(thread),
+        runtimeState: thread.runtimeState,
+      };
+    }
+
+    const queued = thread.pendingInput;
+    if (queued !== undefined && queued.kind === "composer_input") {
+      thread.pendingInput = undefined;
+      const handle = await this.activeOrResumedHandle(thread);
+      const submittedBlock = this.appendLocalUserMessageBlock(thread, queued.value);
+      thread.runtimeState = "running";
+      thread.lifecycleState = "running";
+      thread.lastKnownState = "running";
+      thread.updatedAt = this.clock();
+      await this.agentRuntimePort.writeInput(handle, {
+        kind: "composer_input",
+        value: queued.value,
+        submittedAt: this.clock(),
+      });
+      return {
+        ok: true,
+        thread: snapshotThread(thread),
+        runtimeState: thread.runtimeState,
+        flushedInput: queued.value,
+        submittedBlock,
+      };
+    }
+
+    thread.runtimeState = "idle";
+    thread.lifecycleState = "open";
+    thread.lastKnownState = "idle";
+    thread.updatedAt = this.clock();
     return {
       ok: true,
       thread: snapshotThread(thread),
@@ -1758,6 +1855,9 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
             "Thread does not have an Execution Context root for FileTree View.",
           );
         }
+        // Full tree: load the whole source tree once (heavy dirs are skipped by
+        // the workspace file port). Folders are collapsed by default in the UI,
+        // so the DOM stays light even though every entry is loaded upfront.
         const listed = await this.workspaceFilePort.listTree({
           root,
           maxDepth: fileTreeMaxDepth(input.data?.maxDepth),
@@ -3157,12 +3257,23 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
 
     thread.runtimeState = "starting";
     thread.updatedAt = this.clock();
-    const resumeInput: AgentRuntimeResumeInput = {
-      threadId: thread.threadId,
-      agentBinding: cloneAgentBinding(thread.agentBinding),
-      scope: cloneScope(thread.scope),
-    };
-    const handle = await this.agentRuntimePort.resume(resumeInput);
+    // Resume only when there is a provider session to resume. A thread that has
+    // never run (e.g. hydrated from metadata before the agent produced a session
+    // ref) has no providerSessionRef, so it must start a fresh runtime instead
+    // of failing the resume.
+    const handle =
+      thread.agentBinding.providerSessionRef === undefined
+        ? await this.agentRuntimePort.start({
+            threadId: thread.threadId,
+            agentBinding: cloneAgentBinding(thread.agentBinding),
+            scope: cloneScope(thread.scope),
+            launchOptions: thread.launchOptions,
+          })
+        : await this.agentRuntimePort.resume({
+            threadId: thread.threadId,
+            agentBinding: cloneAgentBinding(thread.agentBinding),
+            scope: cloneScope(thread.scope),
+          });
     thread.activeRuntimeHandle = cloneRuntimeHandle(handle);
     return handle;
   }
@@ -3515,8 +3626,8 @@ function launcherPaneActions(): LauncherPaneState["actions"] {
     {
       actionId: "open_editor",
       label: "Editor",
-      description: "Open from FileTree or Agent file tools",
-      enabled: false,
+      description: "Pick a file from the FileTree to edit",
+      enabled: true,
     },
     {
       actionId: "open_terminal",
@@ -3529,12 +3640,6 @@ function launcherPaneActions(): LauncherPaneState["actions"] {
       label: "Diff",
       description: "Available after a file edit or review target",
       enabled: false,
-    },
-    {
-      actionId: "open_file_tree",
-      label: "FileTree",
-      description: "Show the Thread FileTree",
-      enabled: true,
     },
   ];
 }
@@ -3836,16 +3941,16 @@ function commandTimeoutMs(value: unknown): number {
 
 function fileTreeMaxDepth(value: unknown): number {
   if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
-    return Math.min(value, 6);
+    return Math.min(value, 12);
   }
-  return 2;
+  return 12;
 }
 
 function fileTreeMaxEntries(value: unknown): number {
   if (typeof value === "number" && Number.isInteger(value) && value > 0) {
-    return Math.min(value, 500);
+    return Math.min(value, 4000);
   }
-  return 160;
+  return 4000;
 }
 
 function commandRunStatus(run: WorkspaceCommandRun): "completed" | "failed" {

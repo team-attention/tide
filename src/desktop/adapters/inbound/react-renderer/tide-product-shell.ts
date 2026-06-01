@@ -1,9 +1,7 @@
 import { createElement, useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import {
   Archive,
-  ChevronDown,
   ChevronRight,
-  ChevronUp,
   ExternalLink,
   FileText,
   Folder,
@@ -16,8 +14,10 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
+  PanelRightOpen,
   Pin,
   PinOff,
+  Plus,
   Search,
   Settings,
   Square,
@@ -78,16 +78,27 @@ import {
   toggleProductShellSearch,
   selectProductShellChoiceSurfaceRow,
   selectProductShellLauncherAction,
+  archiveProductShellProjectChats,
+  cancelProductShellProjectRename,
   setProductShellComposerActiveSurface,
+  setProductShellComposerFolderScope,
+  setProductShellGitContext,
+  setProductShellRegisteredProjects,
+  startProductShellProjectRename,
+  startNewProductShellScratchThread,
+  toggleProductShellProjectPin,
   showProductShellThreadArchiveConfirm,
   startProductShellThreadRename,
   submitProductShellThreadRename,
   cancelProductShellThreadRename,
   startNewProductShellThread,
+  openProductShellWorkbenchLauncher,
+  interruptProductShellRuntime,
   submitProductShellComposerDraft,
   saveProductShellWorkbenchEditorPane,
   toggleProductShellFileTreeWithRefresh,
   toggleProductShellLeftUi,
+  toggleProductShellProject,
   toggleProductShellThreadPin,
   toggleProductShellWorkbenchWithLauncher,
   updateProductShellBrowserActionResult,
@@ -100,6 +111,7 @@ import {
   type ProductShellBrowserSnapshot,
   type ProductShellLeftUiMenu,
   type ProductShellProjectGroupView,
+  type ProductShellPinnedProjectView,
   type ProductShellState,
   type ProductShellThreadView,
   type ProductShellViewModel,
@@ -111,29 +123,86 @@ import type {
   AgentChatComposerSurfaceKind,
 } from "../../../application/domains/agent-chat/agent-chat-shell-state.ts";
 
+export interface ProjectRegistryEntry {
+  projectId: string;
+  name: string;
+  cwd: string;
+}
+
+// Native folder picker + persisted project registry, provided by the renderer
+// entry from the Main process (absent in tests / non-Electron contexts).
+export interface GitContextResult {
+  isGitRepo: boolean;
+  currentBranch: string | null;
+  branches: { name: string; kind: "local" | "remote"; current: boolean }[];
+  worktrees: { path: string; branch: string | null; current: boolean }[];
+}
+
+export interface ProjectRegistryBridge {
+  openDirectory(): Promise<string | null>;
+  listProjects(): Promise<ProjectRegistryEntry[]>;
+  registerProject(cwd: string): Promise<ProjectRegistryEntry[]>;
+  unregisterProject(cwd: string): Promise<ProjectRegistryEntry[]>;
+  renameProject(cwd: string, name: string): Promise<ProjectRegistryEntry[]>;
+  revealInFinder(cwd: string): Promise<void>;
+  createWorktree(cwd: string): Promise<{ entries: ProjectRegistryEntry[]; createdCwd: string | null }>;
+  gitContext(cwd: string): Promise<GitContextResult>;
+}
+
 export interface TideProductShellProps {
   initialState?: ProductShellState;
   onBackendCommand?: (
     command: ProductShellBackendCommand,
   ) => Promise<AgentChatBackendEvent[]> | AgentChatBackendEvent[] | void;
   onBackendEvent?: (listener: (event: AgentChatBackendEvent) => void) => (() => void) | undefined;
+  projectBridge?: ProjectRegistryBridge;
+}
+
+// Screen rect of a context-menu trigger, used to anchor the menu as a fixed
+// popover so it is not clipped by the left rail's scroll overflow.
+interface MenuAnchorRect {
+  left: number;
+  top: number;
+  bottom: number;
+  right: number;
 }
 
 interface ProductShellHandlers {
   onNewThread: () => void;
+  onNewThreadInProject: (projectId: string) => void;
+  onProjectToggle: (projectId: string) => void;
   onThreadSelect: (threadId: string) => void;
   onLeftUiToggle: () => void;
   onWorkbenchToggle: () => void;
+  onNewWorkbenchPane: () => void;
   onFileTreeToggle: () => void;
+  onResizeStart: (
+    edge: "left" | "workbench" | "fileTree",
+    event: { clientX: number; preventDefault: () => void },
+  ) => void;
   onDraftChange: (draft: string) => void;
   onSubmit: () => void;
+  onInterrupt: () => void;
   onComposerSurfaceChange: (surface: AgentChatComposerSurfaceKind | null) => void;
   onChoiceSurfaceRowSelect: (
     surfaceKind: AgentChatChoiceSurfaceView["surfaceKind"],
     rowId: string,
   ) => void;
   onLauncherAction: (actionId: string) => void;
-  onLeftUiMenuOpen: (menu: ProductShellLeftUiMenu | null) => void;
+  onLeftUiMenuOpen: (menu: ProductShellLeftUiMenu | null, rect?: MenuAnchorRect) => void;
+  isSectionCollapsed: (title: string) => boolean;
+  onToggleSection: (title: string) => void;
+  onProjectRevealInFinder: (projectId: string) => void;
+  onProjectArchiveChats: (projectId: string) => void;
+  onProjectRemove: (projectId: string) => void;
+  onProjectPinToggle: (projectId: string) => void;
+  onProjectRenameStart: (projectId: string) => void;
+  onProjectRenameSubmit: (projectId: string, name: string) => void;
+  onProjectRenameCancel: () => void;
+  onProjectCreateWorktree: (projectId: string) => void;
+  onPinnedProjectSelect: (projectId: string) => void;
+  onAddProject: () => void;
+  onNewScratchThread: () => void;
   onThreadArchiveIntent: (threadId: string) => void;
   onThreadArchiveConfirm: (threadId: string) => void;
   onThreadPinToggle: (threadId: string) => void;
@@ -162,6 +231,155 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   const [shellState, setShellState] = useState(() =>
     props.initialState ?? createProductShellState({ includeFixtureData: false }),
   );
+  // Resizable column widths (agent chat is the flexible middle track). Drag
+  // handles on column edges update these via pointer capture.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const lastSubmitAtRef = useRef(0);
+  // Screen rect of the trigger that opened the left-rail context menu, so the
+  // menu can anchor to it as a fixed popover (escaping the rail's scroll clip).
+  const [menuAnchor, setMenuAnchor] = useState<MenuAnchorRect | null>(null);
+  // Collapsed left-rail sections (Pinned / Projects / Scratch), keyed by title.
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [columnWidths, setColumnWidths] = useState({ left: 256, workbench: 480, fileTree: 344 });
+
+  // Load the persisted project registry on mount so opened folders appear even
+  // before any thread exists (Codex flow).
+  useEffect(() => {
+    const bridge = props.projectBridge;
+    if (bridge === undefined) {
+      return;
+    }
+    let cancelled = false;
+    bridge
+      .listProjects()
+      .then((entries) => {
+        if (!cancelled) {
+          setShellState((state) => setProductShellRegisteredProjects(state, entries));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [props.projectBridge]);
+
+  // Open the native directory picker, register the chosen folder as a persisted
+  // project, then scope the Start Composer to it.
+  const openFolderAsProject = async () => {
+    const bridge = props.projectBridge;
+    if (bridge === undefined) {
+      return;
+    }
+    const cwd = await bridge.openDirectory();
+    if (cwd === null) {
+      return;
+    }
+    const entries = await bridge.registerProject(cwd);
+    setShellState((state) => {
+      const withRegistry = setProductShellRegisteredProjects(state, entries);
+      const project = entries.find((entry) => entry.cwd === cwd);
+      return project === undefined
+        ? withRegistry
+        : selectProductShellChoiceSurfaceRow(withRegistry, "project_menu", `project:${project.projectId}`)
+            .state;
+    });
+  };
+
+  // The chip's "Open folder" only sets this Thread's Execution Context (cwd); it
+  // does NOT register a persisted project. The folder appears in the left
+  // Projects list only once a Thread is actually started in it.
+  const openFolderForScope = async () => {
+    const bridge = props.projectBridge;
+    if (bridge === undefined) {
+      return;
+    }
+    const cwd = await bridge.openDirectory();
+    if (cwd === null) {
+      return;
+    }
+    setShellState((state) => setProductShellComposerFolderScope(state, cwd));
+  };
+
+  // Fetch real git branches/worktrees whenever the active Project cwd changes,
+  // so the Worktree/Branch menus reflect the actual repo (cleared for Scratch).
+  const activeScope = shellState.agentChat.thread?.scope ?? shellState.agentChat.composer.startOptions.scope;
+  const activeProjectCwd = activeScope?.kind === "project" ? activeScope.cwd : null;
+  useEffect(() => {
+    const bridge = props.projectBridge;
+    if (bridge === undefined || activeProjectCwd === null) {
+      setShellState((state) => setProductShellGitContext(state, { branches: [], worktrees: [] }));
+      return;
+    }
+    let cancelled = false;
+    bridge
+      .gitContext(activeProjectCwd)
+      .then((context) => {
+        if (!cancelled) {
+          setShellState((state) =>
+            setProductShellGitContext(state, {
+              branches: context.branches,
+              worktrees: context.worktrees,
+            }),
+          );
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [props.projectBridge, activeProjectCwd]);
+
+  // The agent-chat column never shrinks below the composer's usable width.
+  const CHAT_MIN = 440;
+  const startColumnResize = (
+    edge: "left" | "workbench" | "fileTree",
+    event: { clientX: number; preventDefault: () => void },
+  ) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const start = columnWidths;
+    const clamp = (value: number, min: number, max: number) =>
+      Math.max(min, Math.min(max, value));
+    const onMove = (move: PointerEvent) => {
+      const dx = move.clientX - startX;
+      // Keep every column inside the viewport: the flexible chat track must keep
+      // at least CHAT_MIN, so a resizable column can't grow past the space left
+      // by the other open columns. This prevents horizontal overflow/scroll.
+      const total = bodyRef.current?.clientWidth ?? window.innerWidth;
+      setColumnWidths((current) => {
+        if (edge === "left") {
+          const reserved =
+            (viewModel.workbenchOpen ? current.workbench : 0) +
+            (viewModel.fileTreeOpen ? current.fileTree : 0);
+          const max = Math.max(200, total - reserved - CHAT_MIN);
+          return { ...current, left: clamp(start.left + dx, 200, max) };
+        }
+        if (edge === "workbench") {
+          // Handle on the workbench's left edge: dragging right shrinks it.
+          const reserved =
+            (viewModel.leftUiOpen ? current.left : 0) +
+            (viewModel.fileTreeOpen ? current.fileTree : 0);
+          const max = Math.max(320, total - reserved - CHAT_MIN);
+          return { ...current, workbench: clamp(start.workbench - dx, 320, max) };
+        }
+        const reserved =
+          (viewModel.leftUiOpen ? current.left : 0) +
+          (viewModel.workbenchOpen ? current.workbench : 0);
+        const max = Math.max(240, total - reserved - CHAT_MIN);
+        return { ...current, fileTree: clamp(start.fileTree - dx, 240, max) };
+      });
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
   useEffect(() => {
     return props.onBackendEvent?.((event) => {
       // Terminal output is a hot path: write it straight to the GPU terminal and
@@ -189,7 +407,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             payload: {
               threadId: next.activeThreadId,
               command: "refresh_file_tree",
-              data: { maxDepth: 2, maxEntries: 200 },
+              data: { maxDepth: 1, maxEntries: 400 },
             },
           });
         }
@@ -225,6 +443,10 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   }, []);
   const handlers: ProductShellHandlers = {
     onNewThread: () => setShellState((state) => startNewProductShellThread(state)),
+    onNewThreadInProject: (projectId) =>
+      setShellState((state) => startNewProductShellThread(state, projectId)),
+    onProjectToggle: (projectId) =>
+      setShellState((state) => toggleProductShellProject(state, projectId)),
     onThreadSelect: (threadId) =>
       setShellState((state) => {
         const result = openProductShellThreadFromLeftUi(state, threadId, {
@@ -239,7 +461,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
             payload: {
               threadId: result.state.activeThreadId,
               command: "refresh_file_tree",
-              data: { maxDepth: 2, maxEntries: 200 },
+              data: { maxDepth: 1, maxEntries: 400 },
             },
           });
         }
@@ -252,6 +474,13 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         dispatchBackendCommand(result.command);
         return result.state;
       }),
+    onNewWorkbenchPane: () =>
+      setShellState((state) => {
+        const result = openProductShellWorkbenchLauncher(state);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onResizeStart: startColumnResize,
     onFileTreeToggle: () =>
       setShellState((state) => {
         const result = toggleProductShellFileTreeWithRefresh(state);
@@ -259,27 +488,127 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         return result.state;
       }),
     onDraftChange: (draft) => setShellState((state) => updateProductShellComposerDraft(state, draft)),
-    onSubmit: () =>
+    onSubmit: () => {
+      // Throttle to swallow accidental double-clicks / double Enter so the same
+      // draft is never submitted twice in quick succession.
+      const now = Date.now();
+      if (now - lastSubmitAtRef.current < 700) {
+        return;
+      }
+      lastSubmitAtRef.current = now;
       setShellState((state) => {
         const result = submitProductShellComposerDraft(state);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      });
+    },
+    onInterrupt: () =>
+      setShellState((state) => {
+        const result = interruptProductShellRuntime(state);
         dispatchBackendCommand(result.command);
         return result.state;
       }),
     onComposerSurfaceChange: (surface) =>
       setShellState((state) => setProductShellComposerActiveSurface(state, surface)),
-    onChoiceSurfaceRowSelect: (surfaceKind, rowId) =>
+    onChoiceSurfaceRowSelect: (surfaceKind, rowId) => {
+      // "Open folder" in the chip only scopes the Start Composer to the picked
+      // folder (Execution Context). It is NOT registered as a persisted project
+      // here — registration/left-list appearance happens via the Projects "+"
+      // button or when a Thread is actually started in the folder.
+      if (surfaceKind === "project_menu" && rowId === "open-folder") {
+        openFolderForScope();
+        setShellState((state) => setProductShellComposerActiveSurface(state, null));
+        return;
+      }
       setShellState((state) => {
         const result = selectProductShellChoiceSurfaceRow(state, surfaceKind, rowId);
         dispatchBackendCommand(result.command);
         return result.state;
-      }),
+      });
+    },
     onLauncherAction: (actionId) =>
       setShellState((state) => {
         const result = selectProductShellLauncherAction(state, actionId);
         dispatchBackendCommand(result.command);
         return result.state;
       }),
-    onLeftUiMenuOpen: (menu) => setShellState((state) => openProductShellLeftUiMenu(state, menu)),
+    onLeftUiMenuOpen: (menu, rect) => {
+      setMenuAnchor(rect ?? null);
+      setShellState((state) => openProductShellLeftUiMenu(state, menu));
+    },
+    isSectionCollapsed: (title) => collapsedSections[title] === true,
+    onToggleSection: (title) =>
+      setCollapsedSections((current) => ({ ...current, [title]: !current[title] })),
+    onProjectRevealInFinder: (projectId) => {
+      const cwd = projectCwdById(shellState, projectId);
+      if (cwd !== undefined) {
+        props.projectBridge?.revealInFinder(cwd);
+      }
+      setShellState((state) => openProductShellLeftUiMenu(state, null));
+    },
+    onProjectArchiveChats: (projectId) =>
+      setShellState((state) => {
+        const result = archiveProductShellProjectChats(state, projectId);
+        for (const command of result.commands) {
+          dispatchBackendCommand(command);
+        }
+        return result.state;
+      }),
+    onProjectRemove: (projectId) => {
+      const cwd = projectCwdById(shellState, projectId);
+      const bridge = props.projectBridge;
+      if (cwd !== undefined && bridge !== undefined) {
+        bridge
+          .unregisterProject(cwd)
+          .then((entries) => setShellState((state) => setProductShellRegisteredProjects(state, entries)))
+          .catch(() => {});
+      }
+      setShellState((state) => openProductShellLeftUiMenu(state, null));
+    },
+    onProjectPinToggle: (projectId) =>
+      setShellState((state) => toggleProductShellProjectPin(state, projectId)),
+    onProjectRenameStart: (projectId) =>
+      setShellState((state) => startProductShellProjectRename(state, projectId)),
+    onProjectRenameCancel: () =>
+      setShellState((state) => cancelProductShellProjectRename(state)),
+    onProjectRenameSubmit: (projectId, name) => {
+      const cwd = projectCwdById(shellState, projectId);
+      const bridge = props.projectBridge;
+      const trimmed = name.trim();
+      if (cwd !== undefined && bridge !== undefined && trimmed.length > 0) {
+        bridge
+          .renameProject(cwd, trimmed)
+          .then((entries) => setShellState((state) => setProductShellRegisteredProjects(state, entries)))
+          .catch(() => {});
+      }
+      setShellState((state) => cancelProductShellProjectRename(state));
+    },
+    onProjectCreateWorktree: (projectId) => {
+      const cwd = projectCwdById(shellState, projectId);
+      const bridge = props.projectBridge;
+      if (cwd !== undefined && bridge !== undefined) {
+        bridge
+          .createWorktree(cwd)
+          .then((result) =>
+            setShellState((state) => setProductShellRegisteredProjects(state, result.entries)),
+          )
+          .catch(() => {});
+      }
+      setShellState((state) => openProductShellLeftUiMenu(state, null));
+    },
+    onPinnedProjectSelect: (projectId) =>
+      setShellState((state) => {
+        const result = selectProductShellChoiceSurfaceRow(
+          state,
+          "project_menu",
+          `project:${projectId}`,
+        );
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onAddProject: () => openFolderAsProject(),
+    onNewScratchThread: () =>
+      setShellState((state) => startNewProductShellScratchThread(state)),
     onThreadArchiveIntent: (threadId) =>
       setShellState((state) => showProductShellThreadArchiveConfirm(state, threadId)),
     onThreadArchiveConfirm: (threadId) =>
@@ -382,8 +711,28 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     },
     createElement(
       "div",
-      { className: "tide-product-shell__body" },
-      viewModel.leftUiOpen ? createLeftUi(viewModel, handlers) : null,
+      {
+        className: "tide-product-shell__body",
+        ref: bodyRef,
+        // Agent chat is the flexible middle track; the other columns use
+        // minmax(min, dragWidth) so they honour the dragged width when there is
+        // room but shrink toward their min when several columns are open at once
+        // (so workbench + filetree can both show without overflowing).
+        style: {
+          gridTemplateColumns: [
+            viewModel.leftUiOpen ? `minmax(180px, ${columnWidths.left}px)` : null,
+            // Never shrink the agent-chat column below the composer's usable width.
+            `minmax(${CHAT_MIN}px, 1fr)`,
+            viewModel.workbenchOpen ? `minmax(280px, ${columnWidths.workbench}px)` : null,
+            viewModel.fileTreeOpen ? `minmax(220px, ${columnWidths.fileTree}px)` : null,
+          ]
+            .filter(Boolean)
+            .join(" "),
+        } as CSSProperties,
+      },
+      viewModel.leftUiOpen
+        ? createLeftUi(viewModel, handlers, { menu: shellState.leftUiMenu, anchor: menuAnchor })
+        : null,
       createAgentChatColumn(viewModel, handlers),
       viewModel.workbenchOpen ? createWorkbenchColumn(viewModel, handlers) : null,
       viewModel.fileTreeOpen ? createFileTreeColumn(viewModel, handlers) : null,
@@ -410,10 +759,20 @@ export function AgentIdentityIcon(props: { agentId: ProductShellAgentIdentity | 
 function createLeftUi(
   viewModel: ProductShellViewModel,
   handlers: ProductShellHandlers,
+  contextMenu: { menu: ProductShellLeftUiMenu | null; anchor: MenuAnchorRect | null },
 ): ReactElement {
   return createElement(
     "aside",
     { className: "left-ui", "aria-label": "Left UI", "data-column": "left-ui" },
+    createColumnResizeHandle("left", "right", handlers),
+    contextMenu.menu
+      ? createLeftUiContextMenuOverlay(
+          contextMenu.menu,
+          contextMenu.anchor ?? { left: 12, top: 120, bottom: 150, right: 256 },
+          () => handlers.onLeftUiMenuOpen(null),
+          handlers,
+        )
+      : null,
     createElement(
       "header",
       { className: "left-ui__top-row column-top-row", "aria-label": "Left UI Top Row" },
@@ -455,7 +814,7 @@ function createLeftUi(
     createElement(
       "div",
       { className: "left-ui__sections" },
-      createThreadSection("Pinned", viewModel.pinnedThreads, handlers),
+      createPinnedSection(viewModel.pinnedProjects, viewModel.pinnedThreads, handlers),
       createProjectSection(viewModel.projectGroups, handlers),
       createThreadSection("Scratch", viewModel.scratchThreads, handlers),
     ),
@@ -503,7 +862,9 @@ function createAgentChatColumn(
         "div",
         { className: "column-top-row__trailing" },
         createIconButton("Thread menu", createElement(MoreHorizontal, { size: 16, strokeWidth: 1.9 }), undefined, "top-row-button"),
-        rightOwner === "agent-chat" ? createRightWindowActions(rightOwner, handlers) : null,
+        rightOwner === "agent-chat"
+          ? createRightWindowActions(rightOwner, viewModel.workbenchOpen, handlers)
+          : null,
       ),
     ),
     createElement(AgentChatShell, {
@@ -511,6 +872,7 @@ function createAgentChatColumn(
       showThreadHeader: false,
       onDraftChange: handlers.onDraftChange,
       onSubmit: handlers.onSubmit,
+      onInterrupt: handlers.onInterrupt,
       onComposerSurfaceChange: handlers.onComposerSurfaceChange,
       onChoiceSurfaceRowSelect: handlers.onChoiceSurfaceRowSelect,
     }),
@@ -529,6 +891,7 @@ function createWorkbenchColumn(
   return createElement(
     "aside",
     { className: "workbench-column", "aria-label": "Workbench", "data-column": "workbench" },
+    createColumnResizeHandle("workbench", "left", handlers),
     createElement(
       "header",
       { className: "workbench-column__top-row column-top-row", "aria-label": "Workbench Top Row" },
@@ -575,8 +938,11 @@ function createWorkbenchColumn(
       createElement(
         "div",
         { className: "column-top-row__trailing" },
+        createIconButton("New Pane", createElement(Plus, { size: 16, strokeWidth: 1.9 }), handlers.onNewWorkbenchPane, "top-row-button"),
         createIconButton("Close Workbench", createElement(PanelRightClose, { size: 16, strokeWidth: 1.9 }), handlers.onWorkbenchToggle, "top-row-button"),
-        rightOwner === "workbench" ? createRightWindowActions(rightOwner, handlers) : null,
+        rightOwner === "workbench"
+          ? createRightWindowActions(rightOwner, viewModel.workbenchOpen, handlers)
+          : null,
       ),
     ),
     activeTab && activePane
@@ -593,7 +959,16 @@ function createWorkbenchColumn(
             viewModel.editorDrafts[activePane.paneId],
           ),
         )
-      : createElement("div", { className: "workbench-column__empty" }, "No visible Workbench Pane."),
+      : createElement(
+          "section",
+          { className: "workbench-column__pane", "data-pane-kind": "launcher" },
+          // An empty Workbench presents the Launcher rather than a dead empty
+          // state, so there is always a way to open a Pane.
+          createElement(WorkbenchLauncherPane, {
+            pane: emptyWorkbenchLauncherPane(),
+            handlers,
+          }),
+        ),
   );
 }
 
@@ -621,6 +996,25 @@ function createWorkbenchPaneContent(
         createElement("h2", null, pane.title),
       );
   }
+}
+
+// Default Launcher shown when the Workbench has no visible Pane yet. Mirrors the
+// backend launcher action set so the empty Workbench is never a dead end.
+function emptyWorkbenchLauncherPane(): NonNullable<
+  ProductShellViewModel["appChrome"]["activeWorkbenchPane"]
+> {
+  return {
+    paneId: "workbench-launcher-empty",
+    kind: "launcher",
+    title: "Workbench launcher",
+    revision: "workbench-launcher-empty",
+    actions: [
+      { actionId: "open_browser", label: "Browser", description: "Open a Browser Pane", enabled: true },
+      { actionId: "open_editor", label: "Editor", description: "Pick a file from the FileTree to edit", enabled: true },
+      { actionId: "open_terminal", label: "Terminal", description: "Open a visible Terminal Pane", enabled: true },
+      { actionId: "open_diff", label: "Diff", description: "Available after a file edit or review target", enabled: false },
+    ],
+  } as NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>;
 }
 
 function WorkbenchLauncherPane(props: {
@@ -688,12 +1082,36 @@ function WorkbenchBrowserPane(props: {
   pane: NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>;
   handlers: ProductShellHandlers;
 }): ReactElement {
-  const title = props.pane.pageTitle ?? props.pane.title;
   const webviewRef = useRef<BrowserWebViewElement | null>(null);
   const executedActionIdsRef = useRef<Set<string>>(new Set());
+  const [address, setAddress] = useState(props.pane.url ?? "");
+  // Keep the address bar in sync when the backend reports a navigated URL.
+  useEffect(() => {
+    if (props.pane.url !== undefined) {
+      setAddress(props.pane.url);
+    }
+  }, [props.pane.url]);
+  const navigate = () => {
+    const url = normalizeBrowserUrl(address);
+    if (url.length === 0) {
+      return;
+    }
+    setAddress(url);
+    const webview = webviewRef.current;
+    if (webview?.loadURL !== undefined) {
+      void webview.loadURL(url).catch(() => undefined);
+    }
+    // Report the navigation so the backend pane reflects it; did-finish-load
+    // will follow up with the resolved title/body snapshot.
+    props.handlers.onBrowserSnapshot(props.pane.paneId, {
+      revision: props.pane.revision,
+      url,
+      loading: true,
+    });
+  };
   useEffect(() => {
     const webview = webviewRef.current;
-    if (webview === null || props.pane.url === undefined) {
+    if (webview === null) {
       return;
     }
     const paneId = props.pane.paneId;
@@ -759,42 +1177,68 @@ function WorkbenchBrowserPane(props: {
   return createElement(
     "div",
     { className: "workbench-pane-content workbench-pane-content--browser" },
-    // Slim address bar (no file-info panel) — the page fills the pane below it.
+    // Slim editable address bar — the page fills the pane below it.
     createElement(
-      "div",
-      { className: "workbench-browser-bar", "aria-label": "Browser address" },
-      createElement("span", { className: "workbench-browser-bar__title" }, title),
-      props.pane.url
-        ? createElement(
-            "span",
-            { className: "workbench-browser-bar__url", title: props.pane.url },
-            props.pane.url,
-          )
-        : null,
+      "form",
+      {
+        className: "workbench-browser-bar",
+        "aria-label": "Browser address",
+        onSubmit: (event: { preventDefault: () => void }) => {
+          event.preventDefault();
+          navigate();
+        },
+      },
+      createElement("input", {
+        className: "workbench-browser-bar__input",
+        "aria-label": "Browser address input",
+        value: address,
+        placeholder: "Enter a URL and press Enter",
+        spellCheck: false,
+        autoCapitalize: "off",
+        autoCorrect: "off",
+        onChange: (event: { currentTarget: { value: string } }) =>
+          setAddress(event.currentTarget.value),
+      }),
       props.pane.loading
         ? createElement("span", { className: "workbench-browser-bar__status" }, "loading")
         : null,
+      createElement(
+        "button",
+        { type: "submit", className: "workbench-browser-bar__go", "aria-label": "Go" },
+        "Go",
+      ),
     ),
-    props.pane.url
-      ? createElement("webview", {
-          ref: webviewRef,
-          className: "workbench-browser-webview",
-          "data-browser-pane-webview": props.pane.paneId,
-          src: props.pane.url,
-          partition: "persist:tide-workbench-browser",
-        })
-      : createElement(
-          "div",
-          { className: "workbench-browser-empty" },
-          "No page loaded.",
-        ),
+    createElement("webview", {
+      ref: webviewRef,
+      className: "workbench-browser-webview",
+      "data-browser-pane-webview": props.pane.paneId,
+      src: props.pane.url ?? "about:blank",
+      partition: "persist:tide-workbench-browser",
+    }),
   );
 }
 
 type BrowserWebViewElement = HTMLElement & {
   executeJavaScript?: (code: string) => Promise<unknown>;
   getURL?: () => string;
+  loadURL?: (url: string) => Promise<void>;
 };
+
+// Turn a user-typed address into a navigable URL: keep explicit schemes, treat a
+// dotted token as a bare host (https://), and fall back to a web search.
+function normalizeBrowserUrl(input: string): string {
+  const value = input.trim();
+  if (value.length === 0) {
+    return "";
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) || value.startsWith("about:")) {
+    return value;
+  }
+  if (/^[^\s/]+\.[^\s/]+/.test(value)) {
+    return `https://${value}`;
+  }
+  return `https://www.google.com/search?q=${encodeURIComponent(value)}`;
+}
 
 type BrowserWebViewSnapshot = Omit<ProductShellBrowserSnapshot, "revision" | "loading">;
 type BrowserWebViewAction = NonNullable<
@@ -1353,7 +1797,12 @@ function WorkbenchTerminalView(props: {
       fontSize: 12,
       fontFamily: '"Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
       scrollback: 5000,
-      theme: { background: "#fcfcfb", foreground: "#242424", cursor: "#343038" },
+      theme: {
+        background: "#1b1b1d",
+        foreground: "#e4e4e6",
+        cursor: "#e4e4e6",
+        selectionBackground: "#3a3a40",
+      },
     });
     term.open(host);
     if (props.initialText.length > 0) {
@@ -1427,86 +1876,16 @@ function WorkbenchTerminalPane(props: {
   pane: NonNullable<ProductShellViewModel["appChrome"]["activeWorkbenchPane"]>;
   handlers: ProductShellHandlers;
 }): ReactElement {
-  const [draft, setDraft] = useState("");
-  const sendBytes = (bytes: string) => {
-    props.handlers.onTerminalInput(props.pane.paneId, bytes);
-  };
-
+  // A real dark terminal: the xterm surface fills the pane and takes keystrokes
+  // directly (xterm.onData routes to onTerminalInput). No metadata chrome.
   return createElement(
     "div",
     { className: "workbench-terminal", "data-terminal-status": props.pane.status ?? "ready" },
-    createElement("div", { className: "workbench-column__kind" }, "terminal"),
-    createElement(
-      "div",
-      { className: "workbench-terminal__heading" },
-      createElement("h2", null, props.pane.title),
-      createElement("span", { className: "workbench-terminal__status" }, props.pane.status ?? "ready"),
-    ),
-    createElement(
-      "dl",
-      { className: "workbench-terminal__meta" },
-      props.pane.command
-        ? [
-            createElement("dt", { key: "command-label" }, "Command"),
-            createElement("dd", { key: "command-value" }, props.pane.command),
-          ]
-        : null,
-      props.pane.cwd
-        ? [
-            createElement("dt", { key: "cwd-label" }, "CWD"),
-            createElement("dd", { key: "cwd-value" }, props.pane.cwd),
-          ]
-        : null,
-      props.pane.expectedCompletion
-        ? [
-            createElement("dt", { key: "completion-label" }, "Completion"),
-            createElement("dd", { key: "completion-value" }, props.pane.expectedCompletion),
-          ]
-        : null,
-    ),
     createElement(WorkbenchTerminalView, {
       paneId: props.pane.paneId,
       initialText: props.pane.transcriptPreview ?? "",
       onInput: props.handlers.onTerminalInput,
     }),
-    createElement(
-      "pre",
-      { className: "workbench-terminal__preview", "aria-label": "Terminal transcript preview" },
-      props.pane.transcriptPreview ?? "",
-    ),
-    createElement(
-      "form",
-      {
-        className: "workbench-terminal__input",
-        "aria-label": "Provider Setup Surface input",
-        onSubmit: (event) => {
-          event.preventDefault();
-          if (draft.length === 0) {
-            return;
-          }
-          sendBytes(`${draft}\r`);
-          setDraft("");
-        },
-      },
-      createElement("input", {
-        value: draft,
-        onChange: (event) => setDraft(event.currentTarget.value),
-        "aria-label": "Terminal input",
-        placeholder: "Type input for setup...",
-      }),
-      createElement("button", { type: "submit" }, "Enter"),
-      createElement("button", { type: "button", onClick: () => sendBytes("\u001b") }, "Esc"),
-      createElement(
-        "button",
-        { type: "button", "aria-label": "Send Up Arrow", onClick: () => sendBytes("\u001b[A") },
-        createElement(ChevronUp, { size: 14, strokeWidth: 1.9 }),
-      ),
-      createElement(
-        "button",
-        { type: "button", "aria-label": "Send Down Arrow", onClick: () => sendBytes("\u001b[B") },
-        createElement(ChevronDown, { size: 14, strokeWidth: 1.9 }),
-      ),
-    ),
   );
 }
 
@@ -1517,6 +1896,7 @@ function createFileTreeColumn(
   return createElement(
     "aside",
     { className: "file-tree-column", "aria-label": "FileTree", "data-column": "file-tree" },
+    createColumnResizeHandle("fileTree", "left", handlers),
     createElement(
       "header",
       { className: "file-tree-column__top-row column-top-row", "aria-label": "FileTree Top Row" },
@@ -1526,7 +1906,7 @@ function createFileTreeColumn(
         createElement(FolderOpen, { size: 15, strokeWidth: 1.9, "aria-hidden": true }),
         createElement("span", { className: "column-top-row__title" }, viewModel.fileTree.cwdLabel),
       ),
-      createRightWindowActions("file-tree", handlers),
+      createRightWindowActions("file-tree", viewModel.workbenchOpen, handlers),
     ),
     createElement(
       "div",
@@ -1579,11 +1959,20 @@ function createProjectSection(
   projectGroups: ProductShellProjectGroupView[],
   handlers: ProductShellHandlers,
 ): ReactElement {
+  const collapsed = handlers.isSectionCollapsed("Projects");
   return createElement(
     "section",
     { className: "left-ui-section", "aria-label": "Projects" },
-    createSectionHeader("Projects"),
-    projectGroups.map((project) =>
+    createSectionHeader(
+      "Projects",
+      projectGroups.length,
+      collapsed,
+      () => handlers.onToggleSection("Projects"),
+      { label: "Add project", onClick: handlers.onAddProject },
+    ),
+    collapsed
+      ? null
+      : projectGroups.map((project) =>
       createElement(
         "div",
         { key: project.projectId, className: "project-group" },
@@ -1598,32 +1987,122 @@ function createProjectSection(
               "data-project-row": project.projectId,
               "data-expanded": project.expanded,
             },
-            project.expanded
-              ? createElement(FolderOpen, { size: 16, strokeWidth: 1.85, "aria-hidden": true })
-              : createElement(Folder, { size: 16, strokeWidth: 1.85, "aria-hidden": true }),
-            createElement("span", { className: "project-row__title" }, project.name),
+            createElement(
+              "button",
+              {
+                className: "project-row__toggle",
+                type: "button",
+                "aria-label": project.expanded ? "Collapse project" : "Expand project",
+                "aria-expanded": project.expanded,
+                onClick: () => handlers.onProjectToggle(project.projectId),
+              },
+              createElement(ChevronRight, {
+                size: 13,
+                strokeWidth: 2,
+                className: `project-row__chevron${project.expanded ? " project-row__chevron--expanded" : ""}`,
+                "aria-hidden": true,
+              }),
+              project.expanded
+                ? createElement(FolderOpen, { size: 16, strokeWidth: 1.85, "aria-hidden": true })
+                : createElement(Folder, { size: 16, strokeWidth: 1.85, "aria-hidden": true }),
+              project.renaming
+                ? createElement("input", {
+                    className: "project-row__rename-input",
+                    "aria-label": "Rename project",
+                    defaultValue: project.name,
+                    autoFocus: true,
+                    onClick: (event: { stopPropagation: () => void }) => event.stopPropagation(),
+                    onKeyDown: (event: {
+                      key: string;
+                      currentTarget: { value: string };
+                      preventDefault: () => void;
+                    }) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        handlers.onProjectRenameSubmit(project.projectId, event.currentTarget.value);
+                      } else if (event.key === "Escape") {
+                        handlers.onProjectRenameCancel();
+                      }
+                    },
+                    onBlur: (event: { currentTarget: { value: string } }) =>
+                      handlers.onProjectRenameSubmit(project.projectId, event.currentTarget.value),
+                  })
+                : createElement("span", { className: "project-row__title" }, project.name),
+            ),
             createElement(
               "span",
               { className: "project-row__actions" },
               createIconButton(
                 "Project menu",
                 createElement(MoreHorizontal, { size: 15, strokeWidth: 1.9 }),
-                () => handlers.onLeftUiMenuOpen({ kind: "project", projectId: project.projectId }),
+                (event) =>
+                  handlers.onLeftUiMenuOpen(
+                    { kind: "project", projectId: project.projectId },
+                    menuAnchorFromEvent(event),
+                  ),
                 "project-row__action",
               ),
               createIconButton(
                 "New thread in project",
                 createElement(MessageSquarePlus, { size: 15, strokeWidth: 1.9 }),
-                handlers.onNewThread,
+                () => handlers.onNewThreadInProject(project.projectId),
                 "project-row__action",
               ),
             ),
           ),
-          project.contextMenuOpen ? createLeftUiContextMenu("project") : null,
         ),
-        project.expanded ? project.threads.map((thread) => createThreadRow(thread, handlers)) : null,
+        project.expanded
+          ? createElement(
+              "div",
+              { className: "project-group__threads" },
+              project.threads.length === 0
+                ? createElement("p", { className: "project-group__empty" }, "No threads yet")
+                : project.threads.map((thread) => createThreadRow(thread, handlers)),
+            )
+          : null,
       ),
     ),
+  );
+}
+
+// The Pinned section: pinned project shortcuts (folder icon) then pinned
+// threads. Hidden entirely when nothing is pinned (per the empty-Pinned rule).
+function createPinnedSection(
+  pinnedProjects: ProductShellPinnedProjectView[],
+  pinnedThreads: ProductShellThreadView[],
+  handlers: ProductShellHandlers,
+): ReactElement | null {
+  const total = pinnedProjects.length + pinnedThreads.length;
+  if (total === 0) {
+    return null;
+  }
+  const collapsed = handlers.isSectionCollapsed("Pinned");
+  return createElement(
+    "section",
+    { className: "left-ui-section", "aria-label": "Pinned" },
+    createSectionHeader("Pinned", total, collapsed, () => handlers.onToggleSection("Pinned")),
+    collapsed
+      ? null
+      : [
+          ...pinnedProjects.map((project) =>
+            createElement(
+              "div",
+              { key: `pinned-project-${project.projectId}`, className: "thread-row-wrap" },
+              createElement(
+                "button",
+                {
+                  className: "thread-row thread-row--pinned-project",
+                  type: "button",
+                  "data-pinned-project": project.projectId,
+                  onClick: () => handlers.onPinnedProjectSelect(project.projectId),
+                },
+                createElement(Folder, { size: 14, strokeWidth: 1.85, "aria-hidden": true }),
+                createElement("span", { className: "thread-row__title" }, project.name),
+              ),
+            ),
+          ),
+          ...pinnedThreads.map((thread) => createThreadRow(thread, handlers)),
+        ],
   );
 }
 
@@ -1631,12 +2110,25 @@ function createThreadSection(
   title: string,
   threads: ProductShellThreadView[],
   handlers: ProductShellHandlers,
-): ReactElement {
+): ReactElement | null {
+  // The Pinned section is hidden entirely when nothing is pinned.
+  if (title === "Pinned" && threads.length === 0) {
+    return null;
+  }
+  const collapsed = handlers.isSectionCollapsed(title);
   return createElement(
     "section",
     { className: "left-ui-section", "aria-label": title },
-    createSectionHeader(title),
-    threads.map((thread) => createThreadRow(thread, handlers)),
+    createSectionHeader(
+      title,
+      threads.length,
+      collapsed,
+      () => handlers.onToggleSection(title),
+      title === "Scratch"
+        ? { label: "New scratch thread", onClick: handlers.onNewScratchThread }
+        : undefined,
+    ),
+    collapsed ? null : threads.map((thread) => createThreadRow(thread, handlers)),
   );
 }
 
@@ -1695,6 +2187,7 @@ function createThreadRow(
               onClick: () => handlers.onThreadSelect(thread.threadId),
               onDoubleClick: () => handlers.onThreadRenameStart(thread.threadId),
             },
+            createElement(AgentIdentityIcon, { agentId: thread.agentId }),
             createElement("span", { className: "thread-row__title" }, thread.title),
           ),
       thread.archiveConfirming
@@ -1731,7 +2224,6 @@ function createThreadRow(
             ),
           ],
     ),
-    thread.contextMenuOpen ? createLeftUiContextMenu("thread") : null,
   );
 }
 
@@ -1744,21 +2236,82 @@ function createLeftNavRow(label: string, icon: ReactNode, onClick?: () => void):
   );
 }
 
-function createSectionHeader(title: string): ReactElement {
+function createSectionHeader(
+  title: string,
+  itemCount: number,
+  collapsed: boolean,
+  onToggle: () => void,
+  action?: { label: string; onClick: () => void },
+): ReactElement {
+  // Collapsible only when there are items below; otherwise a static label.
+  const toggle =
+    itemCount === 0
+      ? createElement("span", { className: "left-ui-section__title" }, title)
+      : createElement(
+          "button",
+          {
+            type: "button",
+            className: `left-ui-section__toggle${collapsed ? " left-ui-section__toggle--collapsed" : ""}`,
+            "aria-expanded": !collapsed,
+            onClick: onToggle,
+          },
+          createElement(ChevronRight, {
+            size: 12,
+            strokeWidth: 2.2,
+            className: "left-ui-section__chevron",
+            "aria-hidden": true,
+          }),
+          createElement("span", { className: "left-ui-section__title" }, title),
+        );
   return createElement(
     "div",
     { className: "left-ui-section__header" },
-    createElement("span", { className: "left-ui-section__title" }, title),
+    toggle,
+    action
+      ? createIconButton(
+          action.label,
+          createElement(Plus, { size: 15, strokeWidth: 2 }),
+          action.onClick,
+          "left-ui-section__action",
+        )
+      : null,
   );
+}
+
+function createColumnResizeHandle(
+  edge: "left" | "workbench" | "fileTree",
+  side: "left" | "right",
+  handlers: ProductShellHandlers,
+): ReactElement {
+  return createElement("div", {
+    className: `column-resize-handle column-resize-handle--${side}`,
+    role: "separator",
+    "aria-orientation": "vertical",
+    "aria-label": "Resize column",
+    "data-resize-edge": edge,
+    onPointerDown: (event: { clientX: number; preventDefault: () => void }) =>
+      handlers.onResizeStart(edge, event),
+  });
 }
 
 function createRightWindowActions(
   owner: RightActionOwner,
+  workbenchOpen: boolean,
   handlers: ProductShellHandlers,
 ): ReactElement {
   return createElement(
     "div",
     { className: "right-window-actions", "data-right-actions-owner": owner },
+    // Workbench open affordance. When the Workbench is open its own column header
+    // owns the close control, so we only surface "Open Workbench" here.
+    workbenchOpen
+      ? null
+      : createIconButton(
+          "Open Workbench",
+          createElement(PanelRightOpen, { size: 15, strokeWidth: 1.9 }),
+          handlers.onWorkbenchToggle,
+          "top-row-button",
+        ),
     createIconButton(
       owner === "file-tree" ? "Close FileTree" : "Open FileTree",
       owner === "file-tree"
@@ -1772,35 +2325,117 @@ function createRightWindowActions(
   );
 }
 
-function createLeftUiContextMenu(kind: "thread" | "project"): ReactElement {
-  const items =
-    kind === "thread"
+// Renders the left-rail context menu as a fixed popover anchored to its trigger
+// (escaping the rail's scroll-overflow clip), behind a transparent full-viewport
+// backdrop that closes it on outside click.
+function createLeftUiContextMenuOverlay(
+  menu: ProductShellLeftUiMenu,
+  anchor: MenuAnchorRect,
+  onClose: () => void,
+  handlers: ProductShellHandlers,
+): ReactElement {
+  const viewportH = typeof window === "undefined" ? 900 : window.innerHeight;
+  const width = menu.kind === "project" ? 244 : 200;
+  const estimated = menu.kind === "project" ? 230 : 110;
+  const openUp = anchor.bottom + estimated > viewportH;
+  const style: Record<string, string> = {
+    position: "fixed",
+    left: `${anchor.left}px`,
+    zIndex: "60",
+  };
+  if (openUp) {
+    style.bottom = `${viewportH - anchor.top + 4}px`;
+  } else {
+    style.top = `${anchor.bottom + 4}px`;
+  }
+  return createElement(
+    "div",
+    { className: "left-ui-context-menu-backdrop", onMouseDown: onClose },
+    createElement(
+      "div",
+      {
+        onMouseDown: (event: { stopPropagation: () => void }) => event.stopPropagation(),
+        style: { ...style, width: `${width}px` } as unknown as CSSProperties,
+      },
+      createLeftUiContextMenu(menu, handlers),
+    ),
+  );
+}
+
+interface ContextMenuItem {
+  label: string;
+  icon: ReactNode;
+  onClick?: () => void;
+  danger?: boolean;
+}
+
+function createLeftUiContextMenu(
+  menu: ProductShellLeftUiMenu,
+  handlers: ProductShellHandlers,
+): ReactElement {
+  const items: ContextMenuItem[] =
+    menu.kind === "thread"
       ? [
-          { label: "Pin / unpin", icon: createElement(Pin, { size: 15, strokeWidth: 1.9 }) },
-          { label: "Archive", icon: createElement(Archive, { size: 15, strokeWidth: 1.9 }) },
+          {
+            label: "Pin / unpin",
+            icon: createElement(Pin, { size: 15, strokeWidth: 1.9 }),
+            onClick: () => handlers.onThreadPinToggle(menu.threadId),
+          },
+          {
+            label: "Archive",
+            icon: createElement(Archive, { size: 15, strokeWidth: 1.9 }),
+            onClick: () => handlers.onThreadArchiveIntent(menu.threadId),
+          },
         ]
       : [
-          { label: "Pin project", icon: createElement(Pin, { size: 16, strokeWidth: 1.9 }) },
-          { label: "Open in Finder", icon: createElement(FolderOpen, { size: 16, strokeWidth: 1.9 }) },
-          { label: "Create permanent worktree", icon: createElement(GitBranchPlus, { size: 16, strokeWidth: 1.9 }) },
-          { label: "Rename project", icon: createElement(Pencil, { size: 16, strokeWidth: 1.9 }) },
-          { label: "Archive chats", icon: createElement(Archive, { size: 16, strokeWidth: 1.9 }) },
-          { label: "Remove", icon: createElement(Trash2, { size: 16, strokeWidth: 1.9 }), danger: true },
+          {
+            label: "Pin project",
+            icon: createElement(Pin, { size: 16, strokeWidth: 1.9 }),
+            onClick: () => handlers.onProjectPinToggle(menu.projectId),
+          },
+          {
+            label: "Open in Finder",
+            icon: createElement(FolderOpen, { size: 16, strokeWidth: 1.9 }),
+            onClick: () => handlers.onProjectRevealInFinder(menu.projectId),
+          },
+          {
+            label: "Create permanent worktree",
+            icon: createElement(GitBranchPlus, { size: 16, strokeWidth: 1.9 }),
+            onClick: () => handlers.onProjectCreateWorktree(menu.projectId),
+          },
+          {
+            label: "Rename project",
+            icon: createElement(Pencil, { size: 16, strokeWidth: 1.9 }),
+            onClick: () => handlers.onProjectRenameStart(menu.projectId),
+          },
+          {
+            label: "Archive chats",
+            icon: createElement(Archive, { size: 16, strokeWidth: 1.9 }),
+            onClick: () => handlers.onProjectArchiveChats(menu.projectId),
+          },
+          {
+            label: "Remove",
+            icon: createElement(Trash2, { size: 16, strokeWidth: 1.9 }),
+            onClick: () => handlers.onProjectRemove(menu.projectId),
+            danger: true,
+          },
         ];
 
   return createElement(
     "div",
     {
-      className: `left-ui-context-menu left-ui-context-menu--${kind}`,
-      "data-left-ui-menu-kind": kind,
+      className: `left-ui-context-menu left-ui-context-menu--${menu.kind}`,
+      "data-left-ui-menu-kind": menu.kind,
     },
     items.map((item) =>
       createElement(
         "button",
         {
           key: item.label,
-          className: `left-ui-context-menu__item${item.danger ? " left-ui-context-menu__item--danger" : ""}`,
+          className: `left-ui-context-menu__item${item.danger ? " left-ui-context-menu__item--danger" : ""}${item.onClick ? "" : " left-ui-context-menu__item--disabled"}`,
           type: "button",
+          disabled: item.onClick === undefined,
+          onClick: item.onClick,
         },
         createElement("span", { className: "left-ui-context-menu__icon", "aria-hidden": true }, item.icon),
         createElement("span", null, item.label),
@@ -1826,10 +2461,22 @@ function createTrafficControls(): ReactElement {
   return createElement("div", { className: "traffic-controls", "aria-hidden": "true" });
 }
 
+// Looks up a project's cwd by id across registered + thread-derived projects.
+function projectCwdById(state: ProductShellState, projectId: string): string | undefined {
+  return [...state.registeredProjects, ...state.projects].find(
+    (project) => project.projectId === projectId,
+  )?.cwd;
+}
+
+function menuAnchorFromEvent(event: { currentTarget: HTMLElement }): MenuAnchorRect {
+  const rect = event.currentTarget.getBoundingClientRect();
+  return { left: rect.left, top: rect.top, bottom: rect.bottom, right: rect.right };
+}
+
 function createIconButton(
   label: string,
   icon: ReactNode,
-  onClick?: () => void,
+  onClick?: (event: { currentTarget: HTMLElement }) => void,
   className = "icon-button",
 ): ReactElement {
   return createElement(

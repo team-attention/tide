@@ -34,6 +34,9 @@ import {
   readCodexProviderHistoryFramesFromHome,
   readClaudeProviderHistoryFramesFromHome,
   readClaudeProviderSessionRefsFromHome,
+  rebuildCodexConversation,
+  rebuildClaudeConversation,
+  rebuildAntigravityConversation,
   readProviderSignalFramesFromSpool,
   readAntigravityProviderHistoryFramesFromHome,
   readAntigravityProviderStateFromHome,
@@ -1264,6 +1267,316 @@ test("codex_provider_history_reader_projects_agent_message_frame", () => {
     }),
     [],
   );
+});
+
+test("codex_provider_history_reader_emits_only_the_current_turns_reply", () => {
+  // Regression: a codex rollout accumulates the whole session, so prior turns'
+  // replies must NOT leak. Only the agent message(s) after the latest matching
+  // user message should emit. (Repro of the "gd" stale-reply bug.)
+  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-codex-history-stale-"));
+  const rolloutPath = path.join(
+    providerBootstrapArtifactsForHome({ homeDir: home }).codexHome,
+    "sessions",
+    "2026",
+    "05",
+    "30",
+    "rollout-2026-05-30T10-11-12-019e7000-0000-7000-a000-000000000003.jsonl",
+  );
+  writeFile(
+    rolloutPath,
+    [
+      JSON.stringify({ type: "event_msg", payload: { type: "user_message", message: "gd" } }),
+      JSON.stringify({
+        type: "event_msg",
+        payload: { type: "agent_message", message: "I do not know what you mean by `gd`." },
+      }),
+      JSON.stringify({ type: "event_msg", payload: { type: "user_message", message: "hi" } }),
+      JSON.stringify({
+        type: "event_msg",
+        payload: { type: "agent_message", message: "Hello! How can I help?" },
+      }),
+    ].join("\n"),
+  );
+
+  const frames = readCodexProviderHistoryFramesFromHome({
+    homeDir: home,
+    threadId: "thread-stale",
+    runtimeId: "runtime-stale",
+    sinceMs: Date.now() - 10_000,
+    seenKeys: new Set<string>(),
+    expectedUserMessage: "hi",
+  });
+
+  assert.equal(frames.length, 1, "only the current turn's reply is emitted");
+  assert.equal(frames[0].body, "Hello! How can I help?");
+});
+
+test("codex_provider_history_reader_emits_tool_call_and_tool_result_frames", () => {
+  // Spec: docs_v2/specs/agent-session-block-rendering-path.md D12
+  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-codex-tool-"));
+  const rolloutPath = path.join(
+    providerBootstrapArtifactsForHome({ homeDir: home }).codexHome,
+    "sessions",
+    "2026",
+    "06",
+    "01",
+    "rollout-2026-06-01T10-11-12-019e7000-0000-7000-a000-00000000000a.jsonl",
+  );
+  writeFile(
+    rolloutPath,
+    [
+      JSON.stringify({ type: "event_msg", payload: { type: "user_message", message: "list files" } }),
+      JSON.stringify({
+        type: "response_item",
+        payload: {
+          type: "function_call",
+          name: "exec_command",
+          arguments: '{"cmd":["ls","-la"]}',
+          call_id: "call_abc",
+        },
+      }),
+      JSON.stringify({
+        type: "response_item",
+        payload: { type: "function_call_output", call_id: "call_abc", output: "total 0\n" },
+      }),
+      JSON.stringify({
+        type: "event_msg",
+        payload: { type: "agent_message", message: "Listed the files." },
+      }),
+    ].join("\n"),
+  );
+
+  const frames = readCodexProviderHistoryFramesFromHome({
+    homeDir: home,
+    threadId: "thread-codex-tool",
+    runtimeId: "runtime-codex-tool",
+    sinceMs: Date.now() - 10_000,
+    seenKeys: new Set<string>(),
+    expectedUserMessage: "list files",
+  });
+
+  // Ordered: tool_call, tool_result, then the agent message.
+  assert.deepEqual(
+    frames.map((frame) => (frame.payload as { type: string }).type),
+    ["tool_call", "tool_result", "message"],
+  );
+  const call = frames[0].payload as Record<string, unknown>;
+  assert.equal(call.toolName, "exec_command");
+  assert.equal(call.callId, "call_abc");
+  assert.match(String(call.body), /ls/);
+  const result = frames[1].payload as Record<string, unknown>;
+  assert.equal(result.toolName, "exec_command", "result inherits the matching call's tool name");
+  assert.equal(result.callId, "call_abc");
+  assert.match(String(result.body), /total 0/);
+});
+
+test("claude_provider_history_reader_emits_tool_call_and_tool_result_frames", () => {
+  // Spec: docs_v2/specs/agent-session-block-rendering-path.md D12
+  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-claude-tool-"));
+  const transcriptPath = path.join(
+    home,
+    ".claude",
+    "projects",
+    "-Users-eatnug-Workspace-tide",
+    "7a26b8ab-c91e-4846-aae5-f51ce6b04a40.jsonl",
+  );
+  writeFile(
+    transcriptPath,
+    [
+      JSON.stringify({ type: "user", message: { role: "user", content: "list files" } }),
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Running ls." },
+            { type: "tool_use", id: "toolu_1", name: "Bash", input: { command: "ls -la" } },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "total 0\n" }],
+        },
+      }),
+      JSON.stringify({
+        type: "assistant",
+        message: { role: "assistant", content: [{ type: "text", text: "Done." }] },
+      }),
+    ].join("\n"),
+  );
+
+  const frames = readClaudeProviderHistoryFramesFromHome({
+    homeDir: home,
+    threadId: "thread-claude-tool",
+    runtimeId: "runtime-claude-tool",
+    sinceMs: Date.now() - 10_000,
+    seenKeys: new Set<string>(),
+    expectedUserMessage: "list files",
+  });
+
+  const types = frames.map((frame) => (frame.payload as { type: string }).type);
+  // The assistant text, its tool_use, the tool_result, and the final text.
+  assert.deepEqual(types, ["message", "tool_call", "tool_result", "message"]);
+  const call = frames[1].payload as Record<string, unknown>;
+  assert.equal(call.toolName, "Bash");
+  assert.equal(call.callId, "toolu_1");
+  assert.match(String(call.body), /ls -la/);
+  const result = frames[2].payload as Record<string, unknown>;
+  assert.equal(result.callId, "toolu_1");
+  assert.match(String(result.body), /total 0/);
+});
+
+test("antigravity_provider_history_reader_emits_tool_call_and_tool_result_frames", () => {
+  // Spec: docs_v2/specs/agent-session-block-rendering-path.md D12
+  const home = fs.mkdtempSync(path.join(tmpdir(), "tide-agy-tool-"));
+  const transcriptPath = path.join(
+    home,
+    ".gemini",
+    "antigravity-cli",
+    "brain",
+    "11111111-2222-3333-4444-555555555555",
+    ".system_generated",
+    "logs",
+    "transcript.jsonl",
+  );
+  writeFile(
+    transcriptPath,
+    [
+      JSON.stringify({ step_index: 0, source: "USER_EXPLICIT", type: "USER_INPUT", content: "list it" }),
+      JSON.stringify({
+        step_index: 2,
+        source: "MODEL",
+        type: "PLANNER_RESPONSE",
+        tool_calls: [{ name: "list_dir", args: { DirectoryPath: "/tmp", toolSummary: "List directory" } }],
+      }),
+      JSON.stringify({ step_index: 3, source: "MODEL", type: "LIST_DIRECTORY", content: "a.txt\nb.txt\n" }),
+      JSON.stringify({
+        step_index: 4,
+        source: "MODEL",
+        type: "PLANNER_RESPONSE",
+        content: "Two files.",
+      }),
+    ].join("\n"),
+  );
+
+  const frames = readAntigravityProviderHistoryFramesFromHome({
+    homeDir: home,
+    threadId: "thread-agy-tool",
+    runtimeId: "runtime-agy-tool",
+    sinceMs: Date.now() - 10_000,
+    seenKeys: new Set<string>(),
+  });
+
+  assert.deepEqual(
+    frames.map((frame) => (frame.payload as { type: string }).type),
+    ["tool_call", "tool_result", "message"],
+  );
+  const call = frames[0].payload as Record<string, unknown>;
+  assert.equal(call.toolName, "list_dir");
+  assert.match(String(call.body), /DirectoryPath|tmp|List directory/);
+  const result = frames[1].payload as Record<string, unknown>;
+  assert.equal(result.toolName, "list_dir", "result inherits the preceding call's tool name");
+  assert.match(String(result.body), /a\.txt/);
+  assert.equal(frames[2].body, "Two files.");
+});
+
+test("rebuilt_antigravity_conversation_includes_ordered_tool_blocks", () => {
+  // Spec: docs_v2/specs/agent-session-block-rendering-path.md UC-5 D12
+  const text = [
+    JSON.stringify({ step_index: 0, source: "USER_EXPLICIT", type: "USER_INPUT", content: "<USER_REQUEST>\nlist it\n</USER_REQUEST>" }),
+    JSON.stringify({
+      step_index: 2,
+      source: "MODEL",
+      type: "PLANNER_RESPONSE",
+      tool_calls: [{ name: "view_file", args: { AbsolutePath: "/tmp/x.json" } }],
+    }),
+    JSON.stringify({ step_index: 3, source: "MODEL", type: "VIEW_FILE", content: "1: {}\n" }),
+    JSON.stringify({ step_index: 4, source: "MODEL", type: "PLANNER_RESPONSE", content: "Read it." }),
+  ].join("\n");
+
+  const blocks = rebuildAntigravityConversation(text, "thread-agy", "conv-agy", "antigravity");
+
+  assert.deepEqual(
+    blocks.map((block) => block.kind),
+    ["user_message", "tool_call", "tool_result", "agent_message"],
+  );
+  assert.equal(blocks[0].body, "list it", "user prompt is unwrapped from <USER_REQUEST>");
+  assert.equal(blocks[1].title, "view_file");
+  assert.equal(blocks[2].title, "view_file");
+  assert.match(String(blocks[2].body), /\{\}/);
+  assert.equal(blocks[3].body, "Read it.");
+});
+
+test("rebuilt_codex_conversation_includes_ordered_tool_blocks", () => {
+  // Spec: docs_v2/specs/agent-session-block-rendering-path.md UC-5 D12
+  const text = [
+    JSON.stringify({ type: "event_msg", payload: { type: "user_message", message: "list files" } }),
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "exec_command",
+        arguments: '{"cmd":["ls"]}',
+        call_id: "call_z",
+      },
+    }),
+    JSON.stringify({
+      type: "response_item",
+      payload: { type: "function_call_output", call_id: "call_z", output: "a.txt\n" },
+    }),
+    JSON.stringify({ type: "event_msg", payload: { type: "agent_message", message: "Done." } }),
+  ].join("\n");
+
+  const blocks = rebuildCodexConversation(text, "thread-x", "session-x", "codex");
+
+  assert.deepEqual(
+    blocks.map((block) => block.kind),
+    ["user_message", "tool_call", "tool_result", "agent_message"],
+  );
+  const call = blocks[1];
+  assert.equal(call.role, "tool");
+  assert.equal(call.title, "exec_command");
+  assert.match(String(call.body), /ls/);
+  assert.equal(blocks[2].title, "exec_command", "result inherits the call's tool name");
+  assert.match(String(blocks[2].body), /a\.txt/);
+});
+
+test("rebuilt_claude_conversation_pairs_tool_use_and_tool_result_blocks", () => {
+  // Spec: docs_v2/specs/agent-session-block-rendering-path.md UC-5 D12
+  const text = [
+    JSON.stringify({ type: "user", message: { role: "user", content: "list files" } }),
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "text", text: "Running ls." },
+          { type: "tool_use", id: "toolu_9", name: "Bash", input: { command: "ls" } },
+        ],
+      },
+    }),
+    JSON.stringify({
+      type: "user",
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "toolu_9", content: "a.txt\n" }],
+      },
+    }),
+  ].join("\n");
+
+  const blocks = rebuildClaudeConversation(text, "thread-y", "session-y", "claude");
+
+  assert.deepEqual(
+    blocks.map((block) => block.kind),
+    ["user_message", "agent_message", "tool_call", "tool_result"],
+  );
+  assert.equal(blocks[2].title, "Bash");
+  assert.match(String(blocks[2].body), /ls/);
+  assert.equal(blocks[3].title, "Bash", "result inherits the call's tool name");
+  assert.match(String(blocks[3].body), /a\.txt/);
 });
 
 test("claude_provider_history_reader_projects_agent_message_frame", () => {

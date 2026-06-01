@@ -70,7 +70,7 @@ import type {
   AgentSessionBlock,
   AgentSessionBlockUpdate,
 } from "../../application/domains/agent-session/agent-session-block.ts";
-import type { PromptState } from "../../application/domains/thread/thread.ts";
+import type { AgentId, PromptState } from "../../application/domains/thread/thread.ts";
 import { createFixtureAgentSessionReader } from "../../application/services/fixture-agent-session-reader.ts";
 import {
   createThreadPersistenceService,
@@ -121,7 +121,7 @@ export function createLiveBackendContractMessageAdapter(
     for (const event of events) {
       input.onEvent?.(event);
     }
-    void persistThreadEvents(persistence, events);
+    void persistThreadEvents(persistence, service, events);
   };
   const bootstrapArtifacts = ensureProviderBootstrapArtifacts({
     homeDir,
@@ -276,9 +276,27 @@ function createPersistentLiveBackendAdapter(input: {
       return;
     }
 
-    const restored = await input.service.restoreThreads({
-      threads: listed.value.map(threadSeedFromStorageRecord),
-    });
+    // Restore each thread WITH its persisted Agent Session blocks so reopening a
+    // thread after a restart shows the prior conversation (not an empty pane).
+    const seeds = await Promise.all(
+      listed.value.map(async (record) => {
+        const seed = threadSeedFromStorageRecord(record);
+        // Prefer the coding agent's own persisted session (codex rollout / claude
+        // transcript) as the source of truth — this restores the FULL conversation
+        // for any thread, including ones started before Tide cached blocks.
+        const fromProvider = rebuildConversationFromProviderHistory(record);
+        if (fromProvider.length > 0) {
+          seed.cachedBlocks = fromProvider;
+        } else {
+          const hydrated = await input.persistence.hydrateThread(record.threadId, {});
+          if (hydrated.ok && hydrated.value.blocks.length > 0) {
+            seed.cachedBlocks = hydrated.value.blocks;
+          }
+        }
+        return seed;
+      }),
+    );
+    const restored = await input.service.restoreThreads({ threads: seeds });
     if (!restored.ok) {
       process.emitWarning(restored.error.message, {
         type: "TidePersistenceRestoreWarning",
@@ -291,7 +309,7 @@ function createPersistentLiveBackendAdapter(input: {
       restorePromise ??= restorePersistedThreads();
       await restorePromise;
       const events = await input.adapter.handleMessage(message);
-      await persistThreadEvents(input.persistence, events);
+      await persistThreadEvents(input.persistence, input.service, events);
       return events;
     },
   };
@@ -299,9 +317,17 @@ function createPersistentLiveBackendAdapter(input: {
 
 async function persistThreadEvents(
   persistence: ThreadPersistenceService,
+  service: ThreadRuntimeService,
   events: BackendEventEnvelope[],
 ): Promise<void> {
+  const blockThreadIds = new Set<string>();
   for (const event of events) {
+    if (event.kind === "agentSessionBlock.upserted") {
+      const blockThreadId = (event.payload as { block?: { threadId?: unknown } }).block?.threadId;
+      if (typeof blockThreadId === "string") {
+        blockThreadIds.add(blockThreadId);
+      }
+    }
     if (
       event.kind !== "thread.started" &&
       event.kind !== "thread.hydrated" &&
@@ -323,6 +349,9 @@ async function persistThreadEvents(
         type: "TidePersistenceSaveWarning",
       });
     }
+  }
+  for (const threadId of blockThreadIds) {
+    await persistThreadBlocks({ persistence, service, threadId });
   }
 }
 
@@ -454,6 +483,225 @@ export function threadSeedFromStorageRecord(record: ThreadStorageRecord): Thread
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
+}
+
+// Rebuild the FULL conversation (all user + agent turns) from the coding agent's
+// own persisted session file (codex rollout / claude transcript). This restores
+// any thread on restart — including ones created before Tide cached blocks —
+// since the agent's session is the durable source of truth.
+function rebuildConversationFromProviderHistory(
+  record: ThreadStorageRecord,
+): AgentSessionBlock[] {
+  const ref = record.providerSessionRef;
+  const filePath = ref?.transcriptPath;
+  if (ref === undefined || filePath === undefined) {
+    return [];
+  }
+  const text = readBoundedTail(filePath, 1024 * 1024);
+  if (text === undefined) {
+    return [];
+  }
+  const agentId = record.agentBinding.agentId;
+  if (ref.kind === "codex_rollout") {
+    return rebuildCodexConversation(text, record.threadId, ref.value, agentId);
+  }
+  if (ref.kind === "claude_transcript") {
+    return rebuildClaudeConversation(text, record.threadId, ref.value, agentId);
+  }
+  if (ref.kind === "antigravity_conversation") {
+    return rebuildAntigravityConversation(text, record.threadId, ref.value, agentId);
+  }
+  return [];
+}
+
+function conversationBlock(input: {
+  threadId: string;
+  sessionId: string;
+  index: number;
+  agentId: AgentId;
+  isUser: boolean;
+  body: string;
+  timestamp: string;
+  blockId?: string;
+}): AgentSessionBlock {
+  return {
+    blockId: input.blockId ?? `provider:${input.threadId}:${input.sessionId}:${input.index}`,
+    threadId: input.threadId,
+    agentId: input.agentId,
+    kind: input.isUser ? "user_message" : "agent_message",
+    role: input.isUser ? "user" : "agent",
+    sourceFrameIds: [],
+    status: "complete",
+    body: input.body,
+    createdAt: input.timestamp,
+    updatedAt: input.timestamp,
+  };
+}
+
+function toolConversationBlock(input: {
+  threadId: string;
+  agentId: AgentId;
+  blockId: string;
+  kind: "tool_call" | "tool_result";
+  toolName: string;
+  callId: string;
+  body: string;
+  data: Record<string, unknown>;
+  timestamp: string;
+}): AgentSessionBlock {
+  return {
+    blockId: input.blockId,
+    threadId: input.threadId,
+    agentId: input.agentId,
+    kind: input.kind,
+    role: "tool",
+    sourceFrameIds: [],
+    status: "complete",
+    title: input.toolName,
+    body: input.body,
+    data: { toolName: input.toolName, callId: input.callId, ...input.data },
+    createdAt: input.timestamp,
+    updatedAt: input.timestamp,
+  };
+}
+
+export function rebuildCodexConversation(
+  text: string,
+  threadId: string,
+  sessionId: string,
+  agentId: AgentId,
+): AgentSessionBlock[] {
+  const blocks: AgentSessionBlock[] = [];
+  const lines = text.split(/\r?\n/);
+  const timestamp = new Date().toISOString();
+  const toolNameByCallId = new Map<string, string>();
+  for (let index = 0; index < lines.length; index += 1) {
+    const record = parseJsonObject(lines[index]);
+    const payload = recordField(record, "payload");
+    if (record?.type === "event_msg") {
+      const isUser = payload?.type === "user_message";
+      if (!isUser && payload?.type !== "agent_message") {
+        continue;
+      }
+      const body = stringField(payload, "message") ?? (isUser ? joinTextContent(payload?.content) : undefined);
+      if (body === undefined || body.length === 0) {
+        continue;
+      }
+      blocks.push(conversationBlock({ threadId, sessionId, index, agentId, isUser, body, timestamp }));
+      continue;
+    }
+    if (record?.type !== "response_item" || payload === undefined) {
+      continue;
+    }
+    const toolFrame = codexToolFramePayload({
+      payload,
+      threadId,
+      sessionId,
+      index,
+      runtimeId: "",
+      toolNameByCallId,
+    });
+    if (toolFrame === undefined) {
+      continue;
+    }
+    blocks.push(
+      toolConversationBlock({
+        threadId,
+        agentId,
+        blockId: String(toolFrame.blockId),
+        kind: toolFrame.type === "tool_call" ? "tool_call" : "tool_result",
+        toolName: String(toolFrame.toolName),
+        callId: String(toolFrame.callId),
+        body: String(toolFrame.body ?? ""),
+        data:
+          toolFrame.type === "tool_call"
+            ? { arguments: toolFrame.arguments }
+            : { ok: true, output: toolFrame.output },
+        timestamp,
+      }),
+    );
+  }
+  return blocks;
+}
+
+export function rebuildClaudeConversation(
+  text: string,
+  threadId: string,
+  sessionId: string,
+  agentId: AgentId,
+): AgentSessionBlock[] {
+  const blocks: AgentSessionBlock[] = [];
+  const lines = text.split(/\r?\n/);
+  const timestamp = new Date().toISOString();
+  const toolNameByCallId = new Map<string, string>();
+  for (let index = 0; index < lines.length; index += 1) {
+    const record = parseJsonObject(lines[index]);
+    const isUser = record?.type === "user";
+    if (!isUser && record?.type !== "assistant") {
+      continue;
+    }
+    const message = recordField(record, "message");
+    if (message?.role !== (isUser ? "user" : "assistant")) {
+      continue;
+    }
+    const blockId = `provider:${threadId}:${sessionId}:${index}`;
+    const body = isUser ? joinTextContent(message.content) : claudeAssistantTextContent(message.content);
+    if (body !== undefined && body.length > 0) {
+      blocks.push(conversationBlock({ threadId, sessionId, index, agentId, isUser, body, timestamp }));
+    }
+    if (isUser) {
+      for (const result of claudeToolResultItems(message.content)) {
+        blocks.push(
+          toolConversationBlock({
+            threadId,
+            agentId,
+            blockId: `${blockId}:${result.callId}`,
+            kind: "tool_result",
+            toolName: toolNameByCallId.get(result.callId) ?? "tool",
+            callId: result.callId,
+            body: boundedToolText(result.output),
+            data: { ok: true, output: result.output },
+            timestamp,
+          }),
+        );
+      }
+      continue;
+    }
+    for (const tool of claudeToolUseItems(message.content)) {
+      toolNameByCallId.set(tool.callId, tool.toolName);
+      blocks.push(
+        toolConversationBlock({
+          threadId,
+          agentId,
+          blockId: `${blockId}:${tool.callId}`,
+          kind: "tool_call",
+          toolName: tool.toolName,
+          callId: tool.callId,
+          body: boundedToolText(tool.argumentsText),
+          data: { arguments: tool.argumentsText },
+          timestamp,
+        }),
+      );
+    }
+  }
+  return blocks;
+}
+
+// Extracts plain text from a provider message `content` (string or content-part array).
+function joinTextContent(content: unknown): string | undefined {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+  const parts = content
+    .map((item) => {
+      const record = unknownRecord(item);
+      return record ? (stringField(record, "text") ?? stringField(record, "input_text")) : undefined;
+    })
+    .filter((value): value is string => typeof value === "string");
+  return parts.length > 0 ? parts.join("") : undefined;
 }
 
 export function threadStorageRecordFromThreadSummary(
@@ -682,6 +930,13 @@ export function createLiveAgentSessionEventProjector(input: {
         service,
         onEvent: input.onEvent,
       });
+      if (TURN_END_SIGNAL_EVENTS.has(signalFrame.eventName)) {
+        await emitTurnComplete({
+          threadId: frameInput.threadId,
+          service,
+          onEvent: input.onEvent,
+        });
+      }
     }
     blocksByThread.set(frameInput.threadId, [...nextBlocks.values()]);
   };
@@ -869,7 +1124,7 @@ export function createLiveAgentSessionEventProjector(input: {
         existingBlocks: [...nextBlocks.values()],
       });
       for (const update of providerReadResult.blockUpdates) {
-        await recordBlockUpdateInThreadCache(service, update);
+        await recordBlockUpdateInThreadCache(input.persistence, service, update);
         emitBlockUpdate({
           update,
           blocks: nextBlocks,
@@ -984,7 +1239,7 @@ export function createLiveAgentSessionEventProjector(input: {
         existingBlocks: [...nextBlocks.values()],
       });
       for (const update of providerReadResult.blockUpdates) {
-        await recordBlockUpdateInThreadCache(service, update);
+        await recordBlockUpdateInThreadCache(input.persistence, service, update);
         emitBlockUpdate({
           update,
           blocks: nextBlocks,
@@ -1094,7 +1349,7 @@ export function createLiveAgentSessionEventProjector(input: {
         existingBlocks: [...nextBlocks.values()],
       });
       for (const update of providerReadResult.blockUpdates) {
-        await recordBlockUpdateInThreadCache(service, update);
+        await recordBlockUpdateInThreadCache(input.persistence, service, update);
         emitBlockUpdate({
           update,
           blocks: nextBlocks,
@@ -1182,7 +1437,7 @@ export function createLiveAgentSessionEventProjector(input: {
         blocks: nextBlocks,
         onEvent: input.onEvent,
       });
-      await recordBlockUpdateInThreadCache(service, update);
+      await recordBlockUpdateInThreadCache(input.persistence, service, update);
     }
     blocksByThread.set(frameInput.threadId, [...nextBlocks.values()]);
     await emitPromptState({
@@ -1515,41 +1770,161 @@ export function readCodexProviderHistoryFramesFromHome(input: {
     }
 
     const lines = rolloutText.split(/\r?\n/);
-    for (let index = 0; index < lines.length; index += 1) {
-      const record = parseJsonObject(lines[index]);
-      if (record?.type !== "event_msg") {
-        continue;
+    // Only the reply to the CURRENT turn: emit agent messages that come after the
+    // latest occurrence of the expected user message. A codex rollout accumulates
+    // the whole session, so without this gate prior turns' replies leak in.
+    let latestUserIndex = -1;
+    if (input.expectedUserMessage !== undefined) {
+      for (let i = 0; i < lines.length; i += 1) {
+        const r = parseJsonObject(lines[i]);
+        const p = recordField(r, "payload");
+        if (r?.type !== "event_msg" || p?.type !== "user_message") {
+          continue;
+        }
+        const content = p.content;
+        if (
+          stringField(p, "message") === input.expectedUserMessage ||
+          (Array.isArray(content) &&
+            content.some((item) => inputTextContentEquals(item, input.expectedUserMessage ?? "")))
+        ) {
+          latestUserIndex = i;
+        }
       }
-      const payload = recordField(record, "payload");
-      if (payload?.type !== "agent_message") {
-        continue;
-      }
-      const message = stringField(payload, "message");
-      if (message === undefined) {
-        continue;
-      }
-      const frameKey = `${rolloutPath}:${index}:agent_message`;
+    }
+    // Tool calls carry their name on the `function_call`/`custom_tool_call`
+    // line; the matching `*_output` line only has the call_id. Track names so a
+    // result block can show the same provider-native tool name as its call.
+    const toolNameByCallId = new Map<string, string>();
+    const pushFrame = (index: number, payload: Record<string, unknown>, body: string): void => {
+      const frameKey = `${rolloutPath}:${index}:${payload.type}`;
       if (input.seenKeys.has(frameKey)) {
-        continue;
+        return;
       }
       input.seenKeys.add(frameKey);
       frames.push({
         source: "provider_history",
         sourceRef: rolloutPath,
         payloadKind: "provider_record",
-        payload: {
-          type: "message",
-          role: "agent",
-          status: "complete",
-          blockId: `provider:${input.threadId}:${sessionId}:${index}`,
-          body: message,
-          sourceRuntimeId: input.runtimeId,
-        },
-        body: message,
+        payload,
+        body,
       });
+    };
+    for (let index = 0; index < lines.length; index += 1) {
+      if (input.expectedUserMessage !== undefined && index <= latestUserIndex) {
+        continue;
+      }
+      const record = parseJsonObject(lines[index]);
+      const payload = recordField(record, "payload");
+      if (record?.type === "event_msg") {
+        if (payload?.type !== "agent_message") {
+          continue;
+        }
+        const message = stringField(payload, "message");
+        if (message === undefined) {
+          continue;
+        }
+        pushFrame(
+          index,
+          {
+            type: "message",
+            role: "agent",
+            status: "complete",
+            blockId: `provider:${input.threadId}:${sessionId}:${index}`,
+            body: message,
+            sourceRuntimeId: input.runtimeId,
+          },
+          message,
+        );
+        continue;
+      }
+      if (record?.type !== "response_item" || payload === undefined) {
+        continue;
+      }
+      const toolFrame = codexToolFramePayload({
+        payload,
+        threadId: input.threadId,
+        sessionId,
+        index,
+        runtimeId: input.runtimeId,
+        toolNameByCallId,
+      });
+      if (toolFrame !== undefined) {
+        pushFrame(index, toolFrame, String(toolFrame.body ?? ""));
+      }
     }
   }
   return frames;
+}
+
+// Maps a codex rollout `response_item` tool payload to a tool_call/tool_result
+// frame payload that the Agent Session reader turns into a tool block. Returns
+// undefined for non-tool response items (reasoning, output_text, etc.).
+function codexToolFramePayload(input: {
+  payload: Record<string, unknown>;
+  threadId: string;
+  sessionId: string;
+  index: number;
+  runtimeId: string;
+  toolNameByCallId: Map<string, string>;
+}): Record<string, unknown> | undefined {
+  const { payload } = input;
+  const type = stringField(payload, "type");
+  const callId = stringField(payload, "call_id");
+  const blockId = `provider:${input.threadId}:${input.sessionId}:${input.index}`;
+  const base = {
+    blockId,
+    callId: callId ?? blockId,
+    status: "complete",
+    sourceRuntimeId: input.runtimeId,
+  };
+  if (type === "function_call" || type === "custom_tool_call") {
+    const toolName = stringField(payload, "name") ?? "tool";
+    if (callId !== undefined) {
+      input.toolNameByCallId.set(callId, toolName);
+    }
+    // function_call carries a JSON `arguments` string; custom_tool_call an `input`.
+    const args = stringField(payload, "arguments") ?? stringField(payload, "input") ?? "";
+    return {
+      type: "tool_call",
+      toolName,
+      arguments: args,
+      body: boundedToolText(args),
+      ...base,
+    };
+  }
+  if (type === "function_call_output" || type === "custom_tool_call_output") {
+    const toolName = (callId !== undefined ? input.toolNameByCallId.get(callId) : undefined) ?? "tool";
+    const output = codexToolOutputText(payload.output);
+    return {
+      type: "tool_result",
+      toolName,
+      ok: true,
+      output,
+      body: boundedToolText(output),
+      ...base,
+    };
+  }
+  return undefined;
+}
+
+// codex tool output is usually a string, but some tools wrap it in
+// `{ output: string }` or content parts; extract readable text either way.
+function codexToolOutputText(output: unknown): string {
+  if (typeof output === "string") {
+    return output;
+  }
+  const record = unknownRecord(output);
+  if (record !== undefined) {
+    return stringField(record, "output") ?? joinTextContent(record.content) ?? "";
+  }
+  return joinTextContent(output) ?? "";
+}
+
+// Tool args/output can be large (full file contents, long command output). Keep
+// the rendered body bounded so the transcript stays readable and light.
+function boundedToolText(text: string): string {
+  const limit = 2000;
+  return text.length > limit ? `${text.slice(0, limit)}\n… (${text.length - limit} more chars)` : text;
 }
 
 export function readClaudeProviderHistoryFramesFromHome(input: {
@@ -1578,41 +1953,159 @@ export function readClaudeProviderHistoryFramesFromHome(input: {
     }
 
     const lines = transcriptText.split(/\r?\n/);
-    for (let index = 0; index < lines.length; index += 1) {
-      const record = parseJsonObject(lines[index]);
-      if (record?.type !== "assistant") {
-        continue;
+    // Only the reply to the CURRENT turn: emit assistant messages after the latest
+    // occurrence of the expected user message (the transcript holds the whole
+    // session, so prior turns' replies would otherwise leak in).
+    let latestUserIndex = -1;
+    if (input.expectedUserMessage !== undefined) {
+      for (let i = 0; i < lines.length; i += 1) {
+        const r = parseJsonObject(lines[i]);
+        if (r?.type !== "user") {
+          continue;
+        }
+        const m = recordField(r, "message");
+        if (m?.role !== "user") {
+          continue;
+        }
+        const content = m.content;
+        if (
+          content === input.expectedUserMessage ||
+          (Array.isArray(content) &&
+            content.some((item) => inputTextContentEquals(item, input.expectedUserMessage ?? "")))
+        ) {
+          latestUserIndex = i;
+        }
       }
-      const message = recordField(record, "message");
-      if (message?.role !== "assistant") {
-        continue;
-      }
-      const body = claudeAssistantTextContent(message.content);
-      if (body === undefined) {
-        continue;
-      }
-      const frameKey = `${transcriptPath}:${index}:assistant`;
+    }
+    const toolNameByCallId = new Map<string, string>();
+    const pushFrame = (key: string, payload: Record<string, unknown>, body: string): void => {
+      const frameKey = `${transcriptPath}:${key}`;
       if (input.seenKeys.has(frameKey)) {
-        continue;
+        return;
       }
       input.seenKeys.add(frameKey);
       frames.push({
         source: "provider_history",
         sourceRef: transcriptPath,
         payloadKind: "provider_record",
-        payload: {
-          type: "message",
-          role: "agent",
-          status: "complete",
-          blockId: `provider:${input.threadId}:${sessionId}:${index}`,
-          body,
-          sourceRuntimeId: input.runtimeId,
-        },
+        payload,
         body,
       });
+    };
+    for (let index = 0; index < lines.length; index += 1) {
+      if (input.expectedUserMessage !== undefined && index <= latestUserIndex) {
+        continue;
+      }
+      const record = parseJsonObject(lines[index]);
+      const message = recordField(record, "message");
+      const blockId = `provider:${input.threadId}:${sessionId}:${index}`;
+      if (record?.type === "assistant" && message?.role === "assistant") {
+        // Agent text becomes a message block; tool_use items become tool_call
+        // blocks. Both come from the same assistant line, so disambiguate the
+        // block ids by call id.
+        const body = claudeAssistantTextContent(message.content);
+        if (body !== undefined) {
+          pushFrame(
+            `${index}:assistant`,
+            {
+              type: "message",
+              role: "agent",
+              status: "complete",
+              blockId,
+              body,
+              sourceRuntimeId: input.runtimeId,
+            },
+            body,
+          );
+        }
+        for (const tool of claudeToolUseItems(message.content)) {
+          toolNameByCallId.set(tool.callId, tool.toolName);
+          pushFrame(
+            `${index}:tool_use:${tool.callId}`,
+            {
+              type: "tool_call",
+              toolName: tool.toolName,
+              callId: tool.callId,
+              arguments: tool.argumentsText,
+              body: boundedToolText(tool.argumentsText),
+              status: "complete",
+              blockId: `${blockId}:${tool.callId}`,
+              sourceRuntimeId: input.runtimeId,
+            },
+            boundedToolText(tool.argumentsText),
+          );
+        }
+        continue;
+      }
+      if (record?.type === "user") {
+        // Intermediate user turns carry tool_result content; render those as
+        // tool_result blocks. Plain user prompts are added locally, not here.
+        for (const result of claudeToolResultItems(message?.content)) {
+          const toolName = toolNameByCallId.get(result.callId) ?? "tool";
+          pushFrame(
+            `${index}:tool_result:${result.callId}`,
+            {
+              type: "tool_result",
+              toolName,
+              callId: result.callId,
+              ok: true,
+              output: result.output,
+              body: boundedToolText(result.output),
+              status: "complete",
+              blockId: `${blockId}:${result.callId}`,
+              sourceRuntimeId: input.runtimeId,
+            },
+            boundedToolText(result.output),
+          );
+        }
+      }
     }
   }
   return frames;
+}
+
+// Extracts claude `tool_use` content items (assistant message) as tool calls.
+function claudeToolUseItems(
+  content: unknown,
+): { callId: string; toolName: string; argumentsText: string }[] {
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  const items: { callId: string; toolName: string; argumentsText: string }[] = [];
+  for (const item of content) {
+    const record = unknownRecord(item);
+    if (record?.type !== "tool_use") {
+      continue;
+    }
+    const callId = stringField(record, "id") ?? `tool:${items.length}`;
+    const toolName = stringField(record, "name") ?? "tool";
+    const input = record.input;
+    const argumentsText =
+      typeof input === "string" ? input : input === undefined ? "" : JSON.stringify(input);
+    items.push({ callId, toolName, argumentsText });
+  }
+  return items;
+}
+
+// Extracts claude `tool_result` content items (intermediate user message).
+function claudeToolResultItems(content: unknown): { callId: string; output: string }[] {
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  const items: { callId: string; output: string }[] = [];
+  for (const item of content) {
+    const record = unknownRecord(item);
+    if (record?.type !== "tool_result") {
+      continue;
+    }
+    const callId = stringField(record, "tool_use_id") ?? `tool:${items.length}`;
+    const output =
+      typeof record.content === "string"
+        ? record.content
+        : joinTextContent(record.content) ?? "";
+    items.push({ callId, output });
+  }
+  return items;
 }
 
 export function readProviderSignalFramesFromSpool(input: {
@@ -1676,42 +2169,170 @@ export function readAntigravityProviderHistoryFramesFromHome(input: {
       continue;
     }
 
-    for (const line of transcriptText.split(/\r?\n/)) {
-      const record = parseJsonObject(line);
-      if (record === undefined || record.type !== "PLANNER_RESPONSE") {
-        continue;
-      }
-      const content = stringField(record, "content");
-      const stepIndex = numberField(record, "step_index");
-      if (content === undefined || stepIndex === undefined) {
-        continue;
-      }
-
-      const frameKey = `${transcriptPath}:${stepIndex}:PLANNER_RESPONSE`;
+    // The live reader projects agent activity only (user prompts are added
+    // locally with local provenance). Tool calls live on PLANNER_RESPONSE
+    // entries; their results are the following typed MODEL entries.
+    for (const item of antigravityConversationItems(transcriptText, { includeUser: false })) {
+      const blockId = `provider:${input.threadId}:${conversationId}:${item.blockSuffix}`;
+      const frameKey = `${transcriptPath}:${item.blockSuffix}`;
       if (input.seenKeys.has(frameKey)) {
         continue;
       }
       input.seenKeys.add(frameKey);
-
-      const blockId = `provider:${input.threadId}:${conversationId}:${stepIndex}`;
+      const payload =
+        item.kind === "message"
+          ? {
+              type: "message",
+              role: "agent",
+              status: "complete",
+              blockId,
+              body: item.body,
+              sourceRuntimeId: input.runtimeId,
+            }
+          : {
+              type: item.kind,
+              toolName: item.toolName,
+              callId: blockId,
+              ...(item.kind === "tool_call" ? { arguments: item.body } : { ok: true, output: item.body }),
+              body: item.body,
+              status: "complete",
+              blockId,
+              sourceRuntimeId: input.runtimeId,
+            };
       frames.push({
         source: "provider_history",
         sourceRef: transcriptPath,
         payloadKind: "provider_record",
-        payload: {
-          type: "message",
-          role: "agent",
-          status: "complete",
-          blockId,
-          body: content,
-          sourceRuntimeId: input.runtimeId,
-        },
-        body: content,
+        payload,
+        body: item.body,
       });
     }
   }
 
   return frames;
+}
+
+interface AntigravityConversationItem {
+  kind: "message" | "tool_call" | "tool_result";
+  role: "user" | "agent";
+  blockSuffix: string;
+  toolName?: string;
+  body: string;
+}
+
+// Walks an antigravity transcript into ordered conversation items. A
+// PLANNER_RESPONSE (source MODEL) carries tool_calls (the call) and/or content
+// (the agent's visible text); the following typed MODEL entry is the call's
+// result. CONVERSATION_HISTORY/SYSTEM and reasoning (`thinking`) are skipped.
+function antigravityConversationItems(
+  text: string,
+  options: { includeUser: boolean },
+): AntigravityConversationItem[] {
+  const items: AntigravityConversationItem[] = [];
+  let pendingToolName: string | undefined;
+  for (const line of text.split(/\r?\n/)) {
+    const record = parseJsonObject(line);
+    if (record === undefined) {
+      continue;
+    }
+    const type = stringField(record, "type");
+    const source = stringField(record, "source");
+    const step = numberField(record, "step_index") ?? items.length;
+
+    if (type === "USER_INPUT") {
+      const body = unwrapAntigravityUserRequest(stringField(record, "content"));
+      if (options.includeUser && body.length > 0) {
+        items.push({ kind: "message", role: "user", blockSuffix: `${step}`, body });
+      }
+      continue;
+    }
+    if (source !== "MODEL") {
+      continue;
+    }
+    if (type === "PLANNER_RESPONSE") {
+      const toolCalls = Array.isArray(record.tool_calls) ? record.tool_calls : [];
+      toolCalls.forEach((call, callIndex) => {
+        const callRecord = unknownRecord(call);
+        if (callRecord === undefined) {
+          return;
+        }
+        const toolName = stringField(callRecord, "name") ?? "tool";
+        pendingToolName = toolName;
+        const argsText = callRecord.args === undefined ? "" : JSON.stringify(callRecord.args);
+        items.push({
+          kind: "tool_call",
+          role: "agent",
+          blockSuffix: `${step}:call:${callIndex}`,
+          toolName,
+          body: boundedToolText(argsText),
+        });
+      });
+      const content = stringField(record, "content");
+      if (content !== undefined && content.length > 0) {
+        items.push({ kind: "message", role: "agent", blockSuffix: `${step}`, body: content });
+      }
+      continue;
+    }
+    // Any other MODEL-sourced typed entry is the preceding call's result.
+    const content = stringField(record, "content");
+    if (content === undefined || content.length === 0) {
+      continue;
+    }
+    items.push({
+      kind: "tool_result",
+      role: "agent",
+      blockSuffix: `${step}:result`,
+      toolName: pendingToolName ?? type ?? "tool",
+      body: boundedToolText(content),
+    });
+    pendingToolName = undefined;
+  }
+  return items;
+}
+
+// USER_INPUT content is wrapped in <USER_REQUEST>…</USER_REQUEST>; show the
+// inner prompt text.
+function unwrapAntigravityUserRequest(content: string | undefined): string {
+  if (content === undefined) {
+    return "";
+  }
+  const match = content.match(/<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>/);
+  return (match ? match[1] : content).trim();
+}
+
+export function rebuildAntigravityConversation(
+  text: string,
+  threadId: string,
+  conversationId: string,
+  agentId: AgentId,
+): AgentSessionBlock[] {
+  const timestamp = new Date().toISOString();
+  return antigravityConversationItems(text, { includeUser: true }).map((item) => {
+    const blockId = `provider:${threadId}:${conversationId}:${item.blockSuffix}`;
+    if (item.kind === "message") {
+      return conversationBlock({
+        threadId,
+        sessionId: conversationId,
+        index: 0,
+        agentId,
+        isUser: item.role === "user",
+        body: item.body,
+        timestamp,
+        blockId,
+      });
+    }
+    return toolConversationBlock({
+      threadId,
+      agentId,
+      blockId,
+      kind: item.kind,
+      toolName: item.toolName ?? "tool",
+      callId: blockId,
+      body: item.body,
+      data: item.kind === "tool_call" ? { arguments: item.body } : { ok: true, output: item.body },
+      timestamp,
+    });
+  });
 }
 
 function promptStatePayload(
@@ -1762,25 +2383,105 @@ function emitBlockUpdate(input: {
 }
 
 async function recordBlockUpdateInThreadCache(
+  persistence: ThreadPersistenceService,
   service: ThreadRuntimeService,
   update: AgentSessionBlockUpdate,
 ): Promise<void> {
+  let threadId: string | undefined;
   if (update.kind === "upsert") {
     await service.recordAgentSessionBlock({
       threadId: update.block.threadId,
       block: update.block,
     });
+    threadId = update.block.threadId;
+  } else if (update.kind === "reset") {
+    for (const block of update.blocks) {
+      await service.recordAgentSessionBlock({ threadId: block.threadId, block });
+    }
+    threadId = update.blocks[0]?.threadId;
+  }
+  if (threadId !== undefined) {
+    await persistThreadBlocks({ persistence, service, threadId });
+  }
+}
+
+// Persist the thread's full current Agent Session block list so a restart can
+// restore the conversation. Blocks live as references in the service; fill the
+// required block fields to write the durable cache.
+async function persistThreadBlocks(input: {
+  persistence: ThreadPersistenceService;
+  service: ThreadRuntimeService;
+  threadId: string;
+}): Promise<void> {
+  const hydrated = await input.service.hydrateThread({ threadId: input.threadId });
+  if (!hydrated.ok || hydrated.blocks.length === 0) {
     return;
   }
-
-  if (update.kind === "reset") {
-    for (const block of update.blocks) {
-      await service.recordAgentSessionBlock({
-        threadId: block.threadId,
-        block,
-      });
-    }
+  const agentId = hydrated.thread.agentBinding.agentId;
+  const blocks = hydrated.blocks.map((ref) => ({
+    blockId: ref.blockId,
+    threadId: input.threadId,
+    agentId: ref.agentId ?? agentId,
+    kind: ref.kind,
+    role: ref.role ?? "runtime",
+    sourceFrameIds: ref.sourceFrameIds ?? [],
+    localProvenance: ref.localProvenance,
+    status: ref.status,
+    title: ref.title,
+    body: ref.body,
+    data: ref.data,
+    rawFallback: ref.rawFallback,
+    createdAt: ref.createdAt ?? ref.updatedAt,
+    updatedAt: ref.updatedAt,
+  })) as AgentSessionBlock[];
+  const saved = await input.persistence.writeAgentSessionCache(input.threadId, {
+    blocks,
+    sourceFingerprint: `local:${blocks.length}:${blocks[blocks.length - 1]?.updatedAt ?? ""}`,
+  });
+  if (!saved.ok) {
+    process.emitWarning(saved.error.message, { type: "TidePersistenceCacheWarning" });
   }
+}
+
+// Provider Stop-hook signal events that mean "the current turn has ended".
+// codex forwards `codex-stop`; claude/antigravity forward `agent-idle`.
+const TURN_END_SIGNAL_EVENTS = new Set(["codex-stop", "agent-idle"]);
+
+// On a turn-end signal, return the runtime to idle (so the UI stops showing
+// "working") or flush a queued Composer input into the next turn.
+async function emitTurnComplete(input: {
+  threadId: string;
+  service: ThreadRuntimeService;
+  onEvent?: (event: BackendEventEnvelope) => void;
+}): Promise<void> {
+  const result = await input.service.recordTurnComplete({ threadId: input.threadId });
+  if (!result.ok) {
+    return;
+  }
+  // If a queued input was flushed into the next turn, surface its user-message
+  // block so the conversation shows the queued message (then the new turn runs).
+  if (result.submittedBlock !== undefined) {
+    input.onEvent?.({
+      contractVersion: CONTRACT_VERSION,
+      eventId: nextEventId(),
+      kind: "agentSessionBlock.upserted",
+      emittedAt: new Date().toISOString(),
+      payload: {
+        block: toAgentSessionBlockDto(result.thread, result.submittedBlock),
+      },
+    });
+  }
+  input.onEvent?.({
+    contractVersion: CONTRACT_VERSION,
+    eventId: nextEventId(),
+    kind: "agentRuntime.stateChanged",
+    emittedAt: new Date().toISOString(),
+    payload: {
+      threadId: result.thread.threadId,
+      state: result.runtimeState,
+      changedAt: result.thread.updatedAt,
+    },
+  });
 }
 
 async function emitPromptState(input: {

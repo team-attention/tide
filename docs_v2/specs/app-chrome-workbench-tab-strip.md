@@ -103,6 +103,17 @@ Attention dots or badges indicate a specific local state, such as Provider Readi
 
 They do not create global status buckets.
 
+### D9. Workbench is reachable from top chrome, and new Panes from the Tab Strip
+
+When a Thread is active, top chrome always exposes a Workbench open/close Chrome
+Action (icon button with tooltip + accessible label). Opening the Workbench when
+it has no visible Pane opens the Launcher Pane so the user can create the first
+Pane (Browser, Terminal, Editor, Diff).
+
+When the Workbench is open, the Tab Strip exposes a "New Pane" Chrome Action
+(the "+" affordance) that opens the Launcher Pane. This is how a Browser Pane is
+opened without first sending a message to the Agent.
+
 ## Out Of Scope
 
 - Final icon asset set.
@@ -210,6 +221,16 @@ Chrome emits BackendCommands:
 3. Browser tab is focusable and closable.
 4. Hidden Agent Runtime is not represented as a tab.
 
+### UC-6: Open Workbench and Launcher from chrome
+
+1. A Thread is active and the Workbench is closed.
+2. Top chrome shows an "Open Workbench" Chrome Action.
+3. User clicks it; the Workbench opens.
+4. Because the Workbench has no visible Pane, an `open_launcher` Workbench
+   command is emitted and the Launcher Pane appears.
+5. From the Launcher (or the Tab Strip "New Pane" action) the user opens a
+   Browser/Terminal/Editor/Diff Pane.
+
 ### UC-4: Workbench tab overflow
 
 1. Visible tab count exceeds available width.
@@ -236,6 +257,8 @@ Chrome emits BackendCommands:
 8. Every icon-only Chrome Action has tooltip and accessible label.
 9. Disabled/loading/active states are explicit.
 10. Attention indicators point to actionable local state.
+11. While a Thread is active, the Workbench (and therefore the Launcher) is
+    always reachable from top chrome, even before any message is sent.
 
 ## Tests
 
@@ -251,6 +274,9 @@ Chrome emits BackendCommands:
 | Split unavailable | `first_tab_strip_does_not_render_pin_or_split_actions` renders no split action until Workbench split behavior is specified. |
 | Icon buttons are labeled | `chrome_action_buttons_have_tooltips_and_accessible_labels` requires tooltip and accessible label for icon-only actions. |
 | Loading disables conflicts | `loading_chrome_action_disables_conflicting_action` models loading state and disables the conflicting action. |
+| Workbench reachable from chrome | `active_thread_with_closed_workbench_renders_open_workbench_action` renders an "Open Workbench" chrome action when a Thread is active and the Workbench is closed. |
+| Opening empty Workbench opens Launcher | `opening_closed_workbench_for_active_thread_emits_open_launcher` emits `open_launcher` when toggling open a Workbench with no visible Pane. |
+| Tab Strip exposes New Pane | `open_workbench_tab_strip_renders_new_pane_action` renders a "New Pane" chrome action that opens the Launcher. |
 
 ## Implementation Notes
 

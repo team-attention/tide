@@ -48,10 +48,10 @@ closed.
 
 ### D2. Launcher actions are visible affordances, not fake execution
 
-The Launcher shows actions for opening Browser, Editor, Terminal, Diff, and
-FileTree work. Actions that need later specs may render as disabled or as
-future-command affordances, but the Pane itself must not fabricate Browser,
-Editor, Diff, or Terminal state.
+The Launcher shows actions for opening Browser, Editor, Terminal, and Diff work.
+FileTree is NOT a Launcher action — it is a top-chrome column toggle. Actions
+that need later specs may render as disabled or as future-command affordances,
+but the Pane itself must not fabricate Browser, Editor, Diff, or Terminal state.
 
 ### D3. Empty Workbench opens Launcher
 
@@ -66,12 +66,12 @@ Workbench commands:
 
 - Browser dispatches `workbench.command open_browser`.
 - Terminal dispatches `workbench.command open_terminal`.
-- FileTree opens the FileTree View column and dispatches
-  `workbench.command refresh_file_tree`.
+- Editor is a file picker: it opens the FileTree View column and dispatches
+  `workbench.command refresh_file_tree`, so the user can choose a file to open
+  in an Editor Pane (clicking a file row dispatches `open_editor` for that path).
 
-Editor and Diff remain disabled in this slice because they need a selected file
-or diff source. They must not look like working controls until a concrete target
-selection flow exists.
+Diff remains disabled in this slice because it needs a diff source. It must not
+look like a working control until a concrete target selection flow exists.
 
 ## Domain Model
 

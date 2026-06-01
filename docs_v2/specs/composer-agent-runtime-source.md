@@ -100,12 +100,30 @@ The Model Source changes by Agent Runtime Source:
 | Antigravity CLI | Antigravity Agent Integration capability when proven |
 | OpenAI API | Tide API Agent OpenAI Provider Account and model catalog |
 
-The UI must not imply that `GPT-5.5 High` selected through Codex CLI and `GPT-5.5 High` selected through OpenAI API are the same control path.
+The UI must not imply that a model selected through Codex CLI and the same id
+selected through OpenAI API are the same control path.
 
 The visible Model Chip label may be product-polished, but the value sent in
 `launchOptions.model` must be the provider-native model id for the selected
-Model Source. For Codex CLI, the current default visible label `GPT-5.5 High`
-maps to the Codex-native launch value `gpt-5.5`.
+Model Source. For Codex CLI the launch value is the Codex-native model id
+(default `gpt-5.5`).
+
+#### D5a. Codex Model menu exposes reasoning effort, not a fabricated model list
+
+Codex has no enumerable model catalog — model is a free-form `--model <id>`.
+The real tuning knob is reasoning effort, mapped to the Codex config override
+`-c model_reasoning_effort=<low|medium|high>`.
+
+The Codex Model menu therefore shows two sections:
+
+- **Model**: the active model row (provider-native id, default `gpt-5.5`) plus a
+  "Custom model id..." escape hatch. No invented alternate model rows.
+- **Reasoning effort**: Low / Medium / High rows that set
+  `launchOptions.reasoning`. Default is Medium when unset.
+
+The Model Chip label for Codex shows both: `<Model> · <Effort>` (e.g.
+`GPT-5.5 · Medium`). The label MUST reflect the actually-selected reasoning
+effort, never a hardcoded level.
 
 ### D6. Readiness copy must name the right setup source
 

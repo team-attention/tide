@@ -683,7 +683,8 @@ test("live_backend_records_runtime_output_blocks_before_hydrate_snapshots", () =
   const source = readRepoFile("src/backend/infrastructure/node/live-backend.ts");
 
   assert.match(source, /const appendFrameAndEmit = async/);
-  assert.match(source, /await recordBlockUpdateInThreadCache\(service,\s*update\)/);
+  // Blocks are recorded into the thread cache (and persisted) before snapshots.
+  assert.match(source, /await recordBlockUpdateInThreadCache\(input\.persistence,\s*service,\s*update\)/);
 });
 
 test("live_backend_awaits_tide_api_structured_frame_projection_for_push_events", () => {

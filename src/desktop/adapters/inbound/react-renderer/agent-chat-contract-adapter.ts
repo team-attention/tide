@@ -16,6 +16,9 @@ export type AgentChatBackendCommandDraft = {
   kind: "composer.sendInput";
   payload: BackendCommandPayloadByKind["composer.sendInput"];
 } | {
+  kind: "agentRuntime.stop";
+  payload: BackendCommandPayloadByKind["agentRuntime.stop"];
+} | {
   kind: "prompt.answer";
   payload: BackendCommandPayloadByKind["prompt.answer"];
 } | {
@@ -45,6 +48,11 @@ export function toBackendCommandDraft(
     case "composer.sendInput":
       return {
         kind: "composer.sendInput",
+        payload: command.payload,
+      };
+    case "agentRuntime.stop":
+      return {
+        kind: "agentRuntime.stop",
         payload: command.payload,
       };
     case "prompt.answer":

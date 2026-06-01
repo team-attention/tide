@@ -1,5 +1,7 @@
-import { app, BrowserWindow, ipcMain, utilityProcess, type UtilityProcess } from "electron";
-import { dirname, join } from "node:path";
+import { app, BrowserWindow, dialog, ipcMain, shell, utilityProcess, type UtilityProcess } from "electron";
+import { basename, dirname, join } from "node:path";
+import { readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   CONTRACT_VERSION,
@@ -47,6 +49,175 @@ let rejectBackendHandshake: ((error: Error) => void) | null = null;
 const pendingBackendRequests = new Map<string, PendingBackendRequest>();
 const deferredBackendBroadcastEvents: BackendEventEnvelope[] = [];
 let deferredBackendBroadcastTimer: ReturnType<typeof setTimeout> | null = null;
+
+// --- Persisted project registry (Codex-style "open folder") ---
+// Lives under the app data root, owned by Main (supervisor) since it is a
+// Desktop/Left-UI concern, not agent-runtime domain.
+interface ProjectRegistryEntry {
+  projectId: string;
+  name: string;
+  cwd: string;
+}
+
+function projectRegistryPath(): string {
+  return join(resolveAppDataRoot(), "project-registry.json");
+}
+
+async function readProjectRegistry(): Promise<ProjectRegistryEntry[]> {
+  try {
+    const parsed = JSON.parse(await readFile(projectRegistryPath(), "utf8")) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter(
+      (entry): entry is ProjectRegistryEntry =>
+        typeof entry === "object" &&
+        entry !== null &&
+        typeof (entry as ProjectRegistryEntry).cwd === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+async function writeProjectRegistry(entries: ProjectRegistryEntry[]): Promise<void> {
+  await writeFile(projectRegistryPath(), `${JSON.stringify(entries, null, 2)}\n`, "utf8");
+}
+
+ipcMain.handle("tide:open-directory", async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ["openDirectory", "createDirectory"],
+  });
+  return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
+});
+
+ipcMain.handle("tide:list-projects", async () => readProjectRegistry());
+
+ipcMain.handle("tide:register-project", async (_event, cwd: unknown) => {
+  const current = await readProjectRegistry();
+  if (typeof cwd !== "string" || cwd.length === 0) {
+    return current;
+  }
+  // Dedupe by cwd; projectId/name derive from the folder basename.
+  if (!current.some((entry) => entry.cwd === cwd)) {
+    const name = basename(cwd) || cwd;
+    current.push({ projectId: name, name, cwd });
+    await writeProjectRegistry(current);
+  }
+  return current;
+});
+
+// Remove a project from the registry (unregister only — never touches disk).
+ipcMain.handle("tide:unregister-project", async (_event, cwd: unknown) => {
+  const current = await readProjectRegistry();
+  if (typeof cwd !== "string") {
+    return current;
+  }
+  const next = current.filter((entry) => entry.cwd !== cwd);
+  if (next.length !== current.length) {
+    await writeProjectRegistry(next);
+  }
+  return next;
+});
+
+// Rename a project's display name; upserts so renaming a thread-derived project
+// (not yet in the registry) persists the new name.
+ipcMain.handle("tide:rename-project", async (_event, cwd: unknown, name: unknown) => {
+  const current = await readProjectRegistry();
+  if (typeof cwd !== "string" || typeof name !== "string" || name.trim().length === 0) {
+    return current;
+  }
+  const trimmed = name.trim();
+  const next = current.some((entry) => entry.cwd === cwd)
+    ? current.map((entry) => (entry.cwd === cwd ? { ...entry, name: trimmed } : entry))
+    : [...current, { projectId: basename(cwd) || cwd, name: trimmed, cwd }];
+  await writeProjectRegistry(next);
+  return next;
+});
+
+// Create a git worktree for a project and register it. The worktree lives in a
+// Tide-managed directory; a new branch is created from the project's HEAD.
+ipcMain.handle("tide:create-worktree", async (_event, cwd: unknown) => {
+  const current = await readProjectRegistry();
+  if (typeof cwd !== "string" || cwd.length === 0) {
+    return { entries: current, createdCwd: null };
+  }
+  const id = Math.random().toString(36).slice(2, 8);
+  const branch = `${basename(cwd) || "tide"}-wt-${id}`;
+  const worktreePath = join(resolveAppDataRoot(), "worktrees", branch);
+  const created = await new Promise<boolean>((resolve) => {
+    execFile(
+      "git",
+      ["-C", cwd, "worktree", "add", "-b", branch, worktreePath],
+      { maxBuffer: 4 * 1024 * 1024 },
+      (error) => resolve(!error),
+    );
+  });
+  if (!created) {
+    return { entries: current, createdCwd: null };
+  }
+  const entries = [...current, { projectId: branch, name: branch, cwd: worktreePath }];
+  await writeProjectRegistry(entries);
+  return { entries, createdCwd: worktreePath };
+});
+
+// Reveal a folder in Finder (read-only, opens the OS file browser).
+ipcMain.handle("tide:reveal-in-finder", async (_event, cwd: unknown) => {
+  if (typeof cwd === "string" && cwd.length > 0) {
+    await shell.openPath(cwd);
+  }
+});
+
+// --- Git context for the Worktree/Branch menus (read-only) ---
+interface GitContext {
+  isGitRepo: boolean;
+  currentBranch: string | null;
+  branches: { name: string; kind: "local" | "remote"; current: boolean }[];
+  worktrees: { path: string; branch: string | null; current: boolean }[];
+}
+
+function runGit(cwd: string, args: string[]): Promise<string> {
+  return new Promise((resolve) => {
+    execFile("git", ["-C", cwd, ...args], { maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+      resolve(error ? "" : stdout);
+    });
+  });
+}
+
+ipcMain.handle("tide:git-context", async (_event, cwd: unknown): Promise<GitContext> => {
+  const empty: GitContext = { isGitRepo: false, currentBranch: null, branches: [], worktrees: [] };
+  if (typeof cwd !== "string" || cwd.length === 0) {
+    return empty;
+  }
+  const inside = (await runGit(cwd, ["rev-parse", "--is-inside-work-tree"])).trim();
+  if (inside !== "true") {
+    return empty;
+  }
+  const currentBranch = (await runGit(cwd, ["branch", "--show-current"])).trim() || null;
+  // Local then remote branches (skip the "origin/HEAD -> ..." alias line).
+  const refLines = (await runGit(cwd, ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"]))
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.endsWith("/HEAD"));
+  const branches = refLines.map((ref) => {
+    const isRemote = ref.startsWith("refs/remotes/");
+    const name = ref.replace(/^refs\/heads\//, "").replace(/^refs\/remotes\//, "");
+    return { name, kind: isRemote ? ("remote" as const) : ("local" as const), current: name === currentBranch };
+  });
+  // Worktrees via porcelain output.
+  const worktrees: GitContext["worktrees"] = [];
+  let pending: { path: string; branch: string | null } | null = null;
+  for (const line of (await runGit(cwd, ["worktree", "list", "--porcelain"])).split("\n")) {
+    if (line.startsWith("worktree ")) {
+      if (pending) worktrees.push({ ...pending, current: pending.path === cwd });
+      pending = { path: line.slice("worktree ".length).trim(), branch: null };
+    } else if (line.startsWith("branch ") && pending) {
+      pending.branch = line.slice("branch ".length).trim().replace(/^refs\/heads\//, "");
+    }
+  }
+  if (pending) worktrees.push({ ...pending, current: pending.path === cwd });
+  return { isGitRepo: true, currentBranch, branches, worktrees };
+});
 
 ipcMain.handle("tide:backend-command", async (_event, command: BackendCommandEnvelope) => {
   const validatedCommand = validateBackendCommandEnvelope(command);
@@ -327,6 +498,16 @@ function createMainWindow(): BrowserWindow {
       webviewTag: true,
     },
   });
+
+  // Tell the renderer when native fullscreen hides the macOS traffic lights, so
+  // the Left UI top row can reclaim the space they normally reserve.
+  const sendFullscreen = (isFullscreen: boolean) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("tide:fullscreen-changed", isFullscreen);
+    }
+  };
+  mainWindow.on("enter-full-screen", () => sendFullscreen(true));
+  mainWindow.on("leave-full-screen", () => sendFullscreen(false));
 
   const rendererLoaded =
     process.env.ELECTRON_RENDERER_URL !== undefined

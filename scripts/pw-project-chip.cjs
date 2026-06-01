@@ -1,0 +1,26 @@
+const { _electron } = require("playwright");
+const { spawnSync } = require("node:child_process");
+const path = require("node:path");
+const os = require("node:os");
+const fs = require("node:fs");
+const repo = "/Users/eatnug/Workspace/tide";
+(async () => {
+  const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tide-pchip-"));
+  spawnSync("node", [path.join(repo, "scripts/seed-thread.cjs"), dataRoot, "codex"], { cwd: repo, stdio: "inherit" });
+  const app = await _electron.launch({ args: [path.join(repo, "out/main/electron-main.js")], env: { ...process.env, TIDE_APP_DATA_ROOT: dataRoot } });
+  const page = await app.firstWindow();
+  await page.waitForSelector(".tide-product-shell", { timeout: 20000 });
+  await page.waitForTimeout(900);
+  await page.locator('.composer-shell__context-chip[data-context-kind="project"]').first().click();
+  await page.waitForSelector('[data-choice-surface="project_menu"]', { timeout: 5000 });
+  await page.waitForTimeout(300);
+  const labels = await page.locator('[data-choice-surface="project_menu"] .choice-surface__row-label').allInnerTexts();
+  const svgIcons = await page.locator('[data-choice-surface="project_menu"] .choice-surface__row-icon svg').count();
+  const hasSlice = labels.includes("slice");
+  console.log("project menu rows:", JSON.stringify(labels));
+  console.log("lucide svg icons:", svgIcons, "| hardcoded 'slice' present:", hasSlice);
+  await page.screenshot({ path: "/tmp/pw-project-chip.png" });
+  await app.close();
+  console.log("PROJECT CHIP OK?", labels.includes("tide") && labels.includes("Scratch") && !hasSlice && svgIcons >= 4);
+  console.log("DONE");
+})().catch((e) => { console.error("ERR", e); process.exit(1); });

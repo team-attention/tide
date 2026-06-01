@@ -55,6 +55,13 @@ Unknown provider output becomes `raw_block`.
 
 Unknown output is not dropped and is not guessed into structured tool, file, approval, or prompt blocks.
 
+Exception: control **signals** are not "output". A consumed signal frame — a
+`hook_payload` whose hook did not resolve into a renderable prompt, carried as
+payload `type: "provider_signal"` — is runtime transport (like the hidden PTY).
+It is consumed for Prompt State / session bookkeeping and MUST NOT render as a
+visible `raw_block`. Only genuine provider *output* with an unrecognized type
+(e.g. a future provider event from history) stays visible as `raw_block`.
+
 ### D5. Streaming uses stable block ids
 
 A streaming provider message updates one Agent Session Block by stable block id until the reader marks it complete or failed.
@@ -96,6 +103,73 @@ Shared Contracts owns only the Desktop-facing Contract DTO shape for an Agent Se
 The first implementation uses a provider-neutral fixture reader under Backend application services.
 
 Provider-specific readers remain Agent Integration work after fixture behavior proves ordering, fallback, prompt, and DTO mapping rules.
+
+### D12. Provider history readers extract tool calls
+
+The codex and claude history paths (both the live history reader and the
+rebuild-on-reopen path) extract provider-native tool activity into
+`tool_call` and `tool_result` blocks, in file order, interleaved with message
+blocks.
+
+- **codex** rollout `response_item` payloads:
+  - `function_call` / `custom_tool_call` → `tool_call` (title = provider tool
+    name; body = the provider-native arguments/input, bounded).
+  - `function_call_output` / `custom_tool_call_output` → `tool_result` (title =
+    the matching call's tool name; body = the provider-native output, bounded).
+  - calls and outputs are paired by `call_id` for stable block ids.
+- **claude** transcript content items:
+  - assistant `tool_use` → `tool_call` (title = tool name; body = bounded
+    input).
+  - user `tool_result` → `tool_result` (paired by `tool_use_id`; body = bounded
+    output).
+- **antigravity** transcript entries (`<brain>/<id>/.system_generated/logs/transcript.jsonl`):
+  - a `PLANNER_RESPONSE` (`source: MODEL`) carries `tool_calls: [{ name, args }]`
+    → each becomes a `tool_call` (title = provider tool name such as
+    `run_command`/`list_dir`; body = the args, bounded), and its `content`
+    (when a non-empty string) becomes an agent message block.
+  - the following typed `MODEL` entry (e.g. `LIST_DIRECTORY`, `VIEW_FILE`,
+    `ERROR_MESSAGE`) is the result → `tool_result` (title = the preceding call's
+    tool name; body = `content`, bounded), paired by step order.
+  - `CONVERSATION_HISTORY`, `SYSTEM_MESSAGE`, and `thinking` are transport/meta
+    and are not rendered.
+
+Provider-native tool names and argument/output text are preserved (per D3). The
+body is bounded; it is never guessed into a structured Tide tool block (those
+come only from Tide MCP frames, per the Tide MCP specs).
+
+### D13. Tool blocks render as a collapsed activity summary (Codex-style)
+
+The Desktop renderer groups *consecutive* `role: "tool"` blocks into a single
+muted, one-line **tool activity summary** row — matching the Codex app, e.g.
+"Edited 1 file, ran 2 commands". The summary aggregates the group's `tool_call`
+blocks by category derived from the provider-native tool name:
+
+| Category | Tool name match (case-insensitive) | Phrase |
+|----------|-----------------------------------|--------|
+| edit | patch, edit, write, apply, create, str_replace | "edited N file(s)" |
+| run | exec, run, bash, shell, command | "ran N command(s)" |
+| search | grep, glob, search, find, ripgrep | "N search(es)" |
+| read | view, read, list, cat, dir, ls | "read N file(s)" |
+| other | (fallback) | "N tool call(s)" |
+
+The summary row is expandable; expanded, it reveals the individual tool entries
+(tool name + bounded monospace args/output), so detail is available on demand but
+does not clutter the transcript. The row is visually separate from user and
+agent message turns and is never rendered as a generic event or agent message.
+
+### D14. Edited files surface as a "files changed" list
+
+When a tool activity group contains edit-category `tool_call` blocks, the
+renderer derives the distinct edited file paths from the call arguments and shows
+a Codex-style "files changed" list under the summary (filename + muted parent
+dir). Path extraction is best-effort from provider-native arguments:
+
+- claude `Edit`/`Write`/`MultiEdit` → `file_path` from the JSON args.
+- codex `apply_patch` → `*** Update/Add/Delete File: <path>` lines.
+- antigravity edit tools → `AbsolutePath`/`file_path`/`path` from the JSON args.
+
+Paths are display-only (no diff stats are invented — those require git evidence
+the transcript does not carry).
 
 ## Out Of Scope
 
@@ -297,6 +371,7 @@ Backend emits `agentSessionBlock.upserted` BackendEvents with this DTO. Backend 
 4. Every provider-derived Agent Session Block has Raw Agent Frame provenance.
 5. Local user input blocks have local provenance until provider provenance can be linked.
 6. Unknown provider output becomes raw block.
+6b. Consumed control signals (hook payloads carried as `type: "provider_signal"`) are transport, not output, and never render as a visible block.
 7. Readers interpret only supported provider evidence.
 8. Agent Session Blocks are renderer-agnostic.
 9. Provider-native labels stay provider-native in user-visible controls.
@@ -310,6 +385,7 @@ This slice adds the following executable expectations before implementation:
 |----------|---------------|------------------|
 | UC-1 | BR-1 | A structured fixture message frame emits a user or agent message block. |
 | UC-1 | BR-3 | A structured fixture frame with an unknown event type emits `raw_block` with the payload visible. |
+| UC-1 | BR-3b | A `hook_payload` frame carrying a consumed `provider_signal` envelope emits no visible block. |
 | UC-1 | BR-4 | The same ordered frame list produces the same block ids, statuses, and DTOs. |
 | UC-2 | BR-1 | ANSI/text PTY fixture output keeps `rawFallback` when it is not safely parsed. |
 | UC-2 | BR-2 | Partial output appends delta frames into one streaming block by stable block id. |
@@ -322,6 +398,10 @@ This slice adds the following executable expectations before implementation:
 | UC-6 | BR-3 | A local user input block sorts before subsequent provider output. |
 | UC-7 | BR-1 | A Workbench reference targeting the same Thread stays available. |
 | UC-7 | BR-2 | A Workbench reference targeting another Thread renders as unavailable. |
+| UC-5 | D12 | Rebuilding a codex rollout with `function_call`/`function_call_output` emits ordered `tool_call` + `tool_result` blocks with provider-native tool name and bounded body. |
+| UC-5 | D12 | Rebuilding a claude transcript with `tool_use`/`tool_result` emits paired `tool_call` + `tool_result` blocks. |
+| UC-1 | D13 | A `tool` role block renders as a tool log entry (tool name label + monospace body), not as a user/agent message turn. |
+| UC-5 | D12 | An antigravity transcript with a `PLANNER_RESPONSE` tool_call followed by a typed result entry emits a `tool_call` + `tool_result` pair with the provider-native tool name. |
 
 Future slices keep these documented but do not implement them here:
 

@@ -66,12 +66,15 @@ button {
 .tide-product-shell {
   width: 100%;
   height: 100%;
+  overflow: hidden;
   background: var(--tide-bg);
 }
 
 .tide-product-shell__body {
   height: 100%;
+  width: 100%;
   min-height: 0;
+  overflow: hidden;
   display: grid;
   grid-template-columns: 256px minmax(460px, 1fr);
 }
@@ -107,6 +110,7 @@ button {
 .column-top-row {
   height: 52px;
   min-height: 52px;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -141,6 +145,7 @@ button {
 
 .column-top-row__trailing,
 .right-window-actions {
+  flex: 0 0 auto;
   gap: 8px;
 }
 
@@ -160,6 +165,19 @@ button {
   flex: 0 0 auto;
   width: 54px;
   height: 100%;
+}
+
+/* In fullscreen the native traffic lights are hidden, so don't reserve their
+   space — the top-row controls shift left to fill it. */
+.tide-fullscreen .traffic-controls {
+  width: 0;
+}
+
+/* The agent identity icon, sized down to fit a composer chip. */
+.composer-shell__chip-icon .agent-identity-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 5px;
 }
 
 .top-row-button,
@@ -204,6 +222,45 @@ button {
   gap: 18px;
   padding: 0 16px;
   background: var(--tide-surface);
+}
+
+/* Drag-resize handles sit on column edges. */
+.left-ui,
+.workbench-column,
+.file-tree-column {
+  position: relative;
+}
+
+.column-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  z-index: 6;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.column-resize-handle--right {
+  right: -4px;
+}
+
+.column-resize-handle--left {
+  left: -4px;
+}
+
+.column-resize-handle::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.column-resize-handle:hover::after {
+  background: var(--tide-action);
 }
 
 .left-ui__nav,
@@ -293,7 +350,54 @@ button {
   height: 30px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 4px;
   padding: 0 8px;
+}
+
+.left-ui-section__toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  border-radius: 6px;
+  text-align: left;
+  padding: 0;
+}
+
+.left-ui-section__toggle:hover {
+  background: var(--tide-selection);
+}
+
+/* + button on Projects/Scratch headers, revealed on section hover. */
+.left-ui-section__action {
+  flex: 0 0 auto;
+  opacity: 0;
+  color: var(--tide-muted);
+}
+
+.left-ui-section:hover .left-ui-section__action {
+  opacity: 1;
+}
+
+.left-ui-section__action:hover {
+  color: var(--tide-text);
+}
+
+/* Chevron points down when expanded, right when collapsed. */
+.left-ui-section__chevron {
+  color: var(--tide-muted);
+  flex-shrink: 0;
+  transform: rotate(90deg);
+  transition: transform 0.14s ease;
+}
+
+.left-ui-section__toggle--collapsed .left-ui-section__chevron {
+  transform: rotate(0deg);
 }
 
 .left-ui-section__title {
@@ -362,6 +466,53 @@ button {
   border-radius: 7px;
 }
 
+/* The whole project label (chevron + folder + name) is the expand/collapse hit
+   target; the row actions sit outside it so they do not toggle. */
+.project-row__toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 580;
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-row__chevron {
+  flex: 0 0 auto;
+  color: var(--tide-muted);
+  transition: transform 0.12s ease;
+}
+
+.project-row__chevron--expanded {
+  transform: rotate(90deg);
+}
+
+/* Threads belonging to a project are visually nested under it with an indent
+   and a left guide line. */
+.project-group__threads {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 18px;
+  padding-left: 8px;
+  border-left: 1px solid var(--tide-line);
+}
+
+.project-group__empty {
+  margin: 2px 0 4px;
+  padding: 0 8px;
+  color: var(--tide-muted);
+  font-size: 12px;
+}
+
 /* Canonical thread row (1288): 13px/16, default #4e4c49, selected Medium
    #343038, selection background when active. */
 .thread-row {
@@ -385,14 +536,34 @@ button {
 .thread-row__main {
   min-width: 0;
   flex: 1 1 auto;
+  /* Fill the row's full height so the whole row (not just the text line) is a
+     click target. */
+  align-self: stretch;
   display: inline-flex;
   align-items: center;
+  gap: 8px;
   border: 0;
   padding: 0;
   background: transparent;
   color: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.thread-row__main .agent-identity-icon {
+  width: 15px;
+  height: 15px;
+  border-radius: 5px;
+}
+
+.thread-row__main .agent-identity-icon__core {
+  width: 5px;
+  height: 5px;
+}
+
+.thread-row__main .agent-identity-icon__orbit {
+  width: 11px;
+  height: 7px;
 }
 
 .thread-row__rename-input {
@@ -474,48 +645,90 @@ button {
   cursor: pointer;
 }
 
+/* Transparent full-viewport layer that catches the outside click closing an
+   open left-rail context menu. */
+.left-ui-context-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
 .left-ui-context-menu {
-  position: absolute;
-  top: 34px;
-  left: 8px;
-  z-index: 20;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   border: 1px solid var(--tide-line);
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--tide-bg);
   box-shadow: var(--tide-shadow-popover);
 }
 
 .left-ui-context-menu--thread {
-  width: 196px;
-  padding: 10px;
+  padding: 5px;
 }
 
 .left-ui-context-menu--project {
-  width: 300px;
-  padding: 12px;
+  padding: 5px;
 }
 
 .left-ui-context-menu__item {
-  height: 32px;
+  height: 30px;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 7px;
   padding: 0 8px;
   background: transparent;
   color: var(--tide-text);
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 13px;
+  line-height: 18px;
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .left-ui-context-menu__item:hover {
   background: var(--tide-selection);
+}
+
+/* Not-yet-wired items read as pending, not interactive. */
+.left-ui-context-menu__item--disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.left-ui-context-menu__item--disabled:hover {
+  background: none;
+}
+
+.project-row__rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--tide-action);
+  border-radius: 6px;
+  padding: 1px 5px;
+  background: var(--tide-bg);
+  color: var(--tide-text);
+  font-size: 13px;
+}
+
+.thread-row--pinned-project {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--tide-text);
+  text-align: left;
+}
+
+.thread-row--pinned-project .lucide {
+  color: var(--tide-muted);
+  flex-shrink: 0;
 }
 
 .left-ui-context-menu__item--danger {
@@ -685,12 +898,12 @@ button {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 16px;
+  gap: 22px;
 }
 
 .agent-session--has-turns {
   justify-content: flex-start;
-  padding: 2px 0 10px;
+  padding: 6px 0 12px;
 }
 
 /* Canonical (1338): default user and agent text is a flat transcript, not
@@ -726,14 +939,89 @@ button {
   font-size: 12px;
   font-weight: 500;
   line-height: 18px;
+  letter-spacing: 0.01em;
 }
 
 .agent-session-turn__body {
   margin: 0;
   color: inherit;
-  font-size: 14px;
-  line-height: 1.62;
+  font-size: 15px;
+  line-height: 1.68;
   white-space: pre-wrap;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Live "working" indicator while the runtime is responding (thinking/streaming),
+   so progress is visible instead of only the final result. */
+.agent-session-working {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--tide-muted);
+  font-size: 13px;
+}
+
+.agent-session-working__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--tide-muted);
+  animation: tide-working-pulse 1.1s ease-in-out infinite;
+}
+
+.agent-session-working__dot:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.agent-session-working__dot:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+.agent-session-working__text {
+  margin-left: 4px;
+}
+
+/* A queued user turn (submitted during a live turn, not yet sent). */
+.agent-session-turn--queued {
+  opacity: 0.62;
+}
+
+.agent-session-turn__queued-badge {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--tide-selection);
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+@keyframes tide-working-pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* A still-streaming agent message shows a blinking caret after its text. */
+.agent-session-turn--agent[data-block-status="streaming"] .agent-session-turn__body::after,
+.agent-session-turn--agent[data-block-status="pending"] .agent-session-turn__body::after {
+  content: "▍";
+  margin-left: 1px;
+  color: var(--tide-muted);
+  animation: tide-caret-blink 1s steps(1) infinite;
+}
+
+@keyframes tide-caret-blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 .agent-session-turn__raw {
@@ -747,6 +1035,153 @@ button {
   font: 12px/1.5 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+/* Provider tool calls/results: a compact, indented log entry distinct from the
+   flat message transcript — quiet by default so they read as activity, not chat. */
+.agent-session-turn--tool {
+  align-self: stretch;
+  max-width: min(800px, 100%);
+  gap: 4px;
+  padding: 6px 10px;
+  border-left: 2px solid var(--tide-line);
+  background: transparent;
+}
+
+.agent-session-turn__tool-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tide-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.agent-session-turn__tool-marker {
+  color: var(--tide-muted);
+  opacity: 0.7;
+}
+
+.agent-session-turn--tool-result .agent-session-turn__tool-marker {
+  color: #2f9e44;
+}
+
+.agent-session-turn__tool-name {
+  font: 12px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--tide-text);
+}
+
+.agent-session-turn__tool-body {
+  max-width: 100%;
+  max-height: 220px;
+  overflow: auto;
+  margin: 2px 0 0;
+  padding: 7px 9px;
+  border-radius: 7px;
+  color: var(--tide-text);
+  background: var(--tide-selection);
+  font: 12px/1.5 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+/* Codex-style collapsed tool-activity summary: a quiet one-line row that
+   aggregates a run of tool calls, expandable to the per-tool detail. */
+.agent-session-tools {
+  align-self: stretch;
+  max-width: min(760px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-session-tools__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 2px 2px;
+  border: none;
+  background: none;
+  color: var(--tide-muted);
+  font-size: 13.5px;
+  line-height: 20px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 0.12s ease;
+}
+
+.agent-session-tools__summary:hover {
+  color: var(--tide-text);
+}
+
+.agent-session-tools__icon {
+  color: var(--tide-muted);
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+
+.agent-session-tools__summary-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-session-tools__chevron {
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: transform 0.14s ease;
+}
+
+.agent-session-tools--expanded .agent-session-tools__chevron {
+  transform: rotate(180deg);
+}
+
+.agent-session-tools__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 4px;
+}
+
+/* "Files changed" list under a tool group: a compact bordered card listing the
+   distinct edited files (filename + muted parent dir), Codex-style. */
+.agent-session-tools__files {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--tide-line);
+  border-radius: 10px;
+  background: var(--tide-bg);
+  overflow: hidden;
+}
+
+.agent-session-tools__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  font-size: 13.5px;
+  line-height: 18px;
+}
+
+.agent-session-tools__file-icon {
+  color: var(--tide-muted);
+  flex-shrink: 0;
+}
+
+.agent-session-tools__file-name {
+  color: var(--tide-text);
+  font-weight: 500;
+}
+
+.agent-session-tools__file-dir {
+  color: var(--tide-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .agent-chat-shell__composer-stack {
   width: min(760px, 100%);
   display: grid;
@@ -754,30 +1189,59 @@ button {
   margin: 0 auto;
 }
 
+/* Transparent full-viewport layer behind an open chip dropdown: catches the
+   outside click that closes it, and lets the popover float above all panes. */
+.chip-popover-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+.chip-popover {
+  /* positioned inline (anchored to the chip) via fixed coordinates;
+     max-height is set inline to the space available on the open side */
+  max-width: min(380px, calc(100vw - 16px));
+  display: flex;
+  overflow: hidden;
+}
+
 .choice-surface {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0;
-  padding: 10px;
+  /* A compact dropdown menu, not a full-width table. */
+  width: max-content;
+  max-width: min(380px, 100%);
+  /* Fill the height the popover allows so the row list owns the scroll. */
+  max-height: 100%;
+  overflow: hidden;
+  padding: 6px;
   border: 1px solid var(--tide-line);
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--tide-bg);
-  /* Canonical ChoiceSurface shadow (1357). */
-  box-shadow: 0 8px 9px -3px rgba(52, 48, 56, 0.12);
+  box-shadow: var(--tide-shadow-popover);
 }
 
 .choice-surface__header {
-  min-height: 28px;
+  flex: 0 0 auto;
+}
+
+.choice-surface__header {
+  min-height: 24px;
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
+  padding: 2px 8px 4px;
 }
 
 .choice-surface__header h2 {
   margin: 0;
-  color: var(--tide-text);
-  font-size: 14px;
-  font-weight: 500;
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -803,22 +1267,44 @@ button {
   gap: 0;
   margin: 0;
   padding: 0;
+  /* Own the scroll within the popover's available height; the 56vh fallback
+     applies when the surface is rendered inline (not in a fixed popover). */
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 56vh;
+  overflow-y: auto;
 }
 
 .choice-surface__row {
-  min-height: 38px;
+  min-height: 34px;
   display: grid;
-  grid-template-columns: 18px minmax(150px, 190px) minmax(0, 1fr) auto;
+  /* icon | label (hugs) | detail (muted, fills) | meta badge (right) — no fixed
+     label column, so short labels sit next to their detail instead of spreading
+     across a wide table. */
+  grid-template-columns: 16px auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   border: 0;
-  border-radius: 7px;
-  padding: 0 10px;
+  border-radius: 8px;
+  padding: 0 8px;
   background: transparent;
   color: var(--tide-text);
   font-size: 14px;
   text-align: left;
   cursor: pointer;
+}
+
+.choice-surface__row-detail {
+  font-size: 12px;
+}
+
+.choice-surface__row-meta {
+  justify-self: end;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--tide-selection);
+  font-size: 11px;
+  line-height: 16px;
 }
 
 .choice-surface__row[data-selected="true"],
@@ -845,10 +1331,6 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.choice-surface__row-meta {
-  font-size: 12px;
 }
 
 .composer-shell {
@@ -910,21 +1392,27 @@ button {
 .composer-shell__context-chip,
 .composer-shell__choice-chip {
   height: 28px;
-  max-width: 180px;
+  max-width: 200px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: 1px solid var(--tide-line-strong);
-  border-radius: 8px;
-  background: var(--tide-surface);
+  /* Subtle pill (Codex-style): light border, no heavy fill, soft hover. */
+  border: 1px solid var(--tide-line);
+  border-radius: 999px;
+  background: transparent;
   color: var(--tide-text);
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.composer-shell__context-chip:hover {
+  background: var(--tide-selection);
 }
 
 .composer-shell__context-chip {
-  padding: 0 10px;
+  padding: 0 11px;
   cursor: pointer;
 }
 
@@ -955,7 +1443,7 @@ button {
 
 .composer-shell__choice-chip:hover,
 .composer-shell__icon-button:hover {
-  border-color: var(--tide-line-strong);
+  border-color: var(--tide-line);
   background: var(--tide-selection);
 }
 
@@ -971,7 +1459,7 @@ button {
   width: 30px;
   height: 28px;
   border: 1px solid var(--tide-line);
-  border-radius: 9px;
+  border-radius: 999px;
 }
 
 .composer-shell__icon-button--mic {
@@ -993,6 +1481,9 @@ button {
   min-height: 0;
   overflow: hidden;
   display: grid;
+  /* Constrain the single column track to the container so the header can't grow
+     to its max-content width (which would push the tab-strip controls off). */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 52px minmax(0, 1fr);
   border-left: 1px solid var(--tide-line);
   background: var(--tide-bg);
@@ -1004,11 +1495,22 @@ button {
 }
 
 .workbench-tabs {
+  flex: 1 1 auto;
   min-width: 0;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 6px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.workbench-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.workbench-tab {
+  flex: 0 0 auto;
 }
 
 .workbench-tabs__empty {
@@ -1112,9 +1614,15 @@ button {
 .workbench-terminal {
   min-width: 0;
   min-height: 0;
-  display: grid;
-  gap: 10px;
-  padding: 14px;
+  flex: 1;
+  display: block;
+  padding: 8px;
+}
+
+/* Only the terminal pane is dark; other panes inherit the light pane surface. */
+.workbench-terminal {
+  padding: 8px;
+  background: #1b1b1d;
 }
 
 /* Editor manages its own layout/padding (breadcrumb + content), so it fills the
@@ -1266,17 +1774,21 @@ button {
   color: var(--tide-muted);
 }
 
-.workbench-browser-bar__title {
-  flex: 0 0 auto;
+.workbench-browser-bar__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--tide-line);
+  border-radius: 999px;
+  background: var(--tide-bg);
   color: var(--tide-text);
-  font: 500 12px/1.4 Inter, ui-sans-serif, system-ui, sans-serif;
+  font: 12px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-.workbench-browser-bar__url {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.workbench-browser-bar__input:focus {
+  outline: none;
+  border-color: var(--tide-action);
 }
 
 .workbench-browser-bar__status {
@@ -1284,10 +1796,25 @@ button {
   color: var(--tide-muted);
 }
 
+.workbench-browser-bar__go {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--tide-action);
+  color: #fff;
+  font: 600 12px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer;
+}
+
 .workbench-browser-webview {
-  display: block;
-  flex: 1 1 auto;
+  display: flex;
+  /* `<webview>` is a replaced element with a short intrinsic height; a 0 flex
+     basis + height:100% makes it actually fill the pane instead of collapsing. */
+  flex: 1 1 0;
   width: 100%;
+  height: 100%;
   min-height: 0;
   background: var(--tide-bg);
 }
@@ -1718,107 +2245,18 @@ button {
   border-top: 1px solid var(--tide-line);
 }
 
-.workbench-terminal__heading {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.workbench-terminal__heading h2 {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workbench-terminal__status {
-  flex: 0 0 auto;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 0 8px;
-  background: var(--tide-selection);
-  color: var(--tide-muted);
-  font-size: 12px;
-}
-
-.workbench-terminal__meta {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 5px 10px;
-  margin: 0;
-  color: var(--tide-muted);
-  font-size: 12px;
-}
-
-.workbench-terminal__meta dt,
-.workbench-terminal__meta dd {
-  min-width: 0;
-  margin: 0;
-}
-
-.workbench-terminal__meta dd {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--tide-text);
-}
-
+/* The xterm surface IS the terminal: it fills the dark pane edge-to-edge. */
 .workbench-terminal-xterm {
-  min-height: 220px;
-  max-height: 440px;
-  height: 44vh;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--tide-line);
-  border-radius: 8px;
-  padding: 6px;
-  background: var(--tide-bg);
+  background: #1b1b1d;
 }
 
 .workbench-terminal-xterm .xterm,
 .workbench-terminal-xterm .xterm-viewport,
 .workbench-terminal-xterm .xterm-screen {
   height: 100%;
-}
-
-/* The live GPU terminal (.workbench-terminal-xterm) is the visible surface; the
-   bounded transcript preview stays in the DOM as a fallback/snapshot only. */
-.workbench-terminal__preview {
-  display: none;
-}
-
-.workbench-terminal__input {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
-  align-items: center;
-  gap: 6px;
-}
-
-.workbench-terminal__input input,
-.workbench-terminal__input button {
-  height: 30px;
-  border: 1px solid var(--tide-line);
-  border-radius: 7px;
-  background: var(--tide-bg);
-  color: var(--tide-text);
-}
-
-.workbench-terminal__input input {
-  min-width: 0;
-  padding: 0 9px;
-}
-
-.workbench-terminal__input button {
-  padding: 0 9px;
-  cursor: pointer;
-}
-
-.workbench-terminal__input button:hover {
-  background: var(--tide-hover);
 }
 
 .file-tree-column__body {
@@ -1851,7 +2289,8 @@ button {
 }
 
 .file-tree-row {
-  height: 30px;
+  flex: 0 0 28px;
+  height: 28px;
   width: 100%;
   display: flex;
   align-items: center;
@@ -1863,7 +2302,9 @@ button {
   color: var(--tide-text);
   font: inherit;
   font-size: 13px;
+  line-height: 28px;
   text-align: left;
+  overflow: hidden;
 }
 
 button.file-tree-row {

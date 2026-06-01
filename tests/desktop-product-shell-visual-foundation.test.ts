@@ -34,12 +34,17 @@ import {
   selectProductShellChoiceSurfaceRow,
   selectProductShellLauncherAction,
   setProductShellComposerActiveSurface,
+  setProductShellComposerFolderScope,
+  setProductShellRegisteredProjects,
   showProductShellThreadArchiveConfirm,
+  startNewProductShellThread,
   submitProductShellComposerDraft,
   saveProductShellWorkbenchEditorPane,
   toggleProductShellFileTree,
   toggleProductShellFileTreeWithRefresh,
+  interruptProductShellRuntime,
   toggleProductShellLeftUi,
+  toggleProductShellProject,
   toggleProductShellWorkbench,
   toggleProductShellWorkbenchWithLauncher,
   updateProductShellBrowserActionResult,
@@ -65,7 +70,7 @@ test("product_shell_renders_left_ui_agent_chat_composer_and_app_chrome", () => {
   assert.match(html, /aria-label="Agent Chat Top Row"/);
 });
 
-test("left_ui_renders_project_grouped_thread_rows_without_thread_icons", () => {
+test("left_ui_renders_project_grouped_thread_rows_with_agent_identity_icons", () => {
   const html = renderProductShell();
 
   assert.match(html, /Pinned/);
@@ -73,7 +78,9 @@ test("left_ui_renders_project_grouped_thread_rows_without_thread_icons", () => {
   assert.match(html, /Scratch/);
   assert.match(html, /data-left-row-kind="project"/);
   assert.match(html, /data-left-row-kind="thread"/);
-  assert.doesNotMatch(html, /class="thread-row[^"]*".*data-agent-icon=/s);
+  // Thread rows carry the per-agent identity icon (Codex-app aesthetic), the
+  // same mark used in the composer agent chip.
+  assert.match(html, /class="thread-row__main"[^>]*>\s*<span class="agent-identity-icon/);
   assert.doesNotMatch(html, /project-row__count/);
 });
 
@@ -325,19 +332,26 @@ test("clicking_a_file_tree_folder_collapses_and_expands_its_descendants", () => 
   const visible = (s: typeof state) =>
     createProductShellViewModel(s).fileTree.entries.map((e) => e.relativePath);
 
-  assert.ok(visible(state).includes("src/app.ts"), "descendant visible initially");
+  // D6: folders are collapsed by default, so the descendant is hidden initially
+  // while the top-level folder and file rows stay visible.
+  assert.ok(!visible(state).includes("src/app.ts"), "descendant hidden initially");
+  assert.ok(visible(state).includes("src"), "top-level folder visible initially");
+  assert.ok(visible(state).includes("README.md"), "top-level file visible initially");
 
-  const collapsed = selectProductShellFileTreeEntry(state, "d-src");
+  // Expanding reveals already-loaded children with no Backend round-trip.
+  const expanded = selectProductShellFileTreeEntry(state, "d-src");
+  assert.equal(expanded.command, null, "folder toggle emits no Backend command");
+  assert.ok(visible(expanded.state).includes("src/app.ts"), "descendant visible when expanded");
+  const folder = createProductShellViewModel(expanded.state).fileTree.entries.find(
+    (e) => e.relativePath === "src",
+  );
+  assert.equal(folder?.expanded, true);
+
+  // Collapsing hides the descendant again.
+  const collapsed = selectProductShellFileTreeEntry(expanded.state, "d-src");
   assert.equal(collapsed.command, null);
   assert.ok(!visible(collapsed.state).includes("src/app.ts"), "descendant hidden when collapsed");
   assert.ok(visible(collapsed.state).includes("src"), "folder itself stays visible");
-  const folder = createProductShellViewModel(collapsed.state).fileTree.entries.find(
-    (e) => e.relativePath === "src",
-  );
-  assert.equal(folder?.expanded, false);
-
-  const expanded = selectProductShellFileTreeEntry(collapsed.state, "d-src");
-  assert.ok(visible(expanded.state).includes("src/app.ts"), "descendant visible again when expanded");
 });
 
 test("clicking_a_file_tree_file_opens_it_in_the_editor", () => {
@@ -551,7 +565,7 @@ test("sending_start_composer_from_product_shell_emits_thread_start_without_local
   assert.equal(result.command?.kind, "thread.start");
   assert.equal(result.command?.payload.initialMessage, "Build the Product Shell interactions");
   assert.equal(result.command?.payload.launchOptions?.model, "gpt-5.5");
-  assert.equal(view.agentChat.composer.modelLabel, "GPT-5.5 High");
+  assert.equal(view.agentChat.composer.modelLabel, "GPT-5.5 · Medium");
   assert.equal(view.activeThreadId, null);
   assert.equal(view.agentChat.thread, null);
   assert.equal(view.agentChat.composer.draft, "Build the Product Shell interactions");
@@ -576,6 +590,21 @@ test("sending_start_composer_from_product_shell_uses_provider_native_model_value
     permission: "Auto-review",
     worktree: "current folder",
     branch: "main",
+  });
+});
+
+test("new_thread_in_project_prescopes_start_composer_to_that_project", () => {
+  // Spec: docs_v2/specs/desktop-product-shell-visual-foundation.md UC-6b inv-18
+  // "slice" project (cwd /Users/eatnug/Workspace/slice) must scope the new thread.
+  const state = startNewProductShellThread(createProductShellState(), "slice");
+  const drafted = updateProductShellComposerDraft(state, "Investigate the slice build");
+  const result = submitProductShellComposerDraft(drafted);
+
+  assert.equal(result.command?.kind, "thread.start");
+  assert.deepEqual(result.command?.payload.scope, {
+    kind: "project",
+    projectId: "slice",
+    cwd: "/Users/eatnug/Workspace/slice",
   });
 });
 
@@ -651,6 +680,42 @@ test("right_workbench_tab_actions_emit_backend_commands_and_apply_workbench_even
   assert.equal(closedView.agentChat.workbenchOpen, true);
 });
 
+test("active_thread_with_closed_workbench_renders_open_workbench_action", () => {
+  // Spec: docs_v2/specs/app-chrome-workbench-tab-strip.md UC-6 D9
+  // thread-sketch has no Workbench panes, so opening it leaves the Workbench closed.
+  const state = openProductShellThread(createProductShellState(), "thread-sketch");
+  const view = createProductShellViewModel(state);
+  assert.equal(view.workbenchOpen, false, "workbench starts closed for a no-pane thread");
+
+  const html = renderProductShell(state);
+  assert.match(html, /aria-label="Open Workbench"/);
+  assert.match(html, /title="Open Workbench"/);
+});
+
+test("opening_closed_workbench_for_active_thread_emits_open_launcher", () => {
+  // Spec: docs_v2/specs/app-chrome-workbench-tab-strip.md UC-6 D9
+  const state = openProductShellThread(createProductShellState(), "thread-sketch");
+  const result = toggleProductShellWorkbenchWithLauncher(state);
+
+  assert.equal(result.state.workbenchOpen, true);
+  assert.deepEqual(result.command, {
+    kind: "workbench.command",
+    payload: {
+      threadId: "thread-sketch",
+      command: "open_launcher",
+    },
+  });
+});
+
+test("open_workbench_tab_strip_renders_new_pane_action", () => {
+  // Spec: docs_v2/specs/app-chrome-workbench-tab-strip.md UC-6 D9
+  // thread-workbench opens with visible panes, so the Workbench is open.
+  const state = openProductShellThread(createProductShellState(), "thread-workbench");
+  const html = renderProductShell(state);
+  assert.match(html, /aria-label="New Pane"/);
+  assert.match(html, /title="New Pane"/);
+});
+
 test("workbench_browser_pane_renders_url_loading_and_preview", () => {
   // Spec: docs_v2/specs/desktop-workbench-pane-content-rendering.md
   const state = applyProductShellBackendEvent(
@@ -680,8 +745,8 @@ test("workbench_browser_pane_renders_url_loading_and_preview", () => {
   const html = renderProductShell(state);
 
   assert.match(html, /data-pane-kind="browser"/);
-  // Flat browser pane: address bar (title + url + loading) then the live page.
-  assert.match(html, /Example Docs/);
+  // Flat browser pane: editable address bar (URL input + loading) then the page.
+  assert.match(html, /aria-label="Browser address input"/);
   assert.match(html, /https:\/\/example\.test\/docs/);
   assert.match(html, /loading/);
   // The live <webview> renders the page (the human view); the text snapshot is
@@ -1290,8 +1355,10 @@ test("workbench_diff_pane_renders_structured_unified_diff_lines", () => {
   assert.doesNotMatch(html, /aria-label="Diff preview"/);
 });
 
-test("provider_setup_terminal_pane_renders_preview_and_input_controls", () => {
+test("provider_setup_terminal_pane_renders_dark_xterm_surface", () => {
   // Spec: docs_v2/specs/provider-setup-surface-input-and-retry.md
+  // The terminal (incl. provider setup) is a dark xterm surface: input and the
+  // setup transcript live inside the live terminal, not in metadata chrome.
   const state = applyProductShellBackendEvent(
     openProductShellThread(createProductShellState(), "thread-workbench"),
     {
@@ -1306,13 +1373,10 @@ test("provider_setup_terminal_pane_renders_preview_and_input_controls", () => {
   const html = renderProductShell(state);
 
   assert.match(html, /data-pane-kind="terminal"/);
-  assert.match(html, /Provider setup: codex/);
-  assert.match(html, /running/);
-  assert.match(html, /\/Users\/eatnug\/\.local\/bin\/codex/);
-  assert.match(html, /Welcome to Codex setup/);
-  assert.match(html, /aria-label="Provider Setup Surface input"/);
-  assert.match(html, /Enter/);
-  assert.match(html, /Esc/);
+  assert.match(html, /data-terminal-xterm="pane-provider-setup"/);
+  // No metadata/preview/input chrome leaks into the terminal surface anymore.
+  assert.doesNotMatch(html, /aria-label="Provider Setup Surface input"/);
+  assert.doesNotMatch(html, /workbench-terminal__meta/);
 });
 
 test("product_shell_setup_terminal_input_emits_workbench_command", () => {
@@ -1379,6 +1443,174 @@ test("product_shell_ignores_thread_scoped_events_for_inactive_threads", () => {
   assert.doesNotMatch(html, /This belongs to another Thread/);
 });
 
+test("project_row_collapse_toggle_hides_and_restores_its_threads", () => {
+  // Spec: docs_v2/specs/desktop-product-shell-visual-foundation.md (project nesting)
+  const state = createProductShellState();
+  const tideBefore = createProductShellViewModel(state).projectGroups.find(
+    (group) => group.projectId === "tide",
+  );
+  assert.equal(tideBefore?.expanded, true, "projects are expanded by default");
+  assert.ok((tideBefore?.threads.length ?? 0) > 0, "tide has threads");
+
+  const collapsed = toggleProductShellProject(state, "tide");
+  const tideCollapsed = createProductShellViewModel(collapsed).projectGroups.find(
+    (group) => group.projectId === "tide",
+  );
+  assert.equal(tideCollapsed?.expanded, false, "toggle collapses the project");
+
+  const reExpanded = toggleProductShellProject(collapsed, "tide");
+  assert.equal(
+    createProductShellViewModel(reExpanded).projectGroups.find((group) => group.projectId === "tide")
+      ?.expanded,
+    true,
+    "toggle again re-expands",
+  );
+});
+
+test("agent_session_shows_working_indicator_while_runtime_is_running", () => {
+  // Spec: docs_v2/specs/agent-session-block-rendering-path.md (visible progress)
+  const opened = openProductShellThread(createProductShellState(), "thread-workbench");
+  const withUserTurn = applyProductShellBackendEvent(opened, {
+    kind: "agentSessionBlock.upserted",
+    payload: {
+      block: {
+        blockId: "block-user-turn",
+        threadId: "thread-workbench",
+        agentId: "codex",
+        kind: "user_message",
+        role: "user",
+        status: "complete",
+        body: "Do the thing",
+        updatedAt: "2026-05-29T00:00:00.000Z",
+      },
+    },
+  });
+  const running = applyProductShellBackendEvent(withUserTurn, {
+    kind: "agentRuntime.stateChanged",
+    payload: {
+      threadId: "thread-workbench",
+      state: "running",
+      changedAt: "2026-05-29T00:00:00.000Z",
+    },
+  });
+  // Running + last block is the user's turn (no agent reply yet) -> indicator shows.
+  assert.match(renderProductShell(running), /agent-session-working/);
+
+  // Once a complete agent reply arrives, the indicator clears even if the runtime
+  // state is still "running" (no lingering loading after the answer).
+  const answered = applyProductShellBackendEvent(running, {
+    kind: "agentSessionBlock.upserted",
+    payload: {
+      block: {
+        blockId: "block-agent-reply",
+        threadId: "thread-workbench",
+        agentId: "codex",
+        kind: "agent_message",
+        role: "agent",
+        status: "complete",
+        body: "Done.",
+        updatedAt: "2026-05-29T00:00:01.000Z",
+      },
+    },
+  });
+  assert.doesNotMatch(renderProductShell(answered), /agent-session-working/);
+
+  // When idle, no working indicator.
+  assert.doesNotMatch(renderProductShell(opened), /agent-session-working/);
+});
+
+test("submitting_during_a_running_turn_shows_a_queued_row_then_clears_on_flush", () => {
+  // Spec: docs_v2/specs/agent-session-block-rendering-path.md (queue UX)
+  const running = applyProductShellBackendEvent(
+    openProductShellThread(createProductShellState(), "thread-workbench"),
+    {
+      kind: "agentRuntime.stateChanged",
+      payload: { threadId: "thread-workbench", state: "running", changedAt: "2026-05-29T00:00:00.000Z" },
+    },
+  );
+  const drafted = updateProductShellComposerDraft(running, "follow up while busy");
+  const submitted = submitProductShellComposerDraft(drafted);
+
+  // Queued (not sent): composer.sendInput command + optimistic "대기 중" row.
+  assert.equal(submitted.command?.kind, "composer.sendInput");
+  assert.equal(createProductShellViewModel(submitted.state).agentChat.queuedInput, "follow up while busy");
+  const queuedHtml = renderProductShell(submitted.state);
+  assert.match(queuedHtml, /대기 중/);
+  assert.match(queuedHtml, /follow up while busy/);
+
+  // When the turn ends and the queued input is flushed as a real user block,
+  // the optimistic queued row clears.
+  const flushed = applyProductShellBackendEvent(submitted.state, {
+    kind: "agentSessionBlock.upserted",
+    payload: {
+      block: {
+        blockId: "block-flushed-user",
+        threadId: "thread-workbench",
+        agentId: "codex",
+        kind: "user_message",
+        role: "user",
+        status: "complete",
+        body: "follow up while busy",
+        updatedAt: "2026-05-29T00:00:02.000Z",
+      },
+    },
+  });
+  assert.equal(createProductShellViewModel(flushed).agentChat.queuedInput, null);
+});
+
+test("starting_a_thread_in_a_new_project_adds_that_project_to_the_rail", () => {
+  // Spec: docs_v2/specs/desktop-product-shell-visual-foundation.md (project grouping)
+  const state = createProductShellState({ includeFixtureData: false });
+  const started = applyProductShellBackendEvent(state, {
+    kind: "thread.started",
+    payload: {
+      thread: {
+        threadId: "thread-slice-new",
+        title: "Slice work",
+        agentBinding: { agentId: "codex" },
+        scope: { kind: "project", projectId: "slice", cwd: "/Users/eatnug/Workspace/slice" },
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-01T00:00:00.000Z",
+        pinned: false,
+        archived: false,
+        lastKnownState: "running",
+      },
+      runtimeState: "running",
+    },
+  });
+  const view = createProductShellViewModel(started);
+  const slice = view.projectGroups.find((group) => group.projectId === "slice");
+  assert.ok(slice, "the slice project appears in the rail immediately");
+  assert.deepEqual(
+    slice?.threads.map((thread) => thread.threadId),
+    ["thread-slice-new"],
+  );
+});
+
+test("interrupt_stops_a_running_turn_and_shows_a_stop_button", () => {
+  // Spec: docs_v2/specs/app-chrome-workbench-tab-strip.md (runtime stop)
+  const running = applyProductShellBackendEvent(
+    openProductShellThread(createProductShellState(), "thread-workbench"),
+    {
+      kind: "agentRuntime.stateChanged",
+      payload: { threadId: "thread-workbench", state: "running", changedAt: "2026-05-29T00:00:00.000Z" },
+    },
+  );
+  // While running, the composer shows an Interrupt control.
+  assert.match(renderProductShell(running), /aria-label="Interrupt"/);
+
+  const result = interruptProductShellRuntime(running);
+  assert.deepEqual(result.command, {
+    kind: "agentRuntime.stop",
+    payload: { threadId: "thread-workbench" },
+  });
+
+  // Idle thread: interrupt is a no-op (nothing to stop).
+  const idle = openProductShellThread(createProductShellState(), "thread-workbench");
+  assert.equal(interruptProductShellRuntime(idle).command, null);
+  assert.doesNotMatch(renderProductShell(idle), /aria-label="Interrupt"/);
+});
+
 test("product_shell_uses_column_owned_top_rows_without_global_window_chrome", () => {
   const html = renderProductShell();
 
@@ -1411,8 +1643,8 @@ test("opening_file_tree_emits_refresh_workbench_command_for_active_thread", () =
     threadId: "thread-workbench",
     command: "refresh_file_tree",
     data: {
-      maxDepth: 2,
-      maxEntries: 160,
+      maxDepth: 12,
+      maxEntries: 4000,
     },
   });
 });
@@ -1552,8 +1784,10 @@ test("product_shell_launcher_browser_action_emits_open_browser_command", () => {
   });
 });
 
-test("product_shell_launcher_file_tree_action_opens_column_and_refreshes_tree", () => {
+test("product_shell_launcher_editor_action_opens_file_picker_column", () => {
   // Spec: docs_v2/specs/workbench-launcher-pane.md
+  // The Editor launcher entry is a file picker: it opens the FileTree column so
+  // the user can choose a file. FileTree is not itself a launcher entry.
   const state = applyProductShellBackendEvent(
     toggleProductShellWorkbench(openProductShellThread(createProductShellState(), "thread-sketch")),
     {
@@ -1570,9 +1804,9 @@ test("product_shell_launcher_file_tree_action_opens_column_and_refreshes_tree", 
             updatedAt: "2026-05-29T00:00:00.000Z",
             actions: [
               {
-                actionId: "open_file_tree",
-                label: "FileTree",
-                description: "Show the Thread FileTree",
+                actionId: "open_editor",
+                label: "Editor",
+                description: "Pick a file from the FileTree to edit",
                 enabled: true,
               },
             ],
@@ -1581,7 +1815,7 @@ test("product_shell_launcher_file_tree_action_opens_column_and_refreshes_tree", 
       },
     },
   );
-  const result = selectProductShellLauncherAction(state, "open_file_tree");
+  const result = selectProductShellLauncherAction(state, "open_editor");
 
   assert.equal(result.state.fileTreeOpen, true);
   assert.equal(result.command?.kind, "workbench.command");
@@ -1589,8 +1823,8 @@ test("product_shell_launcher_file_tree_action_opens_column_and_refreshes_tree", 
     threadId: "thread-sketch",
     command: "refresh_file_tree",
     data: {
-      maxDepth: 2,
-      maxEntries: 160,
+      maxDepth: 12,
+      maxEntries: 4000,
     },
   });
 });
@@ -1770,7 +2004,7 @@ test("product_shell_antigravity_selection_updates_model_before_thread_start", ()
   const view = createProductShellViewModel(result.state);
 
   assert.equal(view.agentChat.composer.contextItems[0].value, "Antigravity CLI");
-  assert.equal(view.agentChat.composer.modelLabel, "Antigravity default");
+  assert.equal(view.agentChat.composer.modelLabel, "Default");
   assert.equal(view.agentChat.composer.permissionLabel, "default");
 });
 
@@ -1871,7 +2105,7 @@ test("product_shell_thread_started_preserves_antigravity_model_label", () => {
   assert.equal(view.activeThreadId, "thread-antigravity-started");
   assert.equal(view.agentChat.thread?.agentLabel, "Antigravity CLI");
   assert.equal(view.agentChat.composer.mode, "follow_up");
-  assert.equal(view.agentChat.composer.modelLabel, "Antigravity default");
+  assert.equal(view.agentChat.composer.modelLabel, "Default");
   assert.equal(view.agentChat.composer.permissionLabel, "default");
   assert.notEqual(view.agentChat.composer.modelLabel, "GPT-5.5 High");
   assert.deepEqual(view.agentChat.composer.contextItems.map((item) => item.value), [
@@ -1988,3 +2222,72 @@ function extractByDataAttribute(html: string, attr: string, value: string): stri
   assert.ok(end >= 0, `Expected closing div for ${attr}=${value}`);
   return html.slice(start, end + "</div>".length);
 }
+
+// Spec: docs_v2/specs/project-open-folder-registry.md
+test("registered_project_appears_in_projects_even_with_no_threads", () => {
+  const state = setProductShellRegisteredProjects(
+    createProductShellState({ includeFixtureData: false }),
+    [{ projectId: "money", name: "money", cwd: "/Users/eatnug/Workspace/money" }],
+  );
+  const view = createProductShellViewModel(state);
+
+  const ids = view.projectGroups.map((group) => group.projectId);
+  assert.ok(ids.includes("money"), "registered project lists even with no threads");
+  const money = view.projectGroups.find((group) => group.projectId === "money");
+  assert.equal(money?.threads.length, 0);
+});
+
+test("registered_and_thread_derived_projects_dedupe_by_id", () => {
+  // Seed a thread in project "tide", then register the same "tide" folder.
+  const seeded = applyProductShellBackendEvent(createProductShellState({ includeFixtureData: false }), {
+    kind: "thread.listed",
+    payload: {
+      threads: [
+        {
+          threadId: "t1",
+          title: "x",
+          agentBinding: { agentId: "codex" },
+          scope: { kind: "project", projectId: "tide", cwd: "/Users/eatnug/Workspace/tide" },
+          createdAt: "2026-06-01T00:00:00.000Z",
+          updatedAt: "2026-06-01T00:00:00.000Z",
+          lastKnownState: "idle",
+          pinned: false,
+          archived: false,
+        },
+      ],
+    },
+  });
+  const withRegistry = setProductShellRegisteredProjects(seeded, [
+    { projectId: "tide", name: "tide", cwd: "/Users/eatnug/Workspace/tide" },
+  ]);
+  const view = createProductShellViewModel(withRegistry);
+
+  const tideGroups = view.projectGroups.filter((group) => group.projectId === "tide");
+  assert.equal(tideGroups.length, 1, "no duplicate tide project");
+  assert.equal(tideGroups[0].threads.length, 1, "keeps the thread under it");
+});
+
+test("project_menu_offers_a_single_open_folder_action", () => {
+  const html = renderProductShell(
+    setProductShellComposerActiveSurface(createProductShellState({ includeFixtureData: false }), "project_menu"),
+  );
+  assert.match(html, /Open folder/);
+  assert.doesNotMatch(html, /Create new project/);
+  assert.doesNotMatch(html, /Use existing folder/);
+});
+
+test("chip_open_folder_scopes_composer_without_registering_a_left_list_project", () => {
+  // Picking a folder from the composer's Project chip only sets the Thread's
+  // Execution Context (cwd). It must NOT appear in the left Projects list until
+  // a Thread is actually started in it (thread-derived).
+  const state = createProductShellState({ includeFixtureData: false });
+  const scoped = setProductShellComposerFolderScope(state, "/Users/eatnug/Workspace/battleship");
+  const view = createProductShellViewModel(scoped);
+
+  // The Project chip reflects the picked folder's basename.
+  const projectItem = view.agentChat.composer.contextItems.find((item) => item.label === "Project");
+  assert.equal(projectItem?.value, "battleship");
+
+  // ...but the left Projects list gains no "battleship" entry.
+  assert.ok(!view.projectGroups.some((group) => group.projectId === "battleship"));
+});

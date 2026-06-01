@@ -47,13 +47,15 @@ Provider Setup Surface output and exit happen after the original `workbench.comm
 
 The events use existing contract kinds: `workbench.changed`, `providerReadiness.changed`, `agentSessionBlock.upserted`, `agentRuntime.stateChanged`, and `thread.hydrated`. No new event kind is required for this slice.
 
-### D6. Desktop renders Terminal Pane preview and input
+### D6. Desktop renders a live dark terminal surface for input
 
-Desktop renders a visible Terminal Workbench Pane from contract metadata:
-status, command, cwd, expected completion, and bounded `transcriptPreview`.
-The first UI does not implement full terminal emulation, but it must provide a
-raw-byte input path for setup flows so the user can send line input and common
-control keys through `workbench.command` `write_terminal_input`.
+Desktop renders the Terminal Workbench Pane (including the Provider Setup
+Surface) as a live dark xterm terminal that fills the pane. The terminal seeds
+from the bounded `transcriptPreview` and then streams live output. Keystrokes
+typed into the terminal — line input, arrows, Enter, Esc, and other control keys
+(CSI-u included) — are captured by the terminal and routed as raw bytes through
+`workbench.command` `write_terminal_input`. There is no separate metadata header
+or text-input widget; the terminal itself is the raw-byte input path.
 
 ## Flow
 
