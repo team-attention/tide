@@ -178,6 +178,12 @@ function useColumnPresence(open: boolean): { mounted: boolean; visible: boolean 
   useEffect(() => {
     if (open) {
       setMounted(true);
+      // Reveal on the next frame so the grid track animates from 0 -> width. In
+      // non-browser environments (tests) there is no rAF, so reveal immediately.
+      if (typeof requestAnimationFrame === "undefined") {
+        setVisible(true);
+        return;
+      }
       const frame = requestAnimationFrame(() => setVisible(true));
       return () => cancelAnimationFrame(frame);
     }
