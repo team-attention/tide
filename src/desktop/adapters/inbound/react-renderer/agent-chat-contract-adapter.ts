@@ -48,7 +48,7 @@ export function toBackendCommandDraft(
     case "composer.sendInput":
       return {
         kind: "composer.sendInput",
-        payload: command.payload,
+        payload: command.payload as BackendCommandPayloadByKind["composer.sendInput"],
       };
     case "agentRuntime.stop":
       return {

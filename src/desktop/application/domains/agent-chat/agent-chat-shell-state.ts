@@ -204,7 +204,7 @@ export type AgentChatBackendCommand =
     }
   | {
       kind: "composer.sendInput";
-      payload: { threadId: string; input: string };
+      payload: { threadId: string; input: string; launchOptions?: Record<string, unknown> };
     }
   | {
       kind: "agentRuntime.stop";
@@ -579,6 +579,9 @@ export function submitComposer(
         payload: {
           threadId: state.thread.threadId,
           input,
+          // Carry the current composer launch options (e.g. a changed model /
+          // reasoning) so follow-ups honor them, not just the thread's original.
+          launchOptions: launchOptionsForState(state),
         },
       },
     };
@@ -1073,6 +1076,12 @@ function updateComposerLaunchOptions(
   return {
     state: {
       ...state,
+      // For an active thread the launch options live on the thread (that's what
+      // launchOptionsForState reads), so a model/reasoning/permission change must
+      // patch there too — otherwise it has no effect on follow-ups.
+      thread: state.thread
+        ? { ...state.thread, launchOptions: { ...state.thread.launchOptions, ...patch } }
+        : state.thread,
       composer: {
         ...state.composer,
         activeSurface: null,

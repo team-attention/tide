@@ -131,10 +131,31 @@ test("follow_up_composer_emits_composer_send_input_for_the_active_thread", () =>
   const command = result.command ? toBackendCommandDraft(result.command) : null;
 
   assert.equal(command?.kind, "composer.sendInput");
-  assert.deepEqual(command?.payload, {
-    threadId: "thread-shell",
-    input: "Continue this Thread",
-  });
+  assert.equal(command?.payload.threadId, "thread-shell");
+  assert.equal(command?.payload.input, "Continue this Thread");
+  // Follow-ups carry the current composer launch options so a changed model
+  // (or reasoning/permission) applies, not just the thread's original.
+  assert.ok("launchOptions" in (command?.payload ?? {}));
+});
+
+test("follow_up_carries_a_changed_model_in_launch_options", () => {
+  const hydrated = applyBackendEventToAgentChatShell(
+    createAgentChatShellState(),
+    backendEvent("thread.hydrated", { thread, blocks: [], runtimeState: "idle" }),
+  );
+  // Change the model via the model menu, then send a follow-up.
+  const remodeled = selectAgentChatChoiceSurfaceRow(
+    setComposerActiveSurface(hydrated, "model_menu").state,
+    "model_menu",
+    "model:gpt-5.4",
+  ).state;
+  const state = updateComposerDraft(remodeled, "go").state;
+  const command = submitComposer(state).command;
+  assert.equal(command?.kind, "composer.sendInput");
+  assert.equal(
+    command?.kind === "composer.sendInput" && command.payload.launchOptions?.model,
+    "gpt-5.4",
+  );
 });
 
 test("hydrating_thread_with_workbench_panes_marks_workbench_open", () => {

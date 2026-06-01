@@ -43,7 +43,7 @@ export interface BackendCommandPayloadByKind {
   "thread.setPinned": { threadId: ThreadId; pinned: boolean };
   "thread.rename": { threadId: ThreadId; title: string };
   "agentRuntime.resume": { threadId: ThreadId };
-  "composer.sendInput": { threadId: ThreadId; input: string };
+  "composer.sendInput": { threadId: ThreadId; input: string; launchOptions?: JsonObject };
   "prompt.answer": {
     promptId: string;
     threadId: ThreadId;
