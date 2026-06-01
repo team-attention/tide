@@ -20,11 +20,20 @@ test("tool_body_joins_array_command", () => {
   assert.equal(text, "bash -lc ls -a");
 });
 
-// Non-command JSON args pretty-print (real newlines, no escape noise).
-test("tool_body_pretty_prints_object_args", () => {
-  const text = toolBodyText("Edit", JSON.stringify({ file_path: "/a/b.ts", old: "x", new: "y" }));
-  assert.ok(text.includes("\n"));
-  assert.ok(text.includes('"file_path"'));
+// Edit/write tools show the file content with real newlines (path header), not
+// an escaped JSON blob.
+test("tool_body_renders_edit_content_with_real_newlines", () => {
+  const text = toolBodyText("Edit", JSON.stringify({ file_path: "/a/b.ts", new_string: "line1\nline2" }));
+  assert.equal(text, "/a/b.ts\n\nline1\nline2");
+  assert.ok(!text.includes("\\n"));
+  assert.ok(!text.includes('"new_string"'));
+});
+
+// Other object args render as key: value lines (raw values, no escape noise).
+test("tool_body_renders_object_args_as_key_value_lines", () => {
+  const text = toolBodyText("Read", JSON.stringify({ file_path: "/a/b.ts", offset: 85, limit: 35 }));
+  assert.match(text, /file_path: \/a\/b\.ts/);
+  assert.match(text, /offset: 85/);
   assert.ok(!text.includes('\\"'));
 });
 

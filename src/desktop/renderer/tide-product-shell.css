@@ -799,12 +799,20 @@ button {
 }
 
 .agent-chat-top-row {
-  padding: 0 16px;
+  /* Match the Workbench/FileTree headers so trailing actions align across
+     columns. */
+  padding: 0 12px;
 }
 
 .agent-chat-shell {
+  min-width: 0;
   min-height: 0;
   display: grid;
+  /* minmax(0, 1fr) keeps the single column from growing past the stage when a
+     child (e.g. a long <pre> tool body) has a wide intrinsic size — otherwise
+     the auto-margin composer centers in an over-wide track and loses its right
+     padding. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 16px;
   padding: 26px clamp(24px, 4vw, 56px) 24px;
@@ -915,10 +923,26 @@ button {
   gap: 4px;
 }
 
-.agent-session-turn--user,
 .agent-session-turn--agent {
   align-self: stretch;
   color: var(--tide-text);
+}
+
+/* Codex-style: the user's message is a compact right-aligned bubble, clearly
+   distinct from the agent's flat left-aligned prose. */
+.agent-session-turn--user {
+  align-self: flex-end;
+  max-width: min(560px, 82%);
+  width: fit-content;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: var(--tide-selection);
+  color: var(--tide-text);
+}
+
+.agent-session-turn--user .agent-session-turn__body {
+  font-size: 15px;
+  line-height: 1.55;
 }
 
 /* Structured/event blocks are cards (canonical 1338): white, bordered, soft
@@ -1686,22 +1710,43 @@ button {
   color: var(--tide-text);
 }
 
+/* Launcher is a quiet pane (one tab type), not a marketing card list: a small
+   "Open a pane" eyebrow over a compact choice list, centered in the pane. */
+.workbench-pane-content--launcher {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px clamp(12px, 4%, 40px);
+  max-width: 460px;
+  margin: 0 auto;
+}
+
+.workbench-launcher-hint {
+  margin: 0;
+  color: var(--tide-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .workbench-launcher-actions {
   min-width: 0;
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .workbench-launcher-action {
   min-width: 0;
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-columns: 20px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
-  min-height: 46px;
+  min-height: 40px;
   border: 1px solid var(--tide-line);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 6px 10px;
   background: var(--tide-bg);
   color: var(--tide-text);
   text-align: left;
@@ -1742,8 +1787,8 @@ button {
 }
 
 .workbench-launcher-action__label {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 580;
 }
 
 .workbench-launcher-action__description {
@@ -2333,4 +2378,33 @@ button.file-tree-row {
 
 .file-tree-row--active {
   background: var(--tide-selection);
+}
+
+/* ---- Layout transitions ---------------------------------------------------
+   Smooth height collapse/expand for folders and sections (the actual layout
+   change), driven by a grid-template-rows 0fr<->1fr transition so the content
+   stays mounted and animates both ways. Disabled under reduced-motion. */
+.collapsible {
+  display: grid;
+  grid-template-rows: 0fr;
+}
+
+.collapsible > .collapsible__inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .collapsible {
+    transition: grid-template-rows 0.2s ease;
+  }
+  .project-row__chevron,
+  .left-ui-section__chevron,
+  .file-tree-row__chevron {
+    transition: transform 0.18s ease;
+  }
+}
+
+.collapsible[data-expanded="true"] {
+  grid-template-rows: 1fr;
 }

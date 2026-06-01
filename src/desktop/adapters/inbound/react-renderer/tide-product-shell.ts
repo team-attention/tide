@@ -875,7 +875,6 @@ function createAgentChatColumn(
       createElement(
         "div",
         { className: "column-top-row__trailing" },
-        createIconButton("Thread menu", createElement(MoreHorizontal, { size: 16, strokeWidth: 1.9 }), undefined, "top-row-button"),
         rightOwner === "agent-chat"
           ? createRightWindowActions(rightOwner, viewModel.workbenchOpen, handlers)
           : null,
@@ -1039,7 +1038,7 @@ function WorkbenchLauncherPane(props: {
   return createElement(
     "div",
     { className: "workbench-pane-content workbench-pane-content--launcher" },
-    createWorkbenchPaneHeading("launcher", props.pane.title, "ready"),
+    createElement("p", { className: "workbench-launcher-hint" }, "Open a pane"),
     createElement(
       "div",
       { className: "workbench-launcher-actions", "aria-label": "Workbench Launcher Actions" },
@@ -2072,9 +2071,17 @@ function createProjectGroup(
         ),
       ),
     ),
-    project.expanded
-      ? createElement(ProjectThreadList, { threads: project.threads, handlers })
-      : null,
+    // Kept mounted and height-animated (grid-rows) so the folder expands AND
+    // collapses smoothly in both directions.
+    createElement(
+      "div",
+      { className: "collapsible", "data-expanded": project.expanded },
+      createElement(
+        "div",
+        { className: "collapsible__inner" },
+        createElement(ProjectThreadList, { threads: project.threads, handlers }),
+      ),
+    ),
   );
 }
 
@@ -2370,8 +2377,6 @@ function createRightWindowActions(
       handlers.onFileTreeToggle,
       "top-row-button",
     ),
-    createIconButton("Open external", createElement(ExternalLink, { size: 15, strokeWidth: 1.9 }), undefined, "top-row-button"),
-    createIconButton("Maximize", createElement(Maximize2, { size: 15, strokeWidth: 1.9 }), undefined, "top-row-button"),
   );
 }
 

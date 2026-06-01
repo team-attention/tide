@@ -418,13 +418,12 @@ function createAgentSessionTurn(block: AgentChatBlockView): ReactElement {
       "data-block-status": block.status,
       "data-block-role": role,
     },
-    // Codex-style: agent answers are flat prose with no label (the text is the
-    // hero). Only user turns and structured events carry a small muted label.
+    // Codex-style: the user turn is a right-aligned bubble (no label needed),
+    // the agent answer is flat prose (the text is the hero), and structured
+    // events keep a small muted label.
     role === "event"
       ? createElement("span", { className: "agent-session-turn__label" }, block.title)
-      : role === "user"
-        ? createElement("span", { className: "agent-session-turn__label" }, "You")
-        : null,
+      : null,
     createElement("p", { className: "agent-session-turn__body" }, block.body),
     block.rawFallback && block.rawFallback !== block.body
       ? createElement("pre", { className: "agent-session-turn__raw" }, block.rawFallback)
@@ -495,13 +494,34 @@ export function toolBodyText(toolName: string, body: string): string {
   if (Array.isArray(command)) {
     return command.map((part) => String(part)).join(" ");
   }
-  // Edit/other tools: surface the single human-readable field if there is one,
-  // else a pretty-printed object (real newlines, no escape noise).
-  const single = record.description ?? record.query ?? record.prompt;
-  if (typeof single === "string" && Object.keys(record).length === 1) {
-    return single;
+  // Edit/write/patch tools carry the file content as a string field. Show it with
+  // REAL newlines (optionally headed by the path) instead of an escaped blob —
+  // JSON.stringify would re-escape \n/\" inside those string values.
+  const path = pickStringField(record, ["file_path", "filePath", "path", "AbsolutePath", "TargetFile"]);
+  const content = pickStringField(record, [
+    "new_string", "newString", "content", "file_text", "contents", "text", "code", "patch", "diff", "body",
+  ]);
+  if (content !== undefined) {
+    return path !== undefined ? `${path}\n\n${content}` : content;
   }
-  return JSON.stringify(record, null, 2);
+  // Otherwise render key: value lines (multiline values kept raw, not escaped).
+  const entries = Object.entries(record);
+  if (entries.length === 0) {
+    return body;
+  }
+  return entries
+    .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
+    .join("\n");
+}
+
+function pickStringField(record: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 // A run of tool calls/results renders as ONE muted Codex-style summary line
