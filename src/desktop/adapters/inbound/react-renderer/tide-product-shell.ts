@@ -166,6 +166,28 @@ function persistListSettings(settings: ProductShellListSettings): void {
   }
 }
 
+const COLUMN_TRANSITION_MS = 240;
+
+// Animated presence for a layout column: keeps it mounted through an exit
+// transition so opening/closing animates the grid track (0 <-> width) smoothly
+// instead of snapping. `mounted` gates rendering + the grid track; `visible`
+// drives the open (full) vs collapsed (0) track width.
+function useColumnPresence(open: boolean): { mounted: boolean; visible: boolean } {
+  const [mounted, setMounted] = useState(open);
+  const [visible, setVisible] = useState(open);
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      const frame = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(frame);
+    }
+    setVisible(false);
+    const timer = setTimeout(() => setMounted(false), COLUMN_TRANSITION_MS);
+    return () => clearTimeout(timer);
+  }, [open]);
+  return { mounted, visible };
+}
+
 export interface ProjectRegistryEntry {
   projectId: string;
   name: string;
@@ -299,6 +321,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // Collapsed left-rail sections (Pinned / Projects / Scratch), keyed by title.
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [columnWidths, setColumnWidths] = useState({ left: 256, workbench: 480, fileTree: 344 });
+  const [isResizing, setIsResizing] = useState(false);
   // Track the window width so the layout can auto-collapse columns that no
   // longer fit (responsive narrow-screen handling).
   const [windowWidth, setWindowWidth] = useState(
@@ -491,11 +514,13 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       window.removeEventListener("pointerup", onUp);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      setIsResizing(false);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
+    setIsResizing(true);
   };
   useEffect(() => {
     return props.onBackendEvent?.((event) => {
@@ -859,6 +884,11 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       ? viewModel
       : { ...viewModel, workbenchOpen: eff.workbenchOpen, fileTreeOpen: eff.fileTreeOpen };
 
+  // Animate columns open/closed by keeping them mounted across an exit transition.
+  const leftPresence = useColumnPresence(layoutVm.leftUiOpen);
+  const workbenchPresence = useColumnPresence(layoutVm.workbenchOpen);
+  const fileTreePresence = useColumnPresence(layoutVm.fileTreeOpen);
+
   return createElement(
     "div",
     {
@@ -867,7 +897,10 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         layoutVm.leftUiOpen ? "tide-product-shell--left-open" : "tide-product-shell--left-closed",
         layoutVm.workbenchOpen ? "tide-product-shell--workbench-open" : "tide-product-shell--workbench-closed",
         layoutVm.fileTreeOpen ? "tide-product-shell--file-tree-open" : "tide-product-shell--file-tree-closed",
-      ].join(" "),
+        isResizing ? "tide-product-shell--resizing" : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
     },
     createElement(
       "div",
@@ -879,23 +912,37 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         // room but shrink toward their min when several columns are open at once
         // (so workbench + filetree can both show without overflowing).
         style: {
+          // A mounted-but-closing column keeps its track (collapsing to 0) so the
+          // grid width animates rather than snapping; unmounted columns drop out.
           gridTemplateColumns: [
-            layoutVm.leftUiOpen ? `minmax(180px, ${columnWidths.left}px)` : null,
+            leftPresence.mounted
+              ? leftPresence.visible
+                ? `minmax(180px, ${columnWidths.left}px)`
+                : "0px"
+              : null,
             // Never shrink the agent-chat column below the composer's usable width.
             `minmax(${CHAT_MIN}px, 1fr)`,
-            layoutVm.workbenchOpen ? `minmax(280px, ${columnWidths.workbench}px)` : null,
-            layoutVm.fileTreeOpen ? `minmax(220px, ${columnWidths.fileTree}px)` : null,
+            workbenchPresence.mounted
+              ? workbenchPresence.visible
+                ? `minmax(280px, ${columnWidths.workbench}px)`
+                : "0px"
+              : null,
+            fileTreePresence.mounted
+              ? fileTreePresence.visible
+                ? `minmax(220px, ${columnWidths.fileTree}px)`
+                : "0px"
+              : null,
           ]
             .filter(Boolean)
             .join(" "),
         } as CSSProperties,
       },
-      layoutVm.leftUiOpen
+      leftPresence.mounted
         ? createLeftUi(layoutVm, handlers, { menu: shellState.leftUiMenu, anchor: menuAnchor })
         : null,
       createAgentChatColumn(layoutVm, handlers),
-      layoutVm.workbenchOpen ? createWorkbenchColumn(layoutVm, handlers) : null,
-      layoutVm.fileTreeOpen ? createFileTreeColumn(layoutVm, handlers) : null,
+      workbenchPresence.mounted ? createWorkbenchColumn(layoutVm, handlers) : null,
+      fileTreePresence.mounted ? createFileTreeColumn(layoutVm, handlers) : null,
     ),
   );
 }
