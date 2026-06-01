@@ -14,6 +14,7 @@ import type {
   ThreadRuntimeService,
   ThreadSnapshot,
   ProviderReadinessResult,
+  TrustWorkspaceResult,
 } from "../../../application/services/thread-runtime-service.ts";
 import {
   CONTRACT_VERSION,
@@ -181,6 +182,14 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           typedCommand,
           await this.service.stopAgentRuntime(typedCommand.payload),
           (result) => this.stopRuntimeEvents(typedCommand, result),
+        );
+      }
+      case "provider.trustWorkspace": {
+        const typedCommand = command as BackendCommandEnvelope<"provider.trustWorkspace">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.trustWorkspace(typedCommand.payload),
+          (result) => this.trustWorkspaceEvents(typedCommand, result),
         );
       }
       case "agentRuntime.resume": {
@@ -386,6 +395,21 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           prompt: result.promptState === null ? null : toPromptStateDto(result.promptState),
         },
       },
+      this.agentRuntimeStateChangedEvent(command, result.thread, result.runtimeState),
+      this.commandCompletedEvent(command),
+    ];
+  }
+
+  private trustWorkspaceEvents(
+    command: BackendCommandEnvelope,
+    result: TrustWorkspaceResult,
+  ): BackendEventEnvelope[] {
+    return [
+      this.providerReadinessChangedEvent(
+        command,
+        result.thread.threadId,
+        result.providerReadiness,
+      ),
       this.agentRuntimeStateChangedEvent(command, result.thread, result.runtimeState),
       this.commandCompletedEvent(command),
     ];
@@ -655,6 +679,7 @@ function contractCodeFromServiceError(error: ServiceError): ContractErrorCode {
     case "workbench_target_not_found":
     case "workbench_stale_reference":
     case "unsupported_tide_mcp_tool":
+    case "directory_trust_unavailable":
     case "workspace_file_unavailable":
     case "workspace_file_not_found":
     case "workspace_file_outside_scope":

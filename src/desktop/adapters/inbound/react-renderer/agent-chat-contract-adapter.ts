@@ -19,6 +19,9 @@ export type AgentChatBackendCommandDraft = {
   kind: "agentRuntime.stop";
   payload: BackendCommandPayloadByKind["agentRuntime.stop"];
 } | {
+  kind: "provider.trustWorkspace";
+  payload: BackendCommandPayloadByKind["provider.trustWorkspace"];
+} | {
   kind: "prompt.answer";
   payload: BackendCommandPayloadByKind["prompt.answer"];
 } | {
@@ -53,6 +56,11 @@ export function toBackendCommandDraft(
     case "agentRuntime.stop":
       return {
         kind: "agentRuntime.stop",
+        payload: command.payload,
+      };
+    case "provider.trustWorkspace":
+      return {
+        kind: "provider.trustWorkspace",
         payload: command.payload,
       };
     case "prompt.answer":

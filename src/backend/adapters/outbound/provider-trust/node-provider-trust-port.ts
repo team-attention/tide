@@ -1,0 +1,117 @@
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+
+import type { ProviderTrustPort } from "../../../application/ports/outbound/provider-trust-port.ts";
+
+// Writes each provider's own trust store so the CLI treats the cwd as trusted on
+// next launch. Mirrors the readers in live-backend.ts (claude .claude.json,
+// codex config.toml, antigravity settings.json).
+export function createNodeProviderTrustPort(homeDir?: string): ProviderTrustPort {
+  const home = homeDir ?? homedir();
+  return {
+    async trust(input: { agentId: string; cwd: string }): Promise<void> {
+      switch (input.agentId) {
+        case "claude":
+          trustClaude(home, input.cwd);
+          return;
+        case "codex":
+          trustCodex(home, input.cwd);
+          return;
+        case "antigravity":
+          trustAntigravity(home, input.cwd);
+          return;
+        default:
+          return;
+      }
+    },
+  };
+}
+
+function trustClaude(home: string, cwd: string): void {
+  const path = join(home, ".claude.json");
+  const state = readJson(path) ?? {};
+  const projects = isRecord(state.projects) ? state.projects : {};
+  const project = isRecord(projects[cwd]) ? projects[cwd] : {};
+  project.hasTrustDialogAccepted = true;
+  projects[cwd] = project;
+  state.projects = projects;
+  writeJson(path, state);
+}
+
+function trustAntigravity(home: string, cwd: string): void {
+  const path = join(home, ".gemini", "antigravity-cli", "settings.json");
+  const settings = readJson(path) ?? {};
+  const trusted = Array.isArray(settings.trustedWorkspaces)
+    ? settings.trustedWorkspaces.filter((entry: unknown) => typeof entry === "string")
+    : [];
+  if (!trusted.includes(cwd)) {
+    trusted.push(cwd);
+  }
+  settings.trustedWorkspaces = trusted;
+  writeJson(path, settings);
+}
+
+function trustCodex(home: string, cwd: string): void {
+  const path = join(home, ".codex", "config.toml");
+  const existing = (existsSync(path) ? readText(path) : "") ?? "";
+  if (codexCwdAlreadyTrusted(existing, cwd)) {
+    return;
+  }
+  const block = `\n[projects."${cwd}"]\ntrust_level = "trusted"\n`;
+  const next = existing.length === 0 ? block.trimStart() : `${existing.replace(/\n*$/, "\n")}${block}`;
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, next, "utf8");
+}
+
+function codexCwdAlreadyTrusted(config: string, cwd: string): boolean {
+  const header = `[projects."${cwd}"]`;
+  const lines = config.split(/\r?\n/);
+  let active = false;
+  for (const line of lines) {
+    if (line.trim() === header) {
+      active = true;
+      continue;
+    }
+    if (active) {
+      if (line.startsWith("[")) {
+        active = false;
+        continue;
+      }
+      if (line.trim() === 'trust_level = "trusted"') {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function readJson(path: string): Record<string, unknown> | undefined {
+  const text = readText(path);
+  if (text === undefined) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(text);
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readText(path: string): string | undefined {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+function writeJson(path: string, value: Record<string, unknown>): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

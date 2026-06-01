@@ -235,6 +235,10 @@ export type AgentChatBackendCommand =
       payload: { threadId: string };
     }
   | {
+      kind: "provider.trustWorkspace";
+      payload: { threadId: string };
+    }
+  | {
       kind: "prompt.answer";
       payload: {
         threadId: string;
@@ -505,6 +509,21 @@ export function selectAgentChatChoiceSurfaceRow(
   }
 
   if (surfaceKind === "provider_readiness") {
+    // The directory-trust blocker offers a direct "Trust this folder" action that
+    // writes the provider's trust config (no terminal). See workspace-trust-grant.
+    if (rowId === "directory_trust_required:trust") {
+      const threadId = state.thread?.threadId ?? activeThreadId;
+      if (threadId === undefined) {
+        return { state, command: null };
+      }
+      return {
+        state,
+        command: {
+          kind: "provider.trustWorkspace",
+          payload: { threadId },
+        },
+      };
+    }
     const blocker = state.providerReadiness?.blockers.find(
       (candidate) => `${candidate.kind}:setup` === rowId,
     );

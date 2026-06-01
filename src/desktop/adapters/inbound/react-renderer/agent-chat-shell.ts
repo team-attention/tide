@@ -362,6 +362,18 @@ function createProviderReadiness(
             detail: blocker.scope,
             icon: "□",
           },
+          // The directory-trust blocker gets a one-click in-app trust action that
+          // writes the provider's own trust config (no terminal drop).
+          ...(blocker.kind === "directory_trust_required"
+            ? [
+                {
+                  rowId: "directory_trust_required:trust",
+                  label: "Trust this folder",
+                  detail: "grant workspace trust",
+                  icon: "✓",
+                },
+              ]
+            : []),
           ...(blocker.setup
             ? [
                 {

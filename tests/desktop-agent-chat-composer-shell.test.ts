@@ -131,6 +131,40 @@ test("clears_composer_attachments_after_send", () => {
   assert.equal(result.state.composer.attachments.length, 0);
 });
 
+test("directory_trust_blocker_offers_a_trust_this_folder_action", () => {
+  // Spec: docs_v2/specs/workspace-trust-grant.md
+  // UC-2 BR-4: selecting the trust row emits provider.trustWorkspace for the thread.
+  const base = createAgentChatShellState();
+  const state: AgentChatShellState = {
+    ...base,
+    providerReadiness: {
+      agentId: "claude",
+      ready: false,
+      blockers: [
+        {
+          kind: "directory_trust_required",
+          message: "Claude Code workspace trust is required.",
+          scope: "execution_context",
+        },
+      ],
+    },
+  };
+
+  const result = selectAgentChatChoiceSurfaceRow(
+    state,
+    "provider_readiness",
+    "directory_trust_required:trust",
+    "thread-1",
+  );
+
+  assert.equal(result.command?.kind, "provider.trustWorkspace");
+  assert.equal(
+    result.command?.kind === "provider.trustWorkspace" &&
+      result.command.payload.threadId,
+    "thread-1",
+  );
+});
+
 test("new_thread_start_screen_renders_start_composer_without_fake_cues", () => {
   const state = createAgentChatShellState({
     startOptions: {

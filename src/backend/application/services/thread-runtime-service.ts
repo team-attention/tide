@@ -70,6 +70,7 @@ import type {
   ComposerAttachmentInput,
   ComposerAttachmentStorePort,
 } from "../ports/outbound/composer-attachment-store-port.ts";
+import type { ProviderTrustPort } from "../ports/outbound/provider-trust-port.ts";
 import type {
   WorkspaceCommandErrorCode,
   WorkspaceCommandPort,
@@ -116,6 +117,7 @@ export type {
   WorkspaceFilePort,
   ComposerAttachmentInput,
   ComposerAttachmentStorePort,
+  ProviderTrustPort,
   AgentBinding,
   AgentId,
   LastKnownState,
@@ -163,6 +165,7 @@ export interface CreateThreadRuntimeServiceInput {
   workspaceFilePort?: WorkspaceFilePort;
   workspaceCodeIntelligencePort?: WorkspaceCodeIntelligencePort;
   composerAttachmentStorePort?: ComposerAttachmentStorePort;
+  providerTrustPort?: ProviderTrustPort;
   defaultWorkbenchTerminalCommand?: string;
   clock?: () => string;
   idGenerator?: () => string;
@@ -215,6 +218,7 @@ export type ServiceErrorCode =
   | "workbench_target_not_found"
   | "workbench_stale_reference"
   | "unsupported_tide_mcp_tool"
+  | "directory_trust_unavailable"
   | WorkspaceCodeIntelligenceErrorCode
   | WorkspaceCommandErrorCode
   | WorkspaceFileErrorCode;
@@ -302,6 +306,17 @@ export interface SendComposerInput {
   agentId?: AgentId;
   launchOptions?: Record<string, unknown>;
   attachments?: ComposerAttachmentInput[];
+}
+
+export interface TrustWorkspaceInput {
+  threadId: ThreadId;
+}
+
+export interface TrustWorkspaceResult {
+  status: "trusted" | "still_not_ready";
+  thread: ThreadSnapshot;
+  runtimeState: AgentRuntimeState;
+  providerReadiness: ProviderReadinessResult;
 }
 
 export interface SendComposerInputResult {
@@ -618,6 +633,9 @@ export interface ThreadRuntimeService {
   stopAgentRuntime(
     input: StopAgentRuntimeInput,
   ): Promise<ServiceResult<StopAgentRuntimeResult>>;
+  trustWorkspace(
+    input: TrustWorkspaceInput,
+  ): Promise<ServiceResult<TrustWorkspaceResult>>;
   recordTurnComplete(
     input: RecordTurnCompleteInput,
   ): Promise<ServiceResult<RecordTurnCompleteResult>>;
@@ -811,6 +829,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
   workspaceFilePort: WorkspaceFilePort;
   workspaceCodeIntelligencePort: WorkspaceCodeIntelligencePort;
   composerAttachmentStorePort?: ComposerAttachmentStorePort;
+  providerTrustPort?: ProviderTrustPort;
   defaultWorkbenchTerminalCommand: string;
   clock: () => string;
   idGenerator: () => string;
@@ -830,6 +849,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
     this.workspaceCodeIntelligencePort =
       input.workspaceCodeIntelligencePort ?? createUnavailableWorkspaceCodeIntelligencePort();
     this.composerAttachmentStorePort = input.composerAttachmentStorePort;
+    this.providerTrustPort = input.providerTrustPort;
     this.defaultWorkbenchTerminalCommand =
       input.defaultWorkbenchTerminalCommand ?? DEFAULT_WORKBENCH_TERMINAL_COMMAND;
     this.clock = input.clock ?? defaultClock;
@@ -1371,6 +1391,96 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       thread: snapshotThread(thread),
       runtimeState: thread.runtimeState,
     };
+  }
+
+  // Grant the provider's own Workspace Trust for this Thread's Execution Context
+  // cwd, then re-check Provider Readiness. If the provider is now ready and a
+  // Composer input was held pending trust, proceed with it. See
+  // docs_v2/specs/workspace-trust-grant.md.
+  async trustWorkspace(
+    input: TrustWorkspaceInput,
+  ): Promise<ServiceResult<TrustWorkspaceResult>> {
+    const thread = this.threads.get(input.threadId);
+    if (thread === undefined) {
+      return failure("thread_not_found", "Thread was not found.");
+    }
+    const cwd = threadRoot(thread);
+    if (cwd === undefined) {
+      return failure(
+        "directory_trust_unavailable",
+        "Thread has no Execution Context cwd to trust.",
+      );
+    }
+
+    if (this.providerTrustPort !== undefined) {
+      await this.providerTrustPort.trust({
+        agentId: thread.agentBinding.agentId,
+        cwd,
+      });
+    }
+
+    const readiness = await this.providerReadinessPort.check({
+      agentId: thread.agentBinding.agentId,
+      scope: thread.scope,
+      launchOptions: thread.launchOptions,
+    });
+    thread.updatedAt = this.clock();
+    this.emitAsyncEvent({
+      kind: "provider_readiness_changed",
+      threadId: thread.threadId,
+      readiness,
+    });
+
+    if (readiness.ready && thread.pendingInput !== undefined) {
+      await this.replayPendingInputAfterTrust(thread);
+    }
+
+    return {
+      ok: true,
+      status: readiness.ready ? "trusted" : "still_not_ready",
+      thread: snapshotThread(thread),
+      runtimeState: thread.runtimeState,
+      providerReadiness: readiness,
+    };
+  }
+
+  private async replayPendingInputAfterTrust(thread: ThreadRecord): Promise<void> {
+    const pendingInput = thread.pendingInput;
+    if (pendingInput === undefined) {
+      return;
+    }
+    thread.runtimeState = "starting";
+    thread.lifecycleState = "running";
+    thread.lastKnownState = "running";
+    thread.updatedAt = this.clock();
+    const handle = await this.startOrResumeRuntimeForPendingInput(
+      thread,
+      pendingInput.launchOptions,
+    );
+    const submittedBlock = this.appendLocalUserMessageBlock(
+      thread,
+      pendingInput.value,
+    );
+    thread.activeRuntimeHandle = cloneRuntimeHandle(handle);
+    thread.runtimeState = "running";
+    thread.pendingInput = undefined;
+    thread.updatedAt = this.clock();
+    await this.agentRuntimePort.writeInput(handle, {
+      kind: "composer_input",
+      value: pendingInput.value,
+      submittedAt: this.clock(),
+    });
+    const threadSnapshot = snapshotThread(thread);
+    this.emitAsyncEvent({
+      kind: "agent_session_block_upserted",
+      thread: threadSnapshot,
+      block: submittedBlock,
+    });
+    this.emitAsyncEvent({
+      kind: "agent_runtime_state_changed",
+      thread: threadSnapshot,
+      runtimeState: thread.runtimeState,
+    });
   }
 
   // Called when a provider Stop signal ends the current turn. The runtime

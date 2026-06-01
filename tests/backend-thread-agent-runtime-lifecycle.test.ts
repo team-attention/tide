@@ -25,6 +25,7 @@ import {
   type ThreadRuntimeAsyncEvent,
   type ComposerAttachmentInput,
   type ComposerAttachmentStorePort,
+  type ProviderTrustPort,
 } from "../src/backend/application/services/thread-runtime-service.ts";
 import type { AgentSessionBlock } from "../src/backend/application/domains/agent-session/agent-session-block.ts";
 import type {
@@ -389,6 +390,73 @@ test("sends_attachment_paths_when_the_message_text_is_empty", async () => {
     fakes.runtime.writes[0]?.input.value,
     "[Attached image: /repo/.tide/attachments/0-only.png]",
   );
+});
+
+// --- UC-1: Grant Workspace Trust ---
+// Spec: docs_v2/specs/workspace-trust-grant.md
+
+test("trusting_a_workspace_writes_provider_trust_for_the_thread_cwd", async () => {
+  // UC-1 BR-1: trust is written for the Thread's Execution Context cwd + agent.
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-trust", {
+        agentBinding: { agentId: "claude" },
+        scope: { kind: "project", projectId: "p1", cwd: "/repo" },
+      }),
+    ],
+  });
+
+  const result = await service.trustWorkspace({ threadId: "thread-trust" });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(fakes.providerTrust.calls, [{ agentId: "claude", cwd: "/repo" }]);
+});
+
+test("trusting_a_workspace_rechecks_provider_readiness", async () => {
+  // UC-1 BR-2: after writing trust, readiness is re-checked and reported.
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-trust", {
+        agentBinding: { agentId: "claude" },
+        scope: { kind: "project", projectId: "p1", cwd: "/repo" },
+      }),
+    ],
+  });
+
+  const checksBefore = fakes.readiness.checks.length;
+  const result = await service.trustWorkspace({ threadId: "thread-trust" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.status, "trusted");
+  assert.equal(fakes.readiness.checks.length, checksBefore + 1);
+  assert.equal(result.ok && result.providerReadiness.ready, true);
+});
+
+test("trusting_a_workspace_without_a_cwd_fails", async () => {
+  // UC-1 BR-3: a Thread with no Execution Context cwd cannot be trusted.
+  const fakes = createFakes();
+  const service = createThreadRuntimeService({
+    ...fakes.ports,
+    clock: fixedClock,
+    idGenerator: sequentialIdGenerator("id"),
+    initialThreads: [
+      threadSeed("thread-no-cwd", { agentBinding: { agentId: "claude" }, scope: undefined }),
+    ],
+  });
+
+  const result = await service.trustWorkspace({ threadId: "thread-no-cwd" });
+
+  assert.equal(result.ok, false);
+  assert.equal(!result.ok && result.error.code, "directory_trust_unavailable");
+  assert.deepEqual(fakes.providerTrust.calls, []);
 });
 
 test("starting_ready_thread_records_local_user_message_block_before_runtime_output", async () => {
@@ -2383,6 +2451,7 @@ function createFakes(options: {
     options.references,
   );
   const composerAttachments = new FakeComposerAttachmentStorePort();
+  const providerTrust = new FakeProviderTrustPort();
 
   return {
     runtime,
@@ -2394,6 +2463,7 @@ function createFakes(options: {
     workspaceFiles,
     codeIntelligence,
     composerAttachments,
+    providerTrust,
     ports: {
       agentRuntimePort: runtime,
       providerReadinessPort: readiness,
@@ -2404,8 +2474,17 @@ function createFakes(options: {
       workspaceFilePort: workspaceFiles,
       workspaceCodeIntelligencePort: codeIntelligence,
       composerAttachmentStorePort: composerAttachments,
+      providerTrustPort: providerTrust,
     },
   };
+}
+
+class FakeProviderTrustPort implements ProviderTrustPort {
+  calls: { agentId: string; cwd: string }[] = [];
+
+  async trust(input: { agentId: string; cwd: string }): Promise<void> {
+    this.calls.push(input);
+  }
 }
 
 class FakeComposerAttachmentStorePort implements ComposerAttachmentStorePort {

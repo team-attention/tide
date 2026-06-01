@@ -14,6 +14,7 @@ export type BackendCommandKind =
   | "composer.sendInput"
   | "prompt.answer"
   | "agentRuntime.stop"
+  | "provider.trustWorkspace"
   | "workbench.command";
 
 export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
@@ -27,6 +28,7 @@ export const BACKEND_COMMAND_KINDS: BackendCommandKind[] = [
   "composer.sendInput",
   "prompt.answer",
   "agentRuntime.stop",
+  "provider.trustWorkspace",
   "workbench.command",
 ];
 
@@ -69,6 +71,7 @@ export interface BackendCommandPayloadByKind {
     value?: string;
   };
   "agentRuntime.stop": { threadId: ThreadId };
+  "provider.trustWorkspace": { threadId: ThreadId };
   "workbench.command": {
     threadId: ThreadId;
     command: string;
