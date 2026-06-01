@@ -1,6 +1,7 @@
-import { createElement, useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { createElement, useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import {
   Archive,
+  Check,
   ChevronRight,
   ExternalLink,
   FileText,
@@ -20,6 +21,7 @@ import {
   Plus,
   Search,
   Settings,
+  SlidersHorizontal,
   Square,
   Terminal,
   Trash2,
@@ -113,8 +115,6 @@ import {
   setProductShellListSettings,
   DEFAULT_PRODUCT_SHELL_LIST_SETTINGS,
   type ProductShellListSettings,
-  type ProductShellListGroupBy,
-  type ProductShellListSortBy,
   type ProductShellBackendCommand,
   type ProductShellAgentIdentity,
   type ProductShellBrowserActionResult,
@@ -962,6 +962,7 @@ function createLeftUi(
           contextMenu.anchor ?? { left: 12, top: 120, bottom: 150, right: 256 },
           () => handlers.onLeftUiMenuOpen(null),
           handlers,
+          viewModel.listSettings,
         )
       : null,
     createElement(
@@ -1002,10 +1003,10 @@ function createLeftUi(
           )
         : createLeftNavRow("Search", createElement(Search, { size: 16, strokeWidth: 1.9 }), handlers.onSearchToggle),
     ),
+    createListSettingsBar(handlers),
     createElement(
       "div",
       { className: "left-ui__sections" },
-      createListSettingsControl(viewModel.listSettings, handlers),
       ...(viewModel.listSettings.groupBy === "thread"
         ? [createThreadSection("Threads", viewModel.flatThreads, handlers)]
         : [
@@ -2355,57 +2356,81 @@ function createPinnedSection(
   );
 }
 
-// Compact Left UI list-display controls: group mode, sort, and (project mode
-// only) whether to collect worktrees under their repo. See
-// docs_v2/specs/thread-list-display-settings.md.
-function createListSettingsControl(
+// A thin bar with a single right-aligned icon button that opens the list-display
+// settings dropdown (group + sort). See docs_v2/specs/thread-list-display-settings.md.
+function createListSettingsBar(handlers: ProductShellHandlers): ReactElement {
+  return createElement(
+    "div",
+    { className: "list-settings-bar" },
+    createElement(
+      "button",
+      {
+        type: "button",
+        className: "list-settings-bar__button",
+        title: "List display settings",
+        "aria-label": "List display settings",
+        onClick: (event: { currentTarget: HTMLElement }) =>
+          handlers.onLeftUiMenuOpen({ kind: "list_settings" }, menuAnchorFromEvent(event)),
+      },
+      createElement(SlidersHorizontal, { size: 14, strokeWidth: 1.9, "aria-hidden": true }),
+    ),
+  );
+}
+
+// The list-display settings dropdown content (Group by / Sort by), rendered in
+// the shared Left UI menu overlay with a check on the active option.
+function createListSettingsMenu(
   settings: ProductShellListSettings,
   handlers: ProductShellHandlers,
 ): ReactElement {
-  const select = (
-    ariaLabel: string,
-    value: string,
-    options: { value: string; label: string }[],
-    onChange: (value: string) => void,
+  const close = () => handlers.onLeftUiMenuOpen(null);
+  const optionRow = (
+    label: string,
+    selected: boolean,
+    onPick: () => void,
   ): ReactElement =>
     createElement(
-      "select",
+      "button",
       {
-        className: "list-settings__select",
-        "aria-label": ariaLabel,
-        value,
-        onChange: (event: ChangeEvent<HTMLSelectElement>) => onChange(event.currentTarget.value),
+        key: label,
+        type: "button",
+        className: "left-ui-context-menu__item",
+        onClick: () => {
+          onPick();
+          close();
+        },
       },
-      options.map((option) =>
-        createElement("option", { key: option.value, value: option.value }, option.label),
+      createElement(
+        "span",
+        { className: "left-ui-context-menu__icon", "aria-hidden": true },
+        selected ? createElement(Check, { size: 14, strokeWidth: 2 }) : null,
       ),
+      createElement("span", null, label),
     );
+
+  const sectionLabel = (text: string): ReactElement =>
+    createElement("div", { key: `label-${text}`, className: "left-ui-context-menu__label" }, text);
 
   return createElement(
     "div",
-    { className: "list-settings", "aria-label": "List display settings" },
-    select(
-      "Group threads by",
-      settings.groupBy,
-      [
-        { value: "project", label: "By project" },
-        { value: "thread", label: "By thread" },
-      ],
-      (value) => handlers.onListSettingsChange({ groupBy: value as ProductShellListGroupBy }),
+    { className: "left-ui-context-menu left-ui-context-menu--list_settings" },
+    sectionLabel("Group by"),
+    optionRow("By project", settings.groupBy === "project", () =>
+      handlers.onListSettingsChange({ groupBy: "project" }),
     ),
-    select(
-      "Sort threads by",
-      settings.sortBy,
-      [
-        { value: "recent", label: "Recent" },
-        { value: "created", label: "Created" },
-        { value: "name", label: "Name" },
-      ],
-      (value) => handlers.onListSettingsChange({ sortBy: value as ProductShellListSortBy }),
+    optionRow("By thread", settings.groupBy === "thread", () =>
+      handlers.onListSettingsChange({ groupBy: "thread" }),
     ),
-    // The "Group worktrees under their repo" toggle lands with the worktree-create
-    // desktop slice (no worktree Projects exist yet to collect). Field is kept on
-    // state so the setting persists once wired.
+    sectionLabel("Sort by"),
+    optionRow("Recent activity", settings.sortBy === "recent", () =>
+      handlers.onListSettingsChange({ sortBy: "recent" }),
+    ),
+    optionRow("Created", settings.sortBy === "created", () =>
+      handlers.onListSettingsChange({ sortBy: "created" }),
+    ),
+    optionRow("Name", settings.sortBy === "name", () =>
+      handlers.onListSettingsChange({ sortBy: "name" }),
+    ),
   );
 }
 
@@ -2634,10 +2659,11 @@ function createLeftUiContextMenuOverlay(
   anchor: MenuAnchorRect,
   onClose: () => void,
   handlers: ProductShellHandlers,
+  listSettings: ProductShellListSettings,
 ): ReactElement {
   const viewportH = typeof window === "undefined" ? 900 : window.innerHeight;
-  const width = menu.kind === "project" ? 244 : 200;
-  const estimated = menu.kind === "project" ? 230 : 110;
+  const width = menu.kind === "project" ? 244 : menu.kind === "list_settings" ? 200 : 200;
+  const estimated = menu.kind === "project" ? 230 : menu.kind === "list_settings" ? 230 : 110;
   const openUp = anchor.bottom + estimated > viewportH;
   const style: Record<string, string> = {
     position: "fixed",
@@ -2658,7 +2684,9 @@ function createLeftUiContextMenuOverlay(
         onMouseDown: (event: { stopPropagation: () => void }) => event.stopPropagation(),
         style: { ...style, width: `${width}px` } as unknown as CSSProperties,
       },
-      createLeftUiContextMenu(menu, handlers),
+      menu.kind === "list_settings"
+        ? createListSettingsMenu(listSettings, handlers)
+        : createLeftUiContextMenu(menu, handlers),
     ),
   );
 }
@@ -2671,7 +2699,7 @@ interface ContextMenuItem {
 }
 
 function createLeftUiContextMenu(
-  menu: ProductShellLeftUiMenu,
+  menu: Exclude<ProductShellLeftUiMenu, { kind: "list_settings" }>,
   handlers: ProductShellHandlers,
 ): ReactElement {
   const items: ContextMenuItem[] =

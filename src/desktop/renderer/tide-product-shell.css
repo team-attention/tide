@@ -313,36 +313,38 @@ button {
   gap: 18px;
 }
 
-.list-settings {
+.list-settings-bar {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  padding: 0 4px;
+  justify-content: flex-end;
+  padding: 2px 4px 0;
 }
 
-.list-settings__select {
-  appearance: none;
-  border: 1px solid var(--tide-line);
+.list-settings-bar__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--tide-muted);
-  font-size: 11.5px;
-  padding: 2px 6px;
   cursor: pointer;
 }
 
-.list-settings__select:hover {
+.list-settings-bar__button:hover {
+  background: color-mix(in srgb, var(--tide-muted) 14%, transparent);
   color: var(--tide-text);
 }
 
-.list-settings__toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11.5px;
+.left-ui-context-menu__label {
+  padding: 6px 12px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--tide-muted);
-  cursor: pointer;
+  text-transform: uppercase;
 }
 
 .left-ui__footer {

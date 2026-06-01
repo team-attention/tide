@@ -43,7 +43,8 @@ export type ProductShellAgentIdentity = "codex" | "claude" | "antigravity" | "op
 
 export type ProductShellLeftUiMenu =
   | { kind: "thread"; threadId: string }
-  | { kind: "project"; projectId: string };
+  | { kind: "project"; projectId: string }
+  | { kind: "list_settings" };
 
 export interface ProductShellThread {
   threadId: string;
