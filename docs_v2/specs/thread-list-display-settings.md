@@ -72,7 +72,7 @@ sessions:
 | UC-1 Group mode | BR-2 "project" mode buckets threads by project (default) | `project_group_mode_buckets_threads_by_project` |
 | UC-2 Sort | BR-3 "recent" orders newest updatedAt first | `recent_sort_orders_threads_by_last_activity` |
 | UC-2 Sort | BR-4 "name" orders threads A–Z | `name_sort_orders_threads_alphabetically` |
-| UC-3 Worktree group | BR-5 worktree Projects collect under their repo when on | (deferred — lands with the worktree-create desktop slice; `groupWorktreesByRepo` field + persistence are in place, the toggle UI + grouping logic ship together with real worktree Projects) |
+| UC-3 Worktree group | BR-5 worktree Projects collect under their repo when on | `worktree_projects_group_under_their_repo_when_enabled` |
 
 ## Implementation Notes
 

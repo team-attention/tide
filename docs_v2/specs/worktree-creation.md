@@ -55,8 +55,11 @@ In scope:
 
 ## Contracts
 
-- New command `worktree.create`: `{ projectCwd: string; name: string }` →
-  result `{ worktreePath: string; branch: string }`.
+- Implemented via Electron Main IPC `tide:create-worktree(cwd, name)` (which also
+  registers the new worktree as a Project), not a Backend command — worktree
+  creation is a project-registry/git concern owned by Main. The pure path rule
+  lives in `src/shared/worktree-path.ts` (`computeWorktreePath`,
+  `sanitizeWorktreeBranch`, `worktreeRepoRootForCwd`).
 
 ## Flow
 
