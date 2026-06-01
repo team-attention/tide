@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, utilityProcess, type UtilityProcess } from "electron";
 import { basename, dirname, join } from "node:path";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir, copyFile } from "node:fs/promises";
 import { readdirSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import {
@@ -145,16 +145,23 @@ ipcMain.handle("tide:rename-project", async (_event, cwd: unknown, name: unknown
 // level as others. One user-supplied name drives the branch + directory; the
 // worktree lives in a `<repo>.worktree/<branch>` sibling (Tide v1 rule).
 // See docs_v2/specs/worktree-creation.md.
-ipcMain.handle("tide:create-worktree", async (_event, cwd: unknown, name: unknown) => {
+ipcMain.handle("tide:create-worktree", async (_event, cwd: unknown, name: unknown, options: unknown) => {
   const current = await readProjectRegistry();
   if (typeof cwd !== "string" || cwd.length === 0) {
     return { entries: current, createdCwd: null };
   }
+  const opts = (options ?? {}) as { baseDirPattern?: unknown; copyFiles?: unknown };
+  const baseDirPattern = typeof opts.baseDirPattern === "string" && opts.baseDirPattern.length > 0
+    ? opts.baseDirPattern
+    : undefined;
+  const copyFiles = Array.isArray(opts.copyFiles)
+    ? opts.copyFiles.filter((entry): entry is string => typeof entry === "string")
+    : [];
   const rawName = typeof name === "string" ? name.trim() : "";
   const branch = sanitizeWorktreeBranch(
     rawName.length > 0 ? rawName : `${basename(cwd) || "tide"}-wt`,
   );
-  const worktreePath = computeWorktreePath(cwd, branch);
+  const worktreePath = computeWorktreePath(cwd, branch, { baseDirPattern });
   const created = await new Promise<boolean>((resolve) => {
     execFile(
       "git",
@@ -165,6 +172,18 @@ ipcMain.handle("tide:create-worktree", async (_event, cwd: unknown, name: unknow
   });
   if (!created) {
     return { entries: current, createdCwd: null };
+  }
+  // Copy configured files (repo-relative) from the source repo into the new
+  // worktree (e.g. .env). Best-effort: skip missing sources, never fail the create.
+  for (const rel of copyFiles) {
+    const src = join(cwd, rel);
+    const dst = join(worktreePath, rel);
+    try {
+      await mkdir(dirname(dst), { recursive: true });
+      await copyFile(src, dst);
+    } catch {
+      // Source missing or unreadable — skip.
+    }
   }
   const entries = [...current, { projectId: worktreePath, name: branch, cwd: worktreePath }];
   await writeProjectRegistry(entries);

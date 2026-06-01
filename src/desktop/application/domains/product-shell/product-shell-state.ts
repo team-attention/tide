@@ -79,6 +79,21 @@ export const DEFAULT_PRODUCT_SHELL_LIST_SETTINGS: ProductShellListSettings = {
   groupWorktreesByRepo: false,
 };
 
+// App-level worktree creation settings (persisted in the renderer; passed to Main
+// on create). See docs_v2/specs/worktree-creation.md.
+export interface ProductShellWorktreeSettings {
+  // Directory pattern with {repo_root}/{branch} placeholders. Empty = v1 default
+  // (`<repo>.worktree/<branch>`).
+  baseDirPattern: string;
+  // Repo-relative paths copied into a newly created worktree (e.g. ".env").
+  copyFiles: string[];
+}
+
+export const DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS: ProductShellWorktreeSettings = {
+  baseDirPattern: "",
+  copyFiles: [],
+};
+
 export interface ProductShellProject {
   projectId: string;
   name: string;
@@ -126,6 +141,10 @@ export interface ProductShellState {
   nextLocalThreadNumber: number;
   // How the Left UI thread list is grouped/sorted (persisted in the renderer).
   listSettings: ProductShellListSettings;
+  // App-level worktree creation settings (persisted in the renderer).
+  worktreeSettings: ProductShellWorktreeSettings;
+  // Whether the Settings panel (modal) is open.
+  settingsOpen: boolean;
 }
 
 export type ProductShellBackendCommand =
@@ -210,8 +229,9 @@ export type ProductShellBackendCommand =
 
 export interface CreateProductShellStateInput {
   includeFixtureData?: boolean;
-  // Seed the persisted list-display settings (renderer loads from localStorage).
+  // Seed the persisted settings (renderer loads from localStorage).
   listSettings?: ProductShellListSettings;
+  worktreeSettings?: ProductShellWorktreeSettings;
 }
 
 export interface ProductShellUpdateResult {
@@ -261,6 +281,8 @@ export interface ProductShellViewModel {
   // group mode (project + scratch threads together). In "project" mode the
   // renderer uses projectGroups/scratchThreads; in "thread" mode it uses flatThreads.
   listSettings: ProductShellListSettings;
+  worktreeSettings: ProductShellWorktreeSettings;
+  settingsOpen: boolean;
   flatThreads: ProductShellThreadView[];
   agentChat: AgentChatShellViewModel;
   appChrome: AppChromeViewModel;
@@ -401,7 +423,23 @@ export function createProductShellState(
     editorDrafts: {},
     nextLocalThreadNumber: 1,
     listSettings: input.listSettings ?? { ...DEFAULT_PRODUCT_SHELL_LIST_SETTINGS },
+    worktreeSettings: input.worktreeSettings ?? { ...DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS },
+    settingsOpen: false,
   };
+}
+
+export function setProductShellWorktreeSettings(
+  state: ProductShellState,
+  patch: Partial<ProductShellWorktreeSettings>,
+): ProductShellState {
+  return { ...state, worktreeSettings: { ...state.worktreeSettings, ...patch } };
+}
+
+export function setProductShellSettingsOpen(
+  state: ProductShellState,
+  open: boolean,
+): ProductShellState {
+  return { ...state, settingsOpen: open };
 }
 
 export function setProductShellListSettings(
@@ -505,6 +543,8 @@ export function createProductShellViewModel(
       .filter((thread) => thread.scope.kind === "scratch")
       .map((thread) => toThreadView(thread, state)),
     listSettings: state.listSettings,
+    worktreeSettings: state.worktreeSettings,
+    settingsOpen: state.settingsOpen,
     // "thread" group mode: one flat, already-sorted list of every visible thread.
     flatThreads: visibleThreads.map((thread) => toThreadView(thread, state)),
     agentChat: createAgentChatShellViewModel(agentChatWithProjects(state)),

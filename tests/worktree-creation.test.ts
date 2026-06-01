@@ -12,6 +12,8 @@ import {
   createProductShellViewModel,
   startProductShellWorktreeCreate,
   cancelProductShellWorktreeCreate,
+  setProductShellWorktreeSettings,
+  setProductShellSettingsOpen,
 } from "../src/desktop/application/domains/product-shell/product-shell-state.ts";
 
 // --- UC-1: Worktree Path Rule ---
@@ -61,4 +63,27 @@ test("opening_worktree_create_marks_the_project_row_for_a_name_input", () => {
 
   const cancelled = cancelProductShellWorktreeCreate(opened);
   assert.equal(cancelled.creatingWorktreeForProjectId, null);
+});
+
+// --- Worktree settings (Desktop) ---
+
+test("worktree_settings_patch_and_settings_panel_toggle", () => {
+  const base = createProductShellState({ includeFixtureData: false });
+  assert.equal(base.settingsOpen, false);
+  assert.deepEqual(base.worktreeSettings, { baseDirPattern: "", copyFiles: [] });
+
+  const opened = setProductShellSettingsOpen(base, true);
+  assert.equal(opened.settingsOpen, true);
+  assert.equal(createProductShellViewModel(opened).settingsOpen, true);
+
+  const patched = setProductShellWorktreeSettings(opened, {
+    baseDirPattern: "{repo_root}/.worktrees/{branch}",
+    copyFiles: [".env"],
+  });
+  assert.equal(patched.worktreeSettings.baseDirPattern, "{repo_root}/.worktrees/{branch}");
+  assert.deepEqual(patched.worktreeSettings.copyFiles, [".env"]);
+  assert.deepEqual(
+    createProductShellViewModel(patched).worktreeSettings.copyFiles,
+    [".env"],
+  );
 });

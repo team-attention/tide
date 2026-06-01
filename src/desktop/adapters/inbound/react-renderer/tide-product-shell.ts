@@ -1,4 +1,4 @@
-import { createElement, useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { createElement, useEffect, useRef, useState, type ChangeEvent, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import {
   Archive,
   Check,
@@ -20,6 +20,7 @@ import {
   PinOff,
   Plus,
   Search,
+  Settings,
   SlidersHorizontal,
   Square,
   Terminal,
@@ -114,8 +115,12 @@ import {
   setProductShellListSettings,
   startProductShellWorktreeCreate,
   cancelProductShellWorktreeCreate,
+  setProductShellWorktreeSettings,
+  setProductShellSettingsOpen,
   DEFAULT_PRODUCT_SHELL_LIST_SETTINGS,
+  DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS,
   type ProductShellListSettings,
+  type ProductShellWorktreeSettings,
   type ProductShellBackendCommand,
   type ProductShellAgentIdentity,
   type ProductShellBrowserActionResult,
@@ -163,6 +168,41 @@ function persistListSettings(settings: ProductShellListSettings): void {
     localStorage.setItem(LIST_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
   } catch {
     // Best-effort; ignore quota/serialization errors.
+  }
+}
+
+const WORKTREE_SETTINGS_STORAGE_KEY = "tide.worktreeSettings";
+
+function loadWorktreeSettings(): ProductShellWorktreeSettings {
+  if (typeof localStorage === "undefined") {
+    return { ...DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS };
+  }
+  try {
+    const raw = localStorage.getItem(WORKTREE_SETTINGS_STORAGE_KEY);
+    if (raw === null) {
+      return { ...DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS };
+    }
+    const parsed = JSON.parse(raw) as Partial<ProductShellWorktreeSettings>;
+    return {
+      baseDirPattern:
+        typeof parsed.baseDirPattern === "string" ? parsed.baseDirPattern : "",
+      copyFiles: Array.isArray(parsed.copyFiles)
+        ? parsed.copyFiles.filter((entry): entry is string => typeof entry === "string")
+        : [],
+    };
+  } catch {
+    return { ...DEFAULT_PRODUCT_SHELL_WORKTREE_SETTINGS };
+  }
+}
+
+function persistWorktreeSettings(settings: ProductShellWorktreeSettings): void {
+  if (typeof localStorage === "undefined") {
+    return;
+  }
+  try {
+    localStorage.setItem(WORKTREE_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // Best-effort.
   }
 }
 
@@ -216,7 +256,11 @@ export interface ProjectRegistryBridge {
   unregisterProject(cwd: string): Promise<ProjectRegistryEntry[]>;
   renameProject(cwd: string, name: string): Promise<ProjectRegistryEntry[]>;
   revealInFinder(cwd: string): Promise<void>;
-  createWorktree(cwd: string, name: string): Promise<{ entries: ProjectRegistryEntry[]; createdCwd: string | null }>;
+  createWorktree(
+    cwd: string,
+    name: string,
+    options?: { baseDirPattern?: string; copyFiles?: string[] },
+  ): Promise<{ entries: ProjectRegistryEntry[]; createdCwd: string | null }>;
   gitContext(cwd: string): Promise<GitContextResult>;
   listCommands(cwd: string, agentId: string): Promise<AgentChatCommandOption[]>;
 }
@@ -282,6 +326,9 @@ interface ProductShellHandlers {
   onProjectCreateWorktree: (projectId: string) => void;
   onProjectCreateWorktreeSubmit: (projectId: string, name: string) => void;
   onProjectCreateWorktreeCancel: () => void;
+  onOpenSettings: () => void;
+  onCloseSettings: () => void;
+  onWorktreeSettingsChange: (patch: Partial<ProductShellWorktreeSettings>) => void;
   onPinnedProjectSelect: (projectId: string) => void;
   onAddProject: () => void;
   onNewScratchThread: () => void;
@@ -315,6 +362,7 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       createProductShellState({
         includeFixtureData: false,
         listSettings: loadListSettings(),
+        worktreeSettings: loadWorktreeSettings(),
       }),
   );
   // Resizable column widths (agent chat is the flexible middle track). Drag
@@ -764,8 +812,9 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       const cwd = projectCwdById(shellState, projectId);
       const bridge = props.projectBridge;
       if (trimmed.length > 0 && cwd !== undefined && bridge !== undefined) {
+        const { baseDirPattern, copyFiles } = shellState.worktreeSettings;
         bridge
-          .createWorktree(cwd, trimmed)
+          .createWorktree(cwd, trimmed, { baseDirPattern, copyFiles })
           .then((result) =>
             setShellState((state) => setProductShellRegisteredProjects(state, result.entries)),
           )
@@ -775,6 +824,14 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     },
     onProjectCreateWorktreeCancel: () =>
       setShellState((state) => cancelProductShellWorktreeCreate(state)),
+    onOpenSettings: () => setShellState((state) => setProductShellSettingsOpen(state, true)),
+    onCloseSettings: () => setShellState((state) => setProductShellSettingsOpen(state, false)),
+    onWorktreeSettingsChange: (patch) =>
+      setShellState((state) => {
+        const next = setProductShellWorktreeSettings(state, patch);
+        persistWorktreeSettings(next.worktreeSettings);
+        return next;
+      }),
     onPinnedProjectSelect: (projectId) =>
       setShellState((state) => {
         const result = selectProductShellChoiceSurfaceRow(
@@ -950,6 +1007,86 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       workbenchPresence.mounted ? createWorkbenchColumn(layoutVm, handlers) : null,
       fileTreePresence.mounted ? createFileTreeColumn(layoutVm, handlers) : null,
     ),
+    viewModel.settingsOpen ? createSettingsModal(viewModel.worktreeSettings, handlers) : null,
+  );
+}
+
+// App Settings modal (centered overlay). Currently hosts worktree creation
+// options: the directory pattern and files to copy into a new worktree.
+// See docs_v2/specs/worktree-creation.md.
+function createSettingsModal(
+  worktree: ProductShellWorktreeSettings,
+  handlers: ProductShellHandlers,
+): ReactElement {
+  return createElement(
+    "div",
+    { className: "settings-modal-backdrop", onMouseDown: handlers.onCloseSettings },
+    createElement(
+      "div",
+      {
+        className: "settings-modal",
+        role: "dialog",
+        "aria-label": "Settings",
+        onMouseDown: (event: { stopPropagation: () => void }) => event.stopPropagation(),
+      },
+      createElement(
+        "header",
+        { className: "settings-modal__header" },
+        createElement("h2", null, "Settings"),
+        createIconButton(
+          "Close Settings",
+          createElement(X, { size: 16, strokeWidth: 1.9 }),
+          handlers.onCloseSettings,
+        ),
+      ),
+      createElement(
+        "section",
+        { className: "settings-modal__section" },
+        createElement("h3", { className: "settings-modal__section-title" }, "Worktrees"),
+        createElement(
+          "label",
+          { className: "settings-modal__field" },
+          createElement("span", { className: "settings-modal__label" }, "Directory pattern"),
+          createElement("input", {
+            className: "settings-modal__input",
+            value: worktree.baseDirPattern,
+            placeholder: "{repo_root}.worktree/{branch}",
+            "aria-label": "Worktree directory pattern",
+            onChange: (event: ChangeEvent<HTMLInputElement>) =>
+              handlers.onWorktreeSettingsChange({ baseDirPattern: event.currentTarget.value }),
+          }),
+          createElement(
+            "span",
+            { className: "settings-modal__hint" },
+            "Use {repo_root} and {branch}. Empty = default sibling <repo>.worktree/<branch>.",
+          ),
+        ),
+        createElement(
+          "label",
+          { className: "settings-modal__field" },
+          createElement("span", { className: "settings-modal__label" }, "Files to copy"),
+          createElement("textarea", {
+            className: "settings-modal__textarea",
+            value: worktree.copyFiles.join("\n"),
+            placeholder: ".env\n.env.local",
+            rows: 4,
+            "aria-label": "Files to copy into new worktrees",
+            onChange: (event: ChangeEvent<HTMLTextAreaElement>) =>
+              handlers.onWorktreeSettingsChange({
+                copyFiles: event.currentTarget.value
+                  .split("\n")
+                  .map((line) => line.trim())
+                  .filter((line) => line.length > 0),
+              }),
+          }),
+          createElement(
+            "span",
+            { className: "settings-modal__hint" },
+            "Repo-relative paths, one per line, copied into each new worktree.",
+          ),
+        ),
+      ),
+    ),
   );
 }
 
@@ -1090,6 +1227,15 @@ function createLeftUi(
             createProjectSection(viewModel.projectGroups, handlers),
             createThreadSection("Scratch", viewModel.scratchThreads, handlers),
           ]),
+    ),
+    createElement(
+      "div",
+      { className: "left-ui__footer" },
+      createLeftNavRow(
+        "Settings",
+        createElement(Settings, { size: 16, strokeWidth: 1.9 }),
+        handlers.onOpenSettings,
+      ),
     ),
   );
 }

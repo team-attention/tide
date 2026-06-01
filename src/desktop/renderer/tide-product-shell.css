@@ -361,6 +361,86 @@ button {
   color: var(--tide-text);
 }
 
+.settings-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.settings-modal {
+  width: min(520px, calc(100vw - 48px));
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  background: var(--tide-surface, #fff);
+  border: 1px solid var(--tide-line);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  padding: 18px 20px 22px;
+}
+
+.settings-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.settings-modal__header h2 {
+  font-size: 16px;
+  font-weight: 650;
+  margin: 0;
+}
+
+.settings-modal__section-title {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tide-muted);
+  margin: 8px 0 10px;
+}
+
+.settings-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 16px;
+}
+
+.settings-modal__label {
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--tide-text);
+}
+
+.settings-modal__input,
+.settings-modal__textarea {
+  width: 100%;
+  border: 1px solid var(--tide-line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--tide-text);
+  font-size: 13px;
+  font-family: var(--tide-mono, ui-monospace, monospace);
+  padding: 7px 9px;
+  outline: none;
+  resize: vertical;
+}
+
+.settings-modal__input:focus,
+.settings-modal__textarea:focus {
+  border-color: color-mix(in srgb, var(--tide-accent, #6b7) 60%, var(--tide-line));
+}
+
+.settings-modal__hint {
+  font-size: 11.5px;
+  color: var(--tide-muted);
+}
+
 .left-ui-context-menu__label {
   padding: 6px 12px 2px;
   font-size: 11px;
