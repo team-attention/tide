@@ -33,6 +33,7 @@ import {
   createAppChromeViewModel,
   focusWorkbenchPane,
   writeWorkbenchTerminalInput,
+  resizeWorkbenchTerminal,
   type AppChromeBackendCommand,
   type AppChromeWorkbenchPaneRef,
   type AppChromeState,
@@ -1471,6 +1472,19 @@ export function writeProductShellTerminalInput(
       ...state,
       appChrome: result.state,
     },
+    command: result.command,
+  };
+}
+
+export function resizeProductShellTerminal(
+  state: ProductShellState,
+  paneId: string,
+  cols: number,
+  rows: number,
+): ProductShellUpdateResult {
+  const result = resizeWorkbenchTerminal(state.appChrome, paneId, cols, rows);
+  return {
+    state: { ...state, appChrome: result.state },
     command: result.command,
   };
 }

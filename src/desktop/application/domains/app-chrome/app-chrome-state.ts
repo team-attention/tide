@@ -182,6 +182,12 @@ export type AppChromeBackendCommand = {
         command: "write_terminal_input";
         targetPaneId: string;
         data: { bytes: string };
+      }
+    | {
+        threadId: string;
+        command: "resize_terminal";
+        targetPaneId: string;
+        data: { cols: number; rows: number };
       };
 };
 
@@ -408,6 +414,35 @@ export function writeWorkbenchTerminalInput(
         command: "write_terminal_input",
         targetPaneId: paneId,
         data: { bytes },
+      },
+    },
+  };
+}
+
+// Tells the backend to resize the PTY to match the rendered terminal grid, so the
+// shell wraps + redraws correctly. Does not change visible state (no activePane
+// side effects) — it's a pure transport for cols/rows.
+export function resizeWorkbenchTerminal(
+  state: AppChromeState,
+  paneId: string,
+  cols: number,
+  rows: number,
+): AppChromeUpdateResult {
+  const pane = state.workbenchPanes.find(
+    (candidate) => candidate.paneId === paneId && candidate.visible,
+  );
+  if (!state.thread || pane?.kind !== "terminal" || pane.status !== "running") {
+    return { state, command: null };
+  }
+  return {
+    state,
+    command: {
+      kind: "workbench.command",
+      payload: {
+        threadId: state.thread.threadId,
+        command: "resize_terminal",
+        targetPaneId: paneId,
+        data: { cols, rows },
       },
     },
   };

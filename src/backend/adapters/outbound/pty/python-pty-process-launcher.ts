@@ -54,6 +54,23 @@ class ChildProcessPtyHandle implements PtyProcessHandle {
     });
   }
 
+  // Resize the PTY so the shell's view matches the rendered terminal (cols/rows),
+  // sent over the dedicated control pipe (fd 3) the bridge listens on. Without
+  // this the shell stays at its spawn size and cursor-relative redraws (e.g.
+  // starship's async prompt) land wrong. Best-effort; ignored if the pipe is gone.
+  resize(cols: number, rows: number): void {
+    const control = this.child.stdio[3];
+    if (control && typeof (control as { write?: unknown }).write === "function") {
+      const safeCols = Math.max(1, Math.floor(cols));
+      const safeRows = Math.max(1, Math.floor(rows));
+      try {
+        (control as NodeJS.WritableStream).write(`${safeRows},${safeCols}\n`);
+      } catch {
+        // Control pipe closed (process exiting) — ignore.
+      }
+    }
+  }
+
   stop(): Promise<void> {
     this.child.kill("SIGTERM");
     return Promise.resolve();
@@ -66,11 +83,13 @@ function spawnProcess(plan: ProviderLaunchPlan): ChildProcessWithoutNullStreams 
     ...plan.env,
   };
 
+  // fd 0-2 are the PTY stdio; fd 3 is a dedicated control pipe the bridge reads
+  // resize messages ("rows,cols\n") from.
   return spawn("python3", ["-c", pythonPtyBridgeSource, plan.command, ...plan.args], {
     cwd: plan.cwd,
     env,
-    stdio: "pipe",
-  });
+    stdio: ["pipe", "pipe", "pipe", "pipe"],
+  }) as ChildProcessWithoutNullStreams;
 }
 
 const pythonPtyBridgeSource = String.raw`
@@ -100,9 +119,34 @@ child = subprocess.Popen(
     start_new_session=True,
 )
 os.close(slave_fd)
+
+# fd 3 is a control pipe carrying "rows,cols\n" resize messages from the host.
+control_fd = 3
+control_open = True
+control_buffer = b""
+try:
+    os.set_blocking(control_fd, False)
+except OSError:
+    control_open = False
+
+def apply_resize(line):
+    try:
+        rows_str, cols_str = line.split(b",", 1)
+        rows = int(rows_str)
+        cols = int(cols_str)
+    except (ValueError, IndexError):
+        return
+    if rows > 0 and cols > 0:
+        try:
+            fcntl.ioctl(master_fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+        except OSError:
+            pass
+
 selector = selectors.DefaultSelector()
 selector.register(master_fd, selectors.EVENT_READ, "pty")
 selector.register(sys.stdin.buffer, selectors.EVENT_READ, "stdin")
+if control_open:
+    selector.register(control_fd, selectors.EVENT_READ, "control")
 
 def write_terminal_query_replies(master_fd, data):
     responses = []
@@ -154,6 +198,20 @@ while True:
             else:
                 selector.unregister(sys.stdin.buffer)
                 stdin_open = False
+        elif key.data == "control" and control_open:
+            try:
+                chunk = os.read(control_fd, 1024)
+            except OSError:
+                chunk = b""
+            if chunk:
+                control_buffer += chunk
+                while b"\n" in control_buffer:
+                    line, control_buffer = control_buffer.split(b"\n", 1)
+                    if line:
+                        apply_resize(line)
+            else:
+                selector.unregister(control_fd)
+                control_open = False
 
 try:
     while True:

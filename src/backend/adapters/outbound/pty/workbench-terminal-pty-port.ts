@@ -39,6 +39,7 @@ class PtyWorkbenchTerminalPort implements WorkbenchTerminalPort {
     return {
       terminalRuntimeId: handle.runtimeId,
       write: (data) => handle.write(data),
+      resize: (cols, rows) => handle.resize?.(cols, rows),
       stop: () => handle.stop(),
     };
   }

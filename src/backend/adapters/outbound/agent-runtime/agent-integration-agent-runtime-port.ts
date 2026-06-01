@@ -20,6 +20,7 @@ export type AgentIntegrationRegistry = Record<ProviderCliAgentId, AgentIntegrati
 export interface PtyProcessHandle {
   runtimeId: string;
   write(data: string): Promise<void> | void;
+  resize?(cols: number, rows: number): void;
   stop(): Promise<void> | void;
 }
 

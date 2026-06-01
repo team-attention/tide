@@ -1786,6 +1786,23 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
           workbench: snapshotWorkbench(thread.workbench),
         };
       }
+      case "resize_terminal": {
+        const cols = numberFromData(input.data, "cols");
+        const rows = numberFromData(input.data, "rows");
+        const pane = workbenchPaneById(thread.workbench, input.targetPaneId);
+        if (pane === undefined || pane.kind !== "terminal") {
+          return failure("workbench_target_not_found", "Terminal Pane target was not found.");
+        }
+        if (cols !== undefined && rows !== undefined) {
+          this.workbenchTerminalHandles.get(pane.paneId)?.resize?.(cols, rows);
+        }
+        return {
+          ok: true,
+          handled: true,
+          thread: snapshotThread(thread),
+          workbench: snapshotWorkbench(thread.workbench),
+        };
+      }
       case "focus_pane": {
         const pane = workbenchPaneById(thread.workbench, input.targetPaneId);
         if (pane === undefined) {
@@ -4072,6 +4089,16 @@ function optionalString(value: unknown): string | undefined {
   }
   const trimmed = value.trim();
   return trimmed.length === 0 ? undefined : trimmed;
+}
+
+function numberFromData(
+  data: Record<string, unknown> | undefined,
+  key: string,
+): number | undefined {
+  const value = data?.[key];
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
 }
 
 function optionalRawString(value: unknown): string | undefined {

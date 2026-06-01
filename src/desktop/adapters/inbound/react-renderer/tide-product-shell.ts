@@ -112,6 +112,7 @@ import {
   updateProductShellBrowserSnapshot,
   updateProductShellComposerDraft,
   writeProductShellTerminalInput,
+  resizeProductShellTerminal,
   setProductShellListSettings,
   startProductShellWorktreeCreate,
   cancelProductShellWorktreeCreate,
@@ -356,6 +357,7 @@ interface ProductShellHandlers {
   onCloseWorkbenchPane: (paneId: string) => void;
   onFileTreeEntryOpen: (entryId: string) => void;
   onTerminalInput: (paneId: string, bytes: string) => void;
+  onTerminalResize: (paneId: string, cols: number, rows: number) => void;
   onEditorDraftChange: (paneId: string, content: string) => void;
   onEditorCursorChange: (paneId: string, cursorOffset: number) => void;
   onEditorSave: (paneId: string) => void;
@@ -907,6 +909,12 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     onTerminalInput: (paneId, bytes) =>
       setShellState((state) => {
         const result = writeProductShellTerminalInput(state, paneId, bytes);
+        dispatchBackendCommand(result.command);
+        return result.state;
+      }),
+    onTerminalResize: (paneId, cols, rows) =>
+      setShellState((state) => {
+        const result = resizeProductShellTerminal(state, paneId, cols, rows);
         dispatchBackendCommand(result.command);
         return result.state;
       }),
@@ -2208,6 +2216,7 @@ function WorkbenchTerminalView(props: {
   paneId: string;
   initialText: string;
   onInput: (paneId: string, bytes: string) => void;
+  onResize?: (paneId: string, cols: number, rows: number) => void;
 }): ReactElement {
   const hostRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -2250,11 +2259,21 @@ function WorkbenchTerminalView(props: {
         if (active && FitAddonCtor !== undefined) {
           fitAddon = new FitAddonCtor();
           term.loadAddon(fitAddon as never);
+          // After fitting, tell the backend the real grid size so the PTY/shell
+          // matches the rendered terminal (otherwise prompts wrap/redraw wrong).
+          const emitResize = () => {
+            const dims = term as { cols?: number; rows?: number };
+            if (typeof dims.cols === "number" && typeof dims.rows === "number") {
+              props.onResize?.(props.paneId, dims.cols, dims.rows);
+            }
+          };
           fitAddon.fit();
+          emitResize();
           if (typeof ResizeObserver !== "undefined" && hostRef.current !== null) {
             observer = new ResizeObserver(() => {
               try {
                 fitAddon?.fit();
+                emitResize();
               } catch {
                 // measurement unavailable
               }
@@ -2309,6 +2328,7 @@ function WorkbenchTerminalPane(props: {
       paneId: props.pane.paneId,
       initialText: props.pane.transcriptPreview ?? "",
       onInput: props.handlers.onTerminalInput,
+      onResize: props.handlers.onTerminalResize,
     }),
   );
 }

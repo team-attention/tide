@@ -24,6 +24,7 @@ export interface WorkbenchTerminalStartInput {
 export interface WorkbenchTerminalHandle {
   terminalRuntimeId: string;
   write(data: string): Promise<void> | void;
+  resize?(cols: number, rows: number): void;
   stop(): Promise<void> | void;
 }
 
