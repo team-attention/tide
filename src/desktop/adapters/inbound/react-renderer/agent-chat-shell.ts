@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 
 import { fileIconFor } from "./file-icons.ts";
-import { highlightToHtml } from "./code-highlight.ts";
+import { guessLanguage, highlightToHtml } from "./code-highlight.ts";
 import type {
   AgentChatBlockView,
   AgentChatChoiceSurfaceRowView,
@@ -534,6 +534,9 @@ function renderToolBody(block: AgentChatBlockView): ReactNode {
   if (diff !== null && diff.length > 0) {
     const adds = diff.filter((line) => line.kind === "add").length;
     const dels = diff.filter((line) => line.kind === "del").length;
+    // One language for the whole diff so every line (incl. continuations) is
+    // highlighted consistently.
+    const diffLang = guessLanguage(diff.map((line) => line.text).join("\n"));
     return createElement(
       "div",
       { className: "agent-session-turn__diff" },
@@ -555,7 +558,10 @@ function renderToolBody(block: AgentChatBlockView): ReactNode {
               { className: "diff-line__sign", "aria-hidden": true },
               line.kind === "add" ? "+" : line.kind === "del" ? "-" : " ",
             ),
-            createElement("span", { className: "diff-line__text" }, line.text),
+            createElement("span", {
+              className: "diff-line__text",
+              dangerouslySetInnerHTML: { __html: highlightToHtml(line.text, diffLang) },
+            }),
           ),
         ),
       ),
