@@ -2277,6 +2277,39 @@ test("project_menu_offers_a_single_open_folder_action", () => {
   assert.doesNotMatch(html, /Use existing folder/);
 });
 
+test("collapsed_project_bubbles_a_waiting_thread_attention", () => {
+  // A thread waiting for input raises attention; when its project is collapsed,
+  // the indicator bubbles to the project row.
+  const listed = applyProductShellBackendEvent(
+    createProductShellState({ includeFixtureData: false }),
+    {
+      kind: "thread.listed",
+      payload: {
+        threads: [
+          {
+            threadId: "t-wait",
+            title: "Needs input",
+            agentBinding: { agentId: "claude", runtimeSource: { kind: "provider_cli", integrationId: "claude" } },
+            scope: { kind: "project", projectId: "tide", cwd: "/repo/tide" },
+            createdAt: "2026-05-29T00:00:00.000Z",
+            updatedAt: "2026-05-29T00:01:00.000Z",
+            archived: false,
+            lastKnownState: "waiting_for_input",
+          },
+        ],
+      },
+    },
+  );
+  // Expanded: project carries attention but renders the dot on the thread row.
+  const expandedView = createProductShellViewModel(listed);
+  assert.equal(expandedView.projectGroups.find((p) => p.projectId === "tide")?.attention, true);
+
+  // Collapsed: the project row shows the attention dot.
+  const collapsed = toggleProductShellProject(listed, "tide");
+  const html = renderProductShell(collapsed);
+  assert.match(html, /data-project-row="tide"[\s\S]*?project-row__attention/);
+});
+
 test("project_limits_visible_threads_and_offers_show_more", () => {
   // A project with many threads shows only the first N, with a "Show more"
   // affordance for the rest (projects accumulate many adopted local sessions).

@@ -203,6 +203,9 @@ export interface ProductShellProjectGroupView {
   pinned: boolean;
   renaming: boolean;
   threads: ProductShellThreadView[];
+  // True when a child thread needs attention (waiting for input/approval) — used
+  // to bubble the indicator to the project row when it is collapsed.
+  attention: boolean;
 }
 
 // Pinned projects render as full expandable groups, identical to the Projects
@@ -383,6 +386,12 @@ export function createProductShellViewModel(
     threads: visibleThreads
       .filter((thread) => thread.scope.kind === "project" && thread.scope.projectId === project.projectId)
       .map((thread) => toThreadView(thread, state)),
+    attention: state.threads.some(
+      (thread) =>
+        thread.scope.kind === "project" &&
+        thread.scope.projectId === project.projectId &&
+        thread.attention === true,
+    ),
   });
   return {
     activeThreadId: state.activeThreadId,

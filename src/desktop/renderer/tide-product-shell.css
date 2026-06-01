@@ -642,12 +642,17 @@ button {
   font-size: 12px;
 }
 
-.thread-row__attention {
+.thread-row__attention,
+.project-row__attention {
   width: 6px;
   height: 6px;
   flex: 0 0 auto;
   border-radius: 999px;
   background: var(--tide-action);
+}
+
+.project-row__attention {
+  margin-left: 6px;
 }
 
 .thread-row__actions {

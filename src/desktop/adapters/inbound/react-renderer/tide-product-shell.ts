@@ -373,6 +373,27 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
     };
   }, [props.projectBridge, activeProjectCwd, activeAgentId]);
 
+  // Fire a native OS notification when a thread newly needs attention (waiting
+  // for input/approval), so the user is pulled back even when Tide is in the
+  // background. Re-notifies if a thread returns to attention after resolving.
+  const notifiedAttentionRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (typeof Notification === "undefined") {
+      return;
+    }
+    if (Notification.permission === "default") {
+      void Notification.requestPermission();
+    }
+    const waiting = shellState.threads.filter((thread) => thread.attention === true);
+    const current = new Set(waiting.map((thread) => thread.threadId));
+    for (const thread of waiting) {
+      if (!notifiedAttentionRef.current.has(thread.threadId) && Notification.permission === "granted") {
+        new Notification("Tide — a thread needs your input", { body: thread.title });
+      }
+    }
+    notifiedAttentionRef.current = current;
+  }, [shellState.threads]);
+
   // The agent-chat column never shrinks below the composer's usable width.
   const CHAT_MIN = 440;
   const startColumnResize = (
@@ -2138,6 +2159,13 @@ function createProjectGroup(
                   handlers.onProjectRenameSubmit(project.projectId, event.currentTarget.value),
               })
             : createElement("span", { className: "project-row__title" }, project.name),
+          // When collapsed, bubble a child thread's attention to the project row.
+          !project.expanded && project.attention
+            ? createElement("span", {
+                className: "project-row__attention",
+                "aria-label": "A thread in this project needs attention",
+              })
+            : null,
         ),
         createElement(
           "span",
