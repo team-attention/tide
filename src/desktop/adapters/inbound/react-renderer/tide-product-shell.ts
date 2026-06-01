@@ -1037,6 +1037,7 @@ function createSettingsModal(
           "Close Settings",
           createElement(X, { size: 16, strokeWidth: 1.9 }),
           handlers.onCloseSettings,
+          "settings-modal__close",
         ),
       ),
       createElement(

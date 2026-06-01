@@ -395,6 +395,25 @@ button {
   margin: 0;
 }
 
+.settings-modal__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--tide-muted);
+  cursor: pointer;
+}
+
+.settings-modal__close:hover {
+  background: color-mix(in srgb, var(--tide-muted) 14%, transparent);
+  color: var(--tide-text);
+}
+
 .settings-modal__section-title {
   font-size: 11px;
   font-weight: 650;

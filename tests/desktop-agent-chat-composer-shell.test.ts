@@ -826,7 +826,7 @@ test("composer_menu_rows_update_start_context_and_close_the_surface", () => {
   const agentSelected = selectAgentChatChoiceSurfaceRow(
     setComposerActiveSurface(base, "agent_menu").state,
     "agent_menu",
-    "openai-api",
+    "claude",
   ).state;
   const projectSelected = selectAgentChatChoiceSurfaceRow(
     setComposerActiveSurface(agentSelected, "project_menu").state,
@@ -836,19 +836,19 @@ test("composer_menu_rows_update_start_context_and_close_the_surface", () => {
   const permissionSelected = selectAgentChatChoiceSurfaceRow(
     setComposerActiveSurface(projectSelected, "permission_menu").state,
     "permission_menu",
-    "tide-ask-first",
+    "accept-edits",
   ).state;
   const html = renderShell(permissionSelected);
 
   assert.equal(permissionSelected.composer.activeSurface, null);
-  assert.equal(permissionSelected.composer.startOptions.agentBinding.agentId, "openai_api");
+  assert.equal(permissionSelected.composer.startOptions.agentBinding.agentId, "claude");
   assert.deepEqual(permissionSelected.composer.startOptions.scope, {
     kind: "project",
     projectId: "slice",
     cwd: "/Users/eatnug/Workspace/slice",
   });
-  assert.equal(permissionSelected.composer.startOptions.launchOptions?.permission, "Ask before tools");
-  assert.match(html, /OpenAI API/);
+  assert.equal(permissionSelected.composer.startOptions.launchOptions?.permission, "acceptEdits");
+  assert.match(html, /Claude Code/);
   assert.match(html, /What should we build in slice/);
   assert.match(html, /composer-shell__chip-label">slice/);
   assert.doesNotMatch(html, /data-choice-surface/);

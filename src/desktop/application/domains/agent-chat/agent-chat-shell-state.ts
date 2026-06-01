@@ -1042,13 +1042,13 @@ function createActiveComposerSurface(
         surfaceKind,
         title: "Agent",
         sourceLabel: "Agent Binding",
+        // Tide API Agents / OpenAI API are hidden for now (provider-CLI only).
+        // The openai_api binding + runtime still exist; they're just not offered here.
         rows: [
           row("provider-cli", "Provider CLI Agents", "hidden PTY", "source", "source"),
           row("codex", "Codex CLI", "Agent Integration", "ready", binding.agentId === "codex" ? "check" : "identity:codex", binding.agentId === "codex"),
           row("claude", "Claude Code", "Agent Integration", "ready", binding.agentId === "claude" ? "check" : "identity:claude", binding.agentId === "claude"),
           row("antigravity", "Antigravity CLI", "Agent Integration", "ready", binding.agentId === "antigravity" ? "check" : "identity:antigravity", binding.agentId === "antigravity"),
-          row("tide-api", "Tide API Agents", "Provider Account", "source", "source"),
-          row("openai-api", "OpenAI API", "Tide API runtime", "setup", binding.agentId === "openai_api" ? "check" : "identity:openai_api", binding.agentId === "openai_api"),
         ],
       };
     case "model_menu":
