@@ -734,6 +734,21 @@ function electronRuntimeSmokeScript(input: {
   `;
 }
 
+// Keep a stray error from hard-aborting the main process (SIGTRAP/brk). Log it
+// instead so the app survives and the cause is diagnosable.
+process.on("uncaughtException", (error) => {
+  console.error("[tide-main] uncaughtException:", error);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[tide-main] unhandledRejection:", reason);
+});
+app.on("render-process-gone", (_event, _webContents, details) => {
+  console.error("[tide-main] render-process-gone:", details.reason, details.exitCode);
+});
+app.on("child-process-gone", (_event, details) => {
+  console.error("[tide-main] child-process-gone:", details.type, details.reason, details.exitCode);
+});
+
 void app.whenReady().then(() => {
   createMainWindow();
 
