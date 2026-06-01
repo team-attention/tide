@@ -1517,12 +1517,22 @@ button {
 }
 
 .agent-session-tools__file {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 7px 12px;
+  border: 0;
+  background: transparent;
+  font: inherit;
   font-size: 13.5px;
   line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-session-tools__file:hover {
+  background: var(--tide-selection);
 }
 
 .agent-session-tools__file-icon {
@@ -1531,11 +1541,15 @@ button {
 }
 
 .agent-session-tools__file-name {
+  flex: 0 0 auto;
   color: var(--tide-text);
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .agent-session-tools__file-dir {
+  min-width: 0;
+  flex: 1 1 auto;
   color: var(--tide-muted);
   font-size: 12px;
   overflow: hidden;

@@ -410,7 +410,7 @@ function groupSessionItems(blocks: AgentChatBlockView[]): SessionRenderItem[] {
   return items;
 }
 
-function renderSessionItem(item: SessionRenderItem): ReactElement {
+function renderSessionItem(item: SessionRenderItem): ReactElement | null {
   return item.kind === "toolGroup"
     ? createElement(ToolActivityGroup, { key: item.key, blocks: item.blocks })
     : createAgentSessionTurn(item.block);
@@ -489,7 +489,7 @@ function renderAgentMarkdown(body: string): ReactElement {
   });
 }
 
-function createAgentSessionTurn(block: AgentChatBlockView): ReactElement {
+function createAgentSessionTurn(block: AgentChatBlockView): ReactElement | null {
   if (block.role === "tool") {
     return createToolLogTurn(block);
   }
@@ -523,8 +523,14 @@ function createAgentSessionTurn(block: AgentChatBlockView): ReactElement {
 // A provider tool call/result renders as a compact log entry: a small header
 // with the result/call marker and provider-native tool name, then the bounded
 // args/output in a monospace body — visually distinct from message turns.
-function createToolLogTurn(block: AgentChatBlockView): ReactElement {
+function createToolLogTurn(block: AgentChatBlockView): ReactElement | null {
   const isResult = block.kind === "tool_result";
+  const body = renderToolBody(block);
+  // Drop empty tool entries (e.g. a "← Read" result with no captured output) —
+  // a lone header marker is noise.
+  if (body === null) {
+    return null;
+  }
   return createElement(
     "article",
     {
@@ -547,7 +553,7 @@ function createToolLogTurn(block: AgentChatBlockView): ReactElement {
       ),
       createElement("span", { className: "agent-session-turn__tool-name" }, block.title),
     ),
-    renderToolBody(block),
+    body,
   );
 }
 
@@ -833,15 +839,21 @@ function createFilesChangedList(blocks: AgentChatBlockView[]): ReactElement | nu
     return null;
   }
   return createElement(
-    "ul",
+    "div",
     { className: "agent-session-tools__files" },
     paths.map((path) => {
       const slash = path.lastIndexOf("/");
       const name = slash === -1 ? path : path.slice(slash + 1);
       const dir = slash === -1 ? "" : path.slice(0, slash);
       return createElement(
-        "li",
-        { key: path, className: "agent-session-tools__file" },
+        "button",
+        {
+          key: path,
+          type: "button",
+          className: "agent-session-tools__file",
+          "data-open-file": path,
+          title: `Open ${name} in the Workbench`,
+        },
         createElement(fileIconFor(name), { className: "agent-session-tools__file-icon", size: 13, "aria-hidden": true }),
         createElement("span", { className: "agent-session-tools__file-name" }, name),
         dir.length > 0
