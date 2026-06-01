@@ -241,6 +241,19 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
   // Collapsed left-rail sections (Pinned / Projects / Scratch), keyed by title.
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [columnWidths, setColumnWidths] = useState({ left: 256, workbench: 480, fileTree: 344 });
+  // Track the window width so the layout can auto-collapse columns that no
+  // longer fit (responsive narrow-screen handling).
+  const [windowWidth, setWindowWidth] = useState(
+    typeof window === "undefined" ? 1440 : window.innerWidth,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const onResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // Load the persisted project registry on mount so opened folders appear even
   // before any thread exists (Codex flow).
@@ -699,14 +712,26 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
       }),
   };
 
+  // Auto-collapse columns that no longer fit the window at their min widths.
+  const eff = fitColumnsToWidth({
+    windowWidth,
+    leftUiOpen: viewModel.leftUiOpen,
+    workbenchOpen: viewModel.workbenchOpen,
+    fileTreeOpen: viewModel.fileTreeOpen,
+  });
+  const layoutVm =
+    eff.workbenchOpen === viewModel.workbenchOpen && eff.fileTreeOpen === viewModel.fileTreeOpen
+      ? viewModel
+      : { ...viewModel, workbenchOpen: eff.workbenchOpen, fileTreeOpen: eff.fileTreeOpen };
+
   return createElement(
     "div",
     {
       className: [
         "tide-product-shell",
-        viewModel.leftUiOpen ? "tide-product-shell--left-open" : "tide-product-shell--left-closed",
-        viewModel.workbenchOpen ? "tide-product-shell--workbench-open" : "tide-product-shell--workbench-closed",
-        viewModel.fileTreeOpen ? "tide-product-shell--file-tree-open" : "tide-product-shell--file-tree-closed",
+        layoutVm.leftUiOpen ? "tide-product-shell--left-open" : "tide-product-shell--left-closed",
+        layoutVm.workbenchOpen ? "tide-product-shell--workbench-open" : "tide-product-shell--workbench-closed",
+        layoutVm.fileTreeOpen ? "tide-product-shell--file-tree-open" : "tide-product-shell--file-tree-closed",
       ].join(" "),
     },
     createElement(
@@ -720,24 +745,51 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         // (so workbench + filetree can both show without overflowing).
         style: {
           gridTemplateColumns: [
-            viewModel.leftUiOpen ? `minmax(180px, ${columnWidths.left}px)` : null,
+            layoutVm.leftUiOpen ? `minmax(180px, ${columnWidths.left}px)` : null,
             // Never shrink the agent-chat column below the composer's usable width.
             `minmax(${CHAT_MIN}px, 1fr)`,
-            viewModel.workbenchOpen ? `minmax(280px, ${columnWidths.workbench}px)` : null,
-            viewModel.fileTreeOpen ? `minmax(220px, ${columnWidths.fileTree}px)` : null,
+            layoutVm.workbenchOpen ? `minmax(280px, ${columnWidths.workbench}px)` : null,
+            layoutVm.fileTreeOpen ? `minmax(220px, ${columnWidths.fileTree}px)` : null,
           ]
             .filter(Boolean)
             .join(" "),
         } as CSSProperties,
       },
-      viewModel.leftUiOpen
-        ? createLeftUi(viewModel, handlers, { menu: shellState.leftUiMenu, anchor: menuAnchor })
+      layoutVm.leftUiOpen
+        ? createLeftUi(layoutVm, handlers, { menu: shellState.leftUiMenu, anchor: menuAnchor })
         : null,
-      createAgentChatColumn(viewModel, handlers),
-      viewModel.workbenchOpen ? createWorkbenchColumn(viewModel, handlers) : null,
-      viewModel.fileTreeOpen ? createFileTreeColumn(viewModel, handlers) : null,
+      createAgentChatColumn(layoutVm, handlers),
+      layoutVm.workbenchOpen ? createWorkbenchColumn(layoutVm, handlers) : null,
+      layoutVm.fileTreeOpen ? createFileTreeColumn(layoutVm, handlers) : null,
     ),
   );
+}
+
+// Min widths used to decide which columns fit (mirrors the body grid minmax).
+const COLUMN_MINS = { left: 180, chat: 440, workbench: 280, fileTree: 220 } as const;
+
+// Responsive auto-collapse: given the window width and the user's open/closed
+// intent, returns which of Workbench/FileTree actually fit. Drops the lowest
+// priority first (FileTree, then Workbench). Intent is preserved by the caller,
+// so columns reappear when the window widens again.
+export function fitColumnsToWidth(input: {
+  windowWidth: number;
+  leftUiOpen: boolean;
+  workbenchOpen: boolean;
+  fileTreeOpen: boolean;
+}): { workbenchOpen: boolean; fileTreeOpen: boolean } {
+  const base = (input.leftUiOpen ? COLUMN_MINS.left : 0) + COLUMN_MINS.chat;
+  const fits = (wb: boolean, ft: boolean): boolean =>
+    base + (wb ? COLUMN_MINS.workbench : 0) + (ft ? COLUMN_MINS.fileTree : 0) <= input.windowWidth;
+  let workbenchOpen = input.workbenchOpen;
+  let fileTreeOpen = input.fileTreeOpen;
+  if (!fits(workbenchOpen, fileTreeOpen)) {
+    fileTreeOpen = false;
+  }
+  if (!fits(workbenchOpen, fileTreeOpen)) {
+    workbenchOpen = false;
+  }
+  return { workbenchOpen, fileTreeOpen };
 }
 
 // Two-letter monogram per provider (Codex/Claude both start with C, so we use
