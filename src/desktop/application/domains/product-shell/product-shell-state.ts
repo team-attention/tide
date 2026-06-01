@@ -1341,6 +1341,13 @@ export function applyProductShellBackendEvent(
       }
       const panes = payload.panes ?? [];
       const threadId = payload.threadId ?? state.activeThreadId;
+      // Only a real (non-launcher) visible pane auto-opens the workbench; an empty
+      // launcher pane must not (e.g. a refresh_file_tree from opening the FileTree
+      // emits workbench.changed with just the launcher — that shouldn't pop the
+      // workbench open). Otherwise preserve the user's open/closed intent, and
+      // close only when nothing is visible at all.
+      const hasRealPane = panes.some((pane) => pane.visible && pane.kind !== "launcher");
+      const anyVisible = panes.some((pane) => pane.visible);
       return {
         ...nextState,
         threads:
@@ -1351,7 +1358,7 @@ export function applyProductShellBackendEvent(
                   ? { ...thread, workbenchPanes: panes }
                   : thread,
               ),
-        workbenchOpen: panes.some((pane) => pane.visible),
+        workbenchOpen: hasRealPane ? true : anyVisible ? nextState.workbenchOpen : false,
         fileTree:
           payload.fileTree === undefined
             ? nextState.fileTree

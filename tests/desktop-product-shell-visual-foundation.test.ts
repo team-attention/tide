@@ -310,6 +310,35 @@ test("left_ui_search_is_a_nav_row_until_activated", () => {
   assert.equal(reclosed.searchQuery, "");
 });
 
+test("a_launcher_only_workbench_change_does_not_force_the_workbench_open", () => {
+  // Opening the FileTree emits a refresh_file_tree -> workbench.changed carrying
+  // just the (default-visible) launcher pane. That must NOT pop the Workbench open.
+  const base = openProductShellThread(createProductShellState(), "thread-wb");
+  const launcherOnly = applyProductShellBackendEvent(base, {
+    kind: "workbench.changed",
+    payload: {
+      threadId: "thread-wb",
+      panes: [
+        { paneId: "p-launcher", kind: "launcher", title: "Workbench launcher", visible: true, revision: "1", updatedAt: "2026-06-01T00:00:00.000Z" },
+      ],
+    },
+  });
+  assert.equal(launcherOnly.workbenchOpen, false, "launcher-only change keeps workbench closed");
+
+  // A real (non-launcher) visible pane does auto-open the workbench.
+  const withEditor = applyProductShellBackendEvent(launcherOnly, {
+    kind: "workbench.changed",
+    payload: {
+      threadId: "thread-wb",
+      panes: [
+        { paneId: "p-launcher", kind: "launcher", title: "Workbench launcher", visible: false, revision: "2", updatedAt: "2026-06-01T00:00:00.000Z" },
+        { paneId: "p-editor", kind: "editor", title: "app.ts", visible: true, revision: "2", updatedAt: "2026-06-01T00:00:00.000Z" },
+      ],
+    },
+  });
+  assert.equal(withEditor.workbenchOpen, true, "a visible editor pane opens the workbench");
+});
+
 test("clicking_a_file_tree_folder_collapses_and_expands_its_descendants", () => {
   // Spec: docs_v2/specs/workbench-filetree-view.md
   const state = applyProductShellBackendEvent(
