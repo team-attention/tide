@@ -206,7 +206,9 @@ function persistWorktreeSettings(settings: ProductShellWorktreeSettings): void {
   }
 }
 
-const COLUMN_TRANSITION_MS = 240;
+// Slightly longer than the CSS grid transition (260ms) so a closing column stays
+// mounted until its collapse animation finishes, then unmounts.
+const COLUMN_TRANSITION_MS = 300;
 
 // Animated presence for a layout column: keeps it mounted through an exit
 // transition so opening/closing animates the grid track (0 <-> width) smoothly
@@ -977,23 +979,19 @@ export function TideProductShell(props: TideProductShellProps): ReactElement {
         style: {
           // A mounted-but-closing column keeps its track (collapsing to 0) so the
           // grid width animates rather than snapping; unmounted columns drop out.
+          // Side tracks are plain px (not minmax) so the open<->0 transition is
+          // CSS-interpolable — minmax(...) <-> 0px is NOT and would just snap.
           gridTemplateColumns: [
             leftPresence.mounted
-              ? leftPresence.visible
-                ? `minmax(180px, ${columnWidths.left}px)`
-                : "0px"
+              ? `${leftPresence.visible ? columnWidths.left : 0}px`
               : null,
             // Never shrink the agent-chat column below the composer's usable width.
             `minmax(${CHAT_MIN}px, 1fr)`,
             workbenchPresence.mounted
-              ? workbenchPresence.visible
-                ? `minmax(280px, ${columnWidths.workbench}px)`
-                : "0px"
+              ? `${workbenchPresence.visible ? columnWidths.workbench : 0}px`
               : null,
             fileTreePresence.mounted
-              ? fileTreePresence.visible
-                ? `minmax(220px, ${columnWidths.fileTree}px)`
-                : "0px"
+              ? `${fileTreePresence.visible ? columnWidths.fileTree : 0}px`
               : null,
           ]
             .filter(Boolean)

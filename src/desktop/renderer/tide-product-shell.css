@@ -106,8 +106,10 @@ button {
   overflow: hidden;
   display: grid;
   grid-template-columns: 256px minmax(460px, 1fr);
-  /* Smoothly animate columns opening/closing (track 0 <-> width). */
-  transition: grid-template-columns 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* Smoothly animate columns opening/closing (track 0 <-> width). A balanced
+     ease-in-out keeps the motion perceptible across the whole duration (a
+     front-loaded ease-out finishes ~80% in the first ~80ms and feels abrupt). */
+  transition: grid-template-columns 260ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* While dragging a column divider, width updates should track the cursor with no
