@@ -543,16 +543,11 @@ function createToolLogTurn(block: AgentChatBlockView): ReactElement | null {
       "data-block-status": block.status,
       "data-block-role": "tool",
     },
-    createElement(
-      "span",
-      { className: "agent-session-turn__tool-header" },
-      createElement(
-        "span",
-        { className: "agent-session-turn__tool-marker", "aria-hidden": true },
-        isResult ? "←" : "→",
-      ),
-      createElement("span", { className: "agent-session-turn__tool-name" }, block.title),
-    ),
+    // A call shows a quiet tool-name label; a result drops the (repeated) label
+    // and just shows its output flowing under the call. No arrow markers.
+    isResult
+      ? null
+      : createElement("span", { className: "agent-session-turn__tool-name" }, block.title),
     body,
   );
 }

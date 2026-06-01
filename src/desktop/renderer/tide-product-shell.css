@@ -1273,34 +1273,20 @@ button {
 /* Provider tool calls/results: a compact, indented log entry distinct from the
    flat message transcript — quiet by default so they read as activity, not chat. */
 .agent-session-turn--tool {
-  max-width: min(800px, 100%);
-  gap: 4px;
-  padding: 6px 10px;
-  border-left: 2px solid var(--tide-line);
+  gap: 3px;
+  padding: 0;
   background: transparent;
 }
 
-.agent-session-turn__tool-header {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--tide-muted);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.agent-session-turn__tool-marker {
-  color: var(--tide-muted);
-  opacity: 0.7;
-}
-
-.agent-session-turn--tool-result .agent-session-turn__tool-marker {
-  color: #2f9e44;
-}
-
+/* A call's tool name reads as a quiet monospace label; the result has no label
+   and its output flows directly under (a continuation), tightly spaced. */
 .agent-session-turn__tool-name {
-  font: 12px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color: var(--tide-text);
+  font: 11.5px/1.4 "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--tide-muted);
+}
+
+.agent-session-turn--tool-result {
+  margin-top: -1px;
 }
 
 .agent-session-turn__tool-body {
