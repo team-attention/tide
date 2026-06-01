@@ -71,6 +71,11 @@ import type {
   ComposerAttachmentStorePort,
 } from "../ports/outbound/composer-attachment-store-port.ts";
 import type { ProviderTrustPort } from "../ports/outbound/provider-trust-port.ts";
+import {
+  computeWorktreePath,
+  sanitizeWorktreeBranch,
+  type WorktreePathSettings,
+} from "../domains/worktree/worktree-path.ts";
 import type {
   WorkspaceCommandErrorCode,
   WorkspaceCommandPort,
@@ -166,6 +171,7 @@ export interface CreateThreadRuntimeServiceInput {
   workspaceCodeIntelligencePort?: WorkspaceCodeIntelligencePort;
   composerAttachmentStorePort?: ComposerAttachmentStorePort;
   providerTrustPort?: ProviderTrustPort;
+  worktreeSettings?: WorktreePathSettings;
   defaultWorkbenchTerminalCommand?: string;
   clock?: () => string;
   idGenerator?: () => string;
@@ -219,6 +225,7 @@ export type ServiceErrorCode =
   | "workbench_stale_reference"
   | "unsupported_tide_mcp_tool"
   | "directory_trust_unavailable"
+  | "worktree_create_failed"
   | WorkspaceCodeIntelligenceErrorCode
   | WorkspaceCommandErrorCode
   | WorkspaceFileErrorCode;
@@ -310,6 +317,16 @@ export interface SendComposerInput {
 
 export interface TrustWorkspaceInput {
   threadId: ThreadId;
+}
+
+export interface CreateWorktreeInput {
+  projectCwd: string;
+  name: string;
+}
+
+export interface CreateWorktreeResult {
+  worktreePath: string;
+  branch: string;
 }
 
 export interface TrustWorkspaceResult {
@@ -636,6 +653,9 @@ export interface ThreadRuntimeService {
   trustWorkspace(
     input: TrustWorkspaceInput,
   ): Promise<ServiceResult<TrustWorkspaceResult>>;
+  createWorktree(
+    input: CreateWorktreeInput,
+  ): Promise<ServiceResult<CreateWorktreeResult>>;
   recordTurnComplete(
     input: RecordTurnCompleteInput,
   ): Promise<ServiceResult<RecordTurnCompleteResult>>;
@@ -830,6 +850,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
   workspaceCodeIntelligencePort: WorkspaceCodeIntelligencePort;
   composerAttachmentStorePort?: ComposerAttachmentStorePort;
   providerTrustPort?: ProviderTrustPort;
+  worktreeSettings?: WorktreePathSettings;
   defaultWorkbenchTerminalCommand: string;
   clock: () => string;
   idGenerator: () => string;
@@ -850,6 +871,7 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       input.workspaceCodeIntelligencePort ?? createUnavailableWorkspaceCodeIntelligencePort();
     this.composerAttachmentStorePort = input.composerAttachmentStorePort;
     this.providerTrustPort = input.providerTrustPort;
+    this.worktreeSettings = input.worktreeSettings;
     this.defaultWorkbenchTerminalCommand =
       input.defaultWorkbenchTerminalCommand ?? DEFAULT_WORKBENCH_TERMINAL_COMMAND;
     this.clock = input.clock ?? defaultClock;
@@ -1481,6 +1503,50 @@ class InMemoryThreadRuntimeService implements ThreadRuntimeService {
       thread: threadSnapshot,
       runtimeState: thread.runtimeState,
     });
+  }
+
+  // Create a git worktree for `name` off the Project cwd, mirroring v1's rule
+  // (sibling `<repo>.worktree/<branch>`, overridable). Returns the new path so
+  // the Desktop can scope a Thread to it. See docs_v2/specs/worktree-creation.md.
+  async createWorktree(
+    input: CreateWorktreeInput,
+  ): Promise<ServiceResult<CreateWorktreeResult>> {
+    const branch = sanitizeWorktreeBranch(input.name.trim());
+    if (branch.length === 0) {
+      return failure("worktree_create_failed", "Worktree name is required.");
+    }
+    if (this.workspaceCommandPort === undefined) {
+      return failure("worktree_create_failed", "Workspace command port is unavailable.");
+    }
+
+    const worktreePath = computeWorktreePath(
+      input.projectCwd,
+      branch,
+      this.worktreeSettings,
+    );
+
+    const run = await this.workspaceCommandPort.run({
+      command: "git",
+      args: ["worktree", "add", worktreePath, "-b", branch],
+      cwd: input.projectCwd,
+      timeoutMs: 30000,
+      byteLimit: 64 * 1024,
+      startedAt: this.clock(),
+    });
+
+    if (!run.ok) {
+      return failure("worktree_create_failed", run.error.message);
+    }
+    if (run.run.exitCode !== 0) {
+      return failure(
+        "worktree_create_failed",
+        run.run.stderr.trim().length > 0
+          ? run.run.stderr.trim()
+          : `git worktree add exited with code ${run.run.exitCode}`,
+      );
+    }
+
+    return { ok: true, worktreePath, branch };
   }
 
   // Called when a provider Stop signal ends the current turn. The runtime

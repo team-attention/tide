@@ -192,6 +192,19 @@ class ThreadRuntimeContractMessageAdapter implements BackendContractMessageAdapt
           (result) => this.trustWorkspaceEvents(typedCommand, result),
         );
       }
+      case "worktree.create": {
+        const typedCommand = command as BackendCommandEnvelope<"worktree.create">;
+        return this.handleServiceResult(
+          typedCommand,
+          await this.service.createWorktree(typedCommand.payload),
+          (result) => [
+            this.commandCompletedEvent(typedCommand, {
+              worktreePath: result.worktreePath,
+              branch: result.branch,
+            }),
+          ],
+        );
+      }
       case "agentRuntime.resume": {
         const typedCommand = command as BackendCommandEnvelope<"agentRuntime.resume">;
         return this.handleServiceResult(
@@ -680,6 +693,7 @@ function contractCodeFromServiceError(error: ServiceError): ContractErrorCode {
     case "workbench_stale_reference":
     case "unsupported_tide_mcp_tool":
     case "directory_trust_unavailable":
+    case "worktree_create_failed":
     case "workspace_file_unavailable":
     case "workspace_file_not_found":
     case "workspace_file_outside_scope":
