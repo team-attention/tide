@@ -220,14 +220,23 @@ function useColumnPresence(open: boolean): { mounted: boolean; visible: boolean 
   useEffect(() => {
     if (open) {
       setMounted(true);
-      // Reveal on the next frame so the grid track animates from 0 -> width. In
-      // non-browser environments (tests) there is no rAF, so reveal immediately.
+      // Reveal after the collapsed (0px) track has actually painted, or the grid
+      // jumps straight to full width with no transition. A single rAF runs before
+      // paint (React batches setVisible into the same frame), so use a double rAF:
+      // frame 1 lets 0px paint, frame 2 flips to full width -> the track animates.
+      // No rAF in tests -> reveal immediately.
       if (typeof requestAnimationFrame === "undefined") {
         setVisible(true);
         return;
       }
-      const frame = requestAnimationFrame(() => setVisible(true));
-      return () => cancelAnimationFrame(frame);
+      let inner = 0;
+      const outer = requestAnimationFrame(() => {
+        inner = requestAnimationFrame(() => setVisible(true));
+      });
+      return () => {
+        cancelAnimationFrame(outer);
+        cancelAnimationFrame(inner);
+      };
     }
     setVisible(false);
     const timer = setTimeout(() => setMounted(false), COLUMN_TRANSITION_MS);
