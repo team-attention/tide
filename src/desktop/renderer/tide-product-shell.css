@@ -51,6 +51,35 @@ button {
   color: inherit;
 }
 
+/* Thin overlay scrollbars with no track background (Codex-like): the bar floats
+   over content with padding, and the track is transparent. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(60, 55, 60, 0.28) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(60, 55, 60, 0.24);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(60, 55, 60, 0.42);
+  background-clip: padding-box;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -901,8 +930,11 @@ button {
 }
 
 .agent-session {
+  min-width: 0;
   min-height: 0;
-  overflow: auto;
+  /* Vertical scroll only — content wraps, so there is never a horizontal bar. */
+  overflow-x: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -917,6 +949,7 @@ button {
 /* Canonical (1338): default user and agent text is a flat transcript, not
    boxed into cards. Only structured/event blocks get cards. */
 .agent-session-turn {
+  min-width: 0;
   max-width: min(760px, 100%);
   align-self: stretch;
   display: grid;
@@ -968,10 +1001,14 @@ button {
 
 .agent-session-turn__body {
   margin: 0;
+  min-width: 0;
   color: inherit;
   font-size: 15px;
   line-height: 1.68;
   white-space: pre-wrap;
+  /* Long tokens/URLs wrap instead of forcing a horizontal scrollbar. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
   -webkit-font-smoothing: antialiased;
 }
 
