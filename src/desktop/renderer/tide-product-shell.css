@@ -1780,9 +1780,12 @@ button {
 .workbench-pane-content--launcher {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  /* Top-aligned so a tall/narrow pane doesn't leave the list floating in a big
+     empty void. */
+  justify-content: flex-start;
   gap: 10px;
-  padding: 16px clamp(12px, 4%, 40px);
+  padding: 18px clamp(12px, 4%, 32px);
+  width: 100%;
   max-width: 460px;
   margin: 0 auto;
 }
